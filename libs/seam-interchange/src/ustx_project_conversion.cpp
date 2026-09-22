@@ -19,7 +19,9 @@ constexpr std::int64_t kSeamPpq = 960;
 
 void addIssue(std::vector<UstxIssue>& issues, UstxIssueSeverity severity,
               std::string path, std::string message, const UstxLimits& limits) {
-  if (issues.size() < std::min<std::size_t>(limits.maximumNodes, 4'096U))
+  // One overflow witness makes the final admission fail without retaining an
+  // unbounded report. Neither import nor export may publish a partial report.
+  if (issues.size() <= std::min<std::size_t>(limits.maximumNodes, 4'096U))
     issues.push_back({severity, std::move(path), std::move(message)});
 }
 
@@ -526,6 +528,9 @@ core::Result<UstxProjectDraft> importUstxProject(
     region->sortNotes();
   }
   const auto valid = project.validate(); if (!valid) return core::Result<Output>{valid.error()};
+  if (issues.size() > std::min<std::size_t>(limits.maximumNodes, 4'096U))
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+        "USTX diagnostic report exceeds its capacity; conversion would conceal losses");
   return Output{std::move(project), std::move(issues)};
 }
 
@@ -630,6 +635,9 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
     }
   }
   if (!project.audioTracks().empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.audioTracks", "USTX export contains vocal tracks only", limits);
+  if (issues.size() > std::min<std::size_t>(limits.maximumNodes, 4'096U))
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+        "USTX diagnostic report exceeds its capacity; conversion would conceal losses");
   const auto encoded = encodeUstx(document, limits); if (!encoded) return core::Result<Output>{encoded.error()};
   return Output{std::move(encoded).value(), std::move(issues)};
 }

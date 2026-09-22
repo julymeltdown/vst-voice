@@ -89,6 +89,21 @@ bool fourcc(std::span<const std::uint8_t> bytes, std::string_view value) {
 
 struct ActiveNote final { time::Tick start; std::uint8_t velocity; std::uint8_t channel; };
 
+std::string discardedChannelEvent(std::uint8_t kind, std::uint8_t channel) {
+  std::string_view family = "Channel event";
+  switch (kind) {
+    case 0xa0U: family = "Polyphonic pressure"; break;
+    case 0xb0U: family = "Control change"; break;
+    case 0xc0U: family = "Program change"; break;
+    case 0xd0U: family = "Channel pressure"; break;
+    case 0xe0U: family = "Pitch bend"; break;
+    default: break;
+  }
+  return std::string{family} + " on channel " +
+      std::to_string(static_cast<unsigned>(channel) + 1U) +
+      " was ignored; channel-control import is unsupported";
+}
+
 core::Result<void> validateText(std::string_view text, std::size_t& textBytes, const SmfLimits& limits) {
   if (text.size() > limits.maximumTextBytes || text.size() > limits.maximumTextBytes - textBytes || text.find('\0') != std::string_view::npos)
     return core::failure(core::ErrorCode::ParseError, "SMF text payload exceeds bounds");
@@ -160,14 +175,13 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
         const auto second = (kind == 0xc0U || kind == 0xd0U) ? core::Result<std::uint8_t>{std::uint8_t{0}} : trackReader.byte();
         if (!second) return core::Result<Output>{second.error()};
         if (second.value() > 127U) return core::failure<Output>(core::ErrorCode::ParseError, "SMF running-status data byte is invalid");
-        const auto data1 = status == running ? raw.value() : raw.value();
-        (void)data1; // The running-status branch is handled below by reusing raw.
         if (kind == 0x90U || kind == 0x80U) {
           const auto velocity = second.value(); const auto key = raw.value();
           auto& queue = active[{channel, key}];
           if (kind == 0x90U && velocity != 0U) queue.push_back({tick, velocity, channel});
           else if (!queue.empty()) { const auto start = queue.front(); queue.pop_front(); result.notes.push_back({start.start, tick - start.start, key, start.velocity, channel}); }
-        }
+        } else result.issues.push_back({SmfIssueSeverity::Loss, tick,
+                                        discardedChannelEvent(kind, channel)});
         continue;
       }
       if (status < 0xf0U) {
@@ -182,8 +196,8 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
           auto& queue = active[{channel, first.value()}];
           if (kind == 0x90U && second.value() != 0U) queue.push_back({tick, second.value(), channel});
           else if (!queue.empty()) { const auto start = queue.front(); queue.pop_front(); result.notes.push_back({start.start, tick - start.start, first.value(), start.velocity, channel}); }
-        } else if (kind != 0xc0U && kind != 0xd0U && kind != 0xb0U && kind != 0xe0U && kind != 0xa0U)
-          result.issues.push_back({SmfIssueSeverity::Loss, tick, "Unsupported channel event was ignored"});
+        } else result.issues.push_back({SmfIssueSeverity::Loss, tick,
+                                        discardedChannelEvent(kind, channel)});
         continue;
       }
       if (status == 0xffU) {
@@ -240,6 +254,15 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
   }
   if (reader.remaining() != 0U) return core::failure<Output>(core::ErrorCode::ParseError, "SMF has trailing bytes after declared tracks");
   if (result.notes.size() > limits.maximumNotes) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF note count exceeds bounds");
+  if (trackCount.value() > 1U) {
+    if (result.issues.size() >= limits.maximumEvents)
+      return core::failure<Output>(core::ErrorCode::Unsupported,
+          "SMF track-structure diagnostic report exceeds event bounds");
+    result.issues.push_back({SmfIssueSeverity::Loss, time::Tick{0},
+        std::to_string(trackCount.value()) +
+            " source tracks were flattened into one score; track membership "
+            "and separation are not retained"});
+  }
   std::stable_sort(result.notes.begin(), result.notes.end(), [](const auto& lhs, const auto& rhs) { return std::tie(lhs.start, lhs.channel, lhs.midi, lhs.duration) < std::tie(rhs.start, rhs.channel, rhs.midi, rhs.duration); });
   std::stable_sort(result.tempos.begin(), result.tempos.end(), [](const auto& lhs, const auto& rhs) { return lhs.tick < rhs.tick; });
   std::stable_sort(result.meters.begin(), result.meters.end(), [](const auto& lhs, const auto& rhs) { return lhs.tick < rhs.tick; });

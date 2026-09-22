@@ -5,6 +5,7 @@
 #include "seam/application/note_commands.hpp"
 #include "seam/build/version.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,6 +38,7 @@ public:
   seam::core::Result<std::optional<std::filesystem::path>> choose(
       const seam::platform::FileDialogRequest& request) override {
     requests.push_back(request);
+    if (onChoose) onChoose(request);
     if (responses.empty()) return std::optional<std::filesystem::path>{};
     auto response = responses.front();
     responses.erase(responses.begin());
@@ -44,6 +47,7 @@ public:
 
   std::vector<seam::platform::FileDialogRequest> requests;
   std::vector<std::optional<std::filesystem::path>> responses;
+  std::function<void(const seam::platform::FileDialogRequest&)> onChoose;
 };
 
 class FakePrompt final : public seam::platform::IUnsavedChangesPrompt {
@@ -51,6 +55,7 @@ public:
   seam::core::Result<seam::platform::UnsavedDecision> choose(
       std::string_view name) override {
     names.emplace_back(name);
+    if (onChoose) onChoose();
     if (decisions.empty()) return seam::platform::UnsavedDecision::Cancel;
     const auto result = decisions.front();
     decisions.erase(decisions.begin());
@@ -59,6 +64,7 @@ public:
 
   std::vector<std::string> names;
   std::vector<seam::platform::UnsavedDecision> decisions;
+  std::function<void()> onChoose;
 };
 
 std::unique_ptr<seam::standalone::AuthoringSession> makeSession(
@@ -86,6 +92,59 @@ void addNote(seam::standalone::AuthoringSession& session) {
   CHECK(session.runtime().execute(
       std::make_unique<seam::application::AddNoteCommand>(
           session.regionId(), std::move(lyric), std::move(note))));
+}
+
+std::filesystem::path makeInterchangeFixture(
+    const std::filesystem::path& root, seam::authoring::InterchangeFormat format) {
+  seam::application::ProjectFactory factory{800000U};
+  auto project = factory.createProject("External melody");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto region = factory.addRegion(project, track, "Phrase",
+      seam::time::Tick{0}, seam::time::Tick{960});
+  auto* target = project.findRegion(region);
+  CHECK(target != nullptr);
+  auto [lyric, note] = factory.makeNote(seam::time::Tick{0},
+      seam::time::Tick{480}, 67U, U"la");
+  target->lyrics.push_back(std::move(lyric));
+  target->notes.push_back(std::move(note));
+  const auto path = root / (format == seam::authoring::InterchangeFormat::Ustx
+                               ? "external.ustx" : "external.mid");
+  CHECK(seam::authoring::InterchangeService{}.exportFile(project,
+      {.format = format, .destination = path, .trackId = track, .regionId = region}));
+  return path;
+}
+
+struct DocumentObservation final {
+  std::string project;
+  std::uint64_t revision;
+  std::uint64_t nextId;
+  seam::authoring::DocumentIdentity identity;
+  bool canUndo;
+  bool canRedo;
+};
+
+DocumentObservation observeDocument(const seam::standalone::AuthoringSession& session) {
+  const auto& document = session.runtime().document();
+  const auto encoded = seam::formats::ProjectJsonCodec{}.encode(document.session().project());
+  CHECK(encoded);
+  return {encoded.value(), document.session().revision(), document.factory().nextIdValue(),
+          document.identity(), document.session().canUndo(), document.session().canRedo()};
+}
+
+void checkDocumentUnchanged(const seam::standalone::AuthoringSession& session,
+                            const DocumentObservation& before) {
+  const auto after = observeDocument(session);
+  CHECK(after.project == before.project);
+  CHECK(after.revision == before.revision);
+  CHECK(after.nextId == before.nextId);
+  CHECK(after.canUndo == before.canUndo);
+  CHECK(after.canRedo == before.canRedo);
+  CHECK(after.identity.projectPath == before.identity.projectPath);
+  CHECK(after.identity.autosavePath == before.identity.autosavePath);
+  CHECK(after.identity.recoveryOriginPath == before.identity.recoveryOriginPath);
+  CHECK(after.identity.lastSavedRevision == before.identity.lastSavedRevision);
+  CHECK(after.identity.baseProjectHash == before.identity.baseProjectHash);
+  CHECK(after.identity.dirty == before.identity.dirty);
 }
 
 }  // namespace
@@ -1139,4 +1198,482 @@ TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") 
       std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), plain,
       [&quit] { quit = true; });
   CHECK(controller);
+}
+
+TEST_CASE("standalone interchange accepts reviewed USTX and MIDI as new unsaved documents") {
+  using namespace seam;
+  for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
+    const auto root = test::support::temporaryDirectory("standalone-interchange-accept");
+    const auto source = makeInterchangeFixture(root, format);
+    const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+    auto session = makeSession(root);
+    addNote(*session);
+    const auto originalId = session->runtime().document().session().project().id();
+    const auto expected = session->prepareInterchangeImport(source,
+        {.format = format, .projectName = source.stem().string()}); CHECK(expected);
+    const auto before = observeDocument(*session);
+    const auto destination = root / "accepted.seam";
+    auto dialog = std::make_unique<FakeDialog>();
+    auto* dialogPtr = dialog.get();
+    dialogPtr->responses = {source, destination};
+    auto prompt = std::make_unique<FakePrompt>();
+    prompt->decisions = {platform::UnsavedDecision::Discard};
+    unsigned reviews = 0U;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .reviewInterchangeImport = [&](const authoring::InterchangeImportDraft& draft) -> core::Result<bool> {
+            ++reviews;
+            checkDocumentUnchanged(*session, before);
+            CHECK(draft.format == format);
+            CHECK(draft.sourcePath == std::filesystem::weakly_canonical(source));
+            CHECK(draft.sourceHash == sourceHash.value());
+            CHECK(draft.issues == expected.value().issues);
+            CHECK(draft.project.vocalTracks().size() == 1U);
+            CHECK(draft.project.vocalTracks().front().regions.front().notes.front().midiKey == 67U);
+            return true;
+          }});
+    CHECK(controller);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject));
+    CHECK(reviews == 1U);
+    CHECK(dialogPtr->requests.front().purpose == platform::FileDialogPurpose::OpenScore);
+    const auto& document = session->runtime().document();
+    CHECK(document.session().project().id() != originalId);
+    CHECK(document.dirty());
+    CHECK(!document.identity().projectPath.has_value());
+    CHECK(!document.identity().autosavePath.has_value());
+    CHECK(!document.identity().recoveryOriginPath.has_value());
+    CHECK(document.identity().baseProjectHash.empty());
+    CHECK(!document.session().canUndo());
+    CHECK(!document.session().canRedo());
+    CHECK(document.session().project().findRegion(session->regionId()) != nullptr);
+    CHECK(document.session().project().findRegion(session->regionId())->notes.front().midiKey == 67U);
+    CHECK(session->controller().sceneState().dirty);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::SaveProjectAs));
+    CHECK(document.identity().projectPath == destination);
+    CHECK(!document.dirty());
+    CHECK(std::filesystem::exists(destination));
+    CHECK(core::sha256File(source).value() == sourceHash.value());
+  }
+}
+
+TEST_CASE("standalone interchange review cancellation errors and missing surfaces preserve the document") {
+  using namespace seam;
+  for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
+    for (const int decision : {0, 1, 2}) {
+      const auto root = test::support::temporaryDirectory("standalone-interchange-refusal");
+      const auto source = makeInterchangeFixture(root, format);
+      const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+      auto session = makeSession(root);
+      addNote(*session);
+      const auto before = observeDocument(*session);
+      auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {source};
+      auto prompt = std::make_unique<FakePrompt>();
+      prompt->decisions = {platform::UnsavedDecision::Discard};
+      standalone::StandaloneApplicationControllerConfig config{};
+      config.autosaveRoot = root / "autosaves";
+      config.recentProjectsPath = root / "recent.json";
+      unsigned reviews = 0U;
+      if (decision != 2) config.reviewInterchangeImport = [&](const auto&) -> core::Result<bool> {
+        ++reviews;
+        if (decision == 1) return core::failure<bool>(core::ErrorCode::IoError, "review failed");
+        return false;
+      };
+      auto controller = standalone::StandaloneApplicationController::create(
+          *session, std::move(dialog), std::move(prompt), std::move(config)); CHECK(controller);
+      const auto imported = controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject);
+      CHECK(imported.hasValue() == (decision == 0));
+      if (decision == 1) CHECK(imported.error().code == core::ErrorCode::IoError);
+      if (decision == 2) CHECK(imported.error().code == core::ErrorCode::Unsupported);
+      CHECK(reviews == (decision == 2 ? 0U : 1U));
+      checkDocumentUnchanged(*session, before);
+      CHECK(core::sha256File(source).value() == sourceHash.value());
+    }
+  }
+}
+
+TEST_CASE("standalone interchange honors unsaved cancellation and cancelled save before opening") {
+  using namespace seam;
+  for (const auto decision : {platform::UnsavedDecision::Cancel, platform::UnsavedDecision::Save}) {
+    const auto root = test::support::temporaryDirectory("standalone-interchange-prompt-cancel");
+    auto session = makeSession(root); addNote(*session);
+    const auto before = observeDocument(*session);
+    auto dialog = std::make_unique<FakeDialog>(); auto* dialogPtr = dialog.get();
+    dialogPtr->responses = {std::nullopt};
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {decision};
+    unsigned reviews = 0U;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+          .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> { ++reviews; return true; }});
+    CHECK(controller);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject));
+    CHECK(reviews == 0U);
+    CHECK(dialogPtr->requests.size() == (decision == platform::UnsavedDecision::Save ? 1U : 0U));
+    if (!dialogPtr->requests.empty()) CHECK(dialogPtr->requests.front().purpose == platform::FileDialogPurpose::SaveProject);
+    checkDocumentUnchanged(*session, before);
+  }
+}
+
+TEST_CASE("standalone interchange captures its approval stamp after a successful unsaved save") {
+  using namespace seam;
+  for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
+    const auto root = test::support::temporaryDirectory("standalone-interchange-save-first");
+    const auto source = makeInterchangeFixture(root, format);
+    const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+    auto session = makeSession(root); addNote(*session);
+    const auto before = observeDocument(*session);
+    const auto savedPath = root / "previous.seam";
+    auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {savedPath, source};
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Save};
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+          .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> {
+            CHECK(session->runtime().document().identity().projectPath == savedPath);
+            CHECK(!session->runtime().document().dirty());
+            const auto saved = formats::ProjectJsonCodec{}.load(savedPath); CHECK(saved);
+            CHECK(formats::ProjectJsonCodec{}.encode(saved.value()).value() == before.project);
+            return true;
+          }});
+    CHECK(controller);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject));
+    CHECK(session->runtime().document().dirty());
+    CHECK(!session->runtime().document().identity().projectPath.has_value());
+    CHECK(core::sha256File(source).value() == sourceHash.value());
+  }
+}
+
+TEST_CASE("standalone interchange rejects stale review after edits undo replacement save or recovery") {
+  using namespace seam;
+  for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
+    for (const int mutation : {0, 1, 2, 3, 4}) {
+      const auto root = test::support::temporaryDirectory("standalone-interchange-stale-review");
+      const auto source = makeInterchangeFixture(root, format);
+      const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+      auto session = makeSession(root); addNote(*session);
+      const auto originalId = session->runtime().document().session().project().id();
+      std::optional<DocumentObservation> newer;
+      auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {source};
+      auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Discard};
+      auto controller = standalone::StandaloneApplicationController::create(
+          *session, std::move(dialog), std::move(prompt), {
+            .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+            .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> {
+              auto& document = session->runtime().document();
+              if (mutation == 0 || mutation == 1) {
+                addNote(*session);
+                if (mutation == 1) CHECK(document.undo());
+              } else if (mutation == 2) {
+                auto sameProject = document.session().project();
+                CHECK(document.replaceProject(std::move(sameProject)));
+                CHECK(document.session().project().id() == originalId);
+              } else if (mutation == 3) {
+                CHECK(session->saveProjectAs(root / "saved-during-review.seam"));
+              } else {
+                document.markRecovered(root / "recovered-during-review.seam");
+              }
+              newer = observeDocument(*session);
+              return true;
+            }});
+      CHECK(controller);
+      const auto imported = controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject);
+      CHECK(!imported); CHECK(imported.error().code == core::ErrorCode::Conflict);
+      CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+      CHECK(core::sha256File(source).value() == sourceHash.value());
+    }
+  }
+}
+
+TEST_CASE("standalone interchange detects file picker mutations but cancellation preserves newer edits") {
+  using namespace seam;
+  for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
+    for (const bool cancel : {false, true}) {
+      const auto root = test::support::temporaryDirectory("standalone-interchange-stale-picker");
+      const auto source = makeInterchangeFixture(root, format);
+      const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+      auto session = makeSession(root); addNote(*session);
+      std::optional<DocumentObservation> newer;
+      auto dialog = std::make_unique<FakeDialog>();
+      dialog->responses = {cancel ? std::optional<std::filesystem::path>{} : std::optional{source}};
+      dialog->onChoose = [&](const platform::FileDialogRequest& request) {
+        CHECK(request.purpose == platform::FileDialogPurpose::OpenScore);
+        addNote(*session); newer = observeDocument(*session);
+      };
+      auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Discard};
+      unsigned reviews = 0U;
+      auto controller = standalone::StandaloneApplicationController::create(
+          *session, std::move(dialog), std::move(prompt), {
+            .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+            .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> { ++reviews; return true; }});
+      CHECK(controller);
+      const auto imported = controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject);
+      CHECK(imported.hasValue() == cancel);
+      if (!cancel) CHECK(imported.error().code == core::ErrorCode::Conflict);
+      CHECK(reviews == 0U); CHECK(newer.has_value());
+      checkDocumentUnchanged(*session, *newer);
+      CHECK(core::sha256File(source).value() == sourceHash.value());
+    }
+  }
+}
+
+TEST_CASE("standalone interchange review cancellation preserves edits made during the modal review") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("standalone-interchange-cancel-newer");
+  const auto source = makeInterchangeFixture(root, authoring::InterchangeFormat::Ustx);
+  auto session = makeSession(root); addNote(*session);
+  std::optional<DocumentObservation> newer;
+  auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {source};
+  auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Discard};
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt), {
+        .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+        .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> {
+          addNote(*session); newer = observeDocument(*session); return false;
+        }});
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject));
+  CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+}
+
+TEST_CASE("standalone interchange malformed sources never invoke review or replace the document") {
+  using namespace seam;
+  for (const auto extension : {".ustx", ".mid"}) {
+    const auto root = test::support::temporaryDirectory("standalone-interchange-malformed");
+    const auto source = root / (std::string{"invalid"} + extension);
+    CHECK(core::durableAtomicWriteText(source, "not an interchange document"));
+    const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+    auto session = makeSession(root); addNote(*session);
+    const auto before = observeDocument(*session);
+    auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {source};
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Discard};
+    unsigned reviews = 0U;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+          .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> { ++reviews; return true; }});
+    CHECK(controller);
+    CHECK(!controller.value()->dispatch(platform::ApplicationCommand::OpenExternalProject));
+    CHECK(reviews == 0U); checkDocumentUnchanged(*session, before);
+    CHECK(core::sha256File(source).value() == sourceHash.value());
+  }
+}
+
+TEST_CASE("standalone lifecycle rejects stale unsaved prompt decisions before replacement saving or quit") {
+  using namespace seam;
+  for (const auto command : {platform::ApplicationCommand::OpenExternalProject,
+      platform::ApplicationCommand::NewProject, platform::ApplicationCommand::OpenProject,
+      platform::ApplicationCommand::Quit}) {
+    for (const auto decision : {platform::UnsavedDecision::Discard, platform::UnsavedDecision::Save}) {
+      for (const bool replace : {false, true}) {
+        const auto root = test::support::temporaryDirectory("lifecycle-stale-unsaved-prompt");
+        auto session = makeSession(root); addNote(*session);
+        const auto savedPath = root / "original.seam";
+        CHECK(session->saveProjectAs(savedPath));
+        const auto savedHash = core::sha256File(savedPath); CHECK(savedHash);
+        addNote(*session);
+        std::optional<DocumentObservation> newer;
+        auto dialog = std::make_unique<FakeDialog>(); auto* dialogPtr = dialog.get();
+        auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {decision};
+        prompt->onChoose = [&] {
+          if (replace) {
+            auto sameProject = session->runtime().document().session().project();
+            CHECK(session->runtime().document().replaceProject(std::move(sameProject)));
+          } else addNote(*session);
+          newer = observeDocument(*session);
+        };
+        bool quit = false;
+        unsigned reviews = 0U;
+        auto controller = standalone::StandaloneApplicationController::create(
+            *session, std::move(dialog), std::move(prompt), {
+              .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+              .reviewInterchangeImport = [&](const auto&) -> core::Result<bool> { ++reviews; return true; }},
+            [&] { quit = true; }); CHECK(controller);
+        const auto result = controller.value()->dispatch(command);
+        CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+        CHECK(!quit); CHECK(reviews == 0U); CHECK(dialogPtr->requests.empty());
+        CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+        CHECK(core::sha256File(savedPath).value() == savedHash.value());
+      }
+    }
+  }
+}
+
+TEST_CASE("standalone lifecycle unsaved prompt cancellation preserves newer document changes") {
+  using namespace seam;
+  for (const auto command : {platform::ApplicationCommand::OpenExternalProject,
+      platform::ApplicationCommand::NewProject, platform::ApplicationCommand::OpenProject,
+      platform::ApplicationCommand::Quit}) {
+    const auto root = test::support::temporaryDirectory("lifecycle-cancel-unsaved-newer");
+    auto session = makeSession(root); addNote(*session);
+    std::optional<DocumentObservation> newer;
+    auto dialog = std::make_unique<FakeDialog>(); auto* dialogPtr = dialog.get();
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Cancel};
+    prompt->onChoose = [&] { addNote(*session); newer = observeDocument(*session); };
+    bool quit = false;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"},
+        [&] { quit = true; }); CHECK(controller);
+    CHECK(controller.value()->dispatch(command));
+    CHECK(!quit); CHECK(dialogPtr->requests.empty()); CHECK(newer.has_value());
+    checkDocumentUnchanged(*session, *newer);
+  }
+}
+
+TEST_CASE("standalone lifecycle rejects stale Save As decisions before writing or replacing") {
+  using namespace seam;
+  for (const auto command : {platform::ApplicationCommand::SaveProjectAs,
+      platform::ApplicationCommand::SaveProject, platform::ApplicationCommand::OpenExternalProject,
+      platform::ApplicationCommand::NewProject, platform::ApplicationCommand::OpenProject,
+      platform::ApplicationCommand::Quit}) {
+    for (const int mutation : {0, 1, 2}) {
+      const auto root = test::support::temporaryDirectory("lifecycle-stale-save-as");
+      auto session = makeSession(root); addNote(*session);
+      const auto destination = root / "must-not-change.seam";
+      CHECK(core::durableAtomicWriteText(destination, "existing destination sentinel"));
+      const auto destinationHash = core::sha256File(destination); CHECK(destinationHash);
+      std::optional<DocumentObservation> newer;
+      auto dialog = std::make_unique<FakeDialog>(); auto* dialogPtr = dialog.get();
+      dialog->responses = {destination};
+      dialog->onChoose = [&](const platform::FileDialogRequest& request) {
+        // An implementation missing the guard can continue into the next Open
+        // picker; mutate only at the Save As boundary under review here.
+        if (request.purpose != platform::FileDialogPurpose::SaveProject) return;
+        if (mutation == 0) addNote(*session);
+        else if (mutation == 1) {
+          auto sameProject = session->runtime().document().session().project();
+          CHECK(session->runtime().document().replaceProject(std::move(sameProject)));
+        } else CHECK(session->saveProjectAs(root / "saved-by-nested-action.seam"));
+        newer = observeDocument(*session);
+      };
+      auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Save};
+      bool quit = false;
+      auto controller = standalone::StandaloneApplicationController::create(
+          *session, std::move(dialog), std::move(prompt), {
+            .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"},
+          [&] { quit = true; }); CHECK(controller);
+      const auto result = controller.value()->dispatch(command);
+      CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+      CHECK(!quit); CHECK(dialogPtr->requests.size() == 1U); CHECK(newer.has_value());
+      checkDocumentUnchanged(*session, *newer);
+      CHECK(core::sha256File(destination).value() == destinationHash.value());
+      CHECK(!std::filesystem::exists(std::filesystem::path{destination.string() + ".bak"}));
+    }
+  }
+}
+
+TEST_CASE("standalone lifecycle cancelled Save As preserves newer edits and never quits") {
+  using namespace seam;
+  for (const auto command : {platform::ApplicationCommand::SaveProjectAs,
+      platform::ApplicationCommand::OpenExternalProject, platform::ApplicationCommand::Quit}) {
+    const auto root = test::support::temporaryDirectory("lifecycle-cancel-save-as-newer");
+    auto session = makeSession(root); addNote(*session);
+    std::optional<DocumentObservation> newer;
+    auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {std::nullopt};
+    dialog->onChoose = [&](const platform::FileDialogRequest& request) {
+      CHECK(request.purpose == platform::FileDialogPurpose::SaveProject);
+      addNote(*session); newer = observeDocument(*session);
+    };
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Save};
+    bool quit = false;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"},
+        [&] { quit = true; }); CHECK(controller);
+    CHECK(controller.value()->dispatch(command));
+    CHECK(!quit); CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+  }
+}
+
+TEST_CASE("standalone lifecycle successful save allows legitimate close after identity changes") {
+  using namespace seam;
+  for (const bool alreadySaved : {false, true}) {
+    const auto root = test::support::temporaryDirectory("lifecycle-save-close-control");
+    auto session = makeSession(root); addNote(*session);
+    const auto destination = root / "saved-on-close.seam";
+    if (alreadySaved) { CHECK(session->saveProjectAs(destination)); addNote(*session); }
+    const auto before = observeDocument(*session);
+    auto dialog = std::make_unique<FakeDialog>(); auto* dialogPtr = dialog.get();
+    dialog->responses = {destination};
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Save};
+    bool quit = false;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"},
+        [&] { quit = true; }); CHECK(controller);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::Quit));
+    CHECK(quit); CHECK(!session->runtime().document().dirty());
+    CHECK(session->runtime().document().identity().projectPath == destination);
+    CHECK(session->runtime().document().session().revision() == before.revision);
+    CHECK(dialogPtr->requests.size() == (alreadySaved ? 0U : 1U));
+    const auto saved = formats::ProjectJsonCodec{}.load(destination); CHECK(saved);
+    CHECK(formats::ProjectJsonCodec{}.encode(saved.value()).value() == before.project);
+  }
+}
+
+TEST_CASE("standalone lifecycle New and Open dialogs cannot consume earlier discard approval after edits") {
+  using namespace seam;
+  for (const auto command : {platform::ApplicationCommand::NewProject,
+                            platform::ApplicationCommand::OpenProject}) {
+    for (const bool cancel : {false, true}) {
+      const auto root = test::support::temporaryDirectory("lifecycle-stale-following-dialog");
+      auto session = makeSession(root); addNote(*session);
+      const auto source = root / "other.seam";
+      CHECK(formats::ProjectJsonCodec{}.save(session->runtime().document().session().project(), source));
+      const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+      std::optional<DocumentObservation> newer;
+      auto dialog = std::make_unique<FakeDialog>();
+      dialog->responses = {cancel ? std::optional<std::filesystem::path>{} : std::optional{source}};
+      dialog->onChoose = [&](const auto&) { addNote(*session); newer = observeDocument(*session); };
+      auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Discard};
+      auto controller = standalone::StandaloneApplicationController::create(
+          *session, std::move(dialog), std::move(prompt), {
+            .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+            .requestNewProject = [&]() -> core::Result<std::optional<authoring::NewProjectRequest>> {
+              addNote(*session); newer = observeDocument(*session);
+              if (cancel) return std::optional<authoring::NewProjectRequest>{};
+              return std::optional{authoring::NewProjectRequest{.name = "Replacement"}};
+            }}); CHECK(controller);
+      const auto result = controller.value()->dispatch(command);
+      CHECK(result.hasValue() == cancel);
+      if (!cancel) CHECK(result.error().code == core::ErrorCode::Conflict);
+      CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+      CHECK(core::sha256File(source).value() == sourceHash.value());
+    }
+  }
+}
+
+TEST_CASE("standalone lifecycle save notifications cannot turn newer edits into permission to quit") {
+  using namespace seam;
+  for (const bool alreadySaved : {false, true}) {
+    const auto root = test::support::temporaryDirectory("lifecycle-stale-save-notification");
+    auto session = makeSession(root); addNote(*session);
+    const auto destination = root / "approved-save.seam";
+    if (alreadySaved) { CHECK(session->saveProjectAs(destination)); addNote(*session); }
+    const auto approved = observeDocument(*session);
+    std::optional<DocumentObservation> newer;
+    auto dialog = std::make_unique<FakeDialog>(); dialog->responses = {destination};
+    auto prompt = std::make_unique<FakePrompt>(); prompt->decisions = {platform::UnsavedDecision::Save};
+    bool quit = false;
+    bool mutateOnNotification = false;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::move(prompt), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json",
+          .stateChanged = [&] {
+            if (!mutateOnNotification) return;
+            mutateOnNotification = false;
+            addNote(*session); newer = observeDocument(*session);
+          }}, [&] { quit = true; }); CHECK(controller);
+    mutateOnNotification = true;
+    const auto result = controller.value()->dispatch(platform::ApplicationCommand::Quit);
+    CHECK(!result); CHECK(result.error().code == core::ErrorCode::Conflict);
+    CHECK(!quit); CHECK(newer.has_value()); checkDocumentUnchanged(*session, *newer);
+    // The approved snapshot really was saved; only the subsequent stale close
+    // is rejected. The newer edit is retained dirty and never silently saved.
+    CHECK(session->runtime().document().dirty());
+    const auto saved = formats::ProjectJsonCodec{}.load(destination); CHECK(saved);
+    CHECK(formats::ProjectJsonCodec{}.encode(saved.value()).value() == approved.project);
+  }
 }

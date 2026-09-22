@@ -14,10 +14,24 @@ public:
   }
 };
 
+class UnavailableNativeInterchangeReviewDialog final
+    : public INativeInterchangeReviewDialog {
+public:
+  core::Result<bool> review(const authoring::InterchangeImportDraft&) override {
+    return core::failure<bool>(core::ErrorCode::Unsupported,
+        "Native interchange review is unavailable on this platform");
+  }
+};
+
 }
 
 std::unique_ptr<INativeNewProjectDialog> createNativeNewProjectDialog() {
   return std::make_unique<UnavailableNativeNewProjectDialog>();
+}
+
+std::unique_ptr<INativeInterchangeReviewDialog>
+createNativeInterchangeReviewDialog() {
+  return std::make_unique<UnavailableNativeInterchangeReviewDialog>();
 }
 
 }

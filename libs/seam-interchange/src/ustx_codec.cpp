@@ -489,7 +489,9 @@ const Node* optional(const Node& object, std::string_view key) noexcept { return
 
 void issue(std::vector<UstxIssue>& issues, UstxIssueSeverity severity, std::string path, std::string message,
            const UstxLimits& limits) {
-  if (issues.size() < std::min<std::size_t>(limits.maximumNodes, 4'096U)) issues.push_back({severity, std::move(path), std::move(message)});
+  // Retain one overflow witness, not an apparently complete truncated report.
+  // validate() rejects that document before it can be admitted or encoded.
+  if (issues.size() <= std::min<std::size_t>(limits.maximumNodes, 4'096U)) issues.push_back({severity, std::move(path), std::move(message)});
 }
 
 void reportUnknown(const Node& object, std::initializer_list<std::string_view> known,
@@ -563,7 +565,16 @@ core::Result<UstxNote> decodeNote(const Node& value, std::string_view path,
     reportUnknown(*vibrato, {"length", "period", "depth", "in", "out", "shift", "drift", "vol_link"}, std::string(path) + ".vibrato", issues, limits);
   }
   reportUnknown(value, {"position", "duration", "tone", "lyric", "pitch", "vibrato", "tuning", "phoneme_expressions", "phoneme_overrides", "phonemizer"}, path, issues, limits);
-  for (const auto field : {"phoneme_expressions", "phoneme_overrides", "phonemizer"}) if (optional(value, field)) issue(issues, UstxIssueSeverity::Loss, std::string(path) + "." + field, "phoneme-level detail is not represented in the SEAM interchange subset", limits);
+  for (const auto field : {"phoneme_expressions", "phoneme_overrides", "phonemizer"}) {
+    const auto* content = optional(value, field);
+    if (!content) continue;
+    // The encoder emits empty expression/override lists. They contain no
+    // discarded data and must not exhaust a large song's diagnostic budget.
+    if (std::string_view{field} != "phonemizer" &&
+        content->isArray() && content->asArray().empty()) continue;
+    issue(issues, UstxIssueSeverity::Loss, std::string(path) + "." + field,
+        "phoneme-level detail is not represented in the SEAM interchange subset", limits);
+  }
   return result;
 }
 
@@ -618,7 +629,14 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
       for (std::size_t color = 0U; color < colors->asArray().size(); ++color) { auto parsed = stringValue(colors->asArray()[color], path + ".voice_color_names[" + std::to_string(color) + "]", limits); if (!parsed) return core::Result<Output>{parsed.error()}; track.voiceColors.push_back(std::move(parsed).value()); }
     }
     reportUnknown(item, {"singer", "track_name", "track_color", "mute", "solo", "volume", "pan", "track_expressions", "voice_color_names", "phonemizer", "renderer_settings", "mix_fx"}, path, document.issues, limits);
-    for (const auto field : {"track_expressions", "phonemizer", "renderer_settings", "mix_fx"}) if (optional(item, field)) issue(document.issues, UstxIssueSeverity::Loss, path + "." + field, "track metadata is not represented in the SEAM interchange subset", limits);
+    for (const auto field : {"track_expressions", "phonemizer", "renderer_settings", "mix_fx"}) {
+      const auto* content = optional(item, field);
+      if (!content) continue;
+      if (std::string_view{field} == "track_expressions" &&
+          content->isArray() && content->asArray().empty()) continue;
+      issue(document.issues, UstxIssueSeverity::Loss, path + "." + field,
+          "track metadata is not represented in the SEAM interchange subset", limits);
+    }
     document.tracks.push_back(std::move(track));
   }
   std::size_t noteCount = 0U;
@@ -685,9 +703,11 @@ core::Result<void> UstxDocument::validate(const UstxLimits& limits) const {
   if (limits.maximumInputBytes == 0U || limits.maximumTracks == 0U || limits.maximumParts == 0U || limits.maximumNotes == 0U ||
       version != "0.9" || name.size() > limits.maximumScalarBytes || !domain::fromUtf8(name) ||
       tempos.empty() || meters.empty() || tempos.size() > limits.maximumTempoEvents || meters.size() > limits.maximumMeterEvents ||
-      tracks.size() > limits.maximumTracks || parts.size() > limits.maximumParts ||
-      issues.size() > std::min<std::size_t>(limits.maximumNodes, 4'096U))
+      tracks.size() > limits.maximumTracks || parts.size() > limits.maximumParts)
     return core::failure(core::ErrorCode::InvalidArgument, "USTX document exceeds declared bounds");
+  if (issues.size() > std::min<std::size_t>(limits.maximumNodes, 4'096U))
+    return core::failure(core::ErrorCode::Unsupported,
+        "USTX diagnostic report exceeds its capacity; conversion would conceal losses");
   if (tempos.front().position != time::Tick{0} || meters.front().barPosition != 0) return core::failure(core::ErrorCode::InvalidArgument, "USTX tempo and meter maps must begin at zero");
   for (std::size_t index = 0U; index < tempos.size(); ++index) {
     const auto& tempo = tempos[index]; if (tempo.position.value() < 0 || tempo.position.value() > limits.maximumTick || !std::isfinite(tempo.bpm) || tempo.bpm <= 0.0 || tempo.bpm > 1'000.0 || (index > 0U && tempos[index - 1U].position >= tempo.position)) return core::failure(core::ErrorCode::InvalidArgument, "USTX tempo map is invalid");

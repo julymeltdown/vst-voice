@@ -556,6 +556,7 @@ add_library(seam_platform
   libs/seam-platform/src/pulse_audio_input_device.cpp
   libs/seam-platform/src/system_audio_input_device_unavailable.cpp
   libs/seam-platform/src/recording_session.cpp
+  libs/seam-platform/src/recording_input_session.cpp
   libs/seam-platform/src/application_paths.cpp
   libs/seam-platform/src/crash_capture.cpp
   libs/seam-platform/src/audio_device_catalog_unavailable.cpp
@@ -632,6 +633,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/voicebank_studio_manifest_draft.cpp
     libs/seam-native-ui/src/voicebank_studio_source_quality.cpp
     libs/seam-native-ui/src/new_project_dialog.cpp
+    libs/seam-native-ui/src/conversion_review_model.cpp
     libs/seam-native-ui/src/arrangement_panel.cpp
     libs/seam-native-ui/src/track_inspector.cpp
     libs/seam-native-ui/src/export_dialog.cpp
@@ -1388,7 +1390,17 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_automatic_performance_tests
     tests/test_main.cpp tests/test_automatic_performance.cpp)
   add_executable(seam_voice_design_tests tests/test_main.cpp tests/test_voice_design.cpp)
+  add_executable(seam_recording_input_tests tests/test_main.cpp tests/test_recording_input_session.cpp)
+  target_include_directories(seam_recording_input_tests PRIVATE tests)
+  target_link_libraries(seam_recording_input_tests PRIVATE seam_platform)
+  seam_apply_compiler_options(seam_recording_input_tests)
+  add_test(NAME seam_recording_input_tests COMMAND seam_recording_input_tests)
   if(SEAM_BUILD_NATIVE_DESKTOP)
+    add_executable(seam_conversion_review_tests tests/test_main.cpp tests/test_conversion_review_model.cpp)
+    target_include_directories(seam_conversion_review_tests PRIVATE tests)
+    target_link_libraries(seam_conversion_review_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_conversion_review_tests)
+    add_test(NAME seam_conversion_review_tests COMMAND seam_conversion_review_tests)
     add_executable(seam_voice_designer_tests tests/test_main.cpp tests/test_voice_designer_workflow.cpp)
     target_include_directories(seam_voice_designer_tests PRIVATE tests)
     target_link_libraries(seam_voice_designer_tests PRIVATE seam_native_ui)
@@ -1675,6 +1687,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_serialization.cpp
     tests/test_ui.cpp
     tests/test_platform.cpp
+    tests/test_recording_input_session.cpp
     tests/test_phonemizer.cpp
     tests/test_english_phonemizer.cpp
     tests/test_korean_phonemizer.cpp
@@ -1818,6 +1831,7 @@ if(SEAM_BUILD_TESTS)
       tests/test_eula_acceptance.cpp
       tests/test_japanese_reading_native.cpp
       tests/test_voice_designer_workflow.cpp
+      tests/test_conversion_review_model.cpp
       tests/test_native_runtime.cpp
       tests/test_voicebank_studio_options.cpp
       tests/test_diagnostic_panel.cpp

@@ -14,11 +14,21 @@ struct SmfImportRequest final {
 
 struct SmfProjectDraft final {
   domain::Project project;
+  // Original source PPQ/positions, with conversion diagnostics appended using
+  // source-coordinate ticks. The project uses SEAM's default PPQ instead.
   SmfScore score;
 };
 
 // Builds an inert unsaved SEAM project from a decoded SMF score. IDs are
 // allocated by the caller's factory; no current EditorSession is touched.
+// Absolute positions are rescaled with checked rational arithmetic, rounding
+// to nearest tick (half up) with explicit warnings. Distinct positions that
+// collide after rounding are refused, never coalesced or stretched. Tick limits
+// apply to both source and normalized project coordinates. Timing admission
+// completes before project IDs are allocated; lyrics keep source-note pairing.
+// Unsupported velocity/channel values and unused text/lyric events are disclosed
+// by exact-count, source-tick-range loss summaries. Velocity 100/channel 1 are
+// the neutral defaults retained by the fixed-value SMF export path.
 [[nodiscard]] core::Result<SmfProjectDraft> importSmfProject(
     std::span<const std::uint8_t> bytes, application::ProjectFactory& factory,
     SmfImportRequest request = {}, SmfLimits limits = {});

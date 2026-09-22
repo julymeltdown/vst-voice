@@ -538,6 +538,18 @@ core::Result<void> NativeEditorApp::initialize() {
           .editJapaneseReading = [this] {
             const auto result = authoring_->controller().openJapaneseReadingReview(); record(result); return result;
           },
+          .reviewInterchangeImport = [this](
+              const authoring::InterchangeImportDraft& draft) -> core::Result<bool> {
+            if (config_.reviewInterchangeImport) {
+              return config_.reviewInterchangeImport(draft);
+            }
+            auto dialog = createNativeInterchangeReviewDialog();
+            if (!dialog) {
+              return core::failure<bool>(core::ErrorCode::Unsupported,
+                  "Native interchange review is unavailable");
+            }
+            return dialog->review(draft);
+          },
           .removeSelectedOverlaps = [this] {
             const auto result = authoring_->controller().openNoteCleanupReview(ui::NoteCleanupKind::RemoveOverlap);
             record(result); return result;

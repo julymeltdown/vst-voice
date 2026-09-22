@@ -767,10 +767,13 @@ core::Result<bool>
 StandaloneApplicationController::confirmDestructiveAction() {
   auto& document = session_.runtime().document();
   if (!document.dirty()) return true;
+  const auto expected = documentTransitionStamp();
   auto decision = unsavedPrompt_->choose(
       document.session().project().name());
   if (!decision) return core::Result<bool>{decision.error()};
   if (decision.value() == platform::UnsavedDecision::Cancel) return false;
+  const auto current = validateDocumentTransitionStamp(expected);
+  if (!current) return core::Result<bool>{current.error()};
   if (decision.value() == platform::UnsavedDecision::Discard) return true;
 
   if (!document.identity().projectPath.has_value()) {
@@ -778,13 +781,19 @@ StandaloneApplicationController::confirmDestructiveAction() {
   }
   auto saved = session_.saveProject();
   if (!saved) return core::Result<bool>{saved.error()};
+  // Saving this approved document legitimately changes its identity. Rebase
+  // only after that synchronous save, before notifying reentrant UI callbacks.
+  const auto savedState = documentTransitionStamp();
   auto recorded = recordCurrentProject();
   if (!recorded) return core::Result<bool>{recorded.error()};
+  const auto stillSaved = validateDocumentTransitionStamp(savedState);
+  if (!stillSaved) return core::Result<bool>{stillSaved.error()};
   return true;
 }
 
 core::Result<bool> StandaloneApplicationController::chooseAndSaveAs() {
   const auto& document = session_.runtime().document();
+  const auto expected = documentTransitionStamp();
   const auto selected = fileDialog_->choose(platform::FileDialogRequest{
       .purpose = platform::FileDialogPurpose::SaveProject,
       .title = "Save Project",
@@ -794,10 +803,15 @@ core::Result<bool> StandaloneApplicationController::chooseAndSaveAs() {
   });
   if (!selected) return core::Result<bool>{selected.error()};
   if (!selected.value().has_value()) return false;
+  const auto current = validateDocumentTransitionStamp(expected);
+  if (!current) return core::Result<bool>{current.error()};
   auto saved = session_.saveProjectAs(*selected.value());
   if (!saved) return core::Result<bool>{saved.error()};
+  const auto savedState = documentTransitionStamp();
   auto recorded = recordCurrentProject();
   if (!recorded) return core::Result<bool>{recorded.error()};
+  const auto stillSaved = validateDocumentTransitionStamp(savedState);
+  if (!stillSaved) return core::Result<bool>{stillSaved.error()};
   return true;
 }
 
@@ -825,8 +839,37 @@ core::Result<void> StandaloneApplicationController::openPath(
   return recorded;
 }
 
+StandaloneApplicationController::DocumentTransitionStamp
+StandaloneApplicationController::documentTransitionStamp() const {
+  const auto& document = session_.runtime().document();
+  return {document.session().project().id(), document.session().revision(),
+          document.identity()};
+}
+
+core::Result<void> StandaloneApplicationController::validateDocumentTransitionStamp(
+    const DocumentTransitionStamp& expected) const {
+  const auto current = documentTransitionStamp();
+  const auto& before = expected.identity;
+  const auto& after = current.identity;
+  if (current.projectId != expected.projectId ||
+      current.revision != expected.revision ||
+      after.projectPath != before.projectPath ||
+      after.autosavePath != before.autosavePath ||
+      after.recoveryOriginPath != before.recoveryOriginPath ||
+      after.lastSavedRevision != before.lastSavedRevision ||
+      after.baseProjectHash != before.baseProjectHash ||
+      after.dirty != before.dirty) {
+    return core::failure(core::ErrorCode::Conflict,
+        "The current document changed during this request; retry the action for the current document");
+  }
+  return core::success();
+}
+
 core::Result<void> StandaloneApplicationController::openInterchangePath(
-    const std::filesystem::path& path) {
+    const std::filesystem::path& path,
+    const DocumentTransitionStamp& expected) {
+  auto current = validateDocumentTransitionStamp(expected);
+  if (!current) return current;
   const auto extension = lowerExtension(path);
   const auto format = extension == ".ustx"
                           ? authoring::InterchangeFormat::Ustx
@@ -842,6 +885,8 @@ core::Result<void> StandaloneApplicationController::openInterchangePath(
   auto accepted = config_.reviewInterchangeImport(draft.value());
   if (!accepted) return core::Result<void>{accepted.error()};
   if (!accepted.value()) return core::success();
+  current = validateDocumentTransitionStamp(expected);
+  if (!current) return current;
   auto replaced = session_.acceptInterchangeImport(std::move(draft).value());
   if (!replaced) return replaced;
   performanceComparison_.reset();
@@ -1041,6 +1086,7 @@ core::Result<void> StandaloneApplicationController::dispatch(
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};
       if (!allowed.value()) return core::success();
+      const auto expected = documentTransitionStamp();
       auto request = defaultNewProject();
       if (config_.requestNewProject) {
         auto chosen = config_.requestNewProject();
@@ -1048,12 +1094,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
         if (!chosen.value().has_value()) return core::success();
         request = std::move(*chosen.value());
       }
+      const auto current = validateDocumentTransitionStamp(expected);
+      if (!current) return current;
       return createNewProject(std::move(request));
     }
     case platform::ApplicationCommand::OpenProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};
       if (!allowed.value()) return core::success();
+      const auto expected = documentTransitionStamp();
       const auto selected = fileDialog_->choose(platform::FileDialogRequest{
           .purpose = platform::FileDialogPurpose::OpenProject,
           .title = "Open Project",
@@ -1063,12 +1112,15 @@ core::Result<void> StandaloneApplicationController::dispatch(
       });
       if (!selected) return core::Result<void>{selected.error()};
       if (!selected.value().has_value()) return core::success();
+      const auto current = validateDocumentTransitionStamp(expected);
+      if (!current) return current;
       return openPath(*selected.value());
     }
     case platform::ApplicationCommand::OpenExternalProject: {
       auto allowed = confirmDestructiveAction();
       if (!allowed) return core::Result<void>{allowed.error()};
       if (!allowed.value()) return core::success();
+      const auto expected = documentTransitionStamp();
       const auto selected = fileDialog_->choose(platform::FileDialogRequest{
           .purpose = platform::FileDialogPurpose::OpenScore,
           .title = "Open USTX or MIDI",
@@ -1078,7 +1130,7 @@ core::Result<void> StandaloneApplicationController::dispatch(
       });
       if (!selected) return core::Result<void>{selected.error()};
       if (!selected.value().has_value()) return core::success();
-      return openInterchangePath(*selected.value());
+      return openInterchangePath(*selected.value(), expected);
     }
     case platform::ApplicationCommand::RecoverLatestAutosave: {
       auto candidates = recoveryCandidates();

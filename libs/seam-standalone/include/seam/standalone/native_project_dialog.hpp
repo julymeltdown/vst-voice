@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/authoring/project_lifecycle.hpp"
+#include "seam/authoring/interchange_service.hpp"
 #include "seam/core/result.hpp"
 #include "seam/voicebank/catalog.hpp"
 
@@ -31,5 +32,19 @@ public:
 
 [[nodiscard]] std::unique_ptr<INativeNewProjectDialog>
 createNativeNewProjectDialog();
+
+class INativeInterchangeReviewDialog {
+public:
+  virtual ~INativeInterchangeReviewDialog() = default;
+  // True explicitly accepts the displayed draft. False leaves the current
+  // document untouched. This review neither installs nor replaces singers.
+  [[nodiscard]] virtual core::Result<bool> review(
+      const authoring::InterchangeImportDraft& draft) = 0;
+};
+
+// macOS has a native review surface. Other platforms return Unsupported;
+// absence of a review UI is never implicit approval of a lossy import.
+[[nodiscard]] std::unique_ptr<INativeInterchangeReviewDialog>
+createNativeInterchangeReviewDialog();
 
 }

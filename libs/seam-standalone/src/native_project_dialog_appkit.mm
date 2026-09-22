@@ -6,7 +6,9 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include "seam/native_ui/new_project_dialog.hpp"
+#include "seam/native_ui/conversion_review_model.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <initializer_list>
@@ -15,6 +17,65 @@
 #include <string>
 #include <string_view>
 #include <utility>
+
+namespace {
+
+NSString* conversionString(std::string_view value) {
+  auto* text = [[NSString alloc] initWithBytes:value.data()
+                                      length:value.size()
+                                    encoding:NSUTF8StringEncoding];
+  return text != nil ? text : @"[Invalid UTF-8 text]";
+}
+
+}  // namespace
+
+@interface SEAMConversionReviewTable : NSObject <NSTableViewDataSource, NSTableViewDelegate>
+@property(nonatomic, assign) const seam::native_ui::ConversionReviewModel* model;
+@property(nonatomic, strong) NSTextView* details;
+@end
+
+@implementation SEAMConversionReviewTable
+- (NSInteger)numberOfRowsInTableView:(NSTableView*)tableView {
+  (void)tableView;
+  return self.model == nullptr ? 0 : static_cast<NSInteger>(self.model->issueCount());
+}
+
+- (NSView*)tableView:(NSTableView*)tableView
+    viewForTableColumn:(NSTableColumn*)column row:(NSInteger)row {
+  if (self.model == nullptr || row < 0) return nil;
+  const auto* item = self.model->issue(static_cast<std::size_t>(row));
+  if (item == nullptr) return nil;
+  auto* cell = static_cast<NSTextField*>(
+      [tableView makeViewWithIdentifier:column.identifier owner:self]);
+  if (cell == nil) {
+    cell = [NSTextField labelWithString:@""];
+    cell.identifier = column.identifier;
+    cell.maximumNumberOfLines = 1;
+    cell.lineBreakMode = NSLineBreakByTruncatingTail;
+  }
+  std::string_view value;
+  if ([column.identifier isEqualToString:@"severity"]) {
+    value = item->loss ? "Loss" : "Warning";
+  } else if ([column.identifier isEqualToString:@"location"]) {
+    value = item->path;
+  } else {
+    value = item->message;
+  }
+  cell.stringValue = conversionString(value);
+  cell.toolTip = cell.stringValue;
+  cell.accessibilityLabel = [NSString stringWithFormat:@"%@: %@",
+      column.title, cell.stringValue];
+  return cell;
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification*)notification {
+  auto* table = static_cast<NSTableView*>(notification.object);
+  if (self.model == nullptr || table.selectedRow < 0) return;
+  self.details.string = conversionString(
+      self.model->issueDetails(static_cast<std::size_t>(table.selectedRow)));
+  [self.details scrollRangeToVisible:NSMakeRange(0U, 0U)];
+}
+@end
 
 @interface SEAMVoicebankToggleTarget : NSObject
 @property(nonatomic, assign) NSPopUpButton* voicebank;
@@ -76,6 +137,149 @@ std::string suggestedProjectFileName(std::string_view name) {
   return path.extension() == ".seam" ? std::string{name}
                                      : std::string{name} + ".seam";
 }
+
+NSTextView* conversionTextView(NSView* parent, NSRect frame,
+                              NSString* accessibilityLabel, NSString* text) {
+  auto* scroll = [[NSScrollView alloc] initWithFrame:frame];
+  scroll.hasVerticalScroller = YES;
+  scroll.hasHorizontalScroller = NO;
+  scroll.borderType = NSBezelBorder;
+  auto* contents = [[NSTextView alloc] initWithFrame:
+      NSMakeRect(0.0, 0.0, scroll.contentSize.width, scroll.contentSize.height)];
+  contents.editable = NO;
+  contents.selectable = YES;
+  contents.richText = NO;
+  contents.usesFindPanel = YES;
+  contents.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+  contents.textContainerInset = NSMakeSize(6.0, 6.0);
+  contents.verticallyResizable = YES;
+  contents.horizontallyResizable = NO;
+  contents.autoresizingMask = NSViewWidthSizable;
+  contents.textContainer.widthTracksTextView = YES;
+  contents.textContainer.containerSize =
+      NSMakeSize(scroll.contentSize.width, std::numeric_limits<CGFloat>::max());
+  contents.maxSize = NSMakeSize(std::numeric_limits<CGFloat>::max(),
+                                std::numeric_limits<CGFloat>::max());
+  contents.accessibilityLabel = accessibilityLabel;
+  contents.string = text;
+  scroll.documentView = contents;
+  [parent addSubview:scroll];
+  return contents;
+}
+
+class AppKitNativeInterchangeReviewDialog final
+    : public INativeInterchangeReviewDialog {
+public:
+  core::Result<bool> review(
+      const authoring::InterchangeImportDraft& draft) override {
+    if (![NSThread isMainThread]) {
+      return core::failure<bool>(core::ErrorCode::InvalidState,
+          "AppKit interchange review must run on the main thread");
+    }
+    @autoreleasepool {
+      const native_ui::ConversionReviewModel model{draft};
+      // Only the selected detail is materialized. NSTableView requests visible
+      // rows lazily; a large admitted conversion report stays scrollable.
+      const auto screenHeight = NSScreen.mainScreen.visibleFrame.size.height;
+      const auto tableHeight = std::clamp(screenHeight - 570.0, 80.0, 160.0);
+      constexpr CGFloat width = 680.0;
+      auto* view = [[NSView alloc] initWithFrame:
+          NSMakeRect(0.0, 0.0, width, 315.0 + tableHeight)];
+      auto* details = conversionTextView(view,
+          NSMakeRect(0.0, 0.0, width, 100.0), @"Selected conversion issue, full text",
+          model.issueCount() == 0U ? @"No conversion issues were reported."
+                                  : conversionString(model.issueDetails(0U)));
+      [view addSubview:label(@"Selected issue — full location and message",
+                            NSMakeRect(0.0, 103.0, width, 18.0))];
+
+      auto* tableScroll = [[NSScrollView alloc] initWithFrame:
+          NSMakeRect(0.0, 125.0, width, tableHeight)];
+      tableScroll.hasVerticalScroller = YES;
+      tableScroll.hasHorizontalScroller = YES;
+      tableScroll.borderType = NSBezelBorder;
+      auto* table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
+      table.accessibilityLabel = @"Conversion losses and warnings";
+      table.rowHeight = 24.0;
+      table.usesAlternatingRowBackgroundColors = YES;
+      table.allowsMultipleSelection = NO;
+      table.allowsEmptySelection = NO;
+      table.columnAutoresizingStyle = NSTableViewLastColumnOnlyAutoresizingStyle;
+      auto* severity = [[NSTableColumn alloc] initWithIdentifier:@"severity"];
+      severity.title = @"Type";
+      severity.width = 80.0;
+      auto* location = [[NSTableColumn alloc] initWithIdentifier:@"location"];
+      location.title = @"Location";
+      location.width = 190.0;
+      auto* message = [[NSTableColumn alloc] initWithIdentifier:@"message"];
+      message.title = @"Message";
+      message.width = 390.0;
+      [table addTableColumn:severity];
+      [table addTableColumn:location];
+      [table addTableColumn:message];
+      auto* dataSource = [[SEAMConversionReviewTable alloc] init];
+      dataSource.model = &model;
+      dataSource.details = details;
+      table.dataSource = dataSource;
+      table.delegate = dataSource;
+      tableScroll.documentView = table;
+      [view addSubview:tableScroll];
+      [table reloadData];
+      if (model.issueCount() != 0U) {
+        [table selectRowIndexes:[NSIndexSet indexSetWithIndex:0U]
+            byExtendingSelection:NO];
+      }
+      [view addSubview:label(@"Conversion report — select a row to read its full details",
+          NSMakeRect(0.0, 129.0 + tableHeight, width, 18.0))];
+      auto* source = conversionTextView(view,
+          NSMakeRect(0.0, 151.0 + tableHeight, width, 95.0),
+          @"Imported source path, SHA-256, and project identity",
+          conversionString(model.sourceDetails()));
+      auto* disclosure = [NSTextField wrappingLabelWithString:
+          conversionString(model.singerDisclosure())];
+      disclosure.frame = NSMakeRect(0.0, 252.0 + tableHeight, width, 60.0);
+      disclosure.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+      disclosure.accessibilityLabel = disclosure.stringValue;
+      [view addSubview:disclosure];
+
+      auto* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Review Interchange Import";
+      alert.informativeText = conversionString(model.summary() +
+          "\nImport creates an unsaved SEAM document. The source file is not modified.");
+      alert.alertStyle = model.hasLosses() ? NSAlertStyleWarning
+                                          : NSAlertStyleInformational;
+      alert.accessoryView = view;
+      // Cancel is deliberately the default, especially for lossy conversion.
+      // Pressing Return or Escape is not consent to discard musical data.
+      auto* cancel = [alert addButtonWithTitle:@"Cancel"];
+      cancel.keyEquivalent = @"\r";
+      auto* accept = [alert addButtonWithTitle:
+          model.hasLosses() ? @"Import With Losses" : @"Import"];
+      accept.keyEquivalent = @"";
+      accept.accessibilityLabel = model.hasLosses()
+          ? @"Import after accepting the disclosed conversion losses"
+          : @"Import the reviewed conversion";
+      [alert layout];
+      alert.window.defaultButtonCell = cancel.cell;
+      alert.window.initialFirstResponder = cancel;
+      cancel.nextKeyView = table;
+      table.nextKeyView = details;
+      details.nextKeyView = source;
+      source.nextKeyView = accept;
+      accept.nextKeyView = cancel;
+      NSWindow* owner = NSApp.keyWindow;
+      NSResponder* responder = owner.firstResponder;
+      const auto response = [alert runModal];
+      table.delegate = nil;
+      table.dataSource = nil;
+      dataSource.model = nullptr;
+      if (owner != nil && owner.visible) {
+        [owner makeKeyWindow];
+        if (responder != nil) [owner makeFirstResponder:responder];
+      }
+      return response == NSAlertSecondButtonReturn;
+    }
+  }
+};
 
 class AppKitNativeNewProjectDialog final : public INativeNewProjectDialog {
 public:
@@ -229,6 +433,11 @@ public:
 
 std::unique_ptr<INativeNewProjectDialog> createNativeNewProjectDialog() {
   return std::make_unique<AppKitNativeNewProjectDialog>();
+}
+
+std::unique_ptr<INativeInterchangeReviewDialog>
+createNativeInterchangeReviewDialog() {
+  return std::make_unique<AppKitNativeInterchangeReviewDialog>();
 }
 
 }

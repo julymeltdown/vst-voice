@@ -29,6 +29,15 @@ namespace {
 
 constexpr wchar_t kDialogClassName[] = L"ProjectSeamNewProjectDialog";
 
+class DeferredNativeInterchangeReviewDialog final
+    : public INativeInterchangeReviewDialog {
+public:
+  core::Result<bool> review(const authoring::InterchangeImportDraft&) override {
+    return core::failure<bool>(core::ErrorCode::Unsupported,
+        "Windows native interchange review is TODO; import was not applied");
+  }
+};
+
 enum ControlId : int {
   kName = 1001,
   kTempo,
@@ -495,6 +504,11 @@ private:
 
 std::unique_ptr<INativeNewProjectDialog> createNativeNewProjectDialog() {
   return std::make_unique<Win32NativeNewProjectDialog>();
+}
+
+std::unique_ptr<INativeInterchangeReviewDialog>
+createNativeInterchangeReviewDialog() {
+  return std::make_unique<DeferredNativeInterchangeReviewDialog>();
 }
 
 }

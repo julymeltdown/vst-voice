@@ -42,6 +42,10 @@ struct NativeEditorAppConfig final {
   std::function<std::unique_ptr<platform::IAudioDevice>()>
       threadedAudioDeviceFactory;
   std::function<core::Result<std::optional<authoring::NewProjectRequest>>()> requestNewProject;
+  // Optional host/test-owned review. Without an override the app uses its
+  // real native conversion-review dialog, not an automatic approval.
+  std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
+      reviewInterchangeImport;
   // Optional host-owned verified/staged Open JTalk resource. The app never
   // discovers a reader through PATH or a working directory.
   std::function<core::Result<authoring::StagedJapaneseReadingResource>()>

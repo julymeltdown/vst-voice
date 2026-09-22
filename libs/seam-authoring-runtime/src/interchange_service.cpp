@@ -56,23 +56,32 @@ std::string lowerExtension(const std::filesystem::path& path) {
   return extension;
 }
 
-void append(std::vector<InterchangeIssue>& output, InterchangeFormat format,
-            bool loss, std::string path, std::string message) {
-  if (output.size() < 4'096U) output.push_back({format, loss, std::move(path), std::move(message)});
+core::Result<void> admitReportSize(std::size_t current, std::size_t additional) {
+  constexpr std::size_t maximumIssues = 4'096U;
+  if (current > maximumIssues || additional > maximumIssues - current)
+    return core::failure(core::ErrorCode::Unsupported,
+        "Interchange diagnostic report exceeds its capacity; conversion would conceal losses");
+  return core::success();
 }
 
-void appendUstx(std::vector<InterchangeIssue>& output,
-                const std::vector<interchange::UstxIssue>& issues) {
-  for (const auto& item : issues) append(output, InterchangeFormat::Ustx,
+core::Result<void> appendUstx(std::vector<InterchangeIssue>& output,
+                            const std::vector<interchange::UstxIssue>& issues) {
+  const auto admitted = admitReportSize(output.size(), issues.size());
+  if (!admitted) return admitted;
+  for (const auto& item : issues) output.push_back({InterchangeFormat::Ustx,
       item.severity == interchange::UstxIssueSeverity::Loss,
-      item.path, item.message);
+      item.path, item.message});
+  return core::success();
 }
 
-void appendSmf(std::vector<InterchangeIssue>& output,
-               const std::vector<interchange::SmfIssue>& issues) {
-  for (const auto& item : issues) append(output, InterchangeFormat::Smf,
+core::Result<void> appendSmf(std::vector<InterchangeIssue>& output,
+                           const std::vector<interchange::SmfIssue>& issues) {
+  const auto admitted = admitReportSize(output.size(), issues.size());
+  if (!admitted) return admitted;
+  for (const auto& item : issues) output.push_back({InterchangeFormat::Smf,
       item.severity == interchange::SmfIssueSeverity::Loss,
-      "tick:" + std::to_string(item.tick.value()), item.message);
+      "tick:" + std::to_string(item.tick.value()), item.message});
+  return core::success();
 }
 
 }  // namespace
@@ -101,7 +110,8 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
     auto importedValue = std::move(imported).value();
     Output result{std::move(importedValue.project), InterchangeFormat::Ustx,
                   path.value(), sourceHash, {}};
-    appendUstx(result.issues, importedValue.issues);
+    const auto report = appendUstx(result.issues, importedValue.issues);
+    if (!report) return core::Result<Output>{report.error()};
     return result;
   }
   const auto view = std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(sourceBytes.value().data()), sourceBytes.value().size()};
@@ -111,7 +121,8 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
   auto importedValue = std::move(imported).value();
   Output result{std::move(importedValue.project), InterchangeFormat::Smf,
                 path.value(), sourceHash, {}};
-  appendSmf(result.issues, importedValue.score.issues);
+  const auto report = appendSmf(result.issues, importedValue.score.issues);
+  if (!report) return core::Result<Output>{report.error()};
   return result;
 }
 
@@ -126,7 +137,8 @@ core::Result<InterchangeExportReceipt> InterchangeService::exportFile(
   if (request.format == InterchangeFormat::Ustx) {
     auto exported = interchange::exportUstxProject(project, ustxLimits);
     if (!exported) return core::Result<Output>{exported.error()};
-    appendUstx(issues, exported.value().issues);
+    const auto report = appendUstx(issues, exported.value().issues);
+    if (!report) return core::Result<Output>{report.error()};
     const auto written = core::durableAtomicWriteNew(path.value(), std::as_bytes(std::span{exported.value().bytes.data(), exported.value().bytes.size()}));
     if (!written) return core::Result<Output>{written.error()};
     return Output{InterchangeFormat::Ustx, path.value(), core::sha256Hex(std::span<const std::byte>{reinterpret_cast<const std::byte*>(exported.value().bytes.data()), exported.value().bytes.size()}), std::move(issues)};
@@ -140,7 +152,8 @@ core::Result<InterchangeExportReceipt> InterchangeService::exportFile(
   if (!trackId.valid() || !regionId.valid()) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF export requires a vocal track and region");
   auto exported = interchange::exportSmfProject(project, trackId, regionId, smfLimits);
   if (!exported) return core::Result<Output>{exported.error()};
-  appendSmf(issues, exported.value().issues);
+  const auto report = appendSmf(issues, exported.value().issues);
+  if (!report) return core::Result<Output>{report.error()};
   auto encoded = interchange::encodeSmf(exported.value(), smfLimits);
   if (!encoded) return core::Result<Output>{encoded.error()};
   const auto written = core::durableAtomicWriteNew(path.value(), std::as_bytes(std::span{encoded.value().data(), encoded.value().size()}));

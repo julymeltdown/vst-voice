@@ -332,8 +332,20 @@ private:
   [[nodiscard]] core::Result<bool> chooseAndSaveAs();
   [[nodiscard]] core::Result<void> openPath(
       const std::filesystem::path& path);
+  // Every affirmative lifecycle decision belongs to the exact document and
+  // save state shown before its modal dialog. Nested owner-thread events may
+  // change either; cancellation never restores an older state over those edits.
+  struct DocumentTransitionStamp final {
+    domain::ProjectId projectId;
+    std::uint64_t revision;
+    authoring::DocumentIdentity identity;
+  };
+  [[nodiscard]] DocumentTransitionStamp documentTransitionStamp() const;
+  [[nodiscard]] core::Result<void> validateDocumentTransitionStamp(
+      const DocumentTransitionStamp& expected) const;
   [[nodiscard]] core::Result<void> openInterchangePath(
-      const std::filesystem::path& path);
+      const std::filesystem::path& path,
+      const DocumentTransitionStamp& expected);
   [[nodiscard]] core::Result<void> exportScoreFromDialog();
   [[nodiscard]] core::Result<void> recordCurrentProject();
   [[nodiscard]] core::Result<void> exportAudio();

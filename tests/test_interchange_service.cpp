@@ -7,6 +7,75 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include "seam/core/sha256.hpp"
+
+TEST_CASE("interchange service refuses an incomplete MIDI loss report") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("midi-loss-capacity");
+  for (const std::size_t losses : {4096U, 4097U}) {
+    std::vector<std::uint8_t> track;
+    for (std::size_t index = 0; index < losses; ++index)
+      track.insert(track.end(), {0U, 0xffU, 0x7fU, 0U});
+    track.insert(track.end(), {0U, 0x90U, 60U, 100U, 0x83U, 0x60U, 0x80U, 60U, 0U, 0U, 0xffU, 0x2fU, 0U});
+    std::vector<std::uint8_t> bytes{'M', 'T', 'h', 'd', 0U, 0U, 0U, 6U, 0U, 0U, 0U, 1U, 1U, 0xe0U,
+                                    'M', 'T', 'r', 'k'};
+    const auto count = static_cast<std::uint32_t>(track.size());
+    for (const unsigned shift : {24U, 16U, 8U, 0U})
+      bytes.push_back(static_cast<std::uint8_t>((count >> shift) & 0xffU));
+    bytes.insert(bytes.end(), track.begin(), track.end());
+    const auto source = root / (std::to_string(losses) + ".mid");
+    CHECK(core::durableAtomicWriteNew(source, std::as_bytes(std::span{bytes})));
+    const auto before = core::sha256File(source); CHECK(before);
+    application::ProjectFactory factory{880000U};
+    const auto result = authoring::InterchangeService{}.importFile(
+        source, factory, {.format = authoring::InterchangeFormat::Smf,
+                         .projectName = "Bounded MIDI losses"});
+    if (losses == 4096U) {
+      CHECK(result); CHECK(result.value().issues.size() == losses);
+    } else {
+      CHECK(!result); CHECK(result.error().code == core::ErrorCode::Unsupported);
+      CHECK(result.error().message.find("diagnostic") != std::string::npos);
+    }
+    CHECK(core::sha256File(source).value() == before.value());
+  }
+}
+
+TEST_CASE("interchange export refuses diagnostic overflow before touching destinations") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("ustx-export-loss-capacity");
+  application::ProjectFactory factory{890000U};
+  auto project = factory.createProject("Many losses");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto region = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{5000 * 960});
+  auto* target = project.findRegion(region); CHECK(target);
+  const auto initial = interchange::exportUstxProject(project); CHECK(initial);
+  CHECK(initial.value().issues.size() < 4096U);
+  const auto noteCount = 4096U - initial.value().issues.size();
+  const auto addLoss = [&](std::size_t index) {
+    auto [lyric, note] = factory.makeNote(time::Tick{static_cast<std::int64_t>(index) * 960},
+                                        time::Tick{960}, 60U, U"a");
+    note.articulation = domain::NoteArticulation::Staccato;
+    target->lyrics.push_back(std::move(lyric)); target->notes.push_back(std::move(note));
+  };
+  for (std::size_t index = 0; index < noteCount; ++index) addLoss(index);
+  const auto full = interchange::exportUstxProject(project); CHECK(full);
+  CHECK(full.value().issues.size() == 4096U);
+  addLoss(noteCount);
+  const auto rejected = interchange::exportUstxProject(project);
+  CHECK(!rejected); CHECK(rejected.error().code == core::ErrorCode::Unsupported);
+  const auto existing = root / "existing.ustx";
+  CHECK(core::durableAtomicWriteText(existing, "preserve existing file"));
+  const auto before = core::sha256File(existing); CHECK(before);
+  const auto fresh = root / "fresh.ustx";
+  for (const auto& destination : {existing, fresh}) {
+    const auto result = authoring::InterchangeService{}.exportFile(
+        project, {.format = authoring::InterchangeFormat::Ustx, .destination = destination});
+    CHECK(!result); CHECK(result.error().code == core::ErrorCode::Unsupported);
+    CHECK(result.error().message.find("diagnostic") != std::string::npos);
+  }
+  CHECK(core::sha256File(existing).value() == before.value());
+  CHECK(!std::filesystem::exists(fresh));
+}
 
 #ifndef _WIN32
 #include <cerrno>

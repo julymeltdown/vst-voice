@@ -8,6 +8,7 @@
 #include "seam/native_ui/voice_designer_source_selection.hpp"
 #include "seam/platform/audio_input_device.hpp"
 #include "seam/platform/recording_session.hpp"
+#include "seam/platform/recording_input_session.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/native_ui/candidate_audition.hpp"
@@ -36,11 +37,12 @@ using seam::voicebank_studio_native::printUsage;
 class VoicebankStudioApp final : public seam::native_ui::INativeWindowClient {
 public:
   explicit VoicebankStudioApp(bool forceSyntheticInput)
-      : forceSyntheticInput_(forceSyntheticInput), recording_(48000U, 300U) {}
+      : recording_(48000U, 300U), recordingInput_(recording_, forceSyntheticInput
+            ? seam::platform::RecordingInputMode::SyntheticTest
+            : seam::platform::RecordingInputMode::Physical) {}
 
   ~VoicebankStudioApp() override {
     stopAudition();
-    static_cast<void>(stopRecording());
   }
 
   seam::core::Result<void> open(const Options& options) {
@@ -55,10 +57,9 @@ public:
           options.operatorId);
       if (!production) return production;
     }
-    // Designing a patch needs output audition, not microphone access or a bank.
-    if (options.startDesigner && options.manifest.empty() && !options.productionProject)
-      return seam::core::success();
-    return initializeInput();
+    // File, producer and Designer work must not require microphone permission.
+    // Open a fresh selected input only when Record is requested, including retries.
+    return seam::core::success();
   }
 
   seam::core::Result<seam::voicebank_production::ExportedU57Inputs>
@@ -1071,6 +1072,7 @@ public:
   }
 
   void paint(seam::native_ui::RasterCanvas& canvas) noexcept override {
+    record(recordingInput_.poll());
     const auto auditionState = audition_.poll();
     if (!auditionState) { auditionStatus_.clear(); lastError_ = auditionState.error().message; }
     else if (!auditionState.value()) auditionStatus_.clear();
@@ -1101,7 +1103,7 @@ public:
     canvas.drawText({canvas.logicalWidth() - 360.0, 56.0, 340.0, 12.0},
         !lastError_.empty() ? lastError_ : (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
         !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255}, 6.0);
-    if (controller_.proceduralImportBusy() || audition_.active()) repaint();
+    if (controller_.proceduralImportBusy() || audition_.active() || recordingInput_.capturing()) repaint();
   }
   void resized(double width, double height, double) noexcept override {
     if (designerDrag_ && designer_.model()) {
@@ -1112,6 +1114,10 @@ public:
   }
 
   void pointerDown(const seam::native_ui::PointerEvent& event) noexcept override {
+    if (recordingInput_.capturing() || recordingInput_.pending()) {
+      lastError_ = "Press R to finish or retry publishing the current recording before editing";
+      repaint(); return;
+    }
     if (sampleReviewModal_) return;
     if (sampleReviewView_) {
       if (event.button == seam::native_ui::PointerButton::Left)
@@ -1240,6 +1246,7 @@ public:
   }
   void scroll(double, double deltaY, seam::ui::Point point,
               seam::native_ui::InputModifiers) noexcept override {
+    if (recordingInput_.capturing() || recordingInput_.pending()) return;
     if (sampleReviewModal_) return;
     if (sampleReviewView_) {
       if (deltaY != 0.0) { record(sampleReviewAction(deltaY > 0.0 ? "previous-page" : "next-page")); repaint(); }
@@ -1257,6 +1264,11 @@ public:
   void keyDown(const seam::native_ui::KeyEvent& event) noexcept override {
     if (sampleReviewModal_) return;
     lastError_.clear();
+    if (recordingInput_.capturing() || recordingInput_.pending()) {
+      if (event.key == seam::native_ui::NativeKey::R && !event.repeat) record(stopRecording());
+      else if (!event.repeat) lastError_ = "Press R to finish or retry publishing the current recording before editing";
+      repaint(); return;
+    }
     if (sampleReviewView_) {
       using Key = seam::native_ui::NativeKey;
       if (event.repeat && event.key != Key::Left && event.key != Key::Right) return;
@@ -1361,9 +1373,7 @@ public:
                event.modifiers.primaryShortcut()) {
       record(controller_.save());
     } else if (event.key == seam::native_ui::NativeKey::R) {
-      record(recording_.armed() || recording_.recordedFrames() > 0U
-                 ? stopRecording()
-                 : startRecording());
+      if (!event.repeat) record(startRecording());
     } else if (event.key == seam::native_ui::NativeKey::I && event.modifiers.primaryShortcut()) {
       record(event.modifiers.shift ? generationFromDialog() : importProceduralFromDialog());
     } else if (event.key == seam::native_ui::NativeKey::B && event.modifiers.primaryShortcut() && event.modifiers.shift) {
@@ -1402,6 +1412,9 @@ public:
   }
   seam::core::Result<void> dispatchAccessibility(std::string_view id, seam::native_ui::SemanticAction action) noexcept override {
     using namespace seam::native_ui;
+    if (recordingInput_.capturing() || recordingInput_.pending())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Finish or publish the pending recording before changing its target");
     if (!designerView_ && !sampleReviewView_ && controller_.productionProject() && controller_.manifest().units.empty()) {
       const auto prefix=generationSemanticPrefix();
       if (generationModal_ || !id.starts_with(prefix)) return seam::core::failure(seam::core::ErrorCode::Conflict,"Generation accessibility target is stale or modal");
@@ -1586,6 +1599,10 @@ public:
     if (closeConfirmationActive_) return false;
     struct Guard final { bool& active; explicit Guard(bool& flag) : active(flag) { active = true; } ~Guard() { active = false; } } guard{closeConfirmationActive_};
     try {
+      if (recordingInput_.capturing() || recordingInput_.pending()) {
+        const auto captured = stopRecording();
+        if (!captured) { record(captured); repaint(); return false; }
+      }
       const auto epoch = designer_.epoch();
       const auto revision = designer_.model() ? designer_.model()->revision() : 0U;
       const auto discard = allowDesignerReplacement();
@@ -1612,12 +1629,10 @@ public:
     return lastRecordedFrames_;
   }
   [[nodiscard]] seam::platform::AudioInputDeviceInfo inputInfo() const {
-    return input_ == nullptr ? seam::platform::AudioInputDeviceInfo{}
-                             : input_->info();
+    return recordingInput_.info();
   }
   [[nodiscard]] seam::platform::AudioInputDeviceStats inputStats() const noexcept {
-    return input_ == nullptr ? seam::platform::AudioInputDeviceStats{}
-                             : input_->stats();
+    return recordingInput_.stats();
   }
   [[nodiscard]] const seam::voicebank_production::VoicebankProductionProject*
   productionProject() const noexcept {
@@ -1635,35 +1650,26 @@ public:
     stopAudition();
     if (controller_.proceduralImportBusy()) return seam::core::failure(seam::core::ErrorCode::Conflict,
         "Finish candidate import before recording");
-    if (input_ == nullptr) {
-      if (controller_.productionProject()) {
-        const auto initialized=initializeInput(); if (!initialized) return initialized;
-      }
-    }
-    if (input_ == nullptr) {
-      return seam::core::failure(seam::core::ErrorCode::InvalidState,
-                                 "Voicebank Studio input is unavailable");
-    }
-    const auto armed = recording_.arm();
-    if (!armed) return armed;
+    const auto started = recordingInput_.begin();
+    inputBackend_ = recordingInput_.info().backend;
+    if (!started) return started;
+    controller_.cancelCandidateMarkerDrag();
+    markerDrag_.reset();
+    pitchDrag_.reset();
+    designerView_ = false;
     lastRecordedFrames_ = 0U;
     lastRecording_.clear();
-    const auto started = input_->start();
-    if (!started) {
-      recording_.stop();
-      return started;
-    }
+    pendingRecordingPath_.clear();
+    pendingRecordingHash_.clear();
+    lastError_.clear();
     return seam::core::success();
   }
 
   seam::core::Result<void> stopRecording() {
-    if (input_ != nullptr) input_->stop();
-    if (!recording_.armed() && recording_.recordedFrames() == 0U) {
-      return seam::core::success();
-    }
-    recording_.stop();
+    const auto finished = recordingInput_.finish();
+    if (!finished) return finished;
+    if (!recordingInput_.pending()) return seam::core::success();
     const auto frames = recording_.recordedFrames();
-    if (frames == 0U) return seam::core::success();
     lastRecordedFrames_ = frames;
     std::error_code error;
     auto directory = controller_.recordingDirectory();
@@ -1686,55 +1692,56 @@ public:
                     : productionAssignment != nullptr
                           ? productionAssignment->plannedTakeId
                           : std::string{"take"};
-    const auto destination = seam::native_ui::nextVoicebankRecordingPath(
-        directory, name);
-    if (!destination) return seam::core::Result<void>{destination.error()};
-    lastRecording_ = destination.value();
-    const auto saved = recording_.exportWav(
-        lastRecording_, seam::voicebank::WavSampleFormat::Pcm24, false);
-    if (!saved) return saved;
+    if (pendingRecordingPath_.empty()) {
+      const auto destination = seam::native_ui::nextVoicebankRecordingPath(directory, name);
+      if (!destination) return seam::core::Result<void>{destination.error()};
+      const auto saved = recordingInput_.exportPending(destination.value());
+      if (!saved) return saved;  // The valid capture remains pending for a retry.
+      // A successful write is retained immediately, even if its identity cannot
+      // be read. Never make another WAV or bind later, potentially edited bytes
+      // as the original capture merely because a hash retry succeeds.
+      pendingRecordingPath_ = destination.value();
+      lastRecording_ = pendingRecordingPath_;
+      const auto hash = seam::core::sha256File(destination.value());
+      if (!hash) return seam::core::failure(hash.error().code,
+          "Recording WAV was saved but its identity could not be verified; file and capture retained for manual recovery",
+          pendingRecordingPath_.string());
+      pendingRecordingHash_ = hash.value();
+    } else {
+      if (pendingRecordingHash_.empty())
+        return seam::core::failure(seam::core::ErrorCode::Conflict,
+            "Saved recording has no verified identity; file and capture retained for manual recovery, no new WAV was created",
+            pendingRecordingPath_.string());
+      const auto hash = seam::core::sha256File(pendingRecordingPath_);
+      if (!hash) return seam::core::Result<void>{hash.error()};
+      if (hash.value() != pendingRecordingHash_)
+        return seam::core::failure(seam::core::ErrorCode::Conflict,
+            "Saved recording changed before publication; the pending capture is retained",
+            pendingRecordingPath_.string());
+    }
     const auto expectedRootMidi = controller_.selectedUnit() != nullptr
                                       ? controller_.selectedUnit()->rootMidi
                                       : productionAssignment != nullptr
                                             ? productionAssignment->pitchLayer
                                             : 60;
     const auto inspected = controller_.inspectTake(
-        lastRecording_, expectedRootMidi);
+        pendingRecordingPath_, expectedRootMidi);
     if (!inspected) return inspected;
-    const auto persisted = controller_.persistTakeInspection(lastRecording_);
+    const auto persisted = controller_.persistTakeInspection(pendingRecordingPath_);
     if (!persisted) return seam::core::Result<void>{persisted.error()};
     if (controller_.productionProject() != nullptr) {
-      auto imported = controller_.importSelectedTake(lastRecording_);
+      auto imported = controller_.importSelectedTake(pendingRecordingPath_);
       if (!imported) return imported;
     }
-    recording_.clear();
+    const auto published = recordingInput_.acknowledgePublished();
+    if (!published) return published;
+    pendingRecordingPath_.clear();
+    pendingRecordingHash_.clear();
+    lastError_.clear();
     return seam::core::success();
   }
 
 private:
-  seam::core::Result<void> initializeInput() {
-    seam::platform::AudioInputDeviceConfig config{
-        .sampleRate = 48000U,
-        .blockFrames = 256U,
-        .applicationName = "Project SEAM",
-        .streamName = "Voicebank Studio recording",
-    };
-    if (!forceSyntheticInput_) {
-      auto physical = seam::platform::createSystemAudioInputDevice();
-      auto opened = physical->open(config, recording_);
-      if (opened) input_ = std::move(physical);
-      else lastError_ = opened.error().message;
-    }
-    if (input_ == nullptr) {
-      auto fallback = seam::platform::createThreadedSilenceInputDevice();
-      auto opened = fallback->open(config, recording_);
-      if (!opened) return opened;
-      input_ = std::move(fallback);
-    }
-    inputBackend_ = input_->info().backend;
-    return seam::core::success();
-  }
-
   void repaint() noexcept {
     if (window_ != nullptr) window_->requestRepaint();
   }
@@ -1742,13 +1749,12 @@ private:
     if (!result) lastError_ = result.error().message;
   }
 
-  bool forceSyntheticInput_{false};
   seam::native_ui::CandidateAuditionSession audition_;
   std::string auditionStatus_;
   seam::native_ui::VoicebankStudioController controller_;
   seam::native_ui::VoicebankStudioScenePainter painter_;
   seam::platform::RecordingSession recording_;
-  std::unique_ptr<seam::platform::IAudioInputDevice> input_;
+  seam::platform::RecordingInputSession recordingInput_;
   std::string inputBackend_{"OFF"};
   std::optional<seam::ui::AcousticMarkerKind> markerDrag_;
   std::optional<std::size_t> pitchDrag_;
@@ -1776,6 +1782,8 @@ private:
   };
   std::optional<DesignerDrag> designerDrag_;
   std::filesystem::path lastRecording_;
+  std::filesystem::path pendingRecordingPath_;
+  std::string pendingRecordingHash_;
   std::size_t lastRecordedFrames_{0U};
 };
 

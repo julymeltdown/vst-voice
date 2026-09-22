@@ -16,6 +16,91 @@
 #include <string>
 #include <vector>
 
+TEST_CASE("large USTX roundtrips do not invent losses for empty emitted metadata") {
+  using namespace seam;
+  interchange::UstxDocument document;
+  document.name = "Large neutral song";
+  document.tempos.push_back({time::Tick{0}, 120.0});
+  document.meters.push_back({0, 4U, 4U});
+  document.tracks.push_back({.name = "Lead"});
+  interchange::UstxPart part;
+  part.name = "Many neutral notes";
+  part.duration = time::Tick{2048 * 480};
+  for (std::int64_t index = 0; index < 2048; ++index) {
+    interchange::UstxNote note;
+    note.position = time::Tick{index * 480};
+    note.lyric = "a";
+    note.snapFirst = false;
+    part.notes.push_back(std::move(note));
+  }
+  document.parts.push_back(std::move(part));
+  const auto encoded = interchange::encodeUstx(document); CHECK(encoded);
+  const auto decoded = interchange::decodeUstx(encoded.value()); CHECK(decoded);
+  CHECK(decoded.value().issues.empty());
+  CHECK(decoded.value().parts.front().notes.size() == 2048U);
+  application::ProjectFactory factory{869000U};
+  const auto imported = interchange::importUstxProject(encoded.value(), factory); CHECK(imported);
+  CHECK(imported.value().issues.empty());
+  CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 2048U);
+
+  std::string nonempty{encoded.value().begin(), encoded.value().end()};
+  // These ignored metadata lists now contain actual values; they must still
+  // generate losses and exceed the unchanged 4096-record report budget.
+  for (const std::string field : {"track_expressions", "phoneme_expressions", "phoneme_overrides"}) {
+    const auto empty = field + ": []";
+    std::size_t offset = 0U;
+    while ((offset = nonempty.find(empty, offset)) != std::string::npos) {
+      const auto replacement = field + ": [1]";
+      nonempty.replace(offset, empty.size(), replacement);
+      offset += replacement.size();
+    }
+  }
+  const auto refused = interchange::decodeUstx(std::span<const std::uint8_t>{
+      reinterpret_cast<const std::uint8_t*>(nonempty.data()), nonempty.size()});
+  CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::Unsupported);
+  CHECK(refused.error().message.find("diagnostic") != std::string::npos);
+}
+
+TEST_CASE("USTX parsing refuses diagnostic overflow instead of truncating unknown field losses") {
+  using namespace seam;
+  std::string source = "ustx_version: \"0.9\"\ntime_signatures: [{bar_position: 0, beat_per_bar: 4, beat_unit: 4}]\n"
+                       "tempos: [{position: 0, bpm: 120}]\ntracks: []\nvoice_parts: []\n";
+  for (std::size_t index = 0; index < 4096U; ++index)
+    source += "unknown_" + std::to_string(index) + ": 0\n";
+  const auto view = [](const std::string& text) {
+    return std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(text.data()), text.size()};
+  };
+  const auto full = interchange::decodeUstx(view(source)); CHECK(full);
+  CHECK(full.value().issues.size() == 4096U);
+  source += "one_more_loss: 0\n";
+  const auto overflow = interchange::decodeUstx(view(source));
+  CHECK(!overflow); CHECK(overflow.error().code == core::ErrorCode::Unsupported);
+  CHECK(overflow.error().message.find("diagnostic") != std::string::npos);
+}
+
+TEST_CASE("USTX conversion cannot append losses beyond an already full parser report") {
+  using namespace seam;
+  std::string source = "ustx_version: \"0.9\"\ntime_signatures: [{bar_position: 0, beat_per_bar: 4, beat_unit: 4}]\n"
+                       "tempos: [{position: 0, bpm: 120}]\n"
+                       "tracks: [{track_name: Lead, voice_color_names: [soft]}]\nvoice_parts: []\n";
+  const auto view = [](const std::string& text) {
+    return std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(text.data()), text.size()};
+  };
+  application::ProjectFactory factory{870000U};
+  const auto baseline = interchange::importUstxProject(view(source), factory); CHECK(baseline);
+  CHECK(baseline.value().issues.size() == 1U);
+  for (std::size_t index = 0; index < 4095U; ++index)
+    source += "unknown_" + std::to_string(index) + ": 0\n";
+  const auto full = interchange::importUstxProject(view(source), factory); CHECK(full);
+  CHECK(full.value().issues.size() == 4096U);
+  source += "one_more_loss: 0\n";
+  const auto parsed = interchange::decodeUstx(view(source)); CHECK(parsed);
+  CHECK(parsed.value().issues.size() == 4096U);
+  const auto overflow = interchange::importUstxProject(view(source), factory);
+  CHECK(!overflow); CHECK(overflow.error().code == core::ErrorCode::Unsupported);
+  CHECK(overflow.error().message.find("diagnostic") != std::string::npos);
+}
+
 namespace {
 
 std::vector<std::uint8_t> bytes(std::string_view text) {
@@ -167,7 +252,29 @@ TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   CHECK(decoded.value().parts.front().notes.size() == 2U);
   CHECK(decoded.value().parts.front().notes.front().pitch.size() == 2U);
   CHECK(decoded.value().parts.front().notes.front().hasVibrato);
-  CHECK(!decoded.value().issues.empty()); // snap_first/phoneme details are explicit losses or warnings.
+  // The fixture's track_expressions/phoneme_expressions/phoneme_overrides lists
+  // are empty, so they contain nothing to lose and must not be reported. Before
+  // the capacity repair these empty lists produced four bogus loss records.
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.tracks[0].track_expressions"));
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.voice_parts[0].notes[0].phoneme_expressions"));
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.voice_parts[0].notes[0].phoneme_overrides"));
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.voice_parts[0].notes[1].phoneme_expressions"));
+  // Nonempty discarded metadata must still be disclosed at its exact source path.
+  std::string populated{fixture()};
+  for (const std::string field : {"track_expressions", "phoneme_expressions", "phoneme_overrides"}) {
+    const auto empty = field + ": []";
+    std::size_t offset = 0U;
+    while ((offset = populated.find(empty, offset)) != std::string::npos) {
+      const auto replacement = field + ": [1]";
+      populated.replace(offset, empty.size(), replacement);
+      offset += replacement.size();
+    }
+  }
+  const auto lossy = seam::interchange::decodeUstx(bytes(populated));
+  CHECK(lossy);
+  CHECK(hasLossAt(lossy.value().issues, "ustx.tracks[0].track_expressions"));
+  CHECK(hasLossAt(lossy.value().issues, "ustx.voice_parts[0].notes[0].phoneme_expressions"));
+  CHECK(hasLossAt(lossy.value().issues, "ustx.voice_parts[0].notes[0].phoneme_overrides"));
 }
 
 TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and hostile depth") {
