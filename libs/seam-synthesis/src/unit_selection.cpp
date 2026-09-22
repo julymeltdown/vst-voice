@@ -237,7 +237,13 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
   const auto allocated = budget.spend(SelectionWork::States, candidates.size(), context.stop);
   if (!allocated) return core::Result<UnitPlan>{allocated.error()};
   constexpr auto none = std::numeric_limits<std::size_t>::max();
-  struct State { double score{std::numeric_limits<double>::infinity()}; std::size_t previous{none}; double edge{0.0}; bool joined{false}; };
+  // The sentinel is written out instead of naming the enclosing function's local
+  // 'none'. A local class default member initializer that names an automatic
+  // variable is only valid while it stays a non-odr-used constant expression, and
+  // MSVC rejects this one when std::vector value-initializes the element type.
+  // The literal constant keeps the same value without that odr-use.
+  struct State { double score{std::numeric_limits<double>::infinity()};
+    std::size_t previous{std::numeric_limits<std::size_t>::max()}; double edge{0.0}; bool joined{false}; };
   std::vector<State> states(candidates.size());
   std::vector<std::vector<std::size_t>> byStart(tokens.size()), byEnd(tokens.size() + 1U);
   std::map<std::string_view, const UnitJoinAnalysis*> analysis;
