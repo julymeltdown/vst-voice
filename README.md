@@ -85,6 +85,9 @@ Windows items cannot be closed by engineering in this repository.
 - Coverage diagnostics distinguish missing, disabled, wrong-style, and unsupported-pitch units before rendering.
 - Production rendering reports failed phrases while allowing unaffected tracks and regions to continue; no other voicebank is silently substituted.
 - Native USTX 0.9 and bounded Standard MIDI interchange paths retain score timing, lyrics, pitch/vibrato where representable, and expose explicit conversion losses; imports remain unsaved until review acceptance.
+- **External interoperability is verified against a tool that is not SEAM**, in both directions. OpenUtau's own deserializer (pinned commit `8c0dc40`) reads SEAM's USTX export with notes, tones, positions and UTF-8 lyrics intact, and DryWetMidi — the library OpenUtau uses for MIDI — reads SEAM's SMF export with all 80 lyric meta events present. Reading an OpenUtau-authored USTX back through OpenUtau reproduces both notes and their pitch contours. A MIDI round trip (export → import → export) reproduces the file byte for byte.
+- The bank tool exposes this path directly: `export-score PROJECT.seam OUT.ustx|.mid` and `import-score IN.ustx|.mid PROJECT.seam [NAME]`. The oracle is optional and not part of CI; see `tools/openutau_oracle/README.md` for how to re-run it.
+- Real DAW exchange (REAPER, Bitwig) and any listening judgement remain unverified. Being readable is not the same as sounding right.
 - Interval harmony proposals are prepared without mutating the source and accepted through one stale-checked, undoable command.
 
 
