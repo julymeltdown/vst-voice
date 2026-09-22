@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U17 ordered sample-style crossfade implemented; independent review pending (2026-09-22)
+## U17 ordered sample-style crossfade independently approved (2026-09-22)
 
 Project schema 19 persists an explicit primary/secondary sample-style pair and
 default amount. The native style sheet stages pair selection and 5% amount edits
@@ -20,7 +20,11 @@ Strict selected builds and tests pass: Release 9 targets / 977 case executions
 The 480x320 native scene fits its controls; this is not live installed UI or
 listening qualification. Source closure/diff checks pass. See
 U17_PAIRED_STYLE_CROSSFADE_2026-09-22.md for tests and exact non-claims.
-Implementation review is pending; no additional complete unit or Beta GO is counted.
+Developer 2 APPROVED the bounded increment at bdb62019bcc2dca1306709de2076c6917ff32cb9,
+independently rerunning 142 Release cases, 123 Debug cases and 12 Python cases.
+The earlier empty review completion was not approval. The reviewer found no
+reproducible blocker and recommends stronger multi-placement paired seam/export
+coverage. No additional complete unit, perceptual qualification or Beta GO is counted.
 
 ## U6 timing repairs after independent review (2026-09-22)
 
