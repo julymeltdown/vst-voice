@@ -1,7 +1,7 @@
 # U16 offline WORLD reference comparison — revision 2
 
-Status: both arms executed; independent review requested source-inventory repair,
-now implemented and awaiting final review. The exact extracted
+Status: scoped developer-only implementation independently APPROVED at
+`48f02a3fbc968ba9f1d492db3b663657f2ed5b56` after source-inventory repair. The exact extracted
 guard resolves the six observed synthetic AP rejections. All three speech
 hypotheses still FAIL the unchanged acoustic conjunction. Additive source-energy
 diagnostics identify a fixture limitation, not renderer acceptance.
@@ -321,8 +321,8 @@ validation remain required before U16 qualification. No new recording/download
 or corpus admission is claimed by this increment.
 
 No U6/U16 closure, qualified singer, extra accepted unit or Beta GO is claimed.
-Independent diagnostic concurrence is NOT implementation approval; the exact
-committed candidate still needs review.
+The initial independent diagnostic concurrence was NOT implementation approval;
+the pinned implementation reviews and final disposition are recorded below.
 
 ## Independent review and closed-inventory repair
 
@@ -368,4 +368,25 @@ Final repaired identities:
 The same path convention above applies. Build/test logs now use
 `u16-world-inventory-final-{build,ctest}.log`; Python log and regenerated artifact
 summary use `build-u4-macos/u16-world-inventory-final-{python.log,artifact-check.json}`.
-Final independent repair review remains pending. No acoustic verdict changed.
+No acoustic verdict changed.
+
+## Final independent approval
+
+Developer 2 APPROVED `48f02a3fbc968ba9f1d492db3b663657f2ed5b56` against
+`1f56f23234e68777e78f808d6c0a061fdd6d7978`, combining the initial full implementation
+review with the complete five-file repair review. They independently reproduced
+the verifier, fresh-configure and build-time shadow-header rejections, valid and
+wrong-variant admission, and passed twelve C++ cases per configuration (Release
+4.53 s / Debug 30.97 s) plus fifteen focused Python cases. All four repaired
+binary/report identities and 372 referenced file hashes verified. Full reports
+match the pre-repair reports except executable identity. Before/after snapshots
+of all six retained artifact trees were unchanged across 2,105 files.
+
+The reviewer used the documented existing binaries, not fresh full builds, and
+did not rerun the full 64-test Python suite, broad production/native workflows or
+Windows tests. No listening or production approval is inferred. The P2 blocker
+is closed; no remaining actionable scoped blocker was established.
+
+The next experiment's source-only fixed 42-input specification is recorded in
+`U16_LF_CONTROL_PANEL_2026-09-22.md`. It was added prospectively after the reviewed
+code checkpoint; it is not a completed experiment or an additional approved unit.

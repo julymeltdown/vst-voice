@@ -31,7 +31,13 @@ now enforce exact file/directory inventories and reject symlinks/nonregular file
 before content access. Fresh configure and build reject the shadow-header probe.
 Rebuilt Release/Debug pass twelve cases each (7.01/42.05 s); Python 60 pass/four
 explicit skips. Regenerated report fields match except executable identity and
-all 372 file hashes verify. Final repair review is pending; no unit or Beta GO.
+all 372 file hashes verify. Developer 2 APPROVED the scoped increment at
+48f02a3fbc968ba9f1d492db3b663657f2ed5b56: independently twelve C++ cases per
+configuration, fifteen focused Python cases, fresh configure/build rejection,
+all repaired hashes and 2,105 retained-artifact hashes unchanged across reruns.
+They did not rebuild the full binaries or repeat broad suites/Windows/listening.
+The prospective 42-input next experiment is fixed in U16_LF_CONTROL_PANEL_2026-09-22.md;
+it is not executed yet. No unit or Beta GO is counted.
 
 ## U6 oracle calibration: resonant noise exposes an excitation-classifier limit (2026-09-22)
 
