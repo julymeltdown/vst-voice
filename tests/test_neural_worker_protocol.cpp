@@ -140,6 +140,41 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
   CHECK(std::abs(defaultedRequest.value().breathiness[4799]-0.4F)<1e-6F);
   CHECK(defaultedRequest.value().breathiness[4800]==0.0F);
   CHECK(defaultedRequest.value().breathiness[12000]==0.0F);
+  // Accepted breathiness overrides the prior only inside its destination span,
+  // including zero; manual Replace owns even an empty (neutral) drawn curve.
+  auto selected=region;
+  selected.performance.takes={{.id="breath",.sourceRegionId=region.id,
+      .resource={domain::SingerResourceKind::Neural,"fixture","1",std::string(64U,'a')},
+      .pronunciation={domain::Language::English,"fixture","1",std::string(64U,'b'),std::string(64U,'c'),std::string(64U,'d')},
+      .generatorId="fixture",.generatorVersion="1",.range={time::Tick{0},time::Tick{480}},
+      .lanes={{domain::PerformanceChannel::Breathiness,{{time::Tick{0},0.8}}}}}};
+  selected.performance.accepted={{"breath",domain::PerformanceChannel::Breathiness,
+      domain::PerformanceTimeRange{time::Tick{40},time::Tick{240}},time::Tick{0}}};
+  selected.performance.ownership={{domain::PerformanceChannel::Breathiness,
+      domain::PerformanceTimeRange{time::Tick{80},time::Tick{120}},domain::ManualPerformanceMode::Replace,{}}};
+  const auto requestFor=[&](const domain::VocalRegion& input) {
+    const auto compiled=synthesis::compileScorePerformance(project,input,48000U,phones); CHECK(compiled);
+    return prepareNeuralScoreRequest(109U,defaultedModel,vocabulary.value(),compiled.value(),
+        phones,std::string(64U,'b'),0,12010,"SP");
+  };
+  const auto selectedRequest=requestFor(selected); CHECK(selectedRequest);
+  for (const auto frame:{500U,999U}) CHECK_NEAR(selectedRequest.value().breathiness[frame],0.4F,1e-6);
+  for (const auto frame:{1000U,1999U,3000U,4799U,4800U,5999U})
+    CHECK_NEAR(selectedRequest.value().breathiness[frame],0.8F,1e-6);
+  for (const auto frame:{0U,2000U,2999U,6000U,12000U}) CHECK(selectedRequest.value().breathiness[frame]==0.0F);
+  selected.performance.takes.front().lanes.front().points.front().value=0.0;
+  const auto selectedZero=requestFor(selected); CHECK(selectedZero);
+  CHECK_NEAR(selectedZero.value().breathiness[999],0.4F,1e-6);
+  CHECK(selectedZero.value().breathiness[1000]==0.0F);
+  CHECK(selectedZero.value().breathiness[4799]==0.0F);
+  // A manual curve fills unselected frames and locked frames, but does not
+  // replace an accepted zero outside explicit manual ownership.
+  CHECK(selected.breathinessAutomation.upsert({time::Tick{0},0.9F}));
+  const auto mixed=requestFor(selected); CHECK(mixed);
+  for (const auto frame:{500U,2000U,2999U,6000U}) CHECK_NEAR(mixed.value().breathiness[frame],0.9F,1e-6);
+  for (const auto frame:{1000U,1999U,3000U,5999U}) CHECK(mixed.value().breathiness[frame]==0.0F);
+  const auto selectedWire=encodeRequest(selectedRequest.value()); CHECK(selectedWire);
+  CHECK(decodeRequest(selectedWire.value()).value()==selectedRequest.value());
   // A drawn curve is authoritative for the whole region: the same defaults
   // must not leak into a request whose performance carries automation.
   auto automated=region;

@@ -1,5 +1,25 @@
 # Integrated Singer Execution
 
+## U6 accepted generated timbre reaches audio (2026-09-22)
+
+Reproduced the shared compiler's rejection of accepted timbral lanes, then
+implemented all six existing procedural timbre controls in compiler revision
+17. Source offsets, half-open scopes and manual Replace ownership are retained.
+Neural breathiness now distinguishes frame-local explicit intent (including
+zero) from unowned frames eligible for model priors. Normal sample/neural
+snapshot admission refuses unsupported accepted controls rather than silently
+dropping them; declared neural breathiness is admitted.
+
+Strict Release and Debug focused builds and four suites pass: 22 compiler,
+47 performance snapshot, 26 neural protocol and 7 neural snapshot cases in each.
+The six-channel connected test uses normal proposal/acceptance commands, real
+procedural PCM, project save/reopen, undo/redo, identity and immutable jobs.
+The broader Release rerun passes all seven targets (955 individual cases),
+including the 830-case monolithic suite, 19 coordinator cases and four installed
+singer song journeys (19.72 s total). Independent review remains pending. See
+U6_GENERATED_TIMBRE_AUTOMATION_2026-09-22.md for the evidence and non-claims.
+U6 and full-product Beta GO remain open; no new complete unit is counted.
+
 ## U29 final regression harness correction (2026-09-22)
 
 Developer 2 independently closed all four production/accounting findings

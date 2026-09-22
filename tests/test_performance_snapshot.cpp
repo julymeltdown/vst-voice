@@ -17,6 +17,7 @@
 #include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/synthesis/phrase_backend.hpp"
 #include "seam/voice_design/procedural_renderer.hpp"
 
@@ -2069,6 +2070,99 @@ TEST_CASE("accepted attack survives normal snapshots and manual ownership undo a
     CHECK(fixture.snapshot().contentHash == neutral.contentHash);
     // Snapshot-owned evaluation remains immutable after live ownership edits.
     CHECK(seam::rendering::PhraseRenderPipeline{}.render(attacked).value().rendered.audio.samples == shaped.samples);
+  }
+}
+
+TEST_CASE("accepted timbre reaches procedural PCM through commands persistence and undo without sample fallback") {
+  using namespace seam; using namespace domain; using time::Tick;
+  const std::array channels{
+      std::pair{PerformanceChannel::Formant, "formant"},
+      std::pair{PerformanceChannel::Breathiness, "breathiness"},
+      std::pair{PerformanceChannel::Tension, "tension"},
+      std::pair{PerformanceChannel::Airiness, "airiness"},
+      std::pair{PerformanceChannel::Gender, "gender"},
+      std::pair{PerformanceChannel::Growl, "growl"}};
+  for (const auto& [channel, name] : channels) {
+    PerformanceSnapshotFixture fixture;
+    auto& region = *fixture.project.findRegion(fixture.regionId);
+    region.notes.front().vibrato.enabled = false;
+    CHECK(region.dynamicsAutomation.replacePoints({}));
+    voice_design::VoiceRecipe recipe; recipe.id = "accepted-timbre";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = [&] {
+      const auto result = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+          fixture.trackId, fixture.regionId, 1U, rendering::RenderQuality::Preview, 48000U);
+      CHECK(result); return result.value();
+    };
+    const auto pcm = [](const rendering::RenderSnapshot& input) {
+      const auto result = rendering::PhraseRenderPipeline{}.render(input); CHECK(result);
+      return result.value().rendered.audio.samples;
+    };
+    const auto neutral = snapshot(); const auto neutralPcm = pcm(neutral);
+    const float value = channel == PerformanceChannel::Formant ? 3.0F :
+        channel == PerformanceChannel::Gender ? -0.5F : 0.75F;
+    const auto pronunciation = phonemizer::resolveJapanesePronunciation(region); CHECK(pronunciation);
+    PerformanceTake proposal{.id = "timbre", .sourceRegionId = fixture.regionId,
+        .capturedRevision = region.performance.revision, .resource = resource.value().identity,
+        .pronunciation = pronunciation.value().identity, .generatorId = "fixture", .generatorVersion = "1",
+        .range = {Tick{0}, Tick{9600}}, .lanes = {{channel, {{Tick{1920}, static_cast<double>(value)}}}}};
+    application::EditorSession session{fixture.project};
+    const auto job = session.capturePerformanceJob(); CHECK(job);
+    CHECK(session.executePerformanceResult(job.value(), std::make_unique<application::AddPerformanceProposalCommand>(
+        fixture.regionId, region.performance, proposal)));
+    fixture.project = session.project();
+    CHECK(snapshot().contentHash == neutral.contentHash); // Unselected proposals are inert.
+    CHECK(session.execute(std::make_unique<application::SetAcceptedPerformanceCommand>(fixture.regionId,
+        fixture.project.findRegion(fixture.regionId)->performance,
+        std::vector<AcceptedPerformanceSelection>{{"timbre", channel, fixture.noteId, Tick{0}}})));
+    fixture.project = session.project();
+    const auto accepted = snapshot(); const auto acceptedPcm = pcm(accepted);
+    CHECK(accepted.contentHash != neutral.contentHash); CHECK(acceptedPcm != neutralPcm);
+    // A generated constant has exactly the existing manual control's sound;
+    // it is not incorrectly interpreted as amplitude or an unrelated channel.
+    auto& manual = *fixture.project.findRegion(fixture.regionId); manual.performance = {};
+    switch (channel) {
+      case PerformanceChannel::Formant: CHECK(manual.formantAutomation.upsert({Tick{0}, value})); break;
+      case PerformanceChannel::Breathiness: CHECK(manual.breathinessAutomation.upsert({Tick{0}, value})); break;
+      case PerformanceChannel::Tension: CHECK(manual.tensionAutomation.upsert({Tick{0}, value})); break;
+      case PerformanceChannel::Airiness: CHECK(manual.airinessAutomation.upsert({Tick{0}, value})); break;
+      case PerformanceChannel::Gender: CHECK(manual.genderAutomation.upsert({Tick{0}, value})); break;
+      case PerformanceChannel::Growl: CHECK(manual.growlAutomation.upsert({Tick{0}, value})); break;
+      default: CHECK(false);
+    }
+    CHECK(pcm(snapshot()) == acceptedPcm);
+    fixture.project = session.project();
+    const auto path = fixture.bankRoot / "accepted-timbre.seam";
+    CHECK(formats::ProjectJsonCodec{}.save(fixture.project, path));
+    const auto reopened = formats::ProjectJsonCodec{}.load(path); CHECK(reopened);
+    CHECK(reopened.value().findRegion(fixture.regionId)->performance == fixture.project.findRegion(fixture.regionId)->performance);
+    fixture.project = reopened.value();
+    CHECK(snapshot().contentHash == accepted.contentHash); CHECK(pcm(snapshot()) == acceptedPcm);
+    const auto& state = session.project().findRegion(fixture.regionId)->performance;
+    CHECK(session.execute(std::make_unique<application::EditPerformanceCommand>(
+        std::vector<application::NoteExpressionEdit>{}, std::vector<application::RegionDynamicsEdit>{},
+        std::vector<application::TrackStyleEdit>{}, std::vector<application::RegionOwnershipEdit>{{
+            .regionId = fixture.regionId, .expectedRevision = state.revision, .expectedOwnership = state.ownership,
+            .ownership = {{channel, fixture.noteId, ManualPerformanceMode::Replace, {}}}}})));
+    fixture.project = session.project();
+    const auto overridden = snapshot(); CHECK(overridden.contentHash != accepted.contentHash);
+    CHECK(pcm(overridden) == neutralPcm);
+    CHECK(session.undo()); fixture.project = session.project();
+    CHECK(snapshot().contentHash == accepted.contentHash); CHECK(pcm(snapshot()) == acceptedPcm);
+    CHECK(session.redo()); fixture.project = session.project();
+    CHECK(snapshot().contentHash == overridden.contentHash); CHECK(pcm(snapshot()) == neutralPcm);
+    CHECK(pcm(accepted) == acceptedPcm); // The frozen job does not observe later edits.
+    // Unsupported sample routes cannot silently ignore accepted intent, even
+    // neutral or manually overridden intent. No fallback renderer is selected.
+    for (const auto amount : {static_cast<double>(value), 0.0}) {
+      fixture.project.findRegion(fixture.regionId)->performance.takes.front().lanes.front().points.front().value = amount;
+      const auto segments = rendering::PhraseSegmenter{}.segment(*fixture.project.findRegion(fixture.regionId)); CHECK(segments);
+      const auto refused = rendering::RenderSnapshotFactory{}.create(fixture.project, fixture.bank, fixture.trackId,
+          segments.value().front(), 1U, rendering::RenderQuality::Preview, fixture.bankRoot);
+      CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::Unsupported);
+      CHECK(refused.error().message.find(name) != std::string::npos);
+    }
   }
 }
 

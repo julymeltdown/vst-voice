@@ -32,12 +32,21 @@ constexpr std::uint64_t kMaximumFrozenPhraseEncodedBytes =
 constexpr std::uint64_t kMaximumFrozenPhraseDecodedBytes =
     512ULL * 1024ULL * 1024ULL;
 
+// Accepted intent is an explicit control request even when neutral or manually
+// overridden. Unsupported carriers reject it instead of silently discarding it.
+// Unselected proposals are inert and do not affect admission.
+bool hasAcceptedChannel(const domain::VocalRegion& region, domain::PerformanceChannel channel) noexcept {
+  return std::any_of(region.performance.accepted.begin(), region.performance.accepted.end(),
+      [channel](const auto& selection) { return selection.channel == channel; });
+}
+
 // The formant channel is a control a concatenative bank and an admitted model do not have. A curve
 // that asks for one would otherwise be dropped in silence, which is exactly what the capability rule
 // forbids, so the request is refused by name instead. A curve that is entirely neutral is not a
 // request.
 bool requiresFormantShift(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.formantAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Formant) ||
+      std::any_of(region.formantAutomation.points().begin(),
                      region.formantAutomation.points().end(),
                      [](const domain::FormantAutomationPoint& point) {
                        return point.semitones != 0.0F;
@@ -47,14 +56,14 @@ bool requiresFormantShift(const domain::VocalRegion& region) noexcept {
 std::string formantShiftUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
          " cannot apply the project's formant curve: it has no vocal-tract resonances of its own, so "
-         "the shift would be dropped in silence. Remove the curve or select a source-filter singer.";
+         "the shift would be dropped in silence. Remove the curve or accepted selection, or select a source-filter singer.";
 }
 
-// Breathiness is the same kind of request one layer down: it rebalances the excitation the source-filter
-// engine generates for itself, and neither a concatenative bank nor an admitted model has that
-// excitation to rebalance. A curve that asks for nothing is not a request.
+// Source-filter supports breathiness directly; a neural model must explicitly
+// declare its conditioning input. An unselected neutral manual curve is inert.
 bool requiresBreathiness(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.breathinessAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Breathiness) ||
+      std::any_of(region.breathinessAutomation.points().begin(),
                      region.breathinessAutomation.points().end(),
                      [](const domain::BreathinessAutomationPoint& point) {
                        return point.amount != 0.0F;
@@ -63,16 +72,16 @@ bool requiresBreathiness(const domain::VocalRegion& region) noexcept {
 
 std::string breathinessUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
-         " cannot apply the project's breathiness curve: it does not generate the excitation that would "
-         "be rebalanced, so the curve would be dropped in silence. Remove the curve or select a "
-         "source-filter singer.";
+         " cannot apply the project's breathiness curve: it has no admitted breathiness control. "
+         "Remove the curve or accepted selection, or select a singer with a declared breathiness control.";
 }
 
 // Tension is the same request again, on the source's own spectrum: neither a concatenative bank nor an
 // admitted model hands the application the harmonic source it would have to tilt. A curve that asks for
 // nothing is not a request.
 bool requiresTension(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.tensionAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Tension) ||
+      std::any_of(region.tensionAutomation.points().begin(),
                      region.tensionAutomation.points().end(),
                      [](const domain::TensionAutomationPoint& point) {
                        return point.amount != 0.0F;
@@ -82,14 +91,15 @@ bool requiresTension(const domain::VocalRegion& region) noexcept {
 std::string tensionUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
          " cannot apply the project's tension curve: it does not generate the harmonic source whose "
-         "spectrum would change, so the curve would be dropped in silence. Remove the curve or select a "
+         "spectrum would change, so the curve would be dropped in silence. Remove the curve or accepted selection, or select a "
          "source-filter singer.";
 }
 
 // Airiness is a band of the source's own noise, which is the same kind of request as breathiness and
 // tension: the carrier has to own the source to have a band to shape.
 bool requiresAiriness(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.airinessAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Airiness) ||
+      std::any_of(region.airinessAutomation.points().begin(),
                      region.airinessAutomation.points().end(),
                      [](const domain::AirinessAutomationPoint& point) {
                        return point.amount != 0.0F;
@@ -99,14 +109,15 @@ bool requiresAiriness(const domain::VocalRegion& region) noexcept {
 std::string airinessUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
          " cannot apply the project's airiness curve: it does not generate the noise band the curve "
-         "would add, so the curve would be dropped in silence. Remove the curve or select a "
+         "would add, so the curve would be dropped in silence. Remove the curve or accepted selection, or select a "
          "source-filter singer.";
 }
 
 // Gender is the coupled request: it needs the carrier to own both the tract and the source, because
 // applying half of it would silently become a different channel.
 bool requiresGender(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.genderAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Gender) ||
+      std::any_of(region.genderAutomation.points().begin(),
                      region.genderAutomation.points().end(),
                      [](const domain::GenderAutomationPoint& point) {
                        return point.amount != 0.0F;
@@ -117,13 +128,14 @@ std::string genderUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
          " cannot apply the project's gender curve: gender moves the tract's resonances and the source's "
          "spectrum together, and this carrier owns neither half, so the curve would be dropped in "
-         "silence. Remove the curve or select a source-filter singer.";
+         "silence. Remove the curve or accepted selection, or select a source-filter singer.";
 }
 
 // Growl is a roughness of the source's own excitation, which a bank and an admitted model do not hand the
 // application to shape. A curve that asks for nothing is not a request.
 bool requiresGrowl(const domain::VocalRegion& region) noexcept {
-  return std::any_of(region.growlAutomation.points().begin(),
+  return hasAcceptedChannel(region, domain::PerformanceChannel::Growl) ||
+      std::any_of(region.growlAutomation.points().begin(),
                      region.growlAutomation.points().end(),
                      [](const domain::GrowlAutomationPoint& point) {
                        return point.amount != 0.0F;
@@ -133,7 +145,7 @@ bool requiresGrowl(const domain::VocalRegion& region) noexcept {
 std::string growlUnsupportedMessage(std::string_view carrier) {
   return std::string{"The selected "} + std::string{carrier} +
          " cannot apply the project's growl curve: it does not generate the excitation the roughness is "
-         "added to, so the curve would be dropped in silence. Remove the curve or select a source-filter "
+         "added to, so the curve would be dropped in silence. Remove the curve or accepted selection, or select a source-filter "
          "singer.";
 }
 

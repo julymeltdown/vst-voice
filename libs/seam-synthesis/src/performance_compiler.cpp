@@ -253,10 +253,16 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   for (const auto& selection : region.performance.accepted) {
     if (selection.channel != domain::PerformanceChannel::Pitch &&
         // Timing is admitted here because it is consumed by the ordered timing plan
-        // below, not by per-frame score evaluation. The remaining channels still have
-        // no consumer, so claiming them would invent audio the backend cannot make.
+        // below, not by per-frame score evaluation. StyleBlend still requires
+        // paired style resources and is not a generic timbral scalar.
         selection.channel != domain::PerformanceChannel::Timing &&
         selection.channel != domain::PerformanceChannel::Dynamics &&
+        selection.channel != domain::PerformanceChannel::Formant &&
+        selection.channel != domain::PerformanceChannel::Breathiness &&
+        selection.channel != domain::PerformanceChannel::Tension &&
+        selection.channel != domain::PerformanceChannel::Airiness &&
+        selection.channel != domain::PerformanceChannel::Gender &&
+        selection.channel != domain::PerformanceChannel::Growl &&
         selection.channel != domain::PerformanceChannel::Attack &&
         selection.channel != domain::PerformanceChannel::Release) {
       return core::failure<CompiledScorePerformance>(core::ErrorCode::Unsupported,
@@ -446,6 +452,10 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
         static_cast<std::size_t>(mode)], ownershipScopes_).has_value();
   };
   const bool manualPitchReplaces = owns(domain::PerformanceChannel::Pitch, domain::ManualPerformanceMode::Replace);
+  // Drawn curves hold edge values across the region. An empty curve can still
+  // be deliberately locked to its neutral value over a manual ownership span.
+  result.breathinessIsExplicit = !breathiness_.points().empty() ||
+      owns(domain::PerformanceChannel::Breathiness, domain::ManualPerformanceMode::Replace);
   auto scoreMidi = static_cast<double>(note.midiKey);
   // Replace means the authored curve also owns portamento. Keeping the
   // automatic glide would apply its base-note transition a second time.
@@ -503,12 +513,21 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
         // A manual formant edit is authoritative over the generated curve, exactly as a manual dynamics
         // edit is: the channel's own unit is semitones, so the value is applied as it was written.
         result.formantSemitones = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::Breathiness && value) {
+        result.breathiness = static_cast<float>(*value);
+        result.breathinessIsExplicit = true;
+      } else if (selection.channel == domain::PerformanceChannel::Tension && value) {
+        result.tension = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::Airiness && value) {
+        result.airiness = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::Gender && value) {
+        result.gender = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::Growl && value) {
+        result.growl = static_cast<float>(*value);
       }
-      // Every other channel stays out of the per-frame audio path on purpose. A
-      // generated timing proposal is consumed by the ordered timing plan, and the
-      // remaining channels are reported unsupported by the renderer capability table.
-      // None of them is an amplitude, which is what a fallback assignment here would
-      // have claimed by writing a microsecond offset into a gain.
+      // Timing is consumed by the ordered timing plan, never as amplitude.
+      // Snapshot admission separately checks each renderer's timbral consumers;
+      // shared compilation must not imply every carrier supports every lane.
     }
   }
   if (result.attackMilliseconds && *result.attackMilliseconds > 0.0 && note.reattack) {

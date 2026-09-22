@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 16U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 17U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -33,6 +33,10 @@ struct ScorePerformanceSample final {
   // range. It is not a gain: zero is the recipe's own source and one is the breathiest setting the
   // channel admits, so a consumer that treats this as loudness would be wrong by construction.
   float breathiness{0.0F};
+  // A drawn curve, an active accepted lane, or manual Replace owns this frame,
+  // including an intentional zero. Neural per-phone defaults may fill only
+  // unowned frames; region-wide presence cannot express partial selections.
+  bool breathinessIsExplicit{false};
   // The source's own spectral tilt change for this frame, normalized to the channel's range. Like
   // breathiness it is not a gain: zero is the recipe's own source and one is the most pressed setting
   // the channel admits, so a consumer that treated it as loudness would be wrong by construction.
@@ -87,11 +91,6 @@ public:
   [[nodiscard]] std::span<const ScoreNoteSpan> notes() const noexcept { return notes_; }
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] std::span<const PhonemeTimingAnchor> phonemeTiming() const noexcept { return phonemeTiming_; }
-  // Whether the region carries any drawn breathiness curve. When false, a
-  // neural consumer may substitute the model's measured per-phone defaults;
-  // when true, the drawn curve is authoritative for the whole region because
-  // lane evaluation holds edge values outside the drawn range.
-  [[nodiscard]] bool hasBreathinessAutomation() const noexcept { return !breathiness_.points().empty(); }
 private:
   [[nodiscard]] ScorePerformanceSample evaluate(time::SampleFrame absoluteFrame, bool inspect) const noexcept;
   friend core::Result<CompiledScorePerformance> compileScorePerformance(

@@ -2,6 +2,15 @@
 
 Status: active, incomplete. The approved U6 goal remains a shared musical evaluator consumed by all three rendering families, not merely a standalone score utility.
 
+Latest continuation (2026-09-22): compiler revision 17 now consumes accepted
+Formant, Breathiness, Tension, Airiness, Gender and Growl, in addition to the
+previously supported Pitch, Timing, Dynamics, Attack and Release. Neural
+breathiness uses explicit per-frame ownership rather than a region-wide drawn
+curve flag. Unsupported carriers reject accepted controls at snapshot admission.
+See `U6_GENERATED_TIMBRE_AUTOMATION_2026-09-22.md` for connected PCM, persistence,
+ownership and graph-admission evidence. Earlier entries below are chronological
+checkpoints, not the current channel-support inventory. U6 remains incomplete.
+
 ## Implemented first component
 
 `performance_compiler.hpp/.cpp` provides `compileScorePerformance` and an immutable `CompiledScorePerformance`. It retains bounded, absolute-frame note spans and copies only required tempo, manual pitch and dynamics data. It does not take a selected unit or bank as an input. A C4→G4 score therefore exposes both pitches independently of acoustic-unit boundaries.

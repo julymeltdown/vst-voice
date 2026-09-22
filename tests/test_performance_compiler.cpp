@@ -10,6 +10,7 @@
 #include "test_support.hpp"
 #include <cmath>
 #include <algorithm>
+#include <array>
 
 namespace {
 struct Fixture {
@@ -108,6 +109,98 @@ TEST_CASE("score vibrato uses absolute note phase independent of block boundarie
       }
     }
   }
+}
+
+TEST_CASE("accepted timbre lanes retain native units source offsets and manual half-open ownership") {
+  using namespace seam; using namespace domain; using time::Tick;
+  using Sample = synthesis::ScorePerformanceSample;
+  struct Channel final { PerformanceChannel channel; float Sample::*field; float manual; double first; double last; };
+  const std::array channels{
+      Channel{PerformanceChannel::Formant, &Sample::formantSemitones, -1.0F, -12.0, 12.0},
+      Channel{PerformanceChannel::Breathiness, &Sample::breathiness, 0.125F, 0.25, 0.75},
+      Channel{PerformanceChannel::Tension, &Sample::tension, 0.125F, 0.25, 0.75},
+      Channel{PerformanceChannel::Airiness, &Sample::airiness, 0.125F, 0.25, 0.75},
+      Channel{PerformanceChannel::Gender, &Sample::gender, -0.25F, -0.75, 0.75},
+      Channel{PerformanceChannel::Growl, &Sample::growl, 0.125F, 0.25, 0.75}};
+  for (const auto& channel : channels) {
+    Fixture f;
+    CHECK(f.project.tempoMap().addOrReplace(f.region().startTick + Tick{480}, 90.0));
+    CHECK(f.region().formantAutomation.upsert({Tick{0}, -1.0F}));
+    CHECK(f.region().breathinessAutomation.upsert({Tick{0}, 0.125F}));
+    CHECK(f.region().tensionAutomation.upsert({Tick{0}, 0.125F}));
+    CHECK(f.region().airinessAutomation.upsert({Tick{0}, 0.125F}));
+    CHECK(f.region().genderAutomation.upsert({Tick{0}, -0.25F}));
+    CHECK(f.region().growlAutomation.upsert({Tick{0}, 0.125F}));
+    auto& state = f.region().performance;
+    state.takes = {{.id = "timbre", .sourceRegionId = f.id,
+        .resource = {SingerResourceKind::Procedural, "fixture", "1", std::string(64U, 'a')},
+        .pronunciation = {Language::Japanese, "fixture", "1", std::string(64U, 'b'), std::string(64U, 'c'), std::string(64U, 'd')},
+        .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, Tick{3840}},
+        .lanes = {{channel.channel, {{Tick{1200}, channel.first}, {Tick{1680}, channel.last}}}}}};
+    for (const auto rate : {8000U, 44100U, 192000U}) {
+      const auto frame = [&](int tick) { return f.project.tempoMap().sampleFrameAt(f.region().startTick + Tick{tick}, rate); };
+      state.accepted.clear(); state.ownership.clear();
+      const auto proposed = synthesis::compileScorePerformance(f.project, f.region(), rate); CHECK(proposed);
+      CHECK(proposed.value().at(frame(480)).*channel.field == channel.manual);
+      state.accepted = {{"timbre", channel.channel, PerformanceTimeRange{Tick{240}, Tick{720}}, Tick{960}}};
+      const auto generated = synthesis::compileScorePerformance(f.project, f.region(), rate); CHECK(generated);
+      CHECK(generated.value().at(frame(240) - 1).*channel.field == channel.manual);
+      CHECK_NEAR(generated.value().at(frame(240)).*channel.field, channel.first, 1e-6);
+      CHECK_NEAR(generated.value().at(frame(480)).*channel.field, (channel.first + channel.last) * 0.5, 1e-6);
+      CHECK_NEAR(generated.value().at(frame(720) - 1).*channel.field, channel.last, 1e-6);
+      CHECK(generated.value().at(frame(720)).*channel.field == channel.manual);
+      const auto mid = generated.value().at(frame(480));
+      CHECK(mid.dynamicsGain == 1.0F); CHECK(mid.articulationGain == 1.0F);
+      CHECK(mid.scoreFrequencyHz == proposed.value().at(frame(480)).scoreFrequencyHz);
+      for (const auto& other : channels) if (other.channel != channel.channel)
+        CHECK(mid.*other.field == other.manual);
+      state.ownership = {{channel.channel, PerformanceTimeRange{Tick{360}, Tick{600}}, ManualPerformanceMode::Replace, {}}};
+      const auto owned = synthesis::compileScorePerformance(f.project, f.region(), rate); CHECK(owned);
+      CHECK(owned.value().at(frame(360) - 1).*channel.field != channel.manual);
+      CHECK(owned.value().at(frame(360)).*channel.field == channel.manual);
+      CHECK(owned.value().at(frame(600) - 1).*channel.field == channel.manual);
+      CHECK(owned.value().at(frame(600)).*channel.field != channel.manual);
+      // Immutable compiled intent is unaffected by subsequent live ownership changes.
+      CHECK(generated.value().at(frame(480)).*channel.field == mid.*channel.field);
+      CHECK(!owned.value().at(frame(1920)).noteId);
+      CHECK(owned.value().at(frame(1920)).*channel.field == 0.0F);
+    }
+    state.takes.front().lanes.front().points.front().value.reset();
+    CHECK(!synthesis::compileScorePerformance(f.project, f.region(), 48000U));
+    state.takes.front().lanes.front().points.front().value = 1000.0;
+    CHECK(!synthesis::compileScorePerformance(f.project, f.region(), 48000U));
+  }
+}
+
+TEST_CASE("breathiness ownership distinguishes an explicit neutral from an unowned frame") {
+  using namespace seam; using namespace domain; using time::Tick;
+  Fixture f;
+  const auto frame = [&](int tick) { return f.project.tempoMap().sampleFrameAt(f.region().startTick + Tick{tick}, 48000U); };
+  auto& state = f.region().performance;
+  state.takes = {{.id = "breath", .sourceRegionId = f.id,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = {Language::Japanese, "fixture", "1", std::string(64U, 'b'), std::string(64U, 'c'), std::string(64U, 'd')},
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, Tick{3840}},
+      .lanes = {{PerformanceChannel::Breathiness, {{Tick{0}, 0.0}}}}}};
+  state.accepted = {{"breath", PerformanceChannel::Breathiness, PerformanceTimeRange{Tick{240}, Tick{720}}, Tick{0}}};
+  state.ownership = {{PerformanceChannel::Breathiness, PerformanceTimeRange{Tick{0}, Tick{120}}, ManualPerformanceMode::Replace, {}}};
+  const auto selected = synthesis::compileScorePerformance(f.project, f.region(), 48000U); CHECK(selected);
+  for (const auto tick : {0, 119, 240, 719}) {
+    CHECK(selected.value().at(frame(tick)).breathinessIsExplicit);
+    CHECK(selected.value().at(frame(tick)).breathiness == 0.0F);
+  }
+  for (const auto tick : {120, 239, 720, 1920})
+    CHECK(!selected.value().at(frame(tick)).breathinessIsExplicit);
+  CHECK(f.region().breathinessAutomation.upsert({Tick{480}, 0.0F}));
+  const auto drawn = synthesis::compileScorePerformance(f.project, f.region(), 48000U); CHECK(drawn);
+  CHECK(drawn.value().at(frame(120)).breathinessIsExplicit);
+  CHECK(drawn.value().at(frame(720)).breathinessIsExplicit);
+  CHECK(!drawn.value().at(frame(1920)).breathinessIsExplicit);
+  // Style blend is not admitted as a scalar timbre control without paired resources.
+  state.accepted.front().channel = PerformanceChannel::StyleBlend;
+  state.takes.front().lanes.front().channel = PerformanceChannel::StyleBlend;
+  const auto unsupported = synthesis::compileScorePerformance(f.project, f.region(), 48000U);
+  CHECK(!unsupported); CHECK(unsupported.error().code == core::ErrorCode::Unsupported);
 }
 
 TEST_CASE("score compiler rejects invalid rates and ambiguous overlapping note voices") {

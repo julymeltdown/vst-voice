@@ -328,3 +328,52 @@ TEST_CASE("neural snapshot refuses breathiness control unless admitted graph dec
   CHECK(accepted);
   CHECK(accepted.value().neuralExecution->acousticGraph().supportsConditioningControl("breathiness"));
 }
+
+TEST_CASE("neural accepted timbre admission follows the actual graph without silent drops") {
+  using namespace seam; using namespace domain; using namespace rendering; using time::Tick;
+  const auto plain = freezeBundle(48000U); CHECK(plain);
+  const auto withBreath = freezeBundle(48000U, 48000U, 3U, true); CHECK(withBreath);
+  const auto plainModel = AdmittedNeuralBundle::admit(plain.value(), 65536U, 10); CHECK(plainModel);
+  const auto breathModel = AdmittedNeuralBundle::admit(withBreath.value(), 65536U, 10); CHECK(breathModel);
+  const NeuralRenderProvenance provenance{.workerVersion="seam-neural-worker-1",
+      .runtimeVersion="onnxruntime-1.30.0",.provider="CPUExecutionProvider"};
+  const auto create = [&](const Score& music, const AdmittedNeuralBundle& model) {
+    return RenderSnapshotFactory{}.createNeural(music.project, model, provenance,
+        music.track, music.region, 1U, RenderQuality::Final, 48000U, "original");
+  };
+  const auto baseline = create(score(), breathModel.value()); CHECK(baseline);
+  const std::array channels{
+      std::pair{PerformanceChannel::Breathiness, "breathiness"},
+      std::pair{PerformanceChannel::Formant, "formant"},
+      std::pair{PerformanceChannel::Tension, "tension"},
+      std::pair{PerformanceChannel::Airiness, "airiness"},
+      std::pair{PerformanceChannel::Gender, "gender"},
+      std::pair{PerformanceChannel::Growl, "growl"}};
+  for (const auto& [channel, name] : channels) {
+    auto music = score(); auto& region = *music.project.findRegion(music.region);
+    region.performance.takes = {{.id="timbre", .sourceRegionId=region.id,
+        .resource={SingerResourceKind::Neural,"fixture","1",std::string(64U,'a')},
+        .pronunciation={Language::English,"fixture","1",std::string(64U,'b'),std::string(64U,'c'),std::string(64U,'d')},
+        .generatorId="fixture", .generatorVersion="1", .range={Tick{0},Tick{1920}},
+        .lanes={{channel,{{Tick{0},0.5}}}}}};
+    const auto inert = create(music, breathModel.value()); CHECK(inert);
+    CHECK(inert.value().contentHash == baseline.value().contentHash);
+    region.performance.accepted = {{"timbre", channel, region.notes.front().id, Tick{0}}};
+    for (const auto amount : {0.0, 0.5}) {
+      region.performance.takes.front().lanes.front().points.front().value = amount;
+      const auto refused = create(music, plainModel.value()); CHECK(!refused);
+      CHECK(refused.error().code == core::ErrorCode::Unsupported);
+      CHECK(refused.error().message.find(name) != std::string::npos);
+      const auto declared = create(music, breathModel.value());
+      if (channel == PerformanceChannel::Breathiness) {
+        CHECK(declared);
+        CHECK(declared.value().contentHash != baseline.value().contentHash);
+        const auto sample = declared.value().compiledPerformance->at(1000);
+        CHECK(sample.breathinessIsExplicit); CHECK_NEAR(sample.breathiness, amount, 1e-6);
+      } else {
+        CHECK(!declared); CHECK(declared.error().code == core::ErrorCode::Unsupported);
+        CHECK(declared.error().message.find(name) != std::string::npos);
+      }
+    }
+  }
+}
