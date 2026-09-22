@@ -672,7 +672,11 @@ int importScoreCommand(int argc, char** argv) {
     std::cerr << "error: " << encoded.error().message << '\n';
     return 5;
   }
-  const auto saved = codec.save(imported.value().project, destination);
+  // Create-new rather than save. Codec::save writes atomically but replaces the destination and moves
+  // the previous file to .bak, which would let one mistyped path silently overwrite an existing
+  // project with an import. Refusing an occupied destination is the safe default for a command whose
+  // whole job is to bring in unfamiliar data.
+  const auto saved = seam::core::durableAtomicWriteTextNew(destination, encoded.value());
   if (!saved) {
     std::cerr << "error: " << saved.error().message;
     if (!saved.error().context.empty()) std::cerr << " (" << saved.error().context << ')';

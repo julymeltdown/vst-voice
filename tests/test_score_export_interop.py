@@ -240,6 +240,15 @@ def main():
         assert len(ustx_region["notes"]) == len(authored), len(ustx_region["notes"])
 
         # --- Fail-closed behaviour: bad input must not produce a file ---
+        # An import must not be able to replace an existing project. Codec::save writes atomically but
+        # replaces the destination and moves the old file aside, so a mistyped path would silently
+        # overwrite real work with unfamiliar data. The command uses create-new semantics instead.
+        occupied = root / "occupied.seam"
+        occupied.write_text("ORIGINAL USER CONTENT\n")
+        collision = run(executable, "import-score", str(foreign), str(occupied), "Collision", expect=6)
+        assert occupied.read_text() == "ORIGINAL USER CONTENT\n", occupied.read_text()
+        assert not (root / "occupied.seam.bak").exists(), "the previous file must not be moved aside"
+        assert "exist" in collision.stderr.lower(), collision.stderr
         bad_extension = run(executable, "import-score", str(PROJECT), str(root / "never.seam"), expect=3)
         assert "ustx" in bad_extension.stderr, bad_extension.stderr
         assert not (root / "never.seam").exists()
