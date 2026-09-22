@@ -1188,3 +1188,88 @@ TEST_CASE("A phoneme boundary edit moves the sound, not only the compiled timing
     }
   }
 }
+
+// The whole first milestone in one run: a creator designs a voice, saves it as a draft recipe, that
+// recipe becomes a signed singer, the singer installs, and a song sings through the installed
+// resource. Every earlier case in this file starts from a hand-built package or an already-installed
+// singer, so this is the only case that proves the two halves are actually connected: a voice that
+// exists only as Designer output has to survive publication and installation to be usable at all.
+TEST_CASE("A voice designed and saved here becomes a singer that sings a song") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designed-voice-to-song");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+
+  // 1. Design the voice through the Designer, the way the Studio does, and save the draft recipe.
+  native_ui::VoiceDesignerSession designer;
+  designer.setProtectedRoots({root / "singers"});
+  CHECK(designer.create(songRecipe()).hasValue());
+  CHECK(designer.model() != nullptr);
+  if (designer.model() == nullptr) return;
+  const auto draft = root / "drafts" / "designed.json";
+  std::filesystem::create_directories(draft.parent_path());
+  CHECK(designer.beginSave(draft).hasValue());
+  CHECK(drainDesigner(designer).hasValue());
+  CHECK(std::filesystem::exists(draft));
+
+  // 2. The saved recipe is the creative input to publication. Nothing here supplies an identity,
+  //    coverage, or an approval: the manifest is derived from the recipe the Designer wrote.
+  const auto resource = voice_design::loadVoiceRecipeResource(draft);
+  CHECK(resource.hasValue());
+  if (!resource) return;
+  distribution::PublishProceduralSingerOptions publishOptions;
+  publishOptions.version = "1.0.0";
+  publishOptions.language = "ja";
+  publishOptions.displayName = "Designed Song Voice";
+  const auto package = root / "designed.seamsinger";
+  const auto published = distribution::publishProceduralSingerFromRecipe(
+      resource.value(), root / "staging", package, key.value(), publishOptions);
+  CHECK(published.hasValue());
+  if (!published) return;
+  CHECK(published.value().manifest.id == songRecipe().id);
+  // The declared phones are the recipe's own, including the consonants this song's lyrics need.
+  CHECK(published.value().manifest.phones.size() >= 10U);
+  CHECK(std::filesystem::exists(package));
+
+  // 3. Install it as a trusted singer, then sing through it in a fresh session. The install is what
+  //    makes the voice reachable by identity from a project.
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  Installed fixture;
+  fixture.root = root;
+  fixture.installRoot = installRoot;
+  fixture.key = key.value();
+  auto editor = makeEditor(fixture);
+  const auto offers = editor.controller->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  CHECK(offers.value().size() == 1U);
+  selectInstalledSinger(editor);
+  writeSong(editor);
+
+  // 4. The project recorded the designed singer's identity, and the song renders and exports from
+  //    that identity rather than from an unbound substitute.
+  const auto* track = editor.session->runtime().document().session().project().findVocalTrack(
+      editor.session->runtime().selectedTrack());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(track->proceduralRecipe.has_value());
+  if (!track->proceduralRecipe) return;
+  CHECK(track->proceduralRecipe->resource.id == songRecipe().id);
+  CHECK(track->proceduralRecipe->resource.contentHash ==
+        installed.value().renderIdentity.contentHash);
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto exported = editor.controller->exportSet(root / "export", settings);
+  CHECK(exported.hasValue());
+  if (!exported) return;
+  CHECK(exported.value().masterSha256.size() == 64U);
+  CHECK(std::filesystem::exists(exported.value().masterPath));
+}
