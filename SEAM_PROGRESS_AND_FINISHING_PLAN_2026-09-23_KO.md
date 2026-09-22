@@ -68,7 +68,19 @@
 | 외부 Beta 계약 / phase12b 계약 | **통과** |
 | 소스 폐쇄성(source closure) | **통과** |
 
-첫 실행에서 `seam_phase12b_tests`가 한 번 실패했으나, 단독 8회 반복 + 전체 3회 반복에서 모두 통과했다. **간헐적 실패(flake)로 판정**했고, 원인은 아직 특정하지 못했다 — 아래 리스크 항목에 남긴다.
+전체 스위트 1회차에서 `seam_phase12b_tests`가 한 번 `Subprocess aborted`로 실패했다. 이후 재현을 시도한 결과:
+
+| 시도 | 결과 |
+|---|---|
+| 단독 실행 (직렬) | 200회 연속 통과 |
+| 24개 동시 실행 | 24/24 통과 (exit 0) |
+| 전체 스위트 `-j 6` / `-j 12` | 각각 183/183 통과 |
+
+**중요한 단서:** 이 테스트는 실패 시 `std::cerr`로 진단을 출력하지 않고 **종료 코드만 반환**하는 구조다(`tests/test_phase12b.cpp` — 예: `return 9`). 그런데 실패는 `return`이 아니라 `Subprocess aborted`(SIGABRT)였다. 즉 실패 지점은 검사 로직이 아니라 **그 이후**이며, 프로세스 종료(teardown) 과정에서 발생한 것으로 보인다.
+
+종료 경로는 이미 정리(new)를 하고 있다: `EditorRuntime::~EditorRuntime` → 콜백 해제 후 `shutdown()` → `AuthoringRuntime::shutdown()` → `previewWorker_.request_stop()` + `join()`, 그리고 `AuthoringRenderCoordinator::shutdown()` → `worker_.request_stop()` + `join()`. 구조적으로는 맞다. 다만 **렌더 워커가 진행 중일 때 종료가 겹치면** 콜백 경로가 정리 도중의 상태를 건드릴 여지가 남아 있다.
+
+**결론: 재현 실패. 원인 미특정.** 전체 스위트가 부하를 받는 특정 타이밍에서만 나오는 것으로 보이며, 1회 관측이다. A4로 남긴다.
 
 ---
 
