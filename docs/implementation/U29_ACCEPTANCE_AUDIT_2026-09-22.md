@@ -2,10 +2,10 @@
 
 Date: 2026-09-22. Plan criterion source:
 docs/plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md (U29).
-Verdict: LOCAL IMPLEMENTATION ACCEPTANCE - every explicit U29 criterion
-and test scenario maps to named code and passing test evidence. This is
-not Beta GO, not a claim about U30/U31 codec coverage, and not a
-native-panel or cross-platform claim.
+Verdict: POSIX production fixes independently verified; final regression
+harness review pending. This audit maps the local U29 boundary to code
+and tests, with the CreateNew interruption limitation stated below.
+Windows coverage and full-product Beta acceptance remain open.
 
 ## Criteria to evidence
 
@@ -41,10 +41,12 @@ native-panel or cross-platform claim.
    with a restored mtime" (injector rewrites same-length content and
    restores mtime via utimensat; the ctime comparison still rejects),
    "a held import rejects a FIFO without blocking the admission"
-   (detached worker bounded by a 5-second deadline; O_NONBLOCK makes
-   open return so S_ISREG can reject), "a held import closes its
-   descriptor when the admission throws" (injector throws; /dev/fd
-   count is unchanged), "draft identity tracks the bytes actually
+   (child process bounded by a 5-second deadline, killed and reaped
+   before a timeout assertion; it must return IoError with the exact
+   non-regular-file diagnostic), "a held import closes its descriptor
+   when the admission throws" (a distinct sentinel exception must
+   propagate; /dev/fd enumeration must succeed and its count is
+   unchanged), "draft identity tracks the bytes actually
    read" (changed bytes -> different sourceHash). Identity binds
    content, not path strings.
 3. Interrupted output or destination conflict preserves the original
@@ -82,13 +84,17 @@ as trivial passes on Windows, matching the pending-Windows non-claim.
 - USTX field coverage breadth (U30), real-DAW exchange (U31
   verification), native conversion-review panel (U32), and any
   host/platform qualification remain open.
-- On POSIX the read is descriptor-held: leaf-symlink and parent
-  replacement cannot redirect it, and in-place mutation during the
-  read is rejected. The post-read metadata check is best-effort:
+- On POSIX the leaf is opened without following symlinks and path
+  replacement after open cannot redirect the held descriptor.
+  In-place mutations detected by post-read metadata are rejected.
+  The metadata check is best-effort:
   metadata equality alone is not a proof of immutable content, and an
-  attacker who can mutate the file between the post-read fstat and the
-  caller's use of the bytes, or control mount options, is out of
-  scope.
+  attacker who can mutate the file in ways that evade the metadata
+  observation window or its resolution (for example rewriting content
+  so every compared field coincides, or racing within one ctime
+  granularity tick) or control mount options is out of scope. The
+  caller receives an owned byte vector, so later filesystem changes
+  cannot mutate the returned bytes.
 - The Windows branch of readFileBytesLimited retains the prior
   stat-then-read sequence (symlink_status + size + ifstream); the
   held-input guarantee is POSIX-only until Windows reparse/descriptor

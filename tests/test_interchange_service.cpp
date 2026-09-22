@@ -9,11 +9,14 @@
 #include <string>
 
 #ifndef _WIN32
-#include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <thread>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -278,24 +281,59 @@ TEST_CASE("a held import rejects a FIFO without blocking the admission") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-fifo");
   const auto fifo = root / "song.ustx";
   CHECK(::mkfifo(fifo.c_str(), 0600) == 0);
-  seam::application::ProjectFactory factory{979000U};
-  seam::authoring::InterchangeService service;
-  // A FIFO with no writer must not block inside open: run the import on a
-  // detached worker and bound the wait. A hang fails the case without
-  // stalling the suite; the detached thread is abandoned only on failure.
-  std::atomic<int> outcome{0};  // 0 pending, 1 rejected, 2 imported
-  std::thread worker([&] {
-    auto imported = service.importFile(fifo, factory,
-        seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
-    outcome.store(imported ? 2 : 1, std::memory_order_release);
-  });
-  worker.detach();
+  // A FIFO with no writer must not block inside open. The import runs in a
+  // forked child so a hang can be bounded, terminated and reaped without
+  // touching this process's fixtures; a detached in-process worker could
+  // outlive them. Exit codes: 0 rejected with the specific non-regular-file
+  // diagnostic, 2 rejected for another reason, 1 imported,
+  // 3 unexpected exception.
+  const pid_t child = ::fork();
+  CHECK(child >= 0);
+  if (child == 0) {
+    try {
+      seam::application::ProjectFactory factory{979000U};
+      seam::authoring::InterchangeService service;
+      auto imported = service.importFile(fifo, factory,
+          seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
+      if (imported) ::_exit(1);
+      const auto& error = imported.error();
+      ::_exit(error.code == seam::core::ErrorCode::IoError &&
+              error.message == "Unable to read a non-regular file" ? 0 : 2);
+    } catch (...) {
+      ::_exit(3);
+    }
+  }
+  int status = 0;
+  bool reaped = false;
+  int waitError = 0;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-  while (outcome.load(std::memory_order_acquire) == 0
-         && std::chrono::steady_clock::now() < deadline) {
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto waited = ::waitpid(child, &status, WNOHANG);
+    if (waited == child) {
+      reaped = true;
+      break;
+    }
+    if (waited < 0 && errno != EINTR) {
+      waitError = errno;
+      break;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
-  CHECK(outcome.load(std::memory_order_acquire) == 1);
+  if (!reaped && waitError != ECHILD) {
+    // Finish cleanup before any assertion can throw; interrupted waits must
+    // not leave an unreaped child. ECHILD means there is no child to signal.
+    const auto killed = ::kill(child, SIGKILL);
+    const auto killError = killed < 0 ? errno : 0;
+    pid_t waited;
+    do { waited = ::waitpid(child, &status, 0); }
+    while (waited < 0 && errno == EINTR);
+    CHECK(killed == 0 || killError == ESRCH);
+    CHECK(waited == child);
+  }
+  CHECK(waitError == 0);
+  CHECK(reaped);
+  CHECK(WIFEXITED(status));
+  CHECK(WEXITSTATUS(status) == 0);
 }
 
 TEST_CASE("a held import closes its descriptor when the admission throws") {
@@ -305,25 +343,33 @@ TEST_CASE("a held import closes its descriptor when the admission throws") {
   const auto openDescriptors = [] {
     std::error_code error;
     std::size_t count = 0;
-    for (const auto& entry : std::filesystem::directory_iterator("/dev/fd", error)) {
-      static_cast<void>(entry);
+    auto entry = std::filesystem::directory_iterator("/dev/fd", error);
+    CHECK(!error);
+    while (entry != std::filesystem::directory_iterator{}) {
       ++count;
+      entry.increment(error);
+      CHECK(!error);
     }
     return count;
   };
   const auto before = openDescriptors();
   seam::application::ProjectFactory factory{980100U};
   seam::authoring::InterchangeService service;
+  // A sentinel type that does NOT derive from std::exception: a framework
+  // Failure thrown by CHECK inside the try must not be swallowed here.
+  struct InjectedFault {};
+  bool threw = false;
   try {
     static_cast<void>(service.importFile(source, factory,
         seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx},
         {}, {},
         [](seam::core::HeldReadStage) -> seam::core::Result<void> {
-          throw std::runtime_error{"injected admission failure"};
+          throw InjectedFault{};
         }));
-    CHECK(false);  // The injector must propagate.
-  } catch (const std::runtime_error&) {
+  } catch (const InjectedFault&) {
+    threw = true;
   }
+  CHECK(threw);  // The injector must propagate.
   CHECK(openDescriptors() == before);
 }
 #endif  // _WIN32 (POSIX-only held-admission cases)

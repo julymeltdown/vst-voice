@@ -1,5 +1,30 @@
 # Integrated Singer Execution
 
+## U29 final regression harness correction (2026-09-22)
+
+Developer 2 independently closed all four production/accounting findings
+on 483dc253: the standalone probes rejected the FIFO and restored-mtime
+rewrite, and observed zero leaked descriptors after an injected exception.
+The remaining review findings concerned the tests themselves.
+
+The FIFO regression now uses a child process with a five-second deadline.
+Timeout cleanup sends SIGKILL and reaps the child before any assertion;
+waitpid retries EINTR. Success requires the exact non-regular-file IoError,
+so an unrelated failure cannot pass. The exception regression catches a
+distinct sentinel and checks propagation outside the catch. Descriptor
+enumeration errors now fail on both creation and iteration.
+
+Fresh verification of this working tree: service tests 15/15 in Release
+and Debug; Release monolithic suite 830/830 (21.21 seconds). CTest exit
+codes were checked directly. This is regression evidence for the tested
+paths; no per-call-site execution coverage was measured. Final reviewer
+sign-off on this harness revision is pending.
+
+The preceding chat progress statement is withdrawn: the listed U1-U5 plus
+pending U29 cannot substantiate "7 of 48", and no current complete-unit
+inventory substantiates the 55-60% implementation estimate. This does
+not change acceptance state or waive the unresolved singer-quality gates.
+
 ## U29 held-input second rework: reviewer-reproduced gaps closed
 
 Developer 2 re-review of fdcf4bf reproduced three defects against the
@@ -91,7 +116,7 @@ linked seam_clap_editor unguarded. Fixed by gating clap_editor
 sources/targets and linking seam_live_voice unconditionally (the
 library itself is unconditional). seam_tests now builds and runs the
 full suite in this configuration: 827/827 pass (Release,
-build-u4-macos), covering every readFileBytesLimited call site.
+build-u4-macos). Per-call-site execution coverage was not measured.
 
 ## Developer-2 direction after ablation STOP: listening packet staged; U29 closed
 
