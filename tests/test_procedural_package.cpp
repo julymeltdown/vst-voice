@@ -11,6 +11,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voice_design/articulation_plan.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
 
 #include <filesystem>
@@ -591,3 +592,131 @@ TEST_CASE("A review file beside the singers is not mistaken for an installed sin
   CHECK(scanned.value().front().trust == distribution::ProceduralTrust::TrustedInstalled);
 }
 
+// The bridge the creator actually needs: a voice designed here becomes a singer that can be
+// installed and sung. Before this path existed, a recipe could be designed and a package could be
+// installed, but nothing in product code connected the two, so a designed voice could never reach a
+// song without hand-written JSON.
+TEST_CASE("A designed voice publishes to a signed singer whose declared support comes from the recipe") {
+  const auto root = test::support::temporaryDirectory("procedural-publish-from-recipe");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+
+  // The recipe is what the Designer produces: two styles and several articulation families, so the
+  // derived manifest has something real to derive from.
+  auto recipe = testRecipe();
+  recipe.id = "designed-original";
+  recipe.poses.push_back({"i", "soft", 0.0,
+                          {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}});
+  recipe.frications = {{"s", "neutral",
+      voice_design::FricationConfig{.seed = 9U, .centerHz = 5500.0, .bandwidthHz = 3000.0, .gain = 0.12}}};
+  // An approximant is a transition between two resonance banks, so the recipe must own its own pose.
+  recipe.approximants = {{"r", "neutral", 45.0}};
+  recipe.poses.push_back({"r", "neutral", 0.0,
+                          {{400.0, 80.0, 0.0}, {1400.0, 110.0, -3.0}, {2200.0, 160.0, -6.0}}});
+  recipe.closures = {{"cl", "neutral"}};
+  const auto frozen = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(frozen.hasValue());
+  if (!frozen) return;
+
+  distribution::PublishProceduralSingerOptions options;
+  options.version = "1.0.0";
+  options.language = "ja";
+  options.displayName = "Designed Original";
+  const auto staging = root / "staging";
+  const auto package = root / "designed-original.seamsinger";
+  const auto published = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), staging, package, key.value(), options);
+  CHECK(published.hasValue());
+  if (!published) return;
+
+  // The declared facts come from the recipe, never from the caller: styles are the recipe's own set
+  // and every phone is one the recipe declares a model for.
+  const auto& manifest = published.value().manifest;
+  CHECK(manifest.id == "designed-original");
+  CHECK(manifest.version == "1.0.0");
+  CHECK(manifest.language == "ja");
+  CHECK(manifest.displayName == "Designed Original");
+  CHECK(manifest.styles == (std::vector<std::string>{"neutral", "soft"}));
+  CHECK(manifest.phones == (std::vector<std::string>{"a", "cl", "i", "r", "s"}));
+  CHECK(manifest.engineId == recipe.engineId);
+  CHECK(manifest.recipeSha256.size() == 64U);
+  // A published package must be one a renderer admits, so the written bytes are re-verified here
+  // rather than assumed from the fact that packing returned.
+  const auto verified = distribution::verifyProceduralPackage(package,
+      distribution::VerifySeambankOptions{.limits = {},
+          .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true});
+  CHECK(verified.hasValue());
+  if (!verified) return;
+  CHECK(verified.value().manifest == manifest);
+  // The retained staging bytes are the canonical recipe the manifest digest binds.
+  const auto stagedRecipe = core::readTextFileLimited(staging / "recipe.json", 1U << 20U);
+  CHECK(stagedRecipe.hasValue());
+  if (stagedRecipe) CHECK(core::sha256Hex(stagedRecipe.value()) == manifest.recipeSha256);
+
+  // Installing makes it a singer rather than merely a well-formed package, and the recorded render
+  // identity is the one a project will store and the renderer will validate.
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(package, root / "singers",
+                                                                installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+  CHECK(installed.value().id == manifest.id);
+  CHECK(installed.value().version == manifest.version);
+  CHECK(installed.value().renderIdentity.id == manifest.id);
+  CHECK(installed.value().renderIdentity.contentHash == manifest.recipeSha256);
+}
+
+TEST_CASE("Publishing refuses a style, version or engine the recipe cannot honour") {
+  const auto root = test::support::temporaryDirectory("procedural-publish-refusals");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  auto recipe = testRecipe();
+  const auto frozen = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(frozen.hasValue());
+  if (!frozen) return;
+
+  // A style the recipe does not declare would be rendered by falling back to another one, so asking
+  // for it is refused instead of being written into a manifest as if the singer supported it.
+  distribution::PublishProceduralSingerOptions wrongStyle;
+  wrongStyle.version = "1.0.0";
+  wrongStyle.styles = {"operatic"};
+  const auto refusedStyle = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), root / "staging-style", root / "style.seamsinger", key.value(), wrongStyle);
+  CHECK(!refusedStyle);
+  CHECK(refusedStyle.error().message.find("style") != std::string::npos);
+  // A refused request publishes nothing and leaves no staging directory behind.
+  CHECK(!std::filesystem::exists(root / "style.seamsinger"));
+  CHECK(!std::filesystem::exists(root / "staging-style"));
+
+  // A version is a distribution decision, so it is required rather than derived from a digest.
+  distribution::PublishProceduralSingerOptions noVersion;
+  const auto refusedVersion = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), root / "staging-version", root / "version.seamsinger", key.value(), noVersion);
+  CHECK(!refusedVersion);
+  CHECK(refusedVersion.error().message.find("version") != std::string::npos);
+
+  // A repeated style is refused: a manifest that lists one style twice is malformed, and accepting
+  // it would make the declared set ambiguous.
+  distribution::PublishProceduralSingerOptions repeated;
+  repeated.version = "1.0.0";
+  repeated.styles = {"neutral", "neutral"};
+  const auto refusedRepeat = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), root / "staging-repeat", root / "repeat.seamsinger", key.value(), repeated);
+  CHECK(!refusedRepeat);
+
+  // Publishing into an existing staging directory is refused: those bytes belong to someone else.
+  const auto occupied = root / "occupied";
+  std::filesystem::create_directories(occupied);
+  distribution::PublishProceduralSingerOptions okOptions;
+  okOptions.version = "1.0.0";
+  const auto refusedStaging = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), occupied, root / "occupied.seamsinger", key.value(), okOptions);
+  CHECK(!refusedStaging);
+  CHECK(refusedStaging.error().message.find("staging") != std::string::npos);
+  // The existing directory is untouched by the refusal.
+  CHECK(std::filesystem::exists(occupied));
+}

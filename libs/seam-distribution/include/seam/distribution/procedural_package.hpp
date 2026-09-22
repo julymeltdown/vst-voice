@@ -8,7 +8,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <stop_token>
 #include <vector>
+
+namespace seam::synthesis {
+struct ProceduralSingerResource;
+}
 
 namespace seam::distribution {
 
@@ -67,6 +72,33 @@ struct PackProceduralPackageOptions final {
     const std::filesystem::path& outputPackage,
     const SigningKeyPair& signingKey,
     const PackProceduralPackageOptions& options = {});
+
+// How a designed voice becomes a distributable singer. The manifest's declared identity and phone
+// coverage are derived from the recipe itself rather than supplied by the caller, so a package can
+// never advertise a phone its recipe does not declare. Signing proves authenticity only: nothing
+// here records approval, review, or measured quality.
+struct PublishProceduralSingerOptions final {
+  // Which of the recipe's declared styles this singer offers. Empty means every style the recipe
+  // declares. Every requested style must be one the recipe actually carries.
+  std::vector<std::string> styles{};
+  std::string language{"und"};
+  std::string displayName{};
+  // Required: a package manifest's version is a distribution decision, not a property of a recipe,
+  // so it is never guessed from a digest or a timestamp.
+  std::string version{};
+  PackProceduralPackageOptions packing{};
+};
+
+// Writes the canonical recipe and a manifest derived from it into the caller's staging directory,
+// then packs and signs them. The staging directory is left in place so the caller can retain the
+// exact pre-packaging bytes; pass a directory that does not already exist.
+[[nodiscard]] core::Result<ProceduralPackageInfo> publishProceduralSingerFromRecipe(
+    const synthesis::ProceduralSingerResource& recipe,
+    const std::filesystem::path& stagingDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PublishProceduralSingerOptions& options = {},
+    std::stop_token stop = {});
 
 [[nodiscard]] core::Result<ProceduralPackageInfo> verifyProceduralPackage(
     const std::filesystem::path& packagePath,

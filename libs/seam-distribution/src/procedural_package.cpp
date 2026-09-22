@@ -22,6 +22,9 @@ using Object = JsonValue::Object;
 using Array = JsonValue::Array;
 
 constexpr std::string_view kManifestEntry = "manifest.json";
+// The one recipe filename this family publishes, matching the shipped fixtures and the default the
+// manifest codec already carries.
+constexpr std::string_view kRecipeEntry = "recipe.json";
 
 bool safeIdentity(std::string_view value) noexcept {
   if (value.empty() || value.size() > 128U) return false;
@@ -243,6 +246,46 @@ core::Result<domain::SingerResourceIdentity> proceduralRenderIdentity(
                 core::sha256Hex(canonical.value())};
 }
 
+// Every style the recipe declares, across all its articulation families. A singer that offers a
+// style the recipe does not carry would render that style by falling back to another one, so the
+// offered set is read from the recipe rather than asked for.
+std::vector<std::string> recipeStyles(const voice_design::VoiceRecipe& recipe) {
+  std::set<std::string> unique;
+  const auto observe = [&unique](const std::string& style) {
+    if (!style.empty()) unique.insert(style);
+  };
+  for (const auto& pose : recipe.poses) observe(pose.style);
+  for (const auto& pose : recipe.frications) observe(pose.style);
+  for (const auto& pose : recipe.plosives) observe(pose.style);
+  for (const auto& pose : recipe.affricates) observe(pose.style);
+  for (const auto& pose : recipe.voicedAffricates) observe(pose.style);
+  for (const auto& pose : recipe.approximants) observe(pose.style);
+  for (const auto& pose : recipe.palatalized) observe(pose.style);
+  for (const auto& pose : recipe.closures) observe(pose.style);
+  for (const auto& pose : recipe.breaths) observe(pose.style);
+  return {unique.begin(), unique.end()};
+}
+
+// Every phone the recipe declares a renderable model for. This is coverage *by declaration*, the
+// same sense the shipped manifest uses: the recipe names the phone, not a measured result. A phone
+// the recipe omits is absent here, so a singer cannot advertise one it would refuse to render.
+std::vector<std::string> recipePhones(const voice_design::VoiceRecipe& recipe) {
+  std::set<std::string> unique;
+  const auto observe = [&unique](const std::string& phone) {
+    if (!phone.empty()) unique.insert(phone);
+  };
+  for (const auto& pose : recipe.poses) observe(pose.phone);
+  for (const auto& pose : recipe.frications) observe(pose.phone);
+  for (const auto& pose : recipe.plosives) observe(pose.phone);
+  for (const auto& pose : recipe.affricates) observe(pose.phone);
+  for (const auto& pose : recipe.voicedAffricates) observe(pose.phone);
+  for (const auto& pose : recipe.approximants) observe(pose.phone);
+  for (const auto& pose : recipe.palatalized) observe(pose.phone);
+  for (const auto& pose : recipe.closures) observe(pose.phone);
+  for (const auto& pose : recipe.breaths) observe(pose.phone);
+  return {unique.begin(), unique.end()};
+}
+
 }  // namespace
 
 core::Result<ProceduralPackageInfo> packProceduralPackage(
@@ -268,6 +311,95 @@ core::Result<ProceduralPackageInfo> packProceduralPackage(
       .limits = options.limits,
       .trustedPublicKeys = {signingKey.publicKey},
       .requireTrustedSigner = true});
+}
+
+core::Result<ProceduralPackageInfo> publishProceduralSingerFromRecipe(
+    const synthesis::ProceduralSingerResource& resource,
+    const std::filesystem::path& stagingDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PublishProceduralSingerOptions& options, std::stop_token stop) {
+  using Output = ProceduralPackageInfo;
+  if (stop.stop_requested())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Procedural publication cancelled");
+  if (options.version.empty() || options.version.size() > 128U)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "Procedural publication requires a bounded version");
+  if (options.language.empty() || options.language.size() > 16U)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "Procedural publication requires a bounded language tag");
+  // The recipe is decoded from the caller's resource rather than trusted as a structure, so the
+  // manifest is derived from exactly the bytes that will be signed.
+  auto decoded = voice_design::decodeVoiceRecipeResource(resource, stop);
+  if (!decoded) return core::Result<Output>{decoded.error()};
+  const auto recipe = decoded.value();
+  const auto canonical = voice_design::encodeVoiceRecipe(recipe);
+  if (!canonical) return core::Result<Output>{canonical.error()};
+
+  const auto declaredStyles = recipeStyles(recipe);
+  if (declaredStyles.empty())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "Procedural recipe declares no styles");
+  std::vector<std::string> styles = declaredStyles;
+  if (!options.styles.empty()) {
+    for (const auto& style : options.styles) {
+      if (std::find(declaredStyles.begin(), declaredStyles.end(), style) == declaredStyles.end())
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                     "Requested style is not declared by the recipe", style);
+    }
+    std::set<std::string> requested(options.styles.begin(), options.styles.end());
+    if (requested.size() != options.styles.size())
+      return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                   "Requested styles repeat an entry");
+    styles = options.styles;
+  }
+  const auto phones = recipePhones(recipe);
+  if (phones.empty())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 "Procedural recipe declares no phones");
+
+  ProceduralSingerManifest manifest;
+  manifest.id = recipe.id;
+  manifest.version = options.version;
+  manifest.displayName = options.displayName.empty() ? recipe.id : options.displayName;
+  manifest.language = options.language;
+  manifest.styles = styles;
+  manifest.engineId = recipe.engineId;
+  manifest.engineRevision = voice_design::kSourceFilterEngineRevision;
+  manifest.recipeEntry = std::string{kRecipeEntry};
+  manifest.recipeSha256 = core::sha256Hex(canonical.value());
+  manifest.phones = phones;
+  const auto valid = manifest.validate();
+  if (!valid) return core::Result<Output>{valid.error()};
+  // The renderer must accept this engine/revision pair, because a manifest that promises a revision
+  // no renderer implements would install a singer that cannot be selected.
+  if (manifest.engineId != std::string{voice_design::kSourceFilterEngineId})
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+                                 "Procedural recipe engine is not the source-filter engine",
+                                 manifest.engineId);
+
+  std::error_code error;
+  if (std::filesystem::exists(stagingDirectory, error) || error)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "Procedural staging directory already exists or is unreadable",
+                                 stagingDirectory.string());
+  if (!std::filesystem::create_directories(stagingDirectory, error) || error)
+    return core::failure<Output>(core::ErrorCode::IoError,
+                                 "Unable to create the procedural staging directory",
+                                 error.message());
+  const auto stagedRecipe = stagingDirectory / std::string{kRecipeEntry};
+  const auto recipeWritten = core::durableAtomicWriteTextNew(stagedRecipe, canonical.value());
+  if (!recipeWritten) return core::Result<Output>{recipeWritten.error()};
+  ProceduralSingerManifestJsonCodec codec;
+  const auto manifestText = codec.encode(manifest);
+  if (!manifestText) return core::Result<Output>{manifestText.error()};
+  const auto manifestWritten =
+      core::durableAtomicWriteTextNew(stagingDirectory / std::string{kManifestEntry},
+                                      manifestText.value());
+  if (!manifestWritten) return core::Result<Output>{manifestWritten.error()};
+  if (stop.stop_requested())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Procedural publication cancelled");
+  return packProceduralPackage(stagingDirectory, outputPackage, signingKey, options.packing);
 }
 
 core::Result<ProceduralPackageInfo> verifyProceduralPackage(
