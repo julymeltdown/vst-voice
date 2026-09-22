@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## U6 target-unvoicing experiment: acoustic FAIL, production disabled (2026-09-22)
+
+The attempted shared envelope/noise conversion passed synthetic controls but
+failed the frozen speech assessment: root-67 conditioning retained excessive
+source-lag correlation (0.896720); estimated-pitch conditioning exceeded the
+spectral-share error limit (0.285658). Both use the same independent 991.014 Hz
+measurement oracle. An intermediate run that changed that oracle is explicitly
+withdrawn as acceptance evidence. Neither thresholds nor the failing conjunction
+were relaxed.
+
+Following Developer 2's design recommendation, all provisional production
+adapter/compiler/cache wiring and product-test changes were restored to
+`2fe9871c`. The retained implementation is a default-OFF developer executable
+under `tools/singing_quality/`; normal preview, cache and export cannot use it.
+Its machine-readable assessment distinguishes engineering execution PASS from
+acoustic FAIL, and includes source, manifest, output and executable hashes.
+Fresh selected Release and Debug builds pass six CTest targets each (956/1,087
+overlapping case executions, 23.43/183.47 seconds). A clean configure confirms
+the target is absent without explicit opt-in. Pinned implementation review is
+pending. See U6_SAMPLE_TARGET_VOICING_2026-09-22.md for the experiment, failures,
+artifacts and next action. No complete unit, qualified singer or Beta GO is counted.
+
 ## U6 production phonetic context independently approved (2026-09-22)
 
 The two production regressions now admit region-contained authored pickups and

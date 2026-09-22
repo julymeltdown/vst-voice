@@ -1628,6 +1628,22 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_performance_snapshot_tests)
   add_test(NAME seam_performance_snapshot_tests COMMAND seam_performance_snapshot_tests)
 
+  option(SEAM_ENABLE_SAMPLE_TARGET_VOICING_EXPERIMENT
+    "Build the developer-only target-unvoicing experiment (known acoustic assessment FAIL)" OFF)
+  if(SEAM_ENABLE_SAMPLE_TARGET_VOICING_EXPERIMENT)
+    add_executable(seam_sample_target_voicing_experiment_tests tests/test_main.cpp
+      tests/test_sample_target_voicing_experiment.cpp tools/singing_quality/target_voicing_experiment.cpp)
+    target_include_directories(seam_sample_target_voicing_experiment_tests PRIVATE tests tools/singing_quality)
+    target_link_libraries(seam_sample_target_voicing_experiment_tests PRIVATE seam_application seam_synthesis seam_voicebank)
+    target_compile_definitions(seam_sample_target_voicing_experiment_tests PRIVATE
+      SEAM_TARGET_VOICING_SPEECH_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav"
+      SEAM_TARGET_VOICING_EXECUTABLE="$<TARGET_FILE:seam_sample_target_voicing_experiment_tests>"
+      SEAM_TARGET_VOICING_REPORT_DIRECTORY="${CMAKE_CURRENT_BINARY_DIR}/target-voicing-experiment")
+    seam_apply_compiler_options(seam_sample_target_voicing_experiment_tests)
+    add_test(NAME seam_sample_target_voicing_experiment_tests COMMAND seam_sample_target_voicing_experiment_tests)
+    set_tests_properties(seam_sample_target_voicing_experiment_tests PROPERTIES TIMEOUT 120 LABELS "developer-experiment;acoustic-assessment-fail")
+  endif()
+
   add_executable(seam_style_blending_tests tests/test_main.cpp tests/test_style_blending.cpp)
   target_include_directories(seam_style_blending_tests PRIVATE tests)
   target_link_libraries(seam_style_blending_tests PRIVATE seam_application seam_rendering seam_voicebank seam_formats)
