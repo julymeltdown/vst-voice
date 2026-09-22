@@ -86,7 +86,9 @@ void capture(native_ui::NativeEditorController& controller, std::uint32_t width,
 
 TEST_CASE("sample microscope plots and paged details fit compact and desktop windows without losing text") {
   using namespace seam;
-  for (const auto size : {std::pair{480U, 320U}, {700U, 480U}, {1280U, 720U}}) {
+  // Bind by reference: GCC rejects a per-iteration copy under -Werror
+  // (range-loop-construct) even though the initializer list elements are const.
+  for (const auto& size : {std::pair{480U, 320U}, {700U, 480U}, {1280U, 720U}}) {
     Fixture fixture; const auto original = fixture.session.project();
     native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.region, fixture.callbacks()};
     controller.resize(size.first, size.second);
