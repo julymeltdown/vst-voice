@@ -176,4 +176,15 @@ core::Result<void> RecordingInputSession::acknowledgePublished() {
   return core::success();
 }
 
+core::Result<void> RecordingInputSession::discardPending() {
+  if (!pending())
+    return core::failure(core::ErrorCode::InvalidState, "There is no completed recording to discard");
+  // The capture is deliberately dropped without deleting any file the caller
+  // already wrote: a saved WAV is user data whose removal needs its own consent.
+  recording_.clear();
+  state_ = State::Idle;
+  error_.reset();
+  return core::success();
+}
+
 }  // namespace seam::platform

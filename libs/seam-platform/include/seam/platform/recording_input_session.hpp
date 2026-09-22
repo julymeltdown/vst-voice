@@ -40,6 +40,10 @@ public:
   [[nodiscard]] core::Result<void> exportPending(const std::filesystem::path& path,
       voicebank::WavSampleFormat format = voicebank::WavSampleFormat::Pcm24) const;
   [[nodiscard]] core::Result<void> acknowledgePublished();
+  // Escape hatch for a capture whose publication already failed. The caller must
+  // have preserved any written file as user data; discarding drops only the
+  // in-memory capture and never touches the filesystem.
+  [[nodiscard]] core::Result<void> discardPending();
   [[nodiscard]] bool capturing() const noexcept;
   [[nodiscard]] bool pending() const noexcept;
   [[nodiscard]] AudioInputDeviceInfo info() const;

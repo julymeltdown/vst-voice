@@ -1115,7 +1115,7 @@ public:
 
   void pointerDown(const seam::native_ui::PointerEvent& event) noexcept override {
     if (recordingInput_.capturing() || recordingInput_.pending()) {
-      lastError_ = "Press R to finish or retry publishing the current recording before editing";
+      lastError_ = "Press R to finish or retry publishing the current recording, or X to discard it";
       repaint(); return;
     }
     if (sampleReviewModal_) return;
@@ -1266,7 +1266,8 @@ public:
     lastError_.clear();
     if (recordingInput_.capturing() || recordingInput_.pending()) {
       if (event.key == seam::native_ui::NativeKey::R && !event.repeat) record(stopRecording());
-      else if (!event.repeat) lastError_ = "Press R to finish or retry publishing the current recording before editing";
+      else if (event.key == seam::native_ui::NativeKey::X && !event.repeat) record(discardRecording());
+      else if (!event.repeat) lastError_ = "Press R to finish or retry publishing the current recording, or X to discard it";
       repaint(); return;
     }
     if (sampleReviewView_) {
@@ -1692,7 +1693,18 @@ public:
                     : productionAssignment != nullptr
                           ? productionAssignment->plannedTakeId
                           : std::string{"take"};
-    if (pendingRecordingPath_.empty()) {
+    if (pendingRecordingHash_.empty()) {
+      // First publication, or recovery from a written file whose identity could
+      // not be read. Recovery always writes a NEW file from the retained capture;
+      // the earlier file remains untouched user data and is never rebound.
+      if (!pendingRecordingPath_.empty()) {
+        if (recoveryExportAttempts_ >= 1U)
+          return seam::core::failure(seam::core::ErrorCode::Conflict,
+              "Recovery already wrote a new WAV that still could not be verified; press X to discard the capture "
+              "(the saved file is kept) or inspect the recording directory",
+              pendingRecordingPath_.string());
+        ++recoveryExportAttempts_;
+      }
       const auto destination = seam::native_ui::nextVoicebankRecordingPath(directory, name);
       if (!destination) return seam::core::Result<void>{destination.error()};
       const auto saved = recordingInput_.exportPending(destination.value());
@@ -1704,19 +1716,15 @@ public:
       lastRecording_ = pendingRecordingPath_;
       const auto hash = seam::core::sha256File(destination.value());
       if (!hash) return seam::core::failure(hash.error().code,
-          "Recording WAV was saved but its identity could not be verified; file and capture retained for manual recovery",
+          "Recording WAV was saved but its identity could not be verified; press R to retry, press X to discard the capture",
           pendingRecordingPath_.string());
       pendingRecordingHash_ = hash.value();
     } else {
-      if (pendingRecordingHash_.empty())
-        return seam::core::failure(seam::core::ErrorCode::Conflict,
-            "Saved recording has no verified identity; file and capture retained for manual recovery, no new WAV was created",
-            pendingRecordingPath_.string());
       const auto hash = seam::core::sha256File(pendingRecordingPath_);
       if (!hash) return seam::core::Result<void>{hash.error()};
       if (hash.value() != pendingRecordingHash_)
         return seam::core::failure(seam::core::ErrorCode::Conflict,
-            "Saved recording changed before publication; the pending capture is retained",
+            "Saved recording changed before publication; press R to retry or X to discard the capture",
             pendingRecordingPath_.string());
     }
     const auto expectedRootMidi = controller_.selectedUnit() != nullptr
@@ -1737,7 +1745,27 @@ public:
     if (!published) return published;
     pendingRecordingPath_.clear();
     pendingRecordingHash_.clear();
+    recoveryExportAttempts_ = 0U;
     lastError_.clear();
+    return seam::core::success();
+  }
+
+  // Explicit escape from a capture whose publication keeps failing. The in-memory
+  // capture is dropped; any WAV already written stays on disk as user data.
+  seam::core::Result<void> discardRecording() {
+    if (!recordingInput_.pending())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "There is no completed recording to discard");
+    const auto preserved = pendingRecordingPath_;
+    const auto discarded = recordingInput_.discardPending();
+    if (!discarded) return discarded;
+    pendingRecordingPath_.clear();
+    pendingRecordingHash_.clear();
+    recoveryExportAttempts_ = 0U;
+    lastError_.clear();
+    auditionStatus_ = preserved.empty()
+                          ? std::string{"Recording capture discarded; no file had been written"}
+                          : "Recording capture discarded; saved file kept at " + preserved.string();
     return seam::core::success();
   }
 
@@ -1784,6 +1812,7 @@ private:
   std::filesystem::path lastRecording_;
   std::filesystem::path pendingRecordingPath_;
   std::string pendingRecordingHash_;
+  std::size_t recoveryExportAttempts_{0U};
   std::size_t lastRecordedFrames_{0U};
 };
 

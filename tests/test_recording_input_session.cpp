@@ -306,11 +306,41 @@ TEST_CASE("failed WAV export preserves valid pending audio and never overwrites 
   CHECK(input.exportPending(root / "recovered.wav"));
   CHECK(input.pending());
   CHECK(!input.begin());
-  CHECK(input.acknowledgePublished());
+    CHECK(input.acknowledgePublished());
+    CHECK(input.begin());
+    fixture.audio();
+    CHECK(input.finish());
+    CHECK(fixture.physicalCalls == 2U && fixture.syntheticCalls == 0U);
+}
+
+TEST_CASE("a capture that cannot be published can be explicitly discarded without deleting files") {
+  Fixture fixture;
+  platform::RecordingSession buffer;
+  platform::RecordingInputSession input{buffer, platform::RecordingInputMode::Physical,
+      fixture.factories(), {}, fixture.clock()};
   CHECK(input.begin());
   fixture.audio();
   CHECK(input.finish());
+  const auto root = test::support::temporaryDirectory("recording-discard-recovery");
+  const auto published = root / "take.wav";
+  CHECK(input.exportPending(published));
+  CHECK(input.pending());
+  // The caller writes the file but cannot verify its identity. Discarding must
+  // free the session, keep the written file byte-identical, and allow a new take.
+  const auto writtenHash = core::sha256File(published);
+  CHECK(writtenHash);
+  CHECK(input.discardPending());
+  CHECK(!input.pending() && !input.capturing());
+  CHECK(core::sha256File(published).value() == writtenHash.value());
+  CHECK(!input.discardPending());
+  CHECK(!input.acknowledgePublished());
+  CHECK(input.begin());
+  fixture.audio();
+  CHECK(input.finish());
+  CHECK(input.pending());
+  CHECK(input.discardPending());
   CHECK(fixture.physicalCalls == 2U && fixture.syntheticCalls == 0U);
+  CHECK(buffer.recordedFrames() == 0U);
 }
 
 TEST_CASE("input frame accounting and buffer format mismatch are refused") {
