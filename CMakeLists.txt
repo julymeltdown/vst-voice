@@ -2069,7 +2069,12 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_original_singer_song_journey_tests)
   add_test(NAME seam_original_singer_song_journey_tests
     COMMAND seam_original_singer_song_journey_tests)
-  set_tests_properties(seam_original_singer_song_journey_tests PROPERTIES TIMEOUT 180)
+  # This target renders several full songs, so its cost is real work rather than a stall. The
+  # original 180 was measured when the file had four cases on a CI Debug runner that took 135-156 s
+  # for them, which left under 25 percent headroom; adding the designed-voice-to-song case pushed
+  # the Ubuntu runner over at 180.01 s. 300 matches the global bound CI already passes and restores
+  # headroom, and a genuine stall is still bounded and named by the per-case [START]/[PASS] lines.
+  set_tests_properties(seam_original_singer_song_journey_tests PROPERTIES TIMEOUT 300)
   target_include_directories(seam_procedural_install_journey_tests PRIVATE tests)
   target_link_libraries(seam_procedural_install_journey_tests PRIVATE
     seam_standalone_authoring seam_distribution seam_voice_design seam_application
