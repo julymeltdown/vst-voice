@@ -150,6 +150,15 @@ CI의 Windows 작업 두 개가 모두 `seam_synthesis` 빌드에서 실패하�
 
 **범위:** `libs/seam-voice-design/`, `libs/seam-voicebank-production/`, 네이티브 Designer/Studio, 기존 `tests/test_procedural_install_journey.cpp`, `tests/test_original_singer_song_journey.cpp` 확장.
 
+**진행 상황 (2026-09-22 갱신): 아래 1~3번의 "설계 → 패키지 → 설치 → 곡" 경로가 코드로 연결되고 검증됐다.**
+
+- **발견한 실제 단절:** 목소리를 설계하는 코드와 패키지를 설치하는 코드는 있었지만, **그 둘을 잇는 제품 코드가 없었다.** 설계한 목소리를 곡에 쓰려면 매니페스트 JSON을 손으로 써야 했다. 즉 "설계 → 설치"가 사람 손작업에 의존하고 있었다.
+- **수리:** `distribution::publishProceduralSingerFromRecipe`를 추가했다. 레시피를 디코딩해 **매니페스트를 레시피 자체에서 유도**하고(식별자·스타일·선언 음소), 정규 레시피와 매니페스트를 스테이징에 쓴 뒤 서명·패키징한다.
+- **정직한 경계:** 선언되는 스타일은 렌더러가 실제로 보유한 클래스에서 나오며, 레시피가 선언하지 않은 스타일·중복 스타일·버전 누락·잘못된 언어 태그·지원하지 않는 엔진·이미 존재하는 스테이징 디렉터리는 **쓰기 전에 거부**한다. 승인·리뷰·측정 품질 필드는 생성하지도 암시하지도 않는다.
+- **실행 경로:** `seam_bank_tool publish-singer RECIPE STAGING OUTPUT PRIVATE_KEY --version ...`(선택적 `--install-root`/`--public-key`/`--replace`)와 `verify-singer`를 추가했다. 기존 `verify`는 샘플 뱅크 전용이라 방금 만든 가수를 같은 도구로 검사할 수 없었다.
+- **증거:** `tests/test_bank_tool_publish_singer.py`가 실제 바이너리로 전체 사슬을 돌리고(스테이징 레시피 해시 = 매니페스트 다이제스트, 승인 필드 부재, 거부 3종이 아무것도 쓰지 않음), `test_original_singer_song_journey.cpp`에 **Designer로 만든 목소리 → 게시 → 설치 → 곡 작성 → 최종 출력**을 한 번에 통과하는 케이스를 추가했다. 프로젝트가 기록한 가수 식별자가 설치된 렌더 식별자와 일치함을 확인하므로, 대체 가수로 통과할 수 없다.
+- **아직 남은 것:** 네이티브 앱 UI에서 이 경로를 클릭으로 수행하는 것(현재는 CLI와 라이브러리 경로), 실제 마이크 입력 경로, 지각적 품질 승인.
+
 1. 빈 작업 공간 → 목소리 생성·조형 → 발성/공명/자음/스타일 편집 → 저장·재열기 → 미리듣기.
 2. 생성 또는 실제 녹음 → 테이크 편집·재생성 → 기존 수동 작업 보존 → 검사·검토 → 후보 패키지 → 설치.
 3. 설치 가수를 선택해 처음 보는 가사로 30–60초 곡 → pitch/phoneme timing/vibrato/timbre 수정 → 저장·재열기 → 최종 WAV.
