@@ -251,7 +251,22 @@ Logs are `u17-debounce-{build,ctest}.log` in each build directory and
 `build/debug/u17-debounce-repeat-ctest.log`. Source closure and diff whitespace
 checks pass. No observed crash on the old undefined-behavior path, new live
 native session, installed-host result or perceptual qualification is claimed.
-Exact-hash independent re-review is pending.
+Developer 2 **APPROVED** exact commit
+`b99734d3599a97a2a2c6bffe2c1654120b2460b1`, against
+`08d45090899f1406b1413c39b3385c598cf27609`. Both the P1 inner-debounce optional
+dereference and P2 explicit-refresh/current-measurement gap are resolved; no
+remaining blocking finding was identified in this bounded U17 implementation
+and repair chain. The reviewer checked the real wait interleaving, observer
+storage lifetime during assertion unwinding, mutex ordering, immediate
+replacement, and preservation of the outer invalidation/dispatch serialization.
+
+Independent execution using existing binaries passed 21 coordinator and five
+standalone cases in **each** Release/Debug configuration (52 case executions).
+The reviewer verified a clean worktree at the exact hash and a passing diff
+whitespace check. The broad 968-case run and five repeated runs above were not
+independently rerun; the earlier 104-per-configuration contextual review remains
+prior evidence. Approval is not an exhaustive concurrency proof, new sanitizer
+result, live AppKit/DAW/Windows journey, complete U17 acceptance or Beta GO.
 
 ## Still open
 

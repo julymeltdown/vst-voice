@@ -18,8 +18,12 @@ replacement. The production default stays 20 ms.
 Fresh Release passes eight targets / 968 case executions in 22.06 seconds;
 Debug passes 26 cases in 5.23 seconds and five additional successful repetitions
 of the 21-case coordinator suite in 24.70 seconds. Source closure/diff checks
-pass. Exact-hash independent re-review is pending. Details and non-claims are in
-U17_CONTEXTUAL_SELECTION_2026-09-22.md. No complete unit or Beta GO is counted.
+pass. Developer 2 APPROVED b99734d3599a97a2a2c6bffe2c1654120b2460b1,
+independently passing 21 coordinator and five standalone cases in each build
+configuration (52 case executions). Both the inner-debounce P1 and explicit-
+refresh P2 are closed, with no remaining blocking finding in this bounded chain.
+The broad/repeated runs were not independently rerun. Details and non-claims are
+in U17_CONTEXTUAL_SELECTION_2026-09-22.md. No complete unit or Beta GO is counted.
 
 ## U17 contextual selection: explicit-refresh review repair (2026-09-22)
 
