@@ -1285,3 +1285,74 @@ TEST_CASE("voicebank production PCM operations are bounded and deterministic") {
   CHECK(oneFrameResampled);
   CHECK(oneFrameResampled.value().frameCount() == 1U);
 }
+
+// U15 scenario 2: downsampling must reject aliasing on a fixed test signal.
+// Before the band-limited kernel this fixture kept the whole tone: a 10 kHz sine
+// resampled 48k->16k came back at full amplitude near 6 kHz, which is content the
+// source never contained.
+TEST_CASE("resampling rejects aliasing on a fixed downsampling fixture") {
+  constexpr std::uint32_t kSourceRate = 48000U;
+  constexpr std::uint32_t kTargetRate = 16000U;
+  constexpr double kToneHz = 10000.0;      // above the target Nyquist of 8000 Hz
+  constexpr double kPassbandHz = 1000.0;   // well inside the target band
+  constexpr std::size_t kFrames = 48000U;
+
+  auto tone = [&](double hz) {
+    seam::voicebank::AudioBuffer buffer{
+        .sampleRate = kSourceRate, .channels = 1U, .bitsPerSample = 32U};
+    buffer.interleaved.reserve(kFrames);
+    for (std::size_t frame = 0U; frame < kFrames; ++frame) {
+      const auto time = static_cast<double>(frame) / static_cast<double>(kSourceRate);
+      buffer.interleaved.push_back(
+          static_cast<float>(0.5 * std::sin(2.0 * std::numbers::pi * hz * time)));
+    }
+    return buffer;
+  };
+
+  auto rms = [](const seam::voicebank::AudioBuffer& buffer) {
+    if (buffer.interleaved.empty()) return 0.0;
+    double total = 0.0;
+    for (const auto sample : buffer.interleaved) {
+      total += static_cast<double>(sample) * static_cast<double>(sample);
+    }
+    return std::sqrt(total / static_cast<double>(buffer.interleaved.size()));
+  };
+
+  // A tone that cannot exist below the new Nyquist must be removed, not folded.
+  const auto source = tone(kToneHz);
+  const auto resampled = seam::voicebank_production::applyOperation(
+      source, {.kind = seam::voicebank_production::OperationKind::Resample,
+               .targetSampleRate = kTargetRate});
+  CHECK(resampled);
+  CHECK(resampled.value().sampleRate == kTargetRate);
+  // Declared length is preserved: the resampler must still produce the rounded
+  // frame count it always did.
+  CHECK(resampled.value().frameCount() ==
+        static_cast<std::size_t>(std::llround(
+            static_cast<double>(kFrames) * kTargetRate / kSourceRate)));
+  const auto sourceLevel = rms(source);
+  const auto rejectedLevel = rms(resampled.value());
+  CHECK(sourceLevel > 0.3);
+  // 1 percent of the input level is roughly -40 dB: comfortably above any rounding
+  // noise and far below the 100 percent the linear kernel retained.
+  CHECK(rejectedLevel < sourceLevel * 0.01);
+
+  // A tone inside the target band must survive at essentially full level, so the
+  // test cannot pass by simply attenuating everything.
+  const auto passband = seam::voicebank_production::applyOperation(
+      tone(kPassbandHz),
+      {.kind = seam::voicebank_production::OperationKind::Resample,
+       .targetSampleRate = kTargetRate});
+  CHECK(passband);
+  const auto passbandLevel = rms(passband.value());
+  CHECK(passbandLevel > rms(tone(kPassbandHz)) * 0.95);
+
+  // Upsampling must reconstruct rather than attenuate.
+  const auto upsampled = seam::voicebank_production::applyOperation(
+      tone(kPassbandHz),
+      {.kind = seam::voicebank_production::OperationKind::Resample,
+       .targetSampleRate = 96000U});
+  CHECK(upsampled);
+  CHECK(upsampled.value().frameCount() == kFrames * 2U);
+  CHECK(rms(upsampled.value()) > rms(tone(kPassbandHz)) * 0.95);
+}
