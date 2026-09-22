@@ -2,11 +2,14 @@
 
 Status: active, incomplete. The approved U6 goal remains a shared musical evaluator consumed by all three rendering families, not merely a standalone score utility.
 
-Latest continuation (2026-09-22): compiler revision 17 now consumes accepted
+Latest continuation (2026-09-22): compiler revision 18 now consumes accepted
 Formant, Breathiness, Tension, Airiness, Gender and Growl, in addition to the
 previously supported Pitch, Timing, Dynamics, Attack and Release. Neural
 breathiness uses explicit per-frame ownership rather than a region-wide drawn
-curve flag. Unsupported carriers reject accepted controls at snapshot admission.
+curve flag, without extending ownership into phonetic context or borrowing a
+neighbor's lane. Procedural source/tract controls follow absolute score frames
+independently of chunk boundaries (engine 15, sustained 14, articulated 11).
+Unsupported carriers reject accepted controls at snapshot admission.
 See `U6_GENERATED_TIMBRE_AUTOMATION_2026-09-22.md` for connected PCM, persistence,
 ownership and graph-admission evidence. Earlier entries below are chronological
 checkpoints, not the current channel-support inventory. U6 remains incomplete.

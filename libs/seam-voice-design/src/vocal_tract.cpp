@@ -1,5 +1,6 @@
 #include "seam/voice_design/vocal_tract.hpp"
 #include "seam/domain/formant_automation.hpp"
+#include "seam/domain/gender_automation.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 #include <algorithm>
 #include <array>
@@ -7,6 +8,21 @@
 #include <numbers>
 
 namespace seam::voice_design {
+
+FormantControlSpan nextFormantControlSpan(const synthesis::CompiledScorePerformance& performance,
+    time::SampleFrame origin, std::size_t maximumFrames) noexcept {
+  if (maximumFrames == 0U) return {};
+  const auto shiftAt = [&](time::SampleFrame frame) {
+    const auto value = performance.at(frame);
+    return static_cast<double>(value.formantSemitones) +
+        static_cast<double>(std::clamp(value.gender, -1.0F, 1.0F)) *
+            static_cast<double>(domain::kGenderFormantSemitones);
+  };
+  FormantControlSpan result{1U, shiftAt(origin)};
+  while (result.frames < maximumFrames &&
+      shiftAt(origin + static_cast<time::SampleFrame>(result.frames)) == result.semitones) ++result.frames;
+  return result;
+}
 
 core::Result<void> VocalTract::scaleBanks(std::vector<Band>& bands,
     std::optional<NasalState>& nasal, double ratio, std::uint32_t sampleRate) {

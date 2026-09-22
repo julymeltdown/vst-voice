@@ -45,23 +45,6 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
   const auto rate = static_cast<double>(performance_->sampleRate());
   const auto noisePole = std::exp(-2.0 * std::numbers::pi * std::min(6000.0, 0.3 * rate) / rate);
   const auto modulationPhase = 0.5 * (noiseAt(seed_, 0) + 1.0);
-  // Tension is the source's own spectrum, so it is applied to the harmonic table the source generates
-  // for itself rather than to the phrase's level. One tilt per processing block is enough, exactly as the
-  // tract's formant shift is one shift per block, and the tilt for a tension of exactly zero is a factor
-  // of exactly one, which leaves the table the recipe declared untouched.
-  const auto opening = performance_->at(position_);
-  const auto tension = static_cast<double>(std::clamp(opening.tension, 0.0F, 1.0F));
-  const auto gender = static_cast<double>(std::clamp(opening.gender, -1.0F, 1.0F));
-  const auto tiltDbPerOctave = tension * static_cast<double>(domain::kTensionTiltDbPerOctave) +
-                               gender * static_cast<double>(domain::kGenderTiltDbPerOctave);
-  if (tiltDbPerOctave != appliedTiltDbPerOctave_) {
-    const auto tilt = tiltDbPerOctave / 6.020599913279624;
-    for (std::size_t index = 0U; index < appliedHarmonics_.size(); ++index) {
-      appliedHarmonics_[index] =
-          harmonics_[index] * std::pow(static_cast<double>(index + 1U), tilt);
-    }
-    appliedTiltDbPerOctave_ = tiltDbPerOctave;
-  }
   for (std::size_t i = 0; i < frames; ++i) {
     if (i % 256U == 0U && stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Phonation rendering cancelled");
     const auto frame = position_ + static_cast<time::SampleFrame>(i);
@@ -72,6 +55,18 @@ core::Result<synthesis::PhraseAudio> PhonationSource::render(std::size_t frames,
     const auto white = noiseAt(seed_, frame);
     noise = noisePole * noise + (1.0 - noisePole) * white;
     if (!musical.noteId) { lastNote.reset(); continue; }
+    // Source tilt and tract shift observe the same absolute score frame. A
+    // short accepted/manual span must not disappear between caller blocks.
+    const auto tension = static_cast<double>(std::clamp(musical.tension, 0.0F, 1.0F));
+    const auto gender = static_cast<double>(std::clamp(musical.gender, -1.0F, 1.0F));
+    const auto tiltDbPerOctave = tension * static_cast<double>(domain::kTensionTiltDbPerOctave) +
+                                 gender * static_cast<double>(domain::kGenderTiltDbPerOctave);
+    if (tiltDbPerOctave != appliedTiltDbPerOctave_) {
+      const auto tilt = tiltDbPerOctave / 6.020599913279624;
+      for (std::size_t index = 0U; index < appliedHarmonics_.size(); ++index)
+        appliedHarmonics_[index] = harmonics_[index] * std::pow(static_cast<double>(index + 1U), tilt);
+      appliedTiltDbPerOctave_ = tiltDbPerOctave;
+    }
     if (lastNote != musical.noteId && musical.reattack) { phase = 0.0; subPhase = 0.0; }
     lastNote = musical.noteId;
     const auto modulation = modulation_.rateHz == 0.0 ? 0.0 : std::sin(2.0 * std::numbers::pi *

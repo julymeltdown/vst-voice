@@ -210,6 +210,55 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
   CHECK(std::abs(extendedRequest.value().f0Hz[25000]-440.0F)<0.001F);
   CHECK(extendedRequest.value().dynamics[25000]==extendedPerformance.value().at(23999).dynamicsGain);
   CHECK(extendedRequest.value().f0Hz[26400]==0.0F); CHECK(extendedRequest.value().dynamics[26400]==0.0F);
+  auto extendedTimbre=delayed;
+  extendedTimbre.performance.takes={{.id="extended-breath",.sourceRegionId=delayed.id,
+      .resource={domain::SingerResourceKind::Neural,"fixture","1",std::string(64U,'a')},
+      .pronunciation={domain::Language::English,"fixture","1",std::string(64U,'b'),std::string(64U,'c'),std::string(64U,'d')},
+      .generatorId="fixture",.generatorVersion="1",.range={time::Tick{0},time::Tick{1920}},
+      .lanes={{domain::PerformanceChannel::Breathiness,{{time::Tick{480},0.8}}}}}};
+  extendedTimbre.performance.accepted={{"extended-breath",domain::PerformanceChannel::Breathiness,
+      domain::PerformanceTimeRange{time::Tick{480},time::Tick{960}},time::Tick{0}}};
+  const auto extendedRequestFor=[&](const domain::VocalRegion& input, const std::vector<domain::PhonemeToken>& inputPhones) {
+    const auto compiled=synthesis::compileScorePerformance(project,input,48000U,inputPhones); CHECK(compiled);
+    return prepareNeuralScoreRequest(110U,defaultedModel,vocabulary.value(),compiled.value(),
+        inputPhones,std::string(64U,'b'),0,26410,"SP");
+  };
+  for (const auto amount:{0.8,0.0}) {
+    extendedTimbre.performance.takes.front().lanes.front().points.front().value=amount;
+    const auto scoped=extendedRequestFor(extendedTimbre,extendedPhones); CHECK(scoped);
+    for (const auto frame:{7200U,8000U,11999U,24000U,25000U,26399U})
+      CHECK_NEAR(scoped.value().breathiness[frame],0.4F,1e-6);
+    for (const auto frame:{12000U,21600U,23999U}) CHECK_NEAR(scoped.value().breathiness[frame],amount,1e-6);
+    CHECK(scoped.value().breathiness[7199]==0.0F); CHECK(scoped.value().breathiness[26400]==0.0F);
+    CHECK(scoped.value().f0Hz==extendedRequest.value().f0Hz);
+    CHECK(scoped.value().dynamics==extendedRequest.value().dynamics);
+  }
+  extendedTimbre.performance.takes.front().lanes.front().points.front().value=0.8;
+  extendedTimbre.performance.ownership={{domain::PerformanceChannel::Breathiness,
+      domain::PerformanceTimeRange{time::Tick{480},time::Tick{960}},domain::ManualPerformanceMode::Replace,{}}};
+  const auto lockedExtension=extendedRequestFor(extendedTimbre,extendedPhones); CHECK(lockedExtension);
+  CHECK_NEAR(lockedExtension.value().breathiness[11999],0.4F,1e-6);
+  CHECK(lockedExtension.value().breathiness[12000]==0.0F);
+  CHECK(lockedExtension.value().breathiness[23999]==0.0F);
+  CHECK_NEAR(lockedExtension.value().breathiness[24000],0.4F,1e-6);
+  // A prior score note still sounds at the next phone's preutterance time.
+  // Its accepted timbre must not be borrowed by that next phone's owner.
+  extendedTimbre.performance.ownership.clear();
+  const domain::NoteId neighborId{6U};
+  extendedTimbre.notes.insert(extendedTimbre.notes.begin(),domain::Note{.id=neighborId,
+      .durationTick=time::Tick{480},.midiKey=60U,.lyricTokenId=domain::LyricTokenId{4U}});
+  auto neighborTake=extendedTimbre.performance.takes.front(); neighborTake.id="neighbor-breath";
+  neighborTake.lanes.front().points={{time::Tick{0},0.9}};
+  extendedTimbre.performance.takes.push_back(std::move(neighborTake));
+  extendedTimbre.performance.accepted.push_back({"neighbor-breath",domain::PerformanceChannel::Breathiness,neighborId,time::Tick{0}});
+  auto neighboringPhones=extendedPhones;
+  neighboringPhones.insert(neighboringPhones.begin(),domain::PhonemeToken{.key={neighborId,0U},.symbol="a",
+      .role=domain::PhonemeRole::Nucleus,.voiced=true,.timing={.startOffset=0,.endOffset=150000}});
+  const auto neighborRequest=extendedRequestFor(extendedTimbre,neighboringPhones); CHECK(neighborRequest);
+  CHECK_NEAR(neighborRequest.value().breathiness[7000],0.9F,1e-6);
+  CHECK_NEAR(neighborRequest.value().breathiness[8000],0.4F,1e-6);
+  CHECK_NEAR(neighborRequest.value().breathiness[12000],0.8F,1e-6);
+  CHECK_NEAR(neighborRequest.value().breathiness[25000],0.4F,1e-6);
   std::stop_source stop; stop.request_stop();
   CHECK(!prepareNeuralScoreRequest(103U,model,vocabulary.value(),performance.value(),phones,std::string(64U,'b'),0,12010,"SP",{},stop.get_token()));
 #if defined(SEAM_NEURAL_WORKER_PROBE)

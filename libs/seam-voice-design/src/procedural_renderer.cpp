@@ -197,19 +197,15 @@ core::Result<SustainedPoseResult> SustainedPoseStream::renderOwned(synthesis::Ph
       if (spanIndex < activeSpans_->size()) count = std::min(count, static_cast<std::size_t>(
           (active ? (*activeSpans_)[spanIndex].end : (*activeSpans_)[spanIndex].start) - source.position()));
     }
+    const auto control = nextFormantControlSpan(*performance_, source.position(), count);
+    count = control.frames;
     auto excitation = source.render(count, stopToken);
     if (!excitation) return core::Result<SustainedPoseResult>{excitation.error()};
     if (!active) std::fill(excitation.value().samples.begin(), excitation.value().samples.end(), 0.0F);
-    // The vocal-tract envelope is a control-rate channel, exactly as it is on the articulated path. The
-    // formant channel owns the tract alone; gender couples the tract to the source, so its tract half is
-    // added here and its source half is applied where the excitation is generated.
-    const auto musical = performance_->at(source.position());
-    const auto formant =
-        static_cast<double>(musical.formantSemitones) +
-        static_cast<double>(std::clamp(musical.gender, -1.0F, 1.0F)) *
-            static_cast<double>(domain::kGenderFormantSemitones);
-    if (formant != tract.formantShiftSemitones()) {
-      const auto applied = tract.setFormantShift(formant);
+    // Use the excitation's actual start, not the source's now-advanced position.
+    // Each run ends before the compiled tract control changes.
+    if (control.semitones != tract.formantShiftSemitones()) {
+      const auto applied = tract.setFormantShift(control.semitones);
       if (!applied) return core::Result<SustainedPoseResult>{applied.error()};
     }
     auto shaped = tract.process(excitation.value().samples, stopToken);

@@ -2166,6 +2166,70 @@ TEST_CASE("accepted timbre reaches procedural PCM through commands persistence a
   }
 }
 
+TEST_CASE("accepted timbre ramps and manual islands survive arbitrary procedural snapshot cuts") {
+  using namespace seam; using namespace domain; using time::Tick;
+  for (const bool articulated : {false, true}) {
+    for (const auto channel : {PerformanceChannel::Formant, PerformanceChannel::Tension,
+          PerformanceChannel::Gender, PerformanceChannel::Breathiness, PerformanceChannel::Airiness,
+          PerformanceChannel::Growl}) {
+      for (const bool shortSpan : {false, true}) {
+        PerformanceSnapshotFixture fixture;
+        auto& region = *fixture.project.findRegion(fixture.regionId);
+        region.notes.front().durationTick = Tick{480}; region.notes.front().vibrato.enabled = false;
+        if (articulated) {
+          region.notes.front().phoneticHint.reset(); region.lyrics.front().surface = U"さ";
+          region.phonemeOverrides = {{.key={fixture.noteId,0U},.timing={.startOffset=0},.locked=true},
+              {.key={fixture.noteId,1U},.timing={.startOffset=20000},.locked=true}};
+        }
+        voice_design::VoiceRecipe recipe; recipe.id = "timbre-chunks";
+        recipe.poses = {{"a", "neutral", 0.0, {{700.0,80.0,0.0},{1200.0,100.0,-3.0},{2600.0,140.0,-6.0}}}};
+        recipe.frications = {{"s", "neutral", {.seed=42U}}};
+        const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+        const auto pronunciation = phonemizer::resolveJapanesePronunciation(region); CHECK(pronunciation);
+        region.performance.takes = {{.id="ramp",.sourceRegionId=region.id,.resource=resource.value().identity,
+            .pronunciation=pronunciation.value().identity,.generatorId="fixture",.generatorVersion="1",
+            .range={Tick{0},Tick{9600}},.lanes={{channel,{{Tick{1920},0.0},{Tick{2400},0.75}}}}}};
+        if (shortSpan) region.performance.takes.front().lanes.front().points = {{Tick{1920},0.75}};
+        const PerformanceScope scope = shortSpan ? PerformanceScope{PerformanceTimeRange{Tick{1963},Tick{1966}}} :
+            PerformanceScope{fixture.noteId};
+        region.performance.accepted = {{"ramp",channel,scope,Tick{0}}};
+        region.performance.ownership = {{channel,shortSpan ? PerformanceTimeRange{Tick{1964},Tick{1965}} :
+            PerformanceTimeRange{Tick{2120},Tick{2160}},ManualPerformanceMode::Replace,{}}};
+        const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+            fixture.trackId, fixture.regionId, 1U, rendering::RenderQuality::Preview, 48000U); CHECK(snapshot);
+        const auto whole = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(whole);
+        const auto& notes = snapshot.value().compiledPerformance->notes();
+        const synthesis::PhraseFrameRange extent{notes.front().startFrame,notes.back().endFrame};
+        if (shortSpan) {
+          region.performance = {};
+          const auto neutral = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project,resource.value(),
+              fixture.trackId,fixture.regionId,1U,rendering::RenderQuality::Preview,48000U); CHECK(neutral);
+          const auto plain = rendering::PhraseRenderPipeline{}.render(neutral.value()); CHECK(plain);
+          CHECK(whole.value().rendered.audio.samples != plain.value().rendered.audio.samples);
+          const auto onset = fixture.project.tempoMap().sampleFrameAt(region.startTick+Tick{1963},48000U)-extent.start;
+          CHECK(std::equal(whole.value().rendered.audio.samples.begin(),whole.value().rendered.audio.samples.begin()+onset,
+              plain.value().rendered.audio.samples.begin()));
+        }
+        for (const auto cut : {127U, 733U, 1024U}) {
+          const auto chunks = rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(),extent,cut); CHECK(chunks);
+          auto stream = rendering::ProceduralSnapshotStream::create(snapshot.value()); CHECK(stream);
+          std::vector<float> joined;
+          for (const auto& chunk : chunks.value()) {
+            auto checkpoint = stream.value();
+            const auto rendered = stream.value().render(chunk); CHECK(rendered);
+            if (joined.empty()) {
+              const auto replay = checkpoint.render(chunk); CHECK(replay);
+              CHECK(replay.value().audio.samples == rendered.value().audio.samples);
+            }
+            joined.insert(joined.end(),rendered.value().audio.samples.begin(),rendered.value().audio.samples.end());
+          }
+          CHECK(joined == whole.value().rendered.audio.samples);
+        }
+      }
+    }
+  }
+}
+
 TEST_CASE("snapshots exclude inert proposals but retain selected performance and manual ownership") {
   PerformanceSnapshotFixture fixture;
   const auto baseline = fixture.snapshot();

@@ -1,9 +1,20 @@
 #pragma once
 #include "seam/voice_design/voice_recipe.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 #include <span>
 #include <stop_token>
 
 namespace seam::voice_design {
+struct FormantControlSpan final {
+  std::size_t frames{0U};
+  double semitones{0.0};
+};
+// A maximal constant-control run within a validated renderer block. Scope
+// edges and tick interpolation, not caller chunk cuts, determine DSP changes.
+[[nodiscard]] FormantControlSpan nextFormantControlSpan(
+    const synthesis::CompiledScorePerformance& performance, time::SampleFrame origin,
+    std::size_t maximumFrames) noexcept;
+
 // Stateful linear oral/nasal-resonance stage, not a complete voice renderer.
 // Input is finite normalized excitation; gainDb is relative band weighting.
 class VocalTract final {

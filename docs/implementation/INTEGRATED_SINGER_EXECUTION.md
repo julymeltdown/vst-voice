@@ -1,5 +1,28 @@
 # Integrated Singer Execution
 
+## U6 timing repairs after independent review (2026-09-22)
+
+Developer 2 requested changes on d939154: constant-control tests had missed
+procedural block-dependent timbre, and neural note-edge clamping extended
+breathiness ownership into preutterance/tails. A local subdivision regression
+also reproduced the procedural defect (47 passed, 1 failed).
+
+Procedural source tilt now follows each score frame; tract runs end before the
+compiled Formant/Gender control changes and use the excitation's actual start.
+Neural pitch/envelope extension remains, but timbre/default selection uses actual
+time and the phone's owning note, excluding a neighboring note's lane. Compiler
+18, engine 15, sustained 14 and articulated 11 bind the changed audio semantics.
+Existing distributed engine-14 recipes require rebuilding/review for engine 15.
+
+Fresh strict Release passes all eight selected targets (995 cases, 24.89 s),
+including the 830-case monolithic suite, 19 coordinator cases and four installed
+singer journeys. Debug passes the five focused suites (142 cases, 30.07 s).
+Tests cover ramps, sub-block selections, manual islands, both procedural paths,
+three chunk sizes, checkpoint replay, and neural preutterance/tail/neighbor
+ownership. Source closure/diff checks pass; independent re-review is pending.
+See U6_GENERATED_TIMBRE_AUTOMATION_2026-09-22.md. No full U6, singer qualification
+or Beta GO acceptance is claimed.
+
 ## U6 accepted generated timbre reaches audio (2026-09-22)
 
 Reproduced the shared compiler's rejection of accepted timbral lanes, then
@@ -16,7 +39,8 @@ The six-channel connected test uses normal proposal/acceptance commands, real
 procedural PCM, project save/reopen, undo/redo, identity and immutable jobs.
 The broader Release rerun passes all seven targets (955 individual cases),
 including the 830-case monolithic suite, 19 coordinator cases and four installed
-singer song journeys (19.72 s total). Independent review remains pending. See
+singer song journeys (19.72 s total). Review subsequently requested the timing
+repairs recorded above; these initial passing tests did not close the increment. See
 U6_GENERATED_TIMBRE_AUTOMATION_2026-09-22.md for the evidence and non-claims.
 U6 and full-product Beta GO remain open; no new complete unit is counted.
 

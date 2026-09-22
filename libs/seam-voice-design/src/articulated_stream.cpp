@@ -229,7 +229,10 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
         if (position < gesture->span.start + entryFrames) boundary = std::min(boundary, gesture->span.start + entryFrames);
       }
     }
-    const auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
+    auto count = static_cast<std::size_t>(std::min<time::SampleFrame>(static_cast<time::SampleFrame>(blockFrames_), boundary - position));
+    const auto control = candidate.tract_ ? nextFormantControlSpan(*performance_, position, count) :
+        FormantControlSpan{count, 0.0};
+    count = control.frames;
     // A palatalized consonant puts its own palatal resonance in force for the whole gesture, even
     // when the gesture itself is unvoiced, so the release and the vowel's onset transition start
     // from the palatal shape. That transition into the vowel is what distinguishes きゃ from か.
@@ -282,18 +285,10 @@ core::Result<synthesis::PhraseAudio> ArticulatedStream::renderOwned(synthesis::P
     // excitation and the voiced lane is exactly silent for every frame of it.
     std::vector<float> voicedSamples;
     if (candidate.tract_) {
-      // The vocal-tract envelope is a control-rate channel: one shift per block, applied before the
-      // block is filtered. A shift that has not changed costs nothing, and a shift that would put a
-      // resonance past Nyquist is refused by cause instead of being clamped.
-      // The formant channel owns the tract alone; gender couples the tract to the source, so its tract
-      // half is added here and its source half is applied where the excitation is generated.
-      const auto musical = performance_->at(position);
-      const auto formant =
-          static_cast<double>(musical.formantSemitones) +
-          static_cast<double>(std::clamp(musical.gender, -1.0F, 1.0F)) *
-              static_cast<double>(domain::kGenderFormantSemitones);
-      if (formant != candidate.tract_->formantShiftSemitones()) {
-        const auto applied = candidate.tract_->setFormantShift(formant);
+      // The same absolute-frame control policy as the sustained path. Unchanged
+      // coefficients are retained across chunk cuts and DSP checkpoints.
+      if (control.semitones != candidate.tract_->formantShiftSemitones()) {
+        const auto applied = candidate.tract_->setFormantShift(control.semitones);
         if (!applied) return core::Result<Output>{applied.error()};
       }
       auto voiced = candidate.tract_->process(excitation.value().samples, stop);

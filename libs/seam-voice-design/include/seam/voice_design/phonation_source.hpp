@@ -22,8 +22,8 @@ private:
   std::uint64_t seed_{0U};
   std::array<double, 256U> harmonics_{};
   // The harmonic table actually used, which is the recipe's own table tilted by the tension in force.
-  // One table per processing block is a control-rate change like the vocal tract's formant shift, and a
-  // block whose tension equals the applied one costs nothing.
+  // Retained until the absolute-frame compiled tilt changes, independent of
+  // caller block size. Frames with the same tilt reuse the table.
   std::array<double, 256U> appliedHarmonics_{};
   // The key is the combined tilt in force, not one channel's value: tension and gender both change the
   // source's spectrum, and the table depends only on their sum. Zero means the recipe's own table.

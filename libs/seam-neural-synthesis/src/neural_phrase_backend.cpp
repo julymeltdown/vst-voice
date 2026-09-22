@@ -236,7 +236,11 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       if (active->second.voiced && value.scoreFrequencyHz) request.f0Hz[frame]=static_cast<float>(*value.scoreFrequencyHz);
       // Explicit phonetic extensions must not inherit a closed note envelope.
       request.dynamics[frame]=value.dynamicsGain*(sampled==absolute?value.articulationGain:1.0F);
-      const auto amount=value.breathinessIsExplicit?std::clamp(value.breathiness,0.0F,1.0F):active->second.defaultBreathiness;
+      // Pitch/envelope can extend from the owning note's edge. Timbral ownership
+      // cannot: use actual time and never borrow an overlapping neighbor's lane.
+      const auto timbre=sampled==absolute?value:performance.at(absolute);
+      const auto amount=timbre.noteId==std::optional{owner.id} && timbre.breathinessIsExplicit
+          ?std::clamp(timbre.breathiness,0.0F,1.0F):active->second.defaultBreathiness;
       breathiness[frame]=amount;
       if (amount != 0.0F) anyBreathiness = true;
     }

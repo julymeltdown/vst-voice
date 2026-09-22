@@ -44,7 +44,7 @@ inline constexpr std::string_view kSourceFilterEngineId = "seam.source-filter.v1
 // reported as incompatible rather than rendered by a renderer that would sound different. Bump it
 // whenever source-filter rendering changes behavior for the same recipe, which is what makes an old
 // review decision inapplicable to newly built material.
-inline constexpr std::uint32_t kSourceFilterEngineRevision = 14U;
+inline constexpr std::uint32_t kSourceFilterEngineRevision = 15U;
 
 struct VoiceRecipe final {
   std::string id;
