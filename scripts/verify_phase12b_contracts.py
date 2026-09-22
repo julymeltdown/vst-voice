@@ -86,15 +86,37 @@ def main() -> int:
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
         [
-            "state.sampleMicroscope",
-            "EditorSceneState::SampleMicroscopeView",
+            # The microscope view is built by the shared controller, so the CLAP
+            # surface must paint that shared state and suppress its own overlay
+            # whenever either modal is open in it.
+            "controller_->sceneState()",
+            "state.sampleMicroscope.has_value()",
             "painter_.paint(canvas, controller_->pianoRoll(), state)",
         ],
         errors,
     )
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime_input.cpp",
-        ["microscopeWaveformBounds", "microscopeSpectrogramBounds"],
+        [
+            # Input is delegated to the shared controller while the microscope is
+            # open, so hit-testing and the details keyboard controls cannot drift
+            # between the standalone and embedded surfaces.
+            "controller_->sampleMicroscopeOpen()",
+            "controller_->pointerDown(event)",
+            "controller_->pointerMove(event)",
+            "controller_->pointerUp(event)",
+        ],
+        errors,
+    )
+    # The shared controller owns the microscope layout and hit-testing that both
+    # surfaces depend on.
+    require_text(
+        root / "libs/seam-native-ui/src/editor_controller.cpp",
+        [
+            "layout_.microscopeWaveformBounds(logicalWidth_, logicalHeight_)",
+            "layout_.microscopeSpectrogramBounds(logicalWidth_, logicalHeight_)",
+            "EditorSceneState::SampleMicroscopeView",
+        ],
         errors,
     )
     require_text(
