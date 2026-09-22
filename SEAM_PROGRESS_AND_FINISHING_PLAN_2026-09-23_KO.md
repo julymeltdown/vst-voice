@@ -64,9 +64,10 @@
 
 | 검사 | 결과 |
 |---|---|
-| Release 전체 스위트 3회 연속 | **183/183 통과** (3회 모두) |
+| Release 전체 스위트 연속 실행 | **183/183 통과** (총 6회: -j 6 ×4, -j 12 ×1, 직렬 ×1) |
 | 외부 Beta 계약 / phase12b 계약 | **통과** |
 | 소스 폐쇄성(source closure) | **통과** |
+| **CI 5개 잡 전부** (`b22adec7`) | **전부 success** — windows-helper, native-platform-matrix ×3(macOS/Ubuntu/Windows), isolated-release-candidate |
 
 전체 스위트 1회차에서 `seam_phase12b_tests`가 한 번 `Subprocess aborted`로 실패했다. 이후 재현을 시도한 결과:
 
