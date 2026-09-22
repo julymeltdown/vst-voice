@@ -21,7 +21,33 @@ core::Result<std::filesystem::path> normalizedPath(
   if (!error && status.type() == std::filesystem::file_type::symlink) return core::failure<std::filesystem::path>(core::ErrorCode::Conflict, "Interchange path cannot be a symbolic link", path.string());
   const auto absolute = std::filesystem::absolute(path, error);
   if (error) return core::failure<std::filesystem::path>(core::ErrorCode::IoError, "Unable to resolve interchange path", error.message());
-  return absolute.lexically_normal();
+  const auto normalized = absolute.lexically_normal();
+  // Parent-path policy: canonicalize the parent chain so intermediate
+  // symlinks resolve deterministically to the real directory instead of
+  // silently redirecting a held path. The leaf itself is still rejected
+  // when it is a symlink (checked above and again by the no-follow open),
+  // and the recorded sourcePath is the canonical real location.
+  const auto parent = normalized.parent_path();
+  std::error_code canonicalError;
+  const auto canonicalParent = parent.empty()
+      ? normalized
+      : std::filesystem::weakly_canonical(parent, canonicalError);
+  if (canonicalError) {
+    return core::failure<std::filesystem::path>(core::ErrorCode::IoError,
+        "Unable to canonicalize interchange parent", canonicalError.message());
+  }
+  const auto resolved = parent.empty()
+      ? normalized
+      : (canonicalParent / normalized.filename()).lexically_normal();
+  // Re-check the resolved leaf: canonicalization must not smuggle a symlink
+  // back into the admitted path.
+  std::error_code resolvedError;
+  const auto resolvedStatus = std::filesystem::symlink_status(resolved, resolvedError);
+  if (!resolvedError && resolvedStatus.type() == std::filesystem::file_type::symlink) {
+    return core::failure<std::filesystem::path>(core::ErrorCode::Conflict,
+        "Interchange path cannot be a symbolic link", resolved.string());
+  }
+  return resolved;
 }
 
 std::string lowerExtension(const std::filesystem::path& path) {
@@ -54,7 +80,8 @@ void appendSmf(std::vector<InterchangeIssue>& output,
 core::Result<InterchangeImportDraft> InterchangeService::importFile(
     const std::filesystem::path& source, application::ProjectFactory& factory,
     InterchangeImportRequest request, interchange::UstxLimits ustxLimits,
-    interchange::SmfLimits smfLimits) const {
+    interchange::SmfLimits smfLimits,
+    const core::HeldReadFaultInjector& readFaultInjector) const {
   using Output = InterchangeImportDraft;
   auto path = normalizedPath(source);
   if (!path) return core::Result<Output>{path.error()};
@@ -63,7 +90,7 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
   else if (extension == ".mid" || extension == ".midi") request.format = InterchangeFormat::Smf;
   else return core::failure<Output>(core::ErrorCode::Unsupported, "Unsupported interchange file extension", extension);
   const auto maximumBytes = request.format == InterchangeFormat::Ustx ? ustxLimits.maximumInputBytes : smfLimits.maximumBytes;
-  const auto sourceBytes = core::readFileBytesLimited(path.value(), maximumBytes);
+  const auto sourceBytes = core::readFileBytesLimited(path.value(), maximumBytes, readFaultInjector);
   if (!sourceBytes) return core::Result<Output>{sourceBytes.error()};
   const auto sourceHash = core::sha256Hex(std::span<const std::byte>{sourceBytes.value().data(), sourceBytes.value().size()});
   if (request.format == InterchangeFormat::Ustx) {

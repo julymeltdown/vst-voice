@@ -354,8 +354,90 @@ Result<void> writeImpl(const std::filesystem::path& path,
 
 Result<std::vector<std::byte>> readFileBytesLimited(
     const std::filesystem::path& path,
-    std::uint64_t maximumBytes) {
+    std::uint64_t maximumBytes,
+    const HeldReadFaultInjector& faultInjector) {
   recordRealtimeFileIo();
+#ifndef _WIN32
+  // Held-input admission: one descriptor supplies validation, bounding and
+  // every byte read, then a post-read fstat proves the opened object did not
+  // change underneath us. Leaf and parent replacement cannot redirect the
+  // read because the descriptor pins the originally opened inode; in-place
+  // mutation is caught by the post-read identity comparison.
+  const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (descriptor < 0) {
+    if (errno == ELOOP) {
+      return failure<std::vector<std::byte>>(
+          ErrorCode::Conflict, "Unable to read a symbolic link", path.string());
+    }
+    return failure<std::vector<std::byte>>(
+        ErrorCode::IoError, "Unable to open input file", std::strerror(errno));
+  }
+  const auto closeDescriptor = [&] {
+    ::close(descriptor);
+  };
+  struct stat before {};
+  if (::fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode)) {
+    closeDescriptor();
+    return failure<std::vector<std::byte>>(
+        ErrorCode::IoError, "Unable to read a non-regular file", path.string());
+  }
+  if (faultInjector) {
+    auto outcome = faultInjector(HeldReadStage::Opened);
+    if (!outcome) {
+      closeDescriptor();
+      return Result<std::vector<std::byte>>{outcome.error()};
+    }
+  }
+  const auto size = static_cast<std::uint64_t>(before.st_size);
+  if (before.st_size < 0 || size > maximumBytes
+      || size > static_cast<std::uint64_t>(
+          std::numeric_limits<std::size_t>::max())) {
+    closeDescriptor();
+    return failure<std::vector<std::byte>>(ErrorCode::Unsupported,
+                                           "Input file exceeds configured limit",
+                                           path.string());
+  }
+  std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+  std::size_t offset = 0;
+  while (offset < bytes.size()) {
+    const auto count = ::pread(descriptor, bytes.data() + offset,
+                               bytes.size() - offset,
+                               static_cast<off_t>(offset));
+    if (count < 0 && errno == EINTR) continue;
+    if (count <= 0) {
+      closeDescriptor();
+      return failure<std::vector<std::byte>>(ErrorCode::IoError,
+                                             "Unable to read input file completely",
+                                             path.string());
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  if (faultInjector) {
+    auto outcome = faultInjector(HeldReadStage::ContentRead);
+    if (!outcome) {
+      closeDescriptor();
+      return Result<std::vector<std::byte>>{outcome.error()};
+    }
+  }
+  struct stat after {};
+  if (::fstat(descriptor, &after) != 0
+      || after.st_dev != before.st_dev || after.st_ino != before.st_ino
+      || after.st_size != before.st_size
+#ifdef __APPLE__
+      || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
+      || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec) {
+#else
+      || after.st_mtim.tv_sec != before.st_mtim.tv_sec
+      || after.st_mtim.tv_nsec != before.st_mtim.tv_nsec) {
+#endif
+    closeDescriptor();
+    return failure<std::vector<std::byte>>(ErrorCode::Conflict,
+                                           "Input file changed during read",
+                                           path.string());
+  }
+  closeDescriptor();
+  return bytes;
+#else
   std::error_code error;
   const auto status = std::filesystem::symlink_status(path, error);
   if (status.type() == std::filesystem::file_type::symlink) {
@@ -395,6 +477,7 @@ Result<std::vector<std::byte>> readFileBytesLimited(
                                            path.string());
   }
   return bytes;
+#endif
 }
 
 Result<std::string> readTextFileLimited(const std::filesystem::path& path,

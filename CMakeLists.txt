@@ -1554,15 +1554,17 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_performance_job_context_tests)
   add_test(NAME seam_performance_job_context_tests COMMAND seam_performance_job_context_tests)
 
-  add_executable(seam_region_performance_state_tests
-    tests/test_main.cpp tests/test_region_performance_state.cpp)
-  target_include_directories(seam_region_performance_state_tests PRIVATE tests)
-  target_link_libraries(seam_region_performance_state_tests PRIVATE
-    seam_domain seam_formats seam_application seam_authoring_runtime seam_clap_editor)
-  seam_apply_compiler_options(seam_region_performance_state_tests)
-  add_test(NAME seam_region_performance_state_tests COMMAND seam_region_performance_state_tests)
-  set_tests_properties(seam_region_performance_state_tests PROPERTIES
-    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/region-performance-preview-cache")
+  if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    add_executable(seam_region_performance_state_tests
+      tests/test_main.cpp tests/test_region_performance_state.cpp)
+    target_include_directories(seam_region_performance_state_tests PRIVATE tests)
+    target_link_libraries(seam_region_performance_state_tests PRIVATE
+      seam_domain seam_formats seam_application seam_authoring_runtime seam_clap_editor)
+    seam_apply_compiler_options(seam_region_performance_state_tests)
+    add_test(NAME seam_region_performance_state_tests COMMAND seam_region_performance_state_tests)
+    set_tests_properties(seam_region_performance_state_tests PROPERTIES
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/region-performance-preview-cache")
+  endif()
 
   add_executable(seam_schema8_performance_tests
     tests/test_main.cpp tests/test_schema8_performance.cpp)
@@ -1581,16 +1583,18 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_style_migration_tests)
   add_test(NAME seam_style_migration_tests COMMAND seam_style_migration_tests)
 
-  add_executable(seam_plugin_style_migration_tests
-    tests/test_main.cpp tests/test_plugin_style_migration.cpp)
-  target_include_directories(seam_plugin_style_migration_tests PRIVATE tests)
-  target_link_libraries(seam_plugin_style_migration_tests PRIVATE seam_clap_editor seam_distribution)
-  target_compile_definitions(seam_plugin_style_migration_tests PRIVATE
-    SEAM_SCHEMA8_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
-  seam_apply_compiler_options(seam_plugin_style_migration_tests)
-  add_test(NAME seam_plugin_style_migration_tests COMMAND seam_plugin_style_migration_tests)
-  set_tests_properties(seam_plugin_style_migration_tests PROPERTIES
-    ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/plugin-style-preview-cache")
+  if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    add_executable(seam_plugin_style_migration_tests
+      tests/test_main.cpp tests/test_plugin_style_migration.cpp)
+    target_include_directories(seam_plugin_style_migration_tests PRIVATE tests)
+    target_link_libraries(seam_plugin_style_migration_tests PRIVATE seam_clap_editor seam_distribution)
+    target_compile_definitions(seam_plugin_style_migration_tests PRIVATE
+      SEAM_SCHEMA8_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+    seam_apply_compiler_options(seam_plugin_style_migration_tests)
+    add_test(NAME seam_plugin_style_migration_tests COMMAND seam_plugin_style_migration_tests)
+    set_tests_properties(seam_plugin_style_migration_tests PROPERTIES
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/plugin-style-preview-cache")
+  endif()
 
   add_executable(seam_performance_command_tests tests/test_main.cpp tests/test_performance_commands.cpp)
   add_executable(seam_tempo_meter_tests tests/test_main.cpp tests/test_tempo_meter_commands.cpp)
@@ -1641,7 +1645,6 @@ if(SEAM_BUILD_TESTS)
     tests/test_smf_interchange.cpp
     tests/test_ustx_interchange.cpp
     tests/test_interchange_service.cpp
-    tests/test_offline_render_session.cpp
     tests/test_renderer_capabilities.cpp
     tests/test_automatic_performance.cpp
     tests/test_neural_worker_protocol.cpp
@@ -1769,7 +1772,6 @@ if(SEAM_BUILD_TESTS)
     list(APPEND SEAM_TEST_SOURCES
       apps/seam-voicebank-studio-native/options.cpp
       tests/test_eula_acceptance.cpp
-      tests/test_native_ui.cpp
       tests/test_japanese_reading_native.cpp
       tests/test_voice_designer_workflow.cpp
       tests/test_native_runtime.cpp
@@ -1782,6 +1784,10 @@ if(SEAM_BUILD_TESTS)
       tests/test_standalone_authoring_integration.cpp
       tests/test_standalone_project_lifecycle.cpp
       tests/test_standalone_voicebank_workflow.cpp)
+    if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+      # test_native_ui.cpp includes seam/clap_editor/editor_runtime.hpp.
+      list(APPEND SEAM_TEST_SOURCES tests/test_native_ui.cpp)
+    endif()
   endif()
   if(APPLE AND SEAM_RUN_NATIVE_GUI_TESTS)
     list(APPEND SEAM_TEST_SOURCES tests/test_accessibility_appkit.mm)
@@ -2314,9 +2320,11 @@ if(SEAM_BUILD_TESTS)
     target_sources(seam_tests PRIVATE tests/test_studio_sample_review.cpp tests/test_studio_manifest_draft.cpp)
   endif()
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
-    target_link_libraries(seam_tests PRIVATE seam_clap_editor seam_live_voice)
+    target_link_libraries(seam_tests PRIVATE seam_clap_editor)
     target_include_directories(seam_tests SYSTEM PRIVATE third_party/clap/include)
+    target_sources(seam_tests PRIVATE tests/test_offline_render_session.cpp)
   endif()
+  target_link_libraries(seam_tests PRIVATE seam_live_voice)
   seam_apply_compiler_options(seam_tests)
   add_dependencies(seam_tests seam_crash_capture_probe)
   add_test(NAME seam_tests COMMAND seam_tests)

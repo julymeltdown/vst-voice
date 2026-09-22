@@ -61,10 +61,25 @@ must be separately labeled with logged gain, never phone-normalized.
 6. Time-localization: note approximate timestamps of the worst defects.
 
 Compare stages within each song: reference vs vocoder-reconstruction
-isolates vocoder reconstruction loss; vocoder-reconstruction vs
-acoustic-to-vocoder isolates acoustic prediction loss. On the
+helps localize vocoder reconstruction loss; vocoder-reconstruction vs
+acoustic-to-vocoder helps localize acoustic prediction loss. These
+contrasts narrow the search space; they do not isolate a single cause,
+since the stages share corpus, split and draw conditions. On the
 development panel only the reference vs acoustic-to-vocoder contrast
 is available.
+
+## Reviewer-facing blind handoff
+
+reviewer-handoff/ inside the artifact root is the ONLY directory given
+to a listener. It contains opaque copies of the 46 clips (sha-verified
+against the manifest), neutral INSTRUCTIONS.md and scoresheet.csv
+pre-filled with neutral set IDs (set-01..set-17). No role, stage or
+panel names appear in the handoff; the set-to-song mapping lives in
+set-map.coordinator.json beside the sealed key, coordinator-side only.
+The role manifest and key.sealed.json stay outside the handoff. A
+listener who has seen the coordinator files is not blind; anyone who
+has read this decision document or the manifest cannot serve as the
+blind reviewer.
 
 ## Exit criteria
 

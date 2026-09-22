@@ -1,0 +1,171 @@
+{
+ "formatId": "com.project-seam.stage-localization-set-map",
+ "schemaVersion": 1,
+ "sets": [
+  {
+   "setId": "set-01",
+   "panel": "heldout",
+   "song": "song-021",
+   "clips": [
+    "clip-01",
+    "clip-03",
+    "clip-34"
+   ]
+  },
+  {
+   "setId": "set-02",
+   "panel": "heldout",
+   "song": "song-018",
+   "clips": [
+    "clip-02",
+    "clip-06",
+    "clip-19"
+   ]
+  },
+  {
+   "setId": "set-03",
+   "panel": "development",
+   "song": "song-003",
+   "clips": [
+    "clip-04",
+    "clip-18"
+   ]
+  },
+  {
+   "setId": "set-04",
+   "panel": "development",
+   "song": "song-024",
+   "clips": [
+    "clip-05",
+    "clip-27"
+   ]
+  },
+  {
+   "setId": "set-05",
+   "panel": "heldout",
+   "song": "song-008",
+   "clips": [
+    "clip-07",
+    "clip-16",
+    "clip-21"
+   ]
+  },
+  {
+   "setId": "set-06",
+   "panel": "heldout",
+   "song": "song-007",
+   "clips": [
+    "clip-08",
+    "clip-20",
+    "clip-44"
+   ]
+  },
+  {
+   "setId": "set-07",
+   "panel": "heldout",
+   "song": "song-029",
+   "clips": [
+    "clip-09",
+    "clip-14",
+    "clip-43"
+   ]
+  },
+  {
+   "setId": "set-08",
+   "panel": "development",
+   "song": "song-420",
+   "clips": [
+    "clip-10",
+    "clip-24"
+   ]
+  },
+  {
+   "setId": "set-09",
+   "panel": "heldout",
+   "song": "song-017",
+   "clips": [
+    "clip-11",
+    "clip-28",
+    "clip-29"
+   ]
+  },
+  {
+   "setId": "set-10",
+   "panel": "heldout",
+   "song": "song-038",
+   "clips": [
+    "clip-12",
+    "clip-38",
+    "clip-39"
+   ]
+  },
+  {
+   "setId": "set-11",
+   "panel": "heldout",
+   "song": "song-000",
+   "clips": [
+    "clip-13",
+    "clip-37",
+    "clip-42"
+   ]
+  },
+  {
+   "setId": "set-12",
+   "panel": "heldout",
+   "song": "song-011",
+   "clips": [
+    "clip-15",
+    "clip-23",
+    "clip-32"
+   ]
+  },
+  {
+   "setId": "set-13",
+   "panel": "heldout",
+   "song": "song-019",
+   "clips": [
+    "clip-17",
+    "clip-25",
+    "clip-45"
+   ]
+  },
+  {
+   "setId": "set-14",
+   "panel": "heldout",
+   "song": "song-004",
+   "clips": [
+    "clip-22",
+    "clip-33",
+    "clip-40"
+   ]
+  },
+  {
+   "setId": "set-15",
+   "panel": "heldout",
+   "song": "song-023",
+   "clips": [
+    "clip-26",
+    "clip-30",
+    "clip-35"
+   ]
+  },
+  {
+   "setId": "set-16",
+   "panel": "development",
+   "song": "song-005",
+   "clips": [
+    "clip-31",
+    "clip-36"
+   ]
+  },
+  {
+   "setId": "set-17",
+   "panel": "development",
+   "song": "song-402",
+   "clips": [
+    "clip-41",
+    "clip-46"
+   ]
+  }
+ ]
+}

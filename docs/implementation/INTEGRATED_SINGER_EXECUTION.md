@@ -1,5 +1,59 @@
 # Integrated Singer Execution
 
+## U29 held-input rework + blind reviewer handoff (developer-2 P1/P2 fixes)
+
+Developer 2 returned REQUEST CHANGES on the first U29 audit: the
+"held/validated input" criterion was not met because the read used
+three separate path resolutions (symlink_status, file_size, ifstream),
+leaving a TOCTOU window; and the listening packet leaked roles to the
+reviewer through the manifest.
+
+Held input (POSIX): readFileBytesLimited now opens once with
+O_RDONLY|O_NOFOLLOW|O_CLOEXEC, fstat-validates the descriptor (regular
+file, bounded size), serves every byte from that descriptor via pread,
+and re-fstats after the read comparing dev/ino/size/mtime; in-place
+mutation during the read fails with ErrorCode::Conflict instead of
+admitting torn bytes. A HeldReadFaultInjector test seam (Opened,
+ContentRead stages) lets adversarial tests intervene inside the single
+admission; production callers pass none. InterchangeService::importFile
+forwards the injector; normalizedPath now canonicalizes the parent
+chain via weakly_canonical (intermediate symlinks resolve
+deterministically; outright rejection would break macOS /var and /tmp
+symlinked temp roots) and re-checks the resolved leaf. Windows retains
+the prior stat-then-read sequence pending platform evidence - called
+out in the audit non-claims.
+
+New tests (12/12 pass Release and Debug): canonicalizes intermediate
+symlink (same hash+sourcePath as direct), held import reads original
+inode across parent replacement (injector renames dirs at Opened),
+held import rejects in-place mutation (injector rewrites at
+ContentRead -> Conflict). Audit doc updated: held-input row rewritten,
+interruption coverage split into pre-publication (tested, temp cleaned)
+vs post-publication (link succeeded; unlink/fsync error cannot
+unpublish), create-new interruption gap noted; Replace-mode coverage
+cited at tests/test_stabilization.cpp:235.
+
+Blind reviewer handoff: reviewer-handoff/ inside the artifact root is
+the only listener-facing directory - 46 sha-verified opaque clip
+copies, neutral INSTRUCTIONS.md, scoresheet.csv pre-filled with
+set-01..set-17 IDs. Set-to-song mapping lives in
+set-map.coordinator.json beside the sealed key, coordinator-side only.
+decision.md "isolates" wording replaced with "helps localize" per
+review. A listener who has seen coordinator files or the manifest is
+not blind.
+
+Pre-existing build-graph repair found during broad-suite verification:
+seam_tests could never build with SEAM_BUILD_CLAP_EDITOR_PLUGIN=OFF -
+test_offline_render_session.cpp, test_native_ui.cpp and four phase12c
+live-voice test files were compiled unconditionally while
+seam_clap_editor/seam_live_voice links were plugin-gated, and
+seam_region_performance_state_tests / seam_plugin_style_migration_tests
+linked seam_clap_editor unguarded. Fixed by gating clap_editor
+sources/targets and linking seam_live_voice unconditionally (the
+library itself is unconditional). seam_tests now builds and runs the
+full suite in this configuration: 827/827 pass (Release,
+build-u4-macos), covering every readFileBytesLimited call site.
+
 ## Developer-2 direction after ablation STOP: listening packet staged; U29 closed
 
 Developer 2 accepted the STOP verdict and redirected: (1) a

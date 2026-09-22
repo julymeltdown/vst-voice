@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/application/project_factory.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/core/result.hpp"
 #include "seam/interchange/smf_project_conversion.hpp"
 #include "seam/interchange/ustx_project_conversion.hpp"
@@ -68,7 +69,8 @@ public:
       application::ProjectFactory& factory,
       InterchangeImportRequest request = {},
       interchange::UstxLimits ustxLimits = {},
-      interchange::SmfLimits smfLimits = {}) const;
+      interchange::SmfLimits smfLimits = {},
+      const core::HeldReadFaultInjector& readFaultInjector = {}) const;
 
   [[nodiscard]] core::Result<InterchangeExportReceipt> exportFile(
       const domain::Project& project,

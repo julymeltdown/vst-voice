@@ -60,7 +60,8 @@ TEST_CASE("interchange service imports an unsaved USTX draft with source identit
   CHECK(imported.value().project.vocalTracks().size() == 1U);
   CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 1U);
   CHECK(imported.value().sourceHash.size() == 64U);
-  CHECK(imported.value().sourcePath == std::filesystem::absolute(source).lexically_normal());
+  CHECK(imported.value().sourcePath ==
+        std::filesystem::weakly_canonical(source.parent_path()) / source.filename());
 }
 
 TEST_CASE("interchange service exports create-new and preserves the project on collision") {
@@ -140,15 +141,103 @@ TEST_CASE("interchange service rejects symlinked import paths") {
   const auto real = root / "real.ustx";
   writeText(real, kUstx);
   const auto link = root / "link.ustx";
+#ifdef _WIN32
+  // Reparse-point semantics differ on Windows; that path is verified on
+  // platform hardware, so this case records an explicit skip here.
+  return;
+#else
   std::error_code error;
   std::filesystem::create_symlink(real, link, error);
-  if (error) return;  // Platform without symlink support cannot run this case.
+  CHECK(!error);  // Fixture creation is required on POSIX, not optional.
   seam::application::ProjectFactory factory{970000U};
   seam::authoring::InterchangeService service;
   auto imported = service.importFile(link, factory,
       seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
   CHECK(!imported);
   CHECK(imported.error().code == seam::core::ErrorCode::Conflict);
+#endif
+}
+
+TEST_CASE("interchange service canonicalizes an intermediate symlink component") {
+#ifdef _WIN32
+  return;  // See the leaf-symlink case; Windows reparse checks are pending.
+#else
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-midlink");
+  const auto realDir = root / "real-dir";
+  std::filesystem::create_directories(realDir);
+  writeText(realDir / "song.ustx", kUstx);
+  const auto linkDir = root / "linked-dir";
+  std::error_code error;
+  std::filesystem::create_directory_symlink(realDir, linkDir, error);
+  CHECK(!error);
+  seam::application::ProjectFactory factory{975000U};
+  seam::authoring::InterchangeService service;
+  // The admitted path resolves deterministically to the real directory;
+  // the draft identity and recorded sourcePath are the canonical location,
+  // identical to importing the real path directly.
+  auto viaLink = service.importFile(linkDir / "song.ustx", factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
+  auto direct = service.importFile(realDir / "song.ustx", factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
+  CHECK(viaLink);
+  CHECK(direct);
+  CHECK(viaLink.value().sourceHash == direct.value().sourceHash);
+  CHECK(viaLink.value().sourcePath == direct.value().sourcePath);
+#endif
+}
+
+TEST_CASE("a held import reads the originally opened inode across parent replacement") {
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-held-parent");
+  const auto directoryA = root / "phrase-a";
+  const auto directoryB = root / "phrase-b";
+  std::filesystem::create_directories(directoryA);
+  std::filesystem::create_directories(directoryB);
+  writeText(directoryA / "song.ustx", kUstx);
+  writeText(directoryB / "song.ustx", std::string{kUstx} + "# different parent\n");
+  seam::application::ProjectFactory factory{976000U};
+  seam::authoring::InterchangeService service;
+  const auto heldPath = directoryA / "song.ustx";
+  // Baseline hash of the bytes the held import must retain.
+  auto baseline = service.importFile(heldPath, factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
+  CHECK(baseline);
+  // Swap the parent mid-admission: the descriptor pins the originally opened
+  // inode, so the read still returns the original bytes rather than the
+  // replacement directory's contents.
+  auto injected = service.importFile(heldPath, factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx},
+      {}, {},
+      [&](seam::core::HeldReadStage stage) -> seam::core::Result<void> {
+        if (stage == seam::core::HeldReadStage::Opened) {
+          const auto parked = root / "phrase-a-parked";
+          std::filesystem::rename(directoryA, parked);
+          std::filesystem::rename(directoryB, directoryA);
+        }
+        return seam::core::success();
+      });
+  CHECK(injected);
+  CHECK(injected.value().sourceHash == baseline.value().sourceHash);
+}
+
+TEST_CASE("a held import rejects in-place mutation during the read") {
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-held-mutate");
+  const auto source = root / "song.ustx";
+  writeText(source, kUstx);
+  seam::application::ProjectFactory factory{977000U};
+  seam::authoring::InterchangeService service;
+  auto injected = service.importFile(source, factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx},
+      {}, {},
+      [&](seam::core::HeldReadStage stage) -> seam::core::Result<void> {
+        if (stage == seam::core::HeldReadStage::ContentRead) {
+          // Rewrite the same inode with different-length content; the
+          // post-read identity check must reject rather than admit.
+          writeText(source, std::string{kUstx} + "# mutated in place\n");
+        }
+        return seam::core::success();
+      });
+  CHECK(!injected);
+  CHECK(injected.error().code == seam::core::ErrorCode::Conflict);
 }
 
 TEST_CASE("interchange draft identity tracks the bytes actually read") {
@@ -207,9 +296,12 @@ TEST_CASE("interchange service rejects symlinked export destinations") {
   const auto real = root / "real.ustx";
   writeText(real, "pre-existing\n");
   const auto link = root / "link.ustx";
+#ifdef _WIN32
+  return;  // Windows reparse verification is pending platform evidence.
+#else
   std::error_code error;
   std::filesystem::create_symlink(real, link, error);
-  if (error) return;
+  CHECK(!error);
   seam::authoring::InterchangeService service;
   auto exported = service.exportFile(project,
       seam::authoring::InterchangeExportRequest{.format = seam::authoring::InterchangeFormat::Ustx,
@@ -218,6 +310,7 @@ TEST_CASE("interchange service rejects symlinked export destinations") {
   std::ifstream input(real, std::ios::binary);
   const std::string after{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
   CHECK(after == "pre-existing\n");
+#endif
 }
 
 TEST_CASE("interchange export failure leaves no destination and preserves the project") {

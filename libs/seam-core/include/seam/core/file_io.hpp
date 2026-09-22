@@ -25,15 +25,32 @@ enum class AtomicWriteStage {
 using AtomicWriteFaultInjector =
     std::function<Result<void>(AtomicWriteStage stage)>;
 
+enum class HeldReadStage {
+  Opened,       // Descriptor opened and fstat-validated, before allocation/read.
+  ContentRead,  // Content read, before the post-read identity verification.
+};
+
+using HeldReadFaultInjector =
+    std::function<Result<void>(HeldReadStage stage)>;
+
 struct AtomicWriteOptions final {
   std::filesystem::path backupPath;
   std::uint64_t maximumBackupBytes{128ULL * 1024ULL * 1024ULL};
   AtomicWriteFaultInjector faultInjector;
 };
 
+// Held-input read: on POSIX the file is opened once with O_NOFOLLOW, the
+// descriptor is fstat-validated (regular file, bounded size), the SAME
+// descriptor supplies every byte, and a post-read fstat compares device,
+// inode, size and modification time so in-place mutation during the read is
+// rejected rather than silently admitted. Parent-directory replacement cannot
+// redirect the read because the descriptor pins the originally opened inode.
+// The injector exists for deterministic adversarial tests that intervene
+// inside this single admission; production callers pass none.
 [[nodiscard]] Result<std::vector<std::byte>> readFileBytesLimited(
     const std::filesystem::path& path,
-    std::uint64_t maximumBytes);
+    std::uint64_t maximumBytes,
+    const HeldReadFaultInjector& faultInjector = {});
 
 [[nodiscard]] Result<std::string> readTextFileLimited(
     const std::filesystem::path& path,
