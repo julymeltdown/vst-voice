@@ -262,14 +262,6 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
   state.characterDockReserved = character_.dockVisible(state.characterMode);
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
-  if (microscopeUnitId_.has_value()) {
-    state.sampleMicroscope = native_ui::EditorSceneState::SampleMicroscopeView{
-        .model = &microscope_,
-        .unitId = *microscopeUnitId_,
-        .destinationContext = microscopeSelectionRationale_,
-        .canPlay = false,
-    };
-  }
   return state;
 }
 

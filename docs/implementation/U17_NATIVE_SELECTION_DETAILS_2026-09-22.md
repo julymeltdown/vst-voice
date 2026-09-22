@@ -2,6 +2,11 @@
 
 Date: 2026-09-22. Baseline: `9484adedebad3e5d51f94926ae13d7c9dc07021e`.
 
+Initial implementation: `83dcaa1927365205a5ef92efe09e002cb5574c32`.
+Developer 2 returned **REQUEST CHANGES** on this commit. The repair below is
+implemented locally and awaiting exact-commit re-review; the initial passing
+tests did not establish CLAP interaction or complete modal isolation.
+
 ## Delivered behavior
 
 The shared native sample microscope now has a **Details / D** control. It shows
@@ -50,7 +55,7 @@ first-visible byte. Only line-ending bytes are omitted when painting a row.
   19 px bitmap height even for a Latin line; the original proposed 18 px row was
   corrected rather than weakening the glyph-fit assertion.
 
-## Verification
+## Initial implementation verification
 
 `tests/test_sample_microscope_details.cpp` is included in the native-enabled
 monolithic suite and the new `seam_sample_microscope_tests` target. Four cases
@@ -69,8 +74,9 @@ The fresh warnings-as-errors Release build and eight selected CTest targets
 pass: 838 monolithic, four microscope, ten style-coverage, two vibrato-inspector,
 one measured-dynamics, five standalone, 21 coordinator and four original-singer
 journey cases (885 case executions, 27.54 seconds). These are suite executions,
-not deduplicated coverage. The focused Debug suites pass; the broad Debug result
-and independent review are pending. Logs are `u17-details-{configure,build}.log`
+not deduplicated coverage. The broader Debug run subsequently passed six targets
+and 989 case executions (967 monolithic) in 180.92 seconds. Independent review
+nevertheless found the three missing paths below. Logs are `u17-details-{configure,build}.log`
 and `u17-details-final-ctest.log` under `build-u4-macos/`, and
 `u17-details-{configure,build,final-build,final-ctest}.log` under `build/debug/`.
 Source closure and diff whitespace checks pass.
@@ -81,6 +87,70 @@ Rendered QA fixtures are generated with
 desktop details, with PPM originals and PNG previews. They deliberately use
 long adversarial IDs. These are native scene rasterizations with the actual
 system text engine, not screenshots of an installed AppKit/DAW session.
+
+## Independent review and connected repair
+
+Developer 2 found three P2 defects in the initial commit:
+
+1. CLAP's separate microscope state supplied the shared painter but did not
+   implement its new Details/Close controls or modal keyboard/AX routing. The
+   initial tests instantiated only the native controller, not `EditorRuntime`.
+2. The accessibility root was modal, but virtual note enumeration and focus
+   traversal still exposed background notes. A retained regression reproduced
+   this against the initial commit: three cases passed and one failed on the
+   requirement that an open microscope have zero virtual notes.
+3. `setAccessibilityValue` bypassed the modal command guard. Its valid note path
+   could select and edit a background lyric; retained tempo/meter IDs were also
+   unguarded. This finding was source-traced, not an observed end-user mutation.
+
+The repair removes CLAP's duplicate microscope model, audio, identity and focus
+state. Its loader supplies the actual rendered selection to the same
+`NativeEditorController` used by standalone; scene state, pointer/key handling,
+details pages and accessibility now use that controller. Active CLAP technical
+gestures refuse inspection, and open inspection intercepts CLAP's S/R unit
+shortcuts before they can change the score. The loader does not create new
+selection or listening evidence. Existing callback capability checks keep
+unsupported sample editing/playback unavailable.
+
+`AccessibilityTree` now suppresses both materialized and virtual background
+notes while inspection is open. `setAccessibilityValue` rejects at entry,
+before parsing, selection, composition or project edits. Regressions cover
+forward/reverse focus cycles, actual/stale note IDs, valid tempo/meter values,
+unchanged score/selection/undo state and restored note enumeration after close.
+
+The new `tests/test_clap_microscope_details.cpp` uses the real `EditorRuntime`
+and checked-in development voicebank, waits for current rendered PCM and checks
+the selected occurrence's actual rationale. Two cases cover pointer/key/AX
+controls, lossless details pagination, resize, single-click Close, retained
+SetValue rejection, background shortcut isolation and Escape transitions. They
+run in a focused target and the CLAP-enabled monolithic suite. This is connected
+runtime evidence, not an installed DAW session or a qualified singer resource.
+
+The first repair build failed because the new test included the pronunciation
+resolver rather than `language_resolver.hpp`, which declares the inspection
+entry point. The include is corrected. All four focused Debug targets pass in
+11.25 seconds: four native microscope cases, two connected CLAP cases, and the
+existing Phase 11 and Phase 12B integration executables.
+
+The repaired-tree broad runs also pass:
+
+- Release, warnings-as-errors: eight targets / 885 case executions, including
+  838 monolithic cases, in 21.04 seconds.
+- Debug: nine targets in 164.99 seconds; seven test-framework suites account
+  for 993 case executions (969 monolithic), plus the two separate Phase 11/12B
+  integration executables. These counts overlap across suites and are not
+  deduplicated coverage.
+
+Release currently has CLAP disabled; the connected CLAP coverage is Debug only,
+and Debug warnings-as-errors is disabled. Source closure and staged whitespace
+checks pass. Exact-commit independent re-review is still required. No failed
+build or initial red regression is counted as passing.
+
+Repair logs: `build/debug/u17-details-repair-{build,focused-ctest}.log`;
+the red native regression is retained in
+`build/debug/u17-details-focus-red-{build,ctest}.log`.
+Broad repair logs are `build/debug/u17-details-repair-broad-{build,ctest}.log`
+and `build-u4-macos/u17-details-repair-{configure,build,ctest}.log`.
 
 ## Scope retained
 

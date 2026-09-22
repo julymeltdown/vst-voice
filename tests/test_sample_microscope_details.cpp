@@ -135,10 +135,27 @@ TEST_CASE("sample details use modal keyboard pointer and accessibility controls 
   CHECK(controller.dispatchAccessibility("microscope.details", native_ui::SemanticAction::SetFocus));
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Enter}));
   CHECK(controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
+  CHECK(controller.accessibilityTree().materializeNotes(0U, 100U).empty());
+  for (const auto reverse : {false, true}) {
+    for (std::size_t i = 0U; i < 12U; ++i) {
+      CHECK(controller.keyDown({.key = native_ui::NativeKey::Tab, .modifiers = {.shift = reverse}}));
+      const auto* focused = controller.accessibilityTree().focusedNode();
+      CHECK(focused != nullptr); CHECK(focused->id.starts_with("microscope."));
+    }
+  }
   CHECK(!native_ui::EditorSemanticTree::containsId(controller.accessibilityTree().root(), "microscope.waveform"));
   CHECK(native_ui::EditorSemanticTree::containsId(controller.accessibilityTree().root(), "microscope.readout"));
   CHECK(!controller.dispatchAccessibility("microscope.waveform", native_ui::SemanticAction::Activate));
   CHECK(!controller.dispatchAccessibility("toolbar.transport", native_ui::SemanticAction::Activate));
+  for (const auto& [id, value] : {std::pair{"note." + fixture.note.toString(), "changed lyric"},
+      {std::string{"note.fffffffffffffff0"}, "stale reference"},
+      {std::string{"toolbar.tempo"}, "130"}, {std::string{"toolbar.meter"}, "7/8"}}) {
+    const auto changed = controller.setAccessibilityValue(id, value);
+    CHECK(!changed); CHECK(changed.error().code == core::ErrorCode::Conflict);
+    CHECK(fixture.session.project() == original); CHECK(fixture.session.selection().empty());
+    CHECK(!fixture.session.canUndo()); CHECK(!controller.textInputActive());
+  }
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
   const auto timelineBefore = controller.pianoRoll().timeline().tickToPixel(time::Tick{0});
   controller.scroll(120.0, 120.0, {100.0, 120.0}, {});
@@ -161,6 +178,7 @@ TEST_CASE("sample details use modal keyboard pointer and accessibility controls 
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Left}));
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
   CHECK(controller.sampleMicroscopeOpen()); CHECK(!controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
   const auto details = layout.microscopeDetailsToggleBounds(480.0, 320.0);
   CHECK(controller.pointerDown({{details.x + 1.0, details.y + 1.0}, native_ui::PointerButton::Left, {}, 1}));
   CHECK(controller.sceneState().sampleMicroscope->detailsVisible);
@@ -172,6 +190,8 @@ TEST_CASE("sample details use modal keyboard pointer and accessibility controls 
   const auto close = native_ui::EditorSceneLayout{}.microscopeCloseBounds(480.0, 320.0);
   CHECK(controller.pointerDown({{close.x + 1.0, close.y + 1.0}, native_ui::PointerButton::Left, {}, 1}));
   CHECK(!controller.sampleMicroscopeOpen()); CHECK(fixture.played == 0U);
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.accessibilityTree().virtualizedNoteCount() == 1U);
   CHECK(fixture.session.project() == original); CHECK(!fixture.session.canUndo());
 }
 

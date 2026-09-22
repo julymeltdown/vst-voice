@@ -341,6 +341,8 @@ private:
   void refreshLiveResourceLocked();
   void rebuildTechnicalModelsLocked();
   [[nodiscard]] phonemizer::Result phonemesLocked() const;
+  [[nodiscard]] core::Result<native_ui::SampleMicroscopeData> loadSampleMicroscope(
+      domain::PhonemeKey key);
   [[nodiscard]] const ui::PhonemeVisual* phonemeVisualAt(
       ui::Point point) const noexcept;
   [[nodiscard]] const ui::UnitLaneVisual* unitVisualAt(
@@ -392,11 +394,6 @@ private:
   bool dirty_{false};
   ui::PhonemeLaneModel phonemeLane_;
   ui::UnitLaneModel unitLane_;
-  ui::SampleMicroscopeModel microscope_;
-  voicebank::AudioBuffer microscopeAudio_;
-  std::optional<std::string> microscopeUnitId_;
-  std::string microscopeSelectionRationale_;
-  std::string microscopeFocusedId_;
   std::optional<domain::PhonemeKey> selectedUnitKey_;
   std::optional<domain::PhonemeKey> draggingPhonemeKey_;
   bool draggingPhonemeStart_{false};

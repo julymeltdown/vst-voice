@@ -1,6 +1,6 @@
 # Integrated Singer Execution
 
-## U17 native selection details implemented; review pending (2026-09-22)
+## U17 native selection details: repaired and verified; re-review pending (2026-09-22)
 
 The shared sample microscope now offers lossless UTF-8-aware paged details for
 the captured selection rationale and unit/destination identity. Snapshot age is
@@ -11,13 +11,25 @@ fixed a Time Map control painting above the modal; actual system glyph metrics
 also required taller detail rows. A pixel assertion and glyph-fit checks retain
 those findings.
 
-Release warnings-as-errors build and eight selected targets pass 885 case
-executions in 27.54 seconds, including 838 monolithic and four new microscope
-cases. Focused Debug passes; its broader monolithic run and independent review
-are pending. The captures are native raster fixtures, not installed AppKit/DAW
-screenshots. See U17_NATIVE_SELECTION_DETAILS_2026-09-22.md. Full U17, singer
-qualification, Windows verification and Beta GO remain open; no complete unit
-is counted.
+Initial Release passes eight targets / 885 case executions in 27.54 seconds;
+Debug subsequently passes six / 989 in 180.92 seconds. Developer 2 nevertheless
+REQUESTED CHANGES on 83dcaa1927365205a5ef92efe09e002cb5574c32: CLAP advertised
+unwired controls, virtual notes escaped modal focus isolation, and retained AX
+SetValue could reach background editing. The virtual-note regression reproduced
+the defect. The initial tests covered only the shared controller, not CLAP.
+
+The repair routes CLAP through that controller, removes its duplicate microscope
+state, excludes background virtual notes and rejects SetValue before mutation.
+Four focused Debug targets pass, including two new actual-CLAP-runtime cases,
+four native cases and existing Phase 11/12B integrations. Fresh broad Release
+passes eight targets / 885 case executions (21.04 seconds); Debug passes nine
+targets / 993 case executions plus two integration executables (164.99 seconds).
+Release CLAP is disabled; connected CLAP coverage is Debug only. Source closure
+and whitespace checks pass. Exact-commit re-review remains pending. The captures
+are native raster fixtures, not installed AppKit/DAW screenshots. See
+U17_NATIVE_SELECTION_DETAILS_2026-09-22.md.
+Full U17, singer qualification, Windows verification and Beta GO remain open;
+no complete unit is counted.
 
 ## U17 second review repair: cancellation inside the coordinator debounce (2026-09-22)
 

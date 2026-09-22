@@ -446,6 +446,9 @@ void EditorRuntime::configureControllerCallbacks() {
         requestRepaint();
         return core::success();
       },
+      .loadSampleMicroscope = [this](domain::PhonemeKey key) {
+        return loadSampleMicroscope(key);
+      },
       .selectVoicebank = [this](std::string_view id, std::string_view version,
                                 std::string_view contentHash) {
         return selectVoicebank(id, version, contentHash);

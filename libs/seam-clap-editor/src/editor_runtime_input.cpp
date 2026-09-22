@@ -30,16 +30,10 @@ void EditorRuntime::requestRenderAfterEdit() {
 
 void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (controller_->replacementReviewOpen()) {
+  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->pointerDown(event)); return;
   }
   rebuildTechnicalModelsLocked();
-  if (microscopeUnitId_.has_value()) {
-    if (event.button == native_ui::PointerButton::Right || event.clickCount >= 2) {
-      closeSampleMicroscope();
-    }
-    return;
-  }
 
   const auto layout = painter_.layout();
   const auto* technicalRegion = session_.project().findRegion(regionId_);
@@ -190,7 +184,7 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (controller_->replacementReviewOpen()) {
+  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->pointerMove(event)); return;
   }
   if (draggingPhonemeKey_.has_value() || draggingPitchTick_.has_value()) {
@@ -202,7 +196,7 @@ void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (controller_->replacementReviewOpen()) {
+  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     draggingPhonemeKey_.reset(); draggingPitchTick_.reset();
     static_cast<void>(controller_->pointerUp(event)); return;
   }
@@ -263,13 +257,8 @@ void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
 
 void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (controller_->replacementReviewOpen()) {
+  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->keyDown(event)); return;
-  }
-  if (event.key == native_ui::NativeKey::Escape &&
-      microscopeUnitId_.has_value()) {
-    closeSampleMicroscope();
-    return;
   }
   if (selectedUnitKey_.has_value() && event.key == native_ui::NativeKey::S) {
     static_cast<void>(cycleUnitVariant(*selectedUnitKey_));
@@ -411,12 +400,12 @@ core::Result<void> EditorRuntime::cyclePitchInterpolation(
   return result;
 }
 
-core::Result<void> EditorRuntime::openSampleMicroscope(
+core::Result<native_ui::SampleMicroscopeData> EditorRuntime::loadSampleMicroscope(
     domain::PhonemeKey key) {
   std::lock_guard lock(mutex_);
   auto phonemes = phonemesLocked();
   const auto preview = renderedPreview();
-  if (!preview) return core::failure(core::ErrorCode::NotFound, "Rendered unit decision is unavailable");
+  if (!preview) return core::failure<native_ui::SampleMicroscopeData>(core::ErrorCode::NotFound, "Rendered unit decision is unavailable");
   const synthesis::UnitPlanEntry* entry = nullptr;
   for (const auto& candidate : preview->unitPlan) {
     if (candidate.tokenStart < phonemes.tokens.size() &&
@@ -426,53 +415,50 @@ core::Result<void> EditorRuntime::openSampleMicroscope(
     }
   }
   if (entry == nullptr || !voicebankResolution_.resolved()) {
-    return core::failure(core::ErrorCode::NotFound,
+    return core::failure<native_ui::SampleMicroscopeData>(core::ErrorCode::NotFound,
                          "Unit sample is unavailable for inspection");
   }
   const auto& bank = *voicebankResolution_.candidate;
   const auto* unit = bank.manifest.findUnit(entry->unitId);
   if (unit == nullptr) {
-    return core::failure(core::ErrorCode::NotFound,
+    return core::failure<native_ui::SampleMicroscopeData>(core::ErrorCode::NotFound,
                          "Voicebank Unit is missing", entry->unitId);
   }
   auto audio = voicebank::readWav(bank.bankRoot / unit->audioPath);
-  if (!audio) return core::Result<void>{audio.error()};
-  microscopeAudio_ = std::move(audio.value());
-  const auto layout = painter_.layout();
-  auto rebuilt = microscope_.rebuild(
-      *unit, microscopeAudio_,
-      layout.microscopeWaveformBounds(logicalWidth_, logicalHeight_),
-      layout.microscopeSpectrogramBounds(logicalWidth_, logicalHeight_));
-  if (!rebuilt) return rebuilt;
-  microscopeUnitId_ = entry->unitId;
-  microscopeSelectionRationale_ = synthesis::describeUnitSelection(*entry);
-  microscopeFocusedId_ = "microscope.panel";
-  selectedUnitKey_ = key;
-  requestRepaint();
-  return core::success();
+  if (!audio) return core::Result<native_ui::SampleMicroscopeData>{audio.error()};
+  return native_ui::SampleMicroscopeData{
+      .unit = *unit, .audio = std::move(audio.value()),
+      .destinationContext = synthesis::describeUnitSelection(*entry)};
+}
+
+core::Result<void> EditorRuntime::openSampleMicroscope(domain::PhonemeKey key) {
+  std::lock_guard lock(mutex_);
+  if (draggingPhonemeKey_ || draggingPitchTick_)
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture before sample inspection");
+  const auto opened = controller_->openSampleMicroscope(key);
+  if (opened) selectedUnitKey_ = key;
+  return opened;
 }
 
 void EditorRuntime::closeSampleMicroscope() noexcept {
   std::lock_guard lock(mutex_);
-  microscopeUnitId_.reset();
-  microscopeFocusedId_.clear();
-  microscopeAudio_ = {};
-  requestRepaint();
+  controller_->closeSampleMicroscope();
 }
 
 bool EditorRuntime::sampleMicroscopeOpen() const noexcept {
   std::lock_guard lock(mutex_);
-  return microscopeUnitId_.has_value();
+  return controller_->sampleMicroscopeOpen();
 }
 
 const ui::SampleMicroscopeModel* EditorRuntime::sampleMicroscope() const noexcept {
   std::lock_guard lock(mutex_);
-  return microscopeUnitId_.has_value() ? &microscope_ : nullptr;
+  return controller_->sampleMicroscope();
 }
 
 std::optional<std::string> EditorRuntime::selectedUnitId() const {
   std::lock_guard lock(mutex_);
-  return microscopeUnitId_;
+  return controller_->sampleMicroscopeOpen()
+      ? std::optional<std::string>{controller_->sampleMicroscopeUnitId()} : std::nullopt;
 }
 
 void EditorRuntime::setHostTimelineState(HostTimelineState state) noexcept {

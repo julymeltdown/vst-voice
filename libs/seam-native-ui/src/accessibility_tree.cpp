@@ -17,7 +17,9 @@ void AccessibilityTree::rebuild(const EditorSceneState& state,
                                 const ui::PianoRollModel& model,
                                 AccessibilityTreeConfig config) {
   state_ = state;
-  model_ = state.phonemeReview.visible ? nullptr : &model;
+  const auto modal = state.phonemeReview.visible ||
+      (state.sampleMicroscope && state.sampleMicroscope->model != nullptr);
+  model_ = modal ? nullptr : &model;
   config_ = config;
   root_ = EditorSemanticTree::build(state, model, {}, false, false);
   std::vector<SemanticNode> retained;
@@ -27,7 +29,7 @@ void AccessibilityTree::rebuild(const EditorSceneState& state,
       retained.push_back(std::move(child));
     }
   }
-  virtualizedNoteCount_ = state.phonemeReview.visible ? 0U : model.noteCount();
+  virtualizedNoteCount_ = modal ? 0U : model.noteCount();
   const auto keep = std::min(config_.maximumMaterializedNotes,
                              virtualizedNoteCount_);
   for (std::size_t index = 0U; index < keep; ++index) {

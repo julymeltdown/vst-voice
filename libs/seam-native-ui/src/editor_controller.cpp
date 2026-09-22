@@ -2438,6 +2438,8 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
 
 core::Result<void> NativeEditorController::setAccessibilityValue(
     std::string_view id, std::string_view value) {
+  if (sampleMicroscopeOpen())
+    return core::failure(core::ErrorCode::Conflict, "Sample inspection does not edit background values");
   if (replacementOpen_ || id.starts_with("replacement."))
     return core::failure(core::ErrorCode::Conflict, "Replacement review does not edit background values");
   if (hintEdit_ || replacementInput_) {

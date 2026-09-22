@@ -1738,6 +1738,7 @@ if(SEAM_BUILD_TESTS)
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     list(APPEND SEAM_TEST_SOURCES
       tests/test_authoring_characterization.cpp
+      tests/test_clap_microscope_details.cpp
       tests/test_phase12c_clap_events.cpp
       phase12c/src/live_fixture.cpp)
   endif()
@@ -1818,6 +1819,16 @@ if(SEAM_BUILD_TESTS)
   endif()
 
   if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
+    add_executable(seam_clap_microscope_tests tests/test_main.cpp tests/test_clap_microscope_details.cpp)
+    target_include_directories(seam_clap_microscope_tests PRIVATE tests)
+    target_compile_definitions(seam_clap_microscope_tests PRIVATE
+      SEAM_SOURCE_PRODUCTION_VOICEBANK="${CMAKE_CURRENT_SOURCE_DIR}/assets/demo-human-voicebank-public-domain/production-bank")
+    target_link_libraries(seam_clap_microscope_tests PRIVATE seam_clap_editor)
+    seam_apply_compiler_options(seam_clap_microscope_tests)
+    add_test(NAME seam_clap_microscope_tests COMMAND seam_clap_microscope_tests)
+    set_tests_properties(seam_clap_microscope_tests PROPERTIES TIMEOUT 90
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "SEAM_PREVIEW_CACHE_ROOT=${CMAKE_BINARY_DIR}/ctest-preview-cache")
     add_executable(seam_offline_render_session_tests
       tests/test_main.cpp tests/test_offline_render_session.cpp)
     target_include_directories(seam_offline_render_session_tests PRIVATE tests)

@@ -127,9 +127,6 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   preparedHostTimeline_.reset();
   const auto replaced = authoring_->document().replaceProject(std::move(project));
   if (!replaced) return replaced;
-  microscopeUnitId_.reset();
-  microscopeFocusedId_.clear();
-  microscopeAudio_ = {};
   selectedUnitKey_.reset();
   draggingPhonemeKey_.reset();
   draggingPitchTick_.reset();
