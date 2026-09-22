@@ -220,3 +220,138 @@ TEST_CASE("CLAP interchange imports SMF and reports conversion losses instead of
   CHECK(runtime.acceptInterchangeImport(draft.value()).hasValue());
   CHECK(runtime.projectCopy().id() == draft.value().project.id());
 }
+
+// The embedded surface reaches interchange only through host handoffs, because a plugin cannot own a
+// file dialog. These cases cover the states a host actually drives: no chooser connected, the user
+// cancelling, the reviewer declining, the reviewer accepting, and an unsupported extension.
+TEST_CASE("CLAP interchange handoffs keep the song unchanged when unconnected, cancelled or declined") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-handoff");
+  auto runtime = runtimeFixture();
+  const auto before = runtime.projectCopy();
+  const auto beforeRevision = runtime.revision();
+
+  // An offered action with no chooser must say so rather than report a success that did nothing.
+  const auto unconnectedImport = runtime.requestInterchangeImport();
+  CHECK(!unconnectedImport);
+  CHECK(unconnectedImport.error().message.find("host file chooser") != std::string::npos);
+  const auto unconnectedExport = runtime.requestInterchangeExport();
+  CHECK(!unconnectedExport);
+  CHECK(unconnectedExport.error().message.find("host file chooser") != std::string::npos);
+  CHECK(runtime.revision() == beforeRevision);
+
+  // Write a real score to import, then drive the handoff.
+  const auto source = root / "score.ustx";
+  authoring::InterchangeExportRequest exportRequest;
+  exportRequest.format = authoring::InterchangeFormat::Ustx;
+  exportRequest.destination = source;
+  CHECK(runtime.exportInterchange(exportRequest).hasValue());
+
+  // A cancelled chooser is the user closing the dialog: nothing happens and nothing is an error.
+  bool importReviewCalled = false;
+  runtime.setInterchangeImportHandoff([] { return std::optional<std::filesystem::path>{}; });
+  runtime.setInterchangeReviewHandoff([&](const authoring::InterchangeImportDraft&) {
+    importReviewCalled = true;
+    return true;
+  });
+  const auto cancelled = runtime.requestInterchangeImport();
+  CHECK(cancelled.hasValue());
+  // The review is not reached when the user cancels, so no conversion work or decision is implied.
+  CHECK(!importReviewCalled);
+  CHECK(runtime.revision() == beforeRevision);
+  CHECK(runtime.projectCopy().id() == before.id());
+
+  // A declined review keeps the song the creator already had, and is not an error.
+  runtime.setInterchangeImportHandoff([&] {
+    return std::optional<std::filesystem::path>{source};
+  });
+  authoring::InterchangeImportDraft reviewedDraft;
+  runtime.setInterchangeReviewHandoff([&](const authoring::InterchangeImportDraft& draft) {
+    reviewedDraft = draft;
+    return false;
+  });
+  const auto declined = runtime.requestInterchangeImport();
+  CHECK(declined.hasValue());
+  CHECK(!reviewedDraft.project.vocalTracks().empty());
+  CHECK(runtime.revision() == beforeRevision);
+  CHECK(runtime.projectCopy().id() == before.id());
+
+  // Accepting adopts the reviewed draft, and the live document is now the imported one.
+  runtime.setInterchangeReviewHandoff([](const authoring::InterchangeImportDraft&) { return true; });
+  const auto accepted = runtime.requestInterchangeImport();
+  CHECK(accepted.hasValue());
+  CHECK(runtime.projectCopy().id() == reviewedDraft.project.id());
+
+  // An export to an extension the interchange subset cannot write is refused, and a cancellation is
+  // not an error.
+  runtime.setInterchangeExportHandoff([] { return std::optional<std::filesystem::path>{}; });
+  CHECK(runtime.requestInterchangeExport().hasValue());
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{root / "score.txt"};
+  });
+  const auto unsupported = runtime.requestInterchangeExport();
+  CHECK(!unsupported);
+  CHECK(unsupported.error().message.find("ustx") != std::string::npos);
+  CHECK(!std::filesystem::exists(root / "score.txt"));
+
+  // A MIDI destination is accepted and writes a real file.
+  const auto midi = root / "score.mid";
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{midi};
+  });
+  const auto exportedMidi = runtime.requestInterchangeExport();
+  CHECK(exportedMidi.hasValue());
+  CHECK(std::filesystem::exists(midi));
+  CHECK(std::filesystem::file_size(midi) > 14U);
+}
+
+// A conversion that lost information must not reach the live document without a human decision. The
+// embedded runtime has to fail closed when no review surface is connected, because a host that never
+// wired one would otherwise adopt a lossy score silently.
+TEST_CASE("CLAP interchange refuses a lossy draft when no review surface is connected") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-fail-closed");
+  auto runtime = runtimeFixture();
+  const auto before = runtime.projectCopy();
+  const auto beforeRevision = runtime.revision();
+
+  // A score whose nondefault velocity and channel the interchange subset drops: the conversion owes
+  // an explicit loss, so it is exactly the case that must not be adopted unreviewed.
+  interchange::SmfScore score;
+  score.ppq = 480U;
+  score.tempos = {{time::Tick{0}, 120.0}};
+  score.meters = {{time::Tick{0}, 4U, 2U}};
+  score.texts = {{time::Tick{0}, "a", true}};
+  score.notes = {{time::Tick{0}, time::Tick{480}, 60U, 90U, 2U}};
+  const auto encoded = interchange::encodeSmf(score);
+  CHECK(encoded.hasValue());
+  if (!encoded) return;
+  const auto source = root / "lossy.mid";
+  {
+    std::ofstream out{source, std::ios::binary | std::ios::trunc};
+    out.write(reinterpret_cast<const char*>(encoded.value().data()),
+              static_cast<std::streamsize>(encoded.value().size()));
+  }
+
+  runtime.setInterchangeImportHandoff([&] {
+    return std::optional<std::filesystem::path>{source};
+  });
+  // No review handoff is set. The draft has losses, so the import must be refused and the song kept.
+  const auto refused = runtime.requestInterchangeImport();
+  CHECK(!refused);
+  CHECK(refused.error().message.find("review surface") != std::string::npos);
+  CHECK(runtime.revision() == beforeRevision);
+  CHECK(runtime.projectCopy().id() == before.id());
+  CHECK(runtime.projectCopy().vocalTracks().size() == before.vocalTracks().size());
+
+  // With the review connected and accepting, the same file is imported: the refusal was about the
+  // missing decision, not about the file.
+  runtime.setInterchangeReviewHandoff([](const authoring::InterchangeImportDraft& draft) {
+    // The losses are still reported to the reviewer; acceptance is an informed choice.
+    return std::any_of(draft.issues.begin(), draft.issues.end(),
+                       [](const authoring::InterchangeIssue& issue) { return issue.loss; });
+  });
+  const auto accepted = runtime.requestInterchangeImport();
+  CHECK(accepted.hasValue());
+  CHECK(runtime.projectCopy().id() != before.id());
+}

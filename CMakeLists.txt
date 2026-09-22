@@ -1020,7 +1020,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
   target_include_directories(seam_clap_editor_plugin SYSTEM PRIVATE
     third_party/clap/include)
   target_link_libraries(seam_clap_editor_plugin PRIVATE
-    seam_clap_editor seam_core)
+    seam_clap_editor seam_standalone_authoring seam_core)
   set_target_properties(seam_clap_editor_plugin PROPERTIES
     PREFIX ""
     OUTPUT_NAME "ProjectSEAMEditor"

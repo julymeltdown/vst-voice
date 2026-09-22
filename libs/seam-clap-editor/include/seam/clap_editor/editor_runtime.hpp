@@ -214,6 +214,21 @@ public:
       authoring::InterchangeImportDraft draft);
   [[nodiscard]] core::Result<authoring::InterchangeExportReceipt> exportInterchange(
       authoring::InterchangeExportRequest request) const;
+  // A plugin cannot own a file dialog, so the host supplies the path choice and the loss-review
+  // decision, exactly as it already does for the voicebank installer. The lifecycle stays here so
+  // the order "choose, convert, review, accept" is the same one the standalone surface runs and can
+  // be exercised without a host.
+  using InterchangePathHandoff =
+      std::function<core::Result<std::optional<std::filesystem::path>>()>;
+  void setInterchangeImportHandoff(InterchangePathHandoff callback);
+  void setInterchangeExportHandoff(InterchangePathHandoff callback);
+  void setInterchangeReviewHandoff(
+      std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)> callback);
+  // Choose a source, convert it to a draft and ask the review handoff whether to accept it. A
+  // declined or missing decision leaves the live song untouched.
+  [[nodiscard]] core::Result<void> requestInterchangeImport();
+  // Choose a destination and write the live project as USTX or SMF. Never mutates the project.
+  [[nodiscard]] core::Result<void> requestInterchangeExport();
   [[nodiscard]] domain::RegionId regionId() const noexcept { return regionId_; }
   [[nodiscard]] domain::TrackId trackId() const noexcept { return trackId_; }
   [[nodiscard]] std::uint64_t revision() const noexcept;
@@ -403,6 +418,10 @@ private:
   OfflineRenderSession offlineRender_;
   std::atomic<bool> offlineAudioReady_{false};
   bool dirty_{false};
+  InterchangePathHandoff interchangeImportHandoff_;
+  InterchangePathHandoff interchangeExportHandoff_;
+  std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
+      interchangeReviewHandoff_;
   ui::PhonemeLaneModel phonemeLane_;
   ui::UnitLaneModel unitLane_;
   std::optional<domain::PhonemeKey> selectedUnitKey_;

@@ -6,6 +6,8 @@
 #include "seam/clap_editor/host_transport_publication.hpp"
 #include "seam/live_voice/midi1_decoder.hpp"
 #include "seam/platform/application_menu.hpp"
+#include "seam/platform/file_dialog.hpp"
+#include "seam/standalone/native_project_dialog.hpp"
 
 #include <clap/clap.h>
 
@@ -105,6 +107,25 @@ core::Result<void> openStandaloneVoicebankInstaller() {
       "Install the Project SEAM standalone app to manage voicebanks");
 }
 
+// A plugin cannot own a modal file dialog through the host's window, so the embedded surface asks for
+// the path with the same native dialog the standalone editor uses. The conversion and the adoption
+// stay in EditorRuntime; only the path choice lives here.
+core::Result<std::optional<std::filesystem::path>> chooseInterchangePath(
+    platform::FileDialogPurpose purpose, std::string title,
+    std::vector<std::string> extensions, std::string suggestedName) {
+  auto dialog = platform::createNativeFileDialog();
+  if (dialog == nullptr) {
+    return core::failure<std::optional<std::filesystem::path>>(
+        core::ErrorCode::Unsupported, "No native file dialog is available for this platform");
+  }
+  return dialog->choose(platform::FileDialogRequest{
+      .purpose = purpose,
+      .title = std::move(title),
+      .initialDirectory = {},
+      .suggestedName = std::move(suggestedName),
+      .extensions = std::move(extensions)});
+}
+
 std::vector<voicebank::VoicebankSearchRoot> resolveVoicebankRoots() {
   std::vector<voicebank::VoicebankSearchRoot> roots;
   std::filesystem::path pluginPath;
@@ -157,6 +178,29 @@ public:
             std::nullopt, resolveCharacterPackage(), resolveVoicebankRoots())) {
     runtime_->setVoicebankInstallerHandoff(
         [] { return openStandaloneVoicebankInstaller(); });
+    // Score interchange in the embedded editor. The runtime runs the conversion and the adoption;
+    // this supplies the destination and keeps the review decision conservative by default.
+    runtime_->setInterchangeImportHandoff([] {
+      return chooseInterchangePath(platform::FileDialogPurpose::OpenScore,
+                                   "Open USTX or MIDI", {"ustx", "mid", "midi"}, {});
+    });
+    runtime_->setInterchangeExportHandoff([] {
+      return chooseInterchangePath(platform::FileDialogPurpose::ExportScore,
+                                   "Export USTX or MIDI", {"ustx", "mid", "midi"},
+                                   "score.ustx");
+    });
+    // The loss review is a human decision, so the embedded surface uses the same native review
+    // dialog the standalone editor does. Without it, a lossy conversion is refused rather than
+    // adopted silently.
+    runtime_->setInterchangeReviewHandoff(
+        [](const authoring::InterchangeImportDraft& draft) {
+          auto dialog = standalone::createNativeInterchangeReviewDialog();
+          if (dialog == nullptr) {
+            return core::failure<bool>(core::ErrorCode::Unsupported,
+                "Native interchange review is unavailable");
+          }
+          return dialog->review(draft);
+        });
     runtime_->setRenderReadyCallback([this] {
       refreshRuntimeMetadata();
       if (host_ != nullptr && host_->request_process != nullptr) {
