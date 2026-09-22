@@ -21,7 +21,44 @@ class Phase12CSoakWorkflowTests(unittest.TestCase):
         self.assertIn("soak-binary", workflow)
         self.assertIn("packet.json", workflow)
         self.assertIn("upload-artifact", workflow)
-        self.assertIn('profile == "full" ? 7200U : 5U', source)
+        # The profile set is closed. A bare ternary treated every unrecognised value as the
+        # five-second smoke duration while still recording the name the caller typed, so a
+        # mistyped long soak produced a passing receipt without running. The runner must name
+        # both supported profiles and refuse anything else.
+        self.assertIn('profile == "full" ? 7200U : profile == "smoke" ? 5U : 0U', source)
+        self.assertIn('unsupported --profile', source)
+        self.assertIn('expected smoke or full', source)
+
+    def test_unknown_profile_is_refused_rather_than_downgraded(self) -> None:
+        """An unrecognised duration must fail, not silently become a smoke run."""
+        import subprocess
+        import tempfile
+
+        runner = None
+        for candidate in ("build/release/phase12c/seam_phase12c_soak",
+                           "build/debug/phase12c/seam_phase12c_soak"):
+            if (ROOT / candidate).is_file():
+                runner = ROOT / candidate
+                break
+        if runner is None:
+            self.skipTest("soak runner is not built in this configuration")
+        with tempfile.TemporaryDirectory() as directory:
+            for profile in ("ful", "full ", "FULL", "soak"):
+                with self.subTest(profile=profile):
+                    output = Path(directory) / "out.json"
+                    result = subprocess.run(
+                        [str(runner), "--profile", profile, "--output", str(output)],
+                        capture_output=True, text=True, timeout=120)
+                    self.assertEqual(result.returncode, 2, (profile, result.stdout, result.stderr))
+                    self.assertIn("unsupported --profile", result.stderr)
+                    # A refused run must not leave a receipt behind for a later step to read.
+                    self.assertFalse(output.exists(), profile)
+            # The supported smoke profile still runs, so the refusal is about the name, not the path.
+            smoke = Path(directory) / "smoke.json"
+            ran = subprocess.run([str(runner), "--profile", "smoke", "--output", str(smoke)],
+                                 capture_output=True, text=True, timeout=180)
+            self.assertEqual(ran.returncode, 0, (ran.stdout, ran.stderr))
+            self.assertTrue(smoke.is_file())
 
     def test_full_soak_validator_rejects_short_or_wrong_profile_records(self) -> None:
         passing = {

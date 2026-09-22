@@ -140,7 +140,15 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  const std::uint64_t requiredSeconds = profile == "full" ? 7200U : 5U;
+  // A closed profile set. Before this, any unrecognised value fell through to the
+  // five-second smoke duration while still being recorded under the name the caller
+  // typed, so a mistyped "ful" or "full " produced a passing receipt for a two-hour
+  // soak that never ran. An unknown profile is now refused rather than downgraded.
+  const std::uint64_t requiredSeconds = profile == "full" ? 7200U : profile == "smoke" ? 5U : 0U;
+  if (requiredSeconds == 0U) {
+    std::cerr << "unsupported --profile '" << profile << "'; expected smoke or full\n";
+    return 2;
+  }
   const auto requiredDuration = std::chrono::seconds{
       static_cast<std::chrono::seconds::rep>(requiredSeconds)};
   std::optional<CanonicalEvidenceIdentity> identity;
