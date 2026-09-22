@@ -46,6 +46,200 @@ seam::neural_synthesis::NeuralRequest request() {
 
 }  // namespace
 
+TEST_CASE("neural staccato keeps an explicitly extended phonetic tail closed") {
+  using namespace seam;
+  using namespace seam::neural_synthesis;
+  const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","z","a"]})";
+  domain::Project project{domain::ProjectId{1U},"Tail envelope"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{1920},
+      .lyrics={{domain::LyricTokenId{4U},U"za",domain::Language::English}},
+      .notes={{.id=domain::NoteId{5U},.startTick=time::Tick{480},.durationTick=time::Tick{480},
+          .midiKey=69U,.lyricTokenId=domain::LyricTokenId{4U},.articulation=domain::NoteArticulation::Staccato}}};
+  const std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol="z",.role=domain::PhonemeRole::Onset,.voiced=true,.timing={.startOffset=-100000}},
+      {.key={domain::NoteId{5U},1U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true,.timing={.startOffset=0,.endOffset=200000}},
+      {.key={domain::NoteId{5U},2U},.symbol="z",.role=domain::PhonemeRole::Coda,.voiced=true,.timing={.startOffset=200000,.endOffset=300000}}};
+  for (const auto rate:{8000U,44100U,48000U,192000U}) {
+    ModelContract model{.modelId="tail-test",.modelVersion="1",.modelContentHash=std::string(64U,'a'),
+        .vocabularyHash=core::sha256Hex(json),.sampleRate=rate};
+    const auto vocabulary=NeuralVocabulary::decode(json,model); CHECK(vocabulary);
+    const auto compiled=synthesis::compileScorePerformance(project,region,rate,phones); CHECK(compiled);
+    const auto& note=compiled.value().notes().front();
+    const auto prepared=prepareNeuralScoreRequest(201U,model,vocabulary.value(),compiled.value(),
+        phones,std::string(64U,'b'),0,rate*56U/100U,"SP"); CHECK(prepared);
+    CHECK(prepared.value().dynamics[static_cast<std::size_t>(note.startFrame-1)]==1.0F);
+    CHECK(compiled.value().at(note.endFrame).articulationGain==0.0F);
+    for (auto frame=note.gateEndFrame;frame<rate*55U/100U;++frame)
+      CHECK(prepared.value().dynamics[static_cast<std::size_t>(frame)]==0.0F);
+    const auto padded=((prepared.value().frameCount+model.hopSize-1U)/model.hopSize)*model.hopSize;
+    const std::vector<float> carrier(static_cast<std::size_t>(padded),0.25F);
+    const auto output=finalizeDiffSingerAudio(prepared.value(),model,carrier); CHECK(output);
+    for (std::size_t frame=0U;frame<output.value().size();++frame)
+      CHECK(output.value()[frame]==0.25F*prepared.value().dynamics[frame]);
+  }
+}
+
+TEST_CASE("neural accepted release closes phonetic tails while neutral and manual replacement preserve them") {
+  using namespace seam;
+  using namespace seam::neural_synthesis;
+  const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","a"]})";
+  domain::Project project{domain::ProjectId{1U},"Release envelope"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{1920},
+      .lyrics={{domain::LyricTokenId{4U},U"a",domain::Language::English},
+          {domain::LyricTokenId{6U},U"a",domain::Language::English}},
+      .notes={{.id=domain::NoteId{5U},.startTick=time::Tick{480},.durationTick=time::Tick{480},
+          .midiKey=69U,.lyricTokenId=domain::LyricTokenId{4U}},
+          {.id=domain::NoteId{7U},.startTick=time::Tick{960},.durationTick=time::Tick{480},
+          .midiKey=72U,.lyricTokenId=domain::LyricTokenId{6U}}}};
+  const std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true,
+          .timing={.startOffset=0,.endOffset=300000}},
+      {.key={domain::NoteId{7U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true,
+          .timing={.startOffset=100000}}};
+  region.performance.takes={{.id="release",.sourceRegionId=region.id,
+      .resource={domain::SingerResourceKind::Neural,"fixture","1",std::string(64U,'a')},
+      .pronunciation={domain::Language::English,"fixture","1",std::string(64U,'b'),std::string(64U,'c'),std::string(64U,'d')},
+      .generatorId="fixture",.generatorVersion="1",.range={time::Tick{0},time::Tick{1920}},
+      .lanes={{domain::PerformanceChannel::Release,{{time::Tick{0},100.0}}}}}};
+  region.performance.accepted={{"release",domain::PerformanceChannel::Release,domain::NoteId{5U},time::Tick{0}}};
+  for (const auto rate:{8000U,44100U,48000U,192000U}) {
+    ModelContract model{.modelId="tail-test",.modelVersion="1",.modelContentHash=std::string(64U,'a'),
+        .vocabularyHash=core::sha256Hex(json),.sampleRate=rate};
+    const auto vocabulary=NeuralVocabulary::decode(json,model); CHECK(vocabulary);
+    for (const auto variant:{0,1,2}) {
+      auto input=region;
+      if (variant==1) input.performance.takes.front().lanes.front().points.front().value=0.0;
+      if (variant==2) input.performance.ownership={{domain::PerformanceChannel::Release,
+          domain::NoteId{5U},domain::ManualPerformanceMode::Replace,{}}};
+      const auto compiled=synthesis::compileScorePerformance(project,input,rate,phones); CHECK(compiled);
+      const auto& note=compiled.value().notes().front();
+      const auto prepared=prepareNeuralScoreRequest(202U,model,vocabulary.value(),compiled.value(),
+          phones,std::string(64U,'b'),0,rate*76U/100U,"SP"); CHECK(prepared);
+      for (auto frame=note.startFrame;frame<note.endFrame;++frame) {
+        const auto value=compiled.value().at(frame);
+        CHECK(prepared.value().dynamics[static_cast<std::size_t>(frame)]==value.dynamicsGain*value.articulationGain);
+      }
+      const auto expected=variant==0?0.0F:1.0F;
+      // The next score note is open, but cannot reopen the prior phone's tail.
+      CHECK(compiled.value().at(note.endFrame).noteId==std::optional{domain::NoteId{7U}});
+      CHECK(compiled.value().at(note.endFrame).articulationGain==1.0F);
+      CHECK(note.closesPhoneticTail==(variant==0));
+      for (auto frame=note.endFrame;frame<rate*55U/100U;++frame)
+        CHECK(prepared.value().dynamics[static_cast<std::size_t>(frame)]==expected);
+      CHECK(prepared.value().dynamics[rate*65U/100U]==1.0F);
+    }
+  }
+}
+
+TEST_CASE("neural melisma retains one vowel token while repeated syllables retain their attack boundaries") {
+  using namespace seam;
+  using namespace seam::neural_synthesis;
+  const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","a","e"]})";
+  ModelContract model{.modelId="melisma-test",.modelVersion="1",.modelContentHash=std::string(64U,'a'),
+      .vocabularyHash=core::sha256Hex(json)};
+  const auto vocabulary=NeuralVocabulary::decode(json,model); CHECK(vocabulary);
+  domain::Project project{domain::ProjectId{1U},"Melisma conditioning"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{1440},
+      .lyrics={{domain::LyricTokenId{4U},U"a",domain::Language::English},
+          {domain::LyricTokenId{6U},U"a",domain::Language::English}},
+      .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{480},.midiKey=60U,.lyricTokenId=domain::LyricTokenId{4U}},
+          {.id=domain::NoteId{7U},.startTick=time::Tick{480},.durationTick=time::Tick{480},.midiKey=60U,.lyricTokenId=domain::LyricTokenId{6U}}}};
+  std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true},
+      {.key={domain::NoteId{7U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true}};
+  const auto prepare=[&] {
+    const auto compiled=synthesis::compileScorePerformance(project,region,48000U,phones); CHECK(compiled);
+    return prepareNeuralScoreRequest(203U,model,vocabulary.value(),compiled.value(),
+        phones,std::string(64U,'b'),0,compiled.value().notes().back().endFrame,"SP");
+  };
+  const auto repeated=prepare(); CHECK(repeated);
+  CHECK(repeated.value().conditioning->spans.size()==2U);
+  region.lyrics.back().surface=U"-";
+  const auto linked=prepare(); CHECK(linked);
+  CHECK(linked.value().conditioning->spans.size()==1U);
+  CHECK(linked.value().conditioning->spans.front()==(NeuralPhonemeSpan{1U,0U,24000U}));
+  CHECK(linked.value().f0Hz==repeated.value().f0Hz);
+  CHECK(linked.value().dynamics==repeated.value().dynamics);
+  const auto repeatedInputs=prepareDiffSingerAcousticInputs(repeated.value(),model,vocabulary.value(),10); CHECK(repeatedInputs);
+  const auto linkedInputs=prepareDiffSingerAcousticInputs(linked.value(),model,vocabulary.value(),10); CHECK(linkedInputs);
+  CHECK(repeatedInputs.value().tokens==(std::vector<std::int64_t>{1,1}));
+  CHECK(linkedInputs.value().tokens==(std::vector<std::int64_t>{1}));
+  CHECK(repeatedInputs.value().f0Hz==linkedInputs.value().f0Hz);
+  region.notes.back().midiKey=67U;
+  const auto melody=prepare(); CHECK(melody); CHECK(melody.value().conditioning->spans.size()==1U);
+  CHECK_NEAR(melody.value().f0Hz[1000],261.625565,0.001);
+  CHECK_NEAR(melody.value().f0Hz[22000],391.995436,0.001);
+  region.notes.front().articulation=domain::NoteArticulation::Staccato;
+  const auto detached=prepare(); CHECK(detached); CHECK(detached.value().conditioning->spans.size()==2U);
+  region.notes.front().articulation=domain::NoteArticulation::Normal;
+  phones.back().symbol="e";
+  const auto different=prepare(); CHECK(different); CHECK(different.value().conditioning->spans.size()==2U);
+  phones.back().symbol="a";
+  region.notes.back().startTick=time::Tick{600};
+  const auto rest=prepare(); CHECK(rest); CHECK(rest.value().conditioning->spans.size()==3U);
+  region.notes.back().startTick=time::Tick{480};
+  phones.back().timing.startOffset=10000;
+  const auto delayed=prepare(); CHECK(delayed); CHECK(delayed.value().conditioning->spans.size()==3U);
+  CHECK(delayed.value().conditioning->spans[1].tokenId==0U);
+  phones.back().timing={};
+  region.lyrics.push_back({domain::LyricTokenId{8U},U"-",domain::Language::English});
+  region.notes.push_back({.id=domain::NoteId{9U},.startTick=time::Tick{960},.durationTick=time::Tick{480},
+      .midiKey=64U,.lyricTokenId=domain::LyricTokenId{8U}});
+  phones.push_back({.key={domain::NoteId{9U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true});
+  const auto chain=prepare(); CHECK(chain);
+  CHECK(chain.value().conditioning->spans==(std::vector<NeuralPhonemeSpan>{{1U,0U,36000U}}));
+  CHECK_NEAR(chain.value().f0Hz[22000],391.995436,0.001);
+  CHECK_NEAR(chain.value().f0Hz[34000],329.627557,0.001);
+}
+
+TEST_CASE("neural melody tempo vibrato and gain match absolute compiled performance across block subdivisions") {
+  using namespace seam;
+  using namespace seam::neural_synthesis;
+  const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","a"]})";
+  domain::Project project{domain::ProjectId{1U},"Cross-family musical controls"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.startTick=time::Tick{960},.durationTick=time::Tick{1440},
+      .lyrics={{domain::LyricTokenId{4U},U"a",domain::Language::English},
+          {domain::LyricTokenId{6U},U"-",domain::Language::English}},
+      .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{480},.midiKey=60U,.lyricTokenId=domain::LyricTokenId{4U}},
+          {.id=domain::NoteId{7U},.startTick=time::Tick{480},.durationTick=time::Tick{480},.midiKey=67U,.lyricTokenId=domain::LyricTokenId{6U}}}};
+  CHECK(project.tempoMap().addOrReplace(region.startTick+time::Tick{600},90.0));
+  CHECK(region.dynamicsAutomation.replacePoints({{time::Tick{0},0.25F},{time::Tick{960},0.75F}}));
+  for (auto& note:region.notes) { note.vibrato.enabled=true; note.vibrato.phaseTurns=0.25F; }
+  const std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true},
+      {.key={domain::NoteId{7U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true}};
+  for (const auto rate:{8000U,44100U,48000U,192000U}) {
+    ModelContract model{.modelId="controls-test",.modelVersion="1",.modelContentHash=std::string(64U,'a'),
+        .vocabularyHash=core::sha256Hex(json),.sampleRate=rate};
+    const auto vocabulary=NeuralVocabulary::decode(json,model); CHECK(vocabulary);
+    const auto compiled=synthesis::compileScorePerformance(project,region,rate,phones); CHECK(compiled);
+    const auto origin=compiled.value().notes().front().startFrame;
+    const auto end=compiled.value().notes().back().endFrame;
+    const auto prepared=prepareNeuralScoreRequest(204U,model,vocabulary.value(),compiled.value(),
+        phones,std::string(64U,'b'),origin,end,"SP"); CHECK(prepared);
+    CHECK(prepared.value().conditioning->spans.size()==1U);
+    bool vibratoObserved=false;
+    for (auto frame=origin;frame<end;++frame) {
+      const auto value=compiled.value().at(frame); CHECK(value.scoreFrequencyHz);
+      CHECK(prepared.value().f0Hz[static_cast<std::size_t>(frame-origin)]==static_cast<float>(*value.scoreFrequencyHz));
+      vibratoObserved=vibratoObserved || value.vibratoCents!=0.0;
+    }
+    CHECK(vibratoObserved);
+    const auto padded=((prepared.value().frameCount+model.hopSize-1U)/model.hopSize)*model.hopSize;
+    const auto neural=finalizeDiffSingerAudio(prepared.value(),model,std::vector<float>(static_cast<std::size_t>(padded),0.25F)); CHECK(neural);
+    for (const auto block:{127U,733U,1024U}) {
+      std::vector<float> classicalAndProceduralGain(static_cast<std::size_t>(end-origin),0.25F);
+      for (auto stop=classicalAndProceduralGain.size();stop>0U;) {
+        const auto begin=stop>block?stop-block:0U;
+        CHECK(synthesis::applyCompiledPerformanceGain(std::span<float>{classicalAndProceduralGain}.subspan(begin,stop-begin),
+            compiled.value(),origin+static_cast<time::SampleFrame>(begin)));
+        stop=begin;
+      }
+      CHECK(neural.value()==classicalAndProceduralGain);
+    }
+  }
+}
+
 TEST_CASE("neural vocabulary loads exact model-bound bytes and preserves explicit token order") {
   using namespace seam::neural_synthesis;
   const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","z","aa1","あ"]})";

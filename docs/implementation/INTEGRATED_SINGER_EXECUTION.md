@@ -1,5 +1,30 @@
 # Integrated Singer Execution
 
+## U6 neural envelope and melisma parity verified; review pending (2026-09-22)
+
+The cross-renderer audit reproduced two neural control losses. Explicit
+post-note phonetic extensions reopened completed staccato/release gates
+(26 existing cases passed, two new cases failed). Same-pitch repeated vowels
+and melisma also reached the acoustic model with identical token boundaries
+(28 passed, one new case failed after the envelope repair).
+
+Compiler 20 derives note-owned tail closure after accepted/manual ownership and
+continuation. Neural request revision 3 honors that closure without borrowing a
+following note's envelope. After evaluating original per-phone controls, it joins
+only contiguous same-vowel nuclei that the compiler marks as continuation at
+the exact score boundary. Repeats, staccato, changed vowels, rests and shifted
+phonetic boundaries remain distinct. Existing cache identities bind both revisions.
+
+Four new regressions exercise 8/44.1/48/192 kHz, closed tails, neutral/manual
+release, following-note isolation, C4-G4-E4 continuation, actual acoustic token
+inputs, tempo/vibrato and block-independent shared gain. Fresh builds and eleven
+selected targets pass in each configuration: Release 1,027 case executions in
+25.66 seconds; Debug 1,158 in 164.78 seconds. Captured-teacher Python tests pass
+12/12; source closure and whitespace checks pass. Exact-commit review remains
+pending. No learned-model inference, training or listening
+acceptance is claimed. See U6_NEURAL_MUSICAL_CONTROL_PARITY_2026-09-22.md. Full U6
+and Beta remain open; no new complete unit is counted.
+
 ## U17 native selection details independently approved after repair (2026-09-22)
 
 The shared sample microscope now offers lossless UTF-8-aware paged details for

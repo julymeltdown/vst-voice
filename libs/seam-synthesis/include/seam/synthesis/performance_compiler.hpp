@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 19U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 20U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -82,6 +82,10 @@ struct ScoreNoteSpan final {
   // immediately before endFrame rounds to the following score tick.
   time::Tick startTick{};
   time::Tick endTick{};
+  // Derived after accepted/manual ownership and continuation are resolved.
+  // A phonetic extension may retain edge pitch/dynamics, but must not reopen
+  // this note's completed staccato or accepted-release envelope.
+  bool closesPhoneticTail{false};
 };
 
 // Bounded immutable score evaluator; no per-frame song arrays or worker phase.

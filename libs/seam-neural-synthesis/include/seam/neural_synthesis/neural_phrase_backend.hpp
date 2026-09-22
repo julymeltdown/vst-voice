@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace seam::neural_synthesis {
-inline constexpr std::uint32_t kNeuralScoreRequestRevision = 2U;
+inline constexpr std::uint32_t kNeuralScoreRequestRevision = 3U;
 
 struct NeuralPackageFile final {
   std::filesystem::path relativePath;

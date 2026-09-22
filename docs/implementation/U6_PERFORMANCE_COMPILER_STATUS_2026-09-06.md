@@ -2,6 +2,19 @@
 
 Status: active, incomplete. The approved U6 goal remains a shared musical evaluator consumed by all three rendering families, not merely a standalone score utility.
 
+Latest continuation (2026-09-22, neural musical-control parity): compiler 20
+derives note-owned tail closure after accepted/manual ownership and continuation.
+Neural request revision 3 respects it through explicit phonetic tails instead of
+reopening staccato/release at note end. Contiguous same-vowel continuation tokens
+are joined only after original per-note F0/dynamics/timbre evaluation; repeated
+syllables and explicit shifted boundaries stay separate. Three regressions first
+reproduced these two integration defects. Four new cases now cover tail/neighbor
+ownership, melisma acoustic inputs, tempo/vibrato and multi-rate shared-gain
+parity. Eleven selected targets pass per configuration (Release 1,027 and Debug
+1,158 case executions), plus 12 Python tests. Independent review is pending. See
+`U6_NEURAL_MUSICAL_CONTROL_PARITY_2026-09-22.md`. No full U6 or singer qualification
+is claimed; older entries below describe historical checkpoints.
+
 Latest continuation (2026-09-22, paired-style increment): compiler revision 19
 adds accepted StyleBlend for explicit ordered sample-bank pairs. The track default
 survives unowned preutterance/tails; selected lanes and manual Replace retain

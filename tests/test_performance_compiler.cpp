@@ -403,6 +403,7 @@ TEST_CASE("staccato release stays closed through gaps and follows tempo-resolved
     CHECK(compiled);
     const auto& first = compiled.value().notes()[0];
     const auto& second = compiled.value().notes()[1];
+    CHECK(first.closesPhoneticTail); CHECK(!second.closesPhoneticTail);
     CHECK(first.gateEndFrame - first.startFrame == (first.endFrame - first.startFrame) / 2);
     CHECK(first.gateEndFrame - first.releaseStartFrame <= rate / 100U);
     CHECK(compiled.value().at(first.gateEndFrame).articulationGain == 0.0F);
@@ -823,6 +824,7 @@ TEST_CASE("accepted release fades to note end preserves continuation and keeps s
   for (const auto rate : {8000U, 44100U, 192000U}) {
     const auto score = seam::synthesis::compileScorePerformance(f.project, f.region(), rate); CHECK(score);
     const auto end = score.value().notes().back().endFrame;
+    CHECK(score.value().notes().back().closesPhoneticTail);
     CHECK(score.value().at(end - rate / 10U).articulationGain == 1.0F);
     CHECK(score.value().at(end - rate / 20U).articulationGain == 0.5F);
     CHECK(score.value().at(end).articulationGain == 0.0F);
@@ -836,9 +838,11 @@ TEST_CASE("accepted release fades to note end preserves continuation and keeps s
   const auto manual = seam::synthesis::compileScorePerformance(f.project, f.region(), 48000U); CHECK(manual);
   const auto end = manual.value().notes().back().endFrame;
   CHECK(!manual.value().at(end - 1).releaseMilliseconds); CHECK(manual.value().at(end - 1).articulationGain == 1.0F);
+  CHECK(!manual.value().notes().back().closesPhoneticTail);
   CHECK(manual.value().at(end + 100).articulationGain == 1.0F);
   state.ownership.clear(); state.takes[0].lanes[0].points = {{Tick{0}, 0.0}};
   const auto zero = seam::synthesis::compileScorePerformance(f.project, f.region(), 48000U); CHECK(zero);
+  CHECK(!zero.value().notes().back().closesPhoneticTail);
   CHECK(zero.value().at(end - 1).articulationGain == 1.0F); CHECK(zero.value().at(end).articulationGain == 1.0F);
   state.takes[0].lanes[0].points = {{Tick{0}, 100.0}};
   state.accepted[0].scope = f.region().notes.front().id;
@@ -846,6 +850,7 @@ TEST_CASE("accepted release fades to note end preserves continuation and keeps s
   const auto phones = seam::phonemizer::resolveJapanesePronunciation(f.region()); CHECK(phones);
   const auto linked = seam::synthesis::compileScorePerformance(f.project, f.region(), 48000U, phones.value().pronunciation.tokens); CHECK(linked);
   CHECK(!linked.value().notes()[1].reattack);
+  CHECK(!linked.value().notes().front().closesPhoneticTail);
   CHECK(linked.value().at(linked.value().notes()[0].endFrame - 1).articulationGain == 1.0F);
 }
 

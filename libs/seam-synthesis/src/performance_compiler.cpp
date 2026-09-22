@@ -394,6 +394,14 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   sortIndex(result.acceptedIndex_, result.acceptedScopes_);
   result.hasManualPerformance_ = !result.performance_.accepted.empty() ||
       !result.performance_.ownership.empty();
+  for (std::size_t i = 0U; i < result.notes_.size(); ++i) {
+    auto& note = result.notes_[i];
+    const auto last = result.at(note.endFrame - 1);
+    const bool continues = i + 1U < result.notes_.size() &&
+        result.notes_[i + 1U].startFrame == note.endFrame && !result.notes_[i + 1U].reattack;
+    note.closesPhoneticTail = note.articulation == domain::NoteArticulation::Staccato ||
+        (!continues && last.releaseMilliseconds && *last.releaseMilliseconds > 0.0);
+  }
   return result;
 }
 
@@ -413,11 +421,7 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
   if (frame >= note.endFrame) {
     // A staccato release stays closed through a gap/extended source tail; it
     // must not reopen just because there is no longer an active score note.
-    if (note.articulation == domain::NoteArticulation::Staccato) result.articulationGain = 0.0F;
-    else if (!acceptedIndex_[static_cast<std::size_t>(domain::PerformanceChannel::Release)].empty()) {
-      const auto last = at(note.endFrame - 1);
-      if (last.releaseMilliseconds && *last.releaseMilliseconds > 0.0) result.articulationGain = 0.0F;
-    }
+    if (note.closesPhoneticTail) result.articulationGain = 0.0F;
     return result;
   }
   const auto tick = tempo_.tickAtSampleFrame(frame, sampleRate_) - regionStart_;

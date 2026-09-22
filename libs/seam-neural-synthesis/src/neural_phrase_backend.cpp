@@ -193,7 +193,7 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       const auto found=model.breathinessDefaults.find(phone.symbol);
       defaults.emplace(phone.key,found==model.breathinessDefaults.end()?0.0F:found->second);
     }
-  struct PhoneOwner { bool voiced; bool silent; float defaultBreathiness; const synthesis::ScoreNoteSpan* note; };
+  struct PhoneOwner { bool voiced; bool silent; bool nucleus; float defaultBreathiness; const synthesis::ScoreNoteSpan* note; };
   std::map<domain::NoteId,const synthesis::ScoreNoteSpan*> notes;
   for (const auto& note:performance.notes()) notes.emplace(note.id,&note);
   std::map<std::uint64_t,PhoneOwner> activeStarts;
@@ -205,7 +205,7 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
     if (owner==notes.end() || owner->second->endFrame<=owner->second->startFrame)
       return core::failure<NeuralRequest>(core::ErrorCode::Conflict,"Neural phoneme has no valid owning note");
     activeStarts.emplace(static_cast<std::uint64_t>(start-origin),PhoneOwner{voiced.at(anchor.key),silent.at(anchor.key),
-        hasDefaults?defaults.at(anchor.key):0.0F,owner->second});
+        anchor.nucleusKey==std::optional{anchor.key},hasDefaults?defaults.at(anchor.key):0.0F,owner->second});
   }
   NeuralRequest request{.requestId=requestId,.modelId=model.modelId,.modelVersion=model.modelVersion,
       .modelContentHash=model.modelContentHash,.pronunciationHash=std::move(pronunciationHash),
@@ -234,8 +234,11 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
         return core::failure<NeuralRequest>(core::ErrorCode::Conflict,"Neural phone context resolves to a different score voice");
       // scoreFrequencyHz already includes compiled pitch and vibrato.
       if (active->second.voiced && value.scoreFrequencyHz) request.f0Hz[frame]=static_cast<float>(*value.scoreFrequencyHz);
-      // Explicit phonetic extensions must not inherit a closed note envelope.
-      request.dynamics[frame]=value.dynamicsGain*(sampled==absolute?value.articulationGain:1.0F);
+      // Explicit context retains edge pitch/dynamics, but a completed authored
+      // gate stays closed. Use this phone's owner, not a following score note.
+      const auto envelope=absolute>=owner.endFrame && owner.closesPhoneticTail
+          ?0.0F:(sampled==absolute?value.articulationGain:1.0F);
+      request.dynamics[frame]=value.dynamicsGain*envelope;
       // Pitch/envelope can extend from the owning note's edge. Timbral ownership
       // cannot: use actual time and never borrow an overlapping neighbor's lane.
       const auto timbre=sampled==absolute?value:performance.at(absolute);
@@ -245,6 +248,28 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       if (amount != 0.0F) anyBreathiness = true;
     }
   }
+  // Keep the original phone owners until every sample-domain control has been
+  // evaluated. Then represent a compiled, contiguous vowel continuation as one
+  // acoustic token; repeated syllables must keep separate duration entries.
+  // Off-score timing boundaries remain explicit instead of being erased.
+  std::vector<NeuralPhonemeSpan> linked;
+  linked.reserve(request.conditioning->spans.size());
+  const PhoneOwner* previousOwner=nullptr;
+  for (const auto& span:request.conditioning->spans) {
+    if (stop.stop_requested()) return cancelled();
+    const auto active=activeStarts.find(span.startFrame);
+    const auto* owner=active==activeStarts.end()?nullptr:&active->second;
+    if (!linked.empty() && previousOwner && owner &&
+        previousOwner->nucleus && owner->nucleus && previousOwner->voiced && owner->voiced &&
+        !previousOwner->silent && !owner->silent && !owner->note->reattack &&
+        previousOwner->note->endFrame==owner->note->startFrame &&
+        origin+static_cast<time::SampleFrame>(span.startFrame)==owner->note->startFrame &&
+        linked.back().tokenId==span.tokenId && linked.back().endFrame==span.startFrame) {
+      linked.back().endFrame=span.endFrame;
+    } else linked.push_back(span);
+    previousOwner=owner;
+  }
+  request.conditioning->spans=std::move(linked);
   if (anyBreathiness) request.breathiness = std::move(breathiness);
   if (stop.stop_requested()) return cancelled();
   const auto checked=model.validateRequest(request,limits); if (!checked) return core::Result<NeuralRequest>{checked.error()};
