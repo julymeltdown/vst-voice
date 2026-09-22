@@ -1,5 +1,19 @@
 # U6 performance compiler status
 
+## Target-unvoicing research, 2026-09-22 — production remains unsupported
+
+A shared envelope/noise conversion was rejected for normal rendering after its
+frozen speech assessment failed. All provisional production adapter/compiler
+changes were restored. Developer 2 approved only the isolated default-OFF
+experiment at `86a4ae43`, then its additive exact-oracle calibration at `609f5734`.
+The latter reproduces a measurement-scope limitation in 36/108 aperiodic-excitation
+constructions; this is not a perceptual unvoiced label or evidence that either
+speech failure should pass. The original oracle, thresholds, speech results and
+historical artifacts are preserved. Both increments passed dedicated Release/Debug
+checks and independent reruns; neither closes U6/U16 or changes normal rendering.
+See U6_SAMPLE_TARGET_VOICING_2026-09-22.md and
+U6_VOICING_ORACLE_CALIBRATION_2026-09-22.md for identities and review limits.
+
 ## Production phonetic context, 2026-09-22 — independently approved
 
 Compiler 21 adds region-bounded resolved phonetic context and an explicit

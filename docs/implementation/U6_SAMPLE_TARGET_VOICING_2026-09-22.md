@@ -182,13 +182,19 @@ fixed-corpus numerical and listening support. Existing unqualified renderers do
 not justify turning a new, demonstrably unmet requested effect into normal
 success with a warning.
 
-Next: test a stronger analysis/synthesis alternative and calibrate any
-aperiodicity diagnostic against independent voiced/unvoiced controls. The current
-short-lag correlation may be sensitive to spectral coloration, but that is a
-hypothesis, not an excuse to relabel this assessment PASS. A validated replacement
-metric would require a versioned, independently reviewed contract change and
-retesting—not retrospective threshold relaxation. Production enablement requires
-a separate pinned review after the claimed resource/control scope passes.
+The additive calibration in U6_VOICING_ORACLE_CALIBRATION_2026-09-22.md now
+demonstrates a construction-label scope limitation: resonant coloring alone can
+put independently generated random excitation above this correlation cutoff.
+Developer 2 approved that bounded conclusion at `609f5734`. Whether it explains
+this particular speech failure, or whether that speech sounds acceptably unvoiced,
+remains unproved. It is not an excuse to relabel this assessment PASS.
+
+Next: compare a stronger analysis/synthesis alternative using defensible
+aperiodicity diagnostics, preserving the existing numerical results. Any proposed
+replacement diagnostic needs held-out controls, a versioned independently reviewed
+contract and side-by-side retesting, not retrospective threshold relaxation.
+Production enablement requires separate review after the claimed resource/control
+scope passes, including the applicable acoustic and listening evidence.
 
 ## Reference provenance
 

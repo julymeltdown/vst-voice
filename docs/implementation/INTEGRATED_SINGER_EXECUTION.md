@@ -17,7 +17,12 @@ directories. Historical speech report hashes remain unchanged, and new speech
 results still reproduce both acoustic failures. No production code, thresholds,
 fixtures or original oracle changed. A replacement metric and production
 promotion require separate evidence/review; neither is implemented here.
-Pinned calibration review is pending. See
+Developer 2 APPROVED `609f573429aff855f1280ca1707923582f94d9b3`, independently
+running both six-case binaries, recalculating every reported count/range and
+verifying all 336 control WAV hashes with Node crypto. Historical report/WAV
+hashes remained unchanged across the reviewer's reruns. No fresh builds,
+broader product-suite runs, Windows/listening checks or independent numerical
+oracle were performed. See
 U6_VOICING_ORACLE_CALIBRATION_2026-09-22.md. No additional complete unit or Beta GO.
 
 ## U6 target-unvoicing experiment: acoustic FAIL, production disabled (2026-09-22)

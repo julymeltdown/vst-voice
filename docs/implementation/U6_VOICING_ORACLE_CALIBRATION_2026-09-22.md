@@ -1,7 +1,7 @@
 # U6 source-lag oracle calibration — prospective revision 1
 
 Date: 2026-09-22. Baseline: `8b8668d9563130fba43e4b8ec2340475c887e5b0`.
-Status: fixed-grid calibration executed; construction-label scope limitation reproduced.
+Status: calibration-v1 independently approved; construction-label scope limitation reproduced.
 This is additive measurement research, not production unvoicing or singer qualification.
 
 ## Question and fixed controls
@@ -115,6 +115,27 @@ directory. Use the existing default-OFF experiment target's reproduction command
 its output names the exact executable-bound artifact directory. There is no new
 runtime dependency, production target or applied-control capability.
 
-Developer 2 approved this next research direction separately from approving
-the original experiment at `86a4ae43`; implementation review of this calibration
-is still required after execution.
+## Independent acceptance and limits
+
+Developer 2 APPROVED calibration-v1 at
+`609f573429aff855f1280ca1707923582f94d9b3` against
+`8b8668d9563130fba43e4b8ec2340475c887e5b0`, with no actionable blocking finding.
+The reviewer inspected the entire four-file diff and unchanged oracle/thresholds,
+then independently executed both existing binaries (six passing cases each).
+All counts and documented ranges were recalculated from the reports. All 336
+control WAV hashes were independently checked using Node crypto, along with
+binary/report hashes, 168 unique case IDs per configuration, measurement geometry
+and complete cross-configuration report equality apart from executable identity.
+
+The reviewer captured historical root-level report/WAV hashes before rerunning
+and verified them afterward: all unchanged. New speech reports differ only by
+executable identity, and their three WAV hashes match the corresponding historical
+ones. Both original acoustic failures remain intact.
+
+No fresh build/configure, broader product-suite rerun, Windows verification,
+listening assessment or independently implemented numerical oracle was performed
+by the reviewer. This accepts only the additive calibration and its stated
+construction-label measurement-scope conclusion. It does not qualify the
+converter, replace the metric, relax thresholds, authorize production promotion,
+or close U6/U16. A replacement metric still needs separately reviewed criteria,
+held-out controls and fixed-speech evidence with old/new results retained together.
