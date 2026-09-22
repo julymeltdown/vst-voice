@@ -256,6 +256,20 @@ void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
 }
 
 void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
+  // Score interchange is dispatched before the editor lock is taken. Both operations can open a host
+  // dialog through the handoff callbacks, which must not run while this mutex is held: the modal would
+  // then deadlock against the conversion that tries to re-enter the same lock. Command-Shift-O opens a
+  // score and Command-Shift-E writes one, matching the standalone menu's shortcuts.
+  if (event.modifiers.command && event.modifiers.shift && !event.repeat) {
+    if (event.key == native_ui::NativeKey::O) {
+      static_cast<void>(requestInterchangeImport());
+      return;
+    }
+    if (event.key == native_ui::NativeKey::E) {
+      static_cast<void>(requestInterchangeExport());
+      return;
+    }
+  }
   std::lock_guard lock(mutex_);
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->keyDown(event)); return;

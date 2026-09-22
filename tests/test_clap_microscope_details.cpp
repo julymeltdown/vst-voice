@@ -355,3 +355,50 @@ TEST_CASE("CLAP interchange refuses a lossy draft when no review surface is conn
   CHECK(accepted.hasValue());
   CHECK(runtime.projectCopy().id() != before.id());
 }
+
+// The embedded surface reaches interchange through its keyboard, so the shortcut itself is part of
+// the contract: a wired runtime nobody can trigger is not a usable feature.
+TEST_CASE("CLAP interchange shortcuts reach the host handoffs and leave other keys alone") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-shortcut");
+  auto runtime = runtimeFixture();
+  const auto score = root / "shortcut.ustx";
+  // The shortcut must reach a real conversion, so a score exists to import.
+  authoring::InterchangeExportRequest writeScore;
+  writeScore.format = authoring::InterchangeFormat::Ustx;
+  writeScore.destination = score;
+  CHECK(runtime.exportInterchange(writeScore).hasValue());
+  int importCalls = 0;
+  int exportCalls = 0;
+  runtime.setInterchangeImportHandoff([&] {
+    ++importCalls;
+    return std::optional<std::filesystem::path>{score};
+  });
+  runtime.setInterchangeExportHandoff([&] {
+    ++exportCalls;
+    return std::optional<std::filesystem::path>{};
+  });
+  runtime.setInterchangeReviewHandoff([](const authoring::InterchangeImportDraft&) { return true; });
+
+  // A plain key must not be swallowed by the interchange path.
+  runtime.keyDown({.key = native_ui::NativeKey::O, .modifiers = {}});
+  runtime.keyDown({.key = native_ui::NativeKey::E, .modifiers = {.command = true}});
+  CHECK(importCalls == 0);
+  CHECK(exportCalls == 0);
+
+  // Command-Shift-E writes a score.
+  runtime.keyDown({.key = native_ui::NativeKey::E,
+                   .modifiers = {.shift = true, .command = true}});
+  CHECK(exportCalls == 1);
+  // A repeat must not fire the dialog again while the key is held down.
+  runtime.keyDown({.key = native_ui::NativeKey::E,
+                   .modifiers = {.shift = true, .command = true}, .repeat = true});
+  CHECK(exportCalls == 1);
+
+  // Command-Shift-O opens one: the handoff runs, the conversion is reviewed and adopted.
+  const auto before = runtime.projectCopy();
+  runtime.keyDown({.key = native_ui::NativeKey::O,
+                   .modifiers = {.shift = true, .command = true}});
+  CHECK(importCalls == 1);
+  CHECK(runtime.projectCopy().id() != before.id());
+}

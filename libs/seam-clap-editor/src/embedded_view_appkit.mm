@@ -79,6 +79,8 @@ native_ui::NativeKey keyFor(NSEvent* event) noexcept {
     case 6: return native_ui::NativeKey::Z;
     case 16: return native_ui::NativeKey::Y;
     case 8: return native_ui::NativeKey::C;
+    case 31: return native_ui::NativeKey::O;
+    case 14: return native_ui::NativeKey::E;
     case 24: return native_ui::NativeKey::Plus;
     case 27: return native_ui::NativeKey::Minus;
     default: return native_ui::NativeKey::Unknown;
