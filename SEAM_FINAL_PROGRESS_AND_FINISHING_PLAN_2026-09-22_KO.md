@@ -1,6 +1,6 @@
 # SEAM 최종 진행도 및 마무리 계획 (2026-09-22)
 
-기준 리비전: `c077cf5d` (기준 `ed41968d` + 검증·커밋·푸시 완료된 네이티브 입력/상호교환 통합 배치)
+기준 리비전: `f2d3b150` (기준 `ed41968d` + 검증·커밋·푸시 완료된 네이티브 입력/상호교환 통합 배치)
 성격: 코드·테스트·계약 실행 증거에 기반한 진행도 평가와 마무리 작업 계획. 이 문서는 구현 승인, 단위 승인, 출시 승인을 새로 부여하지 않는다.
 이전 점검 문서: `SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-22_KO.md` (20:11 KST 시점 기록, 그대로 보존)
 
@@ -30,7 +30,7 @@
 | 전체 제품 계약 Python 검사 | **44개 통과, 21.9초** | 검증기 정의·게이트 동작 증거이며 제품 합격 증거가 아님 |
 | 계약 실시간 판정 | 요구사항 20, 사례 83, 정의 오류 0, 미확정 13, 출시 리소스 0 | `matrixStatus=UNRESOLVED`, `evaluationProfile.status=UNRESOLVED` |
 | 추적 소스 완전성 | 이전 실패(미등록 7개) → **`SOURCE_CLOSURE=PASS`** | 파일 유실이 아니라 통합 전 미등록 상태였음 |
-| 원격 `origin/master` | **`c077cf5d`** (푸시 후 `ls-remote`로 확인) | `ed41968d → 162adc60 → 2a797b96 → c077cf5d` |
+| 원격 `origin/master` | **`f2d3b150`** (푸시마다 `ls-remote`로 확인) | `ed41968d → 162adc60 → 2a797b96 → c077cf5d → 27e49aee → f2d3b150` |
 | Release 전체 스위트 | 181개 중 **176개 통과 / 5개 실패** | 실패 5개는 `phase12b_contract`, `macos_source_contract`(이번에 수정), 미빌드 실행 파일 2개, `inventory_preflight`(재빌드 후 통과). 아래에서 원인 분리 |
 
 ### 이번에 실제로 고친 결함 (모두 커밋·푸시 완료)
@@ -45,8 +45,18 @@
 - **전체 스위트의 기존 실패 (이번 변경과 무관함을 확인)**:
   - `seam_inventory_preflight_tests`: 로컬 실패는 **오래된 `seam_voicebank_cli` 바이너리 때문**이었다. CLI와 테스트를 다시 빌드하니 통과한다. 이 실패는 회귀가 아니라 빌드 트리 드리프트다. **전체 스위트 결과를 읽을 때 이 구분이 중요하다.**
   - `seam_contextual_unit_selection_tests`, `seam_sample_microscope_tests`: 실행 파일이 없어 `Not Run`이었고 개별 빌드로 생성된다. 빌드 트리 드리프트.
-  - **`seam_phase12b_contract` — 실제 미구현 결함(기존)**: CLAP 임베디드 편집기에 `EditorSceneState::SampleMicroscopeView`, `microscopeWaveformBounds`, `microscopeSpectrogramBounds`가 없다. 통합 뷰(`libs/seam-native-ui`)에는 있지만 CLAP 편집기(`libs/seam-clap-editor/src/editor_runtime_paint.cpp`, `editor_runtime_input.cpp`)에는 연결되지 않았다. CI `ed41968d` 실행에서도 동일하게 실패했으므로 이번 배치가 만든 문제가 아니다.
+  - ~~`seam_phase12b_contract`~~ **해결 완료**: 실패 원인은 미구현이 아니라 **낡은 계약**이었다. 이전 리팩터가 마이크로스코프 상태·레이아웃·히트테스트를 공용 컨트롤러로 옮겼는데 계약은 CLAP 런타임이 직접 만들던 옛 구조를 검사하고 있었다. 계약을 실제 소유자(공용 컨트롤러 + CLAP의 위임)로 옮기고 검증을 강화했다. `verify_phase12b_contracts.py` 6개 섹션 통과, `phase12b_contract`/`clap_microscope_tests`/`sample_microscope_tests`/`contextual_unit_selection_tests` Release 통과. (f2d3b15)
   - CI `ed41968d` 실행의 macOS 작업은 그 외에도 `onnx`/`torch` 미설치로 인한 `seam_voice_model_training_tests` 실패가 있었다. 이는 환경 의존 실패이며 코드 회귀가 아니다.
+
+### 교훈: "실패"를 세 종류로 나눠야 한다
+
+이번 점검에서 전체 스위트 실패 5건 중 실제 결함은 1건(낡은 계약)뿐이었다.
+
+1. **빌드 트리 드리프트** (2건): 실행 파일이 없거나 오래된 바이너리를 참조. 재빌드로 해소. **CI는 이 경우 통과**하므로 로컬 실패가 곧 회귀는 아니다.
+2. **환경 의존** (CI 1건): `onnx`/`torch` 미설치.
+3. **실제 결함** (1건): 계약이 코드 구조 변경을 따라가지 못함. 동작은 정상이었고 계약이 틀렸다.
+
+앞으로 전체 스위트 결과를 보고할 때 이 분류를 먼저 적용한다.
 - **아직 남은 것 (이번 배치 범위 밖)**:
 - **네이티브 모달 실제 조작 미검증**: AppKit 검토 대화상자 코드는 존재하지만 Return/Escape, 포커스 복원, 긴 텍스트 스크롤, 작은 화면은 실행 검증이 없다(이전 시도는 Mac 잠금으로 실패).
 - **실제 마이크 장치·권한·분리 동작 미검증**: 주입된 장치 팩토리 테스트는 하드웨어 증거가 아니다.
