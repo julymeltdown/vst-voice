@@ -23,6 +23,7 @@ namespace seam::formats::detail {
 [[nodiscard]] JsonValue encodeGrowl(const domain::GrowlAutomation& growl);
 [[nodiscard]] core::Result<domain::GrowlAutomation> decodeGrowl(const JsonValue* value);
 [[nodiscard]] JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection);
-[[nodiscard]] core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value);
+[[nodiscard]] core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value,
+                                                                          bool allowBlend = false);
 
 }

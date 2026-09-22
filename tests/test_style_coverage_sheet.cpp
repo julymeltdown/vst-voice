@@ -93,6 +93,39 @@ TEST_CASE("style sheet does not invent coverage for empty unsupported or procedu
   CHECK(!procedural); CHECK(procedural.error().message.find("recipe controls") != std::string::npos);
 }
 
+TEST_CASE("native style crossfade selects an explicit pair and amount through draft apply and undo") {
+  using namespace seam; Fixture f; f.bank.candidate->manifest.units[1].enabled = true;
+  application::EditorSession session{f.project};
+  native_ui::NativeEditorController controller{session, f.factory, f.region};
+  controller.setStyleBankResolver([&](domain::TrackId) { return f.bank; });
+  controller.resize(480.0, 320.0);
+  CHECK(controller.openStyleCoverageSheet());
+  CHECK(controller.openReplacementRow(2U)); // Configure pair, not a third style.
+  CHECK(controller.sceneState().replacementReview.status.find("PCM style crossfade") != std::string::npos);
+  CHECK(!controller.openReplacementRow(3U)); // No secondary: amount cannot be edited.
+  CHECK(controller.openReplacementRow(1U));
+  CHECK(!controller.openReplacementRow(0U)); // Duplicate primary/secondary refused.
+  CHECK(controller.openReplacementRow(1U)); // soft, default 50 percent.
+  CHECK(controller.openReplacementRow(3U)); // 55 percent.
+  CHECK(session.project() == f.project);
+  if (const auto* capture = std::getenv("SEAM_STYLE_BLEND_CAPTURE")) {
+    auto engine = text::TextEngine::createSystem(); CHECK(engine);
+    native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+  }
+  CHECK(controller.replacementReviewAction(3U));
+  const auto& selection = session.project().findVocalTrack(f.track)->styleSelection;
+  CHECK(selection.blend); CHECK(selection.blend->targetStyleId == "soft");
+  CHECK(selection.blend->amount == 0.55F);
+  const auto paired = session.project();
+  CHECK(session.undo()); CHECK(session.project() == f.project);
+  CHECK(session.redo()); CHECK(session.project() == paired);
+  CHECK(controller.openStyleCoverageSheet()); CHECK(controller.openReplacementRow(2U));
+  CHECK(controller.openReplacementRow(4U)); CHECK(controller.replacementReviewAction(3U));
+  CHECK(!session.project().findVocalTrack(f.track)->styleSelection.blend);
+  CHECK(session.undo()); CHECK(session.project() == paired);
+}
+
 TEST_CASE("style coverage uses the selected English phonemizer when the bank and region agree") {
   using namespace seam;
   Fixture f;
@@ -160,8 +193,8 @@ TEST_CASE("native style sheet pages declared styles without selecting or applyin
   application::EditorSession session{f.project}; native_ui::NativeEditorController controller{session, f.factory, f.region};
   controller.setStyleBankResolver([&](domain::TrackId) { return f.bank; });
   CHECK(controller.openStyleCoverageSheet()); CHECK(controller.replacementReviewAction(1U));
-  CHECK(controller.sceneState().replacementReview.rows.size() == 3U);
-  CHECK(!controller.openReplacementRow(3U)); CHECK(controller.openReplacementRow(2U));
+  CHECK(controller.sceneState().replacementReview.rows.size() == 4U);
+  CHECK(!controller.openReplacementRow(4U)); CHECK(controller.openReplacementRow(2U));
   CHECK(session.project() == f.project); CHECK(controller.replacementReviewAction(0U));
   CHECK(controller.replacementReviewAction(3U));
   CHECK(session.project().findVocalTrack(f.track)->styleSelection.styleId == "style-8");

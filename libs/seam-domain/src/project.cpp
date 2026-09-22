@@ -474,6 +474,10 @@ core::Result<void> Project::validate() const {
     if (!routeValidation) return routeValidation;
     const auto styleValidation = track.styleSelection.validate();
     if (!styleValidation) return styleValidation;
+    if (track.styleSelection.blend && (track.proceduralRecipe || track.neuralResource)) {
+      return core::failure(core::ErrorCode::Unsupported,
+          "StyleBlend PCM pairs require a sample-bank singer", track.id.toString());
+    }
     if (track.proceduralRecipe) {
       const auto recipe = track.proceduralRecipe->validate();
       if (!recipe) return recipe;

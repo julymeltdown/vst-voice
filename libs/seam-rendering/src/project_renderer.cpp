@@ -284,7 +284,8 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
             rendered.value().resolvedStyle,
             renderedPronunciationIdentity(rendered.value().phrasePronunciationDigests),
             revision,
-            sampleRate};
+            sampleRate,
+            track.styleSelection.blend};
         if (identity.complete()) output.performanceIdentity = identity;
       }
       for (const auto& failure : rendered.value().failures) {

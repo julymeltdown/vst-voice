@@ -545,6 +545,7 @@ core::Result<void> NativeEditorController::openStyleCoverageSheet() {
   findMode_ = false; diagnosticFindMode_ = false; findNavigation_.reset(); diagnosticFindReview_.reset();
   clearVibrato_.reset(); clearDynamics_.reset(); noteCleanup_.reset(); vibratoDraft_.reset(); dynamicsDraft_.reset(); dynamicsPointEdit_.reset();
   styleDraft_.emplace(std::move(draft.value()));
+  styleBlendMode_ = false; styleBlendChoosingSecondary_ = false;
   styleIssues_ = false; styleIssue_.reset(); styleDetailLines_.clear();
   replacementDependencies_ = false; replacementDistribution_ = false;
   replacementOpen_ = true; replacementPage_ = 0U; replacementRegion_ = regionId_; replacementDetail_.reset();
@@ -934,11 +935,34 @@ ReplacementReviewView NativeEditorController::replacementReviewView() const {
     for (std::size_t i = offset; i < std::min(offset + 6U, styles.size()); ++i)
       view.rows.push_back(std::string(styles[i].id == styleDraft_->selection().styleId ? "Selected: " : "Choose: ") + styles[i].id +
           " / enabled " + std::to_string(styles[i].enabled) + " / disabled " + std::to_string(styles[i].disabled));
+    if (offset <= styles.size() && styles.size() < offset + 6U) view.rows.push_back("Configure PCM style crossfade");
     view.rowsInspectable = current;
     view.labels[2] = "Draft only"; view.labels[3] = "Apply track style"; view.labels[4] = "Cancel draft"; view.labels[5] = "Refresh";
-    view.enabled[0] = replacementPage_ > 0U; view.enabled[1] = offset + 6U < styles.size();
+    view.enabled[0] = replacementPage_ > 0U; view.enabled[1] = offset + 6U < styles.size() + 1U;
     view.enabled[3] = current && styleDraft_->hasChanges() && !styleDraft_->selection().styleId.empty(); view.enabled[5] = true;
     view.labels[2] = "Coverage details"; view.enabled[2] = true;
+    if (styleBlendMode_) {
+      view.status = current ? "PCM style crossfade — draft only" : "Source changed; Refresh or Cancel";
+      view.labels[2] = styleBlendChoosingSecondary_ ? "Back to pair" : "Back to styles";
+      view.summary = "Render checks both styles' timing and local cancellation; not voice-morph or listening approval";
+      if (styleBlendChoosingSecondary_) {
+        view.rows.clear();
+        for (std::size_t i = offset; i < std::min(offset + 6U, styles.size()); ++i)
+          view.rows.push_back("Secondary: " + styles[i].id);
+        view.enabled[1] = offset + 6U < styles.size();
+      } else {
+        const auto& selection = styleDraft_->selection();
+        const auto percent = selection.blend ? std::to_string(static_cast<int>(std::lround(selection.blend->amount * 100.0F))) : "0";
+        view.rows = {"Primary: " + selection.styleId + " (back to styles to change)",
+            "Choose secondary: " + (selection.blend ? selection.blend->targetStyleId : std::string{"none"}),
+            "Decrease by 5% (current " + percent + "%)", "Increase by 5% (current " + percent + "%)", "Disable crossfade pair"};
+        view.enabled[0] = false; view.enabled[1] = false;
+        if (const auto& secondary = styleDraft_->secondaryCoverage()) view.summary =
+            "Secondary coverage " + std::to_string(secondary->summary.coveredPhonemes) + "/" +
+            std::to_string(secondary->summary.totalPhonemes) + "; timing and phase checked when rendered, not audio approval";
+      }
+      return view;
+    }
     if (styleIssues_) {
       const auto& report = styleDraft_->coverage();
       view.rows.clear(); view.rowsInspectable = current && !styleIssue_;
@@ -1315,6 +1339,27 @@ core::Result<void> NativeEditorController::openReplacementRow(std::size_t pageRo
     japaneseReadingDetailLines_ = std::move(rendered); japaneseReadingDetail_ = index; replacementPage_ = 0U; ++replacementInteraction_; repaint(); return core::success();
   }
   if (styleDraft_ && replacementOpen_) {
+    if (styleBlendMode_) {
+      if (!styleSourceCurrent() || replacementInteraction_ == std::numeric_limits<std::uint64_t>::max())
+        return core::failure(core::ErrorCode::Conflict, "Style pair source is stale or interaction identity is exhausted");
+      core::Result<void> chosen = core::success();
+      if (styleBlendChoosingSecondary_) {
+        const auto index = replacementPage_ * 6U + pageRow;
+        if (pageRow >= 6U || index >= styleDraft_->styles().size()) return core::failure(core::ErrorCode::NotFound, "Secondary style row is unavailable");
+        const auto& blend = styleDraft_->selection().blend;
+        chosen = styleDraft_->chooseBlend(styleDraft_->styles()[index].id, blend ? blend->amount : 0.5F);
+        if (chosen) { styleBlendChoosingSecondary_ = false; replacementPage_ = 0U; }
+      } else {
+        const auto& blend = styleDraft_->selection().blend;
+        if (pageRow == 0U) { styleBlendMode_ = false; replacementPage_ = 0U; }
+        else if (pageRow == 1U) { styleBlendChoosingSecondary_ = true; replacementPage_ = 0U; }
+        else if ((pageRow == 2U || pageRow == 3U) && blend) chosen = styleDraft_->chooseBlend(blend->targetStyleId,
+            static_cast<float>(std::clamp(std::round(static_cast<double>(blend->amount) * 20.0) + (pageRow == 2U ? -1.0 : 1.0), 0.0, 20.0) / 20.0));
+        else if (pageRow == 4U) chosen = styleDraft_->clearBlend();
+        else return core::failure(core::ErrorCode::Conflict, "Choose a secondary style before adjusting its crossfade amount");
+      }
+      ++replacementInteraction_; repaint(); return chosen;
+    }
     if (styleIssues_) {
       const auto& report = styleDraft_->coverage(); const auto index = replacementPage_ * 6U + pageRow;
       if (styleIssue_ || pageRow >= 6U || index >= (report ? report->issues.size() : 1U) || !styleSourceCurrent())
@@ -1337,10 +1382,14 @@ core::Result<void> NativeEditorController::openReplacementRow(std::size_t pageRo
       ++replacementInteraction_; repaint(); return core::success();
     }
     if (!styleSourceCurrent() ||
-        pageRow >= 6U || replacementPage_ * 6U + pageRow >= styleDraft_->styles().size())
+        pageRow >= 6U || replacementPage_ * 6U + pageRow > styleDraft_->styles().size())
       return core::failure(core::ErrorCode::Conflict, "Style row is stale or unavailable");
     if (replacementInteraction_ == std::numeric_limits<std::uint64_t>::max())
       return core::failure(core::ErrorCode::Conflict, "Inspector interaction identity exhausted");
+    if (replacementPage_ * 6U + pageRow == styleDraft_->styles().size()) {
+      styleBlendMode_ = true; styleBlendChoosingSecondary_ = false; replacementPage_ = 0U;
+      ++replacementInteraction_; repaint(); return core::success();
+    }
     const auto chosen = styleDraft_->choose(styleDraft_->styles()[replacementPage_ * 6U + pageRow].id);
     ++replacementInteraction_; repaint(); return chosen;
   }
@@ -1477,7 +1526,11 @@ core::Result<void> NativeEditorController::replacementReviewAction(std::size_t a
     if (action == 0U) --replacementPage_;
     if (action == 1U) ++replacementPage_;
     if (action == 2U) {
-      if (styleIssue_) { replacementPage_ = *styleIssue_ / 6U; styleIssue_.reset(); styleDetailLines_.clear(); }
+      if (styleBlendMode_) {
+        if (styleBlendChoosingSecondary_) styleBlendChoosingSecondary_ = false;
+        else styleBlendMode_ = false;
+        replacementPage_ = 0U;
+      } else if (styleIssue_) { replacementPage_ = *styleIssue_ / 6U; styleIssue_.reset(); styleDetailLines_.clear(); }
       else { styleIssues_ = !styleIssues_; replacementPage_ = 0U; }
     }
     if (action == 3U) {

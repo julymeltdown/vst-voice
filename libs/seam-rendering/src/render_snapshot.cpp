@@ -714,6 +714,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createProcedural(
   if (!region || region->notes.empty() || region->notes.size() > 4096U || sampleRate < 8000U || sampleRate > 384000U) {
     return core::failure<RenderSnapshot>(core::ErrorCode::InvalidArgument, "Procedural snapshot region/rate is invalid");
   }
+  if (track->styleSelection.blend || hasAcceptedChannel(*region, domain::PerformanceChannel::StyleBlend)) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        "Procedural rendering does not admit a StyleBlend PCM pair");
+  }
   const auto recipe = voice_design::decodeVoiceRecipeResource(resource);
   if (!recipe) return core::Result<RenderSnapshot>{recipe.error()};
   // Select the same explicit language service used by native inspection and
@@ -784,6 +788,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::createNeural(
   }
   if (track->proceduralRecipe) return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
       "A saved procedural singer cannot render through an admitted neural bundle");
+  if (track->styleSelection.blend || hasAcceptedChannel(*region, domain::PerformanceChannel::StyleBlend)) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        "Neural rendering does not admit a StyleBlend PCM pair");
+  }
   if (requiresFormantShift(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
         formantShiftUnsupportedMessage("neural model"), trackId.toString());
@@ -932,14 +940,29 @@ core::Result<std::vector<RenderSnapshot>> RenderSnapshotFactory::splitOwnedOutpu
   if (source.ownedFrames && (output.start < source.ownedFrames->start || output.end > source.ownedFrames->end)) {
     return core::failure<Output>(core::ErrorCode::Conflict, "Chunk subdivision cannot expand existing output ownership");
   }
-  if (sample.frozenAudio.size() > 65536U / windows.value().size()) return core::failure<Output>(
+  if (sample.blendStyle && (!sample.blendStyle->unitPlan ||
+      sample.blendStyle->frozenAudio.size() != sample.blendStyle->unitPlan->entries.size() ||
+      sample.blendStyle->selectedUnits.size() != sample.blendStyle->frozenAudio.size())) {
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Chunk StyleBlend sources are incomplete");
+  }
+  const auto aggregateSources = sample.frozenAudio.size() +
+      (sample.blendStyle ? sample.blendStyle->frozenAudio.size() : 0U);
+  if (aggregateSources > 65536U / windows.value().size()) return core::failure<Output>(
       core::ErrorCode::Unsupported, "Chunk snapshots exceed aggregate sample metadata budget");
   Output result;
   result.reserve(windows.value().size());
   for (const auto window : windows.value()) {
-    const auto identity = buildIdentity(*source.project, *sample.voicebank, *sample.unitPlan,
+    auto identity = buildIdentity(*source.project, *sample.voicebank, *sample.unitPlan,
         sample.selectedUnits, source.quality, source.sampleRate, source.style, sample.renderOptions, window);
     if (!identity) return core::Result<Output>{identity.error()};
+    if (sample.blendStyle) {
+      const auto& secondary = *sample.blendStyle;
+      const auto secondIdentity = buildIdentity(*source.project, *sample.voicebank, *secondary.unitPlan,
+          secondary.selectedUnits, source.quality, source.sampleRate, secondary.style, sample.renderOptions, window);
+      if (!secondIdentity) return core::Result<Output>{secondIdentity.error()};
+      identity = core::sha256Hex("seam.ordered-pcm-style-pair/" + std::to_string(kStyleBlendRevision) +
+          "/" + identity.value() + secondIdentity.value());
+    }
     auto chunk = source;
     chunk.ownedFrames = window;
     chunk.contentHash = core::sha256Hex(identity.value() + source.pronunciationIdentity->resourceHash +
@@ -986,6 +1009,16 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
                                          "Render snapshot region was not found",
                                          segment.regionId.toString());
+  }
+  const auto& blend = track->styleSelection.blend;
+  if (!blend && (hasAcceptedChannel(*region, domain::PerformanceChannel::StyleBlend) ||
+      renderOptions.renderer.controls.required[static_cast<std::size_t>(synthesis::RendererControl::StyleBlend)])) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+        "StyleBlend requires an explicit sample-bank style pair");
+  }
+  if (blend && !style.empty() && style != track->styleSelection.styleId) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+        "Render style override differs from the saved ordered StyleBlend pair");
   }
   if (requiresFormantShift(*region))
     return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
@@ -1052,6 +1085,16 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
                                          "Render snapshot style is not in the voicebank",
                                          style);
+  }
+  if (blend && std::find(voicebankValue.styles.begin(), voicebankValue.styles.end(), blend->targetStyleId) ==
+      voicebankValue.styles.end()) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
+        "StyleBlend secondary style is not in the voicebank", blend->targetStyleId);
+  }
+  if (blend && (track->voicebank.id != voicebankValue.id || track->voicebank.version != voicebankValue.version ||
+      track->voicebank.contentHash.size() != 64U)) {
+    return core::failure<RenderSnapshot>(core::ErrorCode::Conflict,
+        "StyleBlend requires an exact versioned bank selection");
   }
 
   auto phraseProject = extractPhraseProject(project, trackId, segment);
@@ -1202,7 +1245,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   // Reuse the same bounded frozen assets during final selection and rendering.
   std::vector<synthesis::SourceAlignmentEvidence> evidence;
   for (const auto& unit : voicebankValue.units) {
-    if (!unit.enabled || unit.style != style || unit.phones.empty() || unit.phones.size() > phonemes.tokens.size()) continue;
+    if (!unit.enabled || (unit.style != style && (!blend || unit.style != blend->targetStyleId)) ||
+        unit.phones.empty() || unit.phones.size() > phonemes.tokens.size()) continue;
     bool needsAlignment = false;
     for (std::size_t start = 0; start <= phonemes.tokens.size() - unit.phones.size(); ++start) {
       const auto covered = std::span<const domain::PhonemeToken>{phonemes.tokens}.subspan(start, unit.phones.size());
@@ -1243,6 +1287,31 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     frozenAudio.push_back(resource);
   }
 
+  std::optional<synthesis::FrozenSampleStyle> secondary;
+  if (blend) {
+    auto secondPlan = selector.select(voicebankValue, *phraseRegion, phonemes.tokens,
+        blend->targetStyleId, phraseRegion->unitSelectionOverrides, evidence, true);
+    if (!secondPlan) return core::failure<RenderSnapshot>(secondPlan.error().code,
+        "StyleBlend secondary selection failed: " + secondPlan.error().message, secondPlan.error().context);
+    if (secondPlan.value().entries.size() + plan.value().entries.size() > 8192U) {
+      return core::failure<RenderSnapshot>(core::ErrorCode::Unsupported,
+          "StyleBlend selected sources exceed the aggregate plan budget");
+    }
+    secondary.emplace();
+    secondary->style = blend->targetStyleId;
+    secondary->unitPlan = std::make_shared<const synthesis::UnitPlan>(std::move(secondPlan).value());
+    for (const auto& entry : secondary->unitPlan->entries) {
+      const auto* unit = voicebankValue.findUnit(entry.unitId);
+      if (!unit) return core::failure<RenderSnapshot>(core::ErrorCode::NotFound,
+          "StyleBlend secondary unit is absent", entry.unitId);
+      const auto frozen = freezeUnit(*unit);
+      if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
+      const auto& resource = frozenByUnit.at(entry.unitId);
+      secondary->selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256, alignments.at(entry.unitId).sha256});
+      secondary->frozenAudio.push_back(resource);
+    }
+  }
+
   std::shared_ptr<const synthesis::CompiledScorePerformance> compiledPerformance;
   const bool needsPerformance = std::any_of(plan.value().entries.begin(), plan.value().entries.end(),
       [&](const auto& entry) {
@@ -1260,6 +1329,13 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                                 plan.value(), selectedUnits, quality,
                                 sampleRate, style, renderOptions, ownedFrames);
   if (!identity) return core::Result<RenderSnapshot>{identity.error()};
+  if (secondary) {
+    const auto secondIdentity = buildIdentity(phraseProject.value(), voicebankValue, *secondary->unitPlan,
+        secondary->selectedUnits, quality, sampleRate, secondary->style, renderOptions, ownedFrames);
+    if (!secondIdentity) return core::Result<RenderSnapshot>{secondIdentity.error()};
+    identity = core::sha256Hex("seam.ordered-pcm-style-pair/" + std::to_string(kStyleBlendRevision) +
+        "/" + identity.value() + secondIdentity.value());
+  }
 
   return RenderSnapshot{
       .revision = revision,
@@ -1280,6 +1356,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
           .frozenAudio = std::move(frozenAudio),
           .bankRoot = std::move(bankRoot),
           .renderOptions = renderOptions,
+          .blendStyle = std::move(secondary),
       },
       .sampleRate = sampleRate,
       .style = std::move(style),

@@ -13,6 +13,13 @@ struct SelectedUnitIdentity final {
   friend bool operator==(const SelectedUnitIdentity&, const SelectedUnitIdentity&) = default;
 };
 
+struct FrozenSampleStyle final {
+  std::string style;
+  std::shared_ptr<const UnitPlan> unitPlan;
+  std::vector<SelectedUnitIdentity> selectedUnits;
+  std::vector<FrozenUnitAudio> frozenAudio;
+};
+
 struct SampleSingerResource final {
   std::shared_ptr<const voicebank::Manifest> voicebank;
   std::shared_ptr<const UnitPlan> unitPlan;
@@ -20,6 +27,8 @@ struct SampleSingerResource final {
   std::vector<FrozenUnitAudio> frozenAudio;
   std::filesystem::path bankRoot;
   PhraseRenderOptions renderOptions;
+  // A second arm of the SAME frozen bank, not a path to resolve during render.
+  std::optional<FrozenSampleStyle> blendStyle{};
 };
 
 // Owns a deep copy, with no mutable byte accessor or file path. A caller's

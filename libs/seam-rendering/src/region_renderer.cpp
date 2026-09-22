@@ -203,7 +203,8 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     RegionRenderPhraseInfo info{
         .phraseId = segment.id,
         .contentHash = snapshot.value().contentHash,
-        .unitCount = snapshot.value().sample().unitPlan->entries.size(),
+        .unitCount = snapshot.value().sample().unitPlan->entries.size() +
+            (snapshot.value().sample().blendStyle ? snapshot.value().sample().blendStyle->unitPlan->entries.size() : 0U),
         .fallbackCount = cached != nullptr ? cached->fallbackCount : 0U,
         .cacheHit = cached != nullptr,
         .rendererIdentity = cached != nullptr ? cached->rendererIdentity : "unknown",
@@ -247,6 +248,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
         rendered.value().rendered.placements.end(),
         [](const auto& placement) { return placement.usedFallback; }));
     info.rendererIdentity = rendererIdentity(rendered.value().rendered.placements);
+    if (rendered.value().styleBlendCompatibility) info.rendererIdentity = "seam.pcm-style-crossfade.v1";
     info.fallbackDiagnostic = fallbackDiagnostic(rendered.value().rendered.placements);
     output.fallbackCount += info.fallbackCount;
     const auto& audio = rendered.value().rendered.audio;

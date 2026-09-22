@@ -410,14 +410,19 @@ core::Result<domain::GrowlAutomation> decodeGrowl(const JsonValue* value) {
 }
 
 JsonValue encodeStyleSelection(const domain::VoiceStyleSelection& selection) {
-  return JsonValue::Object{
+  JsonValue::Object result{
       {"origin", JsonValue{std::string{styleOriginName(selection.origin)}}},
       {"styleId", JsonValue{selection.styleId}},
   };
+  if (selection.blend) result.emplace("blend", JsonValue::Object{
+      {"targetStyleId", JsonValue{selection.blend->targetStyleId}},
+      {"amount", JsonValue{static_cast<double>(selection.blend->amount)}}});
+  return result;
 }
 
-core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value) {
-  if (value == nullptr || !value->isObject() || value->asObject().size() != 2U) {
+core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* value, bool allowBlend) {
+  if (value == nullptr || !value->isObject() ||
+      (value->asObject().size() != 2U && !(allowBlend && value->asObject().size() == 3U && value->find("blend")))) {
     return core::failure<domain::VoiceStyleSelection>(core::ErrorCode::ParseError,
         "Schema 8 track requires styleSelection origin and styleId");
   }
@@ -437,6 +442,21 @@ core::Result<domain::VoiceStyleSelection> decodeStyleSelection(const JsonValue* 
   for (const auto candidate : origins) {
     if (origin->asString() != styleOriginName(candidate)) continue;
     domain::VoiceStyleSelection selection{.origin = candidate, .styleId = styleId->asString()};
+    if (const auto* blend = value->find("blend")) {
+      if (!allowBlend || !blend->isObject() || blend->asObject().size() != 2U ||
+          !blend->find("targetStyleId") || !blend->find("targetStyleId")->isString() ||
+          !blend->find("amount") || !blend->find("amount")->isNumber()) {
+        return core::failure<domain::VoiceStyleSelection>(core::ErrorCode::ParseError,
+            "Schema 19 style blend requires targetStyleId and amount");
+      }
+      const auto amount = blend->find("amount")->asNumber();
+      if (!std::isfinite(amount) || amount < 0.0 || amount > 1.0) {
+        return core::failure<domain::VoiceStyleSelection>(core::ErrorCode::ParseError,
+            "Style blend amount is outside zero to one");
+      }
+      selection.blend = domain::VoiceStyleBlend{blend->find("targetStyleId")->asString(),
+          static_cast<float>(amount)};
+    }
     const auto validation = selection.validate();
     if (!validation) return core::Result<domain::VoiceStyleSelection>{validation.error()};
     return selection;

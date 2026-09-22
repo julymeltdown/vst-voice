@@ -1,5 +1,27 @@
 # Integrated Singer Execution
 
+## U17 ordered sample-style crossfade implemented; independent review pending (2026-09-22)
+
+Project schema 19 persists an explicit primary/secondary sample-style pair and
+default amount. The native style sheet stages pair selection and 5% amount edits
+through existing Apply/undo commands. Compiler 19 consumes accepted StyleBlend
+with absolute scoped/manual ownership and a default that survives source tails.
+Both source/alignment sets share freezing budgets and ordered cache identity.
+
+The composer checks matching destination timing/partitions and classical
+renderers without fallback, rejects measured dangerous local cancellation, and
+mixes on absolute frames before output cropping. This is guarded linear PCM
+crossfade, not arbitrary-bank perceptual morphing. Both arms remain mandatory
+at endpoints. Cache provenance names the pair renderer; captured-teacher schema
+compatibility is retained without allowing sample pairs on the procedural route.
+
+Strict selected builds and tests pass: Release 9 targets / 977 case executions
+(22.85 s), Debug 6 targets / 123 cases (30.97 s), captured-teacher Python 12/12.
+The 480x320 native scene fits its controls; this is not live installed UI or
+listening qualification. Source closure/diff checks pass. See
+U17_PAIRED_STYLE_CROSSFADE_2026-09-22.md for tests and exact non-claims.
+Implementation review is pending; no additional complete unit or Beta GO is counted.
+
 ## U6 timing repairs after independent review (2026-09-22)
 
 Developer 2 requested changes on d939154: constant-control tests had missed

@@ -8,7 +8,7 @@
 #include <stop_token>
 
 namespace seam::synthesis {
-inline constexpr std::uint32_t kPerformanceCompilerRevision = 18U;
+inline constexpr std::uint32_t kPerformanceCompilerRevision = 19U;
 inline constexpr std::size_t kMaximumScoreVoiceAllocationNotes = 4096U;
 
 struct ScoreVoicePlan final {
@@ -51,6 +51,9 @@ struct ScorePerformanceSample final {
   // The roughness of the source for this frame, normalized to the channel's range. Zero is the recipe's
   // own source, and a consumer that applied it as gain would be wrong by construction.
   float growl{0.0F};
+  // Ordered style-pair PCM crossfade, consumed once by the pair composer.
+  // The track default also applies in source preutterance, gaps and tails.
+  float styleBlend{0.0F};
   float articulationGain{1.0F};
   // Accepted amplitude attack; absent/manual replacement retains the neutral
   // envelope. Continuations expose intent but do not restart the attack.
@@ -109,6 +112,7 @@ private:
   domain::AirinessAutomation airiness_;
   domain::GenderAutomation gender_;
   domain::GrowlAutomation growl_;
+  float styleBlendDefault_{0.0F};
   domain::RegionPerformanceState performance_;
   struct FrameScope final {
     std::optional<domain::NoteId> noteId;

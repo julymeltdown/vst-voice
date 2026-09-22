@@ -2,7 +2,17 @@
 
 Status: active, incomplete. The approved U6 goal remains a shared musical evaluator consumed by all three rendering families, not merely a standalone score utility.
 
-Latest continuation (2026-09-22): compiler revision 18 now consumes accepted
+Latest continuation (2026-09-22, paired-style increment): compiler revision 19
+adds accepted StyleBlend for explicit ordered sample-bank pairs. The track default
+survives unowned preutterance/tails; selected lanes and manual Replace retain
+frame-local scopes. A bounded PCM pair composer renders both frozen styles,
+checks destination timing and local phase cancellation, then mixes before owned
+output cropping. Procedural/neural StyleBlend remains unsupported. See
+`U17_PAIRED_STYLE_CROSSFADE_2026-09-22.md` for implementation evidence, independent
+review status and the distinction between PCM crossfade and perceptual morphing.
+U6 and U17 remain incomplete.
+
+Earlier same-day continuation: compiler revision 18 consumes accepted
 Formant, Breathiness, Tension, Airiness, Gender and Growl, in addition to the
 previously supported Pitch, Timing, Dynamics, Attack and Release. Neural
 breathiness uses explicit per-frame ownership rather than a region-wide drawn

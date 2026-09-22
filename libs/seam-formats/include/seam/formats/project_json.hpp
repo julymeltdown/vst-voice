@@ -21,9 +21,9 @@ struct ProjectJsonEncodeOptions final {
 
 class ProjectJsonCodec final {
 public:
-  // Schema 18 adds the recorded renderer provenance a project carries so a renderer change is visible
-  // rather than silent. Older documents load with no recorded renderer, which reads as unknown.
-  static constexpr std::int32_t kSchemaVersion = 18;
+  // Schema 19 adds an optional ordered sample-style pair and its default blend.
+  // Older documents remain single-style; no second style is inferred.
+  static constexpr std::int32_t kSchemaVersion = 19;
 
   [[nodiscard]] core::Result<std::string> encode(const domain::Project& project) const;
   [[nodiscard]] core::Result<std::string> encode(

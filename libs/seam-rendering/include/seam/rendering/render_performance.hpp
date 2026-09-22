@@ -44,6 +44,7 @@ struct RenderedPerformanceIdentity final {
   std::string resourceId, resourceVersion, resourceContentHash, style, pronunciationIdentity;
   std::uint64_t renderRevision{0};
   std::uint32_t sampleRate{48000U};
+  std::optional<domain::VoiceStyleBlend> styleBlend{};
   [[nodiscard]] bool complete() const noexcept;
   friend bool operator==(const RenderedPerformanceIdentity&,
                          const RenderedPerformanceIdentity&) = default;

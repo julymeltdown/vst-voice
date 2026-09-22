@@ -518,6 +518,10 @@ core::Result<void> SetTrackVoicebankCommand::apply(domain::Project& project) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Voicebank selection requires ID, version, and content hash");
   }
+  if (track->styleSelection.blend && track->voicebank != after_) {
+    return core::failure(core::ErrorCode::Conflict,
+        "Clear the StyleBlend pair before changing bank identity; reselect and verify both styles in the new bank");
+  }
   if (before_ && track->proceduralRecipe != beforeRecipe_) return core::failure(core::ErrorCode::Conflict,
       "Procedural selection changed before sample-bank redo");
   if (!afterStyle_.has_value()) {

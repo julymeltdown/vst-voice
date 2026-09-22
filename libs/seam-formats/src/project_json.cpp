@@ -978,7 +978,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
            neural->find("version")->asString(), neural->find("contentHash")->asString()}};
     }
     if (schemaVersion >= 8) {
-      auto selection = detail::decodeStyleSelection(trackValue.find("styleSelection"));
+      auto selection = detail::decodeStyleSelection(trackValue.find("styleSelection"), schemaVersion >= 19);
       if (!selection) return core::Result<domain::Project>{selection.error()};
       track.styleSelection = std::move(selection).value();
     } else {

@@ -509,6 +509,7 @@ add_library(seam_rendering
   libs/seam-rendering/src/render_snapshot.cpp
   libs/seam-rendering/src/singer_route.cpp
   libs/seam-rendering/src/render_pipeline.cpp
+  libs/seam-rendering/src/style_blend.cpp
   libs/seam-rendering/src/region_renderer.cpp
   libs/seam-rendering/src/project_renderer.cpp
   libs/seam-rendering/src/render_performance.cpp
@@ -1619,6 +1620,12 @@ if(SEAM_BUILD_TESTS)
     seam_application seam_rendering seam_voicebank seam_formats)
   seam_apply_compiler_options(seam_performance_snapshot_tests)
   add_test(NAME seam_performance_snapshot_tests COMMAND seam_performance_snapshot_tests)
+
+  add_executable(seam_style_blending_tests tests/test_main.cpp tests/test_style_blending.cpp)
+  target_include_directories(seam_style_blending_tests PRIVATE tests)
+  target_link_libraries(seam_style_blending_tests PRIVATE seam_application seam_rendering seam_voicebank seam_formats)
+  seam_apply_compiler_options(seam_style_blending_tests)
+  add_test(NAME seam_style_blending_tests COMMAND seam_style_blending_tests)
 
   add_executable(seam_performance_edit_preservation_tests
     tests/test_main.cpp tests/test_performance_edit_preservation.cpp)

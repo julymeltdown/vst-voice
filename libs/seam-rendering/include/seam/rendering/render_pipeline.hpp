@@ -3,6 +3,7 @@
 #include "seam/core/result.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 #include "seam/rendering/render_snapshot.hpp"
+#include "seam/rendering/style_blend.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include "seam/synthesis/unit_selection.hpp"
@@ -46,6 +47,9 @@ struct PhrasePipelineResult final {
   synthesis::PhraseRenderResult rendered;
   domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
   std::vector<voice_design::ProceduralPhoneMarker> proceduralMarkers{};
+  std::optional<synthesis::UnitPlan> secondaryUnitPlan{};
+  std::optional<synthesis::TimingPlan> secondaryTiming{};
+  std::optional<StyleBlendReport> styleBlendCompatibility{};
 };
 
 // Executes one prepared neural snapshot. The application selects the concrete

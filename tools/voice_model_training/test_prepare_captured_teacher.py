@@ -106,6 +106,22 @@ class PrepareBundleTest(unittest.TestCase):
         self.assertEqual(midi, [60, 62])
         self.assertEqual(provenance["exportReceiptSha256"], self.digest)
 
+    def test_schema_19_keeps_single_recipe_capture_and_refuses_sample_pair(self):
+        for schema in (17, 18, 19):
+            self.project["schemaVersion"] = schema
+            self.write_export()
+            self.assertEqual(self.capture()[1], self.audio)
+        self.project["schemaVersion"] = 20
+        self.write_export()
+        with self.assertRaisesRegex(ValueError, "schema 17/18/19"):
+            self.capture()
+        self.project["schemaVersion"] = 19
+        self.project["vocalTracks"][0]["styleSelection"] = dict(
+            origin="explicit", styleId="neutral", blend=dict(targetStyleId="soft", amount=0.5))
+        self.write_export()
+        with self.assertRaisesRegex(ValueError, "sample StyleBlend"):
+            self.capture()
+
     def test_mutated_project_or_wav_or_metadata_is_rejected(self):
         for name in ("project.seam", self.path, self.path.replace(".json", ".wav")):
             with self.subTest(name=name):

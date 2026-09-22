@@ -30,6 +30,9 @@ struct RenderedPlacementInfo final {
   float seamAmount{0.7F};
   domain::SeamCurve seamCurve{domain::SeamCurve::HardCharacter};
   std::string diagnostic;
+  // Populated by the ordered pair composer so two arms never masquerade as
+  // one unit sequence in inspection/export diagnostics.
+  std::string style{};
 };
 
 struct PhraseRenderResult final {

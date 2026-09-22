@@ -222,47 +222,114 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
         "Render pipeline phrase track or region is missing");
   }
 
-  synthesis::TimingSolver timingSolver;
-  std::vector<synthesis::SourceAlignmentEvidence> alignments;
-  for (const auto& frozen : snapshot.sample().frozenAudio) {
-    if (frozen.sourceAlignment && frozen.audio && frozen.audio->frameCount() <= 32ULL * 1024ULL * 1024ULL) {
-      alignments.push_back({&*frozen.sourceAlignment, frozen.verifiedAudioSha256,
-          static_cast<time::SampleFrame>(frozen.audio->frameCount())});
-    }
+  const auto& pair = snapshot.sample().blendStyle;
+  if (static_cast<bool>(pair) != static_cast<bool>(track->styleSelection.blend) ||
+      (pair && (pair->style != track->styleSelection.blend->targetStyleId ||
+                snapshot.style != track->styleSelection.styleId || !snapshot.compiledPerformance ||
+                !pair->unitPlan || pair->unitPlan->entries.size() != pair->frozenAudio.size() ||
+                pair->selectedUnits.size() != pair->frozenAudio.size()))) {
+    return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+        "StyleBlend snapshot does not contain both saved ordered style sources");
   }
-  auto timing = timingSolver.solve(*snapshot.project, *region,
-                                   snapshot.phonemes->tokens,
-                                   *snapshot.sample().unitPlan, *snapshot.sample().voicebank,
-                                   snapshot.sampleRate, alignments, true);
-  if (!timing) return core::Result<PhrasePipelineResult>{timing.error()};
-  for (const auto& placement : timing.value().placements) {
-    const auto covered = std::span<const domain::PhonemeToken>{snapshot.phonemes->tokens}.subspan(
-        placement.tokenStart, placement.tokenCount);
-    const auto* unit = snapshot.sample().voicebank->findUnit(placement.unitId);
-    if (synthesis::hasMultipleNuclei(covered) &&
-        (!unit || !synthesis::supportsAlignedPhonemeTiming(*unit, covered, alignments))) {
-      return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
-          "Multi-nucleus rendering requires source alignment; author landmarks or select smaller units", placement.unitId);
+  const auto prepareArm = [&](const synthesis::UnitPlan& unitPlan,
+      const std::vector<synthesis::FrozenUnitAudio>& frozenAudio) -> core::Result<synthesis::TimingPlan> {
+    synthesis::TimingSolver timingSolver;
+    std::vector<synthesis::SourceAlignmentEvidence> alignments;
+    for (const auto& frozen : frozenAudio) {
+      if (frozen.sourceAlignment && frozen.audio && frozen.audio->frameCount() <= 32ULL * 1024ULL * 1024ULL) {
+        alignments.push_back({&*frozen.sourceAlignment, frozen.verifiedAudioSha256,
+            static_cast<time::SampleFrame>(frozen.audio->frameCount())});
+      }
     }
-  }
-  if (stopToken.stop_requested()) {
-    return core::failure<PhrasePipelineResult>(
+    auto timing = timingSolver.solve(*snapshot.project, *region, snapshot.phonemes->tokens,
+        unitPlan, *snapshot.sample().voicebank, snapshot.sampleRate, alignments, true);
+    if (!timing) return timing;
+    for (const auto& placement : timing.value().placements) {
+      const auto covered = std::span<const domain::PhonemeToken>{snapshot.phonemes->tokens}.subspan(
+          placement.tokenStart, placement.tokenCount);
+      const auto* unit = snapshot.sample().voicebank->findUnit(placement.unitId);
+      if (synthesis::hasMultipleNuclei(covered) &&
+          (!unit || !synthesis::supportsAlignedPhonemeTiming(*unit, covered, alignments))) {
+        return core::failure<synthesis::TimingPlan>(core::ErrorCode::Conflict,
+            "Multi-nucleus rendering requires source alignment; author landmarks or select smaller units", placement.unitId);
+      }
+    }
+    if (stopToken.stop_requested()) return core::failure<synthesis::TimingPlan>(
         core::ErrorCode::Conflict, "Phrase render was cancelled");
+    return timing;
+  };
+  auto primaryTiming = prepareArm(*snapshot.sample().unitPlan, snapshot.sample().frozenAudio);
+  if (!primaryTiming) return core::Result<PhrasePipelineResult>{primaryTiming.error()};
+  std::optional<synthesis::TimingPlan> secondaryTiming;
+  if (pair) {
+    auto prepared = prepareArm(*pair->unitPlan, pair->frozenAudio);
+    if (!prepared) return core::Result<PhrasePipelineResult>{prepared.error()};
+    const auto compatible = validateStyleBlendTiming(primaryTiming.value(), prepared.value());
+    if (!compatible) return core::Result<PhrasePipelineResult>{compatible.error()};
+    secondaryTiming = std::move(prepared).value();
+    // Sum requested unit work across BOTH arms before running either DSP path.
+    // Actual completed PCM is bounded again by the pair composer.
+    std::size_t workFrames = 0U;
+    for (const auto* timing : {&primaryTiming.value(), &*secondaryTiming}) {
+      for (const auto& placement : timing->placements) {
+        const auto count = placement.destinationEnd - placement.destinationStart;
+        if (count <= 0 || count > static_cast<time::SampleFrame>(kMaximumStyleBlendFrames - workFrames))
+          return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
+              "StyleBlend exceeds aggregate requested render work");
+        workFrames += static_cast<std::size_t>(count);
+      }
+    }
   }
-
-  synthesis::ConcatenativePhraseRenderer renderer;
-  auto renderOptions = snapshot.sample().renderOptions;
-  renderOptions.renderer.psola.performance = snapshot.compiledPerformance;
-  renderOptions.renderer.raw.performance = snapshot.compiledPerformance;
-  renderOptions.renderer.spectral.performance = snapshot.compiledPerformance;
-  renderOptions.renderer.stretch.performance = snapshot.compiledPerformance;
-  auto rendered = renderer.render(*snapshot.sample().voicebank,
-                                  *snapshot.project, *region,
-                                  *snapshot.sample().unitPlan, timing.value(),
-                                  snapshot.sampleRate, renderOptions,
-                                  snapshot.sample().frozenAudio, stopToken);
-  if (!rendered) return core::Result<PhrasePipelineResult>{rendered.error()};
-  auto& audio = rendered.value().audio;
+  const auto renderArm = [&](const synthesis::UnitPlan& unitPlan,
+      const std::vector<synthesis::FrozenUnitAudio>& frozenAudio,
+      const synthesis::TimingPlan& timing) -> core::Result<PhrasePipelineResult> {
+    synthesis::ConcatenativePhraseRenderer renderer;
+    auto renderOptions = snapshot.sample().renderOptions;
+    // Pair composition consumes this once. Individual renderers still have to
+    // satisfy every other required control; no global sample capability is added.
+    if (pair) renderOptions.renderer.controls.required[static_cast<std::size_t>(synthesis::RendererControl::StyleBlend)] = false;
+    renderOptions.renderer.psola.performance = snapshot.compiledPerformance;
+    renderOptions.renderer.raw.performance = snapshot.compiledPerformance;
+    renderOptions.renderer.spectral.performance = snapshot.compiledPerformance;
+    renderOptions.renderer.stretch.performance = snapshot.compiledPerformance;
+    auto rendered = renderer.render(*snapshot.sample().voicebank, *snapshot.project, *region,
+        unitPlan, timing, snapshot.sampleRate, renderOptions, frozenAudio, stopToken);
+    if (!rendered) return core::Result<PhrasePipelineResult>{rendered.error()};
+    return PhrasePipelineResult{.phonemes = *snapshot.phonemes, .unitPlan = unitPlan,
+        .timing = timing, .rendered = std::move(rendered).value()};
+  };
+  auto result = renderArm(*snapshot.sample().unitPlan, snapshot.sample().frozenAudio, primaryTiming.value());
+  if (!result) return result;
+  if (pair) {
+    auto secondary = renderArm(*pair->unitPlan, pair->frozenAudio, *secondaryTiming);
+    if (!secondary) return core::failure<PhrasePipelineResult>(secondary.error().code,
+        "StyleBlend secondary render failed: " + secondary.error().message, secondary.error().context);
+    const auto& a = result.value().rendered.placements;
+    const auto& b = secondary.value().rendered.placements;
+    if (a.size() != b.size()) return core::failure<PhrasePipelineResult>(core::ErrorCode::Conflict,
+        "StyleBlend rendered partitions differ");
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      if (a[i].usedFallback || b[i].usedFallback || a[i].actualRenderer != b[i].actualRenderer ||
+          (a[i].actualRenderer != voicebank::RendererHint::ClassicPsola &&
+           a[i].actualRenderer != voicebank::RendererHint::SpectralClassic)) {
+        return core::failure<PhrasePipelineResult>(core::ErrorCode::Unsupported,
+            "StyleBlend requires matching pitch-preserving classical renderers without fallback", a[i].unitId + " / " + b[i].unitId);
+      }
+    }
+    auto mixed = crossfadeStylePair(result.value().rendered.audio, secondary.value().rendered.audio,
+        *snapshot.compiledPerformance, stopToken);
+    if (!mixed) return core::Result<PhrasePipelineResult>{mixed.error()};
+    result.value().rendered.audio = std::move(mixed.value().audio);
+    result.value().styleBlendCompatibility = mixed.value().compatibility;
+    result.value().secondaryUnitPlan = std::move(secondary.value().unitPlan);
+    result.value().secondaryTiming = std::move(secondary.value().timing);
+    for (auto& placement : result.value().rendered.placements) placement.style = snapshot.style;
+    for (auto& placement : secondary.value().rendered.placements) {
+      placement.style = pair->style;
+      result.value().rendered.placements.push_back(std::move(placement));
+    }
+  }
+  auto& audio = result.value().rendered.audio;
   constexpr auto maximumFrames = std::size_t{32U * 1024U * 1024U};
   if (audio.samples.size() > maximumFrames ||
       audio.startFrame > std::numeric_limits<time::SampleFrame>::max() - static_cast<time::SampleFrame>(audio.samples.size())) {
@@ -274,12 +341,7 @@ core::Result<PhrasePipelineResult> PhraseRenderPipeline::render(
       {snapshot.sampleRate, extent, snapshot.ownedFrames.value_or(extent)}, std::move(audio), stopToken);
   if (!finalized) return core::Result<PhrasePipelineResult>{finalized.error()};
   audio = std::move(finalized).value();
-  return PhrasePipelineResult{
-      .phonemes = *snapshot.phonemes,
-      .unitPlan = *snapshot.sample().unitPlan,
-      .timing = std::move(timing).value(),
-      .rendered = std::move(rendered).value(),
-  };
+  return result;
 }
 
 }  // namespace seam::rendering

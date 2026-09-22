@@ -253,8 +253,8 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   for (const auto& selection : region.performance.accepted) {
     if (selection.channel != domain::PerformanceChannel::Pitch &&
         // Timing is admitted here because it is consumed by the ordered timing plan
-        // below, not by per-frame score evaluation. StyleBlend still requires
-        // paired style resources and is not a generic timbral scalar.
+        // below, not by per-frame score evaluation. A StyleBlend value is
+        // consumed by the admitted pair composer, never an individual arm.
         selection.channel != domain::PerformanceChannel::Timing &&
         selection.channel != domain::PerformanceChannel::Dynamics &&
         selection.channel != domain::PerformanceChannel::Formant &&
@@ -263,6 +263,7 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
         selection.channel != domain::PerformanceChannel::Airiness &&
         selection.channel != domain::PerformanceChannel::Gender &&
         selection.channel != domain::PerformanceChannel::Growl &&
+        selection.channel != domain::PerformanceChannel::StyleBlend &&
         selection.channel != domain::PerformanceChannel::Attack &&
         selection.channel != domain::PerformanceChannel::Release) {
       return core::failure<CompiledScorePerformance>(core::ErrorCode::Unsupported,
@@ -281,6 +282,19 @@ core::Result<CompiledScorePerformance> compileScorePerformance(
   result.airiness_ = region.airinessAutomation;
   result.gender_ = region.genderAutomation;
   result.growl_ = region.growlAutomation;
+  bool paired = false;
+  for (const auto& track : project.vocalTracks()) {
+    if (!track.findRegion(region.id) || !track.styleSelection.blend) continue;
+    const auto pairValid = track.styleSelection.validate();
+    if (!pairValid) return core::Result<CompiledScorePerformance>{pairValid.error()};
+    paired = true;
+    result.styleBlendDefault_ = track.styleSelection.blend->amount;
+  }
+  if (!paired && std::any_of(region.performance.accepted.begin(), region.performance.accepted.end(),
+      [](const auto& selected) { return selected.channel == domain::PerformanceChannel::StyleBlend; })) {
+    return core::failure<CompiledScorePerformance>(core::ErrorCode::Unsupported,
+        "Accepted StyleBlend requires an explicit admitted style pair");
+  }
   result.performance_ = region.performance;
   result.notes_.reserve(region.notes.size());
   for (const auto& note : region.notes) {
@@ -391,6 +405,7 @@ ScorePerformanceSample CompiledScorePerformance::inspectAt(time::SampleFrame fra
 }
 ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame frame, bool inspect) const noexcept {
   ScorePerformanceSample result;
+  result.styleBlend = styleBlendDefault_;
   const auto next = std::upper_bound(notes_.begin(), notes_.end(), frame,
       [](auto value, const auto& note) { return value < note.startFrame; });
   if (next == notes_.begin()) return result;
@@ -524,6 +539,8 @@ ScorePerformanceSample CompiledScorePerformance::evaluate(time::SampleFrame fram
         result.gender = static_cast<float>(*value);
       } else if (selection.channel == domain::PerformanceChannel::Growl && value) {
         result.growl = static_cast<float>(*value);
+      } else if (selection.channel == domain::PerformanceChannel::StyleBlend && value) {
+        result.styleBlend = static_cast<float>(*value);
       }
       // Timing is consumed by the ordered timing plan, never as amplitude.
       // Snapshot admission separately checks each renderer's timbral consumers;

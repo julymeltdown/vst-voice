@@ -575,6 +575,8 @@ private:
   std::optional<VibratoInspectorDraft> vibratoDraft_;
   std::optional<StyleCoverageSheet> styleDraft_;
   bool styleIssues_{false};
+  bool styleBlendMode_{false};
+  bool styleBlendChoosingSecondary_{false};
   std::optional<std::size_t> styleIssue_;
   std::vector<std::string> styleDetailLines_;
   std::function<voicebank::VoicebankResolution(domain::TrackId)> styleBankResolver_;

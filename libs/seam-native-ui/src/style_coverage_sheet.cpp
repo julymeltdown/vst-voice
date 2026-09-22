@@ -27,7 +27,7 @@ core::Result<StyleCoverageSheet> StyleCoverageSheet::prepare(const application::
   const auto* track = session.project().findVocalTrack(trackId);
   if (!track || !track->findRegion(regionId) || track->findRegion(regionId)->notes.size() > 10000U)
     return core::failure<StyleCoverageSheet>(core::ErrorCode::InvalidArgument, "Choose a vocal region with at most 10000 notes");
-  if (track->proceduralRecipe)
+  if (track->proceduralRecipe || track->neuralResource)
     return core::failure<StyleCoverageSheet>(core::ErrorCode::Unsupported, "Procedural styles use recipe controls, not sample-bank style selection");
   if (!bank.resolved() || bank.candidate->manifest.styles.size() > 256U || bank.candidate->manifest.units.size() > 16384U)
     return core::failure<StyleCoverageSheet>(core::ErrorCode::Unsupported, "Resolve a bank within the sheet's 256-style and 16384-unit limits");
@@ -47,7 +47,7 @@ core::Result<StyleCoverageSheet> StyleCoverageSheet::prepare(const application::
       bank.candidate->manifest, resolved.value().selection};
 }
 void StyleCoverageSheet::refreshCoverage() {
-  coverage_.reset(); diagnostic_.clear();
+  coverage_.reset(); secondaryCoverage_.reset(); diagnostic_.clear();
   if (std::find(manifest_.styles.begin(), manifest_.styles.end(), selection_.styleId) == manifest_.styles.end()) {
     diagnostic_ = "Choose a declared style; no fallback style is applied"; return;
   }
@@ -68,10 +68,13 @@ void StyleCoverageSheet::refreshCoverage() {
     pronunciationPrepared_ = true;
   }
   if (!pronunciationDiagnostic_.empty()) { diagnostic_ = pronunciationDiagnostic_; return; }
-  if (pronunciationTokens_.size() > 4096U || (coverageWorkPerToken_ > 0U && pronunciationTokens_.size() > 4'194'304U / coverageWorkPerToken_)) {
+  const auto arms = selection_.blend ? 2U : 1U;
+  if (pronunciationTokens_.size() > 4096U || (coverageWorkPerToken_ > 0U && pronunciationTokens_.size() > (4'194'304U / arms) / coverageWorkPerToken_)) {
     diagnostic_ = "Coverage query exceeds the bounded sheet workload; style selection remains available"; return;
   }
   coverage_ = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(manifest_, track_, *region, pronunciationTokens_, selection_.styleId);
+  if (selection_.blend) secondaryCoverage_ = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      manifest_, track_, *region, pronunciationTokens_, selection_.blend->targetStyleId);
   diagnostic_ = "Structural coverage only; source audio, alignment, renderer and listening approval are separate";
 }
 bool StyleCoverageSheet::hasChanges() const noexcept {
@@ -101,10 +104,23 @@ core::Result<void> StyleCoverageSheet::choose(std::string style) {
   if (state_ != State::Ready) return core::failure(core::ErrorCode::Conflict, "Style sheet is closed");
   if (std::find(manifest_.styles.begin(), manifest_.styles.end(), style) == manifest_.styles.end())
     return core::failure(core::ErrorCode::NotFound, "Style is not declared by the captured bank");
-  const bool changed = selection_.styleId != style;
+  const bool changed = selection_.styleId != style || selection_.blend.has_value();
   selection_ = {domain::VoiceStyleOrigin::Explicit, std::move(style)};
   if (changed) refreshCoverage();
   return core::success();
+}
+core::Result<void> StyleCoverageSheet::chooseBlend(std::string secondary, float amount) {
+  if (state_ != State::Ready) return core::failure(core::ErrorCode::Conflict, "Style sheet is closed");
+  if (std::find(manifest_.styles.begin(), manifest_.styles.end(), secondary) == manifest_.styles.end())
+    return core::failure(core::ErrorCode::NotFound, "Secondary style is not declared by the captured bank");
+  domain::VoiceStyleSelection candidate{domain::VoiceStyleOrigin::Explicit, selection_.styleId,
+      domain::VoiceStyleBlend{std::move(secondary), amount}};
+  const auto valid = candidate.validate(); if (!valid) return valid;
+  selection_ = std::move(candidate); refreshCoverage(); return core::success();
+}
+core::Result<void> StyleCoverageSheet::clearBlend() {
+  if (state_ != State::Ready) return core::failure(core::ErrorCode::Conflict, "Style sheet is closed");
+  selection_.blend.reset(); refreshCoverage(); return core::success();
 }
 bool StyleCoverageSheet::matches(const application::EditorSession& session, domain::TrackId track,
     domain::RegionId region, const voicebank::VoicebankResolution& bank) const {
@@ -118,6 +134,8 @@ core::Result<void> StyleCoverageSheet::apply(application::EditorSession& session
     domain::RegionId region, const voicebank::VoicebankResolution& bank) {
   if (!matches(session, track, region, bank) || std::find(manifest_.styles.begin(), manifest_.styles.end(), selection_.styleId) == manifest_.styles.end())
     return core::failure(core::ErrorCode::Conflict, "Style source changed or a declared style has not been chosen");
+  if (selection_.blend && std::find(manifest_.styles.begin(), manifest_.styles.end(), selection_.blend->targetStyleId) == manifest_.styles.end())
+    return core::failure(core::ErrorCode::Conflict, "The secondary style is missing; choose a declared pair");
   if (hasChanges()) {
     const auto result = session.executePerformanceResult(context_, std::make_unique<application::EditPerformanceCommand>(
         std::vector<application::NoteExpressionEdit>{}, std::vector<application::RegionDynamicsEdit>{},

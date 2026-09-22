@@ -20,9 +20,12 @@ public:
   [[nodiscard]] const std::vector<StyleRow>& styles() const noexcept { return styles_; }
   [[nodiscard]] const domain::VoiceStyleSelection& selection() const noexcept { return selection_; }
   [[nodiscard]] const std::optional<voicebank::VoicebankCoverageReport>& coverage() const noexcept { return coverage_; }
+  [[nodiscard]] const std::optional<voicebank::VoicebankCoverageReport>& secondaryCoverage() const noexcept { return secondaryCoverage_; }
   [[nodiscard]] const std::string& diagnostic() const noexcept { return diagnostic_; }
   [[nodiscard]] bool hasChanges() const noexcept;
   [[nodiscard]] core::Result<void> choose(std::string style);
+  [[nodiscard]] core::Result<void> chooseBlend(std::string secondary, float amount);
+  [[nodiscard]] core::Result<void> clearBlend();
   [[nodiscard]] bool matches(const application::EditorSession& session, domain::TrackId track,
       domain::RegionId region, const voicebank::VoicebankResolution& bank) const;
   [[nodiscard]] core::Result<void> apply(application::EditorSession& session, domain::TrackId track,
@@ -40,6 +43,7 @@ private:
   domain::VoiceStyleSelection selection_;
   std::vector<StyleRow> styles_;
   std::optional<voicebank::VoicebankCoverageReport> coverage_;
+  std::optional<voicebank::VoicebankCoverageReport> secondaryCoverage_;
   std::string diagnostic_;
   std::size_t coverageWorkPerToken_{0U};
   bool pronunciationPrepared_{false};

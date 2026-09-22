@@ -41,6 +41,10 @@ core::Result<VoiceStyleResolution> resolveVoiceStyle(
   if (!selectedValidation) return core::Result<VoiceStyleResolution>{selectedValidation.error()};
   result.status = std::find(styles.begin(), styles.end(), result.selection.styleId) != styles.end()
                       ? VoiceStyleStatus::Resolved : VoiceStyleStatus::MissingStyle;
+  if (result.selection.blend &&
+      std::find(styles.begin(), styles.end(), result.selection.blend->targetStyleId) == styles.end()) {
+    result.status = VoiceStyleStatus::MissingStyle;
+  }
   return result;
 }
 

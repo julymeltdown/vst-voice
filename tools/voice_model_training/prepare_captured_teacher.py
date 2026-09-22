@@ -101,14 +101,17 @@ def capture_inputs(root, receipt_sha256, candidate_path):
         return _bytes(path, files[name], limit) if binary else load_config(path, files[name])
     project, candidate = read("project.seam"), read(candidate_path)
     if (not isinstance(project, dict) or project.get("formatId") != "com.project-seam.project"
-            or type(project.get("schemaVersion")) is not int or not 17 <= project["schemaVersion"] <= 18
+            or type(project.get("schemaVersion")) is not int or not 17 <= project["schemaVersion"] <= 19
             or not isinstance(candidate, dict)):
-        raise ValueError("Require captured project schema 17/18 and candidate metadata")
+        raise ValueError("Require captured project schema 17/18/19 and candidate metadata")
     if _id(project.get("projectId")) != _id(receipt.get("projectId")):
         raise ValueError("Receipt and project identity differ")
     track = _index(project.get("vocalTracks")).get(int(match[1], 16))
     if track is None:
         raise ValueError("Candidate track is absent from captured project")
+    selection = track.get("styleSelection")
+    if selection is not None and (not isinstance(selection, dict) or selection.get("blend") is not None):
+        raise ValueError("A captured procedural teacher cannot contain a sample StyleBlend pair")
     region = _index(track.get("regions")).get(int(match[2], 16))
     if region is None:
         raise ValueError("Candidate region is absent from captured project")
