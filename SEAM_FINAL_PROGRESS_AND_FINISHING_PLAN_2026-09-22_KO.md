@@ -48,6 +48,9 @@
   - `seam_contextual_unit_selection_tests`, `seam_sample_microscope_tests`: 실행 파일이 없어 `Not Run`이었고 개별 빌드로 생성된다. 빌드 트리 드리프트.
   - ~~`seam_phase12b_contract`~~ **해결 완료**: 실패 원인은 미구현이 아니라 **낡은 계약**이었다. 이전 리팩터가 마이크로스코프 상태·레이아웃·히트테스트를 공용 컨트롤러로 옮겼는데 계약은 CLAP 런타임이 직접 만들던 옛 구조를 검사하고 있었다. 계약을 실제 소유자(공용 컨트롤러 + CLAP의 위임)로 옮기고 검증을 강화했다. `verify_phase12b_contracts.py` 6개 섹션 통과, `phase12b_contract`/`clap_microscope_tests`/`sample_microscope_tests`/`contextual_unit_selection_tests` Release 통과. (f2d3b15)
   - CI `ed41968d` 실행의 macOS 작업은 그 외에도 `onnx`/`torch` 미설치로 인한 `seam_voice_model_training_tests` 실패가 있었다. 이는 환경 의존 실패이며 코드 회귀가 아니다.
+- **네이티브 모달 실제 조작 미검증**: AppKit 검토 대화상자 코드는 존재하지만 Return/Escape, 포커스 복원, 긴 텍스트 스크롤, 작은 화면은 실행 검증이 없다(이전 시도는 Mac 잠금으로 실패).
+- **실제 마이크 장치·권한·분리 동작 미검증**: 주입된 장치 팩토리 테스트는 하드웨어 증거가 아니다.
+- **CLAP 임베디드 편집기 상호교환 미구현**, **실제 OpenUtau/DAW 교환 미검증**.
 
 ### 교훈: "실패"를 세 종류로 나눠야 한다
 
@@ -90,11 +93,7 @@ CI의 Windows 작업 두 개가 모두 `seam_synthesis` 빌드에서 실패하�
 | `windows-helper-process` | failure | **success** |
 | `isolated-release-candidate` | failure | **success** |
 
-이것은 **CI 전체가 초록인 첫 상태**다. 단, 이는 **빌드·회귀·계약 증거**이며 가수 품질·설치 제품 승인이 아니다. 아래 남은 게이트는 그대로다.
-- **아직 남은 것 (이번 배치 범위 밖)**:
-- **네이티브 모달 실제 조작 미검증**: AppKit 검토 대화상자 코드는 존재하지만 Return/Escape, 포커스 복원, 긴 텍스트 스크롤, 작은 화면은 실행 검증이 없다(이전 시도는 Mac 잠금으로 실패).
-- **실제 마이크 장치·권한·분리 동작 미검증**: 주입된 장치 팩토리 테스트는 하드웨어 증거가 아니다.
-- **CLAP 임베디드 편집기 상호교환 미구현**, **실제 OpenUtau/DAW 교환 미검증**.
+이것은 **CI 전체가 초록인 첫 상태**다. 단, 이는 **빌드·회귀·계약 증거**이며 가수 품질·설치 제품 승인이 아니다. 위에 남긴 게이트는 그대로다.
 
 ---
 
