@@ -13,7 +13,7 @@ native-panel or cross-platform claim.
 |---|---|
 | Parse external scores without mutating the current document | InterchangeService::importFile returns InterchangeImportDraft (an unsaved domain::Project plus issues); no reference to the active document exists in the service API. Test "imports an unsaved USTX draft with source identity". |
 | Do not trust file-declared sizes | core::readFileBytesLimited stats the real file size and rejects size > maximumBytes before allocating the buffer; UstxLimits/SmfLimits bound depth, nodes, collections, scalars, tracks, parts, notes, tempo/meter events, curve points and ticks inside the codecs. Test "rejects oversized input before codec work" (16-byte cap rejects a valid fixture with ErrorCode::Unsupported). |
-| Held/validated input handles | normalizedPath rejects empty paths, uninspectable paths and leaf symlinks, and canonicalizes the parent chain so intermediate symlinks resolve deterministically; on POSIX readFileBytesLimited opens once with O_RDONLY|O_NOFOLLOW|O_CLOEXEC, fstat-validates the descriptor (regular file, bounded size), reads every byte from that SAME descriptor via pread, then a post-read fstat compares dev/ino/size/mtime so in-place mutation during the read is rejected (ErrorCode::Conflict) rather than admitted; the draft records sourcePath + sourceHash (SHA-256 of the bytes actually read). Windows retains the prior stat-then-read sequence pending platform evidence (see non-claims). |
+| Held/validated input handles | normalizedPath rejects empty paths, uninspectable paths and leaf symlinks, and canonicalizes the parent chain so intermediate symlinks resolve deterministically; on POSIX readFileBytesLimited opens once with O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK (a FIFO cannot block admission before the S_ISREG rejection), fstat-validates the descriptor, reads every byte from that SAME descriptor via pread, then a post-read fstat compares dev/ino/size/mtime/ctime - ctime is kernel-maintained and cannot be restored by user-space timestamp calls, so a same-size rewrite with a futimens-restored mtime still rejects (ErrorCode::Conflict). The descriptor is scoped-owned so an injector throw or allocation failure cannot leak it. The metadata comparison is a best-effort snapshot check, not a proof of immutable content. The draft records sourcePath + sourceHash (SHA-256 of the bytes actually read). Windows retains the prior stat-then-read sequence pending platform evidence (see non-claims). |
 | Byte/event/object budgets | UstxLimits.maximumInputBytes (4 MiB) and SmfLimits.maximumBytes (64 MiB) gate the read; per-structure codec limits gate amplification. |
 | Bounded diagnostic amplification | InterchangeService::append caps issue records at 4096 per import/export. |
 | Draft conversion result | Import produces an inert draft + bounded InterchangeIssue list (warning/loss severities preserved from codec issues). |
@@ -37,7 +37,14 @@ native-panel or cross-platform claim.
    descriptor pins the original inode so the sourceHash matches the
    baseline), "a held import rejects in-place mutation during the
    read" (injector rewrites the same inode post-read; post-read fstat
-   rejects with Conflict), "draft identity tracks the bytes actually
+   rejects with Conflict), "a held import rejects a same-size mutation
+   with a restored mtime" (injector rewrites same-length content and
+   restores mtime via utimensat; the ctime comparison still rejects),
+   "a held import rejects a FIFO without blocking the admission"
+   (detached worker bounded by a 5-second deadline; O_NONBLOCK makes
+   open return so S_ISREG can reject), "a held import closes its
+   descriptor when the admission throws" (injector throws; /dev/fd
+   count is unchanged), "draft identity tracks the bytes actually
    read" (changed bytes -> different sourceHash). Identity binds
    content, not path strings.
 3. Interrupted output or destination conflict preserves the original
@@ -63,9 +70,12 @@ native-panel or cross-platform claim.
 ## Verification run (this audit)
 
 Release (build-u4-macos) and Debug (build/debug):
-seam_interchange_service_tests 12/12 pass in both (3 pre-existing +
-9 scenario/boundary cases), seam_ustx_interchange_tests 31/31 in
-both, seam_smf_interchange_tests 5/5 in both.
+seam_interchange_service_tests 15/15 pass in both (3 pre-existing +
+12 scenario/boundary cases), seam_ustx_interchange_tests 31/31 in
+both, seam_smf_interchange_tests 5/5 in both. The POSIX-only cases
+(leaf/intermediate symlink, injector-dependent held-admission, FIFO,
+descriptor-leak) are registered only on POSIX; they are not counted
+as trivial passes on Windows, matching the pending-Windows non-claim.
 
 ## Explicit non-claims
 
@@ -74,9 +84,11 @@ both, seam_smf_interchange_tests 5/5 in both.
   host/platform qualification remain open.
 - On POSIX the read is descriptor-held: leaf-symlink and parent
   replacement cannot redirect it, and in-place mutation during the
-  read is rejected. This is not a full hostile-filesystem threat
-  model: an attacker who can mutate the file faster than the read
-  window or control mount options is out of scope.
+  read is rejected. The post-read metadata check is best-effort:
+  metadata equality alone is not a proof of immutable content, and an
+  attacker who can mutate the file between the post-read fstat and the
+  caller's use of the bytes, or control mount options, is out of
+  scope.
 - The Windows branch of readFileBytesLimited retains the prior
   stat-then-read sequence (symlink_status + size + ifstream); the
   held-input guarantee is POSIX-only until Windows reparse/descriptor

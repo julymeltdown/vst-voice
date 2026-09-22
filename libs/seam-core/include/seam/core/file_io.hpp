@@ -39,14 +39,18 @@ struct AtomicWriteOptions final {
   AtomicWriteFaultInjector faultInjector;
 };
 
-// Held-input read: on POSIX the file is opened once with O_NOFOLLOW, the
-// descriptor is fstat-validated (regular file, bounded size), the SAME
-// descriptor supplies every byte, and a post-read fstat compares device,
-// inode, size and modification time so in-place mutation during the read is
-// rejected rather than silently admitted. Parent-directory replacement cannot
-// redirect the read because the descriptor pins the originally opened inode.
-// The injector exists for deterministic adversarial tests that intervene
-// inside this single admission; production callers pass none.
+// Held-input read: on POSIX the file is opened once with O_NOFOLLOW and
+// O_NONBLOCK (a FIFO cannot block the admission before the regular-file
+// check), the descriptor is fstat-validated, the SAME descriptor supplies
+// every byte, and a post-read fstat compares device, inode, size, mtime and
+// ctime. Parent-directory replacement cannot redirect the read because the
+// descriptor pins the originally opened inode; the metadata comparison is a
+// best-effort snapshot check that rejects observed change (ctime is
+// kernel-maintained and cannot be restored by user-space timestamp calls),
+// not a proof that the content is immutable. The injector exists for
+// deterministic adversarial tests that intervene inside this single
+// admission; production callers pass none. Windows retains the prior
+// stat-then-read sequence pending platform evidence.
 [[nodiscard]] Result<std::vector<std::byte>> readFileBytesLimited(
     const std::filesystem::path& path,
     std::uint64_t maximumBytes,

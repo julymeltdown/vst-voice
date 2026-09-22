@@ -1,5 +1,44 @@
 # Integrated Singer Execution
 
+## U29 held-input second rework: reviewer-reproduced gaps closed
+
+Developer 2 re-review of fdcf4bf reproduced three defects against the
+first held-input implementation and one test-accounting gap; all four
+are fixed:
+
+- FIFO hang (P1): open() without O_NONBLOCK blocked indefinitely on a
+  FIFO with no writer before S_ISREG could reject (reviewer repro:
+  SIGALRM after 2s). The admission now opens
+  O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK; non-regular input returns
+  IoError. Regression: "a held import rejects a FIFO without blocking
+  the admission" runs the import on a detached worker bounded by a
+  5-second deadline.
+- Mutation check bypass (P2): dev/ino/size/mtime alone was defeated by
+  a same-size rewrite plus futimens mtime restore (reviewer repro:
+  replaced bytes accepted). The post-read fstat now also compares
+  ctime, which is kernel-maintained and cannot be restored by
+  user-space timestamp calls. Regression: "a held import rejects a
+  same-size mutation with a restored mtime" (utimensat restore ->
+  Conflict). Wording corrected to "best-effort snapshot check", not a
+  proof of immutable content.
+- Exception-unsafe descriptor (P2): manual close calls leaked the
+  descriptor when the injector threw (reviewer repro: fd delta +1).
+  A local DescriptorGuard now owns the descriptor immediately after
+  open. Regression: "a held import closes its descriptor when the
+  admission throws" (/dev/fd count unchanged).
+- Windows test accounting (P2): early-return cases counted as passes,
+  and injector-dependent cases were unguarded despite the Windows
+  branch ignoring the injector. The leaf/intermediate-symlink,
+  held-admission, FIFO, throw-cleanup and export-symlink cases are now
+  registered only under the POSIX guard; the Windows branch marks the
+  injector parameter consumed. Windows stays a declared pending
+  non-claim.
+
+seam_interchange_service_tests 15/15 pass Release (build-u4-macos)
+and Debug (build/debug). Audit doc updated: held-input row, scenario
+map, verification counts, best-effort wording and POSIX-only test
+registration.
+
 ## U29 held-input rework + blind reviewer handoff (developer-2 P1/P2 fixes)
 
 Developer 2 returned REQUEST CHANGES on the first U29 audit: the

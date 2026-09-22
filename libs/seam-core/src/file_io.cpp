@@ -359,12 +359,16 @@ Result<std::vector<std::byte>> readFileBytesLimited(
   recordRealtimeFileIo();
 #ifndef _WIN32
   // Held-input admission: one descriptor supplies validation, bounding and
-  // every byte read, then a post-read fstat proves the opened object did not
-  // change underneath us. Leaf and parent replacement cannot redirect the
-  // read because the descriptor pins the originally opened inode; in-place
-  // mutation is caught by the post-read identity comparison.
-  const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-  if (descriptor < 0) {
+  // every byte read, then a post-read metadata-identity check rejects an
+  // object that changed underneath us. O_NONBLOCK keeps non-regular inputs
+  // (for example a FIFO with no writer) from blocking inside open before the
+  // S_ISREG rejection runs. Leaf and parent replacement cannot redirect the
+  // read because the descriptor pins the originally opened inode; the
+  // post-read dev/ino/size/mtime/ctime comparison is a best-effort snapshot
+  // check, not a proof that content is immutable.
+  const int openedDescriptor =
+      ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
+  if (openedDescriptor < 0) {
     if (errno == ELOOP) {
       return failure<std::vector<std::byte>>(
           ErrorCode::Conflict, "Unable to read a symbolic link", path.string());
@@ -372,19 +376,21 @@ Result<std::vector<std::byte>> readFileBytesLimited(
     return failure<std::vector<std::byte>>(
         ErrorCode::IoError, "Unable to open input file", std::strerror(errno));
   }
-  const auto closeDescriptor = [&] {
-    ::close(descriptor);
-  };
+  // Scoped ownership: an exception from the injector callback or the buffer
+  // allocation must not leak the descriptor.
+  struct DescriptorGuard {
+    int descriptor;
+    ~DescriptorGuard() { ::close(descriptor); }
+  } guard{openedDescriptor};
+  const int descriptor = guard.descriptor;
   struct stat before {};
   if (::fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode)) {
-    closeDescriptor();
     return failure<std::vector<std::byte>>(
         ErrorCode::IoError, "Unable to read a non-regular file", path.string());
   }
   if (faultInjector) {
     auto outcome = faultInjector(HeldReadStage::Opened);
     if (!outcome) {
-      closeDescriptor();
       return Result<std::vector<std::byte>>{outcome.error()};
     }
   }
@@ -392,7 +398,6 @@ Result<std::vector<std::byte>> readFileBytesLimited(
   if (before.st_size < 0 || size > maximumBytes
       || size > static_cast<std::uint64_t>(
           std::numeric_limits<std::size_t>::max())) {
-    closeDescriptor();
     return failure<std::vector<std::byte>>(ErrorCode::Unsupported,
                                            "Input file exceeds configured limit",
                                            path.string());
@@ -405,7 +410,6 @@ Result<std::vector<std::byte>> readFileBytesLimited(
                                static_cast<off_t>(offset));
     if (count < 0 && errno == EINTR) continue;
     if (count <= 0) {
-      closeDescriptor();
       return failure<std::vector<std::byte>>(ErrorCode::IoError,
                                              "Unable to read input file completely",
                                              path.string());
@@ -415,7 +419,6 @@ Result<std::vector<std::byte>> readFileBytesLimited(
   if (faultInjector) {
     auto outcome = faultInjector(HeldReadStage::ContentRead);
     if (!outcome) {
-      closeDescriptor();
       return Result<std::vector<std::byte>>{outcome.error()};
     }
   }
@@ -425,19 +428,24 @@ Result<std::vector<std::byte>> readFileBytesLimited(
       || after.st_size != before.st_size
 #ifdef __APPLE__
       || after.st_mtimespec.tv_sec != before.st_mtimespec.tv_sec
-      || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec) {
+      || after.st_mtimespec.tv_nsec != before.st_mtimespec.tv_nsec
+      || after.st_ctimespec.tv_sec != before.st_ctimespec.tv_sec
+      || after.st_ctimespec.tv_nsec != before.st_ctimespec.tv_nsec) {
 #else
       || after.st_mtim.tv_sec != before.st_mtim.tv_sec
-      || after.st_mtim.tv_nsec != before.st_mtim.tv_nsec) {
+      || after.st_mtim.tv_nsec != before.st_mtim.tv_nsec
+      || after.st_ctim.tv_sec != before.st_ctim.tv_sec
+      || after.st_ctim.tv_nsec != before.st_ctim.tv_nsec) {
 #endif
-    closeDescriptor();
     return failure<std::vector<std::byte>>(ErrorCode::Conflict,
                                            "Input file changed during read",
                                            path.string());
   }
-  closeDescriptor();
   return bytes;
 #else
+  // Windows retains the stat-then-read sequence pending platform evidence;
+  // the injector is a POSIX-only test seam.
+  static_cast<void>(faultInjector);
   std::error_code error;
   const auto status = std::filesystem::symlink_status(path, error);
   if (status.type() == std::filesystem::file_type::symlink) {

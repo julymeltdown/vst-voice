@@ -8,6 +8,14 @@
 #include <fstream>
 #include <string>
 
+#ifndef _WIN32
+#include <atomic>
+#include <chrono>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <thread>
+#endif
+
 namespace {
 
 const char kUstx[] =
@@ -136,16 +144,15 @@ TEST_CASE("interchange service rejects oversized input before codec work") {
   CHECK(imported.error().code == seam::core::ErrorCode::Unsupported);
 }
 
+#ifndef _WIN32
+// POSIX-only: the held-input admission boundary is POSIX-verified; Windows
+// reparse semantics are pending platform evidence, so these cases are not
+// registered there rather than counted as trivial passes.
 TEST_CASE("interchange service rejects symlinked import paths") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-symlink");
   const auto real = root / "real.ustx";
   writeText(real, kUstx);
   const auto link = root / "link.ustx";
-#ifdef _WIN32
-  // Reparse-point semantics differ on Windows; that path is verified on
-  // platform hardware, so this case records an explicit skip here.
-  return;
-#else
   std::error_code error;
   std::filesystem::create_symlink(real, link, error);
   CHECK(!error);  // Fixture creation is required on POSIX, not optional.
@@ -155,13 +162,9 @@ TEST_CASE("interchange service rejects symlinked import paths") {
       seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
   CHECK(!imported);
   CHECK(imported.error().code == seam::core::ErrorCode::Conflict);
-#endif
 }
 
 TEST_CASE("interchange service canonicalizes an intermediate symlink component") {
-#ifdef _WIN32
-  return;  // See the leaf-symlink case; Windows reparse checks are pending.
-#else
   const auto root = seam::test::support::temporaryDirectory("interchange-service-midlink");
   const auto realDir = root / "real-dir";
   std::filesystem::create_directories(realDir);
@@ -183,7 +186,6 @@ TEST_CASE("interchange service canonicalizes an intermediate symlink component")
   CHECK(direct);
   CHECK(viaLink.value().sourceHash == direct.value().sourceHash);
   CHECK(viaLink.value().sourcePath == direct.value().sourcePath);
-#endif
 }
 
 TEST_CASE("a held import reads the originally opened inode across parent replacement") {
@@ -240,6 +242,92 @@ TEST_CASE("a held import rejects in-place mutation during the read") {
   CHECK(injected.error().code == seam::core::ErrorCode::Conflict);
 }
 
+TEST_CASE("a held import rejects a same-size mutation with a restored mtime") {
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-held-ctime");
+  const auto source = root / "song.ustx";
+  writeText(source, kUstx);
+  seam::application::ProjectFactory factory{978000U};
+  seam::authoring::InterchangeService service;
+  auto injected = service.importFile(source, factory,
+      seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx},
+      {}, {},
+      [&](seam::core::HeldReadStage stage) -> seam::core::Result<void> {
+        if (stage == seam::core::HeldReadStage::ContentRead) {
+          // Rewrite the SAME inode with SAME-length content, then restore
+          // the original mtime. ctime is kernel-maintained and cannot be
+          // restored, so the post-read identity check must still reject.
+          struct stat info {};
+          CHECK(::stat(source.c_str(), &info) == 0);
+          std::string mutated{kUstx};
+          mutated[0] = (mutated[0] == 'u') ? 'v' : 'u';
+          writeText(source, mutated);
+#ifdef __APPLE__
+          const timespec times[2] = {info.st_atimespec, info.st_mtimespec};
+#else
+          const timespec times[2] = {info.st_atim, info.st_mtim};
+#endif
+          CHECK(::utimensat(AT_FDCWD, source.c_str(), times, 0) == 0);
+        }
+        return seam::core::success();
+      });
+  CHECK(!injected);
+  CHECK(injected.error().code == seam::core::ErrorCode::Conflict);
+}
+
+TEST_CASE("a held import rejects a FIFO without blocking the admission") {
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-fifo");
+  const auto fifo = root / "song.ustx";
+  CHECK(::mkfifo(fifo.c_str(), 0600) == 0);
+  seam::application::ProjectFactory factory{979000U};
+  seam::authoring::InterchangeService service;
+  // A FIFO with no writer must not block inside open: run the import on a
+  // detached worker and bound the wait. A hang fails the case without
+  // stalling the suite; the detached thread is abandoned only on failure.
+  std::atomic<int> outcome{0};  // 0 pending, 1 rejected, 2 imported
+  std::thread worker([&] {
+    auto imported = service.importFile(fifo, factory,
+        seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx});
+    outcome.store(imported ? 2 : 1, std::memory_order_release);
+  });
+  worker.detach();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (outcome.load(std::memory_order_acquire) == 0
+         && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(outcome.load(std::memory_order_acquire) == 1);
+}
+
+TEST_CASE("a held import closes its descriptor when the admission throws") {
+  const auto root = seam::test::support::temporaryDirectory("interchange-service-held-throw");
+  const auto source = root / "song.ustx";
+  writeText(source, kUstx);
+  const auto openDescriptors = [] {
+    std::error_code error;
+    std::size_t count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator("/dev/fd", error)) {
+      static_cast<void>(entry);
+      ++count;
+    }
+    return count;
+  };
+  const auto before = openDescriptors();
+  seam::application::ProjectFactory factory{980100U};
+  seam::authoring::InterchangeService service;
+  try {
+    static_cast<void>(service.importFile(source, factory,
+        seam::authoring::InterchangeImportRequest{.format = seam::authoring::InterchangeFormat::Ustx},
+        {}, {},
+        [](seam::core::HeldReadStage) -> seam::core::Result<void> {
+          throw std::runtime_error{"injected admission failure"};
+        }));
+    CHECK(false);  // The injector must propagate.
+  } catch (const std::runtime_error&) {
+  }
+  CHECK(openDescriptors() == before);
+}
+#endif  // _WIN32 (POSIX-only held-admission cases)
+
 TEST_CASE("interchange draft identity tracks the bytes actually read") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-identity");
   const auto source = root / "song.ustx";
@@ -282,6 +370,8 @@ TEST_CASE("interchange parent replacement cannot silently redirect an import") {
   CHECK(first.value().sourceHash != second.value().sourceHash);
 }
 
+#ifndef _WIN32
+// POSIX-only: reparse-point semantics are pending Windows platform evidence.
 TEST_CASE("interchange service rejects symlinked export destinations") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-exportlink");
   seam::application::ProjectFactory factory{991000U};
@@ -296,9 +386,6 @@ TEST_CASE("interchange service rejects symlinked export destinations") {
   const auto real = root / "real.ustx";
   writeText(real, "pre-existing\n");
   const auto link = root / "link.ustx";
-#ifdef _WIN32
-  return;  // Windows reparse verification is pending platform evidence.
-#else
   std::error_code error;
   std::filesystem::create_symlink(real, link, error);
   CHECK(!error);
@@ -310,8 +397,8 @@ TEST_CASE("interchange service rejects symlinked export destinations") {
   std::ifstream input(real, std::ios::binary);
   const std::string after{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
   CHECK(after == "pre-existing\n");
-#endif
 }
+#endif  // _WIN32
 
 TEST_CASE("interchange export failure leaves no destination and preserves the project") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-exportfail");
