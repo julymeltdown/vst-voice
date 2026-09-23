@@ -20,7 +20,8 @@ import tempfile
 
 
 def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=None,
-               output=None, model_id="fixture", version="1", silence_phone="SP", inputs_output=None):
+               output=None, model_id="fixture", version="1", silence_phone="SP", inputs_output=None,
+               inference_steps=10):
     # Do not let a caller's stale probe variables silently skip rendering.
     environment = {k: v for k, v in os.environ.items()
                    if not k.startswith("SEAM_NEURAL_PRODUCTION_")}
@@ -29,7 +30,8 @@ def run_render(binary, directory, manifest_sha256, maximum_bytes, *, project=Non
                        SEAM_NEURAL_PRODUCTION_MAXIMUM_BYTES=str(maximum_bytes),
                        SEAM_NEURAL_PRODUCTION_MODEL_ID=model_id,
                        SEAM_NEURAL_PRODUCTION_SILENCE_PHONE=silence_phone,
-                       SEAM_NEURAL_PRODUCTION_MODEL_VERSION=version)
+                       SEAM_NEURAL_PRODUCTION_MODEL_VERSION=version,
+                       SEAM_NEURAL_PRODUCTION_INFERENCE_STEPS=str(inference_steps))
     if inputs_output is not None:
         if inputs_output.exists() or inputs_output.is_symlink() or not inputs_output.parent.is_dir():
             raise ValueError("Input replay output must be new with an existing parent")
@@ -121,10 +123,11 @@ def main():
                                   check=True, capture_output=True, text=True, timeout=20)
         manifest_sha256 = json.loads(prepared.stdout)["manifestSha256"]
 
-        run_render(binary, directory, manifest_sha256, 1048576)
+        run_render(binary, directory, manifest_sha256, 1048576, inference_steps=20)
         inputs_output = root / 'inputs.json'
         run_render(binary, directory, manifest_sha256, 1048576,
-                   project=project, output=root / "application-export", inputs_output=inputs_output)
+                   project=project, output=root / "application-export", inputs_output=inputs_output,
+                   inference_steps=20)
         captured = json.loads(inputs_output.read_bytes())
         assert captured['manifestSha256'] == manifest_sha256
         assert captured['projectSha256'] == hashlib.sha256(project.read_bytes()).hexdigest()
@@ -132,13 +135,14 @@ def main():
         assert len(captured['tokens']) == len(captured['durations'])
         assert sum(captured['durations']) == len(captured['f0'])
         assert captured['paddedSampleFrames'] == len(captured['f0']) * 256
-        assert all(value > 0 for value in captured['f0']) and captured['steps'] == 10
+        assert all(value > 0 for value in captured['f0']) and captured['steps'] == 20
         runs = captured['dynamicsRuns']
         assert runs and runs[-1][0] == captured['outputSampleFrames']
         assert all(0 <= gain <= 1 for _, gain in runs)
         assert all(left[0] < right[0] for left, right in zip(runs, runs[1:]))
         try:
-            run_render(binary, directory, manifest_sha256, 1048576, inputs_output=inputs_output)
+            run_render(binary, directory, manifest_sha256, 1048576, inputs_output=inputs_output,
+                       inference_steps=20)
         except ValueError:
             pass
         else:
@@ -160,10 +164,10 @@ def main():
             check=True, capture_output=True, text=True, timeout=20)
         alias_digest = json.loads(alias_prepared.stdout)["manifestSha256"]
         assert alias_digest != manifest_sha256
-        run_render(binary, alias_directory, alias_digest, 1048576)
+        run_render(binary, alias_directory, alias_digest, 1048576, inference_steps=20)
         alias_export = root / "aliased-application-export"
         run_render(binary, alias_directory, alias_digest, 1048576,
-                   project=project, output=alias_export)
+                   project=project, output=alias_export, inference_steps=20)
         original_wavs = sorted((root / "application-export").rglob("*.wav"))
         assert original_wavs
         for original in original_wavs:

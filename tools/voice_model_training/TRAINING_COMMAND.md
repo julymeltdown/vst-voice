@@ -9,7 +9,8 @@ python -m tools.voice_model_training qualify-candidate \
 ```
 
 The captured configuration names the admitted bundle (directory, modelId, modelVersion,
-manifestSha256, maximumBundleBytes), 1..256 held-out items (item and song identity,
+manifestSha256, maximumBundleBytes, optional inferenceSteps in 1..1000; legacy
+schema-1 captures without it use 10), 1..256 held-out items (item and song identity,
 phones, frame count, target F0 and gain) and 2..5 repetitions. The command drives the
 production worker over every item and writes a dossier that keeps each automatic
 criterion separate: bundle admission, response binding to the exact request bytes,

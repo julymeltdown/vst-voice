@@ -2,7 +2,7 @@
 //
 // Launch contract, selected by the application and never by a bank:
 //   seam-neural-worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION \
-//       BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES
+//       BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS
 // One SNW1 request frame on stdin, exactly one SNW1 response frame on stdout.
 //
 // Structural admission of the exact bundle bytes the child loads precedes every
@@ -42,10 +42,6 @@ using seam::synthesis::NeuralAssetRole;
 constexpr std::size_t kMaximumFrameBytes = 64U * 1024U * 1024U;
 constexpr std::size_t kMaximumBundleBytes = 512U * 1024U * 1024U;
 constexpr std::size_t kMaximumDiagnosticBytes = 4096U;
-// Diffusion steps are a model-configuration property. The admitted configuration
-// schema does not yet carry them, so this pinned diagnostic value is explicit and
-// reported through the backend identity until a configuration revision owns it.
-constexpr std::int64_t kInferenceSteps = 10;
 constexpr const char* kBackendId = "seam-neural-worker-acoustic-vocoder-1";
 
 int fail(int code,std::string_view message) {
@@ -117,7 +113,8 @@ const FrozenSingerData* asset(const FrozenNeuralBundle& bundle,NeuralAssetRole r
 // Returns the padded mono vocoder buffer. Trimming the final partial hop and
 // applying sample-domain dynamics happen exactly once, in response finalization.
 seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& bundle,
-    const NeuralBundleMetadata& metadata,const NeuralRequest& request) {
+    const NeuralBundleMetadata& metadata,const NeuralRequest& request,
+    std::int64_t inferenceSteps) {
   using Output=std::vector<float>;
   const auto rejected=[](ErrorCode code,const char* message) {return seam::core::failure<Output>(code,message);};
   const auto* acoustic=asset(bundle,NeuralAssetRole::Acoustic);
@@ -143,7 +140,7 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
       "This build has no native graph admission support; it cannot execute an admitted bundle");
 #endif
   auto prepared=seam::neural_synthesis::prepareDiffSingerAcousticInputs(
-      request,metadata.model,metadata.vocabulary,kInferenceSteps);
+      request,metadata.model,metadata.vocabulary,inferenceSteps);
   if (!prepared) return seam::core::Result<Output>{prepared.error()};
   auto& inputs=prepared.value();
   if (inputs.tokens.empty() || inputs.durations.size()!=inputs.tokens.size() || inputs.f0Hz.empty())
@@ -248,15 +245,21 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
 int main(int argc,char** argv) {
   if (!seam::core::useBinaryStandardStreams()) return fail(2,"Cannot configure binary standard streams");
   using namespace seam::neural_synthesis;
-  if (argc!=7 || std::string_view{argv[1]}!="--seam-neural-worker-v2")
+  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v2")
     return fail(2,"Usage: seam-neural-worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION "
-                   "BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES");
+                   "BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS");
   std::size_t budget{};
   const std::string_view budgetText{argv[6]};
   const auto parsed=std::from_chars(budgetText.data(),budgetText.data()+budgetText.size(),budget);
   if (parsed.ec!=std::errc{} || parsed.ptr!=budgetText.data()+budgetText.size() ||
       budget==0U || budget>kMaximumBundleBytes)
     return fail(3,"Neural worker bundle byte budget is invalid");
+  std::int64_t inferenceSteps{};
+  const std::string_view stepsText{argv[7]};
+  const auto parsedSteps=std::from_chars(stepsText.data(),stepsText.data()+stepsText.size(),inferenceSteps);
+  if (parsedSteps.ec!=std::errc{} || parsedSteps.ptr!=stepsText.data()+stepsText.size() ||
+      inferenceSteps<1 || inferenceSteps>1000)
+    return fail(3,"Neural worker inference steps must be 1 to 1000");
   const auto frame=readRequestFrame();
   if (!frame) return fail(6,frame.error().message);
   // The child re-admits the bytes it actually loads. The launch identity above
@@ -276,9 +279,10 @@ int main(int argc,char** argv) {
       value.conditioning->vocabularyHash!=metadata.value().model.vocabularyHash ||
       !metadata.value().model.validateRequest(value))
     return fail(7,"Neural worker request does not match the admitted bundle identity");
-  const auto audio=executePadded(bundle.value(),metadata.value(),value);
+  const auto audio=executePadded(bundle.value(),metadata.value(),value,inferenceSteps);
   if (!audio) return fail(8,audio.error().message);
-  const auto response=finalizeDiffSingerResponse(value,metadata.value().model,audio.value(),kBackendId);
+  const auto backendId=std::string{kBackendId}+"/steps-"+std::to_string(inferenceSteps);
+  const auto response=finalizeDiffSingerResponse(value,metadata.value().model,audio.value(),backendId);
   if (!response) return fail(8,response.error().message);
   const auto encoded=encodeResponse(response.value());
   if (!encoded) return fail(9,encoded.error().message);

@@ -94,8 +94,10 @@ core::Result<synthesis::PhraseRenderResult> AuthoringNeuralPhraseRunner::render(
   request.bundleContentHash=execution.bundleContentHash;
   const auto requestValid=metadata.model.validateRequest(request,options_.worker.limits);
   if (!requestValid) return core::Result<Output>{requestValid.error()};
+  auto worker=options_.worker;
+  worker.inferenceSteps=execution.inferenceSteps;
   const auto run=neural_synthesis::runNeuralBundleWorker(request,options_.bundleDirectory,
-      options_.maximumBundleBytes,options_.worker,stopToken);
+      options_.maximumBundleBytes,std::move(worker),stopToken);
   if (!run) return core::Result<Output>{run.error()};
   const auto& response=run.value().response;
   if (response.frameCount!=request.frameCount || response.channels!=1U ||

@@ -10666,7 +10666,7 @@ Added `apps/seam-neural-worker/main.cpp`, the first executable that performs rea
 acoustic-then-vocoder inference for an admitted model bundle. The application
 selects it through the existing launch contract,
 `--seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION BUNDLE_CONTENT_HASH
-MAXIMUM_BUNDLE_BYTES`, with one SNW1 request frame on stdin and exactly one SNW1
+MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS`, with one SNW1 request frame on stdin and exactly one SNW1
 response frame on stdout. The child never receives a command, library path or
 script from a bank.
 

@@ -123,6 +123,12 @@ def validate_configuration(config: dict) -> dict:
     maximum_bytes = bundle.get("maximumBundleBytes")
     if not isinstance(maximum_bytes, int) or not 1 <= maximum_bytes <= 512 * 1024 * 1024:
         raise ValueError("Bundle byte budget is invalid")
+    # Preserve schema-1 captures made before the step setting was exposed.
+    # The normalized dossier still records the exact value sent to the worker.
+    inference_steps = bundle.get("inferenceSteps", 10)
+    if type(inference_steps) is not int or not 1 <= inference_steps <= 1000:
+        raise ValueError("Bundle qualification inference steps must be 1 to 1000")
+    bundle = dict(bundle, inferenceSteps=inference_steps)
     held_out = config.get("heldOut")
     if not isinstance(held_out, list) or not 1 <= len(held_out) <= MAXIMUM_ITEMS:
         raise ValueError("Held-out items must number between 1 and " + str(MAXIMUM_ITEMS))
@@ -488,7 +494,7 @@ def qualify(configuration: Path, expected_sha256: str, worker: Path, output: Pat
         raise ValueError("Qualification dossier must be new")
     worker_payload = read_bounded(worker, 512 * 1024 * 1024)
     launch = ["--seam-neural-worker-v2", str(directory), bundle["modelId"], bundle["modelVersion"],
-              bundle["manifestSha256"], str(bundle["maximumBundleBytes"])]
+              bundle["manifestSha256"], str(bundle["maximumBundleBytes"]), str(bundle["inferenceSteps"])]
     items = []
     for index, item in enumerate(config["heldOut"]):
         prepared = dict(item)

@@ -182,7 +182,9 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
     project.vocalTracks().front().neuralResource=seam::domain::NeuralResourceReference{identity};
   const auto frozen = seam::neural_synthesis::loadNeuralBundleDirectory(directory, identity, maximumBytes);
   if (!frozen) throw seam::test::Failure{"bundle load failed: " + frozen.error().message};
-  const auto admitted = AdmittedNeuralBundle::admit(frozen.value(), 4U*1024U*1024U, 10);
+  const auto* selectedSteps=std::getenv("SEAM_NEURAL_PRODUCTION_INFERENCE_STEPS");
+  const auto inferenceSteps=selectedSteps ? std::stoll(selectedSteps) : 10;
+  const auto admitted = AdmittedNeuralBundle::admit(frozen.value(), 4U*1024U*1024U, inferenceSteps);
   if (!admitted) throw seam::test::Failure{"bundle admission failed: " + admitted.error().message};
   auto bundle = std::make_shared<const AdmittedNeuralBundle>(std::move(admitted).value());
 
@@ -225,6 +227,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
   CHECK(published->neuralIdentities.size() == 1U);
   CHECK(published->neuralIdentities.front().modelId == identity.id);
   CHECK(published->neuralIdentities.front().bundleContentHash == manifestSha256);
+  CHECK(published->neuralIdentities.front().inferenceSteps == inferenceSteps);
   CHECK(published->neuralIdentities.front().provider == "CPUExecutionProvider");
   CHECK(published->result.activeUnitPlan.empty());
   CHECK(published->result.interleaved.size() > 0U);
@@ -271,7 +274,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
         context.value().start,context.value().end,options.silencePhone);
     CHECK(request);
     const auto inputs=seam::neural_synthesis::prepareDiffSingerAcousticInputs(
-        request.value(),metadata.model,metadata.vocabulary,10); CHECK(inputs);
+        request.value(),metadata.model,metadata.vocabulary,inferenceSteps); CHECK(inputs);
     std::ostringstream json;
     json << std::setprecision(17)
          << "{\"formatId\":\"com.project-seam.native-input-replay\",\"schemaVersion\":1,"
@@ -314,6 +317,18 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
       phrase.track,phrase.region,8U,seam::rendering::RenderQuality::Final,48000U,"original"); CHECK(snapshot);
   const auto& selected=*std::get<TrackNeuralSource>(sources.front()).runner;
   const auto whole=selected.render(snapshot.value(),{}); CHECK(whole);
+  if (inferenceSteps!=10) {
+    const auto defaultAdmitted=AdmittedNeuralBundle::admit(frozen.value(),4U*1024U*1024U,10);
+    CHECK(defaultAdmitted);
+    const auto defaultSnapshot=seam::rendering::RenderSnapshotFactory{}.createNeural(
+        project,defaultAdmitted.value(),provenance,phrase.track,phrase.region,8U,
+        seam::rendering::RenderQuality::Final,48000U,"original");
+    CHECK(defaultSnapshot);
+    CHECK(defaultSnapshot.value().contentHash!=snapshot.value().contentHash);
+    const auto defaultAudio=selected.render(defaultSnapshot.value(),{}); CHECK(defaultAudio);
+    CHECK(defaultAudio.value().audio.samples.size()==whole.value().audio.samples.size());
+    CHECK(defaultAudio.value().audio.samples!=whole.value().audio.samples);
+  }
   const auto& notes=snapshot.value().compiledPerformance->notes();
   const seam::synthesis::PhraseFrameRange context{notes.front().startFrame,notes.back().endFrame};
   const auto chunks=seam::rendering::RenderSnapshotFactory{}.splitOwnedOutput(snapshot.value(),context,17003U); CHECK(chunks);

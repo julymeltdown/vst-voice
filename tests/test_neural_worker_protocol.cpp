@@ -1075,10 +1075,16 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
   neural_synthesis::NeuralWorkerRunOptions launch{
       .helper=SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE,
       .helperContentHash=core::sha256File(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE).value(),
-      .maximumResidentBytes=256U*1024U*1024U,.maximumCpuTime=std::chrono::seconds{2},.protocolVersion=2U};
+      .maximumResidentBytes=256U*1024U*1024U,.maximumCpuTime=std::chrono::seconds{2},
+      .protocolVersion=2U,.inferenceSteps=10};
   const auto canonical=std::filesystem::canonical(directory);
   const auto run=neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch); CHECK(run);
   CHECK(run.value().response.bundleContentHash==input.bundleContentHash);
+  for (const std::int64_t invalidSteps:{0,1001}) {
+    auto invalidLaunch=launch; invalidLaunch.inferenceSteps=invalidSteps;
+    const auto rejected=neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,invalidLaunch);
+    CHECK(!rejected); CHECK(rejected.error().code==core::ErrorCode::InvalidArgument);
+  }
   auto stale=input; stale.requestId=92U;
   CHECK(!neural_synthesis::runNeuralBundleWorker(stale,canonical,4096U,launch));
   auto unbounded=launch; unbounded.maximumResidentBytes=0U;

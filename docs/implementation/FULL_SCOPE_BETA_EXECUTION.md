@@ -12,6 +12,18 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-24 — U37 neural inference-setting fidelity increment, local only.
+The admitted render snapshot's `inferenceSteps` now reaches the first-party
+worker's ONNX acoustic `steps` input instead of being ignored in favor of a
+hard-coded 10. Protocol-2 launches fail closed on a missing or out-of-range
+setting; the response backend identity names the executed step count. Candidate
+qualification accepts an explicit 1..1000 setting, records it in the dossier,
+and preserves older schema-1 captures by normalizing an absent setting to 10.
+Arithmetic-graph checks compare 10- and 20-step PCM, and the normal authoring
+render path compares distinct admitted snapshots at those settings. This is
+execution fidelity over deterministic fixture graphs, not learned-singer quality
+or U37/Beta GO acceptance. GitHub CI remains deferred.
+
 2026-09-24 — U35 vocoder recovery continuity increment. Schema-2 partial
 checkpoints for `excitationNoiseId` now retain raw-draw and realized-noise
 segment-chain digests bound to the admitted recovery plan. A resumed run checks

@@ -20,7 +20,8 @@ def write_configuration(path, directory, manifest_sha256, items, repetitions=2):
         "formatId": "com.project-seam.candidate-qualification",
         "schemaVersion": 1,
         "bundle": {"directory": str(directory), "modelId": "fixture", "modelVersion": "1",
-                   "manifestSha256": manifest_sha256, "maximumBundleBytes": 1048576},
+                   "manifestSha256": manifest_sha256, "maximumBundleBytes": 1048576,
+                   "inferenceSteps": 20},
         "heldOut": items,
         "repetitions": repetitions,
     }, sort_keys=True, separators=(",", ":")).encode()
@@ -91,6 +92,7 @@ def main():
             assert len(item["milliseconds"]) == 2
         assert dossier["worker"]["sha256"] == hashlib.sha256(worker.read_bytes()).hexdigest()
         assert dossier["bundle"]["manifestSha256"] == manifest_sha256
+        assert dossier["bundle"]["inferenceSteps"] == 20
 
         # A closed output is refused rather than overwritten.
         repeated = qualify(worker, config, config_sha256, output)

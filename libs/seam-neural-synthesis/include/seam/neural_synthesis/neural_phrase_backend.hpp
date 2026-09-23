@@ -47,6 +47,9 @@ struct NeuralWorkerRunOptions final {
   std::chrono::milliseconds maximumCpuTime{0};
   // Trusted package launch contract; independent of SNW1 frame version.
   std::uint32_t protocolVersion{1U};
+  // Selected by the admitted render snapshot, never by bundle-supplied code.
+  // Protocol-2 execution refuses zero instead of silently running a default.
+  std::int64_t inferenceSteps{0};
 };
 
 struct NeuralWorkerResult final {

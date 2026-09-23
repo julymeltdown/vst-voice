@@ -13,11 +13,16 @@
 int main(int argc,char** argv) {
   if (!seam::core::useBinaryStandardStreams()) return 2;
   using namespace seam::neural_synthesis;
-  if (argc!=7 || std::string_view{argv[1]}!="--seam-neural-worker-v2") return 2;
+  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v2") return 2;
   std::size_t budget{};
   const std::string_view text{argv[6]};
   const auto parsed=std::from_chars(text.data(),text.data()+text.size(),budget);
   if (parsed.ec!=std::errc{} || parsed.ptr!=text.data()+text.size()) return 3;
+  std::int64_t inferenceSteps{};
+  const std::string_view stepsText{argv[7]};
+  const auto parsedSteps=std::from_chars(stepsText.data(),stepsText.data()+stepsText.size(),inferenceSteps);
+  if (parsedSteps.ec!=std::errc{} || parsedSteps.ptr!=stepsText.data()+stepsText.size() ||
+      inferenceSteps<1 || inferenceSteps>1000) return 3;
   const auto bundle=loadNeuralBundleDirectory(argv[2],
       {seam::domain::SingerResourceKind::Neural,argv[3],argv[4],argv[5]},budget);
   if (!bundle) return 4;

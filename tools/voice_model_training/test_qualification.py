@@ -26,7 +26,8 @@ def item(frames=48000, phones=("a", "i"), **changes):
 def configuration(directory, manifest_sha256, items=None):
     return {"formatId": "com.project-seam.candidate-qualification", "schemaVersion": 1,
             "bundle": {"directory": str(directory), "modelId": "fixture", "modelVersion": "1",
-                       "manifestSha256": manifest_sha256, "maximumBundleBytes": 1048576},
+                       "manifestSha256": manifest_sha256, "maximumBundleBytes": 1048576,
+                       "inferenceSteps": 10},
             "heldOut": items if items is not None else
             [{"itemId": "held-1", "songId": "song-9", "phones": ["a", "i"],
               "frameCount": 48000, "frequencyHz": 210.0, "gain": 0.5}],
@@ -233,6 +234,19 @@ class EvaluationTests(unittest.TestCase):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_inference_steps_are_explicit_and_bounded(self):
+        for steps in (None, 0, 1001, True, "10"):
+            payload = configuration("/b", "a" * 64)
+            payload["bundle"]["inferenceSteps"] = steps
+            with self.subTest(steps=steps), self.assertRaises(ValueError):
+                validate_configuration(payload)
+        legacy = configuration("/b", "a" * 64)
+        del legacy["bundle"]["inferenceSteps"]
+        self.assertEqual(validate_configuration(legacy)["bundle"]["inferenceSteps"], 10)
+        payload = configuration("/b", "a" * 64)
+        payload["bundle"]["inferenceSteps"] = 1000
+        self.assertEqual(validate_configuration(payload)["bundle"]["inferenceSteps"], 1000)
+
     def test_unknown_format_schema_and_empty_holdout_are_rejected(self):
         with self.assertRaises(ValueError):
             validate_configuration({"formatId": "other", "schemaVersion": 1})
@@ -315,6 +329,7 @@ class CommandTests(unittest.TestCase):
                 # overwrite refusal and an honest verdict rather than about pitch. A stub emitting
                 # constant audio would now be a legitimate pitch failure and would test the wrong thing.
                 prepared = item()
+                self.assertEqual(arguments[-1], "10")
                 return 0, response(request, prepared, frequency_hz=prepared["frequencyHz"]), b""
 
             output = root / "dossier.json"
@@ -324,6 +339,7 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(dossier["verdict"], "UNRESOLVED")
             self.assertEqual(dossier["items"][0]["status"], "PASS")
             self.assertEqual(dossier["worker"]["sha256"], hashlib.sha256(worker.read_bytes()).hexdigest())
+            self.assertEqual(dossier["bundle"]["inferenceSteps"], 10)
             publish_new(output, dossier)
             self.assertTrue(output.is_file())
             with self.assertRaises(ValueError):

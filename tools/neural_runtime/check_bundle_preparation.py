@@ -190,7 +190,7 @@ def main():
         payload = struct.pack(f"<{FRAMES * 2}f", *([210.0] * FRAMES + [0.5] * FRAMES))
         request = struct.pack("<4sHBBIQ", b"SNW1", 1, 1, 0, len(header), len(payload)) + header + payload
         run = subprocess.run([worker, "--seam-neural-worker-v2", str(bundle), "fixture", "1",
-                              digest, "1048576"], input=request, capture_output=True, timeout=60)
+                              digest, "1048576", "10"], input=request, capture_output=True, timeout=60)
         assert run.returncode == 0, run.stderr
         magic, version, kind, reserved, size, payload_size = struct.unpack("<4sHBBIQ", run.stdout[:20])
         assert (magic, version, kind, reserved) == (b"SNW1", 1, 2, 0)
@@ -228,7 +228,7 @@ def main():
                                + conditioned_header + conditioned_payload)
         conditioned_run = subprocess.run(
             [worker, "--seam-neural-worker-v2", str(conditioned_bundle), "fixture", "1",
-             conditioned_digest, "1048576"], input=conditioned_request,
+             conditioned_digest, "1048576", "10"], input=conditioned_request,
             capture_output=True, timeout=60)
         assert conditioned_run.returncode == 0, conditioned_run.stderr
         _, _, _, _, conditioned_size, conditioned_payload_size = struct.unpack(

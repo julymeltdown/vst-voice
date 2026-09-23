@@ -347,6 +347,9 @@ core::Result<NeuralWorkerResult> runNeuralBundleWorker(
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Neural bundle launch cancelled");
   if (options.protocolVersion!=2U || request.bundleContentHash.empty())
     return core::failure<Output>(core::ErrorCode::Unsupported,"Bundle launch requires protocol 2 and request metadata v3");
+  if (options.inferenceSteps<1 || options.inferenceSteps>1000)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Bundle launch requires the admitted 1 to 1000 inference steps");
   const auto valid=request.validate(options.limits);
   if (!valid) return core::Result<Output>{valid.error()};
   if (!bundleDirectory.is_absolute() || maximumBundleBytes==0U || maximumBundleBytes>512U*1024U*1024U ||
@@ -371,9 +374,11 @@ core::Result<NeuralWorkerResult> runNeuralBundleWorker(
   if (!metadata) return core::Result<Output>{metadata.error()};
   options.vocabulary=metadata.value().vocabulary;
   const auto name=canonical.u8string();
+  const auto inferenceSteps=options.inferenceSteps;
   return runWorkerTransport(request,metadata.value().model,std::move(options),
       {"--seam-neural-worker-v2",std::string{name.begin(),name.end()},request.modelId,
-       request.modelVersion,request.bundleContentHash,std::to_string(maximumBundleBytes)},stop);
+       request.modelVersion,request.bundleContentHash,std::to_string(maximumBundleBytes),
+       std::to_string(inferenceSteps)},stop);
 }
 
 }  // namespace seam::neural_synthesis
