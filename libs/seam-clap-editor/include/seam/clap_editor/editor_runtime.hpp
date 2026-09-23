@@ -224,6 +224,11 @@ public:
   void setInterchangeExportHandoff(InterchangePathHandoff callback);
   void setInterchangeReviewHandoff(
       std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)> callback);
+  // Keyboard commands cannot return a Result to their caller. The host presents failures through
+  // this handoff; cancellation and a declined review do not report an error.
+  using InterchangeErrorHandoff =
+      std::function<void(std::string_view, const core::Error&)>;
+  void setInterchangeErrorHandoff(InterchangeErrorHandoff callback);
   // Choose a source, convert it to a draft and ask the review handoff whether to accept it. A
   // declined or missing decision leaves the live song untouched.
   [[nodiscard]] core::Result<void> requestInterchangeImport();
@@ -424,6 +429,7 @@ private:
   InterchangePathHandoff interchangeExportHandoff_;
   std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
       interchangeReviewHandoff_;
+  InterchangeErrorHandoff interchangeErrorHandoff_;
   ui::PhonemeLaneModel phonemeLane_;
   ui::UnitLaneModel unitLane_;
   std::optional<domain::PhonemeKey> selectedUnitKey_;

@@ -262,11 +262,21 @@ void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
   // score and Command-Shift-E writes one, matching the standalone menu's shortcuts.
   if (event.modifiers.command && event.modifiers.shift && !event.repeat) {
     if (event.key == native_ui::NativeKey::O) {
-      static_cast<void>(requestInterchangeImport());
+      const auto result = requestInterchangeImport();
+      if (!result) {
+        InterchangeErrorHandoff report;
+        { std::lock_guard lock(mutex_); report = interchangeErrorHandoff_; }
+        if (report) report("Could not import score", result.error());
+      }
       return;
     }
     if (event.key == native_ui::NativeKey::E) {
-      static_cast<void>(requestInterchangeExport());
+      const auto result = requestInterchangeExport();
+      if (!result) {
+        InterchangeErrorHandoff report;
+        { std::lock_guard lock(mutex_); report = interchangeErrorHandoff_; }
+        if (report) report("Could not export score", result.error());
+      }
       return;
     }
   }

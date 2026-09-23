@@ -4,6 +4,7 @@
 #include "seam/authoring/interchange_service.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <functional>
 #include <utility>
@@ -11,21 +12,65 @@
 // The interchange command surface and its host handoffs live apart from the general
 // editor adapter so neither file has to carry the whole adapter to stay coherent.
 namespace seam::clap_editor {
+namespace {
+
+struct InterchangeDocumentStamp final {
+  domain::ProjectId projectId{};
+  std::uint64_t revision{0U};
+  std::uint64_t nextId{0U};
+  authoring::DocumentIdentity identity;
+};
+
+InterchangeDocumentStamp documentStamp(const authoring::ProjectDocument& document) {
+  return {document.session().project().id(), document.session().revision(),
+          document.factory().nextIdValue(), document.identity()};
+}
+
+bool matchesDocumentStamp(const authoring::ProjectDocument& document,
+                          const InterchangeDocumentStamp& expected) {
+  const auto current = documentStamp(document);
+  const auto& before = expected.identity;
+  const auto& after = current.identity;
+  return current.projectId == expected.projectId &&
+         current.revision == expected.revision &&
+         current.nextId == expected.nextId &&
+         after.projectPath == before.projectPath &&
+         after.autosavePath == before.autosavePath &&
+         after.recoveryOriginPath == before.recoveryOriginPath &&
+         after.lastSavedRevision == before.lastSavedRevision &&
+         after.baseProjectHash == before.baseProjectHash &&
+         after.dirty == before.dirty;
+}
+
+core::Result<void> staleInterchangeApproval() {
+  return core::failure(core::ErrorCode::Conflict,
+      "The current editor document changed during score import; retry for the current document");
+}
+
+core::Result<void> staleInterchangeExport() {
+  return core::failure(core::ErrorCode::Conflict,
+      "The current editor document changed during score export; retry for the current document");
+}
+
+}  // namespace
 
 core::Result<authoring::InterchangeImportDraft>
 EditorRuntime::prepareInterchangeImport(const std::filesystem::path& source,
                                         authoring::InterchangeImportRequest request) const {
   using Output = authoring::InterchangeImportDraft;
-  std::lock_guard lock(mutex_);
-  if (authoring_ == nullptr) {
-    return core::failure<Output>(core::ErrorCode::InvalidState,
-                                 "Interchange import requires an initialized editor session");
+  std::uint64_t nextId = 0U;
+  {
+    std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr) {
+      return core::failure<Output>(core::ErrorCode::InvalidState,
+                                   "Interchange import requires an initialized editor session");
+    }
+    nextId = authoring_->document().factory().nextIdValue();
   }
-  // The draft is built with a factory seeded past this document's identifiers, so accepting it
-  // cannot allocate an id the live project already used. Import never touches the live document:
-  // a rejected conversion has to leave the current song exactly as it was.
-  application::ProjectFactory draftFactory{
-      authoring_->document().factory().nextIdValue()};
+  // Parsing can take time and must not hold the editor lock. The request path
+  // checks its original document stamp before adopting this independently
+  // allocated draft; a rejected conversion never touches the live document.
+  application::ProjectFactory draftFactory{nextId};
   return authoring::InterchangeService{}.importFile(source, draftFactory, std::move(request));
 }
 
@@ -72,13 +117,24 @@ void EditorRuntime::setInterchangeReviewHandoff(
   interchangeReviewHandoff_ = std::move(callback);
 }
 
+void EditorRuntime::setInterchangeErrorHandoff(InterchangeErrorHandoff callback) {
+  std::lock_guard lock(mutex_);
+  interchangeErrorHandoff_ = std::move(callback);
+}
+
 core::Result<void> EditorRuntime::requestInterchangeImport() {
   InterchangePathHandoff chooser;
   std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)> review;
+  InterchangeDocumentStamp stamp;
   {
     std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr) {
+      return core::failure(core::ErrorCode::InvalidState,
+                           "Interchange import requires an initialized editor session");
+    }
     chooser = interchangeImportHandoff_;
     review = interchangeReviewHandoff_;
+    stamp = documentStamp(authoring_->document());
   }
   // A surface that offers the action without a chooser would otherwise report success while doing
   // nothing, so an unconnected handoff is an explicit state error.
@@ -89,37 +145,56 @@ core::Result<void> EditorRuntime::requestInterchangeImport() {
   const auto chosen = chooser();
   if (!chosen) return core::Result<void>{chosen.error()};
   if (!chosen.value().has_value()) return core::success();
+  {
+    std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
+      return staleInterchangeApproval();
+    }
+  }
   // The imported document is named after its source file, the same way the standalone surface names
   // one. A default request would carry an empty project name, which the converters correctly refuse.
   authoring::InterchangeImportRequest request;
   request.projectName = chosen.value()->stem().string();
   auto draft = prepareInterchangeImport(*chosen.value(), std::move(request));
   if (!draft) return core::Result<void>{draft.error()};
-  // A conversion that lost information must be reviewed by a human before it replaces the song. A
-  // surface with no review connected therefore refuses a lossy draft rather than adopting it
-  // silently: absence of a review UI is never approval of a lossy import.
-  const auto lost = std::any_of(draft.value().issues.begin(), draft.value().issues.end(),
-                                [](const authoring::InterchangeIssue& issue) { return issue.loss; });
-  if (!review && lost) {
+  {
+    std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
+      return staleInterchangeApproval();
+    }
+  }
+  // Every import replaces the current song, even if conversion is lossless. A missing review
+  // handoff must never count as approval of that replacement.
+  if (!review) {
     return core::failure(core::ErrorCode::Unsupported,
-                         "Interchange import reported conversion losses; a review surface is required "
-                         "before a lossy score can replace the current document");
+                         "Interchange import requires a review surface before the current "
+                         "document can be replaced");
   }
   // The conversion is reviewed before the live document is touched. A decline is not an error: it
   // is the creator keeping the song they already had.
-  if (review) {
-    const auto accepted = review(draft.value());
-    if (!accepted) return core::Result<void>{accepted.error()};
-    if (!accepted.value()) return core::success();
+  const auto accepted = review(draft.value());
+  if (!accepted) return core::Result<void>{accepted.error()};
+  if (!accepted.value()) return core::success();
+  // The check and replacement share one recursive editor lock. A host callback
+  // cannot change the song between approval validation and adoption.
+  std::lock_guard lock(mutex_);
+  if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
+    return staleInterchangeApproval();
   }
   return acceptInterchangeImport(std::move(draft).value());
 }
 
 core::Result<void> EditorRuntime::requestInterchangeExport() {
   InterchangePathHandoff chooser;
+  InterchangeDocumentStamp stamp;
   {
     std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr) {
+      return core::failure(core::ErrorCode::InvalidState,
+                           "Interchange export requires an initialized editor session");
+    }
     chooser = interchangeExportHandoff_;
+    stamp = documentStamp(authoring_->document());
   }
   if (!chooser) {
     return core::failure(core::ErrorCode::Unsupported,
@@ -129,7 +204,9 @@ core::Result<void> EditorRuntime::requestInterchangeExport() {
   if (!chosen) return core::Result<void>{chosen.error()};
   if (!chosen.value().has_value()) return core::success();
   const auto& destination = *chosen.value();
-  const auto extension = destination.extension().string();
+  auto extension = destination.extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+                 [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
   authoring::InterchangeExportRequest request;
   request.destination = destination;
   if (extension == ".ustx") request.format = authoring::InterchangeFormat::Ustx;
@@ -139,6 +216,12 @@ core::Result<void> EditorRuntime::requestInterchangeExport() {
                          "Score export requires a .ustx, .mid or .midi destination");
   // Exporting the whole selected track is the useful default in a DAW session, and it is the same
   // scope the standalone surface uses.
+  // The chooser may have run the host event loop. Select the track and region only after
+  // validating that the document it offered to export is still the current one.
+  std::lock_guard lock(mutex_);
+  if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
+    return staleInterchangeExport();
+  }
   if (trackId_.valid()) request.trackId = trackId_;
   if (regionId_.valid()) request.regionId = regionId_;
   const auto exported = exportInterchange(std::move(request));

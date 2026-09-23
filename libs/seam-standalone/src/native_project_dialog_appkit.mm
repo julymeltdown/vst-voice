@@ -4,6 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <dispatch/dispatch.h>
 
 #include "seam/native_ui/new_project_dialog.hpp"
 #include "seam/native_ui/conversion_review_model.hpp"
@@ -246,7 +247,8 @@ public:
       auto* alert = [[NSAlert alloc] init];
       alert.messageText = @"Review Interchange Import";
       alert.informativeText = conversionString(model.summary() +
-          "\nImport creates an unsaved SEAM document. The source file is not modified.");
+          "\nImport replaces the current SEAM song with an unsaved document. Save the current "
+          "song or host session first; Undo cannot restore it. The source file is unchanged.");
       alert.alertStyle = model.hasLosses() ? NSAlertStyleWarning
                                           : NSAlertStyleInformational;
       alert.accessoryView = view;
@@ -454,6 +456,27 @@ std::unique_ptr<INativeNewProjectDialog> createNativeNewProjectDialog() {
 std::unique_ptr<INativeInterchangeReviewDialog>
 createNativeInterchangeReviewDialog() {
   return std::make_unique<AppKitNativeInterchangeReviewDialog>();
+}
+
+void presentNativeInterchangeFailure(std::string_view title, std::string_view detail) {
+  NSString* titleText = conversionString(title);
+  NSString* detailText = conversionString(detail);
+  void (^present)(void) = ^{
+    auto* alert = [[NSAlert alloc] init];
+    alert.messageText = titleText;
+    alert.informativeText = detailText;
+    alert.alertStyle = NSAlertStyleWarning;
+    [alert addButtonWithTitle:@"OK"];
+    NSWindow* owner = NSApp.keyWindow;
+    NSResponder* responder = owner.firstResponder;
+    [alert runModal];
+    if (owner != nil && owner.visible) {
+      [owner makeKeyWindow];
+      if (responder != nil) [owner makeFirstResponder:responder];
+    }
+  };
+  if ([NSThread isMainThread]) present();
+  else dispatch_async(dispatch_get_main_queue(), present);
 }
 
 }

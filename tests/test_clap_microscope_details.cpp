@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/interchange/smf_codec.hpp"
+#include "seam/interchange/ustx_codec.hpp"
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/synthesis/unit_selection.hpp"
 
@@ -305,6 +306,69 @@ TEST_CASE("CLAP interchange handoffs keep the song unchanged when unconnected, c
   CHECK(std::filesystem::file_size(midi) > 14U);
 }
 
+TEST_CASE("CLAP interchange refuses stale picker and review approvals") {
+  using namespace seam;
+  for (const bool mutateDuringReview : {false, true}) {
+    const auto root = test::support::temporaryDirectory("clap-interchange-stale-approval");
+    auto runtime = runtimeFixture();
+    const auto original = runtime.projectCopy();
+    const auto source = root / "score.ustx";
+    CHECK(runtime.exportInterchange({
+        .format = authoring::InterchangeFormat::Ustx,
+        .destination = source}).hasValue());
+
+    std::uint64_t newerRevision = 0U;
+    const auto makeNewerDocument = [&] {
+      auto current = runtime.projectCopy();
+      CHECK(runtime.replaceProject(std::move(current)).hasValue());
+      newerRevision = runtime.revision();
+    };
+    bool reviewCalled = false;
+    runtime.setInterchangeImportHandoff([&] {
+      if (!mutateDuringReview) makeNewerDocument();
+      return std::optional<std::filesystem::path>{source};
+    });
+    runtime.setInterchangeReviewHandoff([&](const authoring::InterchangeImportDraft&) {
+      reviewCalled = true;
+      if (mutateDuringReview) makeNewerDocument();
+      return true;
+    });
+
+    const auto imported = runtime.requestInterchangeImport();
+    CHECK(!imported);
+    CHECK(imported.error().code == core::ErrorCode::Conflict);
+    CHECK(reviewCalled == mutateDuringReview);
+    CHECK(runtime.revision() == newerRevision);
+    CHECK(runtime.projectCopy().id() == original.id());
+  }
+}
+
+TEST_CASE("CLAP interchange export refuses a stale picker and accepts uppercase score suffixes") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-stale-export");
+  auto runtime = runtimeFixture();
+  const auto destination = root / "score.USTX";
+  const auto earlierRevision = runtime.revision();
+  runtime.setInterchangeExportHandoff([&] {
+    auto current = runtime.projectCopy();
+    CHECK(runtime.replaceProject(std::move(current)).hasValue());
+    return std::optional<std::filesystem::path>{destination};
+  });
+  const auto refused = runtime.requestInterchangeExport();
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(runtime.revision() > earlierRevision);
+  CHECK(!std::filesystem::exists(destination));
+
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{destination};
+  });
+  const auto exported = runtime.requestInterchangeExport();
+  CHECK(exported.hasValue());
+  CHECK(std::filesystem::exists(destination));
+  CHECK(std::filesystem::file_size(destination) > 0U);
+}
+
 // A conversion that lost information must not reach the live document without a human decision. The
 // embedded runtime has to fail closed when no review surface is connected, because a host that never
 // wired one would otherwise adopt a lossy score silently.
@@ -356,6 +420,52 @@ TEST_CASE("CLAP interchange refuses a lossy draft when no review surface is conn
   CHECK(runtime.projectCopy().id() != before.id());
 }
 
+TEST_CASE("CLAP interchange requires review even when conversion reports no losses") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-lossless-review");
+  auto runtime = runtimeFixture();
+  const auto original = runtime.projectCopy();
+  const auto revision = runtime.revision();
+  const auto source = root / "score.ustx";
+  interchange::UstxDocument score;
+  score.name = "Neutral score";
+  score.tempos.push_back({time::Tick{0}, 120.0});
+  score.meters.push_back({0, 4U, 4U});
+  score.tracks.push_back({.name = "Lead"});
+  interchange::UstxPart part;
+  part.name = "Verse";
+  part.duration = time::Tick{960};
+  interchange::UstxNote note;
+  note.position = time::Tick{0};
+  note.duration = time::Tick{480};
+  note.lyric = "a";
+  note.snapFirst = false;
+  part.notes.push_back(std::move(note));
+  score.parts.push_back(std::move(part));
+  const auto encoded = interchange::encodeUstx(score);
+  CHECK(encoded);
+  if (!encoded) return;
+  {
+    std::ofstream out{source, std::ios::binary | std::ios::trunc};
+    out.write(reinterpret_cast<const char*>(encoded.value().data()),
+              static_cast<std::streamsize>(encoded.value().size()));
+  }
+  const auto draft = runtime.prepareInterchangeImport(source, {.projectName = "score"});
+  CHECK(draft);
+  if (!draft) return;
+  CHECK(draft.value().issues.empty());
+  runtime.setInterchangeImportHandoff([&] {
+    return std::optional<std::filesystem::path>{source};
+  });
+
+  const auto refused = runtime.requestInterchangeImport();
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Unsupported);
+  CHECK(refused.error().message.find("review surface") != std::string::npos);
+  CHECK(runtime.revision() == revision);
+  CHECK(runtime.projectCopy().id() == original.id());
+}
+
 // The embedded surface reaches interchange through its keyboard, so the shortcut itself is part of
 // the contract: a wired runtime nobody can trigger is not a usable feature.
 TEST_CASE("CLAP interchange shortcuts reach the host handoffs and leave other keys alone") {
@@ -401,4 +511,44 @@ TEST_CASE("CLAP interchange shortcuts reach the host handoffs and leave other ke
                    .modifiers = {.shift = true, .command = true}});
   CHECK(importCalls == 1);
   CHECK(runtime.projectCopy().id() != before.id());
+}
+
+TEST_CASE("CLAP interchange shortcuts report failures but not cancellations") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-shortcut-errors");
+  auto runtime = runtimeFixture();
+  const auto before = runtime.projectCopy();
+  const auto revision = runtime.revision();
+  std::vector<std::string> reported;
+  runtime.setInterchangeErrorHandoff([&](std::string_view title, const core::Error& error) {
+    reported.emplace_back(std::string{title} + ": " + error.message);
+  });
+  const auto importKey = native_ui::KeyEvent{
+      .key = native_ui::NativeKey::O, .modifiers = {.shift = true, .command = true}};
+  const auto exportKey = native_ui::KeyEvent{
+      .key = native_ui::NativeKey::E, .modifiers = {.shift = true, .command = true}};
+
+  runtime.setInterchangeImportHandoff([] {
+    return std::optional<std::filesystem::path>{};
+  });
+  runtime.keyDown(importKey);
+  CHECK(reported.empty());
+
+  const auto malformed = root / "broken.ustx";
+  { std::ofstream out{malformed}; out << "not a USTX score\n"; }
+  runtime.setInterchangeImportHandoff([&] {
+    return std::optional<std::filesystem::path>{malformed};
+  });
+  runtime.keyDown(importKey);
+  CHECK(reported.size() == 1U);
+  CHECK(reported.back().find("Could not import score") != std::string::npos);
+
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{root / "invalid.txt"};
+  });
+  runtime.keyDown(exportKey);
+  CHECK(reported.size() == 2U);
+  CHECK(reported.back().find("Could not export score") != std::string::npos);
+  CHECK(runtime.revision() == revision);
+  CHECK(runtime.projectCopy() == before);
 }

@@ -119,9 +119,46 @@ and DAW/OpenUtau round trips.
 After the File-menu error-alert change, the Release aggregate and standalone
 targets passed again (`ctest`, 2/2).
 
+## 2026-09-24 embedded interchange follow-up
+
+The macOS CLAP editor now treats the file chooser and review dialog as
+reentrant host boundaries. An import captures the current document identity,
+revision and ID allocator before opening the chooser; after path selection,
+conversion and explicit review, it refuses a stale decision. The final check
+and replacement run under one editor lock. Export likewise refuses to write a
+path selected for a document that changed while its picker was open. This is a
+retryable conflict, not implicit permission to replace or export a different
+song. Uppercase `.USTX`/`.MID`/`.MIDI` suffixes are recognized.
+
+Every embedded import now requires a review handoff, including conversion with
+zero reported losses. The shared AppKit review discloses that import replaces
+the current SEAM song with an unsaved document, clears its Undo route, and
+warns the user to save the current song or host session first. A missing review
+surface fails closed; a cancelled chooser or declined review leaves the song
+untouched. Embedded Command-Shift-O/E failures are reported through a native
+alert instead of being discarded by the key handler. The alert is dispatched
+on the AppKit main thread when a host delivers the key event elsewhere.
+
+Evidence: new embedded regressions cover stale picker/review approvals,
+zero-loss review, stale export, uppercase suffixes, and keyboard error versus
+cancellation. A deliberately lossless USTX fixture first failed against the
+old implicit-acceptance code, then passed after review became mandatory.
+Release builds of `seam_clap_microscope_tests`, `seam_clap_editor_plugin` and
+`seam_editor_native` passed; eight focused local CTest targets (embedded host,
+conversion review, SMF, USTX, interchange service, microscope, standalone and
+CLAP plugin host smoke) passed. This is not a GUI-in-DAW acceptance run.
+The rebuilt Release aggregate `seam_tests` also passed (one CTest target,
+26.81 seconds). Existing duplicate-library linker warnings remain.
+
+Remaining embedded U32 evidence: exercise the real plugin modal flow in a DAW,
+verify a host save/reopen and unsaved-project decision, visually inspect the
+warning and error alerts at constrained sizes, and roundtrip a score through
+OpenUtau. Windows native review and alerts remain the README TODO. No CI run
+or configuration change was made in this batch.
+
 ## Remaining scope
 
-Embedded-editor interchange and real OpenUtau/DAW exchange are still open.
+Embedded-editor host lifecycle and real OpenUtau/DAW exchange are still open.
 Actual hardware recording/permission/disconnection behavior still needs a
 device run. The new helper's injected failures cannot establish that evidence.
 Windows remains the README TODO, not a waived platform. No complete U22/U30/

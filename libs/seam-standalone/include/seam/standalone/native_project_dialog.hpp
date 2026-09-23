@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace seam::standalone {
@@ -43,8 +44,14 @@ public:
 };
 
 // macOS has a native review surface. Other platforms return Unsupported;
-// absence of a review UI is never implicit approval of a lossy import.
+// absence of a review UI is never implicit approval of any import.
 [[nodiscard]] std::unique_ptr<INativeInterchangeReviewDialog>
 createNativeInterchangeReviewDialog();
+
+#if defined(__APPLE__)
+// Embedded keyboard commands have no synchronous result surface. Present their failures on the
+// AppKit main thread, including when a host delivers the command from another thread.
+void presentNativeInterchangeFailure(std::string_view title, std::string_view detail);
+#endif
 
 }

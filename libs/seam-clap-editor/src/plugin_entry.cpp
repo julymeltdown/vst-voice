@@ -189,9 +189,8 @@ public:
                                    "Export USTX or MIDI", {"ustx", "mid", "midi"},
                                    "score.ustx");
     });
-    // The loss review is a human decision, so the embedded surface uses the same native review
-    // dialog the standalone editor does. Without it, a lossy conversion is refused rather than
-    // adopted silently.
+    // The review is a human replacement decision, so the embedded surface uses the same native
+    // dialog as standalone. Without it, no conversion is adopted silently.
     runtime_->setInterchangeReviewHandoff(
         [](const authoring::InterchangeImportDraft& draft) {
           auto dialog = standalone::createNativeInterchangeReviewDialog();
@@ -201,6 +200,12 @@ public:
           }
           return dialog->review(draft);
         });
+#if defined(__APPLE__)
+    runtime_->setInterchangeErrorHandoff(
+        [](std::string_view title, const core::Error& error) {
+          standalone::presentNativeInterchangeFailure(title, error.message);
+        });
+#endif
     runtime_->setRenderReadyCallback([this] {
       refreshRuntimeMetadata();
       if (host_ != nullptr && host_->request_process != nullptr) {
