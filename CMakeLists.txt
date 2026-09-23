@@ -2549,6 +2549,12 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_standalone_production_path_contract
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_standalone_production_path.py)
+    # This gate enforces the 600-line ceiling and the adapter-ownership rules for the
+    # CLAP editor runtime. It was previously reachable only by hand, which let two
+    # files cross the ceiling unnoticed; running it here keeps it honest.
+    add_test(NAME seam_clap_authoring_adapter_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_clap_authoring_adapter.py)
     add_test(NAME seam_u2_project_lifecycle_contract
       COMMAND ${Python3_EXECUTABLE}
               ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_u2_project_lifecycle.py

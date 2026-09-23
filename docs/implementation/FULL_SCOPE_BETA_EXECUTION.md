@@ -2578,3 +2578,40 @@ revision is bumped because no rendered sample changes. Full account in
 `docs/implementation/PREVIEW_STATUS_RACE_2026-09-23.md`. The separate one-off
 `seam_phase12b_tests` teardown abort, which did not reproduce in 200 serial runs, is
 unrelated to this race and remains tracked on its own.
+
+2026-09-23 -- Repaired a verification gate that had silently stopped passing, and
+closed the reason it could. Found by running every `scripts/verify_*.py` by hand and
+sorting on exit status, because no part of the build or CI produces this signal.
+
+`scripts/verify_clap_authoring_adapter.py` enforces that `EditorRuntime` owns the
+shared `AuthoringRuntime` rather than private business state, and that no
+`editor_runtime_*.cpp` exceeds 600 lines. It was failing on two files
+(`editor_runtime_adapter.cpp` 684, `editor_runtime_project.cpp` 621). The ceiling had
+been respected when the gate was written at `6e3be9ec` (395 and 193 lines) and was
+lost as the adapter grew.
+
+The real defect is that the gate was reachable only by hand: not referenced in
+`CMakeLists.txt`, in any `.github/workflows/` file, or in any CTest test. Nothing ran
+it, so nothing reported that it had stopped passing. Repairing the two files without
+addressing that would leave the same trap for the next growth spurt.
+
+Fixed by splitting the interchange surface into `editor_runtime_interchange.cpp`
+along its own seam (`prepareInterchangeImport`, `acceptInterchangeImport`,
+`exportInterchange`, the import/export/review handoff setters and the two request
+entrypoints; they were already the only consumers of the interchange includes in
+either file). Adapter 683 -> 592, project 620 -> 577, interchange 150. The gate is
+now a CTest entry, `seam_clap_authoring_adapter_contract`.
+
+The U32 token set in `verify_phase12b_contracts.py` is unchanged -- the same four
+strings, checked at the path the code moved to -- so the constraint that the embedded
+editor share the standalone interchange boundary is enforced rather than relaxed.
+
+Verified: the size gate exits 0 where it exited 1; the new CTest entry passes 1/1;
+phase11 and phase12b contracts pass; source closure passes; Release CTest 184/184
+where it was 183, the increase being the gate itself; `seam_tests` 1042 passed, 0
+failed; external-beta 189/189 in 24.69 s; CI Debug `seam_phase11_tests` 1/1 in
+1.17 s; and 12/12 ThreadSanitizer runs clean, which confirms the preview-status race
+repair survived the translation-unit move. Behaviour is unchanged: no logic, no
+rendered output, no renderer revision, and no roadmap unit or Beta criterion
+advances. Other un-wired gates were surveyed; only this one had stopped passing.
+Full account in `docs/implementation/CLAP_ADAPTER_SIZE_GATE_2026-09-23.md`.
