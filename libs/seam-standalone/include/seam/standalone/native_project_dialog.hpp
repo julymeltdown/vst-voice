@@ -41,6 +41,9 @@ public:
   // document untouched. This review neither installs nor replaces singers.
   [[nodiscard]] virtual core::Result<bool> review(
       const authoring::InterchangeImportDraft& draft) = 0;
+  // An export is written only after this review accepts its complete report.
+  [[nodiscard]] virtual core::Result<bool> reviewExport(
+      const authoring::InterchangeExportDraft& draft) = 0;
 };
 
 // macOS has a native review surface. Other platforms return Unsupported;

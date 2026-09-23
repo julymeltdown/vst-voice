@@ -58,6 +58,16 @@ struct InterchangeExportReceipt final {
   std::vector<InterchangeIssue> issues;
 };
 
+// A complete, bounded conversion held in memory until the creator reviews its
+// diagnostic report. Preparing a draft never creates or replaces a file.
+struct InterchangeExportDraft final {
+  InterchangeFormat format{InterchangeFormat::Ustx};
+  std::filesystem::path destination;
+  std::string contentHash;
+  std::vector<InterchangeIssue> issues;
+  std::vector<std::uint8_t> bytes;
+};
+
 // Stateless file boundary for native import/export.  Import returns an
 // unsaved draft; callers decide whether to replace the current document after
 // showing the bounded loss report.  Export is create-new and never mutates the
@@ -77,6 +87,15 @@ public:
       InterchangeExportRequest request,
       interchange::UstxLimits ustxLimits = {},
       interchange::SmfLimits smfLimits = {}) const;
+
+  [[nodiscard]] core::Result<InterchangeExportDraft> prepareExport(
+      const domain::Project& project,
+      InterchangeExportRequest request,
+      interchange::UstxLimits ustxLimits = {},
+      interchange::SmfLimits smfLimits = {}) const;
+
+  [[nodiscard]] core::Result<InterchangeExportReceipt> writeExport(
+      const InterchangeExportDraft& draft) const;
 };
 
 }  // namespace seam::authoring

@@ -904,6 +904,7 @@ core::Result<void> StandaloneApplicationController::openInterchangePath(
 }
 
 core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
+  const auto expected = documentTransitionStamp();
   const auto& document = session_.runtime().document();
   const auto selected = fileDialog_->choose(platform::FileDialogRequest{
       .purpose = platform::FileDialogPurpose::ExportScore,
@@ -914,6 +915,8 @@ core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
   });
   if (!selected) return core::Result<void>{selected.error()};
   if (!selected.value().has_value()) return core::success();
+  auto current = validateDocumentTransitionStamp(expected);
+  if (!current) return current;
   const auto extension = lowerExtension(*selected.value());
   authoring::InterchangeFormat format;
   if (extension == ".ustx") format = authoring::InterchangeFormat::Ustx;
@@ -926,7 +929,18 @@ core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
   };
   if (session_.trackId().valid()) request.trackId = session_.trackId();
   if (session_.regionId().valid()) request.regionId = session_.regionId();
-  const auto exported = session_.exportInterchange(std::move(request));
+  auto draft = session_.prepareInterchangeExport(std::move(request));
+  if (!draft) return core::Result<void>{draft.error()};
+  if (!config_.reviewInterchangeExport) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Interchange export review is not connected");
+  }
+  const auto accepted = config_.reviewInterchangeExport(draft.value());
+  if (!accepted) return core::Result<void>{accepted.error()};
+  if (!accepted.value()) return core::success();
+  current = validateDocumentTransitionStamp(expected);
+  if (!current) return current;
+  const auto exported = authoring::InterchangeService{}.writeExport(draft.value());
   if (!exported) return core::Result<void>{exported.error()};
   notifyStateChanged();
   return core::success();

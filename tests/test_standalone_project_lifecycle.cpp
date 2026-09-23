@@ -1228,6 +1228,69 @@ TEST_CASE("score export suggestion replaces only an existing score extension") {
   }
 }
 
+TEST_CASE("standalone score export reviews losses before writing and rejects stale approval") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("standalone-export-review");
+  auto session = makeSession(root);
+  addNote(*session);
+  const auto destination = root / "score.mid";
+  const auto staleDestination = root / "stale.mid";
+  auto dialog = std::make_unique<FakeDialog>();
+  dialog->responses = {destination, destination, staleDestination};
+  bool approve = false;
+  bool mutateDuringReview = false;
+  std::size_t reviews = 0U;
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::make_unique<FakePrompt>(), {
+        .autosaveRoot = root / "autosaves",
+        .recentProjectsPath = root / "recent.json",
+        .reviewInterchangeExport = [&](const authoring::InterchangeExportDraft& draft)
+            -> core::Result<bool> {
+          ++reviews;
+          CHECK(!std::filesystem::exists(draft.destination));
+          CHECK(!draft.bytes.empty());
+          CHECK(draft.contentHash.size() == 64U);
+          if (mutateDuringReview) {
+            auto current = session->runtime().document().session().project();
+            CHECK(session->runtime().document().replaceProject(std::move(current)));
+          }
+          return approve;
+        },
+      });
+  CHECK(controller);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::ExportScore));
+  CHECK(reviews == 1U);
+  CHECK(!std::filesystem::exists(destination));
+
+  approve = true;
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::ExportScore));
+  CHECK(reviews == 2U);
+  CHECK(std::filesystem::exists(destination));
+  CHECK(std::filesystem::file_size(destination) > 14U);
+
+  mutateDuringReview = true;
+  const auto stale = controller.value()->dispatch(platform::ApplicationCommand::ExportScore);
+  CHECK(!stale);
+  CHECK(stale.error().code == core::ErrorCode::Conflict);
+  CHECK(reviews == 3U);
+  CHECK(!std::filesystem::exists(staleDestination));
+
+  const auto unreviewedDestination = root / "unreviewed.mid";
+  auto unreviewedDialog = std::make_unique<FakeDialog>();
+  unreviewedDialog->responses = {unreviewedDestination};
+  auto withoutReview = standalone::StandaloneApplicationController::create(
+      *session, std::move(unreviewedDialog), std::make_unique<FakePrompt>(), {
+        .autosaveRoot = root / "autosaves",
+        .recentProjectsPath = root / "recent.json",
+      });
+  CHECK(withoutReview);
+  const auto unreviewed = withoutReview.value()->dispatch(
+      platform::ApplicationCommand::ExportScore);
+  CHECK(!unreviewed);
+  CHECK(unreviewed.error().code == core::ErrorCode::Unsupported);
+  CHECK(!std::filesystem::exists(unreviewedDestination));
+}
+
 TEST_CASE("standalone interchange accepts reviewed USTX and MIDI as new unsaved documents") {
   using namespace seam;
   for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {

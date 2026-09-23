@@ -21,6 +21,10 @@ public:
     return core::failure<bool>(core::ErrorCode::Unsupported,
         "Native interchange review is unavailable on this platform");
   }
+  core::Result<bool> reviewExport(const authoring::InterchangeExportDraft&) override {
+    return core::failure<bool>(core::ErrorCode::Unsupported,
+        "Native interchange export review is unavailable on this platform");
+  }
 };
 
 }

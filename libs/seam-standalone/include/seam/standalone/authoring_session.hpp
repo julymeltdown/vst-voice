@@ -69,6 +69,8 @@ public:
       authoring::InterchangeImportDraft draft);
   [[nodiscard]] core::Result<authoring::InterchangeExportReceipt>
   exportInterchange(authoring::InterchangeExportRequest request) const;
+  [[nodiscard]] core::Result<authoring::InterchangeExportDraft>
+  prepareInterchangeExport(authoring::InterchangeExportRequest request) const;
   [[nodiscard]] core::Result<void> recoverProject(
       authoring::AutosaveService& autosave,
       const authoring::RecoveryCandidate& candidate);

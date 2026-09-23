@@ -31,21 +31,28 @@ NSString* conversionString(std::string_view value) {
 }  // namespace
 
 @interface SEAMConversionReviewTable : NSObject <NSTableViewDataSource, NSTableViewDelegate>
-@property(nonatomic, assign) const seam::native_ui::ConversionReviewModel* model;
+@property(nonatomic, assign) const std::vector<seam::authoring::InterchangeIssue>* issues;
 @property(nonatomic, strong) NSTextView* details;
 @end
+
+static std::string conversionIssueDetails(
+    const seam::authoring::InterchangeIssue& item) {
+  return std::string{item.loss ? "Loss" : "Warning"} + " (" +
+      (item.format == seam::authoring::InterchangeFormat::Ustx ? "USTX" : "MIDI") +
+      ")\nLocation: " + item.path + "\n\n" + item.message;
+}
 
 @implementation SEAMConversionReviewTable
 - (NSInteger)numberOfRowsInTableView:(NSTableView*)tableView {
   (void)tableView;
-  return self.model == nullptr ? 0 : static_cast<NSInteger>(self.model->issueCount());
+  return self.issues == nullptr ? 0 : static_cast<NSInteger>(self.issues->size());
 }
 
 - (NSView*)tableView:(NSTableView*)tableView
     viewForTableColumn:(NSTableColumn*)column row:(NSInteger)row {
-  if (self.model == nullptr || row < 0) return nil;
-  const auto* item = self.model->issue(static_cast<std::size_t>(row));
-  if (item == nullptr) return nil;
+  if (self.issues == nullptr || row < 0 ||
+      static_cast<std::size_t>(row) >= self.issues->size()) return nil;
+  const auto* item = &(*self.issues)[static_cast<std::size_t>(row)];
   auto* cell = static_cast<NSTextField*>(
       [tableView makeViewWithIdentifier:column.identifier owner:self]);
   if (cell == nil) {
@@ -71,9 +78,10 @@ NSString* conversionString(std::string_view value) {
 
 - (void)tableViewSelectionDidChange:(NSNotification*)notification {
   auto* table = static_cast<NSTableView*>(notification.object);
-  if (self.model == nullptr || table.selectedRow < 0) return;
+  if (self.issues == nullptr || table.selectedRow < 0 ||
+      static_cast<std::size_t>(table.selectedRow) >= self.issues->size()) return;
   self.details.string = conversionString(
-      self.model->issueDetails(static_cast<std::size_t>(table.selectedRow)));
+      conversionIssueDetails((*self.issues)[static_cast<std::size_t>(table.selectedRow)]));
   [self.details scrollRangeToVisible:NSMakeRange(0U, 0U)];
 }
 @end
@@ -173,12 +181,48 @@ class AppKitNativeInterchangeReviewDialog final
 public:
   core::Result<bool> review(
       const authoring::InterchangeImportDraft& draft) override {
+    const native_ui::ConversionReviewModel model{draft};
+    return reviewIssues(draft.issues, "Review Interchange Import",
+        model.summary() +
+            "\nImport replaces the current SEAM song with an unsaved document. Save the "
+            "current song or host session first; Undo cannot restore it. The source file "
+            "is unchanged.",
+        model.sourceDetails(), model.singerDisclosure(),
+        "Imported source path, SHA-256, and project identity", "Import");
+  }
+
+  core::Result<bool> reviewExport(
+      const authoring::InterchangeExportDraft& draft) override {
+    const auto losses = std::count_if(draft.issues.begin(), draft.issues.end(),
+        [](const auto& issue) { return issue.loss; });
+    const auto format = draft.format == authoring::InterchangeFormat::Ustx
+        ? "USTX" : "MIDI";
+    return reviewIssues(draft.issues, "Review Score Export",
+        std::string{format} + " export: " + std::to_string(losses) + " losses; " +
+            std::to_string(draft.issues.size() - static_cast<std::size_t>(losses)) +
+            " warnings\nThe destination does not exist yet. Export creates a new file and "
+            "does not change the SEAM song. Musical information listed as a loss will "
+            "not be present in the exported file.",
+        "Destination: " + draft.destination.string() + "\nSHA-256: " +
+            draft.contentHash + "\nBytes: " + std::to_string(draft.bytes.size()),
+        "Review all losses and warnings before writing. Cancel leaves the destination "
+        "uncreated; an existing file is never replaced.",
+        "Export destination, SHA-256, and byte count", "Export");
+  }
+
+private:
+  core::Result<bool> reviewIssues(
+      const std::vector<authoring::InterchangeIssue>& issues,
+      std::string_view title, const std::string& summary,
+      const std::string& fileDetails, const std::string& disclosureText,
+      std::string_view fileAccessibilityLabel, std::string_view acceptVerb) {
     if (![NSThread isMainThread]) {
       return core::failure<bool>(core::ErrorCode::InvalidState,
           "AppKit interchange review must run on the main thread");
     }
     @autoreleasepool {
-      const native_ui::ConversionReviewModel model{draft};
+      const bool hasLosses = std::any_of(issues.begin(), issues.end(),
+          [](const auto& issue) { return issue.loss; });
       // Only the selected detail is materialized. NSTableView requests visible
       // rows lazily; a large admitted conversion report stays scrollable.
       const auto screenHeight = NSScreen.mainScreen.visibleFrame.size.height;
@@ -188,8 +232,8 @@ public:
           NSMakeRect(0.0, 0.0, width, 254.0 + tableHeight)];
       auto* details = conversionTextView(view,
           NSMakeRect(0.0, 0.0, width, 82.0), @"Selected conversion issue, full text",
-          model.issueCount() == 0U ? @"No conversion issues were reported."
-                                  : conversionString(model.issueDetails(0U)));
+          issues.empty() ? @"No conversion issues were reported."
+                         : conversionString(conversionIssueDetails(issues.front())));
       [view addSubview:label(@"Selected issue — full location and message",
                             NSMakeRect(0.0, 85.0, width, 18.0))];
 
@@ -220,14 +264,14 @@ public:
       [table addTableColumn:location];
       [table addTableColumn:message];
       auto* dataSource = [[SEAMConversionReviewTable alloc] init];
-      dataSource.model = &model;
+      dataSource.issues = &issues;
       dataSource.details = details;
       table.dataSource = dataSource;
       table.delegate = dataSource;
       tableScroll.documentView = table;
       [view addSubview:tableScroll];
       [table reloadData];
-      if (model.issueCount() != 0U) {
+      if (!issues.empty()) {
         [table selectRowIndexes:[NSIndexSet indexSetWithIndex:0U]
             byExtendingSelection:NO];
       }
@@ -235,33 +279,32 @@ public:
           NSMakeRect(0.0, 111.0 + tableHeight, width, 18.0))];
       auto* source = conversionTextView(view,
           NSMakeRect(0.0, 133.0 + tableHeight, width, 70.0),
-          @"Imported source path, SHA-256, and project identity",
-          conversionString(model.sourceDetails()));
+          conversionString(fileAccessibilityLabel),
+          conversionString(fileDetails));
       auto* disclosure = [NSTextField wrappingLabelWithString:
-          conversionString(model.singerDisclosure())];
+          conversionString(disclosureText)];
       disclosure.frame = NSMakeRect(0.0, 209.0 + tableHeight, width, 42.0);
       disclosure.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
       disclosure.accessibilityLabel = disclosure.stringValue;
       [view addSubview:disclosure];
 
       auto* alert = [[NSAlert alloc] init];
-      alert.messageText = @"Review Interchange Import";
-      alert.informativeText = conversionString(model.summary() +
-          "\nImport replaces the current SEAM song with an unsaved document. Save the current "
-          "song or host session first; Undo cannot restore it. The source file is unchanged.");
-      alert.alertStyle = model.hasLosses() ? NSAlertStyleWarning
-                                          : NSAlertStyleInformational;
+      alert.messageText = conversionString(title);
+      alert.informativeText = conversionString(summary);
+      alert.alertStyle = hasLosses ? NSAlertStyleWarning
+                                  : NSAlertStyleInformational;
       alert.accessoryView = view;
       // Cancel is deliberately the default, especially for lossy conversion.
       // Pressing Return or Escape is not consent to discard musical data.
       auto* cancel = [alert addButtonWithTitle:@"Cancel"];
       cancel.keyEquivalent = @"\033";
-      auto* accept = [alert addButtonWithTitle:
-          model.hasLosses() ? @"Import With Losses" : @"Import"];
+      const auto acceptTitle = std::string{acceptVerb} +
+          (hasLosses ? " With Losses" : "");
+      auto* accept = [alert addButtonWithTitle:conversionString(acceptTitle)];
       accept.keyEquivalent = @"";
-      accept.accessibilityLabel = model.hasLosses()
-          ? @"Import after accepting the disclosed conversion losses"
-          : @"Import the reviewed conversion";
+      accept.accessibilityLabel = hasLosses
+          ? @"Proceed after accepting the disclosed conversion losses"
+          : @"Proceed with the reviewed conversion";
       [alert layout];
       alert.window.defaultButtonCell = cancel.cell;
       alert.window.initialFirstResponder = cancel;
@@ -289,7 +332,7 @@ public:
       if (keyMonitor != nil) [NSEvent removeMonitor:keyMonitor];
       table.delegate = nil;
       table.dataSource = nil;
-      dataSource.model = nullptr;
+      dataSource.issues = nullptr;
       if (owner != nil && owner.visible) {
         [owner makeKeyWindow];
         if (responder != nil) [owner makeFirstResponder:responder];

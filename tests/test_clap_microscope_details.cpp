@@ -301,8 +301,25 @@ TEST_CASE("CLAP interchange handoffs keep the song unchanged when unconnected, c
   runtime.setInterchangeExportHandoff([&] {
     return std::optional<std::filesystem::path>{midi};
   });
+  const auto unreviewed = runtime.requestInterchangeExport();
+  CHECK(!unreviewed);
+  CHECK(unreviewed.error().code == core::ErrorCode::Unsupported);
+  CHECK(!std::filesystem::exists(midi));
+  std::size_t exportReviews = 0U;
+  runtime.setInterchangeExportReviewHandoff(
+      [&](const authoring::InterchangeExportDraft& draft) -> core::Result<bool> {
+        ++exportReviews;
+        CHECK(!std::filesystem::exists(draft.destination));
+        CHECK(!draft.bytes.empty());
+        return exportReviews != 1U;
+      });
+  CHECK(runtime.requestInterchangeExport().hasValue());
+  CHECK(exportReviews == 1U);
+  CHECK(!std::filesystem::exists(midi));
   const auto exportedMidi = runtime.requestInterchangeExport();
+  if (!exportedMidi) throw std::runtime_error(exportedMidi.error().message);
   CHECK(exportedMidi.hasValue());
+  CHECK(exportReviews == 2U);
   CHECK(std::filesystem::exists(midi));
   CHECK(std::filesystem::file_size(midi) > 14U);
 }
@@ -364,10 +381,34 @@ TEST_CASE("CLAP interchange export refuses a stale picker and accepts uppercase 
   runtime.setInterchangeExportHandoff([&] {
     return std::optional<std::filesystem::path>{destination};
   });
+  runtime.setInterchangeExportReviewHandoff(
+      [](const authoring::InterchangeExportDraft&) { return true; });
   const auto exported = runtime.requestInterchangeExport();
+  if (!exported) throw std::runtime_error(exported.error().message);
   CHECK(exported.hasValue());
   CHECK(std::filesystem::exists(destination));
   CHECK(std::filesystem::file_size(destination) > 0U);
+}
+
+TEST_CASE("CLAP interchange export rejects stale review approval before writing") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-stale-export-review");
+  auto runtime = runtimeFixture();
+  const auto destination = root / "score.mid";
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{destination};
+  });
+  runtime.setInterchangeExportReviewHandoff(
+      [&](const authoring::InterchangeExportDraft& draft) -> core::Result<bool> {
+        CHECK(!std::filesystem::exists(draft.destination));
+        auto current = runtime.projectCopy();
+        CHECK(runtime.replaceProject(std::move(current)).hasValue());
+        return true;
+      });
+  const auto stale = runtime.requestInterchangeExport();
+  CHECK(!stale);
+  CHECK(stale.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(destination));
 }
 
 TEST_CASE("CLAP persistent state changes signal revisions and direct bounce settings only once") {

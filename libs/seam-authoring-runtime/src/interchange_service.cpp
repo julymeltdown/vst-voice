@@ -129,19 +129,27 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
 core::Result<InterchangeExportReceipt> InterchangeService::exportFile(
     const domain::Project& project, InterchangeExportRequest request,
     interchange::UstxLimits ustxLimits, interchange::SmfLimits smfLimits) const {
-  using Output = InterchangeExportReceipt;
+  auto draft = prepareExport(project, std::move(request), ustxLimits, smfLimits);
+  if (!draft) return core::Result<InterchangeExportReceipt>{draft.error()};
+  return writeExport(draft.value());
+}
+
+core::Result<InterchangeExportDraft> InterchangeService::prepareExport(
+    const domain::Project& project, InterchangeExportRequest request,
+    interchange::UstxLimits ustxLimits, interchange::SmfLimits smfLimits) const {
+  using Output = InterchangeExportDraft;
   auto path = normalizedPath(request.destination);
   if (!path) return core::Result<Output>{path.error()};
-  if (request.destination.empty()) return core::failure<Output>(core::ErrorCode::InvalidArgument, "Interchange destination cannot be empty");
   std::vector<InterchangeIssue> issues;
   if (request.format == InterchangeFormat::Ustx) {
     auto exported = interchange::exportUstxProject(project, ustxLimits);
     if (!exported) return core::Result<Output>{exported.error()};
     const auto report = appendUstx(issues, exported.value().issues);
     if (!report) return core::Result<Output>{report.error()};
-    const auto written = core::durableAtomicWriteNew(path.value(), std::as_bytes(std::span{exported.value().bytes.data(), exported.value().bytes.size()}));
-    if (!written) return core::Result<Output>{written.error()};
-    return Output{InterchangeFormat::Ustx, path.value(), core::sha256Hex(std::span<const std::byte>{reinterpret_cast<const std::byte*>(exported.value().bytes.data()), exported.value().bytes.size()}), std::move(issues)};
+    auto bytes = std::move(exported).value().bytes;
+    const auto hash = core::sha256Hex(std::as_bytes(std::span{bytes}));
+    return Output{InterchangeFormat::Ustx, path.value(), hash,
+                  std::move(issues), std::move(bytes)};
   }
   domain::TrackId trackId{};
   domain::RegionId regionId{};
@@ -156,9 +164,28 @@ core::Result<InterchangeExportReceipt> InterchangeService::exportFile(
   if (!report) return core::Result<Output>{report.error()};
   auto encoded = interchange::encodeSmf(exported.value(), smfLimits);
   if (!encoded) return core::Result<Output>{encoded.error()};
-  const auto written = core::durableAtomicWriteNew(path.value(), std::as_bytes(std::span{encoded.value().data(), encoded.value().size()}));
+  auto bytes = std::move(encoded).value();
+  const auto hash = core::sha256Hex(std::as_bytes(std::span{bytes}));
+  return Output{InterchangeFormat::Smf, path.value(), hash,
+                std::move(issues), std::move(bytes)};
+}
+
+core::Result<InterchangeExportReceipt> InterchangeService::writeExport(
+    const InterchangeExportDraft& draft) const {
+  using Output = InterchangeExportReceipt;
+  auto path = normalizedPath(draft.destination);
+  if (!path) return core::Result<Output>{path.error()};
+  // Re-validate the held draft before committing it. A caller must not be
+  // able to approve one byte sequence and write another through this API.
+  const auto hash = core::sha256Hex(std::as_bytes(std::span{draft.bytes}));
+  if (hash != draft.contentHash) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Interchange export changed after review");
+  }
+  const auto written = core::durableAtomicWriteNew(path.value(),
+      std::as_bytes(std::span{draft.bytes}));
   if (!written) return core::Result<Output>{written.error()};
-  return Output{InterchangeFormat::Smf, path.value(), core::sha256Hex(std::span<const std::byte>{reinterpret_cast<const std::byte*>(encoded.value().data()), encoded.value().size()}), std::move(issues)};
+  return Output{draft.format, path.value(), hash, draft.issues};
 }
 
 }  // namespace seam::authoring

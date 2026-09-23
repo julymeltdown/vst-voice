@@ -117,6 +117,12 @@ void EditorRuntime::setInterchangeReviewHandoff(
   interchangeReviewHandoff_ = std::move(callback);
 }
 
+void EditorRuntime::setInterchangeExportReviewHandoff(
+    std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)> callback) {
+  std::lock_guard lock(mutex_);
+  interchangeExportReviewHandoff_ = std::move(callback);
+}
+
 void EditorRuntime::setInterchangeErrorHandoff(InterchangeErrorHandoff callback) {
   std::lock_guard lock(mutex_);
   interchangeErrorHandoff_ = std::move(callback);
@@ -186,6 +192,7 @@ core::Result<void> EditorRuntime::requestInterchangeImport() {
 
 core::Result<void> EditorRuntime::requestInterchangeExport() {
   InterchangePathHandoff chooser;
+  std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)> review;
   InterchangeDocumentStamp stamp;
   {
     std::lock_guard lock(mutex_);
@@ -194,6 +201,7 @@ core::Result<void> EditorRuntime::requestInterchangeExport() {
                            "Interchange export requires an initialized editor session");
     }
     chooser = interchangeExportHandoff_;
+    review = interchangeExportReviewHandoff_;
     stamp = documentStamp(authoring_->document());
   }
   if (!chooser) {
@@ -218,13 +226,31 @@ core::Result<void> EditorRuntime::requestInterchangeExport() {
   // scope the standalone surface uses.
   // The chooser may have run the host event loop. Select the track and region only after
   // validating that the document it offered to export is still the current one.
+  authoring::InterchangeExportDraft draft;
+  {
+    std::lock_guard lock(mutex_);
+    if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
+      return staleInterchangeExport();
+    }
+    if (trackId_.valid()) request.trackId = trackId_;
+    if (regionId_.valid()) request.regionId = regionId_;
+    auto prepared = authoring::InterchangeService{}.prepareExport(
+        authoring_->document().session().project(), std::move(request));
+    if (!prepared) return core::Result<void>{prepared.error()};
+    draft = std::move(prepared).value();
+  }
+  if (!review) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Interchange export requires a review surface before writing");
+  }
+  const auto accepted = review(draft);
+  if (!accepted) return core::Result<void>{accepted.error()};
+  if (!accepted.value()) return core::success();
   std::lock_guard lock(mutex_);
   if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
     return staleInterchangeExport();
   }
-  if (trackId_.valid()) request.trackId = trackId_;
-  if (regionId_.valid()) request.regionId = regionId_;
-  const auto exported = exportInterchange(std::move(request));
+  const auto exported = authoring::InterchangeService{}.writeExport(draft);
   if (!exported) return core::Result<void>{exported.error()};
   requestRepaint();
   return core::success();

@@ -550,6 +550,18 @@ core::Result<void> NativeEditorApp::initialize() {
             }
             return dialog->review(draft);
           },
+          .reviewInterchangeExport = [this](
+              const authoring::InterchangeExportDraft& draft) -> core::Result<bool> {
+            if (config_.reviewInterchangeExport) {
+              return config_.reviewInterchangeExport(draft);
+            }
+            auto dialog = createNativeInterchangeReviewDialog();
+            if (!dialog) {
+              return core::failure<bool>(core::ErrorCode::Unsupported,
+                  "Native interchange export review is unavailable");
+            }
+            return dialog->reviewExport(draft);
+          },
           .removeSelectedOverlaps = [this] {
             const auto result = authoring_->controller().openNoteCleanupReview(ui::NoteCleanupKind::RemoveOverlap);
             record(result); return result;

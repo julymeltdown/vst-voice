@@ -192,6 +192,47 @@ warning and error alerts at constrained sizes, and roundtrip a score through
 OpenUtau. Windows native review and alerts remain the README TODO. No CI run
 or configuration change was made in this batch.
 
+## 2026-09-24 export-loss preflight follow-up
+
+Both normal score-export paths previously called `InterchangeService::exportFile`
+and discarded the returned diagnostic issues. A MIDI file could therefore be
+created with pitch or expression data omitted before the creator saw a warning.
+The service now separates `prepareExport` (bounded conversion, exact bytes,
+SHA-256 and complete loss report; no destination file) from `writeExport`
+(recheck the destination, verify the reviewed byte hash, create-new atomic
+write). The existing `exportFile` remains a convenience composition for CLI
+and noninteractive callers.
+
+The standalone and embedded editors now present the same AppKit review before
+writing every USTX or MIDI export. The lazy issue table, selected full detail,
+destination/hash/byte count, default Cancel and explicit **Export With Losses**
+decision make the loss report inspectable. A declined or missing review leaves
+the destination absent. An edit or document replacement while the review is
+open invalidates approval. A file appearing at the destination meanwhile is
+still refused by create-new semantics. Windows continues to return Unsupported
+for native review; its UI is the deferred README TODO.
+
+Local macOS Debug full build passed. Focused conversion-review, interchange
+service, embedded microscope and standalone lifecycle CTest targets passed
+(4/4); the aggregate `seam_tests` target also passed, for 5/5 selected CTest
+targets total (the aggregate took 191.04 seconds in Debug). New tests cover a
+preflight draft with reported losses and no file,
+tampered-byte refusal, accepted hash and issue parity, collision preservation,
+decline, missing review and stale-document approval. The AppKit review compiled
+in both the native app and CLAP plugin. In an isolated Debug standalone app,
+the normal File → Export Score picker displayed the new review with one USTX
+bus-routing loss, its full location and message, destination, SHA-256 and byte
+count. The text, table and buttons were visually inspected at the test Mac's
+display size; no overlap or clipping was seen. Cancel left the destination
+absent. Repeating the picker and explicitly selecting **Export With Losses**
+created a 629-byte file whose SHA-256 exactly matched the reviewed
+`c0d8d75d990f425813631351f874fae1d8d77efb44f1e9e81528cc067bb15051`.
+This is a blank-song standalone UI check, not a real musician score, OpenUtau
+round trip, constrained-screen review, or DAW-host acceptance. No CI
+configuration was touched. The Release native app, CLAP plugin and three
+affected test targets also rebuilt successfully; Release interchange service,
+embedded microscope and standalone lifecycle CTest targets passed (3/3).
+
 ## Remaining scope
 
 Embedded-editor lifecycle in a real DAW and real OpenUtau/DAW exchange are

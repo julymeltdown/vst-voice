@@ -228,6 +228,8 @@ public:
   void setInterchangeExportHandoff(InterchangePathHandoff callback);
   void setInterchangeReviewHandoff(
       std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)> callback);
+  void setInterchangeExportReviewHandoff(
+      std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)> callback);
   // Keyboard commands cannot return a Result to their caller. The host presents failures through
   // this handoff; cancellation and a declined review do not report an error.
   using InterchangeErrorHandoff =
@@ -435,6 +437,8 @@ private:
   InterchangePathHandoff interchangeExportHandoff_;
   std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
       interchangeReviewHandoff_;
+  std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)>
+      interchangeExportReviewHandoff_;
   InterchangeErrorHandoff interchangeErrorHandoff_;
   ui::PhonemeLaneModel phonemeLane_;
   ui::UnitLaneModel unitLane_;

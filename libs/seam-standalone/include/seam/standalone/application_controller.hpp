@@ -98,6 +98,8 @@ struct StandaloneApplicationControllerConfig final {
   // cancels without replacing the current document.
   std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>
       reviewInterchangeImport;
+  std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)>
+      reviewInterchangeExport;
   std::function<core::Result<void>()> removeSelectedOverlaps;
   std::function<core::Result<void>()> closeSelectedGaps;
   std::function<core::Result<void>()> autoLegatoSelectedNotes;

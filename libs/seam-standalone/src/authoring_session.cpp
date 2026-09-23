@@ -469,6 +469,18 @@ AuthoringSession::exportInterchange(
       runtime_->document().session().project(), std::move(request));
 }
 
+core::Result<authoring::InterchangeExportDraft>
+AuthoringSession::prepareInterchangeExport(
+    authoring::InterchangeExportRequest request) const {
+  if (runtime_ == nullptr) {
+    return core::failure<authoring::InterchangeExportDraft>(
+        core::ErrorCode::InvalidState,
+        "Interchange export requires an initialized authoring session");
+  }
+  return authoring::InterchangeService{}.prepareExport(
+      runtime_->document().session().project(), std::move(request));
+}
+
 core::Result<authoring::MediaImportResult> AuthoringSession::importBackingMedia(
     const std::filesystem::path& sourcePath, authoring::MediaImportMode mode,
     std::string trackName, time::Tick startTick) {

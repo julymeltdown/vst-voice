@@ -36,6 +36,10 @@ public:
     return core::failure<bool>(core::ErrorCode::Unsupported,
         "Windows native interchange review is TODO; import was not applied");
   }
+  core::Result<bool> reviewExport(const authoring::InterchangeExportDraft&) override {
+    return core::failure<bool>(core::ErrorCode::Unsupported,
+        "Windows native interchange export review is TODO; export was not written");
+  }
 };
 
 enum ControlId : int {

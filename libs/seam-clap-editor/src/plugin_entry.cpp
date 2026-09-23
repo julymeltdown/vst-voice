@@ -207,6 +207,15 @@ public:
           }
           return dialog->review(draft);
         });
+    runtime_->setInterchangeExportReviewHandoff(
+        [](const authoring::InterchangeExportDraft& draft) {
+          auto dialog = standalone::createNativeInterchangeReviewDialog();
+          if (dialog == nullptr) {
+            return core::failure<bool>(core::ErrorCode::Unsupported,
+                "Native interchange export review is unavailable");
+          }
+          return dialog->reviewExport(draft);
+        });
 #if defined(__APPLE__)
     runtime_->setInterchangeErrorHandoff(
         [](std::string_view title, const core::Error& error) {

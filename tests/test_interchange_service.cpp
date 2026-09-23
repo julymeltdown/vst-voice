@@ -174,6 +174,48 @@ TEST_CASE("interchange service exports create-new and preserves the project on c
   CHECK(after == before);
 }
 
+TEST_CASE("interchange export can be reviewed before any destination is created") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("interchange-export-review");
+  application::ProjectFactory factory{942000U};
+  auto project = factory.createProject("Reviewable score");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto region = factory.addRegion(project, track, "Phrase",
+      time::Tick{0}, time::Tick{960});
+  auto* target = project.findRegion(region);
+  CHECK(target != nullptr);
+  auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{960}, 64U, U"la");
+  note.articulation = domain::NoteArticulation::Staccato;
+  target->lyrics.push_back(std::move(lyric));
+  target->notes.push_back(std::move(note));
+  const auto destination = root / "review.ustx";
+  authoring::InterchangeService service;
+  auto prepared = service.prepareExport(project,
+      {.format = authoring::InterchangeFormat::Ustx, .destination = destination});
+  CHECK(prepared);
+  CHECK(!std::filesystem::exists(destination));
+  CHECK(!prepared.value().bytes.empty());
+  CHECK(prepared.value().contentHash.size() == 64U);
+  CHECK(std::any_of(prepared.value().issues.begin(), prepared.value().issues.end(),
+      [](const auto& issue) { return issue.loss; }));
+
+  auto tampered = prepared.value();
+  tampered.bytes.front() ^= 1U;
+  const auto rejected = service.writeExport(tampered);
+  CHECK(!rejected);
+  CHECK(rejected.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(destination));
+
+  const auto written = service.writeExport(prepared.value());
+  CHECK(written);
+  CHECK(written.value().contentHash == prepared.value().contentHash);
+  CHECK(written.value().issues == prepared.value().issues);
+  CHECK(core::sha256File(destination).value() == prepared.value().contentHash);
+  const auto collision = service.writeExport(prepared.value());
+  CHECK(!collision);
+  CHECK(core::sha256File(destination).value() == prepared.value().contentHash);
+}
+
 TEST_CASE("interchange service uses bounded SMF import and export paths") {
   const auto root = seam::test::support::temporaryDirectory("interchange-service-smf");
   seam::application::ProjectFactory factory{950000U};
