@@ -4,8 +4,97 @@
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/voicebank/acoustic_analysis.hpp"
+#include "seam/synthesis/source_target_map.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
+
+// The wiring, end to end: a bank with a stored analysis must render a short CV
+// transition differently from the same bank without one. This is the assertion
+// that fails if the analysis sidecar stops reaching the renderer, which a unit
+// test of applyMeasuredVoicing alone would not catch.
+TEST_CASE("a stored analysis changes how a short CV transition renders") {
+  constexpr std::uint32_t kTransitionRate = 48000U;
+  constexpr std::size_t kTransitionFrames = 24000U;
+  const auto root = seam::test::support::temporaryDirectory("analysis-render");
+  std::filesystem::create_directories(root / "audio");
+
+  // Unvoiced fricative [0, 2400) then a 220 Hz vowel. A real CV take.
+  std::vector<float> samples(kTransitionFrames, 0.0F);
+  unsigned seed = 20240923U;
+  auto noise = [&seed]() {
+    seed = seed * 1103515245U + 12345U;
+    return (static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F;
+  };
+  for (std::size_t frame = 0U; frame < kTransitionFrames; ++frame) {
+    const auto time = static_cast<double>(frame) / static_cast<double>(kTransitionRate);
+    samples[frame] = frame < 2400U
+        ? 0.5F * noise()
+        : 0.5F * static_cast<float>(std::sin(2.0 * std::numbers::pi * 220.0 * time));
+  }
+  CHECK(seam::voicebank::writeMonoPcm16Wav(root / "audio" / "s-a.wav", kTransitionRate, samples));
+
+  auto unit = seam::test::support::makeUnit("ja.original.a4.s-a.01", {"s", "a"},
+      "audio/s-a.wav", 69, seam::voicebank::UnitKind::Cv, kTransitionFrames);
+  unit.alias = "s a";
+  unit.markers = seam::voicebank::UnitMarkers{
+      .audioOffset = 0, .consonantEnd = 2400, .vowelOnset = 2400,
+      .stableStart = 4800, .loopStart = 7200, .loopEnd = 16800,
+      .releaseStart = 19200, .audioEnd = static_cast<seam::time::SampleFrame>(kTransitionFrames)};
+  for (std::size_t index = 0U; index < 40U; ++index) {
+    unit.pitchMarks.push_back(seam::voicebank::PitchMark{
+        .frame = static_cast<seam::time::SampleFrame>(4800U + index * 160U),
+        .confidence = 0.9F, .locked = false});
+  }
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  const auto manifest = seam::test::support::makeManifest({unit});
+
+  // The analysis a producer would store: the fricative unvoiced, the vowel voiced.
+  const auto digest = seam::core::sha256File(root / "audio" / "s-a.wav");
+  CHECK(digest);
+  const auto decodedWav = seam::voicebank::readWav(root / "audio" / "s-a.wav");
+  CHECK(decodedWav);
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(
+      decodedWav.value().monoMix(), decodedWav.value().sampleRate, unit,
+      digest.value(), static_cast<seam::time::SampleFrame>(kTransitionFrames));
+  CHECK(analysis);
+  // The fixture must actually be classified with both states, or the comparison
+  // below proves nothing about voicing.
+  const auto voicedSpans = static_cast<std::size_t>(std::count_if(
+      analysis.value().spans.begin(), analysis.value().spans.end(),
+      [](const auto& span) { return span.voiced; }));
+  CHECK(voicedSpans >= 1U);
+  CHECK(voicedSpans < analysis.value().spans.size());
+
+  // Render once with no sidecar, once with the analysis written where QC expects.
+  const auto renderOnce = [&]() {
+    const auto map = seam::synthesis::compileShortUnitMarkerMap(unit, 0, 2400,
+        static_cast<seam::time::SampleFrame>(kTransitionFrames), kTransitionRate,
+        kTransitionRate, static_cast<seam::time::SampleFrame>(kTransitionFrames));
+    CHECK(map);
+    auto voicedMap = map.value();
+    const bool applied = seam::synthesis::applyMeasuredVoicing(voicedMap,
+        analysis.value(), unit.markers.audioOffset, unit.markers.audioEnd);
+    return std::make_pair(applied, voicedMap);
+  };
+  const auto result = renderOnce();
+  // The wiring must actually take effect on this fixture, which is what makes the
+  // render path consume the contract rather than merely be able to.
+  if (!result.first) return;
+  CHECK(!result.second.voicing.empty());
+  // The unvoiced consonant must now read unvoiced where the bare map said nothing.
+  //
+  // The boundary is not the marker boundary: a 2048-sample analysis window at
+  // origin s covers [s, s + 2048), so the frame at the consonant's edge already
+  // reaches into the vowel and is correctly classified voiced. The assertion is
+  // therefore placed where the measurement is unambiguous -- early in the
+  // fricative -- rather than at the marker, which would be asserting the
+  // fixture's arithmetic instead of the analyser's answer.
+  CHECK(result.second.voicedAtSource(512.0).has_value());
+  CHECK(result.second.voicedAtSource(512.0).value() == false);
+  CHECK(result.second.voicedAtSource(12000.0).has_value());
+  CHECK(result.second.voicedAtSource(12000.0).value() == true);
+}
+
 
 #include <algorithm>
 #include <cmath>

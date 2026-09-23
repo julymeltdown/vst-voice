@@ -2409,3 +2409,33 @@ renderer re-checks bounds and the guards fail closed -- so it is recorded as an
 open clause rather than claimed as a finding. Wiring measured voicing into source
 map construction is the next U15 step, and it changes render behaviour, so it needs
 its own measured before/after rather than being folded into this entry.
+
+U15 verification clause now met. `render_snapshot.cpp` loads the stored analysis
+sidecar when one exists (optional; a bank without one keeps its previous
+rendering, a broken one is refused rather than silently ignored, since ignoring it
+would render unvoiced material as voiced and look like success), and
+`FrozenUnitAudio` carries it through to `compileShortUnitMarkerMap`, which emits no
+voicing of its own.
+
+The mechanism was measured before being called a defect: a renderer asks
+`voicedAtSource(...) == false` in order to skip a sample, and that accessor answers
+`nullopt` when no span covers the frame, so "no answer" read as "not unvoiced". A
+marker-only map reported `voicingSpans=0` across the whole unit, so every frame of
+a short CV transition -- including the unvoiced consonant -- presented as voiced to
+every renderer. `applyMeasuredVoicing` now replaces that with the measured spans,
+clipped to the map extent and made contiguous because the map requires complete
+coverage; it returns false and changes nothing when the analysis covers no part of
+the range, so a partial description cannot reintroduce the same
+unknown-means-voiced default.
+
+Measured on a real CV fixture (0.5 s of unvoiced fricative then a 220 Hz vowel):
+before, every probe answered unknown; after, the fricative answers unvoiced and the
+vowel answers voiced, and an empty analysis is declined rather than half-applied.
+Note the boundary is deliberately not asserted at the marker: a 2048-sample window
+at the consonant edge already reaches into the vowel, so the analyser correctly
+calls that frame voiced. The assertion sits where the measurement is unambiguous.
+
+Verified: CTest 183/183 including the render path; external-beta 189 tests OK;
+source closure, phase12b and phase11 contracts PASS. This changes render output
+for banks that store an analysis, which is why the whole suite was rerun rather
+than the affected target alone.

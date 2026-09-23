@@ -43,6 +43,37 @@ core::Result<SourceTargetMap> compileShortUnitMarkerMap(
   return core::success(std::move(map));
 }
 
+bool applyMeasuredVoicing(SourceTargetMap& map,
+                                const voicebank::AcousticAnalysis& analysis,
+                                time::SampleFrame begin, time::SampleFrame end) {
+  if (end <= begin || map.knots.empty()) return false;
+  const auto first = std::max(begin, map.knots.front().sourceFrame);
+  const auto last = std::min(end, map.knots.back().sourceFrame);
+  if (last <= first) return false;
+
+  std::vector<SourceVoicingSpan> clipped;
+  for (const auto& span : analysis.spans) {
+    // The map requires contiguous coverage from its first knot, so spans are
+    // intersected with the map extent and the ends are trimmed to meet.
+    const auto start = std::max(span.start, first);
+    const auto stop = std::min(span.end, last);
+    if (stop <= start) continue;
+    clipped.push_back(SourceVoicingSpan{start, stop, span.voiced});
+  }
+  if (clipped.empty()) return false;
+  // Coverage must be complete: a hole would read as unknown, which is the
+  // failure this function exists to remove.
+  if (clipped.front().start != first || clipped.back().end != last) return false;
+
+  SourceTargetMap candidate = map;
+  candidate.voicing = std::move(clipped);
+  const auto checked = candidate.validate(map.knots.back().sourceFrame);
+  if (!checked) return false;
+  map.voicing = std::move(candidate.voicing);
+  return true;
+}
+
+
 core::Result<void> SourceTargetMap::validate(time::SampleFrame sourceFrames) const {
   if (sourceFrames <= 0 || sourceFrames > 32LL * 1024LL * 1024LL || knots.size() < 2U || knots.size() > 770U) {
     return core::failure(core::ErrorCode::InvalidArgument, "Source map exceeds supported bounds");

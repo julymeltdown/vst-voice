@@ -293,15 +293,33 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
             placement.desiredVowelOnset, placement.destinationEnd, frozen->audio->sampleRate,
             outputSampleRate, static_cast<time::SampleFrame>(frozen->audio->frameCount()));
         if (!map) return core::Result<DispatchedRenderedUnit>{map.error()};
+        // The marker map carries no voicing, and a renderer that asks
+        // voicedAtSource(...) == false reads "no answer" as "not unvoiced". Without
+        // this, an unvoiced consonant in a short CV transition renders as though it
+        // were voiced. Measured voicing is applied when a stored analysis exists;
+        // when none does, the previous behaviour is kept rather than guessed at.
+        auto voicedMap = map.value();
+        if (frozen->acousticAnalysis) {
+          // A decline means the analysis covers no part of this unit's range, so
+          // the map keeps no voicing and the renderer keeps its previous reading.
+          // That is the honest outcome: the alternative is inventing a state for
+          // samples nothing measured.
+          const bool applied = applyMeasuredVoicing(
+              voicedMap, *frozen->acousticAnalysis,
+              unit->markers.audioOffset, unit->markers.audioEnd);
+          if (!applied) {
+            voicedMap.voicing.clear();
+          }
+        }
         dispatchParameters.allowRawFallback = false;
         if (requested == voicebank::RendererHint::Raw) {
-          dispatchParameters.raw.sourceMap = map.value(); dispatchParameters.raw.performanceStartFrame = placement.destinationStart;
+          dispatchParameters.raw.sourceMap = voicedMap; dispatchParameters.raw.performanceStartFrame = placement.destinationStart;
         } else if (requested == voicebank::RendererHint::ClassicPsola) {
-          dispatchParameters.psola.sourceMap = map.value(); dispatchParameters.psola.performanceStartFrame = placement.destinationStart;
+          dispatchParameters.psola.sourceMap = voicedMap; dispatchParameters.psola.performanceStartFrame = placement.destinationStart;
         } else if (requested == voicebank::RendererHint::SpectralClassic) {
-          dispatchParameters.spectral.sourceMap = map.value(); dispatchParameters.spectral.performanceStartFrame = placement.destinationStart;
+          dispatchParameters.spectral.sourceMap = voicedMap; dispatchParameters.spectral.performanceStartFrame = placement.destinationStart;
         } else {
-          dispatchParameters.stretch.sourceMap = map.value(); dispatchParameters.stretch.performanceStartFrame = placement.destinationStart;
+          dispatchParameters.stretch.sourceMap = voicedMap; dispatchParameters.stretch.performanceStartFrame = placement.destinationStart;
         }
         auto output = dispatcher.render(*unit, *frozen->audio, outputSampleRate, requestedFrames,
             placement.targetMidi, dispatchParameters, stopToken);

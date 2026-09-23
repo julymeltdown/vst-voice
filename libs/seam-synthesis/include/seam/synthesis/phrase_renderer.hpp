@@ -6,6 +6,7 @@
 #include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/synthesis/seam_composer.hpp"
 #include "seam/synthesis/timing_solver.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
 #include <filesystem>
@@ -61,6 +62,10 @@ struct FrozenUnitAudio final {
   std::shared_ptr<const voicebank::AudioBuffer> audio;
   std::optional<SourcePhonemeAlignment> sourceAlignment{};
   std::string verifiedAudioSha256{};
+  // Measured voicing for this exact take, when a stored analysis was supplied.
+  // Absent means nothing measured this take's voicing, so consumers must treat
+  // voicing as unknown rather than assuming either answer.
+  std::optional<voicebank::AcousticAnalysis> acousticAnalysis{};
 };
 
 class ConcatenativePhraseRenderer final {

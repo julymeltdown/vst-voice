@@ -1,4 +1,5 @@
 #pragma once
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/synthesis/source_phoneme_alignment.hpp"
 #include "seam/synthesis/timing_solver.hpp"
 #include <stop_token>
@@ -36,6 +37,23 @@ struct SourceTargetMap final {
     const voicebank::Unit& unit, time::SampleFrame destinationStart,
     time::SampleFrame vowelFrame, time::SampleFrame destinationEnd,
     std::uint32_t sourceRate, std::uint32_t outputRate, time::SampleFrame decodedFrames);
+
+// Replaces a map's voicing with what the stored analysis measured.
+//
+// Why this is needed: a renderer asks voicedAtSource(...) == false in order to
+// skip a sample, and voicedAtSource answers nullopt when no span covers the
+// frame. Unknown therefore reads as "not unvoiced", so a map with no voicing at
+// all -- which is what compileShortUnitMarkerMap produced -- makes an unvoiced
+// consonant look voiced. The measured spans are clipped to the map's source
+// extent and made contiguous, because the map requires coverage from its first
+// knot to its last.
+//
+// Returns false and leaves the map untouched when the analysis covers no part of
+// the range, so a caller never gets a partially described voicing that would
+// reintroduce the same unknown-means-voiced default.
+[[nodiscard]] bool applyMeasuredVoicing(
+    SourceTargetMap& map, const voicebank::AcousticAnalysis& analysis,
+    time::SampleFrame begin, time::SampleFrame end);
 struct MappedSourceAudio final {
   time::SampleFrame startFrame{0};
   std::vector<float> samples;

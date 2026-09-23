@@ -1171,6 +1171,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     std::string sha256;
   };
   std::map<std::string, FrozenAlignment> alignments;
+  // Measured voicing per unit, when the bank stores an analysis for it. Kept
+  // separate from the alignment map because an analysis and an alignment are
+  // independent: a bank may have either, both or neither.
+  std::map<std::string, voicebank::AcousticAnalysis> analyses;
   std::uint64_t alignmentBytes = 0U;
   std::uint64_t frozenEncodedBytes = 0U;
   std::uint64_t frozenDecodedBytes = 0U;
@@ -1249,11 +1253,63 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
       }
       alignment = alignments.emplace(unit->id, std::move(frozen)).first;
     }
+    // Load the stored acoustic analysis when one exists. It is optional: a bank
+    // without one keeps its previous rendering, and a broken one is refused
+    // rather than silently ignored, because ignoring it would render with
+    // unvoiced-material-as-voiced and look like a successful render.
+    if (analyses.find(unit->id) == analyses.end()) {
+      const auto relative = std::filesystem::path{
+          voicebank::acousticAnalysisSidecarPath(unit->id)};
+      bool analysisPresent = true;
+      auto probePath = bankRoot;
+      for (const auto& component : relative) {
+        probePath /= component;
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(probePath, error);
+        if (error == std::errc::no_such_file_or_directory ||
+            (!error && !std::filesystem::exists(status))) {
+          analysisPresent = false;
+          break;
+        }
+        if (error) {
+          return core::failure<void>(core::ErrorCode::IoError,
+              "Cannot inspect stored acoustic analysis", probePath.string());
+        }
+        if (std::filesystem::is_symlink(status)) {
+          return core::failure<void>(core::ErrorCode::Conflict,
+              "Stored acoustic analysis paths may not contain symbolic links",
+              probePath.string());
+        }
+      }
+      if (analysisPresent) {
+        const auto resolvedAnalysis = voicebank::resolveBankAsset(bankRoot, relative);
+        if (!resolvedAnalysis) return core::Result<void>{resolvedAnalysis.error()};
+        const auto bytes = core::readFileBytesLimited(resolvedAnalysis.value(),
+            512ULL * 1024ULL);
+        if (!bytes) return core::Result<void>{bytes.error()};
+        const auto decodedAnalysis = voicebank::decodeAcousticAnalysis(
+            std::string_view{reinterpret_cast<const char*>(bytes.value().data()),
+                             bytes.value().size()},
+            *unit, asset->second.sha256,
+            static_cast<time::SampleFrame>(asset->second.audio->frameCount()));
+        if (!decodedAnalysis) {
+          return core::failure<void>(decodedAnalysis.error().code,
+                                     decodedAnalysis.error().message,
+                                     decodedAnalysis.error().context);
+        }
+        analyses.emplace(unit->id, std::move(decodedAnalysis).value());
+      }
+    }
     frozenByUnit.emplace(unit->id, synthesis::FrozenUnitAudio{
         .unitId = unit->id,
         .audio = asset->second.audio,
         .sourceAlignment = alignment->second.value,
         .verifiedAudioSha256 = asset->second.sha256,
+        .acousticAnalysis = [&]() -> std::optional<voicebank::AcousticAnalysis> {
+          const auto found = analyses.find(unit->id);
+          return found == analyses.end() ? std::nullopt
+                                         : std::optional<voicebank::AcousticAnalysis>{found->second};
+        }(),
     });
     return {};
   };
