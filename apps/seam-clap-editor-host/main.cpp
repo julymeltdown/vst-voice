@@ -5,6 +5,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/time/tempo_map.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -283,6 +284,12 @@ struct OfflineChecks final {
   bool missingRejected{false};
   bool failedFinalRejected{false};
   bool beatsOnlyRejected{false};
+  bool followHostOffsetBounce{false};
+  bool followHostStaleRejected{false};
+  double followHostExpectedOnsetSeconds{0.0};
+  double followHostEarlyEnergy{0.0};
+  double followHostOnsetEnergy{0.0};
+  std::string followHostStage{"not-started"};
   std::size_t noteWindows{0U};
   std::uint64_t frames{0U};
   double scoreEnergy{0.0};
@@ -417,6 +424,131 @@ bool completeScoreBounce(ProbePlugin& probe, const seam::domain::Project& projec
   return total>0.01 && std::all_of(noteEnergies.begin(),noteEnergies.end(),[](double value){return value>0.01;});
 }
 
+bool followHostOffsetBounce(const clap_plugin_factory_t* factory,
+                            const clap_host_t& host, const char* id,
+                            seam::domain::Project project, OfflineChecks& evidence) {
+  evidence.followHostStage = "construct";
+  const auto ppq = project.tempoMap().ppq();
+  const auto tickAtBeat = [ppq](std::int64_t beats) {
+    return seam::time::Tick{beats * static_cast<std::int64_t>(ppq)};
+  };
+  // The document says 60 BPM; the host starts at 120, changes before the
+  // project's two-beat placement, and changes again inside its score.
+  if (!project.tempoMap().addOrReplace(seam::time::Tick{0}, 60.0)) return false;
+  project.settings().hostStartOffsetTick = tickAtBeat(2);
+  project.settings().bounceTimingAuthority = seam::domain::BounceTimingAuthority::FollowHost;
+  for (auto& track : project.vocalTracks()) {
+    for (auto& region : track.regions) region.startTick += tickAtBeat(1);
+  }
+  seam::time::TempoMap hostMap{ppq};
+  if (!hostMap.addOrReplace(seam::time::Tick{0}, 120.0) ||
+      !hostMap.addOrReplace(tickAtBeat(1), 60.0) ||
+      !hostMap.addOrReplace(tickAtBeat(3), 240.0)) return false;
+  std::int64_t scoreEndTicks = 0;
+  double firstNoteSeconds = 1e9;
+  for (const auto& track : project.vocalTracks()) {
+    if (track.muted) continue;
+    for (const auto& region : track.regions) {
+      scoreEndTicks = std::max(scoreEndTicks,
+          (region.startTick + region.durationTick).value());
+      for (const auto& note : region.notes) {
+        firstNoteSeconds = std::min(firstNoteSeconds,
+            hostMap.secondsAt(project.settings().hostStartOffsetTick +
+                              region.startTick + note.startTick));
+      }
+    }
+  }
+  if (scoreEndTicks <= 0 || firstNoteSeconds >= 1e9) return false;
+  const auto scoreEndBeats = static_cast<double>(scoreEndTicks) / ppq;
+  const auto lastHostBeat = static_cast<std::int64_t>(std::ceil(2.0 + scoreEndBeats));
+  if (lastHostBeat > 64) return false;
+
+  ProbePlugin probe{factory, host, id};
+  evidence.followHostStage = "load";
+  probe.load(projectState(project));
+  evidence.followHostStage = "realtime-activate";
+  if (!probe.activate(48000U)) return false;
+  const auto channels = project.routing().deviceOutputChannels;
+  Output output{512U, channels};
+  clap_event_transport_t transport{};
+  transport.header = {sizeof(transport), 0U, CLAP_CORE_EVENT_SPACE_ID,
+                      CLAP_EVENT_TRANSPORT, 0U};
+  transport.flags = CLAP_TRANSPORT_IS_PLAYING |
+                    CLAP_TRANSPORT_HAS_SECONDS_TIMELINE |
+                    CLAP_TRANSPORT_HAS_BEATS_TIMELINE |
+                    CLAP_TRANSPORT_HAS_TEMPO;
+  clap_process_t process{};
+  process.audio_outputs = &output.buffer;
+  process.audio_outputs_count = 1U;
+  process.transport = &transport;
+  process.frames_count = 32U;
+  for (std::int64_t beat = 0; beat <= lastHostBeat; ++beat) {
+    evidence.followHostStage = "capture-beat-" + std::to_string(beat);
+    const auto tick = tickAtBeat(beat);
+    transport.song_pos_beats = beat * CLAP_BEATTIME_FACTOR;
+    transport.song_pos_seconds = static_cast<clap_sectime>(std::llround(
+        hostMap.secondsAt(tick) * static_cast<double>(CLAP_SECTIME_FACTOR)));
+    transport.tempo = hostMap.bpmAt(tick);
+    const auto captureStatus = probe.plugin->process(probe.plugin, &process);
+    if (captureStatus != CLAP_PROCESS_CONTINUE && captureStatus != CLAP_PROCESS_SLEEP)
+      return false;
+    probe.plugin->on_main_thread(probe.plugin);
+  }
+  probe.stop();
+  evidence.followHostStage = "offline-set";
+  if (!probe.render->set(probe.plugin, CLAP_RENDER_OFFLINE) ||
+      !probe.activate(48000U)) return false;
+
+  double earlyEnergy = 0.0;
+  double onsetEnergy = 0.0;
+  const auto endSeconds = hostMap.secondsAt(tickAtBeat(lastHostBeat)) + 0.25;
+  const auto totalFrames = static_cast<std::uint64_t>(std::ceil(endSeconds * 48000.0));
+  transport.flags = CLAP_TRANSPORT_IS_PLAYING | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE;
+  for (std::uint64_t cursor = 0U; cursor < totalFrames; cursor += process.frames_count) {
+    evidence.followHostStage = "bounce-frame-" + std::to_string(cursor);
+    process.frames_count = static_cast<std::uint32_t>(
+        std::min<std::uint64_t>(512U, totalFrames - cursor));
+    transport.song_pos_seconds = static_cast<clap_sectime>(std::llround(
+        static_cast<double>(cursor) / 48000.0 * CLAP_SECTIME_FACTOR));
+    if (probe.plugin->process(probe.plugin, &process) != CLAP_PROCESS_CONTINUE) return false;
+    for (std::uint32_t frame = 0U; frame < process.frames_count; ++frame) {
+      const auto seconds = static_cast<double>(cursor + frame) / 48000.0;
+      for (const auto& plane : output.planes) {
+        const auto sample = std::abs(static_cast<double>(plane[frame]));
+        if (!std::isfinite(sample)) return false;
+        if (seconds >= firstNoteSeconds - 0.45 &&
+            seconds < firstNoteSeconds - 0.25) earlyEnergy += sample;
+        if (seconds >= firstNoteSeconds &&
+            seconds < firstNoteSeconds + 0.20) onsetEnergy += sample;
+      }
+    }
+  }
+  evidence.followHostExpectedOnsetSeconds = firstNoteSeconds;
+  evidence.followHostEarlyEnergy = earlyEnergy;
+  evidence.followHostOnsetEnergy = onsetEnergy;
+  evidence.followHostOffsetBounce = earlyEnergy < 0.001 && onsetEnergy > 0.01;
+  evidence.followHostStage = "stale-report";
+
+  // Change a tempo before project tick zero. A prepared Final must be revoked;
+  // the next offline process must return an error with cleared output.
+  transport.flags |= CLAP_TRANSPORT_HAS_BEATS_TIMELINE | CLAP_TRANSPORT_HAS_TEMPO;
+  transport.song_pos_beats = CLAP_BEATTIME_FACTOR;
+  transport.song_pos_seconds = CLAP_SECTIME_FACTOR / 2;
+  transport.tempo = 90.0;
+  process.frames_count = 32U;
+  if (probe.plugin->process(probe.plugin, &process) != CLAP_PROCESS_CONTINUE) return false;
+  probe.plugin->on_main_thread(probe.plugin);
+  evidence.followHostStaleRejected =
+      probe.plugin->process(probe.plugin, &process) == CLAP_PROCESS_ERROR;
+  for (const auto& plane : output.planes) {
+    evidence.followHostStaleRejected = evidence.followHostStaleRejected &&
+        energy(std::span{plane.data(), 32U}) == 0.0;
+  }
+  probe.stop();
+  evidence.followHostStage = "complete";
+  return evidence.followHostOffsetBounce && evidence.followHostStaleRejected;
+}
+
 OfflineChecks probeOffline(const clap_plugin_factory_t* factory, const clap_host_t& host,
                           const char* id, std::span<const std::byte> original, bool missingOnly) {
   OfflineChecks result;
@@ -436,6 +568,7 @@ OfflineChecks probeOffline(const clap_plugin_factory_t* factory, const clap_host
       // Same offline intent, new activation rate: must prepare new Final audio.
       result.rateChange=completeScoreBounce(probe,project,48000U,result);
     }
+    static_cast<void>(followHostOffsetBounce(factory, host, id, project, result));
     auto failed=project;
     bool hasOverride=false;
     for (auto& track : failed.vocalTracks()) {
@@ -711,7 +844,8 @@ int main(int argc, char** argv) {
   }
   const auto offlineChecksPassed=offlineChecks.missingRejected && (expectMissingBank ||
       (offlineChecks.completeScore && offlineChecks.rateChange &&
-       offlineChecks.failedFinalRejected && offlineChecks.beatsOnlyRejected));
+       offlineChecks.failedFinalRejected && offlineChecks.beatsOnlyRejected &&
+       offlineChecks.followHostOffsetBounce && offlineChecks.followHostStaleRejected));
   if (offlineOnly) {
     bool audioWritten=audioPath.empty();
     if (!audioPath.empty() && !offlineChecks.scorePcm48k.empty()) {
@@ -729,6 +863,12 @@ int main(int argc, char** argv) {
         {"completeScoreBounce",offlineChecks.completeScore},{"rateChangeReprepared",offlineChecks.rateChange},
         {"missingFinalRejected",offlineChecks.missingRejected},{"failedFinalRejected",offlineChecks.failedFinalRejected},
         {"beatsOnlyRejected",offlineChecks.beatsOnlyRejected},{"expectedMissingBank",expectMissingBank},
+        {"followHostOffsetBounce",offlineChecks.followHostOffsetBounce},
+        {"followHostStaleRejected",offlineChecks.followHostStaleRejected},
+        {"followHostExpectedOnsetSeconds",offlineChecks.followHostExpectedOnsetSeconds},
+        {"followHostEarlyEnergy",offlineChecks.followHostEarlyEnergy},
+        {"followHostOnsetEnergy",offlineChecks.followHostOnsetEnergy},
+        {"followHostStage",offlineChecks.followHostStage},
         {"noteWindows",static_cast<std::int64_t>(offlineChecks.noteWindows)},
         {"capturedFrames",static_cast<std::int64_t>(offlineChecks.frames)},
         {"scoreEnergy",offlineChecks.scoreEnergy},{"audioWritten",audioWritten}}};

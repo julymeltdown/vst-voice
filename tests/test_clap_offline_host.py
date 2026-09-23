@@ -32,8 +32,13 @@ class ClapOfflineHostTests(unittest.TestCase):
             self.assertGreater(report["capturedFrames"], 48000)
             self.assertGreater(report["scoreEnergy"], 0.01)
             for key in ("completeScoreBounce", "rateChangeReprepared", "missingFinalRejected",
-                        "failedFinalRejected", "beatsOnlyRejected", "audioWritten"):
+                        "failedFinalRejected", "beatsOnlyRejected", "audioWritten",
+                        "followHostOffsetBounce", "followHostStaleRejected"):
                 self.assertIs(True, report[key], key)
+            self.assertGreater(report["followHostExpectedOnsetSeconds"], 2.0)
+            self.assertLess(report["followHostEarlyEnergy"], 0.001)
+            self.assertGreater(report["followHostOnsetEnergy"], 0.01)
+            self.assertEqual("complete", report["followHostStage"])
             self.assertEqual("engineering", report["evidenceScope"])
             self.assertIs(False, report["releaseEligible"])
             self.assertIs(False, report["followHostQualified"])
