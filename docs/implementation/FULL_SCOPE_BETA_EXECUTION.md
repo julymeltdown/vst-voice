@@ -2484,3 +2484,22 @@ now covered. Scenarios 2 and 3 remain: intelligibility and duration for short an
 long vowels, breath/noise and pitch jumps need listening evidence, and truthful
 failure with no hidden fallback path is a code question not yet examined here. Unit
 acceptance is NOT claimed.
+
+U16 scenarios 1 and 3 are now covered — scenario 1 by the transposition fix above,
+scenario 3 by `1f062c92`, which pins that a required control either applies or
+fails: driving formant, gender and growl through `UnitRendererDispatcher` with
+`allowRawFallback` explicitly true returns "Selected renderer lacks required
+controls: <control>", and vibrato is honoured by classic-psola without falling
+back. Measured silent losses of a required control: 0.
+
+U16 scenario 2 remains open and is a data problem, not a code one. "Short/long
+vowels, breath/noise and pitch jumps retain intelligibility and correct duration"
+is a listening claim. Duration is checkable numerically, but intelligibility is not
+— and the corpus available for it is two diagnostic cases
+(`tests/singing_quality/corpus/corpus.json`, id `u1-public-domain-diagnostic`)
+against a plan that requires 60 phrases per language across three songs. The
+blind-listening scoresheet is still empty.
+
+U16 unit acceptance is therefore NOT claimed. The plan requires "fixed-corpus
+numerical and listening results" to support the declared default and every exposed
+mode.
