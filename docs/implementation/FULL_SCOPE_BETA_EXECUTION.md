@@ -2389,3 +2389,23 @@ fixed-corpus numerical and listening results, and 0 of 46 blind-listening
 scoresheet rows are filled. The shipped demo fixture is deliberately left with its
 stale marks, since silently rewriting them would erase the evidence that this error
 class occurs.
+
+U15 residual, measured rather than assumed: the plan verification clause reads
+"renderers and producer QC consume the same versioned analysis contract". QC now
+does. The renderers do not. `libs/seam-rendering/src/render_snapshot.cpp` has zero
+references to the analysis sidecar, `FrozenUnitAudio` carries only the alignment
+and the audio digest, and both source-map builders leave measured voicing unused:
+`compileShortUnitMarkerMap` never populates `SourceTargetMap::voicing`, and
+`compileSourceTargetMap` fills it from `PhonemeTimingAnchor::voiced`, which is a
+phoneme-symbol claim from the phonemizer rather than a measurement. The
+`voicedAtSource` accessor the renderers consult is therefore drawn from the written
+phoneme, not from the take.
+
+So three paths can currently disagree about where one installed take is voiced: the
+stored analysis, the phoneme symbols, and the `acousticVoicedAt` helper, which
+nothing calls yet. That is the same class of disagreement U15 was opened to remove,
+and it is not closed. No defect has been demonstrated from it in a render -- the
+renderer re-checks bounds and the guards fail closed -- so it is recorded as an
+open clause rather than claimed as a finding. Wiring measured voicing into source
+map construction is the next U15 step, and it changes render behaviour, so it needs
+its own measured before/after rather than being folded into this entry.
