@@ -2511,3 +2511,22 @@ sweep linked against the pre-fix `classic_psola.cpp` compiled from git: **6 of 1
 off**, including 440.00 Hz measured for the 220.00 Hz target. This is a second
 independent probe, not the probe the fix was developed against, and it was run
 after the fact to check the fix did not merely satisfy its own harness.
+
+Checked whether the PSOLA grain-read defect also affects `spectral_classic`, which
+has the same looking shape at `sourcePosition = sourceCenter + relative *
+sourcePerOutput`. A first sweep reported 15 of 18 down-transposition targets off by
+more than 50 cents, which looked like a second instance.
+
+It is not. The control settled it: the same fixture failed at **unison** (target =
+source), measuring 469.05 Hz for 440.00 Hz, which no working renderer does. The
+fixture was wrong, not the renderer — a 24000-frame take with `releaseStart` 19200
+while the existing spectral test uses a 30000-frame take with `releaseStart` 25000
+and `phaseReset = 0.0F`. Re-run against the configuration the existing passing test
+uses, spectral holds pitch correctly: 440.88 Hz for a 440.00 Hz target (+3.5 cents),
+392.73 for 392.00 (+3.2), 351.25 for 349.23 (+10.0), including down-transposition.
+
+So there is no second defect here, and the first sweep is recorded as a bad
+measurement rather than a finding. The lesson is the same one that caught the
+analyzer octave error earlier: validate the instrument against a known-good case
+before believing its failure. A unison target is that case for a pitch renderer, and
+it should have been the first thing run.
