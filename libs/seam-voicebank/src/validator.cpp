@@ -3,12 +3,14 @@
 #include "seam/core/sha256.hpp"
 #include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/pitch.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <numbers>
+#include <vector>
 
 namespace seam::voicebank {
 namespace {
@@ -35,6 +37,43 @@ float loopJump(std::span<const float> samples, const UnitMarkers& markers) noexc
   const auto end = static_cast<std::size_t>(*markers.loopEnd);
   if (start >= samples.size() || end == 0 || end > samples.size()) return 1.0F;
   return std::abs(samples[start] - samples[end - 1U]);
+}
+
+// Median spacing of a run of consecutive pitch marks, in samples. Stored marks
+// are one per glottal period, so this is the period the manifest claims the
+// audio had when the marks were written.
+double medianMarkGap(std::span<const PitchMark> marks) {
+  if (marks.size() < 2U) return 0.0;
+  std::vector<double> gaps;
+  gaps.reserve(marks.size() - 1U);
+  for (std::size_t index = 1; index < marks.size(); ++index) {
+    gaps.push_back(static_cast<double>(marks[index].frame - marks[index - 1U].frame));
+  }
+  const auto middle = gaps.begin() + static_cast<std::ptrdiff_t>(gaps.size() / 2U);
+  std::nth_element(gaps.begin(), middle, gaps.end());
+  return *middle;
+}
+
+// The configuration the production draft path uses, so a comparison against it
+// is like for like rather than an argument between two different analyses.
+PitchMarkGenerationConfig producerPitchConfig() noexcept {
+  return PitchMarkGenerationConfig{
+      .pitch = {.frameSize = 2048U, .hopSize = 256U, .minimumHz = 60.0,
+                .maximumHz = 1200.0, .voicingThreshold = 0.32,
+                .correlationMethod = PitchCorrelationMethod::Fft}};
+}
+
+PitchAnalysisLimits producerPitchLimits(std::size_t frames) noexcept {
+  constexpr std::size_t frameSize = 2048U;
+  constexpr std::size_t hop = 256U;
+  constexpr std::uint64_t workPerFrame = 4096U * 12U;
+  const auto analysisFrames =
+      frames <= frameSize ? 1U : 1U + (frames - frameSize) / hop;
+  return PitchAnalysisLimits{
+      .maximumFrames = 4096U,
+      .maximumCorrelationTerms = 0U,
+      .maximumTransformButterflies =
+          static_cast<std::uint64_t>(analysisFrames) * workPerFrame};
 }
 
 }  // namespace
@@ -187,6 +226,43 @@ ValidationReport BankValidator::validate(const Manifest& manifest,
         }
       }
     }
+
+    // Stored pitch marks are a measurement of the audio, and until now nothing
+    // recorded which audio they measured. Replacing a unit's take while keeping
+    // its name and length therefore left marks that still satisfied every
+    // structural rule -- ascending, in range, confidence in [0, 1] -- while
+    // describing a take that no longer exists. The marks are what PSOLA cuts on
+    // and what the persisted loop/release descriptions derive from, so the
+    // damage is not visible until a render sounds wrong.
+    //
+    // Re-running the producer's own analysis over the audio that is present now
+    // and comparing periods catches exactly that case. Marks spacing and the
+    // analyser disagreeing by more than a few semitones cannot happen while the
+    // two describe the same bytes.
+    if (unit.pitchMarks.size() >= 6U && unit.renderer == RendererHint::ClassicPsola) {
+      const auto storedPeriod = medianMarkGap(unit.pitchMarks);
+      const auto generated = generatePitchMarks(
+          mono, audio.value().sampleRate, unit.markers.audioOffset,
+          unit.markers.audioEnd, producerPitchConfig(), {},
+          producerPitchLimits(mono.size()));
+      if (generated && generated.value().size() >= 2U) {
+        const auto measuredPeriod = medianMarkGap(generated.value());
+        if (storedPeriod > 0.0 && measuredPeriod > 0.0) {
+          const auto cents = std::abs(1200.0 * std::log2(storedPeriod / measuredPeriod));
+          if (cents > 300.0) {
+            add(report, IssueSeverity::Warning, IssueCode::PitchMarksStale, unit.id,
+                "Stored pitch marks describe a different take: they imply " +
+                    std::to_string(static_cast<int>(std::lround(
+                        audio.value().sampleRate / storedPeriod))) +
+                    " Hz while the audio present measures " +
+                    std::to_string(static_cast<int>(std::lround(
+                        audio.value().sampleRate / measuredPeriod))) +
+                    " Hz, " + std::to_string(static_cast<int>(std::lround(cents))) +
+                    " cents apart. Re-analyse or remove the marks before release.");
+          }
+        }
+      }
+    }
   }
 
   for (const auto& [alias, count] : aliasCounts) {
@@ -225,6 +301,7 @@ std::string_view issueCodeName(IssueCode code) noexcept {
     case IssueCode::RootPitchMismatch: return "root-pitch-mismatch";
     case IssueCode::LoopDiscontinuity: return "loop-discontinuity";
     case IssueCode::MissingSustain: return "missing-sustain";
+    case IssueCode::PitchMarksStale: return "pitch-marks-stale";
   }
   return "unknown";
 }

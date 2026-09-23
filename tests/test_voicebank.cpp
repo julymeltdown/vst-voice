@@ -274,6 +274,69 @@ TEST_CASE("pitch marks are generated validated and edited deterministically") {
   CHECK(marks.size() + 1U == before);
 }
 
+// U15 scenario 3: replacing a unit's audio must invalidate the analysis that was
+// measured from the audio it replaced.
+//
+// The fixture stores real marks produced by the production generator, so the
+// stored analysis agrees with the bytes beside it. It then overwrites the WAV
+// with a different take of the same name and length, which is the edit that used
+// to be invisible: every structural rule on a pitch mark (ascending, inside the
+// unit, confidence in range) still held, and the marks still satisfied the
+// renderer, because none of those rules can see which audio they came from.
+// The bank must now say so rather than let a stale measurement reach a release.
+TEST_CASE("replacing unit audio invalidates the pitch marks measured from it") {
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::size_t kFrames = 24000U;
+  const auto directory = seam::test::support::temporaryDirectory("pitch-marks-stale");
+  std::filesystem::create_directories(directory / "audio");
+  const auto audioPath = directory / "audio" / "a.wav";
+
+  const auto original = seam::test::support::sineWave(kRate, 220.0, 0.5);
+  CHECK(original.size() == kFrames);
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate, original));
+
+  auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 57,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const seam::voicebank::PitchMarkGenerationConfig generation{
+      .pitch = {.frameSize = 2048U, .hopSize = 256U, .minimumHz = 60.0,
+                .maximumHz = 1200.0, .voicingThreshold = 0.32,
+                .correlationMethod = seam::voicebank::PitchCorrelationMethod::Fft}};
+  const auto marks = seam::voicebank::generatePitchMarks(
+      original, kRate, unit.markers.audioOffset, unit.markers.audioEnd, generation);
+  CHECK(marks);
+  CHECK(marks.value().size() >= 6U);
+  unit.pitchMarks = marks.value();
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  const auto manifest = seam::test::support::makeManifest({unit});
+
+  const auto hasStale = [](const seam::voicebank::ValidationReport& report) {
+    return std::any_of(report.issues.begin(), report.issues.end(),
+        [](const auto& issue) {
+          return issue.code == seam::voicebank::IssueCode::PitchMarksStale;
+        });
+  };
+
+  // Marks measured from these bytes: nothing to report.
+  const auto before = seam::voicebank::BankValidator{}.validate(manifest, directory);
+  CHECK(!hasStale(before));
+
+  // A different take, same file name, same frame count, half the frequency.
+  const auto replacement = seam::test::support::sineWave(kRate, 110.0, 0.5);
+  CHECK(replacement.size() == original.size());
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate, replacement));
+
+  // The structural rules still hold, which is exactly why this went unnoticed.
+  CHECK(unit.validate());
+  const auto after = seam::voicebank::BankValidator{}.validate(manifest, directory);
+  CHECK(hasStale(after));
+
+  // Removing the marks is an honest way to resolve it, and must clear the finding.
+  auto resolved = manifest;
+  resolved.units.front().pitchMarks.clear();
+  resolved.units.front().renderer = seam::voicebank::RendererHint::Raw;
+  CHECK(!hasStale(seam::voicebank::BankValidator{}.validate(resolved, directory)));
+}
+
 TEST_CASE("voicebank schema one migrates without pitch marks") {
   auto unit = seam::test::support::makeUnit(
       "a", {"a"}, "audio/a.wav", 69,

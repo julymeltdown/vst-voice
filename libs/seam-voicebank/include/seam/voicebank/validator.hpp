@@ -25,6 +25,7 @@ enum class IssueCode {
   RootPitchMismatch,
   LoopDiscontinuity,
   MissingSustain,
+  PitchMarksStale,
 };
 
 struct ValidationIssue final {
