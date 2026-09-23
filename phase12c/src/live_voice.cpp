@@ -264,17 +264,33 @@ void LiveVoiceEngine::applyEvent(
     if (status == 0x90u && event.midi[2] != 0) {
       auto translated = event;
       translated.type = EventType::NoteOn;
+      translated.noteId = -1;
       translated.channel = midiChannel;
       translated.key = event.midi[1];
       translated.value = static_cast<float>(event.midi[2]) / 127.0F;
+      translated.port = 0;
+      translated.midiOrigin = true;
       applyEvent(translated, resource);
     } else if (status == 0x80u ||
                (status == 0x90u && event.midi[2] == 0)) {
-      auto translated = event;
-      translated.type = EventType::NoteOff;
-      translated.channel = midiChannel;
-      translated.key = event.midi[1];
-      applyEvent(translated, resource);
+      // Repeated MIDI keys have no note IDs. Release one held MIDI voice per
+      // note-off, oldest first, so a new retrigger remains audible. A
+      // pedal-held voice is already key-released and cannot consume another
+      // note-off; CLAP-owned notes are never eligible for this MIDI gesture.
+      Voice* oldest = nullptr;
+      for (auto& voice : voices_) {
+        if (!voice.active || !voice.midiOrigin || voice.keyReleased ||
+            voice.channel != midiChannel || voice.key != event.midi[1] ||
+            voice.port != 0) continue;
+        if (oldest == nullptr || voice.age < oldest->age) oldest = &voice;
+      }
+      if (oldest != nullptr) {
+        oldest->keyReleased = true;
+        if (!channelSustain_[static_cast<std::size_t>(midiChannel)]) {
+          beginRelease(*oldest, false);
+        }
+      }
+      ++stats_.noteOffs;
     } else if (status == 0xE0u) {
       const auto value = static_cast<int>(event.midi[1]) |
                          (static_cast<int>(event.midi[2]) << 7);
@@ -396,6 +412,7 @@ void LiveVoiceEngine::applyEvent(
     voice->channel = channel;
     voice->key = event.key;
     voice->port = event.port;
+    voice->midiOrigin = event.midiOrigin;
     voice->velocity = std::clamp(event.value, 0.0F, 1.0F);
     voice->pan = channelPan_[static_cast<std::size_t>(channel)];
     voice->pressure = channelPressure_[static_cast<std::size_t>(channel)];

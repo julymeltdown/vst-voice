@@ -249,6 +249,37 @@ TEST_CASE("live sustain release panic wildcard choke and zero velocity obey thei
   CHECK(engine.activeVoiceCount() == 0U);
 }
 
+TEST_CASE("MIDI repeated-key release targets one held MIDI voice without choking CLAP notes") {
+  using namespace seam;
+  live_voice::VoiceEngine engine;
+  CHECK(engine.publishResource(phase12c::makeEmbeddedHumanResource()));
+  std::array<float, 4096> mono{};
+  float* outputs[]{mono.data()};
+  const auto midi = [&](std::array<std::uint8_t, 3> message) {
+    engine.dispatch({.type = phase12c::EventType::Midi1, .midi = message});
+  };
+  midi({0x90, 60, 100});
+  midi({0x90, 60, 100});
+  engine.dispatch({.type = phase12c::EventType::NoteOn, .noteId = 77,
+      .channel = 0, .key = 60, .value = 0.8F});
+  CHECK(engine.activeVoiceCount() == 3U);
+
+  midi({0x80, 60, 0});
+  engine.process({}, outputs, 1U, 4096U);
+  CHECK(engine.activeVoiceCount() == 2U);
+  midi({0x90, 60, 0}); // MIDI zero-velocity note-on is also one note-off.
+  engine.process({}, outputs, 1U, 4096U);
+  CHECK(engine.activeVoiceCount() == 1U);
+  // An extra MIDI note-off cannot steal a CLAP-owned note at the same key.
+  midi({0x80, 60, 0});
+  engine.process({}, outputs, 1U, 4096U);
+  CHECK(engine.activeVoiceCount() == 1U);
+  engine.dispatch({.type = phase12c::EventType::NoteOff, .noteId = 77,
+      .channel = 0, .key = 60});
+  engine.process({}, outputs, 1U, 4096U);
+  CHECK(engine.activeVoiceCount() == 0U);
+}
+
 TEST_CASE("ordinary CLAP and MIDI notes remain polyphonic across distinct sample offsets") {
   using namespace seam;
   for (const bool midi : {false, true}) {

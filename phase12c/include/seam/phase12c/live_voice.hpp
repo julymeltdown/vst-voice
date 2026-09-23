@@ -90,6 +90,9 @@ struct LiveEvent {
   float value{0.0F};
   std::array<std::uint8_t, 3> midi{{0, 0, 0}};
   std::int16_t port{0};
+  // MIDI 1.0 has no note ID. Keep its voices distinct from CLAP's wildcard
+  // note ID so a repeated-key MIDI note-off never releases a CLAP note.
+  bool midiOrigin{false};
 };
 
 struct LiveStats {
@@ -144,6 +147,7 @@ class LiveVoiceEngine {
     std::int16_t channel{0};
     std::int16_t key{60};
     std::int16_t port{0};
+    bool midiOrigin{false};
     float tuning{0.0F};
     float volume{1.0F};
     float expression{1.0F};

@@ -21,3 +21,31 @@ allocation, event-overflow, resource-trust and live smoke tests continue to pass
 This is a realtime-safe source-level behavior repair; host-specific event
 delivery, capability declarations, installed plugin tuples and independent
 acoustic/listener qualification remain required for U33/Beta GO.
+
+## 2026-09-24 repeated-key MIDI/CLAP addressing follow-up
+
+MIDI 1.0 note-off was translated into a generic wildcard-ID note-off. With two
+overlapping same-key MIDI notes, one release ended both; it could also release
+a CLAP note on the same port/channel/key. This contradicted the per-event
+release behavior a playing musician needs and crossed the MIDI/CLAP ownership
+boundary. The CLAP [note-address specification](https://github.com/free-audio/clap/blob/main/include/clap/events.h)
+defines wildcard tuple matching for CLAP events; MIDI 1.0 has no note ID and
+requires a separate repeated-key policy in the engine.
+
+Live voices now retain whether they originated from MIDI. A MIDI note-off,
+including zero-velocity note-on, releases exactly one oldest still-held MIDI
+voice for its channel/key on the supported port. It does not consume a
+pedal-held voice twice and cannot release a CLAP-owned note. CLAP note
+expressions, release and choke continue to use the full wildcard tuple.
+The operation scans the fixed 32-voice array, with no audio-thread allocation.
+
+A new mixed-event regression failed against the old binary at the first
+post-release active-voice count (expected two, wildcard release left fewer).
+After the repair, the focused CLAP/live target passed. Existing Phase 12C live
+tests and the realtime allocation probe also passed (three Debug CTest targets
+total). The Release CLAP plugin and these three targets built; their CTest
+cases passed (3/3). The rebuilt Release aggregate passed 1,065 cases with
+zero failures (one CTest target, 29.27 seconds). The focused target is a local
+CMake/CTest target; no GitHub CI
+configuration was changed. This is not evidence for real-host delivery or
+listener quality, so U33 remains incomplete.
