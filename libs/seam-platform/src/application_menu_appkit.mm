@@ -74,6 +74,7 @@
 - (void)closeSelectedGaps:(id)sender;
 - (void)autoLegatoSelectedNotes:(id)sender;
 - (void)clearRegionDynamicsCurve:(id)sender;
+- (void)dispatchCommand:(seam::platform::ApplicationCommand)command errorTitle:(NSString*)title;
 - (void)editCommand:(seam::platform::ApplicationCommand)command title:(NSString*)title;
 - (void)togglePlayback:(id)sender;
 - (void)stopPlayback:(id)sender;
@@ -86,7 +87,11 @@
 }
 - (void)newProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::NewProject]; }
 - (void)openProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenProject]; }
-- (void)openExternalProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenExternalProject]; }
+- (void)openExternalProject:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::OpenExternalProject
+            errorTitle:@"Could not open external project"];
+}
 - (void)recoverLatestAutosave:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RecoverLatestAutosave]; }
 - (void)recoverAutosave:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
@@ -209,7 +214,11 @@
   static_cast<void>(_dispatcher->endPerformanceComparison());
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
-- (void)exportScore:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportScore]; }
+- (void)exportScore:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::ExportScore
+            errorTitle:@"Could not export score"];
+}
 - (void)exportSet:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportSet]; }
 - (void)quitApplication:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Quit]; }
 - (void)undoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Undo]; }
@@ -371,6 +380,9 @@
   [self editCommand:seam::platform::ApplicationCommand::ClearRegionDynamicsCurve title:@"Cannot clear region dynamics curve"];
 }
 - (void)editCommand:(seam::platform::ApplicationCommand)command title:(NSString*)title {
+  [self dispatchCommand:command errorTitle:title];
+}
+- (void)dispatchCommand:(seam::platform::ApplicationCommand)command errorTitle:(NSString*)title {
   if (_dispatcher == nullptr) return;
   const auto result = _dispatcher->dispatch(command);
   if (result) return;
@@ -379,7 +391,7 @@
   const auto& message = result.error().message;
   NSString* detail = [[NSString alloc] initWithBytes:message.data()
       length:message.size() encoding:NSUTF8StringEncoding];
-  alert.informativeText = detail != nil ? detail : @"The selected note cannot be edited.";
+  alert.informativeText = detail != nil ? detail : @"The command could not be completed.";
   [alert addButtonWithTitle:@"OK"];
   if (NSApp.keyWindow != nil) [alert beginSheetModalForWindow:NSApp.keyWindow completionHandler:nil];
   else [alert runModal];

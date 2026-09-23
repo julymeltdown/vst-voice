@@ -102,6 +102,13 @@ The source fixture retained its original SHA-256. The output contains two
 notes, time signatures, tempos, and a pitch contour; this is a local native
 export observation, not an OpenUtau re-import or musical parity claim.
 
+The File menu now presents returned import/export failures instead of silently
+dropping them. A malformed `/tmp/seam-u32-malformed-20260924.ustx` opened
+through the native picker produced a **Could not open external project** sheet
+with the parser error. Dismissing the sheet returned to the unchanged Untitled
+document with zero notes. The export-collision refusal remains service-tested,
+but its complete native confirmation/error sequence was not exercised here.
+
 Post-change Release build of `seam_editor_native` and `seam_tests` passed.
 Focused `seam_conversion_review_tests` and aggregate `seam_tests` passed
 (`ctest`, 2/2 targets); the earlier interchange service, standalone and
@@ -109,6 +116,8 @@ project-lifecycle target selection passed 5/5. The remaining native U32
 acceptance still includes small-screen/long-report review, save/discard/cancel
 with an existing user document, embedded-editor behavior, export collisions,
 and DAW/OpenUtau round trips.
+After the File-menu error-alert change, the Release aggregate and standalone
+targets passed again (`ctest`, 2/2).
 
 ## Remaining scope
 
