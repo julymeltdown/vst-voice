@@ -277,6 +277,61 @@ TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   CHECK(hasLossAt(lossy.value().issues, "ustx.voice_parts[0].notes[0].phoneme_overrides"));
 }
 
+TEST_CASE("USTX 0.6 through 0.9 import the shared musical subset and export as 0.9") {
+  using namespace seam;
+  for (const std::string_view version : {"0.6", "0.7", "0.8", "0.9"}) {
+    std::string source{fixture()};
+    const auto marker = source.find("ustx_version: \"0.9\"");
+    CHECK(marker != std::string::npos);
+    source.replace(marker, std::string_view{"ustx_version: \"0.9\""}.size(),
+                   "ustx_version: \"" + std::string{version} + "\"");
+    if (version == "0.6") {
+      // OpenUtau extends exp_selectors while loading a pre-0.7 project. The
+      // selectors are outside SEAM's musical subset, so the shorter list must
+      // not change the notes, timing or the bounded conversion report.
+      const auto selectors = source.find("exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec, gen, bre]");
+      CHECK(selectors != std::string::npos);
+      source.replace(selectors,
+                     std::string_view{"exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec, gen, bre]"}.size(),
+                     "exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec]");
+    }
+    const auto decoded = interchange::decodeUstx(bytes(source));
+    CHECK(decoded);
+    CHECK(decoded.value().version == version);
+    CHECK(decoded.value().tempos.size() == 2U);
+    CHECK(decoded.value().meters.size() == 2U);
+    CHECK(decoded.value().parts.front().notes.size() == 2U);
+    CHECK(decoded.value().parts.front().notes.front().lyric == "あ");
+    CHECK(decoded.value().parts.front().notes.front().pitch.size() == 2U);
+
+    application::ProjectFactory factory{900000U};
+    const auto imported = interchange::importUstxProject(bytes(source), factory);
+    CHECK(imported);
+    CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 2U);
+
+    const auto exported = interchange::encodeUstx(decoded.value());
+    CHECK(exported);
+    const auto output = std::string{exported.value().begin(), exported.value().end()};
+    CHECK(output.find("ustx_version: \"0.9\"") == 0U);
+    const auto reimported = interchange::decodeUstx(exported.value());
+    CHECK(reimported);
+    CHECK(reimported.value().version == "0.9");
+    CHECK(reimported.value().tempos == decoded.value().tempos);
+    CHECK(reimported.value().meters == decoded.value().meters);
+    CHECK(reimported.value().parts == decoded.value().parts);
+  }
+  for (const std::string_view version : {"0.5", "0.10", "1.0"}) {
+    std::string source{fixture()};
+    const auto marker = source.find("ustx_version: \"0.9\"");
+    CHECK(marker != std::string::npos);
+    source.replace(marker, std::string_view{"ustx_version: \"0.9\""}.size(),
+                   "ustx_version: \"" + std::string{version} + "\"");
+    const auto rejected = interchange::decodeUstx(bytes(source));
+    CHECK(!rejected);
+    CHECK(rejected.error().code == core::ErrorCode::Unsupported);
+  }
+}
+
 TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and hostile depth") {
   using seam::interchange::decodeUstx;
   CHECK(!decodeUstx(bytes("ustx_version: '0.9'\nustx_version: '0.9'\n")));

@@ -1,11 +1,16 @@
 # Native USTX interchange subset v1
 
-Project SEAM now has a native, bounded USTX 0.9 boundary. This is an actual
+Project SEAM now has a native, bounded USTX 0.6–0.9 import boundary and a
+deterministic USTX 0.9 export boundary. This is an actual
 codec and conversion path, not the earlier creator-study Python bridge.
 
 ## Accepted input
 
-- UTF-8 USTX 0.9 YAML with one mapping document.
+- UTF-8 USTX 0.6, 0.7, 0.8 or 0.9 YAML with one mapping document. The source
+  version remains on the decoded document; re-export writes 0.9. OpenUtau's
+  pinned `Ustx.Load` migration changes expression selectors when loading 0.6,
+  which are outside this musical subset. Versions before 0.6 use a different
+  timing-map form and are refused; future versions are refused until reviewed.
 - Block mappings/sequences and flow mappings/sequences used by OpenUtau's
   ordinary `tracks`, `voice_parts`, `notes`, `tempos`, and
   `time_signatures` records.
@@ -48,3 +53,9 @@ This v1 is not a claim of complete OpenUtau interoperability: wave parts,
 custom phonemizers/renderers, all expression curves, plugins, and every future
 USTX field remain explicit losses. Installed-host and native-panel evidence is a
 separate Beta-GO requirement.
+
+The 0.6–0.8 compatibility regression uses the same musical fields as the pinned
+OpenUtau loader's 0.6–0.9 path; it also exercises the shorter pre-0.7 expression
+selector list. It does not substitute for an archival-file corpus from each old
+OpenUtau release. That corpus and external application verification remain part of
+U30 acceptance.

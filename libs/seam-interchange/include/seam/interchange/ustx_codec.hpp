@@ -13,7 +13,7 @@
 namespace seam::interchange {
 
 // USTX is a YAML document, but the production reader intentionally accepts a
-// small, typed 0.9 subset.  The limits are applied while lexing/parsing, before
+// small, typed subset of 0.6 through 0.9. The limits are applied while lexing/parsing, before
 // any collection is grown from an untrusted scalar.
 struct UstxLimits final {
   std::size_t maximumInputBytes{4U * 1024U * 1024U};
@@ -133,7 +133,8 @@ struct UstxDocument final {
 [[nodiscard]] core::Result<UstxDocument> decodeUstx(
     std::span<const std::uint8_t> bytes, UstxLimits limits = {});
 
-// Emits a deterministic USTX 0.9 subset.  Unsupported source metadata is
+// Emits a deterministic USTX 0.9 subset, including when the input document came
+// from 0.6 through 0.8. Unsupported source metadata is
 // represented by bounded issues on the document; it is never silently erased.
 [[nodiscard]] core::Result<std::vector<std::uint8_t>> encodeUstx(
     const UstxDocument& document, UstxLimits limits = {});

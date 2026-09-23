@@ -24,6 +24,14 @@ using Node = formats::JsonValue;
 using Object = Node::Object;
 using Array = Node::Array;
 
+// OpenUtau's pinned USTx.Load migration only changes expression selectors for
+// 0.6 -> 0.7; the timing and note fields represented by this codec keep their
+// 480 PPQ meaning through 0.9. Earlier versions have a different timing map.
+bool supportedInputVersion(std::string_view version) noexcept {
+  return version == "0.6" || version == "0.7" || version == "0.8" ||
+         version == "0.9";
+}
+
 struct Line final {
   std::size_t indent{0U};
   std::size_t number{0U};
@@ -584,7 +592,9 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
   Output document;
   const auto version = required(root, "ustx_version", isString, "string", "ustx"); if (!version) return core::Result<Output>{version.error()};
   auto versionValue = stringValue(*version.value(), "ustx.ustx_version", limits); if (!versionValue) return core::Result<Output>{versionValue.error()};
-  if (versionValue.value() != "0.9") return core::failure<Output>(core::ErrorCode::Unsupported, "Only USTX version 0.9 is supported");
+  if (!supportedInputVersion(versionValue.value()))
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+                                 "Only USTX versions 0.6 through 0.9 are supported");
   document.version = std::move(versionValue).value();
   if (const auto* name = optional(root, "name")) { auto parsed = stringValue(*name, "ustx.name", limits); if (!parsed) return core::Result<Output>{parsed.error()}; document.name = std::move(parsed).value(); }
   const auto tempos = required(root, "tempos", isArray, "array", "ustx"); if (!tempos) return core::Result<Output>{tempos.error()};
@@ -701,7 +711,7 @@ std::string flowVibrato(const UstxVibrato& vibrato) {
 
 core::Result<void> UstxDocument::validate(const UstxLimits& limits) const {
   if (limits.maximumInputBytes == 0U || limits.maximumTracks == 0U || limits.maximumParts == 0U || limits.maximumNotes == 0U ||
-      version != "0.9" || name.size() > limits.maximumScalarBytes || !domain::fromUtf8(name) ||
+      !supportedInputVersion(version) || name.size() > limits.maximumScalarBytes || !domain::fromUtf8(name) ||
       tempos.empty() || meters.empty() || tempos.size() > limits.maximumTempoEvents || meters.size() > limits.maximumMeterEvents ||
       tracks.size() > limits.maximumTracks || parts.size() > limits.maximumParts)
     return core::failure(core::ErrorCode::InvalidArgument, "USTX document exceeds declared bounds");

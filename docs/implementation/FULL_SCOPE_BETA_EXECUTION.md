@@ -2615,3 +2615,20 @@ repair survived the translation-unit move. Behaviour is unchanged: no logic, no
 rendered output, no renderer revision, and no roadmap unit or Beta criterion
 advances. Other un-wired gates were surveyed; only this one had stopped passing.
 Full account in `docs/implementation/CLAP_ADAPTER_SIZE_GATE_2026-09-23.md`.
+
+2026-09-23 — U30 legacy USTX import increment. The approved U30 plan requires
+USTX 0.6–0.9 import, but the native codec admitted only 0.9. The pinned
+OpenUtau `Ustx.Load` source (`8c0dc400`) shows that versions 0.6–0.8 retain
+the musical timing/note schema used here; its post-0.6 migration changes
+expression selectors, which SEAM does not map to its score. The bounded codec
+now admits exactly 0.6, 0.7, 0.8 and 0.9, retains the source version in the
+decoded document, and emits 0.9 on deterministic re-export. Pre-0.6 and future
+versions still fail closed.
+
+A version sweep imports the shared tempo/meter/track/note/lyric/pitch subset,
+including the shorter pre-0.7 selector list, and checks 0.9 re-export and
+re-import. Negative cases cover 0.5, 0.10 and 1.0. Local Release USTX and
+interchange-service tests pass 2/2. This is a code coverage increment, not U30
+acceptance: archival files from each older OpenUtau release and independent
+application verification of the imported results remain to be collected.
+`docs/formats/USTX_INTERCHANGE_V1.md` records the precise boundary.
