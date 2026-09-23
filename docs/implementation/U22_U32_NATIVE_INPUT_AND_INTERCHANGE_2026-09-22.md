@@ -150,6 +150,42 @@ CLAP plugin host smoke) passed. This is not a GUI-in-DAW acceptance run.
 The rebuilt Release aggregate `seam_tests` also passed (one CTest target,
 26.81 seconds). Existing duplicate-library linker warnings remain.
 
+## 2026-09-24 embedded host-state follow-up
+
+The CLAP editor had a working state serializer but did not tell a host when
+non-parameter song state changed. The pinned, consolidated CLAP 1.2.10 header
+now includes the official `clap_host_state_t.mark_dirty` ABI. The plugin asks
+the host for a main-thread callback when a persistent edit changes the editor
+revision, then calls `mark_dirty` once for that revision. Its GUI timer is a
+fallback when the callback is delayed. The bounce-timing choice is stored
+directly in project settings without advancing the document revision; it now
+signals the same path explicitly. Loading host-owned state establishes a new
+baseline; a state save does not clear a pending dirty signal, because the host
+may be making a duplicate or preset snapshot rather than saving its project.
+
+An opt-in local host probe uses the real macOS plugin window and its public
+accessibility controls; it does not reach into the plugin runtime. Before the
+repair, a tempo edit was serialized but the host's dirty count remained zero.
+After repair, the probe showed one callback-driven dirty notification for a
+tempo edit, no duplicate from the timer, one timer-driven notification for a
+second tempo edit, and one notification for the persisted bounce setting.
+The saved state retained the final 138 BPM and Follow Host setting, and a
+separate plugin instance loaded and re-saved identical state without a false
+dirty notification. Repeat locally with:
+
+```sh
+cmake --build build/release --target seam_clap_editor_host seam_clap_editor_plugin -j 8
+build/release/seam_clap_editor_host --plugin build/release/ProjectSEAMEditor.clap --state-dirty-probe
+```
+
+The reported result was `edited=1 callback=1 marked=1 once=1 timer=1
+bounce=1/1 tempo=1 reopened=1`. This is stronger than a serializer unit test
+but remains a synthetic CLAP host, not evidence of FL Studio/REAPER/Bitwig
+save behavior or of importing through a DAW's file dialog. The user deferred
+GitHub CI work; this opt-in probe is not added to CI configuration.
+After this repair, Release CTest passed the offline host, embedded microscope,
+aggregate `seam_tests` (36.87 seconds), and plugin host smoke targets (4/4).
+
 Remaining embedded U32 evidence: exercise the real plugin modal flow in a DAW,
 verify a host save/reopen and unsaved-project decision, visually inspect the
 warning and error alerts at constrained sizes, and roundtrip a score through
@@ -158,7 +194,8 @@ or configuration change was made in this batch.
 
 ## Remaining scope
 
-Embedded-editor host lifecycle and real OpenUtau/DAW exchange are still open.
+Embedded-editor lifecycle in a real DAW and real OpenUtau/DAW exchange are
+still open.
 Actual hardware recording/permission/disconnection behavior still needs a
 device run. The new helper's injected failures cannot establish that evidence.
 Windows remains the README TODO, not a waived platform. No complete U22/U30/

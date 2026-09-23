@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 
 namespace seam::clap_host {
 
@@ -20,6 +21,12 @@ public:
   [[nodiscard]] bool attach(clap_window_t& parent) const noexcept;
   [[nodiscard]] bool pump() noexcept;
   [[nodiscard]] bool capture(const std::filesystem::path& path) const;
+#if defined(__APPLE__)
+  // Drive the embedded editor's public accessibility action in a real Cocoa host window.
+  [[nodiscard]] bool setAccessibilityValue(std::string_view identifier,
+                                           std::string_view value) const;
+  [[nodiscard]] bool activateAccessibility(std::string_view identifier) const;
+#endif
   void destroy() noexcept;
 
   [[nodiscard]] bool available() const noexcept;

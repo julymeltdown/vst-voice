@@ -176,6 +176,13 @@ public:
       : host_(host),
         runtime_(std::make_unique<EditorRuntime>(
             std::nullopt, resolveCharacterPackage(), resolveVoicebankRoots())) {
+    lastHostNotifiedRevision_ = runtime_->revision();
+    runtime_->setPersistentStateChangeCallback([this] {
+      pendingHostStateDirty_.store(true, std::memory_order_release);
+      if (host_ != nullptr && host_->request_callback != nullptr) {
+        host_->request_callback(host_);
+      }
+    });
     runtime_->setVoicebankInstallerHandoff(
         [] { return openStandaloneVoicebankInstaller(); });
     // Score interchange in the embedded editor. The runtime runs the conversion and the adoption;
@@ -235,7 +242,10 @@ public:
   }
 
   ~PluginInstance() {
-    if (runtime_) runtime_->setRenderReadyCallback({});
+    if (runtime_) {
+      runtime_->setRenderReadyCallback({});
+      runtime_->setPersistentStateChangeCallback({});
+    }
     unregisterTimer(*this);
     view_.reset();
   }
@@ -251,6 +261,23 @@ private:
     return plugin != nullptr
                ? static_cast<PluginInstance*>(plugin->plugin_data)
                : nullptr;
+  }
+
+  // CLAP state.mark_dirty is main-thread only. Document edits request a host
+  // callback from their originating thread; both this callback and the GUI timer
+  // coalesce a pending revision or direct persisted-setting change into one
+  // host dirty notification.
+  void publishHostStateDirty() noexcept {
+    const auto revision = runtime_->revision();
+    if (revision == lastHostNotifiedRevision_ &&
+        !pendingHostStateDirty_.load(std::memory_order_acquire)) return;
+    if (host_ == nullptr || host_->get_extension == nullptr) return;
+    const auto* state = static_cast<const clap_host_state_t*>(
+        host_->get_extension(host_, CLAP_EXT_STATE));
+    if (state == nullptr || state->mark_dirty == nullptr) return;
+    lastHostNotifiedRevision_ = revision;
+    pendingHostStateDirty_.store(false, std::memory_order_release);
+    state->mark_dirty(host_);
   }
 
   void refreshRuntimeMetadata() {
@@ -876,6 +903,9 @@ private:
     const auto* instance = self(plugin);
     if (instance == nullptr) return false;
     const auto encoded = encodeEditorState(instance->runtime_->projectCopy());
+    // A host may ask for a preset or duplicate snapshot without saving its project.
+    // Only loading host-owned state acknowledges a new baseline; saving a copy must
+    // not suppress a pending dirty notification for the original project.
     return encoded && writeAll(stream, encoded.value());
   }
 
@@ -908,6 +938,8 @@ private:
     if (!decoded) return false;
     const auto replaced = instance->runtime_->replaceProject(decoded.value());
     if (!replaced) return false;
+    instance->lastHostNotifiedRevision_ = instance->runtime_->revision();
+    instance->pendingHostStateDirty_.store(false, std::memory_order_release);
     instance->refreshRuntimeMetadata();
     instance->synchronizeAudioPortConfiguration();
     instance->freeRunFrame_ = 0U;
@@ -1145,6 +1177,7 @@ private:
       instance->view_->onTimer();
       instance->synchronizeAudioPortConfiguration();
     }
+    instance->publishHostStateDirty();
   }
 
   static const void* CLAP_ABI pluginGetExtension(const clap_plugin_t*,
@@ -1186,6 +1219,7 @@ private:
         instance->timerId_ == CLAP_INVALID_ID) {
       instance->view_->onTimer();
     }
+    instance->publishHostStateDirty();
   }
 
   static const clap_plugin_audio_ports_t& audioPortsExtension() {
@@ -1257,6 +1291,8 @@ private:
   std::uint32_t guiWidth_{kDefaultWidth};
   std::uint32_t guiHeight_{kDefaultHeight};
   clap_id timerId_{CLAP_INVALID_ID};
+  std::uint64_t lastHostNotifiedRevision_{0U};
+  std::atomic<bool> pendingHostStateDirty_{false};
   bool initialized_{false};
   bool active_{false};
   bool processing_{false};

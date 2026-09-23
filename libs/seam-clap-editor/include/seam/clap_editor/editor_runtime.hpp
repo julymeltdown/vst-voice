@@ -175,6 +175,10 @@ public:
       std::string_view id, std::string_view value);
 
   void setRepaintCallback(std::function<void()> callback);
+  // Invoked for a persistent project change, from the originating thread. Most
+  // edits are detected by revision at repaint; direct persisted settings also
+  // signal it explicitly. CLAP can request a main-thread host-state notification.
+  void setPersistentStateChangeCallback(std::function<void()> callback);
   void setRenderReadyCallback(std::function<void()> callback);
   void setTextInputCallbacks(
       std::function<void(const native_ui::TextInputRequest&)> begin,
@@ -411,6 +415,8 @@ private:
   live_voice::VoiceEngine live_;
   voicebank::VoicebankResolution voicebankResolution_;
   std::function<void()> repaintCallback_;
+  std::function<void()> persistentStateChangeCallback_;
+  mutable std::uint64_t lastSignalledRevision_{0U};
   std::function<void()> renderReadyCallback_;
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;

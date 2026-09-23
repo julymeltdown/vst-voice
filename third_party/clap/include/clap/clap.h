@@ -325,6 +325,11 @@ typedef struct clap_plugin_state {
   bool (CLAP_ABI *save)(const clap_plugin_t *plugin, const clap_ostream_t *stream);
   bool (CLAP_ABI *load)(const clap_plugin_t *plugin, const clap_istream_t *stream);
 } clap_plugin_state_t;
+// Same CLAP 1.2.10 host state ABI as upstream ext/state.h. The editor uses it
+// to tell a DAW that non-parameter song edits should be saved again.
+typedef struct clap_host_state {
+  void (CLAP_ABI *mark_dirty)(const clap_host_t *host);
+} clap_host_state_t;
 static const CLAP_CONSTEXPR char CLAP_EXT_STATE[] = "clap.state";
 
 typedef struct clap_plugin_latency { uint32_t (CLAP_ABI *get)(const clap_plugin_t *plugin); } clap_plugin_latency_t;

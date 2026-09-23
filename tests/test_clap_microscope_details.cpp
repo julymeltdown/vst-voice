@@ -7,6 +7,7 @@
 #include "seam/synthesis/unit_selection.hpp"
 
 #include <chrono>
+#include <atomic>
 #include <fstream>
 #include <thread>
 #include <utility>
@@ -367,6 +368,32 @@ TEST_CASE("CLAP interchange export refuses a stale picker and accepts uppercase 
   CHECK(exported.hasValue());
   CHECK(std::filesystem::exists(destination));
   CHECK(std::filesystem::file_size(destination) > 0U);
+}
+
+TEST_CASE("CLAP persistent state changes signal revisions and direct bounce settings only once") {
+  using namespace seam;
+  auto runtime = runtimeFixture();
+  std::atomic<std::uint32_t> signals{0U};
+  runtime.setPersistentStateChangeCallback([&] {
+    signals.fetch_add(1U, std::memory_order_relaxed);
+  });
+  runtime.resize(780.0, 560.0);
+  CHECK(signals.load(std::memory_order_relaxed) == 0U);
+
+  runtime.setOfflineTimingAuthority(clap_editor::OfflineTimingAuthority::FollowHost);
+  CHECK(signals.load(std::memory_order_relaxed) == 1U);
+  runtime.setOfflineTimingAuthority(clap_editor::OfflineTimingAuthority::FollowHost);
+  CHECK(signals.load(std::memory_order_relaxed) == 1U);
+
+  const auto project = runtime.projectCopy();
+  const auto* track = project.findVocalTrack(runtime.trackId());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(runtime.setTrackMix(track->id, track->gainDb + 1.0F,
+                            track->pan, track->muted, track->solo).hasValue());
+  CHECK(signals.load(std::memory_order_relaxed) == 2U);
+  runtime.setOfflineTimingAuthority(clap_editor::OfflineTimingAuthority::FixedAudio);
+  CHECK(signals.load(std::memory_order_relaxed) == 3U);
 }
 
 // A conversion that lost information must not reach the live document without a human decision. The

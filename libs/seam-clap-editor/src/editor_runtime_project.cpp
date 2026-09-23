@@ -195,6 +195,7 @@ void EditorRuntime::setOfflineTimingAuthority(
   offlineAudioReady_.store(false, std::memory_order_release);
   preparedHostTimeline_.reset();
   refreshRenderStatusView();
+  if (persistentStateChangeCallback_) persistentStateChangeCallback_();
 }
 
 OfflineTimingAuthority EditorRuntime::offlineTimingAuthority() const noexcept {

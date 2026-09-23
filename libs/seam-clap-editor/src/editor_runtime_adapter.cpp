@@ -556,6 +556,12 @@ void EditorRuntime::setRepaintCallback(std::function<void()> callback) {
   repaintCallback_ = std::move(callback);
 }
 
+void EditorRuntime::setPersistentStateChangeCallback(std::function<void()> callback) {
+  std::lock_guard lock(mutex_);
+  persistentStateChangeCallback_ = std::move(callback);
+  lastSignalledRevision_ = session_.revision();
+}
+
 void EditorRuntime::setRenderReadyCallback(std::function<void()> callback) {
   std::lock_guard lock(mutex_);
   renderReadyCallback_ = std::move(callback);

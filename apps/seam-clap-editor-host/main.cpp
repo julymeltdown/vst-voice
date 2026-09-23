@@ -92,6 +92,8 @@ struct HostContext final {
   std::atomic<std::uint32_t> processRequests{0U};
   std::atomic<std::uint32_t> audioPortRescans{0U};
   std::atomic<std::uint32_t> audioConfigRescans{0U};
+  std::atomic<std::uint32_t> stateDirtyCalls{0U};
+  std::atomic<std::uint32_t> callbackRequests{0U};
 };
 
 bool CLAP_ABI registerTimer(const clap_host_t* host, std::uint32_t period,
@@ -125,12 +127,18 @@ void CLAP_ABI audioConfigRescan(const clap_host_t* host) {
 }
 const clap_host_audio_ports_t kAudioPortsHost{&audioRescanSupported, &audioRescan};
 const clap_host_audio_ports_config_t kAudioConfigHost{&audioConfigRescan};
+void CLAP_ABI stateMarkDirty(const clap_host_t* host) {
+  static_cast<HostContext*>(host->host_data)->stateDirtyCalls.fetch_add(
+      1U, std::memory_order_relaxed);
+}
+const clap_host_state_t kStateHost{&stateMarkDirty};
 
 const void* CLAP_ABI hostGetExtension(const clap_host_t*, const char* id) {
   if (id == nullptr) return nullptr;
   if (std::strcmp(id, CLAP_EXT_TIMER_SUPPORT) == 0) return &kTimerHost;
   if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS) == 0) return &kAudioPortsHost;
   if (std::strcmp(id, CLAP_EXT_AUDIO_PORTS_CONFIG) == 0) return &kAudioConfigHost;
+  if (std::strcmp(id, CLAP_EXT_STATE) == 0) return &kStateHost;
   return nullptr;
 }
 
@@ -142,7 +150,10 @@ void CLAP_ABI hostRequestProcess(const clap_host_t* host) {
   static_cast<HostContext*>(host->host_data)->processRequests.fetch_add(
       1U, std::memory_order_relaxed);
 }
-void CLAP_ABI hostRequestCallback(const clap_host_t*) {}
+void CLAP_ABI hostRequestCallback(const clap_host_t* host) {
+  static_cast<HostContext*>(host->host_data)->callbackRequests.fetch_add(
+      1U, std::memory_order_relaxed);
+}
 
 struct EventList final {
   std::vector<const clap_event_header_t*> events;
@@ -456,6 +467,7 @@ int main(int argc, char** argv) {
   std::filesystem::path targetRuntimeFixtureRoot;
   bool expectMissingBank = false;
   bool offlineOnly = false;
+  bool stateDirtyProbe = false;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
     if (argument == "--plugin" && index + 1 < argc) {
@@ -473,6 +485,8 @@ int main(int argc, char** argv) {
       expectMissingBank = true;
     } else if (argument == "--offline-only") {
       offlineOnly = true;
+    } else if (argument == "--state-dirty-probe") {
+      stateDirtyProbe = true;
     }
   }
   if (pluginPath.empty() ||
@@ -481,6 +495,7 @@ int main(int argc, char** argv) {
                  "[--screenshot FILE.ppm] [--summary FILE.json] "
                  "[--audio FILE.wav] "
                  "[--offline-only] "
+                 "[--state-dirty-probe] "
                  "[--target-runtime-fixture-root DIR | --expect-missing-bank]\n";
     return 2;
   }
@@ -585,14 +600,15 @@ int main(int argc, char** argv) {
   bool guiVisible = false;
   bool screenshotWritten = false;
   seam::clap_host::HostWindow hostWindow;
-  if (!offlineOnly && hostWindow.create(1100U, 720U) &&
+  const auto hostWidth = stateDirtyProbe ? 1440U : 1100U;
+  if (!offlineOnly && hostWindow.create(hostWidth, 720U) &&
       gui->is_api_supported(plugin, hostWindow.api(), false) &&
       gui->create(plugin, hostWindow.api(), false)) {
     guiCreated = true;
     clap_window_t parentWindow{};
     guiVisible = hostWindow.attach(parentWindow) &&
                  gui->set_parent(plugin, &parentWindow) &&
-                 gui->set_size(plugin, 1100U, 720U) &&
+                 gui->set_size(plugin, hostWidth, 720U) &&
                  gui->show(plugin);
     for (int frame = 0; frame < 45; ++frame) {
       if (context.timerId != CLAP_INVALID_ID) {
@@ -604,6 +620,84 @@ int main(int argc, char** argv) {
     if (guiVisible && !screenshotPath.empty()) {
       screenshotWritten = hostWindow.capture(screenshotPath);
     }
+  }
+
+  if (stateDirtyProbe) {
+    bool passed = false;
+#if defined(__APPLE__)
+    if (guiVisible && context.timerId != CLAP_INVALID_ID) {
+      const auto before = context.stateDirtyCalls.load(std::memory_order_relaxed);
+      const auto callbacksBefore = context.callbackRequests.load(std::memory_order_relaxed);
+      const auto edited = hostWindow.setAccessibilityValue("toolbar.tempo", "137");
+      const auto callbackRequested =
+          context.callbackRequests.load(std::memory_order_relaxed) > callbacksBefore;
+      plugin->on_main_thread(plugin);
+      const auto marked = context.stateDirtyCalls.load(std::memory_order_relaxed) == before + 1U;
+      timer->on_timer(plugin, context.timerId);
+      const auto exactlyOnce =
+          context.stateDirtyCalls.load(std::memory_order_relaxed) == before + 1U;
+      const auto editedAgain = hostWindow.setAccessibilityValue("toolbar.tempo", "138");
+      timer->on_timer(plugin, context.timerId);
+      const auto timerMarked =
+          context.stateDirtyCalls.load(std::memory_order_relaxed) == before + 2U;
+      const auto bounceChanged = hostWindow.activateAccessibility("toolbar.bounce");
+      plugin->on_main_thread(plugin);
+      const auto bounceMarked =
+          context.stateDirtyCalls.load(std::memory_order_relaxed) == before + 3U;
+      WriteStream editedState;
+      const auto savedEdit = state->save(plugin, &editedState.stream);
+      bool reopened = false;
+      if (savedEdit) {
+        const auto* duplicate = factory->create_plugin(factory, &host, descriptor->id);
+        if (duplicate != nullptr && duplicate->init(duplicate)) {
+          const auto* duplicateState = static_cast<const clap_plugin_state_t*>(
+              duplicate->get_extension(duplicate, CLAP_EXT_STATE));
+          ReadStream incoming{editedState.bytes};
+          reopened = duplicateState != nullptr &&
+              duplicateState->load(duplicate, &incoming.stream);
+          if (reopened) {
+            WriteStream savedAgain;
+            reopened = duplicateState->save(duplicate, &savedAgain.stream) &&
+                savedAgain.bytes == editedState.bytes;
+            duplicate->on_main_thread(duplicate);
+            reopened = reopened &&
+                context.stateDirtyCalls.load(std::memory_order_relaxed) == before + 3U;
+          }
+          duplicate->destroy(duplicate);
+        } else if (duplicate != nullptr) {
+          duplicate->destroy(duplicate);
+        }
+      }
+      bool tempoRetained = false;
+      bool bounceRetained = false;
+      if (savedEdit) {
+        try {
+          const auto project = savedProject(editedState.bytes);
+          tempoRetained = std::abs(project.tempoMap().bpmAt(
+              seam::time::Tick{0}) - 138.0) < 1.0e-9;
+          bounceRetained = project.settings().bounceTimingAuthority ==
+              seam::domain::BounceTimingAuthority::FollowHost;
+        } catch (const std::exception&) {}
+      }
+      passed = edited && callbackRequested && marked && exactlyOnce &&
+          editedAgain && timerMarked && bounceChanged && bounceMarked &&
+          tempoRetained && bounceRetained && reopened;
+      std::cout << "state-dirty-probe: edited=" << edited
+                << " callback=" << callbackRequested
+                << " marked=" << marked << " once=" << exactlyOnce
+                << " timer=" << timerMarked
+                << " bounce=" << bounceMarked << "/" << bounceRetained
+                << " tempo=" << tempoRetained << " reopened=" << reopened << '\n';
+    }
+#endif
+    if (guiCreated) {
+      if (guiVisible) static_cast<void>(gui->hide(plugin));
+      gui->destroy(plugin);
+    }
+    hostWindow.destroy();
+    plugin->destroy(plugin);
+    entry->deinit();
+    return passed ? 0 : 1;
   }
 
   WriteStream saved;

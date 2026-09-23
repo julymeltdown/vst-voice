@@ -573,7 +573,19 @@ float EditorRuntime::primarySeamAmount() const noexcept {
 }
 
 void EditorRuntime::requestRepaint() const {
-  if (repaintCallback_) repaintCallback_();
+  std::function<void()> repaint;
+  std::function<void()> changed;
+  {
+    std::lock_guard lock(mutex_);
+    repaint = repaintCallback_;
+    if (const auto revision = session_.revision();
+        revision != lastSignalledRevision_) {
+      lastSignalledRevision_ = revision;
+      changed = persistentStateChangeCallback_;
+    }
+  }
+  if (changed) changed();
+  if (repaint) repaint();
 }
 
 }  // namespace seam::clap_editor

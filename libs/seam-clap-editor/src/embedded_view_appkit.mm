@@ -124,6 +124,7 @@ public:
 
   void destroy() noexcept override {
     runtime_.setTextInputCallbacks({}, {});
+    runtime_.setRepaintCallback({});
     if (view_ != nil) {
       view_->owner_ = nullptr;
       [view_ removeFromSuperview];

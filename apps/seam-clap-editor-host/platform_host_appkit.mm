@@ -10,6 +10,22 @@
 
 namespace seam::clap_host {
 
+namespace {
+id findAccessibilityNode(NSView* content, NSString* name) {
+  NSMutableArray* pending = [NSMutableArray arrayWithArray:content.subviews];
+  for (NSUInteger index = 0U; index < pending.count && index < 256U; ++index) {
+    id node = pending[index];
+    if ([node respondsToSelector:@selector(accessibilityIdentifier)] &&
+        [[node accessibilityIdentifier] isEqualToString:name]) return node;
+    if ([node respondsToSelector:@selector(accessibilityChildren)]) {
+      NSArray* children = [node accessibilityChildren];
+      if (children != nil) [pending addObjectsFromArray:children];
+    }
+  }
+  return nil;
+}
+}  // namespace
+
 struct HostWindow::Impl final {
   NSApplication* __strong application{nil};
   NSWindow* __strong window{nil};
@@ -101,6 +117,30 @@ bool HostWindow::capture(const std::filesystem::path& path) const {
     }
   }
   return static_cast<bool>(output);
+}
+
+bool HostWindow::setAccessibilityValue(std::string_view identifier,
+                                       std::string_view value) const {
+  if (!available() || ![NSThread isMainThread]) return false;
+  NSString* name = [[NSString alloc] initWithBytes:identifier.data()
+      length:identifier.size() encoding:NSUTF8StringEncoding];
+  NSString* text = [[NSString alloc] initWithBytes:value.data()
+      length:value.size() encoding:NSUTF8StringEncoding];
+  if (name == nil || text == nil) return false;
+  id node = findAccessibilityNode(impl_->content, name);
+  if (node == nil || ![node respondsToSelector:@selector(setAccessibilityValue:)]) return false;
+  [node setAccessibilityValue:text];
+  return true;
+}
+
+bool HostWindow::activateAccessibility(std::string_view identifier) const {
+  if (!available() || ![NSThread isMainThread]) return false;
+  NSString* name = [[NSString alloc] initWithBytes:identifier.data()
+      length:identifier.size() encoding:NSUTF8StringEncoding];
+  if (name == nil) return false;
+  id node = findAccessibilityNode(impl_->content, name);
+  return node != nil && [node respondsToSelector:@selector(accessibilityPerformPress)] &&
+      [node accessibilityPerformPress];
 }
 
 void HostWindow::destroy() noexcept {
