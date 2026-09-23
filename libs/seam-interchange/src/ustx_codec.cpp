@@ -141,7 +141,7 @@ private:
       case '{': return parseObject(depth + 1U);
       case '\'':
       case '"': return parseQuoted();
-      default: return parseBare();
+      default: return parseBare(depth == 0U);
     }
   }
 
@@ -180,13 +180,15 @@ private:
     return fail("USTX quoted scalar is unterminated");
   }
 
-  core::Result<Node> parseBare() {
+  core::Result<Node> parseBare(bool blockPlainScalar) {
     const auto start = position_;
-    // Plain YAML scalars may contain spaces (for example a track name).  Flow
-    // delimiters, rather than whitespace, terminate the value; surrounding
-    // whitespace is trimmed below.
-    while (position_ < value_.size() && value_[position_] != ',' && value_[position_] != ']' &&
-           value_[position_] != '}') ++position_;
+    // In a block mapping/sequence entry, brackets and commas are ordinary
+    // plain-scalar characters (for example OpenUtau's `あ[k a]` lyric). In a
+    // nested flow collection they remain delimiters. Keep the distinction
+    // here rather than accepting malformed flow syntax as a string.
+    while (position_ < value_.size() &&
+           (blockPlainScalar || (value_[position_] != ',' && value_[position_] != ']' &&
+                                 value_[position_] != '}'))) ++position_;
     const auto token = trim(value_.substr(start, position_ - start));
     if (token.empty()) return fail("USTX bare scalar is empty");
     if (token.size() > limits_.maximumScalarBytes) return fail("USTX scalar exceeds limit");
@@ -202,7 +204,8 @@ private:
     }
     const auto numericCandidate = token.front() == '-' || token.front() == '+' ||
         token.front() == '.' || (token.front() >= '0' && token.front() <= '9');
-    if (numericCandidate) return fail("USTX numeric scalar is malformed or out of range");
+    if (numericCandidate && !(blockPlainScalar && token.find('[') != std::string_view::npos))
+      return fail("USTX numeric scalar is malformed or out of range");
     std::string folded{token};
     std::transform(folded.begin(), folded.end(), folded.begin(), [](char value) {
       return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value;

@@ -95,6 +95,36 @@ The requested independent peer review of commit `bda570b` did not run: the
 peer task returned HTTP 429. Local and OpenUtau-oracle checks above are not
 mislabelled as peer sign-off.
 
+## 2026-09-24 Japanese phone-hint increment
+
+The pinned OpenUtau serializer generated a seventh fixture with the unquoted
+plain scalar `lyric: あ[k a]`. SEAM initially rejected it at line 282 because
+its flow delimiter rule was incorrectly applied to a block scalar. The
+reader now distinguishes block plain scalars from nested flow values. A
+simple terminal Japanese hint is stored as visible `あ` plus typed `k a`
+only when SEAM's Japanese phone parser accepts it; unsupported languages or
+phones yield a note-path loss. Export reconstructs the bracketed lyric when
+safe. Complex bracket syntax remains raw and lossy rather than silently
+changing phonemization.
+
+- Pinned source fixture SHA-256:
+  `f4c0660e5fa421202b68ed8290e54b5b445d81327a34ab9f38246f4de03e2d7b`.
+- Production CLI import: 9 explicit issues, none for the supported hint.
+  CLI export: 5 explicit losses, none for the hint. Export SHA-256:
+  `1c2b386eba55ebfad98e2e1548c45138f1fb8c16e5fab0dcfc4d10b51c33a6bb`.
+- Pinned OpenUtau core reloaded the exported file with `ORACLE_OK` and the
+  original `あ[k a]` lyric. The independent `--compare-hint` oracle invoked
+  OpenUtau's own `UNote.ToPhonemizerNote` and confirmed the visible lyric and
+  phone hint were identical (`hintedNotes=1`, `HINT_COMPARE_OK`). The oracle's
+  negative control against the no-hint 0.9 fixture failed at note zero as
+  expected. Its pitch sampler passed 18 points with 0.160039 cents maximum
+  error. This does not prove identical phonemizer audio or a GUI-saved
+  document.
+- Release `seam_tests`: 1,053/1,053 passed; focused Release interchange CTest
+  4/4 passed; focused Debug and sanitizer USTX CTest each passed 1/1.
+
+GitHub CI was intentionally excluded at the user's request.
+
 ## Work required before U30 acceptance
 
 1. Exercise actual OpenUtau desktop GUI open/save on the generated and additional

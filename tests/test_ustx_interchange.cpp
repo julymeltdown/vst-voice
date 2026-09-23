@@ -271,6 +271,81 @@ TEST_CASE("USTX voice color palettes and phoneme clr stay inert without trusted 
   CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 2U);
 }
 
+TEST_CASE("USTX Japanese bracketed phone hints preserve visible lyric and typed intent") {
+  using namespace seam;
+  application::ProjectFactory factory{869300U};
+  const auto source = historicalSerializerFixture("pinned-0.9-hint");
+  CHECK(!source.empty());
+  const auto sourceDecoded = interchange::decodeUstx(source); CHECK(sourceDecoded);
+  CHECK(sourceDecoded.value().parts.front().notes.front().lyric == "あ[k a]");
+  const auto imported = interchange::importUstxProject(source, factory); CHECK(imported);
+  const auto& region = imported.value().project.vocalTracks().front().regions.front();
+  CHECK(domain::toUtf8(region.lyrics.front().surface) == "あ");
+  CHECK(region.notes.front().phoneticHint == "k a");
+  CHECK(!hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[0].lyric"));
+  const auto exported = interchange::exportUstxProject(imported.value().project); CHECK(exported);
+  const auto decoded = interchange::decodeUstx(exported.value().bytes); CHECK(decoded);
+  CHECK(decoded.value().parts.front().notes.front().lyric == "あ[k a]");
+  CHECK(!hasLossAt(exported.value().issues,
+                   "project.vocalTracks[0].regions[0].notes[0].phoneticHint"));
+  const auto reopened = interchange::importUstxProject(exported.value().bytes, factory); CHECK(reopened);
+  CHECK(reopened.value().project.vocalTracks().front().regions.front().notes.front().phoneticHint == "k a");
+
+  std::string invalid{fixture()};
+  const auto invalidLyric = invalid.find("lyric: \"あ\""); CHECK(invalidLyric != std::string::npos);
+  invalid.replace(invalidLyric, std::string_view{"lyric: \"あ\""}.size(),
+                  "lyric: \"あ[not_a_phone]\"");
+  const auto unsupported = interchange::importUstxProject(bytes(invalid), factory); CHECK(unsupported);
+  const auto& unsupportedRegion = unsupported.value().project.vocalTracks().front().regions.front();
+  CHECK(domain::toUtf8(unsupportedRegion.lyrics.front().surface) == "あ");
+  CHECK(!unsupportedRegion.notes.front().phoneticHint.has_value());
+  CHECK(hasLossAt(unsupported.value().issues, "ustx.voice_parts[0].notes[0].lyric"));
+
+  const auto nonJapanese = interchange::importUstxProject(source, factory,
+      interchange::UstxImportRequest{.language = domain::Language::English});
+  CHECK(nonJapanese);
+  CHECK(!nonJapanese.value().project.vocalTracks().front().regions.front().notes.front().phoneticHint);
+  CHECK(hasLossAt(nonJapanese.value().issues, "ustx.voice_parts[0].notes[0].lyric"));
+
+  std::string numericLyric{fixture()};
+  const auto numericMarker = numericLyric.find("lyric: \"あ\"");
+  CHECK(numericMarker != std::string::npos);
+  numericLyric.replace(numericMarker, std::string_view{"lyric: \"あ\""}.size(),
+                       "lyric: 1[k a]");
+  const auto numericImported = interchange::importUstxProject(bytes(numericLyric), factory);
+  CHECK(numericImported);
+  const auto& numericRegion = numericImported.value().project.vocalTracks().front().regions.front();
+  CHECK(domain::toUtf8(numericRegion.lyrics.front().surface) == "1");
+  CHECK(numericRegion.notes.front().phoneticHint == "k a");
+
+  std::string complex{fixture()};
+  const auto complexMarker = complex.find("lyric: \"あ\""); CHECK(complexMarker != std::string::npos);
+  complex.replace(complexMarker, std::string_view{"lyric: \"あ\""}.size(),
+                  "lyric: \"あ[k a]x\"");
+  const auto complexImported = interchange::importUstxProject(bytes(complex), factory);
+  CHECK(complexImported);
+  const auto& complexRegion = complexImported.value().project.vocalTracks().front().regions.front();
+  CHECK(domain::toUtf8(complexRegion.lyrics.front().surface) == "あ[k a]x");
+  CHECK(!complexRegion.notes.front().phoneticHint.has_value());
+  CHECK(hasLossAt(complexImported.value().issues, "ustx.voice_parts[0].notes[0].lyric"));
+
+  auto englishProject = factory.createProject("English hint export");
+  const auto englishTrack = factory.addVocalTrack(englishProject, "Lead");
+  const auto englishRegionId = factory.addRegion(englishProject, englishTrack, "Verse",
+                                                 time::Tick{0}, time::Tick{960});
+  auto* englishRegion = englishProject.findRegion(englishRegionId); CHECK(englishRegion != nullptr);
+  auto [englishLyric, englishNote] = factory.makeNote(time::Tick{0}, time::Tick{480},
+                                                       60U, U"hi", domain::Language::English);
+  englishNote.phoneticHint = "k aa1";
+  englishRegion->lyrics.push_back(englishLyric);
+  englishRegion->notes.push_back(englishNote);
+  const auto englishExport = interchange::exportUstxProject(englishProject); CHECK(englishExport);
+  CHECK(hasLossAt(englishExport.value().issues,
+                  "project.vocalTracks[0].regions[0].notes[0].phoneticHint"));
+  const auto englishDecoded = interchange::decodeUstx(englishExport.value().bytes); CHECK(englishDecoded);
+  CHECK(englishDecoded.value().parts.front().notes.front().lyric == "hi");
+}
+
 TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   const auto decoded = seam::interchange::decodeUstx(bytes(fixture()));
   CHECK(decoded);

@@ -20,6 +20,13 @@ codec and conversion path, not the earlier creator-study Python bridge.
   linear, step, and smooth interpolation.
 - Note vibrato is mapped from USTX percentage/frequency fields into the
   persisted SEAM vibrato contract with bounded clamping diagnostics.
+- OpenUtau's simple terminal Japanese lyric hint (`あ[k a]`) maps to the
+  visible lyric `あ` plus a typed SEAM phone hint only when SEAM's Japanese
+  phonemizer accepts its space-separated phones. Both quoted and unquoted
+  YAML plain scalars are accepted. Unsupported phones or languages produce a
+  loss and remove the bracket suffix from the visible lyric; complex bracket
+  syntax remains raw lyric with an explicit loss. No arbitrary phonemizer or
+  singer is loaded to interpret it.
 - A standard `dyn` part curve maps integer tenths of a decibel at part-relative
   480-PPQ ticks to SEAM linear-gain automation. OpenUtau's `-240` sentinel
   means silence; other values use `10^(y/200)`. The importer samples its
@@ -36,7 +43,8 @@ parsing, before typed arrays are grown from declared values.
 
 Import creates a new unsaved `domain::Project` draft. It scales 480 PPQ to the
 canonical 960 PPQ model, retains tempo/meter, track mix fields, notes, lyrics,
-pitch automation, vibrato and supported `dyn` automation, and carries an
+pitch automation, vibrato, representable Japanese phone hints and supported
+`dyn` automation, and carries an
 explicit bounded loss/warning list. Singer references, voice colors,
 renderer/phoneme details, other expression curves, SEAM ownership/units, and
 other unsupported controls never become executable state by accident. A `dyn`
@@ -46,8 +54,10 @@ explicit loss while the rest of the score can still import.
 Export is deterministic and emits a USTX 0.9 subset. Project ticks are rounded
 to 480 PPQ with warnings; millisecond pitch positions are derived from the
 authoritative tempo map. Unsupported SEAM identity, articulation, routing,
-phoneme, generated-performance, audio-track, and style metadata is reported as
-loss. SEAM dynamics are written as OpenUtau `dyn`; 0.1 dB value quantization,
+phoneme overrides, generated-performance, audio-track, and style metadata is
+reported as loss. Valid Japanese phone hints are written in OpenUtau's
+terminal bracket syntax; other SEAM hints are reported as losses. SEAM dynamics
+are written as OpenUtau `dyn`; 0.1 dB value quantization,
 480-PPQ tick collisions and interpolation differences between sparse points
 are explicitly reported. A nonzero gain closer to silence than to OpenUtau's
 minimum nonzero level is exported as its `-240` silence sentinel with a loss.

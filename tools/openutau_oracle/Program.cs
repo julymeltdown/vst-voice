@@ -24,8 +24,10 @@ internal static class Program {
         if (args.Length == 2 && args[0] == "--emit-fixture") return EmitFixture(args[1], false, false);
         if (args.Length == 2 && args[0] == "--emit-curve-fixture") return EmitFixture(args[1], true, false);
         if (args.Length == 2 && args[0] == "--emit-multiline-fixture") return EmitFixture(args[1], false, true);
+        if (args.Length == 2 && args[0] == "--emit-hint-fixture") return EmitFixture(args[1], false, false, true);
         if (args.Length == 3 && args[0] == "--compare-pitch") return ComparePitch(args[1], args[2]);
         if (args.Length == 3 && args[0] == "--compare-dynamics") return CompareDynamics(args[1], args[2]);
+        if (args.Length == 3 && args[0] == "--compare-hint") return CompareHint(args[1], args[2]);
         if (args.Length >= 2 && args[1] == "--midi") return ReadMidi(args[0]);
         if (args.Length < 1) {
             Console.Error.WriteLine("usage: seam_ustx_oracle FILE.ustx");
@@ -33,11 +35,50 @@ internal static class Program {
             Console.Error.WriteLine("       seam_ustx_oracle --emit-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-curve-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-multiline-fixture NEW_FILE.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --emit-hint-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-pitch SOURCE.ustx ROUNDTRIP.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-dynamics SOURCE.ustx ROUNDTRIP.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --compare-hint SOURCE.ustx ROUNDTRIP.ustx");
             return 2;
         }
         return ReadUstx(args[0]);
+    }
+
+    // Compare the notes passed to OpenUtau's phonemizer, not just serialized
+    // lyric text. ToPhonemizerNote is internal to OpenUtau.Core, so invoke it
+    // reflectively without copying its bracket-hint parsing into this oracle.
+    private static int CompareHint(string sourcePath, string roundTripPath) {
+        try {
+            var source = Ustx.Load(sourcePath);
+            var roundTrip = Ustx.Load(roundTripPath);
+            var sourceParts = source.parts.OfType<UVoicePart>().ToList();
+            var roundTripParts = roundTrip.parts.OfType<UVoicePart>().ToList();
+            var sourceNotes = sourceParts.Count == 1 ? sourceParts[0].notes.ToList() : new List<UNote>();
+            var roundTripNotes = roundTripParts.Count == 1 ? roundTripParts[0].notes.ToList() : new List<UNote>();
+            if (sourceParts.Count != 1 || roundTripParts.Count != 1 ||
+                sourceNotes.Count != roundTripNotes.Count)
+                throw new InvalidDataException("Expected equal note counts in one voice part");
+            var method = typeof(UNote).GetMethod("ToPhonemizerNote",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (method == null) throw new MissingMethodException("OpenUtau UNote.ToPhonemizerNote");
+            int hinted = 0;
+            for (int index = 0; index < sourceNotes.Count; index++) {
+                var original = (OpenUtau.Api.Phonemizer.Note)method.Invoke(
+                    sourceNotes[index], new object[] { source.tracks[sourceParts[0].trackNo], sourceParts[0] });
+                var exported = (OpenUtau.Api.Phonemizer.Note)method.Invoke(
+                    roundTripNotes[index], new object[] { roundTrip.tracks[roundTripParts[0].trackNo], roundTripParts[0] });
+                if (original.lyric != exported.lyric || original.phoneticHint != exported.phoneticHint)
+                    throw new InvalidDataException("Phonemizer lyric or hint changed at note " + index);
+                if (!string.IsNullOrEmpty(original.phoneticHint)) hinted++;
+            }
+            if (hinted == 0) throw new InvalidDataException("No phonetic hint was compared");
+            Console.WriteLine("hintedNotes=" + hinted);
+            Console.WriteLine("HINT_COMPARE_OK");
+            return 0;
+        } catch (Exception error) {
+            Console.Error.WriteLine("HINT_COMPARE_FAILED: " + error);
+            return 1;
+        }
     }
 
     // Compare the actual OpenUtau UCurve.Sample values on its five-tick render
@@ -147,7 +188,8 @@ internal static class Program {
         return field;
     }
 
-    private static int EmitFixture(string path, bool withCurve, bool withMultilineComment) {
+    private static int EmitFixture(string path, bool withCurve, bool withMultilineComment,
+                                   bool withPhoneHint = false) {
         try {
             var tuningField = ResolveTuningField();
             var project = Ustx.Create();
@@ -165,7 +207,7 @@ internal static class Program {
                 position = 960, duration = 960 };
             var first = UNote.Create();
             first.position = 0; first.duration = 480; first.tone = 60;
-            first.lyric = "あ";
+            first.lyric = withPhoneHint ? "あ[k a]" : "あ";
             // `tuning` was introduced after USTX 0.7; leave old model types
             // untouched, but exercise it when the historical assembly has it.
             tuningField?.SetValue(first, 25);

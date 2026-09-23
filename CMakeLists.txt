@@ -271,7 +271,7 @@ add_library(seam_interchange
   libs/seam-interchange/src/ustx_codec.cpp
   libs/seam-interchange/src/ustx_project_conversion.cpp)
 target_include_directories(seam_interchange PUBLIC libs/seam-interchange/include)
-target_link_libraries(seam_interchange PUBLIC seam_application seam_formats seam_domain seam_core)
+target_link_libraries(seam_interchange PUBLIC seam_application seam_formats seam_domain seam_phonemizer seam_core)
 seam_apply_compiler_options(seam_interchange)
 
 add_library(seam_application

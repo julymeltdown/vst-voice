@@ -2,6 +2,7 @@
 
 #include "seam/domain/note.hpp"
 #include "seam/domain/dynamics_automation.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -84,6 +85,47 @@ void addIssue(std::vector<UstxIssue>& issues, UstxIssueSeverity severity,
   // unbounded report. Neither import nor export may publish a partial report.
   if (issues.size() <= std::min<std::size_t>(limits.maximumNodes, 4'096U))
     issues.push_back({severity, std::move(path), std::move(message)});
+}
+
+struct ImportedLyric final {
+  std::string visible;
+  std::optional<std::string> hint;
+};
+
+ImportedLyric importLyricHint(std::string_view raw, domain::Language language,
+                             std::string_view path, std::vector<UstxIssue>& issues,
+                             const UstxLimits& limits) {
+  ImportedLyric result{std::string{raw}, std::nullopt};
+  const auto open = raw.find('[');
+  const auto close = raw.rfind(']');
+  if (open == std::string_view::npos || close == std::string_view::npos || close <= open)
+    return result;
+  // OpenUtau's UNote.ToPhonemizerNote removes bracketed text before
+  // phonemization. Only a single terminal bracket group is byte-stable when
+  // SEAM later re-exports the visible lyric plus its typed phone hint.
+  const auto nested = raw.find_first_of("[]", open + 1U);
+  if (close != raw.size() - 1U || nested != close ||
+      raw.substr(0U, open).find_first_of("[]") != std::string_view::npos ||
+      raw.substr(open, close - open).find('\n') != std::string_view::npos) {
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".lyric",
+             "complex OpenUtau bracketed phonetic hint was retained as raw lyric, not applied", limits);
+    return result;
+  }
+  result.visible = std::string{raw.substr(0U, open)};
+  auto hint = raw.substr(open + 1U, close - open - 1U);
+  const auto whitespace = [](char value) {
+    return value == ' ' || value == '\t' || value == '\r' || value == '\n';
+  };
+  while (!hint.empty() && whitespace(hint.front())) hint.remove_prefix(1U);
+  while (!hint.empty() && whitespace(hint.back())) hint.remove_suffix(1U);
+  if (language != domain::Language::Japanese ||
+      !phonemizer::parseJapanesePhoneHint(hint)) {
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".lyric",
+             "OpenUtau phonetic hint was removed from the visible lyric but is not supported by the selected SEAM language", limits);
+    return result;
+  }
+  result.hint = std::string{hint};
+  return result;
 }
 
 core::Result<std::int64_t> scaleTick(std::int64_t value, std::int64_t source,
@@ -511,8 +553,11 @@ core::Result<UstxProjectDraft> importUstxProject(
       const auto priorEnd = earlier == priorNoteEnds.begin() ? -1 : (earlier - 1)->second;
       auto noteStart = scaleTick(inputNote.position.value(), kUstxPpq, kSeamPpq, "ustx.voice_parts.notes.position", issues, limits); if (!noteStart) return core::Result<Output>{noteStart.error()};
       auto noteDuration = scaleTick(inputNote.duration.value(), kUstxPpq, kSeamPpq, "ustx.voice_parts.notes.duration", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()}; if (noteDuration.value() <= 0) return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX note duration rounded to zero");
-      const auto lyric = domain::fromUtf8(inputNote.lyric); if (!lyric) return core::Result<Output>{lyric.error()};
+      const auto importedLyric = importLyricHint(inputNote.lyric, request.language,
+                                                 notePath, issues, limits);
+      const auto lyric = domain::fromUtf8(importedLyric.visible); if (!lyric) return core::Result<Output>{lyric.error()};
       auto [token, note] = factory.makeNote(time::Tick{noteStart.value()}, time::Tick{noteDuration.value()}, inputNote.tone, lyric.value(), request.language);
+      note.phoneticHint = importedLyric.hint;
       if (inputNote.hasVibrato && inputNote.vibrato.length > 0.0) {
         note.vibrato.enabled = true;
         note.vibrato.startFraction = static_cast<float>(std::clamp(1.0 - inputNote.vibrato.length / 100.0, 0.0, 1.0));
@@ -706,6 +751,15 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         auto notePosition = scaleTick(note.startTick.value(), project.ppq(), kUstxPpq, "project.note.startTick", issues, limits); if (!notePosition) return core::Result<Output>{notePosition.error()};
         auto noteDuration = scaleTick(note.durationTick.value(), project.ppq(), kUstxPpq, "project.note.durationTick", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()};
         UstxNote exported{time::Tick{notePosition.value()}, time::Tick{noteDuration.value()}, note.midiKey, domain::toUtf8(lyric->second->surface), 0.0, {}, false, {}, false};
+        if (note.phoneticHint.has_value()) {
+          const auto safeJapaneseHint = lyric->second->language == domain::Language::Japanese &&
+              exported.lyric.find_first_of("[]") == std::string::npos &&
+              phonemizer::parseJapanesePhoneHint(*note.phoneticHint) &&
+              exported.lyric.size() + note.phoneticHint->size() + 2U <= limits.maximumScalarBytes;
+          if (safeJapaneseHint) exported.lyric += "[" + *note.phoneticHint + "]";
+          else addIssue(issues, UstxIssueSeverity::Loss, notePath + ".phoneticHint",
+                        "SEAM phone hint cannot be represented as a Japanese OpenUtau lyric hint and was omitted", limits);
+        }
         for (std::size_t pointIndex = 0U; pointIndex < pitchPoints.size(); ++pointIndex) {
           const auto& point = pitchPoints[pointIndex];
           if (point.tick > note.endTick() || (point.tick < note.startTick && pickupOwners[pointIndex] != noteNumber)) continue;
@@ -729,7 +783,7 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
           exported.vibrato.shift = static_cast<double>(note.vibrato.phaseTurns) * 100.0;
         }
         part.notes.push_back(std::move(exported));
-        if (note.articulation != domain::NoteArticulation::Normal || note.slurGroup.has_value() || note.phoneticHint.has_value()) addIssue(issues, UstxIssueSeverity::Loss, "project.note[" + std::to_string(noteNumber) + "]", "SEAM articulation/slur/phonetic hint is not represented in USTX", limits);
+        if (note.articulation != domain::NoteArticulation::Normal || note.slurGroup.has_value()) addIssue(issues, UstxIssueSeverity::Loss, notePath, "SEAM articulation/slur is not represented in USTX", limits);
       }
       if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.formantAutomation.points().empty() || !region.performance.ownership.empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, formant, manual-ownership and generated-performance metadata is not represented in USTX", limits);
       const auto requiredDuration = part.notes.empty() ? 0 : std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->position.value() + std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->duration.value();

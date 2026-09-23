@@ -90,6 +90,18 @@ The tool allows a missing `UNote.tuning` field only for historical USTX 0.6
 and 0.7; a missing field in 0.8 or later fails rather than silently weakening
 the pitch comparison.
 
+`--emit-hint-fixture NEW_FILE.ustx` uses the same source-model serializer but
+sets the first lyric to `あ[k a]`. The pinned OpenUtau build emits this as an
+unquoted plain scalar. The checked-in result and exact hash are documented in
+`tests/fixtures/ustx/README.md`; it is not a GUI-save receipt.
+
+`--compare-hint SOURCE.ustx ROUNDTRIP.ustx` invokes the pinned OpenUtau
+`UNote.ToPhonemizerNote` method on both loaded files and compares the visible
+lyric and extracted phone hint for every note in their single voice part.
+It requires at least one hinted note. `HINT_COMPARE_OK` is evidence about
+OpenUtau's phonemizer input, not about identical rendered audio or singer
+availability.
+
 To compare a source and SEAM-round-tripped USTX with OpenUtau's own authored
 pitch sampler, run
 `seam_openutau_oracle.dll --compare-pitch SOURCE.ustx ROUNDTRIP.ustx`.
