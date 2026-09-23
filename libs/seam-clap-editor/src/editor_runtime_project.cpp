@@ -574,47 +574,4 @@ core::Result<void> EditorRuntime::setHostStartOffset(time::Tick tick) {
   return result;
 }
 
-core::Result<authoring::InterchangeImportDraft>
-EditorRuntime::prepareInterchangeImport(const std::filesystem::path& source,
-                                        authoring::InterchangeImportRequest request) const {
-  using Output = authoring::InterchangeImportDraft;
-  std::lock_guard lock(mutex_);
-  if (authoring_ == nullptr) {
-    return core::failure<Output>(core::ErrorCode::InvalidState,
-                                 "Interchange import requires an initialized editor session");
-  }
-  // The draft is built with a factory seeded past this document's identifiers, so accepting it
-  // cannot allocate an id the live project already used. Import never touches the live document:
-  // a rejected conversion has to leave the current song exactly as it was.
-  application::ProjectFactory draftFactory{
-      authoring_->document().factory().nextIdValue()};
-  return authoring::InterchangeService{}.importFile(source, draftFactory, std::move(request));
-}
-
-core::Result<void> EditorRuntime::acceptInterchangeImport(
-    authoring::InterchangeImportDraft draft) {
-  // Repairing through replaceProject is deliberate: it is the same adoption path a host-provided
-  // project takes, so an imported score is refreshed, rebound and repainted exactly like one, and
-  // an imported document cannot silently inherit the previous session's bounce authority.
-  auto replaced = replaceProject(std::move(draft.project));
-  if (!replaced) return replaced;
-  dirty_ = authoring_->document().dirty();
-  controller_->setDirty(dirty_);
-  authoring_->handleDocumentChanged();
-  requestRepaint();
-  return core::success();
-}
-
-core::Result<authoring::InterchangeExportReceipt> EditorRuntime::exportInterchange(
-    authoring::InterchangeExportRequest request) const {
-  std::lock_guard lock(mutex_);
-  if (authoring_ == nullptr) {
-    return core::failure<authoring::InterchangeExportReceipt>(
-        core::ErrorCode::InvalidState,
-        "Interchange export requires an initialized editor session");
-  }
-  return authoring::InterchangeService{}.exportFile(
-      authoring_->document().session().project(), std::move(request));
-}
-
 }  // namespace seam::clap_editor

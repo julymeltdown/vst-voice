@@ -80,9 +80,17 @@ def main() -> int:
             "ConfigureProjectOutputCommand",
             "SetHostStartOffsetCommand",
             "setRenderQuality",
+        ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-clap-editor/src/editor_runtime_interchange.cpp",
+        [
             # U32 requires the embedded editor to share the standalone interchange boundary, not a
             # second conversion path: a draft import that the host reviews and explicitly accepts,
-            # and a create-new export that cannot mutate the live song.
+            # and a create-new export that cannot mutate the live song. These live in their own
+            # translation unit so no single adapter file has to exceed the 600-line limit the
+            # CLAP authoring-adapter gate enforces; the required token set is unchanged.
             "InterchangeService{}.importFile",
             "InterchangeService{}.exportFile",
             "acceptInterchangeImport",
