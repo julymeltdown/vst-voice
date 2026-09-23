@@ -36,8 +36,10 @@ codec and conversion path, not the earlier creator-study Python bridge.
   Custom `dyn` descriptors, duplicate/unsupported curves and curves outside
   the part are omitted with explicit losses.
 
-Plain scalars such as OpenUtau's `+~` and `+*` extenders, `2nd`, `Chorus!` and
-`a*b` are accepted; `&`, `*` and `!` are rejected as YAML operators only at
+Plain scalars such as OpenUtau's `+~` and `+*` extenders, `E4`, `1-2`,
+`2024-01-01`, `2nd`, `Chorus!` and `a*b` are accepted. A whole-token decimal
+grammar match that overflows or is non-finite still rejects; `&`, `*` and `!`
+are rejected as YAML operators only at
 node start, including inside flow collections. The reader rejects
 aliases/anchors/tags, multiple documents, duplicate keys,
 tabs in indentation, malformed flow syntax, non-finite numbers, invalid UTF-8,
@@ -62,9 +64,11 @@ authoritative tempo map. Unsupported SEAM identity, articulation, routing,
 phoneme overrides, generated-performance, audio-track, and style metadata is
 reported as loss. Valid Japanese phone hints are written in OpenUtau's
 terminal bracket syntax; other SEAM hints are reported as losses. SEAM dynamics
-are written as OpenUtau `dyn`. Nonempty curves get part-start/end anchors
-because SEAM holds endpoint gain while OpenUtau defaults to 0 dB outside the
-explicit curve span. A visible SEAM lyric containing bracketed text is
+are written as OpenUtau `dyn`. Nonempty curves get part-start and final
+render-grid anchors after rounded notes have fixed the part duration: SEAM
+holds endpoint gain while OpenUtau defaults to 0 dB outside the explicit
+curve span. A non-grid trailing part tick creates no extra unity-gain sample
+on import. A visible SEAM lyric containing bracketed text is
 reported as a loss because OpenUtau interprets that text as a hint. 0.1 dB value quantization,
 480-PPQ tick collisions and interpolation differences between sparse points
 are explicitly reported. A nonzero gain closer to silence than to OpenUtau's

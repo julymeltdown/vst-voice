@@ -99,6 +99,11 @@ unquoted plain scalar. The checked-in result and exact hash are documented in
 unquoted `+~` and `+*` note lyrics and a `Chorus!` track name. This exercises
 ordinary YAML plain scalars that a line-wide operator ban would reject.
 
+`--emit-numeric-text-fixture NEW_FILE.ustx` uses the same pinned serializer
+to write unquoted `E4` and `1-2` lyrics and a `2024-01-01` part name. These
+look numeric but are YAML strings; their checked-in fixture detects a parser
+that rejects by prefix or character set instead of whole-token grammar.
+
 `--compare-hint SOURCE.ustx ROUNDTRIP.ustx` invokes the pinned OpenUtau
 `UNote.ToPhonemizerNote` method on both loaded files and compares the visible
 lyric and extracted phone hint for every note in their single voice part.
@@ -124,7 +129,8 @@ or identical editing points between render-grid samples.
 `--assert-held-dynamics SEAM_EXPORT.ustx AUTHORED_PART_DURATION` loads a
 SEAM-authored one-point 0.5-gain curve in OpenUtau and checks its own
 `UCurve.Sample` is -60 (0.1 dB units) on every five-tick position through the
-authored part duration. Pass the serialized part duration, not the loaded
+authored part's last render-grid tick. Pass the serialized part duration,
+including an off-grid final tick if present, not the loaded
 OpenUtau `Duration`: OpenUtau can extend the part to a bar boundary during
 load. `HELD_DYNAMICS_OK` verifies the edge anchors, not arbitrary curves.
 

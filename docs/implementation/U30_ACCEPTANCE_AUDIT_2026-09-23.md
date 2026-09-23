@@ -194,8 +194,52 @@ follow-up addresses those findings without touching GitHub CI:
   this work is on `codex/production-readiness-completion`, not `master`.
 
 Wider real-world YAML, actual OpenUtau GUI behavior, executable singer mapping
-and rendered-audio comparison remain unverified. The read-only peer has not
-re-reviewed these fixes, and local tests are not its sign-off.
+and rendered-audio comparison remain unverified. At this point the peer had
+not re-reviewed these fixes; the subsequent review is recorded below.
+
+## 2026-09-24 second peer-review follow-up
+
+The read-only follow-up on `e1e1a207` confirmed the six earlier findings
+were addressed, but identified three residuals. Its CLI probes used a binary
+built before that commit, although the observed parser behavior matched the
+source; it did not rebuild, run CTest or run the .NET oracle. The local
+changes below answer the residuals, without promoting U30 or touching
+GitHub CI:
+
+- Numeric-looking lyrics and part names are strings unless the entire token
+  matches decimal syntax. Only a matching token that failed finite/range
+  parsing rejects. In particular, `E4`, `e5`, `1E`, `1e`, `1-2`, `1.2.3`
+  and `2024-01-01` import; true overflow/underflow controls still reject.
+  The pinned OpenUtau serializer emitted a ninth fixture with unquoted `E4`,
+  `1-2` and `2024-01-01` (SHA-256
+  `9a8edf4a0da064f47003b32a21a84d95dbcdedd487eb19b8f79a1e07bb2ba126`).
+  Pinned `Ustx.Load` returned `ORACLE_OK`; the production CLI import and
+  export passed the pinned 18-point pitch oracle with 0.160039 cents maximum
+  error. The exported score SHA-256 was
+  `7ccf8e0c3110248b20577d278783c48fbc4120a10a7b19015cf0608f403a0e7d`.
+- The SEAM dynamics end anchor is now added only after separately rounded
+  note positions/durations can extend the USTX part. A constructed SEAM
+  score with 1,918 SEAM ticks of region duration and a note at tick 1 for
+  1,917 ticks exported a 960-tick USTX part, reported the rounding/extension
+  warnings, and anchored `dyn` at its final 960-tick render-grid position.
+  Pinned OpenUtau `UCurve.Sample` held -60 (0.1 dB units) for all 193 grid
+  samples; export SHA-256
+  `905d452f0c537ed80af1155341d47576844ba7e6d71adb1fb74cbf7887aa3811`.
+- If a part ends off the five-tick grid, the synthesized end anchor uses its
+  final in-part render-grid tick. Import no longer invents a unity-gain point
+  in a shorter-than-five-tick tail. A 961-tick SEAM-authored USTX part used
+  an anchor at tick 960, passed the same 193 OpenUtau samples, and reimported
+  with no dynamics loss (one unrelated Japanese hint warning). Export
+  SHA-256:
+  `7c445a071f152f1572a4d63098da17e2f0d06f5c9e40db140d545c80be96aa4c`.
+
+The second peer review predates these residual fixes. It is not independent
+sign-off on them. Runtime checks are limited to the stated constructed scores
+and serializer fixtures, not GUI open/save or audible equivalence.
+Final local regression after the second follow-up: Release `seam_tests`
+1,055/1,055; focused Release interchange/score-export CTest 4/4; focused
+Debug and sanitizer USTX CTest 1/1 each; local license auditor PASS with
+`--allow-non-master`. GitHub CI was not run or changed.
 
 ## Work required before U30 acceptance
 

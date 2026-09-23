@@ -26,6 +26,7 @@ internal static class Program {
         if (args.Length == 2 && args[0] == "--emit-multiline-fixture") return EmitFixture(args[1], false, true);
         if (args.Length == 2 && args[0] == "--emit-hint-fixture") return EmitFixture(args[1], false, false, true);
         if (args.Length == 2 && args[0] == "--emit-extender-fixture") return EmitFixture(args[1], false, false, false, true);
+        if (args.Length == 2 && args[0] == "--emit-numeric-text-fixture") return EmitFixture(args[1], false, false, false, false, true);
         if (args.Length == 3 && args[0] == "--compare-pitch") return ComparePitch(args[1], args[2]);
         if (args.Length == 3 && args[0] == "--compare-dynamics") return CompareDynamics(args[1], args[2]);
         if (args.Length == 3 && args[0] == "--assert-held-dynamics") {
@@ -45,6 +46,7 @@ internal static class Program {
             Console.Error.WriteLine("       seam_ustx_oracle --emit-multiline-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-hint-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-extender-fixture NEW_FILE.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --emit-numeric-text-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-pitch SOURCE.ustx ROUNDTRIP.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-dynamics SOURCE.ustx ROUNDTRIP.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --assert-held-dynamics SEAM_EXPORT.ustx AUTHORED_PART_DURATION");
@@ -99,12 +101,13 @@ internal static class Program {
             if (parts.Count != 1) throw new InvalidDataException("Expected one voice part");
             var curve = parts[0].curves.FirstOrDefault(c => c.abbr == Ustx.DYN);
             if (curve == null) throw new InvalidDataException("Missing dyn curve");
+            int renderEnd = authoredDuration - authoredDuration % UCurve.interval;
             if (authoredDuration <= 0 || authoredDuration > parts[0].Duration ||
-                curve.xs.Count == 0 || curve.xs.Last() != authoredDuration)
-                throw new InvalidDataException("Curve is not anchored at the authored part duration");
+                curve.xs.Count == 0 || curve.xs.Last() != renderEnd)
+                throw new InvalidDataException("Curve is not anchored at the authored part's last render-grid tick");
             curve.descriptor ??= project.expressions[Ustx.DYN];
             int samples = 0;
-            for (int tick = 0; tick <= authoredDuration; tick += UCurve.interval) {
+            for (int tick = 0; tick <= renderEnd; tick += UCurve.interval) {
                 if (curve.Sample(tick) != -60)
                     throw new InvalidDataException("Held gain became " + curve.Sample(tick) + " at tick " + tick);
                 samples++;
@@ -226,7 +229,8 @@ internal static class Program {
     }
 
     private static int EmitFixture(string path, bool withCurve, bool withMultilineComment,
-                                   bool withPhoneHint = false, bool withExtenders = false) {
+                                   bool withPhoneHint = false, bool withExtenders = false,
+                                   bool withNumericText = false) {
         try {
             var tuningField = ResolveTuningField();
             var project = Ustx.Create();
@@ -240,11 +244,11 @@ internal static class Program {
             project.tracks[0].Volume = -3;
             project.tracks[0].Pan = 0.25;
 
-            var part = new UVoicePart { name = "Verse", trackNo = 0,
+            var part = new UVoicePart { name = withNumericText ? "2024-01-01" : "Verse", trackNo = 0,
                 position = 960, duration = 960 };
             var first = UNote.Create();
             first.position = 0; first.duration = 480; first.tone = 60;
-            first.lyric = withExtenders ? "+~" : withPhoneHint ? "あ[k a]" : "あ";
+            first.lyric = withNumericText ? "E4" : withExtenders ? "+~" : withPhoneHint ? "あ[k a]" : "あ";
             // `tuning` was introduced after USTX 0.7; leave old model types
             // untouched, but exercise it when the historical assembly has it.
             tuningField?.SetValue(first, 25);
@@ -254,7 +258,7 @@ internal static class Program {
             part.notes.Add(first);
             var second = UNote.Create();
             second.position = 480; second.duration = 480; second.tone = 62;
-            second.lyric = withExtenders ? "+*" : "い";
+            second.lyric = withNumericText ? "1-2" : withExtenders ? "+*" : "い";
             second.pitch.AddPoint(new PitchPoint(0, 0));
             part.notes.Add(second);
             if (withCurve) {

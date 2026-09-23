@@ -709,6 +709,37 @@ TEST_CASE("SEAM dynamics exports as typed USTX gain with quantization loss") {
         (interchange::UstxDynamicsPoint{time::Tick{240}, -60}));
   CHECK(heldDecoded.value().parts[0].dynamics[2] ==
         (interchange::UstxDynamicsPoint{time::Tick{960}, -60}));
+
+  region->durationTick = time::Tick{1922}; // USTX part ends at off-grid tick 961.
+  const auto offGridPart = interchange::exportUstxProject(project); CHECK(offGridPart);
+  const auto offGridDecoded = interchange::decodeUstx(offGridPart.value().bytes);
+  CHECK(offGridDecoded);
+  CHECK(offGridDecoded.value().parts[0].duration == time::Tick{961});
+  CHECK(offGridDecoded.value().parts[0].dynamics.back().position == time::Tick{960});
+  const auto offGridImported = interchange::importUstxProject(offGridPart.value().bytes, factory);
+  CHECK(offGridImported);
+  CHECK(!hasLossAt(offGridImported.value().issues, "ustx.voice_parts[0].curves"));
+  CHECK_NEAR(offGridImported.value().project.vocalTracks().front().regions.front()
+                 .dynamicsAutomation.valueAt(time::Tick{1922}),
+             std::pow(10.0, -60.0 / 200.0), 1e-5);
+
+  auto roundedProject = factory.createProject("Rounded note extends part");
+  const auto roundedTrack = factory.addVocalTrack(roundedProject, "Lead");
+  const auto roundedRegionId = factory.addRegion(roundedProject, roundedTrack, "Verse",
+                                                 time::Tick{0}, time::Tick{1918});
+  auto* roundedRegion = roundedProject.findRegion(roundedRegionId);
+  CHECK(roundedRegion != nullptr);
+  auto [roundedLyric, roundedNote] = factory.makeNote(time::Tick{1}, time::Tick{1917}, 60U, U"a");
+  roundedRegion->lyrics.push_back(roundedLyric);
+  roundedRegion->notes.push_back(roundedNote);
+  CHECK(roundedRegion->dynamicsAutomation.replacePoints({{time::Tick{480}, 0.5F}}));
+  const auto roundedExport = interchange::exportUstxProject(roundedProject);
+  CHECK(roundedExport);
+  const auto roundedDecoded = interchange::decodeUstx(roundedExport.value().bytes);
+  CHECK(roundedDecoded);
+  CHECK(roundedDecoded.value().parts[0].duration == time::Tick{960});
+  CHECK(roundedDecoded.value().parts[0].dynamics.back().position == time::Tick{960});
+  CHECK(roundedDecoded.value().parts[0].dynamics.back().tenthDecibels == -60);
 }
 
 TEST_CASE("historical OpenUtau folded multiline comments import without treating body as YAML") {
@@ -838,6 +869,15 @@ TEST_CASE("USTX plain scalars accept extenders and punctuation without enabling 
   const auto pinnedImported = seam::interchange::importUstxProject(pinned, factory);
   CHECK(pinnedImported);
   CHECK(seam::domain::toUtf8(pinnedImported.value().project.vocalTracks().front().regions.front().lyrics[0].surface) == "+~");
+  const auto numericText = historicalSerializerFixture("pinned-0.9-numeric-text");
+  CHECK(!numericText.empty());
+  const auto numericDecoded = decodeUstx(numericText); CHECK(numericDecoded);
+  CHECK(numericDecoded.value().parts.front().name == "2024-01-01");
+  CHECK(numericDecoded.value().parts.front().notes[0].lyric == "E4");
+  CHECK(numericDecoded.value().parts.front().notes[1].lyric == "1-2");
+  const auto numericImported = seam::interchange::importUstxProject(numericText, factory);
+  CHECK(numericImported);
+  CHECK(numericImported.value().project.vocalTracks().front().regions.front().name == "2024-01-01");
   const auto checkLyric = [](std::string_view token) {
     std::string source{fixture()};
     const auto marker = source.find("lyric: \"あ\"");
@@ -847,7 +887,8 @@ TEST_CASE("USTX plain scalars accept extenders and punctuation without enabling 
     const auto decoded = decodeUstx(bytes(source)); CHECK(decoded);
     CHECK(decoded.value().parts.front().notes.front().lyric == token);
   };
-  for (const auto lyric : {"+", "+~", "+*", "2nd", ".", "Chorus!", "a*b", "rock&roll"})
+  for (const auto lyric : {"+", "+~", "+*", "2nd", ".", "Chorus!", "a*b", "rock&roll",
+                           "E4", "e5", "1E", "1e", "1-2", "1.2.3", "2024-01-01"})
     checkLyric(lyric);
   std::string source{fixture()};
   const auto marker = source.find("track_name: Lead");
@@ -856,6 +897,14 @@ TEST_CASE("USTX plain scalars accept extenders and punctuation without enabling 
                  "track_name: Chorus!");
   const auto decoded = decodeUstx(bytes(source)); CHECK(decoded);
   CHECK(decoded.value().tracks.front().name == "Chorus!");
+  for (const auto name : {"1-2", "2024-01-01"}) {
+    std::string named{fixture()};
+    const auto partName = named.find("name: Verse"); CHECK(partName != std::string::npos);
+    named.replace(partName, std::string_view{"name: Verse"}.size(),
+                  "name: " + std::string{name});
+    const auto namedDecoded = decodeUstx(bytes(named)); CHECK(namedDecoded);
+    CHECK(namedDecoded.value().parts.front().name == name);
+  }
 }
 
 TEST_CASE("USTX floating scalars preserve decimal grammar and range rejection") {

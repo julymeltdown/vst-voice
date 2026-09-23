@@ -51,6 +51,29 @@ std::string_view trim(std::string_view value) {
   return value;
 }
 
+bool decimalGrammar(std::string_view value) noexcept {
+  std::size_t position = 0U;
+  if (position < value.size() && (value[position] == '+' || value[position] == '-')) ++position;
+  const auto digits = [&]() {
+    const auto start = position;
+    while (position < value.size() && value[position] >= '0' && value[position] <= '9') ++position;
+    return position != start;
+  };
+  const auto wholeDigits = digits();
+  bool fractionalDigits = false;
+  if (position < value.size() && value[position] == '.') {
+    ++position;
+    fractionalDigits = digits();
+  }
+  if (!wholeDigits && !fractionalDigits) return false;
+  if (position < value.size() && (value[position] == 'e' || value[position] == 'E')) {
+    ++position;
+    if (position < value.size() && (value[position] == '+' || value[position] == '-')) ++position;
+    if (!digits()) return false;
+  }
+  return position == value.size();
+}
+
 std::size_t mappingColon(std::string_view value) {
   bool single = false;
   bool doubleQuote = false;
@@ -204,12 +227,10 @@ private:
     if (core::parseFiniteDecimal(token, number)) {
       return Node{number};
     }
-    // A lyric such as +~, +*, 2nd or . is a YAML string, not a malformed
-    // number. Reject only tokens composed entirely of numeric grammar after
-    // the finite parser has failed (overflow, underflow, malformed exponent).
-    const auto numericCandidate = token.find_first_of("0123456789") != std::string_view::npos &&
-        token.find_first_not_of("0123456789.eE+-") == std::string_view::npos;
-    if (numericCandidate)
+    // A lyric such as E4, 1-2, +~ or 2024-01-01 is a YAML string. Only a
+    // complete decimal grammar token that failed the finite parser is an
+    // unsupported number (for example overflow or underflow).
+    if (decimalGrammar(token))
       return fail("USTX numeric scalar is malformed or out of range");
     std::string folded{token};
     std::transform(folded.begin(), folded.end(), folded.begin(), [](char value) {

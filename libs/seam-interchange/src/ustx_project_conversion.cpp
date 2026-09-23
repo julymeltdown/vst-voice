@@ -69,10 +69,10 @@ void importDynamics(const UstxPart& source, domain::VocalRegion& region,
     const auto gain = y == -240 ? 0.0F : static_cast<float>(std::pow(10.0, static_cast<double>(y) / 200.0));
     points.push_back({time::Tick{tick * 2}, gain});
   }
-  if (gridEnd < source.duration.value()) {
-    const auto nextTick = std::min(gridEnd + 5, source.duration.value());
-    points.push_back({time::Tick{nextTick * 2}, 1.0F});
-  }
+  // OpenUtau renders on a five-tick grid. A non-grid part tail has no next
+  // sample, so do not invent a unity-gain point at the final fractional tick.
+  if (source.duration.value() - gridEnd >= 5)
+    points.push_back({time::Tick{(gridEnd + 5) * 2}, 1.0F});
   const auto applied = region.dynamicsAutomation.replacePoints(std::move(points));
   if (!applied)
     addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".curves",
@@ -706,26 +706,13 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
           part.dynamics.push_back({time::Tick{boundedTick}, rounded});
         }
       }
-      // SEAM holds the first/last automation value beyond the authored points.
-      // OpenUtau UCurve.Sample instead returns the default (0 dB) outside its
-      // explicit x range, so anchor both part edges before emitting the curve.
+      // The start is known now; the final part duration can still grow after
+      // separately rounded note positions/durations are emitted below.
       if (!part.dynamics.empty()) {
         if (part.dynamics.front().position > time::Tick{0})
           part.dynamics.insert(part.dynamics.begin(),
                                {time::Tick{0}, encodeGain(region.dynamicsAutomation.valueAt(time::Tick{0}))});
-        if (part.dynamics.back().position < part.duration)
-          part.dynamics.push_back({part.duration,
-                                   encodeGain(region.dynamicsAutomation.valueAt(region.durationTick))});
       }
-      if (dynamicsQuantized)
-        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
-                 "linear gain was quantized to OpenUtau's 0.1 dB dynamics units", limits);
-      if (dynamicsSparse)
-        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
-                 "sparse SEAM linear-gain interpolation differs from OpenUtau's decibel interpolation between curve points", limits);
-      if (dynamicsRoundedTicks)
-        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
-                 "dynamics points collided or exceeded the USTX part after tick rounding", limits);
       std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
       for (const auto& lyric : region.lyrics) lyrics.emplace(lyric.id, &lyric);
       // A pitch point in a rest belongs to the next note as a negative-X
@@ -809,6 +796,24 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
       if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.formantAutomation.points().empty() || !region.performance.ownership.empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, formant, manual-ownership and generated-performance metadata is not represented in USTX", limits);
       const auto requiredDuration = part.notes.empty() ? 0 : std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->position.value() + std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->duration.value();
       if (part.duration.value() < requiredDuration) { part.duration = time::Tick{requiredDuration}; addIssue(issues, UstxIssueSeverity::Warning, "project.vocalTracks.regions.durationTick", "part duration was extended to contain all rounded notes", limits); }
+      // SEAM holds endpoint gain while OpenUtau defaults to 0 dB beyond the
+      // curve. Add the end anchor only after note rounding fixes the final
+      // part duration, and place it on OpenUtau's five-tick render grid.
+      if (!part.dynamics.empty()) {
+        const auto renderEnd = part.duration.value() - part.duration.value() % 5;
+        if (part.dynamics.back().position.value() < renderEnd)
+          part.dynamics.push_back({time::Tick{renderEnd},
+                                   encodeGain(region.dynamicsAutomation.valueAt(region.durationTick))});
+      }
+      if (dynamicsQuantized)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "linear gain was quantized to OpenUtau's 0.1 dB dynamics units", limits);
+      if (dynamicsSparse)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "sparse SEAM linear-gain interpolation differs from OpenUtau's decibel interpolation between curve points", limits);
+      if (dynamicsRoundedTicks)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "dynamics points collided or exceeded the USTX part after tick rounding", limits);
       document.parts.push_back(std::move(part));
     }
   }
