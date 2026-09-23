@@ -121,10 +121,16 @@ def _cpu_model() -> str:
 def _total_ram_bytes() -> int:
     """Physical memory, from the OS rather than an environment variable.
 
-    /proc/meminfo is authoritative on Linux. sysconf is the portable path and is
-    what macOS and the BSDs answer; it reports pages, which is what SC_PHYS_PAGES
-    documents. No API here reports installed-not-usable memory on macOS, so this
-    is total physical RAM, which is what a reference machine records.
+    /proc/meminfo is authoritative on Linux. sysconf answers on macOS and the
+    BSDs in pages, which is what SC_PHYS_PAGES documents. Windows has neither:
+    os.sysconf does not exist there, and the first version of this function
+    called it unconditionally, which took down the Windows leg of the contract
+    suite the moment this collector landed. Each platform is now asked in the
+    way that platform answers.
+
+    No API here reports installed-usable rather than installed-total memory on
+    macOS, so this is total physical RAM, which is what a reference machine
+    records. Every branch returns bytes.
     """
     meminfo = Path("/proc/meminfo")
     if meminfo.is_file():
@@ -134,9 +140,43 @@ def _total_ram_bytes() -> int:
                 if len(fields) >= 2 and fields[1].isdigit():
                     return int(fields[1]) * 1024
         raise ValueError("MemTotal is absent from /proc/meminfo")
-    page_size = os_sysconf("SC_PAGE_SIZE")
-    page_count = os_sysconf("SC_PHYS_PAGES")
-    return page_size * page_count
+    if hasattr(os, "sysconf"):
+        return os_sysconf("SC_PAGE_SIZE") * os_sysconf("SC_PHYS_PAGES")
+    if sys.platform == "win32":
+        return _windows_total_ram_bytes()
+    raise ValueError("host does not expose a total-memory interface")
+
+
+def _windows_total_ram_bytes() -> int:
+    """Installed memory on Windows, via the documented kernel query.
+
+    GlobalMemoryStatusEx reports ullTotalPhys in bytes through a MEMORYSTATUSEX
+    structure. It is called through ctypes rather than read from an environment
+    variable, because a profile has to describe the machine and not its setup.
+    """
+    import ctypes
+
+    class MemoryStatusEx(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatusEx()
+    status.dwLength = ctypes.sizeof(MemoryStatusEx)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        raise ValueError("GlobalMemoryStatusEx failed on this host")
+    total = int(status.ullTotalPhys)
+    if total <= 0:
+        raise ValueError("GlobalMemoryStatusEx reported no physical memory")
+    return total
 
 
 def os_sysconf(name: str) -> int:
