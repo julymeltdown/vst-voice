@@ -2439,3 +2439,48 @@ Verified: CTest 183/183 including the render path; external-beta 189 tests OK;
 source closure, phase12b and phase11 contracts PASS. This changes render output
 for banks that store an analysis, which is why the whole suite was rerun rather
 than the affected target alone.
+
+2026-09-23 — U16 scenario 1 against `79cabbf7`. The suite transposed up only
+(rootMidi 69 rendered to target 72), so a defect at exact integer down-ratios was
+invisible: rendering to a target an exact integer multiple below the source left
+the output at the SOURCE pitch. Measured 440.00 Hz out for a 220.00 Hz target
+(ratio 2.000, +1200.0 cents) and the same for a 110.00 Hz target (ratio 4.000,
++2400.0 cents).
+
+Established by holding the target fixed and varying only the source, so the target
+could not be the explanation: every source from ratio 1.000 to 1.498 transposed
+correctly to within 1 cent, and the source at exactly ratio 2.000 did not. Two
+instruments agreed it was not an analyser artefact — the product analyser reported
+440.00 Hz and an independent FFT peaked at 440.00 Hz with the 220 Hz partial 39 dB
+down. The harness was validated first by reproducing the existing passing test
+exactly.
+
+Cause: the grain read used sourceMark.frame + relative * sourcePerOutput, where
+sourcePerOutput is only the sample-rate ratio and carries no target-pitch scaling.
+A grain was a 1:1 copy holding the source periodicity at its original spacing, and
+the output lost it only where neighbouring grains overlapped enough to cancel — so
+at integer down-ratios, where grains barely overlap, the source pitch survived. That
+is why the failure tracked the ratio rather than the target.
+
+Grains are now resampled by periodSource * sampleRateRatio / targetPeriod, and the
+overlap-add window is sized from the target period to match. Sizing the window from
+the source period was the wrong unit once the read step changed: at ratio 2.52 a
+219-sample window read 0.6 of a source period and the truncation left a subharmonic
+at 87.56 Hz. SEAM_PSOLA_RENDERER_REVISION went 10 -> 11; seam_phase12a_tests caught
+the omission of that bump, because cached PCM from the old renderer would otherwise
+have been reused against a changed renderer.
+
+Verified across all 46 semitone targets from one source: the 42 below the analyser
+1200 Hz ceiling land within about 3 cents including both previously failing integer
+ratios, and the four above the ceiling were confirmed by FFT within 2 cents. The new
+test was checked for teeth by compiling the pre-fix classic_psola.cpp from git and
+linking it into the same probe; it reports +1200.0 cents, which the assertion
+rejects.
+
+An earlier window-only hypothesis was proposed and then refuted by measurement; that
+is recorded rather than quietly dropped. Full account in
+docs/implementation/PSOLA_OCTAVE_DOWN_TRANSPOSITION_2026-09-23.md. U16 scenario 1 is
+now covered. Scenarios 2 and 3 remain: intelligibility and duration for short and
+long vowels, breath/noise and pitch jumps need listening evidence, and truthful
+failure with no hidden fallback path is a code question not yet examined here. Unit
+acceptance is NOT claimed.
