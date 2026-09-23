@@ -136,6 +136,7 @@ TEST_CASE("streaming sample rate conversion rejects energy above the target nyqu
 
 
 TEST_CASE("sample rate converter preserves bounded impulse placement") {
+
   const std::array<float, 4> impulse{0.0F, 1.0F, 0.0F, 0.0F};
   const auto converted = seam::rendering::SampleRateConverter::convert(
       impulse, 44100U, 48000U, seam::rendering::SampleRateQuality::Final);
@@ -144,6 +145,70 @@ TEST_CASE("sample rate converter preserves bounded impulse placement") {
   for (const auto sample : converted.value()) CHECK(std::isfinite(sample));
   CHECK(converted.value()[1] > 0.8F);
 }
+
+
+// The streaming converter feeds the backing-media render path, which supplies
+// audio in chunk-sized pieces. Two invariants matter there and neither was
+// asserted before: an unchanged rate must be a bit-exact pass-through, so a
+// project that never resamples cannot change; and the output length must not
+// depend on how the input happened to be chopped, or a render's duration would
+// depend on internal buffering rather than on the source.
+TEST_CASE("rate conversion is identity at a matching rate and chunk independent") {
+  constexpr std::size_t kFrames = 24000U;
+  std::vector<float> source(kFrames, 0.0F);
+  for (std::size_t frame = 0U; frame < kFrames; ++frame) {
+    source[frame] = static_cast<float>(
+        0.4 * std::sin(2.0 * std::numbers::pi * 440.0 *
+                       static_cast<double>(frame) / 48000.0));
+  }
+
+  // Matching rate: bit-exact, not merely close. Clamping a Final-quality pass
+  // through a filter would be a silent change to every 48 kHz project.
+  const auto identical = seam::rendering::SampleRateConverter::convert(
+      source, 48000U, 48000U, seam::rendering::SampleRateQuality::Final);
+  CHECK(identical);
+  CHECK(identical.value().size() == source.size());
+  for (std::size_t index = 0U; index < source.size(); ++index) {
+    CHECK(identical.value()[index] == source[index]);
+  }
+
+  // Length is the rounded duration at the target rate, for every conversion.
+  struct Case { std::uint32_t sourceRate; std::uint32_t targetRate; };
+  for (const auto& item : std::array<Case, 3>{{{48000U, 44100U}, {44100U, 48000U}, {96000U, 48000U}}}) {
+    std::vector<float> atSource(
+        static_cast<std::size_t>(static_cast<std::uint64_t>(kFrames) * item.sourceRate / 48000U), 0.0F);
+    for (std::size_t frame = 0U; frame < atSource.size(); ++frame) {
+      atSource[frame] = static_cast<float>(
+          0.4 * std::sin(2.0 * std::numbers::pi * 440.0 *
+                         static_cast<double>(frame) / static_cast<double>(item.sourceRate)));
+    }
+    const auto whole = seam::rendering::SampleRateConverter::convert(
+        atSource, item.sourceRate, item.targetRate, seam::rendering::SampleRateQuality::Preview);
+    CHECK(whole);
+    const auto expected = static_cast<std::size_t>(std::llround(
+        static_cast<double>(atSource.size()) * item.targetRate / item.sourceRate));
+    CHECK(whole.value().size() == expected);
+
+    // Same length regardless of chunking, and matching the whole-buffer form.
+    for (const std::size_t chunk : {1U, 7U, 1024U}) {
+      seam::rendering::StreamingSampleRateConverter converter{
+          item.sourceRate, item.targetRate, seam::rendering::SampleRateQuality::Preview};
+      std::size_t produced = 0U;
+      for (std::size_t offset = 0U; offset < atSource.size(); offset += chunk) {
+        const auto count = std::min(chunk, atSource.size() - offset);
+        const auto part = converter.append(
+            std::span<const float>{atSource.data() + offset, count});
+        CHECK(part);
+        produced += part.value().size();
+      }
+      const auto tail = converter.finish();
+      CHECK(tail);
+      produced += tail.value().size();
+      CHECK(produced == expected);
+    }
+  }
+}
+
 
 TEST_CASE("sample rate converter rejects invalid rates") {
   const auto converted = seam::rendering::SampleRateConverter::convert(
