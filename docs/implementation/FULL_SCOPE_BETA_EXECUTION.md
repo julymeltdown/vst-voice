@@ -2503,3 +2503,11 @@ blind-listening scoresheet is still empty.
 U16 unit acceptance is therefore NOT claimed. The plan requires "fixed-corpus
 numerical and listening results" to support the declared default and every exposed
 mode.
+
+Independent confirmation of the PSOLA fix on the down-transposition range. An 18
+target sweep from cascade down to D4 (4 octaves below the source) on the fixed
+renderer: **0 of 18 off by more than 50 cents**, worst case +2.6 cents. The same
+sweep linked against the pre-fix `classic_psola.cpp` compiled from git: **6 of 18
+off**, including 440.00 Hz measured for the 220.00 Hz target. This is a second
+independent probe, not the probe the fix was developed against, and it was run
+after the fact to check the fix did not merely satisfy its own harness.
