@@ -122,7 +122,14 @@ set(SEAM_UNIT_SELECTOR_REVISION 4)
 set(SEAM_TIMING_SOLVER_REVISION 11)
 # U5: vowel-landmark-preserving onset waveform retiming.
 set(SEAM_RAW_RENDERER_REVISION 10)
-set(SEAM_PSOLA_RENDERER_REVISION 10)
+# 11: grains are resampled so one source period occupies one target period. The
+# previous 1:1 read kept the source periodicity inside each grain and only lost it
+# where neighbouring grains overlapped enough to cancel, so integer down-ratios
+# rendered at the source pitch: 440.00 Hz out for a 220.00 Hz target at ratio
+# 2.000, and +2400.0 cents at ratio 4.000. The window is sized from the target
+# period to match the new read step. Bumping this revision is what invalidates
+# cached PCM that the old renderer produced.
+set(SEAM_PSOLA_RENDERER_REVISION 11)
 set(SEAM_SPECTRAL_RENDERER_REVISION 8)
 set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)

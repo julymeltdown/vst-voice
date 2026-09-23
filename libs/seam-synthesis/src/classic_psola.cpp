@@ -226,6 +226,14 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
 
   std::vector<float> overlap(result.samples.size(), 0.0F);
   std::vector<float> weights(result.samples.size(), 0.0F);
+  // Target period in output samples, needed before the loop to size each grain's
+  // read step. Previously computed only after the loop, which is why the grain
+  // read carried no target-pitch scaling at all.
+  const auto loopCents = parameters.pitchCurve.centsAt(preFrames);
+  const auto loopTargetHz = midiToHz(static_cast<double>(targetMidi) +
+                                     static_cast<double>(loopCents) / 100.0);
+  const auto loopTargetPeriod = static_cast<double>(outputSampleRate) /
+                                std::max(1.0, loopTargetHz);
   auto outputMark = static_cast<double>(preFrames);
   std::size_t sourceIndex = 0;
   std::size_t generatedMarks = 0;
@@ -251,8 +259,14 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
     const auto periodSource = std::clamp(
         localPeriod(stableMarks, stableIndex, sourceMedianPeriod),
         sourceMedianPeriod * 0.55, sourceMedianPeriod * 1.8);
+    // The grain is resampled below so that one source period occupies one target
+    // period, which means the window has to span a TARGET period to contain a
+    // whole source period. Sizing it from the source period sized the grain in
+    // the wrong units once the read step changed: at ratio 2.52 a 219-sample
+    // window read only 0.6 of a source period, and the truncated period left a
+    // subharmonic (measured 87.56 Hz for a 174.61 Hz target).
     const auto halfOutput = std::max<time::SampleFrame>(
-        2, static_cast<time::SampleFrame>(std::llround(periodSource * sampleRateRatio)));
+        2, static_cast<time::SampleFrame>(std::llround(loopTargetPeriod)));
     const auto centerOutput = static_cast<time::SampleFrame>(std::llround(outputMark));
     for (time::SampleFrame relative = -halfOutput;
          relative <= halfOutput; ++relative) {
@@ -265,8 +279,16 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
                               static_cast<double>(halfOutput);
       const auto window = static_cast<float>(
           0.5 * (1.0 + std::cos(std::numbers::pi * normalized)));
+      // Resample inside the grain so one source period occupies one TARGET
+      // period. Without this the grain is a 1:1 copy holding the source
+      // periodicity unchanged, and the output only loses it where neighbouring
+      // grains overlap enough to cancel -- which is why integer down-ratios, where
+      // grains barely overlap, kept the source pitch. Measured: 440.00 Hz out for
+      // a 220.00 Hz target at ratio 2.0.
+      const auto grainStep = sourcePerOutput *
+          (periodSource * sampleRateRatio / std::max(1.0, loopTargetPeriod));
       const auto sourcePosition = static_cast<double>(sourceMark.frame) +
-                                  static_cast<double>(relative) * sourcePerOutput;
+                                  static_cast<double>(relative) * grainStep;
       if (parameters.sourceMap &&
           (parameters.sourceMap->voicedAtSource(sourcePosition) == false ||
            parameters.sourceMap->voicedAtSource(parameters.sourceMap->sourceAt(
