@@ -12,6 +12,94 @@ from tools.voice_model_training.vocoder_training_run import train_reviewed_vocod
 
 @unittest.skipUnless(importlib.util.find_spec("torch") and importlib.util.find_spec("numpy"), "Torch/NumPy required")
 class LoopRecoveryTests(unittest.TestCase):
+    def test_noise_excitation_partial_resume_preserves_full_epoch_identity(self):
+        import numpy as np
+        import torch
+
+        class Generator(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gain = torch.nn.Parameter(torch.tensor(.2))
+            def forward(self, mel, f0, noise):
+                return (self.gain * mel[:, :1].repeat_interleave(2, dim=2)
+                        + noise.mean(dim=2, keepdim=True) * .01)
+
+        class Discriminator(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(1, 2, 3, padding=1)
+            def forward(self, pcm):
+                features = self.conv(pcm)
+                return [features.mean(dim=1)], [[features]]
+
+        def setup():
+            torch.manual_seed(42)
+            random.seed(17)
+            np.random.seed(19)
+            generator, discriminator = Generator(), Discriminator()
+            go = torch.optim.AdamW(generator.parameters(), lr=.01)
+            do = torch.optim.AdamW(discriminator.parameters(), lr=.02)
+            return generator, [discriminator], go, do
+
+        def loss(a, b):
+            return (a-b).abs().mean() * (random.random() + float(np.random.random()) + torch.rand(()))
+
+        snapshot = dict(schemaVersion=3, preparationIssues=[], sourcePermissionsAdmitted=True,
+            labelsAdmitted=True, expiresAt=200, datasetSha256="a"*64,
+            sources=[dict(sourceId="s", frameCount=96)],
+            conditioning=[dict(sourceId="s", frameCount=48)],
+            bindings=dict(split=dict(groups=[dict(partition="train", sourceIds=["s"])])))
+        admission = dict.fromkeys(("permission_config", "permission_hash", "label_config", "label_hash", "root",
+            "rights_review", "rights_policy", "rights_anchor", "label_review", "label_policy", "label_anchor",
+            "seed", "held_out_songs"))
+        batches = [dict(sourceId="s", partition="train", datasetSha256="a"*64, profileSha256="b"*64,
+            frameOffset=i*16, mel=torch.full((1, 2, 16), 1.+i), f0=torch.full((1, 16), 220.),
+            pcm=torch.zeros(1, 1, 32), unvoicedFrames=torch.ones(1, 16, dtype=torch.bool),
+            hopSize=2, validSamples=32) for i in range(3)]
+        prefix = "tools.voice_model_training.vocoder_training_run."
+        with tempfile.TemporaryDirectory() as directory, patch(prefix+"time.time", return_value=100), \
+                patch(prefix+"assemble_dataset", return_value=snapshot), \
+                patch(prefix+"require_disk_headroom"), \
+                patch(prefix+"iter_vocoder_batches", side_effect=lambda *a, **k: iter(batches)):
+            root = Path(directory)
+            options = dict(dataset_inputs=admission, conditioning_directory=root,
+                targets={"s": (dict(profile=dict(hopSize=2)), None)}, pcm_sources={},
+                expected_profile_sha256="b"*64, run_metadata=dict(fixture=True),
+                reconstruction_loss=loss, objective_id="noise-fixture", maximum_updates=3,
+                training_segment_frames=16, maximum_checkpoint_total_bytes=1024**2,
+                excitation_noise_id="uv-gated-v1")
+            baseline = setup()
+            expected = train_reviewed_vocoder_epoch(*baseline, output=root/"baseline", **options)
+            interrupted = setup()
+            def stop(event):
+                if event["stage"] == "partial-checkpoint" and event["completedUpdates"] == 2:
+                    raise RuntimeError("fixture interruption after noise cursor")
+            with self.assertRaisesRegex(RuntimeError, "fixture interruption"):
+                train_reviewed_vocoder_epoch(*interrupted, output=root/"interrupted",
+                    recovery_directory=root/"recovery", checkpoint_interval_updates=1,
+                    maximum_recovery_bytes=1024**2, on_progress=stop, **options)
+            saved = root/"recovery/update-000002"
+            digest = hashlib.sha256((saved/"checkpoint.json").read_bytes()).hexdigest()
+            resumed = setup()
+            from tools.voice_model_training.vocoder_optimization import vocoder_gan_step
+            with patch(prefix+"vocoder_gan_step", wraps=vocoder_gan_step) as steps:
+                result = train_reviewed_vocoder_epoch(*resumed, output=root/"resumed",
+                    resume_partial=saved, resume_partial_sha256=digest, **options)
+            self.assertEqual(steps.call_count, 1)
+            for field in ("excitationNoiseId", "excitationDigestAlgorithm",
+                          "excitationRawDrawSha256", "excitationRealizedSha256"):
+                self.assertEqual(result["epoch"][field], expected["epoch"][field], field)
+            self.assertEqual(result["epoch"], expected["epoch"])
+            for original, restored in ((baseline[0], resumed[0]), (baseline[1][0], resumed[1][0])):
+                for key, value in original.state_dict().items():
+                    self.assertTrue(torch.equal(value, restored.state_dict()[key]), key)
+            wrong = setup()
+            with patch(prefix+"vocoder_gan_step") as steps, self.assertRaisesRegex(ValueError, "excitation identity"):
+                train_reviewed_vocoder_epoch(*wrong, output=root/"wrong",
+                    resume_partial=saved, resume_partial_sha256=digest,
+                    **dict(options, excitation_noise_id="zero-v1"))
+            steps.assert_not_called()
+
     def test_interrupt_restore_matches_uninterrupted_segmented_epoch(self):
         import torch
         import numpy as np

@@ -11,6 +11,31 @@ from .__main__ import encode_report
 from .vocoder_batches import segment_frame_ranges
 
 
+EXCITATION_DIGEST_ALGORITHM = "segment-chain-sha256-v1"
+
+
+def excitation_digest_seed(plan, excitation_noise_id, kind):
+    """Start a domain-separated chain bound to the admitted segment plan."""
+    _verify_plan(plan)
+    from .uv_noise_excitation import EXCITATION_IDS
+    if excitation_noise_id not in EXCITATION_IDS or kind not in ("raw", "realized"):
+        raise ValueError("Invalid excitation digest identity")
+    return hashlib.sha256(encode_report(dict(algorithm=EXCITATION_DIGEST_ALGORITHM,
+        planSha256=plan["planSha256"], excitationNoiseId=excitation_noise_id,
+        kind=kind))).hexdigest()
+
+
+def advance_excitation_digest(previous, segment, payload):
+    """Commit one owned segment without needing a serializable SHA-256 state."""
+    _digest(previous)
+    if (not isinstance(segment, dict) or set(segment) !=
+            {"sourceId", "frameOffset", "frameCount", "validSamples"}
+            or not isinstance(payload, bytes) or not payload):
+        raise ValueError("Invalid excitation segment digest input")
+    return hashlib.sha256(bytes.fromhex(previous) + encode_report(segment) +
+                          hashlib.sha256(payload).digest()).hexdigest()
+
+
 def _digest(value):
     if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
         raise ValueError("Recovery identity must be a captured SHA-256")
@@ -77,7 +102,8 @@ def _verify_plan(plan):
         raise ValueError("Recovery plan is not canonical complete source geometry")
 
 
-def partial_cursor(plan, *, completed_updates, generator_loss_sum, discriminator_loss_sum):
+def partial_cursor(plan, *, completed_updates, generator_loss_sum, discriminator_loss_sum,
+                   excitation_noise_id=None, raw_digest=None, realized_digest=None):
     _verify_plan(plan)
     if (type(completed_updates) is not int or not 1 <= completed_updates < len(plan["segments"])
             or any(type(value) not in (int, float) or not math.isfinite(value)
@@ -88,7 +114,17 @@ def partial_cursor(plan, *, completed_updates, generator_loss_sum, discriminator
         identity = row["sourceId"]
         covered[identity] = covered.get(identity, 0) + row["validSamples"]
         updates[identity] = updates.get(identity, 0) + 1
-    return dict(formatId="com.project-seam.vocoder-partial-epoch", schemaVersion=1,
+    if excitation_noise_id is None:
+        if raw_digest is not None or realized_digest is not None:
+            raise ValueError("Non-excitation recovery cannot carry noise digests")
+    else:
+        from .uv_noise_excitation import EXCITATION_IDS
+        if excitation_noise_id not in EXCITATION_IDS:
+            raise ValueError("Unsupported recovery excitation identity")
+        _digest(raw_digest)
+        _digest(realized_digest)
+    cursor = dict(formatId="com.project-seam.vocoder-partial-epoch",
+                schemaVersion=2 if excitation_noise_id is not None else 1,
                 planSha256=plan["planSha256"], datasetSha256=plan["datasetSha256"],
                 profileSha256=plan["profileSha256"], runSha256=plan["runSha256"],
                 completedUpdates=completed_updates, plannedUpdates=len(plan["segments"]),
@@ -96,14 +132,24 @@ def partial_cursor(plan, *, completed_updates, generator_loss_sum, discriminator
                 coveredSourceSamples=covered, sourceUpdates=updates, validSamples=sum(covered.values()),
                 generatorLossSum=generator_loss_sum, discriminatorLossSum=discriminator_loss_sum,
                 epochComplete=False, coverageVerified=False, trainingAdmitted=False, releaseEligible=False)
+    if excitation_noise_id is not None:
+        cursor.update(excitationNoiseId=excitation_noise_id,
+                      excitationDigestAlgorithm=EXCITATION_DIGEST_ALGORITHM,
+                      excitationRawChainSha256=raw_digest,
+                      excitationRealizedChainSha256=realized_digest)
+    return cursor
 
 
 def verify_partial_cursor(cursor, plan):
     if not isinstance(cursor, dict):
         raise ValueError("Recovery cursor must be an object")
     try:
+        noise = cursor["excitationNoiseId"] if cursor.get("schemaVersion") == 2 else None
         expected = partial_cursor(plan, completed_updates=cursor["completedUpdates"],
-            generator_loss_sum=cursor["generatorLossSum"], discriminator_loss_sum=cursor["discriminatorLossSum"])
+            generator_loss_sum=cursor["generatorLossSum"], discriminator_loss_sum=cursor["discriminatorLossSum"],
+            excitation_noise_id=noise,
+            raw_digest=cursor["excitationRawChainSha256"] if noise is not None else None,
+            realized_digest=cursor["excitationRealizedChainSha256"] if noise is not None else None)
     except KeyError as error:
         raise ValueError("Recovery cursor is incomplete") from error
     if encode_report(cursor) != encode_report(expected):

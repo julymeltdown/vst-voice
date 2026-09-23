@@ -98,9 +98,16 @@ class VocoderExportIdentityTests(unittest.TestCase):
         staged['metadata']['run']['settings']=dict(settings(),schemaVersion=5,
             architectureProfile='mini-nsf-512-mrf-v1',trainingSegmentFrames=128,
             objectiveId=multilag,excitationNoiseId='zero-v1')
+        staged['epoch'].update(schemaVersion=2, excitationNoiseId='zero-v1',
+            excitationDigestAlgorithm='segment-chain-sha256-v1',
+            excitationRawDrawSha256='a'*64, excitationRealizedSha256='b'*64)
         exported=export_identity(staged,receipt,profile)
         self.assertEqual(exported['excitationNoiseId'],'zero-v1')
         self.assertEqual(exported['upsample_initial_channel'],512)
+        legacy=copy.deepcopy(staged)
+        legacy['epoch']['schemaVersion']=1
+        del legacy['epoch']['excitationDigestAlgorithm']
+        self.assertEqual(export_identity(legacy,receipt,profile)['excitationNoiseId'],'zero-v1')
         # Mismatched settings/epoch/metadata still reject.
         for mutation in (
             lambda s:s['metadata']['run']['settings'].update(objectiveId=periodic),
@@ -108,6 +115,10 @@ class VocoderExportIdentityTests(unittest.TestCase):
             lambda s:s['metadata'].update(objectiveId=periodic),
             lambda s:s['metadata']['run']['settings'].update(excitationNoiseId='bogus'),
             lambda s:s['metadata']['run']['settings'].update(schemaVersion=4),
+            lambda s:s['epoch'].update(excitationNoiseId='uv-gated-v1'),
+            lambda s:s['epoch'].update(excitationRawDrawSha256='short'),
+            lambda s:s['epoch'].update(excitationDigestAlgorithm='other'),
+            lambda s:s['epoch'].update(schemaVersion=True),
         ):
             broken=copy.deepcopy(staged)
             mutation(broken)

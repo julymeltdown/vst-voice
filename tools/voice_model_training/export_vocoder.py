@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -52,8 +53,25 @@ def export_identity(state, receipt, profile):
             raise ValueError('Variant export requires explicit matching versioned settings')
     if excitation_noise_id is not None:
         from .uv_noise_excitation import EXCITATION_IDS
+        from .vocoder_recovery_cursor import EXCITATION_DIGEST_ALGORITHM
         if excitation_noise_id not in EXCITATION_IDS:
             raise ValueError('Unsupported excitation noise identity')
+        digests = (epoch.get('excitationRawDrawSha256'), epoch.get('excitationRealizedSha256'))
+        if (epoch.get('excitationNoiseId') != excitation_noise_id
+                or any(not isinstance(value, str) or re.fullmatch(r'[0-9a-f]{64}', value) is None
+                       for value in digests)):
+            raise ValueError('Vocoder excitation receipt differs from the captured training settings')
+        # Existing complete schema-1 receipts use SHA-256 over concatenated draws;
+        # new schema-2 receipts use segment-bound resumable chains. Do not silently
+        # interpret one digest format as the other.
+        epoch_schema = epoch.get('schemaVersion', 1)
+        if type(epoch_schema) is not int:
+            raise ValueError('Unsupported vocoder excitation receipt schema')
+        if epoch_schema == 2:
+            if epoch.get('excitationDigestAlgorithm') != EXCITATION_DIGEST_ALGORITHM:
+                raise ValueError('Unsupported vocoder excitation digest algorithm')
+        elif epoch_schema != 1 or 'excitationDigestAlgorithm' in epoch:
+            raise ValueError('Unsupported vocoder excitation receipt schema')
         configuration = dict(configuration, excitationNoiseId=excitation_noise_id)
     if (digest != metadata.get("profileSha256") or digest != epoch.get("profileSha256")
             or epoch.get("formatId") != "com.project-seam.vocoder-epoch-result"

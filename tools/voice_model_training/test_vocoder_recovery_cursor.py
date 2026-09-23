@@ -2,7 +2,8 @@ import copy
 import unittest
 
 from tools.voice_model_training.vocoder_recovery_cursor import (
-    build_recovery_plan, partial_cursor, verify_partial_cursor,
+    advance_excitation_digest, build_recovery_plan, excitation_digest_seed,
+    partial_cursor, verify_partial_cursor,
 )
 
 
@@ -52,3 +53,26 @@ class RecoveryCursorTests(unittest.TestCase):
         changed["segments"].reverse()
         with self.assertRaises(ValueError):
             partial_cursor(changed, completed_updates=1, generator_loss_sum=0., discriminator_loss_sum=0.)
+
+    def test_excitation_cursor_binds_noise_identity_and_segment_digest_chain(self):
+        plan = self.plan()
+        raw = excitation_digest_seed(plan, "uv-gated-v1", "raw")
+        realized = excitation_digest_seed(plan, "uv-gated-v1", "realized")
+        raw = advance_excitation_digest(raw, plan["segments"][0], b"raw-noise")
+        realized = advance_excitation_digest(realized, plan["segments"][0], b"gated-noise")
+        cursor = partial_cursor(plan, completed_updates=1, generator_loss_sum=1.,
+            discriminator_loss_sum=2., excitation_noise_id="uv-gated-v1",
+            raw_digest=raw, realized_digest=realized)
+        self.assertEqual(cursor["schemaVersion"], 2)
+        self.assertEqual(verify_partial_cursor(cursor, plan), cursor)
+        self.assertNotEqual(raw, realized)
+        self.assertNotEqual(raw, advance_excitation_digest(raw, plan["segments"][1], b"raw-noise"))
+        for change in (dict(excitationNoiseId="invalid"),
+                       dict(excitationRawChainSha256="0"),
+                       dict(excitationDigestAlgorithm="other"),
+                       dict(schemaVersion=1)):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                verify_partial_cursor(cursor | change, plan)
+        with self.assertRaises(ValueError):
+            partial_cursor(plan, completed_updates=1, generator_loss_sum=1.,
+                           discriminator_loss_sum=2., raw_digest=raw)

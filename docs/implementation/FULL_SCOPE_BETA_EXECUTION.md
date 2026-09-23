@@ -12,6 +12,21 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-24 — U35 vocoder recovery continuity increment. Schema-2 partial
+checkpoints for `excitationNoiseId` now retain raw-draw and realized-noise
+segment-chain digests bound to the admitted recovery plan. A resumed run checks
+the noise identity, restores model/optimizer/RNG state, and continues the two
+chains rather than recording only the suffix. New complete noise epochs name
+the chain algorithm and use schema 2; export distinguishes them from existing
+schema-1 concatenated-digest receipts and rejects a mismatched or malformed
+noise identity. A real small Torch GAN fixture interrupted after two segments
+resumed with identical complete epoch identity and model weights to an
+uninterrupted run. Forty-three focused recovery, epoch, checkpoint, command and
+export tests pass in the local DiffSinger model environment. The admission in
+this regression is mocked: it does not establish source rights, an authorized
+pilot corpus, a qualified singer, or U35/U36/Beta GO completion. GitHub CI was
+not changed.
+
 2026-09-24 — U30 folded-scalar interoperability increment, local only;
 GitHub CI remains deferred. A sixth 0.9 file emitted by the historical
 OpenUtau serializer contains a folded multiline comment with YAML

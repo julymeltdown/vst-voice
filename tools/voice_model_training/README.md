@@ -1,5 +1,18 @@
 # Original voice model production
 
+Vocoder runs with `excitationNoiseId` now support the same verified partial
+checkpoint resume as other segmented GAN runs. A schema-2 partial cursor stores
+domain-separated raw-draw and realized-noise digest chains through its exact
+completed segment prefix. Resume checks the captured excitation identity,
+restores the complete model/optimizer/RNG state, and advances those chains for
+the remaining segments. New complete noise epochs use schema 2 and record
+`excitationDigestAlgorithm=segment-chain-sha256-v1`; its digest fields are chain
+commitments, not SHA-256 of concatenated PCM/noise bytes. Schema-1 cursors remain
+the unchanged no-excitation format, and complete legacy schema-1 noise receipts
+retain their original concatenated-digest interpretation at export. An interrupted/resumed optimizer run is
+tested against an uninterrupted run for identical epoch identity and weights.
+This is reproducibility infrastructure, not authorization or singer quality.
+
 Vocoder training config schema four adds mandatory `objectiveId` to the schema
 three fields. Choose `nsf-lsgan-logmel-48k80-v1` for the existing objective or
 `nsf-lsgan-logmel-uvperiodic-48k80-v1` for the experimental Japanese-phone

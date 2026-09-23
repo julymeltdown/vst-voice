@@ -14,7 +14,9 @@ from .__main__ import assemble_dataset, encode_report, load_config
 from .vocoder_batches import iter_vocoder_batches, segment_frame_ranges
 from .vocoder_checkpoint import (publish_vocoder_checkpoint, publish_vocoder_partial_checkpoint,
                                 restore_vocoder_partial_checkpoint, _schedulers)
-from .vocoder_recovery_cursor import build_recovery_plan, partial_cursor, verify_partial_cursor
+from .vocoder_recovery_cursor import (advance_excitation_digest, build_recovery_plan,
+                                      excitation_digest_seed, partial_cursor, verify_partial_cursor,
+                                      EXCITATION_DIGEST_ALGORITHM)
 from .vocoder_optimization import vocoder_gan_step
 from .vocoder_reconstruction import evaluate_held_out_reconstruction
 from .gan_checkpoint_storage import require_disk_headroom
@@ -86,10 +88,6 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         from .uv_noise_excitation import EXCITATION_IDS, build_excitation_noise
         if excitation_noise_id not in EXCITATION_IDS:
             raise ValueError('Unsupported excitation noise identity')
-        if resume_partial is not None:
-            # The per-segment noise digests are not yet chained through the
-            # recovery cursor; a resumed epoch would bind only its suffix.
-            raise ValueError('Excitation noise does not yet support partial resume')
     else:
         build_excitation_noise = None
     if recovery_directory is not None:
@@ -211,7 +209,7 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         datasetSha256=snapshot["datasetSha256"], profileSha256=expected_profile_sha256,
         objectiveId=objective_id, labelOrigin=effective_label_origin)
     plan, resume_cursor = None, None
-    if recovery_enabled:
+    if recovery_enabled or excitation_noise_id is not None:
         profiles = [target_inventory[source][0]["profile"] for source in sorted(selected)]
         if any(profile != profiles[0] for profile in profiles):
             raise ValueError("Recovery sources must share one acoustic profile")
@@ -219,7 +217,7 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
                                         sourceSamples=expected[source]) for source in sorted(selected)],
             dataset_sha256=snapshot["datasetSha256"], profile_sha256=expected_profile_sha256,
             run_sha256=hashlib.sha256(encode_report(metadata)).hexdigest(),
-            segment_frames=training_segment_frames, hop_size=profiles[0]["hopSize"])
+            segment_frames=training_segment_frames or 4096, hop_size=profiles[0]["hopSize"])
         if len(plan["segments"]) != planned_updates:
             raise ValueError("Recovery plan update count differs")
         if resume_partial is not None:
@@ -228,6 +226,8 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             if saved.get("formatId") != "com.project-seam.gan-partial-checkpoint":
                 raise ValueError("Partial resume requires a partial-state receipt")
             resume_cursor = verify_partial_cursor(saved["epoch"], plan)
+            if resume_cursor.get("excitationNoiseId") != excitation_noise_id:
+                raise ValueError("Partial resume excitation identity differs from the captured run")
     recovery_bytes, restored = 0, resume_cursor is None
     recovery_written, retained_partials = 0, []
     if recovery_directory is not None:
@@ -239,8 +239,13 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
     report("updates-started", totalUpdates=planned_updates)
     covered, total, gl, dl = {}, 0, 0.0, 0.0
     source_updates, updates = {}, 0
-    excitation_raw_digest = hashlib.sha256()
-    excitation_realized_digest = hashlib.sha256()
+    excitation_raw_digest = (excitation_digest_seed(plan, excitation_noise_id, "raw")
+                             if excitation_noise_id is not None else None)
+    excitation_realized_digest = (excitation_digest_seed(plan, excitation_noise_id, "realized")
+                                  if excitation_noise_id is not None else None)
+    if resume_cursor is not None and excitation_noise_id is not None:
+        excitation_raw_digest = resume_cursor["excitationRawChainSha256"]
+        excitation_realized_digest = resume_cursor["excitationRealizedChainSha256"]
     segment_options = {} if training_segment_frames is None else dict(training_segment_frames=training_segment_frames)
     if excitation_noise_id is not None:
         segment_options['include_unvoiced_frames'] = True
@@ -290,12 +295,16 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             raw, noise = build_excitation_noise(
                 batch['unvoicedFrames'][0].numpy(), excitation_noise_id)
             auxiliary['excitation_noise'] = noise
-            excitation_raw_digest.update(raw.numpy().tobytes())
-            excitation_realized_digest.update(noise.numpy().tobytes())
         result = vocoder_gan_step(generator, discriminators, generator_optimizer, discriminator_optimizer,
             mel=batch["mel"], f0=batch["f0"], pcm=batch["pcm"], hop_size=batch["hopSize"],
             partition="train", reconstruction_loss=reconstruction_loss,
             periodicity_lags=periodicity_lags or (256,), **auxiliary)
+        if build_excitation_noise is not None:
+            segment = plan["segments"][updates]
+            excitation_raw_digest = advance_excitation_digest(
+                excitation_raw_digest, segment, raw.numpy().tobytes())
+            excitation_realized_digest = advance_excitation_digest(
+                excitation_realized_digest, segment, noise.numpy().tobytes())
         check_lifetime()
         count = batch["validSamples"]
         covered[identity] = covered.get(identity, 0) + count
@@ -314,7 +323,10 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
             if not recovery_directory.exists():
                 recovery_directory.mkdir(mode=0o700)
             child = recovery_directory / f"update-{updates:06d}"
-            cursor = partial_cursor(plan, completed_updates=updates, generator_loss_sum=gl, discriminator_loss_sum=dl)
+            cursor = partial_cursor(plan, completed_updates=updates, generator_loss_sum=gl,
+                                    discriminator_loss_sum=dl, excitation_noise_id=excitation_noise_id,
+                                    raw_digest=excitation_raw_digest,
+                                    realized_digest=excitation_realized_digest)
             saved = publish_vocoder_partial_checkpoint(generator, discriminators, generator_optimizer, discriminator_optimizer,
                 child, metadata=state_metadata, recovery_plan=plan, cursor=cursor, schedulers=schedulers,
                 maximum_bytes=maximum_checkpoint_file_bytes, maximum_total_bytes=allowed, before_publish=revalidate)
@@ -348,9 +360,10 @@ only once at complete-epoch coverage. Saved snapshots are not admission authorit
         coveredSourceSamples=covered, epochComplete=True, coverageVerified=True,
         labelOrigin=effective_label_origin, trainingAdmitted=False, releaseEligible=False)
     if excitation_noise_id is not None:
-        epoch.update(excitationNoiseId=excitation_noise_id,
-                     excitationRawDrawSha256=excitation_raw_digest.hexdigest(),
-                     excitationRealizedSha256=excitation_realized_digest.hexdigest())
+        epoch.update(schemaVersion=2, excitationNoiseId=excitation_noise_id,
+                     excitationDigestAlgorithm=EXCITATION_DIGEST_ALGORITHM,
+                     excitationRawDrawSha256=excitation_raw_digest,
+                     excitationRealizedSha256=excitation_realized_digest)
     if training_segment_frames is not None:
         epoch.update(trainingSegmentFrames=training_segment_frames, sourceUpdates=source_updates,
                      trainingGeometry="balanced-contiguous-complete-coverage-v1")
