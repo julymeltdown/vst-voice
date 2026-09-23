@@ -86,5 +86,25 @@ Behaviour is unchanged. This is a translation-unit boundary change plus a build-
 and-test wiring change; no logic, no rendered output, no renderer revision. It
 **advances no roadmap unit and no Beta acceptance criterion.**
 
-It does not fix the other gates that are currently un-wired — only this one had
-actually stopped passing. Surveying the rest for the same trap is a separate task.
+## The survey: was this the only rotted gate?
+
+The same trap was checked everywhere else. Of 28 `scripts/verify_*.py`, nine are not
+referenced by `CMakeLists.txt` or any workflow. Each was run by hand:
+
+| gate | result |
+|---|---|
+| `verify_creator_scope_ratification` | exit 0, PASS |
+| `verify_phase12c_canonical_contract` | exit 0 |
+| `verify_phase12c_live_contracts` | exit 0, PASS |
+| `verify_phase13b_contracts` | exit 0, PASS |
+| `verify_public_windows_standalone_contract` | exit 0, PASS |
+| `verify_usable_alpha_contract` | exit 0, PASS |
+| `verify_full_product_report` | exit 2, requires `--report`/`--candidate` by design |
+| `verify_neural_feasibility_inputs` | exit 2, requires a `record` argument by design |
+| `verify_update_manifest` | exit 2, requires inputs by design |
+
+So the CLAP adapter ceiling was the only un-wired gate that had actually stopped
+passing. The other six pass; the last three are argument-driven instruments that
+cannot be run without a subject and were not silently broken. Wiring the remaining
+gates that take no arguments would be defensible hardening, but it is not a repair
+of an active defect and is deliberately not bundled into this change.
