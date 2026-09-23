@@ -71,7 +71,8 @@ remain explicit losses; the rest of the score can still import. The codec also
 emits a valid `notes: []` for an empty voice part. This is a local capability
 increment, not U30 acceptance.
 
-- Release `seam_tests`: 1,051 passed, 0 failed after this increment.
+- Release `seam_tests`: 1,052 passed, 0 failed after the style-inertness
+  guardrail was added.
 - Release SMF, USTX, interchange-service, and score-export focused CTest:
   4/4 pass. The USTX target includes the
   64-point historical fixture, malformed/custom/unsupported curves, late
@@ -80,13 +81,19 @@ increment, not U30 acceptance.
 - Production CLI import of the historical curve fixture: 10 explicit issues,
   none for `voice_parts[0].curves`. Production CLI export: 5 explicit losses,
   none claiming dynamics were wholly omitted. The exported file loaded via
-  pinned OpenUtau core with `ORACLE_OK`.
+  pinned OpenUtau core with `ORACLE_OK`. Source SHA-256:
+  `5587a9e520fbb1dcc3c01a8dfc47b43638db4d9ca18d288b636c78d01773803c`;
+  exported SHA-256:
+  `88e76a7c9750d034b3d337b8056632992160a5a5796955d57b44205782d38d3c`.
 - The independent OpenUtau `--compare-dynamics` oracle sampled both files on
   289 five-tick positions: maximum difference 0 tenths of a dB,
   `DYNAMICS_COMPARE_OK`.
 
 The oracle compares one controlled serializer-generated score, not arbitrary
 USTX files, custom descriptors, audio renders, or the desktop GUI.
+The requested independent peer review of commit `bda570b` did not run: the
+peer task returned HTTP 429. Local and OpenUtau-oracle checks above are not
+mislabelled as peer sign-off.
 
 ## Work required before U30 acceptance
 
@@ -106,5 +113,18 @@ USTX files, custom descriptors, audio renders, or the desktop GUI.
 4. Obtain independent reproduction of the receipts and hostile-input
    boundary, not only code review; do not infer whole-product, Windows, or
    Beta-GO acceptance from this unit.
+5. Implement an honest voice-color-to-style bridge. OpenUtau's
+   `UTrack.VoiceColorNames` is a palette of singer subbank color names, not
+   the active selection; `clr` expressions choose palette indices at the
+   phoneme level (`UTrack.cs`, `UPhoneme.cs`, `UNote.cs` in the pinned
+   reference). SEAM stores a trusted-bank style ID at track scope. Mapping
+   a palette string directly to `styleSelection.styleId` could choose the
+   wrong bank style and would discard per-phoneme variation. A real bridge
+   needs a pinned source fixture with `clr` choices, exact approved
+   bank-color-to-style resolution, a documented homogeneous/heterogeneous
+   rule, and explicit loss when no safe match exists. The current import
+   leaves style unselected and reports voice colors as a loss. A focused
+   Release/Debug/sanitizer regression now verifies that a two-color palette
+   and a `clr` phoneme expression do not silently select a SEAM style.
 
 GitHub CI was intentionally not used or assessed in this audit.

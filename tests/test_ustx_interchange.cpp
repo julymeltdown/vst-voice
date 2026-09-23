@@ -251,6 +251,26 @@ double upstreamSineWeight(std::string_view shape, double t) {
 
 }  // namespace
 
+TEST_CASE("USTX voice color palettes and phoneme clr stay inert without trusted style resolution") {
+  using namespace seam;
+  std::string source{fixture()};
+  const auto palette = source.find("voice_color_names: [\"\"]"); CHECK(palette != std::string::npos);
+  source.replace(palette, std::string_view{"voice_color_names: [\"\"]"}.size(),
+                 "voice_color_names: [soft, power]");
+  const auto expression = source.find("phoneme_expressions: []"); CHECK(expression != std::string::npos);
+  source.replace(expression, std::string_view{"phoneme_expressions: []"}.size(),
+                 "phoneme_expressions: [{index: 0, abbr: clr, value: 1}]");
+  application::ProjectFactory factory{869200U};
+  const auto imported = interchange::importUstxProject(bytes(source), factory); CHECK(imported);
+  CHECK(imported.value().project.vocalTracks().front().styleSelection.styleId.empty());
+  CHECK(imported.value().project.vocalTracks().front().styleSelection.origin ==
+        domain::VoiceStyleOrigin::Unselected);
+  CHECK(hasLossAt(imported.value().issues, "ustx.tracks[0].voice_color_names"));
+  CHECK(hasLossAt(imported.value().issues,
+                  "ustx.voice_parts[0].notes[0].phoneme_expressions"));
+  CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 2U);
+}
+
 TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   const auto decoded = seam::interchange::decodeUstx(bytes(fixture()));
   CHECK(decoded);

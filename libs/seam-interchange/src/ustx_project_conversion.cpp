@@ -476,7 +476,7 @@ core::Result<UstxProjectDraft> importUstxProject(
     track->solo = source.solo;
     trackIds.push_back(trackId);
     if (!source.voiceColors.empty() && std::any_of(source.voiceColors.begin(), source.voiceColors.end(), [](const auto& value) { return !value.empty(); }))
-      addIssue(issues, UstxIssueSeverity::Loss, "ustx.tracks[" + std::to_string(trackIds.size() - 1U) + "].voice_color_names", "voice colors require an explicit SEAM style choice and were not imported", limits);
+      addIssue(issues, UstxIssueSeverity::Loss, "ustx.tracks[" + std::to_string(trackIds.size() - 1U) + "].voice_color_names", "OpenUtau voice-color palette remained inert; no trusted bank-to-style or phoneme-level clr mapping was applied", limits);
   }
   for (std::size_t partIndex = 0U; partIndex < document.parts.size(); ++partIndex) {
     const auto& source = document.parts[partIndex];
