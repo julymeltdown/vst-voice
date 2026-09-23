@@ -2323,3 +2323,69 @@ Producer candidate import/lineage: added strict candidate loading into the exist
 Producer CLI import: added `import-procedural` with explicit existing workspace, candidate/recipe files, inventory assignment, MIDI layer, operator/time and optional retake predecessor. It delegates to the strict repository import and prints MarkerReview/digest/generation without approval flags or strategy creation. A real shell-free subprocess regression verifies committed retake/lineage recovery and malformed MIDI rejection. Export integration plus CLI help/validate/inspect CTest entries all pass in strict Debug/Release (2.84/1.48 seconds), plus `git diff --check`. Windows subprocess execution, native producer import UI, resumable generation/QC and full Beta GO remain open; changes are local/uncommitted.
 
 Native producer intake: completed the interrupted Studio import integration with Cmd/Ctrl+I metadata/recipe dialogs, selected-row retake binding, strict repository import and inspection clearing. Centralized epoch/generation/row checks now run after each dialog; workspace reopening invalidates prior context. Recording must finish before import. All 15 controller/export cases pass in strict Debug/Release (1.44/0.61 seconds), the Release native Studio executable builds, and `git diff --check` passes. Non-fatal host Xcode filesystem/cache warnings appeared during successful builds; compiler policy was unchanged. Real panel interaction, asynchronous intake/responsiveness, measured QC, consonants/nasal behavior and full Beta GO remain open; changes are local/uncommitted.
+
+2026-09-23 — U15 acoustic analysis contract against `03f82ab5`. The plan names
+`acoustic_analysis.hpp` and `test_audio_conditioning.cpp`; neither existed, and the
+core U15 deliverable was missing. The analyser ran, callers read its voicing
+decisions, and the result was discarded, so renderers and producer QC each derived
+voicing separately and nothing recorded which algorithm reached a conclusion.
+
+Added `AcousticAnalysis`: per-unit voicing spans with measured fundamental and
+confidence, the digest of the exact audio measured, and the algorithm identity.
+Spans are not analysis frames. Frames overlap (a frame at origin s covers
+[s, s + frameSize) while frames are one hop apart), so one span per frame would
+describe the same sample several times, possibly differently. Each frame is given
+the region no later frame also covers and consecutive agreeing frames are merged,
+so spans partition [0, decodedFrames) exactly and a gap or overlap is rejected.
+Self-contradictory records are refused: an unvoiced span reporting a fundamental,
+or a voiced span reporting none.
+
+Measured on an alternating voiced/fricative/voiced fixture: three spans of 200 Hz
+voiced, unvoiced, 240 Hz voiced, with confidence 0.98 / 0.095 / 0.978, and the
+fricative middle reported unvoiced. An earlier revision of this change emitted
+overlapping spans and was caught by its own validation on that fixture, not by
+inspection.
+
+Algorithm identity makes "regenerate derivatives after algorithm changes"
+checkable: a record from a different revision is refused rather than silently
+reinterpreted. The analysis configuration is now single-sourced as
+`producerPitchConfig`, `producerPitchMarkConfig`, `producerAnalysisWork` and
+`producerPitchLimits`; the producer draft path, QC and the analysis all use them.
+Three sites had each written their own copy of the 2048/256, 60-1200 Hz, 0.32
+constants and agreed only by convention — the same shape of duplication that
+produced three separately aliasing resamplers.
+
+Bank QC now consumes the contract. A stored analysis is re-checked against the
+audio present rather than trusted because it parsed: `acoustic-analysis-stale` for
+a record that cannot be trusted for this audio, `acoustic-analysis-mismatch` when
+it binds correctly but disagrees with a fresh analysis. Absence remains
+non-error. The sidecar is located through the same containment helper as audio.
+
+Removed a defect introduced within this work: `analyzeUnitAcoustics` accepted a
+`PitchConfig` defaulting to direct correlation while the producer and QC use FFT, so
+a caller omitting the argument stored a different measurement under the canonical
+algorithm identity. That is the same defect as an analysis that does not say which
+audio it came from, and it is what made the QC round trip disagree with itself.
+The function now has no configuration parameter. Determinism was measured first —
+two analyses of the same input give bit-identical f0 and confidence — so exact
+equality is a fair comparison and the mismatch was a real disagreement.
+
+Fixed alongside, found while closing U15 scenario 3: stored pitch marks are a
+measurement of one specific take and nothing recorded which. Every rule applied to
+a mark was take-independent, so replacing a WAV of the same name and length left
+marks that satisfied all of them while describing audio that no longer existed.
+Measured with the product own analyser on the shipped fixture: stored marks imply
+390.3 Hz while the audio present measures 980.0 Hz, 1594 cents apart, with the
+declared root agreeing with the marks rather than the audio. `BankValidator` now
+raises `pitch-marks-stale` past 300 cents, and `git HEAD` validator was compiled
+into the same probe as a negative control: it reports nothing.
+
+Verified: CTest 183/183; external-beta 189 tests OK; `verify_tracked_source_closure`,
+`verify_phase12b_contracts` and `verify_phase11_contracts` PASS; producer suite
+51/51. Formats recorded in `docs/formats/ACOUSTIC_ANALYSIS_V1.md` and
+`docs/implementation/PITCH_MARK_STALENESS_2026-09-23.md`. U15 now has all three
+plan scenarios covered in code. Unit acceptance is NOT claimed: the plan requires
+fixed-corpus numerical and listening results, and 0 of 46 blind-listening
+scoresheet rows are filled. The shipped demo fixture is deliberately left with its
+stale marks, since silently rewriting them would erase the evidence that this error
+class occurs.
