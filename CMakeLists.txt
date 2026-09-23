@@ -407,6 +407,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/manifest_json.cpp
   libs/seam-voicebank/src/content_identity.cpp
   libs/seam-voicebank/src/catalog.cpp
+  libs/seam-voicebank/src/acoustic_analysis.cpp
   libs/seam-voicebank/src/style_resolution.cpp
   libs/seam-voicebank/src/coverage.cpp
 )
@@ -1361,6 +1362,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_synthesis.cpp
     tests/test_voicebank.cpp
+    tests/test_audio_conditioning.cpp
     tests/test_sample_rate_converter.cpp)
   target_include_directories(seam_synthesis_quality_tests PRIVATE tests)
   target_link_libraries(seam_synthesis_quality_tests PRIVATE

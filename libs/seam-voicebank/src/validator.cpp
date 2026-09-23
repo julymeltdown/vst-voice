@@ -1,6 +1,7 @@
 #include "seam/voicebank/validator.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/pitch_marks.hpp"
@@ -52,28 +53,6 @@ double medianMarkGap(std::span<const PitchMark> marks) {
   const auto middle = gaps.begin() + static_cast<std::ptrdiff_t>(gaps.size() / 2U);
   std::nth_element(gaps.begin(), middle, gaps.end());
   return *middle;
-}
-
-// The configuration the production draft path uses, so a comparison against it
-// is like for like rather than an argument between two different analyses.
-PitchMarkGenerationConfig producerPitchConfig() noexcept {
-  return PitchMarkGenerationConfig{
-      .pitch = {.frameSize = 2048U, .hopSize = 256U, .minimumHz = 60.0,
-                .maximumHz = 1200.0, .voicingThreshold = 0.32,
-                .correlationMethod = PitchCorrelationMethod::Fft}};
-}
-
-PitchAnalysisLimits producerPitchLimits(std::size_t frames) noexcept {
-  constexpr std::size_t frameSize = 2048U;
-  constexpr std::size_t hop = 256U;
-  constexpr std::uint64_t workPerFrame = 4096U * 12U;
-  const auto analysisFrames =
-      frames <= frameSize ? 1U : 1U + (frames - frameSize) / hop;
-  return PitchAnalysisLimits{
-      .maximumFrames = 4096U,
-      .maximumCorrelationTerms = 0U,
-      .maximumTransformButterflies =
-          static_cast<std::uint64_t>(analysisFrames) * workPerFrame};
 }
 
 }  // namespace
@@ -243,7 +222,7 @@ ValidationReport BankValidator::validate(const Manifest& manifest,
       const auto storedPeriod = medianMarkGap(unit.pitchMarks);
       const auto generated = generatePitchMarks(
           mono, audio.value().sampleRate, unit.markers.audioOffset,
-          unit.markers.audioEnd, producerPitchConfig(), {},
+          unit.markers.audioEnd, producerPitchMarkConfig(), {},
           producerPitchLimits(mono.size()));
       if (generated && generated.value().size() >= 2U) {
         const auto measuredPeriod = medianMarkGap(generated.value());

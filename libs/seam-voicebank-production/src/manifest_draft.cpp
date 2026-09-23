@@ -7,6 +7,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/pitch_marks.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -85,16 +86,15 @@ core::Result<AudioFacts> inspectAudio(std::span<const std::byte> bytes, std::uin
       !std::all_of(audio.interleaved.begin(), audio.interleaved.end(), [](float sample) { return std::isfinite(sample); }))
     return core::failure<AudioFacts>(core::ErrorCode::InvalidArgument, "Editable draft audio must be finite nonempty mono within its frame budget; use an explicit production edit for conversion");
   AudioFacts facts{audio.sampleRate, static_cast<time::SampleFrame>(audio.frameCount()), {}, {}};
-  constexpr std::size_t frameSize = 2048U, hop = 256U;
-  constexpr std::uint64_t workPerFrame = 4096U * 12U; // Both transforms of a 2*frameSize FFT.
-  const auto analysisFrames = audio.frameCount() <= frameSize ? 1U : 1U + (audio.frameCount() - frameSize) / hop;
-  if (analysisFrames > remainingWork / workPerFrame)
+  // The analysis configuration is shared with QC and with installed-bank
+  // re-measurement rather than restated here; a second copy of these constants is
+  // how the three resamplers in this repository drifted apart.
+  const auto work = voicebank::producerAnalysisWork(audio.frameCount());
+  if (work > remainingWork)
     return core::failure<AudioFacts>(core::ErrorCode::Unsupported, "Draft pitch estimation exceeds the aggregate work budget; split the production batch");
-  remainingWork -= static_cast<std::uint64_t>(analysisFrames) * workPerFrame;
-  const voicebank::PitchMarkGenerationConfig config{.pitch = {.frameSize = frameSize, .hopSize = hop,
-      .minimumHz = 60.0, .maximumHz = 1200.0, .voicingThreshold = 0.32, .correlationMethod = voicebank::PitchCorrelationMethod::Fft}};
-  const auto marks = voicebank::generatePitchMarks(audio.interleaved, audio.sampleRate, 0, facts.frames, config, stop,
-      {.maximumFrames = 4096U, .maximumCorrelationTerms = 0U, .maximumTransformButterflies = analysisFrames * workPerFrame});
+  remainingWork -= work;
+  const auto marks = voicebank::generatePitchMarks(audio.interleaved, audio.sampleRate, 0, facts.frames,
+      voicebank::producerPitchMarkConfig(), stop, voicebank::producerPitchLimits(audio.frameCount()));
   if (marks) facts.pitch = marks.value();
   else if (marks.error().code == core::ErrorCode::NotFound) facts.diagnostic = "No reliable pitch-mark estimate. Raw is provisional; inspect voicing and select appropriate processing before review.";
   else return core::Result<AudioFacts>{marks.error()};
