@@ -104,6 +104,11 @@ to write unquoted `E4` and `1-2` lyrics and a `2024-01-01` part name. These
 look numeric but are YAML strings; their checked-in fixture detects a parser
 that rejects by prefix or character set instead of whole-token grammar.
 
+`--emit-plus-lyric-fixture NEW_FILE.ustx` checks the serializer's treatment
+of the numeric-looking `+2` lyric. Pinned OpenUtau emits it quoted. A
+separately hand-edited `pan: +0.25` control tests signed numeric YAML intake;
+do not label that control serializer-generated.
+
 `--compare-hint SOURCE.ustx ROUNDTRIP.ustx` invokes the pinned OpenUtau
 `UNote.ToPhonemizerNote` method on both loaded files and compares the visible
 lyric and extracted phone hint for every note in their single voice part.

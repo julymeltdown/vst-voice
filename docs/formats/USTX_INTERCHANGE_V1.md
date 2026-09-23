@@ -38,7 +38,9 @@ codec and conversion path, not the earlier creator-study Python bridge.
 
 Plain scalars such as OpenUtau's `+~` and `+*` extenders, `E4`, `1-2`,
 `2024-01-01`, `2nd`, `Chorus!` and `a*b` are accepted. A whole-token decimal
-grammar match that overflows or is non-finite still rejects; `&`, `*` and `!`
+grammar match that overflows or is non-finite still rejects. YAML numeric
+values with one leading plus, such as `pan: +0.25`, are accepted; OpenUtau's
+pinned serializer quotes the lyric `+2`. `&`, `*` and `!`
 are rejected as YAML operators only at
 node start, including inside flow collections. The reader rejects
 aliases/anchors/tags, multiple documents, duplicate keys,

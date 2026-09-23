@@ -6,11 +6,13 @@ built separately against the named historical OpenUtau source tags. The
 seventh uses `--emit-hint-fixture` against the pinned reference commit; the
 eighth uses `--emit-extender-fixture` from that same checkout. A ninth uses
 `--emit-numeric-text-fixture` to exercise unquoted numeric-looking strings.
+A tenth uses `--emit-plus-lyric-fixture` to settle whether OpenUtau quotes a
+numeric-looking `+2` lyric.
 They are **serializer-generated**, not hand-edited copies of a 0.9 file and
 not claims of a human operating the historical desktop GUI. The tool creates
 one `UProject` with two tempo events, two meters, a stereo-positioned track,
 two notes, pitch points and vibrato; the baseline notes have Japanese lyrics,
-while the named hint/extender/numeric-text variants replace those lyrics. It validates the project,
+while the named hint/extender/numeric-text/plus-lyric variants replace those lyrics. It validates the project,
 calls OpenUtau `BeforeSave`, and writes the exact YAML from that version's
 `Yaml.DefaultSerializer` with `Encoding.UTF8`, including its BOM. Nonzero
 per-note `tuning` is set only when that version's `UNote` model has the field.
@@ -26,6 +28,7 @@ per-note `tuning` is set only when that version's `UNote` model has the field.
 | `openutau-pinned-0.9-hint-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `f4c0660e5fa421202b68ed8290e54b5b445d81327a34ab9f38246f4de03e2d7b` |
 | `openutau-pinned-0.9-extender-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `2dfedb89f5a3d0da7a52fc4822643ca9df40c4bb456989d10a038fcfc77656a7` |
 | `openutau-pinned-0.9-numeric-text-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `9a8edf4a0da064f47003b32a21a84d95dbcdedd487eb19b8f79a1e07bb2ba126` |
+| `openutau-pinned-0.9-plus-lyric-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `9eb42f6e654249cc1a15e1f70244534683fc94e7897e1c30e69c749995c4fe51` |
 
 Generation used .NET SDK 10.0.401. Each historical checkout's
 `OpenUtau.Core.csproj` needed a **build-only resource-name metadata patch**:
@@ -75,6 +78,11 @@ The pinned numeric-text file has unquoted `E4` and `1-2` lyrics and a
 the previous numeric-prefix rejection failed the whole file. Pinned
 OpenUtau `Ustx.Load` returned `ORACLE_OK`; a production SEAM CLI roundtrip
 passed the 18-point pitch comparison with 0.160039 cents maximum error.
+
+The pinned plus-lyric file serializes `+2` as `lyric: "+2"`, so this
+OpenUtau version does not expose it as an unquoted scalar. A hand-edited
+variant with `pan: +0.25` loaded through pinned OpenUtau and imported through
+SEAM; it is a third-party-style numeric control, not serializer output.
 
 Each file passed its own version's `Ustx.Load` and pinned OpenUtau `8c0dc40`'s
 `Ustx.Load`. SEAM's native importer accepted the original four and disclosed 9, 9,

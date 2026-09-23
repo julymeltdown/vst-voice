@@ -27,6 +27,7 @@ internal static class Program {
         if (args.Length == 2 && args[0] == "--emit-hint-fixture") return EmitFixture(args[1], false, false, true);
         if (args.Length == 2 && args[0] == "--emit-extender-fixture") return EmitFixture(args[1], false, false, false, true);
         if (args.Length == 2 && args[0] == "--emit-numeric-text-fixture") return EmitFixture(args[1], false, false, false, false, true);
+        if (args.Length == 2 && args[0] == "--emit-plus-lyric-fixture") return EmitFixture(args[1], false, false, false, false, false, true);
         if (args.Length == 3 && args[0] == "--compare-pitch") return ComparePitch(args[1], args[2]);
         if (args.Length == 3 && args[0] == "--compare-dynamics") return CompareDynamics(args[1], args[2]);
         if (args.Length == 3 && args[0] == "--assert-held-dynamics") {
@@ -47,6 +48,7 @@ internal static class Program {
             Console.Error.WriteLine("       seam_ustx_oracle --emit-hint-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-extender-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-numeric-text-fixture NEW_FILE.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --emit-plus-lyric-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-pitch SOURCE.ustx ROUNDTRIP.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-dynamics SOURCE.ustx ROUNDTRIP.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --assert-held-dynamics SEAM_EXPORT.ustx AUTHORED_PART_DURATION");
@@ -230,7 +232,7 @@ internal static class Program {
 
     private static int EmitFixture(string path, bool withCurve, bool withMultilineComment,
                                    bool withPhoneHint = false, bool withExtenders = false,
-                                   bool withNumericText = false) {
+                                   bool withNumericText = false, bool withPlusLyric = false) {
         try {
             var tuningField = ResolveTuningField();
             var project = Ustx.Create();
@@ -248,7 +250,8 @@ internal static class Program {
                 position = 960, duration = 960 };
             var first = UNote.Create();
             first.position = 0; first.duration = 480; first.tone = 60;
-            first.lyric = withNumericText ? "E4" : withExtenders ? "+~" : withPhoneHint ? "あ[k a]" : "あ";
+            first.lyric = withPlusLyric ? "+2" : withNumericText ? "E4" :
+                withExtenders ? "+~" : withPhoneHint ? "あ[k a]" : "あ";
             // `tuning` was introduced after USTX 0.7; leave old model types
             // untouched, but exercise it when the historical assembly has it.
             tuningField?.SetValue(first, 25);

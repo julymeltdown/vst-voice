@@ -878,6 +878,12 @@ TEST_CASE("USTX plain scalars accept extenders and punctuation without enabling 
   const auto numericImported = seam::interchange::importUstxProject(numericText, factory);
   CHECK(numericImported);
   CHECK(numericImported.value().project.vocalTracks().front().regions.front().name == "2024-01-01");
+  const auto plusLyric = historicalSerializerFixture("pinned-0.9-plus-lyric");
+  CHECK(!plusLyric.empty());
+  const auto plusDecoded = decodeUstx(plusLyric); CHECK(plusDecoded);
+  CHECK(plusDecoded.value().parts.front().notes[0].lyric == "+2");
+  const auto plusImported = seam::interchange::importUstxProject(plusLyric, factory);
+  CHECK(plusImported);
   const auto checkLyric = [](std::string_view token) {
     std::string source{fixture()};
     const auto marker = source.find("lyric: \"あ\"");
@@ -914,12 +920,18 @@ TEST_CASE("USTX floating scalars preserve decimal grammar and range rejection") 
                    "pan: " + std::string{value});
     return seam::interchange::decodeUstx(bytes(source));
   };
-  for (const auto value : {"0.25", ".25", "2.5e-1", "2.5E-1", "-0.25", "0.", "-0.0", "0e-9999"}) {
+  for (const auto value : {"0.25", ".25", "+0.25", "+.25", "2.5e-1", "2.5E-1", "-0.25", "0.", "-0.0", "0e-9999"}) {
     CHECK(withPan(value));
   }
-  for (const auto value : {"+0.25", "1e9999", "1e-9999", "0.25junk", "1e", "--1", "0x1p-2", "nan", "NAN", "NaN(payload)", "inf", "INFINITY", ".inf"}) {
+  for (const auto value : {"1e9999", "1e-9999", "+1e9999", "+1e-9999", "0.25junk", "1e", "--1", "0x1p-2", "nan", "NAN", "NaN(payload)", "inf", "INFINITY", ".inf"}) {
     CHECK(!withPan(value));
   }
+  std::string signedInteger{fixture()};
+  const auto volume = signedInteger.find("volume: -3"); CHECK(volume != std::string::npos);
+  signedInteger.replace(volume, std::string_view{"volume: -3"}.size(), "volume: +5");
+  const auto signedDecoded = seam::interchange::decodeUstx(bytes(signedInteger));
+  CHECK(signedDecoded);
+  CHECK_NEAR(signedDecoded.value().tracks.front().volume, 5.0, 1e-9);
 }
 
 TEST_CASE("portable finite decimal parser bounds float and double without mutating rejected output") {

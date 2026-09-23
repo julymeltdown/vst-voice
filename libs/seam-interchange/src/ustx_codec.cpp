@@ -220,11 +220,17 @@ private:
     if (token == "null" || token == "Null" || token == "NULL") return Node{nullptr};
     if (token == "true" || token == "True" || token == "TRUE") return Node{true};
     if (token == "false" || token == "False" || token == "FALSE") return Node{false};
+    // The shared finite parser intentionally does not admit a leading plus.
+    // YAML does; remove exactly one plus only before a decimal digit or dot.
+    auto numericToken = token;
+    if (numericToken.size() > 1U && numericToken.front() == '+' &&
+        ((numericToken[1U] >= '0' && numericToken[1U] <= '9') || numericToken[1U] == '.'))
+      numericToken.remove_prefix(1U);
     std::int64_t integer = 0;
-    const auto integerResult = std::from_chars(token.data(), token.data() + token.size(), integer);
-    if (integerResult.ec == std::errc{} && integerResult.ptr == token.data() + token.size()) return Node{integer};
+    const auto integerResult = std::from_chars(numericToken.data(), numericToken.data() + numericToken.size(), integer);
+    if (integerResult.ec == std::errc{} && integerResult.ptr == numericToken.data() + numericToken.size()) return Node{integer};
     double number = 0.0;
-    if (core::parseFiniteDecimal(token, number)) {
+    if (core::parseFiniteDecimal(numericToken, number)) {
       return Node{number};
     }
     // A lyric such as E4, 1-2, +~ or 2024-01-01 is a YAML string. Only a

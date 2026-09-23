@@ -241,6 +241,25 @@ Final local regression after the second follow-up: Release `seam_tests`
 Debug and sanitizer USTX CTest 1/1 each; local license auditor PASS with
 `--allow-non-master`. GitHub CI was not run or changed.
 
+## 2026-09-24 focused third-review follow-up
+
+The read-only follow-up on `09d0dafc` found R1–R3 resolved. Its sole
+remaining low-severity issue was that YAML-valid leading-plus numbers still
+failed in numeric fields; the reviewer did not rebuild or run the .NET oracle.
+The USTX parser now removes one leading plus only before a decimal digit or
+dot, then uses the same bounded integer/finite-decimal paths. `pan: +0.25`,
+`pan: +.25` and `volume: +5` decode; `+1e9999` and `+1e-9999` still reject.
+Extender lyrics `+~` and `+*` remain strings. The pinned OpenUtau serializer
+quotes a `+2` lyric, demonstrated by its tenth fixture (SHA-256
+`9eb42f6e654249cc1a15e1f70244534683fc94e7897e1c30e69c749995c4fe51`).
+A separate hand-edited `pan: +0.25` variant loaded in both pinned OpenUtau
+(`ORACLE_OK`) and production SEAM CLI (9 explicit conversion issues, no
+numeric parse error). It is not a serializer-generated input.
+Final local regression: Release `seam_tests` 1,055/1,055; Release focused
+interchange/score-export CTest 4/4; Debug/sanitizer focused USTX CTest 1/1
+each; local license auditor PASS with `--allow-non-master`. GitHub CI remains
+excluded.
+
 ## Work required before U30 acceptance
 
 1. Exercise actual OpenUtau desktop GUI open/save on the generated and additional
