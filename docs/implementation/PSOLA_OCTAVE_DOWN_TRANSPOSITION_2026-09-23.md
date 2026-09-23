@@ -116,3 +116,47 @@ failure mode the plan asks U16 to eliminate.
 No fix is included. Changing the overlap-add window sizing affects every classical
 render, so it needs its own before/after across the sweep and the existing suite
 rather than being folded in here.
+
+## Resolution (fixed in `4d79e06c`, pinned by `19945613`)
+
+The defect is fixed. The grain read used
+
+    sourcePosition = sourceMark.frame + relative * sourcePerOutput
+
+where `sourcePerOutput` is only the sample-rate ratio. A grain was therefore a
+1:1 copy holding the source periodicity at its original spacing, and the output
+only lost that periodicity where neighbouring grains overlapped enough to cancel.
+At integer down-ratios the grains barely overlap, so the source pitch survived.
+That is why the failure tracked the *ratio* rather than the target pitch, and why
+the earlier window-only hypothesis was wrong: the window was not causing the
+failure, it was the symptom of the same missing scaling.
+
+Grains are now resampled by `periodSource * sampleRateRatio / targetPeriod`, so
+one source period occupies one target period, and the overlap-add window is sized
+from the target period to match the new read step. Sizing the window from the
+source period was the wrong unit once the step changed: at ratio 2.52 a
+219-sample window read only 0.6 of a source period and the truncation left a
+subharmonic at 87.56 Hz for a 174.61 Hz target.
+
+`SEAM_PSOLA_RENDERER_REVISION` went from 10 to 11. That revision is already part
+of the render identity, and without the bump cached PCM from the old renderer
+would have been reused against a changed renderer -- which is what
+`seam_phase12a_tests` caught when the code change was made without it. The
+mechanism worked as designed; I had simply not used it.
+
+Verified across all 46 semitone targets from one source. The 42 targets below the
+analyser 1200 Hz ceiling land within about 3 cents, including both previously
+failing integer ratios (2.000 and 4.000). The four above the ceiling were
+confirmed correct by FFT, within 2 cents, since the product analyser cannot report
+them.
+
+The decisive table after the fix:
+
+| source | source Hz | source / target | measured | error |
+|---|---:|---:|---:|---:|
+| A4 (69) | 440.00 | 2.000 | 220.11 | +0.9 cents |
+| E4 (64) | 329.63 | 1.498 | 220.06 | +0.4 cents |
+| C4 (60) | 261.63 | 1.189 | 220.10 | +0.8 cents |
+| B3 (59) | 246.94 | 1.122 | 220.06 | +0.5 cents |
+| A#3 (58) | 233.08 | 1.059 | 220.11 | +0.9 cents |
+| A3 (57) | 220.00 | 1.000 | 220.00 | +0.0 cents |
