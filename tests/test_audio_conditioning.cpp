@@ -7,6 +7,18 @@
 #include "seam/synthesis/source_target_map.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/synthesis/classic_psola.hpp"
+#include "seam/voicebank/pitch.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <numbers>
+#include <vector>
+
+
+
 
 // The wiring, end to end: a bank with a stored analysis must render a short CV
 // transition differently from the same bank without one. This is the assertion
@@ -94,14 +106,6 @@ TEST_CASE("a stored analysis changes how a short CV transition renders") {
   CHECK(result.second.voicedAtSource(12000.0).has_value());
   CHECK(result.second.voicedAtSource(12000.0).value() == true);
 }
-
-
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <numbers>
-#include <vector>
-
 namespace {
 
 // A take that alternates sung vowel, unvoiced fricative, sung vowel. The plan
@@ -537,4 +541,60 @@ TEST_CASE("bank QC consumes the stored acoustic analysis and reports stale recor
   std::filesystem::create_directory(sidecar);
   const auto asDirectory = seam::voicebank::BankValidator{}.validate(manifest, root);
   CHECK(reportCode(asDirectory, seam::voicebank::IssueCode::AcousticAnalysisStale));
+}
+
+
+TEST_CASE("classic PSOLA reaches the target pitch at integer down-ratios") {
+  constexpr std::uint32_t sampleRate = 48000U;
+  constexpr std::size_t frames = 24000U;
+  constexpr std::int32_t sourceMidi = 69;  // A4 = 440 Hz
+  const auto sourceHz = 440.0;
+
+  // A harmonic-rich source, so the measurement is not an artefact of a bare sine.
+  std::vector<float> samples(frames, 0.0F);
+  for (std::size_t index = 0U; index < frames; ++index) {
+    const auto time = static_cast<double>(index) / static_cast<double>(sampleRate);
+    samples[index] = 0.30F * static_cast<float>(
+                         std::sin(2.0 * std::numbers::pi * sourceHz * time)) +
+                    0.15F * static_cast<float>(
+                         std::sin(2.0 * std::numbers::pi * 2.0 * sourceHz * time)) +
+                    0.08F * static_cast<float>(
+                         std::sin(2.0 * std::numbers::pi * 3.0 * sourceHz * time));
+  }
+  const seam::voicebank::AudioBuffer source{
+      .sampleRate = sampleRate, .channels = 1, .interleaved = samples};
+  auto unit = seam::test::support::makeUnit("a-psola", {"a"}, "audio/a.wav",
+      sourceMidi, seam::voicebank::UnitKind::Sustain, frames);
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  // Marks from the product's own analyser, as an installed bank has. Hand-placed
+  // marks at a fixed spacing do not align with the waveform actual period and
+  // drift in phase, which is a fixture artefact rather than a renderer fault.
+  const auto generated = seam::voicebank::generatePitchMarks(samples, sampleRate,
+      unit.markers.audioOffset, unit.markers.audioEnd);
+  CHECK(generated);
+  unit.pitchMarks = generated.value();
+  CHECK(unit.validate());
+
+  // Ratios 2.000 and 4.000 both failed before the fix; 1.888 and 3.364 passed, so
+  // the non-integer cases are the control that shows the assertion discriminates.
+  const std::array<std::int32_t, 4> targets{57, 58, 45, 48};
+  for (const auto target : targets) {
+    const auto expected = 440.0 * std::pow(2.0, (target - 69) / 12.0);
+    const auto rendered = seam::synthesis::ClassicPsolaRenderer{}.render(
+        unit, source, sampleRate, frames, target,
+        seam::synthesis::PsolaRenderParameters{.sourcePitchResidual = 0.0F});
+    CHECK(rendered);
+    const auto pitch = seam::voicebank::analyzePitch(rendered.value().samples, sampleRate);
+    CHECK(pitch);
+    const auto measured = seam::voicebank::medianVoicedPitch(pitch.value());
+    // The tolerance is generous because the analyser quantises to its hop grid;
+    // it is far tighter than the 1200-cent error this test exists to catch.
+    const auto cents = 1200.0 * std::log2(measured / expected);
+    CHECK_NEAR(cents, 0.0, 25.0);
+    // And the source pitch must not be what came out. Without this, a renderer
+    // that ignores the target entirely would satisfy the check above whenever the
+    // target happens to equal the source.
+    const auto toSource = 1200.0 * std::log2(measured / sourceHz);
+    CHECK(std::abs(toSource) > 100.0);
+  }
 }
