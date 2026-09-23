@@ -286,14 +286,15 @@ TEST_CASE("USTX 0.6 through 0.9 import the shared musical subset and export as 0
     source.replace(marker, std::string_view{"ustx_version: \"0.9\""}.size(),
                    "ustx_version: \"" + std::string{version} + "\"");
     if (version == "0.6") {
-      // OpenUtau extends exp_selectors while loading a pre-0.7 project. The
-      // selectors are outside SEAM's musical subset, so the shorter list must
-      // not change the notes, timing or the bounded conversion report.
+      // OpenUtau 0.1.542's 0.6 UProject default has exactly these five
+      // selectors. Its loader extends them when upgrading a pre-0.7 file.
+      // Selectors are outside SEAM's musical subset, so their historical
+      // shape must not change notes, timing or the bounded report.
       const auto selectors = source.find("exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec, gen, bre]");
       CHECK(selectors != std::string::npos);
       source.replace(selectors,
                      std::string_view{"exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec, gen, bre]"}.size(),
-                     "exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec]");
+                     "exp_selectors: [dyn, pitd, clr, eng, vel]");
     }
     const auto decoded = interchange::decodeUstx(bytes(source));
     CHECK(decoded);

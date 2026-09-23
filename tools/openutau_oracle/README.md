@@ -4,9 +4,10 @@ A read-only checker that answers one question: **can a tool that is not SEAM ope
 score SEAM wrote?**
 
 It reads a file with [OpenUtau](https://github.com/openutau/OpenUtau)'s own
-deserializer and model types (for USTX) and with DryWetMidi, the library OpenUtau
-uses for MIDI. Nothing in SEAM runs inside it, so agreement is external evidence
-rather than a self-check of SEAM's reader against SEAM's writer.
+`Ustx.Load` path (deserialization, migration, `AfterLoad`, validation) and model
+types for USTX, and with DryWetMidi, the library OpenUtau uses for MIDI. Nothing
+in SEAM runs inside it, so agreement is external evidence rather than a
+self-check of SEAM's reader against SEAM's writer.
 
 Pinned reference: OpenUtau commit `8c0dc40`.
 
@@ -48,8 +49,13 @@ does not.
 ```sh
 cd tools/openutau_oracle
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  /tmp/seam-dotnet/dotnet build --nologo -v q -p:OpenUtauRoot=/tmp/OpenUtau-oracle
+  /tmp/seam-dotnet/dotnet build --artifacts-path /tmp/seam-openutau-oracle-artifacts \
+  --nologo -v q -p:OpenUtauRoot=/tmp/OpenUtau-oracle
 ```
+
+Keep build output outside the SEAM checkout: the tracked-source-closure audit
+intentionally rejects generated DLLs under `tools/`. A fresh build of the pinned
+upstream may emit its own compiler warnings; inspect errors separately.
 
 ## Run
 
@@ -61,9 +67,9 @@ seam_voicebank_cli export-score tests/singing_quality/corpus/original-melody.sea
 seam_voicebank_cli export-score tests/singing_quality/corpus/original-melody.seam /tmp/out.mid
 
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  /tmp/seam-dotnet/dotnet run --no-build -p:OpenUtauRoot=/tmp/OpenUtau-oracle -- /tmp/out.ustx
+  /tmp/seam-dotnet/dotnet /tmp/seam-openutau-oracle-artifacts/bin/seam_openutau_oracle/debug/seam_openutau_oracle.dll /tmp/out.ustx
 DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
-  /tmp/seam-dotnet/dotnet run --no-build -p:OpenUtauRoot=/tmp/OpenUtau-oracle -- /tmp/out.mid --midi
+  /tmp/seam-dotnet/dotnet /tmp/seam-openutau-oracle-artifacts/bin/seam_openutau_oracle/debug/seam_openutau_oracle.dll /tmp/out.mid --midi
 ```
 
 Success ends with `ORACLE_OK` (USTX) or `ORACLE_MIDI_OK` (MIDI).
@@ -81,8 +87,8 @@ Success ends with `ORACLE_OK` (USTX) or `ORACLE_MIDI_OK` (MIDI).
 
 ## What this does not prove
 
-Passing the oracle means OpenUtau can *read* the file. It does not mean the file
-renders identically, that SEAM's singer is usable in OpenUtau, or that a DAW will
-produce the same audio. Real DAW exchange (REAPER, Bitwig) and any listening
-judgement remain separate, unverified steps.
-
+Passing the oracle means the pinned OpenUtau core can *load and validate* the
+file. It does not establish the full desktop GUI workflow, identical rendering,
+that SEAM's singer is usable in OpenUtau, or that a DAW will produce the same
+audio. Real DAW exchange (REAPER, Bitwig) and listening judgement remain
+separate, unverified steps.

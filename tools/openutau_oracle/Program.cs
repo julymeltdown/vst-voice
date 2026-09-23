@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using OpenUtau.Core;
 using OpenUtau.Core.Ustx;
+using OpenUtau.Core.Format;
 using Melanchall.DryWetMidi.Core;
 using Melanchall.DryWetMidi.Interaction;
 
@@ -66,15 +67,14 @@ internal static class Program {
         }
     }
 
-    // Reads the USTX half with OpenUtau's own deserializer, then round-trips it through
-    // OpenUtau's serializer: a file OpenUtau can hold and write back is one it accepts as a project.
+    // Use the actual OpenUtau load path, including migration, AfterLoad and validation.
+    // A bare YAML deserialization cannot establish that the editor accepts a project.
     private static int ReadUstx(string path) {
-        var text = File.ReadAllText(path);
         UProject project;
         try {
-            project = Yaml.DefaultDeserializer.Deserialize<UProject>(text);
+            project = Ustx.Load(path);
         } catch (Exception error) {
-            Console.Error.WriteLine("DESERIALIZE_FAILED: " + error.GetType().Name + ": " + error.Message);
+            Console.Error.WriteLine("LOAD_FAILED: " + error.GetType().Name + ": " + error.Message);
             return 1;
         }
 
@@ -87,7 +87,7 @@ internal static class Program {
             Console.WriteLine("track0.name=" + project.tracks[0].TrackName);
             Console.WriteLine("track0.singer=" + (project.tracks[0].singer ?? ""));
         }
-        var parts = project.voiceParts ?? new List<UVoicePart>();
+        var parts = project.parts.OfType<UVoicePart>().ToList();
         Console.WriteLine("voiceParts=" + parts.Count);
         if (parts.Count > 0) {
             var part = parts[0];
@@ -103,10 +103,11 @@ internal static class Program {
                     + ",vibratoLength=" + (note.vibrato?.length ?? 0));
             }
         }
+        project.BeforeSave();
         var roundTripped = Yaml.DefaultDeserializer.Deserialize<UProject>(Yaml.DefaultSerializer.Serialize(project));
+        project.AfterSave();
         Console.WriteLine("roundTripTempos=" + roundTripped.tempos.Count);
         Console.WriteLine("ORACLE_OK");
         return 0;
     }
 }
-

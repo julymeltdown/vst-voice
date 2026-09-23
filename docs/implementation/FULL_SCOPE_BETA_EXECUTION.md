@@ -12,6 +12,17 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-23 — U30 compatibility and independent-load audit, with GitHub CI deferred
+at the user's request. Native USTX now imports the declared 0.6–0.9 musical
+subset and continues to export 0.9. The historical OpenUtau 0.6 source check
+corrected the compatibility regression to use its five-selector default.
+Strengthened the optional external oracle from YAML-only deserialization to
+OpenUtau's `Ustx.Load` migration/`AfterLoad`/validation path. A production SEAM
+export with 80 notes and UTF-8 lyrics loaded successfully through that path;
+the focused Release USTX test passes. U30 is **PARTIAL**, not accepted: actual
+archived 0.6/0.7/0.8 files and desktop GUI workflow evidence are absent. See
+`U30_ACCEPTANCE_AUDIT_2026-09-23.md` for exact provenance, receipts and gaps.
+
 2026-09-19 — Persistent vocoder training batch against `cddf4f9f`. Added production
 `train_vocoder` CLI and multi-epoch orchestration over existing admission/batch/GAN
 services, with complete-state resume, per-epoch retained audio and exact cumulative

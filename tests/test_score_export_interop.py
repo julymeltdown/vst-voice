@@ -2,12 +2,12 @@
 
 The point of this test is to make one specific claim reproducible: a score SEAM
 itself wrote is readable by a tool that is not SEAM. The evidence it records came
-from OpenUtau's own deserializer (commit 8c0dc40) reading a production
+from OpenUtau's own Ustx.Load path (commit 8c0dc40) reading a production
 `export-score` result, and from DryWetMidi 7.2.0 -- the library OpenUtau uses for
 MIDI -- reading the SMF half of the same exchange.
 
-OpenUtau and .NET are not build dependencies of this repository, so the oracle
-itself cannot run here. What this test locks down is the part that *is* in CI:
+OpenUtau and .NET are optional local dependencies, not build dependencies of
+this repository. What this test locks down without those optional tools is that
 the exact bytes SEAM produces for a pinned project must keep satisfying the
 properties the external reader relied on. If SEAM's writer changes in a way that
 would break a real OpenUtau import, the fixture comparison fails here, and the
@@ -174,7 +174,7 @@ def main():
         assert smf_fields["contentHash"] == EXPECTED_SMF_CONTENT_HASH, smf_fields
         assert int(smf_fields["issues"]) == EXPECTED_SMF_LOSSES, smf_fields
 
-        # --- USTX: the properties OpenUtau's deserializer confirmed ---
+        # --- USTX: the properties OpenUtau's load path confirmed ---
         version, ustx_notes, tempos = parse_ustx(ustx)
         assert version == "0.9", version
         assert tempos, "USTX must carry the tempo map"
