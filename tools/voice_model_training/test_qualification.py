@@ -46,17 +46,22 @@ def sine(frames, frequency_hz, amplitude=0.25, sample_rate=48000):
                          for index in range(frames)])
 
 
-def response(request, prepared, value=0.25, frequency_hz=None):
+def response(request, prepared, value=0.25, frequency_hz=None,
+             backend_id="seam-neural-worker-fixture/steps-10", model_hash=None,
+             bundle_hash=None):
     count = prepared["frameCount"]
     if frequency_hz is None:
         pcm = struct.pack("<" + str(count) + "f", *([value] * count))
     else:
         pcm = sine(count, frequency_hz, value)
+    request_size = struct.unpack("<4sHBBIQ", request[:20])[4]
+    request_metadata = json.loads(request[20:20 + request_size])
     reply = {"kind": "seam-neural-response-v3", "requestId": prepared["requestId"],
              "requestContentHash": hashlib.sha256(request).hexdigest(),
              "frameCount": count, "sampleRate": 48000, "channels": 1,
-             "modelContentHash": "a" * 64, "bundleContentHash": "a" * 64,
-             "backendId": "seam-neural-worker-fixture"}
+             "modelContentHash": model_hash or request_metadata["modelContentHash"],
+             "bundleContentHash": bundle_hash or request_metadata["bundleContentHash"],
+             "backendId": backend_id}
     header = json.dumps(reply, sort_keys=True, separators=(",", ":")).encode()
     return struct.pack("<4sHBBIQ", b"SNW1", 1, 2, 0, len(header), len(pcm)) + header + pcm
 
@@ -84,6 +89,20 @@ def runs_for(prepared, vocabulary, values=(0.25, 0.25), codes=None, frames=None,
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_response_identity_and_step_mismatch_fail_binding(self):
+        prepared = item()
+        vocabulary = {"SP": 0, "a": 1, "i": 2}
+        for override in ({"model_hash": "0" * 64}, {"bundle_hash": "0" * 64},
+                         {"backend_id": "seam-neural-worker-fixture/steps-20"}):
+            runs = runs_for(prepared, vocabulary)
+            runs[0]["stdout"] = response(runs[0]["request"], prepared,
+                                           frequency_hz=prepared["frequencyHz"], **override)
+            with self.subTest(override=override):
+                record = evaluate_item(prepared, runs, vocabulary, 1000,
+                                       inference_steps=10)
+                self.assertEqual(record["status"], "FAIL")
+                self.assertEqual(record["criteria"]["response-binding"], "FAIL")
+
     def test_identical_runs_pass_every_automatic_criterion(self):
         prepared = item()
         vocabulary = {"SP": 0, "a": 1, "i": 2}
@@ -91,7 +110,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(record["status"], "PASS")
         self.assertEqual(record["milliseconds"], [12.5, 13.5])
         self.assertEqual(len(record["audioSha256"]), 64)
-        self.assertEqual(record["backendId"], "seam-neural-worker-fixture")
+        self.assertEqual(record["backendId"], "seam-neural-worker-fixture/steps-10")
 
     def test_repeated_requests_may_not_differ(self):
         prepared = item()

@@ -19,6 +19,8 @@ hard-coded 10. Protocol-2 launches fail closed on a missing or out-of-range
 setting; the response backend identity names the executed step count. Candidate
 qualification accepts an explicit 1..1000 setting, records it in the dossier,
 and preserves older schema-1 captures by normalizing an absent setting to 10.
+Its response-binding criterion now also checks the returned model, bundle and
+executed-step identities against the captured request/setting.
 Arithmetic-graph checks compare 10- and 20-step PCM, and the normal authoring
 render path compares distinct admitted snapshots at those settings. This is
 execution fidelity over deterministic fixture graphs, not learned-singer quality

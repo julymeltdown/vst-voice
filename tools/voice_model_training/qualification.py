@@ -209,7 +209,8 @@ def run_worker_process(worker: Path, arguments: list, request: bytes, timeout: f
     return completed.returncode, completed.stdout, completed.stderr
 
 
-def decode_response(stdout: bytes, request: bytes, item: dict) -> tuple:
+def decode_response(stdout: bytes, request: bytes, item: dict,
+                    inference_steps: int | None = None) -> tuple:
     if len(stdout) < 20:
         raise ValueError("response frame is shorter than its header")
     magic, version, kind, reserved, size, payload_size = struct.unpack("<4sHBBIQ", stdout[:20])
@@ -218,12 +219,28 @@ def decode_response(stdout: bytes, request: bytes, item: dict) -> tuple:
     if len(stdout) != 20 + size + payload_size:
         raise ValueError("response frame length disagrees with its header")
     reply = json.loads(stdout[20:20 + size].decode("utf-8"))
+    if not isinstance(reply, dict):
+        raise ValueError("response metadata is not an object")
     if reply.get("kind") != "seam-neural-response-v3":
         raise ValueError("response metadata kind is unknown")
     if reply.get("requestId") != item["requestId"]:
         raise ValueError("response belongs to a different request")
     if reply.get("requestContentHash") != hashlib.sha256(request).hexdigest():
         raise ValueError("response is not bound to the exact request bytes")
+    if len(request) < 20:
+        raise ValueError("captured request frame has no header")
+    request_size = struct.unpack("<4sHBBIQ", request[:20])[4]
+    if request_size > len(request) - 20:
+        raise ValueError("captured request metadata exceeds its frame")
+    request_metadata = json.loads(request[20:20 + request_size].decode("utf-8"))
+    if not isinstance(request_metadata, dict):
+        raise ValueError("captured request metadata is not an object")
+    if (reply.get("modelContentHash") != request_metadata.get("modelContentHash")
+            or reply.get("bundleContentHash") != request_metadata.get("bundleContentHash")):
+        raise ValueError("response model or bundle identity differs from the request")
+    if inference_steps is not None and not str(reply.get("backendId", "")).endswith(
+            "/steps-" + str(inference_steps)):
+        raise ValueError("response backend does not report the selected inference steps")
     if reply.get("frameCount") != item["frameCount"] or reply.get("sampleRate") != SAMPLE_RATE:
         raise ValueError("response frame count or sample rate differs from the request")
     if reply.get("channels") != 1:
@@ -344,7 +361,7 @@ def pitch_adherence_detail(requested_hz: float, measured_hz: float, coverage: fl
 
 
 def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds,
-                  repetitions: int = 2) -> dict:
+                  repetitions: int = 2, inference_steps: int | None = None) -> dict:
     """One held-out item's record. Never approves musical content.
 
     Every automatic criterion keeps its own status, so a candidate that is
@@ -379,7 +396,7 @@ def evaluate_item(item: dict, runs: list, vocabulary: dict, maximum_milliseconds
                           "worker exit status " + str(run["returncode"]) + ": "
                           + run["stderr"][:160].decode("utf-8", "replace").strip())
         try:
-            reply, pcm = decode_response(run["stdout"], run["request"], item)
+            reply, pcm = decode_response(run["stdout"], run["request"], item, inference_steps)
         except ValueError as error:
             return failed("response-binding", str(error))
         frames.append(pcm)
@@ -510,7 +527,8 @@ def qualify(configuration: Path, expected_sha256: str, worker: Path, output: Pat
                              "request": request,
                              "milliseconds": (time.perf_counter() - started) * 1000.0})
         items.append(evaluate_item(prepared, runs, vocabulary,
-                                   config["maximumMillisecondsPerItem"], config["repetitions"]))
+                                   config["maximumMillisecondsPerItem"], config["repetitions"],
+                                   bundle["inferenceSteps"]))
     dossier = aggregate(items, bundle,
                         {"path": str(worker), "sha256": hashlib.sha256(worker_payload).hexdigest()},
                         config["repetitions"], config["maximumMillisecondsPerItem"])

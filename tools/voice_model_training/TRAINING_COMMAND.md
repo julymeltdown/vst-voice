@@ -14,6 +14,7 @@ schema-1 captures without it use 10), 1..256 held-out items (item and song ident
 phones, frame count, target F0 and gain) and 2..5 repetitions. The command drives the
 production worker over every item and writes a dossier that keeps each automatic
 criterion separate: bundle admission, response binding to the exact request bytes,
+model and bundle digests and the selected inference-step identity,
 vocabulary coverage of the held-out phones, determinism across repeated identical
 requests, finite non-silent audio, and runtime when a per-item budget is declared.
 Intelligibility, identity and musicality are always UNRESOLVED, because they need
