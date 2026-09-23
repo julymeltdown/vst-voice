@@ -254,8 +254,10 @@ public:
   [[nodiscard]] std::vector<voicebank::VoicebankCandidate> availableVoicebanks() const;
 
   void requestRender(std::uint32_t sampleRate);
-  // Owner-thread projection of the render state into the editor's panel. Safe to call with
-  // mutex_ held or not: it never takes this runtime's mutex.
+  // Projection of the render state into the editor's panel. This is NOT owner-thread only:
+  // the render worker reaches it through publishPreviewFromAuthoring, so it takes mutex_ to
+  // read the controller_ that the owner thread reassigns. It is safe to call with mutex_
+  // already held because that lock is recursive, and it has no path that re-enters itself.
   void refreshRenderStatusView();
   void setRenderQuality(rendering::RenderQuality quality);
   [[nodiscard]] rendering::RenderQuality renderQuality() const noexcept;

@@ -2530,3 +2530,51 @@ measurement rather than a finding. The lesson is the same one that caught the
 analyzer octave error earlier: validate the instrument against a known-good case
 before believing its failure. A unison target is that case for a pitch renderer, and
 it should have been the first thing run.
+
+2026-09-23 -- Repaired an intermittent segfault in `seam_phase11_tests` on the macOS
+CI leg (`phase11-plugin-formats`, job `clap-editor (macos-latest)`) rather than
+dismissing it as a flake. It surfaced on `1b58bb64`, a documentation-only commit, and
+re-running workflow `35846674545` passed all five jobs -- intermittent, but not
+innocent, because a docs-only commit cannot introduce a defect.
+
+ThreadSanitizer gave the pair directly. The owner thread writes `controller_`
+(`unique_ptr::reset` in `EditorRuntime::configureControllerCallbacks()`,
+`editor_runtime_adapter.cpp:534`, reached from `replaceProject()` at
+`editor_runtime_project.cpp:107` under `mutex_`), while the render worker reads it
+(`unique_ptr::operator->` in `EditorRuntime::refreshRenderStatusView()`,
+`editor_runtime_preview.cpp:48`, reached from `publishPreviewFromAuthoring()` at
+`editor_runtime_adapter.cpp:274` via the completion callback registered at
+`editor_runtime_adapter.cpp:173` and `notifyCompletion()`). That is a use-after-free
+window, not a benign race: the worker can dereference the controller while the owner
+destroys it.
+
+The reason it survived review is a declaration comment asserting the function was
+owner-thread only and "never takes this runtime's mutex". Both halves were false. The
+declaration is corrected in the same commit. The fix takes `mutex_` in
+`refreshRenderStatusView()`; `mutex_` is a `std::recursive_mutex`
+(`editor_runtime.hpp:387`) and this is load-bearing, because `replaceProject()` holds
+it across `rebuildController()` -> `configureControllerCallbacks()`, which calls
+`refreshRenderStatusView()` at `editor_runtime_adapter.cpp:547`.
+
+Verified both directions. Before: two consecutive aborts (exit 134) with the
+`unique_ptr<...NativeEditorController>` race signature. After: 12/12 clean runs, then
+12/12 clean again once the header was corrected, zero ThreadSanitizer reports, every
+run identical at `Phase 11 tests PASS: notes=8 previewEnergy=3704 liveEnergy=14.0871`.
+The exact CI configuration reproduces locally (Debug `seam_phase11_tests` 1/1 in
+3.46 s); Release CTest 183/183 in 89.09 s; external-beta 189/189 in 25.66 s; source
+closure, phase11 and phase12b contract gates pass.
+
+Deadlock was checked rather than assumed. `notifyCompletion()`
+(`render_coordinator.cpp:824`) invokes the callback at line 830 with no coordinator
+lock held, so no lock-order inversion exists; nothing holds `EditorRuntime::mutex_`
+while blocking on the worker (`prepareOfflineRender()` polls `progress()`/`latest()`
+outside the lock); the two accessors taken under the lock (`progress()` at
+`render_coordinator.cpp:371`, `acquireCurrent()` at 347) are `noexcept` and
+non-blocking; and the only join path clears the completion callback before joining
+without holding `mutex_`.
+
+This is maintenance and advances no roadmap unit or Beta criterion. No renderer
+revision is bumped because no rendered sample changes. Full account in
+`docs/implementation/PREVIEW_STATUS_RACE_2026-09-23.md`. The separate one-off
+`seam_phase12b_tests` teardown abort, which did not reproduce in 200 serial runs, is
+unrelated to this race and remains tracked on its own.

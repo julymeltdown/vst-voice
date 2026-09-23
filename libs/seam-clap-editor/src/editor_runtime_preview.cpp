@@ -38,6 +38,19 @@ native_ui::RenderStatusState renderStatusFor(
 }  // namespace
 
 void EditorRuntime::refreshRenderStatusView() {
+  // controller_ is a unique_ptr the owner thread reassigns inside
+  // configureControllerCallbacks(), so reading it here without the lock raced that
+  // write. The render worker calls this through publishPreviewFromAuthoring, and
+  // ThreadSanitizer reported the pair directly: a write in unique_ptr::reset from
+  // EditorRuntime::configureControllerCallbacks against a read in
+  // refreshRenderStatusView from the worker, on the same address. That is a real
+  // use-after-free window, not a benign race: the worker can dereference the
+  // controller while the owner thread is destroying it, which is what produced an
+  // intermittent segfault in seam_phase11_tests on the macOS CI leg.
+  //
+  // The lock is recursive, so this is safe whether or not a caller already holds
+  // it, and refreshRenderStatusView has no call path that re-enters it.
+  std::lock_guard lock{mutex_};
   if (!controller_) return;
   const auto progress = authoring_->renderer().progress();
   const auto offline = offlineRender_.view();
