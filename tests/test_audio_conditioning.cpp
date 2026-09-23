@@ -8,6 +8,8 @@
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/synthesis/classic_psola.hpp"
+#include "seam/synthesis/renderer_capabilities.hpp"
+#include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/pitch_marks.hpp"
 #include <algorithm>
@@ -575,6 +577,8 @@ TEST_CASE("classic PSOLA reaches the target pitch at integer down-ratios") {
   unit.pitchMarks = generated.value();
   CHECK(unit.validate());
 
+
+
   // Ratios 2.000 and 4.000 both failed before the fix; 1.888 and 3.364 passed, so
   // the non-integer cases are the control that shows the assertion discriminates.
   const std::array<std::int32_t, 4> targets{57, 58, 45, 48};
@@ -596,5 +600,58 @@ TEST_CASE("classic PSOLA reaches the target pitch at integer down-ratios") {
     // target happens to equal the source.
     const auto toSource = 1200.0 * std::log2(measured / sourceHz);
     CHECK(std::abs(toSource) > 100.0);
+  }
+}
+
+// U16 scenario 3: "Renderer failures preserve required intent or fail truthfully;
+// discarded experiments cannot become hidden fallback paths."
+//
+// The dangerous outcome is a required control disappearing behind a Raw fallback:
+// the render succeeds, audio is produced, and nobody learns that the vibrato or
+// formant that was asked for was dropped. Fallback is explicitly permitted here,
+// which is the case where that could happen.
+
+TEST_CASE("a required control either applies or fails rather than falling back silently") {
+  constexpr std::uint32_t rate = 48000U;
+  constexpr std::size_t frames = 24000U;
+  const auto samples = seam::test::support::sineWave(rate, 440.0, 0.5, 0.4F);
+  CHECK(samples.size() == frames);
+  const seam::voicebank::AudioBuffer source{
+      .sampleRate = rate, .channels = 1, .interleaved = samples};
+  auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 69,
+      seam::voicebank::UnitKind::Sustain, frames);
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  const auto generated = seam::voicebank::generatePitchMarks(samples, rate,
+      unit.markers.audioOffset, unit.markers.audioEnd);
+  CHECK(generated);
+  unit.pitchMarks = generated.value();
+  CHECK(unit.validate());
+
+  const seam::synthesis::UnitRendererDispatcher dispatcher;
+  for (const auto control : {seam::synthesis::RendererControl::Formant,
+                             seam::synthesis::RendererControl::Gender,
+                             seam::synthesis::RendererControl::Growl,
+                             seam::synthesis::RendererControl::Vibrato}) {
+    seam::synthesis::RendererDispatchParameters parameters{};
+    parameters.controls.require(control);
+    parameters.allowRawFallback = true;
+    const auto rendered = dispatcher.render(unit, source, rate, frames, 69, parameters);
+    const auto name = std::string{seam::synthesis::rendererControlName(control)};
+    if (!rendered) {
+      // Refusing is truthful, as long as the message names the control so the
+      // caller can act on it.
+      CHECK(rendered.error().message.find(name) != std::string::npos);
+      continue;
+    }
+    // Accepting is truthful only when what actually ran supports the control, or
+    // when a diagnostic tells the caller it was not applied.
+    const auto actualSupports =
+        seam::synthesis::rendererCapabilities(rendered.value().actual).supports(control);
+    CHECK(actualSupports || !rendered.value().diagnostic.empty());
+    // A silent fallback that drops a required control is the failure this exists
+    // to catch, so state it directly.
+    if (rendered.value().usedFallback && !actualSupports) {
+      CHECK(!rendered.value().diagnostic.empty());
+    }
   }
 }
