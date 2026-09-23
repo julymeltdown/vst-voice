@@ -54,8 +54,18 @@ custom phonemizers/renderers, all expression curves, plugins, and every future
 USTX field remain explicit losses. Installed-host and native-panel evidence is a
 separate Beta-GO requirement.
 
-The 0.6–0.8 compatibility regression uses the same musical fields as the pinned
-OpenUtau loader's 0.6–0.9 path; it also exercises the shorter pre-0.7 expression
-selector list. It does not substitute for an archival-file corpus from each old
-OpenUtau release. That corpus and external application verification remain part of
-U30 acceptance.
+The compatibility regression includes files emitted by the actual OpenUtau
+0.6, 0.7, 0.8 and 0.9 serializers (see `tests/fixtures/ustx/README.md`). These
+carry their UTF-8 BOM and indentless block sequences; the bounded parser accepts
+both. The earlier version-adjusted fixture remains a smaller control, not the
+source of historical evidence. Nonzero OpenUtau note `tuning` is incorporated
+into SEAM pitch automation, preserving the tested musical contour, but its
+separate edit control is not retained and is explicitly reported as loss.
+`tuning` must be integral to match OpenUtau's `UNote.tuning` type. A fifth
+historical-serializer fixture has a 64-point `dyn` curve; SEAM loads its notes
+but reports the curve as lost. Large expression curves can exhaust the bounded
+line/collection budgets before note import. The historical serializer also
+emits folded `>-` YAML for multiline comments; that shape currently fails
+closed and is not supported by this codec.
+Serializer-generated files do not substitute for broad real-world documents or
+actual desktop GUI open/save verification; both remain part of U30 acceptance.

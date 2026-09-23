@@ -379,6 +379,12 @@ private:
     if (!value.empty()) return parseInline(value, line);
     if (lineIndex_ < lines_.size() && lines_[lineIndex_].indent > indent)
       return parseBlock(depth + 1U, lines_[lineIndex_].indent);
+    // YamlDotNet, including OpenUtau's own serializer, emits block sequences
+    // without increasing indentation after a mapping key. A same-indent
+    // mapping entry is still a sibling; only a sequence marker belongs to the
+    // empty value. Keep it on the ordinary depth/node/collection budget path.
+    if (lineIndex_ < lines_.size() && isSequenceLine(lines_[lineIndex_], indent))
+      return parseBlock(depth + 1U, indent);
     return Node{nullptr};
   }
 
@@ -540,7 +546,14 @@ core::Result<UstxNote> decodeNote(const Node& value, std::string_view path,
   auto toneValue = integerValue(*tone.value(), std::string(path) + ".tone", 0, 127); if (!toneValue) return core::Result<UstxNote>{toneValue.error()};
   auto lyricValue = stringValue(*lyric.value(), std::string(path) + ".lyric", limits); if (!lyricValue) return core::Result<UstxNote>{lyricValue.error()};
   UstxNote result{.position = time::Tick{positionValue.value()}, .duration = time::Tick{durationValue.value()}, .tone = static_cast<std::uint8_t>(toneValue.value()), .lyric = std::move(lyricValue).value()};
-  if (const auto* tuning = optional(value, "tuning")) { auto parsed = numberValue(*tuning, std::string(path) + ".tuning", -4800.0, 4800.0); if (!parsed) return core::Result<UstxNote>{parsed.error()}; result.tuning = parsed.value(); }
+  if (const auto* tuning = optional(value, "tuning")) {
+    auto parsed = numberValue(*tuning, std::string(path) + ".tuning", -4800.0, 4800.0);
+    if (!parsed) return core::Result<UstxNote>{parsed.error()};
+    if (std::trunc(parsed.value()) != parsed.value())
+      return core::failure<UstxNote>(core::ErrorCode::ParseError,
+          "USTX note tuning must be an integer", std::string(path) + ".tuning");
+    result.tuning = parsed.value();
+  }
   if (const auto* pitch = optional(value, "pitch")) {
     if (!pitch->isObject()) return core::failure<UstxNote>(core::ErrorCode::ParseError, "USTX note pitch must be an object");
     const auto* data = optional(*pitch, "data");
@@ -733,7 +746,7 @@ core::Result<void> UstxDocument::validate(const UstxLimits& limits) const {
   for (const auto& part : parts) {
     if (part.trackNo >= tracks.size() || part.name.size() > limits.maximumScalarBytes || !domain::fromUtf8(part.name) || part.position.value() < 0 || part.duration.value() <= 0 || part.position.value() > limits.maximumTick || part.duration.value() > limits.maximumTick - part.position.value() || part.notes.size() > limits.maximumNotes - std::min(noteCount, limits.maximumNotes)) return core::failure(core::ErrorCode::InvalidArgument, "USTX part is invalid");
     for (const auto& note : part.notes) {
-      ++noteCount; if (note.position.value() < 0 || note.duration.value() <= 0 || note.position.value() > limits.maximumTick || note.duration.value() > limits.maximumTick - note.position.value() || note.position.value() + note.duration.value() > part.duration.value() || note.tone > 127U || note.lyric.size() > limits.maximumScalarBytes || !domain::fromUtf8(note.lyric) || !std::isfinite(note.tuning) || note.tuning < -4800.0 || note.tuning > 4800.0) return core::failure(core::ErrorCode::InvalidArgument, "USTX note is invalid");
+      ++noteCount; if (note.position.value() < 0 || note.duration.value() <= 0 || note.position.value() > limits.maximumTick || note.duration.value() > limits.maximumTick - note.position.value() || note.position.value() + note.duration.value() > part.duration.value() || note.tone > 127U || note.lyric.size() > limits.maximumScalarBytes || !domain::fromUtf8(note.lyric) || !std::isfinite(note.tuning) || note.tuning < -4800.0 || note.tuning > 4800.0 || std::trunc(note.tuning) != note.tuning) return core::failure(core::ErrorCode::InvalidArgument, "USTX note is invalid");
       for (const auto& point : note.pitch) { ++curveCount; if (curveCount > limits.maximumCurvePoints || !std::isfinite(point.offsetMilliseconds) || point.offsetMilliseconds < -86'400'000.0 || point.offsetMilliseconds > 86'400'000.0 || !std::isfinite(point.y) || point.y < -480.0 || point.y > 480.0 || point.shape.empty() || point.shape.size() > 16U || !domain::fromUtf8(point.shape)) return core::failure(core::ErrorCode::InvalidArgument, "USTX pitch point is invalid"); }
       if (note.hasVibrato && (!std::isfinite(note.vibrato.length) || note.vibrato.length <= 0.0 || note.vibrato.length > 100.0 || !std::isfinite(note.vibrato.period) || note.vibrato.period < 1.0 || note.vibrato.period > 2'000.0 || !std::isfinite(note.vibrato.depth) || note.vibrato.depth < 0.0 || note.vibrato.depth > 2'000.0 || !std::isfinite(note.vibrato.fadeIn) || note.vibrato.fadeIn < 0.0 || note.vibrato.fadeIn > 100.0 || !std::isfinite(note.vibrato.fadeOut) || note.vibrato.fadeOut < 0.0 || note.vibrato.fadeOut > 100.0)) return core::failure(core::ErrorCode::InvalidArgument, "USTX vibrato is invalid");
     }

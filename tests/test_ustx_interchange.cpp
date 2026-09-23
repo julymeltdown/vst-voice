@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <locale>
 #include <numbers>
 #include <string>
@@ -105,6 +108,14 @@ namespace {
 
 std::vector<std::uint8_t> bytes(std::string_view text) {
   return {text.begin(), text.end()};
+}
+
+std::vector<std::uint8_t> historicalSerializerFixture(std::string_view version) {
+  const auto path = std::filesystem::path{__FILE__}.parent_path() / "fixtures" / "ustx" /
+      ("openutau-" + std::string{version} + "-serializer.ustx");
+  std::ifstream input{path, std::ios::binary};
+  if (!input) return {};
+  return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
 const char* fixture() {
@@ -331,6 +342,118 @@ TEST_CASE("USTX 0.6 through 0.9 import the shared musical subset and export as 0
     CHECK(!rejected);
     CHECK(rejected.error().code == core::ErrorCode::Unsupported);
   }
+}
+
+TEST_CASE("historical OpenUtau serializers feed the bounded USTX import and 0.9 export") {
+  using namespace seam;
+  for (const std::string_view version : {"0.6", "0.7", "0.8", "0.9"}) {
+    const auto source = historicalSerializerFixture(version);
+    CHECK(!source.empty());
+    CHECK(source.size() >= 3U && source[0] == 0xefU && source[1] == 0xbbU && source[2] == 0xbfU);
+    const auto decoded = interchange::decodeUstx(source);
+    CHECK(decoded);
+    const auto& song = decoded.value();
+    CHECK(song.version == version);
+    CHECK(song.tempos.size() == 2U && song.tempos[1].position == time::Tick{480});
+    CHECK(song.meters.size() == 2U && song.meters[1].barPosition == 2);
+    CHECK(song.tracks.size() == 1U && song.tracks[0].name == "Lead");
+    CHECK(song.tracks[0].volume == -3.0 && song.tracks[0].pan == 0.25);
+    CHECK(song.parts.size() == 1U && song.parts[0].position == time::Tick{960});
+    CHECK(song.parts[0].duration == time::Tick{960});
+    CHECK(song.parts[0].notes.size() == 2U);
+    CHECK(song.parts[0].notes[0].position == time::Tick{0} &&
+          song.parts[0].notes[0].duration == time::Tick{480} && song.parts[0].notes[0].tone == 60U);
+    CHECK(song.parts[0].notes[1].position == time::Tick{480} &&
+          song.parts[0].notes[1].duration == time::Tick{480} && song.parts[0].notes[1].tone == 62U);
+    CHECK(song.parts[0].notes[0].lyric == "あ" && song.parts[0].notes[1].lyric == "い");
+    CHECK(song.parts[0].notes[0].pitch.size() == 2U);
+    CHECK(song.parts[0].notes[0].hasVibrato);
+    CHECK(song.parts[0].notes[0].tuning == (version == "0.6" || version == "0.7" ? 0.0 : 25.0));
+    CHECK(hasLossAt(song.issues, "ustx.expressions"));
+    CHECK(hasLossAt(song.issues, "ustx.tracks[0].renderer_settings"));
+    CHECK(song.issues.size() == 7U);  // Source metadata losses, before pitch conversion.
+
+    application::ProjectFactory factory{901000U};
+    const auto imported = interchange::importUstxProject(source, factory);
+    CHECK(imported);
+    const auto carriesTuning = version == "0.8" || version == "0.9";
+    CHECK(imported.value().issues.size() == (carriesTuning ? 10U : 9U));
+    CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[0].tuning") == carriesTuning);
+    CHECK(imported.value().project.vocalTracks().front().gainDb == -3.0F);
+    CHECK(imported.value().project.vocalTracks().front().pan == 0.25F);
+    CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 2U);
+    const auto emitted = interchange::encodeUstx(song);
+    CHECK(emitted);
+    const auto normalized = interchange::decodeUstx(emitted.value());
+    CHECK(normalized);
+    CHECK(normalized.value().version == "0.9");
+    CHECK(normalized.value().tempos == song.tempos);
+    CHECK(normalized.value().meters == song.meters);
+    CHECK(normalized.value().parts == song.parts);
+  }
+}
+
+TEST_CASE("OpenUtau indentless sequences retain collection budgets") {
+  using namespace seam;
+  const auto source = bytes("ustx_version: \"0.9\"\ntempos:\n- position: 0\n  bpm: 120\n- position: 480\n  bpm: 150\n");
+  interchange::UstxLimits limits;
+  limits.maximumCollectionEntries = 1U;
+  const auto overBudget = interchange::decodeUstx(source, limits);
+  CHECK(!overBudget);
+  CHECK(overBudget.error().code == core::ErrorCode::ParseError);
+  CHECK(overBudget.error().message == "USTX collection entry limit exceeded");
+  CHECK(overBudget.error().context == "line 5");
+}
+
+TEST_CASE("USTX tuning remains an integer accepted by OpenUtau") {
+  using namespace seam;
+  const auto source = historicalSerializerFixture("0.9");
+  CHECK(!source.empty());
+  std::string fractional{source.begin(), source.end()};
+  const auto marker = fractional.find("tuning: 25");
+  CHECK(marker != std::string::npos);
+  fractional.replace(marker, std::string_view{"tuning: 25"}.size(), "tuning: 25.5");
+  const auto rejected = interchange::decodeUstx(bytes(fractional));
+  CHECK(!rejected);
+  CHECK(rejected.error().code == core::ErrorCode::ParseError);
+  CHECK(rejected.error().context == "ustx.voice_parts[0].notes[0].tuning");
+
+  auto decoded = interchange::decodeUstx(source);
+  CHECK(decoded);
+  decoded.value().parts[0].notes[0].tuning = 25.5;
+  const auto encoded = interchange::encodeUstx(decoded.value());
+  CHECK(!encoded);
+  CHECK(encoded.error().code == core::ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("OpenUtau curve-bearing score discloses curve loss and consumes bounded parser work") {
+  using namespace seam;
+  const auto source = historicalSerializerFixture("0.9-curve");
+  CHECK(!source.empty());
+  const auto decoded = interchange::decodeUstx(source);
+  CHECK(decoded);
+  CHECK(decoded.value().parts.size() == 1U && decoded.value().parts[0].notes.size() == 2U);
+  CHECK(hasLossAt(decoded.value().issues, "ustx.voice_parts[0].curves"));
+
+  application::ProjectFactory factory{901500U};
+  const auto imported = interchange::importUstxProject(source, factory);
+  CHECK(imported);
+  CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].curves"));
+
+  interchange::UstxLimits lineBudget;
+  lineBudget.maximumNodes = 400U;
+  const auto overLineBudget = interchange::decodeUstx(source, lineBudget);
+  CHECK(!overLineBudget);
+  CHECK(overLineBudget.error().code == core::ErrorCode::ParseError);
+  CHECK(overLineBudget.error().message == "USTX line/node limit exceeded");
+
+  interchange::UstxLimits collectionBudget;
+  collectionBudget.maximumCollectionEntries = 50U;
+  const auto overCollectionBudget = interchange::decodeUstx(source, collectionBudget);
+  CHECK(!overCollectionBudget);
+  CHECK(overCollectionBudget.error().code == core::ErrorCode::ParseError);
+  CHECK(overCollectionBudget.error().message == "USTX collection entry limit exceeded");
+  CHECK(overCollectionBudget.error().context == "line 357");
 }
 
 TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and hostile depth") {

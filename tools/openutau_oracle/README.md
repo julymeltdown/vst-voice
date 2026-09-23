@@ -74,6 +74,28 @@ DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
 
 Success ends with `ORACLE_OK` (USTX) or `ORACLE_MIDI_OK` (MIDI).
 
+For a version-specific serializer fixture, rebuild this checker against that
+version's pinned `OpenUtau.Core` checkout and run
+`seam_openutau_oracle.dll --emit-fixture NEW_FILE.ustx`. Use
+`--emit-curve-fixture NEW_FILE.ustx` for the additional 64-point `dyn` curve
+variant. It uses that assembly's
+`UProject`, validation and YAML serializer, then creates a new UTF-8 file; it
+never overwrites a path. The five checked-in fixtures and exact provenance are
+documented in `tests/fixtures/ustx/README.md`. A .NET 10 build of the old
+checkouts required distinct resource names in their temporary project files;
+no OpenUtau serializer or model code was edited. Old transitive dependencies
+are used only for this isolated fixture generation, not bundled with SEAM.
+The tool allows a missing `UNote.tuning` field only for historical USTX 0.6
+and 0.7; a missing field in 0.8 or later fails rather than silently weakening
+the pitch comparison.
+
+To compare a source and SEAM-round-tripped USTX with OpenUtau's own authored
+pitch sampler, run
+`seam_openutau_oracle.dll --compare-pitch SOURCE.ustx ROUNDTRIP.ustx`.
+It checks note positions/durations/tones/lyrics and samples nine in-note ticks
+per note, excluding vibrato modulation. `PITCH_COMPARE_OK` requires no sampled
+error above 0.5 cent; it is not a waveform or all-curve guarantee.
+
 ## Reading the output
 
 - `midiTextHex` is the authoritative lyric check. `midiText` can show `???` if a

@@ -12,6 +12,30 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-24 — U30 historical-serializer interoperability increment, local only;
+GitHub CI remains deferred by user request. Building the optional OpenUtau
+oracle separately against 0.6, 0.7, 0.8 and 0.9 source tags produced four
+byte-pinned baseline USTX fixtures and a fifth 0.9 curve-bearing fixture.
+Real OpenUtau YAML uses indentless block sequences;
+the native bounded reader previously rejected them as trailing content and
+now accepts them through the existing depth/node/collection limits. All four
+import through SEAM and re-export as 0.9. Their own historical loaders and the
+pinned current loader accept the inputs; the pinned loader accepts all four
+SEAM round trips. Its independent pitch sampler measured at most 0.160040
+cents difference across 18 fixed in-note points per pair. Nonzero per-note
+tuning remains audible through pitch automation, but its separate edit control
+is flattened; that control loss is now named in the conversion report. The
+curve-bearing file imports with an explicit curve loss and bounded-resource
+regression; a read-only peer found no parser regression and highlighted this
+previously untested breadth axis. Fractional `tuning` now rejects to match
+OpenUtau's integer model. A separate historical-serializer probe produced a
+folded `>-` multiline comment that SEAM still refuses; this joins large-curve
+policy, actual desktop GUI and broader field corpus as U30 acceptance work.
+Focused Release and Debug USTX/service tests pass. U30 stays PARTIAL; no
+singer/Beta GO claim. Details and
+hashes: `U30_ACCEPTANCE_AUDIT_2026-09-23.md` and
+`tests/fixtures/ustx/README.md`.
+
 2026-09-23 — U30 compatibility and independent-load audit, with GitHub CI deferred
 at the user's request. Native USTX now imports the declared 0.6–0.9 musical
 subset and continues to export 0.9. The historical OpenUtau 0.6 source check

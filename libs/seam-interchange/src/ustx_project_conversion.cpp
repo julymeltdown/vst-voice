@@ -440,6 +440,9 @@ core::Result<UstxProjectDraft> importUstxProject(
     for (std::size_t noteIndex = 0U; noteIndex < source.notes.size(); ++noteIndex) {
       const auto& inputNote = source.notes[noteIndex];
       const auto notePath = "ustx.voice_parts[" + std::to_string(partIndex) + "].notes[" + std::to_string(noteIndex) + "]";
+      if (inputNote.tuning != 0.0)
+        addIssue(issues, UstxIssueSeverity::Loss, notePath + ".tuning",
+                 "note tuning is included in the imported pitch contour but its separate edit control is not retained", limits);
       const auto earlier = std::lower_bound(priorNoteEnds.begin(), priorNoteEnds.end(), inputNote.position.value(),
                                             [](const auto& entry, std::int64_t position) { return entry.first < position; });
       const auto priorEnd = earlier == priorNoteEnds.begin() ? -1 : (earlier - 1)->second;
