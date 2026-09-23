@@ -33,8 +33,12 @@ double PreparedHostTimeline::observedEndBeats() const noexcept {
 
 HostSampleRange PreparedHostTimeline::observedSampleRange() const {
   return HostSampleRange{
-      .startSeconds = tempoMap_.secondsAt(tickForBeats(observedStartBeats(), ppq_)),
-      .endSeconds = tempoMap_.secondsAt(tickForBeats(observedEndBeats(), ppq_)),
+      .startSeconds = absoluteTempoMap_.secondsAt(
+                          tickForBeats(observedStartBeats(), ppq_)) -
+                      projectOffsetSeconds_,
+      .endSeconds = absoluteTempoMap_.secondsAt(
+                        tickForBeats(observedEndBeats(), ppq_)) -
+                    projectOffsetSeconds_,
   };
 }
 
@@ -228,9 +232,11 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
     return core::failure<PreparedHostTimeline>(core::ErrorCode::InvalidArgument,
                          "Prepared host timeline sample rate is outside supported bounds");
   }
-  if (!std::isfinite(request.projectOffsetSeconds) || request.projectOffsetSeconds < 0.0) {
+  if (!std::isfinite(request.projectStartBeats) || request.projectStartBeats < 0.0 ||
+      request.projectStartBeats >= request.requestedEndBeats ||
+      request.requestedStartBeats != 0.0) {
     return core::failure<PreparedHostTimeline>(core::ErrorCode::InvalidArgument,
-                         "Prepared host timeline project offset must be finite and not negative");
+                         "Prepared host timeline must cover beat zero through the project start and score end");
   }
   if (!std::isfinite(request.maximumGapBeats) || request.maximumGapBeats <= 0.0) {
     return core::failure<PreparedHostTimeline>(core::ErrorCode::InvalidArgument,
@@ -242,6 +248,11 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
     return core::failure<PreparedHostTimeline>(
         core::ErrorCode::Conflict,
         "The host sample rate changed during capture; recapture the range at one rate");
+  }
+  if (sampleRate_.has_value() && *sampleRate_ != request.sampleRate) {
+    return core::failure<PreparedHostTimeline>(
+        core::ErrorCode::Conflict,
+        "The host capture sample rate differs from the final render rate; recapture at the render rate");
   }
   if (meterDropped_) {
     return core::failure<PreparedHostTimeline>(core::ErrorCode::InvalidArgument,
@@ -273,7 +284,7 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
   prepared.projectRevision_ = request.projectRevision;
   prepared.sampleRate_ = request.sampleRate;
   prepared.ppq_ = request.ppq > 0 ? request.ppq : time::kDefaultPpq;
-  prepared.projectOffsetSeconds_ = request.projectOffsetSeconds;
+  prepared.projectStartBeats_ = request.projectStartBeats;
   prepared.requestedStartBeats_ = request.requestedStartBeats;
   prepared.requestedEndBeats_ = request.requestedEndBeats;
   prepared.authority_ = tempoMap_;
@@ -312,14 +323,31 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
     if (!reachesEnd && position != all.end()) prepared.segments_.push_back(*position);
   }
 
-  prepared.tempoMap_ = time::TempoMap{prepared.ppq_};
+  prepared.absoluteTempoMap_ = time::TempoMap{prepared.ppq_};
   for (const auto& segment : prepared.authority_.observations()) {
-    const auto added = prepared.tempoMap_.addOrReplace(
+    const auto added = prepared.absoluteTempoMap_.addOrReplace(
         tickForBeats(segment.beats, prepared.ppq_), segment.bpm);
     if (!added) {
       return core::failure<PreparedHostTimeline>(
           core::ErrorCode::InvalidArgument,
           "Host tempo segments cannot be expressed at this project's tick resolution");
+    }
+  }
+  const auto startTick = tickForBeats(request.projectStartBeats, prepared.ppq_);
+  prepared.projectOffsetSeconds_ = prepared.absoluteTempoMap_.secondsAt(startTick);
+  prepared.tempoMap_ = time::TempoMap{prepared.ppq_};
+  const auto initial = prepared.tempoMap_.addOrReplace(
+      time::Tick{0}, prepared.absoluteTempoMap_.bpmAt(startTick));
+  if (!initial) return core::Result<PreparedHostTimeline>{initial.error()};
+  for (const auto& segment : prepared.authority_.observations()) {
+    if (segment.beats <= request.projectStartBeats ||
+        segment.beats > request.requestedEndBeats) continue;
+    const auto added = prepared.tempoMap_.addOrReplace(
+        tickForBeats(segment.beats, prepared.ppq_) - startTick, segment.bpm);
+    if (!added) {
+      return core::failure<PreparedHostTimeline>(
+          core::ErrorCode::InvalidArgument,
+          "Host tempo segments cannot be rebased at this project's tick resolution");
     }
   }
 
@@ -331,6 +359,7 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
   hash.update(std::to_string(prepared.sampleRate_));
   hash.update(std::to_string(prepared.ppq_));
   hash.update(std::to_string(prepared.projectOffsetSeconds_));
+  hash.update(std::to_string(prepared.projectStartBeats_));
   hash.update(std::to_string(prepared.requestedStartBeats_));
   hash.update(std::to_string(prepared.requestedEndBeats_));
   hash.update(prepared.loopActive_ ? "loop" : "no-loop");

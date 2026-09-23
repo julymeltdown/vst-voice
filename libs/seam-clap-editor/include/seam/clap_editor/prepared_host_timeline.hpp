@@ -33,7 +33,11 @@ struct HostTimelineCaptureRequest final {
   std::uint64_t projectRevision{0U};
   std::uint32_t sampleRate{48000U};
   time::Ppq ppq{time::kDefaultPpq};
-  double projectOffsetSeconds{0.0};
+  // Host beat at which project tick zero begins. Capture must also cover the host
+  // timeline from beat zero so the corresponding seconds offset is determined.
+  double projectStartBeats{0.0};
+  // Includes beat zero even when the project starts later, so its seconds
+  // placement is derived from a complete host tempo history.
   double requestedStartBeats{0.0};
   double requestedEndBeats{0.0};
   // How far apart two host reports may be and still describe a continuous map. The
@@ -69,6 +73,7 @@ public:
   [[nodiscard]] std::uint32_t sampleRate() const noexcept { return sampleRate_; }
   [[nodiscard]] time::Ppq ppq() const noexcept { return ppq_; }
   [[nodiscard]] double projectOffsetSeconds() const noexcept { return projectOffsetSeconds_; }
+  [[nodiscard]] double projectStartBeats() const noexcept { return projectStartBeats_; }
   [[nodiscard]] double requestedStartBeats() const noexcept { return requestedStartBeats_; }
   [[nodiscard]] double requestedEndBeats() const noexcept { return requestedEndBeats_; }
   // What the host actually reported, which may be wider than what was requested.
@@ -90,7 +95,8 @@ public:
   [[nodiscard]] std::size_t reportCount() const noexcept { return reportCount_; }
   [[nodiscard]] std::uint64_t captureRevision() const noexcept { return captureRevision_; }
   [[nodiscard]] std::size_t seekCount() const noexcept { return seekCount_; }
-  // The tempo map the render actually compiles against, at this project's resolution.
+  // The tempo map the render actually compiles against, rebased so project tick
+  // zero coincides with projectStartBeats on the host timeline.
   [[nodiscard]] const time::TempoMap& tempoMap() const noexcept { return tempoMap_; }
   [[nodiscard]] HostSampleRange observedSampleRange() const;
   [[nodiscard]] bool covers(double startBeats, double endBeats,
@@ -114,11 +120,13 @@ private:
   std::uint32_t sampleRate_{48000U};
   time::Ppq ppq_{time::kDefaultPpq};
   double projectOffsetSeconds_{0.0};
+  double projectStartBeats_{0.0};
   double requestedStartBeats_{0.0};
   double requestedEndBeats_{0.0};
   HostTempoMap authority_;
   std::vector<HostTempoObservation> segments_;
   time::TempoMap tempoMap_{};
+  time::TempoMap absoluteTempoMap_{};
   std::vector<HostMeterSegment> meters_;
   bool loopActive_{false};
   double loopStartBeats_{0.0};

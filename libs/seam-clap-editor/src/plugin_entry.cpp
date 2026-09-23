@@ -291,9 +291,15 @@ private:
 
   void refreshRuntimeMetadata() {
     const auto project = runtime_->projectCopy();
-    projectOffsetSeconds_.store(
-        project.tempoMap().secondsAt(project.settings().hostStartOffsetTick),
-        std::memory_order_release);
+    auto offsetSeconds =
+        project.tempoMap().secondsAt(project.settings().hostStartOffsetTick);
+    if (renderMode_.load(std::memory_order_acquire) == CLAP_RENDER_OFFLINE &&
+        runtime_->offlineRenderReady()) {
+      if (const auto prepared = runtime_->preparedHostTimeline()) {
+        offsetSeconds = prepared->projectOffsetSeconds();
+      }
+    }
+    projectOffsetSeconds_.store(offsetSeconds, std::memory_order_release);
     defaultTempo_.store(project.tempoMap().bpmAt(time::Tick{0}),
                         std::memory_order_release);
     desiredOutputChannels_.store(project.routing().deviceOutputChannels,
@@ -347,7 +353,17 @@ private:
 
   static bool prepareFinal(PluginInstance& instance) noexcept {
     try {
-      return static_cast<bool>(instance.runtime_->prepareOfflineRender());
+      if (!instance.runtime_->prepareOfflineRender()) return false;
+      // The rendered Follow Host map is rebased to project tick zero. Playback must
+      // subtract the same captured host-seconds origin, not the document's tempo-map
+      // estimate of that origin (which can differ before a host tempo change).
+      if (const auto prepared = instance.runtime_->preparedHostTimeline()) {
+        instance.projectOffsetSeconds_.store(prepared->projectOffsetSeconds(),
+                                             std::memory_order_release);
+      } else {
+        instance.refreshRuntimeMetadata();
+      }
+      return true;
     } catch (...) {
       // Allocation/worker failures must not escape the C ABI or masquerade as
       // an accepted bounce. The runtime clears its readiness before preparing.
@@ -980,6 +996,8 @@ private:
     }
     instance->renderMode_.store(mode, std::memory_order_release);
     if (mode == CLAP_RENDER_REALTIME) {
+      // Returning from a host-timed bounce restores the document's own placement.
+      instance->refreshRuntimeMetadata();
       instance->runtime_->setRenderQuality(rendering::RenderQuality::Preview);
     }
     return true;

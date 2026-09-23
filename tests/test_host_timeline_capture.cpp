@@ -42,7 +42,7 @@ HostTimelineCaptureRequest request(double endBeats) {
       .projectRevision = 3U,
       .sampleRate = 48000U,
       .ppq = seam::time::Ppq{960U},
-      .projectOffsetSeconds = 0.0,
+      .projectStartBeats = 0.0,
       .requestedStartBeats = 0.0,
       .requestedEndBeats = endBeats,
       .maximumGapBeats = 1.0,
@@ -108,6 +108,49 @@ TEST_CASE("a prepared host timeline freezes the range the host actually covered"
   const auto slowerFrozen = slower.freeze(request(4.0));
   CHECK(slowerFrozen);
   if (slowerFrozen) CHECK(slowerFrozen.value().contentHash() != prepared.contentHash());
+}
+
+TEST_CASE("a host-offset preparation rebases both the render map and playback origin") {
+  HostTimelineCapture capture;
+  capture.observe(report(0.0, 120.0), 48000U);
+  capture.observe(report(1.0, 60.0), 48000U);
+  capture.observe(report(2.0, 60.0), 48000U);
+  capture.observe(report(3.0, 240.0), 48000U);
+  capture.observe(report(4.0, 240.0), 48000U);
+
+  auto shifted = request(4.0);
+  shifted.projectStartBeats = 2.0;
+  const auto frozen = capture.freeze(shifted);
+  CHECK(frozen);
+  if (!frozen) return;
+  CHECK(frozen.value().projectStartBeats() == 2.0);
+  CHECK(std::abs(frozen.value().projectOffsetSeconds() - 1.5) < 1e-9);
+  CHECK(frozen.value().tempoMap().bpmAt(seam::time::Tick{0}) == 60.0);
+  CHECK(frozen.value().tempoMap().bpmAt(seam::time::Tick{960}) == 240.0);
+  CHECK(std::abs(frozen.value().tempoMap().secondsAt(seam::time::Tick{1920}) -
+                 1.25) < 1e-9);
+  const auto observed = frozen.value().observedSampleRange();
+  CHECK(std::abs(observed.startSeconds + 1.5) < 1e-9);
+  CHECK(std::abs(observed.endSeconds - 1.25) < 1e-9);
+  auto atProjectStart = report(2.0, 60.0);
+  atProjectStart.seconds = 1.5;
+  const auto firstFrame = seam::clap_editor::HostTimelineMapper::map(
+      atProjectStart, frozen.value().projectOffsetSeconds(), 120.0, 48000.0, 0U);
+  CHECK(firstFrame.audible);
+  CHECK(firstFrame.sourceFrame == 0U);
+  auto atProjectEnd = report(4.0, 240.0);
+  atProjectEnd.seconds = 2.75;
+  const auto lastFrame = seam::clap_editor::HostTimelineMapper::map(
+      atProjectEnd, frozen.value().projectOffsetSeconds(), 120.0, 48000.0, 0U);
+  CHECK(lastFrame.audible);
+  CHECK(lastFrame.sourceFrame == 60000U);
+
+  auto incomplete = capture;
+  incomplete.clear();
+  for (double beats = 0.0; beats <= 2.0; beats += 1.0) {
+    incomplete.observe(report(beats, 120.0), 48000U);
+  }
+  CHECK(!incomplete.freeze(shifted));
 }
 
 TEST_CASE("a prepared host timeline refuses a range the host never reported") {
@@ -262,6 +305,16 @@ TEST_CASE("a stopped host and a rate change both refuse preparation") {
     CHECK(mixedFrozen.error().message.find("sample rate changed") != std::string::npos);
   }
 
+  auto wrongRenderRate = request(2.0);
+  wrongRenderRate.sampleRate = 44100U;
+  const auto mismatched = constantCapture(120.0, 2.0).freeze(wrongRenderRate);
+  CHECK(!mismatched);
+  if (!mismatched) {
+    CHECK(mismatched.error().code == seam::core::ErrorCode::Conflict);
+    CHECK(mismatched.error().message.find("differs from the final render rate") !=
+          std::string::npos);
+  }
+
   const auto inverted = constantCapture(120.0, 4.0).freeze(request(0.0));
   CHECK(!inverted);
   if (!inverted) CHECK(inverted.error().code == seam::core::ErrorCode::InvalidArgument);
@@ -370,6 +423,39 @@ TEST_CASE("follow host preparation freezes an authority fixed audio does not inh
   CHECK(status.diagnostic.find("uncovered span") != std::string::npos);
   CHECK(status.diagnostic.find("Recapture") != std::string::npos);
   CHECK(!status.hasAudibleAudio);
+
+  // A host placement two beats into the song needs the host's beats 2..4 for
+  // the two-beat score, plus beats 0..2 to determine its seconds origin.
+  auto offsetProject = runtime.projectCopy();
+  offsetProject.settings().hostStartOffsetTick = seam::time::Tick{1920};
+  seam::clap_editor::EditorRuntime shifted{std::nullopt, {}, roots};
+  CHECK(shifted.replaceProject(std::move(offsetProject)));
+  shifted.setOfflineTimingAuthority(seam::clap_editor::OfflineTimingAuthority::FollowHost);
+  for (const auto [beats, bpm] : std::array<std::pair<double, double>, 3>{{
+           {0.0, 120.0}, {1.0, 60.0}, {2.0, 60.0}}}) {
+    shifted.setHostTimelineState(report(beats, bpm));
+  }
+  CHECK(!shifted.prepareOfflineRender(std::chrono::seconds{10}));
+  shifted.setHostTimelineState(report(3.0, 240.0));
+  shifted.setHostTimelineState(report(4.0, 240.0));
+  CHECK(shifted.prepareOfflineRender(std::chrono::seconds{30}));
+  const auto shiftedAuthority = shifted.preparedHostTimeline();
+  CHECK(shiftedAuthority.has_value());
+  if (shiftedAuthority) {
+    CHECK(shiftedAuthority->requestedEndBeats() == 4.0);
+    CHECK(std::abs(shiftedAuthority->projectOffsetSeconds() - 1.5) < 1e-9);
+  }
+  const auto shiftedAudio = shifted.acquireOfflineRenderedPreview();
+  CHECK(shiftedAudio);
+  if (shiftedAudio) {
+    const auto frames = shiftedAudio->interleaved.size() / shiftedAudio->channelCount;
+    CHECK(std::llabs(static_cast<long long>(frames) - 60000LL) < 4800LL);
+  }
+  // The preceding beat is part of the host-seconds origin, even though it is
+  // outside the project's own score. Rewriting it makes the Final audio stale.
+  shifted.setHostTimelineState(report(1.0, 90.0));
+  CHECK(!shifted.preparedHostTimeline().has_value());
+  CHECK(!shifted.acquireOfflineRenderedPreview());
 }
 
 TEST_CASE("the bounce authority is part of the project and survives a reopen") {

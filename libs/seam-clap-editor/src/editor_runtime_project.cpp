@@ -266,14 +266,17 @@ core::Result<void> EditorRuntime::prepareOfflineRender(
       // far apart two host reports may be during playback, not a measured threshold.
       constexpr double kMaximumUnobservedBeats{1.0};
       const auto endBeats = projectEndBeats(session_.project());
+      const auto projectStartBeats =
+          static_cast<double>(session_.project().settings().hostStartOffsetTick.value()) /
+          static_cast<double>(session_.project().tempoMap().ppq());
       const HostTimelineCaptureRequest captureRequest{
           .projectId = projectId,
           .projectRevision = revision,
           .sampleRate = renderSampleRate_,
           .ppq = session_.project().tempoMap().ppq(),
-          .projectOffsetSeconds = 0.0,
+          .projectStartBeats = projectStartBeats,
           .requestedStartBeats = 0.0,
-          .requestedEndBeats = endBeats,
+          .requestedEndBeats = projectStartBeats + endBeats,
           .maximumGapBeats = kMaximumUnobservedBeats,
           .hostId = {},
       };
