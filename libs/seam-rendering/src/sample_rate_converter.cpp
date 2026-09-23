@@ -1,4 +1,5 @@
 #include "seam/rendering/sample_rate_converter.hpp"
+#include "seam/core/resample.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -21,15 +22,16 @@ core::Result<std::vector<float>> SampleRateConverter::convert(
       static_cast<long double>(source.size()) * targetRate / sourceRate));
   if (outputSize == 0U) return std::vector<float>{};
   std::vector<float> output(outputSize, 0.0F);
-  const auto ratio = static_cast<long double>(sourceRate) / targetRate;
+  // `bandRatio` is output samples per input sample, which is the direction the
+  // shared kernel expects. The previous code passed its inverse, which put the
+  // cutoff below the true Nyquist on an upsample and simply interpolated on a
+  // downsample.
+  const auto bandRatio = static_cast<double>(targetRate) /
+                         static_cast<double>(sourceRate);
   for (std::size_t index = 0U; index < output.size(); ++index) {
-    const auto position = static_cast<long double>(index) * ratio;
-    const auto left = std::min<std::size_t>(
-        static_cast<std::size_t>(position), source.size() - 1U);
-    const auto right = std::min(left + 1U, source.size() - 1U);
-    const auto fraction = static_cast<float>(position - static_cast<long double>(left));
-    const auto interpolated = source[left] +
-                               (source[right] - source[left]) * fraction;
+    const auto position = static_cast<double>(index) / bandRatio;
+    const auto interpolated = static_cast<float>(core::bandLimitedSampleAt(
+        source, position, bandRatio, 1U, 0U));
     output[index] = quality == SampleRateQuality::Final
                         ? std::clamp(interpolated, -1.0F, 1.0F)
                         : interpolated;
@@ -68,22 +70,55 @@ std::vector<float> StreamingSampleRateConverter::emit(bool final) {
                                      static_cast<long double>(inputFrames_) *
                                      targetRate_ / sourceRate_))
                                : std::numeric_limits<std::uint64_t>::max();
+  // The kernel reaches halfWidth source samples either side of the interpolated
+  // position, so the stream must hold that much history and wait for that much
+  // lookahead. `sampleAt` above is retained for the identity path only; the
+  // band-limited path needs edge handling, so it clamps explicitly.
+  const auto bandRatio = static_cast<double>(targetRate_) /
+                         static_cast<double>(sourceRate_);
+  const auto halfWidth = static_cast<std::uint64_t>(
+      core::resampleKernelHalfWidthSamples(bandRatio));
+  const auto sampleClamped = [this](std::int64_t index) noexcept {
+    const auto frames = static_cast<std::int64_t>(inputFrames_);
+    if (frames <= 0) return 0.0F;
+    const auto clamped = std::clamp<std::int64_t>(index, 0, frames - 1);
+    const auto asIndex = static_cast<std::uint64_t>(clamped);
+    // The retention rule below guarantees this index is still buffered.
+    if (asIndex < baseIndex_ ||
+        asIndex - baseIndex_ >= static_cast<std::uint64_t>(pending_.size())) {
+      return 0.0F;
+    }
+    return pending_[static_cast<std::size_t>(asIndex - baseIndex_)];
+  };
   while (nextOutputIndex_ < outputLimit) {
-    const auto position = static_cast<long double>(nextOutputIndex_) * ratio_;
-    const auto left = static_cast<std::uint64_t>(position);
-    if (left >= inputFrames_ || (!final && left + 1U >= inputFrames_)) break;
-    const auto right = std::min(left + 1U, inputFrames_ - 1U);
-    const auto fraction = static_cast<float>(position - static_cast<long double>(left));
-    const auto interpolated = sampleAt(left) +
-                               (sampleAt(right) - sampleAt(left)) * fraction;
+    // Output index to input position. `ratio_` holds input samples per output
+    // sample, the inverse of `bandRatio`, so dividing by bandRatio is the same
+    // conversion stated in the direction the kernel expects.
+    const auto position = static_cast<double>(nextOutputIndex_) / bandRatio;
+    const auto centreSigned = static_cast<std::int64_t>(std::floor(position));
+    if (centreSigned < 0) break;
+    const auto centre = static_cast<std::uint64_t>(centreSigned);
+    if (centre >= inputFrames_) break;
+    // Without `final`, emit only once the whole kernel fits inside the input
+    // received so far. Emitting earlier would clamp against the last buffered
+    // sample and fabricate a signal boundary that is not the recording's real end.
+    if (!final && centre + halfWidth >= inputFrames_) break;
+    const auto read = [&sampleClamped](std::int64_t index) {
+      return static_cast<double>(sampleClamped(index));
+    };
+    const auto interpolated = static_cast<float>(core::bandLimitedSampleAt(
+        read, position, bandRatio,
+        static_cast<std::int64_t>(inputFrames_)));
     output.push_back(quality_ == SampleRateQuality::Final
                          ? std::clamp(interpolated, -1.0F, 1.0F)
                          : interpolated);
     ++nextOutputIndex_;
-    const auto nextPosition =
-        static_cast<long double>(nextOutputIndex_) * ratio_;
-    const auto nextLeft = static_cast<std::uint64_t>(nextPosition);
-    while (baseIndex_ < nextLeft && !pending_.empty()) {
+    // Retain halfWidth samples of history behind the next position; everything
+    // before that can no longer contribute to any future output.
+    const auto nextPosition = static_cast<double>(nextOutputIndex_) / bandRatio;
+    const auto nextCentre = static_cast<std::uint64_t>(std::floor(nextPosition));
+    const auto keepFrom = nextCentre > halfWidth ? nextCentre - halfWidth : 0U;
+    while (baseIndex_ < keepFrom && !pending_.empty()) {
       pending_.pop_front();
       ++baseIndex_;
     }

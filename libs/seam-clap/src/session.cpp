@@ -1,4 +1,5 @@
 #include "seam/clap/session.hpp"
+#include "seam/core/resample.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -77,21 +78,20 @@ core::Result<PluginSession> resampleSession(const PluginSession& source,
   output.sampleRate = targetSampleRate;
   output.interleavedSamples.assign(
       static_cast<std::size_t>(targetFrames) * source.channelCount, 0.0F);
+  // Band-limited, not linear. A host may prepare the plugin at a rate below the
+  // session's own, and linear interpolation would fold everything above the new
+  // Nyquist back into the band instead of removing it, so the plugin would play
+  // content the source never contained.
+  const auto bandRatio = static_cast<double>(targetSampleRate) /
+                         static_cast<double>(source.sampleRate);
   for (std::uint64_t targetFrame = 0U; targetFrame < targetFrames; ++targetFrame) {
-    const long double sourcePosition = static_cast<long double>(targetFrame) /
-                                       ratio;
-    const auto left = std::min<std::uint64_t>(
-        static_cast<std::uint64_t>(sourcePosition), sourceFrames - 1U);
-    const auto right = std::min<std::uint64_t>(left + 1U, sourceFrames - 1U);
-    const auto fraction = static_cast<float>(sourcePosition - static_cast<long double>(left));
+    const auto position = static_cast<double>(targetFrame) / bandRatio;
     for (std::uint8_t channel = 0U; channel < source.channelCount; ++channel) {
-      const auto leftSample = source.interleavedSamples[
-          static_cast<std::size_t>(left) * source.channelCount + channel];
-      const auto rightSample = source.interleavedSamples[
-          static_cast<std::size_t>(right) * source.channelCount + channel];
       output.interleavedSamples[
           static_cast<std::size_t>(targetFrame) * source.channelCount + channel] =
-          leftSample + (rightSample - leftSample) * fraction;
+          static_cast<float>(core::bandLimitedSampleAt(
+              source.interleavedSamples, position, bandRatio,
+              source.channelCount, channel));
     }
   }
   return output;

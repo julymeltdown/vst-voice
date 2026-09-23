@@ -137,6 +137,7 @@ add_library(seam_core
   libs/seam-core/src/log_event.cpp
   libs/seam-core/src/sha256.cpp
   libs/seam-core/src/file_io.cpp
+  libs/seam-core/src/resample.cpp
 )
 target_include_directories(seam_core PUBLIC
   libs/seam-core/include

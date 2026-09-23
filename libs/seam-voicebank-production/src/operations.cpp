@@ -1,9 +1,9 @@
 #include "seam/voicebank_production/operations.hpp"
+#include "seam/core/resample.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numbers>
 
 namespace seam::voicebank_production {
 namespace {
@@ -42,38 +42,14 @@ core::Result<voicebank::AudioBuffer> downmix(
 }
 
 // Band-limited resampling.
-//
-// The previous implementation interpolated linearly between neighbouring samples.
-// On a downsample that is not merely low-quality, it is wrong: nothing removes
-// energy above the new Nyquist frequency, so that energy folds back into the
-// audible band. A 10 kHz tone resampled from 48 kHz to 16 kHz survives at full
-// amplitude as a 6 kHz tone. A singer recorded at 48 kHz and prepared as a 16 kHz
-// bank would therefore acquire inharmonic partials that were never sung, and the
-// artefact is not detectable afterwards as noise, only as wrong pitch content.
-//
-// Each output sample is now the windowed-sinc interpolation of the input, with the
-// cutoff placed at the *lower* of the two Nyquist frequencies. Downsampling
-// therefore attenuates content that cannot be represented before it can alias, and
-// upsampling still reconstructs the original band. The kernel is evaluated
-// directly rather than read from a table so the code stays auditable.
-constexpr double kResampleKernelHalfWidth = 16.0;
-
-double sinc(double value) {
-  if (std::abs(value) < 1e-12) return 1.0;
-  const auto angle = std::numbers::pi * value;
-  return std::sin(angle) / angle;
-}
-
-// Blackman window: continuous, so it does not introduce the derivative
-// discontinuity a rectangular truncation would, and its sidelobes fall off fast
-// enough that a 16-sample half-width suppresses stopband energy below the
-// float32 noise floor.
-double windowWeight(double normalized) {
-  if (std::abs(normalized) >= 1.0) return 0.0;
-  const auto position = std::numbers::pi * (normalized + 1.0);
-  return 0.42 - 0.5 * std::cos(position) + 0.08 * std::cos(2.0 * position);
-}
-
+// This previously interpolated linearly between neighbouring samples. On a
+// downsample that is not merely low-quality, it is wrong: nothing removed energy
+// above the new Nyquist frequency, so that energy folded back into the band. A
+// 10 kHz tone resampled from 48 kHz to 16 kHz survived at full amplitude as a
+// 6 kHz tone, so a singer tracked at 48 kHz and prepared as a 16 kHz bank would
+// acquire partials nobody sang, audible as wrong pitch content rather than as
+// noise. The kernel now lives in seam-core so the other two rate converters in
+// this repository cannot drift from it.
 core::Result<voicebank::AudioBuffer> resample(
     const voicebank::AudioBuffer& input, std::uint32_t targetRate) {
   if (input.sampleRate == 0U || input.channels == 0U || targetRate == 0U) {
@@ -102,36 +78,12 @@ core::Result<voicebank::AudioBuffer> resample(
       .bitsPerSample = input.bitsPerSample,
       .interleaved = std::vector<float>(outputFrames * input.channels, 0.0F),
   };
-  // Cutoff in input-domain cycles per sample. When downsampling this is below 0.5
-  // so the kernel itself does the anti-aliasing; when upsampling it stays at 0.5.
-  const double cutoff = std::min(0.5, 0.5 * ratio);
-  const auto halfWidth = static_cast<std::int64_t>(
-      std::ceil(kResampleKernelHalfWidth / (2.0 * cutoff)));
-  const auto sourceFrames = input.frameCount();
   for (std::size_t frame = 0U; frame < outputFrames; ++frame) {
     const double sourcePosition = static_cast<double>(frame) / ratio;
-    const auto centre = static_cast<std::int64_t>(std::floor(sourcePosition));
-    // A silent input must not acquire a DC step at the edges, so the left and
-    // right neighbours are edge-clamped exactly as the linear version did.
     for (std::size_t channel = 0U; channel < input.channels; ++channel) {
-      double accumulated = 0.0;
-      double weightTotal = 0.0;
-      for (std::int64_t offset = -halfWidth; offset <= halfWidth; ++offset) {
-        const auto sourceIndex = centre + offset;
-        const auto clamped = static_cast<std::size_t>(std::clamp<std::int64_t>(
-            sourceIndex, 0, static_cast<std::int64_t>(sourceFrames) - 1));
-        const auto distance = sourcePosition - static_cast<double>(sourceIndex);
-        const auto weight = 2.0 * cutoff * sinc(2.0 * cutoff * distance) *
-                            windowWeight(distance / static_cast<double>(halfWidth));
-        accumulated += static_cast<double>(
-                           input.interleaved[clamped * input.channels + channel]) * weight;
-        weightTotal += weight;
-      }
-      // Normalising by the realised weight sum keeps the DC gain at exactly 1 even
-      // where the kernel is truncated at the signal edges.
       output.interleaved[frame * input.channels + channel] =
-          weightTotal == 0.0 ? 0.0F
-                             : static_cast<float>(accumulated / weightTotal);
+          static_cast<float>(core::bandLimitedSampleAt(
+              input.interleaved, sourcePosition, ratio, input.channels, channel));
     }
   }
   return output;
