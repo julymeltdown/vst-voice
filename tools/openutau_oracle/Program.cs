@@ -21,8 +21,9 @@ using Melanchall.DryWetMidi.Interaction;
 // worse than one that is honestly absent.
 internal static class Program {
     private static int Main(string[] args) {
-        if (args.Length == 2 && args[0] == "--emit-fixture") return EmitFixture(args[1], false);
-        if (args.Length == 2 && args[0] == "--emit-curve-fixture") return EmitFixture(args[1], true);
+        if (args.Length == 2 && args[0] == "--emit-fixture") return EmitFixture(args[1], false, false);
+        if (args.Length == 2 && args[0] == "--emit-curve-fixture") return EmitFixture(args[1], true, false);
+        if (args.Length == 2 && args[0] == "--emit-multiline-fixture") return EmitFixture(args[1], false, true);
         if (args.Length == 3 && args[0] == "--compare-pitch") return ComparePitch(args[1], args[2]);
         if (args.Length >= 2 && args[1] == "--midi") return ReadMidi(args[0]);
         if (args.Length < 1) {
@@ -30,6 +31,7 @@ internal static class Program {
             Console.Error.WriteLine("       seam_ustx_oracle FILE.mid --midi");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-curve-fixture NEW_FILE.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --emit-multiline-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-pitch SOURCE.ustx ROUNDTRIP.ustx");
             return 2;
         }
@@ -106,11 +108,12 @@ internal static class Program {
         return field;
     }
 
-    private static int EmitFixture(string path, bool withCurve) {
+    private static int EmitFixture(string path, bool withCurve, bool withMultilineComment) {
         try {
             var tuningField = ResolveTuningField();
             var project = Ustx.Create();
             project.name = "SEAM historical serializer interop";
+            if (withMultilineComment) project.comment = "First # & * !\nSecond line";
             project.timeSignatures = new List<UTimeSignature> {
                 new UTimeSignature(0, 4, 4), new UTimeSignature(2, 3, 4) };
             project.tempos = new List<UTempo> {

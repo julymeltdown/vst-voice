@@ -40,7 +40,10 @@ PROJECT = ROOT / "tests/singing_quality/corpus/original-melody.seam"
 # smoothstep pitch cannot be represented in USTX 0.9), so the reported loss count is
 # part of the contract: a conversion that suddenly reports zero losses is lying.
 EXPECTED_USTX_LOSSES = 2
-EXPECTED_USTX_CONTENT_HASH = "69c5195cb5db83a9a063ff27aeae737d6addbe49d4d1e8da6239e2ddcf412282"
+# The writer emits an empty comment so its own output does not fabricate an
+# unsupported-comment loss on reimport; this exact byte revision passed the
+# pinned OpenUtau Ustx.Load oracle.
+EXPECTED_USTX_CONTENT_HASH = "097b21716c75c1e03d46119c6a0216a60617b6e3fa048745a97adfff7f416f9c"
 # SMF carries no SEAM performance metadata, and this project has none to carry, so a
 # loss-free SMF export is the correct outcome here -- not a suppressed report.
 EXPECTED_SMF_LOSSES = 0

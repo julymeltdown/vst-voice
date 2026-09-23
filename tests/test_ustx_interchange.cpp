@@ -456,6 +456,97 @@ TEST_CASE("OpenUtau curve-bearing score discloses curve loss and consumes bounde
   CHECK(overCollectionBudget.error().context == "line 357");
 }
 
+TEST_CASE("historical OpenUtau folded multiline comments import without treating body as YAML") {
+  using namespace seam;
+  const auto source = historicalSerializerFixture("0.9-multiline");
+  CHECK(!source.empty());
+  const auto decoded = interchange::decodeUstx(source);
+  CHECK(decoded);
+  CHECK(decoded.value().parts.size() == 1U && decoded.value().parts[0].notes.size() == 2U);
+  CHECK(decoded.value().parts[0].notes[0].lyric == "あ");
+  CHECK(hasLossAt(decoded.value().issues, "ustx.comment"));
+  application::ProjectFactory factory{901800U};
+  const auto imported = interchange::importUstxProject(source, factory);
+  CHECK(imported);
+  CHECK(imported.value().issues.size() == 11U);
+  CHECK(hasLossAt(imported.value().issues, "ustx.comment"));
+}
+
+TEST_CASE("USTX block scalars fold or preserve lyric lines with bounded decoding") {
+  using namespace seam;
+  const auto sourceBytes = historicalSerializerFixture("0.9");
+  CHECK(!sourceBytes.empty());
+  const std::string source{sourceBytes.begin(), sourceBytes.end()};
+  const auto replaceLyric = [&](std::string_view replacement) {
+    auto modified = source;
+    const auto marker = modified.find("    lyric: あ\n");
+    CHECK(marker != std::string::npos);
+    modified.replace(marker, std::string_view{"    lyric: あ\n"}.size(), replacement);
+    return interchange::decodeUstx(bytes(modified));
+  };
+  const auto folded = replaceLyric("    lyric: >-\n      あ\n      い\n");
+  CHECK(folded);
+  CHECK(folded.value().parts[0].notes[0].lyric == "あ い");
+  const auto paragraph = replaceLyric("    lyric: >2-\n      あ\n\n      い\n");
+  CHECK(paragraph);
+  CHECK(paragraph.value().parts[0].notes[0].lyric == "あ\nい");
+  const auto moreIndented = replaceLyric("    lyric: >-\n      あ\n\n        い\n");
+  CHECK(moreIndented);
+  CHECK(moreIndented.value().parts[0].notes[0].lyric == "あ\n\n  い");
+  const auto literal = replaceLyric("    lyric: |\n      あ\n      い\n");
+  CHECK(literal);
+  CHECK(literal.value().parts[0].notes[0].lyric == "あ\nい\n");
+  const auto kept = replaceLyric("    lyric: |+\n      あ\n      い\n\n");
+  CHECK(kept);
+  CHECK(kept.value().parts[0].notes[0].lyric == "あ\nい\n\n");
+
+  auto partComment = source;
+  const auto partCommentMarker = partComment.find("  comment: \"\"\n");
+  CHECK(partCommentMarker != std::string::npos);
+  partComment.replace(partCommentMarker, std::string_view{"  comment: \"\"\n"}.size(),
+                      "  comment: |-\n    Part # comment\n");
+  const auto partCommentDecoded = interchange::decodeUstx(bytes(partComment));
+  CHECK(partCommentDecoded);
+  CHECK(hasLossAt(partCommentDecoded.value().issues, "ustx.voice_parts[0].comment"));
+  const auto emptyKept = replaceLyric("    lyric: |+\n\n");
+  CHECK(emptyKept);
+  CHECK(emptyKept.value().parts[0].notes[0].lyric == "\n");
+
+  auto noFinalBreak = source;
+  const auto nameMarker = noFinalBreak.find("name: SEAM historical serializer interop\n");
+  CHECK(nameMarker != std::string::npos);
+  noFinalBreak.replace(nameMarker, std::string_view{"name: SEAM historical serializer interop\n"}.size(), "");
+  noFinalBreak += "name: |\n  last line";
+  const auto noFinalBreakDecoded = interchange::decodeUstx(bytes(noFinalBreak));
+  CHECK(noFinalBreakDecoded);
+  CHECK(noFinalBreakDecoded.value().name == "last line");
+
+  interchange::UstxLimits limits;
+  limits.maximumScalarBytes = 8U;
+  const auto oversized = interchange::decodeUstx(
+      bytes("comment: >-\n  123456789\nustx_version: \"0.9\"\n"), limits);
+  CHECK(!oversized);
+  CHECK(oversized.error().code == core::ErrorCode::ParseError);
+  CHECK(oversized.error().message == "USTX scalar exceeds limit");
+  const auto badIndent = interchange::decodeUstx(bytes("comment: >2-\n x\nustx_version: \"0.9\"\n"));
+  CHECK(!badIndent);
+  CHECK(badIndent.error().code == core::ErrorCode::ParseError);
+  CHECK(badIndent.error().message == "USTX block scalar indentation is invalid");
+  const auto badHeader = interchange::decodeUstx(bytes("comment: >0\nustx_version: \"0.9\"\n"));
+  CHECK(!badHeader);
+  CHECK(badHeader.error().message == "USTX block scalar header is invalid");
+  const auto leadingIndent = interchange::decodeUstx(
+      bytes("comment: |2-\n   \n  x\nustx_version: \"0.9\"\n"));
+  CHECK(!leadingIndent);
+  CHECK(leadingIndent.error().message == "USTX block scalar leading indentation is invalid");
+  limits = interchange::UstxLimits{};
+  limits.maximumNodes = 4U;
+  const auto tooManyPhysicalLines = interchange::decodeUstx(
+      bytes("comment: |+\n\n\n\n\nustx_version: \"0.9\"\n"), limits);
+  CHECK(!tooManyPhysicalLines);
+  CHECK(tooManyPhysicalLines.error().message == "USTX line/node limit exceeded");
+}
+
 TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and hostile depth") {
   using seam::interchange::decodeUstx;
   CHECK(!decodeUstx(bytes("ustx_version: '0.9'\nustx_version: '0.9'\n")));

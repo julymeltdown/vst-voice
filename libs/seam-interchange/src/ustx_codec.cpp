@@ -12,6 +12,7 @@
 #include <limits>
 #include <locale>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string_view>
@@ -36,6 +37,7 @@ struct Line final {
   std::size_t indent{0U};
   std::size_t number{0U};
   std::string text;
+  std::optional<std::string> blockScalar;
 };
 
 core::Result<Node> parseFailure(std::string message, std::size_t line = 0U) {
@@ -299,14 +301,137 @@ public:
   }
 
 private:
+  struct BlockScalarHeader final {
+    char style{'|'};
+    char chomp{'\0'};
+    std::size_t explicitIndent{0U};
+  };
+
+  static std::optional<BlockScalarHeader> blockScalarHeader(std::string_view value) {
+    if (value.empty() || (value.front() != '|' && value.front() != '>')) return std::nullopt;
+    BlockScalarHeader header{.style = value.front()};
+    for (const auto option : value.substr(1U)) {
+      if (option == '-' || option == '+') {
+        if (header.chomp != '\0') return std::nullopt;
+        header.chomp = option;
+      } else if (option >= '1' && option <= '9') {
+        if (header.explicitIndent != 0U) return std::nullopt;
+        header.explicitIndent = static_cast<std::size_t>(option - '0');
+      } else return std::nullopt;
+    }
+    return header;
+  }
+
+  static std::string_view blockScalarValueForLine(std::string_view content) {
+    const auto colon = mappingColon(content);
+    if (colon != std::string_view::npos)
+      return trim(content.substr(colon + 1U));
+    if (content.size() >= 2U && content.front() == '-' && content[1U] == ' ')
+      return trim(content.substr(2U));
+    return {};
+  }
+
+  core::Result<std::string> readBlockScalar(std::size_t& start, std::size_t& lineNumber,
+                                            std::size_t parentIndent, BlockScalarHeader header,
+                                            std::size_t& physicalLines) const {
+    struct BodyLine final { std::string_view raw; std::size_t indent; bool blank; bool terminated; };
+    std::vector<BodyLine> body;
+    std::size_t bodyBytes = 0U;
+    while (start < input_.size()) {
+      const auto end = input_.find('\n', start);
+      const auto stop = end == std::string::npos ? input_.size() : end;
+      std::string_view raw{input_.data() + start, stop - start};
+      if (!raw.empty() && raw.back() == '\r') raw.remove_suffix(1U);
+      std::size_t indent = 0U;
+      while (indent < raw.size() && raw[indent] == ' ') ++indent;
+      const auto blank = raw.find_first_not_of(" \t") == std::string_view::npos;
+      if (!blank && indent <= parentIndent) break;
+      if (++physicalLines > limits_.maximumNodes)
+        return core::failure<std::string>(core::ErrorCode::ParseError,
+            "USTX line/node limit exceeded", "line " + std::to_string(lineNumber));
+      if (raw.size() + 1U > limits_.maximumScalarBytes - bodyBytes)
+        return core::failure<std::string>(core::ErrorCode::ParseError,
+            "USTX scalar exceeds limit", "line " + std::to_string(lineNumber));
+      bodyBytes += raw.size() + 1U;
+      body.push_back(BodyLine{raw, indent, blank, end != std::string::npos});
+      start = end == std::string::npos ? input_.size() : end + 1U;
+      ++lineNumber;
+    }
+
+    std::size_t contentIndent = parentIndent + header.explicitIndent;
+    if (header.explicitIndent == 0U) {
+      for (const auto& line : body) {
+        if (!line.blank) { contentIndent = line.indent; break; }
+      }
+    }
+    for (std::size_t index = 0U; index < body.size() && body[index].blank; ++index) {
+      if (body[index].indent > contentIndent)
+        return core::failure<std::string>(core::ErrorCode::ParseError,
+            "USTX block scalar leading indentation is invalid", "line " + std::to_string(lineNumber - body.size() + index));
+    }
+    std::string output;
+    const auto append = [&](std::string_view value) -> bool {
+      if (value.size() > limits_.maximumScalarBytes - output.size()) return false;
+      output.append(value);
+      return true;
+    };
+    const auto newlines = [&](std::size_t count) -> bool {
+      if (count > limits_.maximumScalarBytes - output.size()) return false;
+      output.append(count, '\n');
+      return true;
+    };
+    std::size_t previous = body.size();
+    for (std::size_t index = 0U; index < body.size(); ++index) {
+      const auto& line = body[index];
+      if (line.blank) continue;
+      if (line.indent < contentIndent)
+        return core::failure<std::string>(core::ErrorCode::ParseError,
+            "USTX block scalar indentation is invalid", "line " + std::to_string(lineNumber - body.size() + index));
+      if (previous == body.size()) {
+        if (!newlines(index)) return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+      } else {
+        const auto gap = index - previous - 1U;
+        if (gap != 0U) {
+          const auto preserveSeparation = header.style == '|' || line.indent > contentIndent ||
+              body[previous].indent > contentIndent;
+          if (!newlines(preserveSeparation ? gap + 1U : gap))
+            return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+        } else if (header.style == '|' || line.indent > contentIndent || body[previous].indent > contentIndent) {
+          if (!newlines(1U)) return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+        } else if (!append(" ")) return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+      }
+      if (!append(line.raw.substr(contentIndent)))
+        return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+      previous = index;
+    }
+    if (header.chomp == '+' && previous == body.size()) {
+      if (!newlines(body.size()))
+        return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+    } else if (header.chomp != '-' && previous != body.size() && body[previous].terminated) {
+      const auto trailing = body.size() - previous - 1U;
+      if (!newlines(header.chomp == '+' ? trailing + 1U : 1U))
+        return core::failure<std::string>(core::ErrorCode::ParseError, "USTX scalar exceeds limit");
+    }
+    if (!domain::fromUtf8(output))
+      return core::failure<std::string>(core::ErrorCode::ParseError, "USTX block scalar is not valid UTF-8");
+    for (const auto character : output) {
+      if (static_cast<unsigned char>(character) < 0x20U && character != '\n' && character != '\t')
+        return core::failure<std::string>(core::ErrorCode::ParseError, "USTX block scalar contains a control character");
+    }
+    return output;
+  }
+
   core::Result<void> prepareLines() {
     std::size_t start = 0U;
     std::size_t lineNumber = 1U;
+    std::size_t physicalLines = 0U;
     if (input_.size() >= 3U && static_cast<unsigned char>(input_[0]) == 0xefU &&
         static_cast<unsigned char>(input_[1]) == 0xbbU && static_cast<unsigned char>(input_[2]) == 0xbfU) {
       input_.erase(0U, 3U);
     }
-    while (start <= input_.size()) {
+    while (start < input_.size()) {
+      if (++physicalLines > limits_.maximumNodes)
+        return core::failure(core::ErrorCode::ParseError, "USTX line/node limit exceeded", "line " + std::to_string(lineNumber));
       const auto end = input_.find('\n', start);
       const auto stop = end == std::string::npos ? input_.size() : end;
       std::string raw = input_.substr(start, stop - start);
@@ -329,7 +454,24 @@ private:
             return core::failure(core::ErrorCode::ParseError, "USTX aliases and tags are not supported", "line " + std::to_string(lineNumber));
         }
         if (lines_.size() >= limits_.maximumNodes) return core::failure(core::ErrorCode::ParseError, "USTX line/node limit exceeded");
-        lines_.push_back(Line{indent, lineNumber, std::string{content}});
+        Line line{indent, lineNumber, std::string{content}, std::nullopt};
+        const auto blockValue = blockScalarValueForLine(content);
+        const auto header = blockScalarHeader(blockValue);
+        if (!blockValue.empty() && (blockValue.front() == '|' || blockValue.front() == '>') && !header)
+          return core::failure(core::ErrorCode::ParseError, "USTX block scalar header is invalid",
+                               "line " + std::to_string(lineNumber));
+        if (header) {
+          auto bodyStart = end == std::string::npos ? input_.size() : end + 1U;
+          auto bodyLineNumber = lineNumber + 1U;
+          auto block = readBlockScalar(bodyStart, bodyLineNumber, indent, *header, physicalLines);
+          if (!block) return core::Result<void>{block.error()};
+          line.blockScalar = std::move(block).value();
+          lines_.push_back(std::move(line));
+          start = bodyStart;
+          lineNumber = bodyLineNumber;
+          continue;
+        }
+        lines_.push_back(std::move(line));
       }
       if (end == std::string::npos) break;
       start = end + 1U; ++lineNumber;
@@ -359,7 +501,7 @@ private:
     if (++nodes_ > limits_.maximumNodes) return parseFailure("USTX node limit exceeded");
     Object output;
     while (lineIndex_ < lines_.size() && lines_[lineIndex_].indent == indent && !isSequenceLine(lines_[lineIndex_], indent)) {
-      const auto line = lines_[lineIndex_];
+      const auto& line = lines_[lineIndex_];
       const auto colon = mappingColon(line.text);
       if (colon == std::string_view::npos || colon == 0U) return parseFailure("USTX mapping entry requires a key and colon", line.number);
       auto keyNode = parseInline(line.text.substr(0U, colon), line.number);
@@ -375,7 +517,12 @@ private:
 
   core::Result<Node> parseEntryValue(std::size_t depth, std::size_t indent, std::string_view raw, std::size_t line) {
     const auto value = trim(raw);
+    const auto& source = lines_[lineIndex_];
     ++lineIndex_;
+    if (source.blockScalar) {
+      if (++nodes_ > limits_.maximumNodes) return parseFailure("USTX node limit exceeded", line);
+      return Node{*source.blockScalar};
+    }
     if (!value.empty()) return parseInline(value, line);
     if (lineIndex_ < lines_.size() && lines_[lineIndex_].indent > indent)
       return parseBlock(depth + 1U, lines_[lineIndex_].indent);
@@ -393,7 +540,7 @@ private:
     Array output;
     while (lineIndex_ < lines_.size() && isSequenceLine(lines_[lineIndex_], indent)) {
       if (output.size() >= limits_.maximumCollectionEntries) return parseFailure("USTX collection entry limit exceeded", lines_[lineIndex_].number);
-      const auto line = lines_[lineIndex_];
+      const auto& line = lines_[lineIndex_];
       const auto body = trim(std::string_view{line.text}.substr(1U));
       ++lineIndex_;
       if (body.empty()) {
@@ -406,6 +553,11 @@ private:
       }
       const auto colon = mappingColon(body);
       if (colon == std::string_view::npos) {
+        if (line.blockScalar) {
+          if (++nodes_ > limits_.maximumNodes) return parseFailure("USTX node limit exceeded", line.number);
+          output.push_back(Node{*line.blockScalar});
+          continue;
+        }
         auto item = parseInline(body, line.number);
         if (!item) return item;
         output.push_back(std::move(item).value());
@@ -432,6 +584,10 @@ private:
   core::Result<Node> parseSequenceEntryValue(std::size_t depth, std::size_t parentIndent,
                                              std::string_view raw, std::size_t line) {
     const auto value = trim(raw);
+    if (lines_[lineIndex_ - 1U].blockScalar) {
+      if (++nodes_ > limits_.maximumNodes) return parseFailure("USTX node limit exceeded", line);
+      return Node{*lines_[lineIndex_ - 1U].blockScalar};
+    }
     if (!value.empty()) return parseInline(value, line);
     if (lineIndex_ < lines_.size() && lines_[lineIndex_].indent > parentIndent)
       return parseBlock(depth + 1U, lines_[lineIndex_].indent);
@@ -440,7 +596,7 @@ private:
 
   core::Result<void> parseMappingEntries(std::size_t depth, std::size_t indent, Object& output) {
     while (lineIndex_ < lines_.size() && lines_[lineIndex_].indent == indent && !isSequenceLine(lines_[lineIndex_], indent)) {
-      const auto line = lines_[lineIndex_];
+      const auto& line = lines_[lineIndex_];
       const auto colon = mappingColon(line.text);
       if (colon == std::string_view::npos || colon == 0U) return core::failure(core::ErrorCode::ParseError, "USTX mapping continuation requires a key and colon", "line " + std::to_string(line.number));
       auto key = parseInline(line.text.substr(0U, colon), line.number);
@@ -610,6 +766,13 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
                                  "Only USTX versions 0.6 through 0.9 are supported");
   document.version = std::move(versionValue).value();
   if (const auto* name = optional(root, "name")) { auto parsed = stringValue(*name, "ustx.name", limits); if (!parsed) return core::Result<Output>{parsed.error()}; document.name = std::move(parsed).value(); }
+  if (const auto* comment = optional(root, "comment")) {
+    auto parsed = stringValue(*comment, "ustx.comment", limits);
+    if (!parsed) return core::Result<Output>{parsed.error()};
+    if (!parsed.value().empty())
+      issue(document.issues, UstxIssueSeverity::Loss, "ustx.comment",
+            "project comment is not represented in the SEAM interchange subset", limits);
+  }
   const auto tempos = required(root, "tempos", isArray, "array", "ustx"); if (!tempos) return core::Result<Output>{tempos.error()};
   const auto meters = required(root, "time_signatures", isArray, "array", "ustx"); if (!meters) return core::Result<Output>{meters.error()};
   const auto tracks = required(root, "tracks", isArray, "array", "ustx"); if (!tracks) return core::Result<Output>{tracks.error()};
@@ -668,6 +831,13 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
     if (!item.isObject()) return core::failure<Output>(core::ErrorCode::ParseError, path + " must be an object");
     UstxPart part;
     if (const auto* name = optional(item, "name")) { auto parsed = stringValue(*name, path + ".name", limits); if (!parsed) return core::Result<Output>{parsed.error()}; part.name = std::move(parsed).value(); }
+    if (const auto* comment = optional(item, "comment")) {
+      auto parsed = stringValue(*comment, path + ".comment", limits);
+      if (!parsed) return core::Result<Output>{parsed.error()};
+      if (!parsed.value().empty())
+        issue(document.issues, UstxIssueSeverity::Loss, path + ".comment",
+              "part comment is not represented in the SEAM interchange subset", limits);
+    }
     const auto trackNo = required(item, "track_no", isNumber, "integer", path); if (!trackNo) return core::Result<Output>{trackNo.error()};
     const auto position = required(item, "position", isNumber, "integer", path); if (!position) return core::Result<Output>{position.error()};
     const auto duration = required(item, "duration", isNumber, "integer", path); if (!duration) return core::Result<Output>{duration.error()};
@@ -775,7 +945,7 @@ core::Result<std::vector<std::uint8_t>> encodeUstx(const UstxDocument& document,
   output.reserve(1024U);
   output += "ustx_version: \"0.9\"\n";
   output += "name: " + quote(document.name.empty() ? "SEAM USTX Export" : document.name) + "\n";
-  output += "comment: \"Generated by Project SEAM native interchange\"\n";
+  output += "comment: \"\"\n";
   output += "output_dir: \"Vocal\"\ncache_dir: \"UCache\"\nexpressions: {}\n";
   output += "exp_selectors: [dyn, pitd, clr, eng, vel, vol, atk, dec, gen, bre]\nexp_primary: 0\nexp_secondary: 1\nkey: 0\n";
   output += "time_signatures:\n";

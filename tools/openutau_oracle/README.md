@@ -78,9 +78,10 @@ For a version-specific serializer fixture, rebuild this checker against that
 version's pinned `OpenUtau.Core` checkout and run
 `seam_openutau_oracle.dll --emit-fixture NEW_FILE.ustx`. Use
 `--emit-curve-fixture NEW_FILE.ustx` for the additional 64-point `dyn` curve
-variant. It uses that assembly's
+variant, or `--emit-multiline-fixture NEW_FILE.ustx` for a serializer-authored
+folded multiline comment. It uses that assembly's
 `UProject`, validation and YAML serializer, then creates a new UTF-8 file; it
-never overwrites a path. The five checked-in fixtures and exact provenance are
+never overwrites a path. The six checked-in fixtures and exact provenance are
 documented in `tests/fixtures/ustx/README.md`. A .NET 10 build of the old
 checkouts required distinct resource names in their temporary project files;
 no OpenUtau serializer or model code was edited. Old transitive dependencies

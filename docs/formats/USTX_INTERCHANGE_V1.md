@@ -61,11 +61,16 @@ both. The earlier version-adjusted fixture remains a smaller control, not the
 source of historical evidence. Nonzero OpenUtau note `tuning` is incorporated
 into SEAM pitch automation, preserving the tested musical contour, but its
 separate edit control is not retained and is explicitly reported as loss.
-`tuning` must be integral to match OpenUtau's `UNote.tuning` type. A fifth
-historical-serializer fixture has a 64-point `dyn` curve; SEAM loads its notes
+`tuning` must be integral to match OpenUtau's `UNote.tuning` type. The
+curve-bearing historical-serializer fixture has a 64-point `dyn` curve; SEAM loads its notes
 but reports the curve as lost. Large expression curves can exhaust the bounded
-line/collection budgets before note import. The historical serializer also
-emits folded `>-` YAML for multiline comments; that shape currently fails
-closed and is not supported by this codec.
+line/collection budgets before note import. A sixth fixture exercises the
+historical serializer's folded `>-` multiline comment, which now imports.
+The reader supports literal (`|`) and folded (`>`) block scalars with strip,
+clip or keep chomping and single-digit explicit indentation, subject to the
+same byte, physical-line/node and UTF-8 limits. This is a bounded subset of
+YAML, not an arbitrary-YAML promise. Nonempty project and part comments are
+reported as losses because SEAM does not retain them. SEAM's own writer emits
+an empty comment, avoiding a fabricated loss when its output is reimported.
 Serializer-generated files do not substitute for broad real-world documents or
 actual desktop GUI open/save verification; both remain part of U30 acceptance.

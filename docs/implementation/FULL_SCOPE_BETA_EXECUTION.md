@@ -12,6 +12,22 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-24 — U30 folded-scalar interoperability increment, local only;
+GitHub CI remains deferred. A sixth 0.9 file emitted by the historical
+OpenUtau serializer contains a folded multiline comment with YAML
+metacharacters. The native reader now accepts literal/folded block scalars
+with bounded content bytes and physical lines, explicit indentation and
+chomping; block content is not interpreted as YAML aliases/tags. The file
+passes historical/current OpenUtau load, SEAM import/export, current
+OpenUtau re-load and the 18-point pitch comparison (`0.160039` cents maximum).
+The nonempty project comment is explicitly reported as a conversion loss;
+codec tests also cover part-comment loss, multiline lyrics and
+malformed/over-budget bodies. SEAM's own 0.9 writer now emits an empty comment
+so a self round trip does not invent a loss; the changed 80-note production
+export hash was rechecked with pinned OpenUtau `Ustx.Load`. U30
+remains PARTIAL: real GUI open/save, diverse user-authored files, large-curve
+contract and independent receipt reproduction remain. No Beta GO claim.
+
 2026-09-24 — U30 historical-serializer interoperability increment, local only;
 GitHub CI remains deferred by user request. Building the optional OpenUtau
 oracle separately against 0.6, 0.7, 0.8 and 0.9 source tags produced four
