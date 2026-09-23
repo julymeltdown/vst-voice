@@ -125,6 +125,8 @@ ImportedLyric importLyricHint(std::string_view raw, domain::Language language,
     return result;
   }
   result.hint = std::string{hint};
+  addIssue(issues, UstxIssueSeverity::Warning, std::string(path) + ".lyric",
+           "OpenUtau phonetic hint text was retained, but SEAM will interpret its phones with its own Japanese inventory; source phonemizer/audio equivalence is unverified", limits);
   return result;
 }
 
@@ -678,18 +680,22 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
       bool dynamicsSparse = false;
       bool dynamicsRoundedTicks = false;
       const double minimumAudible = std::pow(10.0, -239.0 / 200.0);
+      const auto encodeGain = [&](float gain) {
+        const double decibels = static_cast<double>(gain) <= minimumAudible / 2.0 ? -240.0 :
+            std::max(-239.0, 200.0 * std::log10(static_cast<double>(gain)));
+        const auto rounded = static_cast<std::int16_t>(std::clamp(std::llround(decibels), -240LL, 120LL));
+        const double reconstructed = rounded == -240 ? 0.0 :
+            std::pow(10.0, static_cast<double>(rounded) / 200.0);
+        if (static_cast<float>(reconstructed) != gain) dynamicsQuantized = true;
+        return rounded;
+      };
       for (const auto& point : region.dynamicsAutomation.points()) {
         auto tick = scaleTick(point.tick.value(), project.ppq(), kUstxPpq,
                               dynamicsPath, issues, limits);
         if (!tick) return core::Result<Output>{tick.error()};
         const auto boundedTick = std::min(tick.value(), part.duration.value());
         if (boundedTick != tick.value()) dynamicsRoundedTicks = true;
-        const double decibels = static_cast<double>(point.linearGain) <= minimumAudible / 2.0 ? -240.0 :
-            std::max(-239.0, 200.0 * std::log10(static_cast<double>(point.linearGain)));
-        const auto rounded = static_cast<std::int16_t>(std::clamp(std::llround(decibels), -240LL, 120LL));
-        const double reconstructed = rounded == -240 ? 0.0 :
-            std::pow(10.0, static_cast<double>(rounded) / 200.0);
-        if (static_cast<float>(reconstructed) != point.linearGain) dynamicsQuantized = true;
+        const auto rounded = encodeGain(point.linearGain);
         if (!part.dynamics.empty() && boundedTick <= part.dynamics.back().position.value()) {
           part.dynamics.back().tenthDecibels = rounded;
           dynamicsRoundedTicks = true;
@@ -699,6 +705,17 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
             dynamicsSparse = true;
           part.dynamics.push_back({time::Tick{boundedTick}, rounded});
         }
+      }
+      // SEAM holds the first/last automation value beyond the authored points.
+      // OpenUtau UCurve.Sample instead returns the default (0 dB) outside its
+      // explicit x range, so anchor both part edges before emitting the curve.
+      if (!part.dynamics.empty()) {
+        if (part.dynamics.front().position > time::Tick{0})
+          part.dynamics.insert(part.dynamics.begin(),
+                               {time::Tick{0}, encodeGain(region.dynamicsAutomation.valueAt(time::Tick{0}))});
+        if (part.dynamics.back().position < part.duration)
+          part.dynamics.push_back({part.duration,
+                                   encodeGain(region.dynamicsAutomation.valueAt(region.durationTick))});
       }
       if (dynamicsQuantized)
         addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
@@ -751,6 +768,10 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         auto notePosition = scaleTick(note.startTick.value(), project.ppq(), kUstxPpq, "project.note.startTick", issues, limits); if (!notePosition) return core::Result<Output>{notePosition.error()};
         auto noteDuration = scaleTick(note.durationTick.value(), project.ppq(), kUstxPpq, "project.note.durationTick", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()};
         UstxNote exported{time::Tick{notePosition.value()}, time::Tick{noteDuration.value()}, note.midiKey, domain::toUtf8(lyric->second->surface), 0.0, {}, false, {}, false};
+        const auto visibleOpen = exported.lyric.find('[');
+        if (visibleOpen != std::string::npos && exported.lyric.find(']', visibleOpen + 1U) != std::string::npos)
+          addIssue(issues, UstxIssueSeverity::Loss, notePath + ".lyric",
+                   "OpenUtau removes bracketed text from visible lyrics as a phonetic hint", limits);
         if (note.phoneticHint.has_value()) {
           const auto safeJapaneseHint = lyric->second->language == domain::Language::Japanese &&
               exported.lyric.find_first_of("[]") == std::string::npos &&

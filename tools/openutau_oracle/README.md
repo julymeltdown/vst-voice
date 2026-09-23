@@ -95,6 +95,10 @@ sets the first lyric to `あ[k a]`. The pinned OpenUtau build emits this as an
 unquoted plain scalar. The checked-in result and exact hash are documented in
 `tests/fixtures/ustx/README.md`; it is not a GUI-save receipt.
 
+`--emit-extender-fixture NEW_FILE.ustx` uses the pinned serializer to write
+unquoted `+~` and `+*` note lyrics and a `Chorus!` track name. This exercises
+ordinary YAML plain scalars that a line-wide operator ban would reject.
+
 `--compare-hint SOURCE.ustx ROUNDTRIP.ustx` invokes the pinned OpenUtau
 `UNote.ToPhonemizerNote` method on both loaded files and compares the visible
 lyric and extracted phone hint for every note in their single voice part.
@@ -116,6 +120,13 @@ This loads both files through OpenUtau and compares `dyn` using its own
 part. `DYNAMICS_COMPARE_OK` requires zero error in integer 0.1 dB units. It
 does not prove equal audio, custom expression descriptors, other curve types,
 or identical editing points between render-grid samples.
+
+`--assert-held-dynamics SEAM_EXPORT.ustx AUTHORED_PART_DURATION` loads a
+SEAM-authored one-point 0.5-gain curve in OpenUtau and checks its own
+`UCurve.Sample` is -60 (0.1 dB units) on every five-tick position through the
+authored part duration. Pass the serialized part duration, not the loaded
+OpenUtau `Duration`: OpenUtau can extend the part to a bar boundary during
+load. `HELD_DYNAMICS_OK` verifies the edge anchors, not arbitrary curves.
 
 ## Reading the output
 

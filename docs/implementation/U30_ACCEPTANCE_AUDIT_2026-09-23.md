@@ -109,7 +109,10 @@ changing phonemization.
 
 - Pinned source fixture SHA-256:
   `f4c0660e5fa421202b68ed8290e54b5b445d81327a34ab9f38246f4de03e2d7b`.
-- Production CLI import: 9 explicit issues, none for the supported hint.
+- At that revision, production CLI import reported 9 explicit issues, none
+  for the supported hint. A later review added a warning about unverified
+  source-phonemizer/audio equivalence; the current CLI reports 10 issues,
+  still no hint loss.
   CLI export: 5 explicit losses, none for the hint. Export SHA-256:
   `1c2b386eba55ebfad98e2e1548c45138f1fb8c16e5fab0dcfc4d10b51c33a6bb`.
 - Pinned OpenUtau core reloaded the exported file with `ORACLE_OK` and the
@@ -124,6 +127,75 @@ changing phonemization.
   4/4 passed; focused Debug and sanitizer USTX CTest each passed 1/1.
 
 GitHub CI was intentionally excluded at the user's request.
+
+## 2026-09-24 empty-score export correction
+
+The USTX writer previously emitted `tracks:` or `voice_parts:` with no
+sequence when a score had no vocal track or no voice part. The typed reader
+then saw YAML null and rejected its own output. Both empty collections now
+emit `[]`. A local codec regression covers blank and track-only projects.
+The production CLI exported the historical schema-5 audio-only fixture with
+one explicit audio-loss report; the pinned OpenUtau core loaded the resulting
+zero-track, zero-part USTX with `ORACLE_OK` (SHA-256
+`8e063be4e1e3c96cc73d8ea7c6cee6e05ebee26e3091dda47f5c44ed45e7d329`).
+This is an empty-score interoperability check, not proof of a singing
+performance.
+
+## 2026-09-24 adversarial-review follow-up (GitHub CI deferred)
+
+A subsequent read-only peer review of `64c6ce04` and preceding U30 work
+identified two high-priority parser false rejections, one native-authored
+dynamics edge mismatch, and two lyric/hint disclosure gaps. The reviewer
+did not edit code, run tests or review the empty-score correction. This local
+follow-up addresses those findings without touching GitHub CI:
+
+- A numeric-looking prefix is no longer sufficient to reject a YAML plain
+  scalar. `+~`, `+*`, `2nd` and `.` are strings; malformed/overflowing tokens
+  composed entirely of numeric grammar still fail. `&`, `*` and `!` are now
+  refused at node start (including flow values/keys), not inside `Chorus!`,
+  `a*b` or `rock&roll`. The pinned OpenUtau serializer emitted an eighth
+  fixture with unquoted `Chorus!`, `+~` and `+*` (SHA-256
+  `2dfedb89f5a3d0da7a52fc4822643ca9df40c4bb456989d10a038fcfc77656a7`).
+  Pinned `Ustx.Load` reported `ORACLE_OK`; the SEAM decoder and importer
+  accept it. A production CLI import/export then passed pinned OpenUtau's
+  18-point pitch comparison (`0.160039` cents maximum; exported SHA-256
+  `08e9bd81da35a1db7baa6a17f48a506676df7db1b33e32a174eb797dccd2fe1e`).
+  Hostile node-start alias/tag controls still reject.
+- A nonempty SEAM dynamics curve now gets part-start and part-end anchors
+  when necessary. A SEAM-authored one-point 0.5-gain region exported a
+  `dyn` curve with `xs: [0, 240, 960]`, `ys: [-60, -60, -60]` (0.1 dB
+  units), and explicitly reported 0.1 dB quantization. The source was a
+  copied CLI-imported schema-19 project with a single point inserted at
+  SEAM tick 480 (temporary project SHA-256
+  `28b39edf2976d8252859c3f70ba0af157040b51f8fa1b54e7d89341b7b77270f`);
+  export SHA-256 was
+  `0458d01c09260f5fa7886689d20ae2f9da0c459dec635de2218a4c8280827412`.
+  The independent pinned OpenUtau `UCurve.Sample` returned -60 for all 193
+  five-tick samples through the authored 960-tick part. A deliberately
+  unanchored negative control failed the same oracle. OpenUtau may extend
+  its loaded part to a bar boundary; the check correctly stops at SEAM's
+  serialized part end, not the UI-expanded tail.
+- Supported Japanese phone-hint import now emits a warning that SEAM's phone
+  inventory may differ from the source phonemizer. The current production
+  CLI hint import reports 10 issues, including this warning, and
+  `--compare-hint` still returns `HINT_COMPARE_OK`; that comparison covers
+  OpenUtau's extracted input text, not synthesized audio. Export of a
+  visible SEAM lyric containing bracketed text now reports a lyric loss,
+  because OpenUtau's `UNote.ToPhonemizerNote` strips bracket matches.
+- The explicit-indent sequence-mapping form `- name: |2-` now measures the
+  scalar body relative to the nested key rather than the dash. A synthetic
+  edit of the historical 0.9 serializer fixture loaded in both SEAM and the
+  pinned OpenUtau core; both read `Verse` (pinned `ORACLE_OK`). This control
+  is deliberately labeled synthetic, not serializer-generated.
+- The empty-score writer correction and all these regressions pass final
+  Release `seam_tests` 1,055/1,055, focused Release interchange/score-export
+  CTest 4/4, and focused Debug/sanitizer USTX CTest 1/1 each. The local
+  license audit passes with its explicit `--allow-non-master` option because
+  this work is on `codex/production-readiness-completion`, not `master`.
+
+Wider real-world YAML, actual OpenUtau GUI behavior, executable singer mapping
+and rendered-audio comparison remain unverified. The read-only peer has not
+re-reviewed these fixes, and local tests are not its sign-off.
 
 ## Work required before U30 acceptance
 

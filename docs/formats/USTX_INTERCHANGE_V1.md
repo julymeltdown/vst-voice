@@ -25,8 +25,10 @@ codec and conversion path, not the earlier creator-study Python bridge.
   phonemizer accepts its space-separated phones. Both quoted and unquoted
   YAML plain scalars are accepted. Unsupported phones or languages produce a
   loss and remove the bracket suffix from the visible lyric; complex bracket
-  syntax remains raw lyric with an explicit loss. No arbitrary phonemizer or
-  singer is loaded to interpret it.
+  syntax remains raw lyric with an explicit loss. A supported hint also earns
+  a warning: SEAM applies its own Japanese phone inventory, so text survival
+  does not establish source-phonemizer or audio equivalence. No arbitrary
+  phonemizer or singer is loaded to interpret it.
 - A standard `dyn` part curve maps integer tenths of a decibel at part-relative
   480-PPQ ticks to SEAM linear-gain automation. OpenUtau's `-240` sentinel
   means silence; other values use `10^(y/200)`. The importer samples its
@@ -34,7 +36,10 @@ codec and conversion path, not the earlier creator-study Python bridge.
   Custom `dyn` descriptors, duplicate/unsupported curves and curves outside
   the part are omitted with explicit losses.
 
-The reader rejects aliases/anchors/tags, multiple documents, duplicate keys,
+Plain scalars such as OpenUtau's `+~` and `+*` extenders, `2nd`, `Chorus!` and
+`a*b` are accepted; `&`, `*` and `!` are rejected as YAML operators only at
+node start, including inside flow collections. The reader rejects
+aliases/anchors/tags, multiple documents, duplicate keys,
 tabs in indentation, malformed flow syntax, non-finite numbers, invalid UTF-8,
 and any input or collection that exceeds `UstxLimits`. Limits are checked while
 parsing, before typed arrays are grown from declared values.
@@ -57,10 +62,16 @@ authoritative tempo map. Unsupported SEAM identity, articulation, routing,
 phoneme overrides, generated-performance, audio-track, and style metadata is
 reported as loss. Valid Japanese phone hints are written in OpenUtau's
 terminal bracket syntax; other SEAM hints are reported as losses. SEAM dynamics
-are written as OpenUtau `dyn`; 0.1 dB value quantization,
+are written as OpenUtau `dyn`. Nonempty curves get part-start/end anchors
+because SEAM holds endpoint gain while OpenUtau defaults to 0 dB outside the
+explicit curve span. A visible SEAM lyric containing bracketed text is
+reported as a loss because OpenUtau interprets that text as a hint. 0.1 dB value quantization,
 480-PPQ tick collisions and interpolation differences between sparse points
 are explicitly reported. A nonzero gain closer to silence than to OpenUtau's
 minimum nonzero level is exported as its `-240` silence sentinel with a loss.
+An empty score writes explicit `tracks: []` and `voice_parts: []` rather than
+YAML null fields; the pinned OpenUtau core loads that output. Audio-only SEAM
+projects still report the omitted audio track as a loss.
 
 ## Lifecycle boundary
 
@@ -89,7 +100,8 @@ exhaust the bounded line/collection budgets before note import. A sixth fixture 
 historical serializer's folded `>-` multiline comment, which now imports.
 The reader supports literal (`|`) and folded (`>`) block scalars with strip,
 clip or keep chomping and single-digit explicit indentation, subject to the
-same byte, physical-line/node and UTF-8 limits. This is a bounded subset of
+same byte, physical-line/node and UTF-8 limits. Explicit indentation in a
+sequence mapping (`- key: |2`) is measured from the nested key. This is a bounded subset of
 YAML, not an arbitrary-YAML promise. Nonempty project and part comments are
 reported as losses because SEAM does not retain them. SEAM's own writer emits
 an empty comment, avoiding a fabricated loss when its output is reimported.

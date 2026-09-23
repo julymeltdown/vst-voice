@@ -136,6 +136,8 @@ private:
     if (depth > limits_.maximumDepth) return fail("USTX nesting depth limit exceeded");
     skipSpace();
     if (position_ >= value_.size()) return fail("USTX inline value is empty");
+    if (value_[position_] == '&' || value_[position_] == '*' || value_[position_] == '!')
+      return fail("USTX aliases and tags are not supported");
     switch (value_[position_]) {
       case '[': return parseArray(depth + 1U);
       case '{': return parseObject(depth + 1U);
@@ -202,9 +204,12 @@ private:
     if (core::parseFiniteDecimal(token, number)) {
       return Node{number};
     }
-    const auto numericCandidate = token.front() == '-' || token.front() == '+' ||
-        token.front() == '.' || (token.front() >= '0' && token.front() <= '9');
-    if (numericCandidate && !(blockPlainScalar && token.find('[') != std::string_view::npos))
+    // A lyric such as +~, +*, 2nd or . is a YAML string, not a malformed
+    // number. Reject only tokens composed entirely of numeric grammar after
+    // the finite parser has failed (overflow, underflow, malformed exponent).
+    const auto numericCandidate = token.find_first_of("0123456789") != std::string_view::npos &&
+        token.find_first_not_of("0123456789.eE+-") == std::string_view::npos;
+    if (numericCandidate)
       return fail("USTX numeric scalar is malformed or out of range");
     std::string folded{token};
     std::transform(folded.begin(), folded.end(), folded.begin(), [](char value) {
@@ -274,7 +279,8 @@ private:
     const auto start = position_;
     while (position_ < value_.size() && value_[position_] != ':') ++position_;
     const auto key = trim(value_.substr(start, position_ - start));
-    if (key.empty() || key.size() > limits_.maximumScalarBytes || !domain::fromUtf8(std::string{key}))
+    if (key.empty() || key.front() == '&' || key.front() == '*' || key.front() == '!' ||
+        key.size() > limits_.maximumScalarBytes || !domain::fromUtf8(std::string{key}))
       return core::failure<std::string>(core::ErrorCode::ParseError, "USTX object key is invalid");
     return std::string{key};
   }
@@ -332,6 +338,16 @@ private:
     if (content.size() >= 2U && content.front() == '-' && content[1U] == ' ')
       return trim(content.substr(2U));
     return {};
+  }
+
+  static std::size_t blockScalarParentIndentForLine(std::string_view content,
+                                                    std::size_t indent) {
+    // In `- key: |2`, YAML measures the explicit indentation from the
+    // mapping key after `- `, not from the sequence dash itself.
+    if (content.size() >= 2U && content.front() == '-' && content[1U] == ' ' &&
+        mappingColon(content.substr(2U)) != std::string_view::npos)
+      return indent + 2U;
+    return indent;
   }
 
   core::Result<std::string> readBlockScalar(std::size_t& start, std::size_t& lineNumber,
@@ -447,15 +463,8 @@ private:
       if (!content.empty()) {
         if (content == "---" || content == "..." || content.starts_with("--- ") || content.starts_with("... "))
           return core::failure(core::ErrorCode::ParseError, "USTX multiple YAML documents are not supported", "line " + std::to_string(lineNumber));
-        bool single = false, doubleQuote = false, escaped = false;
-        for (const auto character : content) {
-          if (doubleQuote) { if (escaped) escaped = false; else if (character == '\\') escaped = true; else if (character == '"') doubleQuote = false; continue; }
-          if (single) { if (character == '\'') single = false; continue; }
-          if (character == '"') doubleQuote = true;
-          else if (character == '\'') single = true;
-          else if (character == '&' || character == '*' || character == '!')
-            return core::failure(core::ErrorCode::ParseError, "USTX aliases and tags are not supported", "line " + std::to_string(lineNumber));
-        }
+        // Anchors, aliases and tags are rejected when a node is parsed. They
+        // are ordinary characters inside a plain scalar (Chorus!, a*b, +*).
         if (lines_.size() >= limits_.maximumNodes) return core::failure(core::ErrorCode::ParseError, "USTX line/node limit exceeded");
         Line line{indent, lineNumber, std::string{content}, std::nullopt};
         const auto blockValue = blockScalarValueForLine(content);
@@ -466,7 +475,9 @@ private:
         if (header) {
           auto bodyStart = end == std::string::npos ? input_.size() : end + 1U;
           auto bodyLineNumber = lineNumber + 1U;
-          auto block = readBlockScalar(bodyStart, bodyLineNumber, indent, *header, physicalLines);
+          auto block = readBlockScalar(bodyStart, bodyLineNumber,
+                                       blockScalarParentIndentForLine(content, indent),
+                                       *header, physicalLines);
           if (!block) return core::Result<void>{block.error()};
           line.blockScalar = std::move(block).value();
           lines_.push_back(std::move(line));
@@ -1024,14 +1035,14 @@ core::Result<std::vector<std::uint8_t>> encodeUstx(const UstxDocument& document,
   for (const auto& meter : document.meters) output += "  - {bar_position: " + std::to_string(meter.barPosition) + ", beat_per_bar: " + std::to_string(meter.numerator) + ", beat_unit: " + std::to_string(meter.denominator) + "}\n";
   output += "tempos:\n";
   for (const auto& tempo : document.tempos) output += "  - {position: " + std::to_string(tempo.position.value()) + ", bpm: " + number(tempo.bpm) + "}\n";
-  output += "tracks:\n";
+  output += document.tracks.empty() ? "tracks: []\n" : "tracks:\n";
   for (const auto& track : document.tracks) {
     output += "  - singer: " + quote(track.singer) + "\n    track_name: " + quote(track.name) + "\n    track_color: Blue\n    mute: " + std::string(track.mute ? "true" : "false") + "\n    solo: " + std::string(track.solo ? "true" : "false") + "\n    volume: " + number(track.volume) + "\n    pan: " + number(track.pan) + "\n    track_expressions: []\n    voice_color_names: [";
     if (track.voiceColors.empty()) output += "\"\"";
     else for (std::size_t index = 0U; index < track.voiceColors.size(); ++index) { if (index > 0U) output += ", "; output += quote(track.voiceColors[index]); }
     output += "]\n";
   }
-  output += "voice_parts:\n";
+  output += document.parts.empty() ? "voice_parts: []\n" : "voice_parts:\n";
   for (const auto& part : document.parts) {
     output += "  - name: " + quote(part.name) + "\n    comment: \"\"\n    track_no: " + std::to_string(part.trackNo) + "\n    position: " + std::to_string(part.position.value()) + "\n    duration: " + std::to_string(part.duration.value()) + "\n    curves: ";
     if (part.dynamics.empty()) output += "[]\n";

@@ -64,6 +64,26 @@ TEST_CASE("large USTX roundtrips do not invent losses for empty emitted metadata
   CHECK(refused.error().message.find("diagnostic") != std::string::npos);
 }
 
+TEST_CASE("USTX empty scores emit typed empty track and part arrays") {
+  using namespace seam;
+  application::ProjectFactory factory{869100U};
+  auto project = factory.createProject("Blank score");
+  const auto empty = interchange::exportUstxProject(project); CHECK(empty);
+  const auto decodedEmpty = interchange::decodeUstx(empty.value().bytes); CHECK(decodedEmpty);
+  CHECK(decodedEmpty.value().tracks.empty());
+  CHECK(decodedEmpty.value().parts.empty());
+  const auto importedEmpty = interchange::importUstxProject(empty.value().bytes, factory);
+  CHECK(importedEmpty);
+  CHECK(importedEmpty.value().project.vocalTracks().empty());
+
+  const auto trackId = factory.addVocalTrack(project, "Lead");
+  CHECK(trackId.valid());
+  const auto trackOnly = interchange::exportUstxProject(project); CHECK(trackOnly);
+  const auto decodedTrack = interchange::decodeUstx(trackOnly.value().bytes); CHECK(decodedTrack);
+  CHECK(decodedTrack.value().tracks.size() == 1U);
+  CHECK(decodedTrack.value().parts.empty());
+}
+
 TEST_CASE("USTX parsing refuses diagnostic overflow instead of truncating unknown field losses") {
   using namespace seam;
   std::string source = "ustx_version: \"0.9\"\ntime_signatures: [{bar_position: 0, beat_per_bar: 4, beat_unit: 4}]\n"
@@ -283,6 +303,11 @@ TEST_CASE("USTX Japanese bracketed phone hints preserve visible lyric and typed 
   CHECK(domain::toUtf8(region.lyrics.front().surface) == "あ");
   CHECK(region.notes.front().phoneticHint == "k a");
   CHECK(!hasLossAt(imported.value().issues, "ustx.voice_parts[0].notes[0].lyric"));
+  CHECK(std::any_of(imported.value().issues.begin(), imported.value().issues.end(), [](const auto& issue) {
+    return issue.severity == interchange::UstxIssueSeverity::Warning &&
+           issue.path == "ustx.voice_parts[0].notes[0].lyric" &&
+           issue.message.find("audio equivalence is unverified") != std::string::npos;
+  }));
   const auto exported = interchange::exportUstxProject(imported.value().project); CHECK(exported);
   const auto decoded = interchange::decodeUstx(exported.value().bytes); CHECK(decoded);
   CHECK(decoded.value().parts.front().notes.front().lyric == "あ[k a]");
@@ -344,6 +369,18 @@ TEST_CASE("USTX Japanese bracketed phone hints preserve visible lyric and typed 
                   "project.vocalTracks[0].regions[0].notes[0].phoneticHint"));
   const auto englishDecoded = interchange::decodeUstx(englishExport.value().bytes); CHECK(englishDecoded);
   CHECK(englishDecoded.value().parts.front().notes.front().lyric == "hi");
+
+  auto bracketProject = factory.createProject("Visible bracket lyric");
+  const auto bracketTrack = factory.addVocalTrack(bracketProject, "Lead");
+  const auto bracketRegionId = factory.addRegion(bracketProject, bracketTrack, "Verse",
+                                                  time::Tick{0}, time::Tick{960});
+  auto* bracketRegion = bracketProject.findRegion(bracketRegionId); CHECK(bracketRegion != nullptr);
+  auto [bracketLyric, bracketNote] = factory.makeNote(time::Tick{0}, time::Tick{480}, 60U, U"la[test]");
+  bracketRegion->lyrics.push_back(bracketLyric);
+  bracketRegion->notes.push_back(bracketNote);
+  const auto bracketExport = interchange::exportUstxProject(bracketProject); CHECK(bracketExport);
+  CHECK(hasLossAt(bracketExport.value().issues,
+                  "project.vocalTracks[0].regions[0].notes[0].lyric"));
 }
 
 TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
@@ -645,9 +682,10 @@ TEST_CASE("SEAM dynamics exports as typed USTX gain with quantization loss") {
   const auto exported = interchange::exportUstxProject(project); CHECK(exported);
   CHECK(hasLossAt(exported.value().issues, "project.vocalTracks[0].regions[0].dynamics"));
   const auto decoded = interchange::decodeUstx(exported.value().bytes); CHECK(decoded);
-  CHECK(decoded.value().parts[0].dynamics.size() == 2U);
+  CHECK(decoded.value().parts[0].dynamics.size() == 3U);
   CHECK(decoded.value().parts[0].dynamics[0] == (interchange::UstxDynamicsPoint{time::Tick{0}, -60}));
   CHECK(decoded.value().parts[0].dynamics[1] == (interchange::UstxDynamicsPoint{time::Tick{480}, 0}));
+  CHECK(decoded.value().parts[0].dynamics[2] == (interchange::UstxDynamicsPoint{time::Tick{960}, 0}));
   const auto imported = interchange::importUstxProject(exported.value().bytes, factory); CHECK(imported);
   const auto& back = imported.value().project.vocalTracks().front().regions.front().dynamicsAutomation;
   CHECK_NEAR(back.valueAt(time::Tick{0}), std::pow(10.0, -60.0 / 200.0), 1e-5);
@@ -660,6 +698,17 @@ TEST_CASE("SEAM dynamics exports as typed USTX gain with quantization loss") {
   CHECK(nearSilenceDecoded);
   CHECK(nearSilenceDecoded.value().parts[0].dynamics[0].tenthDecibels == -240);
   CHECK(hasLossAt(nearSilence.value().issues, "project.vocalTracks[0].regions[0].dynamics"));
+
+  CHECK(region->dynamicsAutomation.replacePoints({{time::Tick{480}, 0.5F}}));
+  const auto held = interchange::exportUstxProject(project); CHECK(held);
+  const auto heldDecoded = interchange::decodeUstx(held.value().bytes); CHECK(heldDecoded);
+  CHECK(heldDecoded.value().parts[0].dynamics.size() == 3U);
+  CHECK(heldDecoded.value().parts[0].dynamics[0] ==
+        (interchange::UstxDynamicsPoint{time::Tick{0}, -60}));
+  CHECK(heldDecoded.value().parts[0].dynamics[1] ==
+        (interchange::UstxDynamicsPoint{time::Tick{240}, -60}));
+  CHECK(heldDecoded.value().parts[0].dynamics[2] ==
+        (interchange::UstxDynamicsPoint{time::Tick{960}, -60}));
 }
 
 TEST_CASE("historical OpenUtau folded multiline comments import without treating body as YAML") {
@@ -696,6 +745,14 @@ TEST_CASE("USTX block scalars fold or preserve lyric lines with bounded decoding
   const auto paragraph = replaceLyric("    lyric: >2-\n      あ\n\n      い\n");
   CHECK(paragraph);
   CHECK(paragraph.value().parts[0].notes[0].lyric == "あ\nい");
+  auto sequenceMapping = source;
+  const auto sequenceMarker = sequenceMapping.find("- duration: 960\n  name: Verse\n");
+  CHECK(sequenceMarker != std::string::npos);
+  sequenceMapping.replace(sequenceMarker, std::string_view{"- duration: 960\n  name: Verse\n"}.size(),
+                          "- name: |2-\n    Verse\n  duration: 960\n");
+  const auto sequenceDecoded = interchange::decodeUstx(bytes(sequenceMapping));
+  CHECK(sequenceDecoded);
+  CHECK(sequenceDecoded.value().parts.front().name == "Verse");
   const auto moreIndented = replaceLyric("    lyric: >-\n      あ\n\n        い\n");
   CHECK(moreIndented);
   CHECK(moreIndented.value().parts[0].notes[0].lyric == "あ\n\n  い");
@@ -757,14 +814,48 @@ TEST_CASE("native USTX decoder rejects aliases, duplicate keys, documents and ho
   using seam::interchange::decodeUstx;
   CHECK(!decodeUstx(bytes("ustx_version: '0.9'\nustx_version: '0.9'\n")));
   CHECK(!decodeUstx(bytes("ustx_version: '0.9'\na: &anchor 1\n")));
+  CHECK(!decodeUstx(bytes("ustx_version: '0.9'\na: !unsafe value\n")));
   CHECK(!decodeUstx(bytes("---\nustx_version: '0.9'\n")));
   CHECK(!decodeUstx(bytes("ustx_version: '0.9'\nname: [*missing]\n")));
+  CHECK(!decodeUstx(bytes("ustx_version: '0.9'\nname: {x: *missing}\n")));
   seam::interchange::UstxLimits limits;
   limits.maximumInputBytes = 8U;
   CHECK(!decodeUstx(bytes(fixture()), limits));
   limits = {};
   limits.maximumNodes = 8U;
   CHECK(!decodeUstx(bytes(fixture()), limits));
+}
+
+TEST_CASE("USTX plain scalars accept extenders and punctuation without enabling YAML operators") {
+  using seam::interchange::decodeUstx;
+  const auto pinned = historicalSerializerFixture("pinned-0.9-extender");
+  CHECK(!pinned.empty());
+  const auto pinnedDecoded = decodeUstx(pinned); CHECK(pinnedDecoded);
+  CHECK(pinnedDecoded.value().tracks.front().name == "Chorus!");
+  CHECK(pinnedDecoded.value().parts.front().notes[0].lyric == "+~");
+  CHECK(pinnedDecoded.value().parts.front().notes[1].lyric == "+*");
+  seam::application::ProjectFactory factory{869500U};
+  const auto pinnedImported = seam::interchange::importUstxProject(pinned, factory);
+  CHECK(pinnedImported);
+  CHECK(seam::domain::toUtf8(pinnedImported.value().project.vocalTracks().front().regions.front().lyrics[0].surface) == "+~");
+  const auto checkLyric = [](std::string_view token) {
+    std::string source{fixture()};
+    const auto marker = source.find("lyric: \"あ\"");
+    CHECK(marker != std::string::npos);
+    source.replace(marker, std::string_view{"lyric: \"あ\""}.size(),
+                   "lyric: " + std::string{token});
+    const auto decoded = decodeUstx(bytes(source)); CHECK(decoded);
+    CHECK(decoded.value().parts.front().notes.front().lyric == token);
+  };
+  for (const auto lyric : {"+", "+~", "+*", "2nd", ".", "Chorus!", "a*b", "rock&roll"})
+    checkLyric(lyric);
+  std::string source{fixture()};
+  const auto marker = source.find("track_name: Lead");
+  CHECK(marker != std::string::npos);
+  source.replace(marker, std::string_view{"track_name: Lead"}.size(),
+                 "track_name: Chorus!");
+  const auto decoded = decodeUstx(bytes(source)); CHECK(decoded);
+  CHECK(decoded.value().tracks.front().name == "Chorus!");
 }
 
 TEST_CASE("USTX floating scalars preserve decimal grammar and range rejection") {
