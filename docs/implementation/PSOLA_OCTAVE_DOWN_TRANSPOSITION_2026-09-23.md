@@ -67,11 +67,33 @@ is derived from the thing being replaced rather than the thing being produced,
 which is why the artifact appears exactly where the two periods have the simplest
 relationship.
 
-This is a hypothesis consistent with the measurements above, not yet confirmed by a
-patch: the window width is the only quantity in the loop that depends on
-periodSource without reference to targetHz, and it is the only quantity whose
-behaviour changes at ratio 2.0. Confirming it means sizing the window from the
-target period and re-running the sweep.
+**This window hypothesis was tested and refuted.** Sizing the window from the
+target period (so grains overlap 50% at ratio 2.0 instead of merely touching) was
+implemented and re-measured: the octave-down case still reported 440.00 Hz, and
+the integer-ratio cases still failed. The change was reverted rather than left in
+as an unproven edit.
+
+What the refutation leaves is a better explanation. The loop reads each grain with
+a source position of sourceMark.frame + relative * sourcePerOutput, where
+sourcePerOutput is only the **sample-rate** ratio and carries no target-pitch
+scaling. A grain is therefore a 1:1 copy of a source region, containing the source
+periodicity at its original sample spacing. Pitch change comes only from where
+grains are placed. Two consequences follow, and both are observed:
+
+- Consecutive grains are placed targetPeriod apart while reading source marks
+  sourcePeriod apart, so corresponding samples of adjacent grains land
+  sourcePeriod apart in the output. Where those copies reinforce in phase, the
+  output carries energy at the source period -- the pitch that should have been
+  removed.
+- That reinforcement is strongest when the target period is a whole multiple of
+  the source period, because then the copies line up exactly. Measured integer
+  ratios all fail (2.000, 4.000) and the nearby non-integers pass (1.888 at
+  +0.6 cents, 2.520 at +0.7 cents), which is the shape this explanation predicts
+  and the window hypothesis did not.
+
+So the defect is not the window width but that grain placement and grain content
+are scaled by different quantities. Stating that as a repair is not yet justified
+by a measurement, so no fix is included.
 
 ## Why this was not caught
 
@@ -94,4 +116,3 @@ failure mode the plan asks U16 to eliminate.
 No fix is included. Changing the overlap-add window sizing affects every classical
 render, so it needs its own before/after across the sweep and the existing suite
 rather than being folded in here.
-
