@@ -1,6 +1,7 @@
 #include "seam/interchange/ustx_project_conversion.hpp"
 
 #include "seam/domain/note.hpp"
+#include "seam/domain/dynamics_automation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,66 @@ namespace {
 
 constexpr std::int64_t kUstxPpq = 480;
 constexpr std::int64_t kSeamPpq = 960;
+
+void addIssue(std::vector<UstxIssue>& issues, UstxIssueSeverity severity,
+              std::string path, std::string message, const UstxLimits& limits);
+
+std::int16_t sampleDynamics(const std::vector<UstxDynamicsPoint>& curve,
+                            std::int64_t tick) {
+  const auto right = std::lower_bound(curve.begin(), curve.end(), tick,
+      [](const auto& point, std::int64_t value) { return point.position.value() < value; });
+  if (right != curve.end() && right->position.value() == tick) return right->tenthDecibels;
+  if (right == curve.begin() || right == curve.end()) return 0;
+  const auto& left = *(right - 1);
+  const double fraction = static_cast<double>(tick - left.position.value()) /
+      static_cast<double>((right->position - left.position).value());
+  const double value = std::lerp(static_cast<double>(left.tenthDecibels),
+                                 static_cast<double>(right->tenthDecibels), fraction);
+  // OpenUtau UCurve.Sample uses Math.Round, whose midpoint rule is ties-to-even.
+  const double lower = std::floor(value);
+  const double remainder = value - lower;
+  const double rounded = remainder < 0.5 ||
+      (remainder == 0.5 && std::fmod(lower, 2.0) == 0.0) ? lower : lower + 1.0;
+  return static_cast<std::int16_t>(rounded);
+}
+
+void importDynamics(const UstxPart& source, domain::VocalRegion& region,
+                    std::string_view path, std::vector<UstxIssue>& issues,
+                    const UstxLimits& limits) {
+  if (source.dynamics.empty()) return;
+  const auto first = source.dynamics.front().position.value();
+  const auto last = source.dynamics.back().position.value();
+  const auto gridStart = first - first % 5;
+  const auto gridEnd = std::min(last + (5 - last % 5) % 5,
+                                source.duration.value() - source.duration.value() % 5);
+  const auto gridCount = static_cast<std::uint64_t>((gridEnd - gridStart) / 5 + 1);
+  if (gridCount + 3U > domain::kMaximumDynamicsPoints) {
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".curves",
+             "dynamics span exceeds SEAM's bounded automation point count and was omitted", limits);
+    return;
+  }
+  if (std::any_of(source.dynamics.begin(), source.dynamics.end(),
+                  [](const auto& point) { return point.position.value() % 5 != 0; }))
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".curves",
+             "off-grid dynamics editing points were sampled to OpenUtau's five-tick render grid", limits);
+  std::vector<domain::DynamicsAutomationPoint> points;
+  points.reserve(static_cast<std::size_t>(gridCount + 3U));
+  if (gridStart > 0) points.push_back({time::Tick{0}, 1.0F});
+  if (gridStart > 5) points.push_back({time::Tick{(gridStart - 5) * 2}, 1.0F});
+  for (std::int64_t tick = gridStart; tick <= gridEnd; tick += 5) {
+    const auto y = sampleDynamics(source.dynamics, tick);
+    const auto gain = y == -240 ? 0.0F : static_cast<float>(std::pow(10.0, static_cast<double>(y) / 200.0));
+    points.push_back({time::Tick{tick * 2}, gain});
+  }
+  if (gridEnd < source.duration.value()) {
+    const auto nextTick = std::min(gridEnd + 5, source.duration.value());
+    points.push_back({time::Tick{nextTick * 2}, 1.0F});
+  }
+  const auto applied = region.dynamicsAutomation.replacePoints(std::move(points));
+  if (!applied)
+    addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".curves",
+             "dynamics curve could not be represented by SEAM automation", limits);
+}
 
 void addIssue(std::vector<UstxIssue>& issues, UstxIssueSeverity severity,
               std::string path, std::string message, const UstxLimits& limits) {
@@ -425,6 +486,8 @@ core::Result<UstxProjectDraft> importUstxProject(
     const auto regionId = factory.addRegion(project, trackIds[source.trackNo], source.name.empty() ? "Voice Part" : source.name, time::Tick{partStart.value()}, time::Tick{partDuration.value()});
     auto* region = project.findRegion(regionId);
     if (!region) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX import region was not created");
+    importDynamics(source, *region,
+                   "ustx.voice_parts[" + std::to_string(partIndex) + "]", issues, limits);
     auto composed = composePitch(source, document.tempos,
         "ustx.voice_parts[" + std::to_string(partIndex) + "]", issues, limits);
     if (!composed) return core::Result<Output>{composed.error()};
@@ -563,7 +626,44 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
       const auto& region = track.regions[regionNumber];
       auto partPosition = scaleTick(region.startTick.value(), project.ppq(), kUstxPpq, "project.vocalTracks.regions.startTick", issues, limits); if (!partPosition) return core::Result<Output>{partPosition.error()};
       auto partDuration = scaleTick(region.durationTick.value(), project.ppq(), kUstxPpq, "project.vocalTracks.regions.durationTick", issues, limits); if (!partDuration) return core::Result<Output>{partDuration.error()};
-      UstxPart part{region.name, static_cast<std::uint32_t>(trackNumber), time::Tick{partPosition.value()}, time::Tick{partDuration.value()}, {}};
+      UstxPart part{region.name, static_cast<std::uint32_t>(trackNumber), time::Tick{partPosition.value()}, time::Tick{partDuration.value()}, {}, {}};
+      const auto dynamicsPath = "project.vocalTracks[" + std::to_string(trackNumber) +
+          "].regions[" + std::to_string(regionNumber) + "].dynamics";
+      bool dynamicsQuantized = false;
+      bool dynamicsSparse = false;
+      bool dynamicsRoundedTicks = false;
+      const double minimumAudible = std::pow(10.0, -239.0 / 200.0);
+      for (const auto& point : region.dynamicsAutomation.points()) {
+        auto tick = scaleTick(point.tick.value(), project.ppq(), kUstxPpq,
+                              dynamicsPath, issues, limits);
+        if (!tick) return core::Result<Output>{tick.error()};
+        const auto boundedTick = std::min(tick.value(), part.duration.value());
+        if (boundedTick != tick.value()) dynamicsRoundedTicks = true;
+        const double decibels = static_cast<double>(point.linearGain) <= minimumAudible / 2.0 ? -240.0 :
+            std::max(-239.0, 200.0 * std::log10(static_cast<double>(point.linearGain)));
+        const auto rounded = static_cast<std::int16_t>(std::clamp(std::llround(decibels), -240LL, 120LL));
+        const double reconstructed = rounded == -240 ? 0.0 :
+            std::pow(10.0, static_cast<double>(rounded) / 200.0);
+        if (static_cast<float>(reconstructed) != point.linearGain) dynamicsQuantized = true;
+        if (!part.dynamics.empty() && boundedTick <= part.dynamics.back().position.value()) {
+          part.dynamics.back().tenthDecibels = rounded;
+          dynamicsRoundedTicks = true;
+        } else {
+          if (!part.dynamics.empty() &&
+              boundedTick - part.dynamics.back().position.value() > 5)
+            dynamicsSparse = true;
+          part.dynamics.push_back({time::Tick{boundedTick}, rounded});
+        }
+      }
+      if (dynamicsQuantized)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "linear gain was quantized to OpenUtau's 0.1 dB dynamics units", limits);
+      if (dynamicsSparse)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "sparse SEAM linear-gain interpolation differs from OpenUtau's decibel interpolation between curve points", limits);
+      if (dynamicsRoundedTicks)
+        addIssue(issues, UstxIssueSeverity::Loss, dynamicsPath,
+                 "dynamics points collided or exceeded the USTX part after tick rounding", limits);
       std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
       for (const auto& lyric : region.lyrics) lyrics.emplace(lyric.id, &lyric);
       // A pitch point in a rest belongs to the next note as a negative-X
@@ -631,7 +731,7 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         part.notes.push_back(std::move(exported));
         if (note.articulation != domain::NoteArticulation::Normal || note.slurGroup.has_value() || note.phoneticHint.has_value()) addIssue(issues, UstxIssueSeverity::Loss, "project.note[" + std::to_string(noteNumber) + "]", "SEAM articulation/slur/phonetic hint is not represented in USTX", limits);
       }
-      if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.dynamicsAutomation.points().empty() || !region.formantAutomation.points().empty() || !region.performance.ownership.empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, dynamics, formant, manual-ownership and generated-performance metadata is not represented in USTX", limits);
+      if (!region.phonemeOverrides.empty() || !region.unitSelectionOverrides.empty() || !region.seamOverrides.empty() || !region.formantAutomation.points().empty() || !region.performance.ownership.empty() || !region.performance.takes.empty() || !region.performance.accepted.empty()) addIssue(issues, UstxIssueSeverity::Loss, "project.vocalTracks.regions[" + std::to_string(regionNumber) + "]", "SEAM phoneme, formant, manual-ownership and generated-performance metadata is not represented in USTX", limits);
       const auto requiredDuration = part.notes.empty() ? 0 : std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->position.value() + std::max_element(part.notes.begin(), part.notes.end(), [](const auto& lhs, const auto& rhs) { return lhs.position + lhs.duration < rhs.position + rhs.duration; })->duration.value();
       if (part.duration.value() < requiredDuration) { part.duration = time::Tick{requiredDuration}; addIssue(issues, UstxIssueSeverity::Warning, "project.vocalTracks.regions.durationTick", "part duration was extended to contain all rounded notes", limits); }
       document.parts.push_back(std::move(part));

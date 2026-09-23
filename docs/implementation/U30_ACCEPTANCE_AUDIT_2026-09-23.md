@@ -40,7 +40,7 @@ remains a small unit test, but it is no longer the old-version evidence.
 
 | Plan criterion | Current evidence | Status |
 |---|---|---|
-| Bounded 0.6–0.9 import | `decodeUstx` and `UstxDocument::validate` admit exactly 0.6, 0.7, 0.8, 0.9. The historical serializers emit a BOM and indentless YAML sequences, which exposed and drove a parser repair. The fixture regression checks tempo, meter, notes, UTF-8 lyric, pitch, vibrato, tuning presence and 0.9 re-export; versions 0.5/0.10/1.0 still reject. A 64-point `dyn` curve imports with an explicit loss. A sixth serializer fixture with a folded `>-` multiline comment now imports; literal/folded lyric and chomping behavior have bounded codec tests. | Six genuine historical-serializer outputs pass locally; GUI-saved breadth remains. |
+| Bounded 0.6–0.9 import | `decodeUstx` and `UstxDocument::validate` admit exactly 0.6, 0.7, 0.8, 0.9. The historical serializers emit a BOM and indentless YAML sequences, which exposed and drove a parser repair. The fixture regression checks tempo, meter, notes, UTF-8 lyric, pitch, vibrato, tuning presence and 0.9 re-export; versions 0.5/0.10/1.0 still reject. A 64-point standard `dyn` curve now maps into SEAM dynamics. A sixth serializer fixture with a folded `>-` multiline comment now imports; literal/folded lyric and chomping behavior have bounded codec tests. | Six genuine historical-serializer outputs pass locally; GUI-saved breadth remains. |
 | Deterministic 0.9 export and explicit losses | `encodeUstx`, `ustx_project_conversion.cpp`, and `USTX_INTERCHANGE_V1.md` declare the subset and losses. Local codec and service tests pass. | Local pass. |
 | Hostile YAML and allocation budgets | Codec tests cover aliases, duplicate keys, documents, depth, byte/node limits, invalid scalars and report overflow. A targeted indentless-sequence test reaches the collection limit at a pinned line; the curve fixture reaches reduced line and collection budgets. Block scalar body lines now count against the physical-line limit, scalar bytes are bounded before copying, body characters are not interpreted as YAML operators, and malformed indentation rejects. Non-integral tuning rejects on decode and direct codec encode because OpenUtau's `UNote.tuning` is `int`. U29 separately accepted the local POSIX held-file I/O boundary; its Windows limitation remains. | Local pass, not a full adversarial audit of every old-version field. |
 | External OpenUtau interoperability | The existing 80-note production SEAM export still loads through pinned OpenUtau `Ustx.Load`. The four new historical inputs pass their own version's loader and the pinned loader. After SEAM import→0.9 export, pinned OpenUtau loads all four. Its independent pitch sampler measures at most 0.160040 cents error over 18 fixed in-note points per pair. | Core exchange pass for these files; GUI, sound, unseen-file breadth and vibrato audio not proved. |
@@ -52,7 +52,7 @@ remains a small unit test, but it is no longer the old-version evidence.
 - `/tmp/seam-dotnet/dotnet build tools/openutau_oracle/seam_openutau_oracle.csproj --nologo -v q -p:OpenUtauRoot=/Users/lhs/Downloads/OpenUtau-review`: pass, zero warnings/errors.
 - The same oracle's `dotnet run --no-build` on the SEAM-exported score: `ORACLE_OK` after the full OpenUtau core load path.
 - Four historical OpenUtau builds/fixture emissions and version-specific `Ustx.Load` checks: pass. The 0.6 build emitted NETSDK1206; no old runtime is deployed.
-- Four baseline CLI imports, four 0.9 exports, four pinned-OpenUtau loads and four `--compare-pitch` runs: pass. Peak sampled error `0.160040` cents. The fifth curve-bearing 0.9 file also passes historical/current OpenUtau load, SEAM import/export, current OpenUtau re-load and the pitch oracle (`0.160039` cents maximum); SEAM reports its curve as a loss. OpenUtau note `tuning` in 0.8/0.9 is flattened into musical pitch automation; the separate editable control is reported as a conversion loss.
+- Four baseline CLI imports, four 0.9 exports, four pinned-OpenUtau loads and four `--compare-pitch` runs: pass. Peak sampled error `0.160040` cents. The fifth curve-bearing 0.9 file also passed historical/current OpenUtau load, SEAM import/export, current OpenUtau re-load and the pitch oracle (`0.160039` cents maximum) in the earlier implementation; at that time SEAM reported its curve as a loss. The later typed-dynamics increment and independent comparison are recorded below. OpenUtau note `tuning` in 0.8/0.9 is flattened into musical pitch automation; the separate editable control is reported as a conversion loss.
 - The sixth historical-serializer file has a folded two-line comment containing `# & * !`. Historical and pinned OpenUtau `Ustx.Load`, SEAM CLI import/export, pinned re-load and the 18-point pitch comparison all pass; sampled pitch error is `0.160039` cents. Its nonempty project comment is explicitly reported as a loss (11 import issues), as is a nonempty part comment in a codec regression. The former temporary probe failed at line 3 before this parser change.
 - Pitch-oracle negative control: changing one round-tripped note's tuning to 10 cents failed the same 18-point comparison with `10.105982` cents maximum error and exit 1.
 - Final focused Release CTest: SMF, USTX, interchange service and score-export interop 4/4 pass. Final Debug USTX and interchange-service CTest 2/2 pass. Full product tests were not rerun for this narrow change.
@@ -61,17 +61,44 @@ remains a small unit test, but it is no longer the old-version evidence.
 - A nonempty comment in SEAM's own emitted USTX would have fabricated a loss on reimport; the writer now emits an empty comment. The pinned 80-note production export's new SHA-256 is `097b21716c75c1e03d46119c6a0216a60617b6e3fa048745a97adfff7f416f9c`, and pinned OpenUtau `Ustx.Load` returned `ORACLE_OK` before the exact-byte expectation was updated.
 - Final focused checks after this repair: Release SMF/USTX/service/score-export CTest 4/4 pass, Debug USTX/service 2/2 pass, sanitizer USTX 1/1 pass. Full product tests were not rerun for this narrow change.
 
+## 2026-09-24 typed-dynamics increment
+
+The historical 64-point `dyn` curve now imports as SEAM dynamics automation
+and re-exports as USTX `dyn`. The default OpenUtau descriptor and its
+`-240` silence sentinel are mapped explicitly. Unsupported/custom curves,
+out-of-part points, and spans exceeding SEAM's 16,384-point automation ceiling
+remain explicit losses; the rest of the score can still import. The codec also
+emits a valid `notes: []` for an empty voice part. This is a local capability
+increment, not U30 acceptance.
+
+- Release `seam_tests`: 1,051 passed, 0 failed after this increment.
+- Release SMF, USTX, interchange-service, and score-export focused CTest:
+  4/4 pass. The USTX target includes the
+  64-point historical fixture, malformed/custom/unsupported curves, late
+  curve defaults, oversized span loss, and SEAM-to-USTX dynamics export.
+- Debug focused USTX test: 1/1 pass. Sanitizer focused USTX test: 1/1 pass.
+- Production CLI import of the historical curve fixture: 10 explicit issues,
+  none for `voice_parts[0].curves`. Production CLI export: 5 explicit losses,
+  none claiming dynamics were wholly omitted. The exported file loaded via
+  pinned OpenUtau core with `ORACLE_OK`.
+- The independent OpenUtau `--compare-dynamics` oracle sampled both files on
+  289 five-tick positions: maximum difference 0 tenths of a dB,
+  `DYNAMICS_COMPARE_OK`.
+
+The oracle compares one controlled serializer-generated score, not arbitrary
+USTX files, custom descriptors, audio renders, or the desktop GUI.
+
 ## Work required before U30 acceptance
 
 1. Exercise actual OpenUtau desktop GUI open/save on the generated and additional
    independently sourced, user-authored files from each supported version.
    Capture app build, file hash and redistribution rights. Serializer fixtures
    cover a controlled subset, not real-world field diversity.
-2. Decide the supported contract for large expression curves: preserve them,
-   safely skip them with an explicit loss, or publish a measured, user-facing
-   ceiling. The 64-point fixture costs 131 additional lines over the empty
-   curve file and proves fail-closed 400-node/50-entry limits; it does not
-   establish real-project breadth under the default 100,000-node/4 MiB caps.
+2. Measure the supported breadth for large expression curves. Standard `dyn`
+   spans beyond SEAM's 16,384-point ceiling now skip with an explicit loss,
+   but the YAML reader can still hit its default 100,000-node/4 MiB budgets
+   before typed mapping. The 64-point fixture and one synthetic wide-span
+   test do not establish real-project breadth.
 3. Expand independent comparisons to mixed pitch shapes, dynamics/style
    expressions, multiple tracks/parts and vibrato rendering. The current
    pitch oracle samples an authored contour, not vibrato audio or a complete

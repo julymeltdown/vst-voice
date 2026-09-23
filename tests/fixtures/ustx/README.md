@@ -33,9 +33,11 @@ not shipped with SEAM.
 
 The curve file exercises a nonempty `dyn` expression curve with 64 x/y pairs.
 It is 6,584 bytes and 437 lines, versus 306 lines for the empty-curve 0.9
-file. The 131-line increase includes 128 point lines. SEAM imports its notes
-and explicitly reports `ustx.voice_parts[0].curves` as a loss; it does not
-pretend to preserve the curve. The default parser caps input at 4 MiB,
+file. The 131-line increase includes 128 point lines. SEAM now maps its
+standard `dyn` curve into bounded dynamics automation and exports it again;
+the pinned OpenUtau sampler measured zero difference at 289 five-tick grid
+positions. This is not a claim about arbitrary curve types or audio. The
+default parser caps input at 4 MiB,
 100,000 physical lines/nodes and 50,000 entries per sequence. Therefore a
 large real-world curve can fail closed before import even when the musical
 notes fit. The regression exercises a 400-node and 50-entry reduced budget;
@@ -54,9 +56,11 @@ This excludes vibrato modulation and does not prove every possible curve,
 actual rendered sound, or historical GUI operation.
 
 The curve file also passed its historical and pinned loaders, SEAM
-import/export and pinned-loader reimport. Its curve loss brought the SEAM
-import report to 11 issues; authored pitch remained within 0.160039 cents on
-the same 18-point grid. The sixth file retains the former failing probe: the
+import/export and pinned-loader reimport. Before the dynamics increment, its
+curve loss brought the SEAM import report to 11 issues; the current import
+reports 10, with no loss for the supported curve. Authored pitch remained
+within 0.160039 cents on the same 18-point grid in the earlier comparison.
+The sixth file retains the former failing probe: the
 historical serializer emitted a folded `>-` project comment whose content
 includes `#`, `&`, `*`, and `!`. SEAM now imports it without interpreting those
 characters as YAML operators; its original historical loader, pinned loader,

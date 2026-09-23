@@ -25,6 +25,7 @@ internal static class Program {
         if (args.Length == 2 && args[0] == "--emit-curve-fixture") return EmitFixture(args[1], true, false);
         if (args.Length == 2 && args[0] == "--emit-multiline-fixture") return EmitFixture(args[1], false, true);
         if (args.Length == 3 && args[0] == "--compare-pitch") return ComparePitch(args[1], args[2]);
+        if (args.Length == 3 && args[0] == "--compare-dynamics") return CompareDynamics(args[1], args[2]);
         if (args.Length >= 2 && args[1] == "--midi") return ReadMidi(args[0]);
         if (args.Length < 1) {
             Console.Error.WriteLine("usage: seam_ustx_oracle FILE.ustx");
@@ -33,9 +34,47 @@ internal static class Program {
             Console.Error.WriteLine("       seam_ustx_oracle --emit-curve-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --emit-multiline-fixture NEW_FILE.ustx");
             Console.Error.WriteLine("       seam_ustx_oracle --compare-pitch SOURCE.ustx ROUNDTRIP.ustx");
+            Console.Error.WriteLine("       seam_ustx_oracle --compare-dynamics SOURCE.ustx ROUNDTRIP.ustx");
             return 2;
         }
         return ReadUstx(args[0]);
+    }
+
+    // Compare the actual OpenUtau UCurve.Sample values on its five-tick render
+    // grid. This catches a round trip that parses but changes the dynamics.
+    private static int CompareDynamics(string sourcePath, string roundTripPath) {
+        try {
+            var source = Ustx.Load(sourcePath);
+            var roundTrip = Ustx.Load(roundTripPath);
+            var sourceParts = source.parts.OfType<UVoicePart>().ToList();
+            var roundTripParts = roundTrip.parts.OfType<UVoicePart>().ToList();
+            if (sourceParts.Count != 1 || roundTripParts.Count != 1 ||
+                sourceParts[0].Duration != roundTripParts[0].Duration)
+                throw new InvalidDataException("Expected one equal-duration voice part in both scores");
+            var original = sourceParts[0].curves.FirstOrDefault(c => c.abbr == Ustx.DYN);
+            var exported = roundTripParts[0].curves.FirstOrDefault(c => c.abbr == Ustx.DYN);
+            if (original == null || exported == null)
+                throw new InvalidDataException("A dyn curve is missing from one of the scores");
+            original.descriptor ??= source.expressions[Ustx.DYN];
+            exported.descriptor ??= roundTrip.expressions[Ustx.DYN];
+            int samples = 0;
+            int maximumError = 0;
+            for (int tick = 0; tick <= sourceParts[0].Duration; tick += UCurve.interval) {
+                maximumError = Math.Max(maximumError, Math.Abs(original.Sample(tick) - exported.Sample(tick)));
+                samples++;
+            }
+            Console.WriteLine("dynamicsSamples=" + samples);
+            Console.WriteLine("maxDynamicsTenthDbError=" + maximumError);
+            if (maximumError != 0) {
+                Console.Error.WriteLine("DYNAMICS_COMPARE_FAIL: curve values changed on OpenUtau's render grid");
+                return 1;
+            }
+            Console.WriteLine("DYNAMICS_COMPARE_OK");
+            return 0;
+        } catch (Exception error) {
+            Console.Error.WriteLine("DYNAMICS_COMPARE_FAILED: " + error);
+            return 1;
+        }
     }
 
     // Compare authored score pitch using OpenUtau's own note pitch sampler,

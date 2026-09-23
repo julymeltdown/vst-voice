@@ -426,19 +426,32 @@ TEST_CASE("USTX tuning remains an integer accepted by OpenUtau") {
   CHECK(encoded.error().code == core::ErrorCode::InvalidArgument);
 }
 
-TEST_CASE("OpenUtau curve-bearing score discloses curve loss and consumes bounded parser work") {
+TEST_CASE("OpenUtau dynamics curve maps to bounded SEAM automation and roundtrips") {
   using namespace seam;
   const auto source = historicalSerializerFixture("0.9-curve");
   CHECK(!source.empty());
   const auto decoded = interchange::decodeUstx(source);
   CHECK(decoded);
   CHECK(decoded.value().parts.size() == 1U && decoded.value().parts[0].notes.size() == 2U);
-  CHECK(hasLossAt(decoded.value().issues, "ustx.voice_parts[0].curves"));
+  CHECK(decoded.value().parts[0].dynamics.size() == 64U);
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.voice_parts[0].curves"));
 
   application::ProjectFactory factory{901500U};
   const auto imported = interchange::importUstxProject(source, factory);
   CHECK(imported);
-  CHECK(hasLossAt(imported.value().issues, "ustx.voice_parts[0].curves"));
+  CHECK(!hasLossAt(imported.value().issues, "ustx.voice_parts[0].curves"));
+  const auto& dynamics = imported.value().project.vocalTracks().front().regions.front().dynamicsAutomation;
+  CHECK_NEAR(dynamics.valueAt(time::Tick{0}), std::pow(10.0, 60.0 / 200.0), 1e-5);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{10}), std::pow(10.0, 61.0 / 200.0), 1e-5);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{630}), std::pow(10.0, 63.0 / 200.0), 1e-5);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{640}), 1.0, 1e-5);
+
+  const auto reexported = interchange::exportUstxProject(imported.value().project);
+  CHECK(reexported);
+  const auto redecoded = interchange::decodeUstx(reexported.value().bytes);
+  CHECK(redecoded);
+  CHECK(!redecoded.value().parts[0].dynamics.empty());
+  CHECK(redecoded.value().parts[0].dynamics[0].tenthDecibels == 60);
 
   interchange::UstxLimits lineBudget;
   lineBudget.maximumNodes = 400U;
@@ -454,6 +467,104 @@ TEST_CASE("OpenUtau curve-bearing score discloses curve loss and consumes bounde
   CHECK(overCollectionBudget.error().code == core::ErrorCode::ParseError);
   CHECK(overCollectionBudget.error().message == "USTX collection entry limit exceeded");
   CHECK(overCollectionBudget.error().context == "line 357");
+}
+
+TEST_CASE("USTX dynamics rejects malformed values and discloses unsupported curves") {
+  using namespace seam;
+  interchange::UstxDocument document;
+  document.tempos.push_back({time::Tick{0}, 120.0});
+  document.meters.push_back({0, 4U, 4U});
+  document.tracks.push_back({.name = "Lead"});
+  interchange::UstxPart part;
+  part.duration = time::Tick{960};
+  part.notes.push_back({.lyric = "a"});
+  part.dynamics = {{time::Tick{0}, -240}, {time::Tick{5}, 0}, {time::Tick{10}, 120}};
+  document.parts.push_back(part);
+  const auto encoded = interchange::encodeUstx(document); CHECK(encoded);
+  const auto decoded = interchange::decodeUstx(encoded.value()); CHECK(decoded);
+  CHECK(decoded.value().parts[0].dynamics == part.dynamics);
+  application::ProjectFactory factory{901600U};
+  const auto imported = interchange::importUstxProject(encoded.value(), factory); CHECK(imported);
+  const auto& dynamics = imported.value().project.vocalTracks().front().regions.front().dynamicsAutomation;
+  CHECK_NEAR(dynamics.valueAt(time::Tick{0}), 0.0, 1e-6);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{10}), 1.0, 1e-6);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{20}), seam::domain::kMaximumDynamicsGain, 1e-5);
+  CHECK_NEAR(dynamics.valueAt(time::Tick{30}), 1.0, 1e-6);
+
+  std::string malformed{encoded.value().begin(), encoded.value().end()};
+  const auto marker = malformed.find("ys: [-240, 0, 120]"); CHECK(marker != std::string::npos);
+  malformed.replace(marker, std::string_view{"ys: [-240, 0, 120]"}.size(), "ys: [-240, 0]");
+  const auto rejected = interchange::decodeUstx(bytes(malformed));
+  CHECK(!rejected);
+  CHECK(rejected.error().code == core::ErrorCode::ParseError);
+
+  malformed.assign(encoded.value().begin(), encoded.value().end());
+  const auto abbr = malformed.find("abbr: dyn"); CHECK(abbr != std::string::npos);
+  malformed.replace(abbr, std::string_view{"abbr: dyn"}.size(), "abbr: pitd");
+  const auto unsupported = interchange::decodeUstx(bytes(malformed)); CHECK(unsupported);
+  CHECK(unsupported.value().parts[0].dynamics.empty());
+  CHECK(hasLossAt(unsupported.value().issues, "ustx.voice_parts[0].curves[0]"));
+
+  malformed.assign(encoded.value().begin(), encoded.value().end());
+  const auto expressions = malformed.find("expressions: {}"); CHECK(expressions != std::string::npos);
+  malformed.replace(expressions, std::string_view{"expressions: {}"}.size(),
+                    "expressions: {dyn: {abbr: dyn, type: Curve, min: -200, max: 120, default_value: 0}}");
+  const auto custom = interchange::decodeUstx(bytes(malformed)); CHECK(custom);
+  CHECK(custom.value().parts[0].dynamics.empty());
+  CHECK(hasLossAt(custom.value().issues, "ustx.voice_parts[0].curves[0]"));
+
+  document.parts[0].dynamics = {{time::Tick{100}, 60}};
+  const auto later = interchange::encodeUstx(document); CHECK(later);
+  const auto laterImport = interchange::importUstxProject(later.value(), factory); CHECK(laterImport);
+  const auto& laterDynamics = laterImport.value().project.vocalTracks().front().regions.front().dynamicsAutomation;
+  CHECK_NEAR(laterDynamics.valueAt(time::Tick{0}), 1.0, 1e-6);
+  CHECK_NEAR(laterDynamics.valueAt(time::Tick{190}), 1.0, 1e-6);
+  CHECK_NEAR(laterDynamics.valueAt(time::Tick{200}), std::pow(10.0, 60.0 / 200.0), 1e-5);
+  CHECK_NEAR(laterDynamics.valueAt(time::Tick{210}), 1.0, 1e-6);
+
+  document.parts[0].duration = time::Tick{100'000};
+  document.parts[0].dynamics = {{time::Tick{0}, 60}, {time::Tick{100'000}, 60}};
+  const auto wide = interchange::encodeUstx(document); CHECK(wide);
+  const auto wideImport = interchange::importUstxProject(wide.value(), factory); CHECK(wideImport);
+  CHECK(wideImport.value().project.vocalTracks().front().regions.front().dynamicsAutomation.points().empty());
+  CHECK(hasLossAt(wideImport.value().issues, "ustx.voice_parts[0].curves"));
+
+  document.parts[0].notes.clear();
+  document.parts[0].dynamics.clear();
+  const auto noteFree = interchange::encodeUstx(document); CHECK(noteFree);
+  const auto noteFreeDecoded = interchange::decodeUstx(noteFree.value()); CHECK(noteFreeDecoded);
+  CHECK(noteFreeDecoded.value().parts[0].notes.empty());
+}
+
+TEST_CASE("SEAM dynamics exports as typed USTX gain with quantization loss") {
+  using namespace seam;
+  application::ProjectFactory factory{901700U};
+  auto project = factory.createProject("Dynamics export");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto regionId = factory.addRegion(project, track, "Verse", time::Tick{0}, time::Tick{1920});
+  auto* region = project.findRegion(regionId); CHECK(region != nullptr);
+  auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{960}, 60U, U"a");
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(note);
+  CHECK(region->dynamicsAutomation.replacePoints({{time::Tick{0}, 0.5F}, {time::Tick{960}, 1.0F}}));
+  const auto exported = interchange::exportUstxProject(project); CHECK(exported);
+  CHECK(hasLossAt(exported.value().issues, "project.vocalTracks[0].regions[0].dynamics"));
+  const auto decoded = interchange::decodeUstx(exported.value().bytes); CHECK(decoded);
+  CHECK(decoded.value().parts[0].dynamics.size() == 2U);
+  CHECK(decoded.value().parts[0].dynamics[0] == (interchange::UstxDynamicsPoint{time::Tick{0}, -60}));
+  CHECK(decoded.value().parts[0].dynamics[1] == (interchange::UstxDynamicsPoint{time::Tick{480}, 0}));
+  const auto imported = interchange::importUstxProject(exported.value().bytes, factory); CHECK(imported);
+  const auto& back = imported.value().project.vocalTracks().front().regions.front().dynamicsAutomation;
+  CHECK_NEAR(back.valueAt(time::Tick{0}), std::pow(10.0, -60.0 / 200.0), 1e-5);
+  CHECK_NEAR(back.valueAt(time::Tick{960}), 1.0, 1e-5);
+
+  CHECK(region->dynamicsAutomation.replacePoints({{time::Tick{0}, 0.01F},
+                                                   {time::Tick{960}, 1.0F}}));
+  const auto nearSilence = interchange::exportUstxProject(project); CHECK(nearSilence);
+  const auto nearSilenceDecoded = interchange::decodeUstx(nearSilence.value().bytes);
+  CHECK(nearSilenceDecoded);
+  CHECK(nearSilenceDecoded.value().parts[0].dynamics[0].tenthDecibels == -240);
+  CHECK(hasLossAt(nearSilence.value().issues, "project.vocalTracks[0].regions[0].dynamics"));
 }
 
 TEST_CASE("historical OpenUtau folded multiline comments import without treating body as YAML") {

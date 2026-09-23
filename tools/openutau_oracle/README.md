@@ -97,6 +97,14 @@ It checks note positions/durations/tones/lyrics and samples nine in-note ticks
 per note, excluding vibrato modulation. `PITCH_COMPARE_OK` requires no sampled
 error above 0.5 cent; it is not a waveform or all-curve guarantee.
 
+For a curve-bearing score, run
+`seam_openutau_oracle.dll --compare-dynamics SOURCE.ustx ROUNDTRIP.ustx`.
+This loads both files through OpenUtau and compares `dyn` using its own
+`UCurve.Sample` at every five-tick render-grid position in the single voice
+part. `DYNAMICS_COMPARE_OK` requires zero error in integer 0.1 dB units. It
+does not prove equal audio, custom expression descriptors, other curve types,
+or identical editing points between render-grid samples.
+
 ## Reading the output
 
 - `midiTextHex` is the authoritative lyric check. `midiText` can show `???` if a

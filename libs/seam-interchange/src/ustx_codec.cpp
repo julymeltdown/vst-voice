@@ -777,6 +777,24 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
   const auto meters = required(root, "time_signatures", isArray, "array", "ustx"); if (!meters) return core::Result<Output>{meters.error()};
   const auto tracks = required(root, "tracks", isArray, "array", "ustx"); if (!tracks) return core::Result<Output>{tracks.error()};
   const auto parts = required(root, "voice_parts", isArray, "array", "ustx"); if (!parts) return core::Result<Output>{parts.error()};
+  bool standardDynamicsDescriptor = true;
+  if (const auto* expressions = optional(root, "expressions"); expressions && expressions->isObject()) {
+    if (const auto* descriptor = optional(*expressions, "dyn")) {
+      if (!descriptor->isObject()) standardDynamicsDescriptor = false;
+      else {
+        const auto matchesNumber = [&](std::string_view key, std::int64_t expected) {
+          const auto* field = optional(*descriptor, key);
+          return !field || (field->isNumber() && field->asNumber() == static_cast<double>(expected));
+        };
+        const auto* type = optional(*descriptor, "type");
+        const auto* abbr = optional(*descriptor, "abbr");
+        standardDynamicsDescriptor = matchesNumber("min", -240) && matchesNumber("max", 120) &&
+            matchesNumber("default_value", 0) &&
+            (!type || (type->isString() && type->asString() == "Curve")) &&
+            (!abbr || (abbr->isString() && abbr->asString() == "dyn"));
+      }
+    }
+  }
   if (tempos.value()->asArray().size() > limits.maximumTempoEvents || meters.value()->asArray().size() > limits.maximumMeterEvents || tracks.value()->asArray().size() > limits.maximumTracks || parts.value()->asArray().size() > limits.maximumParts)
     return core::failure<Output>(core::ErrorCode::InvalidArgument, "USTX collection count exceeds bounds");
   for (std::size_t index = 0U; index < tempos.value()->asArray().size(); ++index) {
@@ -850,7 +868,49 @@ core::Result<UstxDocument> decodeNode(const Node& root, const UstxLimits& limits
     for (std::size_t noteIndex = 0U; noteIndex < notes.value()->asArray().size(); ++noteIndex) {
       auto note = decodeNote(notes.value()->asArray()[noteIndex], path + ".notes[" + std::to_string(noteIndex) + "]", limits, document.issues); if (!note) return core::Result<Output>{note.error()}; part.notes.push_back(std::move(note).value()); ++noteCount;
     }
-    if (const auto* curves = optional(item, "curves")) if (curves->isArray() && !curves->asArray().empty()) issue(document.issues, UstxIssueSeverity::Loss, path + ".curves", "part curves are not represented in the SEAM interchange subset", limits);
+    if (const auto* curves = optional(item, "curves")) {
+      if (!curves->isArray()) return core::failure<Output>(core::ErrorCode::ParseError, path + ".curves must be an array");
+      bool sawDynamics = false;
+      for (std::size_t curveIndex = 0U; curveIndex < curves->asArray().size(); ++curveIndex) {
+        const auto curvePath = path + ".curves[" + std::to_string(curveIndex) + "]";
+        const auto& curve = curves->asArray()[curveIndex];
+        if (!curve.isObject()) return core::failure<Output>(core::ErrorCode::ParseError, curvePath + " must be an object");
+        const auto abbr = required(curve, "abbr", isString, "string", curvePath);
+        if (!abbr) return core::Result<Output>{abbr.error()};
+        const auto abbreviation = stringValue(*abbr.value(), curvePath + ".abbr", limits);
+        if (!abbreviation) return core::Result<Output>{abbreviation.error()};
+        if (abbreviation.value() != "dyn" || sawDynamics || !standardDynamicsDescriptor) {
+          issue(document.issues, UstxIssueSeverity::Loss, curvePath,
+                "unsupported, duplicate, or custom-descriptor part expression curve was omitted", limits);
+          continue;
+        }
+        sawDynamics = true;
+        const auto xs = required(curve, "xs", isArray, "array", curvePath);
+        const auto ys = required(curve, "ys", isArray, "array", curvePath);
+        if (!xs || !ys) return core::Result<Output>{(!xs ? xs.error() : ys.error())};
+        if (xs.value()->asArray().size() != ys.value()->asArray().size() ||
+            xs.value()->asArray().size() > limits.maximumCurvePoints)
+          return core::failure<Output>(core::ErrorCode::ParseError, curvePath + " has mismatched or excessive dynamics points");
+        std::int64_t previous = std::numeric_limits<std::int64_t>::min();
+        for (std::size_t pointIndex = 0U; pointIndex < xs.value()->asArray().size(); ++pointIndex) {
+          const auto pointPath = curvePath + "[" + std::to_string(pointIndex) + "]";
+          auto x = integerValue(xs.value()->asArray()[pointIndex], pointPath + ".x", -limits.maximumTick, limits.maximumTick);
+          auto y = integerValue(ys.value()->asArray()[pointIndex], pointPath + ".y", -240, 120);
+          if (!x || !y) return core::Result<Output>{(!x ? x.error() : y.error())};
+          if (x.value() <= previous) return core::failure<Output>(core::ErrorCode::ParseError, curvePath + " dynamics ticks must increase");
+          previous = x.value();
+          part.dynamics.push_back({time::Tick{x.value()}, static_cast<std::int16_t>(y.value())});
+        }
+        if (!part.dynamics.empty() &&
+            (part.dynamics.front().position.value() < 0 ||
+             part.dynamics.back().position > part.duration)) {
+          part.dynamics.clear();
+          issue(document.issues, UstxIssueSeverity::Loss, curvePath,
+                "dynamics curve extends outside its part and was omitted", limits);
+        }
+        reportUnknown(curve, {"xs", "ys", "abbr"}, curvePath, document.issues, limits);
+      }
+    }
     reportUnknown(item, {"name", "comment", "track_no", "position", "duration", "curves", "notes"}, path, document.issues, limits);
     document.parts.push_back(std::move(part));
   }
@@ -915,6 +975,15 @@ core::Result<void> UstxDocument::validate(const UstxLimits& limits) const {
   }
   for (const auto& part : parts) {
     if (part.trackNo >= tracks.size() || part.name.size() > limits.maximumScalarBytes || !domain::fromUtf8(part.name) || part.position.value() < 0 || part.duration.value() <= 0 || part.position.value() > limits.maximumTick || part.duration.value() > limits.maximumTick - part.position.value() || part.notes.size() > limits.maximumNotes - std::min(noteCount, limits.maximumNotes)) return core::failure(core::ErrorCode::InvalidArgument, "USTX part is invalid");
+    std::int64_t previousDynamicsTick = -1;
+    for (const auto& point : part.dynamics) {
+      ++curveCount;
+      if (curveCount > limits.maximumCurvePoints || point.position.value() <= previousDynamicsTick ||
+          point.position.value() > part.duration.value() || point.tenthDecibels < -240 ||
+          point.tenthDecibels > 120)
+        return core::failure(core::ErrorCode::InvalidArgument, "USTX dynamics curve is invalid");
+      previousDynamicsTick = point.position.value();
+    }
     for (const auto& note : part.notes) {
       ++noteCount; if (note.position.value() < 0 || note.duration.value() <= 0 || note.position.value() > limits.maximumTick || note.duration.value() > limits.maximumTick - note.position.value() || note.position.value() + note.duration.value() > part.duration.value() || note.tone > 127U || note.lyric.size() > limits.maximumScalarBytes || !domain::fromUtf8(note.lyric) || !std::isfinite(note.tuning) || note.tuning < -4800.0 || note.tuning > 4800.0 || std::trunc(note.tuning) != note.tuning) return core::failure(core::ErrorCode::InvalidArgument, "USTX note is invalid");
       for (const auto& point : note.pitch) { ++curveCount; if (curveCount > limits.maximumCurvePoints || !std::isfinite(point.offsetMilliseconds) || point.offsetMilliseconds < -86'400'000.0 || point.offsetMilliseconds > 86'400'000.0 || !std::isfinite(point.y) || point.y < -480.0 || point.y > 480.0 || point.shape.empty() || point.shape.size() > 16U || !domain::fromUtf8(point.shape)) return core::failure(core::ErrorCode::InvalidArgument, "USTX pitch point is invalid"); }
@@ -961,7 +1030,22 @@ core::Result<std::vector<std::uint8_t>> encodeUstx(const UstxDocument& document,
   }
   output += "voice_parts:\n";
   for (const auto& part : document.parts) {
-    output += "  - name: " + quote(part.name) + "\n    comment: \"\"\n    track_no: " + std::to_string(part.trackNo) + "\n    position: " + std::to_string(part.position.value()) + "\n    duration: " + std::to_string(part.duration.value()) + "\n    curves: []\n    notes:\n";
+    output += "  - name: " + quote(part.name) + "\n    comment: \"\"\n    track_no: " + std::to_string(part.trackNo) + "\n    position: " + std::to_string(part.position.value()) + "\n    duration: " + std::to_string(part.duration.value()) + "\n    curves: ";
+    if (part.dynamics.empty()) output += "[]\n";
+    else {
+      output += "\n      - xs: [";
+      for (std::size_t index = 0U; index < part.dynamics.size(); ++index) {
+        if (index > 0U) output += ", ";
+        output += std::to_string(part.dynamics[index].position.value());
+      }
+      output += "]\n        ys: [";
+      for (std::size_t index = 0U; index < part.dynamics.size(); ++index) {
+        if (index > 0U) output += ", ";
+        output += std::to_string(part.dynamics[index].tenthDecibels);
+      }
+      output += "]\n        abbr: dyn\n";
+    }
+    output += part.notes.empty() ? "    notes: []\n" : "    notes:\n";
     for (const auto& note : part.notes) {
       output += "      - position: " + std::to_string(note.position.value()) + "\n        duration: " + std::to_string(note.duration.value()) + "\n        tone: " + std::to_string(note.tone) + "\n        lyric: " + quote(note.lyric) + "\n        pitch:\n          data: [";
       for (std::size_t index = 0U; index < note.pitch.size(); ++index) { if (index > 0U) output += ", "; output += flowPitch(note.pitch[index]); }

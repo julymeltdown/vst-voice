@@ -92,12 +92,22 @@ struct UstxNote final {
   friend bool operator==(const UstxNote&, const UstxNote&) = default;
 };
 
+// OpenUtau's `dyn` curve uses part-relative 480-PPQ ticks and integer tenths
+// of a decibel. Its minimum (-240) is a special silence sentinel.
+struct UstxDynamicsPoint final {
+  time::Tick position{time::Tick{0}};
+  std::int16_t tenthDecibels{0};
+
+  friend bool operator==(const UstxDynamicsPoint&, const UstxDynamicsPoint&) = default;
+};
+
 struct UstxPart final {
   std::string name;
   std::uint32_t trackNo{0U};
   time::Tick position{time::Tick{0}};
   time::Tick duration{time::Tick{480}};
   std::vector<UstxNote> notes;
+  std::vector<UstxDynamicsPoint> dynamics;
 
   friend bool operator==(const UstxPart&, const UstxPart&) = default;
 };
