@@ -26,6 +26,15 @@ enum class IssueCode {
   LoopDiscontinuity,
   MissingSustain,
   PitchMarksStale,
+  // A stored acoustic analysis exists but cannot be trusted for the audio the
+  // bank currently contains: wrong algorithm revision, wrong audio, out of
+  // bounds, or structurally invalid. Distinct from "absent", which is not an
+  // error -- a bank need not have stored a measurement.
+  AcousticAnalysisStale,
+  // A stored acoustic analysis disagrees with what the analyser measures from
+  // the audio present now. One of the two is wrong, and QC cannot decide which,
+  // so it reports rather than picking.
+  AcousticAnalysisMismatch,
 };
 
 struct ValidationIssue final {

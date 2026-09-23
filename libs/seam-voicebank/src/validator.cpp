@@ -1,6 +1,7 @@
 #include "seam/voicebank/validator.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/asset_path.hpp"
 #include "seam/voicebank/pitch.hpp"
@@ -242,6 +243,75 @@ ValidationReport BankValidator::validate(const Manifest& manifest,
         }
       }
     }
+
+    // A stored acoustic analysis is consumed by QC and by anything that needs to
+    // know where this take is voiced. When one is present it must be re-checked
+    // against the audio the bank actually contains, not trusted because it parsed:
+    // the same reasoning that makes stored pitch marks untrustworthy applies here,
+    // and analysis spans additionally carry a digest that can be compared exactly.
+    // Located relative to the bank root and resolved through the same containment
+    // helper as audio, so a sidecar cannot sit outside the bank or behind a link.
+    const auto analysisRelative = std::filesystem::path{acousticAnalysisSidecarPath(unit.id)};
+    std::error_code analysisError;
+    const auto analysisStatus =
+        std::filesystem::symlink_status(bankRoot / analysisRelative, analysisError);
+    const bool analysisPresent = !analysisError && std::filesystem::exists(analysisStatus);
+    if (analysisPresent) {
+      const auto analysisPath = resolveBankAsset(bankRoot, analysisRelative);
+      if (!analysisPath) {
+        add(report, IssueSeverity::Error, IssueCode::AcousticAnalysisStale, unit.id,
+            "Stored acoustic analysis is not a contained bank asset: " +
+                analysisPath.error().message);
+      } else {
+        auto bytes = core::readFileBytesLimited(analysisPath.value(), 512ULL * 1024ULL);
+        auto digest = core::sha256File(resolved.value(), kMaximumSupportedWavBytes);
+        if (!bytes || !digest) {
+          add(report, IssueSeverity::Error, IssueCode::AcousticAnalysisStale, unit.id,
+              "Stored acoustic analysis or its audio could not be read");
+        } else {
+          // The record binds to encoded audio bytes; the validator has the decoded
+          // mix, so the digest is what ties the two together.
+          const auto decoded = decodeAcousticAnalysis(
+              std::string_view{reinterpret_cast<const char*>(bytes.value().data()),
+                               bytes.value().size()},
+              unit, digest.value(),
+              static_cast<time::SampleFrame>(audio.value().frameCount()));
+          if (!decoded) {
+            add(report, IssueSeverity::Error, IssueCode::AcousticAnalysisStale, unit.id,
+                "Stored acoustic analysis does not describe this audio: " +
+                    decoded.error().message);
+          } else {
+            // Structure can be right while the conclusion is wrong. Re-measure and
+            // compare, so a record left over from earlier audio is caught rather
+            // than believed.
+            const auto measured = analyzeUnitAcoustics(
+                mono, audio.value().sampleRate, unit, digest.value(),
+                static_cast<time::SampleFrame>(audio.value().frameCount()));
+            if (measured) {
+              const auto agree = std::equal(
+                  decoded.value().spans.begin(), decoded.value().spans.end(),
+                  measured.value().spans.begin(), measured.value().spans.end(),
+                  [](const AcousticVoicingSpan& stored,
+                     const AcousticVoicingSpan& fresh) {
+                    // Booleans must match exactly: a voicing disagreement is the
+                    // thing this check exists to find.
+                    if (stored.voiced != fresh.voiced) return false;
+                    // Frequencies are measurements of the same signal by the same
+                    // algorithm, so exact equality is the honest comparison. Any
+                    // tolerance here would be choosing how wrong is acceptable.
+                    return stored.f0Hz == fresh.f0Hz;
+                  });
+              if (!agree) {
+                add(report, IssueSeverity::Warning, IssueCode::AcousticAnalysisMismatch,
+                    unit.id,
+                    "Stored acoustic analysis disagrees with the analysis of the audio"
+                    " present; regenerate it before relying on it");
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   for (const auto& [alias, count] : aliasCounts) {
@@ -281,6 +351,8 @@ std::string_view issueCodeName(IssueCode code) noexcept {
     case IssueCode::LoopDiscontinuity: return "loop-discontinuity";
     case IssueCode::MissingSustain: return "missing-sustain";
     case IssueCode::PitchMarksStale: return "pitch-marks-stale";
+    case IssueCode::AcousticAnalysisStale: return "acoustic-analysis-stale";
+    case IssueCode::AcousticAnalysisMismatch: return "acoustic-analysis-mismatch";
   }
   return "unknown";
 }

@@ -2,7 +2,9 @@
 #include "test_support.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/core/file_io.hpp"
 #include "seam/voicebank/acoustic_analysis.hpp"
+#include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
@@ -41,11 +43,14 @@ std::vector<float> voicedUnvoicedVoiced(std::uint32_t sampleRate,
   return samples;
 }
 
+// U15 requires renderers and producer QC to consume the same analysis contract.
+// This is the QC half: a sidecar written by the producer is accepted, and the
+// same sidecar against replaced audio is reported instead of believed.
+constexpr std::size_t kUnvoicedEnd = 28800U;
+
 constexpr std::uint32_t kRate = 48000U;
 constexpr std::size_t kFrames = 48000U;
 constexpr std::size_t kVoicedEnd = 19200U;
-constexpr std::size_t kUnvoicedEnd = 28800U;
-
 }  // namespace
 
 // U15: the analysis is stored, versioned, and bound to the bytes it measured.
@@ -328,7 +333,6 @@ TEST_CASE("producer analysis configuration is single-sourced") {
       reinterpret_cast<const std::byte*>(tone.data()), tone.size() * sizeof(float)));
   const auto analysis = seam::voicebank::analyzeUnitAcoustics(
       tone, 48000U, unit, digest, static_cast<seam::time::SampleFrame>(tone.size()),
-      seam::voicebank::producerPitchConfig(),
       seam::voicebank::AcousticAnalysisLimits{.maximumSpans = 4096U,
                                               .pitch = limits});
   CHECK(analysis);
@@ -361,4 +365,87 @@ TEST_CASE("acoustic analysis reports unknown voicing outside its analysed range"
   seam::voicebank::AcousticAnalysis empty;
   CHECK(!seam::voicebank::acousticVoicedAt(empty, 0).has_value());
   CHECK(empty.spanAt(0) == nullptr);
+}
+
+
+TEST_CASE("bank QC consumes the stored acoustic analysis and reports stale records") {
+  const auto root = seam::test::support::temporaryDirectory("analysis-qc");
+  std::filesystem::create_directories(root / "audio");
+  const auto audioPath = root / "audio" / "a.wav";
+  // One second at kRate is exactly kFrames, so the WAV length is the one the unit
+  // declares and the analysis extent is unambiguous.
+  const auto samples = seam::test::support::sineWave(kRate, 200.0, 1.0, 0.5F);
+  CHECK(samples.size() == kFrames);
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate, samples));
+
+  auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto manifest = seam::test::support::makeManifest({unit});
+  const auto reportCode = [](const seam::voicebank::ValidationReport& report,
+                             seam::voicebank::IssueCode code) {
+    return std::any_of(report.issues.begin(), report.issues.end(),
+        [code](const auto& issue) { return issue.code == code; });
+  };
+
+  // No sidecar is not an error: a bank need not have stored a measurement.
+  const auto absent = seam::voicebank::BankValidator{}.validate(manifest, root);
+  CHECK(!reportCode(absent, seam::voicebank::IssueCode::AcousticAnalysisStale));
+  CHECK(!reportCode(absent, seam::voicebank::IssueCode::AcousticAnalysisMismatch));
+
+  // Write what the producer would write. The producer analyses the DECODED WAV,
+  // not the floats it encoded: the file is the artifact every later reader sees,
+  // and PCM16 quantisation is part of what gets measured. Analysing the
+  // pre-encoding floats would bind the record to samples nothing else will read.
+  const auto digest = seam::core::sha256File(audioPath);
+  CHECK(digest);
+  const auto decodedWav = seam::voicebank::readWav(audioPath);
+  CHECK(decodedWav);
+  const auto decodedMono = decodedWav.value().monoMix();
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(
+      decodedMono, decodedWav.value().sampleRate, unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(decodedWav.value().frameCount()));
+  CHECK(analysis);
+  const auto encoded = seam::voicebank::encodeAcousticAnalysis(
+      analysis.value(), unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(kFrames));
+  CHECK(encoded);
+  std::filesystem::create_directories(root / "analysis");
+  const auto sidecar = root / seam::voicebank::acousticAnalysisSidecarPath(unit.id);
+  CHECK(seam::core::durableAtomicWriteText(sidecar, encoded.value()));
+
+  // QC accepts its own producer.
+  const auto matching = seam::voicebank::BankValidator{}.validate(manifest, root);
+  CHECK(!reportCode(matching, seam::voicebank::IssueCode::AcousticAnalysisStale));
+  CHECK(!reportCode(matching, seam::voicebank::IssueCode::AcousticAnalysisMismatch));
+
+  // Replace the audio, keep the file name and length. The stored analysis binds
+  // to the OLD bytes, so it must be reported rather than reused.
+  const auto replacement = seam::test::support::sineWave(kRate, 150.0, 1.0, 0.5F);
+  CHECK(replacement.size() == samples.size());
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate, replacement));
+  const auto replaced = seam::voicebank::BankValidator{}.validate(manifest, root);
+  CHECK(reportCode(replaced, seam::voicebank::IssueCode::AcousticAnalysisStale));
+
+  // A record from an older analyser revision is refused, not reinterpreted, and
+  // the message must say so rather than blaming the audio.
+  auto stale = analysis.value();
+  stale.algorithmVersion = "0";
+  CHECK(!seam::voicebank::encodeAcousticAnalysis(stale, unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(kFrames)));
+
+  // A record belonging to another unit cannot be dropped in under this unit name.
+  auto foreign = unit;
+  foreign.id = "b";
+  const auto asForeign = seam::voicebank::encodeAcousticAnalysis(
+      analysis.value(), unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(kFrames));
+  CHECK(asForeign);
+  CHECK(!seam::voicebank::decodeAcousticAnalysis(asForeign.value(), foreign,
+      digest.value(), static_cast<seam::time::SampleFrame>(kFrames)));
+
+  // A sidecar that is a directory or a symlink is refused rather than followed.
+  CHECK(std::filesystem::remove(sidecar));
+  std::filesystem::create_directory(sidecar);
+  const auto asDirectory = seam::voicebank::BankValidator{}.validate(manifest, root);
+  CHECK(reportCode(asDirectory, seam::voicebank::IssueCode::AcousticAnalysisStale));
 }

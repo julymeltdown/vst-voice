@@ -109,11 +109,16 @@ struct AcousticAnalysis final {
 // Measures one unit audio and binds the result to those exact bytes.
 // verifiedAudioSha256 must be the digest of the encoded audio the samples were
 // decoded from, so the record cannot be detached from its source.
+//
+// There is deliberately no configuration parameter. The record carries an
+// algorithm identity, so a caller able to pass a different configuration would be
+// able to store numbers that claim to be the canonical analysis while being a
+// different measurement -- the same defect as an analysis that does not say which
+// audio it came from. One entry point means the identity is true by construction.
 [[nodiscard]] core::Result<AcousticAnalysis> analyzeUnitAcoustics(
     std::span<const float> samples, std::uint32_t sampleRate, const Unit& unit,
     std::string_view verifiedAudioSha256, time::SampleFrame decodedFrames,
-    PitchConfig config = {}, AcousticAnalysisLimits limits = {},
-    std::stop_token stopToken = {});
+    AcousticAnalysisLimits limits = {}, std::stop_token stopToken = {});
 
 // Structural plus binding validation: unit identity, digest match, decoded
 // bounds, ordered non-overlapping full-coverage spans, finite values in range,

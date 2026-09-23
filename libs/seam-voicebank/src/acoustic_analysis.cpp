@@ -108,7 +108,8 @@ const AcousticVoicingSpan* AcousticAnalysis::spanAt(time::SampleFrame frame) con
 core::Result<AcousticAnalysis> analyzeUnitAcoustics(
     std::span<const float> samples, std::uint32_t sampleRate, const Unit& unit,
     std::string_view verifiedAudioSha256, time::SampleFrame decodedFrames,
-    PitchConfig config, AcousticAnalysisLimits limits, std::stop_token stopToken) {
+    AcousticAnalysisLimits limits, std::stop_token stopToken) {
+  const auto config = producerPitchConfig();
   const auto validUnit = unit.validate();
   if (!validUnit) return core::Result<AcousticAnalysis>{validUnit.error()};
   if (!isDigest(verifiedAudioSha256)) {
