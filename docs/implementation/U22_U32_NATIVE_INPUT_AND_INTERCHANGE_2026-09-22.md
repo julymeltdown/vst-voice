@@ -2,7 +2,7 @@
 
 Date: 2026-09-22  
 Baseline: `ed41968dbb4f6b46d30956130e77d225087b2d7f` plus the preserved native-import work.  
-Status: integration verification in progress; not whole-unit or Beta acceptance.
+Status: partial standalone native runtime verified on 2026-09-24; not whole-unit or Beta acceptance.
 
 ## Why this batch
 
@@ -66,11 +66,49 @@ Release compilation of the AppKit modal, model, standalone application and
 lifecycle tests succeeded. Existing duplicate-library linker warnings remain.
 No compiler warning policy or acceptance threshold was weakened.
 
-The attempt to inspect the isolated native app through computer use returned
-that the Mac was locked and automatic unlock failed. No interaction occurred.
-The owned test app was terminated; that termination is not crash qualification.
-Return/Escape, focus, small-screen/long-text scrolling and actual native import
-acceptance remain runtime-unverified, not substituted by model tests.
+The first attempt to inspect the isolated native app through computer use
+returned that the Mac was locked and automatic unlock failed. No interaction
+occurred in that attempt. The owned test app was terminated; that termination
+is not crash qualification. The follow-up below supersedes only the native
+actions it actually exercised.
+
+## 2026-09-24 native runtime follow-up
+
+On a fresh Release `Project SEAM.app`, the native File menu opened the pinned
+OpenUtau 0.9 USTX fixture through the normal file picker. Its review showed the
+source SHA-256 `9eb42f6e654249cc1a15e1f70244534683fc94e7897e1c30e69c749995c4fe51`,
+one vocal track/region, two notes, nine losses, zero warnings, and an explicit
+unresolved-singer disclosure. Selecting a long pitch-approximation loss exposed
+its complete location and message. Cancel left the initial Untitled document
+with zero notes. Explicit **Import With Losses** created an unsaved document
+with two notes, 21 pitch points, and the unresolved singer; no automatic singer
+substitution was observed. Return and Escape now cancel immediately even when
+a read-only report text view owns focus.
+
+The report layout was tightened after visual inspection: duplicate singer text
+was removed, all nine fixture losses are visible at once on this Mac, and the
+horizontal scrollbar no longer covers the final row. Selected full details
+remain scrollable and accessible. This is one observed display size, not a
+small-screen or long-report sign-off.
+
+The same native app's **Export Score** picker initially suggested a duplicated
+`.ustx.ustx` suffix. Setting allowed content types before the suggested name
+fixed the observed AppKit behavior; the controller also replaces an existing
+`.ustx`/`.mid`/`.midi` project-name suffix rather than adding another one. The
+corrected picker exported the imported score to
+`/tmp/seam-u32-native-roundtrip-20260924.ustx` (2,317 bytes, SHA-256
+`c152a009e1bcf0dd3235888f0e702df2774e5c84ad1b40a2183f20af5932359f`).
+The source fixture retained its original SHA-256. The output contains two
+notes, time signatures, tempos, and a pitch contour; this is a local native
+export observation, not an OpenUtau re-import or musical parity claim.
+
+Post-change Release build of `seam_editor_native` and `seam_tests` passed.
+Focused `seam_conversion_review_tests` and aggregate `seam_tests` passed
+(`ctest`, 2/2 targets); the earlier interchange service, standalone and
+project-lifecycle target selection passed 5/5. The remaining native U32
+acceptance still includes small-screen/long-report review, save/discard/cancel
+with an existing user document, embedded-editor behavior, export collisions,
+and DAW/OpenUtau round trips.
 
 ## Remaining scope
 

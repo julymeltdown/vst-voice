@@ -502,11 +502,11 @@ public:
             [NSString stringWithUTF8String:request.initialDirectory.string().c_str()]
                                       isDirectory:YES];
       }
+      const auto types = allowedTypes(request.extensions);
+      if (types.count > 0U) panel.allowedContentTypes = types;
       if (!request.suggestedName.empty()) {
         panel.nameFieldStringValue = nsString(request.suggestedName);
       }
-      const auto types = allowedTypes(request.extensions);
-      if (types.count > 0U) panel.allowedContentTypes = types;
       if (save) {
         panel.canCreateDirectories =
             request.purpose == FileDialogPurpose::SaveProject ||

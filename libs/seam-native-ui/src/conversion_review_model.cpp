@@ -75,8 +75,7 @@ std::string ConversionReviewModel::singerDisclosure() const {
 
 std::string ConversionReviewModel::sourceDetails() const {
   return "Source: " + draft_.sourcePath.string() + "\nSHA-256: " +
-         draft_.sourceHash + "\nProject: " + draft_.project.name() + "\n" +
-         singerDisclosure();
+         draft_.sourceHash + "\nProject: " + draft_.project.name();
 }
 
 std::string ConversionReviewModel::issueDetails(std::size_t index) const {

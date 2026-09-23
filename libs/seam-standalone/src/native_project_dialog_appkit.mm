@@ -181,25 +181,27 @@ public:
       // Only the selected detail is materialized. NSTableView requests visible
       // rows lazily; a large admitted conversion report stays scrollable.
       const auto screenHeight = NSScreen.mainScreen.visibleFrame.size.height;
-      const auto tableHeight = std::clamp(screenHeight - 570.0, 80.0, 160.0);
+      const auto tableHeight = std::clamp(screenHeight - 500.0, 80.0, 230.0);
       constexpr CGFloat width = 680.0;
       auto* view = [[NSView alloc] initWithFrame:
-          NSMakeRect(0.0, 0.0, width, 315.0 + tableHeight)];
+          NSMakeRect(0.0, 0.0, width, 254.0 + tableHeight)];
       auto* details = conversionTextView(view,
-          NSMakeRect(0.0, 0.0, width, 100.0), @"Selected conversion issue, full text",
+          NSMakeRect(0.0, 0.0, width, 82.0), @"Selected conversion issue, full text",
           model.issueCount() == 0U ? @"No conversion issues were reported."
                                   : conversionString(model.issueDetails(0U)));
       [view addSubview:label(@"Selected issue — full location and message",
-                            NSMakeRect(0.0, 103.0, width, 18.0))];
+                            NSMakeRect(0.0, 85.0, width, 18.0))];
 
       auto* tableScroll = [[NSScrollView alloc] initWithFrame:
-          NSMakeRect(0.0, 125.0, width, tableHeight)];
+          NSMakeRect(0.0, 107.0, width, tableHeight)];
       tableScroll.hasVerticalScroller = YES;
-      tableScroll.hasHorizontalScroller = YES;
+      // The fixed columns fit this viewport. A horizontal scroller consumed
+      // the last row's height even though every cell has a full-detail view.
+      tableScroll.hasHorizontalScroller = NO;
       tableScroll.borderType = NSBezelBorder;
       auto* table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
       table.accessibilityLabel = @"Conversion losses and warnings";
-      table.rowHeight = 24.0;
+      table.rowHeight = 22.0;
       table.usesAlternatingRowBackgroundColors = YES;
       table.allowsMultipleSelection = NO;
       table.allowsEmptySelection = NO;
@@ -229,14 +231,14 @@ public:
             byExtendingSelection:NO];
       }
       [view addSubview:label(@"Conversion report — select a row to read its full details",
-          NSMakeRect(0.0, 129.0 + tableHeight, width, 18.0))];
+          NSMakeRect(0.0, 111.0 + tableHeight, width, 18.0))];
       auto* source = conversionTextView(view,
-          NSMakeRect(0.0, 151.0 + tableHeight, width, 95.0),
+          NSMakeRect(0.0, 133.0 + tableHeight, width, 70.0),
           @"Imported source path, SHA-256, and project identity",
           conversionString(model.sourceDetails()));
       auto* disclosure = [NSTextField wrappingLabelWithString:
           conversionString(model.singerDisclosure())];
-      disclosure.frame = NSMakeRect(0.0, 252.0 + tableHeight, width, 60.0);
+      disclosure.frame = NSMakeRect(0.0, 209.0 + tableHeight, width, 42.0);
       disclosure.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
       disclosure.accessibilityLabel = disclosure.stringValue;
       [view addSubview:disclosure];
@@ -251,7 +253,7 @@ public:
       // Cancel is deliberately the default, especially for lossy conversion.
       // Pressing Return or Escape is not consent to discard musical data.
       auto* cancel = [alert addButtonWithTitle:@"Cancel"];
-      cancel.keyEquivalent = @"\r";
+      cancel.keyEquivalent = @"\033";
       auto* accept = [alert addButtonWithTitle:
           model.hasLosses() ? @"Import With Losses" : @"Import"];
       accept.keyEquivalent = @"";
@@ -261,6 +263,7 @@ public:
       [alert layout];
       alert.window.defaultButtonCell = cancel.cell;
       alert.window.initialFirstResponder = cancel;
+      [alert.window makeFirstResponder:cancel];
       cancel.nextKeyView = table;
       table.nextKeyView = details;
       details.nextKeyView = source;
@@ -268,7 +271,20 @@ public:
       accept.nextKeyView = cancel;
       NSWindow* owner = NSApp.keyWindow;
       NSResponder* responder = owner.firstResponder;
+      // Read-only accessory text views can consume Return/Escape before the
+      // alert's default button sees them. Keep both keys safely cancel-only.
+      id keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+          handler:^NSEvent* (NSEvent* event) {
+            if (event.window != alert.window) return event;
+            if (event.keyCode == 36U || event.keyCode == 53U ||
+                event.keyCode == 76U) {
+              [cancel performClick:nil];
+              return nil;
+            }
+            return event;
+          }];
       const auto response = [alert runModal];
+      if (keyMonitor != nil) [NSEvent removeMonitor:keyMonitor];
       table.delegate = nil;
       table.dataSource = nil;
       dataSource.model = nullptr;

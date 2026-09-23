@@ -44,6 +44,15 @@ std::string lowerExtension(const std::filesystem::path& path) {
   return extension;
 }
 
+std::string suggestedScoreExportName(std::string_view projectName) {
+  std::string name{projectName};
+  const auto extension = lowerExtension(std::filesystem::path{name});
+  if (extension == ".ustx" || extension == ".mid" || extension == ".midi") {
+    name.resize(name.size() - extension.size());
+  }
+  return name + ".ustx";
+}
+
 std::string_view performanceChannelName(domain::PerformanceChannel channel) {
   switch (channel) {
     case domain::PerformanceChannel::Pitch: return "pitch";
@@ -900,7 +909,7 @@ core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
       .purpose = platform::FileDialogPurpose::ExportScore,
       .title = "Export USTX or MIDI",
       .initialDirectory = initialDirectory(document),
-      .suggestedName = document.session().project().name() + ".ustx",
+      .suggestedName = suggestedScoreExportName(document.session().project().name()),
       .extensions = {"ustx", "mid", "midi"},
   });
   if (!selected) return core::Result<void>{selected.error()};

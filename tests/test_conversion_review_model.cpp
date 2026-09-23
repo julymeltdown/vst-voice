@@ -59,6 +59,8 @@ TEST_CASE("conversion review counts the exact draft without editing it") {
   CHECK(model.summary() == "USTX import: 2 tracks, 3 vocal regions, 3 notes\n1 losses; 2 warnings");
   CHECK(model.sourceDetails().find(draft.sourcePath.string()) != std::string::npos);
   CHECK(model.sourceDetails().find(draft.sourceHash) != std::string::npos);
+  CHECK(model.sourceDetails().find("singer identity") == std::string::npos);
+  CHECK(model.singerDisclosure().find("singer identity") != std::string::npos);
   CHECK(draft.project == projectBefore);
   CHECK(draft.issues == issuesBefore);
 }

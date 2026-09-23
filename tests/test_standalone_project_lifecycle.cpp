@@ -1200,6 +1200,34 @@ TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") 
   CHECK(controller);
 }
 
+TEST_CASE("score export suggestion replaces only an existing score extension") {
+  using namespace seam;
+  const std::vector<std::pair<std::string, std::string>> cases{
+      {"Imported.ustx", "Imported.ustx"},
+      {"Imported.mid", "Imported.ustx"},
+      {"Imported.MIDI", "Imported.ustx"},
+      {"Song.v1", "Song.v1.ustx"},
+  };
+  for (const auto& [name, expected] : cases) {
+    const auto root = test::support::temporaryDirectory("score-export-suggestion");
+    auto session = makeSession(root);
+    auto project = session->runtime().document().session().project();
+    project.setName(name);
+    CHECK(session->runtime().document().replaceProject(std::move(project)));
+    auto dialog = std::make_unique<FakeDialog>();
+    auto* dialogPtr = dialog.get();
+    dialogPtr->responses = {std::nullopt};
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session, std::move(dialog), std::make_unique<FakePrompt>(), {
+          .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"});
+    CHECK(controller);
+    CHECK(controller.value()->dispatch(platform::ApplicationCommand::ExportScore));
+    CHECK(dialogPtr->requests.size() == 1U);
+    CHECK(dialogPtr->requests.front().purpose == platform::FileDialogPurpose::ExportScore);
+    CHECK(dialogPtr->requests.front().suggestedName == expected);
+  }
+}
+
 TEST_CASE("standalone interchange accepts reviewed USTX and MIDI as new unsaved documents") {
   using namespace seam;
   for (const auto format : {authoring::InterchangeFormat::Ustx, authoring::InterchangeFormat::Smf}) {
