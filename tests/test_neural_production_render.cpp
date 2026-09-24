@@ -202,7 +202,7 @@ TEST_CASE("an admitted bundle renders non-silent audio through the production wo
       .timeout = std::chrono::seconds{60},
       .maximumResidentBytes = (projectInput ? 1024U : 256U) * 1024U * 1024U,
       .maximumCpuTime = std::chrono::seconds{30},
-      .protocolVersion = 2U};
+      .protocolVersion = 3U};
   const auto runner = AuthoringNeuralPhraseRunner::create(options);
   if (!runner) throw seam::test::Failure{"production runner failed: " + runner.error().message};
   const auto provenance = seam::rendering::NeuralRenderProvenance{

@@ -48,12 +48,14 @@ core::Result<VerifiedNeuralDeployment> VerifiedNeuralDeployment::verify(
   const auto* build=get("buildId"); const auto* platform=get("platform");
   const auto* surface=get("surface"); const auto* module=get("modulePath");
   const auto* manifest=get("manifestPath"); const auto* hash=get("manifestSha256");
-  if (!version || !version->isInteger() || (version->asInt64()!=1 && version->asInt64()!=2)) return fail();
+  if (!version || !version->isInteger() ||
+      (version->asInt64()!=1 && version->asInt64()!=2 && version->asInt64()!=3)) return fail();
   const auto launchVersion=static_cast<std::uint32_t>(version->asInt64());
   const auto* protocol=root.find("protocolVersion");
   if (launchVersion!=expected.protocolVersion ||
       (launchVersion==1U && root.asObject().size()!=8U) ||
-      (launchVersion==2U && (root.asObject().size()!=9U || !protocol || !protocol->isInteger() || protocol->asInt64()!=2))) return fail();
+      (launchVersion>=2U && (root.asObject().size()!=9U || !protocol || !protocol->isInteger() ||
+          protocol->asInt64()!=static_cast<std::int64_t>(launchVersion)))) return fail();
   if (!format || *format!="com.project-seam.neural-deployment" ||
       !build || !clean(*build) || build->size()>256U || *build!=expected.buildId ||
       !platform || (*platform!="macos-arm64" && *platform!="windows-x64") || *platform!=expected.platform ||

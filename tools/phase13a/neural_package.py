@@ -22,14 +22,14 @@ HELPER_MANIFEST_NAME = "neural-helper-package.json"
 
 def build_neural_deployment_descriptor(
     package_root: Path, build_id: str, platform: PayloadPlatform, surface: str,
-    module: str, manifest_path: str, *, protocol_version: int = 1,
+    module: str, manifest_path: str, *, protocol_version: int = 3,
 ) -> tuple[bytes, str]:
     """Return unsigned canonical bytes for the release owner's detached signature.
 
     Rebuild the package manifest from finalized files before binding its digest.
     This does not certify a worker implementation or grant release approval.
     """
-    if type(protocol_version) is not int or protocol_version not in (1, 2):
+    if type(protocol_version) is not int or protocol_version not in (1, 2, 3):
         raise PayloadAssemblyError(("neural deployment protocol is unsupported",))
     if (platform not in (PayloadPlatform.MACOS_ARM64, PayloadPlatform.WINDOWS_X64)
             or surface not in {"standalone", "clap", "vst3", "auv2"}
@@ -66,8 +66,8 @@ def build_neural_deployment_descriptor(
                       schemaVersion=protocol_version, buildId=build_id,
                       platform=str(platform), surface=surface, modulePath=module,
                       manifestPath=manifest_path, manifestSha256=digest)
-    if protocol_version == 2:
-        descriptor["protocolVersion"] = 2
+    if protocol_version >= 2:
+        descriptor["protocolVersion"] = protocol_version
     encoded = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True,
                           separators=(",", ":")) + "\n").encode("utf-8")
     if len(encoded) > 16 * 1024:
@@ -145,10 +145,10 @@ def build_neural_package_manifest(
     module: str,
     helper: str,
     dependencies: tuple[str, ...],
-    *, protocol_version: int = 1,
+    *, protocol_version: int = 3,
 ) -> tuple[bytes, str]:
     """Seal an explicit launch version; this does not qualify the helper implementation."""
-    if type(protocol_version) is not int or protocol_version not in (1, 2):
+    if type(protocol_version) is not int or protocol_version not in (1, 2, 3):
         raise PayloadAssemblyError(("neural package protocol version is unsupported",))
     if (not build_id or len(build_id.encode("utf-8")) > 256
             or any(ord(c) < 32 or ord(c) == 127 for c in build_id)

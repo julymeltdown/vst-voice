@@ -22,7 +22,7 @@ class NeuralPackageTests(unittest.TestCase):
             module = root / "module"
             shutil.copy2(os.environ["SEAM_NEURAL_PACKAGE_PROBE"], module)
             (root / "helper").write_bytes(b"not-an-execution-qualified-helper")
-            for version in (1, 2):
+            for version in (1, 2, 3):
                 raw, _ = build_neural_package_manifest(root, "build", "module", "helper", (), protocol_version=version)
                 (root / "manifest.json").write_bytes(raw)
                 descriptor, digest = build_neural_deployment_descriptor(
@@ -32,13 +32,14 @@ class NeuralPackageTests(unittest.TestCase):
                 command = [str(module), "--seam-neural-deployment-load-probe", "build", "macos-arm64", "standalone", str(version)]
                 accepted = subprocess.run(command, input=descriptor, capture_output=True, timeout=10)
                 self.assertEqual(accepted.returncode, 0, accepted.stderr)
-                command[-1] = str(3 - version)
+                other_version = 1 if version == 3 else version + 1
+                command[-1] = str(other_version)
                 self.assertNotEqual(subprocess.run(command, input=descriptor, capture_output=True, timeout=10).returncode, 0)
                 with self.assertRaises(PayloadAssemblyError):
                     build_neural_deployment_descriptor(root, "build", PayloadPlatform.MACOS_ARM64,
-                        "standalone", "module", "manifest.json", protocol_version=3 - version)
+                        "standalone", "module", "manifest.json", protocol_version=other_version)
                 # Even a newly signed descriptor cannot mask a package-version mismatch.
-                other, _ = build_neural_package_manifest(root, "build", "module", "helper", (), protocol_version=3 - version)
+                other, _ = build_neural_package_manifest(root, "build", "module", "helper", (), protocol_version=other_version)
                 (root / "manifest.json").write_bytes(other)
                 modified = json.loads(descriptor)
                 modified["manifestSha256"] = hashlib.sha256(other).hexdigest()
@@ -82,7 +83,7 @@ class NeuralPackageTests(unittest.TestCase):
             runtime = root / "Contents/Helpers/runtime.bin"
             runtime.write_bytes(b"runtime-fixture")
             raw, digest = build_neural_package_manifest(root, "loader-build", module.relative_to(root).as_posix(),
-                helper.relative_to(root).as_posix(), (runtime.relative_to(root).as_posix(),))
+                helper.relative_to(root).as_posix(), (runtime.relative_to(root).as_posix(),), protocol_version=1)
             manifest.write_bytes(raw)
             command = [str(module), "--seam-neural-package-load-probe", module.relative_to(root).as_posix(),
                        manifest.relative_to(root).as_posix(), digest, "loader-build"]
@@ -118,28 +119,36 @@ class NeuralPackageTests(unittest.TestCase):
             command[-1] = digest_v2
             accepted_v2 = subprocess.run(command, input=raw_v2, capture_output=True, timeout=10, check=False)
             self.assertEqual(accepted_v2.returncode, 0, accepted_v2.stderr)
+            raw_v3, digest_v3 = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=3)
+            command[-1] = digest_v3
+            accepted_v3 = subprocess.run(command, input=raw_v3, capture_output=True, timeout=10, check=False)
+            self.assertEqual(accepted_v3.returncode, 0, accepted_v3.stderr)
 
     def test_manifest_binds_actual_files_deterministically(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("module", "helper", "runtime"):
                 (root / name).write_bytes(name.encode())
-            first = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",))
+            first = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=1)
             second = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=2)
             self.assertNotEqual(first, second)
             self.assertEqual(json.loads(second[0])["schemaVersion"], 2)
             self.assertEqual(json.loads(second[0])["protocolVersion"], 2)
-            for invalid in (0, 3, True, 2.0, "2"):
+            third = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=3)
+            self.assertEqual(json.loads(third[0])["protocolVersion"], 3)
+            self.assertEqual(third, build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",)))
+            self.assertNotEqual(second, third)
+            for invalid in (0, 4, True, 2.0, "2"):
                 with self.assertRaises(PayloadAssemblyError):
                     build_neural_package_manifest(root, "build-1", "module", "helper", (), protocol_version=invalid)
-            self.assertEqual(first, build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",)))
+            self.assertEqual(first, build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=1))
             raw, digest = first
             self.assertEqual(hashlib.sha256(raw).hexdigest(), digest)
             value = json.loads(raw)
             self.assertEqual(value["formatId"], "com.project-seam.neural-helper-package")
             self.assertEqual(value["helper"]["sha256"], hashlib.sha256(b"helper").hexdigest())
             (root / "runtime").write_bytes(b"changed")
-            changed = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",))
+            changed = build_neural_package_manifest(root, "build-1", "module", "helper", ("runtime",), protocol_version=1)
             self.assertNotEqual(first, changed)
             self.assertEqual(json.loads(changed[0])["helper"], value["helper"])
 

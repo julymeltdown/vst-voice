@@ -128,7 +128,7 @@ NeuralPhraseRunnerOptions options(const std::filesystem::path& directory) {
       .helper=SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE,
       .helperContentHash=seam::core::sha256File(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE).value(),
       .timeout=std::chrono::seconds{20},.maximumResidentBytes=256U*1024U*1024U,
-      .maximumCpuTime=std::chrono::seconds{5},.protocolVersion=2U};
+      .maximumCpuTime=std::chrono::seconds{5},.protocolVersion=3U};
   return result;
 }
 

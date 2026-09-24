@@ -510,7 +510,7 @@ def qualify(configuration: Path, expected_sha256: str, worker: Path, output: Pat
     if output.exists() or output.is_symlink():
         raise ValueError("Qualification dossier must be new")
     worker_payload = read_bounded(worker, 512 * 1024 * 1024)
-    launch = ["--seam-neural-worker-v2", str(directory), bundle["modelId"], bundle["modelVersion"],
+    launch = ["--seam-neural-worker-v3", str(directory), bundle["modelId"], bundle["modelVersion"],
               bundle["manifestSha256"], str(bundle["maximumBundleBytes"]), str(bundle["inferenceSteps"])]
     items = []
     for index, item in enumerate(config["heldOut"]):

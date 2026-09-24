@@ -13,7 +13,7 @@
 int main(int argc,char** argv) {
   if (!seam::core::useBinaryStandardStreams()) return 2;
   using namespace seam::neural_synthesis;
-  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v2") return 2;
+  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v3") return 2;
   std::size_t budget{};
   const std::string_view text{argv[6]};
   const auto parsed=std::from_chars(text.data(),text.data()+text.size(),budget);

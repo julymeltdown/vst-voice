@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
   if (argc==6 && std::string_view{argv[1]}=="--seam-neural-deployment-load-probe") {
     // Generated ephemeral key is test-only, never a release credential.
     const std::string_view version{argv[5]};
-    if (version!="1" && version!="2") return 2;
+    if (version!="1" && version!="2" && version!="3") return 2;
     std::string json; char byte{};
     while (std::cin.get(byte)) {
       if (json.size()>=16U*1024U) return 6;
@@ -28,12 +28,13 @@ int main(int argc, char** argv) {
         std::as_bytes(std::span{json.data(),json.size()}),key.value().privateKey);
     if (!signature) return 11;
     const auto verified=seam::neural_synthesis::VerifiedNeuralDeployment::verify(json,
-        signature.value(),key.value().publicKey,{argv[2],argv[3],argv[4],version=="1"?1U:2U});
+        signature.value(),key.value().publicKey,{argv[2],argv[3],argv[4],
+            static_cast<std::uint32_t>(version.front()-'0')});
     if (!verified) return 12;
     static const char anchor=0;
     const auto loaded=verified.value().load(&anchor);
     if (!loaded) return 13;
-    return loaded.value().protocolVersion==(version=="1"?1U:2U)?0:14;
+    return loaded.value().protocolVersion==static_cast<std::uint32_t>(version.front()-'0')?0:14;
   }
   if (argc==2 && std::string_view{argv[1]}=="--seam-convert-vocabulary-probe") {
     std::string json;

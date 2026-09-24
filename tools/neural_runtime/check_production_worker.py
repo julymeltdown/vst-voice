@@ -46,7 +46,7 @@ def main():
                                   check=True, capture_output=True, text=True, timeout=20)
         digest = json.loads(prepared.stdout)["manifestSha256"]
         vocabulary_hash = hashlib.sha256((root / "vocabulary").read_bytes()).hexdigest()
-        launch = ["--seam-neural-worker-v2", directory, "fixture", "1", digest, "1048576", "10"]
+        launch = ["--seam-neural-worker-v3", directory, "fixture", "1", digest, "1048576", "10"]
         count = 731
         metadata = dict(kind="seam-neural-request-v3", requestId=91, modelId="fixture",
                         modelVersion="1", modelContentHash=digest, pronunciationHash="a" * 64,
@@ -106,18 +106,19 @@ def main():
         assert all(abs(sample - (expected + 0.001 * gain)) < 1e-6 for sample in twenty_pcm)
 
         # The v1 transport fixture contract is not this executable's contract.
-        for arguments in (["--seam-neural-worker-v1"], ["--seam-neural-worker-v2", directory, "fixture"],
-                          ["--seam-neural-worker-v2", directory, "fixture", "1", digest, "0", "10"],
-                          ["--seam-neural-worker-v2", directory, "fixture", "1", digest, "nonsense", "10"],
+        for arguments in (["--seam-neural-worker-v1"], ["--seam-neural-worker-v2", *launch[1:]],
+                          ["--seam-neural-worker-v3", directory, "fixture"],
+                          ["--seam-neural-worker-v3", directory, "fixture", "1", digest, "0", "10"],
+                          ["--seam-neural-worker-v3", directory, "fixture", "1", digest, "nonsense", "10"],
                           launch[:-1], [*launch[:-1], "0"], [*launch[:-1], "1001"],
                           [*launch[:-1], "nonsense"]):
             rejected = run(worker, arguments, request)
             assert not rejected.stdout and rejected.returncode in (2, 3), (arguments, rejected.returncode)
-        wrong_digest = run(worker, ["--seam-neural-worker-v2", directory, "fixture", "1", "0" * 64, "1048576", "10"], request)
+        wrong_digest = run(worker, ["--seam-neural-worker-v3", directory, "fixture", "1", "0" * 64, "1048576", "10"], request)
         assert not wrong_digest.stdout and wrong_digest.returncode == 4, wrong_digest.stderr
         # The launch identity is an expectation: a different model id loads the
         # same bytes but cannot authorize the request that names the real model.
-        wrong_identity = run(worker, ["--seam-neural-worker-v2", directory, "other", "1", digest, "1048576", "10"], request)
+        wrong_identity = run(worker, ["--seam-neural-worker-v3", directory, "other", "1", digest, "1048576", "10"], request)
         assert not wrong_identity.stdout and wrong_identity.returncode == 7, wrong_identity.stderr
         # Bytes changed after preparation are rejected by the child's own reload.
         damaged = bytearray(vocoder)
@@ -138,7 +139,7 @@ def main():
         plain_prepared = subprocess.run([cli, "prepare-neural-bundle", str(plain), "fixture", "1", "1048576"],
                                        check=True, capture_output=True, text=True, timeout=20)
         plain_digest = json.loads(plain_prepared.stdout)["manifestSha256"]
-        uninspected = run(worker, ["--seam-neural-worker-v2", str(plain), "fixture", "1", plain_digest, "1048576", "10"],
+        uninspected = run(worker, ["--seam-neural-worker-v3", str(plain), "fixture", "1", plain_digest, "1048576", "10"],
                           encode(dict(metadata, modelContentHash=plain_digest, bundleContentHash=plain_digest),
                                  frequency, gain))
         assert not uninspected.stdout and uninspected.returncode == 8, uninspected.stderr

@@ -838,7 +838,7 @@ TEST_CASE("neural package resolution binds module build helper and dependency fi
   CHECK(valid.value().helper==std::filesystem::canonical(root/"helper"));
   CHECK(valid.value().helperContentHash==digest.value());
   auto bad=package; bad.buildId="other-build"; CHECK(!resolve(bad));
-  bad=package; bad.protocolVersion=3U; CHECK(!resolve(bad));
+  bad=package; bad.protocolVersion=4U; CHECK(!resolve(bad));
   auto bundleManifest=manifest;
   bundleManifest.replace(bundleManifest.find("\"schemaVersion\":1"),17U,"\"schemaVersion\":2");
   bundleManifest.replace(bundleManifest.find("\"protocolVersion\":1"),19U,"\"protocolVersion\":2");
@@ -847,6 +847,12 @@ TEST_CASE("neural package resolution binds module build helper and dependency fi
   const auto bundleOptions=resolve(bundlePackage.value()); CHECK(bundleOptions);
   CHECK(bundleOptions.value().protocolVersion==2U);
   CHECK(!runNeuralWorker(request(),ModelContract{},bundleOptions.value()));
+  auto currentManifest=manifest;
+  currentManifest.replace(currentManifest.find("\"schemaVersion\":1"),17U,"\"schemaVersion\":3");
+  currentManifest.replace(currentManifest.find("\"protocolVersion\":1"),19U,"\"protocolVersion\":3");
+  const auto currentPackage=NeuralHelperPackage::decode(currentManifest,core::sha256Hex(currentManifest)); CHECK(currentPackage);
+  const auto currentOptions=resolve(currentPackage.value()); CHECK(currentOptions);
+  CHECK(currentOptions.value().protocolVersion==3U);
   bad=package; bad.helper.relativePath="../helper"; CHECK(!resolve(bad));
   bad=package; bad.helper.relativePath=root/"helper"; CHECK(!resolve(bad));
   bad=package; bad.helper.relativePath="missing"; CHECK(!resolve(bad));
@@ -908,6 +914,13 @@ TEST_CASE("signed neural deployment binds exact descriptor bytes and the loaded 
   const auto v2Signature=sign(v2); CHECK(v2Signature);
   auto v2Target=target; v2Target.protocolVersion=2U;
   CHECK(VerifiedNeuralDeployment::verify(v2,v2Signature.value(),key.value().publicKey,v2Target));
+  auto v3=json;
+  v3.replace(v3.find("\"schemaVersion\":1"),17U,"\"schemaVersion\":3,\"protocolVersion\":3");
+  const auto v3Signature=sign(v3); CHECK(v3Signature);
+  auto v3Target=target; v3Target.protocolVersion=3U;
+  CHECK(VerifiedNeuralDeployment::verify(v3,v3Signature.value(),key.value().publicKey,v3Target));
+  CHECK(!VerifiedNeuralDeployment::verify(v2,v2Signature.value(),key.value().publicKey,v3Target));
+  CHECK(!VerifiedNeuralDeployment::verify(v3,v3Signature.value(),key.value().publicKey,v2Target));
   CHECK(!VerifiedNeuralDeployment::verify(v2,v2Signature.value(),key.value().publicKey,target));
   CHECK(!VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,v2Target));
   const auto verified=VerifiedNeuralDeployment::verify(json,signature.value(),key.value().publicKey,target); CHECK(verified);
@@ -1076,7 +1089,7 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
       .helper=SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE,
       .helperContentHash=core::sha256File(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE).value(),
       .maximumResidentBytes=256U*1024U*1024U,.maximumCpuTime=std::chrono::seconds{2},
-      .protocolVersion=2U,.inferenceSteps=10};
+      .protocolVersion=3U,.inferenceSteps=10};
   const auto canonical=std::filesystem::canonical(directory);
   const auto run=neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,launch); CHECK(run);
   CHECK(run.value().response.bundleContentHash==input.bundleContentHash);
@@ -1103,7 +1116,9 @@ TEST_CASE("frozen bundle metadata binds vocabulary and rejects incompatible acou
     const auto rejected=neural_synthesis::runNeuralBundleWorker(input,canonical/"missing",4096U,invalidBudget);
     CHECK(!rejected); CHECK(rejected.error().code==core::ErrorCode::InvalidArgument);
   }
-  auto legacy=launch; legacy.protocolVersion=1U;
+  auto legacy=launch; legacy.protocolVersion=2U;
+  CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
+  legacy.protocolVersion=1U;
   CHECK(!neural_synthesis::runNeuralBundleWorker(input,canonical,4096U,legacy));
   legacy=launch; legacy.helper=SEAM_NEURAL_WORKER_PROBE;
   legacy.helperContentHash=core::sha256File(SEAM_NEURAL_WORKER_PROBE).value();

@@ -20,7 +20,7 @@ core::Result<void> NeuralPhraseRunnerOptions::validate() const {
     return core::failure(core::ErrorCode::InvalidArgument,
         "Neural runner requires a bounded bundle payload budget");
   // The bundle launch contract is the only admitted production contract.
-  if (worker.protocolVersion!=2U)
+  if (worker.protocolVersion!=3U)
     return core::failure(core::ErrorCode::Unsupported,
         "Neural runner requires the bundle worker launch contract");
   if (worker.helper.empty() || !worker.helper.is_absolute() || worker.helperContentHash.size()!=64U)

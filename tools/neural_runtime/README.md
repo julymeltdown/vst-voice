@@ -251,16 +251,16 @@ not that a voice was produced.
 must refuse any bundle it cannot inspect structurally. The application selects it
 through the bundle launch contract:
 
-    seam_neural_worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION \
+    seam_neural_worker --seam-neural-worker-v3 BUNDLE_DIR MODEL_ID MODEL_VERSION \
         BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS
 
 One SNW1 request frame arrives on stdin and exactly one SNW1 response frame leaves
 on stdout. `INFERENCE_STEPS` is the trusted admitted render snapshot's 1..1000
-selection; protocol-2 launches without it fail. It reaches the acoustic ONNX
+selection; protocol-3 launches without it fail. It reaches the acoustic ONNX
 `steps` tensor, and the response backend identity records the executed value.
-This changes the v2 helper CLI arity: packages built against the older six-field
-launch must be restaged with the new worker and its trusted digest; an old
-helper fails closed rather than silently using 10 steps.
+Protocol 3 deliberately supersedes the six-field v2 launch. Existing v2
+packages remain parseable for diagnostics but cannot be selected for a render;
+restage the new worker and bind its package digest in a v3 signed deployment.
 The child reads the bounded frame, re-loads the bundle directory itself
 so changed bytes fail their manifest or asset digest, requires the request's
 bundle, model and vocabulary identity to match what it loaded, parses both graphs

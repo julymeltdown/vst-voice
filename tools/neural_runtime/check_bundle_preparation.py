@@ -189,7 +189,7 @@ def main():
         header = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode()
         payload = struct.pack(f"<{FRAMES * 2}f", *([210.0] * FRAMES + [0.5] * FRAMES))
         request = struct.pack("<4sHBBIQ", b"SNW1", 1, 1, 0, len(header), len(payload)) + header + payload
-        run = subprocess.run([worker, "--seam-neural-worker-v2", str(bundle), "fixture", "1",
+        run = subprocess.run([worker, "--seam-neural-worker-v3", str(bundle), "fixture", "1",
                               digest, "1048576", "10"], input=request, capture_output=True, timeout=60)
         assert run.returncode == 0, run.stderr
         magic, version, kind, reserved, size, payload_size = struct.unpack("<4sHBBIQ", run.stdout[:20])
@@ -227,7 +227,7 @@ def main():
                                            len(conditioned_header), len(conditioned_payload))
                                + conditioned_header + conditioned_payload)
         conditioned_run = subprocess.run(
-            [worker, "--seam-neural-worker-v2", str(conditioned_bundle), "fixture", "1",
+            [worker, "--seam-neural-worker-v3", str(conditioned_bundle), "fixture", "1",
              conditioned_digest, "1048576", "10"], input=conditioned_request,
             capture_output=True, timeout=60)
         assert conditioned_run.returncode == 0, conditioned_run.stderr

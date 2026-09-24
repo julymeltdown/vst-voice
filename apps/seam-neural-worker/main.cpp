@@ -1,7 +1,7 @@
 // SEAM production neural worker: admitted acoustic -> vocoder inference.
 //
 // Launch contract, selected by the application and never by a bank:
-//   seam-neural-worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION \
+//   seam-neural-worker --seam-neural-worker-v3 BUNDLE_DIR MODEL_ID MODEL_VERSION \
 //       BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS
 // One SNW1 request frame on stdin, exactly one SNW1 response frame on stdout.
 //
@@ -245,8 +245,8 @@ seam::core::Result<std::vector<float>> executePadded(const FrozenNeuralBundle& b
 int main(int argc,char** argv) {
   if (!seam::core::useBinaryStandardStreams()) return fail(2,"Cannot configure binary standard streams");
   using namespace seam::neural_synthesis;
-  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v2")
-    return fail(2,"Usage: seam-neural-worker --seam-neural-worker-v2 BUNDLE_DIR MODEL_ID MODEL_VERSION "
+  if (argc!=8 || std::string_view{argv[1]}!="--seam-neural-worker-v3")
+    return fail(2,"Usage: seam-neural-worker --seam-neural-worker-v3 BUNDLE_DIR MODEL_ID MODEL_VERSION "
                    "BUNDLE_CONTENT_HASH MAXIMUM_BUNDLE_BYTES INFERENCE_STEPS");
   std::size_t budget{};
   const std::string_view budgetText{argv[6]};

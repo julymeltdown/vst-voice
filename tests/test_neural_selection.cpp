@@ -243,14 +243,14 @@ TEST_CASE("neural selection verifies the surface deployment before admitting a b
   const auto registry = scan(bundle);
   const auto track = domain::TrackId{};
 
-  auto fixture = makeSurface(scratch, "fixture-build", 2U, kPlatform, "standalone");
+  auto fixture = makeSurface(scratch, "fixture-build", 3U, kPlatform, "standalone");
   const auto created = authoring::NeuralSelectionService::create(fixture.surface);
   CHECK(created);
   if (!created) return;
   CHECK(created.value().buildId() == "fixture-build");
   CHECK(!created.value().deploymentContentHash().empty());
   CHECK(created.value().worker().maximumResidentBytes == kMaximumResidentBytes);
-  CHECK(created.value().worker().protocolVersion == 2U);
+  CHECK(created.value().worker().protocolVersion == 3U);
 
   // A descriptor signed by a different key is not this surface's deployment.
   const auto stranger = distribution::generateSigningKeyPair();
@@ -259,10 +259,12 @@ TEST_CASE("neural selection verifies the surface deployment before admitting a b
   wrongKey.trustedReleaseKey = stranger.value().publicKey;
   CHECK(!authoring::NeuralSelectionService::create(wrongKey));
 
-  // The bundle launch contract is the only admitted production contract, so a
-  // schema-1 deployment cannot select a runner at all.
+  // Earlier CLI contracts cannot select a runner that requires an explicit
+  // admitted step count, even when their packages and signatures are valid.
   auto contractSigned = makeSurface(scratch, "fixture-build", 1U, kPlatform, "standalone");
   CHECK(!authoring::NeuralSelectionService::create(contractSigned.surface));
+  auto previousContract = makeSurface(scratch, "fixture-build", 2U, kPlatform, "standalone");
+  CHECK(!authoring::NeuralSelectionService::create(previousContract.surface));
 
   // Target mismatch and unmeasured budgets are refused before any file is used.
   auto otherTarget = fixture.surface;
@@ -313,7 +315,7 @@ TEST_CASE("neural selection refuses a bundle that cannot be executed") {
   // would silently assume defaults that were never reviewed.
   const auto bundle = writeBundle(scratch / "resources", "voice", "seam-pilot-01", "1.0.0", 1U);
   const auto registry = scan(bundle);
-  auto fixture = makeSurface(scratch, "fixture-build", 2U, kPlatform, "standalone");
+  auto fixture = makeSurface(scratch, "fixture-build", 3U, kPlatform, "standalone");
   const auto created = authoring::NeuralSelectionService::create(fixture.surface);
   CHECK(created);
   if (!created) return;
@@ -336,7 +338,7 @@ TEST_CASE("neural selection refuses a resource root with a duplicate identity") 
 TEST_CASE("standalone controller selects and clears an installed neural singer") {
   const auto scratch = test::support::temporaryDirectory("neural-selection-controller");
   const auto bundle = writeBundle(scratch / "resources", "voice", "seam-pilot-01", "1.0.0", 3U);
-  auto fixture = makeSurface(scratch, "fixture-build", 2U, kPlatform, "standalone");
+  auto fixture = makeSurface(scratch, "fixture-build", 3U, kPlatform, "standalone");
   std::filesystem::create_directories(scratch / "banks");
   auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
       .cacheRoot = scratch / "cache",

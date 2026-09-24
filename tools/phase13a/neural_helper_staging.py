@@ -175,7 +175,7 @@ def stage_neural_helper(
     *,
     runtime_search_paths: tuple[Path, ...] = (),
     surface_ids: tuple[str, ...] | None = None,
-    protocol_version: int = 1,
+    protocol_version: int = 3,
 ) -> tuple[dict[str, Any], ...]:
     """Stage and seal the helper package for every selected payload surface.
 
@@ -317,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--build-id", required=True)
     parser.add_argument("--surface", action="append", default=None)
-    parser.add_argument("--protocol-version", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--protocol-version", type=int, choices=(1, 2, 3), default=3)
     arguments = parser.parse_args(argv)
     try:
         records = stage_neural_helper(

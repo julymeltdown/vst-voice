@@ -54,7 +54,7 @@ core::Result<NeuralSelectionService> NeuralSelectionService::create(
   if (stop.stop_requested()) return cancelled();
   const auto verified=neural_synthesis::VerifiedNeuralDeployment::verify(descriptor.value(),
       surface.deploymentSignature,surface.trustedReleaseKey,
-      neural_synthesis::NeuralDeploymentTarget{surface.buildId,surface.platform,surface.surface,2U});
+      neural_synthesis::NeuralDeploymentTarget{surface.buildId,surface.platform,surface.surface,3U});
   if (!verified) return core::Result<Output>{verified.error()};
   // Loading re-derives the helper path from the loaded module and checks the
   // signed manifest digest, so a bank cannot redirect execution even if it could

@@ -86,7 +86,7 @@ core::Result<NeuralHelperPackage> NeuralHelperPackage::decode(
   };
   if (!root.isObject() || root.asObject().size()!=7U || !format || !format->isString() ||
       format->asString()!="com.project-seam.neural-helper-package" || !schema || !schema->isInteger() ||
-      (schema->asInt64()!=1 && schema->asInt64()!=2) ||
+      (schema->asInt64()!=1 && schema->asInt64()!=2 && schema->asInt64()!=3) ||
       !build || !build->isString() || build->asString().size()>256U || !clean(build->asString()) ||
       !protocol || !protocol->isInteger() || protocol->asInt64()!=schema->asInt64() || !module || !helper || !deps || !deps->isArray()) return fail();
   std::set<std::string> paths;
@@ -122,7 +122,7 @@ core::Result<NeuralWorkerRunOptions> resolveNeuralHelperPackage(
   using Output=NeuralWorkerRunOptions;
   if (!packageRoot.is_absolute() || !loadedModule.is_absolute() || expectedBuildId.empty() ||
       expectedBuildId.size()>256U || package.buildId!=expectedBuildId ||
-      (package.protocolVersion!=1U && package.protocolVersion!=2U) ||
+      (package.protocolVersion!=1U && package.protocolVersion!=2U && package.protocolVersion!=3U) ||
       package.dependencies.size()>64U)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,"Neural package anchor, build or protocol is incompatible");
   std::error_code error;
@@ -345,8 +345,8 @@ core::Result<NeuralWorkerResult> runNeuralBundleWorker(
     std::size_t maximumBundleBytes,NeuralWorkerRunOptions options,std::stop_token stop) {
   using Output=NeuralWorkerResult;
   if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Neural bundle launch cancelled");
-  if (options.protocolVersion!=2U || request.bundleContentHash.empty())
-    return core::failure<Output>(core::ErrorCode::Unsupported,"Bundle launch requires protocol 2 and request metadata v3");
+  if (options.protocolVersion!=3U || request.bundleContentHash.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,"Bundle launch requires protocol 3 and request metadata v3");
   if (options.inferenceSteps<1 || options.inferenceSteps>1000)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Bundle launch requires the admitted 1 to 1000 inference steps");
@@ -376,7 +376,7 @@ core::Result<NeuralWorkerResult> runNeuralBundleWorker(
   const auto name=canonical.u8string();
   const auto inferenceSteps=options.inferenceSteps;
   return runWorkerTransport(request,metadata.value().model,std::move(options),
-      {"--seam-neural-worker-v2",std::string{name.begin(),name.end()},request.modelId,
+      {"--seam-neural-worker-v3",std::string{name.begin(),name.end()},request.modelId,
        request.modelVersion,request.bundleContentHash,std::to_string(maximumBundleBytes),
        std::to_string(inferenceSteps)},stop);
 }

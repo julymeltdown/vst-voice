@@ -127,7 +127,7 @@ Track addNeuralTrack(seam::domain::Project& project,seam::application::ProjectFa
       .helper=SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE,
       .helperContentHash=seam::core::sha256File(SEAM_NEURAL_BUNDLE_TRANSPORT_PROBE).value(),
       .timeout=std::chrono::seconds{20},.maximumResidentBytes=256U*1024U*1024U,
-      .maximumCpuTime=std::chrono::seconds{5},.protocolVersion=2U};
+      .maximumCpuTime=std::chrono::seconds{5},.protocolVersion=3U};
   const auto runner=AuthoringNeuralPhraseRunner::create(options);
   if (!runner) throw seam::test::Failure{"neural runner fixture failed: "+runner.error().message};
   result.runner=std::make_shared<const AuthoringNeuralPhraseRunner>(std::move(runner).value());

@@ -221,6 +221,7 @@ class NeuralHelperStagingTests(unittest.TestCase):
             (payload / "Standalone/Project SEAM.app/Contents/Resources/neural-helper-package.json").read_bytes()
         )
         self.assertEqual(staged["helper"]["path"], "Contents/Resources/neural-helper")
+        self.assertEqual(staged["protocolVersion"], 3)
         self.assertEqual(staged["module"]["path"], "Contents/MacOS/Project SEAM")
         self.assertEqual(
             [entry["path"] for entry in staged["dependencies"]],
