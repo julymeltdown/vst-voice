@@ -36,6 +36,10 @@ core::Result<void> CharacterPresentation::load(
   portraits_ = std::move(loaded);
   mouths_ = std::move(mouths);
   state_ = package_->manifest.defaultState;
+  // A successfully loaded package is a new artwork/voice association. Even reloading the same
+  // package must not carry an earlier phrase into a new presentation lifetime.
+  followedSinger_.reset();
+  performance_.reset();
   return core::success();
 }
 
@@ -70,6 +74,9 @@ core::Result<void> CharacterPresentation::setPerformanceSnapshot(
   // first snapshot adopts its own identity, which keeps a single-singer host from having to announce
   // and then bind in two steps; every later switch is explicit.
   const auto key = character::performanceBindingKey(snapshot);
+  if (package_.has_value() && key.resourceId != package_->manifest.voicebankId)
+    return core::Result<void>{core::Error{core::ErrorCode::Conflict,
+        "A performance snapshot does not belong to the loaded character package"}};
   if (followedSinger_.has_value() && !(*followedSinger_ == key))
     return core::Result<void>{core::Error{core::ErrorCode::Conflict,
         "A performance snapshot does not belong to the singer the dock follows"}};
@@ -83,6 +90,9 @@ core::Result<void> CharacterPresentation::followSinger(character::PerformanceBin
       key.style.empty())
     return core::Result<void>{core::Error{core::ErrorCode::InvalidArgument,
         "A followed singer has no complete identity"}};
+  if (package_.has_value() && key.resourceId != package_->manifest.voicebankId)
+    return core::Result<void>{core::Error{core::ErrorCode::Conflict,
+        "The followed singer does not belong to the loaded character package"}};
   if (!followedSinger_.has_value() || !(*followedSinger_ == key)) performance_.reset();
   followedSinger_ = std::move(key);
   return core::success();

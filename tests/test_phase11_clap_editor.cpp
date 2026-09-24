@@ -60,7 +60,8 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
   }
   runtime.controller().setVoicebankCards(std::move(cards));
   runtime.controller().setCharacterBinding({
-      .id = manifest.characterId, .version = manifest.version, .voicebankId = bank.id,
+      .id = manifest.characterId, .version = manifest.version,
+      .voicebankId = manifest.voicebankId,
       .hasPerformance = artwork.hasPerformanceAssets()});
   if (runtime.controller().voicebankBrowserVisible())
     runtime.keyDown({.key = native_ui::NativeKey::V});
@@ -234,20 +235,56 @@ int main() {
 
   auto dockProject = runtime.projectCopy();
   dockProject.settings().characterDisplay = seam::domain::CharacterDisplayMode::Full;
+  // The checked-in development artwork belongs to official.voice.01, not the demo bank. Keep a
+  // refusal check against that real package, then make a process-private package whose manifest is
+  // explicitly paired to the synthetic test voice for the positive paint mechanics below.
   {
-    seam::clap_editor::EditorRuntime performanceRuntime{dockProject, "assets/character-01", roots};
+    seam::clap_editor::EditorRuntime mismatchedRuntime{dockProject, "assets/character-01", roots};
+    if (!awaitRender(mismatchedRuntime, [&] { mismatchedRuntime.requestRender(48000U); }, [&] {
+          return mismatchedRuntime.renderedPreview()->status == seam::clap_editor::PreviewStatus::Ready;
+        })) return 47;
+    auto cards = mismatchedRuntime.controller().sceneState().voicebankCards;
+    seam::native_ui::CharacterPresentation originalArtwork;
+    if (!originalArtwork.load("assets/character-01")) return 47;
+    const auto& originalManifest = originalArtwork.package()->manifest;
+    for (auto& card : cards) {
+      if (card.id == dockProject.vocalTracks().front().voicebank.id) {
+        card.characterId = originalManifest.characterId;
+        card.characterVersion = originalManifest.version;
+      }
+    }
+    mismatchedRuntime.controller().setVoicebankCards(std::move(cards));
+    mismatchedRuntime.resize(1100.0, 720.0);
+    seam::native_ui::PixelSurface actual{1100U, 720U};
+    seam::native_ui::RasterCanvas canvas{actual};
+    mismatchedRuntime.paint(canvas);
+    const auto state = mismatchedRuntime.controller().sceneState();
+    if (state.voiceIdentity.characterActive || state.characterPerformance.has_value()) return 47;
+  }
+  const auto performanceRoot = seam::test::support::temporaryDirectory("clap-matched-character");
+  std::filesystem::copy("assets/character-01/runtime", performanceRoot / "runtime",
+                        std::filesystem::copy_options::recursive);
+  const auto manifestText = seam::core::readTextFileLimited("assets/character-01/manifest.json", 65536U);
+  if (!manifestText) return 48;
+  auto performanceManifest = seam::formats::parseJson(manifestText.value());
+  if (!performanceManifest) return 48;
+  performanceManifest.value().asObject()["voicebankId"] =
+      seam::formats::JsonValue{dockProject.vocalTracks().front().voicebank.id};
+  if (!seam::core::durableAtomicWriteText(performanceRoot / "manifest.json",
+          seam::formats::stringifyJson(performanceManifest.value()))) return 48;
+  {
+    seam::clap_editor::EditorRuntime performanceRuntime{dockProject, performanceRoot, roots};
     if (!awaitRender(performanceRuntime, [&] { performanceRuntime.requestRender(48000U); }, [&] {
           return performanceRuntime.renderedPreview()->status == seam::clap_editor::PreviewStatus::Ready;
-        }) || !verifyCharacterDock(performanceRuntime, "assets/character-01")) return 47;
+        }) || !verifyCharacterDock(performanceRuntime, performanceRoot)) return 47;
   }
   // Legacy status-only packages still draw their fallback glyph, without borrowing a mouth from
   // another package. The source package is copied into a process-private temporary directory.
   const auto statusRoot = seam::test::support::temporaryDirectory("clap-status-character");
-  std::filesystem::copy("assets/character-01/runtime", statusRoot / "runtime",
+  std::filesystem::copy(performanceRoot / "runtime", statusRoot / "runtime",
                         std::filesystem::copy_options::recursive);
-  const auto manifestText = seam::core::readTextFileLimited("assets/character-01/manifest.json", 65536U);
-  if (!manifestText) return 48;
-  auto statusManifest = seam::formats::parseJson(manifestText.value());
+  auto statusManifest = seam::formats::parseJson(
+      seam::formats::stringifyJson(performanceManifest.value()));
   if (!statusManifest) return 48;
   statusManifest.value().asObject().erase("mouths");
   statusManifest.value().asObject().erase("developmentOnly");
@@ -261,6 +298,7 @@ int main() {
         }) || !verifyCharacterDock(statusRuntime, statusRoot)) return 49;
   }
   std::filesystem::remove_all(statusRoot);
+  std::filesystem::remove_all(performanceRoot);
 
   runtime.resize(480.0, 320.0);
   const seam::native_ui::EditorSceneLayout compactLayout;

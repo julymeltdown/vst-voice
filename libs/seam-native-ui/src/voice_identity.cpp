@@ -44,6 +44,8 @@ VoiceIdentityView resolveVoiceIdentity(const VoiceIdentityInput& input) noexcept
                         ? "No voicebank selected"
                         : input.reference.id + " " + input.reference.version;
   result.recovery = cardMatches ? "" : "Choose or relink a trusted voicebank";
+  if (cardMatches && input.character != nullptr && !matchingCharacter(input))
+    result.recovery = "Loaded character package does not match the selected voicebank";
   if (hasError(input.diagnostics)) result.state = VoiceIdentityState::Error;
   else if (!cardMatches) result.state = VoiceIdentityState::Missing;
   else if (hasWarning(input.diagnostics) ||

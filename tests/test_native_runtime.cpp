@@ -408,6 +408,9 @@ TEST_CASE("native editor projects completed render audio state during paint") {
   const auto state = app.value()->authoring().controller().sceneState();
   CHECK(!state.audioDeviceOnline);
   CHECK(state.audioBackend == "threaded-callback-clock");
+  // This demo bank has no associated character package. A valid audible phrase must not become
+  // an invented mouth in the controller's accessibility/read model.
+  CHECK(!state.characterPerformance.has_value());
 }
 
 TEST_CASE("native editor audio settings resume a playing transport after restart") {

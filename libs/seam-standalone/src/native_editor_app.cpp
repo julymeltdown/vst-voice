@@ -1437,21 +1437,36 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
     boundPerformanceGeneration_ = authoring_->characterPerformanceGeneration();
     character_.clearPerformanceSnapshot();
     if (publishedPerformance != nullptr) {
-      static_cast<void>(character_.followSinger(character::performanceBindingKey(*publishedPerformance)));
-      static_cast<void>(character_.setPerformanceSnapshot(*publishedPerformance));
+      const auto followed = character_.followSinger(
+          character::performanceBindingKey(*publishedPerformance));
+      if (followed) {
+        static_cast<void>(character_.setPerformanceSnapshot(*publishedPerformance));
+      }
     }
   }
-  if (const auto frame = authoring_->characterPerformanceFrameAt(tick); frame.has_value()) {
-    state.characterPerformance = native_ui::EditorSceneState::CharacterPerformanceView{
-        .mouth = frame->mouth,
-        .energy = frame->energy,
-        .expression = frame->expression,
-        .performing = frame->performing,
-        .audibleStale = authoring_->characterPerformanceStale(),
-        .reducedMotion = false,
-    };
-    state.characterMouth = character_.mouth(frame->mouth);
+  // The audio phrase may be valid while this artwork belongs to another bank. Only a successfully
+  // bound presentation for the currently verified voice identity may animate the dock.
+  state.characterPerformance.reset();
+  state.characterMouth = nullptr;
+  if (state.voiceIdentity.characterActive && character_.hasPerformanceSnapshot()) {
+    if (const auto frame = authoring_->characterPerformanceFrameAt(tick); frame.has_value()) {
+      state.characterPerformance = native_ui::EditorSceneState::CharacterPerformanceView{
+          .mouth = frame->mouth,
+          .energy = frame->energy,
+          .expression = frame->expression,
+          .performing = frame->performing,
+          .audibleStale = authoring_->characterPerformanceStale(),
+          .reducedMotion = platform::currentAccessibilityPreferences().reduceMotion,
+      };
+      state.characterMouth = character_.mouth(frame->mouth);
+    }
   }
+  // The native accessibility tree is rebuilt from the controller's own read model, not from the
+  // local paint state. Publish the same verified phrase (or clear it) before rebuilding that tree.
+  if (state.characterPerformance.has_value())
+    authoring_->controller().setCharacterPerformance(*state.characterPerformance);
+  else
+    authoring_->controller().clearCharacterPerformance();
   state.characterPortrait = character_.portrait();
   // Layout asks the package, not the decoded frame, so the dock cannot appear or vanish because the
   // render status changed which state's artwork is being shown.

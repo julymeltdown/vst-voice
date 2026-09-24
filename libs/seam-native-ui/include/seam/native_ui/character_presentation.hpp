@@ -61,7 +61,8 @@ public:
   // What the character is singing is a separate read model from what the dock is reporting. A
   // snapshot that does not validate is refused rather than drawn, so a presentation can never show
   // a mouth the phrase it came from does not support. Clearing it leaves the operational state
-  // exactly where it was.
+  // exactly where it was. When artwork is loaded, its declared voicebankId must also match the
+  // phrase resourceId; successful package reloads revoke the previous singer and phrase.
   [[nodiscard]] core::Result<void> setPerformanceSnapshot(
       character::CharacterPerformanceSnapshot snapshot);
   // Which singer the dock follows. Selecting a different resource, style or render revision closes

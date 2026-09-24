@@ -229,8 +229,11 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
       request.interleaved = {result.interleaved.data(), result.interleaved.size()};
       request.cues = result.performanceCues;
       if (auto built = native_ui::buildPublishedCharacterPerformance(request); built) {
-        static_cast<void>(character_.followSinger(character::performanceBindingKey(built.value())));
-        static_cast<void>(character_.setPerformanceSnapshot(std::move(built).value()));
+        const auto followed = character_.followSinger(
+            character::performanceBindingKey(built.value()));
+        if (followed) {
+          static_cast<void>(character_.setPerformanceSnapshot(std::move(built).value()));
+        }
       }
     }
   }
@@ -253,6 +256,12 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
   }
   auto state = controller_->sceneState();
   state.characterMode = session_.project().settings().characterDisplay;
+  if (!state.voiceIdentity.characterActive) {
+    // The render may be audible while the loaded artwork is not associated with this selected
+    // voicebank. Do not publish a singing state in the paint or accessibility read model.
+    state.characterPerformance.reset();
+    controller_->clearCharacterPerformance();
+  }
   if (state.characterPerformance.has_value())
     state.characterMouth = character_.mouth(state.characterPerformance->mouth);
   state.characterPortrait = character_.portrait(state.characterState);

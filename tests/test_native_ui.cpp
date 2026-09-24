@@ -470,6 +470,14 @@ TEST_CASE("voice identity suppresses mismatched character presentation") {
       .reference = reference, .card = &card, .character = &character});
   CHECK(ready.state == seam::native_ui::VoiceIdentityState::Ready);
   CHECK(ready.characterActive);
+  character.voicebankId = "voice.other";
+  const auto mismatchedArtwork = seam::native_ui::resolveVoiceIdentity({
+      .reference = reference, .card = &card, .character = &character});
+  CHECK(mismatchedArtwork.state == seam::native_ui::VoiceIdentityState::Ready);
+  CHECK(!mismatchedArtwork.characterActive);
+  CHECK(mismatchedArtwork.recovery.find("character package does not match") !=
+        std::string::npos);
+  character.voicebankId = reference.id;
   card.contentHash = std::string(64U, 'b');
   const auto missing = seam::native_ui::resolveVoiceIdentity({
       .reference = reference, .card = &card, .character = &character});

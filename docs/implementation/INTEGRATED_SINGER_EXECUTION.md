@@ -1,5 +1,33 @@
 # Integrated Singer Execution
 
+## U41 loaded-character singer binding repair (2026-09-24)
+
+The shared `CharacterPresentation` now refuses a phrase or followed singer whose resource ID
+differs from the loaded package's declared `voicebankId`. A successful package reload revokes the
+old singer and phrase; a failed reload leaves the prior complete presentation intact. Standalone
+and CLAP publish a mouth only after the binding succeeds and the selected voice identity is active.
+Standalone now sends the same performance to the controller's accessibility tree and respects the
+macOS reduced-motion preference. Voice identity exposes a recovery reason when artwork is present
+but its association does not match the selected bank.
+
+The CLAP regression no longer falsely labels the public-domain demo bank as Character 01's own
+voicebank. It checks that the checked-in package refuses that bank, then uses a process-private,
+test-only package explicitly paired to the demo bank for positive artwork/fallback pixel mechanics.
+Package-level regressions cover direct snapshot/follow rejection, preserved valid state on refusal,
+failed reload atomicity, and revocation on successful reload. No production package or bank manifest
+was rewritten for these tests.
+
+Final local verification: full macOS arm64 Release build and 185/185 CTest cases passed
+(94.27 s); focused Debug build and 4/4 CTest targets passed (188.29 s: character
+performance/package, CLAP Phase 11, and aggregate native suite). These are source/runtime
+regressions, not an installed-app visual or human singing-quality acceptance.
+
+This is a cross-cutting U41 repair, **not U41 acceptance**: Character 01 remains development-only
+concept artwork, with final original art, provenance/IP approval, installed association, creator
+journeys, and independent visual/accessibility review still open. The manifest currently binds by
+voicebank ID, not an exact version/content hash. GitHub CI work is deferred by owner direction;
+local tests are engineering evidence only and do not make Beta GO reachable.
+
 ## U18 recipe source-capability admission repaired (2026-09-22)
 
 Caller source restrictions now inspect decoded content across schemas 1–11,

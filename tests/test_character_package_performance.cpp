@@ -13,6 +13,7 @@
 #include "test_support.hpp"
 
 #include "seam/character/character.hpp"
+#include "seam/character/performance.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -25,6 +26,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -45,7 +48,8 @@ void writeSurface(const std::filesystem::path& path, std::uint8_t red) {
 }
 
 std::filesystem::path writePackage(const std::filesystem::path& root, std::int64_t schemaVersion,
-                                   Mouths mouths, std::optional<bool> developmentOnly) {
+                                   Mouths mouths, std::optional<bool> developmentOnly,
+                                   std::string_view voicebankId = "voice.test") {
   std::filesystem::create_directories(root / "runtime");
   std::uint8_t red = 20U;
   formats::JsonValue::Object states;
@@ -59,7 +63,7 @@ std::filesystem::path writePackage(const std::filesystem::path& root, std::int64
   manifest.emplace("characterId", "official.character.test");
   manifest.emplace("displayName", "Test Character");
   manifest.emplace("version", "1.0.0");
-  manifest.emplace("voicebankId", "voice.test");
+  manifest.emplace("voicebankId", std::string{voicebankId});
   manifest.emplace("style", "emo-low-poly");
   manifest.emplace("defaultState", "neutral");
   manifest.emplace("accent", formats::JsonValue{formats::JsonValue::Object{
@@ -90,6 +94,25 @@ std::filesystem::path writePackage(const std::filesystem::path& root, std::int64
   output << formats::stringifyJson(formats::JsonValue{std::move(manifest)});
   output.close();
   return root;
+}
+
+character::CharacterPerformanceSnapshot performanceFor(std::string resourceId) {
+  const std::vector<float> samples(480U, 0.5F);
+  character::CharacterPerformanceRequest request;
+  request.resourceId = std::move(resourceId);
+  request.resourceVersion = "1.0.0";
+  request.resourceContentHash =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  request.style = "neutral";
+  request.pronunciationIdentity = "ja-ipa-1";
+  request.renderRevision = 1U;
+  request.origin = 0;
+  request.end = 480;
+  request.sampleRate = 48000U;
+  request.samples = samples;
+  auto built = character::buildCharacterPerformanceSnapshot(request, 240U);
+  CHECK(built.hasValue());
+  return std::move(built).value();
 }
 
 TEST_CASE("A status-only package stays status-only and is never given a mouth") {
@@ -135,6 +158,51 @@ TEST_CASE("A performance package declares every mouth it can be asked for") {
     CHECK(mouth != nullptr);
     if (mouth != nullptr) CHECK(mouth->width() == 4U);
   }
+}
+
+TEST_CASE("Character performance binds only to the voicebank declared by loaded artwork") {
+  const auto root = writePackage(test::support::temporaryDirectory("character-bound-voice"),
+                                 character::kPerformanceManifestSchema, Mouths::Complete, true);
+  native_ui::CharacterPresentation presentation;
+  CHECK(presentation.load(root).hasValue());
+  const auto wrong = performanceFor("voice.other");
+  const auto wrongKey = character::performanceBindingKey(wrong);
+  const auto refusedFollow = presentation.followSinger(wrongKey);
+  CHECK(!refusedFollow.hasValue());
+  CHECK(refusedFollow.error().code == core::ErrorCode::Conflict);
+  CHECK(!presentation.followingSinger());
+  const auto refusedSnapshot = presentation.setPerformanceSnapshot(wrong);
+  CHECK(!refusedSnapshot.hasValue());
+  CHECK(refusedSnapshot.error().code == core::ErrorCode::Conflict);
+  CHECK(!presentation.hasPerformanceSnapshot());
+
+  const auto matching = performanceFor("voice.test");
+  const auto matchingKey = character::performanceBindingKey(matching);
+  CHECK(presentation.followSinger(matchingKey).hasValue());
+  CHECK(presentation.setPerformanceSnapshot(matching).hasValue());
+  CHECK(presentation.hasPerformanceSnapshot());
+  CHECK(presentation.performanceFrameAt(240).performing);
+  // A refused selection does not replace the valid phrase already displayed.
+  CHECK(!presentation.followSinger(wrongKey).hasValue());
+  CHECK(presentation.followedSinger() == matchingKey);
+  CHECK(presentation.performanceFrameAt(240).performing);
+
+  // A malformed reload is atomic; a successful reload revokes the old singer and phrase.
+  const auto invalid = writePackage(test::support::temporaryDirectory("character-bad-reload"),
+                                    character::kPerformanceManifestSchema, Mouths::Partial, true);
+  CHECK(!presentation.load(invalid).hasValue());
+  CHECK(presentation.hasPerformanceSnapshot());
+  const auto replacement = writePackage(
+      test::support::temporaryDirectory("character-new-voice"),
+      character::kPerformanceManifestSchema, Mouths::Complete, true, "voice.new");
+  CHECK(presentation.load(replacement).hasValue());
+  CHECK(!presentation.followingSinger());
+  CHECK(!presentation.hasPerformanceSnapshot());
+  CHECK(!presentation.performanceFrameAt(240).performing);
+  CHECK(!presentation.followSinger(matchingKey).hasValue());
+  const auto newSinger = performanceFor("voice.new");
+  CHECK(presentation.followSinger(character::performanceBindingKey(newSinger)).hasValue());
+  CHECK(presentation.setPerformanceSnapshot(newSinger).hasValue());
 }
 
 TEST_CASE("A partial or contradictory package is refused by cause") {
