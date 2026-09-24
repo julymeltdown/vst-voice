@@ -2804,3 +2804,13 @@ proposal/ownership conflicts; a blocked decision no longer looks like a silent
 no-op. This improves U40 interaction feedback but does not qualify locked-channel
 semantics across all supported hosts. Release and Debug macOS app targets build
 with the new handlers. GitHub CI remains deferred.
+
+2026-09-24 — U40 acceptance audio continuity. Accepting a ready comparison now
+executes the canonical acceptance command while retaining the exact audition
+render in transport and the character read model. The retained render is
+released only when the current canonical render for the accepted project is
+published; subsequent project/render changes discard that hold. Saving and
+export still read the accepted canonical project. Release and Debug macOS app
+targets build with this transition. No runtime audio-device journey or new test
+was run for this increment; accept-click continuity still needs installed-app
+and physical audio verification. GitHub CI remains deferred.

@@ -412,7 +412,8 @@ private:
   // Applies an exact accepted-selection list as one undoable edit.
   [[nodiscard]] core::Result<void> applyAcceptedSelections(
       domain::RegionId regionId,
-      const std::vector<domain::AcceptedPerformanceSelection>& selections);
+      const std::vector<domain::AcceptedPerformanceSelection>& selections,
+      bool preserveAuditionUntilCanonicalRender = false);
   [[nodiscard]] bool currentPerformanceComparison() const noexcept;
   // The candidate is held only as a transient render overlay until explicitly accepted.
   struct PerformanceComparisonState final {

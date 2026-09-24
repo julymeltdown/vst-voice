@@ -106,6 +106,10 @@ public:
   [[nodiscard]] core::Result<void> auditionPerformance(
       domain::RegionId regionId,
       std::vector<domain::AcceptedPerformanceSelection> accepted);
+  // Apply the explicit take-acceptance command while retaining its already audible
+  // render until the canonical render for the new project revision is published.
+  [[nodiscard]] core::Result<void> acceptPerformanceAudition(
+      std::unique_ptr<application::ICommand> command);
   [[nodiscard]] core::Result<void> stopPerformanceAudition();
   [[nodiscard]] bool performanceAuditionActive() const noexcept {
     return performanceAuditionActive_.load(std::memory_order_acquire);
@@ -149,7 +153,10 @@ public:
 
 private:
   [[nodiscard]] core::Result<void> afterCommandExecution(
-      core::Result<void> result, application::CommandImpact impact);
+      core::Result<void> result, application::CommandImpact impact,
+      std::shared_ptr<const PublishedProjectAudio> retainedAudition = {});
+  void requestPreviewImpl(bool immediate, application::CommandImpact impact,
+                          bool retainAcceptedAudition);
   struct PreviewRequest final {
     domain::Project project;
     std::vector<rendering::TrackSingerSource> voicebanks;
@@ -207,6 +214,7 @@ private:
   mutable std::mutex performanceAuditionMutex_;
   std::atomic<bool> performanceAuditionActive_{false};
   std::atomic<bool> performanceAuditionReady_{false};
+  std::shared_ptr<const PublishedProjectAudio> retainedAcceptedAudition_;
   bool initialized_{false};
   mutable std::mutex diagnosticsMutex_;
   std::vector<Diagnostic> diagnostics_;

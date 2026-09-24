@@ -254,16 +254,28 @@ core::Result<void> AuthoringRuntime::executePerformanceResult(
 }
 
 core::Result<void> AuthoringRuntime::afterCommandExecution(
-    core::Result<void> result, application::CommandImpact impact) {
+    core::Result<void> result, application::CommandImpact impact,
+    std::shared_ptr<const PublishedProjectAudio> retainedAudition) {
+  const bool preserveAcceptedAudio = retainedAudition != nullptr;
   if (!result) recordDiagnostic(result.error());
   document_->synchronizeDirtyState();
-  if (result) static_cast<void>(stopPerformanceAudition());
+  if (result && retainedAudition) {
+    {
+      std::lock_guard lock(performanceAuditionMutex_);
+      retainedAcceptedAudition_ = std::move(retainedAudition);
+      performanceAuditionActive_.store(false, std::memory_order_release);
+      performanceAuditionReady_.store(false, std::memory_order_release);
+    }
+    performanceAuditionRenderer_.cancel();
+  } else if (result) {
+    static_cast<void>(stopPerformanceAudition());
+  }
   if (result && impact.scope != application::CommandAudioImpact::ViewOnly &&
       impact.scope != application::CommandAudioImpact::MetadataOnly) {
     seamPreviewRenderer_.cancel();
     seamPreviewActive_.store(false, std::memory_order_release);
     seamPreviewReady_.store(false, std::memory_order_release);
-    requestPreview(false, impact);
+    requestPreviewImpl(false, impact, preserveAcceptedAudio);
   }
   return result;
 }
@@ -397,6 +409,28 @@ core::Result<void> AuthoringRuntime::auditionPerformance(
   return core::success();
 }
 
+core::Result<void> AuthoringRuntime::acceptPerformanceAudition(
+    std::unique_ptr<application::ICommand> command) {
+  if (command == nullptr)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Performance audition acceptance requires a command");
+  if (!performanceAuditionActive() || !performanceAuditionReady())
+    return core::failure(core::ErrorCode::Conflict,
+                         "The compared take is not currently audible");
+  const auto current = performanceAuditionRenderer_.acquireCurrent();
+  if (!current || current->state != RenderState::Ready)
+    return core::failure(core::ErrorCode::Conflict,
+                         "The compared take render is no longer current");
+  auto retained = performanceAuditionRenderer_.latest();
+  if (!retained || retained->state != RenderState::Ready ||
+      retained->requestId != current->requestId)
+    return core::failure(core::ErrorCode::Conflict,
+                         "The compared take audio changed before acceptance");
+  const auto impact = command->impact();
+  auto result = document_->execute(std::move(command));
+  return afterCommandExecution(std::move(result), impact, std::move(retained));
+}
+
 core::Result<void> AuthoringRuntime::stopPerformanceAudition() {
   core::Result<void> restored = core::success();
   {
@@ -428,6 +462,8 @@ AuthoringRuntime::AudiblePublication AuthoringRuntime::audiblePublication() cons
       return {std::move(audition), true,
               performanceAuditionRenderer_.progress().audibleAudioStale};
   }
+  if (retainedAcceptedAudition_)
+    return {retainedAcceptedAudition_, true, false};
   return {renderer_.latest(), false, renderer_.progress().audibleAudioStale};
 }
 
@@ -508,11 +544,21 @@ void AuthoringRuntime::invalidatePreview() {
 
 void AuthoringRuntime::requestPreview(bool immediate,
                                       application::CommandImpact impact) {
+  requestPreviewImpl(immediate, std::move(impact), false);
+}
+
+void AuthoringRuntime::requestPreviewImpl(
+    bool immediate, application::CommandImpact impact,
+    bool retainAcceptedAudition) {
   if (!initialized_ || document_ == nullptr) return;
 
   // A document/render-setting change ends any alternate-take audition before its new canonical
   // request can publish. The audition never becomes the source of a save or export.
   static_cast<void>(stopPerformanceAudition());
+  if (!retainAcceptedAudition) {
+    std::lock_guard lock(performanceAuditionMutex_);
+    retainedAcceptedAudition_.reset();
+  }
 
   // A previously prepared Final must not remain current during debounce.
   // The publication itself stays alive for readers and technical diagnostics.
@@ -719,8 +765,11 @@ void AuthoringRuntime::publishCompletedAudio() {
   if (config_.enableTransport) {
     std::lock_guard lock(performanceAuditionMutex_);
     if (!seamPreviewActive_.load(std::memory_order_acquire) &&
-        !performanceAuditionActive_.load(std::memory_order_acquire))
-      static_cast<void>(transport_.publishAudio(std::move(handle)));
+        !performanceAuditionActive_.load(std::memory_order_acquire) &&
+        renderer_.matchesCurrent(*handle)) {
+      const auto published = transport_.publishAudio(std::move(handle));
+      if (published) retainedAcceptedAudition_.reset();
+    }
   }
   std::function<void()> callback;
   {

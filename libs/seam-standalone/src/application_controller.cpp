@@ -491,16 +491,19 @@ StandaloneApplicationController::performanceTakeSelections(domain::RegionId regi
 
 core::Result<void> StandaloneApplicationController::applyAcceptedSelections(
     domain::RegionId regionId,
-    const std::vector<domain::AcceptedPerformanceSelection>& selections) {
+    const std::vector<domain::AcceptedPerformanceSelection>& selections,
+    bool preserveAuditionUntilCanonicalRender) {
   const auto& project = session_.runtime().document().session().project();
   const auto* region = project.findRegion(regionId);
   if (region == nullptr) {
     return core::failure(core::ErrorCode::Conflict,
         "Performance takes require a selected region");
   }
-  const auto changed = session_.runtime().execute(
-      std::make_unique<application::SetAcceptedPerformanceCommand>(
-          regionId, region->performance, selections));
+  auto command = std::make_unique<application::SetAcceptedPerformanceCommand>(
+      regionId, region->performance, selections);
+  const auto changed = preserveAuditionUntilCanonicalRender
+      ? session_.runtime().acceptPerformanceAudition(std::move(command))
+      : session_.runtime().execute(std::move(command));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
@@ -621,13 +624,23 @@ core::Result<void> StandaloneApplicationController::endPerformanceComparison() {
         session_.runtime().performanceAuditionActive()
             ? "Wait for the compared take to become audible before accepting it"
             : "The compared take could not be rendered; swap back or cancel, then retry");
+  if (performanceComparison_->candidateApplied) {
+    const auto regionId = performanceComparison_->regionId;
+    const auto candidate = performanceComparison_->candidate;
+    const auto accepted = applyAcceptedSelections(regionId, candidate, true);
+    const auto* region = session_.runtime().document().session().project()
+                             .findRegion(regionId);
+    const bool committed = region != nullptr &&
+                           region->performance.accepted == candidate;
+    if (committed) {
+      performanceComparison_.reset();
+      notifyStateChanged();
+    }
+    if (!accepted) return accepted;
+    return core::success();
+  }
   const auto stopped = session_.runtime().stopPerformanceAudition();
   if (!stopped) return stopped;
-  if (performanceComparison_->candidateApplied) {
-    const auto accepted = applyAcceptedSelections(performanceComparison_->regionId,
-                                                  performanceComparison_->candidate);
-    if (!accepted) return accepted;
-  }
   performanceComparison_.reset();
   notifyStateChanged();
   return core::success();
