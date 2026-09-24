@@ -238,10 +238,9 @@ public:
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take decisions are not supported");
   }
-  // Starts an alternate-take comparison: the candidate is applied over the
-  // requested span while the previous selection state stays held, so the creator
-  // can play the same passage twice from one playhead and swap between the two.
-  // Returns the comparison a surface should mark, or nothing when none is active.
+  // Starts a transient render of the alternate take over the requested span. The
+  // canonical project and undo history remain unchanged until explicit acceptance,
+  // so the creator can compare both renders from one playhead.
   [[nodiscard]] virtual core::Result<void> beginPerformanceComparison(
       std::string_view, PerformanceEditScope = PerformanceEditScope::Whole,
       std::vector<std::string> = {}) {

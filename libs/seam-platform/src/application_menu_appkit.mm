@@ -129,10 +129,16 @@
 - (void)reviewInstalledSinger:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ReviewInstalledSinger]; }
 - (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
 - (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
-- (void)proposeAutomaticPerformance:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformance]; }
+- (void)proposeAutomaticPerformance:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::ProposeAutomaticPerformance
+            errorTitle:@"Could not generate performance take"];
+}
 - (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender {
   (void)sender;
-  [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes];
+  [self dispatchCommand:
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes
+             errorTitle:@"Could not generate take over selected notes"];
 }
 - (void)createHarmonyTrack:(id)sender {
   (void)sender;
@@ -233,20 +239,23 @@
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
-  static_cast<void>(_dispatcher->acceptPerformanceTake(identifier.UTF8String));
+  [self showResult:_dispatcher->acceptPerformanceTake(identifier.UTF8String)
+         errorTitle:@"Could not accept performance take"];
 }
 - (void)rejectPerformanceTake:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
-  static_cast<void>(_dispatcher->rejectPerformanceTake(identifier.UTF8String));
+  [self showResult:_dispatcher->rejectPerformanceTake(identifier.UTF8String)
+         errorTitle:@"Could not reject performance take"];
 }
 - (void)acceptPerformanceTakeOverSelectedNotes:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
-  static_cast<void>(_dispatcher->acceptPerformanceTake(
-      identifier.UTF8String, seam::platform::PerformanceEditScope::SelectedNotes));
+  [self showResult:_dispatcher->acceptPerformanceTake(
+      identifier.UTF8String, seam::platform::PerformanceEditScope::SelectedNotes)
+         errorTitle:@"Could not accept take over selected notes"];
 }
 - (void)comparePerformanceTake:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
@@ -264,16 +273,18 @@
   NSString* channel = value[@"channel"];
   if (identifier == nil || channel == nil) return;
   std::vector<std::string> channels{std::string{channel.UTF8String}};
-  static_cast<void>(_dispatcher->acceptPerformanceTake(identifier.UTF8String,
-      seam::platform::PerformanceEditScope::Whole, std::move(channels)));
+  [self showResult:_dispatcher->acceptPerformanceTake(identifier.UTF8String,
+      seam::platform::PerformanceEditScope::Whole, std::move(channels))
+         errorTitle:@"Could not accept take channel"];
 }
 - (void)proposePerformanceChannel:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* channel = static_cast<NSMenuItem*>(sender).representedObject;
   if (channel == nil) return;
   std::vector<std::string> channels{std::string{channel.UTF8String}};
-  static_cast<void>(_dispatcher->proposeAutomaticPerformance(
-      seam::platform::PerformanceEditScope::SelectedNotes, std::move(channels)));
+  [self showResult:_dispatcher->proposeAutomaticPerformance(
+      seam::platform::PerformanceEditScope::SelectedNotes, std::move(channels))
+         errorTitle:@"Could not generate performance take"];
 }
 - (void)swapPerformanceComparison:(id)sender {
   (void)sender;

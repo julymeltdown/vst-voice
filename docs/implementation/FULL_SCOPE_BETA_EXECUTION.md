@@ -2795,3 +2795,12 @@ two suites then passed 2/2 when rerun sequentially without build load. A
 previous full Release run before the final error-display refinement passed
 185/185. The Debug core suite passed before that final refinement; Debug final
 builds pass, but a final Debug core rerun and physical app review are not claimed.
+
+2026-09-24 — U40 decision feedback follow-up. The native performance menu had
+discarded errors from take acceptance/rejection, per-channel acceptance,
+selected-note acceptance and channel-limited generation. These actions now show
+the returned reason through the existing AppKit error sheet, including stale
+proposal/ownership conflicts; a blocked decision no longer looks like a silent
+no-op. This improves U40 interaction feedback but does not qualify locked-channel
+semantics across all supported hosts. Release and Debug macOS app targets build
+with the new handlers. GitHub CI remains deferred.
