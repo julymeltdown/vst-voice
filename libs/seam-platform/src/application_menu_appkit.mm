@@ -21,6 +21,9 @@
 - (void)bakeProceduralCandidates:(id)sender;
 - (void)proposeAutomaticPerformance:(id)sender;
 - (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender;
+- (void)createHarmonyTrack:(id)sender;
+- (void)createHarmonyTrackFromSelectedNotes:(id)sender;
+- (void)createHarmonyTrackForScope:(seam::platform::PerformanceEditScope)scope;
 - (void)relinkBackingAudio:(id)sender;
 - (void)openAudioSettings:(id)sender;
 - (void)selectVoicebank:(id)sender;
@@ -128,6 +131,72 @@
 - (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender {
   (void)sender;
   [self send:seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes];
+}
+- (void)createHarmonyTrack:(id)sender {
+  (void)sender;
+  [self createHarmonyTrackForScope:seam::platform::PerformanceEditScope::Whole];
+}
+- (void)createHarmonyTrackFromSelectedNotes:(id)sender {
+  (void)sender;
+  [self createHarmonyTrackForScope:seam::platform::PerformanceEditScope::SelectedNotes];
+}
+- (void)createHarmonyTrackForScope:(seam::platform::PerformanceEditScope)scope {
+  if (_dispatcher == nullptr) return;
+  auto* alert = [[NSAlert alloc] init];
+  alert.messageText = @"Create Harmony Track";
+  alert.informativeText = @"Create an independently editable vocal track with the lead singer and lyric syllables. The interval is in scale steps for major/minor, semitones for chromatic. Major and minor require each note to be in the key.";
+  [alert addButtonWithTitle:@"Create Track"];
+  [alert addButtonWithTitle:@"Cancel"];
+
+  auto* accessory = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 380, 120)];
+  auto* scaleLabel = [NSTextField labelWithString:@"Scale"];
+  scaleLabel.frame = NSMakeRect(0, 89, 110, 22);
+  auto* scale = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(125, 86, 250, 28) pullsDown:NO];
+  [scale addItemsWithTitles:@[@"Major", @"Natural minor", @"Chromatic"]];
+  scale.accessibilityLabel = @"Harmony scale";
+  auto* keyLabel = [NSTextField labelWithString:@"Key tonic"];
+  keyLabel.frame = NSMakeRect(0, 49, 110, 22);
+  auto* key = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(125, 46, 250, 28) pullsDown:NO];
+  [key addItemsWithTitles:@[@"C", @"C♯", @"D", @"D♯", @"E", @"F", @"F♯", @"G", @"G♯", @"A", @"A♯", @"B"]];
+  key.accessibilityLabel = @"Harmony key tonic";
+  auto* offsetLabel = [NSTextField labelWithString:@"Interval"];
+  offsetLabel.frame = NSMakeRect(0, 9, 120, 22);
+  auto* offset = [[NSTextField alloc] initWithFrame:NSMakeRect(125, 5, 250, 28)];
+  offset.stringValue = @"2";
+  offset.placeholderString = @"-48 to 48, excluding 0";
+  offset.accessibilityLabel = @"Harmony scale steps or chromatic semitones";
+  for (NSView* child in @[scaleLabel, scale, keyLabel, key, offsetLabel, offset])
+    [accessory addSubview:child];
+  alert.accessoryView = accessory;
+  if ([alert runModal] != NSAlertFirstButtonReturn) return;
+
+  NSString* value = [offset.stringValue stringByTrimmingCharactersInSet:
+      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+  NSScanner* scanner = [NSScanner scannerWithString:value];
+  NSInteger steps = 0;
+  if (![scanner scanInteger:&steps] || !scanner.isAtEnd || steps == 0 ||
+      steps < -48 || steps > 48) {
+    auto* error = [[NSAlert alloc] init];
+    error.messageText = @"Invalid harmony interval";
+    error.informativeText = @"Enter a whole number from -48 to 48, excluding zero.";
+    [error runModal];
+    return;
+  }
+  seam::platform::HarmonyScale selectedScale = seam::platform::HarmonyScale::Major;
+  if (scale.indexOfSelectedItem == 1)
+    selectedScale = seam::platform::HarmonyScale::NaturalMinor;
+  else if (scale.indexOfSelectedItem == 2)
+    selectedScale = seam::platform::HarmonyScale::Chromatic;
+  const auto created = _dispatcher->createHarmonyTrack({
+      .scope = scope, .scale = selectedScale,
+      .tonicPitchClass = static_cast<int>(key.indexOfSelectedItem),
+      .offset = static_cast<int>(steps)});
+  if (!created) {
+    auto* error = [[NSAlert alloc] init];
+    error.messageText = @"Could not create harmony track";
+    error.informativeText = [NSString stringWithUTF8String:created.error().message.c_str()];
+    [error runModal];
+  }
 }
 - (void)relinkBackingAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkBackingAudio]; }
 - (void)openAudioSettings:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::OpenAudioSettings]; }
@@ -489,6 +558,10 @@ public:
     [fileMenu_ addItem:item(@"Propose Automatic Performance Over Selected Notes",
                             @selector(proposeAutomaticPerformanceOverSelectedNotes:), @"",
                             0, target_)];
+    [fileMenu_ addItem:item(@"Create Harmony Track…", @selector(createHarmonyTrack:), @"",
+                            0, target_)];
+    [fileMenu_ addItem:item(@"Create Harmony Track from Selected Notes…",
+                            @selector(createHarmonyTrackFromSelectedNotes:), @"", 0, target_)];
     // Channel-scoped regeneration is a repair action on picked material, so it always
     // proposes over the current note selection and refuses when there is none.
     auto* channelMenu = [[NSMenu alloc] initWithTitle:@"Regenerate Selected Notes (Channel)"];

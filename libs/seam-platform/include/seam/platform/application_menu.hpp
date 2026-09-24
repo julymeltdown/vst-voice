@@ -134,6 +134,16 @@ struct DocumentationMenuItem final {
 // action can honestly cover.
 enum class PerformanceEditScope { Whole, SelectedNotes };
 
+// A harmony action is always an explicit creator choice. Degree offset is in
+// scale steps for major/minor, semitones for chromatic; zero is never useful.
+enum class HarmonyScale { Chromatic, Major, NaturalMinor };
+struct HarmonyMenuRequest final {
+  PerformanceEditScope scope{PerformanceEditScope::Whole};
+  HarmonyScale scale{HarmonyScale::Major};
+  int tonicPitchClass{0};
+  int offset{2};
+};
+
 struct PerformanceTakeMenuItem final {
   std::string id;
   std::string label;
@@ -243,6 +253,11 @@ public:
       PerformanceEditScope, std::vector<std::string> = {}) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Automatic performance proposals are not supported");
+  }
+  [[nodiscard]] virtual core::Result<void> createHarmonyTrack(
+      HarmonyMenuRequest) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Harmony-track creation is not supported");
   }
   // Applies the other side of the active comparison. Refused when none is active.
   [[nodiscard]] virtual core::Result<void> swapPerformanceComparison() {

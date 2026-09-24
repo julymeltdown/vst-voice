@@ -7,6 +7,7 @@
 #include "seam/build/version.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/application/harmony_commands.hpp"
 #include "seam/rendering/singer_route.hpp"
 #include <set>
 
@@ -735,6 +736,63 @@ core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
   return core::success();
 }
 
+core::Result<void> StandaloneApplicationController::createHarmonyTrack(
+    platform::HarmonyMenuRequest request) {
+  if (request.offset == 0 || request.offset < -48 || request.offset > 48 ||
+      request.tonicPitchClass < 0 || request.tonicPitchClass > 11) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "Choose a nonzero harmony interval from -48 to 48 and a valid key");
+  }
+  auto& runtime = session_.runtime();
+  auto& editable = runtime.document().session();
+  const auto& project = editable.project();
+  const auto regionId = runtime.selectedRegion();
+  const auto* sourceTrack = project.findVocalTrack(runtime.selectedTrack());
+  if (sourceTrack == nullptr || sourceTrack->findRegion(regionId) == nullptr)
+    return core::failure(core::ErrorCode::Conflict,
+        "Select a vocal track and region before creating a harmony");
+
+  application::HarmonyRequest harmony{.regionId = regionId,
+      .sourceNotes = {}, .intervalSemitones = request.offset};
+  if (request.scope == platform::PerformanceEditScope::SelectedNotes) {
+    for (const auto id : editable.selection().noteIds())
+      if (sourceTrack->findRegion(regionId)->findNote(id) != nullptr)
+        harmony.sourceNotes.push_back(id);
+    if (harmony.sourceNotes.empty())
+      return core::failure(core::ErrorCode::Conflict,
+          "Select notes in the current region before creating a selected-note harmony");
+  }
+  if (request.scale != platform::HarmonyScale::Chromatic) {
+    application::DiatonicHarmony scale;
+    scale.tonicPitchClass = static_cast<std::uint8_t>(request.tonicPitchClass);
+    scale.degreeOffset = request.offset;
+    if (request.scale == platform::HarmonyScale::NaturalMinor)
+      scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 8U, 10U};
+    else if (request.scale != platform::HarmonyScale::Major)
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Unknown harmony scale");
+    harmony.diatonic = std::move(scale);
+  }
+  // Reserve through the document's allocator. A disposable factory would let
+  // the next ordinary note edit reuse a harmony note/lyric ID.
+  auto prepared = application::prepareHarmonyTrack(project, runtime.document().factory(),
+      std::move(harmony));
+  if (!prepared) return core::Result<void>{prepared.error()};
+  const auto newTrackId = prepared.value().harmonyTrack.id;
+  auto changed = runtime.execute(std::make_unique<application::AddHarmonyTrackCommand>(
+      std::move(prepared.value())));
+  if (!changed) return changed;
+  runtime.handleDocumentChanged();
+  const auto selected = runtime.selectTrack(newTrackId);
+  if (!selected) return selected;
+  const auto editorSelected = session_.controller().selectTrack(newTrackId);
+  if (!editorSelected) return editorSelected;
+  const auto recorded = onDocumentChanged();
+  if (!recorded) return recorded;
+  notifyStateChanged();
+  return core::success();
+}
+
 core::Result<void> StandaloneApplicationController::refreshVoicebankBrowser() {
   // Explicit refresh is a source-generation boundary even when no score edit
   // occurred. Revoke old measurement authority before I/O, including failures.
@@ -1247,6 +1305,16 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::Undo: {
       auto result = session_.runtime().undo();
       if (result) {
+        // Undoing a newly created harmony can remove the track currently open
+        // in both editors. Re-anchor selection before any view renders again.
+        auto& runtime = session_.runtime();
+        const auto& project = runtime.document().session().project();
+        if (project.findVocalTrack(runtime.selectedTrack()) == nullptr &&
+            !project.vocalTracks().empty()) {
+          const auto fallback = project.vocalTracks().front().id;
+          static_cast<void>(runtime.selectTrack(fallback));
+          static_cast<void>(session_.controller().selectTrack(fallback));
+        }
         static_cast<void>(onDocumentChanged());
         notifyStateChanged();
       }

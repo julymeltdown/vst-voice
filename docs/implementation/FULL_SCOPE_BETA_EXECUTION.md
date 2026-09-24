@@ -2721,3 +2721,23 @@ interchange-service tests pass 2/2. This is a code coverage increment, not U30
 acceptance: archival files from each older OpenUtau release and independent
 application verification of the imported results remain to be collected.
 `docs/formats/USTX_INTERCHANGE_V1.md` records the precise boundary.
+
+2026-09-24 — U40 harmony workflow increment. A creator can now choose an
+explicit chromatic interval or major/natural-minor scale and degree offset from
+the macOS File menu, for the selected region or selected notes. Preparation
+rejects out-of-scale and out-of-MIDI-range notes rather than silently
+quantizing. A successful result creates a separately editable vocal track with
+fresh track/region/note/lyric identities, preserved relative note timing and
+shared-lyric melisma, copied singer/style routing, and no inherited absolute
+performance curves. Acceptance is one stale-safe undoable command; undoing a
+selected harmony re-anchors the runtime and native editor on an extant track.
+
+Local Release and Debug tests cover cancellation-equivalent validation failures,
+stale source rejection, melisma, undo/redo, independent selection, native
+save/reopen, and a committed export with master plus lead and harmony stems.
+The AppKit menu and controller compile in both configurations; the full local
+Release build and CTest suite pass (185/185). This does **not** close U40 or Beta GO:
+physical UI interaction/accessibility review, musical quality of the generated
+harmony, scale/key UX beyond major and natural minor, and independent creator
+qualification remain open. GitHub CI work is deferred at the user's request;
+no CI configuration is changed in this increment.

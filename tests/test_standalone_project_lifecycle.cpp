@@ -745,6 +745,86 @@ TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") 
             ->performance.takes.size() == 1U);
 }
 
+TEST_CASE("standalone_harmony_menu_creates_editable_track_and_recovers_selection_on_undo") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-harmony-menu");
+  auto session = makeSession(root);
+  addNote(*session);
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+  const auto leadId = session->runtime().selectedTrack();
+  const auto leadRegionId = session->runtime().selectedRegion();
+  const auto& originalProject = session->runtime().document().session().project();
+  const auto leadNoteId = originalProject.findRegion(leadRegionId)->notes.front().id;
+  const auto original = originalProject;
+
+  using seam::platform::HarmonyMenuRequest;
+  using seam::platform::HarmonyScale;
+  using seam::platform::PerformanceEditScope;
+  CHECK(!controller.value()->createHarmonyTrack(HarmonyMenuRequest{
+      .scope = PerformanceEditScope::Whole, .scale = HarmonyScale::Major,
+      .tonicPitchClass = 0, .offset = 0}));
+  CHECK(!controller.value()->createHarmonyTrack(HarmonyMenuRequest{
+      .scope = PerformanceEditScope::Whole, .scale = HarmonyScale::NaturalMinor,
+      .tonicPitchClass = 0, .offset = 2}));
+  CHECK(!controller.value()->createHarmonyTrack(HarmonyMenuRequest{
+      .scope = PerformanceEditScope::SelectedNotes, .scale = HarmonyScale::Chromatic,
+      .tonicPitchClass = 0, .offset = 3}));
+  CHECK(session->runtime().document().session().project() == original);
+
+  session->runtime().document().session().selection().selectOnly(leadNoteId);
+  CHECK(controller.value()->createHarmonyTrack(HarmonyMenuRequest{
+      .scope = PerformanceEditScope::SelectedNotes, .scale = HarmonyScale::Chromatic,
+      .tonicPitchClass = 0, .offset = 3}));
+  const auto& withHarmony = session->runtime().document().session().project();
+  CHECK(withHarmony.vocalTracks().size() == original.vocalTracks().size() + 1U);
+  const auto harmonyId = withHarmony.vocalTracks().back().id;
+  CHECK(session->runtime().selectedTrack() == harmonyId);
+  CHECK(session->controller().selectedTrack() == harmonyId);
+  CHECK(session->runtime().selectedRegion() ==
+        withHarmony.vocalTracks().back().regions.front().id);
+  CHECK(session->controller().selectedRegion() == session->runtime().selectedRegion());
+  CHECK(withHarmony.vocalTracks().back().regions.front().notes.size() == 1U);
+  CHECK(withHarmony.vocalTracks().back().regions.front().notes.front().midiKey == 67U);
+  CHECK(withHarmony.vocalTracks().back().regions.front().notes.front().id != leadNoteId);
+  CHECK(withHarmony.findVocalTrack(leadId) != nullptr);
+  CHECK(session->runtime().document().factory().nextIdValue() >
+        withHarmony.vocalTracks().back().regions.front().notes.front().id.value());
+  CHECK(session->runtime().document().factory().nextIdValue() >
+        withHarmony.vocalTracks().back().regions.front().lyrics.front().id.value());
+
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(session->runtime().document().session().project() == original);
+  CHECK(session->runtime().selectedTrack() == leadId);
+  CHECK(session->controller().selectedTrack() == leadId);
+  CHECK(session->runtime().selectedRegion() == leadRegionId);
+  CHECK(session->controller().selectedRegion() == leadRegionId);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(session->runtime().document().session().project().findVocalTrack(harmonyId) != nullptr);
+
+  const auto path = root / "harmony.seam";
+  CHECK(session->saveProjectAs(path));
+  CHECK(session->openProject(path));
+  CHECK(session->runtime().document().session().project().findVocalTrack(harmonyId) != nullptr);
+  const auto exported = controller.value()->exportSet(root / "harmony-export",
+      seam::authoring::ExportSettings{.sampleRate = 48000U, .channels = 2U,
+          .format = seam::voicebank::WavSampleFormat::Pcm16,
+          .includeMaster = true, .includeStems = true});
+  CHECK(exported);
+  if (exported) {
+    CHECK(exported.value().state == seam::authoring::ExportState::Committed);
+    CHECK(exported.value().files.size() == 3U); // master, lead and harmony
+    for (const auto& file : exported.value().files) {
+      CHECK(std::filesystem::exists(exported.value().setPath / file.path));
+      CHECK(file.frames > 0U);
+    }
+  }
+}
+
 TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   const auto root = seam::test::support::temporaryDirectory("standalone-decision");
   auto session = makeSession(root);

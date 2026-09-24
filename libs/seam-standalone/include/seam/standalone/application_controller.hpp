@@ -222,6 +222,8 @@ public:
   [[nodiscard]] core::Result<void> proposeAutomaticPerformance(
       platform::PerformanceEditScope scope,
       std::vector<std::string> channels) override;
+  [[nodiscard]] core::Result<void> createHarmonyTrack(
+      platform::HarmonyMenuRequest request) override;
   [[nodiscard]] core::Result<void> swapPerformanceComparison() override;
   [[nodiscard]] core::Result<void> endPerformanceComparison() override;
   [[nodiscard]] std::optional<platform::PerformanceComparisonMenuItem>
