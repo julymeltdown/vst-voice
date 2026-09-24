@@ -1170,6 +1170,14 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
     return session->runtime().document().session().project().findRegion(regionId)
         ->performance;
   };
+  const auto waitFor = [](const auto& predicate) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (predicate()) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    return predicate();
+  };
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
   CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
@@ -1181,39 +1189,80 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   const auto acceptedFirst = performance().accepted;
   CHECK(!acceptedFirst.empty());
   CHECK(controller.value()->performanceComparison() == std::nullopt);
+  CHECK(waitFor([&] { return static_cast<bool>(session->runtime().renderer().acquireCurrent()); }));
+  CHECK(session->runtime().transport().seek(seam::time::SampleFrame{2400}));
+  CHECK(waitFor([&] { return session->runtime().transport().state().playhead == 2400; }));
+  static_cast<void>(session->characterPerformance());
+  const auto originalCharacterGeneration = session->characterPerformanceGeneration();
+  const auto beforeComparison = observeDocument(*session);
 
-  // Comparing the second take applies it while the first state stays held, so both
-  // sides exist at once and neither is a copy of the other.
+  // Audition is a render of a project copy. It cannot alter the canonical selection,
+  // serialized score, revision, dirty identity or undo/redo state.
   CHECK(controller.value()->beginPerformanceComparison(
       secondId,
       seam::platform::PerformanceEditScope::Whole, {}));
+  checkDocumentUnchanged(*session, beforeComparison);
   const auto comparison = controller.value()->performanceComparison();
   CHECK(comparison.has_value());
   CHECK(comparison->takeId == secondId);
   CHECK(comparison->candidateApplied);
   CHECK(!comparison->label.empty());
-  const auto acceptedSecond = performance().accepted;
+  CHECK(waitFor([&] { return session->runtime().performanceAuditionReady(); }));
+  CHECK(controller.value()->performanceComparison()->auditionReady);
+  CHECK(!controller.value()->performanceComparison()->auditionFailed);
+  const auto audibleCandidate = session->runtime().audiblePublication();
+  CHECK(audibleCandidate.performanceAudition);
+  CHECK(audibleCandidate.audio != nullptr);
+  CHECK(audibleCandidate.audio->sourceProject != nullptr);
+  static_cast<void>(session->characterPerformance());
+  CHECK(session->characterPerformanceGeneration() > originalCharacterGeneration);
+  const auto candidateCharacterGeneration = session->characterPerformanceGeneration();
+  const auto acceptedSecond = audibleCandidate.audio->sourceProject
+                                  ->findRegion(regionId)->performance.accepted;
   CHECK(acceptedSecond != acceptedFirst);
   for (const auto& selection : acceptedSecond) {
     CHECK(selection.takeId == secondId);
   }
+  CHECK(performance().accepted == acceptedFirst);
+  checkDocumentUnchanged(*session, beforeComparison);
+  CHECK(waitFor([&] { return session->runtime().transport().state().playhead == 2400; }));
 
-  // Swapping is an ordinary undoable edit that restores the exact other side.
+  // A save while the compared audio is playing still writes the canonical take.
+  const auto savedPath = root / "saved-during-audition.seam";
+  CHECK(session->saveProjectAs(savedPath));
+  const auto saved = seam::formats::ProjectJsonCodec{}.load(savedPath);
+  CHECK(saved);
+  CHECK(saved.value().findRegion(regionId)->performance.accepted == acceptedFirst);
+  CHECK(performance().accepted == acceptedFirst);
+  const auto afterSave = observeDocument(*session);
+
+  // Swapping restores canonical audio at the same playhead without inserting an undo entry.
   CHECK(controller.value()->swapPerformanceComparison());
   CHECK(performance().accepted == acceptedFirst);
   CHECK(!controller.value()->performanceComparison()->candidateApplied);
+  CHECK(!controller.value()->performanceComparison()->auditionReady);
+  CHECK(!controller.value()->performanceComparison()->auditionFailed);
+  CHECK(!session->runtime().audiblePublication().performanceAudition);
+  static_cast<void>(session->characterPerformance());
+  CHECK(session->characterPerformanceGeneration() > candidateCharacterGeneration);
+  checkDocumentUnchanged(*session, afterSave);
+  CHECK(waitFor([&] { return session->runtime().transport().state().playhead == 2400; }));
   CHECK(controller.value()->swapPerformanceComparison());
-  CHECK(performance().accepted == acceptedSecond);
+  CHECK(waitFor([&] { return session->runtime().performanceAuditionReady(); }));
+  CHECK(performance().accepted == acceptedFirst);
   CHECK(controller.value()->performanceComparison()->candidateApplied);
+  checkDocumentUnchanged(*session, afterSave);
+  CHECK(waitFor([&] { return session->runtime().transport().state().playhead == 2400; }));
+
+  // Ending on an audible candidate is the one canonical decision and the one undoable edit.
+  CHECK(controller.value()->endPerformanceComparison());
+  CHECK(controller.value()->performanceComparison() == std::nullopt);
+  CHECK(performance().accepted == acceptedSecond);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Undo));
   CHECK(performance().accepted == acceptedFirst);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Redo));
   CHECK(performance().accepted == acceptedSecond);
 
-  // Ending keeps whichever side is sounding instead of silently reverting it.
-  CHECK(controller.value()->endPerformanceComparison());
-  CHECK(controller.value()->performanceComparison() == std::nullopt);
-  CHECK(performance().accepted == acceptedSecond);
   const auto lapsed = controller.value()->swapPerformanceComparison();
   CHECK(!lapsed);
   CHECK(lapsed.error().code == seam::core::ErrorCode::Conflict);
@@ -1228,6 +1277,8 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   CHECK(!alreadyAccepted);
   CHECK(alreadyAccepted.error().code == seam::core::ErrorCode::Conflict);
 
+  CHECK(waitFor([&] { return static_cast<bool>(session->runtime().renderer().acquireCurrent()); }));
+  const auto beforeCancel = observeDocument(*session);
   CHECK(controller.value()->beginPerformanceComparison(
       firstId,
       seam::platform::PerformanceEditScope::Whole, {}));
@@ -1236,7 +1287,23 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
       seam::platform::PerformanceEditScope::Whole, {});
   CHECK(!nested);
   CHECK(nested.error().code == seam::core::ErrorCode::Conflict);
-  CHECK(controller.value()->endPerformanceComparison());
+  CHECK(controller.value()->cancelPerformanceComparison());
+  checkDocumentUnchanged(*session, beforeCancel);
+  CHECK(!session->runtime().performanceAuditionActive());
+
+  CHECK(controller.value()->beginPerformanceComparison(
+      firstId, seam::platform::PerformanceEditScope::Whole, {}));
+  CHECK(session->runtime().performanceAuditionActive());
+  // A newer score edit ends the transient timeline even if its render finishes after the edit.
+  // The held decision is stale and cannot later accept the old candidate over that work.
+  addNote(*session);
+  CHECK(!session->runtime().performanceAuditionActive());
+  CHECK(!session->runtime().audiblePublication().performanceAudition);
+  CHECK(controller.value()->performanceComparison() == std::nullopt);
+  const auto staleEnd = controller.value()->endPerformanceComparison();
+  CHECK(!staleEnd);
+  CHECK(staleEnd.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(!session->runtime().performanceAuditionActive());
 }
 
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {

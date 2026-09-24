@@ -37,6 +37,7 @@
 - (void)proposePerformanceChannel:(id)sender;
 - (void)swapPerformanceComparison:(id)sender;
 - (void)endPerformanceComparison:(id)sender;
+- (void)cancelPerformanceComparison:(id)sender;
 - (void)openDocumentation:(id)sender;
 - (void)exportAudio:(id)sender;
 - (void)exportScore:(id)sender;
@@ -78,6 +79,7 @@
 - (void)autoLegatoSelectedNotes:(id)sender;
 - (void)clearRegionDynamicsCurve:(id)sender;
 - (void)dispatchCommand:(seam::platform::ApplicationCommand)command errorTitle:(NSString*)title;
+- (void)showResult:(const seam::core::Result<void>&)result errorTitle:(NSString*)title;
 - (void)editCommand:(seam::platform::ApplicationCommand)command title:(NSString*)title;
 - (void)togglePlayback:(id)sender;
 - (void)stopPlayback:(id)sender;
@@ -250,8 +252,9 @@
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
   NSString* identifier = static_cast<NSMenuItem*>(sender).representedObject;
   if (![identifier isKindOfClass:[NSString class]]) return;
-  static_cast<void>(_dispatcher->beginPerformanceComparison(
-      identifier.UTF8String, seam::platform::PerformanceEditScope::Whole));
+  [self showResult:_dispatcher->beginPerformanceComparison(
+      identifier.UTF8String, seam::platform::PerformanceEditScope::Whole)
+         errorTitle:@"Could not compare performance take"];
 }
 - (void)acceptPerformanceChannel:(id)sender {
   if (_dispatcher == nullptr || ![sender isKindOfClass:[NSMenuItem class]]) return;
@@ -275,12 +278,20 @@
 - (void)swapPerformanceComparison:(id)sender {
   (void)sender;
   if (_dispatcher == nullptr) return;
-  static_cast<void>(_dispatcher->swapPerformanceComparison());
+  [self showResult:_dispatcher->swapPerformanceComparison()
+         errorTitle:@"Could not swap performance comparison"];
 }
 - (void)endPerformanceComparison:(id)sender {
   (void)sender;
   if (_dispatcher == nullptr) return;
-  static_cast<void>(_dispatcher->endPerformanceComparison());
+  [self showResult:_dispatcher->endPerformanceComparison()
+         errorTitle:@"Could not finish performance comparison"];
+}
+- (void)cancelPerformanceComparison:(id)sender {
+  (void)sender;
+  if (_dispatcher == nullptr) return;
+  [self showResult:_dispatcher->cancelPerformanceComparison()
+         errorTitle:@"Could not cancel performance comparison"];
 }
 - (void)exportAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportAudio]; }
 - (void)exportScore:(id)sender {
@@ -454,6 +465,9 @@
 - (void)dispatchCommand:(seam::platform::ApplicationCommand)command errorTitle:(NSString*)title {
   if (_dispatcher == nullptr) return;
   const auto result = _dispatcher->dispatch(command);
+  [self showResult:result errorTitle:title];
+}
+- (void)showResult:(const seam::core::Result<void>&)result errorTitle:(NSString*)title {
   if (result) return;
   auto* alert = [[NSAlert alloc] init];
   alert.messageText = title;
@@ -813,11 +827,16 @@ public:
           [performanceMenu_ addItem:entry];
         }
       }
-      // The comparison holds the previous accepted state while the candidate is
-      // applied, so swapping plays the same passage from the same playhead on the
-      // other side without any silent edit to the project.
+      // Swapping changes only the transient playback timeline. Neither side edits
+      // the canonical project until the creator explicitly accepts the candidate.
       [performanceMenu_ addItem:[NSMenuItem separatorItem]];
       const bool comparing = comparison.has_value();
+      if (comparing && comparison->auditionFailed) {
+        auto* failed = item(@"Compared Take Unavailable — Swap Back or Cancel",
+                            nil, @"", 0, nil);
+        failed.enabled = NO;
+        [performanceMenu_ addItem:failed];
+      }
       auto* swap = item(comparing && comparison->candidateApplied
                             ? @"Swap: Hear Previous Take" : @"Swap: Hear Compared Take",
                         @selector(swapPerformanceComparison:), @"", 0, target_);
@@ -825,9 +844,14 @@ public:
       swap.state = comparing && comparison->candidateApplied ? NSControlStateValueOn
                                                              : NSControlStateValueOff;
       [performanceMenu_ addItem:swap];
-      auto* end = item(@"End Comparison", @selector(endPerformanceComparison:), @"", 0, target_);
-      end.enabled = comparing;
+      auto* end = item(comparing && comparison->candidateApplied
+                           ? @"Accept Compared Take" : @"End Comparison — Keep Original",
+                       @selector(endPerformanceComparison:), @"", 0, target_);
+      end.enabled = comparing && (!comparison->candidateApplied || comparison->auditionReady);
       [performanceMenu_ addItem:end];
+      auto* cancel = item(@"Cancel Comparison", @selector(cancelPerformanceComparison:), @"", 0, target_);
+      cancel.enabled = comparing;
+      [performanceMenu_ addItem:cancel];
     }
 
     if (recoveryMenu_ != nil) {

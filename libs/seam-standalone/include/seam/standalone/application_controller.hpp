@@ -212,9 +212,8 @@ public:
       std::vector<std::string> channels) override;
   [[nodiscard]] core::Result<void> rejectPerformanceTake(
       std::string_view id) override;
-  // Alternate-take comparison: the candidate take is applied while the previous
-  // selection state is held, so the creator can play one passage from one playhead
-  // and swap between the two states. Every swap is an ordinary undoable edit.
+  // Alternate-take comparison renders a temporary project copy. The canonical project and undo
+  // stack change only if the creator explicitly ends on a ready candidate and accepts it.
   [[nodiscard]] core::Result<void> beginPerformanceComparison(
       std::string_view id,
       platform::PerformanceEditScope scope,
@@ -226,6 +225,7 @@ public:
       platform::HarmonyMenuRequest request) override;
   [[nodiscard]] core::Result<void> swapPerformanceComparison() override;
   [[nodiscard]] core::Result<void> endPerformanceComparison() override;
+  [[nodiscard]] core::Result<void> cancelPerformanceComparison() override;
   [[nodiscard]] std::optional<platform::PerformanceComparisonMenuItem>
   performanceComparison() const override;
   // Runs the production automatic-performance backend on the selected region and
@@ -413,9 +413,11 @@ private:
   [[nodiscard]] core::Result<void> applyAcceptedSelections(
       domain::RegionId regionId,
       const std::vector<domain::AcceptedPerformanceSelection>& selections);
-  // Held alternate-take comparison. Session state only: it names a take and the two
-  // selection states, and the project remains the single owner of what is applied.
+  [[nodiscard]] bool currentPerformanceComparison() const noexcept;
+  // The candidate is held only as a transient render overlay until explicitly accepted.
   struct PerformanceComparisonState final {
+    domain::ProjectId projectId;
+    std::uint64_t projectRevision{0U};
     domain::RegionId regionId;
     std::string takeId;
     std::string label;

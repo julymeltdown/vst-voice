@@ -54,6 +54,7 @@ AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
                   config_.allowDevelopmentVoicebanks),
       renderer_(config_.cacheRoot),
       seamPreviewRenderer_(config_.cacheRoot / "seam-previews"),
+      performanceAuditionRenderer_(config_.cacheRoot / "performance-auditions"),
       transport_(TransportConfig{
           .sampleRate = config_.previewSampleRate,
           .outputChannels = config_.outputChannels,
@@ -66,6 +67,8 @@ AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
   renderer_.setCompletionCallback([this] { publishCompletedAudio(); });
   seamPreviewRenderer_.setCompletionCallback(
       [this] { publishCompletedSeamPreview(); });
+  performanceAuditionRenderer_.setCompletionCallback(
+      [this] { publishCompletedPerformanceAudition(); });
   previewWorker_ = std::jthread(
       [this](std::stop_token stopToken) { previewWorkerLoop(stopToken); });
 }
@@ -182,6 +185,10 @@ void AuthoringRuntime::shutdown() noexcept {
   seamPreviewReady_.store(false, std::memory_order_release);
   seamPreviewRenderer_.setCompletionCallback({});
   seamPreviewRenderer_.shutdown();
+  performanceAuditionActive_.store(false, std::memory_order_release);
+  performanceAuditionReady_.store(false, std::memory_order_release);
+  performanceAuditionRenderer_.setCompletionCallback({});
+  performanceAuditionRenderer_.shutdown();
   renderer_.setCompletionCallback({});
   renderer_.shutdown();
   if (config_.enableTransport) transport_.shutdown();
@@ -194,6 +201,8 @@ core::Result<void> AuthoringRuntime::selectTrack(domain::TrackId trackId) {
     return core::failure(core::ErrorCode::NotFound,
                          "Selected vocal track is missing");
   }
+  if (trackId != selectedTrack_)
+    static_cast<void>(stopPerformanceAudition());
   selectedTrack_ = trackId;
   if (track->findRegion(selectedRegion_) == nullptr) {
     selectedRegion_ = track->regions.empty() ? domain::RegionId{}
@@ -219,6 +228,8 @@ core::Result<void> AuthoringRuntime::selectRegion(domain::RegionId regionId) {
     return core::failure(core::ErrorCode::NotFound,
                          "Selected vocal region has no owning track");
   }
+  if (regionId != selectedRegion_)
+    static_cast<void>(stopPerformanceAudition());
   selectedTrack_ = track->id;
   selectedRegion_ = regionId;
   technicalEdits_.setRegion(regionId);
@@ -246,6 +257,7 @@ core::Result<void> AuthoringRuntime::afterCommandExecution(
     core::Result<void> result, application::CommandImpact impact) {
   if (!result) recordDiagnostic(result.error());
   document_->synchronizeDirtyState();
+  if (result) static_cast<void>(stopPerformanceAudition());
   if (result && impact.scope != application::CommandAudioImpact::ViewOnly &&
       impact.scope != application::CommandAudioImpact::MetadataOnly) {
     seamPreviewRenderer_.cancel();
@@ -261,6 +273,7 @@ core::Result<void> AuthoringRuntime::undo() {
   if (!result) recordDiagnostic(result.error());
   if (result) {
     document_->synchronizeDirtyState();
+    static_cast<void>(stopPerformanceAudition());
     const auto& impact = document_->lastImpact();
     if (impact.scope != application::CommandAudioImpact::ViewOnly &&
         impact.scope != application::CommandAudioImpact::MetadataOnly) {
@@ -278,6 +291,7 @@ core::Result<void> AuthoringRuntime::redo() {
   if (!result) recordDiagnostic(result.error());
   if (result) {
     document_->synchronizeDirtyState();
+    static_cast<void>(stopPerformanceAudition());
     const auto& impact = document_->lastImpact();
     if (impact.scope != application::CommandAudioImpact::ViewOnly &&
         impact.scope != application::CommandAudioImpact::MetadataOnly) {
@@ -299,6 +313,10 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
   if (!key.noteId.valid()) {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Transient seam preview requires a valid phoneme key");
+  }
+  if (performanceAuditionActive_.load(std::memory_order_acquire)) {
+    const auto stopped = stopPerformanceAudition();
+    if (!stopped) return stopped;
   }
   auto request = makePreviewRequest(application::CommandImpact{
       .scope = application::CommandAudioImpact::PhraseAudio,
@@ -338,6 +356,79 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
                          "Canonical audio is not ready for seam A/B restore");
   }
   return transport_.publishAudio(std::move(canonical));
+}
+
+core::Result<void> AuthoringRuntime::auditionPerformance(
+    domain::RegionId regionId,
+    std::vector<domain::AcceptedPerformanceSelection> accepted) {
+  if (!initialized_ || !config_.enableTransport)
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance comparison requires an active transport");
+  if (seamPreviewActive_.load(std::memory_order_acquire) ||
+      performanceAuditionActive_.load(std::memory_order_acquire))
+    return core::failure(core::ErrorCode::Conflict,
+                         "Another transient audio preview is active");
+  if (regionId != selectedRegion_ || !renderer_.acquireCurrent())
+    return core::failure(core::ErrorCode::Conflict,
+                         "Comparison requires the current selected region and ready canonical audio");
+  auto request = makePreviewRequest(application::CommandImpact{
+      .scope = application::CommandAudioImpact::PhraseAudio,
+      .regionIds = {regionId},
+  });
+  if (!request || request->activeRegion != regionId)
+    return core::failure(core::ErrorCode::Conflict,
+                         "The selected performance region is not renderable");
+  auto* region = request->project.findRegion(regionId);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound,
+                         "The performance region disappeared before audition");
+  region->performance.accepted = std::move(accepted);
+  const auto valid = region->validate();
+  if (!valid) return valid;
+  {
+    std::lock_guard lock(performanceAuditionMutex_);
+    performanceAuditionActive_.store(true, std::memory_order_release);
+    performanceAuditionReady_.store(false, std::memory_order_release);
+  }
+  performanceAuditionRenderer_.submitWithSources(
+      std::move(request->project), std::move(request->voicebanks),
+      request->activeTrack, request->activeRegion, request->revision,
+      request->sampleRate, request->quality, true, std::move(request->impact));
+  return core::success();
+}
+
+core::Result<void> AuthoringRuntime::stopPerformanceAudition() {
+  core::Result<void> restored = core::success();
+  {
+    std::lock_guard lock(performanceAuditionMutex_);
+    if (!performanceAuditionActive_.load(std::memory_order_acquire))
+      return core::success();
+    performanceAuditionActive_.store(false, std::memory_order_release);
+    performanceAuditionReady_.store(false, std::memory_order_release);
+    auto canonical = renderer_.acquire();
+    if (canonical && canonical->state == RenderState::Ready)
+      restored = transport_.publishAudio(std::move(canonical));
+    else {
+      restored = core::failure(core::ErrorCode::Conflict,
+          "Canonical audio is unavailable after performance comparison");
+      static_cast<void>(transport_.pause());
+    }
+  }
+  // Cancellation may invoke the coordinator callback, which takes the mutex above.
+  performanceAuditionRenderer_.cancel();
+  return restored;
+}
+
+AuthoringRuntime::AudiblePublication AuthoringRuntime::audiblePublication() const {
+  std::lock_guard lock(performanceAuditionMutex_);
+  if (performanceAuditionActive_.load(std::memory_order_acquire) &&
+      performanceAuditionReady_.load(std::memory_order_acquire)) {
+    auto audition = performanceAuditionRenderer_.latest();
+    if (audition && audition->state == RenderState::Ready)
+      return {std::move(audition), true,
+              performanceAuditionRenderer_.progress().audibleAudioStale};
+  }
+  return {renderer_.latest(), false, renderer_.progress().audibleAudioStale};
 }
 
 core::Result<void> AuthoringRuntime::setPreviewSampleRate(
@@ -418,6 +509,10 @@ void AuthoringRuntime::invalidatePreview() {
 void AuthoringRuntime::requestPreview(bool immediate,
                                       application::CommandImpact impact) {
   if (!initialized_ || document_ == nullptr) return;
+
+  // A document/render-setting change ends any alternate-take audition before its new canonical
+  // request can publish. The audition never becomes the source of a save or export.
+  static_cast<void>(stopPerformanceAudition());
 
   // A previously prepared Final must not remain current during debounce.
   // The publication itself stays alive for readers and technical diagnostics.
@@ -621,9 +716,11 @@ void AuthoringRuntime::publishCompletedAudio() {
       });
     }
   }
-  if (config_.enableTransport &&
-      !seamPreviewActive_.load(std::memory_order_acquire)) {
-    static_cast<void>(transport_.publishAudio(std::move(handle)));
+  if (config_.enableTransport) {
+    std::lock_guard lock(performanceAuditionMutex_);
+    if (!seamPreviewActive_.load(std::memory_order_acquire) &&
+        !performanceAuditionActive_.load(std::memory_order_acquire))
+      static_cast<void>(transport_.publishAudio(std::move(handle)));
   }
   std::function<void()> callback;
   {
@@ -653,6 +750,44 @@ void AuthoringRuntime::publishCompletedSeamPreview() {
     return;
   }
   seamPreviewReady_.store(true, std::memory_order_release);
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(callbackMutex_);
+    callback = completionCallback_;
+  }
+  if (callback) callback();
+}
+
+void AuthoringRuntime::publishCompletedPerformanceAudition() {
+  const auto progress = performanceAuditionRenderer_.progress();
+  // A cancelled older request can finish after a new audition was submitted.
+  // Only a terminal current publication (or a terminal render failure) may
+  // change the active comparison's transport state.
+  if (progress.state != RenderState::Ready &&
+      progress.state != RenderState::Failed) return;
+  bool published = false;
+  {
+    std::lock_guard lock(performanceAuditionMutex_);
+    if (!performanceAuditionActive_.load(std::memory_order_acquire)) return;
+    if (progress.state == RenderState::Ready) {
+      auto handle = performanceAuditionRenderer_.acquireCurrent();
+      if (!handle) return;
+      published = static_cast<bool>(transport_.publishAudio(std::move(handle)));
+    }
+    if (published) {
+      performanceAuditionReady_.store(true, std::memory_order_release);
+    } else {
+      performanceAuditionActive_.store(false, std::memory_order_release);
+      performanceAuditionReady_.store(false, std::memory_order_release);
+      auto canonical = renderer_.acquire();
+      if (canonical && canonical->state == RenderState::Ready)
+        static_cast<void>(transport_.publishAudio(std::move(canonical)));
+      else
+        static_cast<void>(transport_.pause());
+    }
+  }
+  if (!published && progress.state == RenderState::Failed)
+    recordRenderFailure(progress.failure, progress.diagnostic);
   std::function<void()> callback;
   {
     std::lock_guard lock(callbackMutex_);

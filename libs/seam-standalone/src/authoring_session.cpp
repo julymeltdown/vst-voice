@@ -327,7 +327,8 @@ void AuthoringSession::onRenderCompleted() {
 }
 
 const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerformance() {
-  const auto published = runtime_->renderer().latest();
+  const auto audible = runtime_->audiblePublication();
+  const auto& published = audible.audio;
   const auto publishedRequest = published ? published->requestId : 0U;
   const auto ready = published && published->state == authoring::RenderState::Ready;
   const auto revision = ready ? published->projectRevision : 0U;
@@ -335,12 +336,14 @@ const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerfor
   const auto selectedRegion = runtime_->selectedRegion();
   if (characterPerformanceEvaluated_ && characterPerformanceRequest_ == publishedRequest &&
       characterPerformanceRevision_ == revision &&
+      characterPerformanceAudition_ == audible.performanceAudition &&
       characterPerformanceSelectedTrack_ == selectedTrack &&
       characterPerformanceSelectedRegion_ == selectedRegion)
     return characterPerformance_.has_value() ? &*characterPerformance_ : nullptr;
   characterPerformanceEvaluated_ = true;
   characterPerformanceRequest_ = publishedRequest;
   characterPerformanceRevision_ = revision;
+  characterPerformanceAudition_ = audible.performanceAudition;
   characterPerformanceSelectedTrack_ = selectedTrack;
   characterPerformanceSelectedRegion_ = selectedRegion;
   characterPerformance_.reset();
@@ -391,7 +394,7 @@ std::optional<character::CharacterPerformanceFrame> AuthoringSession::characterP
 }
 
 bool AuthoringSession::characterPerformanceStale() const noexcept {
-  return runtime_->renderer().progress().audibleAudioStale;
+  return runtime_->audiblePublication().stale;
 }
 
 

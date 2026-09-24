@@ -131,6 +131,7 @@ private:
   bool characterPerformanceEvaluated_{false};
   std::uint64_t characterPerformanceRequest_{0U};
   std::uint64_t characterPerformanceRevision_{0U};
+  bool characterPerformanceAudition_{false};
   domain::TrackId characterPerformanceSelectedTrack_{};
   domain::RegionId characterPerformanceSelectedRegion_{};
   std::uint64_t characterPerformanceGeneration_{0U};

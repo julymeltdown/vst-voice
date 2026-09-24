@@ -2762,3 +2762,36 @@ character, dock and lifecycle tests pass (3/3).
 This is not U41 acceptance: final authorized character artwork/provenance,
 package-to-singer association and installed-app visual/accessibility review
 remain open. GitHub CI work remains deferred.
+
+2026-09-24 — U40 alternate-take comparison correction. The previous comparison
+path applied an accepted-take command to the live project on Begin and on every
+Swap, so merely auditioning a take changed the revision, dirty/autosave state,
+undo history and potentially the saved project. Comparison now prepares the
+exact merged selection with the existing stale-safe command on a private project
+copy, renders that copy through a separate transient coordinator, and switches
+transport audio at the same playhead. Swap, Keep Original and Cancel restore
+canonical audio without a document edit. Accept Compared Take is enabled only
+after the candidate audio has been published and then makes one undoable
+canonical edit. Edits, selection changes and a new canonical render end a
+transient audition; stale held decisions cannot be accepted. The character
+performance model follows the audible audition instead of the canonical render.
+AppKit comparison actions now surface errors rather than silently discarding
+them; an asynchronous audition render failure enters the diagnostic registry
+and leaves the canonical timeline in place. A regression checks unchanged
+serialization/revision/dirty/undo state,
+save-during-audition, playhead continuity, audition audio provenance, character
+switching, cancellation, one-step acceptance/undo and stale edit rejection.
+This is a U40 code increment, not U40 or Beta GO acceptance: installed-app
+interaction/audio/accessibility review (including accept-click audio
+continuity), measured musical quality and independent
+creator qualification remain open. GitHub CI remains explicitly deferred and
+no CI configuration is changed.
+
+Verification for this correction: final Release and Debug macOS app/test
+targets build. The final Release core test binary passes 1,071/1,071 cases.
+The local Release CTest run passed 183/185 while two unrelated long-running
+training/public-release suites timed out under concurrent app builds; those
+two suites then passed 2/2 when rerun sequentially without build load. A
+previous full Release run before the final error-display refinement passed
+185/185. The Debug core suite passed before that final refinement; Debug final
+builds pass, but a final Debug core rerun and physical app review are not claimed.

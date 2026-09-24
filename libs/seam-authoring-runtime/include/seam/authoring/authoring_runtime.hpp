@@ -34,6 +34,11 @@ struct AuthoringRuntimeConfig final {
 
 class AuthoringRuntime final {
 public:
+  struct AudiblePublication final {
+    std::shared_ptr<const PublishedProjectAudio> audio;
+    bool performanceAudition{false};
+    bool stale{false};
+  };
   AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
                    AuthoringRuntimeConfig config);
   ~AuthoringRuntime();
@@ -95,6 +100,20 @@ public:
   [[nodiscard]] core::Result<void> redo();
   [[nodiscard]] core::Result<void> previewSeam(domain::PhonemeKey key,
                                                bool alternate);
+  // Render one alternate accepted-take selection from a copy of the current project. The document,
+  // undo stack, autosave and export input are never changed by auditioning. The transport retains its
+  // playhead while switching the published timeline. Owner-thread requests; publication is async.
+  [[nodiscard]] core::Result<void> auditionPerformance(
+      domain::RegionId regionId,
+      std::vector<domain::AcceptedPerformanceSelection> accepted);
+  [[nodiscard]] core::Result<void> stopPerformanceAudition();
+  [[nodiscard]] bool performanceAuditionActive() const noexcept {
+    return performanceAuditionActive_.load(std::memory_order_acquire);
+  }
+  [[nodiscard]] bool performanceAuditionReady() const noexcept {
+    return performanceAuditionReady_.load(std::memory_order_acquire);
+  }
+  [[nodiscard]] AudiblePublication audiblePublication() const;
   [[nodiscard]] bool seamPreviewActive() const noexcept {
     return seamPreviewActive_.load(std::memory_order_acquire);
   }
@@ -154,6 +173,7 @@ private:
                            const std::vector<TrackVoicebankState>& states) const;
   void publishCompletedAudio();
   void publishCompletedSeamPreview();
+  void publishCompletedPerformanceAudition();
   void recordDiagnostic(const core::Error& error);
   void recordRenderFailure(RenderFailureKind failure, std::string message);
   void clearRenderDiagnostics() noexcept;
@@ -163,6 +183,7 @@ private:
   VoicebankSession voicebanks_;
   AuthoringRenderCoordinator renderer_;
   AuthoringRenderCoordinator seamPreviewRenderer_;
+  AuthoringRenderCoordinator performanceAuditionRenderer_;
   TransportController transport_;
   domain::TrackId selectedTrack_{};
   domain::RegionId selectedRegion_{};
@@ -183,6 +204,9 @@ private:
   std::jthread previewWorker_;
   std::atomic<bool> seamPreviewActive_{false};
   std::atomic<bool> seamPreviewReady_{false};
+  mutable std::mutex performanceAuditionMutex_;
+  std::atomic<bool> performanceAuditionActive_{false};
+  std::atomic<bool> performanceAuditionReady_{false};
   bool initialized_{false};
   mutable std::mutex diagnosticsMutex_;
   std::vector<Diagnostic> diagnostics_;

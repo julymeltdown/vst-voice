@@ -157,12 +157,14 @@ struct PerformanceTakeMenuItem final {
 };
 
 // The alternate-take comparison a surface is holding, if any. The label names the
-// candidate take, and the flag reports which of the two states the region carries
-// right now, so a surface can mark the side that is currently sounding.
+// candidate take. The canonical region never carries the candidate until explicit acceptance;
+// candidateApplied reports the audition side requested; ready/failed describe its render status.
 struct PerformanceComparisonMenuItem final {
   std::string takeId;
   std::string label;
   bool candidateApplied{false};
+  bool auditionReady{false};
+  bool auditionFailed{false};
 };
 
 class IApplicationCommandDispatcher {
@@ -264,8 +266,13 @@ public:
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take comparison is not supported");
   }
-  // Keeps whichever side is applied and releases the held state.
+  // Accepts the candidate as one undoable canonical edit only when its audition is ready; ending
+  // from the reference side makes no edit. A separate cancel always keeps canonical work intact.
   [[nodiscard]] virtual core::Result<void> endPerformanceComparison() {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Performance take comparison is not supported");
+  }
+  [[nodiscard]] virtual core::Result<void> cancelPerformanceComparison() {
     return core::failure(core::ErrorCode::Unsupported,
                          "Performance take comparison is not supported");
   }

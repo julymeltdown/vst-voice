@@ -384,6 +384,10 @@ StandaloneApplicationController::performanceTakes() const {
 core::Result<void> StandaloneApplicationController::acceptPerformanceTake(
     std::string_view id, platform::PerformanceEditScope scope,
     std::vector<std::string> channels) {
+  if (performanceComparison_) {
+    const auto stopped = cancelPerformanceComparison();
+    if (!stopped) return stopped;
+  }
   const auto regionId = session_.runtime().selectedRegion();
   const auto& editable = session_.runtime().document().session();
   const auto& project = editable.project();
@@ -507,6 +511,11 @@ core::Result<void> StandaloneApplicationController::applyAcceptedSelections(
 core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
     std::string_view id, platform::PerformanceEditScope scope,
     std::vector<std::string> channels) {
+  if (performanceComparison_ && !currentPerformanceComparison()) {
+    const auto stopped = session_.runtime().stopPerformanceAudition();
+    if (!stopped) return stopped;
+    performanceComparison_.reset();
+  }
   if (performanceComparison_.has_value()) {
     return core::failure(core::ErrorCode::Conflict,
         "A performance take comparison is already active");
@@ -535,31 +544,42 @@ core::Result<void> StandaloneApplicationController::beginPerformanceComparison(
   auto selections = performanceTakeSelections(regionId, id, scope, channels);
   if (!selections) return core::Result<void>{selections.error()};
   const auto previous = state.accepted;
-  const auto changed = session_.runtime().execute(
-      std::make_unique<application::SetAcceptedPerformanceCommand>(
-          regionId, state, std::move(selections).value(),
-          application::PerformanceAcceptanceMode::Merge));
-  if (!changed) return changed;
-  const auto* applied = session_.runtime().document().session().project()
-                            .findRegion(regionId);
-  if (applied == nullptr) {
+  auto trialProject = editable.project();
+  application::SetAcceptedPerformanceCommand trial{
+      regionId, state, std::move(selections).value(),
+      application::PerformanceAcceptanceMode::Merge};
+  const auto prepared = trial.apply(trialProject);
+  if (!prepared) return prepared;
+  const auto* trialRegion = trialProject.findRegion(regionId);
+  if (trialRegion == nullptr)
     return core::failure(core::ErrorCode::Conflict,
-        "Performance region disappeared during comparison");
-  }
-  // The candidate is whatever the merge actually produced, so swapping restores the
-  // exact state the creator heard rather than a recomputed guess.
+                         "Performance region disappeared during comparison preparation");
+  const auto candidate = trialRegion->performance.accepted;
+  const auto audition = session_.runtime().auditionPerformance(regionId, candidate);
+  if (!audition) return audition;
   performanceComparison_ = PerformanceComparisonState{
+      .projectId = editable.project().id(),
+      .projectRevision = editable.revision(),
       .regionId = regionId,
       .takeId = std::string{id},
       .label = label,
       .previous = previous,
-      .candidate = applied->performance.accepted,
+      .candidate = candidate,
       .candidateApplied = true,
   };
-  const auto recorded = onDocumentChanged();
-  if (!recorded) return recorded;
   notifyStateChanged();
   return core::success();
+}
+
+bool StandaloneApplicationController::currentPerformanceComparison() const noexcept {
+  if (!performanceComparison_) return false;
+  const auto& editable = session_.runtime().document().session();
+  const auto& comparison = *performanceComparison_;
+  const auto* region = editable.project().findRegion(comparison.regionId);
+  return editable.project().id() == comparison.projectId &&
+         editable.revision() == comparison.projectRevision &&
+         session_.runtime().selectedRegion() == comparison.regionId &&
+         region != nullptr && region->performance.accepted == comparison.previous;
 }
 
 core::Result<void> StandaloneApplicationController::swapPerformanceComparison() {
@@ -567,12 +587,20 @@ core::Result<void> StandaloneApplicationController::swapPerformanceComparison() 
     return core::failure(core::ErrorCode::Conflict,
         "No performance take comparison is active");
   }
+  if (!currentPerformanceComparison()) {
+    static_cast<void>(session_.runtime().stopPerformanceAudition());
+    performanceComparison_.reset();
+    return core::failure(core::ErrorCode::Conflict,
+        "The project changed during performance comparison");
+  }
   auto& comparison = *performanceComparison_;
-  const auto& target =
-      comparison.candidateApplied ? comparison.previous : comparison.candidate;
-  const auto applied = applyAcceptedSelections(comparison.regionId, target);
+  const auto applied = comparison.candidateApplied
+      ? session_.runtime().stopPerformanceAudition()
+      : session_.runtime().auditionPerformance(comparison.regionId,
+                                              comparison.candidate);
   if (!applied) return applied;
   comparison.candidateApplied = !comparison.candidateApplied;
+  notifyStateChanged();
   return core::success();
 }
 
@@ -581,8 +609,36 @@ core::Result<void> StandaloneApplicationController::endPerformanceComparison() {
     return core::failure(core::ErrorCode::Conflict,
         "No performance take comparison is active");
   }
-  // The applied side stays: ending a comparison chooses the take that is sounding
-  // rather than silently reverting the creator's last decision.
+  if (!currentPerformanceComparison()) {
+    static_cast<void>(session_.runtime().stopPerformanceAudition());
+    performanceComparison_.reset();
+    return core::failure(core::ErrorCode::Conflict,
+        "The project changed during performance comparison");
+  }
+  if (performanceComparison_->candidateApplied &&
+      !session_.runtime().performanceAuditionReady())
+    return core::failure(core::ErrorCode::Conflict,
+        session_.runtime().performanceAuditionActive()
+            ? "Wait for the compared take to become audible before accepting it"
+            : "The compared take could not be rendered; swap back or cancel, then retry");
+  const auto stopped = session_.runtime().stopPerformanceAudition();
+  if (!stopped) return stopped;
+  if (performanceComparison_->candidateApplied) {
+    const auto accepted = applyAcceptedSelections(performanceComparison_->regionId,
+                                                  performanceComparison_->candidate);
+    if (!accepted) return accepted;
+  }
+  performanceComparison_.reset();
+  notifyStateChanged();
+  return core::success();
+}
+
+core::Result<void> StandaloneApplicationController::cancelPerformanceComparison() {
+  if (!performanceComparison_)
+    return core::failure(core::ErrorCode::Conflict,
+                         "No performance take comparison is active");
+  const auto stopped = session_.runtime().stopPerformanceAudition();
+  if (!stopped) return stopped;
   performanceComparison_.reset();
   notifyStateChanged();
   return core::success();
@@ -590,16 +646,25 @@ core::Result<void> StandaloneApplicationController::endPerformanceComparison() {
 
 std::optional<platform::PerformanceComparisonMenuItem>
 StandaloneApplicationController::performanceComparison() const {
-  if (!performanceComparison_.has_value()) return std::nullopt;
+  if (!currentPerformanceComparison()) return std::nullopt;
   return platform::PerformanceComparisonMenuItem{
       .takeId = performanceComparison_->takeId,
       .label = performanceComparison_->label,
       .candidateApplied = performanceComparison_->candidateApplied,
+      .auditionReady = performanceComparison_->candidateApplied &&
+                       session_.runtime().performanceAuditionReady(),
+      .auditionFailed = performanceComparison_->candidateApplied &&
+                        !session_.runtime().performanceAuditionActive() &&
+                        !session_.runtime().performanceAuditionReady(),
   };
 }
 
 core::Result<void> StandaloneApplicationController::rejectPerformanceTake(
     std::string_view id) {
+  if (performanceComparison_) {
+    const auto stopped = cancelPerformanceComparison();
+    if (!stopped) return stopped;
+  }
   const auto regionId = session_.runtime().selectedRegion();
   const auto& project = session_.runtime().document().session().project();
   const auto* region = project.findRegion(regionId);
@@ -2359,7 +2424,10 @@ StandaloneApplicationController::recoveryCandidates() const {
 core::Result<void> StandaloneApplicationController::recover(
     const authoring::RecoveryCandidate& candidate) {
   auto recovered = session_.recoverProject(autosave_, candidate);
-  if (recovered) notifyStateChanged();
+  if (recovered) {
+    performanceComparison_.reset();
+    notifyStateChanged();
+  }
   return recovered;
 }
 
