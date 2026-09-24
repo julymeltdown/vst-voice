@@ -29,6 +29,11 @@ payload staging defaults to protocol 3, while v1/v2 manifests remain parseable
 as historical contracts. This is execution fidelity over deterministic fixture
 graphs, not learned-singer quality
 or U37/Beta GO acceptance. GitHub CI remains deferred.
+The local Release build completed, and the full 185-test Release CTest suite
+passed in 441.96 seconds after protocol-3 packaging was included; four focused
+Debug neural tests and the production worker/package checks also passed. These
+are checkout tests, not clean installed-surface, model-quality or listener
+acceptance evidence.
 
 2026-09-24 — U35 vocoder recovery continuity increment. Schema-2 partial
 checkpoints for `excitationNoiseId` now retain raw-draw and realized-noise
