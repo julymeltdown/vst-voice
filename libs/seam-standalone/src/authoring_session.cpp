@@ -331,12 +331,18 @@ const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerfor
   const auto publishedRequest = published ? published->requestId : 0U;
   const auto ready = published && published->state == authoring::RenderState::Ready;
   const auto revision = ready ? published->projectRevision : 0U;
+  const auto selectedTrack = runtime_->selectedTrack();
+  const auto selectedRegion = runtime_->selectedRegion();
   if (characterPerformanceEvaluated_ && characterPerformanceRequest_ == publishedRequest &&
-      characterPerformanceRevision_ == revision)
+      characterPerformanceRevision_ == revision &&
+      characterPerformanceSelectedTrack_ == selectedTrack &&
+      characterPerformanceSelectedRegion_ == selectedRegion)
     return characterPerformance_.has_value() ? &*characterPerformance_ : nullptr;
   characterPerformanceEvaluated_ = true;
   characterPerformanceRequest_ = publishedRequest;
   characterPerformanceRevision_ = revision;
+  characterPerformanceSelectedTrack_ = selectedTrack;
+  characterPerformanceSelectedRegion_ = selectedRegion;
   characterPerformance_.reset();
   characterPerformanceDiagnostic_.clear();
   // The generation changes even when the evaluation publishes nothing: a host that was drawing a
@@ -344,6 +350,12 @@ const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerfor
   ++characterPerformanceGeneration_;
   if (!ready) return nullptr;
   const auto& result = published->result;
+  if (result.performanceTrackId != selectedTrack ||
+      result.performanceRegionId != selectedRegion) {
+    characterPerformanceDiagnostic_ =
+        "The published performance belongs to a different selected singer or region";
+    return nullptr;
+  }
   if (!result.performanceIdentity.has_value() || result.performanceCues.empty()) return nullptr;
   const auto& identity = *result.performanceIdentity;
   native_ui::CharacterPerformanceBindingRequest request;
@@ -354,9 +366,11 @@ const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerfor
   request.pronunciationIdentity = identity.pronunciationIdentity;
   request.renderRevision = identity.renderRevision;
   request.sampleRate = identity.sampleRate;
-  request.channelCount = result.channelCount;
+  request.channelCount = 1U;
+  request.interleavedStartFrame = result.performanceAudioStartFrame;
   request.interleaved =
-      std::span<const float>{result.interleaved.data(), result.interleaved.size()};
+      std::span<const float>{result.performanceAudioMono.data(),
+                             result.performanceAudioMono.size()};
   request.cues = result.performanceCues;
   auto built = native_ui::buildPublishedCharacterPerformance(request);
   if (!built) {

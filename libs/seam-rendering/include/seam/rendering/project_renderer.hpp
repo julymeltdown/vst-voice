@@ -74,6 +74,14 @@ struct ProjectRenderResult final {
   // named no active region, when that region's render published no identity, or when the identity is
   // incomplete: a presentation binds to a complete identity or to nothing.
   std::optional<RenderedPerformanceIdentity> performanceIdentity;
+  domain::TrackId performanceTrackId{};
+  domain::RegionId performanceRegionId{};
+  // The active region's own mono render, with an absolute project-frame origin.
+  // This is shared with its routed clip, not copied from the project mix: a
+  // character following one singer must not animate to other singers or backing
+  // audio. Empty when the active region published no audible clip.
+  time::SampleFrame performanceAudioStartFrame{0};
+  SharedPcmBuffer performanceAudioMono;
   // Omitted requested content, not informational warnings. Preview may retain
   // the successful clips; Final rendering and export must reject these results.
   std::vector<ProjectRenderDiagnostic> diagnostics;

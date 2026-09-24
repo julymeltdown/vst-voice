@@ -333,8 +333,26 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   CHECK(past->mouth == character::MouthShape::Closed);
   CHECK(!created.characterPerformanceStale());
 
-  // A second render is a second phrase: the dock rebinds, and the previous snapshot is not reused.
-  created.runtime().renderer().submitWithSources(project, sources, created.trackId(),
+  // A second singer changes the audible master but not the selected singer's
+  // own mouth energy. The dock must follow the selected region's published PCM,
+  // not mix the harmony into the lead singer's performance envelope.
+  const auto leadEnergy = performance->energy;
+  const auto leadMix = created.runtime().renderer().latest()->result.interleaved;
+  const auto harmonyTrack = document.factory().addVocalTrack(project, "Harmony");
+  const auto harmonyRegion = document.factory().addRegion(project, harmonyTrack,
+      "Harmony phrase", time::Tick{0}, time::Tick{1920});
+  auto [harmonyLyric, harmonyNote] = document.factory().makeNote(
+      time::Tick{0}, time::Tick{1920}, 76U, U"あ", domain::Language::Japanese);
+  auto* harmony = project.findRegion(harmonyRegion);
+  CHECK(harmony != nullptr);
+  harmony->lyrics.push_back(std::move(harmonyLyric));
+  harmony->notes.push_back(std::move(harmonyNote));
+  project.findVocalTrack(harmonyTrack)->gainDb = 6.0F;
+  CHECK(project.validate());
+  auto layeredSources = sources;
+  layeredSources.emplace_back(rendering::TrackProceduralSource{
+      harmonyTrack, recipe.value(), "neutral"});
+  created.runtime().renderer().submitWithSources(project, layeredSources, created.trackId(),
                                                 created.regionId(), 2U, 48000U,
                                                 rendering::RenderQuality::Preview, true);
   if (waitForRender(created, 2U) != authoring::RenderState::Ready)
@@ -344,11 +362,23 @@ TEST_CASE("A completed render binds the dock to the phrase it published") {
   CHECK(rebound != nullptr);
   if (rebound == nullptr) return;
   CHECK(rebound->renderRevision == 2U);
+  CHECK(rebound->energy == leadEnergy);
+  CHECK(created.runtime().renderer().latest()->result.interleaved != leadMix);
   CHECK(created.characterPerformanceGeneration() == generation + 1U);
+
+  // Merely selecting the other singer must close the lead mouth even before a
+  // fresh render for that selection arrives. Switching back may reuse the
+  // still-audible lead publication, but never while the harmony is selected.
+  CHECK(created.runtime().selectTrack(harmonyTrack));
+  CHECK(created.characterPerformance() == nullptr);
+  CHECK(created.characterPerformanceDiagnostic().find("different selected singer") !=
+        std::string::npos);
+  CHECK(created.runtime().selectTrack(created.trackId()));
+  CHECK(created.characterPerformance() != nullptr);
 
   // A render that fails leaves the audible phrase exactly where it was, and the dock says that the
   // project has moved on instead of drawing the old phrase as if it were current.
-  auto broken = sources;
+  auto broken = layeredSources;
   std::get<rendering::TrackProceduralSource>(broken.front()).resource.identity.contentHash =
       std::string(64U, 'f');
   created.runtime().renderer().submitWithSources(project, broken, created.trackId(),

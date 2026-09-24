@@ -133,6 +133,8 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
   ProjectRenderResult output;
   output.sampleRate = sampleRate;
   output.channelCount = project.routing().deviceOutputChannels;
+  output.performanceTrackId = activeTrack;
+  output.performanceRegionId = activeRegion;
   ProductionRegionRenderer renderer;
 
   for (const auto& track : project.vocalTracks()) {
@@ -195,6 +197,10 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         pcm->interleavedSamples = std::move(rendered.value().rendered.audio.samples);
         const auto valid = pcm->validate();
         if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
+        if (track.id == activeTrack && region.id == activeRegion) {
+          output.performanceAudioStartFrame = pcm->startFrame;
+          output.performanceAudioMono = pcm->interleavedSamples;
+        }
         clips.push_back(RoutedPlaybackClip{
             .id = track.id.toString() + ":" + region.id.toString(), .pcm = std::move(pcm),
             .outputRoute = routeForTrack(track.outputRoute, track.pan),
@@ -269,6 +275,10 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
         }
         const auto valid = pcm->validate();
         if (!valid) return core::Result<ProjectRenderResult>{valid.error()};
+        if (track.id == activeTrack && region.id == activeRegion) {
+          output.performanceAudioStartFrame = pcm->startFrame;
+          output.performanceAudioMono = pcm->interleavedSamples;
+        }
         clips.push_back(RoutedPlaybackClip{
             .id = track.id.toString() + ":" + region.id.toString(), .pcm = std::move(pcm),
             .outputRoute = routeForTrack(track.outputRoute, track.pan),
@@ -321,6 +331,10 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
       const auto pcmValidation = pcm->validate();
       if (!pcmValidation) {
         return core::Result<ProjectRenderResult>{pcmValidation.error()};
+      }
+      if (track.id == activeTrack && region.id == activeRegion) {
+        output.performanceAudioStartFrame = pcm->startFrame;
+        output.performanceAudioMono = pcm->interleavedSamples;
       }
       clips.push_back(RoutedPlaybackClip{
           .id = track.id.toString() + ":" + region.id.toString(),

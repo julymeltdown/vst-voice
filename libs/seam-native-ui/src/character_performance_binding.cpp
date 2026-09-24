@@ -27,9 +27,10 @@ buildPublishedCharacterPerformance(const CharacterPerformanceBindingRequest& req
   const auto channels = static_cast<std::size_t>(request.channelCount);
   const auto origin = request.cues.front().startFrame;
   const auto end = request.cues.back().endFrame;
-  if (end <= origin)
+  if (request.interleavedStartFrame < 0 ||
+      origin < request.interleavedStartFrame || end <= origin)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
-                                 "A performance span is empty or inverted");
+                                 "A performance span is empty or outside its audio source");
   if (end - origin > kMaximumCharacterPerformanceFrames)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
                                  "A performance span exceeds what one presentation may cover");
@@ -40,12 +41,13 @@ buildPublishedCharacterPerformance(const CharacterPerformanceBindingRequest& req
       return core::failure<Output>(core::ErrorCode::InvalidArgument,
                                    "A rendered phone span is empty, unordered or outside its phrase");
   }
-  if (static_cast<std::uint64_t>(end) > request.interleaved.size() / channels)
+  if (static_cast<std::uint64_t>(end - request.interleavedStartFrame) >
+      request.interleaved.size() / channels)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
-                                 "The published mix is shorter than the phrase it claims to contain");
+                                 "The published singer audio is shorter than its phrase");
   const auto frames = static_cast<std::size_t>(end - origin);
   std::vector<float> mono(frames, 0.0F);
-  const auto firstSample = static_cast<std::size_t>(origin) * channels;
+  const auto firstSample = static_cast<std::size_t>(origin - request.interleavedStartFrame) * channels;
   for (std::size_t frame = 0U; frame < frames; ++frame) {
     double sum = 0.0;
     for (std::size_t channel = 0U; channel < channels; ++channel)

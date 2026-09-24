@@ -818,10 +818,20 @@ TEST_CASE("standalone_harmony_menu_creates_editable_track_and_recovers_selection
   if (exported) {
     CHECK(exported.value().state == seam::authoring::ExportState::Committed);
     CHECK(exported.value().files.size() == 3U); // master, lead and harmony
+    std::vector<std::string> stemHashes;
     for (const auto& file : exported.value().files) {
       CHECK(std::filesystem::exists(exported.value().setPath / file.path));
       CHECK(file.frames > 0U);
+      if (file.path.parent_path().filename() == "stems") {
+        const auto wav = seam::voicebank::readWav(exported.value().setPath / file.path);
+        CHECK(wav);
+        CHECK(wav.value().frameCount() == file.frames);
+        CHECK(seam::voicebank::analyzeAudio(wav.value().interleaved).rms > 0.00001);
+        stemHashes.push_back(file.sha256);
+      }
     }
+    CHECK(stemHashes.size() == 2U);
+    CHECK(stemHashes[0] != stemHashes[1]);
   }
 }
 

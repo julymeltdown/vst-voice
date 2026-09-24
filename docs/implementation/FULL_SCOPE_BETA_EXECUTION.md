@@ -2741,3 +2741,24 @@ physical UI interaction/accessibility review, musical quality of the generated
 harmony, scale/key UX beyond major and natural minor, and independent creator
 qualification remain open. GitHub CI work is deferred at the user's request;
 no CI configuration is changed in this increment.
+
+2026-09-24 — U41 selected-singer character binding correction. The published
+character cue/identity came from the selected vocal region, but its energy
+envelope was computed from the entire master mix. An overlapping singer or
+backing track could therefore move the selected singer's mouth. The render now
+publishes the active region's own mono PCM by shared buffer, with its absolute
+start frame, alongside the active track/region IDs. Character binding uses
+that source instead of the master, refuses an audio span outside it, and drops
+the previous phrase when the creator selects another track or region before a
+fresh render. The native paint path now evaluates a new publication before
+comparing generation counters; previously that comparison could prevent the
+dock from ever binding a freshly completed render.
+
+Focused tests verify nonzero and distinct harmony stems, nonzero-offset audio
+frame indexing, stable lead mouth energy when a second singer changes the
+master mix, selection-switch invalidation, and paint-triggered generation.
+The full local Release build and CTest suite pass (185/185); focused Debug
+character, dock and lifecycle tests pass (3/3).
+This is not U41 acceptance: final authorized character artwork/provenance,
+package-to-singer association and installed-app visual/accessibility review
+remain open. GitHub CI work remains deferred.

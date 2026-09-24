@@ -1430,12 +1430,15 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   // The dock follows the phrase the current render published. A rebuild clears whatever was showing
   // first, so a new render that published nothing closes the mouth instead of leaving the previous
   // phrase's mouth on screen.
+  // Evaluation advances the generation. Reading only the counter here would be
+  // circular: nothing else in the paint path evaluates a newly published render.
+  const auto* publishedPerformance = authoring_->characterPerformance();
   if (boundPerformanceGeneration_ != authoring_->characterPerformanceGeneration()) {
     boundPerformanceGeneration_ = authoring_->characterPerformanceGeneration();
     character_.clearPerformanceSnapshot();
-    if (const auto* performance = authoring_->characterPerformance(); performance != nullptr) {
-      static_cast<void>(character_.followSinger(character::performanceBindingKey(*performance)));
-      static_cast<void>(character_.setPerformanceSnapshot(*performance));
+    if (publishedPerformance != nullptr) {
+      static_cast<void>(character_.followSinger(character::performanceBindingKey(*publishedPerformance)));
+      static_cast<void>(character_.setPerformanceSnapshot(*publishedPerformance));
     }
   }
   if (const auto frame = authoring_->characterPerformanceFrameAt(tick); frame.has_value()) {

@@ -531,6 +531,25 @@ TEST_CASE("A published mix and its rendered partition become one performance") {
   shortMix.interleaved = std::span<const float>{mix}.first(200U);
   CHECK(!native_ui::buildPublishedCharacterPerformance(shortMix).hasValue());
 
+  // A region clip may start later than project frame zero. Its local samples
+  // must be indexed relative to that start while the cues stay on the project
+  // timeline for seeking and looping.
+  const std::array<rendering::RenderedCueSpan, 3> shiftedCues{{
+      {"a", rendering::RenderedCueKind::Vowel, 1000, 1240},
+      {"k", rendering::RenderedCueKind::Closure, 1240, 1300},
+      {"a", rendering::RenderedCueKind::Vowel, 1300, 1480},
+  }};
+  auto shifted = request;
+  shifted.cues = shiftedCues;
+  shifted.interleavedStartFrame = 1000;
+  const auto shiftedResult = native_ui::buildPublishedCharacterPerformance(shifted);
+  CHECK(shiftedResult);
+  CHECK(shiftedResult.value().origin == 1000);
+  CHECK(shiftedResult.value().end == 1480);
+  CHECK(shiftedResult.value().energy == built.value().energy);
+  shifted.interleavedStartFrame = 1001;
+  CHECK(!native_ui::buildPublishedCharacterPerformance(shifted));
+
   auto unordered = request;
   const std::array<rendering::RenderedCueSpan, 2> backwards{{
       {"a", rendering::RenderedCueKind::Vowel, 300, 480},

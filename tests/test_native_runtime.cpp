@@ -400,7 +400,11 @@ TEST_CASE("native editor projects completed render audio state during paint") {
 
   seam::native_ui::PixelSurface surface{1280U, 720U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  const auto beforePaintGeneration =
+      app.value()->authoring().characterPerformanceGeneration();
   app.value()->paint(canvas);
+  CHECK(app.value()->authoring().characterPerformanceGeneration() >
+        beforePaintGeneration);
   const auto state = app.value()->authoring().controller().sceneState();
   CHECK(!state.audioDeviceOnline);
   CHECK(state.audioBackend == "threaded-callback-clock");

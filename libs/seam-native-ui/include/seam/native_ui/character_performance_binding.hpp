@@ -10,16 +10,19 @@
 
 namespace seam::native_ui {
 
-// Everything here comes from the render that is already audible: the published mix, the phone
-// partition that render published beside it, and the identity of the resource it used. Nothing is
-// re-derived at presentation time, so a dock cannot disagree with what a listener hears.
+// Everything here comes from the same published render: the selected vocal
+// region's PCM, its phone partition, and the identity of its singer. The
+// project master is deliberately not the mouth source because another track
+// may overlap the singer the dock follows.
 struct CharacterPerformanceBindingRequest final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::string pronunciationIdentity;
   std::uint64_t renderRevision{0};
   std::uint32_t sampleRate{48000U};
   std::uint8_t channelCount{2U};
-  // The published interleaved mix, in absolute project frames.
+  // The published interleaved source for this singer. Its first sample is at
+  // interleavedStartFrame, so a clipped region need not allocate leading silence.
+  time::SampleFrame interleavedStartFrame{0};
   std::span<const float> interleaved;
   // The active region's phone partition, in the same absolute frames.
   std::span<const rendering::RenderedCueSpan> cues;
