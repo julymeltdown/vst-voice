@@ -6,6 +6,7 @@
 #include "seam/ui/expression_lane.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -210,6 +211,12 @@ std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
 std::pair<std::string, std::string> displayValue(const KnobModel& knob) {
   if (knob.descriptor.unit == "semitones") return {format("%.1f", knob.value), "ST"};
   return {format("%.1f", knob.value * 100.0), "%"};
+}
+
+std::string lowercase(std::string_view text) {
+  std::string out{text};
+  for (auto& ch : out) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return out;
 }
 
 std::string barsBeatsTicks(time::Tick tick, std::int64_t ppq, const time::MeterEvent& meter) {
@@ -1609,6 +1616,247 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     return true;
   }
   return false;
+}
+
+// ---- Accessibility ----------------------------------------------------------------------------
+
+void SingShell::rebuildSemantics(const NativeEditorController& controller,
+                                 const EditorSceneState& state) {
+  const auto& l = layout_;
+  const auto& legacy = controller.accessibilityTree().root();
+  const auto* legacyFocus = controller.accessibilityTree().focusedNode();
+  std::string focusedId = semanticFocus_;
+  SemanticNode root{.id = "shell",
+                    .role = SemanticRole::Window,
+                    .name = "Project SEAM - Sing",
+                    .bounds = ui::Rect{0.0, 0.0, l.width, l.height}};
+  auto& children = root.children;
+  const auto add = [&](SemanticNode node) { children.push_back(std::move(node)); };
+  const auto findLegacy = [&](std::string_view id) -> const SemanticNode* {
+    for (const auto& child : legacy.children)
+      if (child.id == id) return &child;
+    return nullptr;
+  };
+  // A controller node shown by the shell at a shell rectangle keeps its id, name and actions.
+  const auto rehome = [&](std::string_view id, ui::Rect bounds) {
+    if (const auto* node = findLegacy(id); node != nullptr) {
+      auto copy = *node;
+      copy.bounds = bounds;
+      copy.children.clear();
+      add(std::move(copy));
+    }
+  };
+
+  // Header: workspaces, look, transport, settings.
+  static constexpr std::array<const char*, 5U> kWorkspaces{"Sing", "Voice", "Tune", "Mix", "Export"};
+  for (std::size_t i = 0U; i < kWorkspaces.size(); ++i) {
+    if (l.workspaceTab[i].width <= 0.0 || l.workspaceTabs.width <= 0.0) break;
+    add(SemanticNode{.id = "shell.workspace." + lowercase(kWorkspaces[i]),
+                     .role = SemanticRole::Tab,
+                     .name = std::string{kWorkspaces[i]} + " workspace",
+                     .bounds = l.workspaceTab[i],
+                     .enabled = i == 0U,
+                     .selected = i == 0U,
+                     .actions = {SemanticAction::SetFocus},
+                     .description = i == 0U ? "" : "Not available in this build"});
+  }
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    const auto emo = mode == DesignMode::Emo;
+    auto half = l.modeSwitch;
+    half.width *= 0.5;
+    if (!emo) half.x += half.width;
+    add(SemanticNode{.id = emo ? "shell.mode.emo" : "shell.mode.scene",
+                     .role = SemanticRole::RadioButton,
+                     .name = emo ? "EMO look" : "SCENE look",
+                     .bounds = half,
+                     .selected = preferences_.mode == mode,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+  }
+  rehome("toolbar.transport", l.playButton);
+  rehome("toolbar.tempo", l.tempoReadout);
+  rehome("toolbar.meter", l.meterReadout);
+  add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = "Audio settings",
+                   .bounds = l.settings,
+                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+  add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
+                   .name = "Switch to the classic editor", .bounds = l.classicToggle,
+                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                   .description = "Command-Shift-Space returns to this design"});
+
+  // Timeline and the notes visible in the grid, in shell coordinates.
+  if (const auto* timeline = findLegacy("timeline"); timeline != nullptr) {
+    auto copy = *timeline;
+    copy.bounds = l.grid;
+    copy.children.clear();
+    add(std::move(copy));
+  }
+  for (const auto& note : controller.pianoRoll().visibleNotes()) {
+    auto node = EditorSemanticTree::noteNode(note);
+    node.bounds = note.bounds;
+    node.bounds.y += l.grid.y;
+    node.focused = legacyFocus != nullptr && legacyFocus->id == node.id;
+    add(std::move(node));
+  }
+  for (const auto& child : legacy.children) {
+    if (!child.id.starts_with("overlap-group.") && !child.id.starts_with("detail.")) continue;
+    auto copy = child;
+    copy.bounds = fromLegacy(copy.bounds);
+    add(std::move(copy));
+  }
+
+  // Lane selector and the hosted lane.
+  static constexpr std::array<const char*, 7U> kLanes{"Dynamics", "Formant", "Breath", "Tension",
+                                                       "Air", "Gender", "Growl"};
+  const auto open = state.expressionLabelVisible();
+  const auto selectedLane = open ? ui::expressionChannelIndex(state.expression.channel) + 1U : 99U;
+  const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
+  for (std::size_t i = 0U; i < kLanes.size(); ++i) {
+    add(SemanticNode{.id = "shell.lane-tab." + lowercase(kLanes[i]),
+                     .role = SemanticRole::Tab,
+                     .name = std::string{kLanes[i]} + " lane",
+                     .bounds = {l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0),
+                                l.laneTabs.y, tabWidth, l.laneTabs.height},
+                     .selected = i == selectedLane,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = i == 0U ? "Opens the Dynamics editor" : ""});
+  }
+  add(SemanticNode{
+      .id = "shell.lane",
+      .role = SemanticRole::Lane,
+      .name = open ? state.expression.label + " curve" : "Expression lane",
+      .value = !open ? "No channel selected"
+               : !state.expression.refusal.empty() ? state.expression.refusal
+                   : state.expression.points.empty()
+                       ? "No curve stored"
+                       : std::to_string(state.expression.points.size()) + " points",
+      .bounds = l.laneTimePlot,
+      .enabled = laneEditable_,
+      .actions = {SemanticAction::SetFocus},
+      .description = laneEditable_ ? "Click to add a point, drag to move, Escape cancels a drag"
+                                   : "Select a channel tab to edit its curve"});
+
+  // Singer rack.
+  rehome("voice.identity", l.rack == RackPresentation::Full ? l.singer : l.portraitRing);
+  add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = "Change voice",
+                   .bounds = l.singerChange,
+                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+  if (l.rack == RackPresentation::Full) {
+    const auto knobs = knobModels(state);
+    for (std::size_t i = 0U; i < knobs.size(); ++i) {
+      const auto& k = knobs[i];
+      const auto percent = k.descriptor.unit != "semitones";
+      const auto scale = percent ? 100.0 : 1.0;
+      const auto [number, unit] = displayValue(k);
+      const auto refused = !k.refusal.empty();
+      add(SemanticNode{
+          .id = "shell.knob." + lowercase(k.label),
+          .role = SemanticRole::Slider,
+          .name = k.label,
+          .value = refused ? k.refusal : number + (percent ? "%" : " semitones"),
+          .bounds = l.knob[i],
+          .enabled = !refused,
+          .actions = refused ? std::vector<SemanticAction>{SemanticAction::SetFocus}
+                             : std::vector<SemanticAction>{SemanticAction::Increment,
+                                                           SemanticAction::Decrement,
+                                                           SemanticAction::Activate,
+                                                           SemanticAction::SetFocus},
+          .description = refused ? k.refusal
+                                 : "Value at the playhead; Activate opens its curve in the lane",
+          .numericValue = k.value * scale,
+          .numericMinimum = static_cast<double>(k.descriptor.minimum) * scale,
+          .numericMaximum = static_cast<double>(k.descriptor.maximum) * scale,
+          .numericStep = static_cast<double>(k.descriptor.step) * scale});
+    }
+    std::string styles;
+    for (const auto& card : state.voicebankCards)
+      if (card.id == state.inspector.voicebank.id && !card.id.empty())
+        for (const auto& style : card.styles) styles += (styles.empty() ? "" : ", ") + style;
+    add(SemanticNode{.id = "shell.style", .role = SemanticRole::Panel, .name = "Style presets",
+                     .value = styles.empty() ? "The selected voice publishes no style presets" : styles,
+                     .bounds = l.style});
+  }
+
+  // Status bar: render state, diagnostics and export actions stay reachable.
+  const auto& s = state.renderStatus;
+  add(SemanticNode{.id = "shell.status", .role = SemanticRole::Status, .name = "Render status",
+                   .value = std::string{renderStatusStateName(s.state)} +
+                            (s.diagnostic.empty() ? "" : ": " + s.diagnostic),
+                   .bounds = l.status});
+  if (s.state == RenderStatusState::Rendering || s.state == RenderStatusState::Queued) {
+    add(SemanticNode{.id = "shell.render-progress", .role = SemanticRole::ProgressIndicator,
+                     .name = "Render progress",
+                     .value = format("%.0f%%", std::clamp(s.fraction, 0.0, 1.0) * 100.0),
+                     .bounds = l.status,
+                     .numericValue = std::clamp(s.fraction, 0.0, 1.0) * 100.0,
+                     .numericMinimum = 0.0,
+                     .numericMaximum = 100.0});
+  }
+  for (const auto& child : legacy.children) {
+    if (!child.id.starts_with("diagnostic") && !child.id.starts_with("export.")) continue;
+    auto copy = child;
+    copy.bounds = l.status;
+    add(std::move(copy));
+  }
+
+  if (focusedId.empty() && legacyFocus != nullptr) focusedId = legacyFocus->id;
+  semantics_.rebuildCustom(std::move(root), focusedId);
+}
+
+core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
+                                               std::string_view id, SemanticAction action) {
+  if (!ownsSemantic(id))
+    return core::failure(core::ErrorCode::NotFound, "Not a shell accessibility element");
+  if (action == SemanticAction::SetFocus) {
+    semanticFocus_ = std::string{id};
+    repaint();
+    return core::success();
+  }
+  const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
+  core::Result<void> result = core::failure(core::ErrorCode::Unsupported,
+                                            "This element does not support that action");
+  if (id == "shell.mode.emo" && activate) {
+    setMode(DesignMode::Emo);
+    result = core::success();
+  } else if (id == "shell.mode.scene" && activate) {
+    setMode(DesignMode::Scene);
+    result = core::success();
+  } else if (id == "shell.settings" && activate) {
+    controller.showAudioSettings();
+    result = core::success();
+  } else if (id == "shell.change-voice" && activate) {
+    controller.showVoicebankBrowser();
+    result = core::success();
+  } else if (id == "shell.classic" && activate) {
+    setEnabled(controller, false);
+    result = core::success();
+  } else if (id.starts_with("shell.lane-tab.") && activate) {
+    static constexpr std::array<std::string_view, 6U> kChannels{"formant", "breath", "tension",
+                                                                "air", "gender", "growl"};
+    const auto name = id.substr(std::string_view{"shell.lane-tab."}.size());
+    if (name == "dynamics") result = controller.openDynamicsInspector();
+    for (std::size_t i = 0U; i < kChannels.size(); ++i)
+      if (name == kChannels[i]) result = controller.openExpressionLane(ui::expressionChannelAt(i));
+  } else if (id.starts_with("shell.knob.")) {
+    static constexpr std::array<std::string_view, 6U> kKnobs{"formant", "breath", "tension",
+                                                             "air", "gender", "growl"};
+    const auto name = id.substr(std::string_view{"shell.knob."}.size());
+    for (std::size_t i = 0U; i < kKnobs.size(); ++i) {
+      if (name != kKnobs[i]) continue;
+      if (knobRefused_[i]) {
+        result = core::failure(core::ErrorCode::Unsupported,
+                               "The selected singer cannot apply this control");
+      } else if (action == SemanticAction::Increment) {
+        result = nudge(controller, i, 1);
+      } else if (action == SemanticAction::Decrement) {
+        result = nudge(controller, i, -1);
+      } else if (activate) {
+        result = controller.openExpressionLane(ui::expressionChannelAt(i));
+      }
+    }
+  }
+  yieldIfModal(controller);
+  repaint();
+  return result;
 }
 
 }  // namespace seam::native_ui::design

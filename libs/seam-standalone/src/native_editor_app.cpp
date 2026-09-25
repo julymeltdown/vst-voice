@@ -1589,6 +1589,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   authoring_->controller().rebuildAccessibilityTree();
   if (!shellFrame || !shell_.paint(canvas, authoring_->controller(), state, tick))
     painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
+  else
+    shell_.rebuildSemantics(authoring_->controller(), state);
 }
 
 void NativeEditorApp::resized(double logicalWidth, double logicalHeight,
@@ -1651,8 +1653,10 @@ void NativeEditorApp::textCancel() noexcept {
 }
 const native_ui::AccessibilityTree* NativeEditorApp::accessibilityTree()
     const noexcept {
-  return authoring_ == nullptr ? nullptr
-                               : &authoring_->controller().accessibilityTree();
+  if (authoring_ == nullptr) return nullptr;
+  // The presented SING shell publishes its own tree in its own geometry.
+  if (shell_.presentedLastFrame()) return &shell_.accessibilityTree();
+  return &authoring_->controller().accessibilityTree();
 }
 
 core::Result<void> NativeEditorApp::dispatchAccessibility(
@@ -1661,6 +1665,9 @@ core::Result<void> NativeEditorApp::dispatchAccessibility(
     return core::failure(core::ErrorCode::InvalidState,
                          "Accessibility dispatch requires an authoring session");
   }
+  if (shell_.presentedLastFrame() && native_ui::design::SingShell::ownsSemantic(id))
+    return shell_.dispatchSemantic(authoring_->controller(), id, action);
+  shell_.controllerFocusTaken();
   return authoring_->controller().dispatchAccessibility(id, action);
 }
 

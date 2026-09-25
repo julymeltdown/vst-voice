@@ -9,6 +9,8 @@
 #include <cstddef>
 
 #import <AppKit/AppKit.h>
+
+#include "seam/native_ui/accessibility_appkit_mapping.hpp"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <algorithm>
@@ -927,6 +929,12 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
   NSString* __strong _title;
   NSString* __strong _value;
   NSString* __strong _description;
+  NSString* __strong _subrole;
+  NSNumber* __strong _numeric;
+  NSNumber* __strong _minimum;
+  NSNumber* __strong _maximum;
+  BOOL _hasIncrement;
+  BOOL _hasDecrement;
   NSRect _frame;
   BOOL _enabled;
   BOOL _focused;
@@ -965,26 +973,13 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
         initWithBytes:node.description.data()
                length:node.description.size()
              encoding:NSUTF8StringEncoding];
-    switch (node.role) {
-      case seam::native_ui::SemanticRole::Window:
-        _role = NSAccessibilityWindowRole; break;
-      case seam::native_ui::SemanticRole::Toolbar:
-        _role = NSAccessibilityToolbarRole; break;
-      case seam::native_ui::SemanticRole::Button:
-        _role = NSAccessibilityButtonRole; break;
-      case seam::native_ui::SemanticRole::TextField:
-        _role = NSAccessibilityTextFieldRole; break;
-      case seam::native_ui::SemanticRole::Timeline:
-      case seam::native_ui::SemanticRole::Lane:
-        _role = NSAccessibilityGroupRole; break;
-      case seam::native_ui::SemanticRole::Note:
-        _role = editable ? NSAccessibilityTextFieldRole
-                         : NSAccessibilityGroupRole;
-        break;
-      case seam::native_ui::SemanticRole::Panel:
-      case seam::native_ui::SemanticRole::Status:
-        _role = NSAccessibilityGroupRole; break;
-    }
+    _role = seam::native_ui::appkit_ax::role(node);
+    _subrole = seam::native_ui::appkit_ax::subrole(node);
+    _numeric = seam::native_ui::appkit_ax::numericValue(node);
+    _minimum = seam::native_ui::appkit_ax::numericMinimum(node);
+    _maximum = seam::native_ui::appkit_ax::numericMaximum(node);
+    _hasIncrement = seam::native_ui::appkit_ax::hasAction(node, seam::native_ui::SemanticAction::Increment);
+    _hasDecrement = seam::native_ui::appkit_ax::hasAction(node, seam::native_ui::SemanticAction::Decrement);
     _frame = frame;
     _enabled = node.enabled;
     _focused = node.focused;
@@ -1011,7 +1006,14 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
 }
 - (NSString*)accessibilityIdentifier { return _identifier; }
 - (id)accessibilityTitle { return _title; }
-- (id)accessibilityValue { return _editable || _value.length != 0U ? _value : nil; }
+- (id)accessibilityValue {
+  if (_numeric != nil) return _numeric;
+  return _editable || _value.length != 0U ? _value : nil;
+}
+- (id)accessibilityValueDescription { return _numeric != nil && _value.length != 0U ? _value : nil; }
+- (id)accessibilitySubrole { return _subrole; }
+- (id)accessibilityMinValue { return _minimum; }
+- (id)accessibilityMaxValue { return _maximum; }
 - (void)setAccessibilityValue:(id)value {
   [self seamApplyAccessibilityValue:value];
 }
@@ -1063,6 +1065,12 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
           [result addObject:NSAccessibilityConfirmAction];
         }
         break;
+      case seam::native_ui::SemanticAction::Increment:
+        [result addObject:NSAccessibilityIncrementAction];
+        break;
+      case seam::native_ui::SemanticAction::Decrement:
+        [result addObject:NSAccessibilityDecrementAction];
+        break;
     }
   }
   return result;
@@ -1073,7 +1081,26 @@ std::unique_ptr<INativeWindow> createNativeWindow() {
     static_cast<void>([self accessibilityPerformPress]);
   } else if ([action isEqualToString:NSAccessibilityConfirmAction]) {
     static_cast<void>([self accessibilityPerformConfirm]);
+  } else if ([action isEqualToString:NSAccessibilityIncrementAction]) {
+    static_cast<void>([self accessibilityPerformIncrement]);
+  } else if ([action isEqualToString:NSAccessibilityDecrementAction]) {
+    static_cast<void>([self accessibilityPerformDecrement]);
   }
+}
+
+- (BOOL)seamDispatch:(seam::native_ui::SemanticAction)action {
+  if (_owner == nullptr || _identifier == nil) return NO;
+  const char* bytes = _identifier.UTF8String;
+  if (bytes == nullptr) return NO;
+  return static_cast<bool>(_owner->dispatchAccessibility(bytes, action));
+}
+
+- (BOOL)accessibilityPerformIncrement {
+  return _hasIncrement ? [self seamDispatch:seam::native_ui::SemanticAction::Increment] : NO;
+}
+
+- (BOOL)accessibilityPerformDecrement {
+  return _hasDecrement ? [self seamDispatch:seam::native_ui::SemanticAction::Decrement] : NO;
 }
 
 - (BOOL)accessibilityPerformPress {

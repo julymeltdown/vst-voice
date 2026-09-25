@@ -1,5 +1,6 @@
 #pragma once
 
+#include "seam/native_ui/accessibility_tree.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -95,6 +96,22 @@ public:
   [[nodiscard]] TextInputRequest translateTextInput(TextInputRequest request);
   void textInputEnded() noexcept { lyricInputActive_ = false; }
 
+  // Accessibility for the presented shell, built from the same layout snapshot that paint and
+  // pointer routing use. Notes and the timeline keep their controller ids (actions still reach the
+  // controller); controls the shell draws get shell ids and real roles: sliders with ranges for
+  // the knobs, radio buttons for EMO/SCENE, tabs for workspaces and lane channels, a progress
+  // indicator for rendering. Classic-only nodes without a visual here are left out.
+  void rebuildSemantics(const NativeEditorController& controller, const EditorSceneState& state);
+  [[nodiscard]] const AccessibilityTree& accessibilityTree() const noexcept { return semantics_; }
+  [[nodiscard]] static bool ownsSemantic(std::string_view id) noexcept {
+    return id.starts_with("shell.");
+  }
+  // Performs an action on a shell-owned node. Controller ids are dispatched by the host.
+  core::Result<void> dispatchSemantic(NativeEditorController& controller, std::string_view id,
+                                      SemanticAction action);
+  // Called when the host sends an action to a controller id, so shell focus follows it.
+  void controllerFocusTaken() noexcept { semanticFocus_.clear(); }
+
   // Converts a rectangle published in the legacy editor's window coordinates into the shell.
   [[nodiscard]] ui::Rect fromLegacy(ui::Rect rect) const noexcept;
   [[nodiscard]] ui::Point toLegacy(ui::Point point) const noexcept;
@@ -155,6 +172,8 @@ private:
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
   double scrollAccumulator_{0.0};
+  AccessibilityTree semantics_;
+  std::string semanticFocus_;
   std::function<void()> repaint_;
 
   PixelSurface background_;

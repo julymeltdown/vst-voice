@@ -3,6 +3,7 @@
 #include "seam/native_ui/editor_scene.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,9 +19,17 @@ enum class SemanticRole {
   Lane,
   Status,
   TextField,
+  // A continuous control with a numeric value, range and step (expression knobs).
+  Slider,
+  // One of a mutually exclusive set; selected marks the chosen one (EMO / SCENE).
+  RadioButton,
+  // A tab in a tab strip; selected marks the shown tab (workspaces, lane channels).
+  Tab,
+  // Determinate progress with a numeric value in [minimum, maximum] (render progress).
+  ProgressIndicator,
 };
 
-enum class SemanticAction { Activate, SetFocus, EditText, Toggle };
+enum class SemanticAction { Activate, SetFocus, EditText, Toggle, Increment, Decrement };
 
 [[nodiscard]] std::string vibratoHandleSemanticId(
     domain::NoteId noteId, VibratoHandleKind kind);
@@ -39,6 +48,12 @@ struct SemanticNode final {
   std::size_t virtualizedChildCount{0U};
   std::string editableValue;
   std::string description;
+  // Numeric presentation for Slider and ProgressIndicator nodes, in display units (for example
+  // 68.0 for a 0.68 breath share). value stays the spoken text with its unit.
+  std::optional<double> numericValue;
+  std::optional<double> numericMinimum;
+  std::optional<double> numericMaximum;
+  std::optional<double> numericStep;
 };
 
 class EditorSemanticTree final {

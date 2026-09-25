@@ -47,6 +47,10 @@ std::string_view semanticRoleName(SemanticRole role) noexcept {
     case SemanticRole::Lane: return "lane";
     case SemanticRole::Status: return "status";
     case SemanticRole::TextField: return "text-field";
+    case SemanticRole::Slider: return "slider";
+    case SemanticRole::RadioButton: return "radio-button";
+    case SemanticRole::Tab: return "tab";
+    case SemanticRole::ProgressIndicator: return "progress-indicator";
   }
   return "unknown";
 }
@@ -57,6 +61,8 @@ std::string_view semanticActionName(SemanticAction action) noexcept {
     case SemanticAction::SetFocus: return "set-focus";
     case SemanticAction::EditText: return "edit-text";
     case SemanticAction::Toggle: return "toggle";
+    case SemanticAction::Increment: return "increment";
+    case SemanticAction::Decrement: return "decrement";
   }
   return "unknown";
 }

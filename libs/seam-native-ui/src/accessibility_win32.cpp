@@ -100,6 +100,10 @@ int controlType(const SemanticNode& node) noexcept {
     case SemanticRole::Panel:
     case SemanticRole::Lane:
     case SemanticRole::Status: return UIA_GroupControlTypeId;
+    case SemanticRole::Slider: return UIA_SliderControlTypeId;
+    case SemanticRole::RadioButton: return UIA_RadioButtonControlTypeId;
+    case SemanticRole::Tab: return UIA_TabItemControlTypeId;
+    case SemanticRole::ProgressIndicator: return UIA_ProgressBarControlTypeId;
   }
   return UIA_CustomControlTypeId;
 }

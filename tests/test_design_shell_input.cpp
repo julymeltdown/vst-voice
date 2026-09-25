@@ -9,6 +9,7 @@
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
@@ -381,4 +382,82 @@ TEST_CASE("notes panned off horizontally are pointed at earlier or later, never 
   const auto hint = f.shell.lastOffscreenHint();
   CHECK(hint.has_value());
   if (hint) CHECK(*hint == 2U || *hint == 3U);
+}
+
+TEST_CASE("the shell accessibility tree exposes its controls with real roles in shell geometry") {
+  using native_ui::SemanticAction;
+  using native_ui::SemanticNode;
+  using native_ui::SemanticRole;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto& root = f.shell.accessibilityTree().root();
+  const auto find = [&](std::string_view id) -> const SemanticNode* {
+    for (const auto& child : root.children)
+      if (child.id == id) return &child;
+    return nullptr;
+  };
+  const auto& l = f.shell.layout();
+  const ui::Rect client{0.0, 0.0, l.width, l.height};
+  for (const auto& child : root.children) {
+    CHECK(child.bounds.x >= client.x - 0.5 && child.bounds.right() <= client.right() + 0.5);
+    CHECK(child.bounds.y >= client.y - 0.5 && child.bounds.bottom() <= client.bottom() + 0.5);
+  }
+  // Knobs are sliders in display units with a range, step and increment/decrement.
+  const auto* gender = find("shell.knob.gender");
+  CHECK(gender != nullptr);
+  if (gender) {
+    CHECK(gender->role == SemanticRole::Slider);
+    CHECK(gender->numericMinimum.has_value() && *gender->numericMinimum < 0.0);
+    CHECK(gender->numericMaximum.has_value() && *gender->numericMaximum > 0.0);
+    CHECK(std::find(gender->actions.begin(), gender->actions.end(), SemanticAction::Increment) !=
+          gender->actions.end());
+    CHECK(gender->bounds.x == l.knob[4U].x && gender->bounds.y == l.knob[4U].y);
+  }
+  // EMO / SCENE are a radio pair reflecting the current look; workspaces and lanes are tabs.
+  const auto* emo = find("shell.mode.emo");
+  const auto* scene = find("shell.mode.scene");
+  CHECK(emo && scene && emo->role == SemanticRole::RadioButton && emo->selected && !scene->selected);
+  const auto* sing = find("shell.workspace.sing");
+  CHECK(sing && sing->role == SemanticRole::Tab && sing->selected);
+  const auto* voice = find("shell.workspace.voice");
+  CHECK(voice && !voice->enabled);
+  CHECK(find("shell.lane-tab.gender") != nullptr);
+  // Notes keep controller ids and sit exactly on their painted rectangles in the grid.
+  const auto visuals = f.controller.pianoRoll().visibleNotes();
+  CHECK(!visuals.empty());
+  if (!visuals.empty()) {
+    const auto* note = find("note." + visuals.front().noteId.toString());
+    CHECK(note != nullptr);
+    if (note) {
+      CHECK_NEAR(note->bounds.y, visuals.front().bounds.y + l.grid.y, 1e-9);
+      CHECK(note->bounds.y >= l.grid.y && note->bounds.bottom() <= l.grid.bottom());
+    }
+  }
+  // Classic-only chrome without a visual in the shell is not exposed.
+  CHECK(find("toolbar.loop") == nullptr);
+  CHECK(find("arrangement.panel") == nullptr);
+}
+
+TEST_CASE("shell accessibility actions edit through the same commands as pointer input") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::Increment).hasValue());
+  CHECK(f.controller.documentRevision() != revision);
+  CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().size() == 1U);
+  CHECK(f.session.undo());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.mode.scene", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.mode() == DesignMode::Scene);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.breath", SemanticAction::Activate).hasValue());
+  CHECK(f.controller.sceneState().expressionLabelVisible());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "note.1", SemanticAction::Activate).hasValue());
+  // Change voice opens a classic surface and hands the frame over at once.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.change-voice", SemanticAction::Activate).hasValue());
+  CHECK(!f.shell.presentedLastFrame());
+  CHECK(!f.controller.hostedGrid().has_value());
 }
