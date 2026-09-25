@@ -138,13 +138,11 @@ public:
     visible_ = false;
   }
 
-  [[nodiscard]] bool setScale(double scale) override {
-    if (!std::isfinite(scale) || scale < 0.5 || scale > 4.0) return false;
-    scale_ = scale;
-    updateSurface();
-    requestRepaint();
-    return true;
-  }
+  // The Cocoa CLAP window API uses logical points: the host must not call
+  // set_scale, and a plug-in that receives one reports it as ignored. The
+  // backing scale is read from the window the view is attached to instead,
+  // so a host scale can never be multiplied into the Retina factor.
+  [[nodiscard]] bool setScale(double) override { return false; }
 
   [[nodiscard]] bool setSize(std::uint32_t width,
                              std::uint32_t height) override {
@@ -218,7 +216,8 @@ public:
     if (view == nil) return;
     updateSurface();
     if (surface_.pixels().empty()) return;
-    native_ui::RasterCanvas canvas{surface_, scale_, textEngine_.get()};
+    // Logical layout is the view's bounds; the surface holds backing pixels.
+    native_ui::RasterCanvas canvas{surface_, backingScale_, textEngine_.get()};
     runtime_.paint(canvas);
     if (accessibilityAnnouncementPending_.exchange(
             false, std::memory_order_acq_rel)) {
@@ -244,8 +243,16 @@ public:
     if (image != nullptr) {
       CGContextRef context = NSGraphicsContext.currentContext.CGContext;
       CGContextSetInterpolationQuality(context, kCGInterpolationNone);
+      CGContextSaveGState(context);
+      // The child view is flipped so input, text fields and accessibility use
+      // a top-left origin, but CGContextDrawImage still places image row 0 at
+      // the bottom of its destination. Mirror once at the presentation
+      // boundary, exactly as the standalone presenter does.
+      CGContextTranslateCTM(context, 0.0, view.bounds.size.height);
+      CGContextScaleCTM(context, 1.0, -1.0);
       CGContextDrawImage(context, CGRectMake(0.0, 0.0, view.bounds.size.width,
                                               view.bounds.size.height), image);
+      CGContextRestoreGState(context);
       CGImageRelease(image);
     }
     CGDataProviderRelease(provider);
@@ -451,8 +458,11 @@ private:
 
   void updateSurface() noexcept {
     if (view_ == nil) return;
-    const auto backing = view_.window.backingScaleFactor;
-    const auto effective = scale_ * static_cast<double>(backing > 0.0 ? backing : 1.0);
+    const auto backing = view_.window != nil ? view_.window.backingScaleFactor : 1.0;
+    const auto effective = std::isfinite(static_cast<double>(backing)) && backing > 0.0
+                               ? std::clamp(static_cast<double>(backing), 1.0, 4.0)
+                               : 1.0;
+    backingScale_ = effective;
     const auto width = static_cast<std::uint32_t>(std::max(
         1.0, std::ceil(static_cast<double>(view_.bounds.size.width) * effective)));
     const auto height = static_cast<std::uint32_t>(std::max(
@@ -500,7 +510,7 @@ private:
   std::unique_ptr<text::TextEngine> textEngine_;
   std::uint32_t width_{960U};
   std::uint32_t height_{680U};
-  double scale_{1.0};
+  double backingScale_{1.0};
   bool created_{false};
   bool visible_{false};
   std::atomic<bool> repaint_{true};
@@ -753,6 +763,16 @@ private:
 }
 - (void)setFrameSize:(NSSize)newSize {
   [super setFrameSize:newSize];
+  if (owner_ != nullptr) owner_->resized();
+}
+- (void)viewDidChangeBackingProperties {
+  [super viewDidChangeBackingProperties];
+  // Moving between a Retina and a non-Retina display changes the pixel
+  // surface, never the logical layout.
+  if (owner_ != nullptr) owner_->resized();
+}
+- (void)viewDidMoveToWindow {
+  [super viewDidMoveToWindow];
   if (owner_ != nullptr) owner_->resized();
 }
 - (void)mouseDown:(NSEvent*)event {
