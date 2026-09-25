@@ -189,6 +189,11 @@ private:
   native_ui::INativeWindow* window_{nullptr};
   std::atomic<bool> closeRequested_{false};
   std::string lastError_;
+  // Envelopes of the selected region's rendered audio for the SING notes. Declared last so its
+  // workers stop before anything their repaint request touches is destroyed.
+  native_ui::RegionEnvelopeCache waveforms_{[this] {
+    if (window_ != nullptr) window_->requestRepaint();
+  }};
 };
 
 }  // namespace seam::standalone

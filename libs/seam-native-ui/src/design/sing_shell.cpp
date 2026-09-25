@@ -621,6 +621,13 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
   exportRunning_ = exportBusy(controller);
+  waveform_ = hostActions_.regionWaveform
+                  ? hostActions_.regionWaveform()
+                  : RegionWaveform{nullptr, "No waveform",
+                                   "This host does not give the editor its region's audio."};
+  if (waveform_.shown() && waveform_.view->key.region != model.regionId())
+    waveform_ = RegionWaveform{nullptr, "Other region",
+                               "The rendered audio belongs to a different region than the one shown."};
   if (workspace_ == Workspace::Export) {
     paintExport(*c, t, state);
   } else {
@@ -755,6 +762,51 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
 }
 
+namespace {
+
+// The note's slice of its region's rendered audio, as signed min/max columns inside the capsule.
+// Ticks map to frames through the project tempo map and the audio's absolute origin frame, so a
+// region placed later in the song and a tempo change draw the audio under the right note.
+void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, const Path& capsule, ui::Rect b,
+                       const RegionEnvelopeView& view, const time::TempoMap& tempo,
+                       time::Tick start, time::Tick end, bool selected) {
+  const auto& envelope = *view.envelope;
+  const auto rate = static_cast<double>(view.key.sampleRate);
+  if (rate <= 0.0 || envelope.peak() < 1e-4F || b.width < 4.0 || b.height < 6.0 || end <= start)
+    return;
+  const auto amplitude = b.height * 0.5 - 1.5;
+  const auto scale = amplitude / static_cast<double>(envelope.peak());
+  const auto mid = b.y + b.height * 0.5;
+  const auto duration = static_cast<double>((end - start).value());
+  const auto frameAt = [&](double x) {
+    const auto fraction = std::clamp((x - b.x) / b.width, 0.0, 1.0);
+    const time::Tick tick{start.value() + static_cast<std::int64_t>(std::llround(fraction * duration))};
+    return tempo.sampleFrameAt(tick, rate) - view.key.originFrame;
+  };
+  constexpr double kColumn = 2.0;
+  Path columns;
+  bool any = false;
+  auto first = frameAt(b.x);
+  for (auto x = b.x; x < b.right(); x += kColumn) {
+    const auto last = std::max(first + 1, frameAt(std::min(b.right(), x + kColumn)));
+    if (const auto pair = envelope.range(first, last); pair.has_value()) {
+      const auto top = mid - static_cast<double>(pair->maximum) * scale;
+      const auto bottom = mid - static_cast<double>(pair->minimum) * scale;
+      const auto column = x + kColumn * 0.5;
+      columns.moveTo({column, std::min(top, mid - 0.5)}).lineTo({column, std::max(bottom, mid + 0.5)});
+      any = true;
+    }
+    first = last;
+  }
+  if (!any) return;
+  c.save();
+  c.clipPath(capsule);
+  c.stroke(columns, withAlpha(t.color.waveInNote, selected ? 0.9 : 0.7), StrokeStyle{1.4});
+  c.restore();
+}
+
+}  // namespace
+
 void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollModel& model,
                             const EditorSceneState& state) const {
   const auto& l = layout_;
@@ -776,6 +828,14 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.text(l.classicToggle, "Classic", style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
                                            TextAlign::Center, true),
          t.color.textSecondary);
+  // Whether the notes carry the current render's waveform, and if not, the short reason (the full
+  // reason is published to accessibility).
+  if (l.gridLabel.width > 0.0 && l.gridLabel.x > chip.right() + 24.0 && !waveform_.caption.empty()) {
+    const auto captionStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Right, true);
+    c.text(l.gridLabel, waveform_.caption,
+           fitted(c, waveform_.caption, captionStyle, l.gridLabel.width),
+           waveform_.shown() ? t.color.waveInNote : t.color.textSecondary);
+  }
 
   // Ruler and grid lines share one tick-to-x transform with the lane below.
   const auto& timeline = model.timeline();
@@ -925,17 +985,28 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     const auto radius = std::min(t.shape.note, b.height * 0.5);
     const auto p = Path::roundedRect(b, radius);
     const auto hovered = state.hoveredNote == note.noteId || state.focusedNote == note.noteId;
+    // The note's own rendered audio sits inside the capsule, under its outline.
+    const auto wave = [&] {
+      if (!waveform_.shown() || region == nullptr) return;
+      const auto* source = region->findNote(note.noteId);
+      if (source == nullptr) return;
+      paintNoteWaveform(c, t, p, b, *waveform_.view, model.project().tempoMap(),
+                        region->startTick + source->startTick, region->startTick + source->endTick(),
+                        note.selected);
+    };
     if (note.selected) {
       c.save();
       c.setGlow(withAlpha(t.color.noteSelectedA, 0.85), 10.0);
       c.fill(p, LinearGradient{{b.x, b.y}, {b.right(), b.bottom()},
                                {{0.0, t.color.noteSelectedA}, {1.0, t.color.noteSelectedB}}});
       c.restore();
+      wave();
       c.stroke(p, t.color.noteSelectedStroke, StrokeStyle{1.2});
     } else {
       c.fill(p, LinearGradient{{b.x, b.y}, {b.x, b.bottom()},
                                {{0.0, note.midiKey % 2U == 0U ? t.color.noteFillAlt : t.color.noteFill},
                                 {1.0, t.color.surfaceSunken}}});
+      wave();
       c.save();
       c.setGlow(withAlpha(t.color.noteStroke, 0.55), 5.0);
       c.stroke(p, withAlpha(t.color.noteStroke, hovered ? 1.0 : 0.8), StrokeStyle{hovered ? 1.6 : 1.1});
@@ -1532,8 +1603,16 @@ struct ExportPanelLayout final {
 
 ExportPanelLayout exportPanelLayout(ui::Rect area) {
   ExportPanelLayout p;
-  p.compact = area.height < 64.0 + 4.0 * 46.0 + 12.0 + 44.0 + 44.0;
-  p.sideColumn = !p.compact && area.width >= 720.0;
+  // The full panel is chosen only where its status area holds the attempt and the last export
+  // (two 38pt rows, 46pt apart); every other size folds into the compact form, whose one-line
+  // status rows always keep the failure on screen.
+  constexpr double kButtonTop = 64.0 + 4.0 * 46.0 + 12.0;
+  constexpr double kStatusRows = 46.0 + 38.0;
+  const auto sideColumnFits =
+      area.width >= 720.0 && area.height >= std::max(kButtonTop + 44.0 + 44.0, 80.0 + kStatusRows);
+  const auto stackedFits = area.height >= kButtonTop + 44.0 + 10.0 + 32.0 + 8.0 + kStatusRows + 24.0;
+  p.sideColumn = sideColumnFits;
+  p.compact = !sideColumnFits && !stackedFits;
   p.columnWidth = std::max(120.0, (p.sideColumn ? area.width * 0.5 : area.width) - 64.0);
   const auto left = area.x + 32.0;
   const auto buttonWidth = std::min(240.0, std::max(120.0, p.columnWidth));
@@ -1955,27 +2034,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     return true;
   }
   // The EXPORT workspace hides the score, so no key may edit it from here, whatever holds focus.
-  // Escape always returns to SING. Command shortcuts that are application commands (new, open,
-  // save, export, quit, undo/redo from the Edit menu) still reach the host; every other modified
-  // key (Alt-Delete, Command-D, Command-Delete) stops here instead of reaching the note editor.
+  // Escape always returns to SING. Only the shortcuts the host declares as its own application
+  // commands (it implements them itself) still reach it; every other modified key (Alt-Delete,
+  // Command-D, Command-Delete, a Command-Q the host does not handle) stops here instead of
+  // reaching the note editor.
   if (presented_ && workspace_ == Workspace::Export && !controller.legacyModalSurfaceActive()) {
     if (event.key == NativeKey::Escape) {
       setWorkspace(controller, Workspace::Sing);
       return true;
     }
-    if (event.modifiers.primaryShortcut()) {
-      switch (event.key) {
-        case NativeKey::N:
-        case NativeKey::O:
-        case NativeKey::S:
-        case NativeKey::E:
-        case NativeKey::Q:
-        case NativeKey::Z:
-        case NativeKey::Y: return event.modifiers.alt;
-        default: return true;
-      }
-    }
-    if (event.modifiers.alt) return true;
+    if (event.modifiers.primaryShortcut() || event.modifiers.alt)
+      return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
   }
   // Keyboard focus walks the tree the shell published, so it reaches the controls that are on
   // screen here. Text fields and classic surfaces keep their own Tab behavior.
@@ -2342,6 +2411,16 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
 
   const auto singShown = workspace_ == Workspace::Sing;
+  if (singShown) {
+    // What the notes show of the rendered audio, as painted in this frame.
+    add(SemanticNode{.id = "shell.waveform", .role = SemanticRole::Status,
+                     .name = "Note waveform",
+                     .value = waveform_.shown() ? std::string{"Showing the current render"}
+                                                : waveform_.caption,
+                     .bounds = layout_.gridLabel,
+                     .actions = {SemanticAction::SetFocus},
+                     .description = waveform_.reason});
+  }
   if (!singShown) {
     // The EXPORT workspace covers the score: nothing of the grid or lane is published under it.
     std::erase_if(children, [](const SemanticNode& node) {

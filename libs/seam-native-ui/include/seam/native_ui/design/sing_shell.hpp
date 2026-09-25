@@ -6,6 +6,7 @@
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
+#include "seam/native_ui/region_envelope.hpp"
 
 #include <array>
 #include <filesystem>
@@ -53,6 +54,13 @@ struct ShellHostActions final {
   std::string exportUnavailable{"This host does not export from the editor"};
   // The host's live export worker state; the shell also reads the editor's current progress.
   std::function<bool()> exportBusy;
+  // The selected region's own rendered audio for the notes, or why there is none. A host without
+  // one leaves it empty and the grid says so.
+  std::function<RegionWaveform()> regionWaveform;
+  // True for a modified key this host itself handles as an application command (save, quit, undo).
+  // While EXPORT hides the score only these pass on; every other modified key stops at the shell,
+  // so a shortcut the host does not implement can never fall through to a note-editing command.
+  std::function<bool(const KeyEvent&)> applicationShortcut;
 };
 
 // Finds assets/ui-design next to a bundle, in an explicit override, or in the source tree for
@@ -233,6 +241,8 @@ private:
   Workspace workspace_{Workspace::Sing};
   // Export progress from the last painted state, so the run button can refuse while one runs.
   bool exportRunning_{false};
+  // What this frame drew inside the notes (or why it drew nothing); accessibility reports it.
+  RegionWaveform waveform_;
 
   PixelSurface background_;
   double backgroundScale_{0.0};

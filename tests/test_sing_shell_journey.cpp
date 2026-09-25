@@ -308,3 +308,56 @@ TEST_CASE("sing shell journey: a retained note cannot be edited through the host
   CHECK(f.app->dispatchAccessibility(id, SemanticAction::SetFocus));
   f.app->shutdownAudio();
 }
+
+TEST_CASE("sing shell journey: the notes show the region's own render, and not once the score changes") {
+  const auto root = seam::test::support::temporaryDirectory("journey-note-waveform");
+  JourneyApp f{root, {}};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  f.paint();
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  if (grid == nullptr) return;
+  const auto gridBounds = grid->bounds;
+  f.doubleClick({gridBounds.x + 240.0, gridBounds.y + gridBounds.height * 0.5});
+  f.paint();
+  CHECK(f.region()->notes.size() == 1U);
+  // The development fixture bank sings こ; give every new note that lyric through its field.
+  const auto singKo = [&f] {
+    for (const auto& note : f.region()->notes) {
+      if (lyricOf(*f.region(), note) == "\u3053") continue;
+      const auto id = "note." + note.id.toString();
+      CHECK(f.app->dispatchAccessibility(id, SemanticAction::EditText));
+      f.app->textCommit(U"\u3053");
+      f.paint();
+      return;
+    }
+  };
+  singKo();
+  const auto waveformValue = [&f]() -> std::string {
+    const auto* node = f.find("shell.waveform");
+    return node == nullptr ? std::string{"<missing>"} : node->value;
+  };
+  const auto waitFor = [&](std::string_view expected) {
+    const auto deadline = std::chrono::steady_clock::now() + 60s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      f.paint();
+      if (waveformValue() == expected) return true;
+      std::this_thread::sleep_for(20ms);
+    }
+    const auto* node = f.find("shell.waveform");
+    std::fprintf(stderr, "waveform stayed '%s' (%s)\n", waveformValue().c_str(),
+                 node == nullptr ? "" : node->description.c_str());
+    return false;
+  };
+  // A real render of this region publishes its own mono audio; the notes draw it.
+  CHECK(waitFor("Showing the current render"));
+  // An edit makes that audio out of date at once: nothing is drawn until the next render lands.
+  f.doubleClick({gridBounds.x + 600.0, gridBounds.y + gridBounds.height * 0.5});
+  f.paint();
+  CHECK(f.region()->notes.size() == 2U);
+  CHECK(waveformValue() != "Showing the current render");
+  singKo();
+  CHECK(waitFor("Showing the current render"));
+  f.app->shutdownAudio();
+}

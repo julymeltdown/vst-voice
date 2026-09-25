@@ -57,8 +57,16 @@ TEST_CASE("CLAP shell: EXPORT refuses retained score elements and editing keys")
   CHECK(!notes.empty());
   if (notes.empty()) return;
   const auto noteId = notes.front().id;
-  // On screen the note is reachable, and focusing it gives the editor a selection target.
-  CHECK(runtime.dispatchAccessibility(noteId, SemanticAction::SetFocus));
+  // On screen the note is reachable. Select it and move it off the grid, so an editor Q
+  // (quantize) reached by a shortcut the plug-in does not own would visibly move it back.
+  CHECK(runtime.dispatchAccessibility(noteId, SemanticAction::Activate));
+  CHECK(runtime.controller().pianoRoll().moveSelection(time::Tick{17}, 0));
+  const auto offGrid = runtime.projectCopy();
+  const auto* movedRegion = offGrid.findRegion(runtime.controller().selectedRegion());
+  CHECK(movedRegion != nullptr && !movedRegion->notes.empty());
+  if (movedRegion == nullptr || movedRegion->notes.empty()) return;
+  const auto movedId = movedRegion->notes.front().id;
+  const auto movedTick = offGrid.findNote(movedId)->startTick;
   CHECK(runtime.dispatchAccessibility("shell.workspace.export", SemanticAction::Activate));
   paintFrame(runtime);
   const auto snapshot = runtime.accessibilitySnapshot();
@@ -77,8 +85,12 @@ TEST_CASE("CLAP shell: EXPORT refuses retained score elements and editing keys")
   runtime.keyDown(KeyEvent{.key = NativeKey::Delete, .modifiers = {.alt = true}});
   runtime.keyDown(KeyEvent{.key = NativeKey::Delete});
   runtime.keyDown(KeyEvent{.key = NativeKey::D, .modifiers = {.command = true}});
+  // A plug-in implements no Quit: Command-Q must not fall through to the editor's Q (quantize).
+  runtime.keyDown(KeyEvent{.key = NativeKey::Q, .modifiers = {.command = true}});
+  runtime.keyDown(KeyEvent{.key = NativeKey::S, .modifiers = {.command = true}});
   CHECK(runtime.revision() == revision);
   CHECK(runtime.projectCopy().noteCount() == notesBefore);
+  CHECK(runtime.projectCopy().findNote(movedId)->startTick == movedTick);
   // Escape returns to SING, where the same note acts again.
   runtime.keyDown(KeyEvent{.key = NativeKey::Escape});
   paintFrame(runtime);

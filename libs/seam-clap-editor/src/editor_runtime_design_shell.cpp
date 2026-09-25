@@ -24,6 +24,30 @@ void EditorRuntime::activateDesignShellWith(
       .exportPlan = {},
       .exportUnavailable =
           "In a plug-in, export from your DAW: render or bounce this track there.",
+      .exportBusy = {},
+      // Paint runs under this runtime's lock; the cache never waits on a worker.
+      .regionWaveform =
+          [this] {
+            const auto audible = authoring_->audiblePublication();
+            return native_ui::bindRegionWaveform(
+                native_ui::RegionWaveformRequest{.audio = audible.audio,
+                                                 .stale = audible.stale,
+                                                 .documentRevision = session_.revision(),
+                                                 .track = authoring_->selectedTrack(),
+                                                 .region = authoring_->selectedRegion()},
+                waveforms_);
+          },
+      // What EditorRuntime::keyDown handles itself (Command-Shift-O/E score interchange) and the
+      // editor's undo and redo. A plug-in has no New/Open/Save/Quit: the DAW owns those keys.
+      .applicationShortcut =
+          [](const native_ui::KeyEvent& event) {
+            if (event.modifiers.alt) return false;
+            if (event.modifiers.command && event.modifiers.shift &&
+                (event.key == native_ui::NativeKey::O || event.key == native_ui::NativeKey::E))
+              return true;
+            return event.modifiers.primaryShortcut() &&
+                   (event.key == native_ui::NativeKey::Z || event.key == native_ui::NativeKey::Y);
+          },
   });
   if (preferences.has_value()) {
     shell_.activate(native_ui::design::locateDesignAssets(), *preferences);

@@ -702,6 +702,35 @@ core::Result<void> NativeEditorApp::initialize() {
       },
       .exportUnavailable = {},
       .exportBusy = [this] { return applicationController_->exportInProgress(); },
+      .regionWaveform =
+          [this] {
+            auto& runtime = authoring_->runtime();
+            const auto audible = runtime.audiblePublication();
+            return native_ui::bindRegionWaveform(
+                native_ui::RegionWaveformRequest{
+                    .audio = audible.audio,
+                    .stale = audible.stale,
+                    .documentRevision = runtime.document().session().revision(),
+                    .track = runtime.selectedTrack(),
+                    .region = runtime.selectedRegion()},
+                waveforms_);
+          },
+      // Exactly the shortcuts keyDown dispatches as application commands below, plus the
+      // editor's undo and redo.
+      .applicationShortcut =
+          [](const native_ui::KeyEvent& event) {
+            if (!event.modifiers.primaryShortcut() || event.modifiers.alt) return false;
+            switch (event.key) {
+              case native_ui::NativeKey::N:
+              case native_ui::NativeKey::O:
+              case native_ui::NativeKey::S:
+              case native_ui::NativeKey::E:
+              case native_ui::NativeKey::Q:
+              case native_ui::NativeKey::Z:
+              case native_ui::NativeKey::Y: return true;
+              default: return false;
+            }
+          },
   });
   applicationMenu_ = platform::createNativeApplicationMenu();
   if (applicationMenu_ != nullptr) {

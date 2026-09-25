@@ -14,6 +14,7 @@
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 
+#include <cmath>
 #include <limits>
 #include <map>
 
@@ -1162,11 +1163,26 @@ TEST_CASE("EXPORT keeps modified and plain editing keys away from the hidden sco
     CHECK(f.shell.workspace() == Workspace::Export);
   }
   CHECK(f.session.project().findRegion(f.regionId)->notes.size() == 1U);
-  // Application commands still reach the host: new, open, save, export, quit, undo and redo.
+  // With no host declaration every modified key stops at the shell, Command-Q included (the
+  // editor's plain Q quantizes the selection).
   for (const auto key : {NativeKey::N, NativeKey::O, NativeKey::S, NativeKey::E, NativeKey::Q,
                          NativeKey::Z, NativeKey::Y}) {
-    CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = key, .modifiers = {.command = true}}));
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = key, .modifiers = {.command = true}}));
   }
+  // Only the shortcuts the host implements itself pass on to it.
+  f.shell.setHostActions(native_ui::design::ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = {}, .exportBusy = {},
+      .regionWaveform = {},
+      .applicationShortcut = [](const KeyEvent& event) {
+        return event.modifiers.command && !event.modifiers.alt &&
+               (event.key == NativeKey::S || event.key == NativeKey::Z);
+      }});
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::S, .modifiers = {.command = true}}));
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Z, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Q, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller,
+                               KeyEvent{.key = NativeKey::S, .modifiers = {.alt = true, .command = true}}));
+  CHECK(f.controller.documentRevision() == revision);
 }
 
 TEST_CASE("Escape leaves EXPORT whatever holds focus, at every supported size") {
@@ -1372,4 +1388,108 @@ TEST_CASE("retained score ids are refused while EXPORT covers the score") {
   f.shell.setWorkspace(f.controller, Workspace::Sing);
   CHECK(f.frame());
   CHECK(f.shell.dispatchController(f.controller, id, SemanticAction::SetFocus).hasValue());
+}
+
+TEST_CASE("every EXPORT size keeps the run button and a failure line on screen") {
+  using native_ui::design::ShellHostActions;
+  using native_ui::design::Workspace;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f;
+  f.shell.setHostActions(ShellHostActions{.exportSet = [] { return core::success(); }});
+  f.shell.setWorkspace(f.controller, Workspace::Export);
+  f.controller.setExportProgress({.state = authoring::ExportState::Failed,
+                                  .currentOutput = "The voicebank cannot cover r a",
+                                  .completedFiles = 0U,
+                                  .totalFiles = 0U});
+  std::size_t checked = 0U;
+  for (double width = 480.0; width <= 1920.0; width += 80.0) {
+    for (double height = 320.0; height <= 1080.0; height += 40.0) {
+      f.controller.resize(width, height);
+      if (!frameAt(f, width, height)) continue;
+      ++checked;
+      const auto run = f.shell.exportRunButton();
+      const auto* attempt = publishedNode(f, "shell.export.attempt");
+      const bool runOk = run.height > 0.0 && run.bottom() <= height && run.right() <= width;
+      const bool attemptOk = attempt != nullptr && attempt->bounds.height >= 16.0 &&
+                             attempt->bounds.bottom() <= height + 1e-9 &&
+                             !(attempt->bounds.x == run.x && attempt->bounds.y == run.y) &&
+                             attempt->value.find("cannot cover") != std::string::npos;
+      if (!runOk || !attemptOk)
+        std::cerr << width << "x" << height << " run " << run.y << ".." << run.bottom()
+                  << " status " << (attempt ? attempt->bounds.y : -1.0) << "+"
+                  << (attempt ? attempt->bounds.height : -1.0) << '\n';
+      CHECK(runOk);
+      CHECK(attemptOk);
+    }
+  }
+  CHECK(checked > 100U);
+}
+
+TEST_CASE("the notes carry their region's rendered waveform only while it matches, and say why not") {
+  using native_ui::design::ShellHostActions;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f;
+  std::vector<float> mono(48000U * 4U);
+  for (std::size_t i = 0U; i < mono.size(); ++i)
+    mono[i] = 0.8F * static_cast<float>(std::sin(static_cast<double>(i) * 0.03)) *
+              static_cast<float>(0.5 + 0.5 * std::sin(static_cast<double>(i) * 0.0004));
+  const auto envelope = native_ui::RegionEnvelope::build(mono);
+  auto view = std::make_shared<const native_ui::RegionEnvelopeView>(native_ui::RegionEnvelopeView{
+      native_ui::RegionEnvelopeKey{.region = f.regionId, .pcmSamples = mono.size(),
+                                   .sampleRate = 48000U, .originFrame = 0},
+      envelope});
+  native_ui::RegionWaveform supplied{view, "Waveform", {}};
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = {}, .exportBusy = {},
+      .regionWaveform = [&supplied] { return supplied; }});
+  const auto paintInto = [&f](native_ui::PixelSurface& surface) {
+    CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    CHECK(f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()));
+  };
+  native_ui::PixelSurface withWave{1600U, 900U};
+  paintInto(withWave);
+  const auto* status = publishedNode(f, "shell.waveform");
+  CHECK(status != nullptr && status->value == "Showing the current render");
+  supplied = native_ui::RegionWaveform{nullptr, "Out of date", "The score changed after the last render."};
+  native_ui::PixelSurface without{1600U, 900U};
+  paintInto(without);
+  status = publishedNode(f, "shell.waveform");
+  CHECK(status != nullptr && status->value == "Out of date" &&
+        status->description.find("score changed") != std::string::npos);
+  // Only pixels inside the note capsule differ: the waveform never paints outside the note.
+  const auto visuals = f.controller.pianoRoll().visibleNotes();
+  CHECK(!visuals.empty());
+  if (visuals.empty()) return;
+  auto capsule = visuals.front().bounds;
+  capsule.y += f.shell.layout().grid.y;
+  std::size_t inside = 0U;
+  std::size_t outside = 0U;
+  for (std::uint32_t y = 0U; y < 900U; ++y) {
+    for (std::uint32_t x = 0U; x < 1600U; ++x) {
+      const auto index = static_cast<std::size_t>(y) * 1600U + x;
+      if (withWave.pixels()[index] == without.pixels()[index]) continue;
+      const auto px = static_cast<double>(x) + 0.5;
+      const auto py = static_cast<double>(y) + 0.5;
+      const bool within = px >= capsule.x - 1.0 && px <= capsule.right() + 1.0 &&
+                          py >= capsule.y - 1.0 && py <= capsule.bottom() + 1.0;
+      const bool caption = px >= f.shell.layout().gridLabel.x && px <= f.shell.layout().gridLabel.right() &&
+                           py >= f.shell.layout().gridLabel.y && py <= f.shell.layout().gridLabel.bottom();
+      if (within) ++inside;
+      else if (!caption) ++outside;
+    }
+  }
+  if (inside < 20U || outside != 0U) std::cerr << "waveform pixels inside=" << inside << " outside=" << outside << '\n';
+  CHECK(inside >= 20U);
+  CHECK(outside == 0U);
+  // A view for another region is refused at paint, whatever the host said.
+  auto foreign = std::make_shared<const native_ui::RegionEnvelopeView>(native_ui::RegionEnvelopeView{
+      native_ui::RegionEnvelopeKey{.region = domain::RegionId{f.regionId.value() + 1000U},
+                                   .pcmSamples = mono.size(), .sampleRate = 48000U},
+      envelope});
+  supplied = native_ui::RegionWaveform{foreign, "Waveform", {}};
+  native_ui::PixelSurface foreignFrame{1600U, 900U};
+  paintInto(foreignFrame);
+  status = publishedNode(f, "shell.waveform");
+  CHECK(status != nullptr && status->value == "Other region");
 }

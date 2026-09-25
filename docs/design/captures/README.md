@@ -17,6 +17,12 @@ verdict against the concept images.
 | `native-emo-sing-720x480@2x-7e7952f2.png` | EMO | 720×480 (narrow + short: tabs dropped, notes-below hint) | same |
 | `native-emo-export-1600x900@2x.png` | EMO | 1600×900 EXPORT workspace (plan from the real Export Set settings, idle, no export yet) | same; built from the commit that adds this file |
 | `native-scene-export-1600x900@2x.png` | SCENE | 1600×900 EXPORT workspace | same |
+| `native-emo-sing-waveform-1600x900@2x.png` | EMO | 1600×900 | six こ notes bound to the development fixture bank `demo.public-domain.human.production` 0.12.0, after its render is Ready: each note carries its region's own rendered mono audio (signed min/max, tool strip reads WAVEFORM). Built from the commit that adds this file. |
+| `native-scene-sing-waveform-1600x900@2x.png` | SCENE | 1600×900 | same |
+
+The waveform captures add `--development --voicebank-root assets/demo-human-voicebank-public-domain/production-bank`
+and `--auto-close-ms 9000` so the render finishes before the frame is taken. The fixture bank is a
+development bank for tests: these frames show where and how the render is drawn, not vocal quality.
 
 Reproduce: `SEAM_UI_DESIGN=emo "build/release/Project SEAM.app/Contents/MacOS/Project SEAM"
 --auto-close-ms 3000 --screenshot out.ppm --window-width 1600 --window-height 900

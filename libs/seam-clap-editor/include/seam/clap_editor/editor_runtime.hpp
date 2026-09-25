@@ -466,6 +466,9 @@ private:
   // for the requested range, never against the instantaneous value above.
   HostTimelineCapture hostTimelineCapture_;
   std::optional<PreparedHostTimeline> preparedHostTimeline_;
+  // Envelopes of the selected region's rendered audio for the SING notes. Declared last so its
+  // workers stop before the state their repaint request reads is destroyed.
+  native_ui::RegionEnvelopeCache waveforms_{[this] { requestRepaint(); }};
 };
 
 [[nodiscard]] core::Result<std::vector<std::byte>> encodeEditorState(
