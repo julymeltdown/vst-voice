@@ -20,9 +20,14 @@ class _Distribution:
 
 
 class TrainingEnvironmentTests(unittest.TestCase):
-    def capture(self, root, executable, distributions):
+    def capture(self, root, executable, distributions, loaded_modules=None):
         site_packages = Path(root) / "site-packages"
         site_packages.mkdir(parents=True, exist_ok=True)
+        # The full training suite loads real numerical modules before these fixture
+        # environments run. Only the modules supplied by this test belong to the
+        # synthetic prefix being inspected.
+        numerical_modules = {name: None for name in ("numpy", "scipy", "torch", "onnxruntime")}
+        numerical_modules.update(loaded_modules or {})
         with patch.object(training_environment.sys, "prefix", str(root)), \
                 patch.object(training_environment.sys, "executable", str(executable)), \
                 patch.object(training_environment.sysconfig, "get_paths",
@@ -30,7 +35,8 @@ class TrainingEnvironmentTests(unittest.TestCase):
                 patch.object(training_environment.importlib.metadata, "distributions",
                              return_value=distributions), \
                 patch.object(training_environment.platform, "platform", return_value="test-platform"), \
-                patch.object(training_environment.platform, "machine", return_value="test-machine"):
+                patch.object(training_environment.platform, "machine", return_value="test-machine"), \
+                patch.dict(training_environment.sys.modules, numerical_modules):
             return training_environment.capture_environment()
 
     def test_capture_is_canonical_and_binds_package_contents(self):
@@ -94,10 +100,9 @@ class TrainingEnvironmentTests(unittest.TestCase):
             (external / "torch.py").write_bytes(b"external torch")
             distributions = [_Distribution(root, "sample", ["site-packages/sample.py"])]
 
-            with patch.dict(training_environment.sys.modules,
-                            {"torch": SimpleNamespace(__file__=str(external / "torch.py"))}):
-                with self.assertRaisesRegex(ValueError, "resolves outside the active environment: torch"):
-                    self.capture(root, executable, distributions)
+            with self.assertRaisesRegex(ValueError, "resolves outside the active environment: torch"):
+                self.capture(root, executable, distributions,
+                             loaded_modules={"torch": SimpleNamespace(__file__=str(external / "torch.py"))})
 
     def test_loaded_numerical_module_must_be_in_hashed_distribution_inventory(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -111,10 +116,9 @@ class TrainingEnvironmentTests(unittest.TestCase):
             distributions = [_Distribution(root, "sample", ["site-packages/sample.py"])]
             (site_packages / "sample.py").write_bytes(b"sample")
 
-            with patch.dict(training_environment.sys.modules,
-                            {"torch": SimpleNamespace(__file__=str(package_file))}):
-                with self.assertRaisesRegex(ValueError, "absent from the hashed package inventory: torch"):
-                    self.capture(root, executable, distributions)
+            with self.assertRaisesRegex(ValueError, "absent from the hashed package inventory: torch"):
+                self.capture(root, executable, distributions,
+                             loaded_modules={"torch": SimpleNamespace(__file__=str(package_file))})
 
     def test_distinct_platlib_distribution_is_captured_and_binds_loaded_module(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -141,7 +145,8 @@ class TrainingEnvironmentTests(unittest.TestCase):
                     patch.object(training_environment.platform, "platform", return_value="test-platform"), \
                     patch.object(training_environment.platform, "machine", return_value="test-machine"), \
                     patch.dict(training_environment.sys.modules,
-                               {"torch": SimpleNamespace(__file__=str(package_file))}):
+                               {"numpy": None, "scipy": None, "onnxruntime": None,
+                                "torch": SimpleNamespace(__file__=str(package_file))}):
                 captured = training_environment.capture_environment()
 
             self.assertEqual(captured["distributionCount"], 1)

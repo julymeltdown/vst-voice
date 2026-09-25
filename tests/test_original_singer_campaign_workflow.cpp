@@ -25,6 +25,7 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/project.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -275,12 +276,27 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   const auto retakeSha = retaken->rawAssetSha256;
   CHECK(retakeSha.size() == 64U);
   CHECK(retakeSha != generatedSha);
-  const auto retakeReview = std::find_if(controller.productionProject()->reviews.begin(),
+  // Import records technical inspection evidence; a human review must remain an explicit decision.
+  CHECK(std::none_of(controller.productionProject()->reviews.begin(),
       controller.productionProject()->reviews.end(),
-      [&](const production::ReviewRecord& review) { return review.takeId == retakeTakeId; });
-  CHECK(retakeReview != controller.productionProject()->reviews.end());
-  if (retakeReview != controller.productionProject()->reviews.end())
-    CHECK(retakeReview->reviewedAtUtc == "2026-09-14T12:03:00Z");
+      [&](const production::ReviewRecord& review) { return review.takeId == retakeTakeId; }));
+  const auto retakeInspection = std::find_if(controller.productionProject()->metadataRevisions.begin(),
+      controller.productionProject()->metadataRevisions.end(),
+      [&](const production::MetadataRevision& revision) {
+        return revision.takeId == retakeTakeId && revision.kind == "dry-take-inspection.v1";
+      });
+  CHECK(retakeInspection != controller.productionProject()->metadataRevisions.end());
+  if (retakeInspection != controller.productionProject()->metadataRevisions.end()) {
+    CHECK(retakeInspection->rawAssetSha256 == retakeSha);
+    CHECK(retakeInspection->performedAtUtc == "2026-09-14T12:03:00Z");
+    CHECK(retakeInspection->values.contains("evidenceJson"));
+    CHECK(retakeInspection->values.contains("evidenceSha256"));
+    if (retakeInspection->values.contains("evidenceJson") &&
+        retakeInspection->values.contains("evidenceSha256")) {
+      CHECK(core::sha256Hex(retakeInspection->values.at("evidenceJson")) ==
+            retakeInspection->values.at("evidenceSha256"));
+    }
+  }
   // The assessment recorded for the previous material does not qualify this one.
   CHECK(!production::requireTakeSourceQualification(*controller.productionProject(), retakeTakeId));
 
