@@ -76,4 +76,33 @@ HostFramePosition HostTimelineMapper::map(
              project.tempoMap().bpmAt(time::Tick{0}), sampleRate, frameOffset);
 }
 
+void HostTimelineBlockCursor::observe(const HostTimelineState& state,
+                                      std::uint32_t sampleOffset) noexcept {
+  if (sampleOffset < anchorOffset_) {
+    reliable_ = false;
+    return;
+  }
+  state_ = state;
+  anchorOffset_ = sampleOffset;
+  reliable_ = true;
+}
+
+void HostTimelineBlockCursor::markIncomplete(
+    std::uint32_t sampleOffset) noexcept {
+  if (sampleOffset >= anchorOffset_) {
+    anchorOffset_ = sampleOffset;
+  }
+  reliable_ = false;
+}
+
+HostFramePosition HostTimelineBlockCursor::mapAt(
+    std::uint32_t sampleOffset,
+    double projectOffsetSeconds,
+    double defaultTempo,
+    double sampleRate) const noexcept {
+  if (!reliable_ || sampleOffset < anchorOffset_) return {};
+  return HostTimelineMapper::map(state_, projectOffsetSeconds, defaultTempo,
+                                 sampleRate, sampleOffset - anchorOffset_);
+}
+
 }  // namespace seam::clap_editor

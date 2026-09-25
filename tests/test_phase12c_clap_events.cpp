@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <type_traits>
 
@@ -352,6 +353,7 @@ TEST_CASE("live legato replacement requires an explicit monophonic policy") {
 TEST_CASE("MIDI vibrato timbre and pressure persist for new voices and reset per channel") {
   using namespace seam;
   for (const auto message : {std::array<std::uint8_t, 3>{0xb0, 1, 127},
+      std::array<std::uint8_t, 3>{0xb0, 7, 64}, std::array<std::uint8_t, 3>{0xb0, 11, 64},
       std::array<std::uint8_t, 3>{0xb0, 74, 127}, std::array<std::uint8_t, 3>{0xd0, 0, 0}}) {
     const auto run = [&](unsigned scenario) {
       live_voice::VoiceEngine engine;
@@ -390,4 +392,66 @@ TEST_CASE("MIDI vibrato timbre and pressure persist for new voices and reset per
     }
     CHECK(difference > 1.0e-3);
   }
+}
+
+TEST_CASE("MIDI CC7 volume and CC11 expression scale the addressed channel") {
+  using namespace seam;
+  const auto renderEnergy = [](std::optional<std::array<std::uint8_t, 3>> controller) {
+    live_voice::VoiceEngine engine;
+    CHECK(engine.publishResource(phase12c::makeEmbeddedHumanResource()));
+    std::array<float, 4096> pcm{};
+    float* outputs[]{pcm.data()};
+    std::array<live_voice::LiveEvent, 2> events{};
+    std::size_t count = 0U;
+    events[count++] = {.type = live_voice::EventType::Midi1,
+                       .midi = controller.value_or(std::array<std::uint8_t, 3>{0, 0, 0})};
+    events[count++] = {.type = live_voice::EventType::NoteOn, .channel = 0,
+                       .key = 60, .value = 0.9F, .midiOrigin = true};
+    engine.process(controller ? std::span<const live_voice::LiveEvent>{events}
+                              : std::span<const live_voice::LiveEvent>{events.data() + 1U, 1U},
+                   outputs, 1U, static_cast<std::uint32_t>(pcm.size()));
+    double energy = 0.0;
+    for (const auto sample : pcm) energy += std::abs(static_cast<double>(sample));
+    return energy;
+  };
+  const auto baseline = renderEnergy(std::nullopt);
+  const auto volume = renderEnergy(std::array<std::uint8_t, 3>{0xb0, 7, 64});
+  const auto expression = renderEnergy(std::array<std::uint8_t, 3>{0xb0, 11, 64});
+  const auto wrongChannel = renderEnergy(std::array<std::uint8_t, 3>{0xb1, 7, 64});
+  CHECK(baseline > 0.1);
+  CHECK(volume > baseline * 0.49 && volume < baseline * 0.52);
+  CHECK(expression > baseline * 0.49 && expression < baseline * 0.52);
+  CHECK(wrongChannel == baseline);
+}
+
+TEST_CASE("MIDI channel levels multiply independently from targeted CLAP voice levels") {
+  using namespace seam;
+  const auto render = [](bool channelFirst) {
+    live_voice::VoiceEngine engine;
+    CHECK(engine.publishResource(phase12c::makeEmbeddedHumanResource()));
+    std::array<float, 2048> pcm{};
+    float* outputs[]{pcm.data()};
+    const live_voice::LiveEvent note{
+        .type = live_voice::EventType::NoteOn, .noteId = 41, .channel = 0,
+        .key = 60, .value = 0.9F};
+    const live_voice::LiveEvent noteVolume{
+        .type = live_voice::EventType::Volume, .noteId = 41, .channel = 0,
+        .key = 60, .value = 0.25F};
+    const live_voice::LiveEvent noteExpression{
+        .type = live_voice::EventType::Expression, .noteId = 41, .channel = 0,
+        .key = 60, .value = 0.6F};
+    const live_voice::LiveEvent channelVolume{
+        .type = live_voice::EventType::Midi1, .midi = {0xb0, 7, 64}};
+    const live_voice::LiveEvent channelExpression{
+        .type = live_voice::EventType::Midi1, .midi = {0xb0, 11, 96}};
+    const std::array<live_voice::LiveEvent, 5> noteFirst{{
+        note, noteVolume, noteExpression, channelVolume, channelExpression}};
+    const std::array<live_voice::LiveEvent, 5> channelFirstEvents{{
+        note, channelVolume, channelExpression, noteVolume, noteExpression}};
+    engine.process(channelFirst ? std::span<const live_voice::LiveEvent>{channelFirstEvents}
+                                : std::span<const live_voice::LiveEvent>{noteFirst},
+                   outputs, 1U, static_cast<std::uint32_t>(pcm.size()));
+    return pcm;
+  };
+  CHECK(render(false) == render(true));
 }

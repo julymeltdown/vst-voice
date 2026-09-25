@@ -110,6 +110,24 @@ TEST_CASE("a prepared host timeline freezes the range the host actually covered"
   if (slowerFrozen) CHECK(slowerFrozen.value().contentHash() != prepared.contentHash());
 }
 
+TEST_CASE("host timeline capture rejects dropped history and tempo ramps") {
+  auto incomplete = constantCapture(120.0, 4.0);
+  auto overflow = report(2.0, 120.0);
+  overflow.captureIncomplete = true;
+  incomplete.observe(overflow, 48000U);
+  const auto dropped = incomplete.freeze(request(4.0));
+  CHECK(!dropped);
+  if (!dropped) CHECK(dropped.error().message.find("overflowed") != std::string::npos);
+
+  auto ramped = constantCapture(120.0, 4.0);
+  auto ramp = report(2.0, 120.0);
+  ramp.hasTempoRamp = true;
+  ramped.observe(ramp, 48000U);
+  const auto unsupported = ramped.freeze(request(4.0));
+  CHECK(!unsupported);
+  if (!unsupported) CHECK(unsupported.error().message.find("tempo ramp") != std::string::npos);
+}
+
 TEST_CASE("a host-offset preparation rebases both the render map and playback origin") {
   HostTimelineCapture capture;
   capture.observe(report(0.0, 120.0), 48000U);
@@ -151,6 +169,45 @@ TEST_CASE("a host-offset preparation rebases both the render map and playback or
     incomplete.observe(report(beats, 120.0), 48000U);
   }
   CHECK(!incomplete.freeze(shifted));
+}
+
+TEST_CASE("host transport anchors map samples from an in-block seconds correction") {
+  const auto blockStart = HostTimelineState{.playing = true,
+                                             .hasSeconds = true,
+                                             .seconds = 0.5};
+  const auto inBlock = HostTimelineState{.playing = true,
+                                          .hasSeconds = true,
+                                          .seconds = 2.25};
+  seam::clap_editor::HostTimelineBlockCursor cursor{blockStart};
+  const auto before = cursor.mapAt(15U, 0.0, 120.0, 48000.0);
+  cursor.observe(inBlock, 16U);
+  const auto atCorrection = cursor.mapAt(16U, 0.0, 120.0, 48000.0);
+  const auto afterCorrection = cursor.mapAt(33U, 0.0, 120.0, 48000.0);
+
+  CHECK(before.audible);
+  CHECK(atCorrection.audible);
+  CHECK(afterCorrection.audible);
+  CHECK(before.sourceFrame == 24015U);
+  CHECK(atCorrection.sourceFrame == 108000U);
+  CHECK(afterCorrection.sourceFrame == 108017U);
+}
+
+TEST_CASE("incomplete in-block host transport silences mapping until a valid anchor") {
+  const auto blockStart = HostTimelineState{.playing = true,
+                                             .hasSeconds = true,
+                                             .seconds = 0.5};
+  const auto recovered = HostTimelineState{.playing = true,
+                                            .hasSeconds = true,
+                                            .seconds = 3.0};
+  seam::clap_editor::HostTimelineBlockCursor cursor{blockStart};
+  CHECK(cursor.mapAt(15U, 0.0, 120.0, 48000.0).audible);
+  cursor.markIncomplete(16U);
+  CHECK(!cursor.mapAt(16U, 0.0, 120.0, 48000.0).audible);
+  CHECK(!cursor.mapAt(23U, 0.0, 120.0, 48000.0).audible);
+  cursor.observe(recovered, 24U);
+  const auto resumed = cursor.mapAt(25U, 0.0, 120.0, 48000.0);
+  CHECK(resumed.audible);
+  CHECK(resumed.sourceFrame == 144001U);
 }
 
 TEST_CASE("a prepared host timeline refuses a range the host never reported") {

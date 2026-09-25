@@ -224,6 +224,10 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
       request.style = identity.style;
       request.pronunciationIdentity = identity.pronunciationIdentity;
       request.renderRevision = identity.renderRevision;
+      request.resourceKind = identity.resourceKind;
+      if (identity.scorePitchRange.has_value())
+        request.scorePitchRange = character::ScorePitchRange{
+            identity.scorePitchRange->lowestMidiKey, identity.scorePitchRange->highestMidiKey};
       request.sampleRate = identity.sampleRate;
       request.channelCount = result.channelCount;
       request.interleaved = {result.interleaved.data(), result.interleaved.size()};
@@ -246,12 +250,17 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
             static_cast<std::uint64_t>(std::numeric_limits<time::SampleFrame>::max())) {
       frame = character_.performanceFrameAt(static_cast<time::SampleFrame>(mapped.sourceFrame));
     }
+    const auto* snapshot = character_.performanceSnapshot();
     controller_->setCharacterPerformance({
         .mouth = frame.mouth,
         .energy = frame.energy,
         .expression = frame.expression,
         .performing = frame.performing,
         .audibleStale = authoring_->renderer().progress().audibleAudioStale,
+        .voiceStyle = snapshot == nullptr ? std::string{} : snapshot->style,
+        .scorePitchRange = snapshot == nullptr || !snapshot->scorePitchRange.has_value()
+            ? std::string{}
+            : character::scorePitchRangeLabel(*snapshot->scorePitchRange),
     });
   }
   auto state = controller_->sceneState();
@@ -262,8 +271,19 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
     state.characterPerformance.reset();
     controller_->clearCharacterPerformance();
   }
-  if (state.characterPerformance.has_value())
+  state.characterMouthPlacement.reset();
+  state.characterVoiceStyle.clear();
+  state.characterScorePitchRange.clear();
+  if (state.characterPerformance.has_value()) {
     state.characterMouth = character_.mouth(state.characterPerformance->mouth);
+    if (state.characterMouth != nullptr)
+      state.characterMouthPlacement = character_.mouthPlacement();
+    if (const auto* snapshot = character_.performanceSnapshot(); snapshot != nullptr) {
+      state.characterVoiceStyle = snapshot->style;
+      if (snapshot->scorePitchRange.has_value())
+        state.characterScorePitchRange = character::scorePitchRangeLabel(*snapshot->scorePitchRange);
+    }
+  }
   state.characterPortrait = character_.portrait(state.characterState);
   // The same predicate the standalone surface uses, so a package reserves the dock in both or in
   // neither. The portrait above is what the dock draws for the current render status; this is whether

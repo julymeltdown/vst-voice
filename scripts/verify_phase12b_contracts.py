@@ -149,10 +149,14 @@ def main() -> int:
             "CLAP_EXT_AUDIO_PORTS_CONFIG",
             "CLAP_EXT_AUDIO_PORTS_CONFIG_INFO",
             "CLAP_EXT_RENDER",
-            "HostTimelineMapper::map",
             "desiredOutputChannels_",
             "desiredOutputChannels_",
         ],
+        errors,
+    )
+    require_text(
+        root / "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
+        ["HostTimelineMapper::map"],
         errors,
     )
     require_text(

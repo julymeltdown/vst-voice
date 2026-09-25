@@ -205,6 +205,7 @@ EditorRuntime::EditorRuntime(
           .id = package->manifest.characterId,
           .version = package->manifest.version,
           .voicebankId = package->manifest.voicebankId,
+          .resourceIdentity = package->manifest.resourceIdentity,
           .accentPrimary = package->manifest.accent.primary,
           .accentSecondary = package->manifest.accent.secondary,
           .hasPerformance = character_.hasPerformanceAssets(),

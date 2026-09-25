@@ -114,6 +114,8 @@ LiveVoiceEngine::LiveVoiceEngine(bool enableEmbeddedFixture) {
   static_cast<void>(enableEmbeddedFixture);
   configure(48000, 2);
   channelPressure_.fill(1.0F);
+  channelVolume_.fill(1.0F);
+  channelExpression_.fill(1.0F);
 }
 
 void LiveVoiceEngine::configure(std::uint32_t sampleRate,
@@ -138,6 +140,8 @@ void LiveVoiceEngine::reset() noexcept {
   channelBend_.fill(0.0F);
   channelPan_.fill(0.0F);
   channelPressure_.fill(1.0F);
+  channelVolume_.fill(1.0F);
+  channelExpression_.fill(1.0F);
   channelTimbre_.fill(0.0F);
   channelVibrato_.fill(0.0F);
   channelSustain_.fill(false);
@@ -319,6 +323,12 @@ void LiveVoiceEngine::applyEvent(
       for (auto& voice : voices_) {
         if (voice.active && voice.channel == midiChannel) voice.pan = channelPan_[static_cast<std::size_t>(midiChannel)];
       }
+    } else if (status == 0xB0u && (event.midi[1] == 7U || event.midi[1] == 11U)) {
+      const auto level = static_cast<float>(event.midi[2]) / 127.0F;
+      auto& channelLevel = event.midi[1] == 7U
+          ? channelVolume_[static_cast<std::size_t>(midiChannel)]
+          : channelExpression_[static_cast<std::size_t>(midiChannel)];
+      channelLevel = level;
     } else if (status == 0xB0u && event.midi[1] == 1) {
       const auto vibrato = static_cast<float>(event.midi[2]) / 127.0F;
       channelVibrato_[static_cast<std::size_t>(midiChannel)] = vibrato;
@@ -341,6 +351,8 @@ void LiveVoiceEngine::applyEvent(
       channelBend_[static_cast<std::size_t>(midiChannel)] = 0.0F;
       channelPan_[static_cast<std::size_t>(midiChannel)] = 0.0F;
       channelPressure_[static_cast<std::size_t>(midiChannel)] = 1.0F;
+      channelVolume_[static_cast<std::size_t>(midiChannel)] = 1.0F;
+      channelExpression_[static_cast<std::size_t>(midiChannel)] = 1.0F;
       channelTimbre_[static_cast<std::size_t>(midiChannel)] = 0.0F;
       channelVibrato_[static_cast<std::size_t>(midiChannel)] = 0.0F;
       channelSustain_[static_cast<std::size_t>(midiChannel)] = false;
@@ -547,7 +559,9 @@ float LiveVoiceEngine::renderVoice(
   sample = std::clamp(sample, -1.0F, 1.0F);
 
   const auto pressureGain = 0.75F + 0.25F * voice.pressure;
-  auto result = sample * voice.envelope * voice.velocity * pressureGain * voice.volume * voice.expression;
+  const auto channel = static_cast<std::size_t>(std::clamp<int>(voice.channel, 0, 15));
+  auto result = sample * voice.envelope * voice.velocity * pressureGain * voice.volume *
+      voice.expression * channelVolume_[channel] * channelExpression_[channel];
 
   if (voice.legatoFadeInRemaining && voice.legatoFadeLength) {
     const auto progress = 1.0F -

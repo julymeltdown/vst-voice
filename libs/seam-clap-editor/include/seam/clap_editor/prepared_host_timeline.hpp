@@ -163,6 +163,7 @@ public:
     return sampleRate_;
   }
   [[nodiscard]] bool sampleRateChanged() const noexcept { return sampleRateChanged_; }
+  [[nodiscard]] bool captureIncomplete() const noexcept { return captureIncomplete_; }
   // Identity of the host's *content*, not of how many times the host repeated it. A host
   // that keeps reporting the same map while the transport advances produces the same hash.
   [[nodiscard]] std::string contentHash() const;
@@ -188,6 +189,8 @@ private:
   bool playing_{false};
   double lastBeats_{0.0};
   bool meterDropped_{false};
+  bool captureIncomplete_{false};
+  bool tempoRampSeen_{false};
   std::size_t reportCount_{0U};
   std::size_t seekCount_{0U};
   std::uint64_t revision_{0U};

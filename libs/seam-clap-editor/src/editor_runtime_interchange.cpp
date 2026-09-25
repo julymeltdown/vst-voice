@@ -222,18 +222,15 @@ core::Result<void> EditorRuntime::requestInterchangeExport() {
   else
     return core::failure(core::ErrorCode::Unsupported,
                          "Score export requires a .ustx, .mid or .midi destination");
-  // Exporting the whole selected track is the useful default in a DAW session, and it is the same
-  // scope the standalone surface uses.
-  // The chooser may have run the host event loop. Select the track and region only after
-  // validating that the document it offered to export is still the current one.
+  // Export the complete score in both standalone and host surfaces. The chooser
+  // may have run the host event loop, so revalidate the offered document before
+  // preparing the whole-project conversion draft.
   authoring::InterchangeExportDraft draft;
   {
     std::lock_guard lock(mutex_);
     if (authoring_ == nullptr || !matchesDocumentStamp(authoring_->document(), stamp)) {
       return staleInterchangeExport();
     }
-    if (trackId_.valid()) request.trackId = trackId_;
-    if (regionId_.valid()) request.regionId = regionId_;
     auto prepared = authoring::InterchangeService{}.prepareExport(
         authoring_->document().session().project(), std::move(request));
     if (!prepared) return core::Result<void>{prepared.error()};

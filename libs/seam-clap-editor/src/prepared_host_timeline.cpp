@@ -66,6 +66,8 @@ void HostTimelineCapture::clear() noexcept {
   playing_ = false;
   lastBeats_ = 0.0;
   meterDropped_ = false;
+  captureIncomplete_ = false;
+  tempoRampSeen_ = false;
   reportCount_ = 0U;
   seekCount_ = 0U;
   revision_ = 0U;
@@ -75,6 +77,8 @@ void HostTimelineCapture::observe(const HostTimelineState& state,
                                   std::uint32_t sampleRate) {
   if (reportCount_ < kMaximumReports) ++reportCount_;
   ++revision_;
+  if (state.captureIncomplete) captureIncomplete_ = true;
+  if (state.hasTempoRamp) tempoRampSeen_ = true;
   if (!sampleRate_.has_value()) {
     sampleRate_ = sampleRate;
   } else if (*sampleRate_ != sampleRate) {
@@ -133,6 +137,9 @@ std::string HostTimelineCapture::contentHash() const {
   hash.update(sampleRate_.has_value() ? std::to_string(*sampleRate_)
                                       : std::string{"no-sample-rate"});
   hash.update(tempoMap_.contentHash());
+  hash.update(captureIncomplete_ ? "incomplete" : "complete");
+  hash.update(tempoRampSeen_ ? "tempo-ramp" : "step-tempo");
+  hash.update(std::to_string(captureIncomplete_));
   hash.update(loopActive_ ? "loop" : "no-loop");
   if (loopActive_) {
     hash.update(std::to_string(loopStartBeats_));
@@ -148,7 +155,7 @@ std::string HostTimelineCapture::contentHash() const {
 }
 
 bool HostTimelineCapture::describes(const PreparedHostTimeline& prepared) const {
-  if (reportCount_ == 0U || sampleRateChanged_) return false;
+  if (reportCount_ == 0U || sampleRateChanged_ || captureIncomplete_ || tempoRampSeen_) return false;
   if (sampleRate_.value_or(0U) != prepared.sampleRate()) return false;
   if (loopActive_ != prepared.loopActive()) return false;
   if (loopActive_ &&
@@ -248,6 +255,16 @@ core::Result<PreparedHostTimeline> HostTimelineCapture::freeze(
     return core::failure<PreparedHostTimeline>(
         core::ErrorCode::Conflict,
         "The host sample rate changed during capture; recapture the range at one rate");
+  }
+  if (captureIncomplete_) {
+    return core::failure<PreparedHostTimeline>(
+        core::ErrorCode::Unsupported,
+        "Host transport history overflowed or contained an unsupported event; recapture the full range");
+  }
+  if (tempoRampSeen_) {
+    return core::failure<PreparedHostTimeline>(
+        core::ErrorCode::Unsupported,
+        "The host supplied a tempo ramp, but Follow Host currently requires piecewise-constant tempo events");
   }
   if (sampleRate_.has_value() && *sampleRate_ != request.sampleRate) {
     return core::failure<PreparedHostTimeline>(

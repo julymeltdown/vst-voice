@@ -201,6 +201,8 @@ class LiveVoiceEngine {
   std::array<float, 16> channelBend_{};
   std::array<float, 16> channelPan_{};
   std::array<float, 16> channelPressure_{};
+  std::array<float, 16> channelVolume_{};
+  std::array<float, 16> channelExpression_{};
   std::array<float, 16> channelTimbre_{};
   std::array<float, 16> channelVibrato_{};
   std::array<bool, 16> channelSustain_{};

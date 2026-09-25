@@ -363,6 +363,7 @@ private:
       } else {
         instance.refreshRuntimeMetadata();
       }
+      instance.offlineTransportRevision_.store(false, std::memory_order_release);
       return true;
     } catch (...) {
       // Allocation/worker failures must not escape the C ABI or masquerade as
@@ -485,6 +486,8 @@ private:
     state.hasTempo = (transport->flags & CLAP_TRANSPORT_HAS_TEMPO) != 0U &&
                      std::isfinite(transport->tempo) && transport->tempo > 0.0;
     state.tempo = state.hasTempo ? transport->tempo : 120.0;
+    state.hasTempoRamp = state.hasTempo &&
+        (!std::isfinite(transport->tempo_inc) || transport->tempo_inc != 0.0);
     state.loopActive =
         (transport->flags & CLAP_TRANSPORT_IS_LOOP_ACTIVE) != 0U;
     if (state.loopActive && state.hasSeconds) {
@@ -515,6 +518,16 @@ private:
     state.numerator = state.hasTimeSignature ? transport->tsig_num : 4U;
     state.denominator = state.hasTimeSignature ? transport->tsig_denom : 4U;
     return state;
+  }
+
+  static void publishHostTransport(PluginInstance& instance,
+                                   const HostTimelineState& state,
+                                   bool force = false) noexcept {
+    if (instance.transportPublication_.publish(state, force) &&
+        instance.transportPublication_.requestCallbackIfNeeded() &&
+        instance.host_ != nullptr && instance.host_->request_callback != nullptr) {
+      instance.host_->request_callback(instance.host_);
+    }
   }
 
   static void clearOutput(clap_audio_buffer_t& output,
@@ -695,6 +708,9 @@ private:
     const auto renderMode =
         instance->renderMode_.load(std::memory_order_acquire);
     const bool offline = renderMode == CLAP_RENDER_OFFLINE;
+    if (offline && instance->offlineTransportRevision_.load(std::memory_order_acquire)) {
+      return CLAP_PROCESS_ERROR;
+    }
     auto preview = offline ? instance->runtime_->acquireOfflineRenderedPreview()
                            : instance->runtime_->acquireRenderedPreview();
     // Never turn missing Final vocals into a successful silent export. Clear
@@ -706,14 +722,13 @@ private:
     // Hand the host's own report to the owner thread. This is a lock-free store into a
     // publication the runtime never reads directly: the editor runtime is updated from the
     // owner thread, so a report cannot block, allocate or invalidate inside the callback.
-    if (process->transport != nullptr &&
-        instance->transportPublication_.publish(timeline) &&
-        instance->transportPublication_.requestCallbackIfNeeded() &&
-        instance->host_ != nullptr && instance->host_->request_callback != nullptr) {
-      instance->host_->request_callback(instance->host_);
-    }
+    if (process->transport != nullptr) publishHostTransport(*instance, timeline);
     // Fixed Audio can use a supplied seconds timeline or its own free-running
     // sample clock. Beats plus one instantaneous BPM are not a tempo history.
+    if (offline && timeline.hasTempoRamp) {
+      instance->offlineTransportRevision_.store(true, std::memory_order_release);
+      return CLAP_PROCESS_ERROR;
+    }
     if (offline && process->transport != nullptr &&
         (!timeline.hasSeconds || !std::isfinite(timeline.seconds))) return CLAP_PROCESS_ERROR;
     const auto projectOffset =
@@ -725,16 +740,37 @@ private:
                                     process->in_events->size != nullptr
                                 ? process->in_events->size(process->in_events)
                                 : 0U;
+    bool eventListOverflow = false;
     if (eventCount > phase12c::kMaxEventsPerBlock) {
-      // Fail the live portion closed without unbounded host-list iteration.
-      // Reset is allocation-free and prevents ignored note-offs hanging voices.
+      // A bounded event prefix is not a trustworthy transport history: the omitted
+      // suffix may contain a sample-offset seek. Invalidate both live mapping and any
+      // prepared offline authority rather than rendering vocals against a stale clock.
       instance->runtime_->resetLive();
+      eventListOverflow = true;
       eventCount = 0U;
+      HostTimelineState incomplete;
+      incomplete.captureIncomplete = true;
+      publishHostTransport(*instance, incomplete, true);
+      if (offline) {
+        instance->offlineTransportRevision_.store(true, std::memory_order_release);
+        return CLAP_PROCESS_ERROR;
+      }
     }
     const clap_event_header_t* event =
         eventIndex < eventCount && process->in_events->get != nullptr
             ? process->in_events->get(process->in_events, eventIndex)
             : nullptr;
+
+    // Keep only borrowed transport-event pointers, not copied timeline structures, so
+    // in-block playback can follow seconds-timeline corrections without allocating or
+    // putting a large event-state array on the real-time thread's stack. CLAP keeps the
+    // input event list valid for the duration of process().
+    struct TransportBreakpoint final {
+      std::uint32_t sampleOffset{0U};
+      const clap_event_transport_t* event{nullptr};
+    };
+    std::array<TransportBreakpoint, phase12c::kMaxEventsPerBlock> transportBreakpoints{};
+    std::size_t transportBreakpointCount = 0U;
 
     std::array<float*, 8> liveOutputs{};
     for (std::uint32_t channel = 0U; channel < 8U; ++channel) {
@@ -748,6 +784,32 @@ private:
                                        process->frames_count);
       instance->runtime_->renderLiveRange(
           liveOutputs.data(), output.channel_count, liveCursor, boundary);
+      if (event->space_id == CLAP_CORE_EVENT_SPACE_ID &&
+          event->type == CLAP_EVENT_TRANSPORT) {
+        if (event->size >= sizeof(clap_event_transport_t)) {
+          const auto& update = reinterpret_cast<const clap_event_transport_t&>(*event);
+          if (transportBreakpointCount < transportBreakpoints.size()) {
+            transportBreakpoints[transportBreakpointCount++] =
+                TransportBreakpoint{event->time, &update};
+          }
+          publishHostTransport(*instance, hostTimelineState(*instance, &update), true);
+        } else {
+          if (transportBreakpointCount < transportBreakpoints.size()) {
+            transportBreakpoints[transportBreakpointCount++] =
+                TransportBreakpoint{event->time, nullptr};
+          }
+          HostTimelineState incomplete;
+          incomplete.captureIncomplete = true;
+          publishHostTransport(*instance, incomplete, true);
+        }
+        // A transport revision arriving after offline readiness was prepared cannot be
+        // applied safely to this bounce. The owner thread will invalidate the authority;
+        // fail this block closed as well so no stale-map audio escapes before that callback.
+        if (offline) {
+          instance->offlineTransportRevision_.store(true, std::memory_order_release);
+          return CLAP_PROCESS_ERROR;
+        }
+      }
       applyNoteEvent(*instance, *event);
       liveCursor = boundary;
       ++eventIndex;
@@ -760,13 +822,26 @@ private:
         process->frames_count);
 
     bool produced = false;
+    std::size_t transportBreakpointIndex = 0U;
+    HostTimelineBlockCursor playbackCursor{timeline};
+    if (eventListOverflow) playbackCursor.markIncomplete(0U);
     for (std::uint32_t frame = 0U; frame < process->frames_count; ++frame) {
+      while (transportBreakpointIndex < transportBreakpointCount &&
+             transportBreakpoints[transportBreakpointIndex].sampleOffset <= frame) {
+        const auto& breakpoint = transportBreakpoints[transportBreakpointIndex++];
+        if (breakpoint.event == nullptr) {
+          playbackCursor.markIncomplete(breakpoint.sampleOffset);
+          continue;
+        }
+        playbackCursor.observe(hostTimelineState(*instance, breakpoint.event),
+                               breakpoint.sampleOffset);
+      }
       std::optional<std::uint64_t> sourceFrame;
       if (static_cast<bool>(preview) &&
           preview->sampleRate ==
               static_cast<std::uint32_t>(std::llround(instance->sampleRate_))) {
-        const auto mapped = HostTimelineMapper::map(
-            timeline, projectOffset, defaultTempo, instance->sampleRate_, frame);
+        const auto mapped = playbackCursor.mapAt(
+            frame, projectOffset, defaultTempo, instance->sampleRate_);
         if (mapped.audible) sourceFrame = mapped.sourceFrame;
       }
       for (std::uint32_t channel = 0U; channel < output.channel_count; ++channel) {
@@ -792,7 +867,9 @@ private:
     }
     // An intentional rest is still part of a prepared score. SLEEP would let a
     // host omit later vocal entrances when no incoming note event wakes us.
-    if (offline && timeline.playing) return CLAP_PROCESS_CONTINUE;
+    if (timeline.playing && (offline || eventListOverflow)) {
+      return CLAP_PROCESS_CONTINUE;
+    }
     return produced || instance->runtime_->activeLiveVoiceCount() != 0U
                ? CLAP_PROCESS_CONTINUE : CLAP_PROCESS_SLEEP;
   }
@@ -1308,6 +1385,7 @@ private:
   std::vector<float> liveScratch_;
   std::uint64_t freeRunFrame_{0U};
   std::atomic<double> projectOffsetSeconds_{0.0};
+  std::atomic<bool> offlineTransportRevision_{false};
   std::atomic<double> defaultTempo_{120.0};
   // What the host told us about its transport, handed to the editor runtime from the owner
   // thread. The audio callback only ever stores into this; it never locks the runtime.

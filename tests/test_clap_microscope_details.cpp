@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
+#include "seam/application/project_factory.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/interchange/smf_codec.hpp"
 #include "seam/interchange/ustx_codec.hpp"
@@ -388,6 +389,50 @@ TEST_CASE("CLAP interchange export refuses a stale picker and accepts uppercase 
   CHECK(exported.hasValue());
   CHECK(std::filesystem::exists(destination));
   CHECK(std::filesystem::file_size(destination) > 0U);
+}
+
+TEST_CASE("CLAP score export includes every vocal track instead of the selected region only") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("clap-interchange-whole-score");
+  auto runtime = runtimeFixture();
+  auto project = runtime.projectCopy();
+  application::ProjectFactory factory{1'000'000U};
+  const auto harmony = factory.addVocalTrack(project, "Harmony");
+  const auto harmonyRegion = factory.addRegion(project, harmony, "Response",
+      time::Tick{0}, time::Tick{960});
+  auto* region = project.findRegion(harmonyRegion);
+  CHECK(region != nullptr);
+  auto [lyric, note] = factory.makeNote(time::Tick{240}, time::Tick{480},
+      67U, U"la");
+  region->lyrics.push_back(std::move(lyric));
+  region->notes.push_back(std::move(note));
+  CHECK(runtime.replaceProject(std::move(project)).hasValue());
+
+  const auto destination = root / "whole-score.mid";
+  runtime.setInterchangeExportHandoff([&] {
+    return std::optional<std::filesystem::path>{destination};
+  });
+  runtime.setInterchangeExportReviewHandoff(
+      [](const authoring::InterchangeExportDraft& draft) -> core::Result<bool> {
+        CHECK(draft.format == authoring::InterchangeFormat::Smf);
+        CHECK(!draft.bytes.empty());
+        return true;
+      });
+  CHECK(runtime.requestInterchangeExport().hasValue());
+
+  application::ProjectFactory importedFactory{2'000'000U};
+  const auto imported = authoring::InterchangeService{}.importFile(destination,
+      importedFactory,
+      {.format = authoring::InterchangeFormat::Smf,
+       .projectName = "Whole score from CLAP"});
+  CHECK(imported);
+  CHECK(imported.value().project.vocalTracks().size() == 2U);
+  CHECK(imported.value().project.vocalTracks()[1U].name == "Harmony");
+  CHECK(imported.value().project.vocalTracks()[1U].regions.front().notes.size() == 1U);
+  CHECK(imported.value().project.vocalTracks()[1U].regions.front().notes.front().midiKey == 67U);
+  CHECK(imported.value().project.vocalTracks()[1U].regions.front().notes.front().startTick ==
+      time::Tick{240});
+  CHECK(imported.value().project.vocalTracks()[1U].regions.front().lyrics.front().surface == U"la");
 }
 
 TEST_CASE("CLAP interchange export rejects stale review approval before writing") {

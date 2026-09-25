@@ -284,8 +284,11 @@ struct OfflineChecks final {
   bool missingRejected{false};
   bool failedFinalRejected{false};
   bool beatsOnlyRejected{false};
+  bool eventOverflowFailClosed{false};
+  bool realtimeOverflowKeepsAdvancing{false};
   bool followHostOffsetBounce{false};
   bool followHostStaleRejected{false};
+  bool followHostTransportEventRejected{false};
   double followHostExpectedOnsetSeconds{0.0};
   double followHostEarlyEnergy{0.0};
   double followHostOnsetEnergy{0.0};
@@ -420,6 +423,138 @@ bool completeScoreBounce(ProbePlugin& probe, const seam::domain::Project& projec
   evidence.beatsOnlyRejected=probe.plugin->process(probe.plugin,&process)==CLAP_PROCESS_ERROR;
   for (const auto& plane : output.planes)
     evidence.beatsOnlyRejected=evidence.beatsOnlyRejected && energy(std::span{plane.data(),32U})==0.0;
+  if (rate == 48000U) {
+    constexpr std::size_t maximumEventsPerBlock = 1024U;
+    const auto makeMidiEvents = [](std::size_t count) {
+      std::vector<clap_event_midi_t> events(count);
+      for (auto& event : events) {
+        event.header = {static_cast<std::uint32_t>(sizeof(event)), 0U, CLAP_CORE_EVENT_SPACE_ID,
+                        CLAP_EVENT_MIDI, 0U};
+        event.port_index = 0U;
+        event.data[0] = 0xB0U;
+        event.data[1] = 1U;
+        event.data[2] = 0U;
+      }
+      return events;
+    };
+    const auto allSilent = [](const Output& block, std::uint32_t frames) {
+      return std::all_of(block.planes.begin(), block.planes.end(),
+          [frames](const auto& channel) {
+            return energy(std::span{channel.data(), frames}) == 0.0;
+          });
+    };
+    clap_event_transport_t inBlockTransport{};
+    inBlockTransport.header = {sizeof(inBlockTransport), 16U,
+        CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, 0U};
+    inBlockTransport.flags = CLAP_TRANSPORT_IS_PLAYING |
+        CLAP_TRANSPORT_HAS_SECONDS_TIMELINE;
+    inBlockTransport.song_pos_seconds = static_cast<clap_sectime>(
+        100 * CLAP_SECTIME_FACTOR);
+    transport.flags = CLAP_TRANSPORT_IS_PLAYING |
+        CLAP_TRANSPORT_HAS_SECONDS_TIMELINE;
+    transport.song_pos_seconds = 0;
+    Output limitOutput{32U, channels};
+    clap_process_t limitProcess{};
+    limitProcess.audio_outputs = &limitOutput.buffer;
+    limitProcess.audio_outputs_count = 1U;
+    limitProcess.transport = &transport;
+    limitProcess.frames_count = 32U;
+
+    // Exactly 1,024 events is accepted; a transport event at the final slot still
+    // invalidates a Final bounce at its in-block sample offset and clears the block.
+    auto exactMidi = makeMidiEvents(maximumEventsPerBlock - 1U);
+    EventList exactList;
+    for (const auto& event : exactMidi) exactList.events.push_back(&event.header);
+    exactList.events.push_back(&inBlockTransport.header);
+    limitProcess.in_events = &exactList.input;
+    const auto exactRejected = probe.plugin->process(probe.plugin, &limitProcess) ==
+        CLAP_PROCESS_ERROR && allSilent(limitOutput, limitProcess.frames_count);
+
+    probe.stop();
+    const bool rebound = probe.render->set(probe.plugin, CLAP_RENDER_OFFLINE) &&
+                         probe.activate(48000U);
+    bool exactOrdinaryAccepted = false;
+    bool overflowRejected = false;
+    bool overflowStaleRejected = false;
+    if (rebound) {
+      auto boundedMidi = makeMidiEvents(maximumEventsPerBlock);
+      EventList boundedList;
+      for (const auto& event : boundedMidi) boundedList.events.push_back(&event.header);
+      limitProcess.in_events = &boundedList.input;
+      exactOrdinaryAccepted = probe.plugin->process(probe.plugin, &limitProcess) ==
+          CLAP_PROCESS_CONTINUE;
+
+      // The 1,025th event is the seek that the previous prefix-truncation path lost.
+      auto overflowingMidi = makeMidiEvents(maximumEventsPerBlock);
+      EventList overflowingList;
+      for (const auto& event : overflowingMidi)
+        overflowingList.events.push_back(&event.header);
+      overflowingList.events.push_back(&inBlockTransport.header);
+      limitProcess.in_events = &overflowingList.input;
+      overflowRejected = probe.plugin->process(probe.plugin, &limitProcess) ==
+          CLAP_PROCESS_ERROR && allSilent(limitOutput, limitProcess.frames_count);
+      limitProcess.in_events = nullptr;
+      probe.plugin->on_main_thread(probe.plugin);
+      overflowStaleRejected = probe.plugin->process(probe.plugin, &limitProcess) ==
+          CLAP_PROCESS_ERROR && allSilent(limitOutput, limitProcess.frames_count);
+    }
+    evidence.eventOverflowFailClosed = exactRejected && rebound &&
+        exactOrdinaryAccepted && overflowRejected && overflowStaleRejected;
+    probe.stop();
+
+    // In realtime, overflow mutes only the affected block. It must still return
+    // CONTINUE while the host says playback is active, so a conforming host advances
+    // into the next event-free block and the score can recover from its fresh clock.
+    const bool finalRebound = probe.render->set(probe.plugin, CLAP_RENDER_OFFLINE);
+    const bool realtimeReady = finalRebound &&
+        probe.render->set(probe.plugin, CLAP_RENDER_REALTIME) && probe.activate(48000U);
+    if (realtimeReady) {
+      const auto longest = std::max_element(noteWindows.begin(), noteWindows.end(),
+          [](const auto& left, const auto& right) {
+            return (left.second - left.first) < (right.second - right.first);
+          });
+      if (longest != noteWindows.end()) {
+        const auto audibleAnchor = longest->first + (longest->second - longest->first) * 0.5;
+        auto overflowingRealtimeMidi = makeMidiEvents(maximumEventsPerBlock + 1U);
+        EventList realtimeEvents;
+        for (const auto& event : overflowingRealtimeMidi)
+          realtimeEvents.events.push_back(&event.header);
+        clap_event_transport_t realtimeTransport{};
+        realtimeTransport.flags = CLAP_TRANSPORT_IS_PLAYING |
+            CLAP_TRANSPORT_HAS_SECONDS_TIMELINE;
+        realtimeTransport.song_pos_seconds = static_cast<clap_sectime>(std::llround(
+            audibleAnchor * static_cast<double>(CLAP_SECTIME_FACTOR)));
+        Output realtimeOutput{512U, channels};
+        clap_process_t realtimeProcess{};
+        realtimeProcess.audio_outputs = &realtimeOutput.buffer;
+        realtimeProcess.audio_outputs_count = 1U;
+        realtimeProcess.transport = &realtimeTransport;
+        realtimeProcess.in_events = &realtimeEvents.input;
+        realtimeProcess.frames_count = 512U;
+        const auto overflowStatus = probe.plugin->process(probe.plugin,
+                                                           &realtimeProcess);
+        const bool overflowMuted = allSilent(realtimeOutput,
+                                              realtimeProcess.frames_count);
+        probe.plugin->on_main_thread(probe.plugin);
+        if (overflowStatus == CLAP_PROCESS_CONTINUE) {
+          // A CLAP host stops polling after SLEEP; model that contract here rather
+          // than forcing a recovery process call after a sleeping status.
+          realtimeTransport.song_pos_seconds = static_cast<clap_sectime>(std::llround(
+              (audibleAnchor + 512.0 / 48000.0) *
+              static_cast<double>(CLAP_SECTIME_FACTOR)));
+          realtimeProcess.in_events = nullptr;
+          const auto recoveryStatus = probe.plugin->process(probe.plugin,
+                                                             &realtimeProcess);
+          const auto recoveryEnergy = energy(std::span{
+              realtimeOutput.planes.front().data(), realtimeProcess.frames_count});
+          evidence.realtimeOverflowKeepsAdvancing = overflowMuted &&
+              (recoveryStatus == CLAP_PROCESS_CONTINUE ||
+               recoveryStatus == CLAP_PROCESS_SLEEP) && recoveryEnergy > 0.0;
+        }
+      }
+    }
+    probe.stop();
+  }
   probe.stop();
   return total>0.01 && std::all_of(noteEnergies.begin(),noteEnergies.end(),[](double value){return value>0.01;});
 }
@@ -527,24 +662,41 @@ bool followHostOffsetBounce(const clap_plugin_factory_t* factory,
   evidence.followHostEarlyEnergy = earlyEnergy;
   evidence.followHostOnsetEnergy = onsetEnergy;
   evidence.followHostOffsetBounce = earlyEnergy < 0.001 && onsetEnergy > 0.01;
-  evidence.followHostStage = "stale-report";
+  evidence.followHostStage = "mid-bounce-transport-event";
 
-  // Change a tempo before project tick zero. A prepared Final must be revoked;
-  // the next offline process must return an error with cleared output.
-  transport.flags |= CLAP_TRANSPORT_HAS_BEATS_TIMELINE | CLAP_TRANSPORT_HAS_TEMPO;
-  transport.song_pos_beats = CLAP_BEATTIME_FACTOR;
-  transport.song_pos_seconds = CLAP_SECTIME_FACTOR / 2;
-  transport.tempo = 90.0;
+  // A sample-offset transport revision during the bounce must not let this block escape
+  // under the previously frozen authority. The event is deliberately inside the block.
+  clap_event_transport_t inBlockTransport = transport;
+  inBlockTransport.header = {sizeof(inBlockTransport), 16U,
+                             CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_TRANSPORT, 0U};
+  inBlockTransport.flags = CLAP_TRANSPORT_IS_PLAYING |
+      CLAP_TRANSPORT_HAS_SECONDS_TIMELINE | CLAP_TRANSPORT_HAS_BEATS_TIMELINE |
+      CLAP_TRANSPORT_HAS_TEMPO;
+  inBlockTransport.song_pos_beats = 3 * CLAP_BEATTIME_FACTOR;
+  inBlockTransport.song_pos_seconds = static_cast<clap_sectime>(std::llround(
+      hostMap.secondsAt(tickAtBeat(3)) * CLAP_SECTIME_FACTOR));
+  inBlockTransport.tempo = 180.0;
   process.frames_count = 32U;
-  if (probe.plugin->process(probe.plugin, &process) != CLAP_PROCESS_CONTINUE) return false;
+  EventList transportEvents;
+  transportEvents.events = {&inBlockTransport.header};
+  process.in_events = &transportEvents.input;
+  evidence.followHostTransportEventRejected =
+      probe.plugin->process(probe.plugin, &process) == CLAP_PROCESS_ERROR;
+  for (const auto& plane : output.planes) {
+    evidence.followHostTransportEventRejected =
+        evidence.followHostTransportEventRejected &&
+        energy(std::span{plane.data(), process.frames_count}) == 0.0;
+  }
+  process.in_events = nullptr;
   probe.plugin->on_main_thread(probe.plugin);
+  evidence.followHostStage = "stale-report-after-in-block-event";
+  process.frames_count = 32U;
   evidence.followHostStaleRejected =
       probe.plugin->process(probe.plugin, &process) == CLAP_PROCESS_ERROR;
   for (const auto& plane : output.planes) {
     evidence.followHostStaleRejected = evidence.followHostStaleRejected &&
         energy(std::span{plane.data(), 32U}) == 0.0;
   }
-  probe.stop();
   evidence.followHostStage = "complete";
   return evidence.followHostOffsetBounce && evidence.followHostStaleRejected;
 }
@@ -845,7 +997,10 @@ int main(int argc, char** argv) {
   const auto offlineChecksPassed=offlineChecks.missingRejected && (expectMissingBank ||
       (offlineChecks.completeScore && offlineChecks.rateChange &&
        offlineChecks.failedFinalRejected && offlineChecks.beatsOnlyRejected &&
-       offlineChecks.followHostOffsetBounce && offlineChecks.followHostStaleRejected));
+       offlineChecks.eventOverflowFailClosed &&
+       offlineChecks.realtimeOverflowKeepsAdvancing &&
+       offlineChecks.followHostOffsetBounce && offlineChecks.followHostStaleRejected &&
+       offlineChecks.followHostTransportEventRejected));
   if (offlineOnly) {
     bool audioWritten=audioPath.empty();
     if (!audioPath.empty() && !offlineChecks.scorePcm48k.empty()) {
@@ -863,8 +1018,11 @@ int main(int argc, char** argv) {
         {"completeScoreBounce",offlineChecks.completeScore},{"rateChangeReprepared",offlineChecks.rateChange},
         {"missingFinalRejected",offlineChecks.missingRejected},{"failedFinalRejected",offlineChecks.failedFinalRejected},
         {"beatsOnlyRejected",offlineChecks.beatsOnlyRejected},{"expectedMissingBank",expectMissingBank},
+        {"eventOverflowFailClosed",offlineChecks.eventOverflowFailClosed},
+        {"realtimeOverflowKeepsAdvancing",offlineChecks.realtimeOverflowKeepsAdvancing},
         {"followHostOffsetBounce",offlineChecks.followHostOffsetBounce},
         {"followHostStaleRejected",offlineChecks.followHostStaleRejected},
+        {"followHostTransportEventRejected",offlineChecks.followHostTransportEventRejected},
         {"followHostExpectedOnsetSeconds",offlineChecks.followHostExpectedOnsetSeconds},
         {"followHostEarlyEnergy",offlineChecks.followHostEarlyEnergy},
         {"followHostOnsetEnergy",offlineChecks.followHostOnsetEnergy},

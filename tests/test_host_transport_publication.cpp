@@ -115,13 +115,15 @@ TEST_CASE("the owner is notified once per undrained report") {
   CHECK(publication.requestCallbackIfNeeded());
   CHECK(publication.shouldNotifyOwner());
   // A second report before the owner has drained does not ask again; the pending request
-  // already covers both, and the drain reads the newest snapshot.
+  // already covers both, and the drain preserves both observations in order.
   CHECK(publication.publish(transport(1.0, 120.0)));
   CHECK(!publication.requestCallbackIfNeeded());
   CHECK(publication.shouldNotifyOwner());
   publication.clearNotify();
   CHECK(!publication.shouldNotifyOwner());
   HostTimelineState consumed;
+  CHECK(publication.tryConsume(consumed));
+  CHECK(consumed.beats == 0.0);
   CHECK(publication.tryConsume(consumed));
   CHECK(consumed.beats == 1.0);
   CHECK(!publication.tryConsume(consumed));
@@ -130,8 +132,8 @@ TEST_CASE("the owner is notified once per undrained report") {
   CHECK(publication.shouldNotifyOwner());
 }
 
-TEST_CASE("a transport published from another thread is never torn") {
-  // Several rounds, because a torn snapshot is an interleaving and one round can miss it.
+TEST_CASE("a transport queue preserves ordered reports across threads") {
+  // Several rounds exercise the SPSC release/acquire hand-off on arm64 as well as x86.
   for (int round = 0; round < 3; ++round) {
   HostTransportPublication publication;
   constexpr int kReports = 2000;
@@ -153,14 +155,16 @@ TEST_CASE("a transport published from another thread is never torn") {
 
   int consumedCount = 0;
   int inconsistent = 0;
+  int expected = 0;
   HostTimelineState last;
-  const auto record = [&consumedCount, &inconsistent, &last](const HostTimelineState& value) {
+  const auto record = [&consumedCount, &inconsistent, &last, &expected](const HostTimelineState& value) {
     ++consumedCount;
     last = value;
-    // A snapshot that mixed two reports would break the relation the writer encoded.
-    if (!value.hasBeats || !value.hasTempo || value.tempo != 120.0 + value.beats) {
+    if (!value.hasBeats || !value.hasTempo || value.tempo != 120.0 + value.beats ||
+        value.beats != static_cast<double>(expected)) {
       ++inconsistent;
     }
+    ++expected;
   };
   while (!writerDone.load(std::memory_order_acquire)) {
     HostTimelineState consumed;
@@ -173,13 +177,28 @@ TEST_CASE("a transport published from another thread is never torn") {
   writer.join();
   HostTimelineState consumed;
   while (publication.tryConsume(consumed)) record(consumed);
-  // A reader is allowed to miss intermediate positions -- the slot holds the newest state --
-  // but it must never see a mixed one, and it must see the last report the writer published.
   CHECK(inconsistent == 0);
-  CHECK(consumedCount > 0);
+  CHECK(consumedCount == kReports);
   CHECK(last.hasBeats);
   CHECK(last.beats == static_cast<double>(kReports - 1));
   CHECK(last.tempo == 120.0 + static_cast<double>(kReports - 1));
   CHECK(publication.publishedCount() == static_cast<std::uint64_t>(kReports));
   }
+}
+
+TEST_CASE("transport queue reports overflow as incomplete history") {
+  HostTransportPublication publication;
+  for (std::size_t index = 0; index <= HostTransportPublication::kCapacity; ++index) {
+    CHECK(publication.publish(transport(static_cast<double>(index), 120.0), true));
+  }
+  CHECK(publication.overflowCount() == 1U);
+  HostTimelineState state;
+  for (std::size_t index = 0; index < HostTransportPublication::kCapacity; ++index) {
+    CHECK(publication.tryConsume(state));
+    CHECK(state.hasBeats);
+    CHECK(state.beats == static_cast<double>(index));
+  }
+  CHECK(publication.tryConsume(state));
+  CHECK(state.captureIncomplete);
+  CHECK(!publication.tryConsume(state));
 }

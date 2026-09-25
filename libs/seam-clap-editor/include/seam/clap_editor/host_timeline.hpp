@@ -14,6 +14,10 @@ struct HostTimelineState final {
   double beats{0.0};
   bool hasTempo{false};
   double tempo{120.0};
+  // CLAP tempo_inc is the per-sample tempo slope until the next time-info event.
+  // The offline map is piecewise constant today, so preserve and reject ramps.
+  bool hasTempoRamp{false};
+  bool captureIncomplete{false};
   bool loopActive{false};
   bool loopHasSeconds{false};
   double loopStartSeconds{0.0};
@@ -45,6 +49,27 @@ public:
       const domain::Project& project,
       double sampleRate,
       std::uint32_t frameOffset = 0U) noexcept;
+};
+
+// Allocation-free cursor for mapping one process block with sample-offset transport
+// corrections. Callers apply sorted host events before mapping each corresponding frame.
+class HostTimelineBlockCursor final {
+public:
+  explicit HostTimelineBlockCursor(HostTimelineState blockStart) noexcept
+      : state_(blockStart) {}
+
+  void observe(const HostTimelineState& state, std::uint32_t sampleOffset) noexcept;
+  void markIncomplete(std::uint32_t sampleOffset) noexcept;
+  [[nodiscard]] HostFramePosition mapAt(
+      std::uint32_t sampleOffset,
+      double projectOffsetSeconds,
+      double defaultTempo,
+      double sampleRate) const noexcept;
+
+private:
+  HostTimelineState state_{};
+  std::uint32_t anchorOffset_{0U};
+  bool reliable_{true};
 };
 
 }  // namespace seam::clap_editor

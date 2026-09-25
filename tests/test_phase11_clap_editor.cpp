@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
@@ -47,7 +48,10 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
                          const std::filesystem::path& packageRoot) {
   using namespace seam;
   native_ui::CharacterPresentation artwork;
-  if (!artwork.load(packageRoot)) return false;
+  if (const auto loaded = artwork.load(packageRoot); !loaded) {
+    std::cerr << "CLAP character package failed to load: " << loaded.error().message << '\n';
+    return false;
+  }
   const auto& manifest = artwork.package()->manifest;
   auto cards = runtime.controller().sceneState().voicebankCards;
   const auto project = runtime.projectCopy();
@@ -96,16 +100,43 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
     const auto top = layout.characterDockMetadataTop(portrait) +
         layout.characterDockNameToRoleAdvance + layout.characterDockRoleToStateAdvance +
         layout.characterDockStateToModeAdvance + layout.characterDockPerformanceAdvance;
-    const ui::Rect mouthBounds{
+    ui::Rect mouthBounds{
         dockLeft + layout.characterDockTextInsetX + layout.characterDockPerformanceBarWidth,
         top - layout.characterDockMouthAssetHeight,
         layout.characterDockMouthAssetWidth, layout.characterDockMouthAssetHeight};
+    const auto* portraitImage = artwork.portrait(character::State::Neutral);
+    std::optional<ui::Rect> fittedPortrait;
+    if (portraitImage != nullptr && portraitImage->width() > 0U &&
+        portraitImage->height() > 0U) {
+      const auto imageWidth = static_cast<double>(portraitImage->width());
+      const auto imageHeight = static_cast<double>(portraitImage->height());
+      const auto scale = std::min(portrait.width / imageWidth,
+                                  portrait.height / imageHeight);
+      const auto width = imageWidth * scale;
+      const auto height = imageHeight * scale;
+      fittedPortrait = ui::Rect{portrait.x + (portrait.width - width) * 0.5,
+                                portrait.y + (portrait.height - height) * 0.5,
+                                width, height};
+    }
+    const auto placement = artwork.mouthPlacement();
+    if (placement && fittedPortrait) {
+      mouthBounds = ui::Rect{
+          fittedPortrait->x + placement->x * fittedPortrait->width,
+          fittedPortrait->y + placement->y * fittedPortrait->height,
+          placement->width * fittedPortrait->width,
+          placement->height * fittedPortrait->height};
+    }
     native_ui::PixelSurface expected{1100U, 720U};
     native_ui::RasterCanvas expectedCanvas{expected};
     expected.clear(painter.theme().characterBackground);
+    if (placement && fittedPortrait) {
+      expectedCanvas.drawImageNearest(*fittedPortrait, *portraitImage,
+                                      layout.characterDockPortraitScale);
+    }
     if (!performance.reducedMotion) {
       if (const auto* asset = artwork.mouth(mouth); asset != nullptr) {
-        expectedCanvas.drawImageNearest(mouthBounds, *asset, layout.characterDockPortraitScale);
+        expectedCanvas.drawImageNearest(mouthBounds, *asset,
+                                        placement ? 1.0 : layout.characterDockPortraitScale);
       } else {
         const auto height = layout.characterDockPerformanceGlyphHeight *
                             (0.2 + 0.8 * performance.energy);
@@ -287,6 +318,7 @@ int main() {
       seam::formats::stringifyJson(performanceManifest.value()));
   if (!statusManifest) return 48;
   statusManifest.value().asObject().erase("mouths");
+  statusManifest.value().asObject().erase("mouthPlacement");
   statusManifest.value().asObject().erase("developmentOnly");
   statusManifest.value().asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{1}};
   if (!seam::core::durableAtomicWriteText(statusRoot / "manifest.json",
