@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <system_error>
 
 namespace seam::character {
@@ -69,7 +70,9 @@ State parseState(std::string_view value) noexcept {
 }
 
 core::Result<void> Manifest::validate() const {
-  if (schemaVersion != kStatusOnlyManifestSchema && schemaVersion != kPerformanceManifestSchema) {
+  if (schemaVersion != kStatusOnlyManifestSchema &&
+      schemaVersion != kPerformanceManifestSchema &&
+      schemaVersion != kResourceBoundManifestSchema) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Unsupported character manifest schema",
                          std::to_string(schemaVersion));
@@ -77,7 +80,8 @@ core::Result<void> Manifest::validate() const {
   if (schemaVersion == kStatusOnlyManifestSchema) {
     // A status-only package cannot claim a performance field of any kind: that would let a package
     // look like a turnaround while its schema says a reader may not expect one.
-    if (declaresPerformance() || developmentOnly) {
+    if (declaresPerformance() || developmentOnly || mouthPlacement.has_value() ||
+        resourceIdentity.has_value()) {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "A status-only character package declares no performance assets");
     }
@@ -86,6 +90,19 @@ core::Result<void> Manifest::validate() const {
       voicebankId.empty() || style.empty()) {
     return core::failure(core::ErrorCode::InvariantViolation,
                          "Character manifest identity fields must not be empty");
+  }
+  if (schemaVersion == kResourceBoundManifestSchema) {
+    if (!resourceIdentity.has_value())
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "A schema-three character package requires an exact singer resource identity");
+    const auto identity = resourceIdentity->validate();
+    if (!identity) return identity;
+    if (voicebankId != resourceIdentity->id)
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Character legacy voicebank ID must match its bound singer resource ID");
+  } else if (resourceIdentity.has_value()) {
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "An exact singer resource identity requires character schema three");
   }
   if (!validHexColor(accent.primary) || !validHexColor(accent.secondary)) {
     return core::failure(core::ErrorCode::InvariantViolation,
@@ -99,13 +116,27 @@ core::Result<void> Manifest::validate() const {
                            std::string{stateName(state)});
     }
   }
-  if (schemaVersion == kPerformanceManifestSchema) {
+  if (schemaVersion == kPerformanceManifestSchema ||
+      schemaVersion == kResourceBoundManifestSchema) {
     for (const auto shape : kMouthShapes) {
       const auto iterator = mouthAssets.find(shape);
       if (iterator == mouthAssets.end() || !safeRelativeAsset(iterator->second)) {
         return core::failure(core::ErrorCode::InvariantViolation,
                              "Character performance asset is missing or unsafe",
                              std::string{mouthShapeName(shape)});
+      }
+    }
+    if (mouthPlacement.has_value()) {
+      const auto& placement = *mouthPlacement;
+      if (!std::isfinite(placement.x) || !std::isfinite(placement.y) ||
+          !std::isfinite(placement.width) || !std::isfinite(placement.height) ||
+          placement.x < 0.0 || placement.y < 0.0 ||
+          placement.width <= 0.0 || placement.height <= 0.0 ||
+          placement.width > 1.0 || placement.height > 1.0 ||
+          placement.x + placement.width > 1.0 ||
+          placement.y + placement.height > 1.0) {
+        return core::failure(core::ErrorCode::InvariantViolation,
+                             "Character mouth placement is outside the portrait bounds");
       }
     }
   }
@@ -182,6 +213,32 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
   manifest.version = std::move(version.value());
   manifest.voicebankId = std::move(voicebank.value());
   manifest.style = std::move(style.value());
+  if (const auto* singer = parsed.value().find("singerResource"); singer != nullptr) {
+    if (!singer->isObject())
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character singerResource must be an object");
+    const auto* kindValue = singer->find("kind");
+    if (kindValue == nullptr || !kindValue->isString())
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character singerResource kind is missing");
+    domain::SingerResourceKind kind;
+    if (kindValue->asString() == "sample") kind = domain::SingerResourceKind::Sample;
+    else if (kindValue->asString() == "procedural") kind = domain::SingerResourceKind::Procedural;
+    else if (kindValue->asString() == "neural") kind = domain::SingerResourceKind::Neural;
+    else return core::failure<Package>(core::ErrorCode::ParseError,
+                                       "Character singerResource kind is unknown");
+    auto singerId = requiredString(*singer, "id");
+    auto singerVersion = requiredString(*singer, "version");
+    auto singerHash = requiredString(*singer, "contentHash");
+    if (!singerId) return core::Result<Package>{singerId.error()};
+    if (!singerVersion) return core::Result<Package>{singerVersion.error()};
+    if (!singerHash) return core::Result<Package>{singerHash.error()};
+    manifest.resourceIdentity = domain::SingerResourceIdentity{
+        .kind = kind,
+        .id = std::move(singerId.value()),
+        .version = std::move(singerVersion.value()),
+        .contentHash = std::move(singerHash.value())};
+  }
   if (const auto* defaultState = parsed.value().find("defaultState");
       defaultState != nullptr && defaultState->isString()) {
     manifest.defaultState = parseState(defaultState->asString());
@@ -230,6 +287,21 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
       }
       manifest.mouthAssets.emplace(shape, std::filesystem::path{value->asString()});
     }
+  }
+  if (const auto* placement = parsed.value().find("mouthPlacement"); placement != nullptr) {
+    if (!placement->isObject())
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character mouth placement must be an object");
+    const auto* x = placement->find("x");
+    const auto* y = placement->find("y");
+    const auto* width = placement->find("width");
+    const auto* height = placement->find("height");
+    if (x == nullptr || y == nullptr || width == nullptr || height == nullptr ||
+        !x->isNumber() || !y->isNumber() || !width->isNumber() || !height->isNumber())
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character mouth placement needs numeric x, y, width and height");
+    manifest.mouthPlacement = MouthPlacement{x->asNumber(), y->asNumber(),
+                                              width->asNumber(), height->asNumber()};
   }
   if (const auto* developmentOnly = parsed.value().find("developmentOnly");
       developmentOnly != nullptr) {

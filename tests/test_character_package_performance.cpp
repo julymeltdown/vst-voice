@@ -47,9 +47,24 @@ void writeSurface(const std::filesystem::path& path, std::uint8_t red) {
   CHECK(surface.writePpm(path));
 }
 
+void writeMouthSurface(const std::filesystem::path& path, std::uint8_t background,
+                       std::uint8_t foreground) {
+  std::filesystem::create_directories(path.parent_path());
+  native_ui::PixelSurface surface{4U, 4U};
+  surface.clear(native_ui::Color{background, 90U, 120U, 255U});
+  surface.pixels()[2U * surface.width() + 2U] =
+      native_ui::Color{foreground, 35U, 105U, 255U}.bgra();
+  CHECK(surface.writePpm(path));
+}
+
 std::filesystem::path writePackage(const std::filesystem::path& root, std::int64_t schemaVersion,
                                    Mouths mouths, std::optional<bool> developmentOnly,
-                                   std::string_view voicebankId = "voice.test") {
+                                   std::string_view voicebankId = "voice.test",
+                                   std::string_view resourceKind = "procedural",
+                                   std::string_view resourceVersion = "1.0.0",
+                                   std::string_view resourceHash =
+                                       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                                   std::optional<character::MouthPlacement> mouthPlacement = std::nullopt) {
   std::filesystem::create_directories(root / "runtime");
   std::uint8_t red = 20U;
   formats::JsonValue::Object states;
@@ -64,6 +79,13 @@ std::filesystem::path writePackage(const std::filesystem::path& root, std::int64
   manifest.emplace("displayName", "Test Character");
   manifest.emplace("version", "1.0.0");
   manifest.emplace("voicebankId", std::string{voicebankId});
+  if (schemaVersion == character::kResourceBoundManifestSchema) {
+    manifest.emplace("singerResource", formats::JsonValue{formats::JsonValue::Object{
+        {"kind", std::string{resourceKind}},
+        {"id", std::string{voicebankId}},
+        {"version", std::string{resourceVersion}},
+        {"contentHash", std::string{resourceHash}}}});
+  }
   manifest.emplace("style", "emo-low-poly");
   manifest.emplace("defaultState", "neutral");
   manifest.emplace("accent", formats::JsonValue{formats::JsonValue::Object{
@@ -85,10 +107,19 @@ std::filesystem::path writePackage(const std::filesystem::path& root, std::int64
         continue;
       }
       const auto relative = "runtime/mouth-" + std::string{name} + ".ppm";
-      writeSurface(root / relative, static_cast<std::uint8_t>(150U + index));
+      if (mouthPlacement.has_value())
+        writeMouthSurface(root / relative, static_cast<std::uint8_t>(150U + index),
+                          static_cast<std::uint8_t>(190U + index));
+      else
+        writeSurface(root / relative, static_cast<std::uint8_t>(150U + index));
       declared.emplace(std::string{name}, relative);
     }
     manifest.emplace("mouths", formats::JsonValue{std::move(declared)});
+  }
+  if (mouthPlacement.has_value()) {
+    manifest.emplace("mouthPlacement", formats::JsonValue{formats::JsonValue::Object{
+        {"x", mouthPlacement->x}, {"y", mouthPlacement->y},
+        {"width", mouthPlacement->width}, {"height", mouthPlacement->height}}});
   }
   std::ofstream output(root / "manifest.json", std::ios::binary | std::ios::trunc);
   output << formats::stringifyJson(formats::JsonValue{std::move(manifest)});
@@ -96,13 +127,18 @@ std::filesystem::path writePackage(const std::filesystem::path& root, std::int64
   return root;
 }
 
-character::CharacterPerformanceSnapshot performanceFor(std::string resourceId) {
+character::CharacterPerformanceSnapshot performanceFor(
+    std::string resourceId, domain::SingerResourceKind resourceKind =
+                                domain::SingerResourceKind::Sample,
+    std::string resourceVersion = "1.0.0",
+    std::string resourceHash =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
   const std::vector<float> samples(480U, 0.5F);
   character::CharacterPerformanceRequest request;
   request.resourceId = std::move(resourceId);
-  request.resourceVersion = "1.0.0";
-  request.resourceContentHash =
-      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  request.resourceVersion = std::move(resourceVersion);
+  request.resourceContentHash = std::move(resourceHash);
+  request.resourceKind = resourceKind;
   request.style = "neutral";
   request.pronunciationIdentity = "ja-ipa-1";
   request.renderRevision = 1U;
@@ -160,6 +196,28 @@ TEST_CASE("A performance package declares every mouth it can be asked for") {
   }
 }
 
+TEST_CASE("A declared mouth placement keys the source corner transparent on load") {
+  const character::MouthPlacement placement{0.4, 0.4, 0.2, 0.2};
+  const auto root = writePackage(test::support::temporaryDirectory("character-mouth-placement"),
+                                 character::kPerformanceManifestSchema, Mouths::Complete, true,
+                                 "voice.test", "procedural", "1.0.0",
+                                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                                 placement);
+  const auto package = character::loadPackage(root);
+  CHECK(package.hasValue());
+  if (!package) return;
+  CHECK(package.value().manifest.mouthPlacement == placement);
+
+  native_ui::CharacterPresentation presentation;
+  CHECK(presentation.load(root).hasValue());
+  const auto* mouth = presentation.mouth(character::MouthShape::Open);
+  CHECK(mouth != nullptr);
+  if (mouth != nullptr) {
+    CHECK((mouth->pixels().front() >> 24U) == 0U);
+    CHECK((mouth->pixels()[2U * mouth->width() + 2U] >> 24U) == 255U);
+  }
+}
+
 TEST_CASE("Character performance binds only to the voicebank declared by loaded artwork") {
   const auto root = writePackage(test::support::temporaryDirectory("character-bound-voice"),
                                  character::kPerformanceManifestSchema, Mouths::Complete, true);
@@ -205,6 +263,44 @@ TEST_CASE("Character performance binds only to the voicebank declared by loaded 
   CHECK(presentation.setPerformanceSnapshot(newSinger).hasValue());
 }
 
+TEST_CASE("Schema-three character packages bind performance to the exact singer resource") {
+  constexpr auto resourceSchema = character::kResourceBoundManifestSchema;
+  const auto root = writePackage(test::support::temporaryDirectory("character-resource-bound"),
+                                 resourceSchema, Mouths::Complete, true);
+  const auto package = character::loadPackage(root);
+  CHECK(package.hasValue());
+  if (!package) return;
+  CHECK(package.value().manifest.resourceIdentity.has_value());
+  if (package.value().manifest.resourceIdentity.has_value()) {
+    const auto& identity = *package.value().manifest.resourceIdentity;
+    CHECK(identity.kind == domain::SingerResourceKind::Procedural);
+    CHECK(identity.id == "voice.test");
+    CHECK(identity.version == "1.0.0");
+    CHECK(identity.contentHash ==
+          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+  }
+
+  native_ui::CharacterPresentation presentation;
+  CHECK(presentation.load(root).hasValue());
+  const auto wrongKind = performanceFor("voice.test", domain::SingerResourceKind::Sample);
+  CHECK(!presentation.followSinger(character::performanceBindingKey(wrongKind)).hasValue());
+  CHECK(!presentation.setPerformanceSnapshot(wrongKind).hasValue());
+  CHECK(!presentation.hasPerformanceSnapshot());
+
+  const auto wrongVersion = performanceFor("voice.test", domain::SingerResourceKind::Procedural,
+                                           "2.0.0");
+  CHECK(!presentation.followSinger(character::performanceBindingKey(wrongVersion)).hasValue());
+  const auto wrongDigest = performanceFor(
+      "voice.test", domain::SingerResourceKind::Procedural, "1.0.0",
+      "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+  CHECK(!presentation.followSinger(character::performanceBindingKey(wrongDigest)).hasValue());
+
+  const auto matching = performanceFor("voice.test", domain::SingerResourceKind::Procedural);
+  CHECK(presentation.followSinger(character::performanceBindingKey(matching)).hasValue());
+  CHECK(presentation.setPerformanceSnapshot(matching).hasValue());
+  CHECK(presentation.hasPerformanceSnapshot());
+}
+
 TEST_CASE("A partial or contradictory package is refused by cause") {
   const auto partial = character::loadPackage(writePackage(
       test::support::temporaryDirectory("character-partial"), character::kPerformanceManifestSchema,
@@ -227,7 +323,7 @@ TEST_CASE("A partial or contradictory package is refused by cause") {
   CHECK(flagged.error().code == core::ErrorCode::InvariantViolation);
 
   const auto future = character::loadPackage(writePackage(
-      test::support::temporaryDirectory("character-future"), 3, Mouths::Complete, false));
+      test::support::temporaryDirectory("character-future"), 4, Mouths::Complete, false));
   CHECK(!future.hasValue());
   CHECK(future.error().code == core::ErrorCode::Unsupported);
 }

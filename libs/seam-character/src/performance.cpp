@@ -1,6 +1,7 @@
 #include "seam/character/performance.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace seam::character {
@@ -37,6 +38,19 @@ std::string_view mouthShapeName(MouthShape shape) noexcept {
   return "closed";
 }
 
+std::string scorePitchRangeLabel(ScorePitchRange range) {
+  static constexpr std::array<std::string_view, 12U> pitchClasses{
+      "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+  if (range.lowestMidiKey > 127U || range.highestMidiKey > 127U ||
+      range.lowestMidiKey > range.highestMidiKey)
+    return "unknown";
+  const auto noteName = [&](std::uint8_t midi) {
+    const auto key = static_cast<unsigned int>(midi);
+    return std::string{pitchClasses[key % 12U]} + std::to_string(static_cast<int>(key / 12U) - 1);
+  };
+  return noteName(range.lowestMidiKey) + "-" + noteName(range.highestMidiKey);
+}
+
 MouthShape mouthShapeForCue(CueKind kind, std::string_view phone) noexcept {
   switch (kind) {
     case CueKind::Silence:
@@ -62,6 +76,17 @@ core::Result<void> CharacterPerformanceSnapshot::validate() const {
     return core::Result<void>{invalid("Character performance snapshot identity is incomplete")};
   if (!isDigest(resourceContentHash))
     return core::Result<void>{invalid("Character performance snapshot resource digest is malformed")};
+  const auto resource = domain::SingerResourceIdentity{
+      .kind = resourceKind,
+      .id = resourceId,
+      .version = resourceVersion,
+      .contentHash = resourceContentHash};
+  const auto validResource = resource.validate();
+  if (!validResource) return validResource;
+  if (scorePitchRange.has_value() &&
+      (scorePitchRange->lowestMidiKey > 127U || scorePitchRange->highestMidiKey > 127U ||
+       scorePitchRange->lowestMidiKey > scorePitchRange->highestMidiKey))
+    return core::Result<void>{invalid("Character performance score pitch range is invalid")};
   if (sampleRate < kMinimumSampleRate || sampleRate > kMaximumSampleRate)
     return core::Result<void>{invalid("Character performance snapshot sample rate is outside its bound")};
   if (end <= origin)
@@ -106,12 +131,27 @@ core::Result<CharacterPerformanceSnapshot> buildCharacterPerformanceSnapshot(
       request.pronunciationIdentity.empty() || !isDigest(request.resourceContentHash))
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Character performance request identity is incomplete");
+  const auto resource = domain::SingerResourceIdentity{
+      .kind = request.resourceKind,
+      .id = request.resourceId,
+      .version = request.resourceVersion,
+      .contentHash = request.resourceContentHash};
+  const auto validResource = resource.validate();
+  if (!validResource)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                 validResource.error().message);
   if (request.end <= request.origin)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Character performance request span is empty or inverted");
   if (request.sampleRate < kMinimumSampleRate || request.sampleRate > kMaximumSampleRate)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Character performance request sample rate is outside its bound");
+  if (request.scorePitchRange.has_value() &&
+      (request.scorePitchRange->lowestMidiKey > 127U ||
+       request.scorePitchRange->highestMidiKey > 127U ||
+       request.scorePitchRange->lowestMidiKey > request.scorePitchRange->highestMidiKey))
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Character performance score pitch range is invalid");
   if (windowFrames == 0U || windowFrames > kMaximumWindowFrames)
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Character performance window length is outside its bound");
@@ -135,6 +175,8 @@ core::Result<CharacterPerformanceSnapshot> buildCharacterPerformanceSnapshot(
   result.style = request.style;
   result.pronunciationIdentity = request.pronunciationIdentity;
   result.renderRevision = request.renderRevision;
+  result.resourceKind = request.resourceKind;
+  result.scorePitchRange = request.scorePitchRange;
   result.sampleRate = request.sampleRate;
   result.origin = request.origin;
   result.end = request.end;
@@ -182,7 +224,7 @@ core::Result<CharacterPerformanceSnapshot> buildCharacterPerformanceSnapshot(
 PerformanceBindingKey performanceBindingKey(const CharacterPerformanceSnapshot& snapshot) noexcept {
   return PerformanceBindingKey{snapshot.resourceId, snapshot.resourceVersion,
                                snapshot.resourceContentHash, snapshot.style,
-                               snapshot.renderRevision};
+                               snapshot.renderRevision, snapshot.resourceKind};
 }
 
 CharacterPerformanceFrame characterPerformanceFrameAt(

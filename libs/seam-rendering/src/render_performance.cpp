@@ -19,8 +19,11 @@ bool isDigest(std::string_view value) {
 }  // namespace
 
 bool RenderedPerformanceIdentity::complete() const noexcept {
+  const bool knownKind = resourceKind == domain::SingerResourceKind::Sample ||
+                         resourceKind == domain::SingerResourceKind::Procedural ||
+                         resourceKind == domain::SingerResourceKind::Neural;
   return !resourceId.empty() && !resourceVersion.empty() && !style.empty() &&
-         isDigest(resourceContentHash) && isDigest(pronunciationIdentity);
+         isDigest(resourceContentHash) && isDigest(pronunciationIdentity) && knownKind;
 }
 
 std::string renderedPronunciationIdentity(std::span<const std::string> phraseDigests) {

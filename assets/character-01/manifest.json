@@ -26,5 +26,11 @@
     "open": "runtime/mouth-open.ppm",
     "wide": "runtime/mouth-wide.ppm",
     "round": "runtime/mouth-round.ppm"
+  },
+  "mouthPlacement": {
+    "x": 0.455,
+    "y": 0.172,
+    "width": 0.09,
+    "height": 0.06
   }
 }

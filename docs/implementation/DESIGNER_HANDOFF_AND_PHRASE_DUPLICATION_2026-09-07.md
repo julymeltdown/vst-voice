@@ -45,7 +45,7 @@ This change does **not** complete U23. Shared-lyric remapping, independent dupli
 
 The dedicated five-case `seam_performance_edit_preservation_tests` target was not included in `seam_tests`. Running it against current code exposed assertions pinned to the former per-note-offset duplication: they expected copied cross-note unit/seam relationships to become unresolved and the original slur ID to be reused. Those expectations contradict the approved common-translation/new-identity repair.
 
-Updated the integration test to require usable complete copied spans/seams, preserved token count and relative timing, placement after the original phrase and a distinct slur ID. Existing assertions still require copied locked phoneme context, vibrato/articulation/hints, note-scoped ownership and accepted-take source offsets, original-note preservation and exact undo/redo. Fixed region-time ownership remains in place; it is not implicitly treated as note-owned data.
+Updated the integration test to require usable complete copied spans/seams, preserved token count and relative timing, placement after the original phrase and a distinct slur ID. Existing assertions still require copied locked phoneme context, vibrato/articulation/hints, note-scoped ownership and accepted-take source offsets, original-note preservation and exact undo/redo. Region-time ownership remains time-scoped and is copied only over the selected phrase's intersecting interval; it is not converted into note ownership.
 
 Added this preservation test file to the core target so future core runs include its five cases. Both the dedicated Debug/Release suite and the rebuilt Release core pass (5 cases at 0.52/0.72 s; 538 core cases at 13.48 s). The separately rebuilt performance-command suite also passes (0.63 s), covering partial spans remaining unresolved, occupied targets, ambiguous mappings and ownership collisions. Diff checks pass. This is a coverage correction and evidence of prior implementation, not an additional completed roadmap unit or new singer-quality evidence.
 
@@ -66,6 +66,10 @@ Duplication now maps each source lyric ID to one new lyric token and each select
 New regressions verify shared Japanese melisma pronunciation (two three-phone phrases), fresh lyric/slur IDs, no orphan per-note lyrics, exact undo/redo, exhaustion rejection, missing/changed shared-token rejection, default collision rejection and non-owning undo. Existing owned-performance copying still runs after all note insertions. Its complete vocabulary and mixed-selection behavior require further U23 review; this follow-up does not accept the entire unit.
 
 Follow-up verification: rebuilt Release core suite passed all 517 cases (11.22 s); the six-case focused suite passed in Release/Debug (0.46/0.52 s). Strict builds and `git diff --check` passed. Native interactive duplication has not been exercised in this checkpoint.
+
+### Follow-up: phrase-window boundaries for time-scoped performance
+
+Added a command-level regression for time-scoped manual ownership and accepted takes that cross the selected phrase boundary, plus scopes beginning exactly at the phrase end. Only the crossing interval's intersection is translated to the duplicate; the original ranges remain unchanged and the non-intersecting scopes are not copied. The copied accepted selection retains its source-take mapping through the adjusted source offset. Command undo/redo restores exact project snapshots. Release `seam_performance_command_tests` and `seam_performance_edit_preservation_tests` pass (22 and 5 cases respectively; focused CTest 2/2). This closes a phrase-window coverage gap, not all U23 acceptance or Beta readiness.
 
 - Strict Release and Debug `seam_melisma_tests` builds passed.
 - Focused four-case suite passed in both configurations (Release 0.45 s; Debug 0.42 s).

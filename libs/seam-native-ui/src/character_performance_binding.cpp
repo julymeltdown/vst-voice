@@ -63,9 +63,11 @@ buildPublishedCharacterPerformance(const CharacterPerformanceBindingRequest& req
   build.resourceId = request.resourceId;
   build.resourceVersion = request.resourceVersion;
   build.resourceContentHash = request.resourceContentHash;
+  build.resourceKind = request.resourceKind;
   build.style = request.style;
   build.pronunciationIdentity = request.pronunciationIdentity;
   build.renderRevision = request.renderRevision;
+  build.scorePitchRange = request.scorePitchRange;
   build.origin = origin;
   build.end = end;
   build.sampleRate = request.sampleRate;

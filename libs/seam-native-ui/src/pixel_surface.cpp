@@ -515,8 +515,11 @@ void RasterCanvas::drawImageNearest(ui::Rect destination,
       const auto blue = static_cast<std::uint8_t>(pixel & 0xFFU);
       const auto green = static_cast<std::uint8_t>((pixel >> 8U) & 0xFFU);
       const auto red = static_cast<std::uint8_t>((pixel >> 16U) & 0xFFU);
+      const auto sourceAlpha = static_cast<std::uint8_t>((pixel >> 24U) & 0xFFU);
+      const auto combinedAlpha = static_cast<std::uint8_t>(std::lround(
+          alpha * static_cast<double>(sourceAlpha)));
       blendPixel(x, y, Color{red, green, blue,
-                             static_cast<std::uint8_t>(std::lround(alpha * 255.0))});
+                             combinedAlpha});
     }
   }
 }

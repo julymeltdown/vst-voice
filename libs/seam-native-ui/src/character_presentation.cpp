@@ -3,6 +3,44 @@
 #include <array>
 
 namespace seam::native_ui {
+namespace {
+
+core::Result<void> makeCornerColorTransparent(PixelSurface& image) {
+  if (image.width() == 0U || image.height() == 0U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "A mouth overlay image is empty");
+  auto pixels = image.pixels();
+  const auto colorMask = 0x00FFFFFFU;
+  const auto key = pixels.front() & colorMask;
+  const auto bottomLeft = static_cast<std::size_t>(image.height() - 1U) * image.width();
+  const auto bottomRight = bottomLeft + image.width() - 1U;
+  if ((pixels[image.width() - 1U] & colorMask) != key ||
+      (pixels[bottomLeft] & colorMask) != key ||
+      (pixels[bottomRight] & colorMask) != key)
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "A placed mouth overlay must have one flat corner background color");
+  for (auto& pixel : pixels)
+    if ((pixel & colorMask) == key) pixel &= colorMask;
+  return core::success();
+}
+
+}  // namespace
+
+namespace {
+
+bool followsManifestSinger(const character::Manifest& manifest,
+                           const character::PerformanceBindingKey& key) noexcept {
+  if (manifest.resourceIdentity.has_value()) {
+    const auto& resource = *manifest.resourceIdentity;
+    return key.resourceKind == resource.kind && key.resourceId == resource.id &&
+           key.resourceVersion == resource.version &&
+           key.resourceContentHash == resource.contentHash;
+  }
+  return key.resourceKind == domain::SingerResourceKind::Sample &&
+         key.resourceId == manifest.voicebankId;
+}
+
+}  // namespace
 
 core::Result<void> CharacterPresentation::load(
     const std::filesystem::path& packageRoot, std::uint64_t maximumAssetBytes) {
@@ -30,6 +68,10 @@ core::Result<void> CharacterPresentation::load(
     if (relative.empty()) continue;
     auto mouth = PixelSurface::loadPpm(package.value().mouthAssetPath(shape), maximumAssetBytes);
     if (!mouth) return core::Result<void>{mouth.error()};
+    if (package.value().manifest.mouthOverlayPlacement()) {
+      const auto keyed = makeCornerColorTransparent(mouth.value());
+      if (!keyed) return keyed;
+    }
     mouths.emplace(shape, std::move(mouth.value()));
   }
   package_ = std::move(package.value());
@@ -74,7 +116,7 @@ core::Result<void> CharacterPresentation::setPerformanceSnapshot(
   // first snapshot adopts its own identity, which keeps a single-singer host from having to announce
   // and then bind in two steps; every later switch is explicit.
   const auto key = character::performanceBindingKey(snapshot);
-  if (package_.has_value() && key.resourceId != package_->manifest.voicebankId)
+  if (package_.has_value() && !followsManifestSinger(package_->manifest, key))
     return core::Result<void>{core::Error{core::ErrorCode::Conflict,
         "A performance snapshot does not belong to the loaded character package"}};
   if (followedSinger_.has_value() && !(*followedSinger_ == key))
@@ -90,7 +132,14 @@ core::Result<void> CharacterPresentation::followSinger(character::PerformanceBin
       key.style.empty())
     return core::Result<void>{core::Error{core::ErrorCode::InvalidArgument,
         "A followed singer has no complete identity"}};
-  if (package_.has_value() && key.resourceId != package_->manifest.voicebankId)
+  const auto resource = domain::SingerResourceIdentity{
+      .kind = key.resourceKind,
+      .id = key.resourceId,
+      .version = key.resourceVersion,
+      .contentHash = key.resourceContentHash};
+  const auto validResource = resource.validate();
+  if (!validResource) return validResource;
+  if (package_.has_value() && !followsManifestSinger(package_->manifest, key))
     return core::Result<void>{core::Error{core::ErrorCode::Conflict,
         "The followed singer does not belong to the loaded character package"}};
   if (!followedSinger_.has_value() || !(*followedSinger_ == key)) performance_.reset();

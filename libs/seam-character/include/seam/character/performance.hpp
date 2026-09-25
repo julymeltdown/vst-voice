@@ -1,10 +1,12 @@
 #pragma once
 
 #include "seam/core/result.hpp"
+#include "seam/domain/performance_intent.hpp"
 #include "seam/time/tick.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -23,6 +25,14 @@ enum class MouthShape { Closed, Narrow, Nasal, Open, Wide, Round };
 // What the phrase contains over one span. The phone the render used is kept beside the shape, so a
 // presentation can show the real cue instead of a shape with no provenance.
 enum class CueKind { Vowel, Consonant, Nasal, Closure, Silence };
+
+struct ScorePitchRange final {
+  std::uint8_t lowestMidiKey{0U};
+  std::uint8_t highestMidiKey{0U};
+  friend bool operator==(const ScorePitchRange&, const ScorePitchRange&) = default;
+};
+
+[[nodiscard]] std::string scorePitchRangeLabel(ScorePitchRange range);
 
 struct PerformanceCueInput final {
   std::string phone;
@@ -48,6 +58,8 @@ struct CharacterPerformanceSnapshot final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::string pronunciationIdentity;
   std::uint64_t renderRevision{0};
+  domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
+  std::optional<ScorePitchRange> scorePitchRange{};
   // The frame coordinate the spans are expressed in. Without it a playhead cannot be mapped onto the
   // model, so it travels with the snapshot instead of being re-guessed from the transport.
   std::uint32_t sampleRate{48000U};
@@ -64,6 +76,8 @@ struct CharacterPerformanceRequest final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::string pronunciationIdentity;
   std::uint64_t renderRevision{0};
+  domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
+  std::optional<ScorePitchRange> scorePitchRange{};
   time::SampleFrame origin{0}, end{0};
   std::uint32_t sampleRate{48000U};
   // The audible material of the phrase result this snapshot describes, read once during
@@ -85,6 +99,7 @@ struct CharacterPerformanceRequest final {
 struct PerformanceBindingKey final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::uint64_t renderRevision{0};
+  domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
   friend bool operator==(const PerformanceBindingKey&, const PerformanceBindingKey&) = default;
 };
 

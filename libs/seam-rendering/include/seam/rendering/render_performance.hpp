@@ -2,10 +2,13 @@
 
 #include "seam/core/result.hpp"
 #include "seam/domain/phoneme.hpp"
+#include "seam/domain/performance_intent.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include "seam/time/tick.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,6 +30,12 @@ struct RenderedCueSpan final {
   friend bool operator==(const RenderedCueSpan&, const RenderedCueSpan&) = default;
 };
 
+struct RenderedPitchRange final {
+  std::uint8_t lowestMidiKey{0U};
+  std::uint8_t highestMidiKey{0U};
+  friend bool operator==(const RenderedPitchRange&, const RenderedPitchRange&) = default;
+};
+
 // A phrase that declares more phone spans than this is refused rather than truncated: a dock that
 // silently draws an abbreviated phrase is worse than one that draws nothing.
 inline constexpr std::size_t kMaximumRenderedCueSpans = 65536U;
@@ -45,6 +54,9 @@ struct RenderedPerformanceIdentity final {
   std::uint64_t renderRevision{0};
   std::uint32_t sampleRate{48000U};
   std::optional<domain::VoiceStyleBlend> styleBlend{};
+  // Score range for this exact published region; this is not a claim about the singer's qualified range.
+  std::optional<RenderedPitchRange> scorePitchRange{};
+  domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
   [[nodiscard]] bool complete() const noexcept;
   friend bool operator==(const RenderedPerformanceIdentity&,
                          const RenderedPerformanceIdentity&) = default;

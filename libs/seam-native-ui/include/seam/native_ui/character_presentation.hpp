@@ -31,6 +31,9 @@ public:
   // The declared mouth artwork, or nothing for a status-only package. A presentation never invents a
   // mouth from an absent asset: an undeclared shape falls back to the dock's own drawing.
   [[nodiscard]] const PixelSurface* mouth(character::MouthShape shape) const noexcept;
+  [[nodiscard]] std::optional<character::MouthPlacement> mouthPlacement() const noexcept {
+    return package_.has_value() ? package_->manifest.mouthOverlayPlacement() : std::nullopt;
+  }
   [[nodiscard]] bool hasPerformanceAssets() const noexcept { return !mouths_.empty(); }
   // Whether this package declares itself a development turnaround. It is read from the package's own
   // bytes, so renaming or moving the directory cannot change the answer.

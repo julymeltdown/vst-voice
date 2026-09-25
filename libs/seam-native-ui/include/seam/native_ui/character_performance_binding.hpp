@@ -5,6 +5,7 @@
 #include "seam/rendering/render_performance.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -18,6 +19,8 @@ struct CharacterPerformanceBindingRequest final {
   std::string resourceId, resourceVersion, resourceContentHash, style;
   std::string pronunciationIdentity;
   std::uint64_t renderRevision{0};
+  domain::SingerResourceKind resourceKind{domain::SingerResourceKind::Sample};
+  std::optional<character::ScorePitchRange> scorePitchRange{};
   std::uint32_t sampleRate{48000U};
   std::uint8_t channelCount{2U};
   // The published interleaved source for this singer. Its first sample is at
