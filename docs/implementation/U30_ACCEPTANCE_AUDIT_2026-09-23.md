@@ -262,15 +262,23 @@ excluded.
 
 ## Work required before U30 acceptance
 
-1. Exercise actual OpenUtau desktop GUI open/save on the generated and additional
-   independently sourced, user-authored files from each supported version.
-   Capture app build, file hash and redistribution rights. Serializer fixtures
-   cover a controlled subset, not real-world field diversity.
-2. Measure the supported breadth for large expression curves. Standard `dyn`
-   spans beyond SEAM's 16,384-point ceiling now skip with an explicit loss,
-   but the YAML reader can still hit its default 100,000-node/4 MiB budgets
-   before typed mapping. The 64-point fixture and one synthetic wide-span
-   test do not establish real-project breadth.
+1. Extend the actual OpenUtau desktop GUI open/save smoke test beyond the one
+   constructed 0.9 dynamics-curve case in
+   `tests/fixtures/ustx/openutau-pinned-0.9-gui-saved.ustx`. The local app was
+   built from pinned source `8c0dc4007e6e8c8181f3a12c10205671800eeb8b`; its UI
+   displayed `Project saved.` and the fixture SHA-256 is recorded in the fixture
+   README. Still needed: independently sourced, user-authored files and breadth
+   across the supported versions, plus a redistribution-rights record. The GUI
+   smoke-test file is constructed from an existing serializer fixture, not a
+   real-world user project.
+2. Measure supported breadth for large expression curves and real projects.
+   The current synthetic exact-capacity regression serializes and imports a
+   16,384-point standard `dyn` curve through the default YAML decoder; one over
+   the ceiling is explicitly omitted. This verifies that this typed curve shape
+   fits current default parser budgets, but not the interaction of large curves
+   with other project fields. Unknown metadata, many tracks/parts, and the
+   default 100,000-node/4 MiB limits still need representative real-project
+   measurements; beyond the dynamics ceiling remains a disclosed loss.
 3. Expand independent comparisons to mixed pitch shapes, dynamics/style
    expressions, multiple tracks/parts and vibrato rendering. The current
    pitch oracle samples an authored contour, not vibrato audio or a complete
@@ -293,3 +301,40 @@ excluded.
    and a `clr` phoneme expression do not silently select a SEAM style.
 
 GitHub CI was intentionally not used or assessed in this audit.
+
+## 2026-09-24 exact dynamics-capacity boundary follow-up
+
+The USTX-to-SEAM dynamics converter formerly admitted a curve only when
+`gridCount + 3` fit the region automation limit, even if the actual curve shape
+needed no outer guard anchors. A full-part curve with exactly
+`domain::kMaximumDynamicsPoints` five-tick samples was therefore discarded.
+Admission now counts only anchors that the converter will emit. The regression
+accepts the exact 16,384-point ceiling and verifies that the next point beyond
+it is omitted with an explicit loss. The test failed against the prior source
+at the exact-limit assertion.
+
+Focused `seam_ustx_interchange_tests` passes in Debug, Release and sanitizer
+builds. The synthetic exact-capacity case exercises the encoder and default YAML
+decoder as well as in-memory automation admission. It does not measure the
+independent byte/node/collection limits alongside other project fields, large
+real-project breadth, rendered vibrato/audio equivalence, or user-authored GUI
+projects. U30 remains PARTIAL; GitHub CI was not run or changed.
+
+## 2026-09-24 native OpenUtau desktop GUI save follow-up
+
+Built the pinned OpenUtau source at
+`/Users/lhs/Downloads/OpenUtau-review` commit
+`8c0dc4007e6e8c8181f3a12c10205671800eeb8b` into a local arm64 macOS app bundle
+using .NET SDK 10.0.401. Opened a disposable copy of the 0.9 curve serializer
+fixture and saved it from the desktop UI; the visible status said `Project
+saved.`. The GUI normalized the part duration from 960 to 1440 ticks while
+preserving two notes and the 64-entry `dyn` curve. The saved file
+`tests/fixtures/ustx/openutau-pinned-0.9-gui-saved.ustx` has SHA-256
+`4af64346f3264e44d891f9ba9aa8b67f40c94afa9e27f3d8580f8d0db87466db` and is
+covered by a native import regression. The locally built app displayed
+`v0.0.0.0`; source commit and file digest identify the test artifact, not an
+official versioned binary. This is constructed fixture-based GUI evidence, not
+independent user-authored breadth or an audio-equivalence check. Focused
+`seam_ustx_interchange_tests` passes 49/49 in Debug, Release and sanitizer
+builds; `git diff --check` passes and `.github` is unchanged. U30 remains
+PARTIAL and GitHub CI remains excluded.

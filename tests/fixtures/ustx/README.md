@@ -29,6 +29,19 @@ per-note `tuning` is set only when that version's `UNote` model has the field.
 | `openutau-pinned-0.9-extender-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `2dfedb89f5a3d0da7a52fc4822643ca9df40c4bb456989d10a038fcfc77656a7` |
 | `openutau-pinned-0.9-numeric-text-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `9a8edf4a0da064f47003b32a21a84d95dbcdedd487eb19b8f79a1e07bb2ba126` |
 | `openutau-pinned-0.9-plus-lyric-serializer.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` | `9eb42f6e654249cc1a15e1f70244534683fc94e7897e1c30e69c749995c4fe51` |
+| `openutau-pinned-0.9-gui-saved.ustx` | pinned / `8c0dc4007e6e8c8181f3a12c10205671800eeb8b`, opened and saved in the macOS desktop GUI | `4af64346f3264e44d891f9ba9aa8b67f40c94afa9e27f3d8580f8d0db87466db` |
+
+Unlike the serializer fixtures above, the GUI-saved file is a real desktop
+workflow artifact. The curve serializer fixture was copied to a disposable
+directory, opened in the macOS OpenUtau app built from the pinned source
+commit, then saved with the app's File > Save command. The app displayed
+`Project saved.` The GUI rewrote the part duration from 960 to 1440 ticks
+while retaining both notes and the 64-point `dyn` curve; the dedicated native
+regression decodes and imports this saved result and checks those fields. This
+is a constructed GUI smoke test, not an independently authored human project
+or proof of audio equivalence. The local source build's window reports
+`v0.0.0.0`, so provenance is pinned by source commit and fixture digest, not a
+claim that this was an official versioned binary.
 
 Generation used .NET SDK 10.0.401. Each historical checkout's
 `OpenUtau.Core.csproj` needed a **build-only resource-name metadata patch**:

@@ -56,7 +56,7 @@ TEST_CASE("conversion review counts the exact draft without editing it") {
   CHECK(model.issueCount() == 3U);
   CHECK(model.sourcePath() == draft.sourcePath);
   CHECK(model.sourceHash() == draft.sourceHash);
-  CHECK(model.summary() == "USTX import: 2 tracks, 3 vocal regions, 3 notes\n1 losses; 2 warnings");
+  CHECK(model.summary() == "USTX import: 2 tracks, 3 vocal regions, 3 notes\n1 loss; 2 warnings");
   CHECK(model.sourceDetails().find(draft.sourcePath.string()) != std::string::npos);
   CHECK(model.sourceDetails().find(draft.sourceHash) != std::string::npos);
   CHECK(model.sourceDetails().find("singer identity") == std::string::npos);
@@ -146,4 +146,22 @@ TEST_CASE("conversion review handles an empty MIDI draft and counts audio tracks
   CHECK(model.issueDetails(0U).empty());
   static_assert(!std::is_constructible_v<seam::native_ui::ConversionReviewModel,
                                         seam::authoring::InterchangeImportDraft&&>);
+}
+
+TEST_CASE("conversion review summary uses singular grammar for one-track MIDI") {
+  seam::application::ProjectFactory factory{63000U};
+  seam::authoring::InterchangeImportDraft draft;
+  draft.format = seam::authoring::InterchangeFormat::Smf;
+  draft.project = factory.createProject("One phrase");
+  const auto track = factory.addVocalTrack(draft.project, "Lead");
+  const auto region = factory.addRegion(draft.project, track, "Verse",
+      seam::time::Tick{0}, seam::time::Tick{960});
+  auto* target = draft.project.findRegion(region);
+  auto [lyric, note] = factory.makeNote(seam::time::Tick{0},
+      seam::time::Tick{480}, 60U, U"la");
+  target->lyrics.push_back(std::move(lyric));
+  target->notes.push_back(std::move(note));
+  const seam::native_ui::ConversionReviewModel model{draft};
+  CHECK(model.summary() ==
+      "MIDI import: 1 track, 1 vocal region, 1 note\n0 losses; 0 warnings");
 }

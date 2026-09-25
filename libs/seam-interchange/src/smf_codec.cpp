@@ -105,7 +105,10 @@ std::string discardedChannelEvent(std::uint8_t kind, std::uint8_t channel) {
 }
 
 core::Result<void> validateText(std::string_view text, std::size_t& textBytes, const SmfLimits& limits) {
-  if (text.size() > limits.maximumTextBytes || text.size() > limits.maximumTextBytes - textBytes || text.find('\0') != std::string_view::npos)
+  if (text.find('\0') != std::string_view::npos)
+    return core::failure(core::ErrorCode::ParseError, "SMF text payload contains NUL");
+  if (textBytes > limits.maximumTextBytes || text.size() > limits.maximumTextBytes ||
+      text.size() > limits.maximumTextBytes - textBytes)
     return core::failure(core::ErrorCode::ParseError, "SMF text payload exceeds bounds");
   textBytes += text.size();
   if (!domain::fromUtf8(std::string{text})) return core::failure(core::ErrorCode::ParseError, "SMF text payload is not valid UTF-8");
@@ -115,24 +118,71 @@ core::Result<void> validateText(std::string_view text, std::size_t& textBytes, c
 }  // namespace
 
 core::Result<void> SmfScore::validate(const SmfLimits& limits) const {
+  const auto trackCount = tracks.empty() ? 1U : tracks.size();
   if (limits.maximumBytes == 0U || limits.maximumTracks == 0U || limits.maximumEvents == 0U ||
+      limits.maximumSerializedEvents == 0U ||
       limits.maximumNotes == 0U || limits.maximumTextBytes == 0U || limits.maximumTick <= 0 ||
       ppq == 0U || ppq > 32767U || notes.size() > limits.maximumNotes ||
-      tempos.size() > limits.maximumEvents || meters.size() > limits.maximumEvents ||
-      texts.size() > limits.maximumEvents || issues.size() > limits.maximumEvents)
+      trackCount == 0U || trackCount > limits.maximumTracks ||
+      issues.size() > limits.maximumEvents)
     return core::failure(core::ErrorCode::InvalidArgument, "SMF score exceeds declared bounds");
+  // maximumSerializedEvents is a wire-event ceiling, not a separate per-vector ceiling.
+  // A note serializes as both note-on and note-off; every track also has an
+  // end-of-track event, and names/lyrics/tempo/meter each add one event.
+  // Validate cumulatively here, before encodeSmf allocates per-event records.
+  std::size_t serializedEvents = trackCount;
+  const auto addEvents = [&](std::size_t count) {
+    if (serializedEvents > limits.maximumSerializedEvents ||
+        count > limits.maximumSerializedEvents - serializedEvents) return false;
+    serializedEvents += count;
+    return true;
+  };
+  if (!addEvents(tempos.size()) || !addEvents(meters.size()) ||
+      !addEvents(texts.size()) ||
+      serializedEvents > limits.maximumSerializedEvents ||
+      notes.size() > (limits.maximumSerializedEvents - serializedEvents) / 2U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "SMF serialized event count exceeds bounds");
+  serializedEvents += notes.size() * 2U;
+  for (const auto& track : tracks)
+    if (!track.name.empty() && !addEvents(1U))
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "SMF serialized event count exceeds bounds");
   std::size_t textBytes = 0U;
+  for (const auto& track : tracks) {
+    const auto valid = validateText(track.name, textBytes, limits);
+    if (!valid) return valid;
+  }
   for (const auto& note : notes) {
     if (note.start.value() < 0 || note.duration.value() <= 0 || note.start.value() > limits.maximumTick ||
-        note.duration.value() > limits.maximumTick - note.start.value() || note.midi > 127U || note.velocity > 127U || note.channel > 15U)
+        note.duration.value() > limits.maximumTick - note.start.value() || note.midi > 127U || note.velocity > 127U || note.channel > 15U ||
+        note.track >= trackCount)
       return core::failure(core::ErrorCode::InvalidArgument, "SMF note is invalid or exceeds tick bounds");
+  }
+  std::vector<const SmfNote*> orderedNotes;
+  orderedNotes.reserve(notes.size());
+  for (const auto& note : notes) orderedNotes.push_back(&note);
+  std::sort(orderedNotes.begin(), orderedNotes.end(), [](const auto* lhs, const auto* rhs) {
+    return std::tuple{lhs->track, lhs->channel, lhs->midi, lhs->start,
+                      lhs->start + lhs->duration} <
+        std::tuple{rhs->track, rhs->channel, rhs->midi, rhs->start,
+                   rhs->start + rhs->duration};
+  });
+  for (std::size_t index = 1U; index < orderedNotes.size(); ++index) {
+    const auto& previous = *orderedNotes[index - 1U];
+    const auto& current = *orderedNotes[index];
+    if (previous.track == current.track && previous.channel == current.channel &&
+        previous.midi == current.midi &&
+        current.start + current.duration < previous.start + previous.duration)
+      return core::failure(core::ErrorCode::Unsupported,
+          "SMF cannot preserve nested overlaps for repeated notes on one track and channel");
   }
   for (const auto& tempo : tempos) if (tempo.tick.value() < 0 || tempo.tick.value() > limits.maximumTick || !finitePositive(tempo.bpm) || tempo.bpm > 1'000'000.0)
     return core::failure(core::ErrorCode::InvalidArgument, "SMF tempo is invalid");
   for (const auto& meter : meters) if (meter.tick.value() < 0 || meter.tick.value() > limits.maximumTick || meter.numerator == 0U || meter.denominatorPower > 7U)
     return core::failure(core::ErrorCode::InvalidArgument, "SMF meter is invalid");
   for (const auto& text : texts) {
-    if (text.tick.value() < 0 || text.tick.value() > limits.maximumTick) return core::failure(core::ErrorCode::InvalidArgument, "SMF text tick is invalid");
+    if (text.tick.value() < 0 || text.tick.value() > limits.maximumTick || text.track >= trackCount) return core::failure(core::ErrorCode::InvalidArgument, "SMF text tick or track is invalid");
     const auto valid = validateText(text.text, textBytes, limits); if (!valid) return valid;
   }
   return core::success();
@@ -153,12 +203,86 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
   if ((division.value() & 0x8000U) != 0U || (division.value() & 0x7fffU) == 0U)
     return core::failure<Output>(core::ErrorCode::Unsupported, "SMPTE or zero-PPQ SMF timing is unsupported");
   Output result; result.ppq = static_cast<std::uint16_t>(division.value() & 0x7fffU);
+  result.tracks.resize(trackCount.value());
+  std::vector<bool> trackNameSeen(trackCount.value(), false);
+  enum class TextDiagnosticKind : std::size_t {
+    InvalidComment, InvalidLyric, RemovedTerminator, EmptyLyric, Count
+  };
+  struct TextDiagnosticAggregate final {
+    std::size_t issueIndex{};
+    std::size_t count{};
+    time::Tick first{};
+    time::Tick last{};
+  };
+  std::vector<std::array<std::optional<TextDiagnosticAggregate>,
+      static_cast<std::size_t>(TextDiagnosticKind::Count)>> textDiagnostics(
+          trackCount.value());
+  const auto recordTextDiagnostic = [&](std::size_t track,
+                                        TextDiagnosticKind kind,
+                                        SmfIssueSeverity severity,
+                                        time::Tick at) -> core::Result<void> {
+    auto& aggregate = textDiagnostics[track][static_cast<std::size_t>(kind)];
+    if (!aggregate) {
+      if (result.issues.size() >= limits.maximumEvents)
+        return core::failure(core::ErrorCode::Unsupported,
+            "SMF diagnostic report exceeds event bounds");
+      aggregate = TextDiagnosticAggregate{result.issues.size(), 0U, at, at};
+      result.issues.push_back({severity, at, {}});
+    }
+    ++aggregate->count;
+    aggregate->last = at;
+    std::string subject;
+    std::string reason;
+    switch (kind) {
+      case TextDiagnosticKind::InvalidComment:
+        subject = aggregate->count == 1U ? "non-lyric text payload"
+                                         : "non-lyric text payloads";
+        reason = aggregate->count == 1U
+            ? "was not NUL-free UTF-8 and was discarded"
+            : "were not NUL-free UTF-8 and were discarded";
+        break;
+      case TextDiagnosticKind::InvalidLyric:
+        subject = aggregate->count == 1U ? "lyric payload" : "lyric payloads";
+        reason = aggregate->count == 1U
+            ? "was not NUL-free UTF-8 and was discarded"
+            : "were not NUL-free UTF-8 and were discarded";
+        break;
+      case TextDiagnosticKind::RemovedTerminator:
+        subject = aggregate->count == 1U
+            ? "trailing NUL lyric terminator"
+            : "trailing NUL lyric terminators";
+        reason = aggregate->count == 1U ? "was removed" : "were removed";
+        break;
+      case TextDiagnosticKind::EmptyLyric:
+        subject = aggregate->count == 1U ? "lyric payload" : "lyric payloads";
+        reason = aggregate->count == 1U
+            ? "was empty or became empty after removing a trailing NUL and was discarded"
+            : "were empty or became empty after removing a trailing NUL and were discarded";
+        break;
+      case TextDiagnosticKind::Count:
+        return core::failure(core::ErrorCode::Internal,
+            "Invalid SMF text diagnostic kind");
+    }
+    auto& issue = result.issues[aggregate->issueIndex];
+    issue.tick = aggregate->first;
+    issue.message = std::to_string(aggregate->count) + " " + subject + " " +
+        reason + " on source track " + std::to_string(track + 1U) +
+        "; source ticks " + std::to_string(aggregate->first.value()) + ".." +
+        std::to_string(aggregate->last.value()) + " at " +
+        std::to_string(result.ppq) + " PPQ";
+    return core::success();
+  };
   std::size_t eventCount = 0U, textBytes = 0U;
   for (std::size_t track = 0U; track < trackCount.value(); ++track) {
     const auto marker = reader.span(4U); if (!marker || !fourcc(marker.value(), "MTrk")) return core::failure<Output>(core::ErrorCode::ParseError, "SMF track chunk is missing");
     const auto length = reader.u32(); if (!length || length.value() > reader.remaining()) return core::failure<Output>(core::ErrorCode::ParseError, "SMF track length is truncated");
     const auto payload = reader.span(length.value()); if (!payload) return core::Result<Output>{payload.error()};
     Reader trackReader{payload.value()}; std::map<std::pair<std::uint8_t, std::uint8_t>, std::deque<ActiveNote>> active;
+    std::size_t activeNoteCount = 0U;
+    const auto noteBudgetReached = [&] {
+      return result.notes.size() >= limits.maximumNotes ||
+          activeNoteCount >= limits.maximumNotes - result.notes.size();
+    };
     std::uint8_t running = 0U; time::Tick tick{0}; bool ended = false;
     while (trackReader.remaining() > 0U) {
       if (++eventCount > limits.maximumEvents) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF event count exceeds bounds");
@@ -178,8 +302,17 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
         if (kind == 0x90U || kind == 0x80U) {
           const auto velocity = second.value(); const auto key = raw.value();
           auto& queue = active[{channel, key}];
-          if (kind == 0x90U && velocity != 0U) queue.push_back({tick, velocity, channel});
-          else if (!queue.empty()) { const auto start = queue.front(); queue.pop_front(); result.notes.push_back({start.start, tick - start.start, key, start.velocity, channel}); }
+          if (kind == 0x90U && velocity != 0U) {
+            if (noteBudgetReached())
+              return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                            "SMF note count exceeds bounds");
+            queue.push_back({tick, velocity, channel});
+            ++activeNoteCount;
+          } else if (!queue.empty()) {
+            const auto start = queue.front(); queue.pop_front();
+            --activeNoteCount;
+            result.notes.push_back({start.start, tick - start.start, key, start.velocity, channel, static_cast<std::uint16_t>(track)});
+          }
         } else result.issues.push_back({SmfIssueSeverity::Loss, tick,
                                         discardedChannelEvent(kind, channel)});
         continue;
@@ -194,8 +327,17 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
           return core::failure<Output>(core::ErrorCode::ParseError, "SMF channel data byte is invalid");
         if ((kind == 0x90U || kind == 0x80U) && first.value() <= 127U) {
           auto& queue = active[{channel, first.value()}];
-          if (kind == 0x90U && second.value() != 0U) queue.push_back({tick, second.value(), channel});
-          else if (!queue.empty()) { const auto start = queue.front(); queue.pop_front(); result.notes.push_back({start.start, tick - start.start, first.value(), start.velocity, channel}); }
+          if (kind == 0x90U && second.value() != 0U) {
+            if (noteBudgetReached())
+              return core::failure<Output>(core::ErrorCode::InvalidArgument,
+                                            "SMF note count exceeds bounds");
+            queue.push_back({tick, second.value(), channel});
+            ++activeNoteCount;
+          } else if (!queue.empty()) {
+            const auto start = queue.front(); queue.pop_front();
+            --activeNoteCount;
+            result.notes.push_back({start.start, tick - start.start, first.value(), start.velocity, channel, static_cast<std::uint16_t>(track)});
+          }
         } else result.issues.push_back({SmfIssueSeverity::Loss, tick,
                                         discardedChannelEvent(kind, channel)});
         continue;
@@ -215,9 +357,69 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
           if (size.value() != 4U || data.value()[0] == 0U || data.value()[1] > 7U) return core::failure<Output>(core::ErrorCode::ParseError, "SMF meter payload is invalid");
           result.meters.push_back({tick, data.value()[0], data.value()[1]});
         } else if (type.value() == 0x01U || type.value() == 0x05U) {
-          const std::string text{reinterpret_cast<const char*>(data.value().data()), data.value().size()};
-          const auto valid = validateText(text, textBytes, limits); if (!valid) return core::Result<Output>{valid.error()};
-          result.texts.push_back({tick, text, type.value() == 0x05U});
+          const auto rawText = std::string_view{
+              reinterpret_cast<const char*>(data.value().data()), data.value().size()};
+          if (textBytes > limits.maximumTextBytes ||
+              rawText.size() > limits.maximumTextBytes - textBytes)
+            return core::failure<Output>(core::ErrorCode::ParseError,
+                "SMF text payload exceeds bounds");
+          textBytes += rawText.size();
+
+          auto text = rawText;
+          const bool lyric = type.value() == 0x05U;
+          // Some MIDI writers encode a C-style terminator inside the meta-event
+          // length. Strip exactly one trailing NUL from lyrics; never treat
+          // embedded NULs as text or let malformed annotations reject notes.
+          const bool strippedTerminator = lyric && !text.empty() && text.back() == '\0';
+          if (strippedTerminator) text.remove_suffix(1U);
+          if (lyric && text.empty()) {
+            const auto recorded = recordTextDiagnostic(track,
+                TextDiagnosticKind::EmptyLyric, SmfIssueSeverity::Loss, tick);
+            if (!recorded) return core::Result<Output>{recorded.error()};
+            continue;
+          }
+          if (text.find('\0') != std::string_view::npos ||
+              !domain::fromUtf8(std::string{text})) {
+            const auto kind = lyric ? TextDiagnosticKind::InvalidLyric
+                                    : TextDiagnosticKind::InvalidComment;
+            const auto recorded = recordTextDiagnostic(track, kind,
+                SmfIssueSeverity::Loss, tick);
+            if (!recorded) return core::Result<Output>{recorded.error()};
+            continue;
+          }
+          result.texts.push_back({tick, std::string{text}, lyric,
+                                  static_cast<std::uint16_t>(track)});
+          if (strippedTerminator) {
+            const auto recorded = recordTextDiagnostic(track,
+                TextDiagnosticKind::RemovedTerminator,
+                SmfIssueSeverity::Warning, tick);
+            if (!recorded) return core::Result<Output>{recorded.error()};
+          }
+        } else if (type.value() == 0x03U) {
+          const std::string name{reinterpret_cast<const char*>(data.value().data()), data.value().size()};
+          if (name.size() > limits.maximumTextBytes ||
+              name.size() > limits.maximumTextBytes - textBytes)
+            return core::failure<Output>(core::ErrorCode::ParseError,
+                "SMF track-name payload exceeds text bounds");
+          textBytes += name.size();
+          if (!trackNameSeen[track]) {
+            trackNameSeen[track] = true;
+            if (name.find('\0') == std::string::npos && domain::fromUtf8(name)) {
+              result.tracks[track].name = name;
+            } else {
+              if (result.issues.size() >= limits.maximumEvents)
+                return core::failure<Output>(core::ErrorCode::Unsupported,
+                    "SMF diagnostic report exceeds event bounds");
+              result.issues.push_back({SmfIssueSeverity::Loss, tick,
+                  "Track name is not NUL-free UTF-8 and was discarded"});
+            }
+          } else {
+            if (result.issues.size() >= limits.maximumEvents)
+              return core::failure<Output>(core::ErrorCode::Unsupported,
+                  "SMF diagnostic report exceeds event bounds");
+            result.issues.push_back({SmfIssueSeverity::Loss, tick,
+                "Additional track-name event was ignored; the first track name is retained"});
+          }
         } else if (type.value() != 0x00U && type.value() != 0x20U && type.value() != 0x21U)
           result.issues.push_back({SmfIssueSeverity::Loss, tick, "Unsupported SMF meta-event was ignored"});
         continue;
@@ -247,23 +449,16 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
     if (ended && trackReader.remaining() != 0U)
       return core::failure<Output>(core::ErrorCode::ParseError, "SMF track contains bytes after end-of-track");
     for (auto& [key, queue] : active) for (const auto& start : queue) {
+      --activeNoteCount;
       if (tick <= start.start) continue;
-      result.notes.push_back({start.start, tick - start.start, key.second, start.velocity, key.first});
+      result.notes.push_back({start.start, tick - start.start, key.second, start.velocity, key.first, static_cast<std::uint16_t>(track)});
       result.issues.push_back({SmfIssueSeverity::Warning, tick, "Note-off was missing; note was closed at track end"});
     }
   }
   if (reader.remaining() != 0U) return core::failure<Output>(core::ErrorCode::ParseError, "SMF has trailing bytes after declared tracks");
   if (result.notes.size() > limits.maximumNotes) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF note count exceeds bounds");
-  if (trackCount.value() > 1U) {
-    if (result.issues.size() >= limits.maximumEvents)
-      return core::failure<Output>(core::ErrorCode::Unsupported,
-          "SMF track-structure diagnostic report exceeds event bounds");
-    result.issues.push_back({SmfIssueSeverity::Loss, time::Tick{0},
-        std::to_string(trackCount.value()) +
-            " source tracks were flattened into one score; track membership "
-            "and separation are not retained"});
-  }
-  std::stable_sort(result.notes.begin(), result.notes.end(), [](const auto& lhs, const auto& rhs) { return std::tie(lhs.start, lhs.channel, lhs.midi, lhs.duration) < std::tie(rhs.start, rhs.channel, rhs.midi, rhs.duration); });
+  std::stable_sort(result.notes.begin(), result.notes.end(), [](const auto& lhs, const auto& rhs) { return std::tie(lhs.track, lhs.start, lhs.channel, lhs.midi, lhs.duration) < std::tie(rhs.track, rhs.start, rhs.channel, rhs.midi, rhs.duration); });
+  std::stable_sort(result.texts.begin(), result.texts.end(), [](const auto& lhs, const auto& rhs) { return std::tie(lhs.track, lhs.tick) < std::tie(rhs.track, rhs.tick); });
   std::stable_sort(result.tempos.begin(), result.tempos.end(), [](const auto& lhs, const auto& rhs) { return lhs.tick < rhs.tick; });
   std::stable_sort(result.meters.begin(), result.meters.end(), [](const auto& lhs, const auto& rhs) { return lhs.tick < rhs.tick; });
   const auto valid = result.validate(limits); if (!valid) return core::Result<Output>{valid.error()};
@@ -273,35 +468,70 @@ core::Result<SmfScore> decodeSmf(std::span<const std::uint8_t> bytes, SmfLimits 
 core::Result<std::vector<std::uint8_t>> encodeSmf(const SmfScore& score, SmfLimits limits) {
   using Output = std::vector<std::uint8_t>;
   const auto valid = score.validate(limits); if (!valid) return core::Result<Output>{valid.error()};
-  struct Event final { time::Tick tick; std::uint8_t order; std::vector<std::uint8_t> bytes; };
-  std::vector<Event> tempoEvents;
+  struct Event final {
+    time::Tick tick;
+    std::uint8_t order;
+    std::vector<std::uint8_t> bytes;
+    std::uint16_t pairingKey{0U};
+    time::Tick pairingEnd{time::Tick{0}};
+    bool noteOn{false};
+  };
+  const auto trackCount = score.tracks.empty() ? 1U : score.tracks.size();
+  std::vector<std::vector<Event>> eventsByTrack(trackCount);
+  auto& conductorEvents = eventsByTrack.front();
   for (const auto& tempo : score.tempos) {
     const auto micros = static_cast<std::uint32_t>(std::clamp(std::llround(60'000'000.0 / tempo.bpm), 1LL, 0xffffffLL));
-    tempoEvents.push_back({tempo.tick, 0U, {0U, 0xffU, 0x51U, 3U, static_cast<std::uint8_t>((micros >> 16U) & 0xffU), static_cast<std::uint8_t>((micros >> 8U) & 0xffU), static_cast<std::uint8_t>(micros & 0xffU)}});
+    conductorEvents.push_back({tempo.tick, 1U, {0U, 0xffU, 0x51U, 3U, static_cast<std::uint8_t>((micros >> 16U) & 0xffU), static_cast<std::uint8_t>((micros >> 8U) & 0xffU), static_cast<std::uint8_t>(micros & 0xffU)}});
   }
-  for (const auto& meter : score.meters) tempoEvents.push_back({meter.tick, 0U, {0U, 0xffU, 0x58U, 4U, meter.numerator, meter.denominatorPower, 24U, 8U}});
+  for (const auto& meter : score.meters) conductorEvents.push_back({meter.tick, 1U, {0U, 0xffU, 0x58U, 4U, meter.numerator, meter.denominatorPower, 24U, 8U}});
+  for (std::size_t index = 0U; index < score.tracks.size(); ++index) {
+    const auto& name = score.tracks[index].name;
+    if (name.empty()) continue;
+    std::vector<std::uint8_t> bytes{0U, 0xffU, 0x03U};
+    appendVlq(bytes, static_cast<std::uint32_t>(name.size()));
+    bytes.insert(bytes.end(), name.begin(), name.end());
+    eventsByTrack[index].push_back({time::Tick{0}, 0U, std::move(bytes)});
+  }
   for (const auto& text : score.texts) {
     if (text.text.size() > 0x0fffffffU) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF text is too long to encode");
     std::vector<std::uint8_t> bytes{0U, 0xffU, static_cast<std::uint8_t>(text.lyric ? 0x05U : 0x01U)}; appendVlq(bytes, static_cast<std::uint32_t>(text.text.size())); bytes.insert(bytes.end(), text.text.begin(), text.text.end());
-    tempoEvents.push_back({text.tick, 0U, std::move(bytes)});
+    eventsByTrack[text.track].push_back({text.tick, 2U, std::move(bytes)});
   }
-  std::vector<Event> notes;
   for (const auto& note : score.notes) {
     const auto status = static_cast<std::uint8_t>(0x90U | note.channel); const auto off = static_cast<std::uint8_t>(0x80U | note.channel);
-    notes.push_back({note.start, 2U, {0U, status, note.midi, note.velocity}});
-    notes.push_back({note.start + note.duration, 1U, {0U, off, note.midi, 0U}});
+    const auto pairingKey = static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(note.channel) * 128U + note.midi);
+    eventsByTrack[note.track].push_back({note.start, 4U,
+        {0U, status, note.midi, note.velocity}, pairingKey,
+        note.start + note.duration, true});
+    eventsByTrack[note.track].push_back({note.start + note.duration, 3U, {0U, off, note.midi, 0U}});
   }
-  std::vector<Event> events; events.reserve(tempoEvents.size() + notes.size()); events.insert(events.end(), std::make_move_iterator(tempoEvents.begin()), std::make_move_iterator(tempoEvents.end())); events.insert(events.end(), std::make_move_iterator(notes.begin()), std::make_move_iterator(notes.end()));
-  std::stable_sort(events.begin(), events.end(), [](const auto& lhs, const auto& rhs) { return std::tie(lhs.tick, lhs.order, lhs.bytes) < std::tie(rhs.tick, rhs.order, rhs.bytes); });
-  std::vector<std::uint8_t> track; time::Tick previous{0};
-  for (auto& event : events) {
-    const auto delta = event.tick - previous; if (delta.value() < 0 || delta.value() > 0x0fffffff) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF event delta exceeds VLQ bounds");
-    event.bytes[0] = 0U; std::vector<std::uint8_t> prefix; appendVlq(prefix, static_cast<std::uint32_t>(delta.value())); track.insert(track.end(), prefix.begin(), prefix.end()); track.insert(track.end(), event.bytes.begin() + 1, event.bytes.end()); previous = event.tick;
+  Output output; output.insert(output.end(), {'M', 'T', 'h', 'd'}); appendU32(output, 6U); appendU16(output, 1U); appendU16(output, static_cast<std::uint16_t>(trackCount)); appendU16(output, score.ppq);
+  for (auto& events : eventsByTrack) {
+    std::stable_sort(events.begin(), events.end(), [](const auto& lhs, const auto& rhs) {
+      if (lhs.tick != rhs.tick) return lhs.tick < rhs.tick;
+      if (lhs.order != rhs.order) return lhs.order < rhs.order;
+      // The decoder pairs overlapping equal-key note-ons FIFO. At one onset,
+      // order same-key notes by end tick so that pairing reconstructs their
+      // original durations; other equal-priority events preserve input order.
+      if (lhs.noteOn && rhs.noteOn) {
+        if (lhs.pairingKey != rhs.pairingKey)
+          return lhs.pairingKey < rhs.pairingKey;
+        return lhs.pairingEnd < rhs.pairingEnd;
+      }
+      return false;
+    });
+    std::vector<std::uint8_t> track; time::Tick previous{0};
+    for (auto& event : events) {
+      const auto delta = event.tick - previous; if (delta.value() < 0 || delta.value() > 0x0fffffff) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF event delta exceeds VLQ bounds");
+      std::vector<std::uint8_t> prefix; appendVlq(prefix, static_cast<std::uint32_t>(delta.value())); track.insert(track.end(), prefix.begin(), prefix.end()); track.insert(track.end(), event.bytes.begin() + 1, event.bytes.end()); previous = event.tick;
+    }
+    track.insert(track.end(), {0U, 0xffU, 0x2fU, 0U});
+    if (track.size() > std::numeric_limits<std::uint32_t>::max())
+      return core::failure<Output>(core::ErrorCode::InvalidArgument, "Encoded SMF track exceeds four-byte length");
+    output.insert(output.end(), {'M', 'T', 'r', 'k'}); appendU32(output, static_cast<std::uint32_t>(track.size())); output.insert(output.end(), track.begin(), track.end());
+    if (output.size() > limits.maximumBytes) return core::failure<Output>(core::ErrorCode::InvalidArgument, "Encoded SMF exceeds byte bounds");
   }
-  track.insert(track.end(), {0U, 0xffU, 0x2fU, 0U});
-  if (track.size() > std::numeric_limits<std::uint32_t>::max())
-    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Encoded SMF track exceeds four-byte length");
-  Output output; output.reserve(14U + track.size()); output.insert(output.end(), {'M', 'T', 'h', 'd'}); appendU32(output, 6U); appendU16(output, 1U); appendU16(output, 1U); appendU16(output, score.ppq); output.insert(output.end(), {'M', 'T', 'r', 'k'}); appendU32(output, static_cast<std::uint32_t>(track.size())); output.insert(output.end(), track.begin(), track.end());
   if (output.size() > limits.maximumBytes) return core::failure<Output>(core::ErrorCode::InvalidArgument, "Encoded SMF exceeds byte bounds");
   return output;
 }

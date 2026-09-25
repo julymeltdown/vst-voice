@@ -25,7 +25,8 @@ struct SmfProjectDraft final {
 // to nearest tick (half up) with explicit warnings. Distinct positions that
 // collide after rounding are refused, never coalesced or stretched. Tick limits
 // apply to both source and normalized project coordinates. Timing admission
-// completes before project IDs are allocated; lyrics keep source-note pairing.
+// completes before project IDs are allocated; Type-1 source tracks with notes
+// become distinct vocal tracks and lyrics keep their source-track/note pairing.
 // Unsupported velocity/channel values and unused text/lyric events are disclosed
 // by exact-count, source-tick-range loss summaries. Velocity 100/channel 1 are
 // the neutral defaults retained by the fixed-value SMF export path.
@@ -39,5 +40,12 @@ struct SmfProjectDraft final {
 [[nodiscard]] core::Result<SmfScore> exportSmfProject(
     const domain::Project& project, domain::TrackId trackId,
     domain::RegionId regionId, SmfLimits limits = {});
+
+// Converts every vocal track and region in a SEAM project to one named SMF
+// Type-1 track per SEAM vocal track. Region-local note positions are shifted to
+// their project timeline positions. Audio tracks and SEAM-only performance
+// controls are reported as losses.
+[[nodiscard]] core::Result<SmfScore> exportSmfProject(
+    const domain::Project& project, SmfLimits limits = {});
 
 }  // namespace seam::interchange

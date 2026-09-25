@@ -3,6 +3,12 @@
 namespace seam::native_ui {
 namespace {
 
+std::string countLabel(std::size_t count, std::string_view singular,
+                       std::string_view plural) {
+  return std::to_string(count) + " " +
+      std::string{count == 1U ? singular : plural};
+}
+
 bool hasIncompleteSingerIdentity(const domain::VocalTrack& track) noexcept {
   if (track.proceduralRecipe.has_value()) {
     const auto& identity = track.proceduralRecipe->resource;
@@ -58,10 +64,12 @@ std::string_view ConversionReviewModel::sourceHash() const noexcept {
 }
 
 std::string ConversionReviewModel::summary() const {
-  return std::string{formatName()} + " import: " + std::to_string(tracks_) +
-         " tracks, " + std::to_string(regions_) + " vocal regions, " +
-         std::to_string(notes_) + " notes\n" + std::to_string(losses_) +
-         " losses; " + std::to_string(warnings_) + " warnings";
+  return std::string{formatName()} + " import: " +
+         countLabel(tracks_, "track", "tracks") + ", " +
+         countLabel(regions_, "vocal region", "vocal regions") + ", " +
+         countLabel(notes_, "note", "notes") + "\n" +
+         countLabel(losses_, "loss", "losses") + "; " +
+         countLabel(warnings_, "warning", "warnings");
 }
 
 std::string ConversionReviewModel::singerDisclosure() const {

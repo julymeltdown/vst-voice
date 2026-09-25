@@ -47,6 +47,8 @@ struct InterchangeImportDraft final {
 struct InterchangeExportRequest final {
   InterchangeFormat format{InterchangeFormat::Ustx};
   std::filesystem::path destination;
+  // For SMF, omit both to export the complete project; provide both to export
+  // one region. Supplying only one is invalid. USTX conversion is project-wide.
   std::optional<domain::TrackId> trackId;
   std::optional<domain::RegionId> regionId;
 };

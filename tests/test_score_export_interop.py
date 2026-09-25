@@ -47,7 +47,7 @@ EXPECTED_USTX_CONTENT_HASH = "097b21716c75c1e03d46119c6a0216a60617b6e3fa048745a9
 # SMF carries no SEAM performance metadata, and this project has none to carry, so a
 # loss-free SMF export is the correct outcome here -- not a suppressed report.
 EXPECTED_SMF_LOSSES = 0
-EXPECTED_SMF_CONTENT_HASH = "6c94cd7575d8e95ae066e4bbd682aa349dec1806a347466b5e53b6819b0927eb"
+EXPECTED_SMF_CONTENT_HASH = "774231a09739d0f27ad39a4984a380bf0b5429ae5ac128c4259f2eb7a4afb79f"
 # PPQ conversion: the project is authored at 960 PPQ, USTX is defined at 480 PPQ.
 EXPECTED_PPQ = 960
 EXPECTED_USTX_PPQ = 480

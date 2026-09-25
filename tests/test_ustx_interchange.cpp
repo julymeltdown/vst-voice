@@ -138,6 +138,14 @@ std::vector<std::uint8_t> historicalSerializerFixture(std::string_view version) 
   return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
 
+std::vector<std::uint8_t> openUtauGuiSavedFixture() {
+  const auto path = std::filesystem::path{__FILE__}.parent_path() / "fixtures" / "ustx" /
+      "openutau-pinned-0.9-gui-saved.ustx";
+  std::ifstream input{path, std::ios::binary};
+  if (!input) return {};
+  return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+}
+
 const char* fixture() {
   return R"USTX(ustx_version: "0.9"
 name: "Native USTX fixture"
@@ -601,6 +609,28 @@ TEST_CASE("OpenUtau dynamics curve maps to bounded SEAM automation and roundtrip
   CHECK(overCollectionBudget.error().context == "line 357");
 }
 
+TEST_CASE("USTX decoder imports a desktop-GUI-saved OpenUtau curve project") {
+  using namespace seam;
+  const auto source = openUtauGuiSavedFixture();
+  CHECK(!source.empty());
+  const auto decoded = interchange::decodeUstx(source);
+  CHECK(decoded);
+  CHECK(decoded.value().version == "0.9");
+  CHECK(decoded.value().parts.size() == 1U);
+  CHECK(decoded.value().parts[0].duration == time::Tick{1440});
+  CHECK(decoded.value().parts[0].notes.size() == 2U);
+  CHECK(decoded.value().parts[0].dynamics.size() == 64U);
+  CHECK(!hasLossAt(decoded.value().issues, "ustx.voice_parts[0].curves"));
+
+  application::ProjectFactory factory{901501U};
+  const auto imported = interchange::importUstxProject(source, factory);
+  CHECK(imported);
+  CHECK(!hasLossAt(imported.value().issues, "ustx.voice_parts[0].curves"));
+  const auto& region = imported.value().project.vocalTracks().front().regions.front();
+  CHECK(region.durationTick == time::Tick{2880});
+  CHECK(region.dynamicsAutomation.points().size() == 65U);
+}
+
 TEST_CASE("USTX dynamics rejects malformed values and discloses unsupported curves") {
   using namespace seam;
   interchange::UstxDocument document;
@@ -666,6 +696,46 @@ TEST_CASE("USTX dynamics rejects malformed values and discloses unsupported curv
   const auto noteFree = interchange::encodeUstx(document); CHECK(noteFree);
   const auto noteFreeDecoded = interchange::decodeUstx(noteFree.value()); CHECK(noteFreeDecoded);
   CHECK(noteFreeDecoded.value().parts[0].notes.empty());
+}
+
+TEST_CASE("USTX dynamics accepts the exact automation point limit and reports one over") {
+  using namespace seam;
+  const auto makeDocument = [](std::int64_t duration) {
+    interchange::UstxDocument document;
+    document.tempos.push_back({time::Tick{0}, 120.0});
+    document.meters.push_back({0, 4U, 4U});
+    document.tracks.push_back({.name = "Lead"});
+    interchange::UstxPart part;
+    part.name = "Curve capacity";
+    part.duration = time::Tick{duration};
+    part.dynamics = {{time::Tick{0}, -120}, {time::Tick{duration}, 0}};
+    document.parts.push_back(std::move(part));
+    return document;
+  };
+  application::ProjectFactory factory{901650U};
+  const auto maxPoints = static_cast<std::int64_t>(domain::kMaximumDynamicsPoints);
+  const auto exactDuration = (maxPoints - 1) * 5;
+  const auto exactBytes = interchange::encodeUstx(makeDocument(exactDuration));
+  CHECK(exactBytes);
+  if (!exactBytes) return;
+  const auto exact = interchange::importUstxProject(exactBytes.value(), factory);
+  CHECK(exact);
+  if (!exact) return;
+  const auto& exactAutomation = exact.value().project.vocalTracks().front().regions.front()
+                                    .dynamicsAutomation;
+  CHECK(exactAutomation.points().size() == domain::kMaximumDynamicsPoints);
+  CHECK(!hasLossAt(exact.value().issues, "ustx.voice_parts[0].curves"));
+
+  const auto overBytes = interchange::encodeUstx(makeDocument(maxPoints * 5));
+  CHECK(overBytes);
+  if (!overBytes) return;
+  const auto over = interchange::importUstxProject(overBytes.value(), factory);
+  CHECK(over);
+  if (!over) return;
+  const auto& overAutomation = over.value().project.vocalTracks().front().regions.front()
+                                   .dynamicsAutomation;
+  CHECK(overAutomation.points().empty());
+  CHECK(hasLossAt(over.value().issues, "ustx.voice_parts[0].curves"));
 }
 
 TEST_CASE("SEAM dynamics exports as typed USTX gain with quantization loss") {
@@ -1007,6 +1077,7 @@ TEST_CASE("USTX project export is deterministic and reports lossy fields") {
   auto* region = project.findRegion(regionId);
   CHECK(region != nullptr);
   auto [lyric, note] = factory.makeNote(seam::time::Tick{0}, seam::time::Tick{960}, 60U, U"あ");
+  lyric.readingHint = U"えー";
   note.vibrato = {.enabled = true, .startFraction = 0.4F, .fadeInFraction = 0.1F,
                   .fadeOutFraction = 0.1F, .depthCents = 100.0F,
                   .periodMilliseconds = 175.0F, .phaseTurns = 0.25F};
@@ -1018,6 +1089,11 @@ TEST_CASE("USTX project export is deterministic and reports lossy fields") {
   CHECK(exported);
   CHECK(!exported.value().bytes.empty());
   CHECK(!exported.value().issues.empty());
+  CHECK(std::any_of(exported.value().issues.begin(), exported.value().issues.end(),
+      [](const auto& issue) {
+        return issue.path.find("readingHint") != std::string::npos &&
+            issue.message.find("separate lyric reading hint") != std::string::npos;
+      }));
   const auto second = seam::interchange::exportUstxProject(project);
   CHECK(second);
   CHECK(exported.value().bytes == second.value().bytes);

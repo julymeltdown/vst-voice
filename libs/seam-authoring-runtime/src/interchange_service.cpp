@@ -151,14 +151,13 @@ core::Result<InterchangeExportDraft> InterchangeService::prepareExport(
     return Output{InterchangeFormat::Ustx, path.value(), hash,
                   std::move(issues), std::move(bytes)};
   }
-  domain::TrackId trackId{};
-  domain::RegionId regionId{};
-  if (request.trackId.has_value()) trackId = *request.trackId;
-  else if (!project.vocalTracks().empty()) trackId = project.vocalTracks().front().id;
-  if (request.regionId.has_value()) regionId = *request.regionId;
-  else if (const auto* track = project.findVocalTrack(trackId); track && !track->regions.empty()) regionId = track->regions.front().id;
-  if (!trackId.valid() || !regionId.valid()) return core::failure<Output>(core::ErrorCode::InvalidArgument, "SMF export requires a vocal track and region");
-  auto exported = interchange::exportSmfProject(project, trackId, regionId, smfLimits);
+  if (request.trackId.has_value() != request.regionId.has_value())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "SMF region export requires both a vocal track and region; omit both to export the whole score");
+  auto exported = request.trackId.has_value()
+      ? interchange::exportSmfProject(project, *request.trackId,
+            *request.regionId, smfLimits)
+      : interchange::exportSmfProject(project, smfLimits);
   if (!exported) return core::Result<Output>{exported.error()};
   const auto report = appendSmf(issues, exported.value().issues);
   if (!report) return core::Result<Output>{report.error()};

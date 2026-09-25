@@ -31,12 +31,14 @@
 #include "seam/native_ui/candidate_audition_session.hpp"
 #include "seam/platform/audio_device.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <csignal>
+#include <iterator>
 #include <thread>
 #include <limits>
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
@@ -1193,9 +1195,9 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
     const auto controls=native_ui::studioGenerationControls(preparationStudio,width,false);
     CHECK(controls.size()==6U);
     for (const auto& control:controls) {
-      // Planning only needs planned take ids; a campaign run needs an identity
-      // this controller recorded, which does not exist until a campaign is planned.
-      CHECK(control.enabled==(control.id!="run-campaign"));
+      // Every free campaign action is available: planning creates a definition,
+      // while the run control opens a retained definition if this is a fresh session.
+      CHECK(control.enabled);
       CHECK(control.bounds.x>=294.0);
       CHECK(control.bounds.x+control.bounds.width<=width-280.0);
       CHECK(control.bounds.y>=268.0); CHECK(control.bounds.y+control.bounds.height<=322.0);
@@ -1879,8 +1881,89 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   const auto& recorded = json.value().find("proceduralRecipes")->asArray(); CHECK(recorded.size() == 1U);
   CHECK(recorded.front().find("contentHash")->asString() == resource.value().identity.contentHash);
   const auto preserved = receipt.value();
+  const auto backingPath = root / "backing.wav";
+  const auto backingSamples = test::support::sineWave(24000U, 220.0, 0.05);
+  CHECK(voicebank::writeMonoPcm16Wav(backingPath, 48000U, backingSamples));
+  const auto resolvedBackingPath = root / "real" / "backing.wav";
+  std::filesystem::create_directories(root / "real" / "sub");
+  const auto resolvedBackingSamples = test::support::sineWave(24000U, 180.0, 0.05);
+  CHECK(voicebank::writeMonoPcm16Wav(resolvedBackingPath, 48000U, resolvedBackingSamples));
+  std::filesystem::create_directory_symlink(root / "real" / "sub", root / "link");
+  std::filesystem::create_symlink(backingPath, root / "backing-link.wav");
+  const auto backing = rendering::StreamingPcmSource::open(backingPath, 4096U); CHECK(backing);
+  const auto resolvedBacking = rendering::StreamingPcmSource::open(resolvedBackingPath, 4096U); CHECK(resolvedBacking);
+  const auto backingTrackId = factory.nextTrackId();
+  project.audioTracks().push_back(domain::AudioTrack{
+      .id = backingTrackId,
+      .name = "Backing",
+      .mediaPath = backingPath.string(),
+      .mediaHash = backing.value()->info().contentHash,
+      .mediaOwnership = domain::MediaOwnership::ExternalReference,
+      .originalFilename = backingPath.filename().string(),
+      .sourceSampleRate = backing.value()->info().sampleRate,
+      .sourceChannels = backing.value()->info().channels,
+      .sourceFrameCount = backing.value()->info().frameCount,
+      .startTick = time::Tick{0},
+      .outputRoute = domain::TrackOutputRoute{
+          .bus = domain::BusId{1U},
+          .matrix = domain::RoutingMatrix::monoToStereo(),
+      },
+  });
+  CHECK(project.validate());
+  // The first path resolves differently under lexical normalization versus filesystem
+  // semantics because `link` is a symlink. The second path has a symlink leaf. Packaging
+  // must canonicalize once and make rendering consume those same admitted targets. The
+  // two targets deliberately have different content so reading the lexically collapsed
+  // path cannot accidentally pass this regression.
+  project.audioTracks().front().mediaPath = "link/../backing.wav";
+  project.audioTracks().front().mediaHash = resolvedBacking.value()->info().contentHash;
+  project.audioTracks().front().sourceSampleRate = resolvedBacking.value()->info().sampleRate;
+  project.audioTracks().front().sourceChannels = resolvedBacking.value()->info().channels;
+  project.audioTracks().front().sourceFrameCount = resolvedBacking.value()->info().frameCount;
+  const auto duplicateMediaTrackId = factory.nextTrackId();
+  project.audioTracks().push_back(domain::AudioTrack{
+      .id = duplicateMediaTrackId,
+      .name = "Audible symlink-leaf backing",
+      .mediaPath = (root / "backing-link.wav").string(),
+      .mediaHash = backing.value()->info().contentHash,
+      .mediaOwnership = domain::MediaOwnership::ExternalReference,
+      .originalFilename = "backing-link.wav",
+      .sourceSampleRate = backing.value()->info().sampleRate,
+      .sourceChannels = backing.value()->info().channels,
+      .sourceFrameCount = backing.value()->info().frameCount,
+      .startTick = time::Tick{0},
+      .outputRoute = domain::TrackOutputRoute{
+          .bus = domain::BusId{1U},
+          .matrix = domain::RoutingMatrix::monoToStereo(),
+      },
+  });
+  const auto duplicateSymlinkTrackId = factory.nextTrackId();
+  auto duplicateSymlinkTrack = project.audioTracks().back();
+  duplicateSymlinkTrack.id = duplicateSymlinkTrackId;
+  duplicateSymlinkTrack.name = "Muted duplicate symlink-leaf backing";
+  duplicateSymlinkTrack.muted = true;
+  project.audioTracks().push_back(std::move(duplicateSymlinkTrack));
+  CHECK(project.validate());
+  auto expectedProject = project;
+  expectedProject.audioTracks().front().mediaPath = resolvedBackingPath.string();
+  for (std::size_t index = 1U; index < expectedProject.audioTracks().size(); ++index)
+    expectedProject.audioTracks()[index].mediaPath = backingPath.string();
+  const auto expectedWithBacking = rendering::ProductionProjectRenderer{}.renderWithSources(
+      expectedProject, sources, trackId, regionId, 1U, 48000U,
+      rendering::RenderQuality::Final);
+  if (!expectedWithBacking) throw test::Failure{expectedWithBacking.error().message + ": " +
+      expectedWithBacking.error().context};
   auto packagedSettings = settings; packagedSettings.includeProjectAndRecipes = true;
+  packagedSettings.projectDirectory = root;
   const auto projectBeforePackage = project;
+  auto unbasedPackageSettings = packagedSettings;
+  unbasedPackageSettings.projectDirectory.reset();
+  const auto unbasedPackage = authoring::ExportService{}.exportSetWithSources(
+      project, sources, trackId, regionId, 1U, root / "packaged-unbased",
+      unbasedPackageSettings);
+  CHECK(!unbasedPackage);
+  CHECK(unbasedPackage.error().code == core::ErrorCode::NotFound);
+  CHECK(!std::filesystem::exists(root / "packaged-unbased"));
   bool originalMoved = false;
   const auto package = authoring::ExportService{}.exportSetWithSources(project, sources, trackId, regionId,
       1U, root / "packaged", packagedSettings, [&](const authoring::ExportProgress& progress) {
@@ -1890,22 +1973,137 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
         }
       });
   CHECK(package); CHECK(originalMoved); CHECK(project == projectBeforePackage);
-  CHECK(package.value().files.size() == 4U);
+  CHECK(package.value().files.size() == 8U); // master, three audible stems, recipe, project, and two WAVs
+  const auto packagedMediaPath = root / "packaged/media" /
+      (resolvedBacking.value()->info().contentHash + ".wav");
+  const auto packagedSymlinkMediaPath = root / "packaged/media" /
+      (backing.value()->info().contentHash + ".wav");
+  CHECK(std::filesystem::exists(packagedMediaPath));
+  CHECK(core::sha256File(packagedMediaPath).value() == resolvedBacking.value()->info().contentHash);
+  CHECK(core::sha256File(packagedSymlinkMediaPath).value() == backing.value()->info().contentHash);
+  const auto packageReceiptText = core::readTextFileLimited(
+      root / "packaged/receipt.json", 1024U * 1024U); CHECK(packageReceiptText);
+  const auto packageReceipt = formats::parseJson(packageReceiptText.value()); CHECK(packageReceipt);
+  const auto* packageFiles = packageReceipt.value().find("files"); CHECK(packageFiles != nullptr);
+  CHECK(packageFiles != nullptr && packageFiles->isArray());
+  std::size_t mediaReceiptCount = 0U;
+  const std::array<std::string, 2U> expectedMediaPaths{
+      (std::filesystem::path{"media"} / (resolvedBacking.value()->info().contentHash + ".wav")).generic_string(),
+      (std::filesystem::path{"media"} / (backing.value()->info().contentHash + ".wav")).generic_string()};
+  const std::array<std::string, 2U> expectedMediaHashes{
+      resolvedBacking.value()->info().contentHash, backing.value()->info().contentHash};
+  const std::array<std::uint64_t, 2U> expectedMediaFrames{
+      resolvedBacking.value()->info().frameCount, backing.value()->info().frameCount};
+  std::array<std::size_t, 2U> mediaReceiptOccurrences{};
+  if (packageFiles != nullptr && packageFiles->isArray()) {
+    for (const auto& file : packageFiles->asArray()) {
+      const auto* path = file.find("path");
+      if (path == nullptr || !path->isString() ||
+          !path->asString().starts_with("media/")) continue;
+      ++mediaReceiptCount;
+      const auto expectedPath = std::find(expectedMediaPaths.begin(), expectedMediaPaths.end(), path->asString());
+      CHECK(expectedPath != expectedMediaPaths.end());
+      if (expectedPath == expectedMediaPaths.end()) continue;
+      const auto mediaIndex = static_cast<std::size_t>(std::distance(expectedMediaPaths.begin(), expectedPath));
+      ++mediaReceiptOccurrences[mediaIndex];
+      const auto* sha = file.find("sha256");
+      const auto* frames = file.find("frames");
+      const auto* channels = file.find("channels");
+      CHECK(sha != nullptr && sha->isString());
+      if (sha != nullptr && sha->isString()) CHECK(sha->asString() == expectedMediaHashes[mediaIndex]);
+      CHECK(frames != nullptr && frames->isInteger());
+      if (frames != nullptr && frames->isInteger()) CHECK(static_cast<std::uint64_t>(frames->asInt64()) == expectedMediaFrames[mediaIndex]);
+      CHECK(channels != nullptr && channels->isInteger());
+      if (channels != nullptr && channels->isInteger()) CHECK(static_cast<std::uint64_t>(channels->asInt64()) == backing.value()->info().channels);
+    }
+  }
+  CHECK(mediaReceiptCount == 2U);
+  CHECK(mediaReceiptOccurrences[0] == 1U);
+  CHECK(mediaReceiptOccurrences[1] == 1U);
   const auto packagedProject = formats::ProjectJsonCodec{}.load(root / "packaged/project.seam"); CHECK(packagedProject);
   const auto& reference = *packagedProject.value().findVocalTrack(trackId)->proceduralRecipe;
   CHECK(reference.resource == resource.value().identity); CHECK(std::filesystem::path{reference.path}.is_relative());
+  const auto& packagedAudio = packagedProject.value().audioTracks().front();
+  CHECK(packagedAudio.mediaPath == (std::filesystem::path{"media"} /
+      (resolvedBacking.value()->info().contentHash + ".wav")).generic_string());
+  CHECK(packagedAudio.mediaOwnership == domain::MediaOwnership::ProjectCopy);
+  CHECK(packagedAudio.mediaHash == resolvedBacking.value()->info().contentHash);
+  CHECK(packagedProject.value().audioTracks().size() == 3U);
+  CHECK(packagedProject.value().audioTracks()[1].mediaPath == (std::filesystem::path{"media"} /
+      (backing.value()->info().contentHash + ".wav")).generic_string());
+  CHECK(packagedProject.value().audioTracks()[1].mediaOwnership == domain::MediaOwnership::ProjectCopy);
+  CHECK(packagedProject.value().audioTracks()[2].mediaPath == packagedProject.value().audioTracks()[1].mediaPath);
+  auto replayProject = packagedProject.value();
+  for (auto& track : replayProject.audioTracks())
+    track.mediaPath = (track.mediaHash == resolvedBacking.value()->info().contentHash
+        ? packagedMediaPath : packagedSymlinkMediaPath).string();
   const std::vector<rendering::TrackSingerSource> packagedSources{
       rendering::TrackRecipeFileSource{trackId, reference, root / "packaged"}};
-  const auto replay = rendering::ProductionProjectRenderer{}.renderWithSources(packagedProject.value(), packagedSources,
+  const auto replay = rendering::ProductionProjectRenderer{}.renderWithSources(replayProject, packagedSources,
       trackId, regionId, 1U, 48000U, rendering::RenderQuality::Final); CHECK(replay);
-  CHECK(replay.value().interleaved == expected.value().interleaved);
+  CHECK(replay.value().interleaved == expectedWithBacking.value().interleaved);
   CHECK(authoring::ExportService{}.recoverSet(root / "packaged"));
   std::filesystem::rename(root / "source-offline.json", root / "singer.json");
+  const auto committedReceiptBeforeFailure = packageReceiptText.value();
+  auto replacementSettings = packagedSettings;
+  replacementSettings.replaceExisting = true;
+  bool changedBeforeSnapshot = false;
+  const auto rejectedChangedMedia = authoring::ExportService{}.exportSetWithSources(
+      project, sources, trackId, regionId, 1U, root / "packaged", replacementSettings,
+      [&](const authoring::ExportProgress& progress) {
+        if (!changedBeforeSnapshot && progress.state == authoring::ExportState::Staging &&
+            progress.completedFiles == 0U && progress.currentOutput.empty()) {
+          const auto changedSamples = test::support::sineWave(24000U, 330.0, 0.05);
+          CHECK(voicebank::writeMonoPcm16Wav(resolvedBackingPath, 48000U, changedSamples));
+          changedBeforeSnapshot = true;
+        }
+      });
+  CHECK(!rejectedChangedMedia);
+  CHECK(rejectedChangedMedia.error().code == core::ErrorCode::Conflict);
+  CHECK(rejectedChangedMedia.error().message ==
+        "Backing media changed before the project snapshot was staged");
+  CHECK(changedBeforeSnapshot);
+  CHECK(core::readTextFileLimited(root / "packaged/receipt.json", 1024U * 1024U).value() ==
+        committedReceiptBeforeFailure);
+  CHECK(core::sha256File(packagedMediaPath).value() == resolvedBacking.value()->info().contentHash);
+  bool stagingArtifactRemains = false;
+  for (const auto& entry : std::filesystem::directory_iterator(root)) {
+    const auto name = entry.path().filename().string();
+    if (name.starts_with(".packaged-export-") && name.ends_with("-staging"))
+      stagingArtifactRemains = true;
+  }
+  CHECK(!stagingArtifactRemains);
+  CHECK(voicebank::writeMonoPcm16Wav(resolvedBackingPath, 48000U, resolvedBackingSamples));
+
+  bool changedAfterSnapshot = false;
+  const auto snapshotExport = authoring::ExportService{}.exportSetWithSources(
+      project, sources, trackId, regionId, 1U, root / "packaged-source-mutated",
+      packagedSettings, [&](const authoring::ExportProgress& progress) {
+        if (!changedAfterSnapshot && progress.state == authoring::ExportState::Staging &&
+            progress.currentOutput == (std::filesystem::path{"media"} /
+                (resolvedBacking.value()->info().contentHash + ".wav")).generic_string()) {
+          const auto changedSamples = test::support::sineWave(24000U, 330.0, 0.05);
+          CHECK(voicebank::writeMonoPcm16Wav(resolvedBackingPath, 48000U, changedSamples));
+          changedAfterSnapshot = true;
+        }
+      });
+  CHECK(snapshotExport);
+  CHECK(changedAfterSnapshot);
+  const auto snapshotMaster = voicebank::readWav(root / "packaged-source-mutated/master.wav");
+  CHECK(snapshotMaster);
+  if (snapshotMaster) CHECK(snapshotMaster.value().interleaved ==
+      std::vector<float>(expectedWithBacking.value().interleaved.begin(),
+                         expectedWithBacking.value().interleaved.end()));
+  CHECK(core::sha256File(root / "packaged-source-mutated/media" /
+      (resolvedBacking.value()->info().contentHash + ".wav")).value() == resolvedBacking.value()->info().contentHash);
+  CHECK(voicebank::writeMonoPcm16Wav(resolvedBackingPath, 48000U, resolvedBackingSamples));
   authoring::ExportSettings bakeSettings;
   bakeSettings.includeMaster = false; bakeSettings.includeStems = false; bakeSettings.includeProceduralCandidates = true;
+  bakeSettings.projectDirectory = root;
   const auto baked = authoring::ExportService{}.exportSetWithSources(project, sources, trackId, regionId,
       1U, root / "baked", bakeSettings); CHECK(baked);
-  CHECK(baked.value().state == authoring::ExportState::Committed); CHECK(baked.value().files.size() == 4U);
+  CHECK(baked.value().state == authoring::ExportState::Committed);
+  CHECK(baked.value().files.size() == 6U); // candidate pair, project/recipe, and two bundled WAV sources
   const auto prefix = root / "baked/candidates" / (trackId.toString() + "-" + regionId.toString());
   const auto bakedWav = voicebank::readWav(prefix.string() + ".wav"); CHECK(bakedWav); CHECK(bakedWav.value().channels == 1U);
   const auto bakeSnapshot = rendering::RenderSnapshotFactory{}.createProcedural(project, resource.value(), trackId, regionId,
@@ -1932,6 +2130,9 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   if (!ingested) throw test::Failure{ingested.error().message};
   CHECK(ingested.value().audio->interleaved == bakedWav.value().interleaved);
   CHECK(ingested.value().markers.size() == 1U); CHECK(ingested.value().recipe.identity == resource.value().identity);
+  project.audioTracks().front().mediaPath = resolvedBackingPath.string();
+  for (std::size_t index = 1U; index < project.audioTracks().size(); ++index)
+    project.audioTracks()[index].mediaPath = backingPath.string();
   const auto corruptPath = root / "corrupt-candidate.json";
   for (const auto* field : {"approval", "recipeHash", "audioSha256", "frameCount", "schemaVersion"}) {
     auto corrupt = bakeJson.value();
@@ -2045,7 +2246,6 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   CHECK(runVoicebankCli(cliArguments) != 0);
   CHECK(repository.recover().value().lastDurableGeneration == savedGeneration + 1U);
 #endif
-  CHECK(project == projectBeforePackage);
   native_ui::VoicebankStudioController studio;
   CHECK(!studio.importSelectedProceduralCandidate(prefix.string() + ".json", prefix.string() + ".wav", root / "singer.json"));
   CHECK(studio.openProductionProject(root / "producer", producer.inventorySha256, "producer"));
@@ -2425,7 +2625,7 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   const auto single = authoring::ExportService{}.exportProjectWithSources(project, sources, trackId, regionId,
       1U, root / "single.wav", voicebank::WavSampleFormat::Float32); CHECK(single);
   const auto singleWav = voicebank::readWav(root / "single.wav"); CHECK(singleWav);
-  CHECK(singleWav.value().interleaved == std::vector<float>(expected.value().interleaved.begin(), expected.value().interleaved.end()));
+  CHECK(singleWav.value().interleaved == std::vector<float>(expectedWithBacking.value().interleaved.begin(), expectedWithBacking.value().interleaved.end()));
   auto changed = recipe; changed.seed = 42U;
   CHECK(voice_design::saveVoiceRecipeFile(root / "singer.json", changed));
   settings.replaceExisting = true;

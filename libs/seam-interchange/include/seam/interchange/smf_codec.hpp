@@ -15,7 +15,11 @@ namespace seam::interchange {
 struct SmfLimits final {
   std::size_t maximumBytes{64U * 1024U * 1024U};
   std::size_t maximumTracks{64U};
+  // Source events accepted by decodeSmf, and diagnostic amplification budget.
   std::size_t maximumEvents{1'000'000U};
+  // Canonical events admitted by encodeSmf. The default allows one synthesized
+  // note-off per admitted missing-off note beyond the source-event ceiling.
+  std::size_t maximumSerializedEvents{1'200'000U};
   std::size_t maximumNotes{200'000U};
   std::size_t maximumTextBytes{1U * 1024U * 1024U};
   std::int64_t maximumTick{std::numeric_limits<std::int64_t>::max() / 4};
@@ -47,6 +51,7 @@ struct SmfText final {
   time::Tick tick{time::Tick{0}};
   std::string text;
   bool lyric{true};
+  std::uint16_t track{0U};
   friend bool operator==(const SmfText&, const SmfText&) = default;
 };
 
@@ -56,11 +61,20 @@ struct SmfNote final {
   std::uint8_t midi{60U};
   std::uint8_t velocity{100U};
   std::uint8_t channel{0U};
+  std::uint16_t track{0U};
   friend bool operator==(const SmfNote&, const SmfNote&) = default;
+};
+
+struct SmfTrack final {
+  std::string name;
+  friend bool operator==(const SmfTrack&, const SmfTrack&) = default;
 };
 
 struct SmfScore final {
   std::uint16_t ppq{480U};
+  // Empty for constructed scores means one default track. Decoded files retain
+  // source track order and names, including empty/conductor-only tracks.
+  std::vector<SmfTrack> tracks;
   std::vector<SmfTempo> tempos;
   std::vector<SmfMeter> meters;
   std::vector<SmfText> texts;

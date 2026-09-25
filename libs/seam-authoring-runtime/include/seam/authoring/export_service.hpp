@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -44,6 +45,10 @@ struct ExportSettings final {
   // Explicit unapproved mono candidates, including their project/recipe source snapshot.
   bool includeProceduralCandidates{false};
   std::function<bool(ExportPublicationPhase)> publicationFaultInjector;
+  // Base directory for relative project-owned media references. When omitted,
+  // a package can still include media whose project snapshot already stores an
+  // absolute path.
+  std::optional<std::filesystem::path> projectDirectory;
 };
 
 struct ExportFileReceipt final {

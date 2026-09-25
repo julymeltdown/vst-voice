@@ -10,6 +10,7 @@
 #include <map>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -51,7 +52,14 @@ void importDynamics(const UstxPart& source, domain::VocalRegion& region,
   const auto gridEnd = std::min(last + (5 - last % 5) % 5,
                                 source.duration.value() - source.duration.value() % 5);
   const auto gridCount = static_cast<std::uint64_t>((gridEnd - gridStart) / 5 + 1);
-  if (gridCount + 3U > domain::kMaximumDynamicsPoints) {
+  // Count the actual guard anchors below. Reserving all three unconditionally
+  // rejects curves that exactly fit the region automation bound (for example,
+  // a curve spanning the complete part has no outer anchors to add).
+  auto outputCount = gridCount;
+  if (gridStart > 0) ++outputCount;
+  if (gridStart > 5) ++outputCount;
+  if (source.duration.value() - gridEnd >= 5) ++outputCount;
+  if (outputCount > domain::kMaximumDynamicsPoints) {
     addIssue(issues, UstxIssueSeverity::Loss, std::string(path) + ".curves",
              "dynamics span exceeds SEAM's bounded automation point count and was omitted", limits);
     return;
@@ -732,6 +740,7 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
       });
       for (std::size_t index = 1U; index < pitchSpans.size(); ++index)
         pitchSpans[index].latestEnd = std::max(pitchSpans[index - 1U].latestEnd, pitchSpans[index].latestEnd);
+      std::set<domain::LyricTokenId> reportedReadingHints;
       const auto& pitchPoints = region.pitchAutomation.points();
       std::vector<std::size_t> pickupOwners(pitchPoints.size(), region.notes.size());
       for (std::size_t index = 0U; index < pitchPoints.size(); ++index) {
@@ -755,6 +764,11 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         auto notePosition = scaleTick(note.startTick.value(), project.ppq(), kUstxPpq, "project.note.startTick", issues, limits); if (!notePosition) return core::Result<Output>{notePosition.error()};
         auto noteDuration = scaleTick(note.durationTick.value(), project.ppq(), kUstxPpq, "project.note.durationTick", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()};
         UstxNote exported{time::Tick{notePosition.value()}, time::Tick{noteDuration.value()}, note.midiKey, domain::toUtf8(lyric->second->surface), 0.0, {}, false, {}, false};
+        if (lyric->second->readingHint &&
+            reportedReadingHints.insert(lyric->second->id).second) {
+          addIssue(issues, UstxIssueSeverity::Loss, notePath + ".lyric.readingHint",
+                   "SEAM's separate lyric reading hint is not represented by USTX 0.9 and was omitted", limits);
+        }
         const auto visibleOpen = exported.lyric.find('[');
         if (visibleOpen != std::string::npos && exported.lyric.find(']', visibleOpen + 1U) != std::string::npos)
           addIssue(issues, UstxIssueSeverity::Loss, notePath + ".lyric",

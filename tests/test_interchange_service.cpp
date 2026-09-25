@@ -4,9 +4,11 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/interchange_service.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 #include "seam/core/sha256.hpp"
 
 TEST_CASE("interchange service refuses an incomplete MIDI loss report") {
@@ -16,7 +18,9 @@ TEST_CASE("interchange service refuses an incomplete MIDI loss report") {
     std::vector<std::uint8_t> track;
     for (std::size_t index = 0; index < losses; ++index)
       track.insert(track.end(), {0U, 0xffU, 0x7fU, 0U});
-    track.insert(track.end(), {0U, 0x90U, 60U, 100U, 0x83U, 0x60U, 0x80U, 60U, 0U, 0U, 0xffU, 0x2fU, 0U});
+    track.insert(track.end(), {0U, 0x90U, 60U, 100U,
+        0U, 0xffU, 0x05U, 1U, 'a',
+        0x83U, 0x60U, 0x80U, 60U, 0U, 0U, 0xffU, 0x2fU, 0U});
     std::vector<std::uint8_t> bytes{'M', 'T', 'h', 'd', 0U, 0U, 0U, 6U, 0U, 0U, 0U, 1U, 1U, 0xe0U,
                                     'M', 'T', 'r', 'k'};
     const auto count = static_cast<std::uint32_t>(track.size());
@@ -241,6 +245,231 @@ TEST_CASE("interchange service uses bounded SMF import and export paths") {
   CHECK(imported);
   CHECK(imported.value().format == seam::authoring::InterchangeFormat::Smf);
   CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 1U);
+}
+
+TEST_CASE("interchange service imports Type-1 tracks as distinct vocal drafts") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("interchange-service-smf-tracks");
+  const auto source = root / "two-vocal-tracks.mid";
+  const std::vector<std::uint8_t> conductor{
+      0U, 0xffU, 0x03U, 9U, 'C', 'o', 'n', 'd', 'u', 'c', 't', 'o', 'r',
+      0U, 0xffU, 0x51U, 3U, 0x09U, 0x27U, 0xc0U,
+      0U, 0xffU, 0x58U, 4U, 3U, 2U, 24U, 8U,
+      0x83U, 0x60U, 0xffU, 0x51U, 3U, 0x06U, 0x1aU, 0x80U,
+      0U, 0xffU, 0x58U, 4U, 5U, 3U, 24U, 8U,
+      0U, 0xffU, 0x2fU, 0U};
+  const std::vector<std::uint8_t> lead{
+      0U, 0xffU, 0x03U, 4U, 'L', 'e', 'a', 'd',
+      0U, 0xffU, 0x05U, 2U, 'l', 'a',
+      0U, 0x90U, 60U, 100U,
+      0x83U, 0x60U, 0x80U, 60U, 0U,
+      0U, 0xffU, 0x2fU, 0U};
+  const std::vector<std::uint8_t> harmony{
+      0U, 0xffU, 0x03U, 7U, 'H', 'a', 'r', 'm', 'o', 'n', 'y',
+      0U, 0xffU, 0x05U, 2U, 'd', 'o',
+      0U, 0x90U, 64U, 100U,
+      0x83U, 0x60U, 0x80U, 64U, 0U,
+      0U, 0xffU, 0x2fU, 0U};
+  std::vector<std::uint8_t> bytes{
+      'M', 'T', 'h', 'd', 0U, 0U, 0U, 6U,
+      0U, 1U, 0U, 3U, 1U, 0xe0U};
+  const auto appendTrack = [&](const std::vector<std::uint8_t>& track) {
+    bytes.insert(bytes.end(), {'M', 'T', 'r', 'k'});
+    const auto size = static_cast<std::uint32_t>(track.size());
+    bytes.push_back(static_cast<std::uint8_t>(size >> 24U));
+    bytes.push_back(static_cast<std::uint8_t>(size >> 16U));
+    bytes.push_back(static_cast<std::uint8_t>(size >> 8U));
+    bytes.push_back(static_cast<std::uint8_t>(size));
+    bytes.insert(bytes.end(), track.begin(), track.end());
+  };
+  appendTrack(conductor);
+  appendTrack(lead);
+  appendTrack(harmony);
+  CHECK(core::durableAtomicWriteNew(source, std::as_bytes(std::span{bytes})));
+  const auto sourceHash = core::sha256File(source); CHECK(sourceHash);
+
+  application::ProjectFactory factory{960000U};
+  const auto imported = authoring::InterchangeService{}.importFile(source, factory,
+      {.format = authoring::InterchangeFormat::Smf,
+       .projectName = "Two-track import"});
+  CHECK(imported);
+  CHECK(imported.value().project.vocalTracks().size() == 2U);
+  CHECK(imported.value().project.name() == "Two-track import");
+  CHECK(imported.value().project.ppq() == time::kDefaultPpq);
+  const auto& tempoEvents = imported.value().project.tempoMap().events();
+  CHECK(tempoEvents.size() == 2U);
+  CHECK((tempoEvents[0] == time::TempoEvent{time::Tick{0}, 100.0}));
+  CHECK((tempoEvents[1] == time::TempoEvent{time::Tick{960}, 150.0}));
+  const auto& meterEvents = imported.value().project.meterMap().events();
+  CHECK(meterEvents.size() == 2U);
+  CHECK((meterEvents[0] == time::MeterEvent{time::Tick{0}, 3U, 4U}));
+  CHECK((meterEvents[1] == time::MeterEvent{time::Tick{960}, 5U, 8U}));
+  const auto& leadTrack = imported.value().project.vocalTracks()[0];
+  const auto& harmonyTrack = imported.value().project.vocalTracks()[1];
+  CHECK(leadTrack.name == "Lead");
+  CHECK(harmonyTrack.name == "Harmony");
+  CHECK(leadTrack.regions.size() == 1U);
+  CHECK(harmonyTrack.regions.size() == 1U);
+  CHECK(leadTrack.regions.front().lyrics.size() == 1U);
+  CHECK(harmonyTrack.regions.front().lyrics.size() == 1U);
+  CHECK(leadTrack.regions.front().notes.size() == 1U);
+  CHECK(harmonyTrack.regions.front().notes.size() == 1U);
+  CHECK(leadTrack.regions.front().notes.front().startTick == time::Tick{0});
+  CHECK(harmonyTrack.regions.front().notes.front().startTick == time::Tick{0});
+  CHECK(leadTrack.regions.front().notes.front().durationTick == time::Tick{960});
+  CHECK(harmonyTrack.regions.front().notes.front().durationTick == time::Tick{960});
+  CHECK(leadTrack.regions.front().notes.front().midiKey == 60U);
+  CHECK(harmonyTrack.regions.front().notes.front().midiKey == 64U);
+  CHECK(leadTrack.regions.front().lyrics.front().surface == U"la");
+  CHECK(harmonyTrack.regions.front().lyrics.front().surface == U"do");
+  const auto* leadBoundLyric = leadTrack.regions.front().findLyric(
+      leadTrack.regions.front().notes.front().lyricTokenId);
+  const auto* harmonyBoundLyric = harmonyTrack.regions.front().findLyric(
+      harmonyTrack.regions.front().notes.front().lyricTokenId);
+  CHECK(leadBoundLyric != nullptr);
+  CHECK(harmonyBoundLyric != nullptr);
+  CHECK(leadBoundLyric->surface == U"la");
+  CHECK(harmonyBoundLyric->surface == U"do");
+  CHECK(imported.value().issues.empty());
+
+  // An unqualified score export must preserve the complete multi-track song,
+  // not silently narrow it to the first selected/default region.
+  const auto roundTripPath = root / "round-trip.mid";
+  authoring::InterchangeService service;
+  const auto exported = service.exportFile(imported.value().project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = roundTripPath});
+  CHECK(exported);
+  const auto roundTrip = service.importFile(roundTripPath, factory,
+      {.format = authoring::InterchangeFormat::Smf,
+       .projectName = "Round-trip"});
+  CHECK(roundTrip);
+  CHECK(roundTrip.value().project.vocalTracks().size() == 2U);
+  CHECK(roundTrip.value().project.vocalTracks()[0].name == "Lead");
+  CHECK(roundTrip.value().project.vocalTracks()[1].name == "Harmony");
+  CHECK(roundTrip.value().project.vocalTracks()[0].regions[0].notes.size() == 1U);
+  CHECK(roundTrip.value().project.vocalTracks()[1].regions[0].notes.size() == 1U);
+  const auto& roundLead = roundTrip.value().project.vocalTracks()[0].regions[0];
+  const auto& roundHarmony = roundTrip.value().project.vocalTracks()[1].regions[0];
+  CHECK(roundLead.notes[0].startTick == time::Tick{0});
+  CHECK(roundHarmony.notes[0].startTick == time::Tick{0});
+  CHECK(roundLead.notes[0].durationTick == time::Tick{960});
+  CHECK(roundHarmony.notes[0].durationTick == time::Tick{960});
+  CHECK(roundLead.notes[0].midiKey == 60U);
+  CHECK(roundHarmony.notes[0].midiKey == 64U);
+  CHECK(roundTrip.value().project.vocalTracks()[0].regions[0].lyrics[0].surface == U"la");
+  CHECK(roundTrip.value().project.vocalTracks()[1].regions[0].lyrics[0].surface == U"do");
+  const auto* roundLeadLyric = roundLead.findLyric(roundLead.notes[0].lyricTokenId);
+  const auto* roundHarmonyLyric = roundHarmony.findLyric(roundHarmony.notes[0].lyricTokenId);
+  CHECK(roundLeadLyric != nullptr);
+  CHECK(roundHarmonyLyric != nullptr);
+  CHECK(roundLeadLyric->surface == U"la");
+  CHECK(roundHarmonyLyric->surface == U"do");
+  CHECK(roundTrip.value().issues.empty());
+  CHECK(roundTrip.value().project.tempoMap().events().size() == 2U);
+  CHECK(roundTrip.value().project.tempoMap().events()[0].bpm == 100.0);
+  CHECK(roundTrip.value().project.tempoMap().events()[1].bpm == 150.0);
+  CHECK(roundTrip.value().project.tempoMap().events()[1].tick == time::Tick{960});
+  CHECK(roundTrip.value().project.meterMap().events().size() == 2U);
+  CHECK(roundTrip.value().project.meterMap().events()[0].numerator == 3U);
+  CHECK(roundTrip.value().project.meterMap().events()[0].denominator == 4U);
+  CHECK(roundTrip.value().project.meterMap().events()[1].numerator == 5U);
+  CHECK(roundTrip.value().project.meterMap().events()[1].denominator == 8U);
+  CHECK(roundTrip.value().project.meterMap().events()[1].tick == time::Tick{960});
+
+  const auto nonFirstRegion = service.prepareExport(imported.value().project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = root / "non-first-region.mid",
+       .trackId = harmonyTrack.id,
+       .regionId = harmonyTrack.regions.front().id});
+  CHECK(nonFirstRegion);
+  const auto nonFirstScore = interchange::decodeSmf(nonFirstRegion.value().bytes);
+  CHECK(nonFirstScore);
+  CHECK(nonFirstScore.value().tracks.size() == 1U);
+  CHECK(nonFirstScore.value().tracks.front().name == "Harmony");
+  CHECK(nonFirstScore.value().notes.size() == 1U);
+  CHECK(nonFirstScore.value().notes.front().midi == 64U);
+  CHECK(nonFirstScore.value().texts.size() == 1U);
+  CHECK(nonFirstScore.value().texts.front().text == "do");
+
+  const auto partialSelection = service.prepareExport(imported.value().project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = root / "invalid-selection.mid",
+       .trackId = leadTrack.id});
+  CHECK(!partialSelection);
+  CHECK(partialSelection.error().code == core::ErrorCode::InvalidArgument);
+  const auto regionOnlySelection = service.prepareExport(imported.value().project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = root / "region-only-selection.mid",
+       .regionId = harmonyTrack.regions.front().id});
+  CHECK(!regionOnlySelection);
+  CHECK(regionOnlySelection.error().code == core::ErrorCode::InvalidArgument);
+  CHECK(core::sha256File(source).value() == sourceHash.value());
+}
+
+TEST_CASE("whole-project MIDI export places every region on the absolute timeline") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("interchange-service-smf-project-export");
+  application::ProjectFactory factory{962000U};
+  auto project = factory.createProject("Multi-region score");
+  const auto lead = factory.addVocalTrack(project, "Lead");
+  const auto harmony = factory.addVocalTrack(project, "Harmony");
+  const auto leadVerse = factory.addRegion(project, lead, "Verse",
+      time::Tick{0}, time::Tick{960});
+  const auto leadChorus = factory.addRegion(project, lead, "Chorus",
+      time::Tick{1920}, time::Tick{2880});
+  const auto harmonyRegion = factory.addRegion(project, harmony, "Harmony phrase",
+      time::Tick{480}, time::Tick{1440});
+  const auto addNote = [&](domain::RegionId regionId, std::int64_t start,
+                           std::uint8_t key, std::u32string lyricText) {
+    auto* region = project.findRegion(regionId);
+    CHECK(region != nullptr);
+    auto [lyric, note] = factory.makeNote(time::Tick{start}, time::Tick{240},
+        key, std::move(lyricText));
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  };
+  addNote(leadVerse, 120, 60U, U"la");
+  addNote(leadChorus, 240, 67U, U"mi");
+  addNote(harmonyRegion, 360, 64U, U"do");
+
+  const auto draft = authoring::InterchangeService{}.prepareExport(project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = root / "whole-score.mid"});
+  CHECK(draft);
+  const auto score = interchange::decodeSmf(draft.value().bytes);
+  CHECK(score);
+  CHECK(score.value().tracks.size() == 2U);
+  CHECK(score.value().tracks[0].name == "Lead");
+  CHECK(score.value().tracks[1].name == "Harmony");
+  CHECK(score.value().notes.size() == 3U);
+  CHECK(score.value().notes[0].track == 0U);
+  CHECK(score.value().notes[0].start == time::Tick{120});
+  CHECK(score.value().notes[1].track == 0U);
+  CHECK(score.value().notes[1].start == time::Tick{2160});
+  CHECK(score.value().notes[2].track == 1U);
+  CHECK(score.value().notes[2].start == time::Tick{840});
+  CHECK(score.value().texts.size() == 3U);
+  CHECK(std::count_if(score.value().texts.begin(), score.value().texts.end(),
+      [](const auto& text) { return text.text == "la" && text.track == 0U; }) == 1);
+  CHECK(std::count_if(score.value().texts.begin(), score.value().texts.end(),
+      [](const auto& text) { return text.text == "mi" && text.tick == time::Tick{2160}; }) == 1);
+  CHECK(std::count_if(score.value().texts.begin(), score.value().texts.end(),
+      [](const auto& text) { return text.text == "do" && text.track == 1U; }) == 1);
+
+  const auto selectedLaterRegion = authoring::InterchangeService{}.prepareExport(project,
+      {.format = authoring::InterchangeFormat::Smf,
+       .destination = root / "selected-later-region.mid",
+       .trackId = lead,
+       .regionId = leadChorus});
+  CHECK(selectedLaterRegion);
+  const auto selectedLaterScore = interchange::decodeSmf(selectedLaterRegion.value().bytes);
+  CHECK(selectedLaterScore);
+  CHECK(selectedLaterScore.value().notes.size() == 1U);
+  CHECK(selectedLaterScore.value().notes.front().midi == 67U);
+  CHECK(selectedLaterScore.value().notes.front().start == time::Tick{240});
+  CHECK(selectedLaterScore.value().texts.size() == 1U);
+  CHECK(selectedLaterScore.value().texts.front().text == "mi");
 }
 
 TEST_CASE("interchange service rejects oversized input before codec work") {

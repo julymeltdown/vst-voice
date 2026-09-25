@@ -7,7 +7,9 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/rendering/render_pipeline.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
 #include <map>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <chrono>
@@ -18,6 +20,17 @@
 
 namespace seam::authoring {
 namespace {
+
+constexpr std::uint64_t kMaximumPackagedMediaBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
+
+struct PackagedMedia final {
+  std::filesystem::path sourcePath;
+  std::string relativePath;
+  std::string contentHash;
+  std::uint64_t byteSize{0U};
+  std::uint64_t frameCount{0U};
+  std::uint16_t channels{0U};
+};
 
 std::filesystem::path stagingPath(const std::filesystem::path& destination,
                                   std::uint64_t revision) {
@@ -667,15 +680,72 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
 
   std::vector<std::pair<domain::TrackId, bool>> stems;
   std::map<std::string, std::string> packageFiles;
+  std::vector<PackagedMedia> packageMedia;
   std::vector<rendering::TrackSingerSource> frozenSources;
+  std::unordered_map<std::string, std::size_t> packagedMediaByHash;
+  std::uint64_t packagedMediaBytes = 0U;
+  auto renderProject = project;
   if (settings.includeProjectAndRecipes || settings.includeProceduralCandidates) {
     if (voicebanks.size() > project.vocalTracks().size()) return core::failure<ExportResult>(
         core::ErrorCode::InvalidArgument, "Recipe package source count exceeds project tracks");
-    for (const auto& track : project.audioTracks()) {
-      if (!track.mediaPath.empty() && std::filesystem::path{track.mediaPath}.is_relative()) return core::failure<ExportResult>(
-          core::ErrorCode::Conflict, "Resolve relative backing media before packaging the project snapshot");
-    }
     auto packaged = project;
+    for (auto& track : packaged.audioTracks()) {
+      if (track.mediaPath.empty()) continue;
+      auto sourcePath = std::filesystem::path{track.mediaPath};
+      if (sourcePath.is_relative()) {
+        if (!settings.projectDirectory || !settings.projectDirectory->is_absolute())
+          return core::failure<ExportResult>(core::ErrorCode::NotFound,
+              "Packaging relative backing media requires the saved project directory",
+              track.mediaPath);
+        sourcePath = *settings.projectDirectory / sourcePath;
+      }
+      std::error_code mediaError;
+      sourcePath = std::filesystem::weakly_canonical(sourcePath, mediaError);
+      if (mediaError || !std::filesystem::is_regular_file(sourcePath, mediaError))
+        return core::failure<ExportResult>(core::ErrorCode::NotFound,
+            "Packaged backing media is not a regular file", track.mediaPath);
+      // Resolve once and use this exact canonical target for both package admission
+      // and rendering. Lexical normalization alone is incorrect across symlink/.. paths.
+      for (auto& renderTrack : renderProject.audioTracks()) {
+        if (renderTrack.id == track.id) {
+          renderTrack.mediaPath = sourcePath.string();
+          break;
+        }
+      }
+      auto extension = sourcePath.extension().string();
+      std::transform(extension.begin(), extension.end(), extension.begin(),
+          [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+      if (extension != ".wav") return core::failure<ExportResult>(core::ErrorCode::Unsupported,
+          "Only WAV backing media can be included in a portable project package",
+          track.mediaPath);
+      const auto wav = rendering::StreamingPcmSource::open(sourcePath, 4096U);
+      if (!wav) return core::Result<ExportResult>{wav.error()};
+      const auto& info = wav.value()->info();
+      if (info.contentHash != track.mediaHash || info.sampleRate != track.sourceSampleRate ||
+          info.channels != track.sourceChannels || info.frameCount != track.sourceFrameCount)
+        return core::failure<ExportResult>(core::ErrorCode::Conflict,
+            "Backing media no longer matches the project's identity and audio metadata",
+            track.mediaPath);
+      const auto existing = packagedMediaByHash.find(info.contentHash);
+      std::string relativePath;
+      if (existing == packagedMediaByHash.end()) {
+        if (info.byteSize > kMaximumPackagedMediaBytes - packagedMediaBytes)
+          return core::failure<ExportResult>(core::ErrorCode::Unsupported,
+              "Packaged backing media exceeds the 2 GiB aggregate limit");
+        packagedMediaBytes += info.byteSize;
+        relativePath = "media/" + info.contentHash + ".wav";
+        packagedMediaByHash.emplace(info.contentHash, packageMedia.size());
+        packageMedia.push_back(PackagedMedia{sourcePath, relativePath, info.contentHash,
+            info.byteSize, info.frameCount, info.channels});
+      } else {
+        const auto& duplicate = packageMedia[existing->second];
+        if (duplicate.byteSize != info.byteSize) return core::failure<ExportResult>(
+            core::ErrorCode::Conflict, "Backing media identity maps to inconsistent file sizes");
+        relativePath = duplicate.relativePath;
+      }
+      track.mediaPath = relativePath;
+      track.mediaOwnership = domain::MediaOwnership::ProjectCopy;
+    }
     std::size_t recipeBytes = 0U;
     for (const auto& source : voicebanks) {
       if (stopToken.stop_requested()) return core::failure<ExportResult>(core::ErrorCode::Conflict, "Recipe packaging cancelled");
@@ -759,7 +829,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     if (candidates.empty()) return core::failure<ExportResult>(core::ErrorCode::InvalidArgument, "No procedural regions were requested for baking");
   }
   const auto totalFiles = static_cast<std::uint64_t>(
-      (settings.includeMaster ? 1U : 0U) + stems.size() + packageFiles.size() + candidates.size() * 2U);
+      (settings.includeMaster ? 1U : 0U) + stems.size() + packageFiles.size() +
+      packageMedia.size() + candidates.size() * 2U);
   if (totalFiles > 1024U) return core::failure<ExportResult>(core::ErrorCode::Unsupported, "Export file count exceeds receipt bounds");
   if (totalFiles == 0U) {
     return core::failure<ExportResult>(core::ErrorCode::InvalidArgument,
@@ -803,6 +874,42 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   result.state = ExportState::Staging;
   notifyProgress(progress, result.state, {}, 0U, totalFiles);
 
+  std::uint64_t completed = 0U;
+  // Stage and verify one project-media snapshot before any audio is rendered.
+  // Both the exported project and every render output then consume these exact bytes,
+  // not a source path that could change between master/stem renders and packaging.
+  for (const auto& media : packageMedia) {
+    if (stopToken.stop_requested()) {
+      static_cast<void>(removeTree(staging));
+      return core::failure<ExportResult>(core::ErrorCode::Conflict,
+          "Backing media packaging cancelled");
+    }
+    const auto bytes = core::readFileBytesLimited(
+        media.sourcePath, voicebank::kMaximumSupportedWavBytes);
+    if (!bytes) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{bytes.error()}; }
+    if (bytes.value().size() != media.byteSize || core::sha256Hex(bytes.value()) != media.contentHash) {
+      static_cast<void>(removeTree(staging));
+      return core::failure<ExportResult>(core::ErrorCode::Conflict,
+          "Backing media changed before the project snapshot was staged",
+          media.sourcePath.string());
+    }
+    const auto path = staging / media.relativePath;
+    std::filesystem::create_directories(path.parent_path(), error);
+    const auto written = error ? core::failure(core::ErrorCode::IoError,
+        "Unable to create packaged backing media directory", error.message()) :
+        core::durableAtomicWriteNew(path, bytes.value());
+    if (!written) { static_cast<void>(removeTree(staging)); return core::Result<ExportResult>{written.error()}; }
+    result.files.push_back({path, media.contentHash, media.frameCount,
+        static_cast<std::uint8_t>(media.channels)});
+    ++completed;
+    notifyProgress(progress, ExportState::Staging, media.relativePath, completed, totalFiles);
+  }
+  for (auto& track : renderProject.audioTracks()) {
+    const auto media = packagedMediaByHash.find(track.mediaHash);
+    if (!track.mediaPath.empty() && media != packagedMediaByHash.end())
+      track.mediaPath = (staging / packageMedia[media->second].relativePath).string();
+  }
+
   rendering::ProductionProjectRenderer renderer;
   const auto renderOne = [&](const domain::Project& renderProject,
                              const std::filesystem::path& relative,
@@ -833,9 +940,8 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
     return receipt;
   };
 
-  std::uint64_t completed = 0U;
   if (settings.includeMaster) {
-    auto master = renderOne(project, "master.wav", activeTrack, activeRegion,
+    auto master = renderOne(renderProject, "master.wav", activeTrack, activeRegion,
                             completed);
     if (!master) {
       static_cast<void>(removeTree(staging));
@@ -859,7 +965,7 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
                                : track->name;
     const auto relative = std::filesystem::path{"stems"} /
         (safeStem(trackName) + "-" + trackId.toString() + ".wav");
-    const auto isolated = isolatedProject(project, trackId, vocal);
+    const auto isolated = isolatedProject(renderProject, trackId, vocal);
     domain::RegionId stemRegion{};
     if (vocal && track != nullptr && !track->regions.empty()) {
       stemRegion = track->regions.front().id;
