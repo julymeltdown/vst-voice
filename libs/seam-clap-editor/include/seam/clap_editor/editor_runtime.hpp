@@ -179,6 +179,8 @@ public:
   // Presents the EMO/SCENE SING workspace in this editor. The shipping plug-in enables it;
   // library tests keep the classic editor and never read the user's saved design preferences.
   void activateDesignShell();
+  // Test and capture entry point: an explicit preference set, never the saved one.
+  void activateDesignShell(native_ui::design::DesignPreferences preferences);
   // Abandons shell and editor pointer gestures without committing them (hide, capture loss).
   void cancelPointerGestures();
   // Invoked for a persistent project change, from the originating thread. Most
@@ -383,6 +385,7 @@ private:
   // Returns true when the SING shell presented the last frame and consumed the pointer event.
   bool routeShellPointerLocked(ShellPointerPhase phase, const native_ui::PointerEvent& event);
   bool shellKeyLocked(const native_ui::KeyEvent& event);
+  void activateDesignShellWith(std::optional<native_ui::design::DesignPreferences> preferences);
   [[nodiscard]] native_ui::EditorSceneState sceneState();
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();

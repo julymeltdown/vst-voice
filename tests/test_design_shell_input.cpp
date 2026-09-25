@@ -1105,3 +1105,271 @@ TEST_CASE("a host that cannot export says why and never pretends to run") {
             .hasValue());
   CHECK(f.controller.voicebankBrowserVisible());
 }
+
+namespace {
+
+const native_ui::SemanticNode* findShellNode(const native_ui::SemanticNode& node, std::string_view id) {
+  if (node.id == id) return &node;
+  for (const auto& child : node.children)
+    if (const auto* found = findShellNode(child, id); found != nullptr) return found;
+  return nullptr;
+}
+
+const native_ui::SemanticNode* publishedNode(ShellFixture& f, std::string_view id) {
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  return findShellNode(f.shell.accessibilityTree().root(), id);
+}
+
+bool frameAt(ShellFixture& f, double width, double height) {
+  if (!f.shell.prepareFrame(f.controller, width, height)) return false;
+  native_ui::PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+  native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+  return f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick());
+}
+
+}  // namespace
+
+TEST_CASE("EXPORT keeps modified and plain editing keys away from the hidden score") {
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(!f.session.selection().empty());
+  f.shell.setWorkspace(f.controller, Workspace::Export);
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+  const std::vector<KeyEvent> editing{
+      {.key = NativeKey::Delete, .modifiers = {.alt = true}},
+      {.key = NativeKey::Backspace, .modifiers = {.alt = true}},
+      {.key = NativeKey::Delete, .modifiers = {.command = true}},
+      {.key = NativeKey::X, .modifiers = {.command = true}},
+      {.key = NativeKey::D, .modifiers = {.command = true}},
+      {.key = NativeKey::A, .modifiers = {.alt = true}},
+      {.key = NativeKey::Up, .modifiers = {.alt = true}},
+      {.key = NativeKey::Delete},
+      {.key = NativeKey::Backspace},
+      {.key = NativeKey::D},
+      {.key = NativeKey::Q},
+      {.key = NativeKey::Up},
+  };
+  for (const auto& event : editing) {
+    // A key the shell passes on reaches the editor exactly as a host would send it.
+    if (!f.shell.handleShellKey(f.controller, event)) static_cast<void>(f.controller.keyDown(event));
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.shell.workspace() == Workspace::Export);
+  }
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == 1U);
+  // Application commands still reach the host: new, open, save, export, quit, undo and redo.
+  for (const auto key : {NativeKey::N, NativeKey::O, NativeKey::S, NativeKey::E, NativeKey::Q,
+                         NativeKey::Z, NativeKey::Y}) {
+    CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = key, .modifiers = {.command = true}}));
+  }
+}
+
+TEST_CASE("Escape leaves EXPORT whatever holds focus, at every supported size") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  const std::vector<std::pair<double, double>> sizes{{480.0, 320.0}, {720.0, 480.0},
+                                                     {1280.0, 800.0}, {1600.0, 900.0}};
+  for (const auto& [width, height] : sizes) {
+    for (int focus = 0; focus < 3; ++focus) {
+      ShellFixture f;
+      if (!native_ui::paint::vectorBackendAvailable()) return;
+      f.controller.resize(width, height);
+      CHECK(frameAt(f, width, height));
+      f.shell.setWorkspace(f.controller, Workspace::Export);
+      CHECK(frameAt(f, width, height));
+      if (focus == 0) {
+        CHECK(f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::SetFocus)
+                  .hasValue());
+      } else if (focus == 1) {
+        // A re-homed editor control the EXPORT workspace still publishes (transport, tempo...).
+        f.controller.rebuildAccessibilityTree();
+        f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+        std::string rehomed;
+        for (const auto& child : f.shell.accessibilityTree().root().children) {
+          if (child.id.starts_with("toolbar.") && child.enabled) {
+            rehomed = child.id;
+            break;
+          }
+        }
+        if (rehomed.empty()) std::cerr << "no re-homed control at " << width << "x" << height << '\n';
+        CHECK(!rehomed.empty());
+        CHECK(f.shell.dispatchController(f.controller, rehomed, SemanticAction::SetFocus).hasValue());
+        CHECK(f.shell.accessibilityTree().focusedNode() == nullptr ||
+              !SingShell::ownsSemantic(f.shell.accessibilityTree().focusedNode()->id));
+      }
+      CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+      if (f.shell.workspace() != Workspace::Sing)
+        std::cerr << "EXPORT kept at " << width << "x" << height << " focus case " << focus << '\n';
+      CHECK(f.shell.workspace() == Workspace::Sing);
+    }
+  }
+}
+
+TEST_CASE("EXPORT refuses a run from live busy state, never from the last paint") {
+  using native_ui::SemanticAction;
+  using native_ui::design::ShellHostActions;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  int calls = 0;
+  bool hostBusy = false;
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = [&calls]() -> core::Result<void> {
+        ++calls;
+        return core::success();
+      },
+      .exportPlan = {},
+      .exportUnavailable = {},
+      .exportBusy = [&hostBusy] { return hostBusy; }});
+  CHECK(f.frame());
+  f.shell.setWorkspace(f.controller, Workspace::Export);
+  CHECK(f.frame());
+  // The host's worker is in a zero-file preflight: the editor still reports its idle progress.
+  hostBusy = true;
+  CHECK(f.shell.exportBusy(f.controller));
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate));
+  const auto run = f.shell.exportRunButton();
+  CHECK(!f.shell.pointerDown(f.controller, press({run.x + 10.0, run.y + 10.0})));
+  const auto* busyNode = publishedNode(f, "shell.export.run");
+  CHECK(busyNode != nullptr && !busyNode->enabled);
+  CHECK(calls == 0);
+  hostBusy = false;
+  // Staging reported by the editor after the last paint, without a repaint in between.
+  f.controller.setExportProgress({.state = authoring::ExportState::Staging,
+                                  .currentOutput = "master.wav",
+                                  .completedFiles = 0U,
+                                  .totalFiles = 2U});
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate));
+  CHECK(calls == 0);
+  const auto* progress = publishedNode(f, "shell.export.progress");
+  CHECK(progress != nullptr);
+  // The run ends: the next attempt is accepted, again without a repaint.
+  f.controller.setExportProgress({.state = authoring::ExportState::Committed,
+                                  .currentOutput = {},
+                                  .completedFiles = 2U,
+                                  .totalFiles = 2U});
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate).hasValue());
+  CHECK(calls == 1);
+}
+
+TEST_CASE("a failed export attempt publishes its reason even with no files counted") {
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.shell.setHostActions({.exportSet = [] { return core::success(); }});
+  CHECK(f.frame());
+  f.shell.setWorkspace(f.controller, Workspace::Export);
+  const std::string reason = "The voicebank cannot cover the phoneme sequence r a";
+  f.controller.setExportProgress({.state = authoring::ExportState::Failed,
+                                  .currentOutput = reason,
+                                  .completedFiles = 0U,
+                                  .totalFiles = 0U});
+  CHECK(f.frame());
+  const auto* attempt = publishedNode(f, "shell.export.attempt");
+  CHECK(attempt != nullptr);
+  if (attempt != nullptr) {
+    CHECK(attempt->value.find("Failed") != std::string::npos ||
+          attempt->value.find("failed") != std::string::npos);
+    CHECK(attempt->value.find(reason) != std::string::npos);
+  }
+  // A cancelled attempt is reported the same way.
+  f.controller.setExportProgress({.state = authoring::ExportState::Cancelled,
+                                  .currentOutput = {},
+                                  .completedFiles = 0U,
+                                  .totalFiles = 0U});
+  CHECK(publishedNode(f, "shell.export.attempt") != nullptr);
+}
+
+TEST_CASE("the EXPORT run button, its hit area and its accessible bounds are one layout at every size") {
+  using native_ui::SemanticAction;
+  using native_ui::design::ShellExportPlan;
+  using native_ui::design::ShellHostActions;
+  using native_ui::design::Workspace;
+  const std::vector<std::pair<double, double>> sizes{{480.0, 320.0}, {720.0, 480.0},
+                                                     {1280.0, 800.0}, {1600.0, 900.0},
+                                                     {1920.0, 1080.0}};
+  const std::string longText(420U, 'w');
+  for (const auto& [width, height] : sizes) {
+    for (const bool failed : {false, true}) {
+      ShellFixture f;
+      if (!native_ui::paint::vectorBackendAvailable()) return;
+      int calls = 0;
+      f.shell.setHostActions(ShellHostActions{
+          .exportSet = [&calls]() -> core::Result<void> {
+            ++calls;
+            return core::success();
+          },
+          .exportPlan = [&longText] {
+            return std::optional<ShellExportPlan>{ShellExportPlan{
+                .sampleRate = 48000U, .channels = 2U, .format = longText, .master = true,
+                .stems = true, .asksAboutPackaging = true}};
+          },
+          .exportUnavailable = {}});
+      f.controller.resize(width, height);
+      CHECK(frameAt(f, width, height));
+      f.shell.setWorkspace(f.controller, Workspace::Export);
+      if (failed) {
+        f.controller.setExportProgress({.state = authoring::ExportState::Failed,
+                                        .currentOutput = "/Volumes/" + longText + "/set",
+                                        .completedFiles = 0U,
+                                        .totalFiles = 0U});
+      }
+      CHECK(frameAt(f, width, height));
+      const auto& layout = f.shell.layout();
+      const auto run = f.shell.exportRunButton();
+      if (run.bottom() > height || run.right() > width || run.y < layout.editor.y)
+        std::cerr << width << "x" << height << " run " << run.x << "," << run.y << " "
+                  << run.width << "x" << run.height << '\n';
+      CHECK(run.width > 0.0 && run.height > 0.0);
+      CHECK(run.x >= 0.0 && run.right() <= width);
+      CHECK(run.y >= layout.editor.y && run.bottom() <= layout.lane.bottom());
+      CHECK(run.bottom() <= height);
+      const auto* node = publishedNode(f, "shell.export.run");
+      CHECK(node != nullptr);
+      if (node != nullptr) {
+        CHECK_NEAR(node->bounds.x, run.x, 1e-9);
+        CHECK_NEAR(node->bounds.y, run.y, 1e-9);
+        CHECK_NEAR(node->bounds.width, run.width, 1e-9);
+        CHECK_NEAR(node->bounds.height, run.height, 1e-9);
+      }
+      for (const auto* id : {"shell.export.last", "shell.export.attempt"}) {
+        if (const auto* status = publishedNode(f, id); status != nullptr) {
+          CHECK(status->bounds.bottom() <= height && status->bounds.right() <= width);
+        }
+      }
+      CHECK(f.shell.pointerDown(f.controller,
+                                press({run.x + run.width * 0.5, run.y + run.height * 0.5}))
+                .hasValue());
+      CHECK(calls == 1);
+    }
+  }
+}
+
+TEST_CASE("retained score ids are refused while EXPORT covers the score") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto id = "note." + f.note().id.toString();
+  // On screen, the note is published and takes focus through the shell's host boundary.
+  CHECK(f.shell.dispatchController(f.controller, id, SemanticAction::SetFocus).hasValue());
+  f.shell.setWorkspace(f.controller, Workspace::Export);
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+  CHECK(!f.shell.dispatchController(f.controller, id, SemanticAction::EditText));
+  CHECK(!f.controller.textInputActive());
+  CHECK(!f.shell.dispatchController(f.controller, id, SemanticAction::Activate));
+  CHECK(!f.shell.dispatchController(f.controller, "timeline", SemanticAction::SetFocus));
+  CHECK(!f.shell.setControllerValue(f.controller, id, "HIDDEN"));
+  CHECK(f.controller.documentRevision() == revision);
+  // Back in SING the same id acts again.
+  f.shell.setWorkspace(f.controller, Workspace::Sing);
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchController(f.controller, id, SemanticAction::SetFocus).hasValue());
+}

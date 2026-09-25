@@ -269,3 +269,42 @@ TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through re
   CHECK(status != nullptr && status->value.find("Written") != std::string::npos);
   second.app->shutdownAudio();
 }
+
+TEST_CASE("sing shell journey: a retained note cannot be edited through the host while EXPORT is up") {
+  const auto root = seam::test::support::temporaryDirectory("journey-export-hidden-note");
+  JourneyApp f{root, {}};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  f.paint();
+  CHECK(f.shellPresents());
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  if (grid == nullptr) return;
+  f.doubleClick({grid->bounds.x + 240.0, grid->bounds.y + grid->bounds.height * 0.5});
+  f.paint();
+  CHECK(f.region()->notes.size() == 1U);
+  const auto id = "note." + f.region()->notes.front().id.toString();
+  const auto lyric = lyricOf(*f.region(), f.region()->notes.front());
+  CHECK(f.app->dispatchAccessibility("shell.workspace.export", SemanticAction::Activate));
+  f.paint();
+  CHECK(f.app->accessibilityTree()->virtualizedNoteCount() == 0U);
+  // A screen reader or automation client that kept the old element gets a refusal, and no field
+  // opens that a later commit could write into.
+  const auto edit = f.app->dispatchAccessibility(id, SemanticAction::EditText);
+  CHECK(!edit);
+  CHECK(!f.app->authoring().controller().textInputActive());
+  f.app->textCommit(U"HIDDEN");
+  CHECK(!f.app->setAccessibilityValue(id, "HIDDEN"));
+  CHECK(!f.app->dispatchAccessibility(id, SemanticAction::Activate));
+  // Alt-Delete, the modified delete the note editor honours, does not reach the covered score.
+  f.app->keyDown(KeyEvent{.key = NativeKey::Delete, .modifiers = {.alt = true}});
+  f.app->keyDown(KeyEvent{.key = NativeKey::Delete});
+  CHECK(f.region()->notes.size() == 1U);
+  CHECK(lyricOf(*f.region(), f.region()->notes.front()) == lyric);
+  // Escape brings the score back and the same id acts again.
+  f.app->keyDown(KeyEvent{.key = NativeKey::Escape});
+  f.paint();
+  CHECK(f.find(id) != nullptr || f.app->accessibilityTree()->virtualizedNoteCount() == 1U);
+  CHECK(f.app->dispatchAccessibility(id, SemanticAction::SetFocus));
+  f.app->shutdownAudio();
+}

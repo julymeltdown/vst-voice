@@ -7,6 +7,15 @@ namespace seam::clap_editor {
 // editor, and an edit made through the shell invalidates the prepared bounce like any other edit.
 
 void EditorRuntime::activateDesignShell() {
+  activateDesignShellWith(std::nullopt);
+}
+
+void EditorRuntime::activateDesignShell(native_ui::design::DesignPreferences preferences) {
+  activateDesignShellWith(preferences);
+}
+
+void EditorRuntime::activateDesignShellWith(
+    std::optional<native_ui::design::DesignPreferences> preferences) {
   std::lock_guard lock(mutex_);
   shell_.setRepaintCallback([this] { requestRepaint(); });
   // A plug-in does not write files from the editor: the DAW renders and exports the track.
@@ -16,7 +25,11 @@ void EditorRuntime::activateDesignShell() {
       .exportUnavailable =
           "In a plug-in, export from your DAW: render or bounce this track there.",
   });
-  shell_.activate();
+  if (preferences.has_value()) {
+    shell_.activate(native_ui::design::locateDesignAssets(), *preferences);
+  } else {
+    shell_.activate();
+  }
   requestRepaint();
 }
 

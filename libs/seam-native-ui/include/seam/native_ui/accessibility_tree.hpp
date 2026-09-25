@@ -41,6 +41,9 @@ public:
       std::size_t offset, std::size_t limit) const;
   [[nodiscard]] std::size_t materializedNoteCount() const noexcept;
   [[nodiscard]] const SemanticNode* focusedNode() const;
+  // True when this tree currently publishes the element: a node in the tree or one of its
+  // virtual notes. A retained host element for anything else is stale.
+  [[nodiscard]] bool publishes(std::string_view id) const;
   [[nodiscard]] core::Result<void> focusNext(bool reverse);
   [[nodiscard]] core::Result<void> setFocus(std::string_view id);
   [[nodiscard]] core::Result<void> dispatch(

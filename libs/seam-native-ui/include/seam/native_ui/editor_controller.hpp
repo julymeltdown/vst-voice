@@ -415,6 +415,9 @@ public:
   void setExportProgress(authoring::ExportProgress progress) noexcept {
     exportProgress_ = std::move(progress);
   }
+  [[nodiscard]] const authoring::ExportProgress& exportProgress() const noexcept {
+    return exportProgress_;
+  }
   void setLastExport(std::optional<authoring::ExportResult> result) {
     lastExport_ = std::move(result);
   }

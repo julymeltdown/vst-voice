@@ -701,6 +701,7 @@ core::Result<void> NativeEditorApp::initialize() {
         };
       },
       .exportUnavailable = {},
+      .exportBusy = [this] { return applicationController_->exportInProgress(); },
   });
   applicationMenu_ = platform::createNativeApplicationMenu();
   if (applicationMenu_ != nullptr) {
@@ -1699,8 +1700,11 @@ core::Result<void> NativeEditorApp::dispatchAccessibility(
   }
   if (shell_.presentedLastFrame() && native_ui::design::SingShell::ownsSemantic(id))
     return shell_.dispatchSemantic(authoring_->controller(), id, action);
+  // The presented shell validates the id against what it publishes now: a retained element of a
+  // score EXPORT hides (or a control the layout dropped) must not act on the document.
+  if (shell_.presentedLastFrame())
+    return shell_.dispatchController(authoring_->controller(), id, action);
   auto result = authoring_->controller().dispatchAccessibility(id, action);
-  // Only a focus transfer that happened moves focus away from a shell control.
   if (result && action == native_ui::SemanticAction::SetFocus) shell_.controllerFocusTaken();
   return result;
 }
@@ -1711,6 +1715,8 @@ core::Result<void> NativeEditorApp::setAccessibilityValue(
     return core::failure(core::ErrorCode::InvalidState,
                          "Accessibility value setting requires an authoring session");
   }
+  if (shell_.presentedLastFrame())
+    return shell_.setControllerValue(authoring_->controller(), id, value);
   return authoring_->controller().setAccessibilityValue(id, value);
 }
 

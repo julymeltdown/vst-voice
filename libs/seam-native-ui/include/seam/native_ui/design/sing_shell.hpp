@@ -51,6 +51,8 @@ struct ShellHostActions final {
   std::function<core::Result<void>()> exportSet;
   std::function<std::optional<ShellExportPlan>()> exportPlan;
   std::string exportUnavailable{"This host does not export from the editor"};
+  // The host's live export worker state; the shell also reads the editor's current progress.
+  std::function<bool()> exportBusy;
 };
 
 // Finds assets/ui-design next to a bundle, in an explicit override, or in the source tree for
@@ -140,6 +142,15 @@ public:
                                       SemanticAction action);
   // Called when the host sends an action to a controller id, so shell focus follows it.
   void controllerFocusTaken() noexcept { semanticFocus_.clear(); }
+  // Host boundary for editor elements while the shell presents. An action or value reaches the
+  // editor only for an element the shell publishes right now: a retained host element for the
+  // covered score (EXPORT) or for a control the layout removed is refused, whatever flags it kept.
+  core::Result<void> dispatchController(NativeEditorController& controller, std::string_view id,
+                                        SemanticAction action);
+  core::Result<void> setControllerValue(NativeEditorController& controller, std::string_view id,
+                                        std::string_view value);
+  // Live export state (the host's worker, the editor's current progress), never a painted cache.
+  [[nodiscard]] bool exportBusy(const NativeEditorController& controller) const;
 
   // Converts a rectangle published in the legacy editor's window coordinates into the shell.
   [[nodiscard]] ui::Rect fromLegacy(ui::Rect rect) const noexcept;

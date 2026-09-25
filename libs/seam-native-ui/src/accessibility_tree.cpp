@@ -100,6 +100,10 @@ std::optional<std::size_t> AccessibilityTree::noteIndexForId(
   return std::nullopt;
 }
 
+bool AccessibilityTree::publishes(std::string_view id) const {
+  return EditorSemanticTree::containsId(root_, id) || noteIndexForId(id).has_value();
+}
+
 const SemanticNode* AccessibilityTree::focusedNode() const {
   const auto findFocused = [](const SemanticNode& node,
                               const auto& self) -> const SemanticNode* {

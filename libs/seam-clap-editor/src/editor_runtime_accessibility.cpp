@@ -54,9 +54,14 @@ core::Result<void> EditorRuntime::dispatchAccessibility(
     if (session_.revision() != before) requestRenderAfterEdit();
     return result;
   }
-  auto result = controller_->dispatchAccessibility(id, action);
+  const auto before = session_.revision();
+  // The presented shell checks the id against what it publishes now, so a retained element of a
+  // hidden score (EXPORT) or a control the layout dropped cannot act on the document.
+  auto result = shell_.presentedLastFrame() ? shell_.dispatchController(*controller_, id, action)
+                                            : controller_->dispatchAccessibility(id, action);
   // Only a focus transfer that happened moves focus away from a shell control.
   if (result && action == native_ui::SemanticAction::SetFocus) shell_.controllerFocusTaken();
+  if (session_.revision() != before) requestRenderAfterEdit();
   return result;
 }
 
@@ -68,7 +73,11 @@ core::Result<void> EditorRuntime::setAccessibilityValue(
                          "CLAP editor accessibility is unavailable");
   }
   controller_->rebuildAccessibilityTree();
-  return controller_->setAccessibilityValue(id, value);
+  const auto before = session_.revision();
+  auto result = shell_.presentedLastFrame() ? shell_.setControllerValue(*controller_, id, value)
+                                            : controller_->setAccessibilityValue(id, value);
+  if (session_.revision() != before) requestRenderAfterEdit();
+  return result;
 }
 
 }

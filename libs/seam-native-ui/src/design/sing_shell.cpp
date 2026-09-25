@@ -620,14 +620,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
-  {
-    const auto& progress = state.exportProgress;
-    exportRunning_ = progress.totalFiles != 0U &&
-                     (progress.state == authoring::ExportState::Preflight ||
-                      progress.state == authoring::ExportState::Staging ||
-                      progress.state == authoring::ExportState::Prepared ||
-                      progress.state == authoring::ExportState::Publishing);
-  }
+  exportRunning_ = exportBusy(controller);
   if (workspace_ == Workspace::Export) {
     paintExport(*c, t, state);
   } else {
@@ -1522,6 +1515,65 @@ std::string sampleRateLabel(std::uint32_t rate) {
 
 }  // namespace
 
+namespace {
+
+// One arrangement of the EXPORT panel, from which paint, hit-testing and accessibility all read.
+// A short panel (the 480x320 minimum, a compact plug-in) folds the plan into one line so the run
+// action, its state and any failure stay on screen; a narrow one stacks the status under it.
+struct ExportPanelLayout final {
+  bool compact{false};
+  bool sideColumn{false};
+  double columnWidth{0.0};
+  ui::Rect summary;
+  ui::Rect button;
+  ui::Rect note;
+  ui::Rect status;
+};
+
+ExportPanelLayout exportPanelLayout(ui::Rect area) {
+  ExportPanelLayout p;
+  p.compact = area.height < 64.0 + 4.0 * 46.0 + 12.0 + 44.0 + 44.0;
+  p.sideColumn = !p.compact && area.width >= 720.0;
+  p.columnWidth = std::max(120.0, (p.sideColumn ? area.width * 0.5 : area.width) - 64.0);
+  const auto left = area.x + 32.0;
+  const auto buttonWidth = std::min(240.0, std::max(120.0, p.columnWidth));
+  if (p.compact) {
+    p.summary = {left, area.y + 46.0, area.width - 64.0, 18.0};
+    const auto buttonY = std::max(area.y + 44.0, std::min(area.y + 70.0, area.bottom() - 52.0));
+    p.button = {left, buttonY, buttonWidth, std::min(44.0, std::max(28.0, area.bottom() - buttonY - 8.0))};
+    p.note = {};
+    p.status = {left, p.button.bottom() + 8.0, area.width - 64.0,
+                std::max(0.0, area.bottom() - p.button.bottom() - 16.0)};
+    return p;
+  }
+  p.button = {left, area.y + 64.0 + 4.0 * 46.0 + 12.0, buttonWidth, 44.0};
+  p.note = {left, p.button.bottom() + 10.0, p.columnWidth, 32.0};
+  p.status = p.sideColumn
+                 ? ui::Rect{area.x + area.width * 0.5 + 16.0, area.y + 64.0, p.columnWidth,
+                            area.bottom() - area.y - 80.0}
+                 : ui::Rect{left, p.note.bottom() + 8.0, area.width - 64.0,
+                            std::max(0.0, area.bottom() - p.note.bottom() - 24.0)};
+  return p;
+}
+
+std::string exportPlanSummary(const std::optional<ShellExportPlan>& plan,
+                              const std::string& unavailable) {
+  if (!plan) return unavailable;
+  std::string summary = plan->master ? "Master " + channelLayout(plan->channels) + ", " +
+                                           sampleRateLabel(plan->sampleRate) + ", " + plan->format
+                                     : std::string{"No master"};
+  summary += plan->stems ? "; one stem per track" : "; no stems";
+  summary += "; SHA-256 receipt";
+  return summary;
+}
+
+bool attemptEnded(authoring::ExportState state) noexcept {
+  return state == authoring::ExportState::Failed || state == authoring::ExportState::Cancelled ||
+         state == authoring::ExportState::RollbackRequired;
+}
+
+}  // namespace
+
 ui::Rect SingShell::exportArea() const noexcept {
   const auto& l = layout_;
   return ui::Rect{l.editor.x, l.editor.y, l.editor.width, l.lane.bottom() - l.editor.y};
@@ -1529,17 +1581,31 @@ ui::Rect SingShell::exportArea() const noexcept {
 
 ui::Rect SingShell::exportRunButton() const noexcept {
   if (workspace_ != Workspace::Export || !presented_) return {};
-  const auto area = exportArea();
-  const auto width = std::min(240.0, std::max(160.0, area.width * 0.5 - 64.0));
-  return ui::Rect{area.x + 32.0, area.y + 64.0 + 4.0 * 46.0 + 12.0, width, 44.0};
+  return exportPanelLayout(exportArea()).button;
+}
+
+bool SingShell::exportBusy(const NativeEditorController& controller) const {
+  // Live state only: the host's own worker flag, and the editor's current export progress. The
+  // editor reports "no export" as a preflight with no files, so a real zero-file preflight is
+  // covered by the host flag, which is set for the whole run of its worker.
+  if (hostActions_.exportBusy && hostActions_.exportBusy()) return true;
+  const auto& progress = controller.exportProgress();
+  switch (progress.state) {
+    case authoring::ExportState::Staging:
+    case authoring::ExportState::Prepared:
+    case authoring::ExportState::Publishing: return true;
+    case authoring::ExportState::Preflight: return progress.totalFiles != 0U;
+    default: return false;
+  }
 }
 
 void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
   if (workspace == workspace_) return;
-  // The grid the gestures and a lyric field belong to leaves the screen with its workspace.
+  // The grid the gestures and any text field belong to leaves the screen with its workspace.
   cancelGestures(controller);
-  if (lyricInputActive_) controller.cancelTextComposition();
+  if (lyricInputActive_ || controller.textInputActive()) controller.cancelTextComposition();
   lyricInputActive_ = false;
+  semanticFocus_.clear();
   workspace_ = workspace;
   repaint();
 }
@@ -1547,7 +1613,7 @@ void SingShell::setWorkspace(NativeEditorController& controller, Workspace works
 core::Result<void> SingShell::runExportSet(NativeEditorController& controller) {
   if (!hostActions_.exportSet)
     return core::failure(core::ErrorCode::Unsupported, hostActions_.exportUnavailable);
-  if (exportRunning_)
+  if (exportBusy(controller))
     return core::failure(core::ErrorCode::Conflict, "An export is already running");
   auto result = hostActions_.exportSet();
   yieldIfModal(controller);
@@ -1555,49 +1621,77 @@ core::Result<void> SingShell::runExportSet(NativeEditorController& controller) {
   return result;
 }
 
+core::Result<void> SingShell::dispatchController(NativeEditorController& controller,
+                                                 std::string_view id, SemanticAction action) {
+  // A retained host element keeps its action flags after the shell stopped publishing it (the
+  // score under EXPORT, a control the layout removed); only what is on screen now may act.
+  refreshSemantics(controller);
+  if (!semantics_.publishes(id))
+    return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
+  auto result = semantics_.dispatch(
+      id, action, [&controller](std::string_view target, SemanticAction requested) {
+        return controller.dispatchAccessibility(target, requested);
+      });
+  if (result && action == SemanticAction::SetFocus) controllerFocusTaken();
+  yieldIfModal(controller);
+  repaint();
+  return result;
+}
+
+core::Result<void> SingShell::setControllerValue(NativeEditorController& controller,
+                                                 std::string_view id, std::string_view value) {
+  refreshSemantics(controller);
+  if (!semantics_.publishes(id))
+    return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
+  return controller.setAccessibilityValue(id, value);
+}
+
 void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
   const auto area = exportArea();
+  const auto p = exportPanelLayout(area);
   glassPanel(c, t, area, t.shape.card, 0.97);
   const auto& last = state.lastExport;
   cardHeader(c, t, area, "Export set", exportRunning_ || last.has_value());
   c.save();
   c.clipRect(area);
-  const auto columnWidth = std::max(160.0, area.width * 0.5 - 48.0);
   const auto left = area.x + 32.0;
-  const auto right = area.x + area.width * 0.5 + 16.0;
   const auto labelStyle = style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking,
                                 TextAlign::Left, true);
   const auto valueStyle = style(FontRole::Ui, t.type.body);
-  const auto row = [&](double x, double y, std::string_view label, const std::string& value,
-                       Color valueColor) {
-    c.text({x, y, columnWidth, 16.0}, label, labelStyle, t.color.textSecondary);
-    c.text({x, y + 18.0, columnWidth, 20.0}, value,
-           fitted(c, value, valueStyle, columnWidth), valueColor);
+  const auto row = [&](double x, double y, double width, std::string_view label,
+                       const std::string& value, Color valueColor) {
+    c.text({x, y, width, 16.0}, label, labelStyle, t.color.textSecondary);
+    c.text({x, y + 18.0, width, 20.0}, value, fitted(c, value, valueStyle, width), valueColor);
   };
 
   // What an Export Set writes, as the host computed it for this document.
   const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
-  auto y = area.y + 64.0;
-  if (plan) {
-    row(left, y, "Master mix",
+  if (p.compact) {
+    const auto summary = exportPlanSummary(plan, hostActions_.exportUnavailable);
+    c.text(p.summary, summary, fitted(c, summary, style(FontRole::Ui, t.type.smallLabel), p.summary.width),
+           plan ? t.color.textPrimary : t.color.warning);
+  } else if (plan) {
+    const auto y = area.y + 64.0;
+    row(left, y, p.columnWidth, "Master mix",
         plan->master ? channelLayout(plan->channels) + " \u00b7 " + sampleRateLabel(plan->sampleRate) +
                            " \u00b7 " + plan->format
                      : std::string{"Not written"},
         t.color.textPrimary);
-    row(left, y + 46.0, "Stems",
+    row(left, y + 46.0, p.columnWidth, "Stems",
         plan->stems ? std::string{"One file per track, same format"} : std::string{"Not written"},
         t.color.textPrimary);
-    row(left, y + 92.0, "Project and recipes",
+    row(left, y + 92.0, p.columnWidth, "Project and recipes",
         plan->asksAboutPackaging ? std::string{"You choose when the export starts"}
                                  : std::string{"Nothing to package for this project"},
         t.color.textPrimary);
-    row(left, y + 138.0, "Receipt", "SHA-256 of every file, written last", t.color.textPrimary);
+    row(left, y + 138.0, p.columnWidth, "Receipt", "SHA-256 of every file, written last",
+        t.color.textPrimary);
   } else {
-    row(left, y, "Export", hostActions_.exportUnavailable, t.color.warning);
+    row(left, area.y + 64.0, p.columnWidth, "Export", hostActions_.exportUnavailable, t.color.warning);
   }
 
-  // The run button: real command, refused while an export runs or when the host cannot export.
-  const auto button = exportRunButton();
+  // The run button: the host's real command, refused while an export runs or when it cannot export.
+  const auto button = p.button;
   const auto available = static_cast<bool>(hostActions_.exportSet) && !exportRunning_;
   c.save();
   if (available) c.setGlow(withAlpha(t.color.accent, 0.7), 10.0);
@@ -1607,56 +1701,63 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.text(button, exportRunning_ ? "Exporting\u2026" : "Export set\u2026",
          style(FontRole::UiBold, t.type.label, 1.4, TextAlign::Center, true),
          available ? t.color.textOnAccent : t.color.textDisabled);
-  if (!hostActions_.exportSet)
-    c.text({left, button.bottom() + 10.0, columnWidth, 32.0}, hostActions_.exportUnavailable,
-           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
-  else
-    c.text({left, button.bottom() + 10.0, columnWidth, 32.0},
-           "Choose a new folder; an existing export set is never overwritten.",
+  if (p.note.width > 0.0)
+    c.text(p.note,
+           hostActions_.exportSet ? std::string{"Choose a new folder; an existing export set is never overwritten."}
+                                  : hostActions_.exportUnavailable,
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
 
-  // Progress and the last written set.
-  y = area.y + 64.0;
+  // Current attempt and the last written set.
   const auto& progress = state.exportProgress;
+  struct StatusLine final {
+    std::string label;
+    std::string value;
+    Color color;
+  };
+  std::vector<StatusLine> lines;
   if (exportRunning_) {
-    row(right, y, "Progress",
-        exportStateLabel(progress.state) + "  " + std::to_string(progress.completedFiles) + " / " +
-            std::to_string(progress.totalFiles) + " files",
-        t.color.textPrimary);
-    const ui::Rect bar{right, y + 44.0, columnWidth, 6.0};
-    const auto fraction = progress.totalFiles == 0U
-                              ? 0.0
-                              : static_cast<double>(progress.completedFiles) /
-                                    static_cast<double>(progress.totalFiles);
-    c.fill(Path::capsule(bar), withAlpha(t.color.surfaceSunken, 0.9));
-    c.save();
-    c.setGlow(t.color.accent, 6.0);
-    c.fill(Path::capsule({bar.x, bar.y, std::max(bar.height, bar.width * fraction), bar.height}),
-           t.color.accent);
-    c.restore();
-    if (!progress.currentOutput.empty())
-      c.text({right, y + 58.0, columnWidth, 18.0}, progress.currentOutput,
-             style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
-  } else if (progress.state == authoring::ExportState::Failed && !progress.currentOutput.empty()) {
-    row(right, y, "Last attempt", "Failed: " + progress.currentOutput, t.color.error);
+    lines.push_back({"Progress", exportStateLabel(progress.state) + "  " +
+                                     std::to_string(progress.completedFiles) + " / " +
+                                     std::to_string(progress.totalFiles) + " files" +
+                                     (progress.currentOutput.empty() ? "" : "  " + progress.currentOutput),
+                     t.color.textPrimary});
+  } else if (attemptEnded(progress.state)) {
+    lines.push_back({"Last attempt",
+                     exportStateLabel(progress.state) +
+                         (progress.currentOutput.empty() ? "" : ": " + progress.currentOutput),
+                     progress.state == authoring::ExportState::Cancelled ? t.color.warning : t.color.error});
   } else {
-    row(right, y, "Progress", "Idle", t.color.textSecondary);
+    lines.push_back({"Progress", "Idle", t.color.textSecondary});
   }
-  y += 92.0;
   if (last) {
     const auto folder = last->setPath.empty() ? last->masterPath.parent_path() : last->setPath;
-    row(right, y, "Last export", exportStateLabel(last->state) + " \u00b7 " +
-                                     std::to_string(last->files.size()) + " files",
-        last->state == authoring::ExportState::Committed ? t.color.success : t.color.warning);
-    row(right, y + 46.0, "Folder", folder.filename().string(), t.color.textPrimary);
-    row(right, y + 92.0, "Master",
-        last->masterPath.filename().string() +
-            (last->masterSha256.size() >= 12U ? "  sha256 " + last->masterSha256.substr(0U, 12U) +
-                                                    "\u2026"
-                                              : std::string{}),
-        t.color.textPrimary);
+    lines.push_back({"Last export",
+                     exportStateLabel(last->state) + " \u00b7 " + std::to_string(last->files.size()) +
+                         " files \u00b7 " + folder.filename().string(),
+                     last->state == authoring::ExportState::Committed ? t.color.success : t.color.warning});
+    if (!p.compact)
+      lines.push_back({"Master",
+                       last->masterPath.filename().string() +
+                           (last->masterSha256.size() >= 12U
+                                ? "  sha256 " + last->masterSha256.substr(0U, 12U) + "\u2026"
+                                : std::string{}),
+                       t.color.textPrimary});
   } else {
-    row(right, y, "Last export", "Nothing exported in this session", t.color.textSecondary);
+    lines.push_back({"Last export", "Nothing exported in this session", t.color.textSecondary});
+  }
+  auto y = p.status.y;
+  for (const auto& line : lines) {
+    if (p.compact) {
+      if (y + 16.0 > p.status.bottom() + 1.0) break;
+      const auto text = line.label + ": " + line.value;
+      c.text({p.status.x, y, p.status.width, 16.0}, text,
+             fitted(c, text, style(FontRole::Ui, t.type.smallLabel), p.status.width), line.color);
+      y += 18.0;
+    } else {
+      if (y + 38.0 > p.status.bottom() + 1.0) break;
+      row(p.status.x, y, p.status.width, line.label, line.value, line.color);
+      y += 46.0;
+    }
   }
   c.restore();
 }
@@ -1853,6 +1954,29 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     cancelGestures(controller);
     return true;
   }
+  // The EXPORT workspace hides the score, so no key may edit it from here, whatever holds focus.
+  // Escape always returns to SING. Command shortcuts that are application commands (new, open,
+  // save, export, quit, undo/redo from the Edit menu) still reach the host; every other modified
+  // key (Alt-Delete, Command-D, Command-Delete) stops here instead of reaching the note editor.
+  if (presented_ && workspace_ == Workspace::Export && !controller.legacyModalSurfaceActive()) {
+    if (event.key == NativeKey::Escape) {
+      setWorkspace(controller, Workspace::Sing);
+      return true;
+    }
+    if (event.modifiers.primaryShortcut()) {
+      switch (event.key) {
+        case NativeKey::N:
+        case NativeKey::O:
+        case NativeKey::S:
+        case NativeKey::E:
+        case NativeKey::Q:
+        case NativeKey::Z:
+        case NativeKey::Y: return event.modifiers.alt;
+        default: return true;
+      }
+    }
+    if (event.modifiers.alt) return true;
+  }
   // Keyboard focus walks the tree the shell published, so it reaches the controls that are on
   // screen here. Text fields and classic surfaces keep their own Tab behavior.
   const auto keyboardFocusOwned = presented_ && !event.modifiers.primaryShortcut() &&
@@ -1878,13 +2002,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that has left the layout (a knob after the rack collapsed) no longer owns them.
   refreshSemantics(controller);
   const auto* focused = semantics_.focusedNode();
-  // With the EXPORT workspace up the score is not on screen, so its plain keys never edit it;
-  // Escape returns to SING.
-  const auto scoreHidden = [&] {
-    if (workspace_ != Workspace::Export) return false;
-    if (event.key == NativeKey::Escape) setWorkspace(controller, Workspace::Sing);
-    return true;
-  };
+  // With the EXPORT workspace up the score is not on screen, so its plain keys never edit it
+  // (Escape was handled above).
+  const auto scoreHidden = [this] { return workspace_ == Workspace::Export; };
   if (focused == nullptr) return scoreHidden();
   const std::string id = focused->id;
   // While a shell control holds focus, plain keys belong to it and never reach the note editor
@@ -2230,39 +2350,46 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
              node.id.starts_with("shell.lane");
     });
     const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
-    const auto available = static_cast<bool>(hostActions_.exportSet) && !exportRunning_;
-    std::string summary = hostActions_.exportUnavailable;
-    if (plan) {
-      summary = plan->master ? "Master " + channelLayout(plan->channels) + ", " +
-                                   sampleRateLabel(plan->sampleRate) + ", " + plan->format
-                             : std::string{"No master"};
-      summary += plan->stems ? "; one stem per track" : "; no stems";
-      summary += "; SHA-256 receipt";
-    }
+    // Busy is read live here too: accessibility must not offer a run the paint cache still shows.
+    const auto busy = exportBusy(controller);
+    const auto available = static_cast<bool>(hostActions_.exportSet) && !busy;
+    const auto panel = exportPanelLayout(exportArea());
+    const auto summary = exportPlanSummary(plan, hostActions_.exportUnavailable);
     add(SemanticNode{.id = "shell.export.panel", .role = SemanticRole::Panel,
                      .name = "Export set", .value = summary, .bounds = exportArea(),
                      .actions = {SemanticAction::SetFocus}});
     add(SemanticNode{
         .id = "shell.export.run", .role = SemanticRole::Button, .name = "Export set",
-        .bounds = exportRunButton(), .enabled = available,
+        .bounds = panel.button, .enabled = available,
         .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate,
                                                            SemanticAction::SetFocus}
                              : std::vector<SemanticAction>{SemanticAction::SetFocus},
         .description = !hostActions_.exportSet ? hostActions_.exportUnavailable
-                       : exportRunning_       ? std::string{"An export is already running"}
+                       : busy                 ? std::string{"An export is already running"}
                                               : std::string{"Choose a new folder for the set"}});
-    const auto& progress = state.exportProgress;
-    if (exportRunning_) {
+    const auto& progress = controller.exportProgress();
+    const auto statusBounds = panel.status.height > 0.0 ? panel.status : panel.button;
+    if (busy) {
       const auto fraction = static_cast<double>(progress.completedFiles) /
                             static_cast<double>(std::max<std::uint64_t>(1U, progress.totalFiles));
       add(SemanticNode{.id = "shell.export.progress", .role = SemanticRole::ProgressIndicator,
                        .name = "Export progress",
-                       .value = std::to_string(progress.completedFiles) + " of " +
+                       .value = exportStateLabel(progress.state) + ", " +
+                                std::to_string(progress.completedFiles) + " of " +
                                 std::to_string(progress.totalFiles) + " files",
-                       .bounds = exportArea(),
+                       .bounds = statusBounds,
                        .numericValue = fraction * 100.0,
                        .numericMinimum = 0.0,
                        .numericMaximum = 100.0});
+    } else if (attemptEnded(progress.state)) {
+      // A failed or cancelled attempt is reported with its reason, whether or not any file was
+      // counted and whatever an earlier successful export wrote.
+      add(SemanticNode{.id = "shell.export.attempt", .role = SemanticRole::Status,
+                       .name = "Last export attempt",
+                       .value = exportStateLabel(progress.state) +
+                                (progress.currentOutput.empty() ? "" : ": " + progress.currentOutput),
+                       .bounds = statusBounds,
+                       .actions = {SemanticAction::SetFocus}});
     }
     const auto& last = state.lastExport;
     add(SemanticNode{
@@ -2273,7 +2400,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                 .filename()
                                 .string()
                       : std::string{"Nothing exported in this session"},
-        .bounds = exportArea(),
+        .bounds = statusBounds,
                         .actions = {SemanticAction::SetFocus}});
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
