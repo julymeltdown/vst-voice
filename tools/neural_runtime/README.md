@@ -285,6 +285,16 @@ malformed frames and an out-of-range gain. The fixture graphs remain arithmetic
 constants, so none of this qualifies a learned singer. Diffusion steps are a
 pinned constant in the worker until the admitted configuration schema carries
 them, and packaging the worker with its runtime is still open.
+
+The optional pinned-model command described in
+`tools/voice_model_training/README.md` goes beyond these arithmetic CTests: it
+composes actual exported DiffSinger acoustic and locally trained vocoder graphs,
+then runs the conditioned request through two fresh production-worker processes.
+Because diffusion sampling uses random noise, it checks each response's identity,
+shape, finite range and non-silence, and reports inter-run PCM differences; it
+does not require byte-identical renders. It also routes the composed bundle through
+the native authoring renderer using a saved project and requires an exported WAV.
+Its training corpus is synthetic and the result remains explicitly unqualified.
 # External request experiment
 
 For repeatable optional integration checks, configure `SEAM_NATIVE_ONNX_PYTHON`

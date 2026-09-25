@@ -27,10 +27,13 @@
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
+#include "seam/phonemizer/pronunciation_resolver.hpp"
+#include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/neural_synthesis/model_contract.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -58,12 +61,14 @@ public:
   std::vector<std::string> offeredStyles;
   std::optional<std::string> styleResponse;
   core::Result<std::optional<std::filesystem::path>> choose(
-      const platform::FileDialogRequest&) override {
+      const platform::FileDialogRequest& request) override {
+    requests.push_back(request);
     if (responses.empty()) return std::optional<std::filesystem::path>{};
     auto result = responses.front();
     responses.erase(responses.begin());
     return result;
   }
+  std::vector<platform::FileDialogRequest> requests;
   std::vector<std::optional<std::filesystem::path>> responses;
 };
 
@@ -75,69 +80,25 @@ public:
 };
 
 // An original singer that can actually carry a lyric song: the five Japanese vowels plus the
-// consonants this song's lyrics need. The parameter choices are development screening values, not
-// phonetic qualification, and the nasal and stop models are declared explicitly so a consonant is
-// refused rather than approximated when its model is missing.
+// The installed-singer journey and Studio's New Voice action deliberately share one
+// partial Japanese screening recipe so a fresh draft can immediately run this song.
+// Its bounded source values are development defaults, not phonetic qualification.
 voice_design::VoiceRecipe songRecipe() {
-  voice_design::VoiceRecipe recipe;
-  recipe.id = "song-01-original";
-  recipe.seed = 7130U;
-  recipe.poses = {
-      {"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
-      {"i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}},
-      {"u", "neutral", 0.0, {{350.0, 80.0, 0.0}, {1100.0, 100.0, -3.0}, {2500.0, 160.0, -6.0}}},
-      {"e", "neutral", 0.0, {{500.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}},
-      {"o", "neutral", 0.0, {{500.0, 90.0, 0.0}, {900.0, 110.0, -3.0}, {2600.0, 160.0, -6.0}}},
-      // Nasal poses carry an explicit active nasal tract, which is what makes them different from a
-      // vowel sung through the mouth.
-      {"m", "neutral", 0.85, {{300.0, 80.0, 0.0}, {1100.0, 110.0, -6.0}, {2500.0, 160.0, -9.0}},
-       voice_design::NasalResonance{280.0, 80.0, 1200.0, 120.0}},
-      {"n", "neutral", 0.75, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -6.0}, {2800.0, 160.0, -9.0}},
-       voice_design::NasalResonance{300.0, 90.0, 1500.0, 120.0}},
-      // Approximants are defined by the formant transition into their neighbouring vowel, so each
-      // needs its own resonance pose as well as a declared transition.
-      {"r", "neutral", 0.0, {{400.0, 80.0, 0.0}, {1400.0, 110.0, -3.0}, {2200.0, 160.0, -6.0}}},
-      {"w", "neutral", 0.0, {{300.0, 80.0, 0.0}, {610.0, 100.0, -3.0}, {2200.0, 160.0, -6.0}}},
-      {"y", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}},
-  };
-  recipe.frications = {
-      {"s", "neutral", voice_design::FricationConfig{.seed = 7130U, .centerHz = 5500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
-      {"sh", "neutral", voice_design::FricationConfig{.seed = 7131U, .centerHz = 3500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
-      {"h", "neutral", voice_design::FricationConfig{.seed = 7132U, .centerHz = 1200.0, .bandwidthHz = 2400.0, .gain = 0.06}},
-  };
-  recipe.plosives = {
-      {"t", "neutral", voice_design::FricationConfig{.seed = 7133U, .centerHz = 4500.0, .bandwidthHz = 3000.0, .gain = 0.12}, 10.0},
-      {"k", "neutral", voice_design::FricationConfig{.seed = 7134U, .centerHz = 2500.0, .bandwidthHz = 2200.0, .gain = 0.12}, 10.0},
-      // A voiced stop is a prevoiced closure followed by the same release a voiceless one has, so `b`
-      // is declared with an explicit closure model rather than borrowed from `p`.
-      {"p", "neutral", voice_design::FricationConfig{.seed = 7135U, .centerHz = 1200.0, .bandwidthHz = 1800.0, .gain = 0.12}, 10.0},
-  };
-  {
-    auto voiced = recipe.plosives.back();
-    voiced.phone = "b";
-    voiced.voicedClosure = voice_design::VoiceRecipe::VoicedClosure{0.2, 400.0};
-    recipe.plosives.push_back(std::move(voiced));
-  }
-  // A voiced fricative is noise plus voicing shaped by the same tract, so `z` needs its own
-  // same-phone resonance pose as well as a declared voicing gain.
-  recipe.poses.push_back({"z", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}});
-  recipe.frications.push_back({"z", "neutral",
-      voice_design::FricationConfig{.seed = 7136U, .centerHz = 5000.0, .bandwidthHz = 2500.0, .gain = 0.10}, 0.35});
-  recipe.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
-  return recipe;
+  return voice_design::makeJapaneseStarterRecipe("song-01-original");
 }
 
 
 // One lyric per note. The sequence deliberately mixes consonants, rising and falling pitch, unequal
-// durations, a rest and a sustained final vowel, so a phrase that renders is a phrase with real
-// articulation rather than a scale of held vowels. Two sections bring the total to about 39.5 seconds
-// at the default 120 BPM, which is the 30–60-second working length the plan asks for and long enough
+// durations, an authored half-second rest and a sustained final vowel, so a phrase that renders is a
+// phrase with real articulation rather than a scale of held vowels. Two sections bring the total to
+// about 41 seconds at the default 120 BPM, which is the 30–60-second working length the plan asks for and long enough
 // that a creator runs out of breath before the song does. Every lyric uses a phone this recipe
 // declares; a phone with no admitted model is refused at render preparation rather than substituted.
 struct SongNote final {
   const char32_t* lyric;
   std::uint8_t midi;
   std::int64_t ticks;
+  bool rest{false};
 };
 
 // The checked-in definition of this song, resolved from the configured source root so the test finds
@@ -170,17 +131,25 @@ const std::vector<SongNote>& songNotes() {
       {U"い", 69U, 960}, {U"そ", 67U, 960}, {U"き", 65U, 960}, {U"や", 64U, 1920},
       {U"か", 62U, 960}, {U"に", 64U, 960}, {U"て", 65U, 960}, {U"し", 67U, 1920},
       {U"ぼ", 69U, 960}, {U"く", 67U, 960}, {U"は", 65U, 960}, {U"あ", 64U, 2880},
-      // Section two: the voiced fricative, voiced stop, and liquid sets, at a rising then falling
+      // A real score gap between sections, not a comment or unsupported placeholder lyric.
+      {nullptr, 0U, 960, true},
+      // Section two: the voiced fricative, affricate, stop and liquid sets, at a rising then falling
       // contour. These are the phones most likely to expose an articulation defect, which is why the
       // song keeps them for its second half rather than spreading them through a held-vowel scale.
-      {U"ざ", 62U, 1920}, {U"ぶ", 64U, 1920}, {U"ぺ", 65U, 1920}, {U"み", 67U, 1920},
-      {U"ね", 65U, 1920}, {U"る", 64U, 1920}, {U"わ", 62U, 1920}, {U"ゆ", 60U, 1920},
+      {U"ざ", 62U, 1920}, {U"ぶ", 64U, 1920}, {U"じ", 65U, 1920}, {U"み", 67U, 1920},
+      {U"ね", 65U, 1920}, {U"る", 64U, 1920}, {U"ふ", 62U, 1920}, {U"ゔ", 60U, 1920},
       {U"ず", 62U, 1920}, {U"べ", 64U, 1920}, {U"ぽ", 65U, 1920}, {U"む", 67U, 1920},
       {U"の", 65U, 1920}, {U"れ", 64U, 1920}, {U"を", 62U, 1920}, {U"や", 60U, 1920},
       {U"ぜ", 62U, 1920}, {U"ぼ", 64U, 1920}, {U"ぱ", 65U, 1920}, {U"も", 67U, 1920},
       {U"ら", 69U, 1920}, {U"しょ", 67U, 1920}, {U"せ", 65U, 1920}, {U"あ", 64U, 3840},
   };
   return notes;
+}
+
+std::size_t authoredSongNoteCount() {
+  return static_cast<std::size_t>(std::count_if(
+      songNotes().begin(), songNotes().end(),
+      [](const SongNote& note) { return !note.rest; }));
 }
 
 // Writes the package exactly the way a producer would: manifest, recipe, then sign with the trusted
@@ -200,10 +169,17 @@ std::filesystem::path createSongPackage(const std::filesystem::path& root,
   if (std::filesystem::exists(fixture / "recipe.json")) {
     const auto onDisk = core::readTextFileLimited(fixture / "recipe.json", 1U << 20U);
     if (!onDisk) throw test::Failure{"reading the song fixture recipe failed: " + onDisk.error().message};
-    if (onDisk.value() != encoded.value())
-      throw test::Failure{
-          "the checked-in song fixture no longer matches the code recipe; regenerate it deliberately "
-          "(SEAM_SONG_FIXTURE_OUT=" + fixture.string() + ")"};
+    if (onDisk.value() != encoded.value()) {
+      if (const char* out = std::getenv("SEAM_SONG_FIXTURE_OUT"); out != nullptr &&
+          std::filesystem::path{out} == fixture) {
+        const auto written = core::durableAtomicWriteText(fixture / "recipe.json", encoded.value());
+        if (!written) throw test::Failure{"regenerating the song fixture recipe failed: " + written.error().message};
+      } else {
+        throw test::Failure{
+            "the checked-in song fixture no longer matches the code recipe; regenerate it deliberately "
+            "(SEAM_SONG_FIXTURE_OUT=" + fixture.string() + ")"};
+      }
+    }
   } else if (const char* out = std::getenv("SEAM_SONG_FIXTURE_OUT"); out != nullptr) {
     std::filesystem::create_directories(out);
     const auto written = core::durableAtomicWriteTextNew(
@@ -221,9 +197,9 @@ std::filesystem::path createSongPackage(const std::filesystem::path& root,
   manifest.engineRevision = voice_design::kSourceFilterEngineRevision;
   manifest.recipeEntry = "recipe.json";
   manifest.recipeSha256 = core::sha256Hex(encoded.value());
-  // Every phone this song's lyrics can produce, including the voiced fricative and the voiced stop the
+  // Every phone this song's lyrics can produce, including the voiced fricative, affricate and stop the
   // second section needs.
-  manifest.phones = {"a", "i", "u", "e", "o", "s", "sh", "z", "h", "t", "k", "p", "b", "m", "n", "r", "w", "y"};
+  manifest.phones = {"a", "i", "u", "e", "o", "s", "sh", "z", "h", "f", "v", "t", "k", "p", "b", "m", "n", "r", "w", "y", "j"};
   distribution::ProceduralSingerManifestJsonCodec codec;
   const auto text = codec.encode(manifest);
   if (!text) throw test::Failure{"encoding the song manifest failed: " + text.error().message};
@@ -336,6 +312,7 @@ Editor makeEditor(const Installed& installed) {
       .path = installed.installRoot, .kind = distribution::ProceduralRootKind::Installed}};
   config.renderableProceduralEngineId = std::string{voice_design::kSourceFilterEngineId};
   config.renderableProceduralEngineRevision = voice_design::kSourceFilterEngineRevision;
+  config.trustedVoicebankKeys = {installed.key.publicKey};
   auto controller = standalone::StandaloneApplicationController::create(
       *editor.session, std::move(dialog), std::make_unique<FakePrompt>(), config);
   if (!controller) throw test::Failure{"creating the controller failed: " + controller.error().message};
@@ -376,6 +353,13 @@ void writeSong(Editor& editor) {
   if (!resized) throw test::Failure{"resizing the song region failed: " + resized.error().message};
   time::Tick start{0};
   for (const auto& note : songNotes()) {
+    if (note.rest) {
+      start = start + time::Tick{note.ticks};
+      continue;
+    }
+    if (note.lyric == nullptr) {
+      throw test::Failure{"a non-rest song entry has no lyric"};
+    }
     auto [lyric, value] = runtime.document().factory().makeNote(
         start, time::Tick{note.ticks}, note.midi, std::u32string{note.lyric},
         domain::Language::Japanese);
@@ -442,6 +426,16 @@ std::vector<float> readMaster(const std::filesystem::path& path) {
   return master.value().interleaved;
 }
 
+std::string expectedExportStemName(std::string trackName) {
+  for (auto& character : trackName) {
+    if (!std::isalnum(static_cast<unsigned char>(character)) &&
+        character != '-' && character != '_') {
+      character = '_';
+    }
+  }
+  return trackName.empty() ? "track" : trackName;
+}
+
 }  // namespace
 
 // The first question M1 asks: with one original singer installed and selected, does an authored lyric
@@ -449,6 +443,11 @@ std::vector<float> readMaster(const std::filesystem::path& path) {
 TEST_CASE("An installed original singer renders an authored lyric song") {
   const auto installed = installSongSinger("song-journey-render");
   auto editor = makeEditor(installed);
+  const auto startupDiagnostics = editor.session->runtime().diagnostics();
+  CHECK(std::any_of(startupDiagnostics.begin(), startupDiagnostics.end(),
+                    [](const auto& diagnostic) {
+                      return diagnostic.code == "BANK_MISSING";
+                    }));
   // The creator sees what the installed singer supports before selecting it: the offer carries a
   // summary from the shared route resolver, naming the carrier and the controls it will actually apply.
   const auto offers = editor.controller->installedSingerOffers();
@@ -461,7 +460,28 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
     CHECK(offer.capabilitySummary.find("voice designer") != std::string::npos);
     CHECK(offer.capabilitySummary.find("formant") != std::string::npos);
   }
-  selectInstalledSinger(editor);
+  if (offers.value().empty() || !offers.value().front().selectable) return;
+  const auto& candidate = offers.value().front().candidate;
+  const domain::ProceduralRecipeReference initialSinger{
+      .resource = candidate.renderIdentity,
+      .path = (candidate.resourceRoot / candidate.manifest.recipeEntry).string(),
+      .style = candidate.manifest.styles.front()};
+  const auto created = editor.controller->createNewProject(authoring::NewProjectRequest{
+      .name = "Original Singer Song", .tempoBpm = 120.0, .sampleRate = 48000U,
+      .outputChannels = 2U, .initialProceduralSinger = initialSinger});
+  CHECK(created.hasValue());
+  if (!created) return;
+  const auto initialDiagnostics = editor.session->runtime().diagnostics();
+  const auto staleMissingBank = std::any_of(
+      initialDiagnostics.begin(), initialDiagnostics.end(),
+      [](const auto& diagnostic) { return diagnostic.code == "BANK_MISSING"; });
+  CHECK(!staleMissingBank);
+  const auto* initialTrack = editor.session->runtime().document().session().project()
+      .findVocalTrack(editor.session->runtime().selectedTrack());
+  CHECK(initialTrack != nullptr);
+  if (initialTrack == nullptr) return;
+  CHECK(initialTrack->proceduralRecipe == initialSinger);
+  CHECK(initialTrack->voicebank.id.empty());
   writeSong(editor);
 
   const auto* track = editor.session->runtime().document().session().project().findVocalTrack(
@@ -476,7 +496,18 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
       editor.session->runtime().selectedRegion());
   CHECK(region != nullptr);
   if (region == nullptr) return;
-  CHECK(region->notes.size() == songNotes().size());
+  CHECK(region->notes.size() == authoredSongNoteCount());
+
+  const auto resolved = phonemizer::resolveJapanesePronunciation(*region);
+  CHECK(resolved.hasValue());
+  if (resolved) {
+    const auto hasPhoneWithVoicing = [&](std::string_view symbol, bool voiced) {
+      return std::any_of(resolved.value().pronunciation.tokens.begin(), resolved.value().pronunciation.tokens.end(),
+          [&](const auto& token) { return token.symbol == symbol && token.voiced == voiced; });
+    };
+    CHECK(hasPhoneWithVoicing("f", false));
+    CHECK(hasPhoneWithVoicing("v", true));
+  }
 
   auto& runtime = editor.session->runtime();
   const auto regionId = runtime.selectedRegion();
@@ -632,19 +663,204 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
 
   authoring::ExportSettings settings;
   settings.includeMaster = true;
+  settings.includeStems = true;
   const auto exported = editor.controller->exportSet(installed.root / "export", settings);
   if (!exported) throw test::Failure{"exporting the song failed: " + exported.error().message};
   CHECK(exported.hasValue());
   if (!exported) return;
+  CHECK(exported.value().state == authoring::ExportState::Committed);
   CHECK(std::filesystem::exists(exported.value().masterPath));
-  const auto samples = readMaster(exported.value().masterPath);
+  const auto master = voicebank::readWav(exported.value().masterPath);
+  CHECK(master.hasValue());
+  if (!master) return;
+  CHECK(master.value().sampleRate == settings.sampleRate);
+  CHECK(master.value().channels == settings.channels);
+  const auto& samples = master.value().interleaved;
   CHECK(!samples.empty());
+  CHECK(samples.size() % master.value().channels == 0U);
+  const auto masterFrames = samples.size() / master.value().channels;
+  const auto& authoredProject = runtime.document().session().project();
+  CHECK(authoredProject.vocalTracks().size() == 1U);
+  CHECK(authoredProject.audioTracks().empty());
+  const auto* authoredRegion = authoredProject.findRegion(regionId);
+  const auto* authoredTrack = authoredProject.findVocalTrack(runtime.selectedTrack());
+  CHECK(authoredRegion != nullptr);
+  CHECK(authoredTrack != nullptr);
+  if (authoredRegion == nullptr || authoredTrack == nullptr) return;
+  const auto expectedStartFrame = authoredProject.tempoMap().sampleFrameAt(
+      authoredRegion->startTick, settings.sampleRate);
+  const auto expectedEndFrame = authoredProject.tempoMap().sampleFrameAt(
+      authoredRegion->startTick + authoredRegion->durationTick,
+      settings.sampleRate);
+  const auto expectedScoreFrames = expectedEndFrame - expectedStartFrame;
+  CHECK_NEAR(static_cast<double>(expectedScoreFrames) / settings.sampleRate,
+             41.0, 1.0 / settings.sampleRate);
+  // No authored media or second track extends this fixture. The rendered set must cover the
+  // complete 41-second score, including its 0.5-second rest; allow at most 250 ms for the
+  // renderer's natural release tail.
+  constexpr std::uint64_t maximumNaturalTailFrames = 12000U;
+  CHECK(masterFrames >= static_cast<std::uint64_t>(expectedScoreFrames));
+  CHECK(masterFrames <= static_cast<std::uint64_t>(expectedScoreFrames) +
+                            maximumNaturalTailFrames);
+  time::Tick scoreCursor{0};
+  std::optional<std::pair<time::Tick, time::Tick>> authoredRest;
+  for (const auto& entry : songNotes()) {
+    if (entry.rest) {
+      authoredRest = std::pair{authoredRegion->startTick + scoreCursor,
+                               authoredRegion->startTick + scoreCursor +
+                                   time::Tick{entry.ticks}};
+    }
+    scoreCursor += time::Tick{entry.ticks};
+  }
+  CHECK(authoredRest.has_value());
+  if (authoredRest) {
+    const auto restStart = authoredProject.tempoMap().sampleFrameAt(
+        authoredRest->first, settings.sampleRate);
+    const auto restEnd = authoredProject.tempoMap().sampleFrameAt(
+        authoredRest->second, settings.sampleRate);
+    CHECK(restEnd - restStart ==
+          static_cast<time::SampleFrame>(settings.sampleRate) / 2);
+    // Check the rest's middle 100 ms, away from the preceding natural tail and the
+    // following consonant onset. The score gap must be audible silence, not merely an
+    // unvoiced/noisy phone rendered as part of a vowel note.
+    const auto silenceStart = restStart +
+        static_cast<time::SampleFrame>(settings.sampleRate) / 5;
+    const auto silenceEnd = restEnd -
+        static_cast<time::SampleFrame>(settings.sampleRate) / 5;
+    double gapPeak = 0.0;
+    for (auto frame = silenceStart; frame < silenceEnd; ++frame) {
+      for (std::uint8_t channel = 0U; channel < master.value().channels; ++channel) {
+        const auto sample = master.value().interleaved[
+            static_cast<std::size_t>(frame) * master.value().channels + channel];
+        gapPeak = std::max(gapPeak, std::abs(static_cast<double>(sample)));
+      }
+    }
+    CHECK(gapPeak < 1e-4);
+  }
   double energy = 0.0;
   const auto peak = peakAndEnergy(samples, energy);
   // A lyric song with consonants must carry real signal; a header-sized or silent export fails.
   CHECK(peak > 1e-3);
   CHECK(energy > 0.0);
   for (const auto sample : samples) CHECK(std::isfinite(sample));
+
+  // A creator's deliverable is the complete set, not only the stereo preview/master. The
+  // installed-singer journey must also produce the isolated vocal stem from the same captured
+  // project revision and verify that the stem is real, finite audio covering the authored song.
+  std::vector<authoring::ExportFileReceipt> vocalStems;
+  for (const auto& file : exported.value().files) {
+    if (file.path == exported.value().setPath / "stems" /
+                         (expectedExportStemName(authoredTrack->name) + "-" +
+                          authoredTrack->id.toString() + ".wav")) {
+      vocalStems.push_back(file);
+    }
+  }
+  CHECK(vocalStems.size() == 1U);
+  if (vocalStems.size() == 1U) {
+    CHECK(vocalStems.front().path.parent_path() ==
+          exported.value().setPath / "stems");
+    CHECK(std::filesystem::exists(vocalStems.front().path));
+    CHECK(vocalStems.front().sha256.size() == 64U);
+    const auto onDiskSha = core::sha256File(vocalStems.front().path);
+    CHECK(onDiskSha.hasValue());
+    if (onDiskSha) CHECK(onDiskSha.value() == vocalStems.front().sha256);
+    const auto stem = voicebank::readWav(vocalStems.front().path);
+    CHECK(stem.hasValue());
+    if (stem) {
+      CHECK(stem.value().sampleRate == settings.sampleRate);
+      CHECK(stem.value().channels == settings.channels);
+      CHECK(stem.value().interleaved.size() % stem.value().channels == 0U);
+      const auto stemFrames = stem.value().interleaved.size() /
+                              stem.value().channels;
+      CHECK(stemFrames == masterFrames);
+      CHECK(vocalStems.front().frames == stemFrames);
+      CHECK(vocalStems.front().channels == stem.value().channels);
+      CHECK(stemFrames >= static_cast<std::uint64_t>(expectedScoreFrames));
+      CHECK(stemFrames <= static_cast<std::uint64_t>(expectedScoreFrames) +
+                              maximumNaturalTailFrames);
+      // This fixture contains one vocal track and no backing-media track, so the solo vocal
+      // stem and master must be the same deterministic routed PCM, not merely similarly sized audio.
+      CHECK(stem.value().interleaved == samples);
+      double stemEnergy = 0.0;
+      const auto stemPeak = peakAndEnergy(stem.value().interleaved, stemEnergy);
+      CHECK(stemPeak > 1e-3);
+      CHECK(stemEnergy > 0.0);
+      for (const auto sample : stem.value().interleaved) CHECK(std::isfinite(sample));
+    }
+  }
+
+  const auto receiptText = core::readTextFileLimited(exported.value().receiptPath,
+                                                       4U << 20U);
+  CHECK(receiptText.hasValue());
+  if (!receiptText) return;
+  const auto receipt = formats::parseJson(receiptText.value());
+  CHECK(receipt.hasValue());
+  if (!receipt) return;
+  const auto* receiptState = receipt.value().find("state");
+  CHECK(receiptState != nullptr);
+  if (receiptState == nullptr) return;
+  CHECK(receiptState->isString());
+  if (!receiptState->isString()) return;
+  CHECK(receiptState->asString() == "COMMITTED");
+  const auto* receiptFiles = receipt.value().find("files");
+  CHECK(receiptFiles != nullptr);
+  if (receiptFiles == nullptr) return;
+  CHECK(receiptFiles->isArray());
+  if (!receiptFiles->isArray()) return;
+  {
+    const auto expectedRelative = std::filesystem::path{"stems"} /
+        (expectedExportStemName(authoredTrack->name) + "-" +
+         authoredTrack->id.toString() + ".wav");
+    std::size_t durableStemReceipts = 0U;
+    for (const auto& file : receiptFiles->asArray()) {
+      const auto* path = file.find("path");
+      const auto* sha = file.find("sha256");
+      const auto* frames = file.find("frames");
+      const auto* channels = file.find("channels");
+      if (path == nullptr || !path->isString() ||
+          path->asString() != expectedRelative.generic_string()) continue;
+      ++durableStemReceipts;
+      CHECK(sha != nullptr);
+      if (sha == nullptr) return;
+      CHECK(sha->isString());
+      if (!sha->isString()) return;
+      CHECK(frames != nullptr);
+      if (frames == nullptr) return;
+      CHECK(frames->isInteger());
+      if (!frames->isInteger()) return;
+      CHECK(channels != nullptr);
+      if (channels == nullptr) return;
+      CHECK(channels->isInteger());
+      if (!channels->isInteger()) return;
+      CHECK(static_cast<std::uint64_t>(frames->asInt64()) == masterFrames);
+      CHECK(static_cast<std::uint64_t>(channels->asInt64()) == settings.channels);
+      if (vocalStems.size() == 1U) {
+        CHECK(sha->asString() == vocalStems.front().sha256);
+        const auto recomputed = core::sha256File(vocalStems.front().path);
+        CHECK(recomputed.hasValue());
+        if (recomputed) CHECK(sha->asString() == recomputed.value());
+      }
+    }
+    CHECK(durableStemReceipts == 1U);
+  }
+
+  // The final two-second vowel is a sustained E4 (MIDI 64) in the authored score. Measure
+  // the last 700 ms of the actual exported master rather than the score compiler's evaluator: this
+  // catches a procedural route that exports audible audio but drops or misapplies the melody pitch.
+  if (master.value().channels > 0U && master.value().sampleRate > 0U) {
+    const auto frameCount = master.value().interleaved.size() / master.value().channels;
+    const auto windowFrames = static_cast<std::size_t>(master.value().sampleRate) * 7U / 10U;
+    CHECK(frameCount >= windowFrames);
+    if (frameCount >= windowFrames) {
+      std::vector<float> mono(windowFrames);
+      const auto firstFrame = frameCount - windowFrames;
+      for (std::size_t frame = 0U; frame < windowFrames; ++frame)
+      mono[frame] = master.value().interleaved[(firstFrame + frame) * master.value().channels];
+      const auto pitch = voicebank::analyzePitch(mono, master.value().sampleRate);
+      CHECK(pitch.hasValue());
+      if (pitch) CHECK_NEAR(voicebank::medianVoicedPitch(pitch.value()), 329.627556, 12.0);
+    }
+  }
 }
 
 // The tuning question: do the edits a creator makes reach the audio, survive undo and redo, and come
@@ -892,7 +1108,7 @@ TEST_CASE("Tuning an installed singer survives undo, save, reopen and export") {
         {"releaseEligible", formats::JsonValue{false}},
         {"route", formats::JsonValue{"voice designer (seam.source-filter.v1)"}},
         {"song", formats::JsonValue{"assets/pilots/seam-song-01/recipe.json"}},
-        {"notes", formats::JsonValue{static_cast<std::int64_t>(songNotes().size())}},
+        {"notes", formats::JsonValue{static_cast<std::int64_t>(authoredSongNoteCount())}},
         {"listening", formats::JsonValue{"NOT_REVIEWED"}},
         {"creatorWorkflow", formats::JsonValue{"NOT_OBSERVED"}},
         {"comparison", formats::JsonValue{"baseline-master.wav is the untuned song; tuned-master.wav "
@@ -1202,29 +1418,26 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
   if (!key) return;
 
   // 1. Design the voice through the Designer, the way the Studio does, and save the draft recipe.
-  native_ui::VoiceDesignerSession designer;
-  designer.setProtectedRoots({root / "singers"});
-  CHECK(designer.create(songRecipe()).hasValue());
-  CHECK(designer.model() != nullptr);
-  if (designer.model() == nullptr) return;
+  auto designer = std::make_unique<native_ui::VoiceDesignerSession>();
+  designer->setProtectedRoots({root / "singers"});
+  CHECK(designer->create(songRecipe()).hasValue());
+  CHECK(designer->model() != nullptr);
+  if (designer->model() == nullptr) return;
   const auto draft = root / "drafts" / "designed.json";
   std::filesystem::create_directories(draft.parent_path());
-  CHECK(designer.beginSave(draft).hasValue());
-  CHECK(drainDesigner(designer).hasValue());
+  CHECK(designer->beginSave(draft).hasValue());
+  CHECK(drainDesigner(*designer).hasValue());
   CHECK(std::filesystem::exists(draft));
 
-  // 2. The saved recipe is the creative input to publication. Nothing here supplies an identity,
-  //    coverage, or an approval: the manifest is derived from the recipe the Designer wrote.
-  const auto resource = voice_design::loadVoiceRecipeResource(draft);
-  CHECK(resource.hasValue());
-  if (!resource) return;
+  // 2. Publish through the same guarded session API used by Voice Designer. Nothing here supplies
+  //    an identity, coverage, or approval: the manifest is derived from the exact saved recipe.
   distribution::PublishProceduralSingerOptions publishOptions;
   publishOptions.version = "1.0.0";
   publishOptions.language = "ja";
   publishOptions.displayName = "Designed Song Voice";
   const auto package = root / "designed.seamsinger";
-  const auto published = distribution::publishProceduralSingerFromRecipe(
-      resource.value(), root / "staging", package, key.value(), publishOptions);
+  const auto published = designer->publishSavedSinger(
+      root / "staging", package, key.value(), publishOptions);
   CHECK(published.hasValue());
   if (!published) return;
   CHECK(published.value().manifest.id == songRecipe().id);
@@ -1232,26 +1445,79 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
   CHECK(published.value().manifest.phones.size() >= 10U);
   CHECK(std::filesystem::exists(package));
 
-  // 3. Install it as a trusted singer, then sing through it in a fresh session. The install is what
-  //    makes the voice reachable by identity from a project.
+  // 3. Install it through the standalone application's native command, then sing through it in a
+  //    fresh session. This exercises the same signed-package boundary and file-dialog contract as
+  //    the user-facing File → Install Procedural Singer action.
   const auto installRoot = root / "singers";
-  distribution::InstallProceduralOptions installOptions;
-  installOptions.verification = distribution::VerifySeambankOptions{
-      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
-  const auto installed = distribution::installProceduralPackage(package, installRoot, installOptions);
-  CHECK(installed.hasValue());
-  if (!installed) return;
-
   Installed fixture;
   fixture.root = root;
   fixture.installRoot = installRoot;
   fixture.key = key.value();
   auto editor = makeEditor(fixture);
+  editor.dialog->responses.push_back(package);
+  const auto installCommand = editor.controller->dispatch(
+      platform::ApplicationCommand::InstallProceduralSinger);
+  CHECK(installCommand.hasValue());
+  if (!installCommand) return;
+  CHECK(editor.dialog->requests.size() == 1U);
+  if (editor.dialog->requests.empty()) return;
+  CHECK(editor.dialog->requests.front().purpose ==
+        platform::FileDialogPurpose::InstallProceduralSinger);
+  CHECK(editor.dialog->requests.front().extensions == (std::vector<std::string>{"seamsinger"}));
+  const auto* unchangedTrack = editor.session->runtime().document().session().project().findVocalTrack(
+      editor.session->runtime().selectedTrack());
+  CHECK(unchangedTrack != nullptr);
+  CHECK(unchangedTrack != nullptr && !unchangedTrack->proceduralRecipe.has_value());
   const auto offers = editor.controller->installedSingerOffers();
   CHECK(offers.hasValue());
   if (!offers) return;
   CHECK(offers.value().size() == 1U);
-  selectInstalledSinger(editor);
+  CHECK(offers.value().size() == 1U && offers.value().front().selectable);
+
+  // Installation owns the singer now. Drop every producer-side representation and the Designer
+  // session before creating the song, so the render cannot accidentally resolve the in-memory model,
+  // editable recipe, preinstall package or retained packaging staging directory.
+  designer.reset();
+  std::error_code cleanupError;
+  static_cast<void>(std::filesystem::remove_all(draft.parent_path(), cleanupError));
+  CHECK(!cleanupError);
+  cleanupError.clear();
+  CHECK(std::filesystem::remove(package, cleanupError));
+  CHECK(!cleanupError);
+  cleanupError.clear();
+  static_cast<void>(std::filesystem::remove_all(root / "staging", cleanupError));
+  CHECK(!cleanupError);
+  CHECK(!std::filesystem::exists(draft));
+  CHECK(!std::filesystem::exists(package));
+  CHECK(!std::filesystem::exists(root / "staging"));
+
+  const auto& installedCandidate = offers.value().front().candidate;
+  const domain::ProceduralRecipeReference initialSinger{
+      .resource = installedCandidate.renderIdentity,
+      .path = (installedCandidate.resourceRoot /
+               installedCandidate.manifest.recipeEntry).string(),
+      .style = installedCandidate.manifest.styles.front()};
+  const auto created = editor.controller->createNewProject(
+      authoring::NewProjectRequest{
+          .name = "Designed Voice Song",
+          .tempoBpm = 120.0,
+          .sampleRate = 48000U,
+          .outputChannels = 2U,
+          .initialProceduralSinger = initialSinger});
+  CHECK(created.hasValue());
+  if (!created) return;
+  const auto diagnostics = editor.session->runtime().diagnostics();
+  CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                     [](const auto& diagnostic) {
+                       return diagnostic.code == "BANK_MISSING";
+                     }));
+  const auto* newProjectTrack =
+      editor.session->runtime().document().session().project().findVocalTrack(
+          editor.session->runtime().selectedTrack());
+  CHECK(newProjectTrack != nullptr);
+  if (newProjectTrack == nullptr) return;
+  CHECK(newProjectTrack->proceduralRecipe == initialSinger);
+  CHECK(newProjectTrack->voicebank.id.empty());
   writeSong(editor);
 
   // 4. The project recorded the designed singer's identity, and the song renders and exports from
@@ -1264,7 +1530,7 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
   if (!track->proceduralRecipe) return;
   CHECK(track->proceduralRecipe->resource.id == songRecipe().id);
   CHECK(track->proceduralRecipe->resource.contentHash ==
-        installed.value().renderIdentity.contentHash);
+        offers.value().front().candidate.renderIdentity.contentHash);
   authoring::ExportSettings settings;
   settings.includeMaster = true;
   const auto exported = editor.controller->exportSet(root / "export", settings);
@@ -1272,4 +1538,33 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
   if (!exported) return;
   CHECK(exported.value().masterSha256.size() == 64U);
   CHECK(std::filesystem::exists(exported.value().masterPath));
+
+  // Save/reopen in a fresh application session after the producer-side recipe and package have
+  // been removed. The reopened track must bind the same installed content and produce the same
+  // master, demonstrating that a development file path is not the installed singer's dependency.
+  const auto projectPath = root / "installed-song.seam";
+  editor.dialog->responses.push_back(projectPath);
+  const auto saved = editor.controller->dispatch(platform::ApplicationCommand::SaveProjectAs);
+  CHECK(saved.hasValue());
+  if (!saved) return;
+  CHECK(std::filesystem::exists(projectPath));
+
+  auto reopened = makeEditor(fixture);
+  reopened.dialog->responses.push_back(projectPath);
+  const auto opened = reopened.controller->dispatch(platform::ApplicationCommand::OpenProject);
+  CHECK(opened.hasValue());
+  if (!opened) return;
+  const auto* reopenedTrack = reopened.session->runtime().document().session().project().findVocalTrack(
+      reopened.session->runtime().selectedTrack());
+  CHECK(reopenedTrack != nullptr);
+  if (reopenedTrack == nullptr) return;
+  CHECK(reopenedTrack->proceduralRecipe.has_value());
+  if (!reopenedTrack->proceduralRecipe) return;
+  CHECK(reopenedTrack->proceduralRecipe->resource.id == songRecipe().id);
+  CHECK(reopenedTrack->proceduralRecipe->resource.contentHash ==
+        offers.value().front().candidate.renderIdentity.contentHash);
+  const auto reopenedExport = reopened.controller->exportSet(root / "reopened-export", settings);
+  CHECK(reopenedExport.hasValue());
+  if (!reopenedExport) return;
+  CHECK(reopenedExport.value().masterSha256 == exported.value().masterSha256);
 }

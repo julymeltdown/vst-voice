@@ -275,7 +275,12 @@ def export_acoustic(deployment_model) -> bytes:
 
 
 def check_acoustic_runtime(deployment_model) -> dict:
-    """Execute genuine merged weights; stochastic outputs are not numerical parity."""
+    """Execute merged weights and verify seeded sampling across fresh ORT sessions.
+
+    This mirrors the production one-request-per-worker session lifecycle. It does
+    not compare PyTorch and ONNX random-number streams or claim cross-runtime
+    stochastic numerical parity.
+    """
     import numpy as np
     import onnxruntime as ort
     ort.disable_telemetry_events()
@@ -285,22 +290,39 @@ def check_acoustic_runtime(deployment_model) -> dict:
     options = ort.SessionOptions()
     options.intra_op_num_threads = 1
     options.inter_op_num_threads = 1
-    session = ort.InferenceSession(payload, sess_options=options, providers=["CPUExecutionProvider"])
     cases = []
+    fresh_session_replay = None
     conditioned = deployment_model.fs2.use_breathiness_embed is True
-    for lengths, steps in (([5, 6, 5], 1), ([1, 0, 2], 4), ([9, 14], 8)):
+    for index, (lengths, steps) in enumerate((([5, 6, 5], 1), ([1, 0, 2], 4), ([9, 14], 8))):
         inputs = dict(tokens=np.array([list(range(1, len(lengths) + 1))], dtype=np.int64),
             durations=np.array([lengths], dtype=np.int64), f0=np.full((1, sum(lengths)), 220., dtype=np.float32),
             steps=np.array(steps, dtype=np.int64))
         if conditioned:
             inputs["breathiness"] = np.linspace(0, 1, sum(lengths), dtype=np.float32)[None]
+        session = ort.InferenceSession(payload, sess_options=options, providers=["CPUExecutionProvider"])
         result = session.run(["mel"], inputs)[0]
         passed = (result.shape == (1, sum(lengths), deployment_model.diffusion.out_dims)
                   and np.isfinite(result).all())
         cases.append(dict(frames=sum(lengths), steps=steps, shape=list(result.shape), passed=bool(passed)))
-    return dict(passed=all(case["passed"] for case in cases), cases=cases,
+        if index == 0:
+            # Each production helper serves one request per process/session. A
+            # second fresh session must therefore reproduce the same seeded
+            # sampler output for the same admitted model and request.
+            replay_session = ort.InferenceSession(payload, sess_options=options,
+                                                  providers=["CPUExecutionProvider"])
+            repeated = replay_session.run(["mel"], inputs)[0]
+            replay_error = (float(np.max(np.abs(result - repeated)))
+                            if result.shape == repeated.shape else None)
+            fresh_session_replay = dict(exact=(result.shape == repeated.shape
+                                                and np.array_equal(result, repeated)),
+                                        maximumAbsoluteError=replay_error,
+                                        frames=sum(lengths), steps=steps)
+    replay_passed = bool(fresh_session_replay and fresh_session_replay["exact"])
+    return dict(passed=all(case["passed"] for case in cases) and replay_passed, cases=cases,
                 graphBytes=len(payload), graphSha256=hashlib.sha256(payload).hexdigest(),
                 runtimeVersion=ort.__version__, stochasticNumericalParityVerified=False,
+                freshSessionDeterminismVerified=replay_passed,
+                freshSessionReplay=fresh_session_replay,
                 conditioningControls=["breathiness"] if conditioned else [], conditioningRevision=2,
                 offlineGraphInspection=inspection["status"],
                 completeAcousticGraph=True, vocoderIntegrated=False, graphRetained=False,

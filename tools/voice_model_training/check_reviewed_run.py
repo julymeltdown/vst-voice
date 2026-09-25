@@ -32,6 +32,8 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                        trusted_checkout: Path | None = None, check_export: bool = False,
                        native_probe: Path | None = None, vocoder_checkout: Path | None = None,
                        vocoder_command_checkout: Path | None = None,
+                       production_worker: Path | None = None, voicebank_cli: Path | None = None,
+                       production_render_binary: Path | None = None,
                        retained_fixture_root: Path | None = None, check_partial_recovery: bool = False) -> dict:
     """Exercise real file admission, optimization, publication and held-out I/O."""
     import numpy as np
@@ -40,6 +42,11 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
     model_configuration = model_metadata.get("configuration") if isinstance(model_metadata, dict) else None
     conditioned = (isinstance(model_configuration, dict)
                    and model_configuration.get("use_breathiness_embed") is True)
+    worker_options = (production_worker, voicebank_cli, production_render_binary)
+    if any(value is not None for value in worker_options) and not all(value is not None for value in worker_options):
+        raise ValueError("Production inference replay requires the worker, voicebank CLI and render binary")
+    if production_worker is not None and (not check_export or vocoder_checkout is None):
+        raise ValueError("Production worker replay requires acoustic export and a trained synthetic vocoder export")
 
     def review_for(kind, configuration_hash):
         label = kind == "label"
@@ -122,12 +129,12 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
         else:
             raise ValueError("Could not construct three fixture partitions")
         permission_config = dict(formatId="com.project-seam.training-permission-config", schemaVersion=1,
-                                 sampleRate=48000, sources=sources, evidence={"fixture": "fixture-evidence.txt"},
+                            sampleRate=48000, sources=sources, evidence={"fixture": "fixture-evidence.txt"},
                                  manifest=dict(formatId="com.project-seam.training-permission-manifest",
                                                schemaVersion=1, sources=permissions))
         label_config = dict(formatId="com.project-seam.voice-training-label-config",
                             schemaVersion=4 if conditioned else 3,
-                            sampleRate=48000, sources=sources, vocabulary=["a", "i", "u"],
+                            sampleRate=48000, sources=sources, vocabulary=["SP", "ah1", "a"],
                             minimumConfidence=.8, labels=labels)
         publish_new(root / "permissions.json", permission_config)
         publish_new(root / "labels.json", label_config)
@@ -274,7 +281,10 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                     if native.returncode:
                         raise ValueError(f"Native learned acoustic inference failed: {native.stderr[-512:]}")
                     native_result = json.loads(native.stdout)
-                    if native_result.get("status") != "ACOUSTIC_EXPORT_NATIVE_SMOKE" or native_result.get("cases") != 3:
+                    if (native_result.get("status") != "ACOUSTIC_EXPORT_NATIVE_SMOKE"
+                            or native_result.get("cases") != 3
+                            or native_result.get("freshSessionDeterministic") is not True
+                            or native_result.get("freshSessionMaximumAbsoluteError") != 0):
                         raise ValueError("Unexpected native acoustic smoke result")
                     rejected = subprocess.run(native_command[:-1] + ["0" * 64],
                                               capture_output=True, text=True, timeout=15)
@@ -288,6 +298,31 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
                 conditioning_directory=shards, targets=targets, profile_sha256=profile,
                 deployment_checkout=trusted_checkout if check_export else None,
                 pcm_sources={row["sourceId"]: root / row["path"] for row in sources})
+        worker_replay = None
+        if production_worker is not None:
+            if (not (root / "export/export.json").is_file()
+                    or not (root / "vocoder-export/export.json").is_file()):
+                raise ValueError("Expected captured acoustic and vocoder exports for production worker replay")
+            replay = subprocess.run([sys.executable, "-m", "tools.neural_runtime.check_exported_worker_replay",
+                str(root / "export"), str(root / "vocoder-export"),
+                str(production_worker.resolve(strict=True)), str(voicebank_cli.resolve(strict=True)),
+                "--render-binary", str(production_render_binary.resolve(strict=True))],
+                capture_output=True, text=True, timeout=240)
+            if replay.returncode:
+                raise ValueError(f"Exported model production-worker replay failed: {replay.stderr[-1024:]}")
+            worker_replay = json.loads(replay.stdout)
+            if (worker_replay.get("status") != "EXPORTED_MODEL_WORKER_REPLAY"
+                    or worker_replay.get("passed") is not True
+                    or worker_replay.get("freshWorkerProcesses") != 2
+                    or worker_replay.get("outputNonSilent") is not True
+                    or worker_replay.get("productionRendererPathExecuted") is not True
+                    or worker_replay.get("projectExportedWavCount", 0) < 1
+                    or worker_replay.get("stochasticSamplerMayDiffer") is not True
+                    or not isinstance(worker_replay.get("maximumAbsolutePcmDifference"), (int, float))
+                    or not isinstance(worker_replay.get("rmsPcmDifference"), (int, float))
+                    or worker_replay.get("singerQualified") is not False
+                    or worker_replay.get("releaseEligible") is not False):
+                raise ValueError("Production worker replay returned an unexpected engineering result")
         vocoder_command = None
         if vocoder_command_checkout is not None:
             from .check_vocoder_train_command import check_vocoder_train_command
@@ -308,6 +343,6 @@ def check_reviewed_run(model, optimizer, *, objective, model_metadata: dict,
         return dict(passed=passed, changedParameterTensors=changed, checkpointRestoredExact=exact,
                     epoch=receipt["epoch"], partitionCounts=split["counts"], validation=validation,
                     trainingCommand=command_result, vocoderEpoch=vocoder, vocoderCommand=vocoder_command,
-                    vocoderRecovery=recovery,
+                    vocoderRecovery=recovery, exportedModelWorkerReplay=worker_replay,
                     syntheticInputs=True, fixturePolicyOnly=True, singerQualified=False,
                     checkpointRetained=retained_fixture_root is not None, releaseEligible=False)

@@ -34,6 +34,7 @@ from .pitch_comparison import compare_wavs
 from .reconstruct_source_vocoder import checked_waveform
 from .spectral_flatness_diagnostic import spectral_flatness, per_phone_flatness
 from .vocoder_reconstruction import compute_stft_spectral_distance
+from .evaluation_provenance import capture_evaluation_provenance
 
 SILENT_LEVEL_FLOOR = -11.5
 UNVOICED = {"h", "f", "k", "s", "sh", "t", "ch", "ts"}
@@ -366,6 +367,11 @@ def main():
     if args.output.exists():
         raise SystemExit("Output must be new")
     _PITCH_EXEC = args.pitch_executable
+    try:
+        provenance = capture_evaluation_provenance(
+            Path(__file__), args.pitch_executable)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"Cannot capture evaluator provenance: {exc}") from exc
     _VOCODER_GRAPH = (args.vocoder_export / "vocoder.onnx").read_bytes()
     arms = {}
     for spec in args.arm:
@@ -386,14 +392,15 @@ def main():
            ("replay-e2-00420-r2-inputs.json", "song-420", "procedural-song-00420")]
     heldout = ["song-000", "song-004", "song-007", "song-018", "song-023", "song-038",
                "song-008", "song-011", "song-017", "song-019", "song-021", "song-029"]
-    report = dict(formatId="com.project-seam.acoustic-flatness-pair-eval", schemaVersion=2,
+    report = dict(formatId="com.project-seam.acoustic-flatness-pair-eval", schemaVersion=3,
                   draws=DRAWS, steps=STEPS, singerQualified=False, releaseEligible=False,
                   combinedModelHoldoutVerified=False, listening="NOT_REVIEWED",
                   developmentDrawsPerSource=DRAWS,
                   heldoutDrawsPerItem=1,
                   heldoutPanelLabel="one-draw zero-breathiness (song-NNN/conditioning.json hasBreathiness=false); mel-based UV-level/voiced-flatness guardrails NOT_EVALUATED on this panel",
                   developmentConditioning="zero-breathiness: all five frozen replay captures carry breathiness=0",
-                  vocoderSha256=_sha(_VOCODER_GRAPH), arms={}, heldout={})
+                  vocoderSha256=_sha(_VOCODER_GRAPH),
+                  evaluationProvenance=provenance, arms={}, heldout={})
     for name, graph in arms.items():
         report["arms"][name] = dict(acousticSha256=_sha(graph), development=[], heldoutItems=[])
         for replay, song, source_id in dev:

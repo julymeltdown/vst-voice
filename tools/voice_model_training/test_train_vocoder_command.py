@@ -32,7 +32,8 @@ class VocoderCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError):model_settings(bad)
 
     def test_partial_lineage_continues_current_epoch_not_next(self):
-        current = dict(configuration={"a": 1}, trainingRevision="revision")
+        current = dict(configuration={"a": 1}, trainingRevision="revision",
+                       trainingEnvironment={"environmentSha256": "d" * 64})
         receipt = dict(formatId="com.project-seam.gan-partial-checkpoint",
             metadata=dict(run=current | dict(completedEpochs=3, parentReceiptSha256="c"*64),
                           profileSha256="b"*64, datasetSha256="a"*64, objectiveId="objective"),
@@ -47,6 +48,12 @@ class VocoderCommandTests(unittest.TestCase):
             self.assertEqual(inspect(receipt), (2, "c"*64))
             first = receipt | dict(metadata=receipt["metadata"] | dict(run=current | dict(completedEpochs=1, parentReceiptSha256=None)))
             self.assertEqual(inspect(first), (0, None))
+            payload = encode_report(receipt)
+            path.write_bytes(payload)
+            with self.assertRaisesRegex(ValueError, "identical captured inputs"):
+                partial_resume_identity(path.parent, hashlib.sha256(payload).hexdigest(),
+                    metadata=current | {"trainingEnvironment": {"environmentSha256": "e" * 64}},
+                    profile="b"*64, dataset="a"*64, objective_id="objective")
             for bad in ([], receipt | dict(formatId="com.project-seam.gan-checkpoint"),
                         receipt | dict(epoch=receipt["epoch"] | dict(epochComplete=True)),
                         receipt | dict(metadata=receipt["metadata"] | dict(run=current | dict(completedEpochs=3, parentReceiptSha256=None)))):
@@ -132,7 +139,8 @@ class VocoderCommandTests(unittest.TestCase):
             with self.assertRaises(ValueError): load_pcm_sources(root, labels)
 
     def test_resume_rejects_changed_inputs_and_incomplete_lineage(self):
-        current = dict(configuration={'a': 1}, trainingRevision='revision', seed=10)
+        current = dict(configuration={'a': 1}, trainingRevision='revision', seed=10,
+                       trainingEnvironment={'environmentSha256': 'd'*64})
         receipt = dict(formatId='com.project-seam.gan-checkpoint', schemaVersion=1,
             metadata=dict(run=current | dict(completedEpochs=2, parentReceiptSha256=None),
                           datasetSha256='a'*64, profileSha256='b'*64, objectiveId='objective'),
@@ -148,6 +156,8 @@ class VocoderCommandTests(unittest.TestCase):
             for non_object in ([], None, 'receipt'):
                 with self.subTest(value=non_object), self.assertRaises(ValueError): run(non_object)
             with self.assertRaises(ValueError): run(metadata=current | dict(seed=11))
+            with self.assertRaises(ValueError):
+                run(metadata=current | {'trainingEnvironment': {'environmentSha256': 'e'*64}})
             for update in (dict(datasetSha256='c'*64), dict(profileSha256='c'*64),
                            dict(run=current | dict(completedEpochs=0))):
                 with self.assertRaises(ValueError): run(receipt | dict(metadata=receipt['metadata'] | update))

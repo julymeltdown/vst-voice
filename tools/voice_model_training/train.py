@@ -20,6 +20,7 @@ from .diffsinger_objective import (DiffSingerDDPMObjective, DiffSingerDDPMUnvoic
 from .conditioning import ADDED_CONDITIONING_PARAMETERS, added_parameters
 from .checkpoint import load_local_checkpoint
 from .epochs import run_reviewed_epochs
+from .training_environment import capture_environment
 
 REVISION = "336cf01b57f2ad44c6b37a79cf33993043291759"
 
@@ -338,6 +339,7 @@ def main():
                         assemblyConfigurationSha256=args.dataset_sha256, targetInventorySha256=args.targets_sha256,
                         configuration=hparams_value, settings=settings, revision=REVISION,
                         torchVersion=str(torch.__version__), numpyVersion=np.__version__, vocabulary=vocabulary,
+                        trainingEnvironment=capture_environment(),
                         singerQualified=False)
         expected_dataset, completed_epochs = None, 0
         captured_bindings = None

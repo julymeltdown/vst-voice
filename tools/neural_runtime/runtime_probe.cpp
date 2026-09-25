@@ -251,6 +251,8 @@ int main(int argc,char** argv) {
       std::vector<const char*> names{"tokens","durations","f0","steps"};
       if (conditioned) names.push_back("breathiness");
       const char* outputName="mel";
+      bool freshSessionDeterministic=false;
+      double freshSessionMaximumAbsoluteError=-1.0;
       for (const std::int64_t frames:{3,16,23}) {
         std::array<std::int64_t,2> tokens{1,1},durations{1,frames-1},tokenShape{1,2},frameShape{1,frames};
         std::int64_t steps=4;
@@ -269,8 +271,32 @@ int main(int argc,char** argv) {
         const auto* data=results.front().GetTensorData<float>();
         for (std::int64_t index=0;index<frames*outputShape[2];++index)
           if (!std::isfinite(data[index])) throw std::runtime_error("Acoustic export returned nonfinite mel");
+        if (frames==3) {
+          // The production worker owns a fresh session for each request because
+          // seeded ONNX random nodes advance inside a session. Recreate that
+          // lifecycle here and require exact replay from the same graph bytes.
+          Ort::Session replaySession{environment,bytes.data(),bytes.size(),options};
+          auto replay=replaySession.Run(Ort::RunOptions{nullptr},names.data(),inputs.data(),inputs.size(),&outputName,1);
+          if (!shapeMatches(replay.front(),{1,frames,outputShape[2]}))
+            throw std::runtime_error("Fresh native acoustic replay returned unexpected shape");
+          const auto* repeated=replay.front().GetTensorData<float>();
+          double maximum=0.0;
+          bool exact=true;
+          for (std::int64_t index=0;index<frames*outputShape[2];++index) {
+            if (!std::isfinite(repeated[index]))
+              throw std::runtime_error("Fresh native acoustic replay returned nonfinite mel");
+            const auto difference=std::abs(static_cast<double>(data[index])-repeated[index]);
+            maximum=std::max(maximum,difference);
+            exact=exact && data[index]==repeated[index];
+          }
+          freshSessionDeterministic=exact;
+          freshSessionMaximumAbsoluteError=maximum;
+        }
       }
-      std::cout<<"{\"status\":\"ACOUSTIC_EXPORT_NATIVE_SMOKE\",\"cases\":3,\"vocoderIntegrated\":false,\"releaseEligible\":false}\n";
+      if (!freshSessionDeterministic)
+        throw std::runtime_error("Fresh native acoustic session did not reproduce seeded mel");
+      std::cout<<"{\"status\":\"ACOUSTIC_EXPORT_NATIVE_SMOKE\",\"cases\":3,\"freshSessionDeterministic\":true,\"freshSessionMaximumAbsoluteError\":"
+               <<freshSessionMaximumAbsoluteError<<",\"vocoderIntegrated\":false,\"releaseEligible\":false}\n";
       return 0;
     }
     const auto runBundle=[&](const seam::synthesis::FrozenNeuralBundle& bundle) {

@@ -17,6 +17,7 @@ import time
 from .__main__ import assemble_dataset, load_config, load_dataset_inputs
 from .check_vocoder_model import TRAINING_REVISION, trusted_checkout, vocoder_configuration
 from .train import load_targets
+from .training_environment import capture_environment
 from .vocoder_checkpoint import restore_vocoder_checkpoint
 from .gan_checkpoint_storage import require_disk_headroom
 
@@ -259,7 +260,8 @@ def main(argv=None):
         metadata = dict(configuration=configuration, trainingRevision=TRAINING_REVISION, settings=settings,
             trainingConfigurationSha256=args.training_sha256, assemblyConfigurationSha256=args.dataset_sha256,
             targetInventorySha256=args.targets_sha256, torchVersion=str(torch.__version__),
-            numpyVersion=np.__version__, scipyVersion=scipy.__version__, singerQualified=False)
+            numpyVersion=np.__version__, scipyVersion=scipy.__version__,
+            trainingEnvironment=capture_environment(), singerQualified=False)
         previous, completed = None, 0
         inherited_path = args.resume or args.resume_partial
         if inherited_path is not None:

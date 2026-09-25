@@ -213,23 +213,173 @@ def admit_segment(permission_config: Path, permission_hash: str, source_root: Pa
                 sourcePermissionsAdmitted=True, trainingAdmitted=False, releaseEligible=False)
 
 
+def _flat_root_file(root: Path, name: str, *, description: str) -> Path:
+    if (not isinstance(name, str) or not 1 <= len(name) <= 128 or name in (".", "..")
+            or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./" for c in name)
+            or name.startswith("/") or "\\" in name or any(part in ("", ".", "..") for part in name.split("/"))):
+        raise ValueError(f"{description} path must be a contained relative path")
+    path = root
+    for part in name.split("/"):
+        path /= part
+        if path.is_symlink():
+            raise ValueError(f"{description} symlinks are unsupported")
+    if not path.resolve(strict=True).is_relative_to(root.resolve(strict=True)):
+        raise ValueError(f"{description} escapes its root")
+    return path
+
+
+def _verify_pitch_extractor(path: Path, expected_sha256: str) -> None:
+    if (not isinstance(expected_sha256, str) or len(expected_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in expected_sha256)
+            or path.is_symlink() or not os.access(path, os.X_OK)):
+        raise ValueError("Fresh pitch extractor requires a captured digest and executable file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode) or not 1 <= before.st_size <= 256 * 1024 * 1024:
+            raise ValueError("Fresh pitch extractor exceeds its executable-file bound")
+        digest = hashlib.sha256()
+        size = 0
+        while True:
+            block = stream.read(1024 * 1024)
+            if not block:
+                break
+            digest.update(block)
+            size += len(block)
+        after = os.fstat(stream.fileno())
+    if ((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            or size != before.st_size or digest.hexdigest() != expected_sha256):
+        raise ValueError("Fresh pitch extractor differs from its captured digest")
+
+
+def _revalidate_derived_segments(*, permission_config: Path, permission_hash: str, root: Path,
+                                 permission_admission: dict, label_config: dict,
+                                 rights_review: dict, rights_policy: dict, rights_anchor: str,
+                                 now: int, derived_segments: list[dict],
+                                 fresh_pitch_extractor: Path | None,
+                                 fresh_pitch_extractor_sha256: str | None) -> tuple[list[dict], list[dict]]:
+    if not isinstance(derived_segments, list) or len(derived_segments) > 10000:
+        raise ValueError("Derived segment inventory exceeds its bound")
+    permission_value = load_config(permission_config, permission_hash)
+    parent_inputs = {row["sourceId"]: row for row in permission_value["sources"]}
+    admitted_parents = {row["sourceId"]: row for row in permission_admission["sources"]}
+    labels_by_id = {row["label"]["sourceId"]: row for row in label_config["labels"]}
+    label_sources = {row["sourceId"]: row for row in label_config["sources"]}
+    if len(labels_by_id) != len(label_config["labels"]) or len(label_sources) != len(label_config["sources"]):
+        raise ValueError("Derived segment join requires unique label/source identities")
+    additions, bindings, seen_children = [], [], set()
+    for item in derived_segments:
+        if (not isinstance(item, dict) or set(item) != {"configuration", "artifactDirectory"}
+                or not isinstance(item["configuration"], dict)
+                or set(item["configuration"]) != {"path", "sha256"}):
+            raise ValueError("Invalid derived segment reference")
+        reference = item["configuration"]
+        config_path = _flat_root_file(root, reference["path"], description="Segment configuration")
+        artifact_directory = _flat_root_file(root, item["artifactDirectory"], description="Segment artifact")
+        if artifact_directory.is_symlink() or not artifact_directory.is_dir():
+            raise ValueError("Derived segment artifact must be an existing real directory")
+        if {child.name for child in artifact_directory.iterdir()} != {"audio.wav", "segment.json"}:
+            raise ValueError("Derived segment artifact must contain only its audio and final record")
+        record_path = artifact_directory / "segment.json"
+        if record_path.is_symlink() or not record_path.is_file():
+            raise ValueError("Derived segment record must be a regular file")
+        segment_config = load_config(config_path, reference["sha256"])
+        parent = segment_config.get("source") if isinstance(segment_config, dict) else None
+        parent_id = parent.get("sourceId") if isinstance(parent, dict) else None
+        if parent_id not in parent_inputs or parent_id not in admitted_parents:
+            raise ValueError("Derived segment parent is not in freshly admitted source permissions")
+        parent_label = labels_by_id.get(parent_id)
+        if (parent_label is None or segment_config.get("schemaVersion") != 3
+                or not isinstance(segment_config.get("parentLabel"), dict)
+                or segment_config["parentLabel"].get("label") != parent_label["label"]
+                or segment_config["parentLabel"].get("sourceSha256") != parent_label["sourceSha256"]
+                or segment_config["parentLabel"].get("audioSha256") != parent_label["audioSha256"]
+                or segment_config.get("parentScore") != parent_label.get("score")):
+            raise ValueError("Segment crop must derive from the currently reviewed parent label and score")
+        if (segment_config["source"].get("sourceSha256") != admitted_parents[parent_id]["sourceSha256"]
+                or any(segment_config["source"].get(key) != admitted_parents[parent_id][key]
+                       for key in ("songId", "sessionId", "lineageId"))):
+            raise ValueError("Segment parent identity differs from fresh source admission")
+        child_id = segment_config.get("segmentId")
+        if not isinstance(child_id, str) or child_id in seen_children or child_id in admitted_parents:
+            raise ValueError("Derived segment identity is duplicate or shadows a directly admitted source")
+        child_label = labels_by_id.get(child_id)
+        child_source = label_sources.get(child_id)
+        expected_audio_path = f"{item['artifactDirectory'].rstrip('/')}/audio.wav"
+        if (child_label is None or child_source is None or child_source["path"] != expected_audio_path
+                or any(child_source[key] != segment_config["source"][key]
+                       for key in ("songId", "sessionId", "lineageId"))):
+            raise ValueError("Derived child must have a reviewed label at its admitted artifact path")
+        hop_size = parent_label["label"].get("hopSize")
+        if type(hop_size) is not int or hop_size <= 0:
+            raise ValueError("Parent label has no valid analysis hop")
+        needs_fresh_pitch = segment_config.get("startFrame") % hop_size != 0
+        if needs_fresh_pitch:
+            if fresh_pitch_extractor is None or fresh_pitch_extractor_sha256 is None:
+                raise ValueError("Off-grid derived crops require the captured fresh pitch extractor")
+            _verify_pitch_extractor(fresh_pitch_extractor, fresh_pitch_extractor_sha256)
+        parent_source_path = _flat_root_file(root, parent_inputs[parent_id]["path"], description="Parent source")
+        admission = admit_segment(permission_config, permission_hash, root,
+            segment_config=config_path, segment_hash=reference["sha256"], source_path=parent_source_path,
+            output=artifact_directory, review=rights_review, policy=rights_policy,
+            trusted_policy_sha256=rights_anchor, now=now, resume=True,
+            fresh_pitch_extractor=fresh_pitch_extractor if needs_fresh_pitch else None)
+        extractor_binding = {}
+        if needs_fresh_pitch:
+            _verify_pitch_extractor(fresh_pitch_extractor, fresh_pitch_extractor_sha256)
+            extractor_binding["freshPitchExtractorSha256"] = fresh_pitch_extractor_sha256
+        segment_record = load_config(record_path, admission["segmentRecordSha256"])
+        expected_label = segment_record.get("label") if isinstance(segment_record, dict) else None
+        if (not isinstance(expected_label, dict) or child_label["sourceSha256"] != admission["sourceSha256"]
+                or child_label["audioSha256"] != admission["audioSha256"]
+                or child_label["label"] != expected_label.get("label")
+                or child_label.get("score") != expected_label.get("score")
+                or child_source["sourceSha256"] != admission["sourceSha256"]):
+            raise ValueError("Reviewed child labels differ from freshly regenerated segment supervision")
+        parent_admission = admitted_parents[parent_id]
+        additions.append(dict(parent_admission, sourceId=child_id, sourceSha256=admission["sourceSha256"],
+            audioSha256=admission["audioSha256"], sampleRate=segment_record["sampleRate"],
+            frameCount=child_label["label"]["frameCount"], derivedFromSourceId=parent_id,
+            segmentRecordSha256=admission["segmentRecordSha256"]))
+        bindings.append(dict(segmentConfigurationSha256=reference["sha256"],
+            segmentRecordSha256=admission["segmentRecordSha256"],
+            sourceId=child_id, sourceSha256=admission["sourceSha256"], audioSha256=admission["audioSha256"],
+            parentSourceId=parent_id, rightsReviewSha256=admission["reviewSha256"], **extractor_binding))
+        seen_children.add(child_id)
+    return additions, sorted(bindings, key=lambda row: row["sourceId"])
+
+
 def assemble_dataset(permission_config: Path, permission_hash: str, label_config: Path, label_hash: str,
                      root: Path, *, rights_review: dict, rights_policy: dict, rights_anchor: str,
                      label_review: dict, label_policy: dict, label_anchor: str, now: int,
                      seed: str, held_out_songs: list[str], conditioning_directory: Path | None = None,
-                     reuse_conditioning: bool = False) -> dict:
+                     reuse_conditioning: bool = False, derived_segments: list[dict] | None = None,
+                     fresh_pitch_extractor: Path | None = None,
+                     fresh_pitch_extractor_sha256: str | None = None) -> dict:
     """Revalidate both authorities before building a source/label/split snapshot."""
     if type(reuse_conditioning) is not bool or (reuse_conditioning and conditioning_directory is None):
         raise ValueError("Read-only conditioning reuse requires a shard directory")
+    if (fresh_pitch_extractor is None) != (fresh_pitch_extractor_sha256 is None):
+        raise ValueError("Fresh pitch extractor path and captured digest must be supplied together")
+    if fresh_pitch_extractor is not None:
+        _verify_pitch_extractor(fresh_pitch_extractor, fresh_pitch_extractor_sha256)
     rights = admit_sources(permission_config, permission_hash, root, review=rights_review,
                            policy=rights_policy, trusted_policy_sha256=rights_anchor, now=now)
     annotations = admit_labels(label_config, label_hash, root, review=label_review,
                                policy=label_policy, trusted_policy_sha256=label_anchor, now=now)
-    rights_by_id = {r["sourceId"]: r for r in rights["sources"]}
+    captured_labels = load_config(label_config, label_hash)
+    added_sources, derived_bindings = _revalidate_derived_segments(permission_config=permission_config,
+        permission_hash=permission_hash, root=root, permission_admission=rights,
+        label_config=captured_labels, rights_review=rights_review, rights_policy=rights_policy,
+        rights_anchor=rights_anchor, now=now, derived_segments=[] if derived_segments is None else derived_segments,
+        fresh_pitch_extractor=fresh_pitch_extractor,
+        fresh_pitch_extractor_sha256=fresh_pitch_extractor_sha256)
+    rights_sources = rights["sources"] + added_sources
+    rights_by_id = {r["sourceId"]: r for r in rights_sources}
     labels_by_id = {r["sourceId"]: r for r in annotations["sources"]}
     if set(rights_by_id) != set(labels_by_id):
         raise ValueError("Rights and label admission cover different source sets")
-    captured_labels = load_config(label_config, label_hash)
     declared = {r["sourceId"]: r for r in captured_labels["sources"]}
     for identity, source in rights_by_id.items():
         if any(source[k] != labels_by_id[identity][k] for k in ("sourceSha256", "audioSha256", "sampleRate")):
@@ -237,7 +387,7 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
         if any(source[k] != declared[identity][k] for k in ("songId", "sessionId", "lineageId")):
             raise ValueError("Reviewed source lineage differs between configurations")
     rows = [{k: r[k] for k in ("sourceId", "songId", "sessionId", "lineageId", "audioSha256")}
-            for r in rights["sources"]]
+            for r in rights_sources]
     split = split_sources(rows, seed=seed, held_out_songs=held_out_songs)
     # Preflight total work; sharded mode retains only one phrase's expanded rows.
     total_frames = sum(len(entry["label"]["f0Hz"]) for entry in captured_labels["labels"])
@@ -277,13 +427,15 @@ def assemble_dataset(permission_config: Path, permission_hash: str, label_config
     identity = dict(permissionConfigurationSha256=permission_hash, labelConfigurationSha256=label_hash,
                     rightsReviewSha256=rights["reviewSha256"], labelReviewSha256=annotations["reviewSha256"],
                     conditioningSha256=conditioning_hash, split=split)
+    if derived_bindings:
+        identity["derivedSegments"] = derived_bindings
     issues = [dict(code="missing-partition", partition=p) for p in split["missingPartitions"]]
     if split["duplicateAudioGroups"]:
         issues.append(dict(code="duplicate-selection-review-required"))
     result = dict(formatId="com.project-seam.training-dataset-snapshot", schemaVersion=3 if conditioning_directory is not None else 2,
                 datasetSha256=hashlib.sha256(encode_report(identity)).hexdigest(), bindings=identity,
                 expiresAt=min(rights["expiresAt"], annotations["expiresAt"]), verifiedAt=now,
-                sources=rights["sources"], labels=captured_labels["labels"], vocabulary=captured_labels["vocabulary"],
+                sources=rights_sources, labels=captured_labels["labels"], vocabulary=captured_labels["vocabulary"],
                 conditioning=conditioning, conditioningFrameCount=total_frames,
                 preparationIssues=issues, sourcePermissionsAdmitted=True, labelsAdmitted=True,
                 trainingAdmitted=False, releaseEligible=False)
@@ -302,9 +454,15 @@ def load_dataset_inputs(config: Path, expected_hash: str, root: Path, *,
     """
     value = load_config(config, expected_hash)
     refs = {"permissionConfig", "labelConfig", "rightsReview", "rightsPolicy", "labelReview", "labelPolicy"}
-    if (not isinstance(value, dict) or set(value) != refs | {"formatId", "schemaVersion", "seed", "heldOutSongs"}
+    fields = refs | {"formatId", "schemaVersion", "seed", "heldOutSongs"}
+    schema = value.get("schemaVersion") if isinstance(value, dict) else None
+    if schema in (2, 3):
+        fields.add("derivedSegments")
+    if schema == 3:
+        fields.add("freshPitchExtractor")
+    if (not isinstance(value, dict) or set(value) != fields
             or value["formatId"] != "com.project-seam.training-dataset-config"
-            or type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1):
+            or type(schema) is not int or schema not in (1, 2, 3)):
         raise ValueError("Unsupported dataset assembly configuration")
     root = root.resolve(strict=True)
     references = {}
@@ -315,14 +473,43 @@ def load_dataset_inputs(config: Path, expected_hash: str, root: Path, *,
         name = ref["path"]
         if (not isinstance(name, str) or not 1 <= len(name) <= 128 or name in (".", "..")
                 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." for c in name)):
-            raise ValueError("Dataset references must be flat ASCII filenames")
+            raise ValueError(f"Dataset {key} reference must be a flat ASCII filename")
         references[key] = load_config(root / name, ref["sha256"])
     permission, labels = value["permissionConfig"], value["labelConfig"]
+    derived_segments = value.get("derivedSegments", [])
+    if not isinstance(derived_segments, list) or len(derived_segments) > 10000:
+        raise ValueError("Derived segment inventory exceeds its bound")
+    captured_segments = []
+    for item in derived_segments:
+        if (not isinstance(item, dict) or set(item) != {"configuration", "artifactDirectory"}
+                or not isinstance(item["configuration"], dict)
+                or set(item["configuration"]) != {"path", "sha256"}):
+            raise ValueError("Invalid derived segment reference")
+        reference = item["configuration"]
+        name = reference["path"]
+        if (not isinstance(name, str) or not 1 <= len(name) <= 128 or name in (".", "..")
+                or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./" for c in name)
+                or name.startswith("/") or "\\" in name
+                or any(part in ("", ".", "..") for part in name.split("/"))):
+            raise ValueError("Segment configuration path must be contained and relative")
+        load_config(_flat_root_file(root, name, description="Segment configuration"), reference["sha256"])
+        captured_segments.append(dict(configuration=dict(path=name, sha256=reference["sha256"]),
+                                      artifactDirectory=item["artifactDirectory"]))
+    extractor = value.get("freshPitchExtractor") if schema == 3 else None
+    captured_extractor = {}
+    if extractor is not None:
+        if not isinstance(extractor, dict) or set(extractor) != {"path", "sha256"}:
+            raise ValueError("Fresh pitch extractor reference requires path and SHA-256")
+        extractor_path = _flat_root_file(root, extractor["path"], description="Fresh pitch extractor")
+        _verify_pitch_extractor(extractor_path, extractor["sha256"])
+        captured_extractor = dict(fresh_pitch_extractor=extractor_path,
+                                  fresh_pitch_extractor_sha256=extractor["sha256"])
     return dict(permission_config=root / permission["path"], permission_hash=permission["sha256"],
         label_config=root / labels["path"], label_hash=labels["sha256"], root=root,
         rights_review=references["rightsReview"], rights_policy=references["rightsPolicy"], rights_anchor=rights_anchor,
         label_review=references["labelReview"], label_policy=references["labelPolicy"], label_anchor=label_anchor,
-        seed=value["seed"], held_out_songs=value["heldOutSongs"])
+        seed=value["seed"], held_out_songs=value["heldOutSongs"], derived_segments=captured_segments,
+        **captured_extractor)
 
 
 def assemble_dataset_command(config: Path, expected_hash: str, root: Path, output: Path, *,

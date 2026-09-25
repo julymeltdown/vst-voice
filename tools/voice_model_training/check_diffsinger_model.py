@@ -18,9 +18,20 @@ def main():
     parser.add_argument("--check-onnx", action="store_true", help="Also serialize and execute the real encoder graph")
     parser.add_argument("--native-probe", type=Path, help="Also execute exported weights through the native probe")
     parser.add_argument("--vocoder-checkout", type=Path, help="Also run reviewed GAN epochs using a pinned trusted SingingVocoders checkout")
+    parser.add_argument("--production-worker", type=Path,
+                        help="Run captured acoustic and synthetic vocoder exports through this production worker")
+    parser.add_argument("--voicebank-cli", type=Path,
+                        help="Native bundle CLI paired with --production-worker")
+    parser.add_argument("--production-render-binary", type=Path,
+                        help="Native authoring-render integration binary paired with --production-worker")
     args = parser.parse_args()
     if args.native_probe is not None and not args.check_onnx:
         parser.error("--native-probe requires --check-onnx")
+    production_options = (args.production_worker, args.voicebank_cli, args.production_render_binary)
+    if any(value is not None for value in production_options) and not all(value is not None for value in production_options):
+        parser.error("--production-worker, --voicebank-cli and --production-render-binary must be provided together")
+    if args.production_worker is not None and (not args.check_onnx or args.vocoder_checkout is None):
+        parser.error("--production-worker requires --check-onnx and --vocoder-checkout")
     checkout = args.trusted_checkout.resolve(strict=True)
     def git(*arguments):
         return subprocess.check_output(["git", "-C", str(checkout), *arguments], text=True, timeout=10).strip()
@@ -135,7 +146,10 @@ def main():
     reviewed_run = check_reviewed_run(model, optimizer, objective=objective,
                                      model_metadata=dict(configuration=config, revision=REVISION),
                                      trusted_checkout=checkout, check_export=args.check_onnx, native_probe=args.native_probe,
-                                     vocoder_checkout=args.vocoder_checkout)
+                                     vocoder_checkout=args.vocoder_checkout,
+                                     production_worker=args.production_worker,
+                                     voicebank_cli=args.voicebank_cli,
+                                     production_render_binary=args.production_render_binary)
     passed = passed and reviewed_run["passed"]
     from tools.voice_model_training.export_adapter import check_deployment_bridge
     deployment_bridge = check_deployment_bridge(model, configuration=config, acoustic_profile=acoustic["profile"])

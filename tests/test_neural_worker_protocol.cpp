@@ -12,6 +12,7 @@
 #include "seam/neural_synthesis/diffsinger_inputs.hpp"
 #include "seam/core/sha256.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -240,6 +241,100 @@ TEST_CASE("neural melody tempo vibrato and gain match absolute compiled performa
   }
 }
 
+TEST_CASE("manual vibrato owns neural F0 over an accepted automatic pitch proposal without doubling") {
+  using namespace seam;
+  using namespace seam::neural_synthesis;
+  const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","a"]})";
+  ModelContract model{.modelId="proposal-vibrato-test",.modelVersion="1",
+      .modelContentHash=std::string(64U,'a'),.vocabularyHash=core::sha256Hex(json),.sampleRate=48000U};
+  const auto vocabulary=NeuralVocabulary::decode(json,model); CHECK(vocabulary);
+  if (!vocabulary) return;
+  domain::Project project{domain::ProjectId{1U},"Proposal and manual vibrato"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.durationTick=time::Tick{960},
+      .lyrics={{domain::LyricTokenId{4U},U"a",domain::Language::English},
+          {domain::LyricTokenId{6U},U"a",domain::Language::English}},
+      .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{480},.midiKey=60U,
+          .lyricTokenId=domain::LyricTokenId{4U},
+          .vibrato={.enabled=true,.startFraction=0.15F,.fadeInFraction=0.25F,
+              .fadeOutFraction=0.25F,.depthCents=22.0F,.periodMilliseconds=430.0F}},
+          {.id=domain::NoteId{7U},.startTick=time::Tick{480},.durationTick=time::Tick{480},
+          .midiKey=67U,.lyricTokenId=domain::LyricTokenId{6U},
+          .vibrato={.enabled=true,.startFraction=0.12F,.fadeInFraction=0.20F,
+              .fadeOutFraction=0.30F,.depthCents=31.0F,.periodMilliseconds=480.0F}}}};
+  const domain::SingerResourceIdentity resource{domain::SingerResourceKind::Neural,
+      "fixture-neural", "1", std::string(64U,'c')};
+  const domain::PronunciationIdentity pronunciation{domain::Language::English,
+      "fixture-resolver", "1", std::string(64U,'d'), std::string(64U,'e'), std::string(64U,'f')};
+  domain::PerformanceTake proposal{.id="accepted-auto-pitch",.sourceRegionId=region.id,
+      .capturedRevision=region.performance.revision,.resource=resource,.pronunciation=pronunciation,
+      .generatorId="fixture-automatic-performance",.generatorVersion="1",.seed=7U,
+      .range={time::Tick{0},time::Tick{960}},.state=domain::PerformanceProposalState::Proposed,
+      .lanes={{domain::PerformanceChannel::Pitch,{{time::Tick{0},6125.0},{time::Tick{480},6810.0}}}}};
+  region.performance.takes.push_back(proposal);
+  region.performance.accepted={{proposal.id,domain::PerformanceChannel::Pitch,domain::NoteId{5U},time::Tick{0}},
+      {proposal.id,domain::PerformanceChannel::Pitch,domain::NoteId{7U},time::Tick{0}}};
+  const std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true},
+      {.key={domain::NoteId{7U},0U},.symbol="a",.role=domain::PhonemeRole::Nucleus,.voiced=true}};
+  const auto compiled=synthesis::compileScorePerformance(project,region,48000U,phones);
+  if (!compiled) throw test::Failure{"accepted neural proposal did not compile: " + compiled.error().message};
+  auto withoutVibrato=region;
+  for (auto& note:withoutVibrato.notes) note.vibrato.enabled=false;
+  const auto proposalOnly=synthesis::compileScorePerformance(project,withoutVibrato,48000U,phones); CHECK(proposalOnly);
+  if (!proposalOnly) return;
+  auto withoutProposal=withoutVibrato;
+  withoutProposal.performance={};
+  const auto scoreOnly=synthesis::compileScorePerformance(project,withoutProposal,48000U,phones); CHECK(scoreOnly);
+  if (!scoreOnly) return;
+  const auto origin=compiled.value().notes().front().startFrame;
+  const auto end=compiled.value().notes().back().endFrame;
+  const auto prepared=prepareNeuralScoreRequest(205U,model,vocabulary.value(),compiled.value(),
+      phones,std::string(64U,'b'),origin,end,"SP"); CHECK(prepared);
+  if (!prepared) return;
+  const auto proposalOnlyOrigin=proposalOnly.value().notes().front().startFrame;
+  const auto proposalOnlyEnd=proposalOnly.value().notes().back().endFrame;
+  const auto proposalOnlyRequest=prepareNeuralScoreRequest(206U,model,vocabulary.value(),
+      proposalOnly.value(),phones,std::string(64U,'b'),proposalOnlyOrigin,proposalOnlyEnd,"SP");
+  CHECK(proposalOnlyRequest);
+  if (!proposalOnlyRequest) return;
+  bool proposalPitchObserved=false;
+  bool vibratoObserved=false;
+  double maximumProposalOffset=0.0;
+  for (auto frame=origin;frame<end;++frame) {
+    const auto actual=compiled.value().at(frame);
+    const auto proposalValue=proposalOnly.value().at(frame);
+    const auto scoreOnlyFrequency=scoreOnly.value().at(frame).scoreFrequencyHz;
+    CHECK(actual.scoreFrequencyHz.has_value());
+    CHECK(proposalValue.scoreFrequencyHz.has_value());
+    CHECK(scoreOnlyFrequency.has_value());
+    if (!actual.scoreFrequencyHz || !proposalValue.scoreFrequencyHz || !scoreOnlyFrequency) continue;
+    const auto index=static_cast<std::size_t>(frame-origin);
+    CHECK(prepared.value().f0Hz[index]==static_cast<float>(*actual.scoreFrequencyHz));
+    CHECK(proposalOnlyRequest.value().f0Hz[index]==static_cast<float>(*proposalValue.scoreFrequencyHz));
+    const auto expectedCents=actual.vibratoCents;
+    const auto measuredCents=1200.0*std::log2(*actual.scoreFrequencyHz / *scoreOnlyFrequency);
+    CHECK_NEAR(measuredCents,expectedCents,0.002);
+    const auto proposalCents=1200.0*std::log2(*proposalValue.scoreFrequencyHz / *scoreOnlyFrequency);
+    proposalPitchObserved=proposalPitchObserved || std::abs(proposalCents)>1.0;
+    maximumProposalOffset=std::max(maximumProposalOffset,std::abs(proposalCents));
+    vibratoObserved=vibratoObserved || std::abs(expectedCents)>1.0;
+  }
+  CHECK(proposalPitchObserved);
+  CHECK(maximumProposalOffset>100.0);
+  CHECK(vibratoObserved);
+  const auto acoustic=prepareDiffSingerAcousticInputs(prepared.value(),model,vocabulary.value(),10); CHECK(acoustic);
+  if (!acoustic) return;
+  std::size_t diffSingerFrame=0U;
+  for (const auto& span:prepared.value().conditioning->spans) {
+    const auto boundary=(span.endFrame+model.hopSize/2U)/model.hopSize;
+    for (;diffSingerFrame<boundary;++diffSingerFrame) {
+      const auto sample=std::clamp<std::uint64_t>(diffSingerFrame*model.hopSize+model.hopSize/2U,
+          span.startFrame,span.endFrame-1U);
+      CHECK(acoustic.value().f0Hz[diffSingerFrame]==prepared.value().f0Hz[static_cast<std::size_t>(sample)]);
+    }
+  }
+}
+
 TEST_CASE("neural vocabulary loads exact model-bound bytes and preserves explicit token order") {
   using namespace seam::neural_synthesis;
   const std::string json=R"({"formatId":"com.project-seam.neural-vocabulary","schemaVersion":1,"tokens":["SP","z","aa1","あ"]})";
@@ -334,6 +429,31 @@ TEST_CASE("neural score conditioning uses compiled timing and explicit silence w
   CHECK(std::abs(defaultedRequest.value().breathiness[4799]-0.4F)<1e-6F);
   CHECK(defaultedRequest.value().breathiness[4800]==0.0F);
   CHECK(defaultedRequest.value().breathiness[12000]==0.0F);
+  WorkerProtocolLimits basePayloadBudget;
+  basePayloadBudget.maximumFrameBytes = 20U + 12010U * 2U * sizeof(float);
+  const auto baseFits = prepareNeuralScoreRequest(110U,model,vocabulary.value(),
+      performance.value(),phones,std::string(64U,'b'),0,12010,"SP",basePayloadBudget);
+  CHECK(baseFits);
+  CHECK(baseFits.value().breathiness.empty());
+  const auto conditionedExceeds = prepareNeuralScoreRequest(111U,defaultedModel,
+      vocabulary.value(),performance.value(),phones,std::string(64U,'b'),0,12010,
+      "SP",basePayloadBudget);
+  CHECK(!conditionedExceeds);
+  CHECK(conditionedExceeds.error().code==core::ErrorCode::InvalidArgument);
+  CHECK(conditionedExceeds.error().message.find("breathiness")!=std::string::npos);
+  WorkerProtocolLimits breathinessPayloadBudget;
+  breathinessPayloadBudget.maximumFrameBytes = 20U + 12010U * 3U * sizeof(float);
+  const auto breathinessFits = prepareNeuralScoreRequest(112U,defaultedModel,
+      vocabulary.value(),performance.value(),phones,std::string(64U,'b'),0,12010,
+      "SP",breathinessPayloadBudget);
+  CHECK(breathinessFits);
+  CHECK(breathinessFits.value().breathiness.size()==12010U);
+  --breathinessPayloadBudget.maximumFrameBytes;
+  const auto breathinessOneByteOver = prepareNeuralScoreRequest(113U,defaultedModel,
+      vocabulary.value(),performance.value(),phones,std::string(64U,'b'),0,12010,
+      "SP",breathinessPayloadBudget);
+  CHECK(!breathinessOneByteOver);
+  CHECK(breathinessOneByteOver.error().code==core::ErrorCode::InvalidArgument);
   // Accepted breathiness overrides the prior only inside its destination span,
   // including zero; manual Replace owns even an empty (neutral) drawn curve.
   auto selected=region;

@@ -307,6 +307,116 @@ class ReviewTests(unittest.TestCase):
             bound = capture()
             (root / "audio.wav").write_bytes(audio[:-1])
             with self.assertRaises(ValueError): admit()
+            (root / "audio.wav").write_bytes(audio)
+
+            # Derived crops enter training only after both fresh parent-rights
+            # admission and an independent child-label review. Reassembly must
+            # reproduce the exact segment bytes and compare the reviewed score.
+            from tools.voice_model_training.__main__ import segment_command
+            rights_admission = admit()
+            child_config = dict(formatId="com.project-seam.voice-training-segment-config", schemaVersion=3,
+                source={key: source[key] for key in ("sourceId", "sourceSha256", "songId", "sessionId", "lineageId")},
+                sampleRate=48000, segmentId="child-source", startFrame=0, endFrame=32,
+                parentLabel=dict(sourceSha256=source["sourceSha256"], audioSha256=rights_admission["sources"][0]["audioSha256"],
+                                 label=label_config["labels"][0]["label"]),
+                parentScore=label_config["labels"][0]["score"], vocabulary=["a"], minimumConfidence=0.8)
+            child_config_bytes = json.dumps(child_config).encode()
+            (root / "child-segment.json").write_bytes(child_config_bytes)
+            child_digest = hashlib.sha256(child_config_bytes).hexdigest()
+            child_record = segment_command(root / "child-segment.json", child_digest, root / "audio.wav",
+                                           root / "derived-child")
+            child_source = dict(source, sourceId="child-source", path="derived-child/audio.wav",
+                                sourceSha256=child_record["sourceSha256"])
+            label_config["sources"].append(child_source)
+            label_config["labels"].append(dict(sourceSha256=child_record["sourceSha256"],
+                audioSha256=child_record["audioSha256"], label=child_record["label"]["label"],
+                score=child_record["label"]["score"]))
+            self.assertEqual(admit_annotation("child-label-admission.json").returncode, 0)
+            assembly["schemaVersion"] = 2
+            assembly["derivedSegments"] = [dict(configuration=dict(path="child-segment.json", sha256=child_digest),
+                                                 artifactDirectory="derived-child")]
+            assembly["labelConfig"]["sha256"] = hashlib.sha256((root / "labels.json").read_bytes()).hexdigest()
+            assembly["labelReview"]["path"] = "label-review.json"
+            assembly["labelReview"]["sha256"] = hashlib.sha256((root / "label-review.json").read_bytes()).hexdigest()
+            child_result = assemble_cli("with-derived-child.json")
+            self.assertEqual(child_result.returncode, 3, child_result.stderr)
+            child_snapshot = json.loads((root / "with-derived-child.json").read_bytes())
+            self.assertEqual({row["sourceId"] for row in child_snapshot["sources"]}, {"source", "child-source"})
+            self.assertEqual({row["label"]["sourceId"] for row in child_snapshot["labels"]}, {"source", "child-source"})
+            self.assertEqual(len(child_snapshot["bindings"]["derivedSegments"]), 1)
+            self.assertEqual(child_snapshot["bindings"]["split"]["counts"]["test"], 2,
+                             child_snapshot["bindings"]["split"])
+            record_path = root / "derived-child" / "segment.json"
+            segment_record_bytes = record_path.read_bytes()
+            record_path.write_bytes(segment_record_bytes.replace(b'"endFrame":32', b'"endFrame":31'))
+            self.assertEqual(assemble_cli("tampered-segment-record.json").returncode, 2)
+            self.assertFalse((root / "tampered-segment-record.json").exists())
+            record_path.write_bytes(segment_record_bytes)
+            refreshed_child = assemble_cli("with-derived-child-refresh.json")
+            self.assertEqual(refreshed_child.returncode, 3, refreshed_child.stderr)
+            self.assertEqual(json.loads((root / "with-derived-child-refresh.json").read_bytes())["datasetSha256"],
+                             child_snapshot["datasetSha256"])
+            tampered_child = dict(child_config, parentScore=dict(child_config["parentScore"], language="ko"))
+            tampered_bytes = json.dumps(tampered_child).encode()
+            (root / "child-segment.json").write_bytes(tampered_bytes)
+            assembly["derivedSegments"][0]["configuration"]["sha256"] = hashlib.sha256(tampered_bytes).hexdigest()
+            rejected_child = assemble_cli("tampered-derived-child.json")
+            self.assertEqual(rejected_child.returncode, 2)
+            self.assertFalse((root / "tampered-derived-child.json").exists())
+            (root / "child-segment.json").write_bytes(child_config_bytes)
+            assembly["derivedSegments"][0]["configuration"]["sha256"] = child_digest
+            extractor = root / "pitch-extractor-fixture"
+            extractor.write_text(f"#!{sys.executable}\n"
+                "import hashlib, io, json, sys, wave\n"
+                "payload = open(sys.argv[2], 'rb').read()\n"
+                "with wave.open(io.BytesIO(payload), 'rb') as source: rate, count = source.getframerate(), source.getnframes()\n"
+                "window = 128\n"
+                "while window < rate // 24: window *= 2\n"
+                "frames = [{'sourceFrame': i * 256, 'f0Hz': 220, 'confidence': 1.0, 'voiced': True} for i in range((count + 255) // 256)]\n"
+                "print(json.dumps({'formatId':'com.project-seam.training-pitch-features','schemaVersion':1,"
+                "'sourceSha256':hashlib.sha256(payload).hexdigest(),'sampleRate':rate,'frameCount':count,"
+                "'windowFrames':window,'hopSize':256,'minimumHz':60,'maximumHz':1200,'voicingThreshold':0.32,"
+                "'algorithm':'fft-autocorrelation-v1','coverage':'full-hop-zero-padded','pitchFrames':frames,"
+                "'trainingAdmitted':False,'releaseEligible':False}, sort_keys=True))\n")
+            extractor.chmod(0o700)
+            extractor_digest = hashlib.sha256(extractor.read_bytes()).hexdigest()
+            offgrid_config = dict(child_config, segmentId="offgrid-source", startFrame=1)
+            offgrid_bytes = json.dumps(offgrid_config).encode()
+            (root / "offgrid-segment.json").write_bytes(offgrid_bytes)
+            offgrid_digest = hashlib.sha256(offgrid_bytes).hexdigest()
+            offgrid_record = segment_command(root / "offgrid-segment.json", offgrid_digest, root / "audio.wav",
+                root / "derived-offgrid", fresh_pitch_extractor=extractor)
+            self.assertEqual(offgrid_record["schemaVersion"], 5)
+            label_config["sources"] = [row for row in label_config["sources"] if row["sourceId"] != "child-source"]
+            label_config["labels"] = [row for row in label_config["labels"]
+                                       if row["label"]["sourceId"] != "child-source"]
+            label_config["sources"].append(dict(source, sourceId="offgrid-source", path="derived-offgrid/audio.wav",
+                                                  sourceSha256=offgrid_record["sourceSha256"]))
+            label_config["labels"].append(dict(sourceSha256=offgrid_record["sourceSha256"],
+                audioSha256=offgrid_record["audioSha256"], label=offgrid_record["label"]["label"],
+                score=offgrid_record["label"]["score"]))
+            self.assertEqual(admit_annotation("offgrid-label-admission.json").returncode, 0)
+            assembly["schemaVersion"] = 3
+            assembly["derivedSegments"] = [dict(configuration=dict(path="offgrid-segment.json", sha256=offgrid_digest),
+                                                 artifactDirectory="derived-offgrid")]
+            assembly["freshPitchExtractor"] = dict(path=extractor.name, sha256=extractor_digest)
+            assembly["labelConfig"]["sha256"] = hashlib.sha256((root / "labels.json").read_bytes()).hexdigest()
+            assembly["labelReview"]["sha256"] = hashlib.sha256((root / "label-review.json").read_bytes()).hexdigest()
+            offgrid_result = assemble_cli("with-offgrid-child.json")
+            self.assertEqual(offgrid_result.returncode, 3, offgrid_result.stderr)
+            offgrid_snapshot = json.loads((root / "with-offgrid-child.json").read_bytes())
+            self.assertEqual(len(offgrid_snapshot["sources"]), 2)
+            self.assertEqual(offgrid_snapshot["bindings"]["derivedSegments"][0]["freshPitchExtractorSha256"],
+                             extractor_digest)
+            assembly["freshPitchExtractor"] = None
+            self.assertEqual(assemble_cli("offgrid-without-extractor.json").returncode, 2)
+            self.assertFalse((root / "offgrid-without-extractor.json").exists())
+            assembly["freshPitchExtractor"] = dict(path=extractor.name, sha256=extractor_digest)
+            extractor_bytes = extractor.read_bytes()
+            extractor.write_bytes(extractor_bytes + b"\n")
+            self.assertEqual(assemble_cli("changed-offgrid-extractor.json").returncode, 2)
+            self.assertFalse((root / "changed-offgrid-extractor.json").exists())
+            extractor.write_bytes(extractor_bytes)
 
 
 if __name__ == "__main__":

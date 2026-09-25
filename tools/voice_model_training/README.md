@@ -102,10 +102,45 @@ actual encoder and DDPM diffusion into one `tokens/durations/f0/steps → mel` g
 A typed non-shallow entry avoids upstream unannotated optional-argument JIT errors;
 its seeded Torch outputs must match upstream exactly at steps 1, 4 and 8 before
 serialization. Graph merging preserves enclosing initializer references inside
-If/Loop bodies. The 845063-byte merged graph passed SEAM offline inspection and
-ONNX Runtime execution at 3/16/23 frames and steps 4/1/8. Outputs are finite with
+If/Loop bodies. The 845589-byte merged graph passed SEAM offline inspection and
+ONNX Runtime execution at frame/step pairs 16/1, 3/4 and 23/8. Outputs are finite with
 the expected [1,T,80] shape. Stochastic cross-runtime numerical parity is not yet
 verified; no vocoder, retained model bundle or native singer render is claimed.
+The complete-graph diagnostic now also creates a second fresh ONNX Runtime
+session for an identical request and requires byte-exact mel replay. The pinned
+synthetic model passed at 16 frames/1 step with maximum absolute difference 0.
+This verifies the one-request-per-session seeded ONNX behavior used by the
+worker; it is not PyTorch-versus-ONNX random-stream parity or a native installed
+worker/voice-quality result.
+When passed `--native-probe`, the same exported graph is also admitted and run by
+the C++ ONNX Runtime probe. It now builds a second native session for one
+identical request and requires exact replay; the captured graph hash and native
+graph-inspection boundary remain enforced. This is a diagnostic executable,
+not an installed bundle/worker acceptance run.
+
+For the next integration boundary, the diagnostic accepts
+`--production-worker PATH --voicebank-cli PATH --production-render-binary PATH`
+together with `--check-onnx` and `--vocoder-checkout TRUSTED_CHECKOUT`. It exports
+the synthetic trained acoustic and vocoder graphs, composes their receipt-bound
+bundle, executes two direct production-worker requests, then renders a saved native
+project through the normal authoring renderer and exports WAV audio. It requires
+native bundle inspection, response/request identity binding, finite non-silent PCM
+from both processes, and an actual project-export WAV. It reports PCM differences
+instead of requiring byte-exact replay because the exported diffusion sampler
+draws random noise per worker session. Example:
+
+    python -m tools.voice_model_training.check_diffsinger_model \
+      build/neural-runtime/DiffSinger-source --check-onnx \
+      --native-probe build/release/seam_onnx_runtime_probe \
+      --vocoder-checkout build/neural-runtime/singing-vocoders-source \
+      --production-worker build/release/seam_neural_worker \
+      --voicebank-cli build/release/seam_voicebank_cli \
+      --production-render-binary build/release/seam_neural_production_render
+
+All training sources in this check are generated oscillators, with fixture-only
+reviews. A passing worker replay proves the captured model graphs execute through
+the production transport and bundle path; it does not prove lawful singer-source
+rights, lyric supervision, voice quality, singer qualification or release GO.
 
 The optional `check_diffsinger_model ... --check-onnx` diagnostic now exports actual
 trained duration-encoder weights and executes the graph in ONNX Runtime 1.30.0.
@@ -342,8 +377,28 @@ decreased from 0.9528179 to 0.9277189; inference returned finite `[1,16,8]` mel.
 Fixed-noise repetition is an optimization sanity check, not held-out evaluation.
 Upstream source remains unchanged. The environment follows its NumPy <2 and
 librosa <0.10 constraints; setuptools 75.8.0 supplies the legacy pkg_resources
-import required by librosa 0.9.2. Top-level dependency pins are present; this is
-not yet a fully hash-locked production training environment.
+import required by librosa 0.9.2. Training receipts now include a bounded
+content fingerprint of the active Python executable, runtime identity, and each
+installed distribution's files; exact resume compares this snapshot and refuses
+to continue when it changes. The composite production-check environment is
+hash-locked for macOS Apple Silicon and Python 3.11 in
+`requirements-training-macos-arm64.lock.txt`. It includes the acoustic/vocoder
+training and ONNX export-check dependencies. On a matching host, create and
+populate a clean venv with:
+
+```sh
+uv venv --python 3.11 build/neural-runtime/diffsinger-repro
+uv pip sync --python build/neural-runtime/diffsinger-repro/bin/python \
+  --require-hashes --strict \
+  tools/voice_model_training/requirements-training-macos-arm64.lock.txt
+build/neural-runtime/diffsinger-repro/bin/python -m pip check
+```
+
+The lock resolves only binary distributions and pins hashes for every accepted
+artifact. It is intentionally platform-scoped; it is not a Windows, Intel Mac,
+or Linux lock. Receipts fingerprint installed contents at runtime, while the
+lock controls package resolution and artifact integrity. Neither proves that a
+corpus is lawful or that a trained voice is musically qualified.
 
 `diffsinger_objective.DiffSingerDDPMObjective("l1"|"l2")` now adapts the inspected
 upstream training call (`tokens`, `mel2ph`, `f0`, `gt_mel`, `infer=False`) and its
@@ -1037,10 +1092,28 @@ rejects invalid input or an existing output. Existing snapshots are never replac
 The earliest review expiry applies to the result. Later consumers must revalidate
 authority and source bytes; the snapshot is not a permanent admission token.
 
+Schema-2 dataset configurations may include `derivedSegments`, a bounded list
+of `{configuration: {path, sha256}, artifactDirectory}` entries for hop-aligned
+crops. Schema 3 retains that list and adds `freshPitchExtractor`, either `null`
+or a `{path, sha256}` file reference to the explicitly trusted native extractor
+(maximum 256 MiB and executable). Its exact bytes are verified at load and
+around every crop use.
+Each referenced schema-3 crop must bind to a directly reviewed parent source and
+the exact parent label/score in the separately reviewed label configuration. The
+artifact directory must already contain only `audio.wav` and `segment.json`;
+assembly re-runs crop generation against the current rights review, verifies the
+captured PCM/segment record, compares child labels and score to the signed label
+configuration, and adds the child with inherited song/session/lineage before the
+deterministic split. A derived clip does not receive independent rights from its
+parent. Child labels still require their own signed annotation review. Off-grid
+starts are re-extracted using the captured extractor; its digest participates in
+dataset identity. Never select an untrusted executable: process supervision is
+bounded but is not a sandbox.
+
 This command does not train, export, qualify a singer, or authorize release.
-`trainingAdmitted` and `releaseEligible` remain false even on exit 0. The current
-join accepts directly reviewed sources; a separate derived-clip admission join
-is not yet implemented.
+`trainingAdmitted` and `releaseEligible` remain false even on exit 0. Both direct
+sources and revalidated derived clips remain subject to missing-partition,
+duplicate-selection, lawful-source, model-quality, and human-review gates.
 
 ### Captured procedural teacher and real vocoder evaluation (2026-09-19)
 
@@ -1219,6 +1292,13 @@ API cancellation are cooperative between operations, not hard process preemption
 the run deadline begins after model initialization. Ctrl-C exits 130. Invalid input
 or a failed attempt exits 2. Earlier completed checkpoints remain; partial files
 without a completion receipt must not be resumed or promoted.
+
+Each complete and partial vocoder checkpoint also binds a bounded content
+fingerprint of the active Python executable/runtime and installed distribution
+files. Both resume modes require an exact match; changing an installed package
+rejects before restoration. This complements the platform-specific package lock
+above, but does not qualify the corpus, prove cross-hardware bitwise identity or
+approve the singer.
 
 Exit 0 means training/persistence/evaluation executed, **not** that reconstruction
 passed or a singer is qualified. Check the retained reconstruction result, including

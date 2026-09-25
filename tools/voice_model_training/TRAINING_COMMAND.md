@@ -64,6 +64,27 @@ This entry point initializes or resumes a DiffSinger DDPM model and runs complet
 train-partition epochs. It is a usable training execution primitive, not a finished
 model-production workflow. It does not export
 ONNX, run a vocoder, produce a singing WAV or confer release approval.
+Each run receipt binds a bounded content fingerprint of the Python runtime and
+installed distribution files. Exact resume requires the same fingerprint, so a
+package update or in-place environment change cannot silently continue the run.
+The capture hashes the installed files at startup. For the supported local
+training-check target (macOS Apple Silicon, Python 3.11), use the composite
+hash-locked dependency set in
+`requirements-training-macos-arm64.lock.txt`; it covers acoustic/vocoder
+training and ONNX export checks. Rebuild in a new environment from the repository
+root with:
+
+```sh
+uv venv --python 3.11 build/neural-runtime/diffsinger-repro
+uv pip sync --python build/neural-runtime/diffsinger-repro/bin/python \
+  --require-hashes --strict \
+  tools/voice_model_training/requirements-training-macos-arm64.lock.txt
+build/neural-runtime/diffsinger-repro/bin/python -m pip check
+```
+
+This lock is target-specific, contains hashes for binary artifacts, and is not a
+cross-platform lock. Runtime fingerprinting detects installed-content drift;
+neither mechanism proves corpus rights, model quality, or release eligibility.
 
 ## Inputs and invocation
 
@@ -73,7 +94,7 @@ Run from the repository root using the isolated model environment described in
 is not sandboxed; do not use an untrusted checkout merely because Git reports clean.
 
 ```sh
-build/neural-runtime/diffsinger-model-env/bin/python -m tools.voice_model_training.train \
+build/neural-runtime/diffsinger-repro/bin/python -m tools.voice_model_training.train \
   --training-config /absolute/run/training.json --training-sha256 TRAINING_FILE_SHA256 \
   --dataset-config /absolute/data/dataset.json --dataset-sha256 DATASET_CONFIG_FILE_SHA256 \
   --source-root /absolute/data \

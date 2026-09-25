@@ -1,0 +1,6 @@
+# Composite model-production environment: acoustic/vocoder training plus ONNX export checks.
+-r requirements-vocoder-model-check.txt
+-r requirements-onnx-export-check.txt
+
+# Keep the installer identity reproducible too; training receipts fingerprint every installed dist.
+pip==26.0.1

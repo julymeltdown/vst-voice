@@ -212,7 +212,7 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       .sampleRate=model.sampleRate,.channels=model.outputChannels,.frameCount=static_cast<std::uint64_t>(end-origin),
       .f0Hz={},.dynamics={},.conditioning=conditioning.value(),.vocabularySize=vocabulary.size()};
   request.f0Hz.resize(static_cast<std::size_t>(request.frameCount)); request.dynamics.resize(request.f0Hz.size());
-  std::vector<float> breathiness(static_cast<std::size_t>(request.frameCount), 0.0F);
+  std::vector<float> breathiness;
   bool anyBreathiness = false;
   for (const auto& span:request.conditioning->spans) {
     const auto active=activeStarts.find(span.startFrame);
@@ -240,8 +240,21 @@ core::Result<NeuralRequest> prepareNeuralScoreRequest(
       // cannot: use actual time and never borrow an overlapping neighbor's lane.
       const auto amount=value.breathinessIsExplicit
           ?std::clamp(value.breathiness,0.0F,1.0F):active->second.defaultBreathiness;
-      breathiness[frame]=amount;
-      if (amount != 0.0F) anyBreathiness = true;
+      if (amount != 0.0F) {
+        if (breathiness.empty()) {
+          constexpr std::size_t minimumFrameHeaderBytes = 20U;
+          constexpr std::size_t breathinessFrameBytes = 3U * sizeof(float);
+          if (limits.maximumFrameBytes < minimumFrameHeaderBytes ||
+              request.frameCount > (limits.maximumFrameBytes - minimumFrameHeaderBytes) /
+                  breathinessFrameBytes) {
+            return core::failure<NeuralRequest>(core::ErrorCode::InvalidArgument,
+                "Neural score request with breathiness exceeds frame byte budget");
+          }
+          breathiness.resize(static_cast<std::size_t>(request.frameCount), 0.0F);
+        }
+        anyBreathiness = true;
+      }
+      if (!breathiness.empty()) breathiness[frame]=amount;
     }
   }
   // Keep the original phone owners until every sample-domain control has been

@@ -36,7 +36,11 @@ def train_reviewed_epoch(model, optimizer, *, dataset_inputs: dict,
     required = {"permission_config", "permission_hash", "label_config", "label_hash",
                 "root", "rights_review", "rights_policy", "rights_anchor",
                 "label_review", "label_policy", "label_anchor", "seed", "held_out_songs"}
-    if not isinstance(dataset_inputs, dict) or set(dataset_inputs) != required:
+    optional = {"derived_segments", "fresh_pitch_extractor", "fresh_pitch_extractor_sha256"}
+    if (not isinstance(dataset_inputs, dict) or not required <= set(dataset_inputs)
+            or set(dataset_inputs) - required - optional
+            or (("fresh_pitch_extractor" in dataset_inputs)
+                != ("fresh_pitch_extractor_sha256" in dataset_inputs))):
         raise ValueError("Training requires the complete captured dataset admission inputs")
     if (not isinstance(run_metadata, dict) or (cancelled is not None and not callable(cancelled))
             or (on_step is not None and not callable(on_step))):

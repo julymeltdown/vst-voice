@@ -107,6 +107,25 @@ The bounded independent approval is recorded above against the exact code commit
 
 ## Remaining scope
 
+### Neural request payload budget correction (2026-09-25)
+
+Request preparation no longer allocates a breathiness plane for a score that
+does not produce any nonzero breathiness. When a nonzero model prior or
+accepted/manual value first appears, preparation checks the configured frame
+byte ceiling for the third Float32 plane before allocating it. The base F0 and
+dynamics planes retain their two-Float32-per-frame preflight. Tests exercise a
+base-only exact budget, a breathiness payload exactly at its three-plane
+boundary, and the one-byte-under boundary, which fails before the additional
+plane is allocated. Release `seam_neural_worker_protocol_tests`,
+`seam_neural_render_tests`, `seam_neural_render_workflow_tests`, and both
+production-render CTest journeys pass (5/5); the three available Debug targets
+(`seam_neural_worker_protocol_tests`, `seam_neural_render_tests`, and
+`seam_neural_render_workflow_tests`) pass (3/3). The Debug configuration does
+not define the production-render executable, so those two journeys are Release
+evidence only. This tightens bounded request preparation only; neural
+control-effect, singer-quality and U37/U39/Beta GO qualification remain
+separate.
+
 StyleBlend remains unsupported by this compiler until paired style resources
 and their renderer semantics exist. This increment does not create a new
 performance generator or train a neural model, add timbral algorithms to sample
