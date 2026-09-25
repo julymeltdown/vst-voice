@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "developmentOnly": true,
+  "assets": [
+    {
+      "path": "emo/portrait.png",
+      "role": "portrait",
+      "size": [
+        768,
+        768
+      ],
+      "sha256": "1469593c48a0b5d4f8c4790df3399f79511ff5d8ca296f430185800df64f4754",
+      "sourceSha256": "b3873ff6d69bc5dbc2f523630d10c861762317a408a737a33ab2ab9a89e68ae4",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "scene/portrait.png",
+      "role": "portrait",
+      "size": [
+        768,
+        768
+      ],
+      "sha256": "8774f44a9bd729921be96dff9b5e223957388af600046504eb74610da91d1576",
+      "sourceSha256": "b433c440f451b72607a6e0d74c9dafc9ff75dfca1dc33e7d69b3735ddd1aff51",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "emo/stage.png",
+      "role": "stage",
+      "size": [
+        362,
+        1152
+      ],
+      "sha256": "da9a56a047b0327aa28b18004ac7be74c96bcf351b1e1cae57305ab2903d8409",
+      "sourceSha256": "ae2263a5a349aaeb7e3c2ad8f0132ce80a115b5aa3eea59e2d1b9201ae11c9b0",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "scene/stage.png",
+      "role": "stage",
+      "size": [
+        354,
+        1152
+      ],
+      "sha256": "db0e843046a81c85a08d1b37bde2cfcae4ef6f6aef369958af244fd36f22c3c3",
+      "sourceSha256": "987bb3467b29f45063b038fde1494e24710bcf1b0bc75f437980698083452047",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "emo/wordmark.png",
+      "role": "wordmark",
+      "size": [
+        828,
+        208
+      ],
+      "sha256": "a2b8a3d828503ef3680b4a5f650e58b91fafe46f4e273d5f8b0a224587bceec7",
+      "sourceSha256": "9cb8f0b24725b2b25019df0db6fd46f1969c7f140df3be25df2fc388b9d848df",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "scene/wordmark.png",
+      "role": "wordmark",
+      "size": [
+        805,
+        208
+      ],
+      "sha256": "532ad7d0784f2b90bff46b07a760c439ac6f1c18febce4e02312622821dff544",
+      "sourceSha256": "540b7c90bfdcb4e443c6ff60ffce30d962c158f8b63d8fdface965b5ac683382",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    }
+  ]
+}

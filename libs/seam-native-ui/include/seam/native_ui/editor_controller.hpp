@@ -354,6 +354,13 @@ public:
                             std::optional<domain::Language> language = std::nullopt);
 
   void resize(double logicalWidth, double logicalHeight) noexcept;
+  // A hosting shell (the EMO/SCENE SING workspace) owns every surface around the ruler and the
+  // piano roll. While a hosted grid is set, pointer input reaches only the ruler and the piano roll
+  // above pianoBottom (window coordinates); the legacy dock, diagnostic strip, export strip and
+  // technical lanes cannot be hit by points the shell forwards. std::nullopt restores the legacy
+  // window geometry.
+  void setHostedGrid(std::optional<double> pianoBottom) noexcept { hostedPianoBottom_ = pianoBottom; }
+  [[nodiscard]] std::optional<double> hostedGrid() const noexcept { return hostedPianoBottom_; }
   [[nodiscard]] core::Result<void> pointerDown(const PointerEvent& event);
   [[nodiscard]] core::Result<void> pointerMove(const PointerEvent& event);
   [[nodiscard]] core::Result<void> pointerUp(const PointerEvent& event);
@@ -492,6 +499,8 @@ private:
   };
 
   [[nodiscard]] ui::Point modelPoint(ui::Point windowPoint) const noexcept;
+  // Window x of tick zero's column origin: the legacy keyboard edge, or the hosted viewport's.
+  [[nodiscard]] double timelineOriginX() const noexcept;
   [[nodiscard]] std::optional<ui::Rect> noteWindowBounds(domain::NoteId noteId) const;
   [[nodiscard]] std::optional<domain::PitchAutomationPoint> pitchPointAt(
       ui::Point point, double automationTop, double automationHeight) const;
@@ -728,6 +737,7 @@ private:
   std::optional<authoring::ExportResult> lastExport_;
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
+  std::optional<double> hostedPianoBottom_;
   double playheadPixel_{0.0};
   time::Tick playheadTick_{0};
   std::string characterName_;

@@ -3677,6 +3677,12 @@ ui::Point NativeEditorController::modelPoint(ui::Point windowPoint) const noexce
   return ui::Point{windowPoint.x, windowPoint.y - layout_.contentTop()};
 }
 
+double NativeEditorController::timelineOriginX() const noexcept {
+  if (!hostedPianoBottom_) return layout_.keyboardWidth;
+  const auto& viewport = pianoRoll_.viewport();
+  return viewport.bounds.x + viewport.keyboardWidth;
+}
+
 void NativeEditorController::repaint() const {
   if (callbacks_.requestRepaint) callbacks_.requestRepaint();
 }
@@ -3934,7 +3940,8 @@ core::Result<void> NativeEditorController::pointerDown(
     }
     return core::success();
   }
-  if (!sampleMicroscopeOpen() && callbacks_.reviewPhonemeBindings && callbacks_.rebindPhonemeOverride &&
+  if (!hostedPianoBottom_ && !sampleMicroscopeOpen() && callbacks_.reviewPhonemeBindings &&
+      callbacks_.rebindPhonemeOverride &&
       event.button == PointerButton::Left && layout_.phonemeReviewOpenBounds(logicalWidth_, logicalHeight_).contains(event.position)) {
     return openPhonemeReview();
   }
@@ -3997,7 +4004,7 @@ core::Result<void> NativeEditorController::pointerDown(
   if (event.button != PointerButton::Left) return core::success();
   const auto diagnosticsBounds = layout_.diagnosticBounds(
       logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U);
-  if (diagnosticsBounds.contains(event.position) &&
+  if (!hostedPianoBottom_ && diagnosticsBounds.contains(event.position) &&
       !diagnosticPanel_.entries().empty()) {
     const auto& diagnostic = diagnosticPanel_.entries().front().diagnostic;
     const auto presentation = presentDiagnostic(diagnostic);
@@ -4013,7 +4020,7 @@ core::Result<void> NativeEditorController::pointerDown(
     }
     return core::success();
   }
-  if (exportCancellable(exportProgress_.state) &&
+  if (!hostedPianoBottom_ && exportCancellable(exportProgress_.state) &&
       exportProgress_.totalFiles != 0U &&
       layout_.exportCancelBounds(logicalWidth_, logicalHeight_)
           .contains(event.position)) {
@@ -4059,7 +4066,7 @@ core::Result<void> NativeEditorController::pointerDown(
       return core::success();
     }
   }
-  if (!voicebankBrowserVisible_ && !audioSettings_.visible &&
+  if (!hostedPianoBottom_ && !voicebankBrowserVisible_ && !audioSettings_.visible &&
       !supportView.visible &&
       session_.project().settings().characterDisplay ==
           domain::CharacterDisplayMode::Off &&
@@ -4315,7 +4322,7 @@ core::Result<void> NativeEditorController::pointerDown(
   if (event.position.y >= layout_.toolbarHeight &&
       event.position.y < layout_.contentTop()) {
     const auto tick = pianoRoll_.timeline().pixelToTick(
-        std::max(0.0, event.position.x - layout_.keyboardWidth));
+        std::max(0.0, event.position.x - timelineOriginX()));
     if (event.modifiers.shift) {
       if (!loopAnchorTick_.has_value()) {
         loopAnchorTick_ = tick;
@@ -4352,7 +4359,8 @@ core::Result<void> NativeEditorController::pointerDown(
                            layout_.exportHeight(state.exportProgress.totalFiles != 0U);
   const auto technical = resolveEditorTechnicalLaneHeights(
       state, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
-  const auto pianoBottom = technical.pianoBottom;
+  // A hosted grid has no technical lanes below it: every lane band starts past its bottom edge.
+  const auto pianoBottom = hostedPianoBottom_.value_or(technical.pianoBottom);
   const auto phonemeHeight = technical.values[0U];
   const auto unitHeight = technical.values[1U];
   const auto seamHeight = technical.values[2U];
@@ -4461,7 +4469,7 @@ core::Result<void> NativeEditorController::pointerDown(
     }
     if (!callbacks_.upsertPitchPoint) return core::success();
     auto tick = pianoRoll_.timeline().pixelToTick(
-        std::max(0.0, event.position.x - layout_.keyboardWidth));
+        std::max(0.0, event.position.x - timelineOriginX()));
     if (session_.project().settings().snapEnabled) {
       tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
     }
@@ -4485,7 +4493,7 @@ core::Result<void> NativeEditorController::pointerDown(
       event.position.y < seamTop + seamHeight) {
     auto* region = session_.project().findRegion(regionId_);
     if (region == nullptr || region->notes.empty()) return core::success();
-    const auto localX = event.position.x - layout_.keyboardWidth;
+    const auto localX = event.position.x - timelineOriginX();
     const auto tick = pianoRoll_.timeline().pixelToTick(localX);
     const auto nearest = std::min_element(
         region->notes.begin(), region->notes.end(),
@@ -5074,7 +5082,7 @@ core::Result<void> NativeEditorController::pointerMove(
   }
   if (dragMode_ == DragMode::RulerSeek) {
     const auto tick = pianoRoll_.timeline().pixelToTick(
-        std::max(0.0, event.position.x - layout_.keyboardWidth));
+        std::max(0.0, event.position.x - timelineOriginX()));
     if (callbacks_.seekTick) {
       const auto result = callbacks_.seekTick(tick);
       if (!result) {
@@ -5203,7 +5211,7 @@ core::Result<void> NativeEditorController::pointerUp(
                                "Pitch automation region is missing");
       } else {
         auto tick = pianoRoll_.timeline().pixelToTick(
-            std::max(0.0, dragCurrent_.x - layout_.keyboardWidth));
+            std::max(0.0, dragCurrent_.x - timelineOriginX()));
         tick = std::clamp(tick, time::Tick{0}, region->durationTick);
         if (session_.project().settings().snapEnabled) {
           tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
@@ -5259,7 +5267,7 @@ core::Result<void> NativeEditorController::pointerUp(
       } else {
         const auto absoluteStart = region->startTick + note->startTick;
         const auto tick = pianoRoll_.timeline().pixelToTick(
-            std::max(0.0, dragCurrent_.x - layout_.keyboardWidth));
+            std::max(0.0, dragCurrent_.x - timelineOriginX()));
         const auto seconds = session_.project().tempoMap().secondsAt(tick) -
                              session_.project().tempoMap().secondsAt(absoluteStart);
         const auto micros = std::clamp(
@@ -5851,7 +5859,7 @@ void NativeEditorController::scroll(double deltaX, double deltaY,
   }
   if (modifiers.control || modifiers.command) {
     pianoRoll_.timeline().zoomAround(
-        std::max(0.0, anchor.x - layout_.keyboardWidth),
+        std::max(0.0, anchor.x - timelineOriginX()),
         deltaY < 0.0 ? 1.12 : 0.89);
   } else {
     pianoRoll_.timeline().panPixels(deltaX + deltaY);
@@ -6823,7 +6831,7 @@ float NativeEditorController::expressionValueAtPlayhead() const {
 
 time::Tick NativeEditorController::expressionTickAt(double x) const {
   const auto* region = session_.project().findRegion(regionId_);
-  auto tick = pianoRoll_.timeline().pixelToTick(std::max(0.0, x - layout_.keyboardWidth));
+  auto tick = pianoRoll_.timeline().pixelToTick(std::max(0.0, x - timelineOriginX()));
   if (region != nullptr) tick = std::clamp(tick, time::Tick{0}, region->durationTick);
   if (session_.project().settings().snapEnabled) {
     tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
