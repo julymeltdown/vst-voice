@@ -295,6 +295,35 @@ class CompactInspectorGeometryTests(unittest.TestCase):
 
 
 
+
+
+class BuildBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.build = Path(tempfile.mkdtemp(prefix="seam-build-test-"))
+        (self.build / "build.ninja").write_text("")
+        self.app = self.build / "Project SEAM.app/Contents/MacOS/Project SEAM"
+
+    def test_no_build_is_recorded_as_unverified(self):
+        result = PACKET.build_app(self.app, skip=True)
+        self.assertFalse(result["builtBeforeCapture"])
+        self.assertIn("unverified", result["sourceBinding"])
+
+    def test_the_app_is_built_from_the_tree_before_capture(self):
+        done = subprocess.CompletedProcess([], 0, "[1/2] Building CXX object a.o\n[2/2] Linking CXX executable app\n", "")
+        with mock.patch.object(PACKET.subprocess, "run", return_value=done) as run:
+            result = PACKET.build_app(self.app, skip=False)
+        self.assertEqual(run.call_args.args[0], ["ninja", "-C", str(self.build)])
+        self.assertTrue(result["builtBeforeCapture"])
+        self.assertEqual(result["stepsPerformed"], 2)
+
+    def test_a_failed_build_stops_the_packet(self):
+        failed = subprocess.CompletedProcess([], 1, "FAILED: a.o\n", "error")
+        with mock.patch.object(PACKET.subprocess, "run", return_value=failed):
+            with self.assertRaises(PACKET.PacketError):
+                PACKET.build_app(self.app, skip=False)
+
+
+
 class FakeClock:
     def __init__(self):
         self.now = 0.0

@@ -140,6 +140,28 @@ def hash_tree(root: Path) -> dict[str, str]:
     }
 
 
+def build_app(app: Path, skip: bool) -> dict[str, Any]:
+    """Builds the app's own build directory before capturing, so the binary is a build of the
+    recorded source tree by construction (a no-op when it already is).
+
+    HEAD alone does not say which tree a binary came from, and a ninja dry run cannot say either:
+    its glob re-check always reports a CMake re-run and stops listing there."""
+    build_dir = next((parent for parent in app.parents if (parent / "build.ninja").is_file()), None)
+    relative = (None if build_dir is None else
+                os.path.relpath(build_dir, ROOT) if build_dir.is_relative_to(ROOT) else str(build_dir))
+    if skip or build_dir is None:
+        return {"buildDir": relative, "builtBeforeCapture": False,
+                "sourceBinding": "unverified (" + ("--no-build" if skip else "no build.ninja above the app") + ")"}
+    completed = subprocess.run(["ninja", "-C", str(build_dir)], capture_output=True, text=True,
+                               check=False)
+    if completed.returncode != 0:
+        raise PacketError(f"building {relative} failed:\n{completed.stdout[-2000:]}{completed.stderr[-1000:]}")
+    steps = [line for line in completed.stdout.splitlines()
+             if " Building " in line or " Linking " in line]
+    return {"buildDir": relative, "builtBeforeCapture": True, "stepsPerformed": len(steps),
+            "sourceBinding": "built from the recorded source tree immediately before capture"}
+
+
 def environment_identity() -> dict[str, Any]:
     return {
         "macOS": run_text(["sw_vers", "-productVersion"]),
@@ -840,6 +862,9 @@ def main() -> int:
     parser.add_argument("--overrun-ms", type=int, default=60000,
                         help="how long past its auto-close a capture may take before its app is "
                              "killed (one deadline for startup, window capture and shutdown)")
+    parser.add_argument("--no-build", action="store_true",
+                        help="capture the existing binary without building it first (the manifest "
+                             "then records the source binding as unverified)")
     args = parser.parse_args()
     args.app = args.app.resolve()
     args.voicebank_root = args.voicebank_root.resolve()
@@ -851,6 +876,7 @@ def main() -> int:
         if not required.exists():
             raise PacketError(f"missing: {required}")
     source = source_identity()
+    build = build_app(args.app, args.no_build)
     out = (args.output or ROOT / "build/evidence/ui-fidelity" / source["candidate"]).resolve()
     if out.exists() and any(out.iterdir()):
         raise PacketError(f"output must be empty: {out}")
@@ -902,6 +928,7 @@ def main() -> int:
         "candidate": source["candidate"],
         "source": source,
         "binary": {"path": os.path.relpath(args.app, ROOT), "sha256": sha256_file(args.app)},
+        "build": build,
         "environment": environment_identity(),
         "backend": next((r["log"].get("window_backend") for r in records if r.get("log")), "unknown"),
         "deviceScale": next((r["geometry"]["deviceScale"] for r in records if "geometry" in r), None),
