@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "id": "seam-ui-fidelity-v1",
+  "baselineCommit": "7e23fb6041fd3e84995d9841165f792ee769c706",
+  "status": "specification-only",
+  "nativeVisualMatch": "NOT_RUN",
+  "authority": "docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md",
+  "references": [
+    {
+      "id": "emo",
+      "path": "docs/design/concepts/concept-emo-sing-2026-09-25.png",
+      "sha256": "62ad02f76b7d80921cb18e59d28d5b4d897f2ac19561216987d1ff36bbf0bc16",
+      "size": [1672, 941],
+      "approximateFrameCrop": [25, 29, 1623, 886]
+    },
+    {
+      "id": "scene",
+      "path": "docs/design/concepts/concept-scene-sing-2026-09-25.png",
+      "sha256": "803c7031eeba3d1e30954dc9f19d1045bca0c51c44c33972a2c8256ae3125476",
+      "size": [1672, 941],
+      "approximateFrameCrop": [72, 24, 1528, 892]
+    },
+    {
+      "id": "protagonist",
+      "path": "docs/design/references/protagonist-reference-sheet-2026-09-25.png",
+      "sha256": "63df5a68c4429d41fb1d40fe2e2008c9263e09f521da82ac185b3f8ec85cad4f",
+      "size": [1055, 1491]
+    }
+  ],
+  "canonical": {
+    "logicalSize": [1600, 900],
+    "uiZoom": 1,
+    "deviceScales": [1, 2],
+    "regionTolerancePoints": 2,
+    "regions": [
+      {"id": "header", "parent": "client", "rect": [16, 16, 1568, 80]},
+      {"id": "wordmark", "parent": "header", "rect": [32, 32, 208, 48]},
+      {"id": "workspaceTabs", "parent": "header", "rect": [264, 24, 400, 64]},
+      {"id": "modeSwitch", "parent": "header", "rect": [720, 42, 132, 28]},
+      {"id": "transport", "parent": "header", "rect": [880, 34, 432, 44]},
+      {"id": "outputMeter", "parent": "header", "rect": [1336, 34, 160, 44]},
+      {"id": "settings", "parent": "header", "rect": [1528, 40, 32, 32]},
+      {"id": "editor", "parent": "client", "rect": [16, 108, 1112, 576]},
+      {"id": "tools", "parent": "editor", "rect": [24, 116, 1096, 28]},
+      {"id": "ruler", "parent": "editor", "rect": [80, 148, 1040, 24]},
+      {"id": "keyboard", "parent": "editor", "rect": [24, 172, 56, 504]},
+      {"id": "grid", "parent": "editor", "rect": [80, 172, 1040, 504]},
+      {"id": "lane", "parent": "client", "rect": [16, 696, 1112, 148]},
+      {"id": "laneTabs", "parent": "lane", "rect": [24, 704, 1096, 28]},
+      {"id": "lanePlot", "parent": "lane", "rect": [56, 740, 1064, 96]},
+      {"id": "laneTimePlot", "parent": "lanePlot", "rect": [80, 740, 1040, 96]},
+      {"id": "rack", "parent": "client", "rect": [1144, 108, 440, 736]},
+      {"id": "singer", "parent": "rack", "rect": [1144, 108, 440, 360]},
+      {"id": "portraitRing", "parent": "singer", "rect": [1220, 148, 288, 288]},
+      {"id": "expression", "parent": "rack", "rect": [1144, 480, 440, 248]},
+      {"id": "style", "parent": "rack", "rect": [1144, 740, 440, 104]},
+      {"id": "status", "parent": "client", "rect": [16, 856, 1568, 28]}
+    ],
+    "sharedTimeAxis": ["ruler", "grid", "laneTimePlot"],
+    "nonOverlappingGroups": [
+      ["header", "editor", "lane", "rack", "status"],
+      ["wordmark", "workspaceTabs", "modeSwitch", "transport", "outputMeter", "settings"],
+      ["tools", "ruler", "keyboard", "grid"],
+      ["laneTabs", "lanePlot"],
+      ["singer", "expression", "style"]
+    ]
+  },
+  "typography": {
+    "body": {"points": 13, "lineBox": 18, "essential": true},
+    "label": {"points": 12, "lineBox": 16, "essential": true},
+    "lyric": {"points": 13, "lineBox": 18, "essential": true},
+    "smallLabel": {"points": 11, "lineBox": 14, "essential": true},
+    "rulerMicro": {"points": 10, "lineBox": 14, "essential": false},
+    "panelTitle": {"points": 12, "lineBox": 16, "essential": true},
+    "knobValue": {"points": 16, "lineBox": 20, "essential": true},
+    "transport": {"points": 22, "lineBox": 28, "essential": true}
+  },
+  "rasterBudget": {
+    "deviceScale": 2,
+    "bytesPerPixel": 4,
+    "fullSizeBuffers": 2,
+    "tileMiB": 24,
+    "scratchMiB": 8,
+    "activeArtMiB": 32,
+    "textIconsMiB": 12,
+    "retainedLimitMiB": 128
+  },
+  "captureRequirements": {
+    "modes": ["emo", "scene"],
+    "surfaces": ["software", "appkit", "flstudio"],
+    "viewports": [[720, 480], [860, 640], [1100, 720], [1280, 800], [1440, 900], [1600, 900]],
+    "states": ["empty", "ready", "rendering", "stale", "failed", "dense-overlap"],
+    "fingerprints": ["sourceTree", "binary", "fonts", "assets", "fixture", "backend", "macOS"],
+    "runtimeEvidencePresent": false
+  }
+}
