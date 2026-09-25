@@ -996,14 +996,14 @@ TEST_CASE("note search resolves generated phones through the region language ser
   auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{480}, 60U, U"a", domain::Language::English);
   auto* region = project.findRegion(regionId); region->lyrics = {lyric}; region->notes = {note};
 
-  const auto phones = ui::NoteSearchModel::search(project, regionId, 3U, "ah1",
+  const auto phones = ui::NoteSearchModel::search(project, regionId, 3U, "ah0",
       ui::NoteSearchField::GeneratedPhoneme);
   CHECK(phones);
   if (!phones) return;
   CHECK(phones.value().hits.size() == 1U);
   if (phones.value().hits.empty()) return;
   CHECK(phones.value().hits.front().noteId == note.id);
-  CHECK(phones.value().hits.front().matchedText == U"ah1");
+  CHECK(phones.value().hits.front().matchedText == U"ah0");
   CHECK(phones.value().hits.front().firstMatch == 0U);
 }
 

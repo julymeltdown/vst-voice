@@ -77,6 +77,17 @@
       "comment": "Consolidated public C ABI subset for Project SEAM CLAP render-player and editor plug-ins."
     },
     {
+      "name": "CMU Pronouncing Dictionary",
+      "SPDXID": "SPDXRef-Package-CMUdict",
+      "versionInfo": "74790861f652b15e4ac49015a90074ad62a27690",
+      "downloadLocation": "https://github.com/cmusphinx/cmudict/tree/74790861f652b15e4ac49015a90074ad62a27690",
+      "filesAnalyzed": true,
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
+      "copyrightText": "Copyright (C) 1993-2015 Carnegie Mellon University",
+      "comment": "Unmodified 135,166-line North American English pronunciation data, embedded by the English phonemizer. Dataset source archive SHA-256: 741c592660bbf10ab93fe3d5aa709b73a3b5ba91e3291a066715440f4137a58d; resource SHA-256: 81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22."
+    },
+    {
       "name": "Sonic talking.wav public-domain fixture",
       "SPDXID": "SPDXRef-Package-Sonic-Human-Fixture",
       "versionInfo": "retrieved-2026-08-17",
@@ -162,6 +173,11 @@
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-Package-CLAP-ABI"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ProjectSEAM",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-CMUdict"
     },
     {
       "spdxElementId": "SPDXRef-Package-ProjectSEAM",

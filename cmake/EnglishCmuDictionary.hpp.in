@@ -1,0 +1,11 @@
+#pragma once
+
+#include <array>
+#include <string_view>
+
+namespace seam::phonemizer::resources {
+
+inline constexpr std::array<std::string_view, @seam_cmudict_chunk_count@> cmuEnglishDictionary{
+@seam_cmudict_chunks@};
+
+}  // namespace seam::phonemizer::resources

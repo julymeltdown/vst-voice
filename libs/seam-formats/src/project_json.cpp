@@ -470,7 +470,10 @@ JsonValue encodeProject(const domain::Project& project,
       for (const auto& lyric : region.lyrics) {
         lyrics.emplace_back(Object{{"id", idValue(lyric.id)},
                                    {"surface", JsonValue{domain::toUtf8(lyric.surface)}},
-                                   {"language", JsonValue{languageName(lyric.language)}}});
+                                   {"language", JsonValue{languageName(lyric.language)}},
+                                   {"readingHint", lyric.readingHint
+                                        ? JsonValue{domain::toUtf8(*lyric.readingHint)}
+                                        : JsonValue{nullptr}}});
       }
       Array notes;
       for (const auto& note : region.notes) {
@@ -1039,17 +1042,32 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
         const auto* lyricIdJson = lyricValue.find("id");
         const auto* surface = lyricValue.find("surface");
         const auto* language = lyricValue.find("language");
+        const auto* readingHintValue = lyricValue.find("readingHint");
         if (lyricIdJson == nullptr || surface == nullptr || language == nullptr ||
             !lyricIdJson->isString() || !surface->isString() || !language->isString()) {
           return core::failure<domain::Project>(core::ErrorCode::ParseError,
                                                 "Lyric fields are invalid");
         }
+        if (schemaVersion >= 20 && readingHintValue == nullptr) {
+          return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                "Schema 20 lyric requires readingHint");
+        }
         auto lyricId = parseId<domain::LyricTag>(*lyricIdJson, "lyric.id");
         auto surfaceText = domain::fromUtf8(surface->asString());
         if (!lyricId) return core::Result<domain::Project>{lyricId.error()};
         if (!surfaceText) return core::Result<domain::Project>{surfaceText.error()};
-        region.lyrics.push_back(domain::LyricToken{
-            lyricId.value(), std::move(surfaceText).value(), parseLanguage(language->asString())});
+        std::optional<std::u32string> readingHint;
+        if (schemaVersion >= 20 && !readingHintValue->isNull()) {
+          if (!readingHintValue->isString()) {
+            return core::failure<domain::Project>(core::ErrorCode::ParseError,
+                                                  "Lyric readingHint must be a string or null");
+          }
+          auto text = domain::fromUtf8(readingHintValue->asString());
+          if (!text) return core::Result<domain::Project>{text.error()};
+          readingHint = std::move(text).value();
+        }
+        region.lyrics.emplace_back(lyricId.value(), std::move(surfaceText).value(),
+            parseLanguage(language->asString()), std::move(readingHint));
       }
       for (const auto& noteValue : notes->asArray()) {
         if (!noteValue.isObject()) {

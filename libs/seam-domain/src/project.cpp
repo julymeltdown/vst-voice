@@ -197,6 +197,19 @@ core::Result<void> VocalRegion::validate() const {
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Lyric IDs must be valid and unique", id.toString());
     }
+    if (lyric.readingHint) {
+      if (lyric.readingHint->empty() || lyric.readingHint->size() > 4096U) {
+        return core::failure(core::ErrorCode::InvariantViolation,
+                             "Lyric reading hint must be nonempty and bounded", lyric.id.toString());
+      }
+      for (const auto codePoint : *lyric.readingHint) {
+        const auto value = static_cast<std::uint32_t>(codePoint);
+        if (value > 0x10ffffU || (value >= 0xd800U && value <= 0xdfffU)) {
+          return core::failure(core::ErrorCode::InvariantViolation,
+                               "Lyric reading hint contains invalid Unicode", lyric.id.toString());
+        }
+      }
+    }
   }
 
   std::unordered_set<NoteId> noteIds;

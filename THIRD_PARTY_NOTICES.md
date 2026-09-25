@@ -26,6 +26,51 @@ verification. OpenSSL is available under the Apache License 2.0. The exact
 upstream `LICENSE.txt` is copied into each assembled distribution payload.
 Project SEAM does not ship a dynamically loaded OpenSSL runtime.
 
+### CMU Pronouncing Dictionary
+
+Project SEAM incorporates the unmodified North American English pronunciation
+data file `assets/pronunciation/en-us/cmudict.dict` from the official
+`cmusphinx/cmudict` repository at immutable revision
+`74790861f652b15e4ac49015a90074ad62a27690` (upstream archive SHA-256
+`741c592660bbf10ab93fe3d5aa709b73a3b5ba91e3291a066715440f4137a58d`). The
+resource is copyrighted by Carnegie Mellon University and is distributed under
+BSD-2-Clause. The complete license conditions and disclaimer are reproduced
+below and are also included at
+`licenses/third-party/CMUdict-2026-09-24-LICENSE.txt`. Upstream requests that
+redistributions acknowledge CMUdict as the source. The dictionary does not
+guarantee pronunciation accuracy and is not, by itself, qualification for
+singing or any particular dialect.
+
+Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+The contents of this file are deemed to be source code.
+
+This work was supported in part by funding from the Defense Advanced Research
+Projects Agency, the Office of Naval Research and the National Science
+Foundation of the United States of America, and by member companies of the
+Carnegie Mellon Sphinx Speech Consortium. We acknowledge the contributions of
+many volunteers to the expansion and improvement of this dictionary.
+
+THIS SOFTWARE IS PROVIDED BY CARNEGIE MELLON UNIVERSITY ``AS IS'' AND ANY
+EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY NOR ITS EMPLOYEES BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 ### Protobuf 33.4 and Abseil 20250512.1
 
 Project SEAM distribution builds statically link Protobuf 33.4 (release tarball

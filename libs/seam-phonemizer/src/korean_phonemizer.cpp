@@ -28,6 +28,71 @@ const std::map<std::string, PhoneList, std::less<>>& romanizedWords() {
   return values;
 }
 
+std::optional<std::size_t> lexicalNInsertionBoundary(
+    std::u32string_view word) noexcept {
+  // Rule 29 depends on compound/morpheme boundaries, not just adjacent
+  // spelling. Keep this intentionally lexical until a reviewed dictionary can
+  // supply boundaries; applying it to every vowel-initial Hangul syllable
+  // would turn ordinary liaison such as 꽃이 into a false nasal sequence.
+  // Sources: NIKL Standard Pronunciation Rule 29 examples and dictionary
+  // answers for 꽃잎, 깻잎, 막일, 솜이불, 홑이불, 한여름, 나뭇잎, 논일, 앞이마.
+  static constexpr std::array<std::pair<std::u32string_view, std::size_t>, 9U> entries{{
+      {U"꽃잎", 1U}, {U"깻잎", 1U}, {U"막일", 1U},
+      {U"솜이불", 1U}, {U"홑이불", 1U}, {U"한여름", 1U},
+      {U"나뭇잎", 2U}, {U"논일", 1U}, {U"앞이마", 1U},
+  }};
+  const auto found = std::find_if(entries.begin(), entries.end(), [word](const auto& entry) {
+    return entry.first == word;
+  });
+  return found == entries.end() ? std::nullopt
+                                : std::optional<std::size_t>{found->second};
+}
+
+std::u32string composeModernHangul(std::u32string_view text) {
+  // Unicode Standard Annex #15 defines algorithmic composition for modern
+  // Hangul L/V/T jamo. Accept canonically decomposed lyrics without adding a
+  // locale-sensitive dependency; leave compatibility and archaic jamo intact
+  // so the normal unsupported-input diagnostic remains authoritative.
+  constexpr char32_t leadingBase = 0x1100U;
+  constexpr char32_t vowelBase = 0x1161U;
+  constexpr char32_t trailingBase = 0x11a7U;
+  constexpr std::size_t leadingCount = 19U;
+  constexpr std::size_t vowelCount = 21U;
+  constexpr std::size_t trailingCount = 28U;
+  constexpr char32_t syllableBase = 0xac00U;
+
+  std::u32string result;
+  result.reserve(text.size());
+  for (std::size_t index = 0U; index < text.size();) {
+    const auto leading = text[index];
+    if (leading < leadingBase || leading >= leadingBase + leadingCount ||
+        index + 1U >= text.size()) {
+      result.push_back(leading);
+      ++index;
+      continue;
+    }
+    const auto vowel = text[index + 1U];
+    if (vowel < vowelBase || vowel >= vowelBase + vowelCount) {
+      result.push_back(leading);
+      ++index;
+      continue;
+    }
+
+    const auto leadingIndex = static_cast<std::size_t>(leading - leadingBase);
+    const auto vowelIndex = static_cast<std::size_t>(vowel - vowelBase);
+    std::size_t trailingIndex = 0U;
+    index += 2U;
+    if (index < text.size() && text[index] > trailingBase &&
+        text[index] < trailingBase + trailingCount) {
+      trailingIndex = static_cast<std::size_t>(text[index] - trailingBase);
+      ++index;
+    }
+    result.push_back(static_cast<char32_t>(syllableBase +
+        (leadingIndex * vowelCount + vowelIndex) * trailingCount + trailingIndex));
+  }
+  return result;
+}
+
 std::string lowerAscii(const std::u32string& text) {
   std::string result;
   result.reserve(text.size());
@@ -76,6 +141,7 @@ std::string finalPhone(std::size_t index) {
 }
 
 struct Syllable final {
+  char32_t source;
   std::string onset;
   PhoneList vowels;
   std::string coda;
@@ -88,7 +154,7 @@ std::optional<Syllable> decomposeHangul(char32_t value) {
   const auto onset = code / (21U * 28U);
   const auto medial = (code / 28U) % 21U;
   const auto final = code % 28U;
-  return Syllable{initialPhone(onset), medialPhones(medial), finalPhone(final), final};
+  return Syllable{value, initialPhone(onset), medialPhones(medial), finalPhone(final), final};
 }
 
 // Surface-level boundary rules. Suffix/compound distinctions, irregular stems
@@ -97,6 +163,33 @@ void connectSyllables(Syllable& left, Syllable& right) {
   // Before initial k the final cluster lk keeps l (NIKL article 11).
   if (left.finalIndex == 9U && right.onset == "k") {
     left.coda = "l"; right.onset = "kk"; return;
+  }
+  // NIKL Standard Pronunciation Rule 10 treats 밟- as [밥] before a
+  // consonant, unlike the default ㄼ -> [ㄹ]. 넓- keeps [ㄹ] in inflection
+  // (넓고 [널꼬]) but has listed compounds with [ㅂ] (넓적/넓죽/넓둥글-).
+  // Rule 25 tensifies ㄱ/ㄷ/ㅅ/ㅈ after the ㄼ adjective stem 넓-.
+  if (!right.onset.empty() && left.source == U'밟') {
+    left.coda = "p";
+  } else if (!right.onset.empty() && left.source == U'넓') {
+    if (right.source == U'적' || right.source == U'죽' || right.source == U'둥') {
+      left.coda = "p";
+    } else if (right.onset == "k") {
+      right.onset = "kk";
+    } else if (right.onset == "t") {
+      right.onset = "tt";
+    } else if (right.onset == "s") {
+      right.onset = "ss";
+    } else if (right.onset == "ch") {
+      right.onset = "cch";
+    }
+  } else if (!right.onset.empty() && left.finalIndex == 13U) {
+    // The ㄾ final is [ㄹ] before a consonant. In the listed stem+ending
+    // pattern, ㄱ/ㄷ/ㅅ/ㅈ are also tensified (핥고 [할꼬], 핥다 [할따]).
+    left.coda = "l";
+    if (right.onset == "k") right.onset = "kk";
+    else if (right.onset == "t") right.onset = "tt";
+    else if (right.onset == "s") right.onset = "ss";
+    else if (right.onset == "ch") right.onset = "cch";
   }
   if (right.onset.empty()) {
     // A final ng stays a coda; it is not an initial consonant in Korean.
@@ -336,14 +429,15 @@ core::Result<Result> KoreanHangulPhonemizer::phonemize(const domain::VocalRegion
           appendPhone(noteTokens, note->id, ordinal, "pau");
         }
       } else {
+        const auto normalized = composeModernHangul(lyric->surface);
         using ReadingUnit = std::variant<Syllable, std::string>;
         std::vector<ReadingUnit> reading;
         bool supported = true;
-        for (std::size_t index = 0U; index < lyric->surface.size(); ++index) {
+        for (std::size_t index = 0U; index < normalized.size(); ++index) {
           if (stop.stop_requested()) return cancelled();
-          const auto syllable = decomposeHangul(lyric->surface[index]);
+          const auto syllable = decomposeHangul(normalized[index]);
           if (!syllable) {
-            const auto consonant = compatibilityJamo(lyric->surface[index]);
+            const auto consonant = compatibilityJamo(normalized[index]);
             if (consonant) {
               reading.emplace_back(*consonant);
               continue;
@@ -358,6 +452,13 @@ core::Result<Result> KoreanHangulPhonemizer::phonemize(const domain::VocalRegion
         if (!supported || reading.empty()) {
           noteTokens.clear(); ordinal = 0U; appendPhone(noteTokens, note->id, ordinal, "pau");
         } else {
+          if (const auto boundary = lexicalNInsertionBoundary(normalized);
+              boundary && *boundary < reading.size()) {
+            if (auto* following = std::get_if<Syllable>(&reading[*boundary]);
+                following != nullptr && following->onset.empty()) {
+              following->onset = "n";
+            }
+          }
           const auto contextSyllable = [&](std::size_t index, bool last) -> std::optional<Syllable> {
             const auto* source = notes[index];
             const auto found = lyrics.find(source->lyricTokenId);

@@ -37,6 +37,20 @@
       "distribution": "statically-linked-into-shipping-binaries",
       "modified": false,
       "purpose": "Ed25519 signing and verification for .seambank packages and release manifests"
+    },
+    {
+      "name": "CMU Pronouncing Dictionary",
+      "source": "https://github.com/cmusphinx/cmudict",
+      "revision": "74790861f652b15e4ac49015a90074ad62a27690",
+      "sourceSha256": "741c592660bbf10ab93fe3d5aa709b73a3b5ba91e3291a066715440f4137a58d",
+      "license": "BSD-2-Clause",
+      "licenseFile": "licenses/third-party/CMUdict-2026-09-24-LICENSE.txt",
+      "usage": "runtime-data",
+      "distribution": "embedded-pronunciation-resource",
+      "resourceFile": "assets/pronunciation/en-us/cmudict.dict",
+      "resourceSha256": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+      "modified": false,
+      "purpose": "lexical North American English pronunciations for the U27 phonemizer"
     }
   ],
   "plannedOrReferenceOnly": [

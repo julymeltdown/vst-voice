@@ -6,6 +6,7 @@
 #include <optional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace seam::application {
@@ -45,11 +46,25 @@ private:
 };
 
 struct BatchLyricEdit final {
+  BatchLyricEdit(domain::LyricTokenId id, std::u32string oldText,
+      std::u32string newText, domain::Language newLanguage,
+      domain::Language oldLanguage,
+      bool editReading = false,
+      std::optional<std::u32string> oldReading = std::nullopt,
+      std::optional<std::u32string> newReading = std::nullopt)
+      : lyricId(id), before(std::move(oldText)), after(std::move(newText)),
+        language(newLanguage), beforeLanguage(oldLanguage),
+        updateReadingHint(editReading), beforeReadingHint(std::move(oldReading)),
+        afterReadingHint(std::move(newReading)) {}
+
   domain::LyricTokenId lyricId;
   std::u32string before;
   std::u32string after;
   domain::Language language{domain::Language::Unspecified};
   domain::Language beforeLanguage{domain::Language::Unspecified};
+  bool updateReadingHint{false};
+  std::optional<std::u32string> beforeReadingHint;
+  std::optional<std::u32string> afterReadingHint;
 };
 
 class BatchSetLyricsCommand final : public ICommand {
@@ -80,6 +95,26 @@ private:
   OverrideState beforeOverrides_;
   OverrideState afterOverrides_;
   bool capturedOverrides_{false};
+};
+
+// Stores a user-authored Japanese reading independently from visible lyric
+// text and note-level explicit phone hints.
+class SetJapaneseLyricReadingCommand final : public ICommand {
+public:
+  SetJapaneseLyricReadingCommand(domain::LyricTokenId lyricId,
+      std::optional<std::u32string> readingHint)
+      : lyricId_(lyricId), after_(std::move(readingHint)) {}
+  [[nodiscard]] std::string_view name() const noexcept override { return "Edit Japanese lyric reading"; }
+  [[nodiscard]] CommandAudioImpact audioImpact() const noexcept override {
+    return CommandAudioImpact::PhraseAudio;
+  }
+  [[nodiscard]] CommandImpact impact() const override;
+  [[nodiscard]] core::Result<void> apply(domain::Project& project) override;
+  [[nodiscard]] core::Result<void> revert(domain::Project& project) override;
+private:
+  domain::LyricTokenId lyricId_;
+  std::optional<std::u32string> after_;
+  std::shared_ptr<BatchSetLyricsCommand> batch_;
 };
 
 // Explicitly accepts validated external Japanese readings as per-note phone

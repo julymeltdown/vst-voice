@@ -231,6 +231,7 @@ endforeach()
 string(SHA256 seam_japanese_resource_sha "${seam_japanese_resource_digest_input}")
 target_compile_definitions(seam_phonemizer PRIVATE SEAM_JAPANESE_RESOURCE_HASH="${seam_japanese_resource_sha}")
 set(seam_english_resource_sources
+  assets/pronunciation/en-us/cmudict.dict
   libs/seam-phonemizer/src/phonemizer.cpp
   libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
   libs/seam-phonemizer/src/english_phonemizer.cpp
@@ -244,6 +245,33 @@ foreach(seam_resource_source IN LISTS seam_english_resource_sources)
   string(APPEND seam_english_resource_digest_input "${seam_resource_source}:${seam_resource_sha}\n")
 endforeach()
 string(SHA256 seam_english_resource_sha "${seam_english_resource_digest_input}")
+set(seam_generated_include_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${seam_generated_include_dir}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/assets/pronunciation/en-us/cmudict.dict" seam_cmudict_content)
+string(FIND "${seam_cmudict_content}" ")SEAM_CMU_DICT\"" seam_cmudict_delimiter_position)
+if(NOT seam_cmudict_delimiter_position EQUAL -1)
+  message(FATAL_ERROR "CMUdict contains the reserved embedding delimiter")
+endif()
+string(LENGTH "${seam_cmudict_content}" seam_cmudict_length)
+set(seam_cmudict_chunk_size 32768)
+math(EXPR seam_cmudict_chunk_count
+  "(${seam_cmudict_length} + ${seam_cmudict_chunk_size} - 1) / ${seam_cmudict_chunk_size}")
+math(EXPR seam_cmudict_last_chunk "${seam_cmudict_chunk_count} - 1")
+set(seam_cmudict_chunks "")
+foreach(seam_cmudict_chunk RANGE 0 ${seam_cmudict_last_chunk})
+  math(EXPR seam_cmudict_offset "${seam_cmudict_chunk} * ${seam_cmudict_chunk_size}")
+  math(EXPR seam_cmudict_remaining "${seam_cmudict_length} - ${seam_cmudict_offset}")
+  if(seam_cmudict_remaining LESS seam_cmudict_chunk_size)
+    set(seam_cmudict_chunk_length "${seam_cmudict_remaining}")
+  else()
+    set(seam_cmudict_chunk_length "${seam_cmudict_chunk_size}")
+  endif()
+  string(SUBSTRING "${seam_cmudict_content}" ${seam_cmudict_offset} ${seam_cmudict_chunk_length} seam_cmudict_piece)
+  string(APPEND seam_cmudict_chunks "R\"SEAM_CMU_DICT(${seam_cmudict_piece})SEAM_CMU_DICT\",\n")
+endforeach()
+configure_file(cmake/EnglishCmuDictionary.hpp.in
+  "${seam_generated_include_dir}/EnglishCmuDictionary.hpp" @ONLY)
+target_include_directories(seam_phonemizer PRIVATE "${seam_generated_include_dir}")
 set(seam_korean_resource_sources
   libs/seam-phonemizer/src/phonemizer.cpp
   libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
@@ -683,7 +711,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-rendering/include
     libs/seam-voicebank/include)
   target_link_libraries(seam_native_ui PUBLIC
-    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_platform seam_core)
+    seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_distribution seam_platform seam_core)
   if(WIN32)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/accessibility_win32.cpp)
@@ -2071,7 +2099,7 @@ if(SEAM_BUILD_TESTS)
   target_include_directories(seam_expression_on_song_tests PRIVATE tests)
   target_link_libraries(seam_expression_on_song_tests PRIVATE
     seam_editor_ui seam_rendering seam_synthesis seam_voice_design seam_application
-    seam_domain seam_core)
+    seam_formats seam_domain seam_core)
   seam_apply_compiler_options(seam_expression_on_song_tests)
   add_test(NAME seam_expression_on_song_tests COMMAND seam_expression_on_song_tests)
   add_executable(seam_procedural_install_journey_tests

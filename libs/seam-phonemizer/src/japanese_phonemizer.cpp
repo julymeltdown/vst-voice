@@ -4,6 +4,7 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -237,19 +238,24 @@ void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
 
 }  // namespace
 
+const std::vector<std::string>& japanesePhoneSymbols() {
+  static const auto symbols = [] {
+    // These explicit events are accepted by phone hints even though they are not
+    // emitted by a kana spelling: moraic closure, pause/hold/glottal events and breath.
+    std::set<std::string, std::less<>> unique{"N", "cl", "pau", "R", "glottal", "br"};
+    for (const auto& [mora, values] : moraTable()) {
+      (void)mora;
+      unique.insert(values.begin(), values.end());
+    }
+    return std::vector<std::string>{unique.begin(), unique.end()};
+  }();
+  return symbols;
+}
+
 core::Result<std::vector<std::string>> parseJapanesePhoneHint(std::string_view text) {
   if (text.empty() || text.size() > 4096U)
     return core::failure<std::vector<std::string>>(core::ErrorCode::InvalidArgument, "Japanese phone hint is empty or exceeds 4096 bytes");
-  static const auto inventory = [] {
-    // The pilot inventory also declares the event symbols a sung score names directly: the
-    // moraic obstruent, an explicit glottal closure and a breath. They are admitted here as
-    // symbols; whether a recipe can render one is a separate, declared question.
-    std::unordered_set<std::string> phones{"N", "cl", "pau", "R", "glottal", "br"};
-    for (const auto& [mora, values] : moraTable()) {
-      (void)mora; for (const auto& value : values) phones.insert(value);
-    }
-    return phones;
-  }();
+  const auto& inventory = japanesePhoneSymbols();
   const auto space = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
   std::vector<std::string> result;
   for (std::size_t i = 0U; i < text.size();) {
@@ -257,7 +263,7 @@ core::Result<std::vector<std::string>> parseJapanesePhoneHint(std::string_view t
     if (i == text.size()) break;
     const auto start = i; while (i < text.size() && !space(text[i])) ++i;
     const std::string phone{text.substr(start, i - start)};
-    if (!inventory.contains(phone) || result.size() >= 256U)
+    if (!std::binary_search(inventory.begin(), inventory.end(), phone) || result.size() >= 256U)
       return core::failure<std::vector<std::string>>(core::ErrorCode::Unsupported, "Japanese phone hint requires at most 256 supported space-separated phones");
     result.push_back(phone);
   }
@@ -273,11 +279,35 @@ core::Result<Result> JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion
     std::size_t maximumTokens) const {
   const auto cancelled = [] { return core::failure<Result>(core::ErrorCode::Conflict, "Japanese phonemization cancelled"); };
   if (stop.stop_requested()) return cancelled();
+  if (region.notes.size() > 10000U || region.lyrics.size() > 10000U ||
+      region.phonemeOverrides.size() > 4096U) {
+    return core::failure<Result>(core::ErrorCode::InvalidArgument,
+                                 "Japanese phonemization input exceeds collection bounds");
+  }
   Result result;
   std::unordered_map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
   lyrics.reserve(region.lyrics.size());
+  std::size_t lyricCharacters = 0U;
   for (const auto& lyric : region.lyrics) {
     if (stop.stop_requested()) return cancelled();
+    const auto readingSize = lyric.readingHint ? lyric.readingHint->size() : 0U;
+    if (lyric.surface.size() > 4096U || readingSize > 4096U ||
+        (lyric.readingHint && readingSize == 0U) ||
+        lyric.surface.size() > 65536U - lyricCharacters ||
+        readingSize > 65536U - lyricCharacters - lyric.surface.size()) {
+      return core::failure<Result>(core::ErrorCode::InvalidArgument,
+                                   "Japanese phonemization lyric text exceeds bounds");
+    }
+    lyricCharacters += lyric.surface.size() + readingSize;
+    if (lyric.readingHint) {
+      for (const auto codePoint : *lyric.readingHint) {
+        const auto value = static_cast<std::uint32_t>(codePoint);
+        if (value > 0x10ffffU || (value >= 0xd800U && value <= 0xdfffU)) {
+          return core::failure<Result>(core::ErrorCode::InvalidArgument,
+                                       "Japanese phonemization reading hint contains invalid Unicode");
+        }
+      }
+    }
     lyrics.emplace(lyric.id, &lyric);
   }
   std::unordered_map<domain::NoteId, std::vector<const domain::PhonemeOverride*>> overrides;
@@ -325,7 +355,9 @@ core::Result<Result> JapaneseKanaPhonemizer::phonemize(const domain::VocalRegion
       });
       appendPhone(noteTokens, note->id, ordinal, "pau");
     } else {
-      const auto normalized = normalize(lyric->surface);
+      const auto& pronunciationText = lyric->readingHint
+          ? *lyric->readingHint : lyric->surface;
+      const auto normalized = normalize(pronunciationText);
       const auto& text = normalized.text;
       const bool sharedContinuation = previousNote && domain::continuesSharedLyric(*previousNote, *note);
       const bool continuation = text == U"-" || text == U"ー" || text == U"〜" || sharedContinuation;

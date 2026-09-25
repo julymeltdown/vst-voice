@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace seam::domain {
 
@@ -16,9 +17,19 @@ enum class Language { Unspecified, Japanese, Korean, English };
 enum class NoteArticulation { Normal, Legato, Staccato };
 
 struct LyricToken final {
+  LyricToken() = default;
+  LyricToken(LyricTokenId tokenId, std::u32string visibleSurface,
+             Language sourceLanguage,
+             std::optional<std::u32string> authoredReading = std::nullopt)
+      : id(tokenId), surface(std::move(visibleSurface)), language(sourceLanguage),
+        readingHint(std::move(authoredReading)) {}
+
   LyricTokenId id;
   std::u32string surface;
   Language language{Language::Unspecified};
+  // Optional reading intent (for example kana for Japanese kanji lyrics).
+  // This is distinct from the visible lyric and from note-level phone hints.
+  std::optional<std::u32string> readingHint;
 
   friend bool operator==(const LyricToken&, const LyricToken&) = default;
 };

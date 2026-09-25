@@ -169,6 +169,147 @@ TEST_CASE("Korean boundary rules retain original finals for liaison and contextu
   }
 }
 
+TEST_CASE("Korean rule-29 nasal insertion is lexical and resource-addressed") {
+  using namespace seam;
+  const std::pair<const char32_t*, std::string_view> cases[]{
+      {U"꽃잎", "kk o n n i p"}, {U"깻잎", "kk ae n n i p"},
+      {U"막일", "m a ng n i l"}, {U"솜이불", "s o m n i p u l"},
+      {U"홑이불", "h o n n i p u l"}, {U"한여름", "h a n n y eo r eu m"},
+      {U"나뭇잎", "n a m u n n i p"}, {U"논일", "n o n n i l"},
+      {U"앞이마", "a m n i m a"},
+  };
+  for (const auto& [text, expectedText] : cases) {
+    Fixture fixture;
+    fixture.add(0, text);
+    const auto resolved = phonemizer::resolveKoreanPronunciation(
+        *fixture.project.findRegion(fixture.region));
+    CHECK(resolved);
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(resolved.value().identity.resourceHash.size() == 64U);
+    CHECK(resolved.value().identity.sequenceHash.size() == 64U);
+    std::string actual;
+    for (const auto& token : resolved.value().pronunciation.tokens) {
+      if (!actual.empty()) actual += ' ';
+      actual += token.symbol;
+    }
+    if (actual != expectedText) throw seam::test::Failure{
+        "Korean Rule 29 phones for '" + std::string{expectedText} +
+        "': got '" + actual + "'"};
+  }
+
+  // This is ordinary particle liaison, not a lexical compound: do not inject ㄴ.
+  Fixture ordinary;
+  ordinary.add(0, U"꽃이");
+  const auto resolved = phonemizer::resolveKoreanPronunciation(
+      *ordinary.project.findRegion(ordinary.region));
+  CHECK(resolved);
+  std::string actual;
+  for (const auto& token : resolved.value().pronunciation.tokens) {
+    if (!actual.empty()) actual += ' ';
+    actual += token.symbol;
+  }
+  CHECK(actual == "kk o chh i");
+}
+
+TEST_CASE("Korean resolver composes canonically decomposed modern Hangul") {
+  using namespace seam;
+  Fixture precomposed;
+  precomposed.add(0, U"꽃잎");
+  Fixture decomposed;
+  decomposed.add(0, U"\u1101\u1169\u11be\u110b\u1175\u11c1");
+
+  const auto resolve = [](Fixture& fixture) {
+    return phonemizer::resolveKoreanPronunciation(
+        *fixture.project.findRegion(fixture.region));
+  };
+  const auto canonical = resolve(precomposed);
+  const auto decomposedResult = resolve(decomposed);
+  CHECK(canonical);
+  CHECK(decomposedResult);
+  CHECK(canonical.value().identity.resourceHash ==
+      decomposedResult.value().identity.resourceHash);
+  CHECK(canonical.value().identity.sequenceHash ==
+      decomposedResult.value().identity.sequenceHash);
+
+  std::string actual;
+  for (const auto& token : decomposedResult.value().pronunciation.tokens) {
+    if (!actual.empty()) actual += ' ';
+    actual += token.symbol;
+  }
+  CHECK(actual == "kk o n n i p");
+
+  Fixture decomposedCompoundVowel;
+  decomposedCompoundVowel.add(0, U"\u110b\u116b");
+  const auto compoundVowel = resolve(decomposedCompoundVowel);
+  CHECK(compoundVowel);
+  std::string compoundVowelPhones;
+  for (const auto& token : compoundVowel.value().pronunciation.tokens) {
+    if (!compoundVowelPhones.empty()) compoundVowelPhones += ' ';
+    compoundVowelPhones += token.symbol;
+  }
+  CHECK(compoundVowelPhones == "w ae");
+}
+
+TEST_CASE("Korean ㄼ and ㄾ rules preserve stem-specific finals and tensing") {
+  using namespace seam;
+  const std::pair<const char32_t*, std::string_view> cases[]{
+      {U"밟고", "p a p kk o"}, {U"밟는", "p a m n eu n"},
+      {U"밟아", "p a l p a"}, {U"넓고", "n eo l kk o"},
+      {U"넓다", "n eo l tt a"}, {U"넓지", "n eo l cch i"},
+      {U"넓적하다", "n eo p cch eo kh a t a"},
+      {U"넓죽하다", "n eo p cch u kh a t a"},
+      {U"핥고", "h a l kk o"}, {U"핥다", "h a l tt a"},
+      {U"핥소", "h a l ss o"}, {U"핥지", "h a l cch i"},
+      {U"핥아", "h a l th a"},
+  };
+  for (const auto& [text, expectedText] : cases) {
+    Fixture fixture;
+    fixture.add(0, text);
+    const auto result = phonemizer::KoreanHangulPhonemizer{}.phonemize(*fixture.project.findRegion(fixture.region));
+    const auto expected = phonemizer::parseKoreanPhoneHint(expectedText);
+    CHECK(expected);
+    std::string actual;
+    for (const auto& token : result.tokens) {
+      if (!actual.empty()) actual += ' ';
+      actual += token.symbol;
+    }
+    if (actual != expectedText) throw seam::test::Failure{
+        "Korean ㄼ phones: expected '" + std::string{expectedText} + "', got '" + actual + "'"};
+  }
+
+  Fixture split;
+  split.add(0, U"밟");
+  split.add(960, U"고");
+  auto* region = split.project.findRegion(split.region);
+  const auto original = *region;
+  const auto resolved = phonemizer::resolveKoreanPronunciation(*region);
+  CHECK(resolved);
+  const auto first = resolved.value().pronunciation.tokensForNote(split.notes.front());
+  const auto second = resolved.value().pronunciation.tokensForNote(split.notes.back());
+  CHECK(first.size() == 3U);
+  CHECK(first[2].symbol == "p");
+  CHECK(first[2].role == domain::PhonemeRole::Coda);
+  CHECK(second.size() == 2U);
+  CHECK(second[0].symbol == "kk");
+  CHECK(second[0].role == domain::PhonemeRole::Onset);
+  CHECK(*region == original);
+
+  Fixture splitTense;
+  splitTense.add(0, U"핥");
+  splitTense.add(960, U"고");
+  region = splitTense.project.findRegion(splitTense.region);
+  const auto splitTenseResolved = phonemizer::resolveKoreanPronunciation(*region);
+  CHECK(splitTenseResolved);
+  const auto splitTenseCoda = splitTenseResolved.value().pronunciation.tokensForNote(
+      splitTense.notes.front());
+  const auto splitTenseOnset = splitTenseResolved.value().pronunciation.tokensForNote(
+      splitTense.notes.back());
+  CHECK(splitTenseCoda.size() == 3U);
+  CHECK(splitTenseCoda.back().symbol == "l");
+  CHECK(splitTenseOnset.size() == 2U);
+  CHECK(splitTenseOnset.front().symbol == "kk");
+}
+
 TEST_CASE("Korean cross-note liaison preserves ownership and stops at rests or explicit hints") {
   using namespace seam;
   Fixture fixture;

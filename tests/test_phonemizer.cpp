@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace {
 
@@ -238,4 +239,41 @@ TEST_CASE("explicit Japanese phone hints change pronunciation without replacing 
   CHECK(!seam::phonemizer::parseJapanesePhoneHint(" \t"));
   CHECK(!seam::phonemizer::parseJapanesePhoneHint(std::string(4097U, 'a')));
   CHECK(seam::phonemizer::parseJapanesePhoneHint(" ky\ta  "));
+}
+
+TEST_CASE("Japanese source-of-truth phone inventory matches strict hint parsing") {
+  const auto& inventory = seam::phonemizer::japanesePhoneSymbols();
+  CHECK(!inventory.empty());
+  CHECK(std::is_sorted(inventory.begin(), inventory.end()));
+  CHECK(std::adjacent_find(inventory.begin(), inventory.end()) == inventory.end());
+  for (const auto& phone : inventory) {
+    const auto parsed = seam::phonemizer::parseJapanesePhoneHint(phone);
+    CHECK(parsed);
+    if (parsed) CHECK(parsed.value() == std::vector<std::string>{phone});
+  }
+  CHECK(std::binary_search(inventory.begin(), inventory.end(), "ky"));
+  CHECK(std::binary_search(inventory.begin(), inventory.end(), "cl"));
+  CHECK(std::binary_search(inventory.begin(), inventory.end(), "br"));
+  CHECK(!std::binary_search(inventory.begin(), inventory.end(), "not-a-japanese-phone"));
+}
+
+TEST_CASE("Japanese lyric reading hint guides phones without replacing surface or phone hints") {
+  PhonemizerFixture fixture;
+  const auto noteId = fixture.add(U"今日", seam::time::Tick{0});
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  const auto* note = region->findNote(noteId);
+  const auto before = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(before);
+  CHECK(!before.value().pronunciation.warnings.empty());
+
+  auto* lyric = region->findLyric(note->lyricTokenId);
+  lyric->readingHint = U"きょう";
+  const auto resolved = seam::phonemizer::resolveJapanesePronunciation(*region); CHECK(resolved);
+  CHECK(symbols(resolved.value().pronunciation.tokensForNote(noteId)) ==
+        (std::vector<std::string>{"ky", "o", "u"}));
+  CHECK(resolved.value().pronunciation.warnings.empty());
+  CHECK(lyric->surface == U"今日");
+  CHECK(lyric->readingHint == U"きょう");
+  CHECK(!region->findNote(noteId)->phoneticHint);
+  CHECK(resolved.value().identity.inputHash != before.value().identity.inputHash);
+  CHECK(resolved.value().identity.sequenceHash != before.value().identity.sequenceHash);
 }

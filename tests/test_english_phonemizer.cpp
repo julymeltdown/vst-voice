@@ -39,7 +39,7 @@ TEST_CASE("English phonemizer keeps stressed dictionary output and explicit hint
   CHECK(result.warnings.empty());
   CHECK(result.tokens.size() == 10U);
   CHECK(result.tokens[0].symbol == "hh");
-  CHECK(result.tokens[1].symbol == "eh0");
+  CHECK(result.tokens[1].symbol == "ah0");
   CHECK(result.tokens[3].symbol == "ow1");
   CHECK(result.tokens[4].symbol == "w");
   CHECK(result.tokens[5].symbol == "er1");
@@ -50,6 +50,55 @@ TEST_CASE("English phonemizer keeps stressed dictionary output and explicit hint
   CHECK(phonemizer::parseEnglishPhoneHint("s iy1 ng").value() ==
       (std::vector<std::string>{"s", "iy1", "ng"}));
   CHECK(!phonemizer::parseEnglishPhoneHint("not-a-phone"));
+}
+
+TEST_CASE("English CMUdict lookup remains complete across non-sorted source entries") {
+  using namespace seam;
+  struct Example final {
+    const char32_t* word;
+    std::vector<std::string> phones;
+  };
+  const Example examples[]{
+      {U"a", {"ah0"}}, // Stable ordering retains the first CMUdict pronunciation variant.
+      {U"sepultura", {"s", "eh1", "p", "uh0", "l", "t", "uh1", "r", "uh0"}},
+      {U"stilted", {"s", "t", "ih1", "l", "t", "ih0", "d"}}};
+  for (const auto& example : examples) {
+    Fixture fixture;
+    fixture.add(0, example.word);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(
+        *fixture.project.findRegion(fixture.region));
+    CHECK(resolved);
+    CHECK(resolved.value().identity.resolverVersion == "7");
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    std::vector<std::string> actual;
+    for (const auto& token : resolved.value().pronunciation.tokens) actual.push_back(token.symbol);
+    CHECK(actual == example.phones);
+  }
+}
+
+TEST_CASE("English dictionary words survive boundary punctuation without rewriting lyric text") {
+  using namespace seam;
+  struct Example final {
+    const char32_t* lyric;
+    std::vector<std::string> phones;
+  };
+  const Example examples[]{
+      {U"hello,", {"hh", "ah0", "l", "ow1"}},
+      {U"\"hello!\"", {"hh", "ah0", "l", "ow1"}},
+      {U"(world!)", {"w", "er1", "l", "d"}},
+      {U"'cause", {"k", "ah0", "z"}}};
+  for (const auto& example : examples) {
+    Fixture fixture;
+    fixture.add(0, example.lyric);
+    const auto before = *fixture.project.findRegion(fixture.region);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(before);
+    CHECK(resolved);
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(*fixture.project.findRegion(fixture.region) == before);
+    std::vector<std::string> actual;
+    for (const auto& token : resolved.value().pronunciation.tokens) actual.push_back(token.symbol);
+    CHECK(actual == example.phones);
+  }
 }
 
 TEST_CASE("OpenUtau English hint examples preserve exact phones roles and source identity") {
@@ -100,9 +149,8 @@ TEST_CASE("English ao hints retain stress and edits cannot cross a changed vowel
   Fixture fixture; fixture.add(0, U"more"); fixture.add(960, U"-");
   auto* region = fixture.project.findRegion(fixture.region);
   const auto estimated = phonemizer::resolveEnglishPronunciation(*region); CHECK(estimated);
-  CHECK(estimated.value().pronunciation.warnings.size() == 2U);
-  for (const auto& warning : estimated.value().pronunciation.warnings)
-    CHECK(warning.code == phonemizer::WarningCode::EstimatedPronunciation);
+  CHECK(estimated.value().pronunciation.warnings.empty());
+  CHECK(estimated.value().pronunciation.tokensForNote(fixture.notes.front())[1].symbol == "ao1");
 
   for (const auto* vowel : {"ao", "ao0", "ao1", "ao2"}) {
     region->notes.front().phoneticHint = std::string{"m "} + vowel + " r";
@@ -169,7 +217,7 @@ TEST_CASE("generic pronunciation resolver rejects mixed explicit language region
   CHECK(phonemizer::inspectPronunciation(*region).warnings.size() == 1U);
 }
 
-TEST_CASE("English spelling estimates remain distinct from dictionary and explicit-hint pronunciation") {
+TEST_CASE("English dictionary readings and continuations remain distinct from explicit hints") {
   using namespace seam;
   Fixture fixture;
   fixture.add(0, U"read");
@@ -180,13 +228,9 @@ TEST_CASE("English spelling estimates remain distinct from dictionary and explic
   const auto estimated = phonemizer::resolveEnglishPronunciation(*region);
   CHECK(estimated);
   CHECK(*region == before);
-  CHECK(estimated.value().pronunciation.warnings.size() == 2U);
-  for (std::size_t index = 0U; index < 2U; ++index) {
-    const auto& warning = estimated.value().pronunciation.warnings[index];
-    CHECK(warning.code == phonemizer::WarningCode::EstimatedPronunciation);
-    CHECK(warning.noteId == fixture.notes[index]);
-    CHECK(warning.message.find("seam-en-spelling-v1") != std::string::npos);
-  }
+  CHECK(estimated.value().pronunciation.warnings.empty());
+  CHECK(estimated.value().pronunciation.tokensForNote(fixture.notes.front())[1].symbol == "eh1");
+  CHECK(estimated.value().pronunciation.tokensForNote(fixture.notes[1]).front().symbol == "eh1");
   region->notes.front().phoneticHint = "r iy1 d";
   const auto explicitReading = phonemizer::resolveEnglishPronunciation(*region);
   CHECK(explicitReading);
@@ -200,10 +244,10 @@ TEST_CASE("English spelling estimates remain distinct from dictionary and explic
   CHECK(!phonemizer::parseEnglishPhoneHint("p1 aa1"));
 }
 
-TEST_CASE("English spelling output uses the declared inventory and does not carry guesses across a pause") {
+TEST_CASE("English spelling fallback remains bounded and does not carry guesses across a pause") {
   using namespace seam;
   Fixture fixture;
-  fixture.add(0, U"hex");
+  fixture.add(0, U"haxz");
   fixture.add(960, U",");
   fixture.add(1920, U"-");
   auto* region = fixture.project.findRegion(fixture.region);
@@ -213,7 +257,7 @@ TEST_CASE("English spelling output uses the declared inventory and does not carr
     if (!phones.empty()) phones += ' ';
     phones += token.symbol;
   }
-  CHECK(phones == "hh eh0 k s");
+  CHECK(phones == "hh ae0 k s z");
   CHECK(phonemizer::parseEnglishPhoneHint(phones));
   CHECK(result.tokensForNote(fixture.notes.back()).front().symbol == "pau");
   CHECK(std::any_of(result.warnings.begin(), result.warnings.end(), [&](const auto& warning) {
@@ -318,13 +362,15 @@ TEST_CASE("English dictionary vowels consonant clusters and terminal codas have 
       {U"world", {Role::Onset, Role::Nucleus, Role::Coda, Role::Coda}},
       {U"and", {Role::Nucleus, Role::Coda, Role::Coda}},
       {U"dream", {Role::Onset, Role::Onset, Role::Nucleus, Role::Coda}},
+      {U"banana", {Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus}},
+      {U"computer", {Role::Onset, Role::Nucleus, Role::Coda, Role::Onset, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus}},
       {U"music", {Role::Onset, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus, Role::Coda}},
       {U"beautiful", {Role::Onset, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus, Role::Coda}},
       {U"project", {Role::Onset, Role::Onset, Role::Nucleus, Role::Onset, Role::Nucleus, Role::Coda, Role::Coda}}};
   for (const auto& [word, expected] : examples) {
     Fixture fixture; fixture.add(0, word);
     const auto resolved = phonemizer::resolveEnglishPronunciation(*fixture.project.findRegion(fixture.region));
-    CHECK(resolved); CHECK(resolved.value().identity.resolverVersion == "4");
+    CHECK(resolved); CHECK(resolved.value().identity.resolverVersion == "7");
     CHECK(resolved.value().pronunciation.warnings.empty());
     std::vector<Role> actual;
     for (const auto& token : resolved.value().pronunciation.tokens) actual.push_back(token.role);
@@ -362,13 +408,41 @@ TEST_CASE("English cluster syllabification changes real timing nucleus ownership
   CHECK(atlas.value().pronunciation.tokens[4].role == domain::PhonemeRole::Coda);
 
   region->notes.front().phoneticHint.reset();
-  region->lyrics.front().surface = U"extra"; // Spelling bootstrap, not a newly qualified dictionary word.
+  region->lyrics.front().surface = U"extra"; // CMUdict reading, still not singing qualification.
   const auto spelling = phonemizer::resolveEnglishPronunciation(*region); CHECK(spelling);
   CHECK(spelling.value().pronunciation.tokens.size() == 6U);
   CHECK(spelling.value().pronunciation.tokens[1].role == domain::PhonemeRole::Coda);
   for (std::size_t i = 2U; i < 5U; ++i) CHECK(spelling.value().pronunciation.tokens[i].role == domain::PhonemeRole::Onset);
-  CHECK(spelling.value().pronunciation.warnings.size() == 1U);
-  CHECK(spelling.value().pronunciation.warnings.front().code == phonemizer::WarningCode::EstimatedPronunciation);
+  CHECK(spelling.value().pronunciation.warnings.empty());
+  CHECK(spelling.value().pronunciation.tokens[0].symbol == "eh1");
+}
+
+TEST_CASE("English spelling fallback recognizes common vowel digraphs and soft c g") {
+  using namespace seam;
+  struct Example final {
+    const char32_t* word;
+    std::vector<std::string> expected;
+  };
+  const Example examples[]{
+      {U"zaiz", {"z", "ey0", "z"}},
+      {U"citix", {"s", "ih0", "t", "ih0", "k", "s"}},
+      {U"gaim", {"g", "ey0", "m"}},
+  };
+  for (const auto& example : examples) {
+    Fixture fixture;
+    fixture.add(0, example.word);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(
+        *fixture.project.findRegion(fixture.region));
+    CHECK(resolved);
+    const auto tokens = resolved.value().pronunciation.tokensForNote(fixture.notes.front());
+    std::vector<std::string> actual;
+    for (const auto& token : tokens) actual.push_back(token.symbol);
+    CHECK(actual == example.expected);
+    CHECK(resolved.value().pronunciation.warnings.size() == 1U);
+    CHECK(resolved.value().pronunciation.warnings.front().code ==
+        phonemizer::WarningCode::EstimatedPronunciation);
+    CHECK(resolved.value().identity.resourceHash.size() == 64U);
+  }
 }
 
 TEST_CASE("English explicit syllable boundaries override estimates and reject malformed separators") {
@@ -395,16 +469,16 @@ TEST_CASE("English explicit syllable boundaries override estimates and reject ma
 
 TEST_CASE("English estimated spellings explicit pauses and continuations retain note ownership") {
   using namespace seam;
-  Fixture fixture; fixture.add(0, U"hex"); fixture.add(960, U"-"); fixture.add(2880, U"-");
+  Fixture fixture; fixture.add(0, U"haxz"); fixture.add(960, U"-"); fixture.add(2880, U"-");
   auto* region = fixture.project.findRegion(fixture.region);
   const auto before = *region;
   const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
   CHECK(*region == before);
   const auto first = resolved.value().pronunciation.tokensForNote(fixture.notes[0]);
   CHECK(first[2].role == domain::PhonemeRole::Coda); CHECK(first[3].role == domain::PhonemeRole::Coda);
-  CHECK(first[1].symbol == "eh0");
+  CHECK(first[1].symbol == "ae0");
   const auto continued = resolved.value().pronunciation.tokensForNote(fixture.notes[1]);
-  CHECK(continued.size() == 1U); CHECK(continued.front().symbol == "eh0");
+  CHECK(continued.size() == 1U); CHECK(continued.front().symbol == "ae0");
   CHECK(continued.front().key.noteId == fixture.notes[1]);
   CHECK(continued.front().lyricOwner == region->notes[1].lyricTokenId);
   CHECK(resolved.value().pronunciation.tokensForNote(fixture.notes[2]).front().symbol == "pau");

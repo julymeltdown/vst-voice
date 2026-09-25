@@ -44,11 +44,23 @@ core::Result<LyricIndex> admitPronunciation(
   for (const auto& lyric : region.lyrics) {
     if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Pronunciation resolution cancelled");
     if (!lyric.id.valid() || lyric.surface.size() > 4096U ||
-        lyric.surface.size() > 65536U - characters) {
+        lyric.surface.size() > 65536U - characters ||
+        (lyric.readingHint && (lyric.readingHint->empty() ||
+         lyric.readingHint->size() > 4096U ||
+         lyric.readingHint->size() > 65536U - characters - lyric.surface.size()))) {
       return core::failure<Output>(core::ErrorCode::InvalidArgument,
           "Pronunciation lyrics exceed identity or text bounds");
     }
-    characters += lyric.surface.size();
+    characters += lyric.surface.size() + (lyric.readingHint ? lyric.readingHint->size() : 0U);
+    if (lyric.readingHint) {
+      for (const auto value : *lyric.readingHint) {
+        const auto scalar = static_cast<std::uint32_t>(value);
+        if (scalar > 0x10ffffU || (scalar >= 0xd800U && scalar <= 0xdfffU)) {
+          return core::failure<Output>(core::ErrorCode::InvalidArgument,
+              "Pronunciation reading hint contains invalid Unicode");
+        }
+      }
+    }
     if (!lyricIndex.emplace(lyric.id, &lyric).second) {
       return core::failure<Output>(core::ErrorCode::InvalidArgument,
           "Pronunciation lyrics repeat an identity");
@@ -79,11 +91,13 @@ core::Result<LyricIndex> admitPronunciation(
     }
     const auto found = lyricIndex.find(note.lyricTokenId);
     if (found != lyricIndex.end()) {
-      if (found->second->surface.size() > 65536U - referencedCharacters) {
+      const auto textSize = found->second->surface.size() +
+          (found->second->readingHint ? found->second->readingHint->size() : 0U);
+      if (textSize > 65536U - referencedCharacters) {
         return core::failure<Output>(core::ErrorCode::InvalidArgument,
             "Repeated lyric expansion exceeds bounds");
       }
-      referencedCharacters += found->second->surface.size();
+      referencedCharacters += textSize;
     }
   }
   for (const auto& edit : region.phonemeOverrides) {
@@ -137,6 +151,14 @@ core::Result<std::string> inputHash(const domain::VocalRegion& region,
       for (const auto value : found->second->surface) {
         if (stop.stop_requested()) return cancelled();
         number(hash, static_cast<std::uint32_t>(value));
+      }
+      number(hash, found->second->readingHint.has_value());
+      if (found->second->readingHint) {
+        number(hash, found->second->readingHint->size());
+        for (const auto value : *found->second->readingHint) {
+          if (stop.stop_requested()) return cancelled();
+          number(hash, static_cast<std::uint32_t>(value));
+        }
       }
     }
   }
@@ -225,7 +247,7 @@ core::Result<ResolvedPronunciation> resolveLanguage(
   }
   const auto input = inputHash(region, lyrics, hashTag, resource, stop);
   if (!input) return core::Result<Output>{input.error()};
-  domain::PronunciationIdentity identity{language, std::string{resolverId}, language == domain::Language::English ? "4" : "3",
+  domain::PronunciationIdentity identity{language, std::string{resolverId}, language == domain::Language::English ? "7" : "3",
       std::string{resource}, input.value(), pronunciationSequenceHash(pronunciation.tokens)};
   const auto valid = identity.validate();
   if (!valid) return core::Result<Output>{valid.error()};
@@ -239,7 +261,7 @@ core::Result<ResolvedPronunciation> resolveRegisteredLanguage(
   switch (language) {
     case domain::Language::English:
       return resolveLanguage(region, lyrics, stop, EnglishPhonemizer{}, language,
-          "seam-builtin-en", SEAM_ENGLISH_RESOURCE_HASH, "seam-en-input-v4");
+          "seam-builtin-en", SEAM_ENGLISH_RESOURCE_HASH, "seam-en-input-v7");
     case domain::Language::Korean:
       return resolveLanguage(region, lyrics, stop, KoreanHangulPhonemizer{}, language,
           "seam-builtin-ko", SEAM_KOREAN_RESOURCE_HASH, "seam-ko-input-v3");

@@ -6,6 +6,9 @@
 
 namespace seam::phonemizer {
 
+// Sorted unique symbols emitted by the built-in Japanese kana adapter, plus the
+// explicit event symbols accepted by Japanese phone hints.
+[[nodiscard]] const std::vector<std::string>& japanesePhoneSymbols();
 [[nodiscard]] core::Result<std::vector<std::string>> parseJapanesePhoneHint(std::string_view text);
 
 class JapaneseKanaPhonemizer final : public IPhonemizer {

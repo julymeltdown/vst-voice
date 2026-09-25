@@ -358,6 +358,58 @@ void reconcileRetainedNoteOverrides(const domain::VocalRegion& before, domain::V
   reconcileOverrides(before, after, false);
 }
 
+CommandImpact SetJapaneseLyricReadingCommand::impact() const {
+  return CommandImpact{.scope = CommandAudioImpact::PhraseAudio,
+      .projectWide = false, .trackIds = {}, .regionIds = {}, .noteIds = {},
+      .lyricIds = {lyricId_}};
+}
+
+core::Result<void> SetJapaneseLyricReadingCommand::apply(domain::Project& project) {
+  if (after_ && (after_->empty() || after_->size() > 4096U)) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Japanese lyric reading must be nonempty and bounded",
+                         lyricId_.toString());
+  }
+  if (!batch_) {
+    domain::LyricToken* target = nullptr;
+    for (auto& track : project.vocalTracks()) {
+      for (auto& region : track.regions) {
+        auto* lyric = region.findLyric(lyricId_);
+        if (!lyric) continue;
+        if (target) {
+          return core::failure(core::ErrorCode::Conflict,
+                               "Japanese lyric reading target is ambiguous across regions",
+                               lyricId_.toString());
+        }
+        target = lyric;
+      }
+    }
+    if (!target) {
+      return core::failure(core::ErrorCode::NotFound,
+                           "Japanese lyric reading target was not found",
+                           lyricId_.toString());
+    }
+    if (target->language != domain::Language::Japanese) {
+      return core::failure(core::ErrorCode::Unsupported,
+                           "Japanese lyric readings require a Japanese lyric",
+                           lyricId_.toString());
+    }
+    BatchLyricEdit edit{lyricId_, target->surface, target->surface,
+        target->language, target->language, true, target->readingHint, after_};
+    batch_ = std::make_shared<BatchSetLyricsCommand>(
+        std::vector<BatchLyricEdit>{std::move(edit)});
+  }
+  return batch_->apply(project);
+}
+
+core::Result<void> SetJapaneseLyricReadingCommand::revert(domain::Project& project) {
+  if (!batch_) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Japanese lyric reading command has no captured state");
+  }
+  return batch_->revert(project);
+}
+
 core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
   if (edits_.empty()) {
     return core::failure(core::ErrorCode::InvalidArgument,
@@ -365,7 +417,7 @@ core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
   }
   auto live = indexLyrics(project, edits_); if (!live) return core::Result<void>{live.error()};
   std::unordered_set<domain::LyricTokenId> ids;
-  for (const auto& edit : edits_) {
+  for (auto& edit : edits_) {
     if (!ids.insert(edit.lyricId).second) {
       return core::failure(core::ErrorCode::InvalidArgument, "Repeated batch lyric target");
     }
@@ -378,6 +430,18 @@ core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
                            "Batch lyric target was not found",
                            edit.lyricId.toString());
     }
+    if (!edit.updateReadingHint &&
+        (edit.before != edit.after || edit.beforeLanguage != edit.language)) {
+      edit.updateReadingHint = true;
+      edit.beforeReadingHint = live.value().at(edit.lyricId)->readingHint;
+      edit.afterReadingHint.reset();
+    }
+    if (edit.updateReadingHint &&
+        live.value().at(edit.lyricId)->readingHint != edit.beforeReadingHint) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Lyric reading changed before the edit could be applied",
+                           edit.lyricId.toString());
+    }
   }
   auto staged = project;
   auto draft = indexLyrics(staged, edits_); if (!draft) return core::Result<void>{draft.error()};
@@ -385,6 +449,7 @@ core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
     auto* lyric = draft.value().at(edit.lyricId);
     lyric->surface = edit.after;
     lyric->language = edit.language;
+    if (edit.updateReadingHint) lyric->readingHint = edit.afterReadingHint;
   }
   OverrideState prior;
   OverrideState next;
@@ -425,6 +490,7 @@ core::Result<void> BatchSetLyricsCommand::apply(domain::Project& project) {
     auto* replacement = draft.value().at(edit.lyricId);
     target->surface.swap(replacement->surface);
     target->language = replacement->language;
+    if (edit.updateReadingHint) target->readingHint.swap(replacement->readingHint);
   }
   for (const auto& state : afterOverrides_) {
     auto* target = project.findRegion(state.regionId);
@@ -447,6 +513,12 @@ core::Result<void> BatchSetLyricsCommand::revert(domain::Project& project) {
                            "Batch lyric undo target was not found",
                            edit.lyricId.toString());
     }
+    if (edit.updateReadingHint &&
+        live.value().at(edit.lyricId)->readingHint != edit.afterReadingHint) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Lyric reading changed before undo",
+                           edit.lyricId.toString());
+    }
   }
   auto staged = project;
   auto draft = indexLyrics(staged, edits_); if (!draft) return core::Result<void>{draft.error()};
@@ -454,6 +526,7 @@ core::Result<void> BatchSetLyricsCommand::revert(domain::Project& project) {
     auto* lyric = draft.value().at(edit.lyricId);
     lyric->surface = edit.before;
     lyric->language = edit.beforeLanguage;
+    if (edit.updateReadingHint) lyric->readingHint = edit.beforeReadingHint;
   }
   for (const auto& [id, overrides, units, seams, pronunciation, revision] : beforeOverrides_) {
     auto* region = staged.findRegion(id);
@@ -471,6 +544,7 @@ core::Result<void> BatchSetLyricsCommand::revert(domain::Project& project) {
     auto* replacement = draft.value().at(edit.lyricId);
     target->surface.swap(replacement->surface);
     target->language = replacement->language;
+    if (edit.updateReadingHint) target->readingHint.swap(replacement->readingHint);
   }
   for (const auto& state : beforeOverrides_) {
     auto* target = project.findRegion(state.regionId);
@@ -511,8 +585,15 @@ core::Result<void> SetLyricCommand::apply(domain::Project& project) {
     beforeSurface_ = lyric->surface;
     beforeLanguage_ = lyric->language;
     captured_ = true;
-    batch_ = std::make_shared<BatchSetLyricsCommand>(std::vector<BatchLyricEdit>{
-        {lyricId_, beforeSurface_, afterSurface_, afterLanguage_, beforeLanguage_}});
+    BatchLyricEdit edit{lyricId_, beforeSurface_, afterSurface_,
+        afterLanguage_, beforeLanguage_};
+    if (beforeSurface_ != afterSurface_ || beforeLanguage_ != afterLanguage_) {
+      edit.updateReadingHint = true;
+      edit.beforeReadingHint = lyric->readingHint;
+      edit.afterReadingHint = std::nullopt;
+    }
+    batch_ = std::make_shared<BatchSetLyricsCommand>(
+        std::vector<BatchLyricEdit>{std::move(edit)});
   }
   return batch_->apply(project);
 }

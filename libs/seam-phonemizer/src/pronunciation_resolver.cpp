@@ -61,14 +61,24 @@ core::Result<ResolvedPronunciation> resolveJapanesePronunciation(const domain::V
   for (const auto& lyric : region.lyrics) {
     if (stop.stop_requested()) return cancelled();
     if (!lyric.id.valid() || !lyricIds.insert(lyric.id).second || lyric.surface.size() > 4096U ||
-        lyric.surface.size() > 65536U - characters) {
+        lyric.surface.size() > 65536U - characters ||
+        (lyric.readingHint && (lyric.readingHint->empty() ||
+         lyric.readingHint->size() > 4096U ||
+         lyric.readingHint->size() > 65536U - characters - lyric.surface.size()))) {
       return core::failure<Output>(core::ErrorCode::InvalidArgument, "Pronunciation lyrics exceed identity or text bounds");
     }
-    characters += lyric.surface.size();
+    characters += lyric.surface.size() + (lyric.readingHint ? lyric.readingHint->size() : 0U);
     lyrics.emplace(lyric.id, &lyric);
     for (const auto cp : lyric.surface) {
       if (cp > 0x10ffffU || (cp >= 0xd800U && cp <= 0xdfffU)) {
         return core::failure<Output>(core::ErrorCode::InvalidArgument, "Pronunciation lyric contains invalid Unicode");
+      }
+    }
+    if (lyric.readingHint) {
+      for (const auto cp : *lyric.readingHint) {
+        if (cp > 0x10ffffU || (cp >= 0xd800U && cp <= 0xdfffU)) {
+          return core::failure<Output>(core::ErrorCode::InvalidArgument, "Pronunciation reading hint contains invalid Unicode");
+        }
       }
     }
   }
@@ -92,10 +102,12 @@ core::Result<ResolvedPronunciation> resolveJapanesePronunciation(const domain::V
     }
     const auto lyricEntry = lyrics.find(note.lyricTokenId);
     if (const auto* lyric = lyricEntry == lyrics.end() ? nullptr : lyricEntry->second) {
-      if (lyric->surface.size() > 65536U - referencedCharacters) {
+      const auto textSize = lyric->surface.size() +
+          (lyric->readingHint ? lyric->readingHint->size() : 0U);
+      if (textSize > 65536U - referencedCharacters) {
         return core::failure<Output>(core::ErrorCode::InvalidArgument, "Repeated lyric expansion exceeds bounds");
       }
-      referencedCharacters += lyric->surface.size();
+      referencedCharacters += textSize;
     }
     notes.push_back(&note);
     noteIndex.emplace(note.id, &note);
@@ -124,6 +136,12 @@ core::Result<ResolvedPronunciation> resolveJapanesePronunciation(const domain::V
       number(input, static_cast<int>(lyric->language));
       number(input, lyric->surface.size());
       for (const auto cp : lyric->surface) number(input, static_cast<std::uint32_t>(cp));
+      number(input, lyric->readingHint.has_value());
+      if (lyric->readingHint) {
+        number(input, lyric->readingHint->size());
+        for (const auto cp : *lyric->readingHint)
+          number(input, static_cast<std::uint32_t>(cp));
+      }
     }
   }
   number(input, region.phonemeOverrides.size());

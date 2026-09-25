@@ -21,9 +21,9 @@ struct ProjectJsonEncodeOptions final {
 
 class ProjectJsonCodec final {
 public:
-  // Schema 19 adds an optional ordered sample-style pair and its default blend.
-  // Older documents remain single-style; no second style is inferred.
-  static constexpr std::int32_t kSchemaVersion = 19;
+  // Schema 20 adds a nullable lyric reading hint, separate from visible text
+  // and note-level phonetic phone hints.
+  static constexpr std::int32_t kSchemaVersion = 20;
 
   [[nodiscard]] core::Result<std::string> encode(const domain::Project& project) const;
   [[nodiscard]] core::Result<std::string> encode(

@@ -202,6 +202,84 @@ TEST_CASE("live lyric command rebinds timing to the vowel and restores exact und
   CHECK(session.project() == after);
 }
 
+TEST_CASE("Japanese lyric reading is independently editable, audible, persistent and undoable") {
+  auto project = projectWithPerformance();
+  auto* region = project.findRegion(RegionId{10U});
+  region->findLyric(LyricTokenId{1U})->surface = U"今日";
+  const auto before = project;
+  const auto oldResolution = seam::phonemizer::resolvePronunciation(
+      *project.findRegion(RegionId{10U})); CHECK(oldResolution);
+  seam::application::EditorSession session{project};
+
+  CHECK(session.execute(std::make_unique<seam::application::SetJapaneseLyricReadingCommand>(
+      LyricTokenId{1U}, std::optional<std::u32string>{U"きょう"})));
+  const auto after = session.project();
+  const auto* changed = after.findRegion(RegionId{10U});
+  const auto* lyric = changed->findLyric(LyricTokenId{1U});
+  CHECK(lyric->surface == U"今日");
+  CHECK(lyric->readingHint == U"きょう");
+  CHECK(!changed->findNote(NoteId{1U})->phoneticHint);
+  const auto newResolution = seam::phonemizer::resolvePronunciation(*changed);
+  CHECK(newResolution);
+  CHECK(newResolution.value().pronunciation.warnings.empty());
+  CHECK(newResolution.value().identity.inputHash != oldResolution.value().identity.inputHash);
+  CHECK(changed->performance.pronunciation == newResolution.value().identity);
+  CHECK(changed->performance.revision.pronunciation ==
+        before.findRegion(RegionId{10U})->performance.revision.pronunciation + 1U);
+
+  const seam::formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(after); CHECK(encoded);
+  const auto decoded = codec.decode(encoded.value()); CHECK(decoded);
+  CHECK(decoded.value() == after);
+  CHECK(session.undo()); CHECK(session.project() == before);
+  CHECK(session.redo()); CHECK(session.project() == after);
+
+  const auto textEdited = session.execute(std::make_unique<seam::application::SetLyricCommand>(
+      LyricTokenId{1U}, U"明日", Language::Japanese));
+  CHECK(textEdited);
+  CHECK(!session.project().findRegion(RegionId{10U})
+             ->findLyric(LyricTokenId{1U})->readingHint);
+  CHECK(session.undo()); CHECK(session.project() == after);
+
+  const auto stable = session.project();
+  const auto revision = session.revision();
+  CHECK(!session.execute(std::make_unique<seam::application::SetJapaneseLyricReadingCommand>(
+      LyricTokenId{1U}, std::optional<std::u32string>{U""})));
+  CHECK(session.project() == stable); CHECK(session.revision() == revision);
+}
+
+TEST_CASE("project schema 20 stores lyric readings and schema 19 migrates without one") {
+  auto project = projectWithPerformance();
+  project.findRegion(RegionId{10U})
+      ->findLyric(LyricTokenId{1U})->readingHint = U"かな";
+  const seam::formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project); CHECK(encoded);
+  const auto parsed = seam::formats::parseJson(encoded.value()); CHECK(parsed);
+  CHECK(parsed.value().find("schemaVersion")->asInt64() == 20);
+  const auto roundtrip = codec.decode(encoded.value()); CHECK(roundtrip);
+  CHECK(roundtrip.value() == project);
+
+  auto legacy = parsed.value();
+  legacy.asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{19}};
+  auto& lyrics = legacy.asObject().at("vocalTracks").asArray().front().asObject()
+      .at("regions").asArray().front().asObject().at("lyrics").asArray();
+  for (auto& lyric : lyrics) lyric.asObject().erase("readingHint");
+  const auto migrated = codec.decode(seam::formats::stringifyJson(legacy)); CHECK(migrated);
+  CHECK(!migrated.value().findRegion(RegionId{10U})
+             ->findLyric(LyricTokenId{1U})->readingHint);
+
+  auto missing = parsed.value();
+  missing.asObject().at("vocalTracks").asArray().front().asObject()
+      .at("regions").asArray().front().asObject().at("lyrics").asArray()
+      .front().asObject().erase("readingHint");
+  CHECK(!codec.decode(seam::formats::stringifyJson(missing)));
+  auto wrongType = parsed.value();
+  wrongType.asObject().at("vocalTracks").asArray().front().asObject()
+      .at("regions").asArray().front().asObject().at("lyrics").asArray()
+      .front().asObject()["readingHint"] = seam::formats::JsonValue{true};
+  CHECK(!codec.decode(seam::formats::stringifyJson(wrongType)));
+}
+
 TEST_CASE("lyric identity exhaustion rejects atomically and unsupported language clears identity") {
   auto project = projectWithPerformance();
   project.findRegion(RegionId{10U})->performance.revision.pronunciation =

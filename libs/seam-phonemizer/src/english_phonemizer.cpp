@@ -1,15 +1,18 @@
 #include "seam/phonemizer/english_phonemizer.hpp"
 
+#include "EnglishCmuDictionary.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <map>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace seam::phonemizer {
 namespace {
@@ -22,63 +25,149 @@ struct EnglishReading final {
   std::vector<std::size_t> syllableBreaks;
 };
 
-const std::map<std::string, PhoneList, std::less<>>& dictionary() {
-  // This is a deliberately small, versioned bootstrap lexicon. It is not
-  // presented as a complete English dictionary; spelling estimates outside
-  // this lexicon carry an explicit per-note EstimatedPronunciation warning.
-  static const std::map<std::string, PhoneList, std::less<>> values{
-      {"a", {"ah1"}},
-      {"an", {"ae1", "n"}},
-      {"and", {"ae1", "n", "d"}},
-      {"are", {"aa1", "r"}},
-      {"be", {"b", "iy1"}},
-      {"beautiful", {"b", "y", "uw1", "t", "ah0", "f", "ah0", "l"}},
-      {"can", {"k", "ae1", "n"}},
-      {"dream", {"d", "r", "iy1", "m"}},
-      {"hello", {"hh", "eh0", "l", "ow1"}},
-      {"i", {"ay1"}},
-      {"is", {"ih1", "z"}},
-      {"love", {"l", "ah1", "v"}},
-      {"music", {"m", "y", "uw1", "z", "ih0", "k"}},
-      {"of", {"ah0", "v"}},
-      {"project", {"p", "r", "aa1", "j", "eh0", "k", "t"}},
-      {"seam", {"s", "iy1", "m"}},
-      {"sing", {"s", "ih1", "ng"}},
-      {"singer", {"s", "ih1", "ng", "er0"}},
-      {"the", {"dh", "ax0"}},
-      {"this", {"dh", "ih1", "s"}},
-      {"to", {"t", "uw1"}},
-      {"voice", {"v", "oy1", "s"}},
-      {"vocal", {"v", "ow1", "k", "ah0", "l"}},
-      {"we", {"w", "iy1"}},
-      {"world", {"w", "er1", "l", "d"}},
-      {"you", {"y", "uw1"}},
-  };
-  return values;
+const std::string& cmuDictionarySource() {
+  static const std::string source = [] {
+    std::string source;
+    for (const auto chunk : resources::cmuEnglishDictionary) source.append(chunk);
+    return source;
+  }();
+  return source;
 }
 
-std::vector<std::size_t> dictionarySyllableBreaks(std::string_view word) {
-  // Explicit bootstrap readings take precedence over onset inference. The
-  // resource fingerprint covers both this table and the phone lexicon.
-  if (word == "beautiful") return {3U, 5U};
-  if (word == "hello" || word == "vocal") return {2U};
-  if (word == "music" || word == "project" || word == "singer") return {3U};
-  return {};
+std::string_view cmuEntryKey(std::string_view line) {
+  const auto separator = line.find(' ');
+  auto key = line.substr(0U, separator);
+  const auto variant = key.find('(');
+  if (variant != std::string_view::npos) key = key.substr(0U, variant);
+  return key;
 }
 
-bool legalEnglishOnset(std::span<const domain::PhonemeToken> cluster) {
+int compareAsciiCaseInsensitive(std::string_view lhs, std::string_view rhs) {
+  const auto common = std::min(lhs.size(), rhs.size());
+  for (std::size_t index = 0U; index < common; ++index) {
+    const auto left = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(lhs[index])));
+    const auto right = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(rhs[index])));
+    if (left < right) return -1;
+    if (left > right) return 1;
+  }
+  if (lhs.size() < rhs.size()) return -1;
+  if (lhs.size() > rhs.size()) return 1;
+  return 0;
+}
+
+struct CmuDictionaryIndex final {
+  std::vector<std::string_view> lines;
+  std::vector<std::pair<std::size_t, std::size_t>> sortedRuns;
+};
+
+const CmuDictionaryIndex& cmuDictionaryIndex() {
+  // The pinned CMUdict resource contains a small number of out-of-order
+  // entries, so binary-searching the raw bytes silently misses real words.
+  // Build line views and partition the source into sorted runs in one pass;
+  // equal pronunciation variants stay in source order without a full sort.
+  static const CmuDictionaryIndex index = [] {
+    const auto& source = cmuDictionarySource();
+    CmuDictionaryIndex result;
+    for (std::size_t start = 0U; start < source.size();) {
+      const auto newline = source.find('\n', start);
+      const auto end = newline == std::string::npos ? source.size() : newline;
+      if (end > start) result.lines.emplace_back(source.data() + start, end - start);
+      if (newline == std::string::npos) break;
+      start = newline + 1U;
+    }
+    if (result.lines.empty()) return result;
+    std::size_t runStart = 0U;
+    for (std::size_t line = 1U; line < result.lines.size(); ++line) {
+      if (compareAsciiCaseInsensitive(cmuEntryKey(result.lines[line - 1U]),
+              cmuEntryKey(result.lines[line])) > 0) {
+        result.sortedRuns.emplace_back(runStart, line);
+        runStart = line;
+      }
+    }
+    result.sortedRuns.emplace_back(runStart, result.lines.size());
+    return result;
+  }();
+  return index;
+}
+
+std::string_view findCmuReading(std::string_view word) {
+  const auto& index = cmuDictionaryIndex();
+  std::size_t earliestMatch = index.lines.size();
+  for (const auto& [first, last] : index.sortedRuns) {
+    auto found = std::lower_bound(index.lines.begin() + static_cast<std::ptrdiff_t>(first),
+        index.lines.begin() + static_cast<std::ptrdiff_t>(last), word,
+        [](std::string_view line, std::string_view key) {
+          return compareAsciiCaseInsensitive(cmuEntryKey(line), key) < 0;
+        });
+    if (found == index.lines.begin() + static_cast<std::ptrdiff_t>(last) ||
+        compareAsciiCaseInsensitive(cmuEntryKey(*found), word) != 0) continue;
+    const auto position = static_cast<std::size_t>(found - index.lines.begin());
+    if (position < earliestMatch) earliestMatch = position;
+  }
+  return earliestMatch == index.lines.size() ? std::string_view{} : index.lines[earliestMatch];
+}
+
+PhoneList cmuPhones(std::string_view line) {
+  std::istringstream fields{std::string{line}};
+  std::string ignoredWord;
+  static_cast<void>(fields >> ignoredWord);
+  PhoneList phones;
+  std::string phone;
+  while (fields >> phone) {
+    if (phone == "JH") phone = "J";
+    std::transform(phone.begin(), phone.end(), phone.begin(), [](unsigned char value) {
+      return static_cast<char>(std::tolower(value));
+    });
+    phones.push_back(phone);
+  }
+  return phones;
+}
+
+bool legalEnglishOnset(std::span<const std::string_view> cluster) {
   if (cluster.empty() || cluster.size() > 3U) return false;
-  static const std::unordered_set<std::string> singles{
+  static const std::unordered_set<std::string_view> singles{
       "p", "b", "t", "d", "k", "g", "m", "n", "f", "v", "th", "dh", "s", "z", "sh", "zh", "hh", "ch", "j", "l", "r", "w", "y"};
-  if (cluster.size() == 1U) return singles.contains(cluster.front().symbol);
-  static const std::unordered_set<std::string> clusters{
+  if (cluster.size() == 1U) return singles.contains(cluster.front());
+  static const std::unordered_set<std::string_view> clusters{
       "p r", "p l", "p y", "b r", "b l", "b y", "t r", "t w", "t y", "d r", "d w", "d y",
       "k r", "k l", "k w", "k y", "g r", "g l", "g w", "g y", "f r", "f l", "f y", "v r", "v y",
       "th r", "th w", "th y", "sh r", "s p", "s t", "s k", "s f", "s m", "s n", "s l", "s w", "s y",
       "m y", "n y", "l y", "hh y", "s p r", "s p l", "s p y", "s t r", "s t y", "s k r", "s k l", "s k w", "s k y"};
   std::string key;
-  for (const auto& phone : cluster) { if (!key.empty()) key += ' '; key += phone.symbol; }
+  for (const auto& phone : cluster) { if (!key.empty()) key += ' '; key += phone; }
   return clusters.contains(key);
+}
+
+bool legalEnglishOnset(std::span<const domain::PhonemeToken> cluster) {
+  std::array<std::string_view, 3U> symbols{};
+  for (std::size_t index = 0U; index < cluster.size(); ++index) symbols[index] = cluster[index].symbol;
+  return legalEnglishOnset(std::span<const std::string_view>{symbols}.first(cluster.size()));
+}
+
+bool legalEnglishOnset(std::span<const std::string> cluster) {
+  std::array<std::string_view, 3U> symbols{};
+  for (std::size_t index = 0U; index < cluster.size(); ++index) symbols[index] = cluster[index];
+  return legalEnglishOnset(std::span<const std::string_view>{symbols}.first(cluster.size()));
+}
+
+std::vector<std::size_t> dictionarySyllableBreaks(std::span<const std::string> phones) {
+  std::vector<std::size_t> nuclei;
+  for (std::size_t index = 0U; index < phones.size(); ++index)
+    if (isVowelSymbol(phones[index])) nuclei.push_back(index);
+
+  std::vector<std::size_t> breaks;
+  for (std::size_t index = 1U; index < nuclei.size(); ++index) {
+    const auto nextNucleus = nuclei[index];
+    const auto clusterStart = nuclei[index - 1U] + 1U;
+    const auto clusterSize = nextNucleus - clusterStart;
+    auto onsetStart = nextNucleus;
+    for (std::size_t count = 1U; count <= std::min<std::size_t>(3U, clusterSize); ++count) {
+      const auto candidate = std::span<const std::string>{phones}.subspan(nextNucleus - count, count);
+      if (legalEnglishOnset(candidate)) onsetStart = nextNucleus - count;
+    }
+    breaks.push_back(onsetStart);
+  }
+  return breaks;
 }
 
 void assignSyllableRoles(std::span<domain::PhonemeToken> tokens) {
@@ -118,6 +207,12 @@ const std::unordered_map<std::string, std::string>& digraphs() {
       {"ch", "ch"}, {"sh", "sh"}, {"th", "th"}, {"ph", "f"},
       {"ng", "ng"}, {"wh", "w"}, {"qu", "k"}, {"ck", "k"},
       {"zh", "zh"},
+      // Common vowel spellings are spelling estimates, not a pronunciation
+      // dictionary. Ambiguous patterns deliberately choose one reading and
+      // remain visible as EstimatedPronunciation at the call site.
+      {"ai", "ey0"}, {"ay", "ey0"}, {"ee", "iy0"}, {"ea", "iy0"},
+      {"oa", "ow0"}, {"oo", "uw0"}, {"oi", "oy0"}, {"oy", "oy0"},
+      {"ow", "aw0"}, {"ou", "aw0"},
   };
   return values;
 }
@@ -137,9 +232,23 @@ bool punctuation(std::string_view text) {
   return std::all_of(text.begin(), text.end(), [](char value) {
     return value == ' ' || value == '\t' || value == '\r' || value == '\n' ||
         value == ',' || value == '.' || value == '!' || value == '?' ||
-        value == ';' || value == ':' || value == '-' ||
-        value == '"' || value == '\'';
+        value == ';' || value == ':' || value == '-' || value == '"' ||
+        value == '\'' || value == '(' || value == ')' || value == '[' ||
+        value == ']' || value == '{' || value == '}';
   });
+}
+
+bool englishBoundaryPunctuation(char value) {
+  return value == ' ' || value == '\t' || value == '\r' || value == '\n' ||
+      value == ',' || value == '.' || value == '!' || value == '?' ||
+      value == ';' || value == ':' || value == '"' || value == '(' ||
+      value == ')' || value == '[' || value == ']' || value == '{' || value == '}';
+}
+
+std::string_view trimEnglishBoundaryPunctuation(std::string_view text) {
+  while (!text.empty() && englishBoundaryPunctuation(text.front())) text.remove_prefix(1U);
+  while (!text.empty() && englishBoundaryPunctuation(text.back())) text.remove_suffix(1U);
+  return text;
 }
 
 void appendPhone(std::vector<domain::PhonemeToken>& target, domain::NoteId note,
@@ -209,6 +318,25 @@ PhoneList fallbackWord(std::string_view word) {
   PhoneList result;
   for (std::size_t index = 0U; index < word.size();) {
     if (word[index] == '\'') { ++index; continue; }
+    // A final silent e commonly marks a preceding single-letter vowel as
+    // "long" across one consonant. Apply this narrow pattern only; exceptions
+    // stay estimates and can be corrected with a hint.
+    if (word[index] == 'e' && index + 1U == word.size() && !result.empty()) {
+      const auto vowel = !result.empty() && isVowelSymbol(result.back())
+          ? result.size() - 1U
+          : result.size() >= 2U && isVowelSymbol(result[result.size() - 2U])
+              ? result.size() - 2U : result.size();
+      if (vowel < result.size()) {
+        auto& preceding = result[vowel];
+        if (preceding == "ae0") preceding = "ey0";
+        else if (preceding == "eh0") preceding = "iy0";
+        else if (preceding == "ih0") preceding = "ay0";
+        else if (preceding == "aa0") preceding = "ow0";
+        else if (preceding == "uh0") preceding = "uw0";
+        ++index;
+        continue;
+      }
+    }
     if (index + 1U < word.size()) {
       const auto found = digraphs().find(std::string{word.substr(index, 2U)});
       if (found != digraphs().end()) {
@@ -225,7 +353,15 @@ PhoneList fallbackWord(std::string_view word) {
       case 'y': result.push_back("iy0"); break;
       case 'h': result.push_back("hh"); break;
       case 'x': result.push_back("k"); result.push_back("s"); break;
-      case 'b': case 'd': case 'f': case 'g': case 'j':
+      case 'c':
+        result.emplace_back(index < word.size() &&
+            (word[index] == 'e' || word[index] == 'i' || word[index] == 'y') ? "s" : "k");
+        break;
+      case 'g':
+        result.emplace_back(index < word.size() &&
+            (word[index] == 'e' || word[index] == 'i' || word[index] == 'y') ? "j" : "g");
+        break;
+      case 'b': case 'd': case 'f': case 'j':
       case 'k': case 'l': case 'm': case 'n': case 'p': case 'r':
       case 's': case 't': case 'v': case 'w': case 'z':
         result.emplace_back(1U, value); break;
@@ -373,10 +509,11 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
       } else if (punctuation(word)) {
         appendPhone(noteTokens, note->id, ordinal, "pau");
       } else {
-        const auto found = dictionary().find(word);
-        const auto phones = found == dictionary().end() ? fallbackWord(word) : found->second;
-        if (found != dictionary().end()) syllableBreaks = dictionarySyllableBreaks(word);
-        estimated = found == dictionary().end() && !phones.empty();
+        const auto pronunciationWord = trimEnglishBoundaryPunctuation(word);
+        const auto reading = findCmuReading(pronunciationWord);
+        const auto phones = reading.empty() ? fallbackWord(pronunciationWord) : cmuPhones(reading);
+        if (!reading.empty()) syllableBreaks = dictionarySyllableBreaks(phones);
+        estimated = reading.empty() && !phones.empty();
         if (phones.empty()) {
           result.warnings.push_back({WarningCode::UnsupportedCharacter, note->id, 0U,
               "English word is outside the bundled bootstrap pronunciation lexicon"});

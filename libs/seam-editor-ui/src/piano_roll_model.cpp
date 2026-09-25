@@ -168,14 +168,18 @@ std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
 std::optional<domain::NoteId> PianoRollModel::hitTest(Point point) const {
   const auto visuals = visibleNotes();
   for (auto iterator = visuals.rbegin(); iterator != visuals.rend(); ++iterator) {
-    if (iterator->bounds.contains(point)) {
+    // Dense overlap members beyond the three painted bands retain geometry so
+    // the overlap detail sheet can describe the full group. They are not direct
+    // hit targets: otherwise a click on a visible band can select an invisible
+    // member that happens to reuse that band's rectangle.
+    if (!iterator->hiddenByOverlapDensity && iterator->bounds.contains(point)) {
       return iterator->noteId;
     }
   }
   const NoteVisual* closest = nullptr;
   auto closestDistance = std::numeric_limits<double>::infinity();
   for (const auto& visual : visuals) {
-    if (!visual.hitBounds.contains(point)) continue;
+    if (visual.hiddenByOverlapDensity || !visual.hitBounds.contains(point)) continue;
     const auto center = visual.hitBounds.x + visual.hitBounds.width * 0.5;
     const auto distance = std::abs(point.x - center);
     if (closest == nullptr || distance < closestDistance ||
@@ -222,7 +226,7 @@ std::vector<domain::NoteId> PianoRollModel::overlapCandidatesAt(Point point) con
 std::vector<domain::NoteId> PianoRollModel::notesInBox(Rect box) const {
   std::vector<domain::NoteId> result;
   for (const auto& visual : visibleNotes()) {
-    if (visual.bounds.intersects(box)) {
+    if (!visual.hiddenByOverlapDensity && visual.bounds.intersects(box)) {
       result.push_back(visual.noteId);
     }
   }
@@ -698,13 +702,8 @@ PianoRollModel::planLyricDistribution(const domain::Project& project, domain::Re
     const auto* lyric = targets[index];
     const auto afterLanguage = language.value_or(lyric->language);
     if (lyric->surface == syllables[index] && lyric->language == afterLanguage) continue;
-    edits.push_back(application::BatchLyricEdit{
-        .lyricId = lyric->id,
-        .before = lyric->surface,
-        .after = syllables[index],
-        .language = afterLanguage,
-        .beforeLanguage = lyric->language,
-    });
+    edits.emplace_back(lyric->id, lyric->surface, syllables[index],
+                       afterLanguage, lyric->language);
   }
   report.changedLyrics = edits.size();
   if (stop.stop_requested()) return core::failure<LyricDistributionPlan>(core::ErrorCode::Conflict, "Lyric distribution planning cancelled");

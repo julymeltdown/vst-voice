@@ -22,6 +22,26 @@ Status: the generic bounded process primitive and private reading staging are im
 and Windows; fixture-backed native reading review is verified on macOS. Shipping resource trust, native-language
 review, installed-host qualification and U26 acceptance remain open; this is not a sandbox.
 
+## 2026-09-25 continuation: durable user-authored reading intent
+
+Project schema 20 now stores an optional lyric-token `readingHint`, separate
+from the visible lyric surface and note-level phone sequence. The Japanese
+resolver consumes this field only when present, includes it in pronunciation
+identity, and retains the visible lyric unchanged. A canonical
+`SetJapaneseLyricReadingCommand` updates it with pronunciation reconciliation,
+explicit undo/redo, and stale before-state checks. Surface/language lyric edits
+clear the prior reading in the same undoable transaction so the previous
+pronunciation is not silently applied to new text. Schemas 1–19 migrate the
+field as unset; schema 20 requires the field to be present as a string or null.
+USTX and SMF export explicitly report that this SEAM-specific intent is lost.
+
+The dedicated reading editor is still unimplemented: this slice supplies its
+domain, command, persistence, resolver and interchange contracts, but creators
+cannot yet edit the new field through the native UI. The external-reading panel
+continues to apply validated phone projections only for complete unambiguous
+note ownership. Shipping helper/dictionary trust and native-language review
+remain open, so this does not complete U26 or establish Beta GO.
+
 ## Current continuation: native review, resource ceilings and cancellation retirement
 
 The reading worker is now exposed through the native replacement-review panel:
