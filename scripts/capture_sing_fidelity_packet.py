@@ -53,6 +53,8 @@ SYSTEM_FONTS = (
 )
 MODES = ("emo", "scene")
 CANONICAL_VIEWPORT = (1600, 900)
+# Capture-only state: the ready fixture with the compact singer inspector open.
+INSPECTOR_STATE = "inspector"
 # ROI name -> geometry region, per section 11.2 ("header, portrait, notes, expression, lane,
 # footer separately").
 ROIS = {
@@ -306,20 +308,39 @@ FULL_RACK_REGIONS = ("singer", "expression", "style")
 COLLAPSIBLE_REGIONS = ("workspaceTabs", "outputMeter")
 ALWAYS_CONTROLS = (
     "classicToggle", "trackLabel", "gridLabel", "playButton", "positionReadout", "tempoReadout",
-    "meterReadout", "singerChange",
+    "meterReadout",
 )
 WORKSPACES = ("sing", "voice", "tune", "mix", "export")
 LANES = ("dynamics", "formant", "breath", "tension", "air", "gender", "growl")
 ALWAYS_NODES = (
-    "shell.change-voice", "shell.classic", "shell.lane", "shell.mode.emo", "shell.mode.scene",
+    "shell.classic", "shell.lane", "shell.mode.emo", "shell.mode.scene",
     "shell.settings", "shell.status", "shell.waveform",
 ) + tuple(f"shell.lane-tab.{lane}" for lane in LANES)
 NOTE_LIMIT = 256
+# The evidence (frame, semantics, geometry) is the last presented frame; the app logs its render
+# state later, after shutdown. A render can finish in between, so the log may be the frame's state
+# or a legal successor of it, never an earlier or unrelated one.
+RENDER_SUCCESSORS = {
+    "queued": {"queued", "rendering", "ready", "failed", "cancelled"},
+    "rendering": {"rendering", "ready", "failed", "cancelled"},
+}
+
+
+def frame_render_state(semantic: dict[str, Any]) -> str | None:
+    """The render state the presented frame's status node reported ("READY: ..." -> "ready")."""
+    for node in semantic.get("nodes") or []:
+        if node.get("id") == "shell.status":
+            value = str(node.get("value", ""))
+            return value.split(":", 1)[0].strip().lower() or None
+    return None
+# Rack controls are on screen with the full rack, or in the compact presentations only while the
+# singer inspector is open (then they lie inside it).
+RACK_CONTROLS_SHOWN = lambda geometry: geometry.get("rack") == "full" or geometry.get("inspectorOpen") is True  # noqa: E731
 
 
 def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
                    expected: dict[str, Any]) -> dict[str, Any]:
-    """expected: {"viewport": [w, h], "mode": "emo"|"scene"}."""
+    """expected: {"viewport": [w, h], "mode": "emo"|"scene", optional "inspectorOpen": bool}."""
     canonical = contract["canonical"]
     tolerance = float(canonical["regionTolerancePoints"])
     failures: list[str] = []
@@ -344,24 +365,41 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
     wanted = spec_rack_presentation(float(width))
     if presentation != wanted:
         failures.append(f"rack presentation {presentation} where section 3.4 requires {wanted}")
+    inspector_open = geometry.get("inspectorOpen") is True
+    if inspector_open != bool(expected.get("inspectorOpen", False)):
+        failures.append(f"inspector open={inspector_open}, requested {bool(expected.get('inspectorOpen', False))}")
+    if presentation == "full" and inspector_open:
+        failures.append("the full rack has no inspector")
 
     at_canonical = [width, height] == list(canonical["logicalSize"])
     required = list(ALWAYS_REGIONS)
-    if presentation == "full":
+    if RACK_CONTROLS_SHOWN(geometry):
         required += FULL_RACK_REGIONS
+    if inspector_open:
+        required.append("inspector")
     if at_canonical:
         required += COLLAPSIBLE_REGIONS
     for name in required:
         if not positive(regions.get(name)):
             failures.append(f"region {name}: missing or empty")
     required_controls = list(ALWAYS_CONTROLS)
-    if presentation == "full":
-        required_controls += [f"knob{i}" for i in range(len(KNOBS))]
+    if RACK_CONTROLS_SHOWN(geometry):
+        required_controls += ["singerChange"] + [f"knob{i}" for i in range(len(KNOBS))]
+    if presentation != "full":
+        required_controls.append("inspectorButton")
     if positive(regions.get("workspaceTabs")):
         required_controls += [f"workspaceTab{i}" for i in range(len(WORKSPACES))]
     for name in required_controls:
         if not positive(controls.get(name)):
             failures.append(f"control {name}: missing or empty")
+    if inspector_open and positive(regions.get("inspector")):
+        # Everything the inspector carries lies inside it.
+        for name in ("singer", "expression", "style"):
+            if positive(regions.get(name)) and not contains(regions["inspector"], regions[name]):
+                failures.append(f"{name}: outside the inspector")
+        for name in ["singerChange"] + [f"knob{i}" for i in range(len(KNOBS))]:
+            if positive(controls.get(name)) and not contains(regions["inspector"], controls[name]):
+                failures.append(f"{name}: outside the inspector")
 
     deviations: dict[str, list[float]] = {}
     if at_canonical:
@@ -379,6 +417,8 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
     client = [0.0, 0.0, float(width), float(height)]
     parents = {region["id"]: region["parent"] for region in canonical["regions"]}
     for name, parent in parents.items():
+        if inspector_open and parent == "rack":
+            continue  # the inspector's cards lie in the inspector (checked above), not the rack column
         if name in visible and (parent == "client" or parent in visible):
             outer = client if parent == "client" else visible[parent]
             if not contains(outer, visible[name]):
@@ -387,6 +427,11 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
         present = [name for name in group if name in visible]
         for index, first in enumerate(present):
             for second in present[index + 1:]:
+                if inspector_open and {first, second} == {"singer", "style"}:
+                    # In the inspector the style is a line of the singer row, not its own card.
+                    if not contains(visible["singer"], visible["style"]):
+                        failures.append("style: outside the inspector's singer row")
+                    continue
                 if overlaps(visible[first], visible[second]):
                     failures.append(f"{first} overlaps {second}")
     axis = [visible.get(name) for name in canonical["sharedTimeAxis"]]
@@ -430,9 +475,9 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
             failures.append(f"{node['id']}: bounds outside the client")
 
     required = list(ALWAYS_NODES)
-    if geometry.get("rack") == "full":
-        required += [f"shell.knob.{knob}" for knob in KNOBS] + ["shell.style"]
-    else:
+    if RACK_CONTROLS_SHOWN(geometry):
+        required += ["shell.change-voice", "shell.style"] + [f"shell.knob.{knob}" for knob in KNOBS]
+    if geometry.get("rack") != "full":
         required.append("shell.inspector")
     if positive(regions.get("workspaceTabs")):
         required += [f"shell.workspace.{name}" for name in WORKSPACES]
@@ -449,6 +494,14 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         node = by_id.get(f"shell.knob.{knob}")
         if node is not None and node["bounds"] != controls.get(f"knob{index}"):
             failures.append(f"{node['id']}: bounds differ from knob{index}")
+    for node_id, control in (("shell.inspector", "inspectorButton"), ("shell.change-voice", "singerChange")):
+        node = by_id.get(node_id)
+        if node is not None and node["bounds"] != controls.get(control):
+            failures.append(f"{node_id}: bounds differ from {control}")
+    if not RACK_CONTROLS_SHOWN(geometry):
+        for node_id in by_id:
+            if node_id.startswith("shell.knob.") or node_id in ("shell.change-voice", "shell.style"):
+                failures.append(f"{node_id}: published while the inspector is closed")
     for index, name in enumerate(WORKSPACES):
         node = by_id.get(f"shell.workspace.{name}")
         if node is not None and node["bounds"] != controls.get(f"workspaceTab{index}"):
@@ -462,13 +515,17 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
     listed_count = len(listed) if isinstance(listed, list) else 0
     if not isinstance(listed, list) or listed_count != min(expected_notes, NOTE_LIMIT):
         failures.append(f"{listed_count} note nodes listed; expected {min(expected_notes, NOTE_LIMIT)}")
-    # The published status agrees with the render state the app logged for the same exit.
-    status = str(by_id.get("shell.status", {}).get("value", ""))
-    if not render_state or not status.startswith(render_state.upper()):
-        failures.append(f"status '{status[:40]}' does not report the logged state {render_state}")
+    # The frame's status and the state the app logged at exit must be the same state or a legal
+    # progression (the frame is earlier).
+    frame_state = frame_render_state(semantic)
+    allowed = RENDER_SUCCESSORS.get(frame_state or "", {frame_state})
+    if not render_state or not frame_state or render_state not in allowed:
+        failures.append(f"frame status {frame_state} is not the logged state {render_state} "
+                        "or an earlier stage of it")
     return {
         "nodes": len(nodes),
         "virtualizedNotes": count,
+        "frameRenderState": frame_state,
         "focused": semantic.get("focused"),
         "failures": failures,
         "result": "PASS" if not failures else "FAIL",
@@ -520,6 +577,9 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     ]
     environment = dict(os.environ, SEAM_UI_DESIGN=mode)
     environment.pop("SEAM_UI_WORKSPACE", None)
+    environment.pop("SEAM_UI_INSPECTOR", None)
+    if state == INSPECTOR_STATE:
+        environment["SEAM_UI_INSPECTOR"] = "open"
     record: dict[str, Any] = {
         "id": name, "mode": mode, "state": state, "viewport": list(viewport),
         "command": [os.path.relpath(part, ROOT) if part.startswith(str(ROOT)) else part
@@ -569,11 +629,13 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
         record["error"] = f"exit {process.returncode}; stderr: {stderr.strip()[-400:]}"
         return record
     record["observedRenderState"] = log.get("render_state", "unknown")
-    expected = {"ready": "ready", "failed": "failed", "dense-overlap": "ready",
-                "rendering": "rendering", "empty": None}[state]
-    record["stateReached"] = expected is None or record["observedRenderState"] == expected
     for part in ("geometry", "semantic-bounds", "performance"):
         record[part] = json.loads((evidence / f"{part}.json").read_text())
+    # A capture shows its state when the presented frame shows it, whatever the render did after.
+    record["frameRenderState"] = frame_render_state(record["semantic-bounds"])
+    expected = {"ready": "ready", INSPECTOR_STATE: "ready", "failed": "failed", "dense-overlap": "ready",
+                "rendering": "rendering", "empty": None}[state]
+    record["stateReached"] = expected is None or record["frameRenderState"] == expected
     return record
 
 def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appkit: bool) -> None:
@@ -638,6 +700,11 @@ def build_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, in
         for viewport in requirements["viewports"]:
             if tuple(viewport) != CANONICAL_VIEWPORT:
                 matrix += [(mode, "ready", (viewport[0], viewport[1])) for mode in MODES]
+        # The compact presentations also show their singer inspector open (a capture state, not a
+        # contract render state): its knobs, voice and style must be reachable and inside it.
+        for viewport in requirements["viewports"]:
+            if spec_rack_presentation(float(viewport[0])) != "full":
+                matrix += [(mode, INSPECTOR_STATE, (viewport[0], viewport[1])) for mode in MODES]
     return matrix
 
 
@@ -690,18 +757,18 @@ def acceptance_markdown(manifest: dict[str, Any], records: list[dict[str, Any]],
         "",
         "## Captures",
         "",
-        "| Capture | Render state | State reached | Geometry | Semantics | Images | AppKit | Paint p50/p95 ms | Footprint MB |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Capture | Frame state | Logged at exit | State reached | Geometry | Semantics | Images | AppKit | Paint p50/p95 ms | Footprint MB |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for record in records:
         if "error" in record:
-            lines.append(f"| {record['id']} | - | - | ERROR | ERROR | ERROR | {record.get('appkit', '-')} | - | - |")
+            lines.append(f"| {record['id']} | - | - | - | ERROR | ERROR | ERROR | {record.get('appkit', '-')} | - | - |")
             continue
         perf = record["performance"]
         paint = perf["paintMillis"]
         memory = perf["memory"].get("physFootprintBytes") or 0
         lines.append(
-            f"| {record['id']} | {record['observedRenderState']} | "
+            f"| {record['id']} | {record['frameRenderState']} | {record['observedRenderState']} | "
             f"{'yes' if record['stateReached'] else 'NO'} | {record['geometryCheck']['result']} | "
             f"{record['semanticCheck']['result']} | {record['imageCheck']['result']} | {record['appkit']} | "
             f"{paint['p50']:.1f}/{paint['p95']:.1f} | {memory / 1048576:.0f} |")
@@ -811,7 +878,9 @@ def main() -> int:
             record = capture(args, work, mode, state, viewport, project)
             if "error" not in record:
                 record["geometryCheck"] = check_geometry(
-                    record["geometry"], contract, expected={"viewport": list(viewport), "mode": mode})
+                    record["geometry"], contract,
+                    expected={"viewport": list(viewport), "mode": mode,
+                              "inspectorOpen": state == INSPECTOR_STATE})
                 record["semanticCheck"] = check_semantics(
                     record["semantic-bounds"], record["geometry"],
                     expected_notes=fixture_notes[state], render_state=record["observedRenderState"])

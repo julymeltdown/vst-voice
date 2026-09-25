@@ -1673,3 +1673,97 @@ TEST_CASE("a failed render's status line names its reason, not only that it fail
   state.diagnostics.front().code = "BANK_MISSING";
   CHECK(native_ui::design::singStatusMessage(state).text == "Voicebank needs attention");
 }
+
+TEST_CASE("the compact inspector opens from its drawer button and keeps every rack control usable") {
+  using native_ui::SemanticAction;
+  using native_ui::design::RackPresentation;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f;
+  const auto frameAt = [&f](double width, double height) {
+    if (!f.shell.prepareFrame(f.controller, width, height)) return false;
+    native_ui::PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    return f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick());
+  };
+  const auto published = [&f](std::string_view id) {
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    for (const auto& node : f.shell.accessibilityTree().root().children)
+      if (node.id == id) return true;
+    return false;
+  };
+
+  // Full rack: the Stage stands behind the notes; no inspector exists.
+  CHECK(frameAt(1600.0, 900.0));
+  CHECK(f.shell.lastFrameShowedStage() == f.shell.assetsLoaded(DesignMode::Emo));
+  CHECK(!published("shell.inspector"));
+
+  // 720x480: a 44-point drawer button, no Stage, and no knob until the inspector opens.
+  CHECK(frameAt(720.0, 480.0));
+  const auto closed = f.shell.layout();
+  CHECK(closed.rack == RackPresentation::Drawer);
+  CHECK(!f.shell.lastFrameShowedStage());
+  CHECK(published("shell.inspector"));
+  CHECK(!published("shell.knob.gender"));
+  CHECK(!published("shell.change-voice"));
+  const auto revision = f.controller.documentRevision();
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::Increment).hasValue());
+
+  // The button opens it; its knobs, Change voice and style are published where they are painted.
+  const auto button = closed.inspectorButton;
+  const ui::Point buttonCenter{button.x + button.width * 0.5, button.y + button.height * 0.5};
+  CHECK(f.shell.pointerDown(f.controller, press(buttonCenter)));
+  CHECK(f.shell.pointerUp(f.controller, press(buttonCenter)));
+  CHECK(f.shell.inspectorOpen());
+  CHECK(frameAt(720.0, 480.0));
+  CHECK(f.shell.inspectorOpen());  // a frame at the same size keeps it open
+  const auto open = f.shell.layout();
+  CHECK(published("shell.knob.gender"));
+  CHECK(published("shell.change-voice"));
+  CHECK(published("shell.style"));
+
+  // A drag on a knob inside the inspector is one command and one undo step.
+  const auto knob = open.knob[4];  // gender
+  const ui::Point dial{knob.x + knob.width * 0.5, knob.y + 46.0};
+  CHECK(f.shell.pointerDown(f.controller, press(dial)));
+  CHECK(f.shell.pointerMove(f.controller, press({dial.x, dial.y - 36.0})));
+  CHECK(f.shell.pointerUp(f.controller, press({dial.x, dial.y - 36.0})));
+  CHECK(f.controller.documentRevision() == revision + 1U);
+  CHECK(f.session.canUndo());
+
+  // A press in the grid outside the inspector only closes it: no note is created or moved.
+  const auto notesBefore = f.session.project().findRegion(f.regionId)->notes.size();
+  const ui::Point gridPoint{open.grid.x + 20.0, open.grid.y + open.grid.height * 0.5};
+  CHECK(gridPoint.x < open.inspector.x);  // left of the inspector, inside the grid
+  CHECK(f.shell.pointerDown(f.controller, press(gridPoint)));
+  CHECK(f.shell.pointerUp(f.controller, press(gridPoint)));
+  CHECK(!f.shell.inspectorOpen());
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notesBefore);
+  CHECK(f.controller.documentRevision() == revision + 1U);
+
+  // Keyboard: Activate on the button opens it with focus kept there; Tab walks into the knobs;
+  // Escape closes it and returns focus to the button.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.inspector", SemanticAction::Activate));
+  CHECK(f.shell.inspectorOpen());
+  CHECK(f.shell.accessibilityTree().focusedNode() != nullptr &&
+        f.shell.accessibilityTree().focusedNode()->id == "shell.inspector");
+  std::string reached;
+  for (int i = 0; i < 12 && !reached.starts_with("shell.knob."); ++i) {
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+    const auto* focused = f.shell.accessibilityTree().focusedNode();
+    reached = focused == nullptr ? std::string{} : focused->id;
+  }
+  CHECK(reached.starts_with("shell.knob."));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.shell.inspectorOpen());
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(f.shell.accessibilityTree().focusedNode() != nullptr &&
+        f.shell.accessibilityTree().focusedNode()->id == "shell.inspector");
+
+  // Growing back to the full rack forgets the inspector; shrinking again starts closed.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.inspector", SemanticAction::Activate));
+  CHECK(frameAt(1600.0, 900.0));
+  CHECK(!f.shell.inspectorOpen());
+  CHECK(frameAt(720.0, 480.0));
+  CHECK(!f.shell.inspectorOpen());
+}

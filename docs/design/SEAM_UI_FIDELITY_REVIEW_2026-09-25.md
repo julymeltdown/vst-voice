@@ -406,7 +406,21 @@ First results, recorded in [evidence/ui-fidelity-11938f8f](evidence/ui-fidelity-
 - **Presentation colour (fixed in 72bef8af).** Both presenters drew the sRGB-authored frame with a device RGB colour space, so a Display P3 screen showed every EMO/SCENE colour oversaturated. With the sRGB presentation space, the worst per-region share of window pixels over channel delta 8 against the software frame fell from 9.9% to 0.01%.
 - **Failed-render status line (fixed in 11938f8f).** It now names the reason.
 - **Geometry.** All 20 captures pass the contract and semantic checks, and EMO/SCENE geometry is identical for every state and viewport.
-- **Open deviation.** Below 860 pt the rack is a 56-pt rail holding the 44-pt portrait button; §3.4 asks for a 44-pt drawer button. This needs a reviewer decision: either change the solver or amend §3.4.
+- **Compact rack deviation (resolved after review, see below).** Below 860 pt the rack was a 56-pt rail holding the 44-pt portrait button, where §3.4 asks for a 44-pt drawer button.
+
+Developer 2's review of \`4623bec4\` (CHANGES_REQUESTED) kept §3.4 authoritative. It ruled that the same-run ROI is presentation-path consistency evidence only, not the accepted-native regression baseline. It raised two P2 findings, both repaired:
+
+- **Checks fail closed (\`c7c4e700\`).** Missing or empty regions, controls and nodes now fail. So do a wrong viewport, mode, scale or presentation, a note count that differs from the fixture, and a parity partner that is missing or has a different identity.
+- **Bounded captures (\`c7c4e700\`).** One monotonic deadline covers startup, the window capture and shutdown. A stuck app is killed and reaped.
+
+The compact behaviour now follows §3.4:
+
+- **Drawer and rail.** Below 860 pt the rack is a 44-pt drawer button; from 860 to 1100 pt it is a 56-pt rail.
+- **Singer inspector.** In both, the portrait button opens an inspector over the body: voice, state and style, Change voice, and all six knobs in 96-pt cells, two rows at 720×480 and one row on shorter windows. A press outside closes it without touching the score. Escape closes it and returns focus to the button. Activate on \`shell.inspector\` opens it, and Tab walks into its knobs.
+- **Semantics.** Knobs, style and Change voice are published only while on screen.
+- **Stage.** The Stage is off without the full rack.
+
+The packet adds open-inspector captures at 720×480 and 860×640. It judges a capture's state from the presented frame and accepts a logged exit state only if it is that state or a later stage of it.
 
 The specification's successful validation is useful: an implementer now has unambiguous inputs and measurable exits. It is not a substitute for producing the working SING screen.
 

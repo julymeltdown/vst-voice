@@ -107,6 +107,10 @@ public:
   [[nodiscard]] DesignMode mode() const noexcept { return preferences_.mode; }
   [[nodiscard]] bool presentedLastFrame() const noexcept { return presented_; }
   [[nodiscard]] const SingLayout& layout() const noexcept { return layout_; }
+  // The compact rack's singer inspector (rail and drawer presentations only).
+  [[nodiscard]] bool inspectorOpen() const noexcept { return layout_.inspectorOpen; }
+  // Whether the last SING frame painted the Stage figure; §3.4 keeps it off without the full rack.
+  [[nodiscard]] bool lastFrameShowedStage() const noexcept { return stageShown_; }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
   [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
 
@@ -209,6 +213,15 @@ private:
   void paintLane(paint::Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
                  const EditorSceneState& state) const;
   void paintRack(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  void paintKnobs(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  void paintInspector(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  // Opens or closes the compact inspector and re-solves the layout at once, so hit-testing and
+  // semantics follow before the next paint. Closing returns shell focus that was inside the
+  // inspector to its button.
+  void setInspectorOpen(NativeEditorController& controller, bool open);
+  [[nodiscard]] bool knobsShown() const noexcept {
+    return layout_.rack == RackPresentation::Full || layout_.inspectorOpen;
+  }
   void paintStatus(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintExport(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   [[nodiscard]] ui::Rect exportArea() const noexcept;
@@ -250,6 +263,8 @@ private:
   mutable std::optional<std::size_t> offscreenHint_;
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
+  bool inspectorWanted_{false};
+  mutable bool stageShown_{false};
   double scrollAccumulator_{0.0};
   AccessibilityTree semantics_;
   std::string semanticFocus_;

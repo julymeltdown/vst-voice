@@ -19,6 +19,15 @@ std::string workspaceName(Workspace workspace) {
   return workspace == Workspace::Export ? "export" : "sing";
 }
 
+std::string rackName(RackPresentation rack) {
+  switch (rack) {
+    case RackPresentation::Full: return "full";
+    case RackPresentation::Rail: return "rail";
+    case RackPresentation::Drawer: return "drawer";
+  }
+  return "unknown";
+}
+
 void flatten(const SemanticNode& node, const std::string& parent, formats::JsonValue::Array& out) {
   formats::JsonValue::Array actions;
   for (const auto action : node.actions) actions.emplace_back(static_cast<std::int64_t>(action));
@@ -66,6 +75,8 @@ formats::JsonValue singLayoutEvidence(const SingShell& shell, double deviceScale
   for (std::size_t i = 0U; i < l.knob.size(); ++i)
     controls.emplace("knob" + std::to_string(i), rect(l.knob[i]));
   if (const auto run = shell.exportRunButton(); run.width > 0.0) controls.emplace("exportRun", rect(run));
+  if (l.inspectorButton.width > 0.0) controls.emplace("inspectorButton", rect(l.inspectorButton));
+  if (l.inspectorOpen) regions.emplace("inspector", rect(l.inspector));
   return formats::JsonValue::Object{
       {"schema", "seam-ui-geometry-evidence-v1"},
       {"source", "SingShell::layout() of the presented frame"},
@@ -74,7 +85,9 @@ formats::JsonValue singLayoutEvidence(const SingShell& shell, double deviceScale
       {"workspace", workspaceName(shell.workspace())},
       {"logicalSize", formats::JsonValue::Array{l.width, l.height}},
       {"deviceScale", deviceScale},
-      {"rack", std::string{l.rack == RackPresentation::Rail ? "rail" : "full"}},
+      {"rack", rackName(l.rack)},
+      {"inspectorOpen", l.inspectorOpen},
+      {"knobsInOneRow", l.knobsInOneRow},
       {"compactHeader", l.compactHeader},
       {"workspaceLabelsVisible", l.workspaceLabelsVisible},
       {"outputMeterVisible", l.outputMeterVisible},
@@ -100,4 +113,3 @@ formats::JsonValue semanticEvidence(const AccessibilityTree& tree, std::size_t n
 }
 
 }  // namespace seam::native_ui::design
-

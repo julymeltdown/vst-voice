@@ -28,6 +28,7 @@ CANONICAL = {"viewport": [1600, 900], "mode": "emo"}
 def canonical_geometry():
     regions = {item["id"]: list(item["rect"]) for item in CONTRACT["canonical"]["regions"]}
     controls = {name: [100 + 10 * i, 50, 8, 8] for i, name in enumerate(PACKET.ALWAYS_CONTROLS)}
+    controls["singerChange"] = [1468, 438, 100, 22]
     controls |= {f"knob{i}": [1170 + 140 * (i % 3), 530 + 100 * (i // 3), 56, 56] for i in range(6)}
     controls |= {f"workspaceTab{i}": [264 + 80 * i, 24, 80, 64] for i in range(5)}
     return {
@@ -48,6 +49,7 @@ def published_tree(geometry, notes=6, state="READY"):
     for node_id in PACKET.ALWAYS_NODES:
         add(node_id, regions.get(PACKET.SEMANTIC_REGIONS.get(node_id, "grid"), [80, 172, 10, 10]))
     nodes[[n["id"] for n in nodes].index("shell.status")]["value"] = f"{state}: render note"
+    add("shell.change-voice", controls["singerChange"])
     for i, knob in enumerate(PACKET.KNOBS):
         add(f"shell.knob.{knob}", controls[f"knob{i}"])
     add("shell.style", regions["style"])
@@ -147,13 +149,31 @@ class SemanticCheckTests(unittest.TestCase):
             "notes removed": lambda s: s.update(notes=[]),
             "count wrong": lambda s: s.update(virtualizedNoteCount=5),
             "status disagrees": lambda s: node(s, "shell.status").update(value="FAILED: x"),
+            "frame later than the log": lambda s: node(s, "shell.status").update(value="READY: x"),
         }
         for name, mutate in cases.items():
             with self.subTest(name):
                 geometry = canonical_geometry()
                 semantic = published_tree(geometry)
+                if name == "frame later than the log":
+                    self.assertEqual(semantic_result(semantic, geometry, state="rendering")["result"], "FAIL")
+                    continue
                 mutate(semantic)
                 self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
+
+    def test_a_render_that_finishes_after_the_frame_is_a_legal_progression(self):
+        geometry = canonical_geometry()
+        semantic = published_tree(geometry, state="RENDERING")
+        semantic["nodes"].append({"id": "shell.render-progress", "parent": "shell",
+                                  "bounds": geometry["regions"]["status"], "value": "90%"})
+        for logged in ("rendering", "ready", "failed", "cancelled"):
+            with self.subTest(logged):
+                result = semantic_result(semantic, geometry, state=logged)
+                self.assertEqual(result["result"], "PASS", result["failures"])
+                self.assertEqual(result["frameRenderState"], "rendering")
+        # A frame reporting READY while the app logged RENDERING later is impossible.
+        ready = published_tree(geometry, state="READY")
+        self.assertEqual(semantic_result(ready, geometry, state="rendering")["result"], "FAIL")
 
     def test_rendering_needs_progress_and_long_songs_list_up_to_the_limit(self):
         geometry = canonical_geometry()
@@ -169,14 +189,20 @@ class SemanticCheckTests(unittest.TestCase):
     def test_compact_rack_needs_the_inspector_instead_of_knobs(self):
         geometry = canonical_geometry()
         geometry["rack"] = "drawer"
+        geometry["controls"]["inspectorButton"] = [1540, 108, 44, 44]
         semantic = published_tree(geometry)
+        # Closed: knobs, Change voice and style are not on screen, so publishing them fails.
+        self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
         semantic["nodes"] = [n for n in semantic["nodes"]
-                             if not n["id"].startswith(("shell.knob.", "shell.style"))]
+                             if not n["id"].startswith(("shell.knob.", "shell.style", "shell.change-voice"))]
         self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
         semantic["nodes"].append({"id": "shell.inspector", "parent": "shell",
-                                  "bounds": geometry["regions"]["rack"], "value": ""})
+                                  "bounds": [1540, 108, 44, 44], "value": "Closed"})
         result = semantic_result(semantic, geometry)
         self.assertEqual(result["result"], "PASS", result["failures"])
+        # Open: they must be published again.
+        geometry["inspectorOpen"] = True
+        self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
 
 
 class ParityTests(unittest.TestCase):
@@ -208,6 +234,65 @@ class ParityTests(unittest.TestCase):
         errored = PACKET.mode_parity([self.record("emo", canonical_geometry()),
                                       {"state": "ready", "viewport": [1600, 900], "mode": "scene"}])
         self.assertEqual([r["result"] for r in errored], ["FAIL"])
+
+
+
+
+def compact_geometry(open_inspector):
+    """A 720x480 drawer snapshot shaped like the solver's output."""
+    g = canonical_geometry()
+    g.update(logicalSize=[720, 480], rack="drawer", inspectorOpen=open_inspector)
+    r = g["regions"]
+    r.update(header=[16, 16, 688, 64], wordmark=[32, 24, 72, 48], modeSwitch=[200, 34, 120, 28],
+             transport=[336, 26, 248, 44], settings=[648, 32, 32, 32], editor=[16, 92, 612, 216],
+             tools=[24, 100, 596, 28], ruler=[80, 132, 540, 24], keyboard=[24, 156, 56, 144],
+             grid=[80, 156, 540, 144], lane=[16, 320, 612, 104], laneTabs=[24, 328, 596, 28],
+             lanePlot=[56, 364, 564, 52], laneTimePlot=[80, 364, 540, 52], rack=[660, 92, 44, 332],
+             portraitRing=[660, 92, 44, 44], status=[16, 436, 688, 28])
+    for name in ("workspaceTabs", "outputMeter", "singer", "expression", "style"):
+        r[name] = [0, 0, 0, 0]
+    c = g["controls"]
+    for name in ["singerChange"] + [f"knob{i}" for i in range(6)] + [f"workspaceTab{i}" for i in range(5)]:
+        c[name] = [0, 0, 0, 0]
+    c["inspectorButton"] = [660, 92, 44, 44]
+    if open_inspector:
+        r.update(inspector=[312, 92, 340, 316], singer=[324, 104, 316, 56],
+                 portraitRing=[324, 110, 44, 44], style=[380, 138, 260, 18],
+                 expression=[324, 172, 316, 224])
+        c["singerChange"] = [540, 110, 100, 22]
+        for i in range(6):
+            c[f"knob{i}"] = [324 + 105 * (i % 3), 216 + 90 * (i // 3), 105, 90]
+    return g
+
+
+class CompactInspectorGeometryTests(unittest.TestCase):
+    EXPECTED = {"viewport": [720, 480], "mode": "emo"}
+
+    def test_closed_and_open_drawer_pass_when_requested(self):
+        closed = geometry_result(compact_geometry(False), self.EXPECTED)
+        self.assertEqual(closed["result"], "PASS", closed["failures"])
+        opened = geometry_result(compact_geometry(True), self.EXPECTED | {"inspectorOpen": True})
+        self.assertEqual(opened["result"], "PASS", opened["failures"])
+
+    def test_inspector_state_and_contents_are_enforced(self):
+        # Open when closed was requested, and the reverse.
+        self.assertEqual(geometry_result(compact_geometry(True), self.EXPECTED)["result"], "FAIL")
+        self.assertEqual(geometry_result(compact_geometry(False),
+                                         self.EXPECTED | {"inspectorOpen": True})["result"], "FAIL")
+        cases = {
+            "no button": lambda g: g["controls"].pop("inspectorButton"),
+            "knob outside": lambda g: g["controls"]["knob5"].__setitem__(0, 100),
+            "missing knob": lambda g: g["controls"].pop("knob2"),
+            "no inspector region": lambda g: g["regions"].pop("inspector"),
+            "change voice outside": lambda g: g["controls"]["singerChange"].__setitem__(1, 20),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                geometry = compact_geometry(True)
+                mutate(geometry)
+                result = geometry_result(geometry, self.EXPECTED | {"inspectorOpen": True})
+                self.assertEqual(result["result"], "FAIL")
+
 
 
 class FakeClock:
@@ -328,4 +413,3 @@ class FixtureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

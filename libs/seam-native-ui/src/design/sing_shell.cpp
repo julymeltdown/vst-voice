@@ -254,6 +254,10 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
   if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE");
       workspace != nullptr && std::string_view{workspace} == "export")
     workspace_ = Workspace::Export;
+  // Captures only: start with the compact inspector open (ignored at the full rack).
+  if (const char* inspector = std::getenv("SEAM_UI_INSPECTOR");
+      inspector != nullptr && std::string_view{inspector} == "open")
+    inspectorWanted_ = true;
   activate(assetRoot, preferences);
   persist_ = true;
 }
@@ -432,7 +436,10 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     releaseSurface(controller);
     return false;
   }
-  const auto next = solveSingLayout(logicalWidth, logicalHeight);
+  // The inspector exists only in the compact presentations; a window that grows back to the full
+  // rack forgets it, so shrinking again starts closed.
+  auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
+  if (next.rack == RackPresentation::Full) inspectorWanted_ = false;
   const auto moved = next.grid.x != layout_.grid.x || next.grid.y != layout_.grid.y ||
                      next.grid.width != layout_.grid.width ||
                      next.grid.height != layout_.grid.height ||
@@ -451,6 +458,27 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   applyGeometry(controller);
   presented_ = true;
   return true;
+}
+
+void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) {
+  if (layout_.rack == RackPresentation::Full) open = false;
+  inspectorWanted_ = open;
+  if (open == layout_.inspectorOpen) return;
+  // A knob gesture belongs to the knob rectangles it started on.
+  if (knobDrag_) cancelGestures(controller);
+  const auto* controllerFocus = controller.accessibilityTree().focusedNode();
+  const auto focusInside =
+      !open && (semanticFocus_ == "shell.inspector" || semanticFocus_ == "shell.change-voice" ||
+                semanticFocus_ == "shell.style" || semanticFocus_.starts_with("shell.knob.") ||
+                (semanticFocus_.empty() && controllerFocus != nullptr &&
+                 controllerFocus->id == "voice.identity"));
+  layout_ = solveSingLayout(layout_.width, layout_.height, open);
+  if (focusInside) {
+    // Closing returns focus to the button that opened the inspector, not to the score.
+    refreshSemantics(controller);
+    takeSemanticFocus(controller, "shell.inspector");
+  }
+  repaint();
 }
 
 void SingShell::ensureBackground(const RasterCanvas& canvas, const DesignTokens& tokens) {
@@ -629,6 +657,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     waveform_ = RegionWaveform{nullptr, "Other region",
                                "The rendered audio belongs to a different region than the one shown."};
   if (workspace_ == Workspace::Export) {
+    stageShown_ = false;
     paintExport(*c, t, state);
   } else {
     paintEditor(*c, t, model, state);
@@ -638,7 +667,9 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   paintStatus(*c, t, state);
   if (workspace_ == Workspace::Sing && state.focusedElementBounds.has_value()) {
     const auto focus = fromLegacy(*state.focusedElementBounds);
-    if (intersects(focus, layout_.grid)) {
+    // The note focus ring never draws over the open inspector.
+    if (intersects(focus, layout_.grid) &&
+        !(layout_.inspectorOpen && intersects(focus, layout_.inspector))) {
       c->save();
       c->setGlow(t.color.focusRing, 6.0);
       c->stroke(Path::roundedRect({focus.x - 2, focus.y - 2, focus.width + 4, focus.height + 4}, 5),
@@ -963,8 +994,13 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.restore();
 
   const auto notes = model.visibleNotes();
-  // The singer stands behind the notes and fades back whenever notes share her space.
-  if (const auto& stage = assets().stage; stage && l.grid.width > 520.0) {
+  // The singer stands behind the notes and fades back whenever notes share her space. Without the
+  // full rack (§3.4 compact widths) the Stage is off: the portrait lives in the inspector and the
+  // narrow grid keeps every pixel for notes.
+  stageShown_ = false;
+  if (const auto& stage = assets().stage;
+      stage && l.rack == RackPresentation::Full && l.grid.width > 520.0) {
+    stageShown_ = true;
     const auto height = l.grid.height * 0.94;
     const auto width = height * stage->width() / stage->height();
     const ui::Rect figure{l.grid.right() - width - 36.0, l.grid.bottom() - height, width, height};
@@ -1346,9 +1382,16 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
                           identity.state == VoiceIdentityState::Complete ||
                           identity.state == VoiceIdentityState::Rendering;
   if (l.rack != RackPresentation::Full) {
-    const auto ring = l.portraitRing;
+    // The rail or drawer portrait is the inspector's button; it lights while the inspector is open.
+    const auto ring = l.inspectorButton;
     const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
     const auto inner = ring.width * 0.5 - 3.0;
+    if (l.inspectorOpen) {
+      c.save();
+      c.setGlow(withAlpha(t.color.accent, 0.9), 10.0);
+      c.fill(Path::circle(center, inner + 3.0), withAlpha(t.color.accent, 0.35));
+      c.restore();
+    }
     c.fill(Path::circle(center, inner), t.color.surfaceSunken);
     if (const auto& portrait = assets().portrait; portrait) {
       c.save();
@@ -1367,6 +1410,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     c.stroke(Path::circle(center, inner + 1.0), railColor, StrokeStyle{1.6});
     c.restore();
     c.fill(Path::circle({ring.right() - 4.0, ring.bottom() - 4.0}, 4.5), railColor);
+    if (l.inspectorOpen) paintInspector(c, t, state);
     return;
   }
   cardHeader(c, t, l.singer, "Singer", voiceReady);
@@ -1444,6 +1488,91 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
 
   // Expression knobs.
   cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
+  paintKnobs(c, t, state);
+
+  // Style presets published by the selected voice.
+  cardHeader(c, t, l.style, "Style", false);
+  std::vector<std::string> styles;
+  for (const auto& card : state.voicebankCards)
+    if (card.id == state.inspector.voicebank.id && !card.id.empty()) styles = card.styles;
+  if (styles.empty()) {
+    c.text({l.style.x + 18.0, l.style.y + 52.0, l.style.width - 36.0, 18.0},
+           "The selected voice publishes no style presets",
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+    return;
+  }
+  const auto chipW = (l.style.width - 32.0 - 3.0 * 8.0) / 4.0;
+  for (std::size_t i = 0U; i < std::min<std::size_t>(styles.size(), 8U); ++i) {
+    const ui::Rect chipRect{l.style.x + 16.0 + (i % 4U) * (chipW + 8.0),
+                            l.style.y + 46.0 + (i / 4U) * 30.0, chipW, 24.0};
+    const auto overflow = i == 7U && styles.size() > 8U;
+    c.stroke(Path::capsule(chipRect), withAlpha(t.color.accent, 0.55), StrokeStyle{1.0});
+    c.text(chipRect, overflow ? "+" + std::to_string(styles.size() - 7U) : styles[i],
+           style(FontRole::UiSemibold, t.type.smallLabel, 0.8, TextAlign::Center, true),
+           t.color.textPrimary);
+  }
+}
+
+void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
+  const auto& l = layout_;
+  const auto& identity = state.voiceIdentity;
+  // Dim the score it covers, so the inspector reads as a drawer over it, not part of it.
+  c.fill(Path::rect({l.editor.x, l.editor.y, l.editor.width, l.lane.bottom() - l.editor.y}),
+         withAlpha(t.color.canvas, 0.45));
+  c.fill(Path::roundedRect(l.inspector, t.shape.card), t.color.surfaceSunken);
+  glassPanel(c, t, l.inspector, t.shape.card);
+  c.save();
+  c.setGlow(withAlpha(t.color.accent, 0.5), 8.0);
+  c.stroke(Path::roundedRect(l.inspector, t.shape.card), withAlpha(t.color.accent, 0.7),
+           StrokeStyle{1.2});
+  c.restore();
+
+  // Singer row: portrait, voice, state and style, and Change voice.
+  const auto voiceReady = identity.state == VoiceIdentityState::Ready ||
+                          identity.state == VoiceIdentityState::Complete ||
+                          identity.state == VoiceIdentityState::Rendering;
+  const auto stateColor = identity.state == VoiceIdentityState::Missing ||
+                                  identity.state == VoiceIdentityState::Error
+                              ? t.color.error
+                              : identity.state == VoiceIdentityState::Warning ? t.color.warning
+                                                                              : t.color.success;
+  const auto ring = l.portraitRing;
+  const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
+  const auto inner = ring.width * 0.5 - 2.0;
+  c.fill(Path::circle(center, inner), t.color.surfaceSunken);
+  if (const auto& portrait = assets().portrait; portrait) {
+    c.save();
+    c.clipPath(Path::circle(center, inner));
+    c.drawImage(*portrait, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
+                voiceReady ? 1.0 : 0.55);
+    c.restore();
+  }
+  c.stroke(Path::circle(center, inner + 1.0), withAlpha(t.color.accent, 0.85), StrokeStyle{1.4});
+  const auto name = !identity.name.empty() ? identity.name
+                    : !state.characterName.empty() ? state.characterName
+                                                   : std::string{"No voice selected"};
+  const auto textX = ring.right() + 12.0;
+  c.text({textX, l.singer.y + 4.0, l.singerChange.x - 8.0 - textX, 18.0}, name,
+         style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
+  std::string styles;
+  for (const auto& card : state.voicebankCards)
+    if (card.id == state.inspector.voicebank.id && !card.id.empty())
+      for (const auto& preset : card.styles) styles += (styles.empty() ? "" : ", ") + preset;
+  c.text(l.style,
+         std::string{voiceIdentityStateName(identity.state)} + "  \u2022  " +
+             (styles.empty() ? std::string{"No style presets"} : "Style: " + styles),
+         style(FontRole::UiMedium, t.type.smallLabel, 0.6), stateColor);
+  c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
+  c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
+  c.text(l.singerChange, "Change voice",
+         style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true), t.color.accent);
+
+  cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
+  paintKnobs(c, t, state);
+}
+
+void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
+  const auto& l = layout_;
   const auto knobs = knobModels(state);
   const auto selectedChannel = state.expressionLabelVisible()
                                    ? ui::expressionChannelIndex(state.expression.channel)
@@ -1517,28 +1646,6 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
            refused ? withAlpha(t.color.warning, 0.85) : t.color.textDisabled);
     if (k.storedPoints > 0U && !refused)
       c.fill(Path::capsule({kc.x - 7.0, kc.y + r + 15.0, 14.0, 3.0}), t.color.accent);
-  }
-
-  // Style presets published by the selected voice.
-  cardHeader(c, t, l.style, "Style", false);
-  std::vector<std::string> styles;
-  for (const auto& card : state.voicebankCards)
-    if (card.id == state.inspector.voicebank.id && !card.id.empty()) styles = card.styles;
-  if (styles.empty()) {
-    c.text({l.style.x + 18.0, l.style.y + 52.0, l.style.width - 36.0, 18.0},
-           "The selected voice publishes no style presets",
-           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
-    return;
-  }
-  const auto chipW = (l.style.width - 32.0 - 3.0 * 8.0) / 4.0;
-  for (std::size_t i = 0U; i < std::min<std::size_t>(styles.size(), 8U); ++i) {
-    const ui::Rect chipRect{l.style.x + 16.0 + (i % 4U) * (chipW + 8.0),
-                            l.style.y + 46.0 + (i / 4U) * 30.0, chipW, 24.0};
-    const auto overflow = i == 7U && styles.size() > 8U;
-    c.stroke(Path::capsule(chipRect), withAlpha(t.color.accent, 0.55), StrokeStyle{1.0});
-    c.text(chipRect, overflow ? "+" + std::to_string(styles.size() - 7U) : styles[i],
-           style(FontRole::UiSemibold, t.type.smallLabel, 0.8, TextAlign::Center, true),
-           t.color.textPrimary);
   }
 }
 
@@ -1921,6 +2028,42 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
                                                const PointerEvent& event) {
   const auto p = event.position;
   const auto& l = layout_;
+  // A knob press starts one gesture; the knob takes keyboard focus so arrows continue it.
+  const auto pressKnob = [&](ui::Point point) -> std::optional<core::Result<void>> {
+    for (std::size_t i = 0U; i < l.knob.size(); ++i) {
+      if (!contains(l.knob[i], point)) continue;
+      if (knobRefused_[i]) return core::success();
+      knobDrag_ = KnobDrag{.index = i,
+                           .startY = point.y,
+                           .steps = 0,
+                           .moved = false,
+                           .revision = controller.documentRevision(),
+                           .region = controller.selectedRegion(),
+                           .playhead = controller.playheadTick()};
+      static constexpr std::array<const char*, 6U> kKnobIds{
+          "shell.knob.formant", "shell.knob.breath", "shell.knob.tension",
+          "shell.knob.air",     "shell.knob.gender", "shell.knob.growl"};
+      takeSemanticFocus(controller, kKnobIds[i]);
+      return core::success();
+    }
+    return std::nullopt;
+  };
+  // The open inspector lies over the score (and over the header on short windows): it takes every
+  // press inside it, and a press anywhere else only closes it.
+  if (l.inspectorOpen) {
+    if (!contains(l.inspector, p)) {
+      setInspectorOpen(controller, false);
+      return core::success();
+    }
+    if (event.button != PointerButton::Left) return core::success();
+    if (contains(l.singerChange, p)) {
+      controller.showVoicebankBrowser();
+      repaint();
+      return core::success();
+    }
+    if (auto knob = pressKnob(p)) return std::move(*knob);
+    return core::success();
+  }
   if (event.button == PointerButton::Left) {
     // Workspace tabs: SING and EXPORT switch the workspace; VOICE opens the voice browser.
     for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
@@ -1961,25 +2104,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       repaint();
       return core::success();
     }
-    if (l.rack == RackPresentation::Full) {
-      for (std::size_t i = 0U; i < l.knob.size(); ++i) {
-        if (!contains(l.knob[i], p)) continue;
-        if (knobRefused_[i]) return core::success();
-        knobDrag_ = KnobDrag{.index = i,
-                             .startY = p.y,
-                             .steps = 0,
-                             .moved = false,
-                             .revision = controller.documentRevision(),
-                             .region = controller.selectedRegion(),
-                             .playhead = controller.playheadTick()};
-        // Grabbing a knob gives it keyboard focus, so arrow keys continue the same control.
-        static constexpr std::array<const char*, 6U> kKnobIds{
-            "shell.knob.formant", "shell.knob.breath", "shell.knob.tension",
-            "shell.knob.air",     "shell.knob.gender", "shell.knob.growl"};
-        takeSemanticFocus(controller, kKnobIds[i]);
-        return core::success();
-      }
+    if (l.inspectorButton.width > 0.0 && contains(l.inspectorButton, p)) {
+      setInspectorOpen(controller, true);
+      return core::success();
     }
+    if (l.rack == RackPresentation::Full)
+      if (auto knob = pressKnob(p)) return std::move(*knob);
     const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
     for (std::size_t i = 0U; i < 7U; ++i) {
       const ui::Rect tab{l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0), l.laneTabs.y,
@@ -2056,7 +2186,7 @@ core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
 bool SingShell::scroll(NativeEditorController& controller, double deltaX, double deltaY,
                        ui::Point anchor, InputModifiers modifiers) {
   if (!presented_) return false;
-  if (layout_.rack == RackPresentation::Full) {
+  if (knobsShown()) {
     for (std::size_t i = 0U; i < layout_.knob.size(); ++i) {
       if (!contains(layout_.knob[i], anchor)) continue;
       if (knobRefused_[i] || knobDrag_) return true;
@@ -2069,6 +2199,7 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
       return true;
     }
   }
+  if (layout_.inspectorOpen && contains(layout_.inspector, anchor)) return true;
   if (inMusicalArea(anchor) ||
       (workspace_ == Workspace::Sing && contains(layout_.laneTimePlot, anchor))) {
     controller.scroll(deltaX, deltaY, toLegacy(anchor), modifiers);
@@ -2085,6 +2216,12 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   if (event.key == NativeKey::Escape && presented_ &&
       (knobDrag_ || (forwarding_ != ForwardArea::None && controller.pointerGestureActive()))) {
     cancelGestures(controller);
+    return true;
+  }
+  // Escape closes the compact inspector first (focus inside it returns to its button).
+  if (event.key == NativeKey::Escape && presented_ && layout_.inspectorOpen &&
+      !controller.textInputActive() && !controller.legacyModalSurfaceActive()) {
+    setInspectorOpen(controller, false);
     return true;
   }
   // The EXPORT workspace hides the score, so no key may edit it from here, whatever holds focus.
@@ -2402,11 +2539,23 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                    : "Select a channel tab to edit its curve"});
 
   // Singer rack.
-  rehome("voice.identity", l.rack == RackPresentation::Full ? l.singer : l.portraitRing);
-  add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = "Change voice",
-                   .bounds = l.singerChange,
-                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
-  if (l.rack == RackPresentation::Full) {
+  // Compact presentations publish the inspector button; its contents follow it in the tree (so Tab
+  // from the button walks into them) only while it is open, at the rectangles painted there.
+  if (l.rack != RackPresentation::Full) {
+    add(SemanticNode{.id = "shell.inspector",
+                     .role = SemanticRole::Button,
+                     .name = "Singer inspector",
+                     .value = l.inspectorOpen ? "Open" : "Closed",
+                     .bounds = l.inspectorButton,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = "Shows the singer, the expression knobs and the style; "
+                                    "Escape closes it"});
+  }
+  if (knobsShown()) {
+    rehome("voice.identity", l.singer);
+    add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = "Change voice",
+                     .bounds = l.singerChange,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     const auto knobs = knobModels(state);
     for (std::size_t i = 0U; i < knobs.size(); ++i) {
       const auto& k = knobs[i];
@@ -2601,6 +2750,13 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     result = core::success();
   } else if (id == "shell.change-voice" && activate) {
     controller.showVoicebankBrowser();
+    result = core::success();
+  } else if (id == "shell.inspector" && activate) {
+    const auto open = !layout_.inspectorOpen;
+    setInspectorOpen(controller, open);
+    // Opened from the keyboard or assistive technology, focus stays on the button so the next
+    // Tab walks into the inspector.
+    if (open) takeSemanticFocus(controller, "shell.inspector");
     result = core::success();
   } else if (id == "shell.classic" && activate) {
     setEnabled(controller, false);

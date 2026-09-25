@@ -6,11 +6,54 @@
 namespace seam::native_ui::design {
 
 double singRackWidth(double width) noexcept {
-  if (!(width >= 1100.0)) return 56.0;
+  if (!(width >= kSingDrawerWidth)) return 44.0;
+  if (!(width >= kSingRailWidth)) return 56.0;
   return std::clamp(width * 0.275, 320.0, 440.0);
 }
 
-SingLayout solveSingLayout(double width, double height) noexcept {
+namespace {
+
+// The singer inspector of the compact presentations: a panel beside the rack column holding a
+// singer row (portrait, voice, style line, Change voice) and the expression card. Knob cells are
+// 96 points tall (label, 52-point dial, caption, then a clear gap before the next row's label; the
+// 720x480 minimum still fits two rows); a window too short for two rows gets one row of six, and a
+// panel taller than the body may rise over the header rather than clip.
+void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
+  constexpr double kPad = 12.0;
+  constexpr double kSingerRow = 56.0;
+  constexpr double kHeader = 44.0;
+  constexpr double kCell = 96.0;
+  const auto width = std::min(340.0, std::max(0.0, l.rackArea.x - 8.0 - kSingEdge));
+  const auto twoRows = kPad + kSingerRow + kSingGap + kHeader + 2.0 * kCell + kPad;
+  const auto oneRow = kPad + kSingerRow + kSingGap + kHeader + kCell + kPad;
+  const auto available = bodyBottom - bodyTop;
+  l.knobsInOneRow = available < twoRows;
+  const auto height = l.knobsInOneRow ? oneRow : twoRows;
+  const auto top = std::max(kSingEdge, std::min(bodyTop, bodyBottom - height));
+  l.inspector = {l.rackArea.x - 8.0 - width, top, width, height};
+  const auto inner = ui::Rect{l.inspector.x + kPad, l.inspector.y + kPad, width - 2.0 * kPad,
+                              height - 2.0 * kPad};
+  l.singer = {inner.x, inner.y, inner.width, kSingerRow};
+  l.portraitRing = {l.singer.x, l.singer.y + 6.0, 44.0, 44.0};
+  l.singerChange = {l.singer.right() - 100.0, l.singer.y + 6.0, 100.0, 22.0};
+  l.style = {l.portraitRing.right() + 12.0, l.singer.y + 34.0,
+             l.singer.right() - l.portraitRing.right() - 12.0, 18.0};
+  l.expression = {inner.x, l.singer.bottom() + kSingGap, inner.width,
+                  inner.bottom() - (l.singer.bottom() + kSingGap)};
+  const auto columns = l.knobsInOneRow ? 6.0 : 3.0;
+  const auto cellWidth = l.expression.width / columns;
+  for (std::size_t i = 0U; i < l.knob.size(); ++i) {
+    const auto index = static_cast<double>(i);
+    const auto column = l.knobsInOneRow ? index : static_cast<double>(i % 3U);
+    const auto row = l.knobsInOneRow ? 0.0 : static_cast<double>(i / 3U);
+    l.knob[i] = {l.expression.x + column * cellWidth, l.expression.y + kHeader + row * kCell,
+                 cellWidth, kCell};
+  }
+}
+
+}  // namespace
+
+SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noexcept {
   SingLayout l;
   const auto W = std::isfinite(width) ? std::max(width, 480.0) : 1600.0;
   const auto H = std::isfinite(height) ? std::max(height, 320.0) : 900.0;
@@ -32,8 +75,11 @@ SingLayout solveSingLayout(double width, double height) noexcept {
   // collapses to the portrait rail rather than clipping cards under the status bar.
   const auto fullRackHeight = 180.0 + 248.0 + 104.0 + 2.0 * kSingGap;
   const auto fullRack = singRackWidth(W) >= 320.0 && bodyHeight >= fullRackHeight;
-  const auto rackWidth = fullRack ? singRackWidth(W) : 56.0;
-  l.rack = fullRack ? RackPresentation::Full : RackPresentation::Rail;
+  const auto drawer = W < kSingDrawerWidth;
+  const auto rackWidth = fullRack ? singRackWidth(W) : drawer ? 44.0 : 56.0;
+  l.rack = fullRack ? RackPresentation::Full
+           : drawer ? RackPresentation::Drawer
+                    : RackPresentation::Rail;
   l.rackArea = {W - kSingEdge - rackWidth, bodyTop, rackWidth, bodyHeight};
 
   const auto editorRight = l.rackArea.x - kSingRackGap;
@@ -83,11 +129,17 @@ SingLayout solveSingLayout(double width, double height) noexcept {
                    cellHeight};
     }
   } else {
-    // Rail: the singer stays present as a small portrait; tapping it opens the voice browser.
-    l.singer = {l.rackArea.x, l.rackArea.y, l.rackArea.width, std::min(l.rackArea.height, 72.0)};
-    l.portraitRing = {l.rackArea.x + (l.rackArea.width - 44.0) * 0.5, l.rackArea.y + 12.0, 44.0,
-                      44.0};
-    l.singerChange = l.portraitRing;
+    // Rail or drawer: the singer stays present as a 44-point portrait button that opens the
+    // inspector. The drawer button is the whole 44-point column; the rail centres it.
+    const auto inset = l.rack == RackPresentation::Drawer ? 0.0 : (l.rackArea.width - 44.0) * 0.5;
+    l.inspectorButton = {l.rackArea.x + inset, l.rackArea.y + (inset > 0.0 ? 12.0 : 0.0), 44.0,
+                         44.0};
+    l.inspectorOpen = inspectorOpen;
+    if (inspectorOpen) {
+      layoutInspector(l, bodyTop, bodyBottom);
+    } else {
+      l.portraitRing = l.inspectorButton;
+    }
   }
 
   // Header, right to left so the transport and meter keep their size before tabs shrink. Narrow
