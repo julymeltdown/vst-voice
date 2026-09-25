@@ -3677,8 +3677,40 @@ ui::Point NativeEditorController::modelPoint(ui::Point windowPoint) const noexce
   return ui::Point{windowPoint.x, windowPoint.y - layout_.contentTop()};
 }
 
+bool NativeEditorController::legacyModalSurfaceActive() const {
+  return voicebankBrowserVisible_ || audioSettings_.visible || recoverySupportPanel_.view().visible ||
+         replacementOpen_ || timeMapPanel_.has_value() || tempoEdit_.has_value() ||
+         hintEdit_.has_value() || replacementInput_.has_value() || microscopeUnit_.has_value() ||
+         phonemeReview_.has_value();
+}
+
+std::uint64_t NativeEditorController::documentRevision() const noexcept {
+  return session_.revision();
+}
+
+bool NativeEditorController::pointerGestureActive() const noexcept {
+  return dragMode_ != DragMode::None || vibratoHandleDrag_.has_value() || dynamicsGainDragging_;
+}
+
+void NativeEditorController::cancelPointerGesture() {
+  if (!pointerGestureActive()) return;
+  if (dragMode_ == DragMode::MoveExpressionPoint && expressionDraft_ && expressionGestureSnapshot_)
+    static_cast<void>(expressionDraft_->replacePoints(*expressionGestureSnapshot_));
+  expressionGestureSnapshot_.reset();
+  expressionDragTick_.reset();
+  vibratoHandleDrag_.reset();
+  dynamicsGainDragging_ = false;
+  dynamicsTimeDragging_ = false;
+  dragMode_ = DragMode::None;
+  dragPhoneme_.reset();
+  dragPitchTick_.reset();
+  dragMicroscopeMarker_.reset();
+  dragMicroscopePitchMark_.reset();
+  repaint();
+}
+
 double NativeEditorController::timelineOriginX() const noexcept {
-  if (!hostedPianoBottom_) return layout_.keyboardWidth;
+  if (!hosted_) return layout_.keyboardWidth;
   const auto& viewport = pianoRoll_.viewport();
   return viewport.bounds.x + viewport.keyboardWidth;
 }
@@ -3940,7 +3972,7 @@ core::Result<void> NativeEditorController::pointerDown(
     }
     return core::success();
   }
-  if (!hostedPianoBottom_ && !sampleMicroscopeOpen() && callbacks_.reviewPhonemeBindings &&
+  if (!hosted_ && !sampleMicroscopeOpen() && callbacks_.reviewPhonemeBindings &&
       callbacks_.rebindPhonemeOverride &&
       event.button == PointerButton::Left && layout_.phonemeReviewOpenBounds(logicalWidth_, logicalHeight_).contains(event.position)) {
     return openPhonemeReview();
@@ -4004,7 +4036,7 @@ core::Result<void> NativeEditorController::pointerDown(
   if (event.button != PointerButton::Left) return core::success();
   const auto diagnosticsBounds = layout_.diagnosticBounds(
       logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U);
-  if (!hostedPianoBottom_ && diagnosticsBounds.contains(event.position) &&
+  if (!hosted_ && diagnosticsBounds.contains(event.position) &&
       !diagnosticPanel_.entries().empty()) {
     const auto& diagnostic = diagnosticPanel_.entries().front().diagnostic;
     const auto presentation = presentDiagnostic(diagnostic);
@@ -4020,7 +4052,7 @@ core::Result<void> NativeEditorController::pointerDown(
     }
     return core::success();
   }
-  if (!hostedPianoBottom_ && exportCancellable(exportProgress_.state) &&
+  if (!hosted_ && exportCancellable(exportProgress_.state) &&
       exportProgress_.totalFiles != 0U &&
       layout_.exportCancelBounds(logicalWidth_, logicalHeight_)
           .contains(event.position)) {
@@ -4066,7 +4098,7 @@ core::Result<void> NativeEditorController::pointerDown(
       return core::success();
     }
   }
-  if (!hostedPianoBottom_ && !voicebankBrowserVisible_ && !audioSettings_.visible &&
+  if (!hosted_ && !voicebankBrowserVisible_ && !audioSettings_.visible &&
       !supportView.visible &&
       session_.project().settings().characterDisplay ==
           domain::CharacterDisplayMode::Off &&
@@ -4360,11 +4392,11 @@ core::Result<void> NativeEditorController::pointerDown(
   const auto technical = resolveEditorTechnicalLaneHeights(
       state, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
   // A hosted grid has no technical lanes below it: every lane band starts past its bottom edge.
-  const auto pianoBottom = hostedPianoBottom_.value_or(technical.pianoBottom);
-  const auto phonemeHeight = technical.values[0U];
-  const auto unitHeight = technical.values[1U];
-  const auto seamHeight = technical.values[2U];
-  const auto automationHeight = technical.values[3U];
+  const auto pianoBottom = hosted_ ? hosted_->pianoBottom : technical.pianoBottom;
+  const auto phonemeHeight = hosted_ ? 0.0 : technical.values[0U];
+  const auto unitHeight = hosted_ ? 0.0 : technical.values[1U];
+  const auto seamHeight = hosted_ ? 0.0 : technical.values[2U];
+  const auto automationHeight = hosted_ ? hosted_->laneHeight : technical.values[3U];
   const auto phonemeTop = pianoBottom;
   const auto unitTop = phonemeTop + phonemeHeight;
   const auto seamTop = unitTop + unitHeight;
@@ -5109,6 +5141,8 @@ core::Result<void> NativeEditorController::pointerMove(
         layout_.exportHeight(expressionState.exportProgress.totalFiles != 0U);
     const auto technical = resolveEditorTechnicalLaneHeights(
         expressionState, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
+    if (hosted_)
+      return updateExpressionGesture(event.position, hosted_->pianoBottom, hosted_->laneHeight);
     const auto automationTop = technical.pianoBottom + technical.values[0U] +
         technical.values[1U] + technical.values[2U];
     return updateExpressionGesture(event.position, automationTop, technical.values[3U]);
@@ -5205,6 +5239,8 @@ core::Result<void> NativeEditorController::pointerUp(
           layout_.seamLaneHeightForHeight(logicalHeight_, overlayInset);
       const auto automationHeight =
           layout_.automationLaneHeightForHeight(logicalHeight_, overlayInset);
+      const auto hostedTop = hosted_ ? hosted_->pianoBottom : automationTop;
+      const auto hostedHeight = hosted_ ? hosted_->laneHeight : automationHeight;
       const auto* region = session_.project().findRegion(regionId_);
       if (region == nullptr) {
         result = core::failure(core::ErrorCode::NotFound,
@@ -5218,10 +5254,10 @@ core::Result<void> NativeEditorController::pointerUp(
           tick = std::clamp(tick, time::Tick{0}, region->durationTick);
         }
         const auto normalized = std::clamp(
-            (automationTop +
-             automationHeight * layout_.automationCenterFraction -
+            (hostedTop +
+             hostedHeight * layout_.automationCenterFraction -
              dragCurrent_.y) /
-                (automationHeight * layout_.pitchAutomationVerticalScale),
+                (hostedHeight * layout_.pitchAutomationVerticalScale),
             -2.0, 2.0);
         const auto existing = std::find_if(
             region->pitchAutomation.points().begin(),
@@ -5796,7 +5832,8 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     }
   } else if (event.key == NativeKey::Plus || event.key == NativeKey::Minus) {
     pianoRoll_.timeline().zoomAround(
-        (logicalWidth_ - layout_.keyboardWidth) * 0.5,
+        (hosted_ ? pianoRoll_.viewport().bounds.right() - timelineOriginX()
+                 : logicalWidth_ - layout_.keyboardWidth) * 0.5,
         event.key == NativeKey::Plus ? 1.25 : 0.8);
   } else if (event.modifiers.shift && session_.selection().empty() &&
              (event.key == NativeKey::Up || event.key == NativeKey::Down)) {
@@ -5887,7 +5924,7 @@ std::optional<domain::PitchAutomationPoint> NativeEditorController::pitchPointAt
   std::optional<domain::PitchAutomationPoint> result;
   auto bestDistance = std::numeric_limits<double>::max();
   for (const auto& candidate : region->pitchAutomation.points()) {
-    const auto x = layout_.keyboardWidth +
+    const auto x = timelineOriginX() +
                    pianoRoll_.timeline().tickToPixel(candidate.tick);
     const auto y = centerY -
                    static_cast<double>(candidate.cents) /
@@ -6846,7 +6883,7 @@ float NativeEditorController::expressionAmountAt(double y, double automationTop,
   const auto centerY = automationTop + automationHeight * layout_.automationCenterFraction;
   const auto span = std::max(std::abs(descriptor.maximum - descriptor.neutral),
                              std::abs(descriptor.neutral - descriptor.minimum));
-  const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
+  const auto scale = automationHeight * (hosted_ ? HostedGeometry::kExpressionVerticalScale : layout_.pitchAutomationVerticalScale) * 0.5;
   if (scale <= 0.0 || span <= 0.0F) return descriptor.neutral;
   const auto normalized = (centerY - y) / scale;
   const auto value = static_cast<double>(descriptor.neutral) + normalized * span;
@@ -6864,11 +6901,11 @@ std::optional<time::Tick> NativeEditorController::expressionPointAt(ui::Point po
   const auto centerY = automationTop + automationHeight * layout_.automationCenterFraction;
   const auto span = std::max(std::abs(descriptor.maximum - descriptor.neutral),
                              std::abs(descriptor.neutral - descriptor.minimum));
-  const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
+  const auto scale = automationHeight * (hosted_ ? HostedGeometry::kExpressionVerticalScale : layout_.pitchAutomationVerticalScale) * 0.5;
   std::optional<time::Tick> result;
   auto bestDistance = std::numeric_limits<double>::max();
   for (const auto& candidate : points) {
-    const auto x = layout_.keyboardWidth + pianoRoll_.timeline().tickToPixel(candidate.tick);
+    const auto x = timelineOriginX() + pianoRoll_.timeline().tickToPixel(candidate.tick);
     const auto y = centerY - (span <= 0.0F ? 0.0 : (candidate.amount - descriptor.neutral) / span) * scale;
     const auto dx = point.x - x;
     const auto dy = point.y - y;
@@ -6885,6 +6922,7 @@ core::Result<void> NativeEditorController::beginExpressionGesture(
     const PointerEvent& event) {
   auto draft = ensureExpressionDraft();
   if (!draft) return core::Result<void>{draft.error()};
+  expressionGestureSnapshot_ = draft.value()->points();
   const auto tick = expressionTickAt(position.x);
   const auto existing = expressionPointAt(position, automationTop, automationHeight);
   if (existing.has_value()) {
@@ -6927,6 +6965,7 @@ core::Result<void> NativeEditorController::updateExpressionGesture(
 
 core::Result<void> NativeEditorController::endExpressionGesture() {
   dragMode_ = DragMode::None;
+  expressionGestureSnapshot_.reset();
   return commitExpressionDraft();
 }
 

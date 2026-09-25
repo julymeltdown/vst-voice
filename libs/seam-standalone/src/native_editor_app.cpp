@@ -330,6 +330,7 @@ core::Result<void> NativeEditorApp::initialize() {
         if (window_ != nullptr) window_->beginTextInput(shell_.translateTextInput(request));
       },
       .endTextInput = [this] {
+        shell_.textInputEnded();
         if (window_ != nullptr) window_->endTextInput();
       },
       .setPlaying = [this](bool playing) {
@@ -1510,6 +1511,9 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         settings.value(), std::move(devices), processorStats().underflowFrames,
         audioStats().xruns);
   }
+  // The surface and its geometry are chosen before the scene state is derived from them.
+  const auto shellFrame = shell_.prepareFrame(authoring_->controller(), canvas.logicalWidth(),
+                                              canvas.logicalHeight());
   auto state = authoring_->controller().sceneState();
   state.playheadPixel =
       authoring_->controller().pianoRoll().timeline().tickToPixel(tick);
@@ -1583,7 +1587,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   authoring_->controller().rebuildAccessibilityTree();
-  if (!shell_.paint(canvas, authoring_->controller().pianoRoll(), state, tick))
+  if (!shellFrame || !shell_.paint(canvas, authoring_->controller(), state, tick))
     painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
 }
 
@@ -1610,7 +1614,7 @@ void NativeEditorApp::scroll(double deltaX, double deltaY, ui::Point anchor,
     authoring_->controller().scroll(deltaX, deltaY, anchor, modifiers);
 }
 void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
-  if (shell_.handleShellKey(event)) return;
+  if (shell_.handleShellKey(authoring_->controller(), event)) return;
   if (applicationController_ != nullptr && event.modifiers.primaryShortcut()) {
     std::optional<platform::ApplicationCommand> command;
     if (event.key == native_ui::NativeKey::N) {

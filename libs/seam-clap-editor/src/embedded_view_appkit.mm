@@ -470,7 +470,15 @@ private:
     if (width != surface_.width() || height != surface_.height()) {
       static_cast<void>(surface_.resize(width, height));
     }
-    runtime_.resize(view_.bounds.size.width, view_.bounds.size.height);
+    // Resize only on a real size change: resizing resets the editor geometry and requests another
+    // repaint, which would otherwise run on every frame.
+    const auto logicalWidth = static_cast<double>(view_.bounds.size.width);
+    const auto logicalHeight = static_cast<double>(view_.bounds.size.height);
+    if (logicalWidth != lastLogicalWidth_ || logicalHeight != lastLogicalHeight_) {
+      lastLogicalWidth_ = logicalWidth;
+      lastLogicalHeight_ = logicalHeight;
+      runtime_.resize(logicalWidth, logicalHeight);
+    }
   }
 
   void beginTextInput(const native_ui::TextInputRequest& request) {
@@ -511,6 +519,8 @@ private:
   std::uint32_t width_{960U};
   std::uint32_t height_{680U};
   double backingScale_{1.0};
+  double lastLogicalWidth_{-1.0};
+  double lastLogicalHeight_{-1.0};
   bool created_{false};
   bool visible_{false};
   std::atomic<bool> repaint_{true};

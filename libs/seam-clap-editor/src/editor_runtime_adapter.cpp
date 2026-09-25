@@ -428,7 +428,7 @@ void EditorRuntime::configureControllerCallbacks() {
         if (beginTextInput_) beginTextInput_(shell_.translateTextInput(request));
       },
       .endTextInput = [this] {
-        if (endTextInput_) endTextInput_();
+        shell_.textInputEnded(); if (endTextInput_) endTextInput_();
       },
       .setPlaying = [this](bool) {
         requestRepaint();

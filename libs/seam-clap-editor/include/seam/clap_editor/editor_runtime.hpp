@@ -179,6 +179,8 @@ public:
   // Presents the EMO/SCENE SING workspace in this editor. The shipping plug-in enables it;
   // library tests keep the classic editor and never read the user's saved design preferences.
   void activateDesignShell();
+  // Abandons shell and editor pointer gestures without committing them (hide, capture loss).
+  void cancelPointerGestures();
   // Invoked for a persistent project change, from the originating thread. Most
   // edits are detected by revision at repaint; direct persisted settings also
   // signal it explicitly. CLAP can request a main-thread host-state notification.

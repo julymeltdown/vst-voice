@@ -1893,6 +1893,13 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_design_system_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_design_system_tests)
     add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
+    add_executable(seam_design_shell_input_tests
+      tests/test_main.cpp tests/test_design_shell_input.cpp)
+    target_include_directories(seam_design_shell_input_tests PRIVATE tests)
+    target_link_libraries(seam_design_shell_input_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_shell_input_tests)
+    add_test(NAME seam_design_shell_input_tests COMMAND seam_design_shell_input_tests)
     add_executable(seam_japanese_reading_native_tests
       tests/test_main.cpp tests/test_japanese_reading_native.cpp)
     target_include_directories(seam_japanese_reading_native_tests PRIVATE tests)

@@ -90,9 +90,15 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
 - Note editing, lyrics, vibrato and the ruler still run through the existing controller, so undo
   history is unchanged. Voice browser, audio settings, reviews and the microscope still open in
   the classic surfaces until they are re-homed.
-- Not done yet: VOICE, TUNE, MIX and EXPORT workspaces (tabs are visible but inactive); a
-  measured output meter; accessibility geometry for the new layout; matched host screenshots
-  in FL Studio. Character art in `assets/ui-design` is **development-only**; see its
+- One geometry per frame: `SingShell::prepareFrame` picks the surface and sets the viewport and
+  the controller's hosted input geometry before scene state is derived. Escape, switching to
+  Classic, resizing and hiding the plug-in cancel gestures without committing. Expression curves
+  are drawn and edited in the shell lane with the same value mapping.
+- Not done yet: **accessibility geometry for the new layout (open FAIL, since VoiceOver still
+  reads the classic layout's rectangles)**; VOICE, TUNE, MIX and EXPORT workspaces (tabs are
+  visible but inactive); a measured output meter; lyric-field re-anchoring while scrolling (the
+  field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host
+  captures. Character art in `assets/ui-design` is **development-only**; see its
   `PROVENANCE.md`.
 
 

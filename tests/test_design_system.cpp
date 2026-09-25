@@ -94,6 +94,52 @@ TEST_CASE("SING layout keeps the timeline usable and the singer present when nar
   }
 }
 
+TEST_CASE("short and narrow SING layouts keep every control inside its parent without overlap") {
+  const auto inside = [](seam::ui::Rect inner, seam::ui::Rect outer) {
+    return inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 &&
+           inner.right() <= outer.right() + 0.5 && inner.bottom() <= outer.bottom() + 0.5;
+  };
+  const auto apart = [](seam::ui::Rect a, seam::ui::Rect b) {
+    return a.width <= 0.0 || b.width <= 0.0 || a.right() <= b.x + 0.5 || b.right() <= a.x + 0.5 ||
+           a.bottom() <= b.y + 0.5 || b.bottom() <= a.y + 0.5;
+  };
+  for (const auto size : std::array<std::array<double, 2U>, 7U>{{{720.0, 480.0},
+                                                                  {1280.0, 480.0},
+                                                                  {1280.0, 700.0},
+                                                                  {1000.0, 700.0},
+                                                                  {900.0, 600.0},
+                                                                  {1280.0, 800.0},
+                                                                  {1600.0, 900.0}}}) {
+    const auto l = solveSingLayout(size[0], size[1]);
+    const seam::ui::Rect client{0.0, 0.0, size[0], size[1]};
+    // Header children stay inside the header and never overlap one another.
+    const std::array<seam::ui::Rect, 6U> header{l.wordmark, l.workspaceTabs, l.modeSwitch,
+                                                l.transport, l.outputMeter, l.settings};
+    for (std::size_t i = 0U; i < header.size(); ++i) {
+      if (header[i].width > 0.0) CHECK(inside(header[i], l.header));
+      for (std::size_t j = i + 1U; j < header.size(); ++j) CHECK(apart(header[i], header[j]));
+    }
+    // Body regions stay in the client, above the status bar, and apart.
+    for (const auto r : {l.editor, l.lane, l.rackArea, l.status}) CHECK(inside(r, client));
+    for (const auto r : {l.editor, l.lane, l.rackArea}) CHECK(r.bottom() <= l.status.y + 0.5);
+    CHECK(apart(l.editor, l.lane));
+    CHECK(apart(l.editor, l.rackArea));
+    CHECK(apart(l.lane, l.rackArea));
+    CHECK(l.grid.height > 60.0);
+    CHECK(l.laneTimePlot.height > 20.0);
+    // Every visible rack card and knob is inside the rack and reachable.
+    CHECK(inside(l.portraitRing, l.rackArea));
+    CHECK(inside(l.singerChange, l.rackArea));
+    if (l.rack == RackPresentation::Full) {
+      for (const auto card : {l.singer, l.expression, l.style}) CHECK(inside(card, l.rackArea));
+      for (const auto knob : l.knob) CHECK(inside(knob, l.expression));
+    }
+    // Transport parts are inside the transport.
+    for (const auto part : {l.playButton, l.positionReadout, l.tempoReadout, l.meterReadout})
+      CHECK(inside(part, l.transport));
+  }
+}
+
 TEST_CASE("EMO and SCENE text roles meet contrast floors in both contrast settings") {
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     for (const auto contrast : {Contrast::Standard, Contrast::High}) {

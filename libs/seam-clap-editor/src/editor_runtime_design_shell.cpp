@@ -13,6 +13,11 @@ void EditorRuntime::activateDesignShell() {
   requestRepaint();
 }
 
+void EditorRuntime::cancelPointerGestures() {
+  std::lock_guard lock(mutex_);
+  shell_.cancelGestures(*controller_);
+}
+
 bool EditorRuntime::routeShellPointerLocked(ShellPointerPhase phase,
                                             const native_ui::PointerEvent& event) {
   if (!shell_.presentedLastFrame()) return false;

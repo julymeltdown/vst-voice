@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <numbers>
 #include <random>
 #include <string>
@@ -48,6 +49,15 @@ bool intersects(ui::Rect a, ui::Rect b) noexcept {
 TextStyle style(FontRole role, double size, double tracking = 0.0,
                 TextAlign align = TextAlign::Left, bool upper = false) {
   return TextStyle{role, size, tracking, align, upper};
+}
+
+// Fits a label to a width by first tightening tracking, then stepping the size down to the 10pt
+// floor. Anything still too long is ellipsized by the canvas, never drawn past its box.
+TextStyle fitted(Canvas2D& c, std::string_view text, TextStyle s, double width) {
+  if (width <= 0.0 || c.measure(text, s) <= width) return s;
+  s.tracking = std::min(s.tracking, 0.4);
+  while (s.size > 10.0 && c.measure(text, s) > width) s.size = std::max(10.0, s.size - 0.5);
+  return s;
 }
 
 void glassPanel(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius,
@@ -279,10 +289,16 @@ void SingShell::setMode(DesignMode mode, bool persist) {
 
 void SingShell::setEnabled(bool enabled, bool persist) {
   preferences_.shellEnabled = enabled;
-  forwarding_ = false;
+  forwarding_ = ForwardArea::None;
   knobDrag_.reset();
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
+}
+
+void SingShell::setEnabled(NativeEditorController& controller, bool enabled) {
+  cancelGestures(controller);
+  if (!enabled) releaseSurface(controller);
+  setEnabled(enabled);
 }
 
 bool SingShell::assetsLoaded(DesignMode mode) const noexcept {
@@ -303,8 +319,12 @@ ui::Point SingShell::toLegacy(ui::Point point) const noexcept {
   return ui::Point{point.x, point.y - layout_.grid.y + legacyContentTop_};
 }
 
-TextInputRequest SingShell::translateTextInput(TextInputRequest request) const noexcept {
-  if (presented_) request.logicalBounds = fromLegacy(request.logicalBounds);
+TextInputRequest SingShell::translateTextInput(TextInputRequest request) {
+  // Non-lyric fields use the controller's external target id and belong to classic surfaces.
+  const auto lyric = request.lyricId.value() != std::numeric_limits<std::uint64_t>::max();
+  if (!presented_ || !lyric) return request;
+  lyricInputActive_ = true;
+  request.logicalBounds = fromLegacy(request.logicalBounds);
   return request;
 }
 
@@ -312,8 +332,22 @@ bool SingShell::inMusicalArea(ui::Point point) const noexcept {
   return contains(layout_.grid, point) || contains(layout_.ruler, point);
 }
 
-PointerEvent SingShell::translated(const PointerEvent& event) const noexcept {
+bool SingShell::inEditableLane(ui::Point point) const noexcept {
+  return laneEditable_ && contains(layout_.laneTimePlot, point);
+}
+
+NativeEditorController::HostedGeometry SingShell::hostedGeometry() const noexcept {
+  return {.pianoBottom = legacyContentTop_ + layout_.grid.height,
+          .laneHeight = layout_.laneTimePlot.height};
+}
+
+PointerEvent SingShell::translated(const PointerEvent& event, ForwardArea area) const noexcept {
   auto copy = event;
+  if (area == ForwardArea::Lane) {
+    // The hosted lane starts at the hosted piano bottom, so lane y maps 1:1 onto it.
+    copy.position.y = event.position.y - layout_.laneTimePlot.y + hostedGeometry().pianoBottom;
+    return copy;
+  }
   copy.position = toLegacy(event.position);
   // The shell ruler is shorter than the legacy ruler; never let a ruler point reach the legacy
   // toolbar row above it.
@@ -323,11 +357,75 @@ PointerEvent SingShell::translated(const PointerEvent& event) const noexcept {
   return copy;
 }
 
-void SingShell::syncHostedGrid(NativeEditorController& controller) const noexcept {
-  if (presented_)
-    controller.setHostedGrid(legacyContentTop_ + layout_.grid.height);
-  else if (!forwarding_)
-    controller.setHostedGrid(std::nullopt);
+void SingShell::applyGeometry(NativeEditorController& controller) {
+  auto& model = controller.pianoRoll();
+  const ui::PianoRollViewport viewport{
+      .bounds = ui::Rect{0.0, 0.0, layout_.grid.right(), layout_.grid.height},
+      .keyboardWidth = layout_.grid.x,
+  };
+  const auto& current = model.viewport();
+  if (current.bounds.x != viewport.bounds.x || current.bounds.y != viewport.bounds.y ||
+      current.bounds.width != viewport.bounds.width ||
+      current.bounds.height != viewport.bounds.height ||
+      current.keyboardWidth != viewport.keyboardWidth) {
+    model.setViewport(viewport);
+    model.rebuildIndex();
+  }
+  controller.setHostedGrid(hostedGeometry());
+}
+
+void SingShell::cancelGestures(NativeEditorController& controller) {
+  const auto hadGesture = knobDrag_.has_value() || forwarding_ != ForwardArea::None;
+  knobDrag_.reset();
+  forwarding_ = ForwardArea::None;
+  scrollAccumulator_ = 0.0;
+  controller.cancelPointerGesture();
+  if (hadGesture) repaint();
+}
+
+void SingShell::releaseSurface(NativeEditorController& controller) {
+  if (presented_ || controller.hostedGrid().has_value()) {
+    cancelGestures(controller);
+    // A lyric field anchored in shell space would be misplaced on the classic surface.
+    if (lyricInputActive_) controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
+  presented_ = false;
+  controller.setHostedGrid(std::nullopt);
+}
+
+void SingShell::yieldIfModal(NativeEditorController& controller) {
+  if (presented_ && controller.legacyModalSurfaceActive()) {
+    releaseSurface(controller);
+    repaint();
+  }
+}
+
+bool SingShell::prepareFrame(NativeEditorController& controller, double logicalWidth,
+                             double logicalHeight) {
+  if (!enabled() || !available() || controller.legacyModalSurfaceActive()) {
+    releaseSurface(controller);
+    return false;
+  }
+  const auto next = solveSingLayout(logicalWidth, logicalHeight);
+  const auto moved = next.grid.x != layout_.grid.x || next.grid.y != layout_.grid.y ||
+                     next.grid.width != layout_.grid.width ||
+                     next.grid.height != layout_.grid.height ||
+                     next.laneTimePlot.y != layout_.laneTimePlot.y ||
+                     next.laneTimePlot.height != layout_.laneTimePlot.height;
+  if (moved || !presented_) {
+    // A gesture's coordinate transform is frozen at its start; a geometry change cancels it, and
+    // an open lyric field would be anchored to the old geometry.
+    if (knobDrag_ || forwarding_ != ForwardArea::None) cancelGestures(controller);
+    if (lyricInputActive_) {
+      controller.cancelTextComposition();
+      lyricInputActive_ = false;
+    }
+  }
+  layout_ = next;
+  applyGeometry(controller);
+  presented_ = true;
+  return true;
 }
 
 void SingShell::ensureBackground(const RasterCanvas& canvas, const DesignTokens& tokens) {
@@ -466,17 +564,21 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
   }
 }
 
-bool SingShell::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
+bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
                       const EditorSceneState& state, time::Tick playhead) {
-  presented_ = false;
-  if (!enabled() || !available() || legacySurfaceRequired(state)) return false;
-  layout_ = solveSingLayout(canvas.logicalWidth(), canvas.logicalHeight());
+  if (!presented_ || legacySurfaceRequired(state) ||
+      layout_.width != std::max(canvas.logicalWidth(), 480.0) ||
+      layout_.height != std::max(canvas.logicalHeight(), 320.0)) {
+    // Either prepareFrame did not run for this canvas or the state needs a classic surface.
+    if (!presented_ || legacySurfaceRequired(state) ||
+        !prepareFrame(controller, canvas.logicalWidth(), canvas.logicalHeight())) {
+      releaseSurface(controller);
+      return false;
+    }
+  }
+  auto& model = controller.pianoRoll();
+  laneEditable_ = state.expressionLabelVisible() && state.expression.refusal.empty();
   const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
-  model.setViewport(ui::PianoRollViewport{
-      .bounds = ui::Rect{0.0, 0.0, layout_.grid.right(), layout_.grid.height},
-      .keyboardWidth = layout_.grid.x,
-  });
-  model.rebuildIndex();
   ppq_ = time::Tick{model.timeline().ppq()}.value();
   ensureBackground(canvas, t);
   auto& surface = canvas.surface();
@@ -486,7 +588,10 @@ bool SingShell::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
     surface.clear(t.color.canvas);
   }
   auto c = paint::makeCanvas(surface, canvas.scale());
-  if (!c) return false;
+  if (!c) {
+    releaseSurface(controller);
+    return false;
+  }
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
@@ -505,7 +610,6 @@ bool SingShell::paint(RasterCanvas& canvas, ui::PianoRollModel& model,
     }
   }
   c->flush();
-  presented_ = true;
   return true;
 }
 
@@ -573,9 +677,10 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   const auto position = barsBeatsTicks(playhead, ppq_, state.meter);
   auto readout = style(FontRole::Mono, t.type.transport, 0.5);
   // A narrow header shrinks the digits instead of truncating the time.
-  if (const auto needed = c.measure("888:8:888", readout); needed > l.positionReadout.width - 4.0)
-    readout = style(FontRole::Mono,
-                    std::max(12.0, t.type.transport * (l.positionReadout.width - 4.0) / needed), 0.5);
+  // The divider sits 6pt inside the tempo cell's left edge; keep the digits clear of it.
+  const auto positionWidth = l.positionReadout.width - 12.0;
+  if (const auto needed = c.measure("888:8:888", readout); needed > positionWidth)
+    readout = style(FontRole::Mono, std::max(12.0, t.type.transport * positionWidth / needed), 0.5);
   c.text(l.positionReadout, "888:8:888", readout, withAlpha(t.color.accentTime, 0.07));
   c.save();
   c.setGlow(withAlpha(t.color.accentTime, 0.75), 7.0);
@@ -590,10 +695,13 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   divider(l.meterReadout.x - 6.0);
   const auto small = style(FontRole::Mono, 14.0, 0.4, TextAlign::Center);
   const auto tempoColor = t.mode == DesignMode::Scene ? t.color.accentTime : t.color.textPrimary;
-  c.text(l.tempoReadout, format("%.0f BPM", state.tempoBpm), small, tempoColor);
-  c.text(l.meterReadout,
-         std::to_string(state.meter.numerator) + "/" + std::to_string(state.meter.denominator),
-         small, tempoColor);
+  const auto tempoText = format("%.0f BPM", state.tempoBpm);
+  const auto meterText =
+      std::to_string(state.meter.numerator) + "/" + std::to_string(state.meter.denominator);
+  c.text(l.tempoReadout, tempoText, fitted(c, tempoText, small, l.tempoReadout.width - 8.0),
+         tempoColor);
+  c.text(l.meterReadout, meterText, fitted(c, meterText, small, l.meterReadout.width - 6.0),
+         tempoColor);
 
   // Output meter: no measured output level is published to the editor yet, so the meter shows
   // its empty scale instead of an invented level.
@@ -891,7 +999,26 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   }
   c.restore();
 
-  if (notes.empty()) {
+  const auto total = model.noteCount();
+  if (notes.empty() && total > 0U) {
+    // Notes exist but are scrolled out of this grid: point at them instead of claiming none exist.
+    std::size_t above = 0U;
+    std::size_t below = 0U;
+    for (const auto& note : model.allNotes()) {
+      if (note.bounds.bottom() <= 0.0) ++above;
+      else if (note.bounds.y >= l.grid.height) ++below;
+    }
+    const auto hint = above >= below
+                          ? "↑ " + std::to_string(above > 0U ? above : total) + " notes above"
+                          : "↓ " + std::to_string(below) + " notes below";
+    const auto hintStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true);
+    const auto chipWidth = c.measure(hint, hintStyle) + 28.0;
+    const ui::Rect hintChip{l.grid.x + (l.grid.width - chipWidth) * 0.5,
+                        above >= below ? l.grid.y + 8.0 : l.grid.bottom() - 30.0, chipWidth, 22.0};
+    c.fill(Path::capsule(hintChip), withAlpha(t.color.surfaceRaised, 0.92));
+    c.stroke(Path::capsule(hintChip), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
+    c.text(hintChip, hint, hintStyle, t.color.accent);
+  } else if (notes.empty()) {
     const auto cx = l.grid.x + l.grid.width * 0.40;
     const auto cy = l.grid.y + l.grid.height * 0.42;
     c.text({cx - 160.0, cy - 22.0, 320.0, 24.0}, "No notes yet",
@@ -953,7 +1080,10 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     } else {
       c.stroke(Path::roundedRect(tab, 6.0), withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
     }
-    c.text(tab, kTabs[i], style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+    c.text(tab, kTabs[i],
+           fitted(c, kTabs[i],
+                  style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+                  tab.width - 8.0),
            active ? t.color.accent : t.color.textSecondary);
   }
   const ui::Rect info{l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0, l.laneTabs.y,
@@ -975,11 +1105,16 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   c.text(info, e.refusal.empty() ? infoText : e.refusal,
          style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          e.refusal.empty() ? t.color.textSecondary : t.color.warning);
-  const auto range = std::max(1e-6, static_cast<double>(e.maximum - e.minimum));
+  // The same value-to-y mapping the controller uses to hit-test and edit this lane, applied to the
+  // hosted lane rectangle, so a drawn point is exactly where a click edits it.
+  const EditorSceneLayout legacyLayout{};
+  const auto centerY = plot.y + plot.height * legacyLayout.automationCenterFraction;
+  const auto span = std::max(std::abs(static_cast<double>(e.maximum - e.neutral)),
+                             std::abs(static_cast<double>(e.neutral - e.minimum)));
+  const auto halfScale = plot.height * NativeEditorController::HostedGeometry::kExpressionVerticalScale * 0.5;
   const auto yFor = [&](double v) {
-    return plot.bottom() - 6.0 - (std::clamp(v, static_cast<double>(e.minimum),
-                                             static_cast<double>(e.maximum)) - e.minimum) /
-                                     range * (plot.height - 12.0);
+    const auto clamped = std::clamp(v, static_cast<double>(e.minimum), static_cast<double>(e.maximum));
+    return span <= 0.0 ? centerY : centerY - (clamped - e.neutral) / span * halfScale;
   };
   const auto gutter = ui::Rect{l.lanePlot.x, l.lanePlot.y, plot.x - l.lanePlot.x - 2.0, plot.height};
   const auto gutterStyle = style(FontRole::Mono, t.type.rulerMicro, 0.0, TextAlign::Right);
@@ -1150,8 +1285,9 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     c.text({cell.x, cell.y, cell.width, 16.0}, k.label,
            style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Center, true),
            selectedKnob ? t.color.accent : t.color.textSecondary);
-    const ui::Point kc{cell.x + cell.width * 0.5, cell.y + 20.0 + 30.0};
-    const auto r = 28.0;
+    // Label (16) + knob (52) + value caption (12) leave a clear gap before the next row's label.
+    const ui::Point kc{cell.x + cell.width * 0.5, cell.y + 20.0 + 26.0};
+    const auto r = 26.0;
     constexpr auto start = 0.75 * kPi;
     constexpr auto sweep = 1.5 * kPi;
     Path track;
@@ -1204,12 +1340,12 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
            style(FontRole::UiSemibold, number.size() > 5 ? 13.0 : t.type.knobValue, 0.0,
                  TextAlign::Center),
            refused ? t.color.textDisabled : t.color.textPrimary);
-    c.text({cell.x, kc.y + r + 2.0, cell.width, 14.0},
+    c.text({cell.x, kc.y + r + 1.0, cell.width, 13.0},
            refused ? std::string{"Unavailable"} : std::string{unitText},
-           style(FontRole::UiMedium, 10.5, 1.0, TextAlign::Center, true),
-           refused ? t.color.warning : t.color.textDisabled);
+           style(FontRole::UiMedium, 10.0, 1.0, TextAlign::Center, true),
+           refused ? withAlpha(t.color.warning, 0.85) : t.color.textDisabled);
     if (k.storedPoints > 0U && !refused)
-      c.fill(Path::capsule({kc.x - 7.0, kc.y + r + 17.0, 14.0, 3.0}), t.color.accent);
+      c.fill(Path::capsule({kc.x - 7.0, kc.y + r + 15.0, 14.0, 3.0}), t.color.accent);
   }
 
   // Style presets published by the selected voice.
@@ -1310,8 +1446,14 @@ core::Result<void> SingShell::nudge(NativeEditorController& controller, std::siz
 
 core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
                                           const PointerEvent& event) {
-  syncHostedGrid(controller);
   if (!presented_) return controller.pointerDown(event);
+  const auto result = shellPointerDown(controller, event);
+  yieldIfModal(controller);
+  return result;
+}
+
+core::Result<void> SingShell::shellPointerDown(NativeEditorController& controller,
+                                               const PointerEvent& event) {
   const auto p = event.position;
   const auto& l = layout_;
   if (event.button == PointerButton::Left) {
@@ -1328,7 +1470,7 @@ core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
       return core::success();
     }
     if (contains(l.classicToggle, p)) {
-      setEnabled(false);
+      setEnabled(controller, false);
       return core::success();
     }
     if (contains(l.singerChange, p)) {
@@ -1340,30 +1482,39 @@ core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
       for (std::size_t i = 0U; i < l.knob.size(); ++i) {
         if (!contains(l.knob[i], p)) continue;
         if (knobRefused_[i]) return core::success();
-        knobDrag_ = KnobDrag{i, p.y, 0, false};
+        knobDrag_ = KnobDrag{.index = i,
+                             .startY = p.y,
+                             .steps = 0,
+                             .moved = false,
+                             .revision = controller.documentRevision(),
+                             .region = controller.selectedRegion(),
+                             .playhead = controller.playheadTick()};
         return core::success();
       }
     }
     const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
     for (std::size_t i = 0U; i < 7U; ++i) {
-      const ui::Rect tab{l.laneTabs.x + i * (tabWidth + 4.0), l.laneTabs.y, tabWidth,
-                         l.laneTabs.height};
+      const ui::Rect tab{l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0), l.laneTabs.y,
+                         tabWidth, l.laneTabs.height};
       if (!contains(tab, p)) continue;
       if (i == 0U) return controller.openDynamicsInspector();
       return controller.openExpressionLane(ui::expressionChannelAt(i - 1U));
     }
   }
   if (inMusicalArea(p)) {
-    forwarding_ = true;
-    return controller.pointerDown(translated(event));
+    forwarding_ = ForwardArea::Grid;
+    return controller.pointerDown(translated(event, forwarding_));
+  }
+  if (inEditableLane(p)) {
+    forwarding_ = ForwardArea::Lane;
+    return controller.pointerDown(translated(event, forwarding_));
   }
   return core::success();
 }
 
 core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
                                           const PointerEvent& event) {
-  syncHostedGrid(controller);
-  if (!presented_ && !forwarding_) return controller.pointerMove(event);
+  if (!presented_) return controller.pointerMove(event);
   if (knobDrag_) {
     const auto steps = static_cast<int>(std::lround((knobDrag_->startY - event.position.y) / 12.0));
     if (steps != knobDrag_->steps) {
@@ -1373,37 +1524,49 @@ core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
     }
     return core::success();
   }
-  if (forwarding_ || inMusicalArea(event.position)) return controller.pointerMove(translated(event));
+  // A gesture keeps the transform of the area it started in, wherever the pointer goes.
+  if (forwarding_ != ForwardArea::None) return controller.pointerMove(translated(event, forwarding_));
+  if (inMusicalArea(event.position))
+    return controller.pointerMove(translated(event, ForwardArea::Grid));
+  if (inEditableLane(event.position))
+    return controller.pointerMove(translated(event, ForwardArea::Lane));
   return core::success();
 }
 
 core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
                                         const PointerEvent& event) {
-  syncHostedGrid(controller);
+  if (!presented_) return controller.pointerUp(event);
   if (knobDrag_) {
     const auto drag = *knobDrag_;
     knobDrag_.reset();
     repaint();
+    // The release commits only against the document, region and playhead the gesture began on.
+    if (controller.documentRevision() != drag.revision ||
+        controller.selectedRegion() != drag.region || controller.playheadTick() != drag.playhead)
+      return core::success();
     // One gesture is one command, so one undo step.
     if (drag.steps != 0) return nudge(controller, drag.index, drag.steps);
-    return controller.openExpressionLane(ui::expressionChannelAt(drag.index));
+    const auto opened = controller.openExpressionLane(ui::expressionChannelAt(drag.index));
+    yieldIfModal(controller);
+    return opened;
   }
-  if (forwarding_) {
-    forwarding_ = false;
-    return controller.pointerUp(translated(event));
+  if (forwarding_ != ForwardArea::None) {
+    const auto area = forwarding_;
+    forwarding_ = ForwardArea::None;
+    const auto result = controller.pointerUp(translated(event, area));
+    yieldIfModal(controller);
+    return result;
   }
-  if (!presented_) return controller.pointerUp(event);
   return core::success();
 }
 
 bool SingShell::scroll(NativeEditorController& controller, double deltaX, double deltaY,
                        ui::Point anchor, InputModifiers modifiers) {
-  syncHostedGrid(controller);
   if (!presented_) return false;
   if (layout_.rack == RackPresentation::Full) {
     for (std::size_t i = 0U; i < layout_.knob.size(); ++i) {
       if (!contains(layout_.knob[i], anchor)) continue;
-      if (knobRefused_[i]) return true;
+      if (knobRefused_[i] || knobDrag_) return true;
       scrollAccumulator_ += deltaY;
       const auto steps = static_cast<int>(scrollAccumulator_ / 8.0);
       if (steps != 0) {
@@ -1420,9 +1583,14 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
   return true;
 }
 
-bool SingShell::handleShellKey(const KeyEvent& event) {
+bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEvent& event) {
   if (event.key == NativeKey::Space && event.modifiers.shift && event.modifiers.primaryShortcut()) {
-    setEnabled(!enabled());
+    setEnabled(controller, !enabled());
+    return true;
+  }
+  if (event.key == NativeKey::Escape && presented_ &&
+      (knobDrag_ || (forwarding_ != ForwardArea::None && controller.pointerGestureActive()))) {
+    cancelGestures(controller);
     return true;
   }
   return false;

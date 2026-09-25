@@ -359,8 +359,31 @@ public:
   // above pianoBottom (window coordinates); the legacy dock, diagnostic strip, export strip and
   // technical lanes cannot be hit by points the shell forwards. std::nullopt restores the legacy
   // window geometry.
-  void setHostedGrid(std::optional<double> pianoBottom) noexcept { hostedPianoBottom_ = pianoBottom; }
-  [[nodiscard]] std::optional<double> hostedGrid() const noexcept { return hostedPianoBottom_; }
+  struct HostedGeometry final {
+    // Window y where the forwarded piano roll ends (legacy window coordinates).
+    double pianoBottom{0.0};
+    // The hosted expression lane sits directly below pianoBottom with this height; the phoneme,
+    // unit and seam lanes are not hosted.
+    double laneHeight{0.0};
+    // Fraction of the hosted lane height an expression curve spans (the classic lane uses
+    // EditorSceneLayout::pitchAutomationVerticalScale). Paint and hit-testing share it.
+    static constexpr double kExpressionVerticalScale = 0.84;
+    friend bool operator==(const HostedGeometry&, const HostedGeometry&) = default;
+  };
+  void setHostedGrid(std::optional<HostedGeometry> geometry) noexcept { hosted_ = geometry; }
+  [[nodiscard]] std::optional<HostedGeometry> hostedGrid() const noexcept { return hosted_; }
+  // Abandons any pointer gesture in progress without committing it: note move/resize previews,
+  // box selection, vibrato/pitch/phoneme/microscope drags and an expression-point drag (whose
+  // draft is restored to its state before the gesture). Used on Escape, surface switches, resizes
+  // and capture loss.
+  void cancelPointerGesture();
+  // True while a surface the SING shell does not host is open: voice browser, audio settings,
+  // support panel, replacement review, tempo/meter map or its input, hint/replacement input,
+  // sample microscope or phoneme review. Mirrors SingShell::legacySurfaceRequired(sceneState())
+  // without building the scene state.
+  [[nodiscard]] bool legacyModalSurfaceActive() const;
+  [[nodiscard]] std::uint64_t documentRevision() const noexcept;
+  [[nodiscard]] bool pointerGestureActive() const noexcept;
   [[nodiscard]] core::Result<void> pointerDown(const PointerEvent& event);
   [[nodiscard]] core::Result<void> pointerMove(const PointerEvent& event);
   [[nodiscard]] core::Result<void> pointerUp(const PointerEvent& event);
@@ -737,7 +760,8 @@ private:
   std::optional<authoring::ExportResult> lastExport_;
   double logicalWidth_{1440.0};
   double logicalHeight_{900.0};
-  std::optional<double> hostedPianoBottom_;
+  std::optional<HostedGeometry> hosted_;
+  std::optional<std::vector<ui::ExpressionPoint>> expressionGestureSnapshot_;
   double playheadPixel_{0.0};
   time::Tick playheadTick_{0};
   std::string characterName_;

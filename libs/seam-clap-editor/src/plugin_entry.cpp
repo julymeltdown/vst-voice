@@ -1275,6 +1275,8 @@ private:
     auto* instance = self(plugin);
     if (instance == nullptr || instance->view_ == nullptr) return false;
     unregisterTimer(*instance);
+    // A hidden editor can no longer receive the mouse-up of a gesture in progress.
+    instance->runtime_->cancelPointerGestures();
     return static_cast<bool>(instance->view_->hide());
   }
 

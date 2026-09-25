@@ -18,18 +18,23 @@ SingLayout solveSingLayout(double width, double height) noexcept {
   l.height = H;
   l.compactHeader = H < 720.0;
   const auto headerHeight = l.compactHeader ? 64.0 : 80.0;
-  const auto laneHeight = l.compactHeader ? 112.0 : 148.0;
 
   l.header = {kSingEdge, kSingEdge, W - 2.0 * kSingEdge, headerHeight};
   l.status = {kSingEdge, H - kSingEdge - kSingStatusHeight, W - 2.0 * kSingEdge,
               kSingStatusHeight};
   const auto bodyTop = l.header.bottom() + kSingGap;
   const auto bodyBottom = l.status.y - kSingGap;
+  const auto bodyHeight = std::max(0.0, bodyBottom - bodyTop);
+  // The lane gives height back to the grid on short windows instead of pushing it off screen.
+  const auto laneHeight = l.compactHeader ? std::clamp(bodyHeight * 0.34, 72.0, 112.0) : 148.0;
 
-  const auto rackWidth = singRackWidth(W);
-  l.rack = rackWidth >= 320.0 ? RackPresentation::Full : RackPresentation::Rail;
-  l.rackArea = {W - kSingEdge - rackWidth, bodyTop, rackWidth,
-                std::max(0.0, bodyBottom - bodyTop)};
+  // The full rack needs its three cards at their minimum heights; anything shorter or narrower
+  // collapses to the portrait rail rather than clipping cards under the status bar.
+  const auto fullRackHeight = 180.0 + 248.0 + 104.0 + 2.0 * kSingGap;
+  const auto fullRack = singRackWidth(W) >= 320.0 && bodyHeight >= fullRackHeight;
+  const auto rackWidth = fullRack ? singRackWidth(W) : 56.0;
+  l.rack = fullRack ? RackPresentation::Full : RackPresentation::Rail;
+  l.rackArea = {W - kSingEdge - rackWidth, bodyTop, rackWidth, bodyHeight};
 
   const auto editorRight = l.rackArea.x - kSingRackGap;
   l.lane = {kSingEdge, bodyBottom - laneHeight, std::max(0.0, editorRight - kSingEdge),
@@ -85,20 +90,27 @@ SingLayout solveSingLayout(double width, double height) noexcept {
     l.singerChange = l.portraitRing;
   }
 
-  // Header, right to left so the transport and meter keep their size before tabs shrink.
-  l.wordmark = {l.header.x + 16.0, l.header.y + (headerHeight - 48.0) * 0.5, 208.0, 48.0};
+  // Header, right to left so the transport and meter keep their size before tabs shrink. Narrow
+  // headers shrink the wordmark, then drop tab labels, then drop the tabs; nothing overlaps.
+  const auto wordmarkWidth = W >= 1180.0 ? 208.0 : 132.0;
+  l.wordmark = {l.header.x + 16.0, l.header.y + (headerHeight - 48.0) * 0.5, wordmarkWidth, 48.0};
   l.settings = {l.header.right() - 56.0, l.header.y + (headerHeight - 32.0) * 0.5, 32.0, 32.0};
   l.outputMeterVisible = W >= 1180.0;
   const auto meterWidth = l.outputMeterVisible ? 160.0 : 0.0;
   l.outputMeter = {l.settings.x - 32.0 - meterWidth, l.header.y + (headerHeight - 44.0) * 0.5,
                    meterWidth, 44.0};
-  const auto transportWidth = std::clamp(W * 0.27, 300.0, 432.0);
+  const auto transportWidth = std::clamp(W * 0.27, 248.0, 432.0);
   const auto meterLeft = l.outputMeterVisible ? l.outputMeter.x - 24.0 : l.settings.x - 24.0;
   l.transport = {meterLeft - transportWidth, l.outputMeter.y, transportWidth, 44.0};
-  l.modeSwitch = {l.transport.x - 28.0 - 132.0, l.header.y + (headerHeight - 28.0) * 0.5, 132.0,
-                  28.0};
+  const auto switchWidth = W >= 900.0 ? 132.0 : 120.0;
+  const auto switchGap = W >= 900.0 ? 28.0 : 16.0;
+  l.modeSwitch = {l.transport.x - switchGap - switchWidth, l.header.y + (headerHeight - 28.0) * 0.5,
+                  switchWidth, 28.0};
+  if (l.modeSwitch.x < l.wordmark.right() + 12.0)
+    l.wordmark.width = std::max(72.0, l.modeSwitch.x - 12.0 - l.wordmark.x);
   const auto tabsLeft = l.wordmark.right() + 24.0;
-  const auto tabsWidth = std::clamp(l.modeSwitch.x - 24.0 - tabsLeft, 0.0, 400.0);
+  auto tabsWidth = std::clamp(l.modeSwitch.x - 24.0 - tabsLeft, 0.0, 400.0);
+  if (tabsWidth < 5.0 * 36.0) tabsWidth = 0.0;
   l.workspaceTabs = {tabsLeft, l.header.y + 8.0, tabsWidth, headerHeight - 16.0};
   l.workspaceLabelsVisible = tabsWidth >= 320.0;
   const auto tabWidth = tabsWidth / 5.0;

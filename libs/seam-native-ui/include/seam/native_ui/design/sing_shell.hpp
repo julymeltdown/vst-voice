@@ -60,12 +60,24 @@ public:
 
   void setMode(DesignMode mode, bool persist = true);
   void setEnabled(bool enabled, bool persist = true);
+  // Enables or disables the shell while a controller is attached: gestures are cancelled and the
+  // controller's input geometry is returned to the classic editor before the switch.
+  void setEnabled(NativeEditorController& controller, bool enabled);
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
   [[nodiscard]] bool assetsLoaded(DesignMode mode) const noexcept;
 
-  // Paints the shell and returns true, or returns false so the caller paints the legacy editor.
-  bool paint(RasterCanvas& canvas, ui::PianoRollModel& model, const EditorSceneState& state,
-             time::Tick playhead);
+  // Frame step 1, before the host derives its scene state: chooses the surface and applies its
+  // complete geometry (piano-roll viewport and the controller's hosted input geometry) so paint,
+  // scene state, IME anchors and pointer routing all read one geometry. Returns true when the shell
+  // will present. When it will not, the classic input geometry is restored here, even if no shell
+  // input event ever runs again.
+  bool prepareFrame(NativeEditorController& controller, double logicalWidth, double logicalHeight);
+  // Frame step 2: paints and returns true, or returns false (restoring classic input geometry) so
+  // the caller paints the legacy editor.
+  bool paint(RasterCanvas& canvas, NativeEditorController& controller,
+             const EditorSceneState& state, time::Tick playhead);
+  // Abandons shell and controller gestures without committing them (capture loss, hide).
+  void cancelGestures(NativeEditorController& controller);
 
   core::Result<void> pointerDown(NativeEditorController& controller, const PointerEvent& event);
   core::Result<void> pointerMove(NativeEditorController& controller, const PointerEvent& event);
@@ -73,21 +85,32 @@ public:
   // Returns true when the shell consumed the scroll.
   bool scroll(NativeEditorController& controller, double deltaX, double deltaY, ui::Point anchor,
               InputModifiers modifiers);
-  // Returns true when the key toggles the shell itself (Command-Shift-Space).
-  bool handleShellKey(const KeyEvent& event);
-  [[nodiscard]] TextInputRequest translateTextInput(TextInputRequest request) const noexcept;
+  // Returns true when the shell consumed the key: Command-Shift-Space toggles the shell, and Escape
+  // cancels a knob drag or a forwarded pointer gesture without committing it.
+  bool handleShellKey(NativeEditorController& controller, const KeyEvent& event);
+  // Lyric requests come from note bounds in the shell's viewport and are moved into shell space.
+  // Every other request (tempo/meter, hint, replacement fields) belongs to a classic surface that
+  // replaces the shell on the next frame and keeps its classic coordinates.
+  [[nodiscard]] TextInputRequest translateTextInput(TextInputRequest request);
+  void textInputEnded() noexcept { lyricInputActive_ = false; }
 
   // Converts a rectangle published in the legacy editor's window coordinates into the shell.
   [[nodiscard]] ui::Rect fromLegacy(ui::Rect rect) const noexcept;
   [[nodiscard]] ui::Point toLegacy(ui::Point point) const noexcept;
 
 private:
+  // A knob gesture is bound to the document, region and playhead it started on; if any of them
+  // changes before release, the release commits nothing.
   struct KnobDrag final {
     std::size_t index{0U};
     double startY{0.0};
     int steps{0};
     bool moved{false};
+    std::uint64_t revision{0U};
+    domain::RegionId region;
+    time::Tick playhead{0};
   };
+  enum class ForwardArea : std::uint8_t { None, Grid, Lane };
 
   void repaint() const {
     if (repaint_) repaint_();
@@ -104,10 +127,15 @@ private:
   void paintRack(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintStatus(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   [[nodiscard]] bool inMusicalArea(ui::Point point) const noexcept;
-  [[nodiscard]] PointerEvent translated(const PointerEvent& event) const noexcept;
-  // Tells the controller whether the shell owns the chrome around the grid this frame.
-  void syncHostedGrid(NativeEditorController& controller) const noexcept;
+  [[nodiscard]] bool inEditableLane(ui::Point point) const noexcept;
+  [[nodiscard]] PointerEvent translated(const PointerEvent& event, ForwardArea area) const noexcept;
+  [[nodiscard]] NativeEditorController::HostedGeometry hostedGeometry() const noexcept;
+  void applyGeometry(NativeEditorController& controller);
+  void releaseSurface(NativeEditorController& controller);
+  // Hands the frame to a classic surface as soon as a shell command opens one, before the repaint.
+  void yieldIfModal(NativeEditorController& controller);
   core::Result<void> nudge(NativeEditorController& controller, std::size_t index, int steps);
+  core::Result<void> shellPointerDown(NativeEditorController& controller, const PointerEvent& event);
 
   DesignPreferences preferences_;
   bool active_{false};
@@ -117,7 +145,9 @@ private:
   double legacyContentTop_{EditorSceneLayout{}.contentTop()};
   std::int64_t ppq_{960};
   bool presented_{false};
-  bool forwarding_{false};
+  ForwardArea forwarding_{ForwardArea::None};
+  bool laneEditable_{false};
+  bool lyricInputActive_{false};
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
   double scrollAccumulator_{0.0};

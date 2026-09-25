@@ -298,8 +298,11 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   std::lock_guard lock(mutex_);
   controller_->pollReplacementReview();
   rebuildTechnicalModelsLocked();
+  // The surface and its geometry are chosen before the scene state is derived from them.
+  const auto shellFrame =
+      shell_.prepareFrame(*controller_, canvas.logicalWidth(), canvas.logicalHeight());
   const auto state = sceneState();
-  if (shell_.paint(canvas, controller_->pianoRoll(), state, controller_->playheadTick())) return;
+  if (shellFrame && shell_.paint(canvas, *controller_, state, controller_->playheadTick())) return;
   painter_.paint(canvas, controller_->pianoRoll(), state);
   if (state.sampleMicroscope.has_value() || state.replacementReview.visible) return;
   const auto seam = primarySeamAmount();
