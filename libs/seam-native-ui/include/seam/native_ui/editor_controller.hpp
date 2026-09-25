@@ -213,6 +213,9 @@ public:
   void rebuildAccessibilityTree();
   [[nodiscard]] core::Result<void> dispatchAccessibility(
       std::string_view id, SemanticAction action);
+  // The one controller focus transition: a successful focus move to anything other than a vibrato
+  // handle ends the vibrato handle subfocus, whichever path (Tab, pointer, assistive, shell) moved it.
+  void accessibilityFocusMoved(std::string_view id) noexcept;
   [[nodiscard]] core::Result<void> setAccessibilityValue(
       std::string_view id, std::string_view value);
   void setDiagnostics(std::vector<authoring::Diagnostic> diagnostics);
@@ -503,6 +506,8 @@ public:
   }
 
 private:
+  [[nodiscard]] core::Result<void> dispatchAccessibilityAction(
+      std::string_view id, SemanticAction action);
   enum class DragMode {
     None,
     MoveNotes,

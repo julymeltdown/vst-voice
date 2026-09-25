@@ -15,6 +15,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <limits>
+#include <map>
 
 namespace {
 
@@ -554,10 +555,20 @@ TEST_CASE("shell note semantics are clipped to the grid at every edge and stay v
     const auto shellNotes = tree.materializeNotes(0U, 64U);
     const auto legacyNotes = source.materializeNotes(0U, 64U);
     CHECK(shellNotes.size() == legacyNotes.size());
+    // The oracle is the painted layout (overlap bands included) for visible notes, and the logical
+    // rectangle for the rest.
+    std::map<std::string, ui::Rect> painted;
+    for (const auto& visual : f.controller.pianoRoll().visibleNotes()) {
+      auto bounds = visual.bounds;
+      bounds.y += grid.y;
+      painted["note." + visual.noteId.toString()] = bounds;
+    }
     for (std::size_t i = 0U; i < std::min(shellNotes.size(), legacyNotes.size()); ++i) {
       ++checks;
       const auto& note = shellNotes[i];
-      const auto full = f.shell.fromLegacy(legacyNotes[i].bounds);
+      const auto paintedNote = painted.find(legacyNotes[i].id);
+      const auto full = paintedNote != painted.end() ? paintedNote->second
+                                                     : f.shell.fromLegacy(legacyNotes[i].bounds);
       CHECK(note.id == legacyNotes[i].id);
       const auto left = std::max(full.x, grid.x);
       const auto right = std::min(full.right(), grid.right());
@@ -794,4 +805,150 @@ TEST_CASE("a rename started over an open lyric field keeps the rename and edits 
     CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
     CHECK(f.controller.textInputActive());
   }
+}
+
+TEST_CASE("a shell control that leaves the layout gives up focus and the keys") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
+  CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* focused = f.shell.accessibilityTree().focusedNode();
+  CHECK(focused == nullptr || focused->id != "shell.knob.gender");
+  // No phantom owner: Space reaches the editor (transport) instead of a removed knob.
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Space}));
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+}
+
+TEST_CASE("re-homed editor controls own Enter and plain keys, notes keep theirs") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  const auto tabTo = [&](std::string_view target) {
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.mode.scene", SemanticAction::SetFocus).hasValue());
+    for (int i = 0; i < 60; ++i) {
+      CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+      const auto* node = f.shell.accessibilityTree().focusedNode();
+      if (node != nullptr && node->id == target) return true;
+    }
+    return false;
+  };
+  // Tempo: Enter opens the tempo field on its classic surface, never the selected note's lyric.
+  CHECK(tabTo("toolbar.tempo"));
+  f.lastTextInput.reset();
+  const KeyEvent enter{.key = NativeKey::Enter};
+  if (!f.shell.handleShellKey(f.controller, enter)) CHECK(f.controller.keyDown(enter).hasValue());
+  CHECK(f.lastTextInput.has_value());
+  if (f.lastTextInput) CHECK(f.lastTextInput->anchor != native_ui::TextInputAnchor::NoteGrid);
+  CHECK(f.controller.textInputActive());
+  f.controller.cancelTextComposition();
+  CHECK(f.frame());
+  // Meter likewise.
+  CHECK(tabTo("toolbar.meter"));
+  f.lastTextInput.reset();
+  CHECK(f.shell.handleShellKey(f.controller, enter));
+  CHECK(f.lastTextInput.has_value());
+  if (f.lastTextInput) CHECK(f.lastTextInput->anchor != native_ui::TextInputAnchor::NoteGrid);
+  f.controller.cancelTextComposition();
+  CHECK(f.frame());
+  // Destructive score shortcuts do not reach the selected note while a control is focused.
+  CHECK(tabTo("toolbar.transport"));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == 1U);
+  CHECK(static_cast<int>(f.note().midiKey) == 72);
+  // Once the note owns focus again, its keys are the score editor's.
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.controller.dispatchAccessibility("note." + f.note().id.toString(), SemanticAction::SetFocus).hasValue());
+  const KeyEvent up{.key = NativeKey::Up};
+  if (!f.shell.handleShellKey(f.controller, up)) CHECK(f.controller.keyDown(up).hasValue());
+  CHECK(static_cast<int>(f.note().midiKey) == 73);
+}
+
+TEST_CASE("delegated note semantics use the painted overlap layout") {
+  ShellFixture f{time::Tick{0}, true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A fourth simultaneous note makes the dense layout hide a member.
+  auto [lyric, note] = f.factory.makeNote(time::Tick{2880}, time::Tick{960}, 74U, U"x",
+                                          domain::Language::Japanese);
+  auto* region = f.session.project().findRegion(f.regionId);
+  region->lyrics.push_back(std::move(lyric));
+  region->notes.push_back(std::move(note));
+  f.controller.pianoRoll().rebuildIndex();
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto ax = f.shell.accessibilityTree().materializeNotes(0U, 64U);
+  const auto grid = f.shell.layout().grid;
+  bool sawBand = false;
+  bool sawHidden = false;
+  for (const auto& visual : f.controller.pianoRoll().visibleNotes()) {
+    const auto id = "note." + visual.noteId.toString();
+    const auto node = std::find_if(ax.begin(), ax.end(), [&](const auto& n) { return n.id == id; });
+    CHECK(node != ax.end());
+    if (node == ax.end()) continue;
+    if (visual.hiddenByOverlapDensity) {
+      sawHidden = true;
+      CHECK(node->description.find("dense overlap group") != std::string::npos);
+      continue;
+    }
+    if (visual.overlapMemberCount > 1U) sawBand = true;
+    CHECK_NEAR(node->bounds.x, std::max(visual.bounds.x, grid.x), 1e-9);
+    CHECK_NEAR(node->bounds.y, visual.bounds.y + grid.y, 1e-9);
+    CHECK_NEAR(node->bounds.height, visual.bounds.height, 1e-9);
+  }
+  CHECK(sawBand);
+  CHECK(sawHidden);
+}
+
+TEST_CASE("leaving a vibrato handle through shell Tab returns arrows to the note") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.session.project().findRegion(f.regionId)->notes.front().vibrato.enabled = true;
+  CHECK(f.frame());
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  std::string handle;
+  for (const auto& child : f.shell.accessibilityTree().root().children)
+    if (child.id.starts_with("editor.vibrato.handle.")) handle = child.id;
+  CHECK(!handle.empty());
+  if (handle.empty()) return;
+  // While the handle owns focus, arrows adjust the vibrato.
+  CHECK(f.controller.dispatchAccessibility(handle, SemanticAction::SetFocus).hasValue());
+  CHECK(f.controller.sceneState().vibratoKeyboardFocus.has_value());
+  for (const auto shift : {false, true}) {
+    CHECK(f.controller.dispatchAccessibility(handle, SemanticAction::SetFocus).hasValue());
+    bool reachedNote = false;
+    for (int i = 0; i < 80; ++i) {
+      CHECK(f.shell.handleShellKey(f.controller,
+                                   KeyEvent{.key = NativeKey::Tab, .modifiers = {.shift = shift}}));
+      const auto* node = f.shell.accessibilityTree().focusedNode();
+      if (node != nullptr && node->id.starts_with("note.")) {
+        reachedNote = true;
+        break;
+      }
+    }
+    CHECK(reachedNote);
+    CHECK(!f.controller.sceneState().vibratoKeyboardFocus.has_value());
+  }
+  const auto beforeKey = static_cast<int>(f.note().midiKey);
+  const auto beforeOnset = f.note().vibrato.startFraction;
+  const KeyEvent up{.key = NativeKey::Up};
+  if (!f.shell.handleShellKey(f.controller, up)) CHECK(f.controller.keyDown(up).hasValue());
+  CHECK(static_cast<int>(f.note().midiKey) == beforeKey + 1);
+  CHECK(f.note().vibrato.startFraction == beforeOnset);
+  // Handle -> shell control also ends the subfocus.
+  CHECK(f.controller.dispatchAccessibility(handle, SemanticAction::SetFocus).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
+  CHECK(!f.controller.sceneState().vibratoKeyboardFocus.has_value());
 }

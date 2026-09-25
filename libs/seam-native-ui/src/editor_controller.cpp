@@ -1914,6 +1914,20 @@ void NativeEditorController::rebuildAccessibilityTree() {
 
 core::Result<void> NativeEditorController::dispatchAccessibility(
     std::string_view id, SemanticAction action) {
+  auto result = dispatchAccessibilityAction(id, action);
+  if (result && action == SemanticAction::SetFocus) accessibilityFocusMoved(id);
+  return result;
+}
+
+void NativeEditorController::accessibilityFocusMoved(std::string_view id) noexcept {
+  if (!id.starts_with("editor.vibrato.handle.") && vibratoKeyboardFocus_.has_value()) {
+    vibratoKeyboardFocus_.reset();
+    repaint();
+  }
+}
+
+core::Result<void> NativeEditorController::dispatchAccessibilityAction(
+    std::string_view id, SemanticAction action) {
   constexpr std::string_view vibratoPrefix{"editor.vibrato.handle."};
   if (id.starts_with(vibratoPrefix)) {
     const auto selected = session_.selection().noteIds();

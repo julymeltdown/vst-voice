@@ -158,9 +158,12 @@ private:
                                      SemanticAction action);
   // Shell focus remembers the controller's focus at the moment it was taken; once the controller's
   // focus moves, the shell's is dropped.
-  void takeSemanticFocus(const NativeEditorController& controller, std::string id);
+  void takeSemanticFocus(NativeEditorController& controller, std::string id);
   // Rebuilds the controller's tree and the shell's from the current state and layout.
   void refreshSemantics(NativeEditorController& controller);
+  // Controller controls the shell shows at its own rectangles (not notes, the timeline or vibrato
+  // handles, whose keys belong to the score editor).
+  [[nodiscard]] static bool rehomedControl(std::string_view id) noexcept;
 
   DesignPreferences preferences_;
   bool active_{false};

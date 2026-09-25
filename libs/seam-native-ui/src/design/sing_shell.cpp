@@ -11,10 +11,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <memory>
 #include <numbers>
+#include <optional>
 #include <random>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 namespace seam::native_ui::design {
@@ -1656,11 +1659,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     repaint();
     return true;
   }
+  if (!keyboardFocusOwned) return false;
+  // Keys follow the element the shell publishes as focused right now. Rebuilding first means a
+  // control that has left the layout (a knob after the rack collapsed) no longer owns them.
+  refreshSemantics(controller);
+  const auto* focused = semantics_.focusedNode();
+  if (focused == nullptr) return false;
+  const std::string id = focused->id;
   // While a shell control holds focus, plain keys belong to it and never reach the note editor
   // (Delete must not delete the selected notes because a knob is focused). Command shortcuts such
   // as undo and save still pass through.
-  if (keyboardFocusOwned && !semanticFocus_.empty()) {
-    const auto id = semanticFocus_;
+  if (ownsSemantic(id)) {
     switch (event.key) {
       case NativeKey::Escape:
         semanticFocus_.clear();
@@ -1682,7 +1691,31 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     }
     return true;
   }
-  return false;
+  // Notes, the timeline and vibrato handles are the score editor's: its keys edit them.
+  if (!rehomedControl(id)) return false;
+  // A re-homed editor control (transport, tempo, meter, voice identity, an overlap group, status
+  // actions) owns the plain keys too: Enter/Space act on it, never on the selected note's lyric.
+  if (event.key == NativeKey::Escape) return false;
+  if (event.key == NativeKey::Enter || event.key == NativeKey::Space) {
+    const auto offers = [focused](SemanticAction action) {
+      return std::find(focused->actions.begin(), focused->actions.end(), action) !=
+             focused->actions.end();
+    };
+    const auto action = offers(SemanticAction::Activate) ? std::optional{SemanticAction::Activate}
+                        : offers(SemanticAction::Toggle) ? std::optional{SemanticAction::Toggle}
+                                                         : std::nullopt;
+    if (action && focused->enabled) {
+      static_cast<void>(controller.dispatchAccessibility(id, *action));
+      yieldIfModal(controller);
+    }
+    repaint();
+  }
+  return true;
+}
+
+bool SingShell::rehomedControl(std::string_view id) noexcept {
+  return id.starts_with("toolbar.") || id == "voice.identity" || id.starts_with("diagnostic") ||
+         id.starts_with("export.") || id.starts_with("overlap-group.") || id.starts_with("detail.");
 }
 
 void SingShell::refreshSemantics(NativeEditorController& controller) {
@@ -1690,7 +1723,9 @@ void SingShell::refreshSemantics(NativeEditorController& controller) {
   rebuildSemantics(controller, controller.sceneState());
 }
 
-void SingShell::takeSemanticFocus(const NativeEditorController& controller, std::string id) {
+void SingShell::takeSemanticFocus(NativeEditorController& controller, std::string id) {
+  // Focus leaving the editor ends any vibrato handle subfocus there.
+  controller.accessibilityFocusMoved(id);
   const auto* controllerFocus = controller.accessibilityTree().focusedNode();
   semanticFocusBaseline_ = controllerFocus == nullptr ? std::string{} : controllerFocus->id;
   semanticFocus_ = std::move(id);
@@ -1783,6 +1818,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // selected note's vibrato handles are listed here, clipped to the grid like the notes.
   const auto grid = l.grid;
   const auto offsetY = l.grid.y - legacyContentTop_;
+  // Geometry for a note comes from the layout that was painted: overlap bands and hidden members
+  // exist only in the visible layout, not in the model's raw note rectangles. The snapshot is
+  // bounded to the visible notes and keyed by id; notes outside it keep their logical rectangle.
+  struct PaintedNote final {
+    ui::Rect bounds;
+    bool hidden{false};
+  };
+  auto painted = std::make_shared<std::unordered_map<std::string, PaintedNote>>();
+  for (const auto& visual : controller.pianoRoll().visibleNotes()) {
+    auto bounds = visual.bounds;
+    bounds.y += legacyContentTop_;
+    painted->insert_or_assign("note." + visual.noteId.toString(),
+                              PaintedNote{bounds, visual.hiddenByOverlapDensity});
+  }
   const auto presentInGrid = [grid, offsetY](SemanticNode& node) {
     node.bounds.y += offsetY;
     const auto left = std::max(node.bounds.x, grid.x);
@@ -1797,6 +1846,15 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                            std::clamp(node.bounds.y, grid.y, grid.y + grid.height), 0.0, 0.0};
     node.description += node.description.empty() ? "" : " / ";
     node.description += "Outside the visible grid; scroll to show it";
+  };
+  const auto presentNote = [presentInGrid, painted](SemanticNode& node) {
+    if (const auto found = painted->find(node.id); found != painted->end()) {
+      node.bounds = found->second.bounds;
+      constexpr std::string_view kDense{"drawn inside a dense overlap group"};
+      if (found->second.hidden && node.description.find(kDense) == std::string::npos)
+        node.description += "; drawn inside a dense overlap group, whose detail lists it";
+    }
+    presentInGrid(node);
   };
   {
     const auto collect = [&](const SemanticNode& node, const auto& self) -> void {
@@ -1922,10 +1980,16 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     add(std::move(copy));
   }
 
+  // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
+  // up focus, and with it the keys; the editor's own focus is reported instead.
+  if (!semanticFocus_.empty() && !EditorSemanticTree::containsId(root, semanticFocus_)) {
+    semanticFocus_.clear();
+    focusedId.clear();
+  }
   if (focusedId.empty() && legacyFocus != nullptr) focusedId = legacyFocus->id;
   semantics_.rebuildCustom(std::move(root), focusedId,
                            VirtualNoteSource{.tree = &controller.accessibilityTree(),
-                                             .present = presentInGrid});
+                                             .present = presentNote});
 }
 
 core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
