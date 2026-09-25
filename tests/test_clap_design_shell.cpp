@@ -9,8 +9,10 @@
 #include "seam/native_ui/pixel_surface.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <string>
+#include <thread>
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
 #error SEAM_SOURCE_PRODUCTION_VOICEBANK is required
@@ -98,4 +100,32 @@ TEST_CASE("CLAP shell: EXPORT refuses retained score elements and editing keys")
   CHECK(back.virtualizedNoteCount > 0U);
   CHECK(childById(back.children, "shell.export.run") == nullptr);
   CHECK(runtime.dispatchAccessibility(noteId, SemanticAction::SetFocus));
+}
+
+TEST_CASE("CLAP shell: the notes show the region's own preview render once it is ready") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.activateDesignShell(
+      native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Scene});
+  runtime.resize(1600.0, 900.0);
+  const auto waveform = [&runtime]() -> std::optional<SemanticNode> {
+    paintFrame(runtime);
+    const auto snapshot = runtime.accessibilitySnapshot();
+    const auto* node = childById(snapshot.children, "shell.waveform");
+    return node == nullptr ? std::nullopt : std::optional<SemanticNode>{*node};
+  };
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{60};
+  std::optional<SemanticNode> last;
+  while (std::chrono::steady_clock::now() < deadline) {
+    last = waveform();
+    if (last && last->value == "Showing the current render") break;
+    std::this_thread::sleep_for(std::chrono::milliseconds{20});
+  }
+  if (!last || last->value != "Showing the current render")
+    std::cerr << "CLAP waveform stayed '" << (last ? last->value : "<missing>") << "' ("
+              << (last ? last->description : "") << ")\n";
+  CHECK(last.has_value() && last->value == "Showing the current render");
 }
