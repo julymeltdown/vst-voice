@@ -952,3 +952,44 @@ TEST_CASE("leaving a vibrato handle through shell Tab returns arrows to the note
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
   CHECK(!f.controller.sceneState().vibratoKeyboardFocus.has_value());
 }
+
+TEST_CASE("releasing shell focus returns to the note, not to a stale vibrato handle") {
+  using native_ui::SemanticAction;
+  for (const auto resize : {false, true}) {
+    ShellFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    f.session.project().findRegion(f.regionId)->notes.front().vibrato.enabled = true;
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    std::string handle;
+    for (const auto& child : f.shell.accessibilityTree().root().children)
+      if (child.name == "Vibrato onset") handle = child.id;
+    CHECK(!handle.empty());
+    if (handle.empty()) return;
+    CHECK(f.controller.dispatchAccessibility(handle, SemanticAction::SetFocus).hasValue());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
+    CHECK(!f.controller.sceneState().vibratoKeyboardFocus.has_value());
+    if (resize)
+      CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
+    else
+      CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    // The published focus and the keyboard target agree: the note owns both.
+    const auto noteId = "note." + f.note().id.toString();
+    const auto* published = f.shell.accessibilityTree().focusedNode();
+    CHECK(published != nullptr && published->id == noteId);
+    const auto* controllerFocus = f.controller.accessibilityTree().focusedNode();
+    CHECK(controllerFocus != nullptr && controllerFocus->id == noteId);
+    CHECK(!f.controller.sceneState().vibratoKeyboardFocus.has_value());
+    const auto beforeKey = static_cast<int>(f.note().midiKey);
+    const auto beforeOnset = f.note().vibrato.startFraction;
+    const KeyEvent up{.key = NativeKey::Up};
+    if (!f.shell.handleShellKey(f.controller, up)) CHECK(f.controller.keyDown(up).hasValue());
+    CHECK(static_cast<int>(f.note().midiKey) == beforeKey + 1);
+    CHECK(f.note().vibrato.startFraction == beforeOnset);
+  }
+}

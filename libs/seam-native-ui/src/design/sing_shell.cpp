@@ -1724,8 +1724,22 @@ void SingShell::refreshSemantics(NativeEditorController& controller) {
 }
 
 void SingShell::takeSemanticFocus(NativeEditorController& controller, std::string id) {
-  // Focus leaving the editor ends any vibrato handle subfocus there.
+  // Focus leaving the editor ends any vibrato handle subfocus there. The editor's own focus moves
+  // off the handle to the note that owns it through a real focus transition, so when the shell
+  // later releases focus (Escape, the control leaving the layout) the focus it reports and the
+  // target that receives the keys are the same note.
   controller.accessibilityFocusMoved(id);
+  if (const auto* current = controller.accessibilityTree().focusedNode();
+      current != nullptr && current->id.starts_with("editor.vibrato.handle.")) {
+    constexpr std::string_view kPrefix{"editor.vibrato.handle."};
+    const std::string_view handle{current->id};
+    const auto rest = handle.substr(kPrefix.size());
+    const auto kind = rest.rfind('.');
+    if (kind != std::string_view::npos) {
+      const auto note = "note." + std::string{rest.substr(0U, kind)};
+      static_cast<void>(controller.dispatchAccessibility(note, SemanticAction::SetFocus));
+    }
+  }
   const auto* controllerFocus = controller.accessibilityTree().focusedNode();
   semanticFocusBaseline_ = controllerFocus == nullptr ? std::string{} : controllerFocus->id;
   semanticFocus_ = std::move(id);
