@@ -388,7 +388,25 @@ python3 scripts/verify_ui_fidelity_contract.py
 python3 -B -m unittest discover -s tests/design -p 'test_ui_fidelity_contract.py'
 ```
 
-This verifies reference hashes/PNG dimensions, the canonical rectangle hierarchy, required nonoverlapping sibling groups, the shared musical time axis, text floors, required 1×/2× logical-to-pixel arithmetic, and memory-budget arithmetic. It explicitly prints `native_visual_match: NOT_RUN`. It does not compare screenshots or prove host rendering. Negative regression cases check that deleting required checks cannot silently produce PASS. The future native capture runner and comparator described above are implementation tasks in B/C, not existing tools.
+This verifies reference hashes/PNG dimensions, the canonical rectangle hierarchy, required nonoverlapping sibling groups, the shared musical time axis, text floors, required 1×/2× logical-to-pixel arithmetic, and memory-budget arithmetic. It explicitly prints `native_visual_match: NOT_RUN`. It does not compare screenshots or prove host rendering. Negative regression cases check that deleting required checks cannot silently produce PASS.
+
+### 11.5 Native capture packet (implemented 2026-09-26)
+
+The §11.2 packet now has a runner on macOS:
+
+```sh
+python3 scripts/capture_sing_fidelity_packet.py            # -> build/evidence/ui-fidelity/<candidate>/
+python3 -B -m unittest discover -s tests/design -p 'test_*.py'
+```
+
+It launches the release app with `--evidence-dir` and `--window-id-file` for the empty, ready, rendering, failed and dense-overlap states in both looks at 1600×900, plus the ready state at every contract viewport. Each capture keeps the software frame and the OS-composited window (`screencapture -l`, title bar removed, both in sRGB). Geometry and semantic bounds come from the snapshot that painted the frame and are checked against the contract (±2 pt edges), against each other, and for EMO/SCENE parity. The candidate id carries the dirty-tree hash when the source is uncommitted. FL Studio captures, the stale state (it needs an edit after a published render), VoiceOver, and the reviewer and owner verdicts stay NOT_RUN in the packet.
+
+First results, recorded in [evidence/ui-fidelity-11938f8f](evidence/ui-fidelity-11938f8f/acceptance.md):
+
+- **Presentation colour (fixed in 72bef8af).** Both presenters drew the sRGB-authored frame with a device RGB colour space, so a Display P3 screen showed every EMO/SCENE colour oversaturated. With the sRGB presentation space, the worst per-region share of window pixels over channel delta 8 against the software frame fell from 9.9% to 0.01%.
+- **Failed-render status line (fixed in 11938f8f).** It now names the reason.
+- **Geometry.** All 20 captures pass the contract and semantic checks, and EMO/SCENE geometry is identical for every state and viewport.
+- **Open deviation.** Below 860 pt the rack is a 56-pt rail holding the 44-pt portrait button; §3.4 asks for a 44-pt drawer button. This needs a reviewer decision: either change the solver or amend §3.4.
 
 The specification's successful validation is useful: an implementer now has unambiguous inputs and measurable exits. It is not a substitute for producing the working SING screen.
 
