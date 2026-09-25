@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/native_ui/character_presentation.hpp"
+#include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
 #include "seam/platform/application_menu.hpp"
@@ -55,6 +56,9 @@ struct NativeEditorAppConfig final {
   std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
       prepareJapaneseReadingResource;
   std::filesystem::path manualsRoot;
+  // Presents the EMO/SCENE SING workspace. The shipping app enables it; tests keep the classic
+  // editor so their pixel and hit-test expectations stay independent of the user's preferences.
+  bool designShell{false};
 };
 
 [[nodiscard]] NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
@@ -150,6 +154,8 @@ private:
   std::unique_ptr<platform::IApplicationMenu> applicationMenu_;
   native_ui::CharacterPresentation character_;
   native_ui::EditorScenePainter painter_;
+  // The EMO/SCENE SING shell. It paints around the same controller and falls back to painter_.
+  native_ui::design::SingShell shell_;
   std::unique_ptr<platform::MultichannelRingBufferAudioProcessor> processor_;
   std::unique_ptr<platform::IAudioDevice> audioDevice_;
   std::unique_ptr<platform::IAudioDeviceCatalog> audioDeviceCatalog_;

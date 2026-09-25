@@ -72,6 +72,29 @@ Windows items cannot be closed by engineering in this repository.
 
 > **Current maturity: Feature Alpha, not Release Candidate.** Phase 13B now adds evidence-backed Official Voicebank 01 and Character 01 release dossiers, deterministic Character 01 development assets, a development-only content bundle and a fail-closed G5 gate. Actual performer contract/recording, public-name and trademark clearance, production 3D assets, official validators, target-OS runtime evidence, signed installers and commercial DAW certification remain mandatory. See [`docs/STATUS_KO.md`](docs/STATUS_KO.md), [`docs/REMAINING_TASKS_KO.md`](docs/REMAINING_TASKS_KO.md), and [`docs/RELEASE_READINESS_KO.md`](docs/RELEASE_READINESS_KO.md).
 
+## EMO / SCENE design shell (in progress)
+
+The standalone app and the CLAP editor now open in the redesigned **SING** workspace, with two
+selectable looks: **EMO** (ink, bone white, blood red) and **SCENE** (neon pink, cyan, lime,
+glitter). The protagonist appears as the singer portrait, whose ring follows real render progress,
+and as a faded stage figure behind the grid. The spec is
+[`docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md`](docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md)
+and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/design/ui-fidelity-contract-v1.json).
+
+- Code: `libs/seam-native-ui/{include,src}/…/design` (tokens, layout, shell) and `…/paint`
+  (CoreGraphics/CoreText vector canvas). Hosts opt in; library tests keep the classic editor.
+- Switch looks with the EMO | SCENE control in the header. **Classic** (tool strip) or
+  Command-Shift-Space returns to the previous editor. The choice is stored in the
+  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene|classic`
+  overrides it.
+- Note editing, lyrics, vibrato and the ruler still run through the existing controller, so undo
+  history is unchanged. Voice browser, audio settings, reviews and the microscope still open in
+  the classic surfaces until they are re-homed.
+- Not done yet: VOICE, TUNE, MIX and EXPORT workspaces (tabs are visible but inactive); a
+  measured output meter; accessibility geometry for the new layout; matched host screenshots
+  in FL Studio. Character art in `assets/ui-design` is **development-only**; see its
+  `PROVENANCE.md`.
+
 
 
 

@@ -299,6 +299,7 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   controller_->pollReplacementReview();
   rebuildTechnicalModelsLocked();
   const auto state = sceneState();
+  if (shell_.paint(canvas, controller_->pianoRoll(), state, controller_->playheadTick())) return;
   painter_.paint(canvas, controller_->pianoRoll(), state);
   if (state.sampleMicroscope.has_value() || state.replacementReview.visible) return;
   const auto seam = primarySeamAmount();

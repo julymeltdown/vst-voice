@@ -425,7 +425,7 @@ void EditorRuntime::configureControllerCallbacks() {
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] { requestRepaint(); },
       .beginTextInput = [this](const native_ui::TextInputRequest& request) {
-        if (beginTextInput_) beginTextInput_(request);
+        if (beginTextInput_) beginTextInput_(shell_.translateTextInput(request));
       },
       .endTextInput = [this] {
         if (endTextInput_) endTextInput_();

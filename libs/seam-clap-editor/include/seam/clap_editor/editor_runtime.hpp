@@ -1,5 +1,6 @@
 #pragma once
 
+#include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/authoring/interchange_service.hpp"
@@ -175,6 +176,9 @@ public:
       std::string_view id, std::string_view value);
 
   void setRepaintCallback(std::function<void()> callback);
+  // Presents the EMO/SCENE SING workspace in this editor. The shipping plug-in enables it;
+  // library tests keep the classic editor and never read the user's saved design preferences.
+  void activateDesignShell();
   // Invoked for a persistent project change, from the originating thread. Most
   // edits are detected by revision at repaint; direct persisted settings also
   // signal it explicitly. CLAP can request a main-thread host-state notification.
@@ -373,6 +377,9 @@ private:
   void configureControllerCallbacks();
   void requestRepaint() const;
   void requestRenderAfterEdit();
+  enum class ShellPointerPhase : std::uint8_t { Down, Move, Up };
+  // Returns true when the SING shell presented the last frame and consumed the pointer event.
+  bool routeShellPointerLocked(ShellPointerPhase phase, const native_ui::PointerEvent& event);
   [[nodiscard]] native_ui::EditorSceneState sceneState();
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
@@ -409,6 +416,7 @@ private:
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::EditorScenePainter painter_;
+  native_ui::design::SingShell shell_;
   native_ui::CharacterPresentation character_;
   // Only the bounded performance model survives a repaint, never the published PCM.
   std::optional<std::uint64_t> characterPerformanceRequest_;

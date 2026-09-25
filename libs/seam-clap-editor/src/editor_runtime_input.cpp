@@ -30,6 +30,7 @@ void EditorRuntime::requestRenderAfterEdit() {
 
 void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (routeShellPointerLocked(ShellPointerPhase::Down, event)) return;
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->pointerDown(event)); return;
   }
@@ -184,6 +185,7 @@ void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (routeShellPointerLocked(ShellPointerPhase::Move, event)) return;
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->pointerMove(event)); return;
   }
@@ -196,6 +198,7 @@ void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
 
 void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
+  if (routeShellPointerLocked(ShellPointerPhase::Up, event)) return;
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     draggingPhonemeKey_.reset(); draggingPitchTick_.reset();
     static_cast<void>(controller_->pointerUp(event)); return;
@@ -252,10 +255,12 @@ void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
 void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
                            native_ui::InputModifiers modifiers) noexcept {
   std::lock_guard lock(mutex_);
-  controller_->scroll(deltaX, deltaY, anchor, modifiers);
+  if (!shell_.scroll(*controller_, deltaX, deltaY, anchor, modifiers))
+    controller_->scroll(deltaX, deltaY, anchor, modifiers);
 }
 
 void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
+  if (std::lock_guard lock(mutex_); shell_.handleShellKey(event)) return;
   // Score interchange is dispatched before the editor lock is taken. Both operations can open a host
   // dialog through the handoff callbacks, which must not run while this mutex is held: the modal would
   // then deadlock against the conversion that tries to re-enter the same lock. Command-Shift-O opens a

@@ -33,8 +33,8 @@ namespace seam::clap_editor {
 namespace {
 
 constexpr std::string_view kPluginId{"com.project-seam.editor"};
-constexpr std::uint32_t kDefaultWidth = 1100U;
-constexpr std::uint32_t kDefaultHeight = 720U;
+constexpr std::uint32_t kDefaultWidth = 1280U;
+constexpr std::uint32_t kDefaultHeight = 800U;
 constexpr std::uint32_t kMinimumWidth = 720U;
 constexpr std::uint32_t kMinimumHeight = 480U;
 constexpr std::size_t kMaximumStateBytes = 16U * 1024U * 1024U + 128U;
@@ -185,6 +185,7 @@ public:
     });
     runtime_->setVoicebankInstallerHandoff(
         [] { return openStandaloneVoicebankInstaller(); });
+    runtime_->activateDesignShell();
     // Score interchange in the embedded editor. The runtime runs the conversion and the adoption;
     // this supplies the destination and keeps the review decision conservative by default.
     runtime_->setInterchangeImportHandoff([] {
@@ -1158,7 +1159,14 @@ private:
         scale > 4.0) {
       return false;
     }
+#if defined(__APPLE__)
+    // Cocoa embedding is specified in logical points; a set_scale call is
+    // ignored and reported as such, whether or not the view exists yet.
+    static_cast<void>(instance);
+    return false;
+#else
     return instance->view_ == nullptr || instance->view_->setScale(scale);
+#endif
   }
 
   static bool CLAP_ABI guiGetSize(const clap_plugin_t* plugin,

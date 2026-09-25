@@ -317,12 +317,17 @@ core::Result<void> NativeEditorApp::initialize() {
     lastError_ = persistedSettings.error().message;
   }
 
+  if (config_.designShell) shell_.activate();
+  shell_.setRepaintCallback([this] {
+    if (window_ != nullptr) window_->requestRepaint();
+  });
+
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] {
         if (window_ != nullptr) window_->requestRepaint();
       },
       .beginTextInput = [this](const native_ui::TextInputRequest& request) {
-        if (window_ != nullptr) window_->beginTextInput(request);
+        if (window_ != nullptr) window_->beginTextInput(shell_.translateTextInput(request));
       },
       .endTextInput = [this] {
         if (window_ != nullptr) window_->endTextInput();
@@ -1578,7 +1583,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   authoring_->controller().rebuildAccessibilityTree();
-  painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
+  if (!shell_.paint(canvas, authoring_->controller().pianoRoll(), state, tick))
+    painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
 }
 
 void NativeEditorApp::resized(double logicalWidth, double logicalHeight,
@@ -1588,21 +1594,23 @@ void NativeEditorApp::resized(double logicalWidth, double logicalHeight,
 
 void NativeEditorApp::pointerDown(
     const native_ui::PointerEvent& event) noexcept {
-  record(authoring_->controller().pointerDown(event));
+  record(shell_.pointerDown(authoring_->controller(), event));
 }
 void NativeEditorApp::pointerMove(
     const native_ui::PointerEvent& event) noexcept {
-  record(authoring_->controller().pointerMove(event));
+  record(shell_.pointerMove(authoring_->controller(), event));
 }
 void NativeEditorApp::pointerUp(
     const native_ui::PointerEvent& event) noexcept {
-  record(authoring_->controller().pointerUp(event));
+  record(shell_.pointerUp(authoring_->controller(), event));
 }
 void NativeEditorApp::scroll(double deltaX, double deltaY, ui::Point anchor,
                              native_ui::InputModifiers modifiers) noexcept {
-  authoring_->controller().scroll(deltaX, deltaY, anchor, modifiers);
+  if (!shell_.scroll(authoring_->controller(), deltaX, deltaY, anchor, modifiers))
+    authoring_->controller().scroll(deltaX, deltaY, anchor, modifiers);
 }
 void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
+  if (shell_.handleShellKey(event)) return;
   if (applicationController_ != nullptr && event.modifiers.primaryShortcut()) {
     std::optional<platform::ApplicationCommand> command;
     if (event.key == native_ui::NativeKey::N) {

@@ -308,6 +308,7 @@ int seam_editor_native_main(int argc, char** argv) {
           .forceThreadedAudio = runtime.forceThreadedAudio,
           .startPaused = runtime.startPaused,
           .manualsRoot = paths.value().manualsRoot,
+          .designShell = true,
       });
   if (!created) {
     std::cerr << "Standalone initialization failed: "

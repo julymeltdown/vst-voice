@@ -736,6 +736,31 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/accessibility_unavailable.cpp)
   endif()
+  # EMO/SCENE design system and the SING shell. The vector backend is macOS-only while Windows
+  # support is deferred; other platforms keep the classic painter through the stubs.
+  target_sources(seam_native_ui PRIVATE
+    libs/seam-native-ui/src/design/design_tokens.cpp
+    libs/seam-native-ui/src/design/sing_layout.cpp
+    libs/seam-native-ui/src/design/sing_shell.cpp
+    libs/seam-native-ui/src/paint/path.cpp)
+  if(APPLE)
+    target_sources(seam_native_ui PRIVATE
+      libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm
+      libs/seam-native-ui/src/design/design_preferences_appkit.mm)
+    set_source_files_properties(
+      libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm
+      libs/seam-native-ui/src/design/design_preferences_appkit.mm
+      PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(seam_native_ui PRIVATE
+      "-framework CoreText" "-framework ImageIO")
+  else()
+    target_sources(seam_native_ui PRIVATE
+      libs/seam-native-ui/src/paint/canvas2d_unavailable.cpp
+      libs/seam-native-ui/src/design/design_preferences_unavailable.cpp)
+  endif()
+  # Development builds can find the design assets in the source tree; bundles carry a copy.
+  target_compile_definitions(seam_native_ui PRIVATE
+    SEAM_UI_DESIGN_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design")
   seam_apply_compiler_options(seam_native_ui)
 endif()
 
@@ -878,6 +903,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${SEAM_RELEASE_RESOURCE_INVENTORY}"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/release-resource-inventory.json"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/ui-design"
       VERBATIM)
     install(TARGETS seam_editor_native BUNDLE DESTINATION ".")
   elseif(WIN32)
@@ -1019,6 +1047,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/src/editor_runtime_accessibility.cpp
     libs/seam-clap-editor/src/editor_runtime_paint.cpp
     libs/seam-clap-editor/src/editor_runtime_input.cpp
+    libs/seam-clap-editor/src/editor_runtime_design_shell.cpp
     libs/seam-clap-editor/src/editor_runtime_project.cpp
     libs/seam-clap-editor/src/editor_runtime_preview.cpp
     libs/seam-clap-editor/src/editor_runtime_interchange.cpp
@@ -1104,6 +1133,9 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${SEAM_RELEASE_RESOURCE_INVENTORY}"
       "${SEAM_EDITOR_RESOURCE_ROOT}/release-resource-inventory.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
+      "${SEAM_EDITOR_RESOURCE_ROOT}/ui-design"
     VERBATIM)
 
   install(TARGETS seam_clap_editor_plugin
@@ -1856,6 +1888,11 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_style_coverage_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_style_coverage_tests)
     add_test(NAME seam_style_coverage_tests COMMAND seam_style_coverage_tests)
+    add_executable(seam_design_system_tests tests/test_main.cpp tests/test_design_system.cpp)
+    target_include_directories(seam_design_system_tests PRIVATE tests)
+    target_link_libraries(seam_design_system_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_design_system_tests)
+    add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
     add_executable(seam_japanese_reading_native_tests
       tests/test_main.cpp tests/test_japanese_reading_native.cpp)
     target_include_directories(seam_japanese_reading_native_tests PRIVATE tests)
