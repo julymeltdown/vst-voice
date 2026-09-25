@@ -271,6 +271,12 @@ def contains(outer: list[float], inner: list[float], slack: float = 0.5) -> bool
             and inner[1] + inner[3] <= outer[1] + outer[3] + slack)
 
 
+def positive(rect: Any) -> bool:
+    return (isinstance(rect, list) and len(rect) == 4
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in rect)
+            and rect[2] > 0 and rect[3] > 0)
+
+
 def spec_rack_width(width: float) -> float:
     if width < 860:
         return 44.0
@@ -279,29 +285,98 @@ def spec_rack_width(width: float) -> float:
     return min(max(width * 0.275, 320.0), 440.0)
 
 
-def check_geometry(geometry: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+def spec_rack_presentation(width: float) -> str:
+    """Section 3.4: a drawer button below 860 points, a rail below 1100, the full rack above."""
+    if width < 860:
+        return "drawer"
+    if width < 1100:
+        return "rail"
+    return "full"
+
+
+# Every check below fails closed: evidence that is missing, empty or for another viewport, mode or
+# presentation is a failure, never a pass. The required sets follow what each presentation must
+# expose; regions that section 3.4 lets collapse are required only at the canonical size.
+ALWAYS_REGIONS = (
+    "header", "wordmark", "modeSwitch", "transport", "settings", "editor", "tools", "ruler",
+    "keyboard", "grid", "lane", "laneTabs", "lanePlot", "laneTimePlot", "rack", "portraitRing",
+    "status",
+)
+FULL_RACK_REGIONS = ("singer", "expression", "style")
+COLLAPSIBLE_REGIONS = ("workspaceTabs", "outputMeter")
+ALWAYS_CONTROLS = (
+    "classicToggle", "trackLabel", "gridLabel", "playButton", "positionReadout", "tempoReadout",
+    "meterReadout", "singerChange",
+)
+WORKSPACES = ("sing", "voice", "tune", "mix", "export")
+LANES = ("dynamics", "formant", "breath", "tension", "air", "gender", "growl")
+ALWAYS_NODES = (
+    "shell.change-voice", "shell.classic", "shell.lane", "shell.mode.emo", "shell.mode.scene",
+    "shell.settings", "shell.status", "shell.waveform",
+) + tuple(f"shell.lane-tab.{lane}" for lane in LANES)
+NOTE_LIMIT = 256
+
+
+def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
+                   expected: dict[str, Any]) -> dict[str, Any]:
+    """expected: {"viewport": [w, h], "mode": "emo"|"scene"}."""
     canonical = contract["canonical"]
     tolerance = float(canonical["regionTolerancePoints"])
-    regions = geometry["regions"]
-    width, height = geometry["logicalSize"]
-    visible = {name: rect for name, rect in regions.items() if rect[2] > 0 and rect[3] > 0}
-    client = [0.0, 0.0, float(width), float(height)]
     failures: list[str] = []
-    deviations: dict[str, list[float]] = {}
-    at_canonical = [width, height] == list(canonical["logicalSize"])
+    regions = geometry.get("regions") or {}
+    controls = geometry.get("controls") or {}
+    size = geometry.get("logicalSize")
+    if not (isinstance(size, list) and len(size) == 2 and positive([0, 0, *size])):
+        return {"failures": ["logicalSize missing or invalid"], "result": "FAIL"}
+    width, height = size
+    # Identity: the snapshot must be the requested viewport, mode and workspace, presented.
+    if [width, height] != list(expected["viewport"]):
+        failures.append(f"logicalSize {size} is not the requested viewport {expected['viewport']}")
+    if geometry.get("mode") != expected["mode"]:
+        failures.append(f"mode {geometry.get('mode')} is not the requested {expected['mode']}")
+    if geometry.get("workspace") != "sing":
+        failures.append(f"workspace {geometry.get('workspace')} is not sing")
+    if geometry.get("presented") is not True:
+        failures.append("the shell did not present the frame")
+    if geometry.get("deviceScale") not in canonical["deviceScales"]:
+        failures.append(f"deviceScale {geometry.get('deviceScale')} is not one of {canonical['deviceScales']}")
+    presentation = geometry.get("rack")
+    wanted = spec_rack_presentation(float(width))
+    if presentation != wanted:
+        failures.append(f"rack presentation {presentation} where section 3.4 requires {wanted}")
 
+    at_canonical = [width, height] == list(canonical["logicalSize"])
+    required = list(ALWAYS_REGIONS)
+    if presentation == "full":
+        required += FULL_RACK_REGIONS
+    if at_canonical:
+        required += COLLAPSIBLE_REGIONS
+    for name in required:
+        if not positive(regions.get(name)):
+            failures.append(f"region {name}: missing or empty")
+    required_controls = list(ALWAYS_CONTROLS)
+    if presentation == "full":
+        required_controls += [f"knob{i}" for i in range(len(KNOBS))]
+    if positive(regions.get("workspaceTabs")):
+        required_controls += [f"workspaceTab{i}" for i in range(len(WORKSPACES))]
+    for name in required_controls:
+        if not positive(controls.get(name)):
+            failures.append(f"control {name}: missing or empty")
+
+    deviations: dict[str, list[float]] = {}
     if at_canonical:
         for region in canonical["regions"]:
             actual = regions.get(region["id"])
-            if actual is None:
-                failures.append(f"{region['id']}: missing")
-                continue
+            if not positive(actual):
+                continue  # already reported above
             delta = [round(a - e, 3) for a, e in zip(actual, region["rect"])]
             # The tolerance governs edges: left, top, right, bottom.
             edges = [delta[0], delta[1], delta[0] + delta[2], delta[1] + delta[3]]
             if any(abs(edge) > tolerance for edge in edges):
                 deviations[region["id"]] = edges
                 failures.append(f"{region['id']}: edges off by {edges} pt")
+    visible = {name: rect for name, rect in regions.items() if positive(rect)}
+    client = [0.0, 0.0, float(width), float(height)]
     parents = {region["id"]: region["parent"] for region in canonical["regions"]}
     for name, parent in parents.items():
         if name in visible and (parent == "client" or parent in visible):
@@ -314,58 +389,87 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any]) -> dict[s
             for second in present[index + 1:]:
                 if overlaps(visible[first], visible[second]):
                     failures.append(f"{first} overlaps {second}")
-    axis = [regions[name] for name in canonical["sharedTimeAxis"] if name in regions]
-    if len({(rect[0], rect[2]) for rect in axis}) != 1:
+    axis = [visible.get(name) for name in canonical["sharedTimeAxis"]]
+    if any(rect is None for rect in axis) or len({(rect[0], rect[2]) for rect in axis}) != 1:
         failures.append("ruler, grid and lane plot do not share one time axis")
-    rack = regions.get("rack", [0, 0, 0, 0])
+    rack = regions["rack"] if positive(regions.get("rack")) else [0, 0, 0, 0]
     rack_width = round(float(rack[2]), 3)
     spec_width = round(spec_rack_width(float(width)), 3)
+    if abs(rack_width - spec_width) > 0.5:
+        failures.append(f"rack width {rack_width:g} where section 3.4 requires {spec_width:g}")
     return {
         "logicalSize": [width, height],
         "comparedToCanonical": at_canonical,
         "tolerancePoints": tolerance,
         "edgeDeviations": deviations,
-        "rackPresentation": geometry.get("rack"),
+        "rackPresentation": presentation,
+        "specRackPresentation": wanted,
         "rackWidth": rack_width,
         "specRackWidth": spec_width,
-        # Section 3.4 is prose, not part of the contract's canonical regions: a mismatch is a
-        # reported deviation for the reviewer, not a geometry failure.
-        "rackWidthMatchesSpec": abs(rack_width - spec_width) <= 0.5,
         "failures": failures,
         "result": "PASS" if not failures else "FAIL",
     }
 
 
-def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any]) -> dict[str, Any]:
-    width, height = geometry["logicalSize"]
-    client = [0.0, 0.0, float(width), float(height)]
+def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
+                    expected_notes: int, render_state: str | None) -> dict[str, Any]:
+    """expected_notes: notes in the fixture; render_state: the state the app logged at exit."""
     failures: list[str] = []
-    seen: set[str] = set()
-    for node in semantic["nodes"]:
-        if node["id"] in seen:
+    size = geometry.get("logicalSize") or [0, 0]
+    client = [0.0, 0.0, float(size[0]), float(size[1])]
+    regions = geometry.get("regions") or {}
+    controls = geometry.get("controls") or {}
+    nodes = semantic.get("nodes") or []
+    by_id: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        if node["id"] in by_id:
             failures.append(f"duplicate id {node['id']}")
-        seen.add(node["id"])
+        by_id[node["id"]] = node
         bounds = node["bounds"]
-        if node["parent"] and bounds[2] > 0 and bounds[3] > 0 and not contains(client, bounds):
+        if node["parent"] and positive(bounds) and not contains(client, bounds):
             failures.append(f"{node['id']}: bounds outside the client")
-    by_id = {node["id"]: node for node in semantic["nodes"]}
+
+    required = list(ALWAYS_NODES)
+    if geometry.get("rack") == "full":
+        required += [f"shell.knob.{knob}" for knob in KNOBS] + ["shell.style"]
+    else:
+        required.append("shell.inspector")
+    if positive(regions.get("workspaceTabs")):
+        required += [f"shell.workspace.{name}" for name in WORKSPACES]
+    if render_state == "rendering":
+        required.append("shell.render-progress")
+    for node_id in required:
+        if node_id not in by_id:
+            failures.append(f"{node_id}: not published")
     for node_id, region in SEMANTIC_REGIONS.items():
         node = by_id.get(node_id)
-        if node is None:
-            if node_id == "shell.style" and geometry.get("rack") != "full":
-                continue
-            failures.append(f"{node_id}: not published")
-        elif node["bounds"] != geometry["regions"][region]:
+        if node is not None and node["bounds"] != regions.get(region):
             failures.append(f"{node_id}: bounds {node['bounds']} != layout {region}")
     for index, knob in enumerate(KNOBS):
         node = by_id.get(f"shell.knob.{knob}")
-        rect = geometry["controls"].get(f"knob{index}")
-        if node is not None and rect is not None and node["bounds"] != rect:
+        if node is not None and node["bounds"] != controls.get(f"knob{index}"):
             failures.append(f"{node['id']}: bounds differ from knob{index}")
+    for index, name in enumerate(WORKSPACES):
+        node = by_id.get(f"shell.workspace.{name}")
+        if node is not None and node["bounds"] != controls.get(f"workspaceTab{index}"):
+            failures.append(f"{node['id']}: bounds differ from workspaceTab{index}")
+
+    # Notes: the tree must virtualize exactly the fixture's notes and list them up to the limit.
+    count = semantic.get("virtualizedNoteCount")
+    listed = semantic.get("notes")
+    if count != expected_notes:
+        failures.append(f"virtualizedNoteCount {count} is not the fixture's {expected_notes} notes")
+    listed_count = len(listed) if isinstance(listed, list) else 0
+    if not isinstance(listed, list) or listed_count != min(expected_notes, NOTE_LIMIT):
+        failures.append(f"{listed_count} note nodes listed; expected {min(expected_notes, NOTE_LIMIT)}")
+    # The published status agrees with the render state the app logged for the same exit.
+    status = str(by_id.get("shell.status", {}).get("value", ""))
+    if not render_state or not status.startswith(render_state.upper()):
+        failures.append(f"status '{status[:40]}' does not report the logged state {render_state}")
     return {
-        "nodes": len(semantic["nodes"]),
-        "virtualizedNotes": semantic["virtualizedNoteCount"],
-        "focused": semantic["focused"],
+        "nodes": len(nodes),
+        "virtualizedNotes": count,
+        "focused": semantic.get("focused"),
         "failures": failures,
         "result": "PASS" if not failures else "FAIL",
     }
@@ -382,6 +486,17 @@ def parse_log(text: str) -> dict[str, str]:
         if separator and key and " " not in key:
             values[key] = value
     return values
+
+
+def stop_child(process: Any, reason: str) -> tuple[str, str, str]:
+    """Kill and reap only this capture's child, draining what it wrote."""
+    process.kill()
+    try:
+        drained = process.communicate(timeout=10.0)
+    except subprocess.TimeoutExpired:
+        return "", "", f"{reason}; the killed app could not be reaped within 10 s"
+    stdout, stderr = drained if isinstance(drained, tuple) and len(drained) == 2 else ("", "")
+    return (stdout if isinstance(stdout, str) else ""), (stderr if isinstance(stderr, str) else ""), reason
 
 
 def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
@@ -405,37 +520,51 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     ]
     environment = dict(os.environ, SEAM_UI_DESIGN=mode)
     environment.pop("SEAM_UI_WORKSPACE", None)
-    started = time.monotonic()
-    process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, text=True)
-    appkit_note = "not captured"
-    lead_ms = min(args.appkit_lead_ms, close_ms * 0.25)
-    capture_at = started + (close_ms - lead_ms) / 1000.0
-    while process.poll() is None and not window_id.exists():
-        time.sleep(0.05)
-    if process.poll() is None and window_id.exists() and not args.no_appkit:
-        # The window server needs a moment after the window opens before it can be captured.
-        capture_at = max(capture_at, time.monotonic() + 0.25)
-        time.sleep(max(0.0, capture_at - time.monotonic()))
-        wid = window_id.read_text().strip()
-        shot = subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(appkit_raw)],
-                              capture_output=True, text=True, check=False)
-        appkit_note = ("captured" if shot.returncode == 0 and appkit_raw.is_file()
-                       else f"screencapture failed: {shot.stderr.strip() or shot.returncode}")
-    try:
-        stdout, stderr = process.communicate(timeout=close_ms / 1000.0 + 90.0)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        stdout, stderr = process.communicate()
-        raise PacketError(f"{name}: the app did not close")
-    (folder / "app.log").write_text(stdout + ("\n# stderr\n" + stderr if stderr else ""))
-    log = parse_log(stdout)
     record: dict[str, Any] = {
         "id": name, "mode": mode, "state": state, "viewport": list(viewport),
-        "exitCode": process.returncode, "log": log, "appkit": appkit_note,
         "command": [os.path.relpath(part, ROOT) if part.startswith(str(ROOT)) else part
                     for part in command[1:]],
     }
+    started = time.monotonic()
+    # One deadline covers startup, the window capture and shutdown.
+    deadline = started + (close_ms + args.overrun_ms) / 1000.0
+    process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    appkit_note = "not captured"
+    failure: str | None = None
+    while process.poll() is None and not window_id.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if process.poll() is None and not window_id.exists():
+        failure = "the app opened no window before the capture deadline"
+    elif process.poll() is None and not args.no_appkit:
+        lead_ms = min(args.appkit_lead_ms, close_ms * 0.25)
+        # The window server needs a moment after the window opens before it can be captured.
+        capture_at = max(started + (close_ms - lead_ms) / 1000.0, time.monotonic() + 0.25)
+        time.sleep(max(0.0, min(capture_at, deadline) - time.monotonic()))
+        wid = window_id.read_text().strip()
+        try:
+            shot = subprocess.run(["screencapture", "-x", "-o", "-l", wid, str(appkit_raw)],
+                                  capture_output=True, text=True, check=False,
+                                  timeout=max(0.1, deadline - time.monotonic()))
+            appkit_note = ("captured" if shot.returncode == 0 and appkit_raw.is_file()
+                           else f"screencapture failed: {shot.stderr.strip() or shot.returncode}")
+        except subprocess.TimeoutExpired:
+            appkit_note = "screencapture timed out at the capture deadline"
+    if failure is None:
+        try:
+            stdout, stderr = process.communicate(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            stdout, stderr, failure = stop_child(process, "the app did not close before the capture deadline")
+    else:
+        stdout, stderr, failure = stop_child(process, failure)
+    stdout = stdout if isinstance(stdout, str) else ""
+    stderr = stderr if isinstance(stderr, str) else ""
+    (folder / "app.log").write_text(stdout + ("\n# stderr\n" + stderr if stderr else ""))
+    log = parse_log(stdout)
+    record.update(exitCode=process.returncode, log=log, appkit=appkit_note)
+    if failure is not None:
+        record["error"] = f"{failure}; stderr: {stderr.strip()[-400:]}"
+        return record
     if process.returncode != 0 or not ppm.is_file() or not (evidence / "geometry.json").is_file():
         record["error"] = f"exit {process.returncode}; stderr: {stderr.strip()[-400:]}"
         return record
@@ -447,17 +576,27 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
         record[part] = json.loads((evidence / f"{part}.json").read_text())
     return record
 
-
-def process_images(record: dict[str, Any], folder: Path, out: Path) -> None:
+def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appkit: bool) -> None:
     from PIL import Image
 
     captures = out / "captures"
+    failures: list[str] = []
+    record["imageCheck"] = {"failures": failures, "result": "FAIL"}
     software, _ = srgb_image(Image.open(folder / "software.ppm"), None)
     save_srgb(software, captures / f"{record['id']}-software.png")
     record["softwarePng"] = f"captures/{record['id']}-software.png"
     record["softwarePixels"] = list(software.size)
+    geometry = record["geometry"]
+    scale = geometry.get("deviceScale")
+    size = geometry.get("logicalSize") or [0, 0]
+    expected = [round(size[0] * scale), round(size[1] * scale)] if isinstance(scale, (int, float)) else None
+    if expected is None or list(software.size) != expected:
+        failures.append(f"software frame {list(software.size)} is not logicalSize x deviceScale {expected}")
     raw = folder / "appkit-raw.png"
     if not raw.is_file():
+        if want_appkit:
+            failures.append(f"no window capture ({record.get('appkit')})")
+        record["imageCheck"]["result"] = "PASS" if not failures else "FAIL"
         return
     appkit = Image.open(raw)
     appkit.load()
@@ -469,18 +608,19 @@ def process_images(record: dict[str, Any], folder: Path, out: Path) -> None:
     record["appkitPng"] = f"captures/{record['id']}-appkit.png"
     if width != software.size[0] or title_bar < 0:
         record["appkitAlignment"] = "size mismatch; not compared"
+        failures.append(f"window capture {width}x{height} does not align with the software frame")
         save_srgb(appkit_srgb, out / record["appkitPng"])
         return
     client = appkit_srgb.crop((0, title_bar, width, height))
     record["appkitTitleBarPixels"] = title_bar
     record["appkitAlignment"] = "client area = capture minus the top title bar"
     save_srgb(client, out / record["appkitPng"])
-    scale = float(record["geometry"]["deviceScale"])
-    regions = record["geometry"]["regions"]
+    regions = geometry["regions"]
     record["roi"] = {
-        roi: roi_metrics(software, client, regions[region], scale)
-        for roi, region in ROIS.items() if regions.get(region, [0, 0, 0, 0])[2] > 0
+        roi: roi_metrics(software, client, regions[region], float(scale))
+        for roi, region in ROIS.items() if positive(regions.get(region))
     }
+    record["imageCheck"]["result"] = "PASS" if not failures else "FAIL"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -501,21 +641,30 @@ def build_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, in
     return matrix
 
 
+PARITY_KEYS = ("logicalSize", "deviceScale", "workspace", "presented", "rack", "compactHeader",
+               "workspaceLabelsVisible", "outputMeterVisible", "regions", "controls")
+
+
 def mode_parity(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Same state and viewport must have the same geometry in both modes (section 11.3)."""
-    first: dict[tuple[str, tuple[int, ...]], dict[str, Any]] = {}
-    results = []
+    """Same state and viewport must have the same geometry in both modes (section 11.3).
+
+    Every key needs exactly one capture per mode with geometry; a missing partner is a failure."""
+    groups: dict[tuple[str, tuple[int, ...]], dict[str, list[dict[str, Any]]]] = {}
     for record in records:
-        if "geometry" not in record:
-            continue
         key = (record["state"], tuple(record["viewport"]))
-        other = first.setdefault(key, record)
-        if other is record:
+        groups.setdefault(key, {}).setdefault(record["mode"], []).append(record)
+    results = []
+    for (state, viewport), by_mode in groups.items():
+        entry = {"state": state, "viewport": list(viewport)}
+        problems = [f"{len(by_mode.get(mode, []))} {mode} captures" for mode in MODES
+                    if len(by_mode.get(mode, [])) != 1 or "geometry" not in by_mode[mode][0]]
+        if problems:
+            results.append(entry | {"result": "FAIL", "reason": "; ".join(problems) + " with geometry"})
             continue
-        same = (other["geometry"]["regions"] == record["geometry"]["regions"]
-                and other["geometry"]["controls"] == record["geometry"]["controls"])
-        results.append({"state": key[0], "viewport": list(key[1]),
-                        "result": "PASS" if same else "FAIL"})
+        first, second = (by_mode[mode][0]["geometry"] for mode in MODES)
+        differing = [key for key in PARITY_KEYS if key not in first or first.get(key) != second.get(key)]
+        results.append(entry | {"result": "PASS" if not differing else "FAIL",
+                                "reason": f"differs in {', '.join(differing)}" if differing else ""})
     return results
 
 
@@ -541,12 +690,12 @@ def acceptance_markdown(manifest: dict[str, Any], records: list[dict[str, Any]],
         "",
         "## Captures",
         "",
-        "| Capture | Render state | State reached | Geometry | Semantics | AppKit | Paint p50/p95 ms | Footprint MB |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Capture | Render state | State reached | Geometry | Semantics | Images | AppKit | Paint p50/p95 ms | Footprint MB |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for record in records:
         if "error" in record:
-            lines.append(f"| {record['id']} | - | - | ERROR | ERROR | {record['appkit']} | - | - |")
+            lines.append(f"| {record['id']} | - | - | ERROR | ERROR | ERROR | {record.get('appkit', '-')} | - | - |")
             continue
         perf = record["performance"]
         paint = perf["paintMillis"]
@@ -554,25 +703,30 @@ def acceptance_markdown(manifest: dict[str, Any], records: list[dict[str, Any]],
         lines.append(
             f"| {record['id']} | {record['observedRenderState']} | "
             f"{'yes' if record['stateReached'] else 'NO'} | {record['geometryCheck']['result']} | "
-            f"{record['semanticCheck']['result']} | {record['appkit']} | "
+            f"{record['semanticCheck']['result']} | {record['imageCheck']['result']} | {record['appkit']} | "
             f"{paint['p50']:.1f}/{paint['p95']:.1f} | {memory / 1048576:.0f} |")
-    for title, key in (("Geometry failures", "geometryCheck"), ("Semantic failures", "semanticCheck")):
+    errored = [r for r in records if "error" in r]
+    if errored:
+        lines += ["", "## Capture errors", ""] + [f"- {r['id']}: {r['error']}" for r in errored]
+    for title, key in (("Geometry failures", "geometryCheck"), ("Semantic failures", "semanticCheck"),
+                       ("Image failures", "imageCheck")):
         lines += ["", f"## {title}", ""]
         failing = [r for r in records if r.get(key, {}).get("failures")]
         lines += [f"- {r['id']}: {'; '.join(r[key]['failures'])}" for r in failing] or ["- none"]
     lines += ["", "## Rack width against the responsive rule (section 3.4)", "",
-              "Section 3.4 asks for a 44-point drawer button below 860 points and a 56-point rail "
-              "below 1100. A mismatch is reported here for the reviewer; it is not a contract "
-              "geometry failure.", "",
-              "| Capture | Presentation | Width | Spec width | Matches |", "|---|---|---|---|---|"]
+              "Section 3.4 asks for a 44-point inspector drawer button below 860 points, a "
+              "56-point rail below 1100 and the full rack above. A mismatch is a geometry "
+              "failure.", "",
+              "| Capture | Presentation | Spec | Width | Spec width |", "|---|---|---|---|---|"]
     for record in records:
         check = record.get("geometryCheck")
-        if check and record["state"] == "ready":
-            lines.append(f"| {record['id']} | {check['rackPresentation']} | {check['rackWidth']:g} | "
-                         f"{check['specRackWidth']:g} | "
-                         f"{'yes' if check['rackWidthMatchesSpec'] else 'DEVIATION'} |")
+        if check and "rackWidth" in check and record["state"] == "ready":
+            lines.append(f"| {record['id']} | {check['rackPresentation']} | "
+                         f"{check['specRackPresentation']} | {check['rackWidth']:g} | "
+                         f"{check['specRackWidth']:g} |")
     lines += ["", "## Mode parity (same state and viewport, EMO vs SCENE geometry)", ""]
-    lines += [f"- {p['state']} {p['viewport'][0]}x{p['viewport'][1]}: {p['result']}" for p in parity]
+    lines += [f"- {p['state']} {p['viewport'][0]}x{p['viewport'][1]}: {p['result']}"
+              + (f" ({p['reason']})" if p.get("reason") else "") for p in parity]
     lines += ["", "## Software vs AppKit per region (pixels over channel delta 8, and max delta)", "",
               "The initial targets of section 11.1 are uncalibrated. The AppKit frame is taken "
               "shortly before the app closes and the software frame at close, so moving content "
@@ -616,6 +770,9 @@ def main() -> int:
     parser.add_argument("--rendering-close-ms", type=int, default=1300)
     parser.add_argument("--appkit-lead-ms", type=int, default=1200,
                         help="take the window capture this long before the app closes")
+    parser.add_argument("--overrun-ms", type=int, default=60000,
+                        help="how long past its auto-close a capture may take before its app is "
+                             "killed (one deadline for startup, window capture and shutdown)")
     args = parser.parse_args()
     args.app = args.app.resolve()
     args.voicebank_root = args.voicebank_root.resolve()
@@ -636,23 +793,29 @@ def main() -> int:
 
     work = Path(tempfile.mkdtemp(prefix="seam-ui-fidelity-"))
     fixtures: dict[str, Path] = {}
+    fixture_notes: dict[str, int] = {}
     fixture_hashes: dict[str, str] = {"base": sha256_file(args.fixture)}
     records: list[dict[str, Any]] = []
     try:
         for mode, state, viewport in build_matrix(args):
             if state not in fixtures:
                 path = work / f"fixture-{state}.seam"
-                path.write_text(json.dumps(derive_fixture(base, state), indent=2))
+                derived = derive_fixture(base, state)
+                path.write_text(json.dumps(derived, indent=2))
                 fixtures[state] = path
+                fixture_notes[state] = len(region_of(derived)["notes"])
                 fixture_hashes[state] = sha256_file(path)
             project = work / f"{mode}-{state}-{viewport[0]}x{viewport[1]}.seam"
             shutil.copyfile(fixtures[state], project)
             print(f"capture {mode} {state} {viewport[0]}x{viewport[1]}", flush=True)
             record = capture(args, work, mode, state, viewport, project)
             if "error" not in record:
-                record["geometryCheck"] = check_geometry(record["geometry"], contract)
-                record["semanticCheck"] = check_semantics(record["semantic-bounds"], record["geometry"])
-                process_images(record, work / record["id"], out)
+                record["geometryCheck"] = check_geometry(
+                    record["geometry"], contract, expected={"viewport": list(viewport), "mode": mode})
+                record["semanticCheck"] = check_semantics(
+                    record["semantic-bounds"], record["geometry"],
+                    expected_notes=fixture_notes[state], render_state=record["observedRenderState"])
+                process_images(record, work / record["id"], out, want_appkit=not args.no_appkit)
             records.append(record)
     finally:
         # Work files go to the Trash, never deleted outright.
@@ -727,9 +890,13 @@ def main() -> int:
 
     errors = [r["id"] for r in records if "error" in r]
     failed = [r["id"] for r in records
-              if "error" not in r and ("FAIL" in (r["geometryCheck"]["result"], r["semanticCheck"]["result"])
+              if "error" not in r and ("FAIL" in (r["geometryCheck"]["result"], r["semanticCheck"]["result"],
+                                                  r["imageCheck"]["result"])
                                        or not r["stateReached"])]
     failed += [f"parity {p['state']} {p['viewport']}" for p in parity if p["result"] == "FAIL"]
+    scales = {r["geometry"].get("deviceScale") for r in records if "geometry" in r}
+    if len(scales) > 1:
+        failed.append(f"captures disagree on the device scale: {sorted(map(str, scales))}")
     print(out)
     print(f"captures={len(records)} errors={len(errors)} failed_or_unreached={len(failed)}")
     for item in errors + failed:
