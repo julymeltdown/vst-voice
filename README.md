@@ -94,8 +94,13 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
   the controller's hosted input geometry before scene state is derived. Escape, switching to
   Classic, resizing and hiding the plug-in cancel gestures without committing. Expression curves
   are drawn and edited in the shell lane with the same value mapping.
-- Not done yet: **accessibility geometry for the new layout (open FAIL, since VoiceOver still
-  reads the classic layout's rectangles)**; VOICE, TUNE, MIX and EXPORT workspaces (tabs are
+- Accessibility: while the shell is on screen, the standalone window and the CLAP view publish
+  the shell's own tree (`SingShell::accessibilityTree`) in shell geometry. Workspace tabs, the
+  EMO | SCENE radio pair, lane tabs, knobs (sliders with Increment/Decrement), render progress and
+  status have real roles, and assistive actions run the same commands as the pointer. Notes, the
+  timeline and the transport are the controller's nodes moved to their shell rectangles. This is
+  covered by source tests; **checking with Accessibility Inspector and VoiceOver is NOT_RUN**.
+- Not done yet: VOICE, TUNE, MIX and EXPORT workspaces (tabs are
   visible but inactive); a measured output meter; lyric-field re-anchoring while scrolling (the
   field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host
   captures. Character art in `assets/ui-design` is **development-only**; see its

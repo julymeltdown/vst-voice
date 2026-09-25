@@ -164,6 +164,9 @@ class MacOSSourceContractTests(unittest.TestCase):
     def test_accessibility_focus_and_toolbar_roles_match_the_painted_controls(self) -> None:
         semantics = (ROOT / "libs/seam-native-ui/src/editor_semantics.cpp").read_text()
         appkit = (ROOT / "libs/seam-native-ui/src/native_window_appkit.mm").read_text()
+        mapping = (
+            ROOT / "libs/seam-native-ui/include/seam/native_ui/accessibility_appkit_mapping.hpp"
+        ).read_text()
         self.assertIn('"toolbar.controls"', semantics)
         self.assertIn('"toolbar.transport"', semantics)
         self.assertIn("transportBoundsForWidth", semantics)
@@ -171,7 +174,14 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("accessibilityFocusedUIElement", appkit)
         self.assertIn("accessibilitySelected", appkit)
         self.assertIn("node.editableValue", appkit)
-        self.assertIn("NSAccessibilityTextFieldRole", appkit)
+        # Roles are mapped once for the standalone window and the CLAP view.
+        self.assertIn('#include "seam/native_ui/accessibility_appkit_mapping.hpp"', appkit)
+        self.assertIn("appkit_ax::role", appkit)
+        self.assertIn("NSAccessibilityTextFieldRole", mapping)
+        self.assertIn("NSAccessibilitySliderRole", mapping)
+        self.assertIn("NSAccessibilityTabButtonSubrole", mapping)
+        self.assertIn("accessibilityPerformIncrement", appkit)
+        self.assertIn("accessibilityPerformDecrement", appkit)
         self.assertIn("accessibilityHelp", appkit)
         self.assertIn("accessibilityIsAttributeSettable", appkit)
         self.assertIn("accessibilitySetValue", appkit)
@@ -285,6 +295,9 @@ class MacOSSourceContractTests(unittest.TestCase):
 
     def test_embedded_clap_view_exposes_the_shared_accessibility_tree(self) -> None:
         embedded = (ROOT / "libs/seam-clap-editor/src/embedded_view_appkit.mm").read_text()
+        mapping = (
+            ROOT / "libs/seam-native-ui/include/seam/native_ui/accessibility_appkit_mapping.hpp"
+        ).read_text()
         runtime_header = (ROOT / "libs/seam-clap-editor/include/seam/clap_editor/editor_runtime.hpp").read_text()
         runtime_source = (ROOT / "libs/seam-clap-editor/src/editor_runtime_accessibility.cpp").read_text()
         self.assertIn("SeamClapAccessibilityElement", embedded)
@@ -301,7 +314,10 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("accessibilityFocusedNode", runtime_header)
         self.assertIn("accessibilitySelected", embedded)
         self.assertIn("node.editableValue", embedded)
-        self.assertIn("NSAccessibilityTextFieldRole", embedded)
+        self.assertIn('#include "seam/native_ui/accessibility_appkit_mapping.hpp"', embedded)
+        self.assertIn("appkit_ax::role", embedded)
+        self.assertIn("NSAccessibilityTextFieldRole", mapping)
+        self.assertIn("accessibilityPerformIncrement", embedded)
         self.assertIn("accessibilityHelp", embedded)
         self.assertIn("accessibilityIsAttributeSettable", embedded)
         self.assertIn("accessibilitySetValue", embedded)
