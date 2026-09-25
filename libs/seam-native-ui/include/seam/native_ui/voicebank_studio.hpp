@@ -24,6 +24,7 @@
 #include <memory>
 #include <map>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -289,14 +290,18 @@ public:
   [[nodiscard]] core::Result<void> moveSelectedPitchMark(std::size_t index,
                                                           double x);
   [[nodiscard]] core::Result<void> inspectTake(
-      const std::filesystem::path& path, std::int32_t expectedRootMidi);
+      const std::filesystem::path& path, std::int32_t expectedRootMidi,
+      std::stop_token stopToken = {});
   [[nodiscard]] core::Result<void> inspectSelectedProductionTake(
-      const std::filesystem::path& path);
+      const std::filesystem::path& path, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<std::filesystem::path> persistTakeInspection(
       const std::filesystem::path& takePath) const;
   [[nodiscard]] core::Result<void> importSelectedTake(
       const std::filesystem::path& takePath,
-      std::string occurredAtUtc = {});
+      std::string occurredAtUtc = {}, std::stop_token stopToken = {});
+  [[nodiscard]] core::Result<void> beginRawTakeImport(
+      std::filesystem::path takePath, std::string occurredAtUtc = {},
+      std::string expectedSha256 = {});
   [[nodiscard]] core::Result<void> importSelectedProceduralCandidate(
       const std::filesystem::path& metadataPath, const std::filesystem::path& audioPath,
       const std::filesystem::path& recipePath, std::string occurredAtUtc = {},

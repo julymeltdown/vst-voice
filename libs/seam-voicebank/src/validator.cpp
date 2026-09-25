@@ -31,6 +31,43 @@ double midiToHz(std::int32_t midi) noexcept {
   return 440.0 * std::pow(2.0, (static_cast<double>(midi) - 69.0) / 12.0);
 }
 
+struct DryMixAnalysis final {
+  AudioStatistics statistics;
+  bool finite{true};
+};
+
+core::Result<DryMixAnalysis> analyzeDryMix(const AudioBuffer& audio, std::stop_token stopToken) {
+  const auto cancelled = [] { return core::failure<DryMixAnalysis>(
+      core::ErrorCode::Conflict, "Dry-take inspection cancelled"); };
+  if (audio.channels == 0U) return core::failure<DryMixAnalysis>(
+      core::ErrorCode::ParseError, "Dry take has no channels");
+  const auto frames = audio.frameCount();
+  const auto channelCount = static_cast<std::size_t>(audio.channels);
+  long double squareSum = 0.0L;
+  long double sum = 0.0L;
+  DryMixAnalysis result;
+  for (std::size_t frame = 0U; frame < frames; ++frame) {
+    if ((frame & 4095U) == 0U && stopToken.stop_requested()) return cancelled();
+    double mixed = 0.0;
+    for (std::size_t channel = 0U; channel < channelCount; ++channel)
+      mixed += audio.interleaved[frame * channelCount + channel];
+    const auto sample = static_cast<float>(mixed / static_cast<double>(channelCount));
+    result.finite = result.finite && std::isfinite(sample);
+    const auto finiteSample = std::isfinite(sample) ? sample : 0.0F;
+    result.statistics.peak = std::max(result.statistics.peak, std::abs(finiteSample));
+    squareSum += static_cast<long double>(finiteSample) * static_cast<long double>(finiteSample);
+    sum += finiteSample;
+    if (std::abs(finiteSample) >= 0.9999F) ++result.statistics.clippedSamples;
+  }
+  if (stopToken.stop_requested()) return cancelled();
+  if (frames != 0U) {
+    const auto sampleCount = static_cast<long double>(frames);
+    result.statistics.rms = std::sqrt(static_cast<double>(squareSum / sampleCount));
+    result.statistics.dcOffset = static_cast<double>(sum / sampleCount);
+  }
+  return result;
+}
+
 float loopJump(std::span<const float> samples, const UnitMarkers& markers) noexcept {
   if (!markers.loopStart.has_value() || !markers.loopEnd.has_value() || samples.empty()) {
     return 0.0F;
@@ -60,16 +97,25 @@ double medianMarkGap(std::span<const PitchMark> marks) {
 
 core::Result<DryTakeInspection> inspectDryTake(
     const std::filesystem::path& path, std::int32_t expectedRootMidi) {
+  return inspectDryTake(path, expectedRootMidi, {});
+}
+
+core::Result<DryTakeInspection> inspectDryTake(
+    const std::filesystem::path& path, std::int32_t expectedRootMidi,
+    std::stop_token stopToken) {
+  const auto cancelled = [&path] { return core::failure<DryTakeInspection>(
+      core::ErrorCode::Conflict, "Dry-take inspection cancelled", path.string()); };
+  if (stopToken.stop_requested()) return cancelled();
   if (expectedRootMidi < 0 || expectedRootMidi > 127) {
     return core::failure<DryTakeInspection>(
         core::ErrorCode::InvalidArgument,
         "Dry-take root MIDI must be between 0 and 127");
   }
-  const auto beforeDigest = core::sha256File(path, kMaximumSupportedWavBytes);
+  const auto beforeDigest = core::sha256File(path, kMaximumSupportedWavBytes, stopToken);
   if (!beforeDigest) return core::Result<DryTakeInspection>{beforeDigest.error()};
-  auto audio = readWav(path);
+  auto audio = readWav(path, WavReadLimits{}, stopToken);
   if (!audio) return core::Result<DryTakeInspection>{audio.error()};
-  const auto afterDigest = core::sha256File(path, kMaximumSupportedWavBytes);
+  const auto afterDigest = core::sha256File(path, kMaximumSupportedWavBytes, stopToken);
   if (!afterDigest) return core::Result<DryTakeInspection>{afterDigest.error()};
   if (beforeDigest.value() != afterDigest.value()) {
     return core::failure<DryTakeInspection>(
@@ -77,8 +123,9 @@ core::Result<DryTakeInspection> inspectDryTake(
         "Dry take changed while it was being inspected");
   }
 
-  const auto mono = audio.value().monoMix();
-  const auto statistics = analyzeAudio(mono);
+  const auto mix = analyzeDryMix(audio.value(), stopToken);
+  if (!mix) return core::Result<DryTakeInspection>{mix.error()};
+  const auto& statistics = mix.value().statistics;
   DryTakeInspection result{
       .sourceSha256 = std::move(afterDigest.value()),
       .sampleRate = audio.value().sampleRate,
@@ -92,19 +139,18 @@ core::Result<DryTakeInspection> inspectDryTake(
       .formatValid = audio.value().sampleRate == 48000U &&
                      audio.value().channels == 1U &&
                      audio.value().bitsPerSample == 24U,
-      .finite = std::all_of(mono.begin(), mono.end(),
-                            [](const float sample) {
-                              return std::isfinite(sample);
-                            }),
+      .finite = mix.value().finite,
       .clippingFree = statistics.clippedSamples == 0U,
       .silenceFree = statistics.rms > 1.0e-4,
       .dcOffsetFree = std::abs(statistics.dcOffset) <= 0.01,
       .rootPitchValid = false,
   };
-  if (result.formatValid && result.finite && mono.size() >= 2048U) {
-    const auto pitch = analyzePitch(mono, result.sampleRate);
+  if (stopToken.stop_requested()) return cancelled();
+  if (result.formatValid && result.finite && audio.value().frameCount() >= 2048U) {
+    const auto pitch = analyzePitch(audio.value().interleaved, result.sampleRate, {}, stopToken);
     if (pitch) {
       const auto median = medianVoicedPitch(pitch.value());
+      if (stopToken.stop_requested()) return cancelled();
       if (median > 0.0 && std::isfinite(median)) {
         const auto midi = 69.0 + 12.0 * std::log2(median / 440.0);
         result.analyzedRootMidi = static_cast<std::int32_t>(std::lround(midi));
@@ -114,6 +160,7 @@ core::Result<DryTakeInspection> inspectDryTake(
       }
     }
   }
+  if (stopToken.stop_requested()) return cancelled();
   return result;
 }
 

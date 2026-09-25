@@ -64,6 +64,85 @@ core::Result<voicebank::AudioBuffer> renderNoisePhraseAudition(const synthesis::
   return finishAudition(std::move(rendered.value().samples),stopToken);
 }
 }
+core::Result<voicebank::AudioBuffer> renderDesignerArticulationPhraseAudition(
+    const synthesis::ProceduralSingerResource& resource, std::string_view phone,
+    std::size_t vowelPoseIndex, std::uint8_t midiKey, std::stop_token stopToken) {
+  using Output=voicebank::AudioBuffer;
+  const auto recipe=voice_design::decodeVoiceRecipeResource(resource,stopToken);
+  if (!recipe) return core::Result<Output>{recipe.error()};
+  if (phone.empty() || phone.size()>128U || vowelPoseIndex>=recipe.value().poses.size() || midiKey<36U || midiKey>96U)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,"Select a supported articulation, vowel pose and audition pitch");
+  const auto& vowel=recipe.value().poses[vowelPoseIndex];
+  if (!phonemizer::isVowelSymbol(vowel.phone))
+    return core::failure<Output>(core::ErrorCode::Unsupported,"Articulation phrase audition requires a vowel pose");
+
+  bool voiced=false;
+  bool breath=false;
+  bool closure=false;
+  const auto hasPhone=[&](const auto& poses) {
+    return std::find_if(poses.begin(),poses.end(),[&](const auto& pose) {
+      return pose.phone==phone && pose.style==vowel.style;
+    })!=poses.end();
+  };
+  if (hasPhone(recipe.value().affricates)) voiced=false;
+  else if (hasPhone(recipe.value().voicedAffricates)) voiced=true;
+  else if (hasPhone(recipe.value().approximants)) voiced=true;
+  else if (hasPhone(recipe.value().breaths)) { voiced=false; breath=true; }
+  else if (std::any_of(recipe.value().poses.begin(),recipe.value().poses.end(),[&](const auto& pose) {
+      return pose.phone==phone && pose.style==vowel.style && pose.nasal && pose.nasalCoupling>0.0;
+    })) voiced=true;
+  else if (const auto binding=std::find_if(recipe.value().palatalized.begin(),recipe.value().palatalized.end(),[&](const auto& pose) {
+      return pose.phone==phone && pose.style==vowel.style;
+    }); binding!=recipe.value().palatalized.end()) {
+    const auto base=std::string_view{binding->basePhone};
+    const auto stop=std::find_if(recipe.value().plosives.begin(),recipe.value().plosives.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style;
+    });
+    const auto frication=std::find_if(recipe.value().frications.begin(),recipe.value().frications.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style;
+    });
+    const auto liquid=std::find_if(recipe.value().approximants.begin(),recipe.value().approximants.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style;
+    });
+    const auto nasal=std::find_if(recipe.value().poses.begin(),recipe.value().poses.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style && pose.nasal && pose.nasalCoupling>0.0;
+    });
+    const auto affricate=std::find_if(recipe.value().affricates.begin(),recipe.value().affricates.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style;
+    });
+    const auto voicedAffricate=std::find_if(recipe.value().voicedAffricates.begin(),recipe.value().voicedAffricates.end(),[&](const auto& pose) {
+      return pose.phone==base && pose.style==vowel.style;
+    });
+    if (stop!=recipe.value().plosives.end()) voiced=stop->voicedClosure.has_value();
+    else if (frication!=recipe.value().frications.end()) voiced=frication->voicingGain.has_value();
+    else if (liquid!=recipe.value().approximants.end() || nasal!=recipe.value().poses.end() ||
+        voicedAffricate!=recipe.value().voicedAffricates.end()) voiced=true;
+    else if (affricate!=recipe.value().affricates.end()) voiced=false;
+    else return core::failure<Output>(core::ErrorCode::Unsupported,"Palatalized phone has no supported base articulation in this style");
+  }
+  else if (std::any_of(recipe.value().closures.begin(),recipe.value().closures.end(),[&](const auto& pose) {
+      return pose.phone==phone && pose.style==vowel.style;
+    })) { voiced=false; closure=true; }
+  else return core::failure<Output>(core::ErrorCode::Unsupported,
+      "Selected phone has no auditionable recipe articulation in the vowel style");
+
+  domain::Project project{domain::ProjectId{1U},"Designer articulation audition"};
+  domain::VocalRegion region{.id=domain::RegionId{3U},.name="Articulation and vowel",.durationTick=time::Tick{1920},
+      .lyrics={{domain::LyricTokenId{4U},U"preview",domain::Language::Japanese}},
+      .notes={{.id=domain::NoteId{5U},.durationTick=time::Tick{1920},.midiKey=midiKey,.lyricTokenId=domain::LyricTokenId{4U}}}};
+  const auto role=breath?domain::PhonemeRole::Breath:closure?domain::PhonemeRole::Silence:domain::PhonemeRole::Onset;
+  std::vector<domain::PhonemeToken> phones{
+      {.key={domain::NoteId{5U},0U},.symbol=std::string(phone),.role=role,.voiced=voiced,.timing={.startOffset=0}},
+      {.key={domain::NoteId{5U},1U},.symbol=vowel.phone,.role=domain::PhonemeRole::Nucleus,.voiced=true,.timing={.startOffset=250000}}};
+  auto performance=synthesis::compileScorePerformance(project,region,48000U,phones);
+  if (!performance) return core::Result<Output>{performance.error()};
+  auto stream=voice_design::ArticulatedStream::createFromRecipe(resource,std::move(performance.value()),phones,
+      vowel.style,512U,stopToken);
+  if (!stream) return core::Result<Output>{stream.error()};
+  auto rendered=stream.value().renderOwned({0,48000},stopToken);
+  if (!rendered) return core::Result<Output>{rendered.error()};
+  return finishAudition(std::move(rendered.value().samples),stopToken);
+}
 core::Result<voicebank::AudioBuffer> renderDesignerPlosivePhraseAudition(const synthesis::ProceduralSingerResource& resource,
     std::size_t index,std::size_t vowelPoseIndex,std::uint8_t midiKey,std::stop_token stopToken,PlosiveAuditionMode mode) {
   if (mode!=PlosiveAuditionMode::StopVowel && mode!=PlosiveAuditionMode::VowelStop)

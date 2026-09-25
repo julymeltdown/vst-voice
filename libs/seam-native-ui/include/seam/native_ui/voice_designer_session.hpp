@@ -1,7 +1,10 @@
 #pragma once
 #include "seam/native_ui/voice_designer_model.hpp"
 #include "seam/native_ui/voice_designer_audition.hpp"
+#include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/signing.hpp"
 #include <future>
+#include <string_view>
 
 namespace seam::native_ui {
 class VoiceDesignerSession final {
@@ -29,6 +32,9 @@ public:
   [[nodiscard]] bool plosiveAudioIsPhrase() const noexcept { return plosiveAudio_ && plosiveAudioMode_!=PlosiveAuditionMode::Source; }
   [[nodiscard]] bool plosiveAudioIsCoda() const noexcept { return plosiveAudio_ && plosiveAudioMode_==PlosiveAuditionMode::VowelStop; }
   [[nodiscard]] const std::shared_ptr<const voicebank::AudioBuffer>& plosiveAudio() const noexcept { return plosiveAudio_; }
+  [[nodiscard]] core::Result<void> beginArticulationAudition(std::string phone);
+  [[nodiscard]] const std::shared_ptr<const voicebank::AudioBuffer>& articulationAudio() const noexcept { return articulationAudio_; }
+  [[nodiscard]] const std::optional<std::string>& articulationAudioPhone() const noexcept { return articulationAudioPhone_; }
   [[nodiscard]] std::optional<std::size_t> plosiveAudioIndex() const noexcept { return plosiveAudioIndex_; }
   [[nodiscard]] const std::shared_ptr<const voicebank::AudioBuffer>& fricationAudio() const noexcept { return fricationAudio_; }
   [[nodiscard]] std::optional<std::size_t> fricationAudioIndex() const noexcept { return fricationAudioIndex_; }
@@ -50,10 +56,29 @@ public:
   [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
   [[nodiscard]] std::uint64_t epoch() const noexcept { return epoch_; }
   [[nodiscard]] core::Result<void> create(voice_design::VoiceRecipe recipe, bool discardUnsaved = false);
+  // Creates an unqualified Japanese source-filter starter with a partial phone inventory.
+  // Its screening defaults are not phonetic qualification or a finished singer.
+  [[nodiscard]] core::Result<void> createJapaneseStarter(bool discardUnsaved = false);
   [[nodiscard]] core::Result<void> beginOpen(std::filesystem::path path, bool discardUnsaved = false);
   // Save As is new-file-only. Saving the currently opened file checks its last
   // observed canonical identity before atomic replacement.
   [[nodiscard]] core::Result<void> beginSave(std::filesystem::path path);
+  // Publish only the exact, clean recipe already persisted at path(). This is
+  // a package operation, not review or quality approval; signer material and
+  // distribution metadata are explicit caller inputs.
+  [[nodiscard]] core::Result<distribution::ProceduralPackageInfo> publishSavedSinger(
+      const std::filesystem::path& stagingDirectory,
+      const std::filesystem::path& outputPackage,
+      const distribution::SigningKeyPair& signingKey,
+      const distribution::PublishProceduralSingerOptions& options) const;
+  // Install only a trusted package for this exact, still-current saved recipe.
+  // This is an explicit user action and never upgrades the package to quality-approved.
+  [[nodiscard]] core::Result<distribution::InstalledProceduralSinger> installPublishedSinger(
+      std::uint64_t expectedEpoch, std::uint64_t expectedRevision,
+      const std::filesystem::path& packagePath,
+      std::string_view expectedPackageDigest,
+      const distribution::Ed25519PublicKey& trustedSigner,
+      const std::filesystem::path& installRoot) const;
   [[nodiscard]] core::Result<void> poll();
   [[nodiscard]] core::Result<void> finish();
   void cancel() noexcept { stop_.request_stop(); auditionStop_.request_stop(); }
@@ -97,6 +122,7 @@ private:
     std::optional<std::size_t> frication{std::nullopt};
     std::optional<std::size_t> plosive{std::nullopt};
     PlosiveAuditionMode plosiveMode{PlosiveAuditionMode::Source};
+    std::optional<std::string> articulationPhone{std::nullopt};
   };
   std::future<core::Result<AuditionResult>> auditionWork_;
   std::stop_source auditionStop_;
@@ -107,9 +133,11 @@ private:
   std::shared_ptr<const voicebank::AudioBuffer> plosiveAudio_;
   std::optional<std::size_t> plosiveAudioIndex_;
   PlosiveAuditionMode plosiveAudioMode_{PlosiveAuditionMode::Source};
+  std::shared_ptr<const voicebank::AudioBuffer> articulationAudio_;
+  std::optional<std::string> articulationAudioPhone_;
   std::optional<AuditionReference> auditionReference_;
   std::size_t auditionPose_{0U};
   std::uint8_t auditionPitch_{69U};
-  void invalidateAudition() noexcept { auditionStop_.request_stop(); auditionAudio_.reset(); fricationAudio_.reset(); fricationAudioIndex_.reset(); plosiveAudio_.reset(); plosiveAudioIndex_.reset(); }
+  void invalidateAudition() noexcept { auditionStop_.request_stop(); auditionAudio_.reset(); fricationAudio_.reset(); fricationAudioIndex_.reset(); plosiveAudio_.reset(); plosiveAudioIndex_.reset(); articulationAudio_.reset(); articulationAudioPhone_.reset(); }
 };
 }

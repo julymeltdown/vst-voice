@@ -387,6 +387,7 @@ public:
                      request.purpose == FileDialogPurpose::PrepareGenerationBatch ||
                      request.purpose == FileDialogPurpose::PlanGenerationCampaign ||
                      request.purpose == FileDialogPurpose::SaveDesignerRecipe ||
+                     request.purpose == FileDialogPurpose::PublishProceduralSinger ||
                       request.purpose == FileDialogPurpose::PublishSampleCandidate ||
                       request.purpose == FileDialogPurpose::CreateSampleManifestDraft;
     ComPtr<::IFileDialog> dialog;

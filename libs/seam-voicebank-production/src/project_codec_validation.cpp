@@ -4,8 +4,11 @@
 #include "seam/voicebank_production/candidate_markers.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <set>
 
 namespace seam::voicebank_production {
@@ -244,6 +247,75 @@ core::Result<void> validateProductionProject(
         const auto* value = metadata.value().find(key);
         if (!value || !value->isString() || value->asString() != expected) return invalid("Procedural lineage metadata is not bound to its raw asset and recipe");
       }
+    } else if (revision.kind == "dry-take-inspection.v1") {
+      const auto& values = revision.values;
+      if (values.size() != 2U || !values.contains("evidenceJson") ||
+          !values.contains("evidenceSha256") ||
+          !isDigest(values.at("evidenceSha256")) ||
+          core::sha256Hex(values.at("evidenceJson")) != values.at("evidenceSha256"))
+        return invalid("Dry-take technical evidence digest is invalid");
+      const auto evidence = formats::parseJson(values.at("evidenceJson"),
+          {.maximumInputBytes = 65536U, .maximumDepth = 6U,
+           .maximumNodes = 128U, .maximumStringBytes = 4096U,
+           .maximumCollectionEntries = 32U});
+      if (!evidence || !evidence.value().isObject())
+        return invalid("Dry-take technical evidence JSON is invalid");
+      const auto& object = evidence.value().asObject();
+      constexpr std::array<std::string_view, 14U> evidenceFields{
+          "schemaVersion", "inspectorId", "inspectorVersion", "takeSha256",
+          "sampleRate", "channels", "bitsPerSample", "expectedRootMidi",
+          "analyzedRootMidi", "peak", "rms", "dcOffset", "status", "quality"};
+      if (object.size() != evidenceFields.size() ||
+          std::any_of(evidenceFields.begin(), evidenceFields.end(), [&](std::string_view key) {
+            return !evidence.value().find(key);
+          })) return invalid("Dry-take technical evidence fields are incomplete or unknown");
+      const auto* schema = evidence.value().find("schemaVersion");
+      const auto* inspector = evidence.value().find("inspectorId");
+      const auto* inspectorVersion = evidence.value().find("inspectorVersion");
+      const auto* takeHash = evidence.value().find("takeSha256");
+      const auto* sampleRate = evidence.value().find("sampleRate");
+      const auto* channels = evidence.value().find("channels");
+      const auto* bits = evidence.value().find("bitsPerSample");
+      const auto* expectedMidi = evidence.value().find("expectedRootMidi");
+      const auto* analyzedMidi = evidence.value().find("analyzedRootMidi");
+      const auto* peak = evidence.value().find("peak");
+      const auto* rms = evidence.value().find("rms");
+      const auto* dc = evidence.value().find("dcOffset");
+      const auto* status = evidence.value().find("status");
+      const auto* quality = evidence.value().find("quality");
+      constexpr auto maximumMeasuredMagnitude =
+          static_cast<double>(std::numeric_limits<float>::max());
+      constexpr std::array<std::string_view, 6U> qualityFields{
+          "formatValid", "finite", "clippingFree", "silenceFree",
+          "dcOffsetFree", "rootPitchValid"};
+      if (!schema->isInteger() || schema->asInt64() != 1 ||
+          !inspector->isString() || inspector->asString() != "seam.dry-take-inspector" ||
+          !inspectorVersion->isString() || inspectorVersion->asString() != "1" ||
+          !takeHash->isString() || takeHash->asString() != revision.rawAssetSha256 ||
+          !sampleRate->isInteger() || sampleRate->asInt64() < 8000 || sampleRate->asInt64() > 384000 ||
+          !channels->isInteger() || channels->asInt64() < 1 || channels->asInt64() > 8 ||
+          !bits->isInteger() || bits->asInt64() < 8 || bits->asInt64() > 32 ||
+          !expectedMidi->isInteger() || expectedMidi->asInt64() < 0 || expectedMidi->asInt64() > 127 ||
+          (!analyzedMidi->isNull() && (!analyzedMidi->isInteger() || analyzedMidi->asInt64() < 0 || analyzedMidi->asInt64() > 127)) ||
+          !peak->isNumber() || !rms->isNumber() || !dc->isNumber() ||
+          !std::isfinite(peak->asNumber()) || !std::isfinite(rms->asNumber()) || !std::isfinite(dc->asNumber()) ||
+          peak->asNumber() < 0.0 || peak->asNumber() > maximumMeasuredMagnitude ||
+          rms->asNumber() < 0.0 || rms->asNumber() > maximumMeasuredMagnitude ||
+          dc->asNumber() < -maximumMeasuredMagnitude || dc->asNumber() > maximumMeasuredMagnitude ||
+          !status->isString() ||
+          !quality->isObject() || quality->asObject().size() != qualityFields.size() ||
+          std::any_of(qualityFields.begin(), qualityFields.end(), [&](std::string_view key) {
+            const auto* value = quality->find(key);
+            return value == nullptr || !value->isBool();
+          })) return invalid("Dry-take technical evidence values are invalid");
+      const bool allSignalChecksPassed = std::all_of(
+          qualityFields.begin(), qualityFields.end(), [&](std::string_view key) {
+            return quality->find(key)->asBool();
+          });
+      const auto expectedStatus = allSignalChecksPassed
+          ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW";
+      if (status->asString() != expectedStatus)
+        return invalid("Dry-take technical status does not match its measured checks");
     }
   }
   for (const auto& takeId : editedCandidates) {

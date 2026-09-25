@@ -83,6 +83,66 @@ TEST_CASE("project_lifecycle_new_project_creates_valid_canonical_document") {
   CHECK(project.validate());
 }
 
+TEST_CASE("new project can start on an exact procedural singer reference") {
+  using namespace seam;
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "first-project-singer";
+  recipe.poses = {{"a", "neutral", 0.0,
+                   {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0},
+                    {2600.0, 140.0, -6.0}}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(resource);
+  if (!resource) return;
+  const domain::ProceduralRecipeReference initial{
+      resource.value().identity, "/User/Singers/first-project-singer/recipe.json", "neutral"};
+
+  auto document = makeDocument();
+  authoring::ProjectLifecycleService lifecycle;
+  const auto created = lifecycle.createNew(document, authoring::NewProjectRequest{
+      .name = "First song", .tempoBpm = 120.0, .sampleRate = 48000U,
+      .outputChannels = 2U, .initialProceduralSinger = initial});
+  CHECK(created);
+  if (!created) return;
+
+  const auto& track = document.session().project().vocalTracks().front();
+  CHECK(track.proceduralRecipe == initial);
+  CHECK(track.neuralResource == std::nullopt);
+  CHECK(track.voicebank.id.empty());
+  CHECK(document.session().project().validate());
+}
+
+TEST_CASE("new project refuses ambiguous or trackless initial singer selections") {
+  using namespace seam;
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "first-project-singer";
+  recipe.poses = {{"a", "neutral", 0.0,
+                   {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0},
+                    {2600.0, 140.0, -6.0}}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(resource);
+  if (!resource) return;
+  const domain::ProceduralRecipeReference initial{
+      resource.value().identity, "/User/Singers/first-project-singer/recipe.json", "neutral"};
+  const auto voice = candidate();
+
+  auto both = makeDocument();
+  const auto bothBefore = both.session().project();
+  authoring::ProjectLifecycleService lifecycle;
+  CHECK(!lifecycle.createNew(both, authoring::NewProjectRequest{
+      .name = "Ambiguous", .tempoBpm = 120.0, .sampleRate = 48000U,
+      .outputChannels = 2U, .initialVoicebank = voice,
+      .initialProceduralSinger = initial}));
+  CHECK(both.session().project() == bothBefore);
+
+  auto trackless = makeDocument();
+  const auto tracklessBefore = trackless.session().project();
+  CHECK(!lifecycle.createNew(trackless, authoring::NewProjectRequest{
+      .name = "Trackless", .tempoBpm = 120.0, .sampleRate = 48000U,
+      .outputChannels = 2U, .createInitialVocalTrack = false,
+      .initialProceduralSinger = initial}));
+  CHECK(trackless.session().project() == tracklessBefore);
+}
+
 TEST_CASE("project_lifecycle_new_project_rejects_invalid_bounds_without_mutation") {
   const auto requests = std::vector<seam::authoring::NewProjectRequest>{
       {.name = "  ", .tempoBpm = 120.0, .sampleRate = 48000U,

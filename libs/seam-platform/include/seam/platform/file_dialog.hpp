@@ -17,6 +17,9 @@ enum class FileDialogPurpose {
   SaveProject,
   ImportAudio,
   InstallVoicebank,
+  InstallProceduralSinger,
+  SelectSingerSigningKey,
+  PublishProceduralSinger,
   RelinkVoicebank,
   RelinkMedia,
   ExportSet,
@@ -38,6 +41,9 @@ enum class FileDialogPurpose {
   // directory, so the platform asks for that directory's name and parent and the
   // controller creates it; an existing directory is never reused.
   PlanGenerationCampaign,
+  // Selects an immutable persisted campaign definition for verification and
+  // resume after the Studio process has restarted.
+  OpenGenerationCampaign,
   SaveDesignerRecipe,
   PublishSampleCandidate,
   OpenSampleManifest,
@@ -58,6 +64,9 @@ struct FileDialogRequest final {
 // no default language or style is supplied by the platform or controller.
 struct SampleManifestDraftIdentityInput final {
   std::string id, version, displayName, language, style;
+};
+struct ProceduralSingerPublishInput final {
+  std::string version, displayName, language;
 };
 
 enum class UnsavedSampleDecision { Cancel, Save, Discard };
@@ -103,6 +112,10 @@ public:
   [[nodiscard]] virtual core::Result<std::optional<SampleManifestDraftIdentityInput>> chooseSampleManifestDraftIdentity() {
     return core::failure<std::optional<SampleManifestDraftIdentityInput>>(core::ErrorCode::Unsupported,
         "Sample manifest draft identity entry is unavailable on this platform");
+  }
+  [[nodiscard]] virtual core::Result<std::optional<ProceduralSingerPublishInput>> chooseProceduralSingerPublishInput() {
+    return core::failure<std::optional<ProceduralSingerPublishInput>>(core::ErrorCode::Unsupported,
+        "Procedural singer release identity entry is unavailable on this platform");
   }
   // Cancel is the safe default. The caller must revalidate its captured
   // producer/manifest/selection/reviewer context after this modal returns.

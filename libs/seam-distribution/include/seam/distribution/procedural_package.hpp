@@ -3,6 +3,7 @@
 #include "seam/distribution/seambank.hpp"
 #include "seam/domain/performance_intent.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -111,6 +112,9 @@ struct PublishProceduralSingerOptions final {
 
 struct InstallProceduralOptions final {
   VerifySeambankOptions verification{};
+  // Optional byte-identity pin for callers that must install the exact package
+  // captured by an earlier publication step, not merely any package from the same signer.
+  std::optional<std::string> expectedPackageDigest{};
   bool replaceExisting{false};
 };
 
@@ -170,8 +174,25 @@ struct ProceduralCandidate final {
   std::string signerKeyId;
 };
 
+// A package-shaped directory that the catalogue found but could not safely load. These are
+// diagnostics, never candidates: callers may explain them but must not make them selectable.
+struct ProceduralCatalogueIssue final {
+  std::filesystem::path root;
+  std::filesystem::path packagePath;
+  std::string detail;
+};
+
+struct ProceduralCatalogueScan final {
+  std::vector<ProceduralCandidate> candidates;
+  std::vector<ProceduralCatalogueIssue> issues;
+  std::size_t omittedIssueCount{0U};
+  bool scanLimitReached{false};
+};
+
 struct ProceduralCatalogue final {
   [[nodiscard]] core::Result<std::vector<ProceduralCandidate>> scan(
+      const std::vector<ProceduralSearchRoot>& roots) const;
+  [[nodiscard]] core::Result<ProceduralCatalogueScan> scanDetailed(
       const std::vector<ProceduralSearchRoot>& roots) const;
 };
 

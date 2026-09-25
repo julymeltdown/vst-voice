@@ -3,6 +3,7 @@
 #include "seam/authoring/project_lifecycle.hpp"
 #include "seam/authoring/interchange_service.hpp"
 #include "seam/core/result.hpp"
+#include "seam/domain/project.hpp"
 #include "seam/voicebank/catalog.hpp"
 
 #include <cstdint>
@@ -15,8 +16,26 @@
 
 namespace seam::standalone {
 
+struct NativeNewProjectSingerOption final {
+  std::string label;
+  domain::ProceduralRecipeReference reference;
+};
+
+struct NativeNewProjectUnavailableSingerOption final {
+  std::string label;
+  std::string detail;
+};
+
+struct NativeNewProjectSingerChoices final {
+  std::vector<NativeNewProjectSingerOption> selectable;
+  std::vector<NativeNewProjectUnavailableSingerOption> unavailable;
+};
+
 struct NativeNewProjectDialogConfig final {
   std::vector<voicebank::VoicebankCandidate> candidates;
+  std::vector<NativeNewProjectSingerOption> proceduralSingers;
+  std::vector<NativeNewProjectUnavailableSingerOption>
+      unavailableProceduralSingers;
   std::filesystem::path initialDirectory;
   std::string suggestedName{"Untitled.seam"};
   std::uint32_t sampleRate{48000U};

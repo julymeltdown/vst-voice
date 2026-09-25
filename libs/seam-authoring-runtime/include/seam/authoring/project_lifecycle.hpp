@@ -24,6 +24,9 @@ struct NewProjectRequest final {
   std::uint8_t outputChannels{2U};
   bool createInitialVocalTrack{true};
   std::optional<voicebank::VoicebankCandidate> initialVoicebank;
+  // An installed procedural singer can be selected on the first project screen. This is an exact
+  // project reference, not an implicit search or fallback; the runtime resolves it after creation.
+  std::optional<domain::ProceduralRecipeReference> initialProceduralSinger;
   std::optional<std::filesystem::path> projectPath;
 };
 

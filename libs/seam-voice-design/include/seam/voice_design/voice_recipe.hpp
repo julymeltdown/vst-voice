@@ -138,6 +138,9 @@ struct VoiceRecipe final {
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const VoiceRecipe&, const VoiceRecipe&) = default;
 };
+// Development starter for the current built-in Japanese phonemizer symbol set.
+// Parameter values are screening defaults, not a qualified singer.
+[[nodiscard]] VoiceRecipe makeJapaneseStarterRecipe(std::string id = "voice-draft");
 [[nodiscard]] core::Result<std::string> encodeVoiceRecipe(const VoiceRecipe& recipe);
 [[nodiscard]] std::int64_t voiceRecipeSchemaVersion(const VoiceRecipe& recipe) noexcept;
 [[nodiscard]] core::Result<VoiceRecipe> decodeVoiceRecipe(std::string_view json);

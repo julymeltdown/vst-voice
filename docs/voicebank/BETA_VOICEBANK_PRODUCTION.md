@@ -68,7 +68,7 @@ Read `inventorySha256` from the inventory generated above, then launch the nativ
 
 The left rail shows every required coverage and pitch assignment. The center shows the selected prompt and planned take. The inspector shows the durable generation, strategy feasibility, missing/rejected/retake/review/approved queues, and incomplete staged recovery candidates.
 
-Use Up and Down to select a required unit. Press R to start or stop recording. A stopped take is written outside the immutable store, inspected, hashed, copied into content-addressed raw storage, and journaled. Failed dry-take inspection enters `REJECTED`; it never becomes approved because recording completed.
+Use Up and Down to select a required unit. Press R to start or stop recording. A stopped take is written outside the immutable store, inspected, hashed, copied into content-addressed raw storage, and journaled. Failed signal checks enter `REJECTED`; passing signal checks remain in `MARKER_REVIEW` with human review pending. Automated dry-take measurements are stored as a hash-bound `dry-take-inspection.v1` metadata revision with the raw asset. They are not written as a `ReviewRecord` or represented as a human/listening review, and cannot approve a take.
 
 An externally recorded PCM WAV can follow the same path without editing project JSON:
 

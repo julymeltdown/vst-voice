@@ -143,6 +143,15 @@ core::Result<void> ProjectLifecycleService::createNew(
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Initial Voicebank requires ID, version, and content hash");
   }
+  if (request.initialProceduralSinger.has_value()) {
+    const auto valid = request.initialProceduralSinger->validate();
+    if (!valid) return valid;
+  }
+  if (request.initialVoicebank.has_value() &&
+      request.initialProceduralSinger.has_value()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Choose either an initial sample Voicebank or procedural singer");
+  }
 
   application::ProjectFactory factory{document.factory().nextIdValue()};
   auto project = factory.createProject(std::move(name));
@@ -171,9 +180,13 @@ core::Result<void> ProjectLifecycleService::createNew(
         track.styleSelection = style.value().selection;
       }
     }
-  } else if (request.initialVoicebank.has_value()) {
+    if (request.initialProceduralSinger.has_value()) {
+      project.vocalTracks().front().proceduralRecipe = request.initialProceduralSinger;
+    }
+  } else if (request.initialVoicebank.has_value() ||
+             request.initialProceduralSinger.has_value()) {
     return core::failure(core::ErrorCode::InvalidArgument,
-                         "An initial voicebank requires an initial vocal track");
+                         "An initial singer requires an initial vocal track");
   }
   configureRouting(project, request.outputChannels);
   const auto validation = project.validate();

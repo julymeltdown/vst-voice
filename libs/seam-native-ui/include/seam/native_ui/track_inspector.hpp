@@ -44,9 +44,9 @@ struct TrackInspectorSnapshot final {
   std::uint16_t sourceChannels{0U};
   std::uint64_t sourceFrameCount{0U};
   domain::TrackOutputRoute outputRoute;
-  // At most three rows, chosen as the channels that carry a stored curve or a non-neutral value at the
-  // playhead. An inspector that listed all six on every track would spend the window on channels the
-  // creator is not working with, and the panel's height is fixed.
+  // All six selected-singer capability decisions, for the accessible route summary.
+  std::vector<TrackInspectorExpressionRow> expressionCapabilities;
+  // At most three rows, chosen as channels with a stored curve or a refusal, for the compact visual panel.
   std::vector<TrackInspectorExpressionRow> expressionRows;
 };
 

@@ -66,10 +66,8 @@ TrackInspectorSnapshot TrackInspectorModel::snapshot(
         }
       }
       const auto allowed = ui::validateExpressionCarrier(project, trackId, channel);
-      // A row earns its place by being something the creator has touched or something the singer will
-      // not take. A refusal is shown even with an empty curve, because a creator whose singer cannot
-      // apply a channel needs to know that before they draw on it, not after the draw is dropped.
-      if (stored == 0U && allowed.hasValue()) continue;
+      // Keep every route decision for accessibility; the compact visible rows below still earn their
+      // space only when there is a stored curve or the selected singer refuses the channel.
       TrackInspectorExpressionRow row;
       row.channel = channel;
       row.label = std::string{descriptor.label};
@@ -77,8 +75,11 @@ TrackInspectorSnapshot TrackInspectorModel::snapshot(
       row.valueAtPlayhead = atPlayhead;
       row.storedPoints = stored;
       if (!allowed) row.refusal = allowed.error().message;
-      snapshot.expressionRows.push_back(std::move(row));
-      if (snapshot.expressionRows.size() >= kMaximumInspectorExpressionRows) break;
+      snapshot.expressionCapabilities.push_back(row);
+      if (stored != 0U || !allowed.hasValue()) {
+        if (snapshot.expressionRows.size() < kMaximumInspectorExpressionRows)
+          snapshot.expressionRows.push_back(std::move(row));
+      }
     }
     return snapshot;
   }

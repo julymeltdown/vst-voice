@@ -4,8 +4,10 @@
 
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreAudio/CoreAudio.h>
+#include <CoreFoundation/CoreFoundation.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <span>
@@ -16,6 +18,7 @@ namespace seam::platform {
 namespace {
 
 std::string statusText(OSStatus status) {
+  if (status == noErr) return {};
   const auto value = static_cast<std::uint32_t>(status);
   char text[5]{
       static_cast<char>((value >> 24U) & 0xFFU),
@@ -27,6 +30,41 @@ std::string statusText(OSStatus status) {
     return c >= 32U && c <= 126U;
   });
   return printable ? std::string{text} : std::to_string(status);
+}
+
+std::string statusDetail(OSStatus status) {
+  if (status == kAudioUnitErr_Unauthorized ||
+      status == kAudioDevicePermissionsError) {
+    return "Microphone access was denied. In System Settings > Privacy & Security > Microphone, allow SEAM Voicebank Studio, then retry Record.";
+  }
+  if (status == kAudioHardwareBadDeviceError) {
+    return "The default microphone is unavailable. Connect a microphone and select it in System Settings > Sound > Input, then retry Record.";
+  }
+  if (status == kAudioHardwareNotReadyError) {
+    return "The microphone is not ready. Reconnect it or select another input in System Settings > Sound > Input, then retry Record.";
+  }
+  return statusText(status);
+}
+
+std::string inputDeviceName(AudioDeviceID device) {
+  AudioObjectPropertyAddress address{
+      kAudioObjectPropertyName,
+      kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain,
+  };
+  CFStringRef value = nullptr;
+  UInt32 size = sizeof(value);
+  if (AudioObjectGetPropertyData(device, &address, 0U, nullptr, &size,
+                                 &value) != noErr ||
+      value == nullptr) {
+    return {};
+  }
+  std::array<char, 512> buffer{};
+  const bool converted = CFStringGetCString(
+      value, buffer.data(), static_cast<CFIndex>(buffer.size()),
+      kCFStringEncodingUTF8);
+  CFRelease(value);
+  return converted ? std::string{buffer.data()} : std::string{};
 }
 
 UInt32 deviceBufferFrameSize(AudioDeviceID device,
@@ -103,7 +141,9 @@ public:
     status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, 0U,
                                         nullptr, &size, &device);
     if (status != noErr || device == kAudioObjectUnknown) {
-      return failOpen("Unable to obtain the default CoreAudio input device", status);
+      return failOpen(
+          "No default microphone is available. Connect or select an input in System Settings > Sound > Input, then retry Record.",
+          status);
     }
     status = AudioUnitSetProperty(unit_, kAudioOutputUnitProperty_CurrentDevice,
                                   kAudioUnitScope_Global, 0U, &device,
@@ -154,6 +194,9 @@ public:
 
     config_ = config;
     processor_ = &processor;
+    deviceName_ = inputDeviceName(device);
+    if (deviceName_.empty())
+      deviceName_ = "CoreAudio device " + std::to_string(device);
     mono_.assign(maximumFrames, 0.0F);
     opened_ = true;
     return core::success();
@@ -175,7 +218,7 @@ public:
       running_.store(false, std::memory_order_release);
       return core::failure(core::ErrorCode::IoError,
                            "Unable to start CoreAudio input",
-                           statusText(status));
+                           statusDetail(status));
     }
     return core::success();
   }
@@ -194,7 +237,7 @@ public:
   AudioInputDeviceInfo info() const override {
     return AudioInputDeviceInfo{
         .backend = "CoreAudio HAL capture",
-        .deviceName = "default-input-device",
+        .deviceName = deviceName_.empty() ? "default-input-device" : deviceName_,
         .sampleRate = config_.sampleRate,
         .blockFrames = config_.blockFrames,
         .physical = true,
@@ -246,7 +289,7 @@ private:
   core::Result<void> failOpen(std::string message, OSStatus status) {
     close();
     return core::failure(core::ErrorCode::IoError, std::move(message),
-                         statusText(status));
+                         statusDetail(status));
   }
 
   void close() noexcept {
@@ -258,11 +301,13 @@ private:
     mono_.clear();
     processor_ = nullptr;
     opened_ = false;
+    deviceName_.clear();
   }
 
   AudioInputDeviceConfig config_;
   IAudioInputProcessor* processor_{nullptr};
   AudioUnit unit_{nullptr};
+  std::string deviceName_;
   std::vector<float> mono_;
   std::atomic<bool> running_{false};
   std::atomic<std::uint64_t> callbacks_{0U};

@@ -53,14 +53,44 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn(".manualsRoot = paths.value().manualsRoot", entry)
         self.assertIn("config_.manualsRoot", native_app)
 
+    def test_procedural_singer_menu_surfaces_command_failures(self) -> None:
+        menu = (ROOT / "libs/seam-platform/src/application_menu_appkit.mm").read_text()
+        file_dialog = (ROOT / "libs/seam-platform/src/file_dialog_appkit.mm").read_text()
+        self.assertIn(
+            "dispatchCommand:seam::platform::ApplicationCommand::SelectInstalledProceduralSinger",
+            menu,
+        )
+        self.assertIn('errorTitle:@"Could not select installed singer"', menu)
+        self.assertIn(
+            "dispatchCommand:seam::platform::ApplicationCommand::InstallProceduralSinger",
+            menu,
+        )
+        self.assertIn("installed-singer candidates", file_dialog)
+        self.assertIn("style.size() > 1024U", file_dialog)
+
     def test_native_new_project_form_collects_exact_authoring_choices(self) -> None:
         dialog = (ROOT / "libs/seam-standalone/src/native_project_dialog_appkit.mm").read_text()
+        app = (ROOT / "libs/seam-standalone/src/native_editor_app.cpp").read_text()
+        lifecycle = (ROOT / "libs/seam-authoring-runtime/src/project_lifecycle.cpp").read_text()
         self.assertIn("Create New Project", dialog)
         self.assertIn("Time signature", dialog)
         self.assertIn("Initial Voicebank", dialog)
+        self.assertIn("Initial Procedural Singer", dialog)
+        self.assertIn("request.initialProceduralSinger", dialog)
+        self.assertIn("installedSingerCatalogue()", app)
+        self.assertIn("candidate.renderIdentity", app)
+        self.assertIn("project.vocalTracks().front().proceduralRecipe", lifecycle)
+        self.assertIn("Choose either an initial sample Voicebank or procedural singer", lifecycle)
         self.assertIn("setProjectPath", dialog)
         self.assertIn("suggestedProjectName", dialog)
         self.assertIn("toggleVoicebank", dialog)
+        self.assertIn("unavailableProceduralSingers", app)
+        self.assertIn("Unavailable —", app)
+        self.assertIn("catalogue.value().issues", app)
+        self.assertIn("catalogue.value().scanLimitReached", app)
+        self.assertIn("8192 package-folder scan limit", app)
+        self.assertIn("menuItem.enabled = NO", dialog)
+        self.assertIn("menuItem.toolTip = nsString(option.detail)", dialog)
 
     def test_export_set_uses_a_new_destination_save_surface(self) -> None:
         source = (ROOT / "libs/seam-platform/src/file_dialog_appkit.mm").read_text()
@@ -177,6 +207,26 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("mono_.assign(maximumFrames", input_source)
         self.assertNotIn("mono_.assign(config.blockFrames", input_source)
 
+    def test_coreaudio_input_failures_explain_permission_and_device_recovery(self) -> None:
+        input_source = (
+            ROOT / "libs/seam-platform/src/coreaudio_audio_input_device.mm"
+        ).read_text()
+        self.assertIn("kAudioUnitErr_Unauthorized", input_source)
+        self.assertIn("kAudioDevicePermissionsError", input_source)
+        self.assertIn("Privacy & Security > Microphone", input_source)
+        self.assertIn("System Settings > Sound > Input", input_source)
+        self.assertIn("retry Record", input_source)
+        self.assertIn("if (status == noErr) return {};", input_source)
+        self.assertIn("kAudioObjectPropertyName", input_source)
+        self.assertIn("CFStringGetCString", input_source)
+        self.assertIn('.deviceName = deviceName_', input_source)
+        studio = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        self.assertIn('inputBackend_ += " / " + input.deviceName', studio)
+        self.assertIn('recordingStatus_ = "CAPTURING FROM " + input.deviceName', studio)
+        scene = (ROOT / "libs/seam-native-ui/src/voicebank_studio.cpp").read_text()
+        self.assertIn("truncateUtf8ToDisplayWidth", scene)
+        self.assertIn('"MIC " + recordingLabel', scene)
+
     def test_voicebank_studio_exposes_a_fail_closed_recording_probe(self) -> None:
         source = (
             ROOT / "apps/seam-voicebank-studio-native/main.cpp"
@@ -203,6 +253,19 @@ class MacOSSourceContractTests(unittest.TestCase):
             'event.key == seam::native_ui::NativeKey::X && !event.repeat) record(discardRecording())',
             source,
         )
+        self.assertIn(
+            "pendingRecordingImportStarted_ && event.key == seam::native_ui::NativeKey::Escape",
+            source,
+        )
+        self.assertIn("controller_.cancelProceduralCandidateImport();", source)
+        self.assertIn(
+            "Wait for recorded WAV export/import to settle before discarding its capture",
+            source,
+        )
+        self.assertIn("beginPendingRecordingExport(pendingRecordingPath_, pendingRecordingHash_)", source)
+        self.assertIn("pollPendingRecordingExport()", source)
+        self.assertIn("pendingRecordingExportStarted_ || pendingRecordingImportStarted_", source)
+        self.assertIn("pendingRecordingPath_, {}, pendingRecordingHash_", source)
         session_source = (
             ROOT / "libs/seam-platform/src/recording_input_session.cpp"
         ).read_text()
@@ -249,6 +312,26 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("dispatchAccessibility", runtime_source)
         self.assertIn("setAccessibilityValue", runtime_header)
         self.assertIn("setAccessibilityValue", runtime_source)
+
+
+    def test_designer_can_install_the_exact_revision_bound_published_singer(self) -> None:
+        source = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        session = (ROOT / "libs/seam-native-ui/src/voice_designer_session.cpp").read_text()
+        self.assertIn('"install-published-singer"', source)
+        self.assertIn("publishedSingerPackagePath_ = *output.value()", source)
+        self.assertIn("publishedSingerPackageDigest_ = published.value().container.packageDigest", source)
+        self.assertIn("publishedSingerDisplayName_ = published.value().manifest.displayName", source)
+        self.assertIn("publishedSingerPublicKey_ = signingKey.value().publicKey", source)
+        self.assertIn("designer_.model()->revision() == publishedDesignerRevision_", source)
+        self.assertIn("publishedSingerPublicKey_", source)
+        self.assertIn("verification.trustedPublicKeys = {trustedSigner}", session)
+        self.assertIn("verification.requireTrustedSigner = true", session)
+        self.assertIn("defaultProceduralSearchRoots()", source)
+        self.assertIn("designer_.installPublishedSinger(", source)
+        self.assertIn("publishedSingerPackageDigest_, *publishedSingerPublicKey_", source)
+        self.assertIn("publishedSingerDisplayName_ + \" \" + installed.value().version", source)
+        self.assertIn("installProceduralPackage(packagePath, installRoot, options)", session)
+        self.assertIn("INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED", source)
 
 
 if __name__ == "__main__":

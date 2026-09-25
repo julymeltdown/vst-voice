@@ -229,9 +229,8 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
   const auto cellWidth=areaWidth/2.0;
   const bool busy=controller.proceduralImportBusy();
   const bool enabled=controller.selectedProductionAssignment() && !busy && !recordingActive;
-  // Campaign planning needs planned take ids, not a selected row, and a run needs
-  // a campaign identity this controller published or adopted. Neither is inferred
-  // from the other, so a missing campaign can never look like a runnable one.
+  // Planning needs planned take IDs. A campaign run can either resume the identity
+  // already adopted by this controller or explicitly open a retained file after restart.
   std::size_t plannedTakeIds=0U;
   if (const auto* project=controller.productionProject()) {
     std::set<std::string> unique;
@@ -245,8 +244,8 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
           {"assemble","Make batch",{294.0,286.0,cellWidth-2.0,18.0},enabled},
           {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled},
           {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U},
-          {"run-campaign",campaignReady?"Resume campaign":"Run campaign",
-              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free && campaignReady}};
+          {"run-campaign",campaignReady?"Resume campaign":"Open / resume",
+              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free}};
 }
 
 void paintProductionEmptyCanvas(

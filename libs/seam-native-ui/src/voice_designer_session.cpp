@@ -24,6 +24,9 @@ core::Result<void> VoiceDesignerSession::create(voice_design::VoiceRecipe recipe
   auditionReference_.reset();
   return core::success();
 }
+core::Result<void> VoiceDesignerSession::createJapaneseStarter(bool discardUnsaved) {
+  return create(voice_design::makeJapaneseStarterRecipe(), discardUnsaved);
+}
 core::Result<void> VoiceDesignerSession::beginOpen(std::filesystem::path path, bool discardUnsaved) {
   const auto ready = canReplace(discardUnsaved); if (!ready) return ready;
   stop_ = std::stop_source{}; const auto stop = stop_.get_token();
@@ -105,6 +108,92 @@ core::Result<void> VoiceDesignerSession::beginSave(std::filesystem::path path) {
   } catch (const std::exception& exception) { return core::failure(core::ErrorCode::Internal, "Cannot start Designer save", exception.what()); }
   return core::success();
 }
+core::Result<distribution::ProceduralPackageInfo> VoiceDesignerSession::publishSavedSinger(
+    const std::filesystem::path& stagingDirectory,
+    const std::filesystem::path& outputPackage,
+    const distribution::SigningKeyPair& signingKey,
+    const distribution::PublishProceduralSingerOptions& options) const {
+  using Output = distribution::ProceduralPackageInfo;
+  if (busy() || !model_ || model_->gestureActive())
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Finish Designer work before publishing a singer");
+  if (path_.empty() || persistedHash_.empty() || model_->dirty() ||
+      model_->resource().identity.contentHash != persistedHash_)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Save the exact current Designer recipe before publishing");
+
+  // A previous save acknowledgement is not enough: the file may have changed
+  // outside this session since it was opened or saved. Re-read and bind
+  // publication to the exact persisted content before signing it.
+  const auto persisted = voice_design::loadVoiceRecipeResource(path_);
+  if (!persisted) return core::Result<Output>{persisted.error()};
+  if (persisted.value().identity != model_->resource().identity ||
+      persisted.value().identity.contentHash != persistedHash_)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Saved Designer recipe changed outside this session; reopen or save a new copy");
+
+  std::error_code pathError;
+  const auto draftPath = std::filesystem::weakly_canonical(path_, pathError);
+  if (pathError)
+    return core::failure<Output>(core::ErrorCode::IoError,
+        "Cannot resolve the saved Designer recipe path", pathError.message());
+  const auto packagePath = std::filesystem::weakly_canonical(outputPackage, pathError);
+  if (pathError)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Cannot resolve the singer package output path", pathError.message());
+  if (draftPath == packagePath)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Singer package output cannot replace the saved Designer recipe");
+
+  // Distribution metadata is required explicitly. The package signature
+  // establishes publisher authenticity only, never singer quality approval.
+  return distribution::publishProceduralSingerFromRecipe(
+      persisted.value(), stagingDirectory, outputPackage, signingKey, options);
+}
+core::Result<distribution::InstalledProceduralSinger> VoiceDesignerSession::installPublishedSinger(
+    std::uint64_t expectedEpoch, std::uint64_t expectedRevision,
+    const std::filesystem::path& packagePath,
+    std::string_view expectedPackageDigest,
+    const distribution::Ed25519PublicKey& trustedSigner,
+    const std::filesystem::path& installRoot) const {
+  using Output = distribution::InstalledProceduralSinger;
+  if (busy() || !model_ || model_->gestureActive() || epoch_ != expectedEpoch ||
+      model_->revision() != expectedRevision)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Designer changed after publication; return to the published recipe before installing");
+  if (packagePath.empty() || expectedPackageDigest.empty() || installRoot.empty())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Published singer package and install folder are required");
+  if (path_.empty() || persistedHash_.empty() || model_->dirty() ||
+      model_->resource().identity.contentHash != persistedHash_)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Install requires the exact saved Designer recipe used for publication");
+  const auto persisted = voice_design::loadVoiceRecipeResource(path_);
+  if (!persisted) return core::Result<Output>{persisted.error()};
+  if (persisted.value().identity != model_->resource().identity ||
+      persisted.value().identity.contentHash != persistedHash_)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Saved Designer recipe changed outside this session; reopen or save a new copy");
+
+  distribution::VerifySeambankOptions verification;
+  verification.trustedPublicKeys = {trustedSigner};
+  verification.requireTrustedSigner = true;
+  const auto package = distribution::verifyProceduralPackage(packagePath, verification);
+  if (!package) return core::Result<Output>{package.error()};
+  if (package.value().manifest.id != model_->recipe().id ||
+      package.value().manifest.recipeSha256 != persistedHash_)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Published singer package does not contain this exact saved Designer recipe");
+  if (package.value().container.packageDigest != expectedPackageDigest)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Published singer package bytes differ from the captured package identity");
+
+  distribution::InstallProceduralOptions options;
+  options.verification = std::move(verification);
+  options.expectedPackageDigest = std::string{expectedPackageDigest};
+  options.replaceExisting = false;
+  return distribution::installProceduralPackage(packagePath, installRoot, options);
+}
 core::Result<void> VoiceDesignerSession::poll() {
   if (auditionWork_.valid() && auditionWork_.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
     try {
@@ -122,6 +211,9 @@ core::Result<void> VoiceDesignerSession::poll() {
             fricationAudioMode_ = preview.value().plosiveMode==PlosiveAuditionMode::Source?FricationAuditionMode::Source:
                 preview.value().plosiveMode==PlosiveAuditionMode::StopVowel?FricationAuditionMode::FricationVowel:FricationAuditionMode::VowelFrication;
             fricationAudio_ = std::make_shared<const voicebank::AudioBuffer>(std::move(preview.value().audio));
+          } else if (preview.value().articulationPhone) {
+            articulationAudioPhone_=std::move(preview.value().articulationPhone);
+            articulationAudio_=std::make_shared<const voicebank::AudioBuffer>(std::move(preview.value().audio));
           } else auditionAudio_ = std::make_shared<const voicebank::AudioBuffer>(std::move(preview.value().audio));
         }
       }
@@ -183,6 +275,25 @@ core::Result<void> VoiceDesignerSession::beginPlosiveAudition(std::size_t index,
     return core::failure(core::ErrorCode::InvalidArgument,"Unknown plosive audition mode");
   return beginNoiseAudition(index,true,mode);
 }
+core::Result<void> VoiceDesignerSession::beginArticulationAudition(std::string phone) {
+  if (busy() || auditionBusy() || !model_ || phone.empty() || phone.size()>128U)
+    return core::failure(core::ErrorCode::Conflict,"Finish Designer work and select a supported articulation first");
+  auditionStop_=std::stop_source{}; const auto stop=auditionStop_.get_token();
+  const auto epoch=epoch_; const auto revision=model_->revision(); const auto resource=model_->resource();
+  const auto pose=auditionPose_; const auto pitch=auditionPitch_;
+  auditionAudio_.reset(); fricationAudio_.reset(); fricationAudioIndex_.reset();
+  plosiveAudio_.reset(); plosiveAudioIndex_.reset(); articulationAudio_.reset(); articulationAudioPhone_.reset();
+  try {
+    auditionWork_=std::async(std::launch::async,[resource,epoch,revision,pose,pitch,phone=std::move(phone),stop]() mutable -> core::Result<AuditionResult> {
+      auto audio=renderDesignerArticulationPhraseAudition(resource,phone,pose,pitch,stop);
+      if (!audio) return core::Result<AuditionResult>{audio.error()};
+      AuditionResult result{epoch,revision,pose,pitch,std::move(audio.value())};
+      result.articulationPhone=std::move(phone);
+      return result;
+    });
+  } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal,"Cannot start articulation audition",error.what()); }
+  return core::success();
+}
 core::Result<void> VoiceDesignerSession::beginNoiseAudition(std::size_t index,bool plosive,PlosiveAuditionMode mode) {
   if (busy() || auditionBusy() || !model_ || index >= (plosive?model_->recipe().plosives.size():model_->recipe().frications.size()))
     return core::failure(core::ErrorCode::Conflict,"Finish Designer work and select a valid noise source");
@@ -191,6 +302,7 @@ core::Result<void> VoiceDesignerSession::beginNoiseAudition(std::size_t index,bo
   const auto pose = auditionPose_; const auto pitch = auditionPitch_;
   fricationAudio_.reset(); fricationAudioIndex_.reset();
   plosiveAudio_.reset(); plosiveAudioIndex_.reset();
+  articulationAudio_.reset(); articulationAudioPhone_.reset();
   try {
     auditionWork_ = std::async(std::launch::async,[resource,epoch,revision,pose,pitch,index,stop,plosive,mode]() -> core::Result<AuditionResult> {
       auto audio = plosive?(mode!=PlosiveAuditionMode::Source?renderDesignerPlosivePhraseAudition(resource,index,pose,pitch,stop,mode):renderDesignerPlosiveAudition(resource,index,stop)):

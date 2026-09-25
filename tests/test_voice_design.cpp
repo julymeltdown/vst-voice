@@ -15,6 +15,8 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/phonemizer/pronunciation_resolver.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 #include <limits>
 #include <cmath>
 #include <numbers>
@@ -992,6 +994,183 @@ TEST_CASE("recipe articulation prepares resolved score edits without caller supp
   CHECK(voice_design::ArticulationPlan::compileRecipe(resource.value(), lowRate.value(), vowel.value().pronunciation.tokens, "neutral"));
 }
 
+TEST_CASE("English CV and VC articulation render recipe-bound consonants around the same vowel") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{31U}, "English CV-VC articulation"};
+  domain::VocalRegion region{.id = domain::RegionId{32U}, .name = "sat", .durationTick = time::Tick{960},
+      .lyrics = {{domain::LyricTokenId{33U}, U"sat", domain::Language::English}},
+      .notes = {{.id = domain::NoteId{34U}, .durationTick = time::Tick{960}, .midiKey = 60U,
+          .lyricTokenId = domain::LyricTokenId{33U}}}};
+  region.notes.front().phoneticHint = "s ae1 t";
+  const auto resolved = phonemizer::resolveEnglishPronunciation(region); CHECK(resolved);
+  if (!resolved) return;
+  const auto& phones = resolved.value().pronunciation.tokens;
+  CHECK(phones.size() == 3U);
+  if (phones.size() != 3U) return;
+  CHECK(phones[0].symbol == "s"); CHECK(phones[0].role == domain::PhonemeRole::Onset);
+  CHECK(phones[1].symbol == "ae1"); CHECK(phones[1].role == domain::PhonemeRole::Nucleus);
+  CHECK(phones[2].symbol == "t"); CHECK(phones[2].role == domain::PhonemeRole::Coda);
+
+  const auto performance = synthesis::compileScorePerformance(project, region, 48000U, phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(performance);
+  if (!performance) return;
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "english-cv-vc-articulation";
+  recipe.seed = 3401U;
+  recipe.phonation.aspiration = 0.0;
+  recipe.poses = {{"ae1", "neutral", 0.0,
+      {{700.0, 80.0, 0.0}, {1400.0, 110.0, -3.0}, {2700.0, 160.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", {.seed = 3402U, .centerHz = 6200.0,
+      .bandwidthHz = 2800.0, .gain = 0.16}}};
+  recipe.plosives = {{"t", "neutral", {.seed = 3403U, .centerHz = 4300.0,
+      .bandwidthHz = 2800.0, .gain = 0.16}, 10.0}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  if (!resource) return;
+  const auto plan = voice_design::ArticulationPlan::compileRecipe(resource.value(), performance.value(), phones, "neutral");
+  CHECK(plan);
+  if (!plan) return;
+  CHECK(plan.value().gestures().size() == 3U);
+  if (plan.value().gestures().size() != 3U) return;
+  const auto& onset = plan.value().gestures()[0];
+  const auto& vowel = plan.value().gestures()[1];
+  const auto& coda = plan.value().gestures()[2];
+  CHECK(onset.kind == voice_design::ArticulationGestureKind::Frication);
+  CHECK(vowel.kind == voice_design::ArticulationGestureKind::OralVowel);
+  CHECK(coda.kind == voice_design::ArticulationGestureKind::Plosive);
+  CHECK(onset.span.end <= vowel.span.start);
+  CHECK(vowel.span.end <= coda.span.start);
+
+  auto phrase = voice_design::ArticulatedStream::create(resource.value(), performance.value(), plan.value(),
+      "neutral", 127U); CHECK(phrase);
+  if (!phrase) return;
+  const auto rendered = phrase.value().renderOwned(plan.value().context()); CHECK(rendered);
+  if (!rendered) return;
+
+  // A vowel-only score is the control rendering. It uses the same note, F0, source and vowel pose;
+  // the shared-vowel pitch must stay at the authored MIDI target even though its contextual tract
+  // transitions differ. The resolved onset and coda must contribute sound where they own spans.
+  auto vowelOnlyRegion = region;
+  vowelOnlyRegion.lyrics.front().surface = U"ae1";
+  vowelOnlyRegion.notes.front().phoneticHint = "ae1";
+  const auto vowelOnly = phonemizer::resolveEnglishPronunciation(vowelOnlyRegion); CHECK(vowelOnly);
+  if (!vowelOnly) return;
+  const auto vowelOnlyPerformance = synthesis::compileScorePerformance(project, vowelOnlyRegion, 48000U,
+      vowelOnly.value().pronunciation.tokens, synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(vowelOnlyPerformance);
+  if (!vowelOnlyPerformance) return;
+  auto reference = voice_design::ArticulatedStream::createFromRecipe(resource.value(), vowelOnlyPerformance.value(),
+      vowelOnly.value().pronunciation.tokens, "neutral", 127U); CHECK(reference);
+  if (!reference) return;
+  const auto referenceAudio = reference.value().renderOwned(plan.value().context()); CHECK(referenceAudio);
+  if (!referenceAudio) return;
+
+  const auto nonzero = [](std::span<const float> samples) {
+    return std::any_of(samples.begin(), samples.end(), [](float sample) { return std::abs(sample) > 1e-6F; });
+  };
+  CHECK(nonzero(std::span<const float>{rendered.value().samples}.subspan(
+      static_cast<std::size_t>(onset.span.start), static_cast<std::size_t>(onset.span.end - onset.span.start))));
+  CHECK(nonzero(std::span<const float>{rendered.value().samples}.subspan(
+      static_cast<std::size_t>(coda.span.start), static_cast<std::size_t>(coda.span.end - coda.span.start))));
+  const auto sharedStart = static_cast<std::size_t>(vowel.span.start + 512);
+  const auto sharedEnd = static_cast<std::size_t>(vowel.span.end - 512);
+  CHECK(sharedEnd > sharedStart);
+  if (sharedEnd > sharedStart) {
+    const auto actualPitch = voicebank::analyzePitch(
+        std::span<const float>{rendered.value().samples}.subspan(sharedStart, sharedEnd - sharedStart), 48000U);
+    const auto referencePitch = voicebank::analyzePitch(
+        std::span<const float>{referenceAudio.value().samples}.subspan(sharedStart, sharedEnd - sharedStart), 48000U);
+    CHECK(actualPitch.hasValue()); CHECK(referencePitch.hasValue());
+    if (actualPitch) CHECK_NEAR(voicebank::medianVoicedPitch(actualPitch.value()), 261.625565, 12.0);
+    if (referencePitch) CHECK_NEAR(voicebank::medianVoicedPitch(referencePitch.value()), 261.625565, 12.0);
+  }
+
+  auto chunked = voice_design::ArticulatedStream::createFromRecipe(resource.value(), performance.value(), phones,
+      "neutral", 257U); CHECK(chunked);
+  if (!chunked) return;
+  const auto cut = vowel.span.start + (vowel.span.end - vowel.span.start) / 2;
+  const auto first = chunked.value().renderOwned({plan.value().context().start, cut}); CHECK(first);
+  auto checkpoint = chunked.value();
+  const auto last = chunked.value().renderOwned({cut, plan.value().context().end}); CHECK(last);
+  if (first && last) {
+    auto joined = first.value().samples;
+    joined.insert(joined.end(), last.value().samples.begin(), last.value().samples.end());
+    CHECK(joined == rendered.value().samples);
+    CHECK(checkpoint.renderOwned({cut, plan.value().context().end}).value().samples == last.value().samples);
+  }
+}
+
+TEST_CASE("Japanese /f/ and /v/ on the same note produce distinct recipe-bound PCM") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{41U}, "Japanese voiced fricative contrast"};
+  const auto makeRegion = [](std::u32string surface) {
+    return domain::VocalRegion{.id = domain::RegionId{42U}, .name = "fricative contrast",
+        .durationTick = time::Tick{960},
+        .lyrics = {{domain::LyricTokenId{43U}, std::move(surface), domain::Language::Japanese}},
+        .notes = {{.id = domain::NoteId{44U}, .durationTick = time::Tick{960}, .midiKey = 60U,
+            .lyricTokenId = domain::LyricTokenId{43U}}}};
+  };
+  const auto fRegion = makeRegion(U"ふ");
+  const auto vRegion = makeRegion(U"ゔ");
+  const auto fResolved = phonemizer::resolveJapanesePronunciation(fRegion); CHECK(fResolved);
+  const auto vResolved = phonemizer::resolveJapanesePronunciation(vRegion); CHECK(vResolved);
+  if (!fResolved || !vResolved) return;
+  const auto& fPhones = fResolved.value().pronunciation.tokens;
+  const auto& vPhones = vResolved.value().pronunciation.tokens;
+  CHECK(fPhones.size() == 2U); CHECK(vPhones.size() == 2U);
+  if (fPhones.size() != 2U || vPhones.size() != 2U) return;
+  CHECK(fPhones[0].symbol == "f"); CHECK(!fPhones[0].voiced);
+  CHECK(fPhones[1].symbol == "u");
+  CHECK(vPhones[0].symbol == "v"); CHECK(vPhones[0].voiced);
+  CHECK(vPhones[1].symbol == "u");
+
+  const auto fPerformance = synthesis::compileScorePerformance(project, fRegion, 48000U, fPhones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(fPerformance);
+  const auto vPerformance = synthesis::compileScorePerformance(project, vRegion, 48000U, vPhones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(vPerformance);
+  if (!fPerformance || !vPerformance) return;
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "japanese-f-v-contrast";
+  recipe.seed = 4101U;
+  recipe.phonation.aspiration = 0.0;
+  const std::vector<voice_design::ResonanceBand> vowelFormants{
+      {350.0, 80.0, 0.0}, {1100.0, 100.0, -3.0}, {2500.0, 160.0, -6.0}};
+  recipe.poses = {{"u", "neutral", 0.0, vowelFormants},
+      {"v", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1500.0, 110.0, -3.0}, {2600.0, 160.0, -6.0}}}};
+  const voice_design::FricationConfig source{.seed = 4102U, .centerHz = 3800.0,
+      .bandwidthHz = 2400.0, .gain = 0.12};
+  recipe.frications = {{"f", "neutral", source}, {"v", "neutral", source, 0.35}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  if (!resource) return;
+  auto fStream = voice_design::ArticulatedStream::createFromRecipe(resource.value(), fPerformance.value(),
+      fPhones, "neutral", 127U); CHECK(fStream);
+  auto vStream = voice_design::ArticulatedStream::createFromRecipe(resource.value(), vPerformance.value(),
+      vPhones, "neutral", 127U); CHECK(vStream);
+  if (!fStream || !vStream) return;
+  const auto context = fPerformance.value().phoneticContext(); CHECK(context);
+  const auto vContext = vPerformance.value().phoneticContext(); CHECK(vContext);
+  if (!context || !vContext) return;
+  CHECK(vContext.value().start == context.value().start);
+  CHECK(vContext.value().end == context.value().end);
+  const auto fAudio = fStream.value().renderOwned(context.value()); CHECK(fAudio);
+  const auto vAudio = vStream.value().renderOwned(context.value()); CHECK(vAudio);
+  if (!fAudio || !vAudio) return;
+  CHECK(fAudio.value().samples.size() == vAudio.value().samples.size());
+  std::size_t differingFrames = 0U;
+  double squaredDifference = 0.0;
+  for (std::size_t index = 0U; index < fAudio.value().samples.size(); ++index) {
+    const auto difference = static_cast<double>(fAudio.value().samples[index]) - vAudio.value().samples[index];
+    if (std::abs(difference) > 1e-6) ++differingFrames;
+    squaredDifference += difference * difference;
+  }
+  CHECK(differingFrames > 1000U);
+  CHECK(std::sqrt(squaredDifference / static_cast<double>(fAudio.value().samples.size())) > 1e-4);
+  for (const auto* samples : {&fAudio.value().samples, &vAudio.value().samples}) {
+    const auto start = samples->size() - 12000U;
+    const auto pitch = voicebank::analyzePitch(std::span<const float>{*samples}.subspan(start), 48000U);
+    CHECK(pitch);
+    if (pitch) CHECK_NEAR(voicebank::medianVoicedPitch(pitch.value()), 261.625565, 12.0);
+  }
+}
+
 TEST_CASE("articulation plans bind explicit frication to shared nucleus timing without guessing phones") {
   using namespace seam;
   domain::Project project{domain::ProjectId{1U}, "Articulation"};
@@ -1913,4 +2092,46 @@ TEST_CASE("recipe opt outs preserve ordinary phonation but reject restricted sou
     CHECK(!direct); CHECK(direct.error().code == core::ErrorCode::Unsupported);
     CHECK(!prepared); CHECK(prepared.error().code == core::ErrorCode::Unsupported);
   }
+}
+
+TEST_CASE("Japanese starter compiles every built-in phonemizer symbol through articulated routing") {
+  using namespace seam;
+  domain::Project project{domain::ProjectId{7301U}, "Japanese starter inventory coverage"};
+  const auto& inventory = phonemizer::japanesePhoneSymbols();
+  domain::VocalRegion region{
+      .id = domain::RegionId{7302U}, .name = "starter inventory coverage",
+      .durationTick = time::Tick{static_cast<std::int64_t>(inventory.size()) * 960},
+      .lyrics = {{domain::LyricTokenId{7303U}, U"あ", domain::Language::Japanese}}};
+  for (std::size_t index = 0U; index < inventory.size(); ++index) {
+    const auto& phone = inventory[index];
+    region.notes.push_back(domain::Note{.id = domain::NoteId{7304U + static_cast<std::uint64_t>(index)},
+        .startTick = time::Tick{static_cast<std::int64_t>(index) * 960}, .durationTick = time::Tick{960},
+        .midiKey = 60U, .lyricTokenId = domain::LyricTokenId{7303U},
+        .phoneticHint = "a " + phone + " a"});
+  }
+  const auto resolved = phonemizer::resolveJapanesePronunciation(region); CHECK(resolved);
+  if (!resolved) return;
+  const auto& phones = resolved.value().pronunciation.tokens;
+  CHECK(phones.size() > 60U);
+  const auto performance = synthesis::compileScorePerformance(project, region, 48000U, phones,
+      synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(performance);
+  if (!performance) return;
+  const auto recipe = voice_design::makeJapaneseStarterRecipe("ja-v1-coverage");
+  CHECK(recipe.validate());
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  if (!resource) return;
+  const auto plan = voice_design::ArticulationPlan::compileRecipe(resource.value(), performance.value(), phones, "neutral");
+  if (!plan) throw test::Failure{"starter full-inventory plan refusal: " + plan.error().message};
+  CHECK(plan);
+  if (!plan) return;
+  const auto& gestures = plan.value().gestures();
+  CHECK(gestures.size() == phones.size());
+  for (const auto& symbol : inventory)
+    CHECK(std::any_of(gestures.begin(), gestures.end(), [&](const auto& gesture) { return gesture.phone == symbol; }));
+  CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "ky" && gesture.posePhone == std::optional<std::string>{"ky"}; }));
+  CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "cl" && gesture.kind == voice_design::ArticulationGestureKind::Closure; }));
+  CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "br" && gesture.kind == voice_design::ArticulationGestureKind::Breath; }));
+  const auto stream = voice_design::ArticulatedStream::create(
+      resource.value(), performance.value(), plan.value(), "neutral", 512U);
+  CHECK(stream);
 }

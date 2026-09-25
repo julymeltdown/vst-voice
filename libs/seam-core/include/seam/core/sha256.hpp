@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -38,5 +39,8 @@ private:
 [[nodiscard]] core::Result<std::string> sha256File(
     const std::filesystem::path& path,
     std::uint64_t maximumBytes = 4ULL * 1024ULL * 1024ULL * 1024ULL);
+[[nodiscard]] core::Result<std::string> sha256File(
+    const std::filesystem::path& path, std::uint64_t maximumBytes,
+    std::stop_token stopToken);
 
 }  // namespace seam::core

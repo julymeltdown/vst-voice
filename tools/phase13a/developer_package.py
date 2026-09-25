@@ -86,6 +86,14 @@ def create_developer_package(
             if not source.is_file() or source.stat().st_size == 0:
                 raise ValueError(f"required distribution notice is missing: {source}")
             _write_bytes(archive, f"ProjectSEAM/{source_name}", source.read_bytes())
+        cmudict_license = ROOT / "licenses/third-party/CMUdict-2026-09-24-LICENSE.txt"
+        if not cmudict_license.is_file() or cmudict_license.stat().st_size == 0:
+            raise ValueError(f"required distribution license is missing: {cmudict_license}")
+        _write_bytes(
+            archive,
+            "ProjectSEAM/Notices/CMUdict-LICENSE.txt",
+            cmudict_license.read_bytes(),
+        )
         _write_bytes(
             archive,
             f"ProjectSEAM/CLAP/{clap_module.name}",

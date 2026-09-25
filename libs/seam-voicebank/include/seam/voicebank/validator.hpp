@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <stop_token>
 #include <vector>
 
 namespace seam::voicebank {
@@ -85,6 +86,9 @@ public:
 
 [[nodiscard]] core::Result<DryTakeInspection> inspectDryTake(
     const std::filesystem::path& path, std::int32_t expectedRootMidi);
+[[nodiscard]] core::Result<DryTakeInspection> inspectDryTake(
+    const std::filesystem::path& path, std::int32_t expectedRootMidi,
+    std::stop_token stopToken);
 
 [[nodiscard]] std::string_view issueSeverityName(IssueSeverity severity) noexcept;
 [[nodiscard]] std::string_view issueCodeName(IssueCode code) noexcept;

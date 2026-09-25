@@ -6,7 +6,10 @@
 #include "seam/native_ui/voice_designer_source_selection.hpp"
 #include "seam/core/exclusive_file_lock.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/signing.hpp"
 #include "seam/voice_design/frication_source.hpp"
+#include "seam/voice_design/vocal_tract.hpp"
 #include <thread>
 #include <algorithm>
 #include <cmath>
@@ -27,6 +30,157 @@ seam::voice_design::VoiceRecipe designerFixture() {
   recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
   return recipe;
 }
+}
+
+TEST_CASE("New Japanese voice starts with an editable partial song-singing source-filter patch") {
+  using namespace seam;
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.createJapaneseStarter());
+  CHECK(session.model() != nullptr);
+  if (session.model() == nullptr) return;
+  const auto& recipe = session.model()->recipe();
+  const std::vector<std::string> expected{"a", "i", "u", "e", "o", "m", "n", "r", "w", "y", "j", "g", "d", "N", "z", "v",
+      "ky", "gy", "ny", "hy", "by", "py", "my", "ry", "fy", "vy"};
+  CHECK(recipe.id == "voice-draft");
+  CHECK(recipe.poses.size() == expected.size());
+  CHECK(recipe.frications.size() == 6U);
+  CHECK(recipe.plosives.size() == 6U);
+  CHECK(recipe.affricates.size() == 2U);
+  CHECK(recipe.voicedAffricates.size() == 1U);
+  CHECK(recipe.approximants.size() == 3U);
+  CHECK(recipe.palatalized.size() == 10U);
+  CHECK(recipe.closures.size() == 4U);
+  CHECK(recipe.breaths.size() == 1U);
+  CHECK(recipe.validate());
+  for (std::size_t index = 0U; index < std::min(expected.size(), recipe.poses.size()); ++index) {
+    CHECK(recipe.poses[index].phone == expected[index]);
+    CHECK(recipe.poses[index].style == "neutral");
+    CHECK(voice_design::VocalTract::create(recipe, expected[index], "neutral", 48000U));
+  }
+  for (const auto vowel : {"a", "i", "u", "e", "o"}) {
+    const auto pose = std::find_if(recipe.poses.begin(), recipe.poses.end(), [&](const auto& value) { return value.phone == vowel; });
+    CHECK(pose != recipe.poses.end());
+    if (pose == recipe.poses.end()) continue;
+    const auto index = static_cast<std::size_t>(std::distance(recipe.poses.begin(), pose));
+    CHECK(session.selectAudition(session.epoch(), session.model()->revision(), index, 60U));
+    CHECK(session.beginAudition());
+    CHECK(drainDesigner(session));
+    CHECK(session.auditionAudio() != nullptr);
+    if (session.auditionAudio()) CHECK(session.auditionAudio()->frameCount() > 0U);
+  }
+  CHECK(std::any_of(recipe.frications.begin(), recipe.frications.end(), [](const auto& value) { return value.phone == "f"; }));
+  CHECK(std::any_of(recipe.frications.begin(), recipe.frications.end(), [](const auto& value) { return value.phone == "v"; }));
+  CHECK(std::any_of(recipe.plosives.begin(), recipe.plosives.end(), [](const auto& value) { return value.phone == "b" && value.voicedClosure.has_value(); }));
+  // This remains an editable, unqualified draft. The shared song fixture exercises this same recipe
+  // end-to-end, but neither the defaults nor renderability prove perceptual pronunciation quality.
+  CHECK(session.model()->dirty());
+}
+
+TEST_CASE("Designer phrase audition renders recipe consonants and events through the production stream") {
+  using namespace seam;
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.createJapaneseStarter());
+  if (!session.model()) return;
+  const auto resource=session.model()->resource();
+  const auto ts=native_ui::renderDesignerArticulationPhraseAudition(resource,"ts",0U);
+  const auto voiced=native_ui::renderDesignerArticulationPhraseAudition(resource,"j",0U);
+  const auto glide=native_ui::renderDesignerArticulationPhraseAudition(resource,"r",0U);
+  const auto breath=native_ui::renderDesignerArticulationPhraseAudition(resource,"br",0U);
+  const auto nasal=native_ui::renderDesignerArticulationPhraseAudition(resource,"m",0U);
+  const auto palatalized=native_ui::renderDesignerArticulationPhraseAudition(resource,"ky",0U);
+  const auto closure=native_ui::renderDesignerArticulationPhraseAudition(resource,"cl",0U);
+  for (const auto* rendered : {&ts,&voiced,&glide,&breath,&nasal,&palatalized,&closure}) {
+    CHECK(*rendered);
+    if (!*rendered) continue;
+    CHECK(rendered->value().sampleRate==48000U);
+    CHECK(rendered->value().frameCount()==48000U);
+    CHECK(std::all_of(rendered->value().interleaved.begin(),rendered->value().interleaved.end(),
+        [](float sample){return std::isfinite(sample) && std::abs(sample)<=0.9F;}));
+  }
+  if (ts && voiced && glide && breath && nasal && palatalized && closure) {
+    CHECK(ts.value().interleaved!=voiced.value().interleaved);
+    CHECK(voiced.value().interleaved!=glide.value().interleaved);
+    CHECK(nasal.value().interleaved!=palatalized.value().interleaved);
+    CHECK(closure.value().interleaved!=breath.value().interleaved);
+    CHECK(native_ui::renderDesignerArticulationPhraseAudition(resource,"ts",0U).value().interleaved==ts.value().interleaved);
+  }
+  CHECK(!native_ui::renderDesignerArticulationPhraseAudition(resource,"missing",0U));
+  CHECK(!native_ui::renderDesignerArticulationPhraseAudition(resource,"ts",999U));
+  CHECK(!native_ui::renderDesignerArticulationPhraseAudition(resource,"ts",0U,20U));
+  std::stop_source cancelled; cancelled.request_stop();
+  CHECK(!native_ui::renderDesignerArticulationPhraseAudition(resource,"ts",0U,69U,cancelled.get_token()));
+
+  CHECK(session.beginArticulationAudition("ts"));
+  CHECK(drainDesigner(session));
+  CHECK(session.articulationAudio());
+  CHECK(session.articulationAudioPhone()==std::optional<std::string>{"ts"});
+  CHECK(session.articulationAudio()->interleaved==ts.value().interleaved);
+  CHECK(session.selectAudition(session.epoch(),session.model()->revision(),1U,69U));
+  CHECK(!session.articulationAudio());
+}
+
+TEST_CASE("Designer source edits change affricate approximant and breath auditions and undo exactly") {
+  using namespace seam;
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.createJapaneseStarter());
+  if (!session.model()) return;
+  const auto root = test::support::temporaryDirectory("designer-source-audition-persistence");
+  CHECK(session.selectAudition(session.epoch(), session.model()->revision(), 0U, 69U));
+
+  const auto audition = [&](std::string phone) {
+    CHECK(session.beginArticulationAudition(phone));
+    CHECK(drainDesigner(session));
+    CHECK(session.articulationAudio());
+    CHECK(session.articulationAudioPhone() == std::optional<std::string>{phone});
+    return session.articulationAudio()
+        ? session.articulationAudio()->interleaved : std::vector<float>{};
+  };
+  const auto editAndVerify = [&](std::string phone, auto editSource) {
+    const auto baseline = audition(phone);
+    CHECK(!baseline.empty());
+    auto recipe = session.model()->recipe();
+    editSource(recipe);
+    const auto edited = session.edit(session.epoch(), session.model()->revision(),
+        std::move(recipe));
+    CHECK(edited);
+    CHECK(!session.articulationAudio());
+    const auto changed = audition(phone);
+    CHECK(!changed.empty());
+    CHECK(changed != baseline);
+
+    CHECK(session.beginSave(root / (phone + ".json")));
+    CHECK(drainDesigner(session));
+    native_ui::VoiceDesignerSession reopened;
+    CHECK(reopened.beginOpen(root / (phone + ".json")));
+    CHECK(drainDesigner(reopened));
+    const auto reopenedAudio = [&] {
+      CHECK(reopened.beginArticulationAudition(phone));
+      CHECK(drainDesigner(reopened));
+      CHECK(reopened.articulationAudio());
+      CHECK(reopened.articulationAudioPhone() == std::optional<std::string>{phone});
+      return reopened.articulationAudio()
+          ? reopened.articulationAudio()->interleaved : std::vector<float>{};
+    }();
+    CHECK(reopenedAudio == changed);
+
+    const auto undone = session.undo(session.epoch(), session.model()->revision());
+    CHECK(undone);
+    const auto restored = audition(phone);
+    CHECK(restored == baseline);
+  };
+
+  editAndVerify("ts", [](auto& recipe) {
+    recipe.affricates.front().burst.centerHz = 3200.0;
+  });
+  editAndVerify("j", [](auto& recipe) {
+    recipe.voicedAffricates.front().tailVoicingGain = 0.65;
+  });
+  editAndVerify("r", [](auto& recipe) {
+    recipe.approximants.front().transitionMilliseconds = 110.0;
+  });
+  editAndVerify("br", [](auto& recipe) {
+    recipe.breaths.front().source.centerHz = 9000.0;
+  });
 }
 
 TEST_CASE("Designer source selection resolves style filtered rows without changing recipes") {
@@ -946,4 +1100,169 @@ TEST_CASE("The Designer refuses any save inside a protected root and leaves prio
   // A second save to the same draft path is still allowed, so the guard did not break normal saves.
   CHECK(session.beginSave(allowed));
   CHECK(drainDesigner(session));
+}
+
+TEST_CASE("Designer publishes only the exact saved recipe as an authenticated singer package") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designer-publish-saved-singer");
+  const auto draft = root / "drafts" / "voice.json";
+  const auto staging = root / "staging";
+  const auto packagePath = root / "voice.seamsinger";
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+
+  std::filesystem::create_directories(draft.parent_path());
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.create(designerFixture()));
+  distribution::PublishProceduralSingerOptions options;
+  options.version = "0.1.0-beta.1";
+  options.language = "ja";
+  options.displayName = "Designer Fixture";
+  CHECK(!session.publishSavedSinger(staging, packagePath, key.value(), options));
+  CHECK(!std::filesystem::exists(packagePath));
+
+  CHECK(session.beginSave(draft));
+  CHECK(drainDesigner(session));
+  CHECK(session.model() != nullptr);
+  if (!session.model()) return;
+  const auto savedIdentity = session.model()->resource().identity;
+  const auto publishedEpoch = session.epoch();
+  const auto publishedRevision = session.model()->revision();
+  const auto published = session.publishSavedSinger(staging, packagePath, key.value(), options);
+  CHECK(published.hasValue());
+  if (!published) return;
+  CHECK(std::filesystem::exists(packagePath));
+  CHECK(published.value().manifest.id == designerFixture().id);
+  CHECK(published.value().manifest.version == options.version);
+  CHECK(published.value().manifest.language == options.language);
+  CHECK(published.value().manifest.recipeSha256 == savedIdentity.contentHash);
+  CHECK(session.model()->resource().identity == savedIdentity);
+  CHECK(!session.model()->dirty());
+  CHECK(session.path() == draft);
+
+  auto alternateOptions = options;
+  alternateOptions.version = "0.2.0";
+  const auto alternatePackagePath = root / "voice-alternate.seamsinger";
+  const auto alternatePackage = session.publishSavedSinger(
+      root / "alternate-staging", alternatePackagePath, key.value(), alternateOptions);
+  CHECK(alternatePackage.hasValue());
+  if (!alternatePackage) return;
+  CHECK(alternatePackage.value().manifest.recipeSha256 == published.value().manifest.recipeSha256);
+  CHECK(alternatePackage.value().container.packageDigest != published.value().container.packageDigest);
+  const auto refusedAlternatePackage = session.installPublishedSinger(
+      publishedEpoch, publishedRevision, alternatePackagePath,
+      published.value().container.packageDigest, key.value().publicKey,
+      root / "AlternateSingers");
+  CHECK(!refusedAlternatePackage);
+  CHECK(refusedAlternatePackage.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(root / "AlternateSingers"));
+
+  const auto verified = distribution::verifyProceduralPackage(packagePath,
+      distribution::VerifySeambankOptions{.limits = {},
+          .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true});
+  CHECK(verified.hasValue());
+  if (verified) {
+    CHECK(verified.value().container.signerTrusted);
+    CHECK(verified.value().manifest.recipeSha256 == savedIdentity.contentHash);
+  }
+
+  const auto installRoot = root / "Singers";
+  const auto installed = session.installPublishedSinger(
+      publishedEpoch, publishedRevision, packagePath,
+      published.value().container.packageDigest, key.value().publicKey, installRoot);
+  CHECK(installed.hasValue());
+  if (installed) {
+    CHECK(installed.value().id == designerFixture().id);
+    CHECK(installed.value().version == options.version);
+    CHECK(installed.value().signerKeyId == distribution::publicKeyId(key.value().publicKey));
+    CHECK(std::filesystem::exists(installRoot / designerFixture().id / options.version / "recipe.json"));
+  }
+  const auto duplicateInstall = session.installPublishedSinger(
+      publishedEpoch, publishedRevision, packagePath,
+      published.value().container.packageDigest, key.value().publicKey, installRoot);
+  CHECK(!duplicateInstall);
+  CHECK(duplicateInstall.error().code == core::ErrorCode::Conflict);
+
+  // Publishing is an export, not approval, and never blesses later unsaved edits.
+  auto changed = session.model()->recipe();
+  changed.poses.front().formants.front().frequencyHz += 10.0;
+  CHECK(session.edit(session.epoch(), session.model()->revision(), changed));
+  CHECK(session.model()->dirty());
+  const auto refusedDirty = session.publishSavedSinger(
+      root / "dirty-staging", root / "dirty.seamsinger", key.value(), options);
+  CHECK(!refusedDirty);
+  CHECK(!std::filesystem::exists(root / "dirty.seamsinger"));
+  const auto refusedStaleInstall = session.installPublishedSinger(
+      publishedEpoch, publishedRevision, packagePath,
+      published.value().container.packageDigest, key.value().publicKey, root / "StaleSingers");
+  CHECK(!refusedStaleInstall);
+  CHECK(!std::filesystem::exists(root / "StaleSingers"));
+}
+
+TEST_CASE("Designer installation refuses a trusted package for a different saved recipe") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designer-install-wrong-singer");
+  const auto draft = root / "drafts" / "voice.json";
+  const auto wrongDraft = root / "drafts" / "other-voice.json";
+  const auto packagePath = root / "other-voice.seamsinger";
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  std::filesystem::create_directories(draft.parent_path());
+
+  native_ui::VoiceDesignerSession current;
+  CHECK(current.create(designerFixture()));
+  CHECK(current.beginSave(draft));
+  CHECK(drainDesigner(current));
+
+  native_ui::VoiceDesignerSession other;
+  auto changedRecipe = designerFixture();
+  changedRecipe.poses.front().formants.front().frequencyHz += 31.0;
+  CHECK(other.create(changedRecipe));
+  CHECK(other.beginSave(wrongDraft));
+  CHECK(drainDesigner(other));
+  distribution::PublishProceduralSingerOptions options;
+  options.version = "0.1.0";
+  options.language = "ja";
+  options.displayName = "Different Recipe";
+  const auto otherPublished = other.publishSavedSinger(
+      root / "other-staging", packagePath, key.value(), options);
+  CHECK(otherPublished.hasValue());
+  if (!otherPublished) return;
+
+  const auto refused = current.installPublishedSinger(
+      current.epoch(), current.model()->revision(), packagePath,
+      otherPublished.value().container.packageDigest, key.value().publicKey, root / "Singers");
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(root / "Singers"));
+}
+
+TEST_CASE("Designer singer publishing detects external draft replacement before signing") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("designer-publish-stale-saved-singer");
+  const auto draft = root / "drafts" / "voice.json";
+  std::filesystem::create_directories(draft.parent_path());
+  native_ui::VoiceDesignerSession session;
+  CHECK(session.create(designerFixture()));
+  CHECK(session.beginSave(draft));
+  CHECK(drainDesigner(session));
+  auto externallyChanged = designerFixture();
+  externallyChanged.poses.front().formants.front().frequencyHz += 25.0;
+  CHECK(voice_design::saveVoiceRecipeFile(draft, externallyChanged));
+
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  distribution::PublishProceduralSingerOptions options;
+  options.version = "0.1.0";
+  options.language = "ja";
+  const auto packagePath = root / "stale.seamsinger";
+  const auto refused = session.publishSavedSinger(
+      root / "stale-staging", packagePath, key.value(), options);
+  CHECK(!refused);
+  CHECK(refused.error().code == core::ErrorCode::Conflict);
+  CHECK(!std::filesystem::exists(packagePath));
+  CHECK(!std::filesystem::exists(root / "stale-staging"));
 }

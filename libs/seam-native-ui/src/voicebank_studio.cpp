@@ -332,16 +332,18 @@ voicebank::Unit* VoicebankStudioController::selectedUnit() noexcept {
 }
 
 core::Result<void> VoicebankStudioController::inspectTake(
-    const std::filesystem::path& path, std::int32_t expectedRootMidi) {
+    const std::filesystem::path& path, std::int32_t expectedRootMidi, std::stop_token stopToken) {
   if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
-  auto inspected = voicebank::inspectDryTake(path, expectedRootMidi);
+  auto inspected = voicebank::inspectDryTake(path, expectedRootMidi, stopToken);
   if (!inspected) {
     takeInspection_.reset();
     status_ = "TAKE ERROR";
     return core::Result<void>{inspected.error()};
   }
   takeInspection_ = std::move(inspected.value());
-  status_ = takeInspection_->accepted() ? "TAKE ACCEPTED" : "TAKE REVIEW";
+  status_ = takeInspection_->accepted()
+      ? "SIGNAL CHECKS PASS / HUMAN REVIEW PENDING"
+      : "SIGNAL CHECKS NEED REVIEW";
   return core::success();
 }
 
@@ -395,10 +397,12 @@ VoicebankStudioController::persistTakeInspection(
   }
   formats::JsonValue::Object record{
       {"schemaVersion", formats::JsonValue{std::int64_t{1}}},
+      {"inspectorId", formats::JsonValue{"seam.dry-take-inspector"}},
+      {"inspectorVersion", formats::JsonValue{"1"}},
       {"takeFile", formats::JsonValue{takePath.filename().generic_string()}},
       {"takeSha256", formats::JsonValue{inspection.sourceSha256}},
       {"status", formats::JsonValue{
-          inspection.accepted() ? "ACCEPTED" : "REVIEW"}},
+          inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"}},
       {"sampleRate", formats::JsonValue{
           static_cast<std::int64_t>(inspection.sampleRate)}},
       {"channels", formats::JsonValue{
@@ -608,8 +612,16 @@ void VoicebankStudioScenePainter::paint(
   canvas.drawText(ui::Point{width - 360.0, 18.0},
                   recording ? "RECORDING" : controller.status(),
                   recording ? theme_.accent : theme_.secondaryText, 8.0);
-  canvas.drawText(ui::Point{width - 360.0, 40.0},
-                  "MIC " + std::string{recordingBackend}, theme_.secondaryText, 7.0);
+  constexpr std::size_t recordingLabelColumns = 44U;
+  const bool recordingLabelTruncated =
+      text::utf8DisplayWidth(recordingBackend) > recordingLabelColumns;
+  auto recordingLabel = text::truncateUtf8ToDisplayWidth(
+      recordingBackend,
+      recordingLabelTruncated ? recordingLabelColumns - 1U
+                              : recordingLabelColumns);
+  if (recordingLabelTruncated) recordingLabel += "…";
+  canvas.drawText(ui::Rect{width - 360.0, 40.0, 344.0, 14.0},
+                  "MIC " + recordingLabel, theme_.secondaryText, 7.0);
 
   canvas.fillRect(ui::Rect{0.0, 72.0, 252.0, height - 72.0}, theme_.panelAlternate);
   canvas.drawText(ui::Point{12.0, 86.0}, "UNITS", theme_.secondaryText, 8.0);

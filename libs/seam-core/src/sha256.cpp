@@ -187,6 +187,15 @@ std::string sha256Hex(std::string_view text) {
 
 core::Result<std::string> sha256File(const std::filesystem::path& path,
                                      std::uint64_t maximumBytes) {
+  return sha256File(path, maximumBytes, {});
+}
+
+core::Result<std::string> sha256File(const std::filesystem::path& path,
+                                     std::uint64_t maximumBytes,
+                                     std::stop_token stopToken) {
+  const auto cancelled = [&path] { return core::failure<std::string>(
+      core::ErrorCode::Conflict, "File hashing cancelled", path.string()); };
+  if (stopToken.stop_requested()) return cancelled();
   std::error_code error;
   const auto status = std::filesystem::symlink_status(path, error);
   if (status.type() == std::filesystem::file_type::symlink) {
@@ -218,18 +227,27 @@ core::Result<std::string> sha256File(const std::filesystem::path& path,
   }
   Sha256 hash;
   std::array<char, 64U * 1024U> buffer{};
-  while (stream) {
+  std::uint64_t total = 0U;
+  while (true) {
+    if (stopToken.stop_requested()) return cancelled();
     stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
     const auto count = stream.gcount();
     if (count > 0) {
+      const auto chunk = static_cast<std::uint64_t>(count);
+      if (chunk > maximumBytes - total)
+        return core::failure<std::string>(core::ErrorCode::Unsupported,
+            "File grew beyond the hashing size limit", path.string());
       hash.update(std::as_bytes(std::span{buffer.data(), static_cast<std::size_t>(count)}));
+      total += chunk;
     }
+    if (stopToken.stop_requested()) return cancelled();
+    if (stream.eof()) break;
+    if (!stream) return core::failure<std::string>(core::ErrorCode::IoError,
+        "Unable to read file while hashing", path.string());
   }
-  if (!stream.eof()) {
-    return core::failure<std::string>(core::ErrorCode::IoError,
-                                      "Unable to read file while hashing",
-                                      path.string());
-  }
+  if (total != bytes) return core::failure<std::string>(core::ErrorCode::Conflict,
+      "File changed while hashing", path.string());
+  if (stopToken.stop_requested()) return cancelled();
   return hash.hexDigest();
 }
 

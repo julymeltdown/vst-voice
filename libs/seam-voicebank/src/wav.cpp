@@ -267,15 +267,41 @@ core::Result<AudioBuffer> readWav(const std::filesystem::path& path) {
 
 core::Result<AudioBuffer> readWav(const std::filesystem::path& path,
     WavReadLimits limits, std::stop_token stopToken) {
-  if (stopToken.stop_requested()) return core::failure<AudioBuffer>(
-      core::ErrorCode::Conflict, "WAV decoding cancelled", path.string());
+  const auto cancelled = [&path] { return core::failure<AudioBuffer>(
+      core::ErrorCode::Conflict, "WAV decoding cancelled", path.string()); };
+  if (stopToken.stop_requested()) return cancelled();
   if (limits.maximumFrames == 0U || limits.maximumChannels == 0U || limits.maximumDecodedSamples == 0U)
     return core::failure<AudioBuffer>(core::ErrorCode::InvalidArgument, "WAV decode limits must be positive", path.string());
   const auto target = validateWavPath(path, false);
   if (!target) return core::Result<AudioBuffer>{target.error()};
-  auto bytes = core::readFileBytesLimited(path, kMaximumSupportedWavBytes);
-  if (!bytes) return core::Result<AudioBuffer>{bytes.error()};
-  return readWav(bytes.value(), path.string(), limits, stopToken);
+  std::error_code error;
+  const auto size = std::filesystem::file_size(path, error);
+  if (error) return core::failure<AudioBuffer>(core::ErrorCode::IoError,
+      "Unable to inspect WAV size", error.message());
+  if (size > kMaximumSupportedWavBytes || size > std::numeric_limits<std::size_t>::max())
+    return core::failure<AudioBuffer>(core::ErrorCode::Unsupported,
+        "WAV payload size is outside supported limits", path.string());
+  std::ifstream stream(path, std::ios::binary);
+  if (!stream) return core::failure<AudioBuffer>(core::ErrorCode::IoError,
+      "Unable to open WAV file", path.string());
+  std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+  constexpr std::size_t kReadChunkBytes = 64U * 1024U;
+  for (std::size_t offset = 0U; offset < bytes.size();) {
+    if (stopToken.stop_requested()) return cancelled();
+    const auto count = std::min(kReadChunkBytes, bytes.size() - offset);
+    stream.read(reinterpret_cast<char*>(bytes.data() + offset), static_cast<std::streamsize>(count));
+    if (stream.gcount() != static_cast<std::streamsize>(count)) {
+      if (stopToken.stop_requested()) return cancelled();
+      return core::failure<AudioBuffer>(core::ErrorCode::Conflict,
+          "WAV changed or ended while being read", path.string());
+    }
+    offset += count;
+  }
+  if (stopToken.stop_requested()) return cancelled();
+  if (stream.peek() != std::char_traits<char>::eof())
+    return core::failure<AudioBuffer>(core::ErrorCode::Conflict,
+        "WAV grew while being read", path.string());
+  return readWav(bytes, path.string(), limits, stopToken);
 }
 
 WavStreamWriter::WavStreamWriter(std::filesystem::path path,

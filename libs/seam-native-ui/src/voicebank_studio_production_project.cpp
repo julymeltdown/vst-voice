@@ -26,6 +26,50 @@ std::string productionCommitStatus(std::string successStatus, const voicebank_pr
   return "COMMIT DURABILITY UNCONFIRMED / RECOVER / DO NOT REPEAT / GENERATION " +
       std::to_string(receipt.committedGeneration) + " / " + receipt.committedProjectSha256 + " / " + receipt.diagnostic;
 }
+
+voicebank_production::MetadataRevision dryTakeInspectionRevision(
+    const voicebank::DryTakeInspection& inspection, std::string_view takeId,
+    std::string_view operatorId, std::string_view occurredAtUtc) {
+  using Json = formats::JsonValue;
+  Json::Object quality{
+      {"formatValid", Json{inspection.formatValid}},
+      {"finite", Json{inspection.finite}},
+      {"clippingFree", Json{inspection.clippingFree}},
+      {"silenceFree", Json{inspection.silenceFree}},
+      {"dcOffsetFree", Json{inspection.dcOffsetFree}},
+      {"rootPitchValid", Json{inspection.rootPitchValid}},
+  };
+  Json::Object evidence{
+      {"schemaVersion", Json{std::int64_t{1}}},
+      {"inspectorId", Json{"seam.dry-take-inspector"}},
+      {"inspectorVersion", Json{"1"}},
+      {"takeSha256", Json{inspection.sourceSha256}},
+      {"sampleRate", Json{static_cast<std::int64_t>(inspection.sampleRate)}},
+      {"channels", Json{static_cast<std::int64_t>(inspection.channels)}},
+      {"bitsPerSample", Json{static_cast<std::int64_t>(inspection.bitsPerSample)}},
+      {"expectedRootMidi", Json{static_cast<std::int64_t>(inspection.expectedRootMidi)}},
+      {"analyzedRootMidi", inspection.analyzedRootMidi
+          ? Json{static_cast<std::int64_t>(*inspection.analyzedRootMidi)} : Json{}},
+      {"peak", Json{inspection.peak}},
+      {"rms", Json{inspection.rms}},
+      {"dcOffset", Json{inspection.dcOffset}},
+      {"status", Json{inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"}},
+      {"quality", Json{std::move(quality)}},
+  };
+  auto evidenceJson = formats::stringifyJson(Json{std::move(evidence)}, false);
+  const auto evidenceSha256 = core::sha256Hex(evidenceJson);
+  const auto binding = core::sha256Hex(std::string{takeId} + inspection.sourceSha256);
+  return voicebank_production::MetadataRevision{
+      .revisionId = "dry-take-inspection-" + binding.substr(0U, 24U),
+      .takeId = std::string{takeId},
+      .rawAssetSha256 = inspection.sourceSha256,
+      .kind = "dry-take-inspection.v1",
+      .values = {{"evidenceJson", std::move(evidenceJson)},
+                 {"evidenceSha256", evidenceSha256}},
+      .operatorId = std::string{operatorId},
+      .performedAtUtc = std::string{occurredAtUtc},
+  };
+}
 }
 
 core::Result<void> VoicebankStudioController::toggleCandidatePitchView() {
@@ -997,13 +1041,13 @@ VoicebankStudioController::selectedProductionAssignment() const noexcept {
 }
 
 core::Result<void> VoicebankStudioController::inspectSelectedProductionTake(
-    const std::filesystem::path& path) {
+    const std::filesystem::path& path, std::stop_token stopToken) {
   const auto* assignment = selectedProductionAssignment();
   if (assignment == nullptr) {
     return core::failure(core::ErrorCode::InvalidState,
                          "No production inventory unit is selected");
   }
-  return inspectTake(path, assignment->pitchLayer);
+  return inspectTake(path, assignment->pitchLayer, stopToken);
 }
 
 core::Result<void> VoicebankStudioController::validateProductionImportContext(
@@ -1049,8 +1093,9 @@ core::Result<void> VoicebankStudioController::importSelectedProceduralCandidate(
 }
 
 core::Result<void> VoicebankStudioController::importSelectedTake(
-    const std::filesystem::path& takePath, std::string occurredAtUtc) {
+    const std::filesystem::path& takePath, std::string occurredAtUtc, std::stop_token stopToken) {
   if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
+  if (stopToken.stop_requested()) return core::failure(core::ErrorCode::Conflict, "Raw take import cancelled before commit");
   if (!productionRepository_ || !productionProject_) {
     return core::failure(core::ErrorCode::InvalidState,
                          "Voicebank Studio has no production project");
@@ -1069,6 +1114,8 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
       ? assignment.plannedTakeId + "-retake-" +
             std::to_string(productionProject_->takes.size() + 1U)
       : assignment.plannedTakeId;
+  const auto inspectionEvidence = dryTakeInspectionRevision(
+      *takeInspection_, takeId, productionOperatorId_, occurredAtUtc);
   auto imported = productionRepository_->importRaw(
       *productionProject_, takePath,
       {.takeId = takeId,
@@ -1079,32 +1126,66 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
        .initialState = takeInspection_->accepted()
                            ? voicebank_production::UnitQueueState::MarkerReview
                            : voicebank_production::UnitQueueState::Rejected,
-       .review = voicebank_production::ReviewRecord{
-           .reviewId = "dry-take-" +
-                       core::sha256Hex(takeId + takeInspection_->sourceSha256)
-                           .substr(0U, 24U),
-           .takeId = takeId,
-           .reviewerId = productionOperatorId_,
-           .result = takeInspection_->accepted() ? "PASS" : "REJECTED",
-           .reviewedAtUtc = occurredAtUtc},
        // A style-owned producer stores the style on the take as well as on the assignment, so an
        // imported or retaken take has to carry the assignment's own style. Without it the import is
        // refused as an incomplete identity, which made the native retake impossible in exactly the
        // workspaces the style migration produced. It stays empty for a legacy workspace, where a
        // non-empty style is the invalid value.
-       .style = assignment.style},
+       .style = assignment.style,
+       .technicalInspection = inspectionEvidence},
       {.action = retake ? "retake" : "import",
        .subjectId = takeId,
        .operatorId = productionOperatorId_,
-       // The same timestamp is also stored in the review above. Function-call
-       // argument evaluation order must not decide whether that review sees a
-       // moved-from string (GCC evaluates this order differently from Clang).
-       .occurredAtUtc = occurredAtUtc});
+       // The same timestamp is bound to technical inspection evidence. Keep a
+       // copy here because function-argument evaluation order is not specified.
+       .occurredAtUtc = occurredAtUtc}, stopToken);
   if (!imported) return core::Result<void>{imported.error()};
   stagedRecoveryCandidateCount_ =
       productionRepository_->inspectStaged(*productionProject_).size();
   status_ = productionCommitStatus(takeInspection_->accepted() ? "TAKE IMPORTED" : "TAKE REJECTED", imported.value());
   refreshCandidateMarkerPreview();
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginRawTakeImport(
+    std::filesystem::path takePath, std::string occurredAtUtc,
+    std::string expectedSha256) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Production work is busy");
+  if (!productionProject_ || !productionRepository_ || !selectedProductionAssignment())
+    return core::failure(core::ErrorCode::InvalidState, "Raw take import requires a selected production inventory row");
+  std::error_code pathError;
+  takePath = std::filesystem::absolute(takePath, pathError).lexically_normal();
+  if (pathError) return core::failure(core::ErrorCode::InvalidArgument, "Cannot resolve selected WAV path", pathError.message());
+
+  auto worker = std::make_unique<VoicebankStudioController>();
+  worker->productionProject_ = *productionProject_;
+  worker->productionWorkspaceRoot_ = productionWorkspaceRoot_;
+  worker->productionRepository_ = std::make_unique<voicebank_production::ProductionProjectRepository>(productionWorkspaceRoot_);
+  worker->productionOperatorId_ = productionOperatorId_;
+  worker->selectedIndex_ = selectedIndex_;
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token();
+  statusBeforeImport_ = status_;
+  try {
+    proceduralImport_ = std::async(std::launch::async,
+        [worker = std::move(worker), takePath = std::move(takePath), occurredAtUtc = std::move(occurredAtUtc),
+         expectedSha256 = std::move(expectedSha256), stop]() mutable
+            -> core::Result<ProductionImportResult> {
+      if (stop.stop_requested()) return core::failure<ProductionImportResult>(core::ErrorCode::Conflict, "Raw take import cancelled before inspection");
+      const auto inspected = worker->inspectSelectedProductionTake(takePath, stop);
+      if (!inspected) return core::Result<ProductionImportResult>{inspected.error()};
+      if (!expectedSha256.empty() && worker->takeInspection_->sourceSha256 != expectedSha256)
+        return core::failure<ProductionImportResult>(core::ErrorCode::Conflict,
+            "Recorded WAV changed after it was written; the saved capture was not imported", takePath.string());
+      if (stop.stop_requested()) return core::failure<ProductionImportResult>(core::ErrorCode::Conflict, "Raw take import cancelled after inspection");
+      const auto imported = worker->importSelectedTake(takePath, std::move(occurredAtUtc), stop);
+      if (!imported) return core::Result<ProductionImportResult>{imported.error()};
+      return ProductionImportResult{std::move(*worker->productionProject_), std::move(worker->status_)};
+    });
+  } catch (const std::exception& error) {
+    return core::failure(core::ErrorCode::Internal, "Unable to start raw take import", error.what());
+  }
+  status_ = "INSPECTING / IMPORTING RAW TAKE / ESC CANCEL";
   return core::success();
 }
 

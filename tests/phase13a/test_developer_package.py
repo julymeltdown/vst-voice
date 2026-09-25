@@ -30,6 +30,7 @@ class DeveloperPackageTests(unittest.TestCase):
                 self.assertIn('ProjectSEAM/UNSIGNED-DEVELOPMENT-BUILD.txt', names)
                 self.assertIn('ProjectSEAM/CLAP/ProjectSEAMEditor.clap', names)
                 self.assertIn('ProjectSEAM/THIRD_PARTY_NOTICES.md', names)
+                self.assertIn('ProjectSEAM/Notices/CMUdict-LICENSE.txt', names)
                 self.assertIn('ProjectSEAM/SBOM.spdx.json', names)
                 self.assertIn('ProjectSEAM/install.sh', names)
                 self.assertIn('ProjectSEAM/uninstall.sh', names)

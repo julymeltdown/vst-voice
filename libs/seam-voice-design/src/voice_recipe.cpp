@@ -29,6 +29,93 @@ bool parseSeed(const J& value, std::uint64_t& seed) {
 }
 }
 
+VoiceRecipe makeJapaneseStarterRecipe(std::string id) {
+  VoiceRecipe recipe;
+  recipe.id = std::move(id);
+  recipe.seed = 7130U;
+  recipe.poses = {
+      {"a", "neutral", 0.0, {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+      {"i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}},
+      {"u", "neutral", 0.0, {{350.0, 80.0, 0.0}, {1100.0, 100.0, -3.0}, {2500.0, 160.0, -6.0}}},
+      {"e", "neutral", 0.0, {{500.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}},
+      {"o", "neutral", 0.0, {{500.0, 90.0, 0.0}, {900.0, 110.0, -3.0}, {2600.0, 160.0, -6.0}}},
+      {"m", "neutral", 0.85, {{300.0, 80.0, 0.0}, {1100.0, 110.0, -6.0}, {2500.0, 160.0, -9.0}},
+       NasalResonance{280.0, 80.0, 1200.0, 120.0}},
+      {"n", "neutral", 0.75, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -6.0}, {2800.0, 160.0, -9.0}},
+       NasalResonance{300.0, 90.0, 1500.0, 120.0}},
+      {"r", "neutral", 0.0, {{400.0, 80.0, 0.0}, {1400.0, 110.0, -3.0}, {2200.0, 160.0, -6.0}}},
+      {"w", "neutral", 0.0, {{300.0, 80.0, 0.0}, {610.0, 100.0, -3.0}, {2200.0, 160.0, -6.0}}},
+      {"y", "neutral", 0.0, {{250.0, 70.0, 0.0}, {2200.0, 120.0, -3.0}, {3000.0, 170.0, -6.0}}},
+      {"j", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}},
+      {"g", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+      {"d", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}},
+      {"N", "neutral", 0.8, {{300.0, 80.0, 0.0}, {1500.0, 110.0, -6.0}, {2700.0, 160.0, -9.0}},
+       NasalResonance{300.0, 90.0, 1500.0, 120.0}},
+  };
+  recipe.frications = {
+      {"s", "neutral", FricationConfig{.seed = 7130U, .centerHz = 5500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
+      {"sh", "neutral", FricationConfig{.seed = 7131U, .centerHz = 3500.0, .bandwidthHz = 3000.0, .gain = 0.12}},
+      {"h", "neutral", FricationConfig{.seed = 7132U, .centerHz = 1200.0, .bandwidthHz = 2400.0, .gain = 0.06}},
+      {"f", "neutral", FricationConfig{.seed = 7139U, .centerHz = 5200.0, .bandwidthHz = 3500.0, .gain = 0.10}},
+  };
+  recipe.plosives = {
+      {"t", "neutral", FricationConfig{.seed = 7133U, .centerHz = 4500.0, .bandwidthHz = 3000.0, .gain = 0.12}, 10.0},
+      {"k", "neutral", FricationConfig{.seed = 7134U, .centerHz = 2500.0, .bandwidthHz = 2200.0, .gain = 0.12}, 10.0},
+      {"p", "neutral", FricationConfig{.seed = 7135U, .centerHz = 1200.0, .bandwidthHz = 1800.0, .gain = 0.12}, 10.0},
+      {"b", "neutral", FricationConfig{.seed = 7135U, .centerHz = 1200.0, .bandwidthHz = 1800.0, .gain = 0.12}, 10.0,
+       VoiceRecipe::VoicedClosure{0.2, 400.0}},
+      {"d", "neutral", FricationConfig{.seed = 7141U, .centerHz = 3000.0, .bandwidthHz = 2200.0, .gain = 0.12}, 10.0,
+       VoiceRecipe::VoicedClosure{0.2, 400.0}},
+      {"g", "neutral", FricationConfig{.seed = 7142U, .centerHz = 2400.0, .bandwidthHz = 2000.0, .gain = 0.12}, 10.0,
+       VoiceRecipe::VoicedClosure{0.2, 400.0}},
+  };
+  recipe.affricates = {
+      {"ts", "neutral", FricationConfig{.seed = 7143U, .centerHz = 6000.0, .bandwidthHz = 2600.0, .gain = 0.12},
+       FricationConfig{.seed = 7144U, .centerHz = 6500.0, .bandwidthHz = 2400.0, .gain = 0.10}, 10.0},
+      {"ch", "neutral", FricationConfig{.seed = 7145U, .centerHz = 3500.0, .bandwidthHz = 2600.0, .gain = 0.12},
+       FricationConfig{.seed = 7146U, .centerHz = 3800.0, .bandwidthHz = 2800.0, .gain = 0.10}, 10.0},
+  };
+  recipe.poses.push_back({"z", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1700.0, 110.0, -3.0}, {2800.0, 160.0, -6.0}}});
+  recipe.frications.push_back({"z", "neutral",
+      FricationConfig{.seed = 7136U, .centerHz = 5000.0, .bandwidthHz = 2500.0, .gain = 0.10}, 0.35});
+  recipe.poses.push_back({"v", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1500.0, 110.0, -3.0}, {2600.0, 160.0, -6.0}}});
+  recipe.frications.push_back({"v", "neutral",
+      FricationConfig{.seed = 7140U, .centerHz = 3500.0, .bandwidthHz = 2500.0, .gain = 0.10}, 0.30});
+  recipe.voicedAffricates.push_back({"j", "neutral",
+      FricationConfig{.seed = 7137U, .centerHz = 3000.0, .bandwidthHz = 2500.0, .gain = 0.12},
+      FricationConfig{.seed = 7138U, .centerHz = 4500.0, .bandwidthHz = 3500.0, .gain = 0.12},
+      12.0, 0.2, 400.0, 0.35});
+  recipe.approximants = {{"r", "neutral", 45.0}, {"w", "neutral", 60.0}, {"y", "neutral", 40.0}};
+  const auto palatalPose = [](std::string phone, double f1, double f2, double f3) {
+    return VoicePose{std::move(phone), "neutral", 0.0,
+        {{f1, 75.0, 0.0}, {f2, 105.0, -3.0}, {f3, 155.0, -6.0}}};
+  };
+  recipe.poses.push_back(palatalPose("ky", 280.0, 2100.0, 3100.0));
+  recipe.poses.push_back(palatalPose("gy", 300.0, 1950.0, 2950.0));
+  recipe.poses.push_back(palatalPose("ny", 280.0, 2050.0, 3000.0));
+  recipe.poses.back().nasalCoupling = 0.8;
+  recipe.poses.back().nasal = NasalResonance{300.0, 90.0, 1500.0, 120.0};
+  recipe.poses.push_back(palatalPose("hy", 320.0, 2050.0, 3000.0));
+  recipe.poses.push_back(palatalPose("by", 300.0, 1950.0, 2900.0));
+  recipe.poses.push_back(palatalPose("py", 300.0, 2050.0, 3000.0));
+  recipe.poses.push_back(palatalPose("my", 280.0, 2050.0, 3000.0));
+  recipe.poses.back().nasalCoupling = 0.8;
+  recipe.poses.back().nasal = NasalResonance{280.0, 80.0, 1450.0, 120.0};
+  recipe.poses.push_back(palatalPose("ry", 330.0, 1900.0, 2900.0));
+  recipe.poses.push_back(palatalPose("fy", 320.0, 2050.0, 3000.0));
+  recipe.poses.push_back(palatalPose("vy", 320.0, 1900.0, 2800.0));
+  recipe.palatalized = {
+      {"ky", "neutral", "k"}, {"gy", "neutral", "g"}, {"ny", "neutral", "n"},
+      {"hy", "neutral", "h"}, {"by", "neutral", "b"}, {"py", "neutral", "p"},
+      {"my", "neutral", "m"}, {"ry", "neutral", "r"}, {"fy", "neutral", "f"},
+      {"vy", "neutral", "v"},
+  };
+  recipe.closures = {{"cl", "neutral"}, {"pau", "neutral"}, {"R", "neutral"}, {"glottal", "neutral"}};
+  recipe.breaths = {{"br", "neutral",
+      FricationConfig{.seed = 7147U, .centerHz = 4200.0, .bandwidthHz = 7000.0, .gain = 0.08}}};
+  return recipe;
+}
+
 core::Result<void> VoiceRecipe::validate() const {
   if (engineId != "seam.source-filter.v1") return core::failure(core::ErrorCode::Unsupported, "Voice recipe engine is unsupported");
   if (!text(id) || poses.empty() || poses.size() > 64U ||

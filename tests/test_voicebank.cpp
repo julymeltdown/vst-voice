@@ -222,6 +222,27 @@ TEST_CASE("dry take inspection enforces format and acoustic quality") {
   CHECK(accepted.value().accepted());
   CHECK(accepted.value().bitsPerSample == 24U);
   CHECK(accepted.value().analyzedRootMidi.has_value());
+  const auto acceptedAudio = seam::voicebank::readWav(acceptedPath);
+  CHECK(acceptedAudio);
+  if (acceptedAudio) {
+    const auto expectedStatistics = seam::voicebank::analyzeAudio(acceptedAudio.value().monoMix());
+    CHECK(accepted.value().peak == expectedStatistics.peak);
+    CHECK(accepted.value().rms == expectedStatistics.rms);
+    CHECK(accepted.value().dcOffset == expectedStatistics.dcOffset);
+  }
+
+  std::stop_source cancellation;
+  cancellation.request_stop();
+  const auto cancelledInspection = seam::voicebank::inspectDryTake(acceptedPath, 69, cancellation.get_token());
+  CHECK(!cancelledInspection);
+  if (!cancelledInspection) CHECK(cancelledInspection.error().code == seam::core::ErrorCode::Conflict);
+  const auto cancelledDecode = seam::voicebank::readWav(acceptedPath, {}, cancellation.get_token());
+  CHECK(!cancelledDecode);
+  if (!cancelledDecode) CHECK(cancelledDecode.error().code == seam::core::ErrorCode::Conflict);
+  const auto cancelledHash = seam::core::sha256File(acceptedPath,
+      seam::voicebank::kMaximumSupportedWavBytes, cancellation.get_token());
+  CHECK(!cancelledHash);
+  if (!cancelledHash) CHECK(cancelledHash.error().code == seam::core::ErrorCode::Conflict);
 
   const auto wrongFormat = root / "wrong-format.wav";
   CHECK(seam::voicebank::writeMonoPcm16Wav(

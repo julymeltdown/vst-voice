@@ -54,15 +54,17 @@ voice_design::VoiceRecipe campaignRecipe() {
 
 // The gate under test: a campaign cannot advance until the held-out phrases that
 // exercise every class it declares have rendered audibly beside it.
-void preflightCampaign(const Controller& controller, const std::filesystem::path& directory) {
-  const auto path = controller.generationCampaignPath();
+void preflightCampaign(const std::filesystem::path& path, std::string_view sha,
+                       const std::filesystem::path& directory) {
   const auto bytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
   CHECK(bytes);
   if (!bytes) return;
-  const auto report = authoring::runInventoryPreflight(bytes.value(), controller.generationCampaignSha256(),
-      directory / "preflight");
+  const auto report = authoring::runInventoryPreflight(bytes.value(), sha, directory / "preflight");
   CHECK(report);
   if (report) CHECK(report.value().passed);
+}
+void preflightCampaign(const Controller& controller, const std::filesystem::path& directory) {
+  preflightCampaign(controller.generationCampaignPath(), controller.generationCampaignSha256(), directory);
 }
 
 struct Fixture final {
@@ -230,6 +232,38 @@ TEST_CASE("a cancelled campaign keeps its retained batches and resumes from its 
   CHECK(failed->phase == Phase::Failed);
 }
 
+TEST_CASE("a fresh Studio controller can adopt and resume a persisted campaign") {
+  Fixture fixture;
+  const auto destination = fixture.root / "campaign-reopen";
+  CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
+      {"take-sa", "take-sa-soft"}, destination, 1U));
+  CHECK(drain(fixture.controller));
+  const auto path = fixture.controller.generationCampaignPath();
+  const auto sha = fixture.controller.generationCampaignSha256();
+  CHECK(!path.empty());
+  CHECK(sha.size() == 64U);
+
+  // A restarted process has no in-memory campaign identity. Reopen the producer,
+  // then explicitly adopt the retained campaign file with its verified digest.
+  Controller reopened;
+  CHECK(reopened.openProductionProject(fixture.workspace, fixture.project.inventorySha256, "producer"));
+  CHECK(drain(reopened));
+  CHECK(reopened.generationCampaignPath().empty());
+  preflightCampaign(path, sha, destination);
+  CHECK(reopened.beginGenerationCampaignAdvance(path, sha, "2026-09-24T00:00:06Z"));
+  CHECK(drain(reopened));
+  const auto progress = reopened.generationCampaignProgress(); CHECK(progress);
+  CHECK(progress->phase == Phase::Complete);
+  CHECK(progress->completedBatches == 2U);
+  CHECK(reopened.generationCampaignPath() == path);
+  production::ProductionProjectRepository repository{fixture.workspace};
+  const auto durable = repository.recover(); CHECK(durable);
+  CHECK(durable.value().takes.size() == 2U);
+  CHECK(std::all_of(durable.value().takes.begin(), durable.value().takes.end(), [](const auto& take) {
+    return take.state == production::UnitQueueState::MarkerReview;
+  }));
+}
+
 TEST_CASE("campaign controls appear only when the producer and identity allow them") {
   Fixture fixture;
   const auto byId = [](const auto& controls, std::string_view id) {
@@ -240,15 +274,15 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
   CHECK(idle.size() == 6U);
   CHECK(byId(idle, "plan-campaign") != idle.end());
   CHECK(byId(idle, "plan-campaign")->enabled);
-  // Running requires an identity this controller recorded, so it starts disabled
-  // and is never presented as a runnable campaign.
+  // A persisted campaign can be selected after restart, even before this
+  // controller has adopted its identity.
   CHECK(byId(idle, "run-campaign") != idle.end());
-  CHECK(!byId(idle, "run-campaign")->enabled);
-  CHECK(byId(idle, "run-campaign")->label == "Run campaign");
+  CHECK(byId(idle, "run-campaign")->enabled);
+  CHECK(byId(idle, "run-campaign")->label == "Open / resume");
   for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, true)) {
     CHECK(!control.enabled);
   }
-  // Planning records the identity, which enables the run control and renames it.
+  // Planning records the identity and changes the action to in-memory resume.
   CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
       {"take-sa", "take-sa-soft"}, fixture.root / "campaign-controls", 1U));
   CHECK(drain(fixture.controller));

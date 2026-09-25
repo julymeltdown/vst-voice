@@ -210,6 +210,57 @@ public:
       return Output{SampleManifestDraftIdentityInput{text[0],text[1],text[2],index == 1 ? "ja" : index == 2 ? "en" : "ko",text[3]}};
     }
   }
+  core::Result<std::optional<ProceduralSingerPublishInput>> chooseProceduralSingerPublishInput() override {
+    using Output = std::optional<ProceduralSingerPublishInput>;
+    if (![NSThread isMainThread]) return core::failure<Output>(core::ErrorCode::InvalidState,
+        "Singer publication identity entry must run on the main thread");
+    @autoreleasepool {
+      NSAlert* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Publish saved voice as a signed singer";
+      alert.informativeText = @"This packages the saved recipe and signs it with a key you choose next. Signing establishes package authenticity only; it does not review or qualify the voice. Version, display name and language must be explicit.";
+      [alert addButtonWithTitle:@"Continue"];
+      [alert addButtonWithTitle:@"Cancel"];
+      NSView* fields = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 480, 124)];
+      const NSArray<NSString*>* names = @[@"Version", @"Display name", @"Language"];
+      NSMutableArray<NSTextField*>* inputs = [NSMutableArray array];
+      NSPopUpButton* language = nil;
+      for (NSUInteger index = 0U; index < names.count; ++index) {
+        const CGFloat y = 88.0 - static_cast<CGFloat>(index) * 36.0;
+        NSTextField* label = [NSTextField labelWithString:names[index]];
+        label.frame = NSMakeRect(0, y + 4.0, 104, 22);
+        [fields addSubview:label];
+        if (index == 2U) {
+          language = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(108, y, 372, 28) pullsDown:NO];
+          [language addItemsWithTitles:@[@"Choose language — required", @"Japanese (ja)", @"English (en)", @"Korean (ko)"]];
+          [language setAccessibilityLabel:@"Singer language; explicitly choose ja, en or ko"];
+          [fields addSubview:language];
+        } else {
+          NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(108, y, 372, 26)];
+          input.placeholderString = index == 0U ? @"Required, e.g. 0.1.0" : @"Required public singer name";
+          [input setAccessibilityLabel:names[index]];
+          [fields addSubview:input];
+          [inputs addObject:input];
+        }
+      }
+      alert.accessoryView = fields;
+      if (runModalRestoringFocus(alert) != NSAlertFirstButtonReturn) return Output{};
+      const auto languageIndex = language.indexOfSelectedItem;
+      if (languageIndex < 1 || languageIndex > 3)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,
+            "Explicitly choose Japanese, English or Korean; there is no default language");
+      std::array<std::string, 2U> text;
+      for (NSUInteger index = 0U; index < inputs.count; ++index) {
+        NSTextField* input = inputs[index];
+        const char* value = input.stringValue.UTF8String;
+        if (value == nullptr || input.stringValue.length == 0U || input.stringValue.length > 128U)
+          return core::failure<Output>(core::ErrorCode::InvalidArgument,
+              "Singer version and display name are required and must be at most 128 characters");
+        text[index] = value;
+      }
+      return Output{ProceduralSingerPublishInput{
+          text[0], text[1], languageIndex == 1 ? "ja" : languageIndex == 2 ? "en" : "ko"}};
+    }
+  }
   core::Result<std::optional<std::string>> chooseSampleReviewer(const std::vector<std::string>& reviewers) override {
     using Output = std::optional<std::string>;
     if (![NSThread isMainThread] || reviewers.empty() || reviewers.size() > 256U)
@@ -432,7 +483,7 @@ public:
     @autoreleasepool {
       NSAlert* alert = [[NSAlert alloc] init];
       alert.messageText = @"Include editable project and recipes?";
-      alert.informativeText = @"Audio Only exports the master and stems. Include Project adds the editable song and procedural recipe JSON files. Sample banks and backing audio files are not bundled.";
+      alert.informativeText = @"Audio Only exports the master and stems. Include Project adds the editable song, procedural recipe JSON files and referenced WAV backing audio. Singer banks and neural models remain external.";
       [alert addButtonWithTitle:@"Audio Only"];
       [alert addButtonWithTitle:@"Include Project"];
       [alert addButtonWithTitle:@"Cancel"];
@@ -460,8 +511,10 @@ public:
       [choices setAccessibilityLabel:@"Recipe style"];
       for (const auto& style : styles) {
         NSString* label = nsString(style);
-        if (style.empty() || style.size() > 128U || label == nil) return core::failure<Output>(
-            core::ErrorCode::InvalidArgument, "Recipe style label is invalid");
+        // This chooser is also used for installed-singer candidates, whose display name, stable
+        // identity, language and renderer capability summary form a longer but still bounded label.
+        if (style.empty() || style.size() > 1024U || label == nil) return core::failure<Output>(
+            core::ErrorCode::InvalidArgument, "Recipe style or choice label is invalid");
         [choices addItemWithTitle:label];
       }
       alert.accessoryView = choices;
@@ -492,6 +545,7 @@ public:
                         request.purpose == FileDialogPurpose::PrepareGenerationBatch ||
                         request.purpose == FileDialogPurpose::PlanGenerationCampaign ||
                         request.purpose == FileDialogPurpose::SaveDesignerRecipe ||
+                        request.purpose == FileDialogPurpose::PublishProceduralSinger ||
                         request.purpose == FileDialogPurpose::PublishSampleCandidate ||
                         request.purpose == FileDialogPurpose::CreateSampleManifestDraft;
       NSOpenPanel* openPanel = save ? nil : [NSOpenPanel openPanel];

@@ -104,6 +104,7 @@ TEST_CASE("recording input is lazy and physical capture publishes only after exp
   CHECK(input.begin());
   CHECK(input.capturing());
   CHECK(input.info().physical);
+  CHECK(input.info().deviceName == "test microphone");
   CHECK(fixture.physicalCalls == 1U && fixture.syntheticCalls == 0U);
   fixture.audio();
   CHECK(!input.begin());

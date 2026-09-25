@@ -16,10 +16,16 @@
 #include "seam/authoring/generation_job.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/signing.hpp"
+#include <atomic>
+#include <cstdint>
 #include <cmath>
 #include <algorithm>
 #include <charconv>
 
+#include <chrono>
+#include <future>
 #include <memory>
 #include <clocale>
 #include <filesystem>
@@ -27,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -83,8 +90,65 @@ public:
     return controller_.importSelectedTake(path);
   }
 
+  seam::core::Result<void> importRecordedTakeFromDialog() {
+    if (designerView_ || sampleReviewView_ || generationModal_ || takeImportModal_ ||
+        controller_.proceduralImportBusy() || recordingInput_.capturing() || recordingInput_.pending())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Finish the current Designer, recording or production operation before importing a WAV take");
+    struct ModalGuard final {
+      bool& active;
+      explicit ModalGuard(bool& value) : active(value) { active = true; }
+      ~ModalGuard() { active = false; }
+    } guard{takeImportModal_};
+    const auto* project = controller_.productionProject();
+    if (!project || !controller_.selectedProductionAssignment())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Open a producer workspace and select an inventory row before importing a WAV take");
+    const auto epoch = controller_.productionSessionEpoch();
+    const auto generation = project->lastDurableGeneration;
+    const auto selected = controller_.selectedIndex();
+    auto dialog = seam::platform::createNativeFileDialog();
+    const auto path = dialog->choose({.purpose = seam::platform::FileDialogPurpose::ImportAudio,
+        .title = "Import an Existing Recording as an Unapproved Take", .initialDirectory = {},
+        .suggestedName = {}, .extensions = {"wav"}});
+    if (!path) return seam::core::Result<void>{path.error()};
+    if (!path.value()) return seam::core::success();
+    const auto context = controller_.validateProductionImportContext(epoch, generation, selected);
+    if (!context) return context;
+    if (controller_.proceduralImportBusy() || recordingInput_.capturing() || recordingInput_.pending())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Production state changed while the recording picker was open; review the selected row and retry");
+    stopAudition();
+    return controller_.beginRawTakeImport(*path.value());
+  }
+
   void setWindow(seam::native_ui::INativeWindow& window) noexcept { window_ = &window; }
-  void finishPendingImport() { stopAudition(); record(controller_.finishProceduralCandidateImport()); record(designer_.finish()); }
+  void finishPendingImport() {
+    stopAudition();
+    while (pendingRecordingExportStarted_) {
+      const auto exported = pollPendingRecordingExport();
+      if (!exported || !pendingRecordingExportStarted_) {
+        record(exported);
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    if (pendingRecordingImportStarted_) {
+      auto imported = seam::core::success();
+      do {
+        imported = controller_.pollProceduralCandidateImport();
+        if (!imported || !controller_.proceduralImportBusy()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      } while (true);
+      record(imported);
+      completePendingRecordingImport(imported);
+    } else {
+      const auto imported = controller_.finishProceduralCandidateImport();
+      record(imported);
+      completePendingRecordingImport(imported);
+    }
+    record(designer_.finish());
+  }
 
   seam::core::Result<bool> allowDesignerReplacement() {
     if (designerConfirmationActive_) return false;
@@ -128,6 +192,126 @@ public:
     return designer_.beginOpen(*path.value(), true);
   }
 
+  seam::core::Result<void> publishDesignerSingerFromDialog() {
+    using namespace seam;
+    const auto* model = designer_.model();
+    if (!designerView_ || !model || designer_.busy() || model->gestureActive())
+      return core::failure(core::ErrorCode::Conflict,
+          "Open a saved, idle voice recipe in Voice Designer before publishing");
+    if (model->dirty() || designer_.path().empty())
+      return core::failure(core::ErrorCode::Conflict,
+          "Save the current voice recipe before publishing it as a singer");
+    const auto epoch = designer_.epoch();
+    const auto revision = model->revision();
+    const auto stillCurrent = [&] {
+      return designerView_ && !designer_.busy() && designer_.epoch() == epoch &&
+          designer_.model() && designer_.model()->revision() == revision &&
+          !designer_.model()->dirty() && !designer_.model()->gestureActive();
+    };
+
+    auto dialog = platform::createNativeFileDialog();
+    const auto entered = dialog->chooseProceduralSingerPublishInput();
+    if (!entered) return core::Result<void>{entered.error()};
+    if (!entered.value()) return core::success();
+    if (!stillCurrent())
+      return core::failure(core::ErrorCode::Conflict,
+          "Designer changed while entering singer release identity");
+
+    const auto keyPath = dialog->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::SelectSingerSigningKey,
+        .title = "Select Private Singer Signing Key",
+        .initialDirectory = designer_.path().parent_path(),
+        .suggestedName = {}, .extensions = {"json"}});
+    if (!keyPath) return core::Result<void>{keyPath.error()};
+    if (!keyPath.value()) return core::success();
+    if (!stillCurrent())
+      return core::failure(core::ErrorCode::Conflict,
+          "Designer changed while selecting the signing key");
+
+    auto signingKey = distribution::loadPrivateKey(*keyPath.value());
+    if (!signingKey) return core::Result<void>{signingKey.error()};
+    struct SigningKeyWiper final {
+      distribution::SigningKeyPair& key;
+      ~SigningKeyWiper() { key.privateKey.fill(std::byte{0}); }
+    } wiper{signingKey.value()};
+
+    const auto output = dialog->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::PublishProceduralSinger,
+        .title = "Publish Signed Procedural Singer Package",
+        .initialDirectory = designer_.path().parent_path(),
+        .suggestedName = model->recipe().id + ".seamsinger",
+        .extensions = {"seamsinger"}});
+    if (!output) return core::Result<void>{output.error()};
+    if (!output.value()) return core::success();
+    if (!stillCurrent())
+      return core::failure(core::ErrorCode::Conflict,
+          "Designer changed while choosing the singer package destination");
+    if (output.value()->extension() != ".seamsinger")
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Choose a package destination ending in .seamsinger");
+
+    static std::atomic_uint64_t stagingSequence{0U};
+    const auto sequence = stagingSequence.fetch_add(1U, std::memory_order_relaxed);
+    if (sequence == std::numeric_limits<std::uint64_t>::max())
+      return core::failure(core::ErrorCode::Conflict,
+          "Singer publication staging identity is exhausted");
+    auto stagingParent = output.value()->parent_path();
+    if (stagingParent.empty()) stagingParent = std::filesystem::current_path();
+    const auto staging = stagingParent /
+        ("." + output.value()->filename().string() + ".staging-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         "-" + std::to_string(sequence));
+    distribution::PublishProceduralSingerOptions options;
+    options.version = entered.value()->version;
+    options.displayName = entered.value()->displayName;
+    options.language = entered.value()->language;
+    const auto published = designer_.publishSavedSinger(
+        staging, *output.value(), signingKey.value(), options);
+    if (!published) return core::Result<void>{published.error()};
+    lastError_.clear();
+    publishedDesignerEpoch_ = epoch;
+    publishedDesignerRevision_ = revision;
+    publishedSingerPackagePath_ = *output.value();
+    publishedSingerPackageDigest_ = published.value().container.packageDigest;
+    publishedSingerDisplayName_ = published.value().manifest.displayName;
+    publishedSingerPublicKey_ = signingKey.value().publicKey;
+    publishedSingerInstalled_ = false;
+    designerPublishStatus_ = "PUBLISHED SIGNED PACKAGE / NOT QUALITY-APPROVED / " +
+        published.value().manifest.displayName + " " + published.value().manifest.version;
+    return core::success();
+  }
+
+  seam::core::Result<void> installPublishedSinger() {
+    if (publishedSingerPackagePath_.empty() || !publishedSingerPublicKey_ ||
+        designerPublishStatus_.empty())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Publish a signed singer package before installing it");
+    if (!designer_.model() || designer_.busy() || designer_.model()->dirty() ||
+        designer_.epoch() != publishedDesignerEpoch_ ||
+        designer_.model()->revision() != publishedDesignerRevision_)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "The Designer changed after publication; publish the saved voice again before installing");
+    if (publishedSingerInstalled_)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "This published singer is already installed");
+    const auto roots = seam::distribution::defaultProceduralSearchRoots();
+    const auto installRoot = std::find_if(roots.begin(), roots.end(), [](const auto& root) {
+      return root.kind == seam::distribution::ProceduralRootKind::Installed;
+    });
+    if (installRoot == roots.end() || installRoot->path.empty())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "No default standalone singer installation folder is available on this platform");
+    const auto installed = designer_.installPublishedSinger(
+        publishedDesignerEpoch_, publishedDesignerRevision_, publishedSingerPackagePath_,
+        publishedSingerPackageDigest_, *publishedSingerPublicKey_, installRoot->path);
+    if (!installed) return seam::core::Result<void>{installed.error()};
+    publishedSingerInstalled_ = true;
+    designerPublishStatus_ = "INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED / " +
+        publishedSingerDisplayName_ + " " + installed.value().version;
+    lastError_.clear();
+    return seam::core::success();
+  }
+
   static std::vector<std::size_t> designerFrications(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
     std::vector<std::size_t> indices;
     for (std::size_t index = 0U; index < recipe.frications.size(); ++index)
@@ -149,7 +333,7 @@ public:
     }
   }
   static std::size_t designerControlCount(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
-    return 13U + recipe.poses[pose].formants.size()*3U + designerFrications(recipe, pose).size()*4U + designerPlosives(recipe,pose).size()*4U;
+    return designerNasalStart(recipe, pose) + 5U;
   }
   static std::vector<std::size_t> designerPlosives(const seam::voice_design::VoiceRecipe& recipe,std::size_t pose) {
     std::vector<std::size_t> indices;
@@ -159,13 +343,87 @@ public:
   static std::size_t designerPlosiveStart(const seam::voice_design::VoiceRecipe& recipe,std::size_t pose) {
     return 8U+recipe.poses[pose].formants.size()*3U+designerFrications(recipe,pose).size()*4U;
   }
+  static std::vector<std::size_t> designerAffricates(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0U; i < recipe.affricates.size(); ++i)
+      if (recipe.affricates[i].style == recipe.poses[pose].style) indices.push_back(i);
+    return indices;
+  }
+  static std::vector<std::size_t> designerVoicedAffricates(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0U; i < recipe.voicedAffricates.size(); ++i)
+      if (recipe.voicedAffricates[i].style == recipe.poses[pose].style) indices.push_back(i);
+    return indices;
+  }
+  static std::vector<std::size_t> designerApproximants(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0U; i < recipe.approximants.size(); ++i)
+      if (recipe.approximants[i].style == recipe.poses[pose].style) indices.push_back(i);
+    return indices;
+  }
+  static std::vector<std::size_t> designerBreaths(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    std::vector<std::size_t> indices;
+    for (std::size_t i = 0U; i < recipe.breaths.size(); ++i)
+      if (recipe.breaths[i].style == recipe.poses[pose].style) indices.push_back(i);
+    return indices;
+  }
+  static std::size_t designerAffricateStart(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    return designerPlosiveStart(recipe, pose) + designerPlosives(recipe, pose).size() * 4U;
+  }
+  static std::size_t designerVoicedAffricateStart(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    return designerAffricateStart(recipe, pose) + designerAffricates(recipe, pose).size() * 7U;
+  }
+  static std::size_t designerApproximantStart(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    return designerVoicedAffricateStart(recipe, pose) + designerVoicedAffricates(recipe, pose).size() * 10U;
+  }
+  static std::size_t designerBreathStart(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    return designerApproximantStart(recipe, pose) + designerApproximants(recipe, pose).size();
+  }
+  static std::size_t designerNasalStart(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
+    return designerBreathStart(recipe, pose) + designerBreaths(recipe, pose).size() * 3U;
+  }
   std::optional<std::size_t> selectedDesignerPlosive() const {
     if (!designer_.model()) return {};
     const auto& recipe=designer_.model()->recipe();
     const auto start=designerPlosiveStart(recipe,designer_.auditionPose());
     const auto indices=designerPlosives(recipe,designer_.auditionPose());
-    if (designerControl_<start || (designerControl_-start)/4U>=indices.size()) return {};
+    if (designerControl_<start || (designerControl_-start)/4U>=indices.size() || designerControl_>=designerAffricateStart(recipe,designer_.auditionPose())) return {};
     return indices[(designerControl_-start)/4U];
+  }
+  std::optional<std::string> selectedDesignerArticulation() const {
+    if (!designer_.model()) return {};
+    const auto& recipe=designer_.model()->recipe();
+    const auto pose=designer_.auditionPose();
+    if (designerControl_>=designerAffricateStart(recipe,pose) && designerControl_<designerVoicedAffricateStart(recipe,pose)) {
+      const auto rows=designerAffricates(recipe,pose);
+      const auto row=(designerControl_-designerAffricateStart(recipe,pose))/7U;
+      if (row<rows.size()) return recipe.affricates[rows[row]].phone;
+    }
+    if (designerControl_>=designerVoicedAffricateStart(recipe,pose) && designerControl_<designerApproximantStart(recipe,pose)) {
+      const auto rows=designerVoicedAffricates(recipe,pose);
+      const auto row=(designerControl_-designerVoicedAffricateStart(recipe,pose))/10U;
+      if (row<rows.size()) return recipe.voicedAffricates[rows[row]].phone;
+    }
+    if (designerControl_>=designerApproximantStart(recipe,pose) && designerControl_<designerBreathStart(recipe,pose)) {
+      const auto rows=designerApproximants(recipe,pose);
+      const auto row=designerControl_-designerApproximantStart(recipe,pose);
+      if (row<rows.size()) return recipe.approximants[rows[row]].phone;
+    }
+    if (designerControl_>=designerBreathStart(recipe,pose) && designerControl_<designerNasalStart(recipe,pose)) {
+      const auto rows=designerBreaths(recipe,pose);
+      const auto row=(designerControl_-designerBreathStart(recipe,pose))/3U;
+      if (row<rows.size()) return recipe.breaths[rows[row]].phone;
+    }
+    const auto oralEnd=8U+recipe.poses[pose].formants.size()*3U;
+    if (designerControl_>=8U && designerControl_<oralEnd) {
+      const auto& selected=recipe.poses[pose];
+      if (selected.nasal && selected.nasalCoupling>0.0) return selected.phone;
+      const auto palatalized=std::find_if(recipe.palatalized.begin(),recipe.palatalized.end(),[&](const auto& value) {
+        return value.phone==selected.phone && value.style==selected.style;
+      });
+      if (palatalized!=recipe.palatalized.end()) return selected.phone;
+    }
+    return {};
   }
   seam::core::Result<void> editDesignerPlosiveSeed(std::size_t index) {
     const auto* model=designer_.model();
@@ -207,7 +465,7 @@ public:
     const auto& recipe = designer_.model()->recipe();
     const auto oralEnd = 8U + recipe.poses[designer_.auditionPose()].formants.size()*3U;
     const auto indices = designerFrications(recipe, designer_.auditionPose());
-    if (designerControl_ < oralEnd || (designerControl_-oralEnd)/4U >= indices.size()) return std::nullopt;
+    if (designerControl_ < oralEnd || (designerControl_-oralEnd)/4U >= indices.size() || designerControl_>=designerPlosiveStart(recipe,designer_.auditionPose())) return std::nullopt;
     return indices[(designerControl_-oralEnd)/4U];
   }
   std::string fricationPreviewDescription() const {
@@ -234,7 +492,7 @@ public:
     if (control == 6U) desired.modulation.shimmerAmount = std::clamp(desired.modulation.shimmerAmount + steps * 0.01, 0.0, 1.0);
     if (control == 7U) desired.modulation.rateHz = std::clamp(desired.modulation.rateHz + steps * 0.1, 0.0, 20.0);
     const auto oralEnd = 8U + desired.poses[pose].formants.size()*3U;
-    const auto nasalStart=designerControlCount(desired,pose)-5U;
+    const auto nasalStart=designerNasalStart(desired,pose);
     if (control>=nasalStart && steps!=0.0) {
       const auto index=control-nasalStart;
       auto value=nasalControlValue(desired.poses[pose],index)+steps*(index==0U?0.01:(index==1U || index==3U)?10.0:5.0);
@@ -242,6 +500,38 @@ public:
       setNasalControl(desired.poses[pose],index,value);
     } else if (control >= nasalStart) {
       return desired;
+    } else if (control >= designerBreathStart(desired,pose)) {
+      auto& source=desired.breaths[designerBreaths(desired,pose)[(control-designerBreathStart(desired,pose))/3U]].source;
+      const auto parameter=(control-designerBreathStart(desired,pose))%3U;
+      if (parameter==0U) source.centerHz+=steps*10.0;
+      else if (parameter==1U) source.bandwidthHz+=steps*10.0;
+      else source.gain+=steps*0.005;
+    } else if (control >= designerApproximantStart(desired,pose)) {
+      auto& approximant=desired.approximants[designerApproximants(desired,pose)[control-designerApproximantStart(desired,pose)]];
+      approximant.transitionMilliseconds+=steps;
+    } else if (control >= designerVoicedAffricateStart(desired,pose)) {
+      auto& affricate=desired.voicedAffricates[designerVoicedAffricates(desired,pose)[(control-designerVoicedAffricateStart(desired,pose))/10U]];
+      const auto parameter=(control-designerVoicedAffricateStart(desired,pose))%10U;
+      if (parameter<6U) {
+        auto& source=parameter<3U?affricate.burst:affricate.tail;
+        const auto field=parameter%3U;
+        if (field==0U) source.centerHz+=steps*10.0;
+        else if (field==1U) source.bandwidthHz+=steps*10.0;
+        else source.gain+=steps*0.005;
+      } else if (parameter==6U) affricate.burstMilliseconds+=steps;
+      else if (parameter==7U) affricate.closureVoicingGain+=steps*0.01;
+      else if (parameter==8U) affricate.closureLowpassHz+=steps*10.0;
+      else affricate.tailVoicingGain+=steps*0.01;
+    } else if (control >= designerAffricateStart(desired,pose)) {
+      auto& affricate=desired.affricates[designerAffricates(desired,pose)[(control-designerAffricateStart(desired,pose))/7U]];
+      const auto parameter=(control-designerAffricateStart(desired,pose))%7U;
+      if (parameter<6U) {
+        auto& source=parameter<3U?affricate.burst:affricate.tail;
+        const auto field=parameter%3U;
+        if (field==0U) source.centerHz+=steps*10.0;
+        else if (field==1U) source.bandwidthHz+=steps*10.0;
+        else source.gain+=steps*0.005;
+      } else affricate.burstMilliseconds+=steps;
     } else if (control >= designerPlosiveStart(desired,pose)) {
       const auto relative=control-designerPlosiveStart(desired,pose);
       auto& plosive=desired.plosives[designerPlosives(desired,pose)[relative/4U]];
@@ -304,6 +594,9 @@ public:
     using Key = seam::native_ui::NativeKey;
     if (event.key == Key::Escape && designer_.auditionBusy()) { designer_.cancelAudition(); return; }
     if (designer_.busy()) { if (event.key == Key::Escape) designer_.cancel(); return; }
+    if (event.key == Key::P && event.modifiers.primaryShortcut() && event.modifiers.alt) {
+      record(publishDesignerSingerFromDialog()); return;
+    }
     if (event.key == Key::P && event.modifiers.primaryShortcut() && event.modifiers.shift) {
       record(prepareDesignerFromDialog()); return;
     }
@@ -324,7 +617,18 @@ public:
           return;
         }
         const auto index = selectedDesignerFrication();
-        if (!index) { record(seam::core::failure(seam::core::ErrorCode::InvalidState,"Select a frication control before noise audition")); return; }
+        if (!index) {
+          if (const auto phone=selectedDesignerArticulation()) {
+            if (!designer_.articulationAudio() || designer_.articulationAudioPhone()!=phone) {
+              record(designer_.beginArticulationAudition(*phone)); return;
+            }
+            const auto& audio=designer_.articulationAudio();
+            record(audition_.start(seam::platform::createSystemAudioDevice(),audio,0U,audio->frameCount(),0.25F));
+            if (audition_.active()) auditionStatus_=*phone+" + SELECTED VOWEL / NOT APPROVED";
+            return;
+          }
+          record(seam::core::failure(seam::core::ErrorCode::InvalidState,"Select an auditionable vowel or source articulation first")); return;
+        }
         using Mode=seam::native_ui::FricationAuditionMode;
         const auto mode=event.modifiers.alt?Mode::VowelFrication:event.modifiers.shift?Mode::FricationVowel:Mode::Source;
         if (!designer_.fricationAudio() || designer_.fricationAudioIndex() != index || designer_.fricationAudioMode()!=mode) { record(designer_.beginFricationAudition(*index,mode)); return; }
@@ -353,9 +657,10 @@ public:
       const auto discard = allowDesignerReplacement();
       if (!discard) { record(seam::core::Result<void>{discard.error()}); return; }
       if (!discard.value()) return;
-      seam::voice_design::VoiceRecipe recipe; recipe.id = "voice-draft";
-      recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
-      record(designer_.create(std::move(recipe), true)); return;
+      const auto created = designer_.createJapaneseStarter(true);
+      record(created);
+      if (created) auditionStatus_ = "JA PHONE SET / SCREENING / UNQUALIFIED";
+      return;
     }
     if (event.key == Key::O && event.modifiers.primaryShortcut()) { record(designerFileAction(false)); return; }
     if (event.key == Key::S && event.modifiers.primaryShortcut()) {
@@ -462,8 +767,38 @@ public:
     if (control == 6U) return recipe.modulation.shimmerAmount;
     if (control == 7U) return recipe.modulation.rateHz;
     const auto oralEnd = 8U + recipe.poses[designer_.auditionPose()].formants.size()*3U;
-    const auto nasalStart=designerControlCount(recipe,designer_.auditionPose())-5U;
+    const auto pose=designer_.auditionPose();
+    const auto nasalStart=designerNasalStart(recipe,pose);
     if (control>=nasalStart) return nasalControlValue(recipe.poses[designer_.auditionPose()],control-nasalStart);
+    if (control>=designerBreathStart(recipe,pose)) {
+      const auto relative=control-designerBreathStart(recipe,pose);
+      const auto& source=recipe.breaths[designerBreaths(recipe,pose)[relative/3U]].source;
+      return relative%3U==0U?source.centerHz:relative%3U==1U?source.bandwidthHz:source.gain;
+    }
+    if (control>=designerApproximantStart(recipe,pose)) {
+      return recipe.approximants[designerApproximants(recipe,pose)[control-designerApproximantStart(recipe,pose)]].transitionMilliseconds;
+    }
+    if (control>=designerVoicedAffricateStart(recipe,pose)) {
+      const auto relative=control-designerVoicedAffricateStart(recipe,pose);
+      const auto& affricate=recipe.voicedAffricates[designerVoicedAffricates(recipe,pose)[relative/10U]];
+      const auto parameter=relative%10U;
+      if (parameter<6U) {
+        const auto& source=parameter<3U?affricate.burst:affricate.tail;
+        return parameter%3U==0U?source.centerHz:parameter%3U==1U?source.bandwidthHz:source.gain;
+      }
+      return parameter==6U?affricate.burstMilliseconds:parameter==7U?affricate.closureVoicingGain:
+          parameter==8U?affricate.closureLowpassHz:affricate.tailVoicingGain;
+    }
+    if (control>=designerAffricateStart(recipe,pose)) {
+      const auto relative=control-designerAffricateStart(recipe,pose);
+      const auto& affricate=recipe.affricates[designerAffricates(recipe,pose)[relative/7U]];
+      const auto parameter=relative%7U;
+      if (parameter<6U) {
+        const auto& source=parameter<3U?affricate.burst:affricate.tail;
+        return parameter%3U==0U?source.centerHz:parameter%3U==1U?source.bandwidthHz:source.gain;
+      }
+      return affricate.burstMilliseconds;
+    }
     const auto plosiveStart=designerPlosiveStart(recipe,designer_.auditionPose());
     if (control>=plosiveStart) return plosiveControlValue(recipe.plosives[designerPlosives(recipe,designer_.auditionPose())[(control-plosiveStart)/4U]],(control-plosiveStart)%4U);
     if (control >= oralEnd) {
@@ -473,6 +808,193 @@ public:
     }
     const auto& band = recipe.poses[designer_.auditionPose()].formants[(control - 8U) / 3U];
     return (control - 8U) % 3U == 0U ? band.frequencyHz : ((control - 8U) % 3U == 1U ? band.bandwidthHz : band.gainDb);
+  }
+  std::string designerControlDescription(std::size_t control) const {
+    const auto& recipe = designer_.model()->recipe();
+    const auto poseIndex = designer_.auditionPose();
+    const auto& pose = recipe.poses[poseIndex];
+    switch (control) {
+      case 0U: return "Sets the open phase of each synthesized vocal pulse. It changes the source spectrum, not note pitch or loudness.";
+      case 1U: return "Tilts harmonic energy toward lower or higher partials. This shapes vocal brightness without changing the authored vowel resonances.";
+      case 2U: return "Sets the aperiodic aspiration share in the voiced source. Higher values add breath noise while retaining a pitched component.";
+      case 3U: return "Chooses which authored phone and style pose the audition uses. Select another pose to edit its own resonances.";
+      case 4U: return "Sets the MIDI note used only for audition. The supported audition range is MIDI 36 through 96.";
+      case 5U: return "Sets deterministic periodic pitch variation depth in cents for the audition source.";
+      case 6U: return "Sets periodic amplitude modulation depth for the audition source; zero disables this modulation.";
+      case 7U: return "Sets the rate in hertz for the source's periodic pitch and amplitude modulation; zero disables modulation.";
+      default: break;
+    }
+
+    const auto oralEnd = 8U + pose.formants.size() * 3U;
+    const auto nasalStart = designerNasalStart(recipe, poseIndex);
+    if (control >= nasalStart) {
+      switch (control - nasalStart) {
+        case 0U: return "Sets how strongly this vowel pose couples to its nasal resonance and antiresonance.";
+        case 1U: return pose.nasal ? "Sets the nasal resonance frequency in hertz." : "Sets the nasal resonance frequency in hertz; editing enables the nasal filter for this pose.";
+        case 2U: return pose.nasal ? "Sets the bandwidth of the nasal resonance in hertz." : "Sets the nasal resonance bandwidth in hertz; editing enables the nasal filter for this pose.";
+        case 3U: return pose.nasal ? "Sets the nasal antiresonance frequency in hertz." : "Sets the nasal antiresonance frequency in hertz; editing enables the nasal filter for this pose.";
+        default: return pose.nasal ? "Sets the bandwidth of the nasal antiresonance in hertz." : "Sets the nasal antiresonance bandwidth in hertz; editing enables the nasal filter for this pose.";
+      }
+    }
+
+    if (control >= designerBreathStart(recipe,poseIndex) && control < nasalStart) {
+      const auto relative=control-designerBreathStart(recipe,poseIndex);
+      const auto& breath=recipe.breaths[designerBreaths(recipe,poseIndex)[relative/3U]];
+      switch (relative%3U) {
+        case 0U: return "Sets the broadband breath-noise center frequency for phone " + breath.phone + " in hertz.";
+        case 1U: return "Sets the broadband breath-noise bandwidth for phone " + breath.phone + " in hertz.";
+        default: return "Sets the broadband breath-noise gain for phone " + breath.phone + ".";
+      }
+    }
+    if (control >= designerApproximantStart(recipe,poseIndex)) {
+      const auto& approximant=recipe.approximants[designerApproximants(recipe,poseIndex)[control-designerApproximantStart(recipe,poseIndex)]];
+      return "Sets the resonance transition duration for contracted voiced phone " + approximant.phone + " in milliseconds.";
+    }
+    if (control >= designerVoicedAffricateStart(recipe,poseIndex)) {
+      const auto relative=control-designerVoicedAffricateStart(recipe,poseIndex);
+      const auto& affricate=recipe.voicedAffricates[designerVoicedAffricates(recipe,poseIndex)[relative/10U]];
+      switch (relative%10U) {
+        case 0U: return "Sets the voiced-affricate burst center frequency for phone " + affricate.phone + " in hertz.";
+        case 1U: return "Sets the voiced-affricate burst bandwidth for phone " + affricate.phone + " in hertz.";
+        case 2U: return "Sets the voiced-affricate burst gain for phone " + affricate.phone + ".";
+        case 3U: return "Sets the voiced-affricate tail center frequency for phone " + affricate.phone + " in hertz.";
+        case 4U: return "Sets the voiced-affricate tail bandwidth for phone " + affricate.phone + " in hertz.";
+        case 5U: return "Sets the voiced-affricate tail noise gain for phone " + affricate.phone + ".";
+        case 6U: return "Sets the prevoiced closure and burst boundary for phone " + affricate.phone + " in milliseconds.";
+        case 7U: return "Sets voicing level during the voiced-affricate closure for phone " + affricate.phone + ".";
+        case 8U: return "Sets the closure low-pass cutoff for voiced-affricate phone " + affricate.phone + " in hertz.";
+        default: return "Sets the voiced component in the affricate tail for phone " + affricate.phone + ".";
+      }
+    }
+    if (control >= designerAffricateStart(recipe,poseIndex)) {
+      const auto relative=control-designerAffricateStart(recipe,poseIndex);
+      const auto& affricate=recipe.affricates[designerAffricates(recipe,poseIndex)[relative/7U]];
+      switch (relative%7U) {
+        case 0U: return "Sets the affricate burst center frequency for phone " + affricate.phone + " in hertz.";
+        case 1U: return "Sets the affricate burst bandwidth for phone " + affricate.phone + " in hertz.";
+        case 2U: return "Sets the affricate burst gain for phone " + affricate.phone + ".";
+        case 3U: return "Sets the affricate tail center frequency for phone " + affricate.phone + " in hertz.";
+        case 4U: return "Sets the affricate tail bandwidth for phone " + affricate.phone + " in hertz.";
+        case 5U: return "Sets the affricate tail noise gain for phone " + affricate.phone + ".";
+        default: return "Sets the affricate burst duration for phone " + affricate.phone + " in milliseconds.";
+      }
+    }
+
+    const auto fricationEnd = designerPlosiveStart(recipe, poseIndex);
+    if (control >= fricationEnd) {
+      const auto relative = control - fricationEnd;
+      const auto indices = designerPlosives(recipe, poseIndex);
+      const auto& plosive = recipe.plosives[indices[relative / 4U]];
+      switch (relative % 4U) {
+        case 0U: return "Sets the burst-noise center frequency for phone " + plosive.phone + " in hertz.";
+        case 1U: return "Sets the burst-noise bandwidth for phone " + plosive.phone + " in hertz.";
+        case 2U: return "Sets the burst-noise gain for phone " + plosive.phone + ".";
+        default: return "Sets the burst duration for phone " + plosive.phone + " in milliseconds.";
+      }
+    }
+    if (control >= oralEnd) {
+      const auto relative = control - oralEnd;
+      const auto indices = designerFrications(recipe, poseIndex);
+      const auto& frication = recipe.frications[indices[relative / 4U]];
+      switch (relative % 4U) {
+        case 0U: return "Sets the noise center frequency for phone " + frication.phone + " in hertz.";
+        case 1U: return "Sets the noise bandwidth for phone " + frication.phone + " in hertz.";
+        case 2U: return "Sets the noise gain for phone " + frication.phone + ".";
+        default: return "Sets the voiced component mixed into phone " + frication.phone + "; zero disables voicing.";
+      }
+    }
+    const auto relative = control - 8U;
+    const auto formantIndex = relative / 3U;
+    switch (relative % 3U) {
+      case 0U: return "Sets formant F" + std::to_string(formantIndex + 1U) + " frequency for phone " + pose.phone + " in hertz; this moves a vocal-tract resonance, not the sung note.";
+      case 1U: return "Sets formant F" + std::to_string(formantIndex + 1U) + " bandwidth for phone " + pose.phone + " in hertz; narrower bands produce a more selective resonance.";
+      default: return "Sets formant F" + std::to_string(formantIndex + 1U) + " relative gain for phone " + pose.phone + ".";
+    }
+  }
+  std::string designerControlRange(std::size_t control) const {
+    const auto& recipe = designer_.model()->recipe();
+    const auto poseIndex = designer_.auditionPose();
+    const auto& pose = recipe.poses[poseIndex];
+    switch (control) {
+      case 0U: return "Accepted range 0.05 to 0.95; arrow adjustment 0.01, Shift plus arrow 0.001.";
+      case 1U: return "Accepted range -48 to 0 dB per octave; arrow adjustment 1, Shift plus arrow 0.1.";
+      case 2U: return "Accepted range 0 to 1; arrow adjustment 0.01, Shift plus arrow 0.001.";
+      case 3U: return "Integer pose index from 0 to " + std::to_string(recipe.poses.size() - 1U) + ".";
+      case 4U: return "Integer MIDI note from 36 to 96.";
+      case 5U: return "Accepted range 0 to 100 cents; arrow adjustment 0.5, Shift plus arrow 0.05.";
+      case 6U: return "Accepted range 0 to 1; arrow adjustment 0.01, Shift plus arrow 0.001.";
+      case 7U: return "Accepted range 0 to 20 hertz; arrow adjustment 0.1, Shift plus arrow 0.01.";
+      default: break;
+    }
+
+    const auto oralEnd = 8U + pose.formants.size() * 3U;
+    const auto nasalStart = designerNasalStart(recipe, poseIndex);
+    if (control >= nasalStart) {
+      switch (control - nasalStart) {
+        case 0U: return "Accepted range 0 to 1; arrow adjustment 0.01, Shift plus arrow 0.001.";
+        case 1U: return "Accepted range 50 to 4000 hertz; arrow adjustment 10.";
+        case 2U: return "Accepted range 10 to 5000 hertz; arrow adjustment 5.";
+        case 3U: return "Accepted range 50 to 16000 hertz; arrow adjustment 10.";
+        default: return "Accepted range 10 to 5000 hertz; arrow adjustment 5.";
+      }
+    }
+
+    const std::string sourceSpectrumRange = "Accepted center 80 to 16000 hertz; bandwidth 20 to 16000 hertz; center/bandwidth ratio 0.25 to 20; gain 0 to 0.25. Arrow adjustment: frequency/bandwidth 10 hertz, gain 0.005.";
+    if (control >= designerBreathStart(recipe,poseIndex) && control < nasalStart) {
+      switch ((control-designerBreathStart(recipe,poseIndex))%3U) {
+        case 0U: return "Accepted range 80 to 16000 hertz; arrow adjustment 10. Center/bandwidth ratio must stay between 0.25 and 20.";
+        case 1U: return "Accepted range 20 to 16000 hertz; arrow adjustment 10. Center/bandwidth ratio must stay between 0.25 and 20.";
+        default: return "Accepted range 0 to 0.25; arrow adjustment 0.005.";
+      }
+    }
+    if (control >= designerApproximantStart(recipe,poseIndex))
+      return "Accepted range 5 to 200 milliseconds; arrow adjustment 1.";
+    if (control >= designerVoicedAffricateStart(recipe,poseIndex)) {
+      const auto parameter=(control-designerVoicedAffricateStart(recipe,poseIndex))%10U;
+      if (parameter<6U) return sourceSpectrumRange;
+      if (parameter==6U) return "Accepted range 1 to 100 milliseconds; arrow adjustment 1.";
+      if (parameter==7U) return "Accepted range greater than 0 and at most 0.5; arrow adjustment 0.01.";
+      if (parameter==8U) return "Accepted range 40 to 2000 hertz; arrow adjustment 10.";
+      return "Accepted range greater than 0 and at most 1; arrow adjustment 0.01.";
+    }
+    if (control >= designerAffricateStart(recipe,poseIndex)) {
+      const auto parameter=(control-designerAffricateStart(recipe,poseIndex))%7U;
+      if (parameter<6U) return sourceSpectrumRange;
+      return "Accepted range 1 to 100 milliseconds; arrow adjustment 1.";
+    }
+
+    const auto plosiveStart = designerPlosiveStart(recipe, poseIndex);
+    if (control >= plosiveStart) {
+      switch ((control - plosiveStart) % 4U) {
+        case 0U: return "Accepted range 80 to 16000 hertz; arrow adjustment 10. The center-to-bandwidth ratio must remain between 0.25 and 20.";
+        case 1U: return "Accepted range 20 to 16000 hertz; arrow adjustment 10. The center-to-bandwidth ratio must remain between 0.25 and 20.";
+        case 2U: return "Accepted range 0 to 0.25; arrow adjustment 0.005.";
+        default: return "Accepted range 1 to 100 milliseconds; arrow adjustment 1.";
+      }
+    }
+    if (control >= oralEnd) {
+      switch ((control - oralEnd) % 4U) {
+        case 0U: return "Accepted range 80 to 16000 hertz; arrow adjustment 10. The center-to-bandwidth ratio must remain between 0.25 and 20.";
+        case 1U: return "Accepted range 20 to 16000 hertz; arrow adjustment 10. The center-to-bandwidth ratio must remain between 0.25 and 20.";
+        case 2U: return "Accepted range 0 to 0.25; arrow adjustment 0.005.";
+        default: return "Zero disables voicing; an enabled voiced component must be greater than 0 and at most 1. Arrow adjustment 0.01.";
+      }
+    }
+
+    const auto relative = control - 8U;
+    const auto formantIndex = relative / 3U;
+    switch (relative % 3U) {
+      case 0U: {
+        auto bounds = formantIndex == 0U ? std::string{"at least 50"}
+            : "above " + std::to_string(pose.formants[formantIndex - 1U].frequencyHz);
+        bounds += formantIndex + 1U == pose.formants.size()
+            ? " and at most 16000 hertz"
+            : " and below " + std::to_string(pose.formants[formantIndex + 1U].frequencyHz) + " hertz";
+        return "Accepted frequency is " + bounds + "; arrow adjustment 10. Formants must stay strictly ordered.";
+      }
+      case 1U: return "Accepted range 10 to 5000 hertz; arrow adjustment 5.";
+      default: return "Accepted range -48 to 24 dB; arrow adjustment 0.5.";
+    }
   }
   seam::core::Result<void> openDesignerProducerWorkspace() {
     if (designer_.busy() || designerDrag_ || controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames()>0U)
@@ -510,7 +1032,8 @@ public:
           (index != 4U || first > 0U) && (index != 5U || first + layout.visibleRows < values.size());
       root.children.push_back({.id = prefix + buttons[index].first, .role = SemanticRole::Button, .name = index==3U && !controller_.productionProject() && controller_.manifest().units.empty()?"Open producer workspace":buttons[index].second,
           .bounds = !designer_.model() && (index<2U || index==3U) ? designerEntryBounds(index==3U?2U:index,width) : seam::ui::Rect{24.0 + static_cast<double>(index) * buttonWidth,58.0,buttonWidth,20.0}, .enabled = available,
-          .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{}});
+          .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{},
+          .description = index==0U ? "Creates a Japanese source-filter draft covering symbols emitted by the built-in Japanese phonemizer; screening defaults are not a qualified singer." : std::string{}});
     }
     if (designer_.model()) {
       const auto seed = std::to_string(designer_.model()->recipe().seed);
@@ -518,17 +1041,29 @@ public:
           .value = seed, .bounds = {width*0.55,24.0,width*0.45-24.0,24.0}, .enabled = enabled,
           .actions = {SemanticAction::SetFocus,SemanticAction::EditText}, .editableValue = seed,
           .description = "Exact unsigned 64-bit decimal integer, 0 to 18446744073709551615"});
-      const auto addAction = [&](const char* id, const char* name, bool available, double x, double y, double actionWidth) {
+      const auto addAction = [&](const char* id, const char* name, bool available, double x, double y,
+                                 double actionWidth, std::string_view description = {}) {
         root.children.push_back({.id = prefix + id, .role = SemanticRole::Button, .name = name,
             .bounds = y < 0.0 ? seam::ui::Rect{} : seam::ui::Rect{x,y,actionWidth,20.0}, .enabled = available,
-            .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus} : std::vector<SemanticAction>{}});
+            .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus} : std::vector<SemanticAction>{},
+            .description = std::string{description}});
       };
-      const auto smallWidth = std::max(1.0, (width-48.0)/5.0);
+      const auto smallWidth = std::max(1.0, (width-48.0)/7.0);
       addAction("save-as", "Save voice as new file", enabled, 24.0,82.0,smallWidth);
       addAction("duplicate-pose", "Duplicate selected pose", enabled, 24.0+smallWidth,82.0,smallWidth);
       addAction("remove-pose", "Remove selected pose", enabled && designer_.model()->recipe().poses.size()>1U, 24.0+smallWidth*2.0,82.0,smallWidth);
       addAction("undo", "Undo Designer edit", enabled && designer_.model()->canUndo(), 24.0+smallWidth*3.0,82.0,smallWidth);
       addAction("redo", "Redo Designer edit", enabled && designer_.model()->canRedo(), 24.0+smallWidth*4.0,82.0,smallWidth);
+      addAction("publish-singer", "Publish signed singer package", enabled && !designer_.model()->dirty() &&
+          !designer_.path().empty(), 24.0+smallWidth*5.0,82.0,smallWidth,
+          "Publish the saved recipe as a .seamsinger package. Requires explicit version, display name, language and private signing key. A valid signature does not mean the voice was reviewed or quality-approved. Shortcut: Command/Control-Option-P.");
+      addAction("install-published-singer", "Install published singer", enabled &&
+          !publishedSingerPackagePath_.empty() && publishedSingerPublicKey_.has_value() &&
+          !publishedSingerPackageDigest_.empty() &&
+          !publishedSingerInstalled_ && designer_.epoch() == publishedDesignerEpoch_ &&
+          designer_.model()->revision() == publishedDesignerRevision_ && !designer_.model()->dirty(),
+          24.0+smallWidth*6.0,82.0,smallWidth,
+          "Install the exact signed package just published into the current user's default standalone singer folder. Trusts the signing key explicitly selected for publication. Installation is not voice-quality approval.");
       const auto audioWidth = std::max(1.0, (width-48.0)/7.0);
       addAction("render", "Render current audition", enabled && !designer_.auditionBusy(), 24.0,layout.helpY,audioWidth);
       addAction("play-current", "Play current B", enabled && static_cast<bool>(designer_.auditionAudio()), 24.0+audioWidth,layout.helpY,audioWidth);
@@ -562,10 +1097,21 @@ public:
         addAction(("play-frication."+std::to_string(*index)).c_str(), "Play selected frication", enabled && designer_.fricationAudio() && designer_.fricationAudioIndex() == index,
             24.0+sourceWidth*4.0,layout.fricationY,sourceWidth);
       }
-      root.children.push_back({.id = prefix+"audition-state", .role = SemanticRole::Status, .name = "Audition state",
+      if (const auto phone=selectedDesignerArticulation()) {
+        const auto suffix="articulation."+*phone;
+        addAction(("render-"+suffix).c_str(),("Render "+*phone+" with selected vowel").c_str(),
+            enabled && !designer_.auditionBusy(),24.0+sourceWidth*3.0,layout.fricationY,sourceWidth);
+        addAction(("play-"+suffix).c_str(),("Play "+*phone+" + vowel").c_str(),
+            enabled && designer_.articulationAudio() && designer_.articulationAudioPhone()==phone,
+            24.0+sourceWidth*4.0,layout.fricationY,sourceWidth);
+      }
+      root.children.push_back({.id = prefix+"audition-state", .role = SemanticRole::Status, .name = "Voice Designer status",
           .value = designer_.auditionBusy() ? "Rendering" : (!auditionStatus_.empty() ? auditionStatus_ :
+              (!designerPublishStatus_.empty() ? designerPublishStatus_ :
               (designer_.plosiveAudio() && designer_.plosiveAudioIndex()==selectedDesignerPlosive()?(designer_.plosiveAudioIsCoda()?"Vowel and stop ready":designer_.plosiveAudioIsPhrase()?"Stop and vowel ready":"Plosive source ready"):
-              designer_.fricationAudio() && designer_.fricationAudioIndex()==selectedDesignerFrication()?fricationPreviewDescription()+" ready":designer_.auditionAudio() ? "Vowel ready" : "Not rendered")),
+              designer_.fricationAudio() && designer_.fricationAudioIndex()==selectedDesignerFrication()?fricationPreviewDescription()+" ready":
+              designer_.articulationAudio() && designer_.articulationAudioPhone()==selectedDesignerArticulation()?*designer_.articulationAudioPhone()+" + vowel ready":
+              designer_.auditionAudio() ? "Vowel ready" : "Not rendered"))),
           .bounds = {24.0,layout.statusY,width-48.0,24.0}});
       if (const auto& reference = designer_.auditionReference()) root.children.push_back({.id = prefix+"reference-state",
           .role = SemanticRole::Status, .name = "Reference A identity",
@@ -578,7 +1124,7 @@ public:
         root.children.push_back({.id = prefix + "control." + std::to_string(index), .role = SemanticRole::TextField,
             .name = values[index], .value = value, .bounds = {24.0,layout.controlsTop + static_cast<double>(index-first)*layout.rowHeight,width-48.0,layout.rowHeight},
             .enabled = enabled, .actions = {SemanticAction::SetFocus, SemanticAction::EditText}, .editableValue = value,
-            .description = index == 3U ? "Zero-based recipe pose index" : (index == 4U ? "Audition MIDI pitch, 36 to 96" : "Validated draft voice parameter")});
+            .description = designerControlDescription(index) + " " + designerControlRange(index)});
       }
     }
     if (!lastError_.empty()) root.children.push_back({.id = prefix + "error", .role = SemanticRole::Status,
@@ -591,7 +1137,7 @@ public:
   static std::string designerButtonLabel(std::string_view suffix) {
     const std::pair<std::string_view,std::string_view> labels[]{
       {"new","New"},{"open","Open"},{"save","Save"},{"back","Producer"},{"previous","Previous"},{"next","Next"},
-      {"save-as","Save as"},{"duplicate-pose","Duplicate"},{"remove-pose","Remove pose"},{"undo","Undo"},{"redo","Redo"},
+      {"save-as","Save as"},{"duplicate-pose","Duplicate"},{"remove-pose","Remove pose"},{"undo","Undo"},{"redo","Redo"},{"publish-singer","Publish"},{"install-published-singer","Install"},
       {"render","Render"},{"play-current","Play B"},{"pin-reference","Pin A"},{"play-reference","Play A"},
       {"clear-reference","Clear A"},{"stop","Stop"},{"cancel-preview","Cancel"},{"prepare-draft","Prepare generation job"},
       {"add-plosive","Add stop"},{"add-frication","Add noise"}};
@@ -602,6 +1148,8 @@ public:
     if (suffix.starts_with("render-frication.")) return "Src";
     if (suffix.starts_with("render-frication-phrase.")) return "CV";
     if (suffix.starts_with("render-frication-coda.")) return "VC";
+    if (suffix.starts_with("render-articulation.")) return "CV";
+    if (suffix.starts_with("play-articulation.")) return "Play";
     if (suffix.starts_with("play-")) return "Play";
     if (suffix.starts_with("remove-")) return "Remove";
     if (suffix.find("-seed.")!=std::string_view::npos) return "Seed";
@@ -679,6 +1227,39 @@ public:
       for (std::size_t parameter=0U;parameter<labels.size();++parameter)
         values.push_back(plosive.phone+labels[parameter]+std::to_string(plosiveControlValue(plosive,parameter)));
     }
+    for (const auto index:designerAffricates(model->recipe(),designer_.auditionPose())) {
+      const auto& source=model->recipe().affricates[index];
+      values.push_back(source.phone+" BURST CENTER Hz "+std::to_string(source.burst.centerHz));
+      values.push_back(source.phone+" BURST WIDTH Hz "+std::to_string(source.burst.bandwidthHz));
+      values.push_back(source.phone+" BURST GAIN "+std::to_string(source.burst.gain));
+      values.push_back(source.phone+" TAIL CENTER Hz "+std::to_string(source.tail.centerHz));
+      values.push_back(source.phone+" TAIL WIDTH Hz "+std::to_string(source.tail.bandwidthHz));
+      values.push_back(source.phone+" TAIL GAIN "+std::to_string(source.tail.gain));
+      values.push_back(source.phone+" BURST DURATION ms "+std::to_string(source.burstMilliseconds));
+    }
+    for (const auto index:designerVoicedAffricates(model->recipe(),designer_.auditionPose())) {
+      const auto& source=model->recipe().voicedAffricates[index];
+      values.push_back(source.phone+" BURST CENTER Hz "+std::to_string(source.burst.centerHz));
+      values.push_back(source.phone+" BURST WIDTH Hz "+std::to_string(source.burst.bandwidthHz));
+      values.push_back(source.phone+" BURST GAIN "+std::to_string(source.burst.gain));
+      values.push_back(source.phone+" TAIL CENTER Hz "+std::to_string(source.tail.centerHz));
+      values.push_back(source.phone+" TAIL WIDTH Hz "+std::to_string(source.tail.bandwidthHz));
+      values.push_back(source.phone+" TAIL NOISE GAIN "+std::to_string(source.tail.gain));
+      values.push_back(source.phone+" CLOSURE/BURST ms "+std::to_string(source.burstMilliseconds));
+      values.push_back(source.phone+" CLOSURE VOICING "+std::to_string(source.closureVoicingGain));
+      values.push_back(source.phone+" CLOSURE LOWPASS Hz "+std::to_string(source.closureLowpassHz));
+      values.push_back(source.phone+" TAIL VOICING "+std::to_string(source.tailVoicingGain));
+    }
+    for (const auto index:designerApproximants(model->recipe(),designer_.auditionPose())) {
+      const auto& source=model->recipe().approximants[index];
+      values.push_back(source.phone+" RESONANCE TRANSITION ms "+std::to_string(source.transitionMilliseconds));
+    }
+    for (const auto index:designerBreaths(model->recipe(),designer_.auditionPose())) {
+      const auto& source=model->recipe().breaths[index];
+      values.push_back(source.phone+" BREATH CENTER Hz "+std::to_string(source.source.centerHz));
+      values.push_back(source.phone+" BREATH BANDWIDTH Hz "+std::to_string(source.source.bandwidthHz));
+      values.push_back(source.phone+" BREATH GAIN "+std::to_string(source.source.gain));
+    }
     const std::array<const char*,5U> nasalLabels{"NASAL COUPLING ","NASAL RESONANCE Hz ","NASAL RESONANCE WIDTH Hz ","NASAL ANTIRESONANCE Hz ","NASAL ANTIRESONANCE WIDTH Hz "};
     for (std::size_t i=0U;i<nasalLabels.size();++i) values.push_back(std::string{nasalLabels[i]}+std::to_string(nasalControlValue(pose,i))+
         (pose.nasal?"":" / MODEL OFF: EDIT TO ENABLE"));
@@ -698,8 +1279,10 @@ public:
     if (designer_.busy()) line(layout.statusY, "FILE OPERATION / ESC CANCEL");
     else if (designer_.auditionBusy()) line(layout.statusY, "RENDERING PREVIEW / ESC CANCEL");
     else if (!auditionStatus_.empty()) line(layout.statusY, auditionStatus_);
+    else if (!designerPublishStatus_.empty()) line(layout.statusY, designerPublishStatus_);
     else if (designer_.plosiveAudio() && designer_.plosiveAudioIndex()==selectedDesignerPlosive()) line(layout.statusY,designer_.plosiveAudioIsCoda()?"VOWEL + STOP READY / CMD-ALT-SPACE PLAY":designer_.plosiveAudioIsPhrase()?"STOP + VOWEL READY / CMD-SHIFT-SPACE PLAY":"STOP READY / CMD-SPACE / SHIFT CV / ALT VC");
     else if (designer_.fricationAudio() && designer_.fricationAudioIndex()==selectedDesignerFrication()) line(layout.statusY,fricationPreviewDescription()+" READY");
+    else if (designer_.articulationAudio() && designer_.articulationAudioPhone()==selectedDesignerArticulation()) line(layout.statusY,*designer_.articulationAudioPhone()+" + VOWEL READY / CMD-SPACE PLAY");
     else if (designer_.auditionAudio()) line(layout.statusY, "POSE READY / SPACE PLAY");
     if (!lastError_.empty()) line(layout.errorY, lastError_, Color{193,115,160,255});
   }
@@ -769,8 +1352,28 @@ public:
   seam::core::Result<void> runCampaignFromDialog() {
     if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U || designer_.busy())
       return seam::core::failure(seam::core::ErrorCode::Conflict, "Finish recording, Designer work or production work before a campaign run");
-    if (controller_.generationCampaignPath().empty())
-      return seam::core::failure(seam::core::ErrorCode::InvalidState, "Plan a generation campaign before running one");
+    if (controller_.generationCampaignPath().empty()) {
+      const auto* project = controller_.productionProject();
+      if (project == nullptr) return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Open a producer workspace before resuming a generation campaign");
+      const auto epoch = controller_.productionSessionEpoch();
+      const auto generation = project->lastDurableGeneration;
+      const auto selected = controller_.selectedIndex();
+      auto dialog = seam::platform::createNativeFileDialog();
+      const auto path = dialog->choose({.purpose = seam::platform::FileDialogPurpose::OpenGenerationCampaign,
+          .title = "Open and Resume Generation Campaign", .initialDirectory = {},
+          .suggestedName = "campaign.json", .extensions = {"json"}});
+      if (!path) return seam::core::Result<void>{path.error()};
+      if (!path.value()) return seam::core::success();
+      const auto current = controller_.validateProductionImportContext(epoch, generation, selected);
+      if (!current) return current;
+      if (recording_.armed() || recording_.recordedFrames() > 0U)
+        return seam::core::failure(seam::core::ErrorCode::Conflict,
+            "Finish recording before resuming a generation campaign");
+      const auto bytes = seam::core::readTextFileLimited(*path.value(), 32U * 1024U * 1024U);
+      if (!bytes) return seam::core::Result<void>{bytes.error()};
+      return controller_.beginGenerationCampaignAdvance(*path.value(), seam::core::sha256Hex(bytes.value()));
+    }
     // One call covers a fresh campaign, a cancelled one and a completed one: the
     // controller advances from the identity it recorded, and the service re-verifies
     // receipts instead of re-planning.
@@ -1066,28 +1669,67 @@ public:
           .bounds=control.bounds,.enabled=enabled,
           .actions=enabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
     }
+    const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
+        !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() &&
+        !generationModal_ && !takeImportModal_;
+    root.children.push_back({.id=prefix+"import-wav",.role=SemanticRole::Button,
+        .name="Import existing WAV as an unapproved take",
+        .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
+        .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
     root.children.push_back({.id=prefix+"status",.role=SemanticRole::Status,.name="Producer operation status",
-        .value=lastError_.empty()?controller_.status():lastError_,.bounds={width-360.0,24.0,340.0,44.0}});
+        .value=!lastError_.empty()?lastError_:!recordingStatus_.empty()?recordingStatus_:controller_.status(),
+        .bounds={width-360.0,24.0,340.0,44.0}});
     generationAccessibility_.rebuildCustom(std::move(root),generationSemanticFocus_);
+  }
+  void rebuildStudioAccessibility(double width,double height) {
+    using namespace seam::native_ui;
+    const auto prefix=generationSemanticPrefix();
+    SemanticNode root{.id=prefix+"root",.role=SemanticRole::Panel,.name="Voicebank production actions",
+        .bounds={0.0,0.0,width,height}};
+    const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
+        !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() &&
+        !takeImportModal_;
+    root.children.push_back({.id=prefix+"import-wav",.role=SemanticRole::Button,
+        .name="Import existing WAV as an unapproved take",
+        .value="Cmd/Ctrl+R. Requires a producer workspace and selected inventory row. Imported takes require review.",
+        .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
+        .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
+    root.children.push_back({.id=prefix+"status",.role=SemanticRole::Status,.name="Studio operation status",
+        .value=!lastError_.empty()?lastError_:!recordingStatus_.empty()?recordingStatus_:controller_.status(),
+        .bounds={width-360.0,24.0,340.0,44.0}});
+    studioAccessibility_.rebuildCustom(std::move(root),studioSemanticFocus_);
   }
 
   void paint(seam::native_ui::RasterCanvas& canvas) noexcept override {
     record(recordingInput_.poll());
+    record(pollPendingRecordingExport());
     const auto auditionState = audition_.poll();
     if (!auditionState) { auditionStatus_.clear(); lastError_ = auditionState.error().message; }
     else if (!auditionState.value()) auditionStatus_.clear();
     const bool workspaceWasOpening=controller_.workspaceOpening();
     const auto producerPoll=controller_.pollProceduralCandidateImport();
     record(producerPoll);
+    completePendingRecordingImport(producerPoll);
     if (workspaceWasOpening && !controller_.workspaceOpening() && !controller_.productionProject()) {
       designerView_=true;
       if (producerPoll) lastError_=designer_.model()?"Workspace opening cancelled; voice draft retained":"Workspace opening cancelled; no workspace loaded";
     }
     record(designer_.poll());
+    if (!designerPublishStatus_.empty() &&
+        (!designer_.model() || designer_.epoch() != publishedDesignerEpoch_ ||
+         designer_.model()->revision() != publishedDesignerRevision_)) {
+      designerPublishStatus_.clear();
+      publishedSingerPackagePath_.clear();
+      publishedSingerPackageDigest_.clear();
+      publishedSingerDisplayName_.clear();
+      publishedSingerPublicKey_.reset();
+      publishedSingerInstalled_ = false;
+    }
     if (designerView_) { paintDesigner(canvas); if (designer_.busy() || designer_.auditionBusy() || audition_.active()) repaint(); return; }
     if (sampleReviewView_) { paintSampleReview(canvas); if (controller_.proceduralImportBusy() || audition_.active()) repaint(); return; }
     painter_.paint(canvas, controller_, recording_.armed(), inputBackend_);
     rebuildGenerationAccessibility(canvas.logicalWidth(),canvas.logicalHeight());
+    rebuildStudioAccessibility(canvas.logicalWidth(),canvas.logicalHeight());
     const auto generationControls=seam::native_ui::studioGenerationControls(controller_,canvas.logicalWidth(),recording_.armed() || recording_.recordedFrames()>0U);
     if (!generationControls.empty()) {
       canvas.fillRect({294.0,268.0,canvas.logicalWidth()-574.0,36.0},seam::native_ui::Color{15,14,18,255});
@@ -1097,13 +1739,19 @@ public:
             control.enabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{125,118,129,255},10.0);
       }
     }
-    canvas.drawText({24.0, 52.0, 200.0, 14.0}, "CMD/CTRL-D DESIGNER", seam::native_ui::Color{166,154,170,255}, 7.0);
+    const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
+        !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() && !takeImportModal_;
+    canvas.fillRect({24.0,48.0,200.0,20.0},importEnabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
+    canvas.drawText({28.0,52.0,192.0,14.0}, "CMD/CTRL-D DESIGNER  CMD/CTRL-R IMPORT WAV",
+        importEnabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{150,145,153,255}, 6.0);
     canvas.fillRect({230.0,48.0,120.0,20.0}, seam::native_ui::Color{72,52,76,255});
     canvas.drawText({236.0,53.0,108.0,12.0}, "Q SAMPLE REVIEW", seam::native_ui::Color{239,233,241,255}, 7.0);
     canvas.drawText({canvas.logicalWidth() - 360.0, 56.0, 340.0, 12.0},
-        !lastError_.empty() ? lastError_ : (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
+        !lastError_.empty() ? lastError_ : !recordingStatus_.empty() ? recordingStatus_ :
+            (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
         !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255}, 6.0);
-    if (controller_.proceduralImportBusy() || audition_.active() || recordingInput_.capturing()) repaint();
+    if (controller_.proceduralImportBusy() || pendingRecordingExportStarted_ ||
+        audition_.active() || recordingInput_.capturing()) repaint();
   }
   void resized(double width, double height, double) noexcept override {
     if (designerDrag_ && designer_.model()) {
@@ -1134,6 +1782,12 @@ public:
         }
         repaint(); return;
       }
+    }
+    if (!designerView_ && event.button==seam::native_ui::PointerButton::Left &&
+        seam::ui::Rect{24.0,48.0,200.0,20.0}.contains(event.position)) {
+      lastError_.clear();
+      record(importRecordedTakeFromDialog());
+      repaint(); return;
     }
     if (!designerView_ && event.button == seam::native_ui::PointerButton::Left && seam::ui::Rect{230.0,48.0,120.0,20.0}.contains(event.position)) {
       if (!controller_.proceduralImportBusy() && !recording_.armed() && recording_.recordedFrames() == 0U) {
@@ -1265,9 +1919,19 @@ public:
     if (sampleReviewModal_) return;
     lastError_.clear();
     if (recordingInput_.capturing() || recordingInput_.pending()) {
-      if (event.key == seam::native_ui::NativeKey::R && !event.repeat) record(stopRecording());
+      if (pendingRecordingImportStarted_ && event.key == seam::native_ui::NativeKey::Escape && !event.repeat) {
+        controller_.cancelProceduralCandidateImport();
+        lastError_ = "Cancelling recorded take import; the capture and saved WAV are retained until completion";
+      } else if (pendingRecordingExportStarted_ && event.key == seam::native_ui::NativeKey::Escape && !event.repeat) {
+        lastError_ = "Recorded WAV export cannot be interrupted; the capture is retained until its file is verified";
+      } else if (event.key == seam::native_ui::NativeKey::R && !event.repeat) record(stopRecording());
       else if (event.key == seam::native_ui::NativeKey::X && !event.repeat) record(discardRecording());
-      else if (!event.repeat) lastError_ = "Press R to finish or retry publishing the current recording, or X to discard it";
+      else if (pendingRecordingImportStarted_ && event.key == seam::native_ui::NativeKey::Escape) {
+        lastError_ = "Recorded take import cancellation requested; capture remains retained";
+      }
+      else if (!event.repeat) lastError_ = pendingRecordingExportStarted_
+          ? "Wait for the saved WAV to finish writing and verification"
+          : "Press R to finish or retry publishing the current recording, or X to discard it";
       repaint(); return;
     }
     if (sampleReviewView_) {
@@ -1374,7 +2038,8 @@ public:
                event.modifiers.primaryShortcut()) {
       record(controller_.save());
     } else if (event.key == seam::native_ui::NativeKey::R) {
-      if (!event.repeat) record(startRecording());
+      if (!event.repeat && event.modifiers.primaryShortcut()) record(importRecordedTakeFromDialog());
+      else if (!event.repeat) record(startRecording());
     } else if (event.key == seam::native_ui::NativeKey::I && event.modifiers.primaryShortcut()) {
       record(event.modifiers.shift ? generationFromDialog() : importProceduralFromDialog());
     } else if (event.key == seam::native_ui::NativeKey::B && event.modifiers.primaryShortcut() && event.modifiers.shift) {
@@ -1409,7 +2074,7 @@ public:
   bool wantsClose() const noexcept override { return false; }
   const seam::native_ui::AccessibilityTree* accessibilityTree() const noexcept override {
     return sampleReviewView_ ? &sampleReviewAccessibility_ : (designerView_ ? &designerAccessibility_ :
-        controller_.productionProject() && controller_.manifest().units.empty()?&generationAccessibility_:nullptr);
+        controller_.productionProject() && controller_.manifest().units.empty()?&generationAccessibility_:&studioAccessibility_);
   }
   seam::core::Result<void> dispatchAccessibility(std::string_view id, seam::native_ui::SemanticAction action) noexcept override {
     using namespace seam::native_ui;
@@ -1423,7 +2088,8 @@ public:
         if (selected==SemanticAction::SetFocus) { generationSemanticFocus_=target; return generationAccessibility_.setFocus(target); }
         if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Generation status is read-only");
         const std::string command{target.substr(prefix.size())};
-        const auto result=generationControlAction(command); record(result); repaint(); return result;
+        const auto result=command=="import-wav"?importRecordedTakeFromDialog():generationControlAction(command);
+        record(result); repaint(); return result;
       });
     }
     if (sampleReviewView_) {
@@ -1433,6 +2099,19 @@ public:
         if (selected == SemanticAction::SetFocus) { sampleReviewSemanticFocus_ = target; return sampleReviewAccessibility_.setFocus(target); }
         if (selected != SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported, "Review data is inspection-only; use the explicit controls");
         const auto result = sampleReviewAction(target.substr(prefix.size())); record(result); repaint(); return result;
+      });
+    }
+    if (!designerView_) {
+      const auto prefix=generationSemanticPrefix();
+      if (takeImportModal_ || !id.starts_with(prefix))
+        return seam::core::failure(seam::core::ErrorCode::Conflict,"Studio accessibility target is stale or modal");
+      return studioAccessibility_.dispatch(id,action,[&](std::string_view target,SemanticAction selected)->seam::core::Result<void> {
+        if (selected==SemanticAction::SetFocus) { studioSemanticFocus_=target; return studioAccessibility_.setFocus(target); }
+        if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Studio status is read-only");
+        const auto result=target.substr(prefix.size())=="import-wav"
+            ?importRecordedTakeFromDialog()
+            :seam::core::failure(seam::core::ErrorCode::Unsupported,"Unknown Studio action");
+        record(result); repaint(); return result;
       });
     }
     const auto prefix = designerSemanticPrefix();
@@ -1458,6 +2137,21 @@ public:
       }
       if (suffix == "prepare-draft") {
         const auto result = prepareDesignerFromDialog(); record(result); repaint(); return result;
+      }
+      if (suffix.starts_with("render-articulation.") || suffix.starts_with("play-articulation.")) {
+        const auto phone=std::string{suffix.substr(suffix.find('.')+1U)};
+        if (!designer_.model() || phone.empty())
+          return seam::core::failure(seam::core::ErrorCode::InvalidArgument,"Articulation action target is invalid");
+        stopAudition();
+        if (suffix.starts_with("render-articulation.")) {
+          const auto result=designer_.beginArticulationAudition(phone); record(result); repaint(); return result;
+        }
+        if (!designer_.articulationAudio() || designer_.articulationAudioPhone()!=phone)
+          return seam::core::failure(seam::core::ErrorCode::Conflict,"Articulation preview is no longer ready");
+        const auto& audio=designer_.articulationAudio();
+        const auto result=audition_.start(seam::platform::createSystemAudioDevice(),audio,0U,audio->frameCount(),0.25F);
+        if (result) auditionStatus_=phone+" + SELECTED VOWEL / NOT APPROVED";
+        record(result); repaint(); return result;
       }
       if (suffix.starts_with("remove-plosive.") || suffix.starts_with("plosive-seed.") || suffix.starts_with("render-plosive.") || suffix.starts_with("render-plosive-phrase.") || suffix.starts_with("render-plosive-coda.") || suffix.starts_with("play-plosive.")) {
         const auto number=suffix.substr(suffix.find('.')+1U); std::size_t index=0U;
@@ -1517,6 +2211,16 @@ public:
         if (suffix == "new") key = NativeKey::N;
         else if (suffix == "open") key = NativeKey::O;
         else if (suffix == "save" || suffix == "save-as") { key = NativeKey::S; shift = suffix == "save-as"; }
+        else if (suffix == "publish-singer") {
+          lastError_.clear(); stopAudition();
+          const auto result = publishDesignerSingerFromDialog();
+          record(result); repaint(); return result;
+        }
+        else if (suffix == "install-published-singer") {
+          lastError_.clear(); stopAudition();
+          const auto result = installPublishedSinger();
+          record(result); repaint(); return result;
+        }
         else if (suffix == "back") key = NativeKey::D;
         else if (suffix == "add-frication") key = NativeKey::E;
         else if (suffix == "add-plosive") key = NativeKey::I;
@@ -1571,8 +2275,46 @@ public:
       else if (control == 7U) desired.modulation.rateHz = number;
       else {
         const auto oralEnd = 8U + desired.poses[designer_.auditionPose()].formants.size()*3U;
-        const auto nasalStart=designerControlCount(desired,designer_.auditionPose())-5U;
+        const auto pose=designer_.auditionPose();
+        const auto nasalStart=designerNasalStart(desired,pose);
         if (control>=nasalStart) setNasalControl(desired.poses[designer_.auditionPose()],control-nasalStart,number);
+        else if (control>=designerBreathStart(desired,pose)) {
+          auto& source=desired.breaths[designerBreaths(desired,pose)[(control-designerBreathStart(desired,pose))/3U]].source;
+          const auto parameter=(control-designerBreathStart(desired,pose))%3U;
+          if (parameter==0U) source.centerHz=number;
+          else if (parameter==1U) source.bandwidthHz=number;
+          else source.gain=number;
+        }
+        else if (control>=designerApproximantStart(desired,pose)) {
+          desired.approximants[designerApproximants(desired,pose)[control-designerApproximantStart(desired,pose)]].transitionMilliseconds=number;
+        }
+        else if (control>=designerVoicedAffricateStart(desired,pose)) {
+          const auto relative=control-designerVoicedAffricateStart(desired,pose);
+          auto& affricate=desired.voicedAffricates[designerVoicedAffricates(desired,pose)[relative/10U]];
+          const auto parameter=relative%10U;
+          if (parameter<6U) {
+            auto& source=parameter<3U?affricate.burst:affricate.tail;
+            const auto field=parameter%3U;
+            if (field==0U) source.centerHz=number;
+            else if (field==1U) source.bandwidthHz=number;
+            else source.gain=number;
+          } else if (parameter==6U) affricate.burstMilliseconds=number;
+          else if (parameter==7U) affricate.closureVoicingGain=number;
+          else if (parameter==8U) affricate.closureLowpassHz=number;
+          else affricate.tailVoicingGain=number;
+        }
+        else if (control>=designerAffricateStart(desired,pose)) {
+          const auto relative=control-designerAffricateStart(desired,pose);
+          auto& affricate=desired.affricates[designerAffricates(desired,pose)[relative/7U]];
+          const auto parameter=relative%7U;
+          if (parameter<6U) {
+            auto& source=parameter<3U?affricate.burst:affricate.tail;
+            const auto field=parameter%3U;
+            if (field==0U) source.centerHz=number;
+            else if (field==1U) source.bandwidthHz=number;
+            else source.gain=number;
+          } else affricate.burstMilliseconds=number;
+        }
         else if (control>=designerPlosiveStart(desired,designer_.auditionPose())) {
           const auto relative=control-designerPlosiveStart(desired,designer_.auditionPose());
           setPlosiveControl(desired.plosives[designerPlosives(desired,designer_.auditionPose())[relative/4U]],relative%4U,number);
@@ -1652,7 +2394,9 @@ public:
     if (controller_.proceduralImportBusy()) return seam::core::failure(seam::core::ErrorCode::Conflict,
         "Finish candidate import before recording");
     const auto started = recordingInput_.begin();
-    inputBackend_ = recordingInput_.info().backend;
+    const auto input = recordingInput_.info();
+    inputBackend_ = input.backend;
+    if (!input.deviceName.empty()) inputBackend_ += " / " + input.deviceName;
     if (!started) return started;
     controller_.cancelCandidateMarkerDrag();
     markerDrag_.reset();
@@ -1662,6 +2406,7 @@ public:
     lastRecording_.clear();
     pendingRecordingPath_.clear();
     pendingRecordingHash_.clear();
+    recordingStatus_ = "CAPTURING FROM " + input.deviceName;
     lastError_.clear();
     return seam::core::success();
   }
@@ -1670,6 +2415,7 @@ public:
     const auto finished = recordingInput_.finish();
     if (!finished) return finished;
     if (!recordingInput_.pending()) return seam::core::success();
+    if (pendingRecordingImportStarted_ || pendingRecordingExportStarted_) return seam::core::success();
     const auto frames = recording_.recordedFrames();
     lastRecordedFrames_ = frames;
     std::error_code error;
@@ -1693,6 +2439,25 @@ public:
                     : productionAssignment != nullptr
                           ? productionAssignment->plannedTakeId
                           : std::string{"take"};
+    if (controller_.productionProject() != nullptr) {
+      if (pendingRecordingHash_.empty()) {
+        if (!pendingRecordingPath_.empty()) {
+          // A previous export failed after writing or could not be hashed. Keep
+          // that user file untouched; a retry writes a fresh direct-child WAV.
+          if (recoveryExportAttempts_ >= 1U)
+            return seam::core::failure(seam::core::ErrorCode::Conflict,
+                "Recovery already wrote a new WAV that still could not be verified; press X to discard the capture "
+                "(the saved file is kept) or inspect the recording directory",
+                pendingRecordingPath_.string());
+          ++recoveryExportAttempts_;
+        }
+        const auto destination = seam::native_ui::nextVoicebankRecordingPath(directory, name);
+        if (!destination) return seam::core::Result<void>{destination.error()};
+        pendingRecordingPath_ = destination.value();
+        lastRecording_ = pendingRecordingPath_;
+      }
+      return beginPendingRecordingExport(pendingRecordingPath_, pendingRecordingHash_);
+    }
     if (pendingRecordingHash_.empty()) {
       // First publication, or recovery from a written file whose identity could
       // not be read. Recovery always writes a NEW file from the retained capture;
@@ -1756,6 +2521,9 @@ public:
     if (!recordingInput_.pending())
       return seam::core::failure(seam::core::ErrorCode::InvalidState,
           "There is no completed recording to discard");
+    if (pendingRecordingExportStarted_ || pendingRecordingImportStarted_)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Wait for recorded WAV export/import to settle before discarding its capture");
     const auto preserved = pendingRecordingPath_;
     const auto discarded = recordingInput_.discardPending();
     if (!discarded) return discarded;
@@ -1763,15 +2531,106 @@ public:
     pendingRecordingHash_.clear();
     recoveryExportAttempts_ = 0U;
     lastError_.clear();
-    auditionStatus_ = preserved.empty()
-                          ? std::string{"Recording capture discarded; no file had been written"}
-                          : "Recording capture discarded; saved file kept at " + preserved.string();
+    recordingStatus_ = preserved.empty()
+        ? std::string{"Recording capture discarded; no file had been written"}
+        : "Recording capture discarded; saved file kept at " + preserved.string();
     return seam::core::success();
   }
 
 private:
+  struct PendingRecordingExport final {
+    std::filesystem::path path;
+    std::string sha256;
+  };
+
+  seam::core::Result<void> beginPendingRecordingExport(
+      std::filesystem::path path, std::string expectedSha256) {
+    if (pendingRecordingExportStarted_)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Recorded WAV export is already running");
+    try {
+      recordingExport_ = std::async(std::launch::async,
+          [this, path = std::move(path), expectedSha256 = std::move(expectedSha256)]()
+              -> seam::core::Result<PendingRecordingExport> {
+        if (expectedSha256.empty()) {
+          const auto written = recordingInput_.exportPending(path);
+          if (!written) return seam::core::Result<PendingRecordingExport>{written.error()};
+        }
+        const auto digest = seam::core::sha256File(path);
+        if (!digest) return seam::core::Result<PendingRecordingExport>{digest.error()};
+        if (!expectedSha256.empty() && digest.value() != expectedSha256)
+          return seam::core::failure<PendingRecordingExport>(seam::core::ErrorCode::Conflict,
+              "Saved recording changed before publication; retry or discard the retained capture",
+              path.string());
+        return seam::core::success(PendingRecordingExport{std::move(path), digest.value()});
+      });
+      pendingRecordingExportStarted_ = true;
+      recordingStatus_ = "WRITING AND VERIFYING WAV / CAPTURE RETAINED";
+      lastError_.clear();
+      return seam::core::success();
+    } catch (const std::exception& error) {
+      return seam::core::failure(seam::core::ErrorCode::Internal,
+          "Unable to start recorded WAV export", error.what());
+    }
+  }
+
+  seam::core::Result<void> pollPendingRecordingExport() {
+    if (!pendingRecordingExportStarted_ || !recordingExport_.valid() ||
+        recordingExport_.wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+      return seam::core::success();
+    pendingRecordingExportStarted_ = false;
+    try {
+      auto result = recordingExport_.get();
+      if (!result) {
+        lastError_ = result.error().message;
+        recordingStatus_ = "RECORDED WAV EXPORT FAILED / CAPTURE RETAINED";
+        return seam::core::Result<void>{result.error()};
+      }
+      pendingRecordingPath_ = result.value().path;
+      pendingRecordingHash_ = result.value().sha256;
+      lastRecording_ = pendingRecordingPath_;
+      const auto imported = controller_.beginRawTakeImport(
+          pendingRecordingPath_, {}, pendingRecordingHash_);
+      if (!imported) {
+        lastError_ = imported.error().message;
+        recordingStatus_ = "RECORDED WAV READY / IMPORT RETRY AVAILABLE";
+        return imported;
+      }
+      pendingRecordingImportStarted_ = true;
+      recordingStatus_ = "WAV VERIFIED / IMPORTING TAKE";
+      return seam::core::success();
+    } catch (const std::exception& error) {
+      lastError_ = "Recorded WAV export worker failed";
+      recordingStatus_ = "RECORDED WAV EXPORT FAILED / CAPTURE RETAINED";
+      return seam::core::failure(seam::core::ErrorCode::Internal,
+          lastError_, error.what());
+    }
+  }
+
   void repaint() noexcept {
     if (window_ != nullptr) window_->requestRepaint();
+  }
+  void completePendingRecordingImport(const seam::core::Result<void>& result) noexcept {
+    if (!pendingRecordingImportStarted_ || controller_.proceduralImportBusy()) return;
+    if (!result) {
+      // Keep the captured audio and its already-written WAV so the creator can
+      // retry publication without recording again or rebinding different bytes.
+      pendingRecordingImportStarted_ = false;
+      recordingStatus_ = "TAKE IMPORT FAILED / CAPTURE AND WAV RETAINED";
+      return;
+    }
+    const auto published = recordingInput_.acknowledgePublished();
+    if (!published) {
+      lastError_ = published.error().message;
+      pendingRecordingImportStarted_ = false;
+      return;
+    }
+    pendingRecordingImportStarted_ = false;
+    pendingRecordingPath_.clear();
+    pendingRecordingHash_.clear();
+    recoveryExportAttempts_ = 0U;
+    lastError_.clear();
+    recordingStatus_.clear();
   }
   void record(const seam::core::Result<void>& result) noexcept {
     if (!result) lastError_ = result.error().message;
@@ -1779,10 +2638,21 @@ private:
 
   seam::native_ui::CandidateAuditionSession audition_;
   std::string auditionStatus_;
+  std::string recordingStatus_;
+  std::string designerPublishStatus_;
+  std::filesystem::path publishedSingerPackagePath_;
+  std::string publishedSingerPackageDigest_;
+  std::string publishedSingerDisplayName_;
+  std::optional<seam::distribution::Ed25519PublicKey> publishedSingerPublicKey_;
+  bool publishedSingerInstalled_{false};
+  std::uint64_t publishedDesignerEpoch_{};
+  std::uint64_t publishedDesignerRevision_{};
   seam::native_ui::VoicebankStudioController controller_;
   seam::native_ui::VoicebankStudioScenePainter painter_;
   seam::platform::RecordingSession recording_;
   seam::platform::RecordingInputSession recordingInput_;
+  std::future<seam::core::Result<PendingRecordingExport>> recordingExport_;
+  bool pendingRecordingExportStarted_{false};
   std::string inputBackend_{"OFF"};
   std::optional<seam::ui::AcousticMarkerKind> markerDrag_;
   std::optional<std::size_t> pitchDrag_;
@@ -1797,7 +2667,9 @@ private:
   seam::native_ui::AccessibilityTree sampleReviewAccessibility_;
   seam::native_ui::AccessibilityTree generationAccessibility_;
   std::string generationSemanticFocus_;
-  bool generationModal_{false};
+  seam::native_ui::AccessibilityTree studioAccessibility_;
+  std::string studioSemanticFocus_;
+  bool generationModal_{false}, takeImportModal_{false};
   std::string sampleReviewSemanticFocus_;
   bool designerConfirmationActive_{false};
   bool closeConfirmationActive_{false};
@@ -1812,6 +2684,7 @@ private:
   std::filesystem::path lastRecording_;
   std::filesystem::path pendingRecordingPath_;
   std::string pendingRecordingHash_;
+  bool pendingRecordingImportStarted_{false};
   std::size_t recoveryExportAttempts_{0U};
   std::size_t lastRecordedFrames_{0U};
 };
@@ -1909,8 +2782,8 @@ int main(int argc, char** argv) {
     }
   }
   const auto result = window->run();
-  app.finishPendingImport();
   const auto stopped = app.stopRecording();
+  app.finishPendingImport();
   const auto info = app.inputInfo();
   const auto stats = app.inputStats();
   std::cout << "input_backend=" << info.backend << '\n'

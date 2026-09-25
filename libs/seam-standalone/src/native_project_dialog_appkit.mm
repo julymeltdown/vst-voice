@@ -88,13 +88,25 @@ static std::string conversionIssueDetails(
 
 @interface SEAMVoicebankToggleTarget : NSObject
 @property(nonatomic, assign) NSPopUpButton* voicebank;
+@property(nonatomic, assign) NSPopUpButton* proceduralSinger;
 @end
 
 @implementation SEAMVoicebankToggleTarget
 - (void)toggleVoicebank:(NSButton*)sender {
   const auto enabled = sender.state == NSControlStateValueOn;
   self.voicebank.enabled = enabled;
-  if (!enabled) [self.voicebank selectItemAtIndex:0];
+  self.proceduralSinger.enabled = enabled;
+  if (!enabled) {
+    [self.voicebank selectItemAtIndex:0];
+    [self.proceduralSinger selectItemAtIndex:0];
+  }
+}
+- (void)selectInitialSinger:(NSPopUpButton*)sender {
+  if (sender == self.voicebank && sender.indexOfSelectedItem > 0) {
+    [self.proceduralSinger selectItemAtIndex:0];
+  } else if (sender == self.proceduralSinger && sender.indexOfSelectedItem > 0) {
+    [self.voicebank selectItemAtIndex:0];
+  }
 }
 @end
 
@@ -223,67 +235,87 @@ private:
     @autoreleasepool {
       const bool hasLosses = std::any_of(issues.begin(), issues.end(),
           [](const auto& issue) { return issue.loss; });
+      const bool hasIssues = !issues.empty();
       // Only the selected detail is materialized. NSTableView requests visible
-      // rows lazily; a large admitted conversion report stays scrollable.
+      // rows lazily; a large admitted conversion report stays scrollable. A
+      // loss-free conversion gets a compact status row instead of an empty table.
       const auto screenHeight = NSScreen.mainScreen.visibleFrame.size.height;
-      const auto tableHeight = std::clamp(screenHeight - 500.0, 80.0, 230.0);
+      const auto desiredTableHeight =
+          static_cast<CGFloat>(issues.size()) * 22.0 + 24.0;
+      const auto availableTableHeight = std::max(46.0, screenHeight - 500.0);
+      const auto tableHeight = hasIssues
+          ? std::clamp(std::min(desiredTableHeight, availableTableHeight),
+                       46.0, 230.0)
+          : 0.0;
       constexpr CGFloat width = 680.0;
+      const CGFloat viewHeight = hasIssues ? 254.0 + tableHeight : 164.0;
       auto* view = [[NSView alloc] initWithFrame:
-          NSMakeRect(0.0, 0.0, width, 254.0 + tableHeight)];
-      auto* details = conversionTextView(view,
-          NSMakeRect(0.0, 0.0, width, 82.0), @"Selected conversion issue, full text",
-          issues.empty() ? @"No conversion issues were reported."
-                         : conversionString(conversionIssueDetails(issues.front())));
-      [view addSubview:label(@"Selected issue — full location and message",
-                            NSMakeRect(0.0, 85.0, width, 18.0))];
+          NSMakeRect(0.0, 0.0, width, viewHeight)];
+      NSTextView* details = nil;
+      NSTableView* table = nil;
+      SEAMConversionReviewTable* dataSource = nil;
+      if (hasIssues) {
+        details = conversionTextView(view,
+            NSMakeRect(0.0, 0.0, width, 82.0),
+            @"Selected conversion issue, full text",
+            conversionString(conversionIssueDetails(issues.front())));
+        [view addSubview:label(@"Selected issue — full location and message",
+                              NSMakeRect(0.0, 85.0, width, 18.0))];
 
-      auto* tableScroll = [[NSScrollView alloc] initWithFrame:
-          NSMakeRect(0.0, 107.0, width, tableHeight)];
-      tableScroll.hasVerticalScroller = YES;
-      // The fixed columns fit this viewport. A horizontal scroller consumed
-      // the last row's height even though every cell has a full-detail view.
-      tableScroll.hasHorizontalScroller = NO;
-      tableScroll.borderType = NSBezelBorder;
-      auto* table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
-      table.accessibilityLabel = @"Conversion losses and warnings";
-      table.rowHeight = 22.0;
-      table.usesAlternatingRowBackgroundColors = YES;
-      table.allowsMultipleSelection = NO;
-      table.allowsEmptySelection = NO;
-      table.columnAutoresizingStyle = NSTableViewLastColumnOnlyAutoresizingStyle;
-      auto* severity = [[NSTableColumn alloc] initWithIdentifier:@"severity"];
-      severity.title = @"Type";
-      severity.width = 80.0;
-      auto* location = [[NSTableColumn alloc] initWithIdentifier:@"location"];
-      location.title = @"Location";
-      location.width = 190.0;
-      auto* message = [[NSTableColumn alloc] initWithIdentifier:@"message"];
-      message.title = @"Message";
-      message.width = 390.0;
-      [table addTableColumn:severity];
-      [table addTableColumn:location];
-      [table addTableColumn:message];
-      auto* dataSource = [[SEAMConversionReviewTable alloc] init];
-      dataSource.issues = &issues;
-      dataSource.details = details;
-      table.dataSource = dataSource;
-      table.delegate = dataSource;
-      tableScroll.documentView = table;
-      [view addSubview:tableScroll];
-      [table reloadData];
-      if (!issues.empty()) {
+        auto* tableScroll = [[NSScrollView alloc] initWithFrame:
+            NSMakeRect(0.0, 107.0, width, tableHeight)];
+        tableScroll.hasVerticalScroller = YES;
+        // The fixed columns fit this viewport. A horizontal scroller consumed
+        // the last row's height even though every cell has a full-detail view.
+        tableScroll.hasHorizontalScroller = NO;
+        tableScroll.borderType = NSBezelBorder;
+        table = [[NSTableView alloc] initWithFrame:tableScroll.bounds];
+        table.accessibilityLabel = @"Conversion losses and warnings";
+        table.rowHeight = 22.0;
+        table.usesAlternatingRowBackgroundColors = YES;
+        table.allowsMultipleSelection = NO;
+        table.allowsEmptySelection = NO;
+        table.columnAutoresizingStyle = NSTableViewLastColumnOnlyAutoresizingStyle;
+        auto* severity = [[NSTableColumn alloc] initWithIdentifier:@"severity"];
+        severity.title = @"Type";
+        severity.width = 80.0;
+        auto* location = [[NSTableColumn alloc] initWithIdentifier:@"location"];
+        location.title = @"Location";
+        location.width = 190.0;
+        auto* message = [[NSTableColumn alloc] initWithIdentifier:@"message"];
+        message.title = @"Message";
+        message.width = 390.0;
+        [table addTableColumn:severity];
+        [table addTableColumn:location];
+        [table addTableColumn:message];
+        dataSource = [[SEAMConversionReviewTable alloc] init];
+        dataSource.issues = &issues;
+        dataSource.details = details;
+        table.dataSource = dataSource;
+        table.delegate = dataSource;
+        tableScroll.documentView = table;
+        [view addSubview:tableScroll];
+        [table reloadData];
         [table selectRowIndexes:[NSIndexSet indexSetWithIndex:0U]
             byExtendingSelection:NO];
+        [view addSubview:label(@"Conversion report — select a row to read its full details",
+            NSMakeRect(0.0, 111.0 + tableHeight, width, 18.0))];
+      } else {
+        auto* emptyState = [NSTextField wrappingLabelWithString:
+            @"No conversion issues were reported."];
+        emptyState.frame = NSMakeRect(0.0, 0.0, width, 22.0);
+        emptyState.accessibilityLabel = emptyState.stringValue;
+        [view addSubview:emptyState];
       }
-      [view addSubview:label(@"Conversion report — select a row to read its full details",
-          NSMakeRect(0.0, 111.0 + tableHeight, width, 18.0))];
       auto* source = conversionTextView(view,
-          NSMakeRect(0.0, 133.0 + tableHeight, width, 70.0),
+          NSMakeRect(0.0, hasIssues ? 133.0 + tableHeight : 30.0,
+                     width, 70.0),
           conversionString(fileAccessibilityLabel),
           conversionString(fileDetails));
       auto* disclosure = [NSTextField wrappingLabelWithString:
           conversionString(disclosureText)];
-      disclosure.frame = NSMakeRect(0.0, 209.0 + tableHeight, width, 42.0);
+      disclosure.frame = NSMakeRect(0.0,
+          hasIssues ? 209.0 + tableHeight : 106.0, width, 50.0);
       disclosure.font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
       disclosure.accessibilityLabel = disclosure.stringValue;
       [view addSubview:disclosure];
@@ -309,9 +341,11 @@ private:
       alert.window.defaultButtonCell = cancel.cell;
       alert.window.initialFirstResponder = cancel;
       [alert.window makeFirstResponder:cancel];
-      cancel.nextKeyView = table;
-      table.nextKeyView = details;
-      details.nextKeyView = source;
+      cancel.nextKeyView = hasIssues ? table : source;
+      if (hasIssues) {
+        table.nextKeyView = details;
+        details.nextKeyView = source;
+      }
       source.nextKeyView = accept;
       accept.nextKeyView = cancel;
       NSWindow* owner = NSApp.keyWindow;
@@ -330,9 +364,11 @@ private:
           }];
       const auto response = [alert runModal];
       if (keyMonitor != nil) [NSEvent removeMonitor:keyMonitor];
-      table.delegate = nil;
-      table.dataSource = nil;
-      dataSource.issues = nullptr;
+      if (hasIssues) {
+        table.delegate = nil;
+        table.dataSource = nil;
+        dataSource.issues = nullptr;
+      }
       if (owner != nil && owner.visible) {
         [owner makeKeyWindow];
         if (responder != nil) [owner makeFirstResponder:responder];
@@ -361,40 +397,40 @@ public:
       model.setSampleRate(config.sampleRate);
       model.setOutputChannels(config.outputChannels);
 
-      auto* view = [[NSView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 460.0, 276.0)];
-      auto* name = [[NSTextField alloc] initWithFrame:NSMakeRect(150.0, 238.0, 294.0, 24.0)];
+      auto* view = [[NSView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 460.0, 336.0)];
+      auto* name = [[NSTextField alloc] initWithFrame:NSMakeRect(150.0, 298.0, 294.0, 24.0)];
       name.stringValue = nsString(initialName);
-      [view addSubview:label(@"Project name", NSMakeRect(12.0, 242.0, 126.0, 18.0))];
+      [view addSubview:label(@"Project name", NSMakeRect(12.0, 302.0, 126.0, 18.0))];
       [view addSubview:name];
 
-      auto* tempo = [[NSTextField alloc] initWithFrame:NSMakeRect(150.0, 204.0, 90.0, 24.0)];
+      auto* tempo = [[NSTextField alloc] initWithFrame:NSMakeRect(150.0, 264.0, 90.0, 24.0)];
       tempo.stringValue = @"120";
-      [view addSubview:label(@"Tempo (BPM)", NSMakeRect(12.0, 208.0, 126.0, 18.0))];
+      [view addSubview:label(@"Tempo (BPM)", NSMakeRect(12.0, 268.0, 126.0, 18.0))];
       [view addSubview:tempo];
 
-      auto* numerator = popup(NSMakeRect(150.0, 170.0, 70.0, 26.0),
+      auto* numerator = popup(NSMakeRect(150.0, 230.0, 70.0, 26.0),
                               {@"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"12"});
       [numerator selectItemWithTitle:@"4"];
-      auto* denominator = popup(NSMakeRect(230.0, 170.0, 70.0, 26.0),
+      auto* denominator = popup(NSMakeRect(230.0, 230.0, 70.0, 26.0),
                                 {@"1", @"2", @"4", @"8", @"16", @"32"});
       [denominator selectItemWithTitle:@"4"];
-      [view addSubview:label(@"Time signature", NSMakeRect(12.0, 174.0, 126.0, 18.0))];
+      [view addSubview:label(@"Time signature", NSMakeRect(12.0, 234.0, 126.0, 18.0))];
       [view addSubview:numerator];
       [view addSubview:denominator];
 
-      auto* sampleRate = popup(NSMakeRect(150.0, 136.0, 120.0, 26.0),
+      auto* sampleRate = popup(NSMakeRect(150.0, 196.0, 120.0, 26.0),
                                {@"44100", @"48000", @"96000"});
       [sampleRate selectItemWithTitle:nsString(std::to_string(config.sampleRate))];
-      [view addSubview:label(@"Sample rate", NSMakeRect(12.0, 140.0, 126.0, 18.0))];
+      [view addSubview:label(@"Sample rate", NSMakeRect(12.0, 200.0, 126.0, 18.0))];
       [view addSubview:sampleRate];
 
-      auto* channels = popup(NSMakeRect(150.0, 102.0, 90.0, 26.0),
+      auto* channels = popup(NSMakeRect(150.0, 162.0, 90.0, 26.0),
                              {@"1", @"2", @"4", @"8"});
       [channels selectItemWithTitle:nsString(std::to_string(config.outputChannels))];
-      [view addSubview:label(@"Output channels", NSMakeRect(12.0, 106.0, 126.0, 18.0))];
+      [view addSubview:label(@"Output channels", NSMakeRect(12.0, 166.0, 126.0, 18.0))];
       [view addSubview:channels];
 
-      auto* track = [[NSButton alloc] initWithFrame:NSMakeRect(12.0, 66.0, 300.0, 24.0)];
+      auto* track = [[NSButton alloc] initWithFrame:NSMakeRect(12.0, 126.0, 300.0, 24.0)];
       track.buttonType = NSButtonTypeSwitch;
       track.title = @"Create initial vocal track";
       track.state = NSControlStateValueOn;
@@ -408,16 +444,39 @@ public:
                            candidate.manifest.id + " " + candidate.manifest.version;
         [bank addItemWithTitle:nsString(title)];
       }
+      auto* proceduralSinger = [[NSPopUpButton alloc]
+          initWithFrame:NSMakeRect(150.0, 58.0, 294.0, 26.0) pullsDown:NO];
+      [proceduralSinger addItemWithTitle:@"No Procedural Singer"];
+      for (const auto& option : config.proceduralSingers) {
+        [proceduralSinger addItemWithTitle:nsString(option.label)];
+      }
+      if (!config.unavailableProceduralSingers.empty()) {
+        [proceduralSinger.menu addItem:[NSMenuItem separatorItem]];
+        for (const auto& option : config.unavailableProceduralSingers) {
+          [proceduralSinger addItemWithTitle:nsString(option.label)];
+          NSMenuItem* menuItem = [proceduralSinger itemAtIndex:
+              proceduralSinger.numberOfItems - 1];
+          menuItem.enabled = NO;
+          menuItem.toolTip = nsString(option.detail);
+        }
+      }
       [view addSubview:label(@"Initial Voicebank", NSMakeRect(12.0, 30.0, 126.0, 18.0))];
       [view addSubview:bank];
+      [view addSubview:label(@"Initial Procedural Singer", NSMakeRect(12.0, 62.0, 136.0, 18.0))];
+      [view addSubview:proceduralSinger];
       auto* toggleTarget = [[SEAMVoicebankToggleTarget alloc] init];
       toggleTarget.voicebank = bank;
+      toggleTarget.proceduralSinger = proceduralSinger;
       track.target = toggleTarget;
       track.action = @selector(toggleVoicebank:);
+      bank.target = toggleTarget;
+      bank.action = @selector(selectInitialSinger:);
+      proceduralSinger.target = toggleTarget;
+      proceduralSinger.action = @selector(selectInitialSinger:);
 
       auto* alert = [[NSAlert alloc] init];
       alert.messageText = @"Create New Project";
-      alert.informativeText = @"Choose the project identity, timing, output, and exact initial Voicebank.";
+      alert.informativeText = @"Choose the project identity, timing, output, and an optional initial singer.";
       alert.accessoryView = view;
       [alert addButtonWithTitle:@"Choose Location…"];
       [alert addButtonWithTitle:@"Cancel"];
@@ -485,7 +544,17 @@ public:
         return core::Result<std::optional<authoring::NewProjectRequest>>{
             submitted.error()};
       }
-      return std::optional<authoring::NewProjectRequest>{std::move(submitted).value()};
+      auto request = std::move(submitted).value();
+      if (createTrack && proceduralSinger.indexOfSelectedItem > 0) {
+        const auto index = static_cast<std::size_t>(proceduralSinger.indexOfSelectedItem - 1);
+        if (index >= config.proceduralSingers.size()) {
+          return core::failure<std::optional<authoring::NewProjectRequest>>(
+              core::ErrorCode::InvalidArgument,
+              "Selected procedural singer is not one of the offered options");
+        }
+        request.initialProceduralSinger = config.proceduralSingers[index].reference;
+      }
+      return std::optional<authoring::NewProjectRequest>{std::move(request)};
     }
   }
 };

@@ -255,6 +255,7 @@ def assemble_release_payload(
         "Documentation/external-beta-documentation.json",
         "THIRD_PARTY_NOTICES.md",
         "Notices/openssl-LICENSE.txt",
+        "Notices/CMUdict-LICENSE.txt",
         "SBOM.spdx.json",
         "Trust/release-trust-roots.json",
         "Ownership/installer-ownership.json",

@@ -10,9 +10,36 @@ from tools.phase13a.payload_materializer import (
     materialize_release_inputs,
 )
 from tools.phase13a.payload_surfaces import PayloadPlatform
+from tools.phase13a.release_inputs import materialize_supporting_files
 
 
 class PayloadMaterializerTests(unittest.TestCase):
+    def test_release_supporting_files_include_the_pinned_dictionary_license(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            output = root / "payload"
+            license_path = source / "licenses/third-party/CMUdict-2026-09-24-LICENSE.txt"
+            license_path.parent.mkdir(parents=True)
+            license_path.write_bytes(b"exact upstream license bytes")
+            for relative in (
+                "THIRD_PARTY_NOTICES.md",
+                "SBOM.spdx.json",
+                "docs/product/external-beta-documentation.json",
+            ):
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}", encoding="utf-8")
+            for relative in ("docs/manual/USER_MANUAL.md", "docs/support/SUPPORT.md"):
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# document", encoding="utf-8")
+
+            materialize_supporting_files(source, root / "dependencies", [], output, False)
+
+            copied = output / "Notices/CMUdict-LICENSE.txt"
+            self.assertEqual(license_path.read_bytes(), copied.read_bytes())
+
     def test_artifact_selection_uses_the_requested_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

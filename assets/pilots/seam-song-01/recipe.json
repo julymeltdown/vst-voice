@@ -1,5 +1,40 @@
 {
-  "affricates": [],
+  "affricates": [
+    {
+      "burst": {
+        "bandwidthHz": 2600,
+        "centerHz": 6000,
+        "gain": 0.12,
+        "seed": "7143"
+      },
+      "burstMilliseconds": 10,
+      "phone": "ts",
+      "style": "neutral",
+      "tail": {
+        "bandwidthHz": 2400,
+        "centerHz": 6500,
+        "gain": 0.10000000000000001,
+        "seed": "7144"
+      }
+    },
+    {
+      "burst": {
+        "bandwidthHz": 2600,
+        "centerHz": 3500,
+        "gain": 0.12,
+        "seed": "7145"
+      },
+      "burstMilliseconds": 10,
+      "phone": "ch",
+      "style": "neutral",
+      "tail": {
+        "bandwidthHz": 2800,
+        "centerHz": 3800,
+        "gain": 0.10000000000000001,
+        "seed": "7146"
+      }
+    }
+  ],
   "approximants": [
     {
       "phone": "r",
@@ -15,6 +50,34 @@
       "phone": "y",
       "style": "neutral",
       "transitionMilliseconds": 40
+    }
+  ],
+  "breaths": [
+    {
+      "bandwidthHz": 7000,
+      "centerHz": 4200,
+      "gain": 0.080000000000000002,
+      "phone": "br",
+      "seed": "7147",
+      "style": "neutral"
+    }
+  ],
+  "closures": [
+    {
+      "phone": "cl",
+      "style": "neutral"
+    },
+    {
+      "phone": "pau",
+      "style": "neutral"
+    },
+    {
+      "phone": "R",
+      "style": "neutral"
+    },
+    {
+      "phone": "glottal",
+      "style": "neutral"
     }
   ],
   "engineId": "seam.source-filter.v1",
@@ -48,6 +111,15 @@
       "voicingGain": null
     },
     {
+      "bandwidthHz": 3500,
+      "centerHz": 5200,
+      "gain": 0.10000000000000001,
+      "phone": "f",
+      "seed": "7139",
+      "style": "neutral",
+      "voicingGain": null
+    },
+    {
       "bandwidthHz": 2500,
       "centerHz": 5000,
       "gain": 0.10000000000000001,
@@ -55,6 +127,15 @@
       "seed": "7136",
       "style": "neutral",
       "voicingGain": 0.34999999999999998
+    },
+    {
+      "bandwidthHz": 2500,
+      "centerHz": 3500,
+      "gain": 0.10000000000000001,
+      "phone": "v",
+      "seed": "7140",
+      "style": "neutral",
+      "voicingGain": 0.29999999999999999
     }
   ],
   "id": "song-01-original",
@@ -63,6 +144,58 @@
     "rateHz": 0,
     "shimmerAmount": 0
   },
+  "palatalized": [
+    {
+      "basePhone": "k",
+      "phone": "ky",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "g",
+      "phone": "gy",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "n",
+      "phone": "ny",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "h",
+      "phone": "hy",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "b",
+      "phone": "by",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "p",
+      "phone": "py",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "m",
+      "phone": "my",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "r",
+      "phone": "ry",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "f",
+      "phone": "fy",
+      "style": "neutral"
+    },
+    {
+      "basePhone": "v",
+      "phone": "vy",
+      "style": "neutral"
+    }
+  ],
   "phonation": {
     "aspiration": 0.050000000000000003,
     "openQuotient": 0.59999999999999998,
@@ -106,6 +239,32 @@
       "gain": 0.12,
       "phone": "b",
       "seed": "7135",
+      "style": "neutral",
+      "voicedClosure": {
+        "gain": 0.20000000000000001,
+        "lowpassHz": 400
+      }
+    },
+    {
+      "bandwidthHz": 2200,
+      "burstMilliseconds": 10,
+      "centerHz": 3000,
+      "gain": 0.12,
+      "phone": "d",
+      "seed": "7141",
+      "style": "neutral",
+      "voicedClosure": {
+        "gain": 0.20000000000000001,
+        "lowpassHz": 400
+      }
+    },
+    {
+      "bandwidthHz": 2000,
+      "burstMilliseconds": 10,
+      "centerHz": 2400,
+      "gain": 0.12,
+      "phone": "g",
+      "seed": "7142",
       "style": "neutral",
       "voicedClosure": {
         "gain": 0.20000000000000001,
@@ -363,6 +522,103 @@
         },
         {
           "bandwidthHz": 110,
+          "frequencyHz": 1900,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 160,
+          "frequencyHz": 2900,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "j",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 110,
+          "frequencyHz": 1700,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 160,
+          "frequencyHz": 2800,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "g",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 110,
+          "frequencyHz": 1700,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 160,
+          "frequencyHz": 2800,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "d",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 110,
+          "frequencyHz": 1500,
+          "gainDb": -6
+        },
+        {
+          "bandwidthHz": 160,
+          "frequencyHz": 2700,
+          "gainDb": -9
+        }
+      ],
+      "nasal": {
+        "antiresonanceBandwidthHz": 120,
+        "antiresonanceHz": 1500,
+        "resonanceBandwidthHz": 90,
+        "resonanceHz": 300
+      },
+      "nasalCoupling": 0.80000000000000004,
+      "phone": "N",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 110,
           "frequencyHz": 1700,
           "gainDb": -3
         },
@@ -376,8 +632,293 @@
       "nasalCoupling": 0,
       "phone": "z",
       "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 80,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 110,
+          "frequencyHz": 1500,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 160,
+          "frequencyHz": 2600,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "v",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 280,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2100,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3100,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "ky",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 1950,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 2950,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "gy",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 280,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2050,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3000,
+          "gainDb": -6
+        }
+      ],
+      "nasal": {
+        "antiresonanceBandwidthHz": 120,
+        "antiresonanceHz": 1500,
+        "resonanceBandwidthHz": 90,
+        "resonanceHz": 300
+      },
+      "nasalCoupling": 0.80000000000000004,
+      "phone": "ny",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 320,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2050,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3000,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "hy",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 1950,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 2900,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "by",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 300,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2050,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3000,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "py",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 280,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2050,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3000,
+          "gainDb": -6
+        }
+      ],
+      "nasal": {
+        "antiresonanceBandwidthHz": 120,
+        "antiresonanceHz": 1450,
+        "resonanceBandwidthHz": 80,
+        "resonanceHz": 280
+      },
+      "nasalCoupling": 0.80000000000000004,
+      "phone": "my",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 330,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 1900,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 2900,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "ry",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 320,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 2050,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 3000,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "fy",
+      "style": "neutral"
+    },
+    {
+      "formants": [
+        {
+          "bandwidthHz": 75,
+          "frequencyHz": 320,
+          "gainDb": 0
+        },
+        {
+          "bandwidthHz": 105,
+          "frequencyHz": 1900,
+          "gainDb": -3
+        },
+        {
+          "bandwidthHz": 155,
+          "frequencyHz": 2800,
+          "gainDb": -6
+        }
+      ],
+      "nasal": null,
+      "nasalCoupling": 0,
+      "phone": "vy",
+      "style": "neutral"
     }
   ],
-  "schemaVersion": 8,
-  "seed": "7130"
+  "schemaVersion": 11,
+  "seed": "7130",
+  "voicedAffricates": [
+    {
+      "burst": {
+        "bandwidthHz": 2500,
+        "centerHz": 3000,
+        "gain": 0.12,
+        "seed": "7137"
+      },
+      "burstMilliseconds": 12,
+      "closureLowpassHz": 400,
+      "closureVoicingGain": 0.20000000000000001,
+      "phone": "j",
+      "style": "neutral",
+      "tail": {
+        "bandwidthHz": 3500,
+        "centerHz": 4500,
+        "gain": 0.12,
+        "seed": "7138"
+      },
+      "tailVoicingGain": 0.34999999999999998
+    }
+  ]
 }

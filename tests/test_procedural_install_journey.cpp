@@ -396,6 +396,78 @@ TEST_CASE("An untrusted or incompatible procedural package cannot be selected") 
              ->proceduralRecipe.has_value());
 }
 
+TEST_CASE("procedural catalogue reports malformed packages without hiding valid singers") {
+  const auto root = test::support::temporaryDirectory("procedural-catalogue-diagnostics");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto package = createProceduralPackage(root, key.value());
+  const auto installRoot = root / "singers";
+  distribution::InstallProceduralOptions installOptions;
+  installOptions.verification = distribution::VerifySeambankOptions{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey},
+      .requireTrustedSigner = true};
+  const auto installed = distribution::installProceduralPackage(
+      package, installRoot, installOptions);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  for (std::size_t index = 0U; index < 65U; ++index) {
+    const auto malformed = installRoot / ("unreadable-singer-" + std::to_string(index)) /
+        "0.1.0";
+    std::filesystem::create_directories(malformed);
+    std::ofstream(malformed / "manifest.json", std::ios::binary | std::ios::trunc)
+        << "{ not valid json";
+  }
+
+  const std::vector roots{distribution::ProceduralSearchRoot{
+      .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}};
+  distribution::ProceduralCatalogue catalogue;
+  const auto scanned = catalogue.scanDetailed(roots);
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().candidates.size() == 1U);
+  CHECK(scanned.value().candidates.front().manifest.id == "authored-original");
+  CHECK(scanned.value().issues.size() == 64U);
+  CHECK(scanned.value().omittedIssueCount == 1U);
+  CHECK(scanned.value().issues.front().detail.find("manifest.json") !=
+        std::string::npos);
+
+  // The legacy API keeps its result contract: it returns only safe candidates.
+  const auto legacy = catalogue.scan(roots);
+  CHECK(legacy.hasValue());
+  CHECK(legacy && legacy.value().size() == 1U);
+
+  const auto invalidRoot = root / "not-a-singer-directory";
+  std::ofstream(invalidRoot, std::ios::binary | std::ios::trunc) << "not a directory";
+  const auto rootScan = catalogue.scanDetailed({distribution::ProceduralSearchRoot{
+      .path = invalidRoot, .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(rootScan.hasValue());
+  CHECK(rootScan && rootScan.value().issues.size() == 1U);
+  CHECK(rootScan && rootScan.value().issues.front().detail.find("catalogue root") !=
+                         std::string::npos);
+}
+
+TEST_CASE("procedural catalogue bounds directory scans and reports incomplete results") {
+  const auto root = test::support::temporaryDirectory("procedural-catalogue-scan-limit");
+  const auto productRoot = root / "singers" / "many-candidates";
+  std::filesystem::create_directories(productRoot);
+  for (std::size_t index = 0U; index < 8193U; ++index) {
+    std::filesystem::create_directory(
+        productRoot / ("version-" + std::to_string(index)));
+  }
+
+  distribution::ProceduralCatalogue catalogue;
+  const auto scanned = catalogue.scanDetailed({distribution::ProceduralSearchRoot{
+      .path = root / "singers", .kind = distribution::ProceduralRootKind::Installed}});
+  CHECK(scanned.hasValue());
+  if (!scanned) return;
+  CHECK(scanned.value().candidates.empty());
+  CHECK(scanned.value().issues.size() == 64U);
+  CHECK(scanned.value().omittedIssueCount > 0U);
+  CHECK(scanned.value().scanLimitReached);
+}
+
 // The remaining failure modes the plan names: a resource that disappears after the project was saved,
 // an intentional replacement that must not disturb the previous version, and an interrupted install
 // that must leave nothing behind.

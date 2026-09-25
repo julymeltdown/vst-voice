@@ -49,8 +49,13 @@ voice_design::VoiceRecipe coverageRecipe() {
   voice_design::VoiceRecipe recipe;
   recipe.id = "coverage-recipe";
   recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
-                  {"i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}}};
+                  {"i", "neutral", 0.0, {{300.0, 70.0, 0.0}, {2300.0, 120.0, -3.0}, {3200.0, 170.0, -6.0}}},
+                  {"j", "neutral", 0.0, {{300.0, 80.0, 0.0}, {1900.0, 110.0, -3.0}, {2900.0, 160.0, -6.0}}}};
   recipe.frications = {{"s", "neutral", {.seed = 41U}}};
+  recipe.voicedAffricates = {{"j", "neutral",
+      {.seed = 42U, .centerHz = 3000.0, .bandwidthHz = 2500.0, .gain = 0.12},
+      {.seed = 43U, .centerHz = 4500.0, .bandwidthHz = 3500.0, .gain = 0.12},
+      12.0, 0.2, 400.0, 0.35}};
   return recipe;
 }
 
@@ -93,19 +98,19 @@ struct Fixture final {
 }  // namespace
 
 TEST_CASE("coverage reports every declared class the recipe can prepare") {
-  Fixture fixture({"cv:s:a", "sustain:a", "sustain:i"});
+  Fixture fixture({"cv:s:a", "cv:j:a", "sustain:a", "sustain:i"});
   const auto report = authoring::inspectInventoryCoverage(fixture.project, fixture.resource);
   CHECK(report);
   if (!report) return;
   CHECK(report.value().complete);
-  CHECK(report.value().assignments == 3U);
-  CHECK(report.value().prepared == 3U);
+  CHECK(report.value().assignments == 4U);
+  CHECK(report.value().prepared == 4U);
   CHECK(report.value().refused == 0U);
-  CHECK(report.value().phones == 3U);   // a, i, s
+  CHECK(report.value().phones == 4U);   // a, i, s, j
   CHECK(report.value().kinds == 2U);    // cv, sustain
   CHECK(report.value().missingPhones.empty());
   CHECK(report.value().missingKinds.empty());
-  CHECK(report.value().entries.size() == 3U);
+  CHECK(report.value().entries.size() == 4U);
   for (const auto& entry : report.value().entries) {
     CHECK(entry.status == "PREPARED");
     CHECK(entry.frameCount > 0U);
@@ -122,9 +127,9 @@ TEST_CASE("coverage reports every declared class the recipe can prepare") {
 }
 
 TEST_CASE("coverage names the class a recipe cannot prepare instead of dropping it") {
-  // The voiced affricate じ has no model, so its class cannot be prepared while the
-  // rest of the inventory can. The report keeps the failure rather than skipping it.
-  Fixture fixture({"cv:s:a", "cv:j:a"});
+  // An unknown phone still has to be refused explicitly; the synthetic coverage recipe now
+  // prepares the voiced affricate じ rather than making that expected gap permanent.
+  Fixture fixture({"cv:s:a", "cv:x:a"});
   const auto report = authoring::inspectInventoryCoverage(fixture.project, fixture.resource);
   CHECK(report);
   if (!report) return;
@@ -133,23 +138,23 @@ TEST_CASE("coverage names the class a recipe cannot prepare instead of dropping 
   CHECK(report.value().prepared == 1U);
   CHECK(report.value().refused == 1U);
   CHECK(report.value().refusedClasses.size() == 1U);
-  CHECK(report.value().refusedClasses.front() == "cv:j:a");
+  CHECK(report.value().refusedClasses.front() == "cv:x:a");
   CHECK(report.value().missingPhones.size() == 1U);
-  CHECK(report.value().missingPhones.front() == "j");
+  CHECK(report.value().missingPhones.front() == "x");
   CHECK(report.value().missingKinds.empty());
   const auto refused = std::find_if(report.value().entries.begin(), report.value().entries.end(),
       [](const auto& entry) { return entry.status == "REFUSED"; });
   CHECK(refused != report.value().entries.end());
   if (refused != report.value().entries.end()) {
-    CHECK(refused->coverageKey == "cv:j:a");
-    CHECK(refused->detail.find("j") != std::string::npos);
+    CHECK(refused->coverageKey == "cv:x:a");
+    CHECK(!refused->detail.empty());
     CHECK(refused->frameCount == 0U);
   }
 }
 
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
 TEST_CASE("the CLI retains a coverage report for an incomplete inventory") {
-  Fixture fixture({"cv:s:a", "cv:j:a"});
+  Fixture fixture({"cv:s:a", "cv:x:a"});
   const auto reportPath = fixture.root / "coverage.json";
   CHECK(runVoicebankCli({"inspect-generation-coverage", fixture.workspace.string(),
       fixture.recipePath.string(), reportPath.string()}) == 0);

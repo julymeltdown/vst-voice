@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <limits>
 #include <set>
 #include <system_error>
 
@@ -473,6 +474,12 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
   }
   auto package = verifyProceduralPackage(packagePath, options.verification);
   if (!package) return core::Result<InstalledProceduralSinger>{package.error()};
+  if (options.expectedPackageDigest &&
+      package.value().container.packageDigest != *options.expectedPackageDigest) {
+    return core::failure<InstalledProceduralSinger>(
+        core::ErrorCode::Conflict,
+        "Procedural singer package differs from the caller's captured publication digest");
+  }
   auto recipeBytes = readProceduralRecipe(package.value());
   if (!recipeBytes) return core::Result<InstalledProceduralSinger>{recipeBytes.error()};
   // The recipe was decoded by admission; this is the manifest-identity binding used by the receipt.
@@ -662,6 +669,20 @@ namespace seam::distribution {
 namespace {
 
 constexpr std::size_t kMaximumProceduralCandidates = 4096U;
+constexpr std::size_t kMaximumProceduralFoldersVisited = 8192U;
+constexpr std::size_t kMaximumProceduralCatalogueIssues = 64U;
+
+void recordCatalogueIssue(ProceduralCatalogueScan& scan,
+                          const std::filesystem::path& root,
+                          const std::filesystem::path& packagePath,
+                          std::string detail) {
+  if (scan.issues.size() < kMaximumProceduralCatalogueIssues) {
+    scan.issues.push_back(ProceduralCatalogueIssue{
+        .root = root, .packagePath = packagePath, .detail = std::move(detail)});
+  } else if (scan.omittedIssueCount < std::numeric_limits<std::size_t>::max()) {
+    ++scan.omittedIssueCount;
+  }
+}
 
 bool isRealRegularFile(const std::filesystem::path& path) {
   std::error_code error;
@@ -721,68 +742,165 @@ ProceduralReceipt loadProceduralReceipt(const std::filesystem::path& resourceRoo
 
 core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
     const std::vector<ProceduralSearchRoot>& roots) const {
-  std::vector<ProceduralCandidate> result;
+  auto detailed = scanDetailed(roots);
+  if (!detailed) return core::Result<std::vector<ProceduralCandidate>>{detailed.error()};
+  return std::move(detailed).value().candidates;
+}
+
+core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
+    const std::vector<ProceduralSearchRoot>& roots) const {
+  ProceduralCatalogueScan result;
+  const auto loadCandidate = [](const std::filesystem::path& resourceRoot,
+                                ProceduralRootKind rootKind)
+      -> core::Result<ProceduralCandidate> {
+    const auto manifestPath = resourceRoot / "manifest.json";
+    if (!isRealRegularFile(manifestPath))
+      return core::failure<ProceduralCandidate>(
+          core::ErrorCode::NotFound, "Package has no safe regular manifest.json file.");
+    auto text = core::readTextFileLimited(manifestPath, 1024U * 1024U);
+    if (!text)
+      return core::failure<ProceduralCandidate>(
+          text.error().code, "Cannot read manifest.json: " + text.error().message,
+          text.error().context);
+    ProceduralSingerManifestJsonCodec codec;
+    auto manifest = codec.decode(text.value());
+    if (!manifest)
+      return core::failure<ProceduralCandidate>(
+          manifest.error().code, "Invalid manifest.json: " + manifest.error().message,
+          manifest.error().context);
+    const auto recipePath = resourceRoot / manifest.value().recipeEntry;
+    if (!isRealRegularFile(recipePath))
+      return core::failure<ProceduralCandidate>(
+          core::ErrorCode::NotFound,
+          "Package recipe is missing or is not a safe regular file.");
+    auto recipeBytes = core::readFileBytesLimited(recipePath, 16U * 1024U * 1024U);
+    if (!recipeBytes)
+      return core::failure<ProceduralCandidate>(
+          recipeBytes.error().code,
+          "Cannot read package recipe: " + recipeBytes.error().message,
+          recipeBytes.error().context);
+    const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
+    if (!renderIdentity)
+      return core::failure<ProceduralCandidate>(
+          renderIdentity.error().code,
+          "Invalid package recipe: " + renderIdentity.error().message,
+          renderIdentity.error().context);
+    const auto contentHash = proceduralContentHash(text.value(), recipeBytes.value());
+    const auto receipt = loadProceduralReceipt(resourceRoot);
+    const auto matches = receipt.present && receipt.id == manifest.value().id &&
+                         receipt.version == manifest.value().version &&
+                         receipt.contentHash == contentHash;
+    auto trust = ProceduralTrust::DevelopmentFixture;
+    if (rootKind == ProceduralRootKind::Installed) {
+      trust = matches && receipt.signatureValid && receipt.signerTrusted
+                  ? ProceduralTrust::TrustedInstalled
+                  : ProceduralTrust::UntrustedInstalled;
+    }
+    return ProceduralCandidate{
+        .manifest = std::move(manifest).value(),
+        .resourceRoot = resourceRoot,
+        .contentHash = contentHash,
+        .renderIdentity = renderIdentity.value(),
+        .trust = trust,
+        .packageDigest = receipt.packageDigest,
+        .signerKeyId = receipt.signerKeyId,
+    };
+  };
+  std::size_t visitedPackageFolders = 0U;
+  bool scanStoppedAtLimit = false;
   for (const auto& root : roots) {
-    if (!isRealDirectory(root.path)) continue;
-    std::error_code error;
-    for (std::filesystem::directory_iterator product(root.path, error), end;
-         !error && product != end; product.increment(error)) {
-      if (!isRealDirectory(product->path())) continue;
-      for (std::filesystem::directory_iterator version(product->path(), error), endVersion;
-           !error && version != endVersion; version.increment(error)) {
-        // Report the canonical location. One installed resource reached through a differently
-        // spelled search root must still compare equal to itself, because a project stores the
-        // resource path and has to resolve it again after the caller's root spelling changes.
-        std::error_code canonicalError;
-        const auto resourceRoot = std::filesystem::canonical(version->path(), canonicalError);
-        if (canonicalError) continue;
-        const auto name = resourceRoot.filename().string();
-        // Staging and backup directories are installation machinery, not installed resources.
-        if (name.starts_with(".staging-") || name.starts_with(".backup-")) continue;
-        if (!isRealDirectory(resourceRoot)) continue;
-        const auto manifestPath = resourceRoot / "manifest.json";
-        if (!isRealRegularFile(manifestPath)) continue;
-        auto text = core::readTextFileLimited(manifestPath, 1024U * 1024U);
-        if (!text) continue;
-        ProceduralSingerManifestJsonCodec codec;
-        auto manifest = codec.decode(text.value());
-        if (!manifest) continue;
-        const auto recipePath = resourceRoot / manifest.value().recipeEntry;
-        if (!isRealRegularFile(recipePath)) continue;
-        auto recipeBytes = core::readFileBytesLimited(recipePath, 16U * 1024U * 1024U);
-        if (!recipeBytes) continue;
-        // The content hash is recomputed from the installed bytes. A receipt that disagrees with
-        // them describes a different resource than the one on disk.
-        const auto contentHash = proceduralContentHash(text.value(), recipeBytes.value());
-        // The renderer derives its identity from the recipe, not from the manifest: the version is
-        // the recipe's schema version and the digest is over its canonical encoding. Compute that
-        // here so a selection can record an identity the renderer will actually accept.
-        const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
-        if (!renderIdentity) continue;
-        const auto receipt = loadProceduralReceipt(resourceRoot);
-        const auto matches = receipt.present && receipt.id == manifest.value().id &&
-                             receipt.version == manifest.value().version &&
-                             receipt.contentHash == contentHash;
-        ProceduralTrust trust = ProceduralTrust::DevelopmentFixture;
-        if (root.kind == ProceduralRootKind::Installed) {
-          trust = matches && receipt.signatureValid && receipt.signerTrusted
-                      ? ProceduralTrust::TrustedInstalled
-                      : ProceduralTrust::UntrustedInstalled;
+    if (scanStoppedAtLimit) break;
+    std::error_code rootStatusError;
+    const auto rootStatus = std::filesystem::symlink_status(root.path, rootStatusError);
+    if (rootStatusError) {
+      if (rootStatusError != std::errc::no_such_file_or_directory) {
+        recordCatalogueIssue(result, root.path, root.path,
+                             "Cannot inspect singer catalogue root: " +
+                                 rootStatusError.message());
+      }
+      continue;
+    }
+    if (rootStatus.type() == std::filesystem::file_type::not_found) continue;
+    if (std::filesystem::is_symlink(rootStatus) ||
+        !std::filesystem::is_directory(rootStatus)) {
+      recordCatalogueIssue(result, root.path, root.path,
+                           "Singer catalogue root is not a safe real directory.");
+      continue;
+    }
+    std::error_code productError;
+    std::filesystem::directory_iterator product(root.path, productError), endProduct;
+    if (productError) {
+      recordCatalogueIssue(result, root.path, root.path,
+                           "Cannot enumerate installed singer folders: " +
+                               productError.message());
+      continue;
+    }
+    while (!productError && product != endProduct) {
+      const auto productPath = product->path();
+      if (isRealDirectory(productPath)) {
+        std::error_code versionError;
+        std::filesystem::directory_iterator version(productPath, versionError), endVersion;
+        if (versionError) {
+          recordCatalogueIssue(result, root.path, productPath,
+                               "Cannot enumerate package versions: " +
+                                   versionError.message());
         }
-        result.push_back(ProceduralCandidate{
-            .manifest = std::move(manifest).value(),
-            .resourceRoot = resourceRoot,
-            .contentHash = contentHash,
-            .renderIdentity = renderIdentity.value(),
-            .trust = trust,
-            .packageDigest = receipt.packageDigest,
-            .signerKeyId = receipt.signerKeyId,
-        });
-        if (result.size() > kMaximumProceduralCandidates) {
-          return core::failure<std::vector<ProceduralCandidate>>(
-              core::ErrorCode::Unsupported,
-              "Procedural catalogue exceeds the supported candidate count");
+        while (!versionError && version != endVersion) {
+          const auto versionPath = version->path();
+          if (isRealDirectory(versionPath)) {
+            if (visitedPackageFolders >= kMaximumProceduralFoldersVisited) {
+              recordCatalogueIssue(
+                  result, root.path, productPath,
+                  "Catalogue scan stopped after the supported 8192 package-folder limit.");
+              scanStoppedAtLimit = true;
+              result.scanLimitReached = true;
+              break;
+            }
+            ++visitedPackageFolders;
+            std::error_code canonicalError;
+            const auto resourceRoot =
+                std::filesystem::canonical(versionPath, canonicalError);
+            if (canonicalError) {
+              recordCatalogueIssue(result, root.path, versionPath,
+                                   "Cannot resolve package folder: " +
+                                       canonicalError.message());
+            } else {
+              const auto folderName = resourceRoot.filename().string();
+              const bool isInstallWorkingDirectory =
+                  folderName.starts_with(".staging-") || folderName.starts_with(".backup-");
+              if (!isInstallWorkingDirectory) {
+                auto candidate = loadCandidate(resourceRoot, root.kind);
+                if (!candidate) {
+                  auto detail = candidate.error().message;
+                  if (!candidate.error().context.empty())
+                    detail += " (" + candidate.error().context + ")";
+                  recordCatalogueIssue(result, root.path, resourceRoot,
+                                       std::move(detail));
+                } else {
+                  result.candidates.push_back(std::move(candidate).value());
+                  if (result.candidates.size() > kMaximumProceduralCandidates) {
+                    return core::failure<ProceduralCatalogueScan>(
+                        core::ErrorCode::Unsupported,
+                        "Procedural catalogue exceeds the supported candidate count");
+                  }
+                }
+              }
+            }
+          }
+          version.increment(versionError);
+          if (versionError) {
+            recordCatalogueIssue(result, root.path, productPath,
+                                 "Cannot continue enumerating package versions: " +
+                                     versionError.message());
+          }
         }
+      }
+      if (scanStoppedAtLimit) break;
+      product.increment(productError);
+      if (productError) {
+        recordCatalogueIssue(result, root.path, root.path,
+                             "Cannot continue enumerating installed singer folders: " +
+                                 productError.message());
       }
     }
   }
@@ -794,21 +912,23 @@ core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
     }
     return 3;
   };
-  std::stable_sort(result.begin(), result.end(), [&](const auto& lhs, const auto& rhs) {
-    if (lhs.manifest.id != rhs.manifest.id) return lhs.manifest.id < rhs.manifest.id;
-    if (lhs.manifest.version != rhs.manifest.version)
-      return lhs.manifest.version < rhs.manifest.version;
-    if (lhs.contentHash != rhs.contentHash) return lhs.contentHash < rhs.contentHash;
-    const auto lhsRank = trustRank(lhs.trust);
-    const auto rhsRank = trustRank(rhs.trust);
-    if (lhsRank != rhsRank) return lhsRank < rhsRank;
-    return lhs.resourceRoot.generic_string() < rhs.resourceRoot.generic_string();
-  });
-  result.erase(std::unique(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
-    return lhs.manifest.id == rhs.manifest.id &&
-           lhs.manifest.version == rhs.manifest.version &&
-           lhs.contentHash == rhs.contentHash && lhs.resourceRoot == rhs.resourceRoot;
-  }), result.end());
+  std::stable_sort(result.candidates.begin(), result.candidates.end(),
+      [&](const auto& lhs, const auto& rhs) {
+        if (lhs.manifest.id != rhs.manifest.id) return lhs.manifest.id < rhs.manifest.id;
+        if (lhs.manifest.version != rhs.manifest.version)
+          return lhs.manifest.version < rhs.manifest.version;
+        if (lhs.contentHash != rhs.contentHash) return lhs.contentHash < rhs.contentHash;
+        const auto lhsRank = trustRank(lhs.trust);
+        const auto rhsRank = trustRank(rhs.trust);
+        if (lhsRank != rhsRank) return lhsRank < rhsRank;
+        return lhs.resourceRoot.generic_string() < rhs.resourceRoot.generic_string();
+      });
+  result.candidates.erase(std::unique(result.candidates.begin(), result.candidates.end(),
+      [](const auto& lhs, const auto& rhs) {
+        return lhs.manifest.id == rhs.manifest.id &&
+               lhs.manifest.version == rhs.manifest.version &&
+               lhs.contentHash == rhs.contentHash && lhs.resourceRoot == rhs.resourceRoot;
+      }), result.candidates.end());
   return result;
 }
 

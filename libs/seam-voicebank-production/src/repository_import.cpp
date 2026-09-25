@@ -119,11 +119,12 @@ core::Result<GenerationImportExpectation> captureGenerationImportExpectation(
 
 core::Result<CommittedAssetRecord> ProductionProjectRepository::importRaw(
     VoicebankProductionProject& project, const std::filesystem::path& source,
-    const RawTakeInput& take, const ProductionJournalEvent& event) {
+    const RawTakeInput& take, const ProductionJournalEvent& event, std::stop_token stopToken) {
   auto draft = project;
-  const auto imported = importRawBound(draft, source, take, event, {}, std::nullopt);
+  const auto imported = importRawBound(draft, source, take, event, {}, std::nullopt,
+      take.technicalInspection, stopToken);
   if (!imported) return core::Result<CommittedAssetRecord>{imported.error()};
-  const auto committed = commitImportedDraft(*this, project, std::move(draft), event, {});
+  const auto committed = commitImportedDraft(*this, project, std::move(draft), event, stopToken);
   if (!committed) return core::Result<CommittedAssetRecord>{committed.error()};
   return CommittedAssetRecord{imported.value(), committed.value()};
 }
@@ -271,13 +272,15 @@ core::Result<AssetRecord> ProductionProjectRepository::importProceduralCandidate
                  {"approval", "unapproved"}},
       .operatorId = event.operatorId, .performedAtUtc = event.occurredAtUtc};
   if (expectation) lineage.values.emplace("generationExpectationSha256", core::sha256Hex(encodeGenerationImportExpectation(*expectation).value()));
-  return importRawBound(project, audioPath, take, event, candidate.value().audioSha256, lineage, stopToken);
+  return importRawBound(project, audioPath, take, event, candidate.value().audioSha256,
+      lineage, std::nullopt, stopToken);
 }
 
 core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
     VoicebankProductionProject& project, const std::filesystem::path& source,
     const RawTakeInput& take, const ProductionJournalEvent& event,
     std::string_view expectedDigest, const std::optional<MetadataRevision>& lineage,
+    const std::optional<MetadataRevision>& technicalInspection,
     std::stop_token stopToken) {
   if (stopToken.stop_requested()) return core::failure<AssetRecord>(
       core::ErrorCode::Conflict, "Candidate import cancelled before commit");
@@ -350,6 +353,21 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
         core::ErrorCode::InvalidArgument,
         "Raw take review is invalid or duplicated");
   }
+  if (technicalInspection) {
+    if (lineage || technicalInspection->kind != "dry-take-inspection.v1" ||
+        technicalInspection->revisionId.empty() || technicalInspection->takeId != take.takeId ||
+        technicalInspection->operatorId != event.operatorId ||
+        technicalInspection->performedAtUtc != event.occurredAtUtc ||
+        technicalInspection->values.size() != 2U ||
+        !technicalInspection->values.contains("evidenceJson") ||
+        !technicalInspection->values.contains("evidenceSha256") ||
+        technicalInspection->rawAssetSha256.size() != 64U ||
+        core::sha256Hex(technicalInspection->values.at("evidenceJson")) !=
+            technicalInspection->values.at("evidenceSha256")) {
+      return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument,
+          "Technical take inspection must be a hash-bound raw-take evidence record");
+    }
+  }
   if (lineage && std::any_of(project.metadataRevisions.begin(), project.metadataRevisions.end(),
       [&](const auto& value) { return value.revisionId == lineage->revisionId; })) return core::failure<AssetRecord>(
           core::ErrorCode::Conflict, "Procedural lineage revision already exists");
@@ -359,6 +377,9 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
   if (!imported) return imported;
   if (!expectedDigest.empty() && imported.value().sha256 != expectedDigest) return core::failure<AssetRecord>(
       core::ErrorCode::Conflict, "Imported candidate audio changed after verification");
+  if (technicalInspection &&
+      technicalInspection->rawAssetSha256 != imported.value().sha256) return core::failure<AssetRecord>(
+          core::ErrorCode::Conflict, "Raw take bytes changed after technical inspection");
   if (stopToken.stop_requested()) return core::failure<AssetRecord>(
       core::ErrorCode::Conflict, "Candidate import cancelled before commit");
   if (project.schemaVersion == 1) project.schemaVersion = kProductionProjectSchemaVersion;
@@ -390,6 +411,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
   if (take.review.has_value()) {
     project.reviews.push_back(*take.review);
   }
+  if (technicalInspection) project.metadataRevisions.push_back(*technicalInspection);
   assignment = std::find_if(
       project.unitAssignments.begin(), project.unitAssignments.end(),
       [&take](const UnitAssignment& value) {

@@ -23,6 +23,10 @@ struct RawTakeInput final {
   UnitQueueState initialState{UnitQueueState::MarkerReview};
   std::optional<ReviewRecord> review;
   std::string style;
+  // Automated source measurements are technical evidence, not a human review.
+  // When provided, this is committed atomically with the raw asset and must be
+  // a dry-take-inspection.v1 MetadataRevision bound to that asset digest.
+  std::optional<MetadataRevision> technicalInspection;
 };
 
 // Captured before worker generation. Integrity/staleness check, not a signature
@@ -127,7 +131,7 @@ public:
       VoicebankProductionProject& project,
       const std::filesystem::path& source,
       const RawTakeInput& take,
-      const ProductionJournalEvent& event);
+      const ProductionJournalEvent& event, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<CommittedAssetRecord> importProceduralCandidate(
       VoicebankProductionProject& project, const std::filesystem::path& metadataPath,
       const std::filesystem::path& audioPath, const synthesis::ProceduralSingerResource& recipe,
@@ -197,6 +201,7 @@ private:
       VoicebankProductionProject& project, const std::filesystem::path& source,
       const RawTakeInput& take, const ProductionJournalEvent& event,
       std::string_view expectedDigest, const std::optional<MetadataRevision>& lineage,
+      const std::optional<MetadataRevision>& technicalInspection,
       std::stop_token stopToken = {});
   [[nodiscard]] std::filesystem::path generationPath(
       std::uint64_t generation) const;

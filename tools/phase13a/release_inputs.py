@@ -30,6 +30,10 @@ def materialize_supporting_files(
         ):
             if license_path.is_file():
                 shutil.copy2(license_path, notices / f"{name}-{license_path.name}")
+    cmudict_license = source_root / "licenses/third-party/CMUdict-2026-09-24-LICENSE.txt"
+    if not cmudict_license.is_file():
+        raise FileNotFoundError(f"CMUdict distribution license is missing: {cmudict_license}")
+    shutil.copy2(cmudict_license, notices / "CMUdict-LICENSE.txt")
     for notice in ("THIRD_PARTY_NOTICES.md", "SBOM.spdx.json"):
         shutil.copy2(source_root / notice, output / notice)
     for documentation_root in (

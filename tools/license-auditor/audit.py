@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import subprocess
 import sys
@@ -125,6 +126,17 @@ def audit(root: Path, allow_non_master: bool = False) -> tuple[list[str], list[s
             warnings.append(f"{name}: font usage does not use OFL-1.1; verify manually")
         if license_id == "OFL-1.1" and dependency.get("usage") != "font":
             errors.append(f"{name}: OFL-1.1 is approved only for fonts")
+        if dependency.get("usage") == "runtime-data":
+            resource_path = str(dependency.get("resourceFile", ""))
+            resource_hash = str(dependency.get("resourceSha256", ""))
+            if not resource_path or not (root / resource_path).is_file():
+                errors.append(f"{name}: runtime data resource is missing: {resource_path}")
+            elif len(resource_hash) != 64 or any(
+                character not in "0123456789abcdefABCDEF" for character in resource_hash
+            ):
+                errors.append(f"{name}: runtime data resource SHA-256 is required")
+            elif hashlib.sha256((root / resource_path).read_bytes()).hexdigest() != resource_hash.lower():
+                errors.append(f"{name}: runtime data resource hash mismatch: {resource_path}")
 
     third_party = root / "third_party"
     allowed_top_level = {"manifest.yml", "README.md"}
@@ -149,7 +161,6 @@ def audit(root: Path, allow_non_master: bool = False) -> tuple[list[str], list[s
             errors.append("public-domain human fixture must retain official=false")
         if human_manifest.get("contractedSinger") is not False:
             errors.append("public-domain human fixture must retain contractedSinger=false")
-        import hashlib
         for relative, field in (("source/talking.wav", "sourceSha256"),
                                 ("audio/human-vowel-demo.wav", "derivedSha256")):
             path = asset_manifest.parent / relative

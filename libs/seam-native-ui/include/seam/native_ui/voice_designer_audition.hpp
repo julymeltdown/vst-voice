@@ -1,6 +1,7 @@
 #pragma once
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank/wav.hpp"
+#include <string_view>
 
 namespace seam::native_ui {
 enum class PlosiveAuditionMode { Source, StopVowel, VowelStop };
@@ -10,6 +11,13 @@ enum class FricationAuditionMode { Source, FricationVowel, VowelFrication };
     const synthesis::ProceduralSingerResource& resource, std::size_t index,
     std::size_t vowelPoseIndex, std::uint8_t midiKey = 69U, std::stop_token stopToken = {},
     FricationAuditionMode mode = FricationAuditionMode::FricationVowel);
+// One-second CV audition for recipe-bound nasal, palatalized, affricate, approximant,
+// closure and breath phones.
+// The phone is resolved against the frozen recipe; this is a synthesis preview, not
+// pronunciation/acoustic qualification.
+[[nodiscard]] core::Result<voicebank::AudioBuffer> renderDesignerArticulationPhraseAudition(
+    const synthesis::ProceduralSingerResource& resource, std::string_view phone,
+    std::size_t vowelPoseIndex, std::uint8_t midiKey = 69U, std::stop_token stopToken = {});
 // One-second stop/vowel context through the production articulation renderer.
 [[nodiscard]] core::Result<voicebank::AudioBuffer> renderDesignerPlosivePhraseAudition(
     const synthesis::ProceduralSingerResource& resource, std::size_t index,

@@ -2,12 +2,16 @@
 #include "voicebank_studio_production_support.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/platform/file_dialog.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <exception>
+#include <string_view>
+#include <utility>
 
 namespace seam::native_ui {
 namespace {
@@ -35,6 +39,71 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
       "REVIEW PACKET SHA256 " + packet.packetSha256,
       "ROOT MIDI " + std::to_string(unit.rootMidi) + " / RENDERER " + std::string(voicebank::rendererHintName(unit.renderer)),
       "GAIN DB " + std::to_string(unit.gainDb) + " / PRIORITY " + std::to_string(unit.priority)};
+  const auto dryTakeInspection = std::find_if(
+      project.metadataRevisions.rbegin(), project.metadataRevisions.rend(),
+      [&](const auto& revision) {
+        return revision.kind == "dry-take-inspection.v1" &&
+            revision.takeId == binding.takeId &&
+            revision.rawAssetSha256 == binding.audioSha256 &&
+            revision.values.contains("evidenceJson");
+      });
+  if (dryTakeInspection != project.metadataRevisions.rend()) {
+    const auto evidence = formats::parseJson(dryTakeInspection->values.at("evidenceJson"),
+        {.maximumInputBytes = 65536U, .maximumDepth = 6U, .maximumNodes = 128U,
+         .maximumStringBytes = 4096U, .maximumCollectionEntries = 32U});
+    if (evidence && evidence.value().isObject()) {
+      const auto* status = evidence.value().find("status");
+      const auto* inspector = evidence.value().find("inspectorId");
+      const auto* version = evidence.value().find("inspectorVersion");
+      const auto* peak = evidence.value().find("peak");
+      const auto* rms = evidence.value().find("rms");
+      const auto* dcOffset = evidence.value().find("dcOffset");
+      const auto* sampleRate = evidence.value().find("sampleRate");
+      const auto* channels = evidence.value().find("channels");
+      const auto* bitsPerSample = evidence.value().find("bitsPerSample");
+      const auto* expectedRootMidi = evidence.value().find("expectedRootMidi");
+      const auto* analyzedRootMidi = evidence.value().find("analyzedRootMidi");
+      const auto* quality = evidence.value().find("quality");
+      if (status && status->isString() && inspector && inspector->isString() &&
+          version && version->isString()) {
+        result.push_back("AUTOMATED SIGNAL CHECKS " + status->asString() +
+            " / " + inspector->asString() + " v" + version->asString() +
+            " / HUMAN REVIEW STILL REQUIRED");
+      }
+      if (sampleRate && sampleRate->isInteger() && channels && channels->isInteger() &&
+          bitsPerSample && bitsPerSample->isInteger()) {
+        result.push_back("INSPECTED WAV FORMAT " + std::to_string(sampleRate->asInt64()) +
+            " HZ / " + std::to_string(channels->asInt64()) + " CH / " +
+            std::to_string(bitsPerSample->asInt64()) + " BIT");
+      }
+      if (expectedRootMidi && expectedRootMidi->isInteger() && analyzedRootMidi) {
+        result.push_back("ROOT-PITCH CHECK EXPECTED MIDI " +
+            std::to_string(expectedRootMidi->asInt64()) + " / ANALYZED " +
+            (analyzedRootMidi->isInteger() ? std::to_string(analyzedRootMidi->asInt64())
+                                            : std::string{"UNAVAILABLE"}));
+      }
+      if (peak && peak->isNumber() && rms && rms->isNumber() &&
+          dcOffset && dcOffset->isNumber()) {
+        result.push_back("DRY-TAKE METRICS PEAK " + std::to_string(peak->asNumber()) +
+            " / RMS " + std::to_string(rms->asNumber()) +
+            " / DC " + std::to_string(dcOffset->asNumber()));
+      }
+      if (quality && quality->isObject()) {
+        static constexpr std::array<std::pair<std::string_view, std::string_view>, 6U>
+            signalChecks{{
+                {"formatValid", "WAV FORMAT"}, {"finite", "FINITE SAMPLES"},
+                {"clippingFree", "CLIPPING"}, {"silenceFree", "SILENCE"},
+                {"dcOffsetFree", "DC OFFSET"}, {"rootPitchValid", "ROOT PITCH"}}};
+        for (const auto& [key, label] : signalChecks) {
+          const auto* passed = quality->find(key);
+          if (passed && passed->isBool()) {
+            result.push_back("AUTOMATED CHECK " + std::string{label} + " / " +
+                (passed->asBool() ? "PASS" : "NEEDS REVIEW"));
+          }
+        }
+      }
+    }
+  }
   std::string phones = "PHONES";
   for (const auto& phone : unit.phones) phones += " " + phone;
   result.push_back(std::move(phones));

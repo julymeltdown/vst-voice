@@ -3,15 +3,23 @@
 #include "test_support.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/application/render_commands.hpp"
 #include "seam/build/version.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
+#include "seam/distribution/signing.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/interchange/smf_codec.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/standalone/native_editor_app.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
+#include "seam/voice_design/articulation_plan.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
+#include "seam/voice_design/voice_recipe.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <chrono>
@@ -85,6 +93,19 @@ std::unique_ptr<seam::standalone::AuthoringSession> makeSession(
   return std::move(created).value();
 }
 
+void finishAutomaticPerformanceProposal(
+    seam::standalone::StandaloneApplicationController& controller) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (controller.performanceProposalInProgress() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!controller.performanceProposalInProgress());
+  const auto applied = controller.applyPendingAutomaticPerformanceProposal();
+  CHECK(applied);
+  CHECK(applied && applied.value());
+}
+
 void addNote(seam::standalone::AuthoringSession& session) {
   auto [lyric, note] = session.runtime().document().factory().makeNote(
       seam::time::Tick{0}, seam::time::Tick{960}, 64U, U"こ",
@@ -148,6 +169,63 @@ void checkDocumentUnchanged(const seam::standalone::AuthoringSession& session,
 }
 
 }  // namespace
+
+TEST_CASE("New Project preserves installed singers that are not currently selectable") {
+  using Offer = seam::standalone::StandaloneApplicationController::InstalledSingerOffer;
+  Offer unavailable;
+  unavailable.candidate.manifest.id = "needs-trust";
+  unavailable.candidate.manifest.version = "1.2.0";
+  unavailable.candidate.manifest.displayName = "Needs Trust Singer";
+  unavailable.candidate.manifest.language = "ja";
+  unavailable.candidate.manifest.styles = {"soft", "power"};
+  unavailable.selectable = false;
+  unavailable.reason = "The installed singer's signing key is not trusted.";
+
+  Offer available;
+  available.candidate.manifest.id = "ready-singer";
+  available.candidate.manifest.version = "2.0.1";
+  available.candidate.manifest.displayName = "Ready Singer";
+  available.candidate.manifest.language = "ja";
+  available.candidate.manifest.styles = {"soft", "clear"};
+  available.candidate.manifest.recipeEntry = "recipe.json";
+  available.candidate.resourceRoot = "/support/Singers/ready-singer/2.0.1";
+  available.candidate.renderIdentity = seam::domain::SingerResourceIdentity{
+      .kind = seam::domain::SingerResourceKind::Procedural,
+      .id = "ready-singer", .version = "1", .contentHash = std::string(64U, 'a')};
+  available.selectable = true;
+  available.reviewed = false;
+
+  const std::vector<seam::distribution::ProceduralCatalogueIssue> scanIssues{
+      {.root = "/support/Singers",
+       .packagePath = "/support/Singers/broken-singer/0.1.0",
+       .detail = "Invalid manifest.json: malformed JSON"}};
+  const auto choices = seam::standalone::makeNativeNewProjectSingerChoices(
+      {unavailable, available}, scanIssues, 2U, true);
+  CHECK(choices.unavailable.size() == 4U);
+  CHECK(choices.unavailable.front().label.find("Unavailable") != std::string::npos);
+  CHECK(choices.unavailable.front().label.find("needs-trust 1.2.0") !=
+        std::string::npos);
+  CHECK(choices.unavailable.front().detail == unavailable.reason);
+  CHECK(choices.selectable.size() == 2U);
+  CHECK(choices.selectable[0].label.find("Ready Singer — soft (ja) — unreviewed") !=
+        std::string::npos);
+  CHECK(choices.selectable[0].reference.resource ==
+        available.candidate.renderIdentity);
+  CHECK(choices.selectable[0].reference.path ==
+        "/support/Singers/ready-singer/2.0.1/recipe.json");
+  CHECK(choices.selectable[0].reference.style == "soft");
+  CHECK(choices.selectable[1].reference.style == "clear");
+  CHECK(choices.unavailable[1].label.find("broken-singer/0.1.0") !=
+        std::string::npos);
+  CHECK(choices.unavailable[1].detail.find("Invalid manifest.json") !=
+        std::string::npos);
+  CHECK(choices.unavailable[2].label.find("Additional package scan issues") !=
+        std::string::npos);
+  CHECK(choices.unavailable[2].detail.find("2 more") != std::string::npos);
+  CHECK(choices.unavailable[3].label.find("Catalogue scan incomplete") !=
+        std::string::npos);
+  CHECK(choices.unavailable[3].detail.find("8192") != std::string::npos);
+}
 
 TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_without_cli") {
   const auto root = seam::test::support::temporaryDirectory("standalone-lifecycle");
@@ -300,13 +378,16 @@ TEST_CASE("startup open-file replaces the provisional Untitled document") {
   CHECK(session->runtime().document().identity().projectPath == target);
 }
 
-TEST_CASE("standalone_application_controller_imports_project_owned_backing_audio") {
+TEST_CASE("standalone reopens relocated project-owned backing audio and renders it") {
   const auto root = seam::test::support::temporaryDirectory("standalone-import-audio");
   auto session = makeSession(root);
+  addNote(*session);
   auto dialog = std::make_unique<FakeDialog>();
   auto* dialogPtr = dialog.get();
   auto prompt = std::make_unique<FakePrompt>();
-  const auto projectPath = root / "song.seam";
+  const auto sourceProjectRoot = root / "source-project";
+  std::filesystem::create_directories(sourceProjectRoot);
+  const auto projectPath = sourceProjectRoot / "song.seam";
   const auto mediaPath = root / "backing.wav";
   CHECK(seam::voicebank::writeMonoPcm16Wav(
       mediaPath, 48000U, seam::test::support::sineWave(48000U, 220.0, 0.1)));
@@ -328,7 +409,7 @@ TEST_CASE("standalone_application_controller_imports_project_owned_backing_audio
   CHECK(audio.size() == 1U);
   CHECK(audio.front().mediaOwnership == seam::domain::MediaOwnership::ProjectCopy);
   CHECK(!audio.front().mediaHash.empty());
-  CHECK(std::filesystem::exists(root / "song.seam.media"));
+  CHECK(std::filesystem::exists(projectPath.parent_path() / "song.seam.media"));
 
   const auto originalHash = audio.front().mediaHash;
   const auto relinkPath = root / "relinked-backing.wav";
@@ -345,6 +426,91 @@ TEST_CASE("standalone_application_controller_imports_project_owned_backing_audio
   CHECK(std::filesystem::path{audio.front().mediaPath}.is_relative());
   CHECK(std::filesystem::exists(
       projectPath.parent_path() / std::filesystem::path{audio.front().mediaPath}));
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::SaveProject));
+
+  // A project package must keep resolving its relative ProjectCopy media after the
+  // entire directory moves; an absolute path cached from the old location is not enough.
+  const auto relocatedProjectRoot = root / "relocated-project";
+  std::error_code relocationError;
+  std::filesystem::rename(sourceProjectRoot, relocatedProjectRoot, relocationError);
+  CHECK(!relocationError);
+  CHECK(!std::filesystem::exists(sourceProjectRoot));
+  const auto relocatedProjectPath = relocatedProjectRoot / "song.seam";
+  CHECK(session->openProject(relocatedProjectPath));
+  CHECK(session->runtime().document().identity().projectPath == relocatedProjectPath);
+  const auto& reopenedProject = session->runtime().document().session().project();
+  CHECK(reopenedProject.audioTracks().size() == 1U);
+  const auto& reopenedAudio = reopenedProject.audioTracks().front();
+  CHECK(reopenedAudio.mediaOwnership == seam::domain::MediaOwnership::ProjectCopy);
+  CHECK(std::filesystem::path{reopenedAudio.mediaPath}.is_relative());
+  CHECK(reopenedAudio.mediaHash == originalHash);
+  const auto relocatedMediaPath =
+      (relocatedProjectRoot / std::filesystem::path{reopenedAudio.mediaPath}).lexically_normal();
+  CHECK(std::filesystem::exists(relocatedMediaPath));
+  CHECK(seam::core::sha256File(relocatedMediaPath).value() == originalHash);
+
+  session->runtime().requestPreview(true);
+  const auto reopenedRevision = session->runtime().document().session().revision();
+  std::shared_ptr<const seam::authoring::PublishedProjectAudio> reopenedAudioRender;
+  for (int attempt = 0; attempt < 1200; ++attempt) {
+    reopenedAudioRender = session->runtime().renderer().latest();
+    if (reopenedAudioRender != nullptr &&
+        reopenedAudioRender->projectRevision == reopenedRevision &&
+        reopenedAudioRender->state == seam::authoring::RenderState::Ready) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(reopenedAudioRender != nullptr);
+  if (reopenedAudioRender != nullptr) {
+    CHECK(reopenedAudioRender->projectRevision == reopenedRevision);
+    CHECK(reopenedAudioRender->state == seam::authoring::RenderState::Ready);
+    CHECK(reopenedAudioRender->sourceProject != nullptr);
+    if (reopenedAudioRender->sourceProject != nullptr) {
+      const auto renderedAudio = std::find_if(
+          reopenedAudioRender->sourceProject->audioTracks().begin(),
+          reopenedAudioRender->sourceProject->audioTracks().end(),
+          [&](const auto& track) { return track.id == reopenedAudio.id; });
+      CHECK(renderedAudio != reopenedAudioRender->sourceProject->audioTracks().end());
+      if (renderedAudio != reopenedAudioRender->sourceProject->audioTracks().end()) {
+        CHECK(std::filesystem::path{renderedAudio->mediaPath} == relocatedMediaPath);
+        CHECK(renderedAudio->mediaHash == originalHash);
+      }
+    }
+    const auto backingDiagnostic = std::any_of(
+        reopenedAudioRender->result.diagnostics.begin(),
+        reopenedAudioRender->result.diagnostics.end(),
+        [&](const auto& diagnostic) {
+          return diagnostic.trackId == reopenedAudio.id;
+        });
+    CHECK(!backingDiagnostic);
+    CHECK(reopenedAudioRender->result.trackCount == 2U);
+    CHECK(std::any_of(reopenedAudioRender->result.interleaved.begin(),
+                      reopenedAudioRender->result.interleaved.end(),
+                      [](float sample) { return std::abs(sample) > 1.0e-5F; }));
+    const auto withBackingPcm = reopenedAudioRender->result.interleaved;
+    CHECK(session->runtime().execute(
+        std::make_unique<seam::application::SetAudioTrackMixCommand>(
+            reopenedAudio.id, reopenedAudio.gainDb, reopenedAudio.pan, true,
+            reopenedAudio.solo)));
+    const auto mutedRevision = session->runtime().document().session().revision();
+    std::shared_ptr<const seam::authoring::PublishedProjectAudio> mutedAudioRender;
+    for (int attempt = 0; attempt < 1200; ++attempt) {
+      mutedAudioRender = session->runtime().renderer().latest();
+      if (mutedAudioRender != nullptr &&
+          mutedAudioRender->projectRevision == mutedRevision &&
+          mutedAudioRender->state == seam::authoring::RenderState::Ready) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    CHECK(mutedAudioRender != nullptr);
+    if (mutedAudioRender != nullptr) {
+      CHECK(mutedAudioRender->projectRevision == mutedRevision);
+      CHECK(mutedAudioRender->state == seam::authoring::RenderState::Ready);
+    }
+    if (mutedAudioRender != nullptr &&
+        mutedAudioRender->projectRevision == mutedRevision &&
+        mutedAudioRender->state == seam::authoring::RenderState::Ready)
+      CHECK(mutedAudioRender->result.interleaved != withBackingPcm);
+  }
 }
 
 TEST_CASE("standalone_application_controller_export_set_cancel_is_side_effect_free") {
@@ -725,6 +891,7 @@ TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") 
   // proposal. It must not accept it, and it must not touch unrelated state.
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   const auto& afterFirst = session->runtime().document().session().project()
                                .findRegion(regionId)->performance;
   CHECK(afterFirst.takes.size() == 1U);
@@ -735,6 +902,7 @@ TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") 
 
   // Asking again is a second, distinct proposal over the same material.
   CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
+  finishAutomaticPerformanceProposal(*controller.value());
   const auto& afterSecond = session->runtime().document().session().project()
                                 .findRegion(regionId)->performance;
   CHECK(afterSecond.takes.size() == 2U);
@@ -743,6 +911,88 @@ TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") 
   CHECK(session->runtime().undo());
   CHECK(session->runtime().document().session().project().findRegion(regionId)
             ->performance.takes.size() == 1U);
+}
+
+TEST_CASE("standalone_automatic_performance_runs_off_thread_and_rejects_stale_score") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-proposal-stale");
+  auto session = makeSession(root);
+  addNote(*session);
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+
+  auto& editable = session->runtime().document().session();
+  const auto regionId = session->regionId();
+  CHECK(controller.value()->proposeAutomaticPerformance(
+      seam::platform::PerformanceEditScope::Whole, {}));
+  // A completed worker still has no authority to edit the score. Only the owner
+  // thread's explicit poll may publish a proposal.
+  CHECK(editable.project().findRegion(regionId)->performance.takes.empty());
+
+  auto [lyric, note] = session->runtime().document().factory().makeNote(
+      seam::time::Tick{960}, seam::time::Tick{480}, 62U, U"き",
+      seam::domain::Language::Japanese);
+  CHECK(session->runtime().execute(std::make_unique<seam::application::AddNoteCommand>(
+      regionId, std::move(lyric), std::move(note))));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (controller.value()->performanceProposalInProgress() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!controller.value()->performanceProposalInProgress());
+  const auto stale = controller.value()->applyPendingAutomaticPerformanceProposal();
+  CHECK(!stale);
+  CHECK(!stale && stale.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(editable.project().findRegion(regionId)->performance.takes.empty());
+}
+
+TEST_CASE("standalone_automatic_performance_can_be_cancelled_without_publishing") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-proposal-cancel");
+  auto session = makeSession(root);
+  addNote(*session);
+  auto& editable = session->runtime().document().session();
+  auto* region = editable.project().findRegion(session->regionId());
+  CHECK(region != nullptr);
+  if (region == nullptr) return;
+  // Use the generator's admitted maximum so the worker remains active long enough
+  // for the owner thread to exercise the same cancellation action as the native menu.
+  auto& factory = session->runtime().document().factory();
+  for (std::int64_t index = 1; index < 4096; ++index) {
+    const auto start = seam::time::Tick{index * 12};
+    auto [lyric, note] = factory.makeNote(start, seam::time::Tick{8}, 60U, U"あ",
+        seam::domain::Language::Japanese);
+    region->notes.push_back(std::move(note));
+    region->lyrics.push_back(std::move(lyric));
+  }
+  region->durationTick = seam::time::Tick{50000};
+  CHECK(editable.project().validate());
+
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+  CHECK(controller.value()->proposeAutomaticPerformance(
+      seam::platform::PerformanceEditScope::Whole, {}));
+  CHECK(controller.value()->performanceProposalInProgress());
+  CHECK(controller.value()->cancelPerformanceProposal());
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (controller.value()->performanceProposalInProgress() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!controller.value()->performanceProposalInProgress());
+  const auto consumed = controller.value()->applyPendingAutomaticPerformanceProposal();
+  CHECK(consumed);
+  CHECK(consumed && consumed.value());
+  CHECK(editable.project().findRegion(session->regionId())->performance.takes.empty());
 }
 
 TEST_CASE("standalone_harmony_menu_creates_editable_track_and_recovers_selection_on_undo") {
@@ -835,6 +1085,43 @@ TEST_CASE("standalone_harmony_menu_creates_editable_track_and_recovers_selection
   }
 }
 
+TEST_CASE("standalone harmony controller routes every named mode to its scale") {
+  using seam::platform::HarmonyMenuRequest;
+  using seam::platform::HarmonyScale;
+  using seam::platform::PerformanceEditScope;
+  const std::vector<std::pair<HarmonyScale, std::uint8_t>> modes{
+      {HarmonyScale::Major, 68U},
+      {HarmonyScale::NaturalMinor, 67U},
+      {HarmonyScale::HarmonicMinor, 67U},
+      {HarmonyScale::MelodicMinor, 67U},
+      {HarmonyScale::Dorian, 67U},
+      {HarmonyScale::Phrygian, 67U},
+      {HarmonyScale::Lydian, 68U},
+      {HarmonyScale::Mixolydian, 68U},
+      {HarmonyScale::Locrian, 67U},
+      {HarmonyScale::Chromatic, 66U},
+  };
+  for (const auto& [scale, expectedPitch] : modes) {
+    const auto root = seam::test::support::temporaryDirectory("standalone-harmony-mode");
+    auto session = makeSession(root);
+    addNote(*session);
+    seam::standalone::StandaloneApplicationControllerConfig config{};
+    config.autosaveRoot = root / "autosaves";
+    config.recentProjectsPath = root / "recent.json";
+    auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+        std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+    CHECK(controller);
+    if (!controller) continue;
+    CHECK(controller.value()->createHarmonyTrack(HarmonyMenuRequest{
+        .scope = PerformanceEditScope::Whole, .scale = scale,
+        .tonicPitchClass = 4, .offset = 2}));
+    const auto& tracks = session->runtime().document().session().project().vocalTracks();
+    CHECK(tracks.size() == 2U);
+    if (tracks.size() == 2U)
+      CHECK(tracks.back().regions.front().notes.front().midiKey == expectedPitch);
+  }
+}
+
 TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   const auto root = seam::test::support::temporaryDirectory("standalone-decision");
   auto session = makeSession(root);
@@ -857,7 +1144,9 @@ TEST_CASE("standalone_controller_decides_a_performance_take_by_identity") {
   // Two proposals over the same material, so a decision has to name one of them.
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
+  finishAutomaticPerformanceProposal(*controller.value());
   const std::string firstId = performance().takes[0].id;
   const std::string secondId = performance().takes[1].id;
   CHECK(firstId != secondId);
@@ -948,6 +1237,7 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   auto& editable = session->runtime().document().session();
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   const auto takeId =
       editable.project().findRegion(regionId)->performance.takes.front().id;
   const auto note = editable.project().findRegion(regionId)->notes.front();
@@ -996,6 +1286,7 @@ TEST_CASE("standalone_controller_accepts_a_take_over_the_selected_notes_only") {
   const auto secondRange = seam::domain::PerformanceTimeRange{
       seam::time::Tick{960}, seam::time::Tick{1920}};
   CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
+  finishAutomaticPerformanceProposal(*controller.value());
   const auto secondTakeId =
       editable.project().findRegion(regionId)->performance.takes.back().id;
   CHECK(secondTakeId != takeId);
@@ -1055,6 +1346,7 @@ TEST_CASE("standalone_controller_regenerates_only_the_selected_notes") {
   // The whole-region command is unchanged.
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(performance().takes.size() == 1U);
   CHECK(performance().takes.back().range == wholeRegion);
 
@@ -1063,6 +1355,7 @@ TEST_CASE("standalone_controller_regenerates_only_the_selected_notes") {
   editable.selection().selectOnly(secondNote);
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(performance().takes.size() == 2U);
   CHECK(performance().takes.back().range == secondSpan);
   CHECK(performance().takes.back().state ==
@@ -1105,8 +1398,10 @@ TEST_CASE("standalone_controller_decides_and_regenerates_one_channel_at_a_time")
   const std::vector<std::string> dynamicsOnly{"dynamics"};
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(controller.value()->proposeAutomaticPerformance(
       seam::platform::PerformanceEditScope::SelectedNotes, dynamicsOnly));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(performance().takes.size() == 2U);
   const auto channelTake = performance().takes.back();
   CHECK(channelTake.lanes.size() == 1U);
@@ -1180,7 +1475,9 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   };
   CHECK(controller.value()->dispatch(
       seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
   CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
+  finishAutomaticPerformanceProposal(*controller.value());
   const std::string firstId = performance().takes[0].id;
   const std::string secondId = performance().takes[1].id;
   CHECK(controller.value()->acceptPerformanceTake(
@@ -1253,11 +1550,34 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   CHECK(controller.value()->performanceComparison()->candidateApplied);
   checkDocumentUnchanged(*session, afterSave);
   CHECK(waitFor([&] { return session->runtime().transport().state().playhead == 2400; }));
-
   // Ending on an audible candidate is the one canonical decision and the one undoable edit.
   CHECK(controller.value()->endPerformanceComparison());
   CHECK(controller.value()->performanceComparison() == std::nullopt);
   CHECK(performance().accepted == acceptedSecond);
+  // Acceptance may finish before the canonical rerender. During that gap, the held
+  // comparison render must remain the audible source rather than reverting to the
+  // previous canonical take (or publishing silence).
+  const auto immediatelyAfterAcceptance = session->runtime().audiblePublication();
+  CHECK(immediatelyAfterAcceptance.audio != nullptr);
+  CHECK(immediatelyAfterAcceptance.performanceAudition ||
+        immediatelyAfterAcceptance.audio->projectRevision ==
+            session->runtime().document().session().revision());
+  CHECK(immediatelyAfterAcceptance.audio->sourceProject != nullptr);
+  CHECK(immediatelyAfterAcceptance.audio->sourceProject
+            ->findRegion(regionId)->performance.accepted == acceptedSecond);
+  CHECK(session->characterPerformance() != nullptr);
+  CHECK(session->characterPerformanceGeneration() > candidateCharacterGeneration);
+  CHECK(waitFor([&] {
+    const auto publication = session->runtime().audiblePublication();
+    return publication.audio != nullptr && !publication.performanceAudition &&
+           publication.audio->projectRevision == session->runtime().document().session().revision();
+  }));
+  const auto canonicalAfterAcceptance = session->runtime().audiblePublication();
+  CHECK(canonicalAfterAcceptance.audio != nullptr);
+  CHECK(!canonicalAfterAcceptance.performanceAudition);
+  CHECK(canonicalAfterAcceptance.audio->sourceProject != nullptr);
+  CHECK(canonicalAfterAcceptance.audio->sourceProject
+            ->findRegion(regionId)->performance.accepted == acceptedSecond);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Undo));
   CHECK(performance().accepted == acceptedFirst);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Redo));
@@ -1304,6 +1624,103 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   CHECK(!staleEnd);
   CHECK(staleEnd.error().code == seam::core::ErrorCode::Conflict);
   CHECK(!session->runtime().performanceAuditionActive());
+}
+
+TEST_CASE("standalone app installs a trusted procedural singer without changing the song") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("standalone-procedural-install");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key);
+  if (!key) return;
+
+  voice_design::VoiceRecipe recipe;
+  recipe.id = "installed-pilot";
+  recipe.poses = {{"a", "neutral", 0.0,
+                   {{800.0, 90.0, 0.0}, {1250.0, 110.0, -3.0},
+                    {2800.0, 160.0, -6.0}}}};
+  auto frozen = voice_design::freezeVoiceRecipeResource(recipe);
+  CHECK(frozen);
+  if (!frozen) return;
+  distribution::PublishProceduralSingerOptions publishOptions{};
+  publishOptions.version = "1.0.0";
+  publishOptions.language = "ja";
+  publishOptions.displayName = "Installed Pilot";
+  const auto packagePath = root / "installed-pilot.seamsinger";
+  auto package = distribution::publishProceduralSingerFromRecipe(
+      frozen.value(), root / "staging", packagePath, key.value(), publishOptions);
+  CHECK(package);
+  if (!package) return;
+
+  auto session = makeSession(root);
+  const auto before = observeDocument(*session);
+  bool quit = false;
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogView = dialog.get();
+  dialogView->responses.push_back(packagePath);
+  standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  config.proceduralSingerRoots = {distribution::ProceduralSearchRoot{
+      .path = root / "installed-singers",
+      .kind = distribution::ProceduralRootKind::Installed}};
+  config.renderableProceduralEngineId =
+      std::string{voice_design::kSourceFilterEngineId};
+  config.renderableProceduralEngineRevision =
+      voice_design::kSourceFilterEngineRevision;
+  config.trustedVoicebankKeys = {key.value().publicKey};
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+
+  CHECK(controller.value()->dispatch(
+      platform::ApplicationCommand::InstallProceduralSinger));
+  CHECK(dialogView->requests.size() == 1U);
+  CHECK(dialogView->requests.front().purpose ==
+        platform::FileDialogPurpose::InstallProceduralSinger);
+  CHECK(dialogView->requests.front().extensions ==
+        (std::vector<std::string>{"seamsinger"}));
+  checkDocumentUnchanged(*session, before);
+
+  const auto installed = controller.value()->installedProceduralSingers();
+  CHECK(installed);
+  CHECK(installed && installed.value().size() == 1U);
+  if (installed && installed.value().size() == 1U) {
+    CHECK(installed.value().front().manifest.id == "installed-pilot");
+    CHECK(installed.value().front().trust == distribution::ProceduralTrust::TrustedInstalled);
+    CHECK(installed.value().front().renderIdentity.kind ==
+          domain::SingerResourceKind::Procedural);
+  }
+  const auto offers = controller.value()->installedSingerOffers();
+  CHECK(offers);
+  CHECK(offers && offers.value().size() == 1U);
+  CHECK(offers && offers.value().front().selectable);
+  CHECK(offers && offers.value().front().capabilitySummary.find("ja") !=
+                      std::string::npos);
+  checkDocumentUnchanged(*session, before);
+
+  if (offers && offers.value().size() == 1U && offers.value().front().selectable) {
+    const auto& candidate = offers.value().front().candidate;
+    domain::ProceduralRecipeReference initial{
+        .resource = candidate.renderIdentity,
+        .path = (candidate.resourceRoot / candidate.manifest.recipeEntry).string(),
+        .style = candidate.manifest.styles.front()};
+    auto stale = initial;
+    stale.path += ".stale";
+    CHECK(!controller.value()->createNewProject(authoring::NewProjectRequest{
+        .name = "Stale singer", .tempoBpm = 120.0, .sampleRate = 48000U,
+        .outputChannels = 2U, .initialProceduralSinger = stale}));
+    checkDocumentUnchanged(*session, before);
+
+    CHECK(controller.value()->createNewProject(authoring::NewProjectRequest{
+        .name = "New song with installed singer", .tempoBpm = 120.0,
+        .sampleRate = 48000U, .outputChannels = 2U,
+        .initialProceduralSinger = initial}));
+    const auto& track = session->runtime().document().session().project().vocalTracks().front();
+    CHECK(track.proceduralRecipe == initial);
+    CHECK(track.voicebank.id.empty());
+  }
 }
 
 TEST_CASE("standalone_controller_refuses_a_neural_deployment_it_cannot_verify") {
@@ -1390,6 +1807,18 @@ TEST_CASE("standalone score export reviews losses before writing and rejects sta
   const auto root = test::support::temporaryDirectory("standalone-export-review");
   auto session = makeSession(root);
   addNote(*session);
+  auto fullProject = session->runtime().document().session().project();
+  auto& factory = session->runtime().document().factory();
+  const auto harmony = factory.addVocalTrack(fullProject, "Harmony");
+  const auto harmonyRegion = factory.addRegion(fullProject, harmony, "Response",
+      time::Tick{0}, time::Tick{960});
+  auto* harmonyTarget = fullProject.findRegion(harmonyRegion);
+  CHECK(harmonyTarget != nullptr);
+  auto [harmonyLyric, harmonyNote] = factory.makeNote(time::Tick{240},
+      time::Tick{480}, 67U, U"la");
+  harmonyTarget->lyrics.push_back(std::move(harmonyLyric));
+  harmonyTarget->notes.push_back(std::move(harmonyNote));
+  CHECK(session->runtime().document().replaceProject(std::move(fullProject)));
   const auto destination = root / "score.mid";
   const auto staleDestination = root / "stale.mid";
   auto dialog = std::make_unique<FakeDialog>();
@@ -1407,6 +1836,14 @@ TEST_CASE("standalone score export reviews losses before writing and rejects sta
           CHECK(!std::filesystem::exists(draft.destination));
           CHECK(!draft.bytes.empty());
           CHECK(draft.contentHash.size() == 64U);
+          CHECK(draft.format == authoring::InterchangeFormat::Smf);
+          const auto score = interchange::decodeSmf(draft.bytes);
+          CHECK(score);
+          CHECK(score.value().tracks.size() == 2U);
+          CHECK(score.value().notes.size() == 2U);
+          CHECK(score.value().notes[1U].track == 1U);
+          CHECK(score.value().notes[1U].midi == 67U);
+          CHECK(score.value().notes[1U].start == time::Tick{240});
           if (mutateDuringReview) {
             auto current = session->runtime().document().session().project();
             CHECK(session->runtime().document().replaceProject(std::move(current)));
@@ -1504,6 +1941,140 @@ TEST_CASE("standalone interchange accepts reviewed USTX and MIDI as new unsaved 
     CHECK(std::filesystem::exists(destination));
     CHECK(core::sha256File(source).value() == sourceHash.value());
   }
+}
+
+TEST_CASE("standalone editor track selection synchronizes the authoring runtime") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory(
+      "standalone-track-selection-sync");
+  auto session = makeSession(root);
+  const auto lead = session->trackId();
+  const auto added = session->controller().addVocalTrack("Harmony");
+  CHECK(added);
+  const auto region = session->controller().addVocalRegion(
+      "Harmony phrase", time::Tick{0}, time::Tick{3840});
+  CHECK(region);
+  CHECK(session->runtime().selectedTrack() != added.value());
+  const auto wasDirty = session->runtime().document().dirty();
+
+  CHECK(session->controller().selectTrack(added.value()));
+  CHECK(session->controller().selectedTrack() == added.value());
+  CHECK(session->trackId() == added.value());
+  CHECK(session->regionId() == region.value());
+  CHECK(session->runtime().selectedTrack() == added.value());
+  CHECK(session->runtime().selectedRegion() == region.value());
+  CHECK(session->runtime().document().dirty() == wasDirty);
+
+  session->controller().setRecoverySupportView(native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .status = "Local reports",
+  });
+  session->controller().rebuildAccessibilityTree();
+  CHECK(native_ui::EditorSemanticTree::containsId(
+      session->controller().accessibilityTree().root(),
+      "support.track.previous"));
+  CHECK(native_ui::EditorSemanticTree::containsId(
+      session->controller().accessibilityTree().root(),
+      "support.track.next"));
+  CHECK(session->controller().dispatchAccessibility(
+      "support.track.previous", native_ui::SemanticAction::Activate));
+  CHECK(session->controller().selectedTrack() == lead);
+  CHECK(session->controller().dispatchAccessibility(
+      "support.track.next", native_ui::SemanticAction::Activate));
+  CHECK(session->controller().selectedTrack() == added.value());
+  session->controller().resize(960.0, 600.0);
+  const native_ui::EditorSceneLayout layout;
+  const auto panelX = std::max(
+      layout.keyboardWidth + layout.minimumTimelineWidth,
+      960.0 - layout.characterDockWidth);
+  const auto previousButton =
+      layout.supportTrackPreviousBounds(panelX, 960.0);
+  CHECK(session->controller().pointerDown(native_ui::PointerEvent{
+      .position = ui::Point{previousButton.x + previousButton.width / 2.0,
+                            previousButton.y + previousButton.height / 2.0},
+      .button = native_ui::PointerButton::Left,
+  }));
+  CHECK(session->controller().selectedTrack() == lead);
+  const auto nextButton = layout.supportTrackNextBounds(panelX, 960.0);
+  CHECK(session->controller().pointerDown(native_ui::PointerEvent{
+      .position = ui::Point{nextButton.x + nextButton.width / 2.0,
+                            nextButton.y + nextButton.height / 2.0},
+      .button = native_ui::PointerButton::Left,
+  }));
+  CHECK(session->controller().selectedTrack() == added.value());
+  CHECK(session->controller().keyDown(native_ui::KeyEvent{
+      .key = native_ui::NativeKey::Left,
+      .modifiers = native_ui::InputModifiers{.alt = true},
+  }));
+  CHECK(session->controller().selectedTrack() == lead);
+  CHECK(session->trackId() == lead);
+  CHECK(session->runtime().selectedTrack() == lead);
+  CHECK(session->controller().keyDown(native_ui::KeyEvent{
+      .key = native_ui::NativeKey::Right,
+      .modifiers = native_ui::InputModifiers{.alt = true},
+  }));
+  CHECK(session->controller().selectedTrack() == added.value());
+  CHECK(session->trackId() == added.value());
+  CHECK(session->runtime().selectedTrack() == added.value());
+}
+
+TEST_CASE("accepted multi-track MIDI stays navigable with recovery support open") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory(
+      "standalone-multitrack-import-navigation");
+  interchange::SmfScore score{
+      .ppq = 480U,
+      .tracks = {{"Conductor"}, {"Lead"}, {"Harmony"}},
+      .tempos = {{.tick = time::Tick{0}, .bpm = 100.0}},
+      .meters = {{.tick = time::Tick{0}, .numerator = 3U,
+                  .denominatorPower = 2U}},
+      .texts = {{.tick = time::Tick{0}, .text = "la", .lyric = true,
+                 .track = 1U},
+                {.tick = time::Tick{480}, .text = "do", .lyric = true,
+                 .track = 2U}},
+      .notes = {{.start = time::Tick{0}, .duration = time::Tick{480},
+                 .midi = 60U, .velocity = 100U, .track = 1U},
+                {.start = time::Tick{480}, .duration = time::Tick{480},
+                 .midi = 67U, .velocity = 92U, .track = 2U}},
+  };
+  auto midi = interchange::encodeSmf(score);
+  CHECK(midi);
+  const auto source = root / "two-vocal-tracks.mid";
+  CHECK(core::durableAtomicWrite(
+      source,
+      std::span<const std::byte>{
+          reinterpret_cast<const std::byte*>(midi.value().data()),
+          midi.value().size()}));
+
+  auto session = makeSession(root);
+  auto draft = session->prepareInterchangeImport(
+      source, {.format = authoring::InterchangeFormat::Smf,
+               .projectName = "Two vocal tracks"});
+  CHECK(draft);
+  CHECK(draft.value().project.vocalTracks().size() == 2U);
+  CHECK(draft.value().project.vocalTracks()[0U].name == "Lead");
+  CHECK(draft.value().project.vocalTracks()[1U].name == "Harmony");
+  CHECK(session->acceptInterchangeImport(std::move(draft).value()));
+  CHECK(session->controller().selectedTrack() ==
+        session->runtime().selectedTrack());
+  CHECK(session->controller().selectedTrack() == session->trackId());
+  CHECK(session->runtime().document().session().project()
+            .findRegion(session->regionId())->notes.front().midiKey == 60U);
+
+  session->controller().setRecoverySupportView(native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .status = "Local reports",
+  });
+  session->controller().rebuildAccessibilityTree();
+  CHECK(session->controller().dispatchAccessibility(
+      "support.track.next", native_ui::SemanticAction::Activate));
+  CHECK(session->controller().selectedTrack() == session->trackId());
+  CHECK(session->runtime().selectedTrack() == session->trackId());
+  CHECK(session->runtime().document().session().project()
+            .findRegion(session->regionId())->notes.front().midiKey == 67U);
+  CHECK(session->controller().sceneState().arrangementTracks[1U].selected);
 }
 
 TEST_CASE("standalone interchange review cancellation errors and missing surfaces preserve the document") {

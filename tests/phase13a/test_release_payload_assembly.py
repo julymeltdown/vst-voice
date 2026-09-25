@@ -189,6 +189,7 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
         )
         self.write("THIRD_PARTY_NOTICES.md")
         self.write("Notices/openssl-LICENSE.txt", "Apache-2.0")
+        self.write("Notices/CMUdict-LICENSE.txt", "BSD-2-Clause")
         self.write("SBOM.spdx.json", '{"spdxVersion":"SPDX-2.3"}')
         self.write("Documentation/manual/USER_MANUAL.md")
         self.write("Documentation/support/SUPPORT.md")
@@ -324,6 +325,10 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
             "Notices/openssl-LICENSE.txt",
             {entry["path"] for entry in manifest["notices"]},
         )
+        self.assertIn(
+            "Notices/CMUdict-LICENSE.txt",
+            {entry["path"] for entry in manifest["notices"]},
+        )
         verified = verify_release_payload_manifest(
             self.payload, PayloadPlatform.MACOS_ARM64
         )
@@ -358,10 +363,20 @@ class ReleasePayloadAssemblyTests(unittest.TestCase):
                 self.payload, self.source, PayloadPlatform.MACOS_ARM64
             )
 
+    def test_payload_rejects_a_missing_cmudict_license_notice(self) -> None:
+        self.create_payload(PayloadPlatform.MACOS_ARM64)
+        (self.payload / "Notices/CMUdict-LICENSE.txt").unlink()
+
+        with self.assertRaisesRegex(PayloadAssemblyError, "CMUdict-LICENSE"):
+            assemble_release_payload(
+                self.payload, self.source, PayloadPlatform.MACOS_ARM64
+            )
+
     def test_payload_rejects_every_required_supporting_input(self) -> None:
         required = (
             "THIRD_PARTY_NOTICES.md",
             "Notices/openssl-LICENSE.txt",
+            "Notices/CMUdict-LICENSE.txt",
             "SBOM.spdx.json",
             "Documentation/manual/USER_MANUAL.md",
             "Documentation/support/SUPPORT.md",
