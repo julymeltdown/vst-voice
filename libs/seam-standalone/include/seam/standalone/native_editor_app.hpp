@@ -88,6 +88,11 @@ public:
   // Stops every background source of repaint requests (envelope workers) and forgets the window,
   // so the window can be destroyed before this app: after this returns no thread touches it.
   void detachWindow() noexcept;
+  // Writes the UI-fidelity evidence of the last presented frame into dir: geometry.json and
+  // semantic-bounds.json from the shell's own snapshot, performance.json with measured paint
+  // durations and this process's memory footprint. Fails when the shell did not present.
+  // Its device scale is the last painted canvas's pixels per logical point.
+  [[nodiscard]] core::Result<void> writeUiEvidence(const std::filesystem::path& dir);
   [[nodiscard]] core::Result<void> startAudioForPlayback();
   void stopAudioForPlayback() noexcept;
   void shutdownAudio() noexcept;
@@ -195,6 +200,9 @@ private:
   std::string dismissedRendererDifference_;
   native_ui::INativeWindow* window_{nullptr};
   mutable std::mutex windowMutex_;
+  // Wall time of each paint() call, most recent last (bounded).
+  std::vector<double> paintMillis_;
+  double lastPaintScale_{1.0};
   std::atomic<bool> closeRequested_{false};
   std::string lastError_;
   // Envelopes of the selected region's rendered audio for the SING notes. Declared last so its

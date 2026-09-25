@@ -8,6 +8,7 @@
 #import <AppKit/AppKit.h>
 
 #include "seam/native_ui/accessibility_appkit_mapping.hpp"
+#include "seam/native_ui/paint/presentation_color.hpp"
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <algorithm>
@@ -226,15 +227,13 @@ public:
       NSAccessibilityPostNotification(
           view_, NSAccessibilityValueChangedNotification);
     }
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    // sRGB, not device RGB: the frame is authored in sRGB and must be colour-matched.
+    CGColorSpaceRef colorSpace = native_ui::paint::presentationColorSpace();
     if (colorSpace == nullptr) return;
     CGDataProviderRef provider = CGDataProviderCreateWithData(
         nullptr, surface_.pixels().data(),
         surface_.pixels().size() * sizeof(std::uint32_t), nullptr);
-    if (provider == nullptr) {
-      CGColorSpaceRelease(colorSpace);
-      return;
-    }
+    if (provider == nullptr) return;
     const auto bitmapInfo = static_cast<CGBitmapInfo>(
         static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst) |
         static_cast<std::uint32_t>(kCGBitmapByteOrder32Little));
@@ -258,7 +257,6 @@ public:
       CGImageRelease(image);
     }
     CGDataProviderRelease(provider);
-    CGColorSpaceRelease(colorSpace);
   }
 
   NSArray* accessibilityChildren() {

@@ -8,6 +8,7 @@
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
+#include "seam/native_ui/design/shell_evidence.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -19,6 +20,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <set>
 
 namespace {
 
@@ -1572,4 +1574,70 @@ TEST_CASE("a long note at maximum zoom walks only its visible waveform columns")
   if (withWave > withoutWave + 25.0)
     std::cerr << "waveform frame " << withWave << " ms vs " << withoutWave << " ms without\n";
   CHECK(withWave <= withoutWave + 25.0);
+}
+
+TEST_CASE("UI evidence is the presented layout and the published tree, not a copy of them") {
+  using formats::JsonValue;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f{time::Tick{0}, true};
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto& l = f.shell.layout();
+  const auto sameRect = [](const JsonValue* value, ui::Rect r) {
+    if (value == nullptr) return false;
+    const auto& a = value->asArray();
+    return a.size() == 4U && a[0].asNumber() == r.x && a[1].asNumber() == r.y &&
+           a[2].asNumber() == r.width && a[3].asNumber() == r.height;
+  };
+
+  const auto geometry = native_ui::design::singLayoutEvidence(f.shell, 2.0);
+  CHECK(geometry.find("presented")->asBool());
+  CHECK(geometry.find("mode")->asString() == "emo");
+  CHECK(geometry.find("workspace")->asString() == "sing");
+  CHECK(geometry.find("deviceScale")->asNumber() == 2.0);
+  CHECK(geometry.find("rack")->asString() == "full");
+  const auto* regions = geometry.find("regions");
+  CHECK(regions != nullptr);
+  // Every canonical region of docs/design/ui-fidelity-contract-v1.json is emitted.
+  std::set<std::string, std::less<>> names;
+  for (const auto& [name, value] : regions->asObject()) names.insert(name);
+  for (const auto* id : {"header", "wordmark", "workspaceTabs", "modeSwitch", "transport",
+                         "outputMeter", "settings", "editor", "tools", "ruler", "keyboard", "grid",
+                         "lane", "laneTabs", "lanePlot", "laneTimePlot", "rack", "singer",
+                         "portraitRing", "expression", "style", "status"})
+    CHECK(names.contains(id));
+  CHECK(sameRect(regions->find("grid"), l.grid));
+  CHECK(sameRect(regions->find("rack"), l.rackArea));
+  CHECK(sameRect(regions->find("laneTimePlot"), l.laneTimePlot));
+  CHECK(sameRect(regions->find("status"), l.status));
+  const auto* controls = geometry.find("controls");
+  CHECK(sameRect(controls->find("knob0"), l.knob[0]));
+  CHECK(sameRect(controls->find("playButton"), l.playButton));
+
+  // Semantic bounds are the published nodes, and the shell controls sit on their layout rects.
+  const auto semantic = native_ui::design::semanticEvidence(f.shell.accessibilityTree(), 4U);
+  std::map<std::string, const JsonValue*, std::less<>> byId;
+  for (const auto& node : semantic.find("nodes")->asArray()) {
+    const auto& id = node.find("id")->asString();
+    CHECK(!byId.contains(id));  // ids are unique in the flattened tree
+    byId.emplace(id, &node);
+  }
+  const auto bounds = [&byId](std::string_view id) {
+    const auto it = byId.find(id);
+    return it == byId.end() ? nullptr : it->second->find("bounds");
+  };
+  CHECK(sameRect(bounds("shell.status"), l.status));
+  CHECK(sameRect(bounds("shell.lane"), l.laneTimePlot));
+  CHECK(sameRect(bounds("shell.settings"), l.settings));
+  CHECK(sameRect(bounds("shell.change-voice"), l.singerChange));
+  CHECK(sameRect(bounds("shell.style"), l.style));
+  CHECK(sameRect(bounds("shell.workspace.sing"), l.workspaceTab[0]));
+  CHECK(sameRect(bounds("shell.knob.gender"), l.knob[4]));
+  CHECK(byId.at("shell.knob.gender")->find("role")->asString() == "slider");
+  // The note list is bounded by the limit and never exceeds what the tree virtualizes.
+  const auto noteCount = semantic.find("notes")->asArray().size();
+  const auto virtualized = static_cast<std::size_t>(semantic.find("virtualizedNoteCount")->asNumber());
+  CHECK(virtualized >= 4U);
+  CHECK(noteCount == 4U);
 }

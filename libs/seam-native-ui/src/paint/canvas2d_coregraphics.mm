@@ -1,4 +1,5 @@
 #include "seam/native_ui/paint/canvas2d.hpp"
+#include "seam/native_ui/paint/presentation_color.hpp"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -379,6 +380,8 @@ std::unique_ptr<Canvas2D> makeCanvas(PixelSurface& surface, double scale) {
 }
 
 bool vectorBackendAvailable() noexcept { return true; }
+
+CGColorSpaceRef presentationColorSpace() noexcept { return srgb(); }
 
 std::filesystem::path codeBundleResources() {
   Dl_info info{};

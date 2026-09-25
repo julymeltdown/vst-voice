@@ -25,6 +25,9 @@ struct NativeWindowConfig final {
   std::uint32_t minimumHeight{320U};
   std::chrono::milliseconds autoCloseAfter{0};
   std::optional<std::filesystem::path> screenshotPath;
+  // Capture tooling: where to write the window-server id of the open window (macOS CGWindowID),
+  // so an OS-composited capture of this exact window can be taken while it runs.
+  std::optional<std::filesystem::path> windowIdPath;
   bool restoreSavedFrame{true};
 };
 

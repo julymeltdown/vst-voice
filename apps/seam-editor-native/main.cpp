@@ -22,6 +22,8 @@ namespace {
 struct CommandLine final {
   std::chrono::milliseconds autoClose{0};
   std::optional<std::filesystem::path> screenshot;
+  std::optional<std::filesystem::path> evidenceDir;
+  std::optional<std::filesystem::path> windowIdFile;
   std::uint32_t windowWidth{1440U};
   std::uint32_t windowHeight{900U};
   double scale{1.0};
@@ -43,6 +45,9 @@ void printUsage() {
       << "Usage: seam_editor_native [options]\n"
       << "  --auto-close-ms N       close automatically after N milliseconds\n"
       << "  --screenshot PATH       write the final software-raster frame as PPM\n"
+      << "  --evidence-dir PATH     write UI-fidelity evidence of the final frame (geometry,\n"
+      << "                          semantic bounds, paint timings, memory)\n"
+      << "  --window-id-file PATH   write the open window's window-server id (capture tooling)\n"
       << "  --window-width N        physical window width from 320 to 8192\n"
       << "  --window-height N       physical window height from 240 to 8192\n"
       << "  --scale N               logical UI scale from 0.5 to 4.0\n"
@@ -131,6 +136,14 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     }
     if (argument == "--screenshot" && index + 1 < argc) {
       result.screenshot = std::filesystem::path{argv[++index]};
+      continue;
+    }
+    if (argument == "--evidence-dir" && index + 1 < argc) {
+      result.evidenceDir = std::filesystem::path{argv[++index]};
+      continue;
+    }
+    if (argument == "--window-id-file" && index + 1 < argc) {
+      result.windowIdFile = std::filesystem::path{argv[++index]};
       continue;
     }
     if ((argument == "--window-width" || argument == "--window-height") &&
@@ -347,6 +360,7 @@ int seam_editor_native_main(int argc, char** argv) {
           .restoreLastDocument = commandLine->openProjects.empty(),
           .autoCloseAfter = commandLine->autoClose,
           .screenshotPath = commandLine->screenshot,
+          .windowIdPath = commandLine->windowIdFile,
       },
       *app);
   if (!opened) {
@@ -377,6 +391,13 @@ int seam_editor_native_main(int argc, char** argv) {
   }
 
   const auto result = window->run();
+  if (commandLine->evidenceDir.has_value()) {
+    const auto evidence = app->writeUiEvidence(*commandLine->evidenceDir);
+    if (!evidence) {
+      std::cerr << "UI evidence was not written: " << evidence.error().message << '\n';
+      return 6;
+    }
+  }
   // The window is destroyed before the app (declaration order): stop every background repaint
   // request and forget the window first.
   app->detachWindow();

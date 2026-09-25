@@ -1,5 +1,6 @@
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/appkit_shortcut_key.hpp"
+#include "seam/native_ui/paint/presentation_color.hpp"
 
 #if defined(SEAM_NATIVE_APPKIT)
 
@@ -17,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -242,6 +244,10 @@ public:
       return accessibility;
     }
     [window_ makeKeyAndOrderFront:nil];
+    if (config.windowIdPath.has_value()) {
+      std::ofstream idFile(*config.windowIdPath, std::ios::trunc);
+      idFile << static_cast<long>(window_.windowNumber) << '\n';
+    }
 
     updateScaleAndSurface();
     if (surface_.pixels().empty()) {
@@ -472,15 +478,13 @@ public:
           view_, NSAccessibilityValueChangedNotification);
     }
 
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    // sRGB, not device RGB: the frame is authored in sRGB and must be colour-matched.
+    CGColorSpaceRef colorSpace = paint::presentationColorSpace();
     if (colorSpace == nullptr) return;
     CGDataProviderRef provider = CGDataProviderCreateWithData(
         nullptr, surface_.pixels().data(),
         surface_.pixels().size() * sizeof(std::uint32_t), nullptr);
-    if (provider == nullptr) {
-      CGColorSpaceRelease(colorSpace);
-      return;
-    }
+    if (provider == nullptr) return;
     const auto bitmapInfo = static_cast<CGBitmapInfo>(
         static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst) |
         static_cast<std::uint32_t>(kCGBitmapByteOrder32Little));
@@ -508,7 +512,6 @@ public:
       CGImageRelease(image);
     }
     CGDataProviderRelease(provider);
-    CGColorSpaceRelease(colorSpace);
   }
 
   void viewResized() noexcept {

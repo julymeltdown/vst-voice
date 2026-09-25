@@ -1,0 +1,306 @@
+{
+  "audioTracks": [],
+  "formatId": "com.project-seam.project",
+  "meterMap": [
+    {
+      "denominator": 4,
+      "numerator": 4,
+      "tick": 0
+    }
+  ],
+  "name": "Untitled",
+  "ppq": 960,
+  "projectId": "3e8",
+  "routing": {
+    "buses": [
+      {
+        "channelCount": 2,
+        "gainDb": 0,
+        "id": "1",
+        "muted": false,
+        "name": "Master",
+        "solo": false
+      }
+    ],
+    "deviceOutputChannels": 2,
+    "deviceRoutes": [
+      {
+        "enabled": true,
+        "gainDb": 0,
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            1,
+            0,
+            0,
+            1
+          ],
+          "sourceChannels": 2
+        },
+        "sourceBus": "1"
+      }
+    ],
+    "masterBus": "1",
+    "sends": []
+  },
+  "schemaVersion": 20,
+  "settings": {
+    "bounceTimingAuthority": "fixed-audio",
+    "characterDisplay": "minimal",
+    "hostStartOffsetTick": 0,
+    "renderedCompilerRevision": 0,
+    "renderedRenderAbi": "",
+    "sampleRate": 48000,
+    "snapEnabled": true,
+    "snapGrid": 240,
+    "technicalLanes": [
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      },
+      {
+        "expandedHeight": 120,
+        "mode": "auto"
+      }
+    ]
+  },
+  "tempoMap": [
+    {
+      "bpm": 120,
+      "tick": 0
+    }
+  ],
+  "vocalTracks": [
+    {
+      "character": {
+        "id": "",
+        "version": ""
+      },
+      "gainDb": 0,
+      "id": "3e9",
+      "muted": false,
+      "name": "Voice 1",
+      "neuralResource": null,
+      "outputRoute": {
+        "busId": "1",
+        "matrix": {
+          "destinationChannels": 2,
+          "gains": [
+            0.7071067690849304,
+            0.7071067690849304
+          ],
+          "sourceChannels": 1
+        }
+      },
+      "pan": 0,
+      "proceduralRecipe": null,
+      "regions": [
+        {
+          "airinessAutomation": [],
+          "breathinessAutomation": [],
+          "durationTick": 15360,
+          "dynamicsAutomation": [],
+          "formantAutomation": [],
+          "genderAutomation": [],
+          "growlAutomation": [],
+          "id": "3ea",
+          "lyrics": [
+            {
+              "id": "5000",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            },
+            {
+              "id": "5001",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            },
+            {
+              "id": "5002",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            },
+            {
+              "id": "5003",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            },
+            {
+              "id": "5004",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            },
+            {
+              "id": "5005",
+              "language": "ja",
+              "readingHint": null,
+              "surface": "\u3053"
+            }
+          ],
+          "name": "Region 1",
+          "notes": [
+            {
+              "articulation": "normal",
+              "durationTick": 840,
+              "id": "6000",
+              "lyricId": "5000",
+              "midiKey": 69,
+              "phoneticHint": null,
+              "startTick": 960,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 840,
+              "id": "6001",
+              "lyricId": "5001",
+              "midiKey": 72,
+              "phoneticHint": null,
+              "startTick": 1920,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 840,
+              "id": "6002",
+              "lyricId": "5002",
+              "midiKey": 74,
+              "phoneticHint": null,
+              "startTick": 2880,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 840,
+              "id": "6003",
+              "lyricId": "5003",
+              "midiKey": 72,
+              "phoneticHint": null,
+              "startTick": 3840,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 840,
+              "id": "6004",
+              "lyricId": "5004",
+              "midiKey": 76,
+              "phoneticHint": null,
+              "startTick": 4800,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            },
+            {
+              "articulation": "normal",
+              "durationTick": 1680,
+              "id": "6005",
+              "lyricId": "5005",
+              "midiKey": 74,
+              "phoneticHint": null,
+              "startTick": 5760,
+              "vibrato": {
+                "depthCents": 50,
+                "enabled": false,
+                "fadeInFraction": 0.10000000149011612,
+                "fadeOutFraction": 0.10000000149011612,
+                "periodMilliseconds": 180,
+                "phaseTurns": 0,
+                "startFraction": 0.6499999761581421
+              }
+            }
+          ],
+          "performance": {
+            "accepted": [],
+            "ownership": [],
+            "pronunciation": {
+              "inputHash": "f23f740fb7bf2710b6fe5dd457cf81cd6d5eded6636955592e9675af04aa2370",
+              "language": "ja",
+              "resolverId": "seam-builtin-ja",
+              "resolverVersion": "2",
+              "resourceHash": "b888b8ee9666dccde1cc7f4db52938fc7b2a773ed0e31e3d49feb67b7af5c5a3",
+              "sequenceHash": "d5c5a1c34c6549e1d5f21642b9b736a1a6a9e46ff333d178bc8b79e0796b55f2"
+            },
+            "revision": {
+              "musical": "0",
+              "ownership": "0",
+              "pronunciation": "2"
+            },
+            "takes": []
+          },
+          "phonemeOverrides": [],
+          "pitchAutomation": [],
+          "seamOverrides": [],
+          "startTick": 0,
+          "tensionAutomation": [],
+          "unitSelectionOverrides": []
+        }
+      ],
+      "solo": false,
+      "styleSelection": {
+        "origin": "unselected",
+        "styleId": ""
+      },
+      "voicebank": {
+        "contentHash": "db651501b8cf7499a902e75378c94ea7b66bea2186dd146d0481c3030f7ca60c",
+        "id": "demo.public-domain.human.production",
+        "version": "0.12.0"
+      }
+    }
+  ]
+}

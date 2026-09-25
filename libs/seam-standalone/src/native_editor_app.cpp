@@ -7,6 +7,12 @@
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/eula_acceptance.hpp"
 #include "seam/standalone/native_project_dialog.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/native_ui/design/shell_evidence.hpp"
+
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -1429,6 +1435,59 @@ void NativeEditorApp::requestWindowRepaint() const noexcept {
   if (window_ != nullptr) window_->requestRepaint();
 }
 
+core::Result<void> NativeEditorApp::writeUiEvidence(const std::filesystem::path& dir) {
+  const auto deviceScale = lastPaintScale_;
+  if (authoring_ == nullptr || !shell_.presentedLastFrame())
+    return core::failure(core::ErrorCode::InvalidState,
+                         "UI evidence needs a frame the SING shell presented");
+  std::error_code error;
+  std::filesystem::create_directories(dir, error);
+  if (error) return core::failure(core::ErrorCode::IoError, "Cannot create the evidence folder", dir.string());
+  auto& controller = authoring_->controller();
+  controller.rebuildAccessibilityTree();
+  shell_.rebuildSemantics(controller, controller.sceneState());
+  std::vector<double> sorted = paintMillis_;
+  std::sort(sorted.begin(), sorted.end());
+  const auto percentile = [&sorted](double p) {
+    if (sorted.empty()) return 0.0;
+    const auto index = static_cast<std::size_t>(p * static_cast<double>(sorted.size() - 1U));
+    return sorted[index];
+  };
+  formats::JsonValue::Object memory{{"scope", "whole standalone process (phys_footprint)"}};
+#if defined(__APPLE__)
+  task_vm_info_data_t info{};
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&info), &count) ==
+      KERN_SUCCESS) {
+    memory.emplace("physFootprintBytes", static_cast<std::int64_t>(info.phys_footprint));
+    memory.emplace("physFootprintPeakBytes", static_cast<std::int64_t>(info.ledger_phys_footprint_peak));
+  }
+#endif
+  const formats::JsonValue performance = formats::JsonValue::Object{
+      {"schema", "seam-ui-performance-evidence-v1"},
+      {"source", "NativeEditorApp::paint wall time for every frame of this run"},
+      {"frames", static_cast<std::int64_t>(sorted.size())},
+      {"paintMillis",
+       formats::JsonValue::Object{{"p50", percentile(0.5)},
+                                  {"p95", percentile(0.95)},
+                                  {"max", sorted.empty() ? 0.0 : sorted.back()}}},
+      {"memory", std::move(memory)},
+  };
+  const auto write = [&dir](std::string_view name, const formats::JsonValue& value) -> core::Result<void> {
+    std::ofstream out(dir / std::string{name}, std::ios::binary | std::ios::trunc);
+    out << formats::stringifyJson(value, true) << '\n';
+    if (!out) return core::failure(core::ErrorCode::IoError, "Cannot write UI evidence", std::string{name});
+    return core::success();
+  };
+  if (auto written = write("geometry.json", native_ui::design::singLayoutEvidence(shell_, deviceScale)); !written)
+    return written;
+  if (auto written = write("semantic-bounds.json", native_ui::design::semanticEvidence(shell_.accessibilityTree()));
+      !written)
+    return written;
+  return write("performance.json", performance);
+}
+
+
 void NativeEditorApp::shutdownAudio() noexcept {
   stopAudioForPlayback();
   if (authoring_ != nullptr) {
@@ -1460,6 +1519,17 @@ std::optional<std::filesystem::path> NativeEditorApp::documentPath()
 
 void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (authoring_ == nullptr) return;
+  const auto paintStarted = std::chrono::steady_clock::now();
+  struct PaintTimer final {
+    std::vector<double>& samples;
+    std::chrono::steady_clock::time_point started;
+    ~PaintTimer() {
+      if (samples.size() >= 4096U) samples.erase(samples.begin(), samples.begin() + 1024);
+      samples.push_back(
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
+    }
+  } paintTimer{paintMillis_, paintStarted};
+  lastPaintScale_ = canvas.scale();
   authoring_->controller().pollReplacementReview();
   if (applicationController_ != nullptr) {
     record(applicationController_->tickAutosave());

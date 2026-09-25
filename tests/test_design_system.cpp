@@ -9,6 +9,14 @@
 #include <cmath>
 #include <string_view>
 
+#if defined(__APPLE__)
+#include "seam/native_ui/paint/presentation_color.hpp"
+
+#include <CoreGraphics/CoreGraphics.h>
+
+#include <cstdint>
+#endif
+
 namespace {
 
 using seam::native_ui::Color;
@@ -182,3 +190,36 @@ TEST_CASE("vector canvas paints top-down in logical points at device scale") {
   CHECK(((at(100U, 30U) >> 16U) & 0xFFU) < 20U);
   CHECK(((at(100U, 95U) >> 16U) & 0xFFU) < 20U);
 }
+
+#if defined(__APPLE__)
+TEST_CASE("frames are presented as sRGB so a wide-gamut display colour-matches them") {
+  const auto space = seam::native_ui::paint::presentationColorSpace();
+  CHECK(space != nullptr);
+  const CFStringRef name = CGColorSpaceCopyName(space);
+  const auto isSrgb = name != nullptr && CFStringCompare(name, kCGColorSpaceSRGB, 0) == kCFCompareEqualTo;
+  if (name != nullptr) CFRelease(name);
+  CHECK(isSrgb);
+
+  // Present one pixel of pure sRGB red, exactly as the windows do, into a Display P3 bitmap.
+  // Colour-matched, it lands inside P3's red (about 234, 51, 35); presented unmanaged it would stay
+  // at P3's full, more saturated red (255, 0, 0).
+  const auto info = static_cast<CGBitmapInfo>(
+      static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst) |
+      static_cast<std::uint32_t>(kCGBitmapByteOrder32Little));
+  std::array<std::uint8_t, 4U> red{0U, 0U, 255U, 255U};  // B, G, R, A in memory
+  CGDataProviderRef provider = CGDataProviderCreateWithData(nullptr, red.data(), red.size(), nullptr);
+  CGImageRef image = CGImageCreate(1U, 1U, 8U, 32U, 4U, space, info, provider, nullptr, false,
+                                   kCGRenderingIntentDefault);
+  CGColorSpaceRef p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+  std::array<std::uint8_t, 4U> shown{};
+  CGContextRef context = CGBitmapContextCreate(shown.data(), 1U, 1U, 8U, 4U, p3, info);
+  CHECK(image != nullptr && context != nullptr);
+  if (image != nullptr && context != nullptr) CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), image);
+  if (context != nullptr) CGContextRelease(context);
+  if (image != nullptr) CGImageRelease(image);
+  CGColorSpaceRelease(p3);
+  CGDataProviderRelease(provider);
+  CHECK(shown[2] >= 220U && shown[2] <= 245U);  // red
+  CHECK(shown[1] >= 30U && shown[1] <= 70U);    // green
+}
+#endif
