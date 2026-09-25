@@ -317,7 +317,12 @@ core::Result<void> NativeEditorApp::initialize() {
     lastError_ = persistedSettings.error().message;
   }
 
-  if (config_.designShell) shell_.activate();
+  if (config_.designShell) {
+    if (config_.designPreferences)
+      shell_.activate(native_ui::design::locateDesignAssets(), *config_.designPreferences);
+    else
+      shell_.activate();
+  }
   shell_.setRepaintCallback([this] {
     if (window_ != nullptr) window_->requestRepaint();
   });
@@ -430,8 +435,10 @@ core::Result<void> NativeEditorApp::initialize() {
 
   const auto supportRoot = config_.applicationSupportRoot;
   auto application = StandaloneApplicationController::create(
-      *authoring_, platform::createNativeFileDialog(),
-      platform::createNativeUnsavedChangesPrompt(),
+      *authoring_,
+      config_.fileDialogFactory ? config_.fileDialogFactory() : platform::createNativeFileDialog(),
+      config_.unsavedChangesPromptFactory ? config_.unsavedChangesPromptFactory()
+                                          : platform::createNativeUnsavedChangesPrompt(),
       StandaloneApplicationControllerConfig{
           .autosaveRoot = supportRoot / "Autosaves",
           .recentProjectsPath = supportRoot / "recent-projects.json",
@@ -672,6 +679,29 @@ core::Result<void> NativeEditorApp::initialize() {
       [this] { closeRequested_.store(true, std::memory_order_release); });
   if (!application) return core::Result<void>{application.error()};
   applicationController_ = std::move(application).value();
+  // The SING shell's EXPORT workspace runs the same Export Set command as the menu and Command-E,
+  // and shows the settings that command will use.
+  shell_.setHostActions(native_ui::design::ShellHostActions{
+      .exportSet = [this]() -> core::Result<void> {
+        return applicationController_->dispatch(platform::ApplicationCommand::ExportSet);
+      },
+      .exportPlan = [this]() -> std::optional<native_ui::design::ShellExportPlan> {
+        const auto plan = applicationController_->plannedExportSet();
+        const auto format = plan.settings.format == voicebank::WavSampleFormat::Pcm16 ? "16-bit WAV"
+                            : plan.settings.format == voicebank::WavSampleFormat::Pcm24
+                                ? "24-bit WAV"
+                                : "32-bit float WAV";
+        return native_ui::design::ShellExportPlan{
+            .sampleRate = plan.settings.sampleRate,
+            .channels = plan.settings.channels,
+            .format = format,
+            .master = plan.settings.includeMaster,
+            .stems = plan.settings.includeStems,
+            .asksAboutPackaging = plan.asksAboutPackaging,
+        };
+      },
+      .exportUnavailable = {},
+  });
   applicationMenu_ = platform::createNativeApplicationMenu();
   if (applicationMenu_ != nullptr) {
     auto installed = applicationMenu_->install(*applicationController_);

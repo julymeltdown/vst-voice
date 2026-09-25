@@ -15,7 +15,10 @@ verdict against the concept images.
 | `native-scene-sing-1600x900@2x-7e7952f2.png` | SCENE | 1600×900 | schema-7 fixture, after the review fixes |
 | `native-scene-sing-1280x480@2x-7e7952f2.png` | SCENE | 1280×480 (short: rail rack, compact lane) | same |
 | `native-emo-sing-720x480@2x-7e7952f2.png` | EMO | 720×480 (narrow + short: tabs dropped, notes-below hint) | same |
+| `native-emo-export-1600x900@2x.png` | EMO | 1600×900 EXPORT workspace (plan from the real Export Set settings, idle, no export yet) | same; built from the commit that adds this file |
+| `native-scene-export-1600x900@2x.png` | SCENE | 1600×900 EXPORT workspace | same |
 
 Reproduce: `SEAM_UI_DESIGN=emo "build/release/Project SEAM.app/Contents/MacOS/Project SEAM"
 --auto-close-ms 3000 --screenshot out.ppm --window-width 1600 --window-height 900
 --application-support-root <temp dir> --force-threaded-audio <copy of project>`.
+Add `SEAM_UI_WORKSPACE=export` to open the EXPORT workspace (captures only; never saved).

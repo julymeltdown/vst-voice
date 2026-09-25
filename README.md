@@ -104,8 +104,18 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
   focused knob owns the plain keys (arrows adjust it, Delete never reaches the notes).
 - Knob edits happen "at the playhead": with the playhead outside the selected region, the knobs
   show the region's edge value but refuse to edit, leaving the document and undo history alone.
-- Not done yet: VOICE, TUNE, MIX and EXPORT workspaces (tabs are
-  visible but inactive); a measured output meter; lyric-field re-anchoring while scrolling (the
+- Workspaces: **SING** and a first **EXPORT** workspace. EXPORT shows what Export Set will write
+  (the same settings the menu command uses), its progress, a failure reason and the last receipt,
+  and runs the real Export Set command; it covers the score, so no hidden note can be edited from
+  there. In the CLAP plug-in, EXPORT explains that the DAW renders and exports. **VOICE** opens the
+  existing voice browser (not yet re-homed). **TUNE** and **MIX** are drawn disabled.
+- `tests/test_sing_shell_journey.cpp` drives the standalone app headlessly through the shell:
+  pick a voice, draw a note and type its lyric, Save As, reopen in a fresh app (voice identity and
+  phrase kept), export from EXPORT, and decode a non-silent master. This is command/persistence/
+  export evidence with the development fixture bank, not Finder, window, FL Studio or vocal-quality
+  evidence.
+- Not done yet: TUNE and MIX workspaces; a re-homed voice browser; a measured output meter;
+  lyric-field re-anchoring while scrolling (the
   field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host
   captures. Character art in `assets/ui-design` is **development-only**; see its
   `PROVENANCE.md`.

@@ -143,6 +143,13 @@ public:
       authoring::ExportSettings settings = {});
   void cancelExport() noexcept;
   [[nodiscard]] bool exportInProgress() const noexcept;
+  // What Export Set would write for the current document: the settings it uses, and whether it
+  // will ask to package project-owned recipes and media. The destination is chosen when it runs.
+  struct ExportSetPlan final {
+    authoring::ExportSettings settings;
+    bool asksAboutPackaging{false};
+  };
+  [[nodiscard]] ExportSetPlan plannedExportSet() const;
   [[nodiscard]] const native_ui::ExportProgressPanelModel& exportProgress()
       const noexcept {
     return exportProgress_;
@@ -369,6 +376,10 @@ private:
   [[nodiscard]] core::Result<void> recordCurrentProject();
   [[nodiscard]] core::Result<void> exportAudio();
   [[nodiscard]] core::Result<void> exportSetFromDialog(bool bakeCandidates = false);
+  [[nodiscard]] static bool projectHasPackageableResources(const domain::Project& project);
+  // The single source of Export Set settings, for the export itself and for the shown plan.
+  [[nodiscard]] authoring::ExportSettings exportSetSettings(bool bakeCandidates,
+                                                            bool includeProjectPackage) const;
   struct ExportRequest final {
     domain::Project project;
     std::vector<rendering::TrackSingerSource> voicebanks;

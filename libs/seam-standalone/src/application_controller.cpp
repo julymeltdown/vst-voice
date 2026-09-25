@@ -1844,6 +1844,41 @@ void StandaloneApplicationController::cancelExport() noexcept {
   exportStopSource_.request_stop();
 }
 
+bool StandaloneApplicationController::projectHasPackageableResources(
+    const domain::Project& project) {
+  return std::any_of(project.vocalTracks().begin(), project.vocalTracks().end(),
+                     [](const auto& track) { return track.proceduralRecipe.has_value(); }) ||
+         std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+                     [](const auto& track) { return !track.mediaPath.empty(); });
+}
+
+authoring::ExportSettings StandaloneApplicationController::exportSetSettings(
+    bool bakeCandidates, bool includeProjectPackage) const {
+  const auto& document = session_.runtime().document();
+  const auto& project = document.session().project();
+  return authoring::ExportSettings{
+      .sampleRate = session_.runtime().transport().sampleRate(),
+      .channels = project.routing().deviceOutputChannels,
+      .format = voicebank::WavSampleFormat::Pcm24,
+      .includeMaster = !bakeCandidates,
+      .includeStems = !bakeCandidates && (!project.vocalTracks().empty() ||
+                      !project.audioTracks().empty()),
+      .replaceExisting = false,
+      .includeProjectAndRecipes = includeProjectPackage || bakeCandidates,
+      .includeProceduralCandidates = bakeCandidates,
+      .projectDirectory = document.identity().projectPath
+          ? std::optional<std::filesystem::path>{document.identity().projectPath->parent_path()}
+          : std::nullopt,
+  };
+}
+
+StandaloneApplicationController::ExportSetPlan
+StandaloneApplicationController::plannedExportSet() const {
+  const auto& project = session_.runtime().document().session().project();
+  return ExportSetPlan{.settings = exportSetSettings(false, false),
+                       .asksAboutPackaging = projectHasPackageableResources(project)};
+}
+
 core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bakeCandidates) {
   const auto& document = session_.runtime().document();
   const auto context = document.session().capturePerformanceJob();
@@ -1866,12 +1901,7 @@ core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bak
   const auto current = session_.runtime().document().session().validatePerformanceJob(context.value());
   if (!current) return current;
   bool includeProjectPackage = false;
-  const auto& exportProject = context.value().sourceProject();
-  const bool hasPackageableResources =
-      std::any_of(exportProject.vocalTracks().begin(), exportProject.vocalTracks().end(),
-          [](const auto& track) { return track.proceduralRecipe.has_value(); }) ||
-      std::any_of(exportProject.audioTracks().begin(), exportProject.audioTracks().end(),
-          [](const auto& track) { return !track.mediaPath.empty(); });
+  const bool hasPackageableResources = projectHasPackageableResources(context.value().sourceProject());
   if (!bakeCandidates && hasPackageableResources) {
     const auto choice = fileDialog_->chooseRecipePackaging();
     if (!choice) return core::Result<void>{choice.error()};
@@ -1881,20 +1911,7 @@ core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bak
     if (!valid) return valid;
   }
   const auto& project = session_.runtime().document().session().project();
-  authoring::ExportSettings settings{
-      .sampleRate = session_.runtime().transport().sampleRate(),
-      .channels = project.routing().deviceOutputChannels,
-      .format = voicebank::WavSampleFormat::Pcm24,
-      .includeMaster = !bakeCandidates,
-      .includeStems = !bakeCandidates && (!project.vocalTracks().empty() ||
-                      !project.audioTracks().empty()),
-      .replaceExisting = false,
-      .includeProjectAndRecipes = includeProjectPackage || bakeCandidates,
-      .includeProceduralCandidates = bakeCandidates,
-      .projectDirectory = document.identity().projectPath
-          ? std::optional<std::filesystem::path>{document.identity().projectPath->parent_path()}
-          : std::nullopt,
-  };
+  const auto settings = exportSetSettings(bakeCandidates, includeProjectPackage);
   native_ui::ExportDialogModel dialog;
   dialog.setDestination(*selected.value());
   dialog.setSettings(settings);

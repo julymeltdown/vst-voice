@@ -31,6 +31,28 @@ struct ModeAssets final {
   std::shared_ptr<const paint::Image> wordmark;
 };
 
+// The shell's workspaces. VOICE opens the voice browser (a classic surface until it is re-homed);
+// TUNE and MIX are not built yet and stay disabled.
+enum class Workspace : std::uint8_t { Sing, Export };
+
+// What an Export Set will write, as the host computed it. Nothing here is a guess by the shell.
+struct ShellExportPlan final {
+  std::uint32_t sampleRate{0U};
+  std::uint8_t channels{0U};
+  std::string format;
+  bool master{false};
+  bool stems{false};
+  bool asksAboutPackaging{false};
+};
+
+// Host commands the shell can run. A host that cannot export from the editor (a plug-in, whose DAW
+// owns rendering and files) leaves exportSet empty and states why in exportUnavailable.
+struct ShellHostActions final {
+  std::function<core::Result<void>()> exportSet;
+  std::function<std::optional<ShellExportPlan>()> exportPlan;
+  std::string exportUnavailable{"This host does not export from the editor"};
+};
+
 // Finds assets/ui-design next to a bundle, in an explicit override, or in the source tree for
 // development builds. Returns an empty path when no asset directory exists.
 [[nodiscard]] std::filesystem::path locateDesignAssets(
@@ -66,6 +88,13 @@ public:
   // controller's input geometry is returned to the classic editor before the switch.
   void setEnabled(NativeEditorController& controller, bool enabled);
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
+  void setHostActions(ShellHostActions actions) { hostActions_ = std::move(actions); }
+  [[nodiscard]] Workspace workspace() const noexcept { return workspace_; }
+  // Switches the visible workspace. Gestures and a note-grid lyric field are abandoned first: the
+  // grid they belong to is no longer on screen.
+  void setWorkspace(NativeEditorController& controller, Workspace workspace);
+  // The Export workspace's run button, in shell coordinates (empty unless that workspace shows).
+  [[nodiscard]] ui::Rect exportRunButton() const noexcept;
   [[nodiscard]] bool assetsLoaded(DesignMode mode) const noexcept;
 
   // Frame step 1, before the host derives its scene state: chooses the surface and applies its
@@ -144,6 +173,9 @@ private:
                  const EditorSceneState& state) const;
   void paintRack(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintStatus(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  void paintExport(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  [[nodiscard]] ui::Rect exportArea() const noexcept;
+  [[nodiscard]] core::Result<void> runExportSet(NativeEditorController& controller);
   [[nodiscard]] bool inMusicalArea(ui::Point point) const noexcept;
   [[nodiscard]] bool inEditableLane(ui::Point point) const noexcept;
   [[nodiscard]] PointerEvent translated(const PointerEvent& event, ForwardArea area) const noexcept;
@@ -186,6 +218,10 @@ private:
   std::string semanticFocus_;
   std::string semanticFocusBaseline_;
   std::function<void()> repaint_;
+  ShellHostActions hostActions_;
+  Workspace workspace_{Workspace::Sing};
+  // Export progress from the last painted state, so the run button can refuse while one runs.
+  bool exportRunning_{false};
 
   PixelSurface background_;
   double backgroundScale_{0.0};

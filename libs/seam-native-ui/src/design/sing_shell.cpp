@@ -250,6 +250,10 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
       preferences.mode = parseDesignMode(value, preferences.mode);
     }
   }
+  // Captures only: open a workspace other than SING. The workspace is never a saved preference.
+  if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE");
+      workspace != nullptr && std::string_view{workspace} == "export")
+    workspace_ = Workspace::Export;
   activate(assetRoot, preferences);
   persist_ = true;
 }
@@ -347,11 +351,12 @@ TextInputRequest SingShell::translateTextInput(TextInputRequest request) {
 }
 
 bool SingShell::inMusicalArea(ui::Point point) const noexcept {
-  return contains(layout_.grid, point) || contains(layout_.ruler, point);
+  return workspace_ == Workspace::Sing &&
+         (contains(layout_.grid, point) || contains(layout_.ruler, point));
 }
 
 bool SingShell::inEditableLane(ui::Point point) const noexcept {
-  return laneEditable_ && contains(layout_.laneTimePlot, point);
+  return workspace_ == Workspace::Sing && laneEditable_ && contains(layout_.laneTimePlot, point);
 }
 
 NativeEditorController::HostedGeometry SingShell::hostedGeometry() const noexcept {
@@ -615,11 +620,23 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
-  paintEditor(*c, t, model, state);
-  paintLane(*c, t, model, state);
+  {
+    const auto& progress = state.exportProgress;
+    exportRunning_ = progress.totalFiles != 0U &&
+                     (progress.state == authoring::ExportState::Preflight ||
+                      progress.state == authoring::ExportState::Staging ||
+                      progress.state == authoring::ExportState::Prepared ||
+                      progress.state == authoring::ExportState::Publishing);
+  }
+  if (workspace_ == Workspace::Export) {
+    paintExport(*c, t, state);
+  } else {
+    paintEditor(*c, t, model, state);
+    paintLane(*c, t, model, state);
+  }
   paintRack(*c, t, state);
   paintStatus(*c, t, state);
-  if (state.focusedElementBounds.has_value()) {
+  if (workspace_ == Workspace::Sing && state.focusedElementBounds.has_value()) {
     const auto focus = fromLegacy(*state.focusedElementBounds);
     if (intersects(focus, layout_.grid)) {
       c->save();
@@ -636,15 +653,20 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
 void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                             time::Tick playhead) const {
   const auto& l = layout_;
-  // Workspace tabs. Only SING is functional in this build; the others are shown disabled.
+  // Workspace tabs. SING and EXPORT are workspaces, VOICE opens the voice browser; TUNE and MIX are
+  // not built yet and are drawn disabled.
   static constexpr std::array<Icon, 5U> kIcons{Icon::Sing, Icon::Voice, Icon::Tune, Icon::Mix,
                                                Icon::Export};
   static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix", "Export"};
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
     const auto tab = l.workspaceTab[i];
     if (tab.width < 24.0) continue;
-    const auto active = i == 0U;
-    const auto color = active ? t.color.accent : withAlpha(t.color.textSecondary, 0.45);
+    const auto active = (i == 0U && workspace_ == Workspace::Sing) ||
+                        (i == 4U && workspace_ == Workspace::Export);
+    const auto enabled = i == 0U || i == 1U || i == 4U;
+    const auto color = active    ? t.color.accent
+                       : enabled ? t.color.textSecondary
+                                 : withAlpha(t.color.textSecondary, 0.35);
     const auto iconCenter = ui::Point{tab.x + tab.width * 0.5,
                                       tab.y + (l.workspaceLabelsVisible ? tab.height * 0.36
                                                                         : tab.height * 0.5)};
@@ -656,7 +678,8 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
       c.text({tab.x, tab.y + tab.height * 0.62, tab.width, 16.0}, kNames[i],
              style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Center,
                    true),
-             active ? t.color.accent : withAlpha(t.color.textSecondary, 0.55));
+             active ? t.color.accent
+                    : withAlpha(t.color.textSecondary, enabled ? 0.9 : 0.4));
     if (active) {
       c.save();
       c.setGlow(t.color.accent, 8.0);
@@ -1467,6 +1490,178 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
          style(FontRole::Ui, t.type.smallLabel), leftColor);
 }
 
+// ---- EXPORT workspace --------------------------------------------------------------------------
+
+namespace {
+
+std::string exportStateLabel(authoring::ExportState state) {
+  switch (state) {
+    case authoring::ExportState::Preflight: return "Checking";
+    case authoring::ExportState::Staging: return "Rendering files";
+    case authoring::ExportState::Prepared: return "Prepared";
+    case authoring::ExportState::Publishing: return "Publishing";
+    case authoring::ExportState::Committed: return "Written";
+    case authoring::ExportState::Cancelled: return "Cancelled";
+    case authoring::ExportState::Failed: return "Failed";
+    case authoring::ExportState::Recovered: return "Recovered";
+    case authoring::ExportState::RollbackRequired: return "Needs rollback";
+  }
+  return "Unknown";
+}
+
+std::string channelLayout(std::uint8_t channels) {
+  if (channels == 1U) return "Mono";
+  if (channels == 2U) return "Stereo";
+  return std::to_string(channels) + " channels";
+}
+
+std::string sampleRateLabel(std::uint32_t rate) {
+  const auto khz = static_cast<double>(rate) / 1000.0;
+  return (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + " kHz";
+}
+
+}  // namespace
+
+ui::Rect SingShell::exportArea() const noexcept {
+  const auto& l = layout_;
+  return ui::Rect{l.editor.x, l.editor.y, l.editor.width, l.lane.bottom() - l.editor.y};
+}
+
+ui::Rect SingShell::exportRunButton() const noexcept {
+  if (workspace_ != Workspace::Export || !presented_) return {};
+  const auto area = exportArea();
+  const auto width = std::min(240.0, std::max(160.0, area.width * 0.5 - 64.0));
+  return ui::Rect{area.x + 32.0, area.y + 64.0 + 4.0 * 46.0 + 12.0, width, 44.0};
+}
+
+void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
+  if (workspace == workspace_) return;
+  // The grid the gestures and a lyric field belong to leaves the screen with its workspace.
+  cancelGestures(controller);
+  if (lyricInputActive_) controller.cancelTextComposition();
+  lyricInputActive_ = false;
+  workspace_ = workspace;
+  repaint();
+}
+
+core::Result<void> SingShell::runExportSet(NativeEditorController& controller) {
+  if (!hostActions_.exportSet)
+    return core::failure(core::ErrorCode::Unsupported, hostActions_.exportUnavailable);
+  if (exportRunning_)
+    return core::failure(core::ErrorCode::Conflict, "An export is already running");
+  auto result = hostActions_.exportSet();
+  yieldIfModal(controller);
+  repaint();
+  return result;
+}
+
+void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
+  const auto area = exportArea();
+  glassPanel(c, t, area, t.shape.card, 0.97);
+  const auto& last = state.lastExport;
+  cardHeader(c, t, area, "Export set", exportRunning_ || last.has_value());
+  c.save();
+  c.clipRect(area);
+  const auto columnWidth = std::max(160.0, area.width * 0.5 - 48.0);
+  const auto left = area.x + 32.0;
+  const auto right = area.x + area.width * 0.5 + 16.0;
+  const auto labelStyle = style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking,
+                                TextAlign::Left, true);
+  const auto valueStyle = style(FontRole::Ui, t.type.body);
+  const auto row = [&](double x, double y, std::string_view label, const std::string& value,
+                       Color valueColor) {
+    c.text({x, y, columnWidth, 16.0}, label, labelStyle, t.color.textSecondary);
+    c.text({x, y + 18.0, columnWidth, 20.0}, value,
+           fitted(c, value, valueStyle, columnWidth), valueColor);
+  };
+
+  // What an Export Set writes, as the host computed it for this document.
+  const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
+  auto y = area.y + 64.0;
+  if (plan) {
+    row(left, y, "Master mix",
+        plan->master ? channelLayout(plan->channels) + " \u00b7 " + sampleRateLabel(plan->sampleRate) +
+                           " \u00b7 " + plan->format
+                     : std::string{"Not written"},
+        t.color.textPrimary);
+    row(left, y + 46.0, "Stems",
+        plan->stems ? std::string{"One file per track, same format"} : std::string{"Not written"},
+        t.color.textPrimary);
+    row(left, y + 92.0, "Project and recipes",
+        plan->asksAboutPackaging ? std::string{"You choose when the export starts"}
+                                 : std::string{"Nothing to package for this project"},
+        t.color.textPrimary);
+    row(left, y + 138.0, "Receipt", "SHA-256 of every file, written last", t.color.textPrimary);
+  } else {
+    row(left, y, "Export", hostActions_.exportUnavailable, t.color.warning);
+  }
+
+  // The run button: real command, refused while an export runs or when the host cannot export.
+  const auto button = exportRunButton();
+  const auto available = static_cast<bool>(hostActions_.exportSet) && !exportRunning_;
+  c.save();
+  if (available) c.setGlow(withAlpha(t.color.accent, 0.7), 10.0);
+  c.fill(Path::capsule(button), available ? t.color.accent : withAlpha(t.color.surfaceSunken, 0.9));
+  c.restore();
+  c.stroke(Path::capsule(button), available ? t.color.accentDeep : t.color.border, StrokeStyle{1.0});
+  c.text(button, exportRunning_ ? "Exporting\u2026" : "Export set\u2026",
+         style(FontRole::UiBold, t.type.label, 1.4, TextAlign::Center, true),
+         available ? t.color.textOnAccent : t.color.textDisabled);
+  if (!hostActions_.exportSet)
+    c.text({left, button.bottom() + 10.0, columnWidth, 32.0}, hostActions_.exportUnavailable,
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  else
+    c.text({left, button.bottom() + 10.0, columnWidth, 32.0},
+           "Choose a new folder; an existing export set is never overwritten.",
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+
+  // Progress and the last written set.
+  y = area.y + 64.0;
+  const auto& progress = state.exportProgress;
+  if (exportRunning_) {
+    row(right, y, "Progress",
+        exportStateLabel(progress.state) + "  " + std::to_string(progress.completedFiles) + " / " +
+            std::to_string(progress.totalFiles) + " files",
+        t.color.textPrimary);
+    const ui::Rect bar{right, y + 44.0, columnWidth, 6.0};
+    const auto fraction = progress.totalFiles == 0U
+                              ? 0.0
+                              : static_cast<double>(progress.completedFiles) /
+                                    static_cast<double>(progress.totalFiles);
+    c.fill(Path::capsule(bar), withAlpha(t.color.surfaceSunken, 0.9));
+    c.save();
+    c.setGlow(t.color.accent, 6.0);
+    c.fill(Path::capsule({bar.x, bar.y, std::max(bar.height, bar.width * fraction), bar.height}),
+           t.color.accent);
+    c.restore();
+    if (!progress.currentOutput.empty())
+      c.text({right, y + 58.0, columnWidth, 18.0}, progress.currentOutput,
+             style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  } else if (progress.state == authoring::ExportState::Failed && !progress.currentOutput.empty()) {
+    row(right, y, "Last attempt", "Failed: " + progress.currentOutput, t.color.error);
+  } else {
+    row(right, y, "Progress", "Idle", t.color.textSecondary);
+  }
+  y += 92.0;
+  if (last) {
+    const auto folder = last->setPath.empty() ? last->masterPath.parent_path() : last->setPath;
+    row(right, y, "Last export", exportStateLabel(last->state) + " \u00b7 " +
+                                     std::to_string(last->files.size()) + " files",
+        last->state == authoring::ExportState::Committed ? t.color.success : t.color.warning);
+    row(right, y + 46.0, "Folder", folder.filename().string(), t.color.textPrimary);
+    row(right, y + 92.0, "Master",
+        last->masterPath.filename().string() +
+            (last->masterSha256.size() >= 12U ? "  sha256 " + last->masterSha256.substr(0U, 12U) +
+                                                    "\u2026"
+                                              : std::string{}),
+        t.color.textPrimary);
+  } else {
+    row(right, y, "Last export", "Nothing exported in this session", t.color.textSecondary);
+  }
+  c.restore();
+}
+
+
 core::Result<void> SingShell::nudge(NativeEditorController& controller, std::size_t index, int steps) {
   if (steps == 0) return core::success();
   switch (ui::expressionChannelAt(index)) {
@@ -1492,6 +1687,24 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
                                                const PointerEvent& event) {
   const auto p = event.position;
   const auto& l = layout_;
+  if (event.button == PointerButton::Left) {
+    // Workspace tabs: SING and EXPORT switch the workspace; VOICE opens the voice browser.
+    for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
+      if (l.workspaceTab[i].width < 24.0 || !contains(l.workspaceTab[i], p)) continue;
+      if (i == 0U) setWorkspace(controller, Workspace::Sing);
+      if (i == 4U) setWorkspace(controller, Workspace::Export);
+      if (i == 1U) {
+        controller.showVoicebankBrowser();
+        yieldIfModal(controller);
+        repaint();
+      }
+      return core::success();
+    }
+    if (workspace_ == Workspace::Export && contains(exportRunButton(), p))
+      return runExportSet(controller);
+  }
+  // The export panel covers the grid and lane; nothing under it is reachable.
+  if (workspace_ == Workspace::Export && contains(exportArea(), p)) return core::success();
   if (event.button == PointerButton::Left) {
     if (contains(l.modeSwitch, p)) {
       setMode(p.x < l.modeSwitch.x + l.modeSwitch.width * 0.5 ? DesignMode::Emo : DesignMode::Scene);
@@ -1622,7 +1835,8 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
       return true;
     }
   }
-  if (inMusicalArea(anchor) || contains(layout_.laneTimePlot, anchor)) {
+  if (inMusicalArea(anchor) ||
+      (workspace_ == Workspace::Sing && contains(layout_.laneTimePlot, anchor))) {
     controller.scroll(deltaX, deltaY, toLegacy(anchor), modifiers);
     return true;
   }
@@ -1664,7 +1878,14 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that has left the layout (a knob after the rack collapsed) no longer owns them.
   refreshSemantics(controller);
   const auto* focused = semantics_.focusedNode();
-  if (focused == nullptr) return false;
+  // With the EXPORT workspace up the score is not on screen, so its plain keys never edit it;
+  // Escape returns to SING.
+  const auto scoreHidden = [&] {
+    if (workspace_ != Workspace::Export) return false;
+    if (event.key == NativeKey::Escape) setWorkspace(controller, Workspace::Sing);
+    return true;
+  };
+  if (focused == nullptr) return scoreHidden();
   const std::string id = focused->id;
   // While a shell control holds focus, plain keys belong to it and never reach the note editor
   // (Delete must not delete the selected notes because a knob is focused). Command shortcuts such
@@ -1692,7 +1913,7 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     return true;
   }
   // Notes, the timeline and vibrato handles are the score editor's: its keys edit them.
-  if (!rehomedControl(id)) return false;
+  if (!rehomedControl(id)) return scoreHidden();
   // A re-homed editor control (transport, tempo, meter, voice identity, an overlap group, status
   // actions) owns the plain keys too: Enter/Space act on it, never on the selected note's lyric.
   if (event.key == NativeKey::Escape) return false;
@@ -1793,10 +2014,16 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .role = SemanticRole::Tab,
                      .name = std::string{kWorkspaces[i]} + " workspace",
                      .bounds = l.workspaceTab[i],
-                     .enabled = i == 0U,
-                     .selected = i == 0U,
-                     .actions = {SemanticAction::SetFocus},
-                     .description = i == 0U ? "" : "Not available in this build"});
+                     .enabled = i == 0U || i == 1U || i == 4U,
+                     .selected = (i == 0U && workspace_ == Workspace::Sing) ||
+                                 (i == 4U && workspace_ == Workspace::Export),
+                     .actions = i == 0U || i == 1U || i == 4U
+                                    ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                                  SemanticAction::SetFocus}
+                                    : std::vector<SemanticAction>{SemanticAction::SetFocus},
+                     .description = i == 1U   ? "Opens the voice browser"
+                                    : i == 2U || i == 3U ? "Not available in this build"
+                                                         : ""});
   }
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto emo = mode == DesignMode::Emo;
@@ -1994,6 +2221,61 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     add(std::move(copy));
   }
 
+  const auto singShown = workspace_ == Workspace::Sing;
+  if (!singShown) {
+    // The EXPORT workspace covers the score: nothing of the grid or lane is published under it.
+    std::erase_if(children, [](const SemanticNode& node) {
+      return node.id == "timeline" || node.id.starts_with("editor.vibrato.handle.") ||
+             node.id.starts_with("overlap-group.") || node.id.starts_with("detail.") ||
+             node.id.starts_with("shell.lane");
+    });
+    const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
+    const auto available = static_cast<bool>(hostActions_.exportSet) && !exportRunning_;
+    std::string summary = hostActions_.exportUnavailable;
+    if (plan) {
+      summary = plan->master ? "Master " + channelLayout(plan->channels) + ", " +
+                                   sampleRateLabel(plan->sampleRate) + ", " + plan->format
+                             : std::string{"No master"};
+      summary += plan->stems ? "; one stem per track" : "; no stems";
+      summary += "; SHA-256 receipt";
+    }
+    add(SemanticNode{.id = "shell.export.panel", .role = SemanticRole::Panel,
+                     .name = "Export set", .value = summary, .bounds = exportArea(),
+                     .actions = {SemanticAction::SetFocus}});
+    add(SemanticNode{
+        .id = "shell.export.run", .role = SemanticRole::Button, .name = "Export set",
+        .bounds = exportRunButton(), .enabled = available,
+        .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                           SemanticAction::SetFocus}
+                             : std::vector<SemanticAction>{SemanticAction::SetFocus},
+        .description = !hostActions_.exportSet ? hostActions_.exportUnavailable
+                       : exportRunning_       ? std::string{"An export is already running"}
+                                              : std::string{"Choose a new folder for the set"}});
+    const auto& progress = state.exportProgress;
+    if (exportRunning_) {
+      const auto fraction = static_cast<double>(progress.completedFiles) /
+                            static_cast<double>(std::max<std::uint64_t>(1U, progress.totalFiles));
+      add(SemanticNode{.id = "shell.export.progress", .role = SemanticRole::ProgressIndicator,
+                       .name = "Export progress",
+                       .value = std::to_string(progress.completedFiles) + " of " +
+                                std::to_string(progress.totalFiles) + " files",
+                       .bounds = exportArea(),
+                       .numericValue = fraction * 100.0,
+                       .numericMinimum = 0.0,
+                       .numericMaximum = 100.0});
+    }
+    const auto& last = state.lastExport;
+    add(SemanticNode{
+        .id = "shell.export.last", .role = SemanticRole::Status, .name = "Last export",
+        .value = last ? exportStateLabel(last->state) + ", " + std::to_string(last->files.size()) +
+                            " files in " +
+                            (last->setPath.empty() ? last->masterPath.parent_path() : last->setPath)
+                                .filename()
+                                .string()
+                      : std::string{"Nothing exported in this session"},
+        .bounds = exportArea(),
+                        .actions = {SemanticAction::SetFocus}});
+  }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.
   if (!semanticFocus_.empty() && !EditorSemanticTree::containsId(root, semanticFocus_)) {
@@ -2001,9 +2283,13 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     focusedId.clear();
   }
   if (focusedId.empty() && legacyFocus != nullptr) focusedId = legacyFocus->id;
+  // A controller focus inside the hidden score is not reported while EXPORT is up.
+  if (!singShown && !focusedId.empty() && !EditorSemanticTree::containsId(root, focusedId))
+    focusedId.clear();
   semantics_.rebuildCustom(std::move(root), focusedId,
-                           VirtualNoteSource{.tree = &controller.accessibilityTree(),
-                                             .present = presentNote});
+                           singShown ? VirtualNoteSource{.tree = &controller.accessibilityTree(),
+                                                         .present = presentNote}
+                                     : VirtualNoteSource{});
 }
 
 core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
@@ -2033,7 +2319,18 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
   core::Result<void> result = core::failure(core::ErrorCode::Unsupported,
                                             "This element does not support that action");
-  if (id == "shell.mode.emo" && activate) {
+  if (id == "shell.workspace.sing" && activate) {
+    setWorkspace(controller, Workspace::Sing);
+    result = core::success();
+  } else if (id == "shell.workspace.export" && activate) {
+    setWorkspace(controller, Workspace::Export);
+    result = core::success();
+  } else if (id == "shell.workspace.voice" && activate) {
+    controller.showVoicebankBrowser();
+    result = core::success();
+  } else if (id == "shell.export.run" && activate) {
+    result = runExportSet(controller);
+  } else if (id == "shell.mode.emo" && activate) {
     setMode(DesignMode::Emo);
     result = core::success();
   } else if (id == "shell.mode.scene" && activate) {

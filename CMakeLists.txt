@@ -1916,6 +1916,7 @@ if(SEAM_BUILD_TESTS)
       tests/test_voice_designer_workflow.cpp
       tests/test_conversion_review_model.cpp
       tests/test_native_runtime.cpp
+      tests/test_sing_shell_journey.cpp
       tests/test_voicebank_studio_options.cpp
       tests/test_diagnostic_panel.cpp
       tests/test_vibrato_inspector.cpp

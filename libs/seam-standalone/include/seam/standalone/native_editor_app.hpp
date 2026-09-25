@@ -59,6 +59,12 @@ struct NativeEditorAppConfig final {
   // Presents the EMO/SCENE SING workspace. The shipping app enables it; tests keep the classic
   // editor so their pixel and hit-test expectations stay independent of the user's preferences.
   bool designShell{false};
+  // Test seams. The shipping app leaves these empty and uses the native file dialog, the native
+  // unsaved-changes prompt and the saved design preferences.
+  std::function<std::unique_ptr<platform::IFileDialog>()> fileDialogFactory;
+  std::function<std::unique_ptr<platform::IUnsavedChangesPrompt>()> unsavedChangesPromptFactory;
+  // An explicit look for the shell, neither read from nor written to the user's preferences.
+  std::optional<native_ui::design::DesignPreferences> designPreferences;
 };
 
 [[nodiscard]] NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(

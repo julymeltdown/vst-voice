@@ -9,6 +9,13 @@ namespace seam::clap_editor {
 void EditorRuntime::activateDesignShell() {
   std::lock_guard lock(mutex_);
   shell_.setRepaintCallback([this] { requestRepaint(); });
+  // A plug-in does not write files from the editor: the DAW renders and exports the track.
+  shell_.setHostActions(native_ui::design::ShellHostActions{
+      .exportSet = {},
+      .exportPlan = {},
+      .exportUnavailable =
+          "In a plug-in, export from your DAW: render or bounce this track there.",
+  });
   shell_.activate();
   requestRepaint();
 }

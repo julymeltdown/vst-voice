@@ -476,8 +476,8 @@ TEST_CASE("the shell accessibility tree exposes its controls with real roles in 
   CHECK(emo && scene && emo->role == SemanticRole::RadioButton && emo->selected && !scene->selected);
   const auto* sing = find("shell.workspace.sing");
   CHECK(sing && sing->role == SemanticRole::Tab && sing->selected);
-  const auto* voice = find("shell.workspace.voice");
-  CHECK(voice && !voice->enabled);
+  const auto* tune = find("shell.workspace.tune");
+  CHECK(tune && !tune->enabled);
   CHECK(find("shell.lane-tab.gender") != nullptr);
   // Controller controls nested in the classic toolbar group are re-homed onto the shell's own
   // header and singer card, keeping their ids, roles and actions.
@@ -728,9 +728,9 @@ TEST_CASE("shell accessibility actions are validated against the current layout 
   const auto revision = f.controller.documentRevision();
   CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.nonexistent", SemanticAction::Increment).hasValue());
   CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.emo", SemanticAction::Increment).hasValue());
-  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::Activate).hasValue());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.tune", SemanticAction::Activate).hasValue());
   // A disabled control can still be focused for its explanation.
-  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::SetFocus).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.tune", SemanticAction::SetFocus).hasValue());
   // After the rack collapses to a rail, a retained knob element no longer exists.
   CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
   CHECK(f.shell.layout().rack == native_ui::design::RackPresentation::Rail);
@@ -992,4 +992,116 @@ TEST_CASE("releasing shell focus returns to the note, not to a stale vibrato han
     CHECK(static_cast<int>(f.note().midiKey) == beforeKey + 1);
     CHECK(f.note().vibrato.startFraction == beforeOnset);
   }
+}
+
+TEST_CASE("the EXPORT workspace covers the score and runs only the host's real export command") {
+  using native_ui::EditorSemanticTree;
+  using native_ui::SemanticAction;
+  using native_ui::SemanticNode;
+  using native_ui::design::ShellExportPlan;
+  using native_ui::design::ShellHostActions;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  int runs = 0;
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = [&runs]() -> core::Result<void> {
+        ++runs;
+        return core::success();
+      },
+      .exportPlan = [] {
+        return std::optional<ShellExportPlan>{ShellExportPlan{.sampleRate = 44100U,
+                                                              .channels = 2U,
+                                                              .format = "24-bit WAV",
+                                                              .master = true,
+                                                              .stems = false}};
+      },
+      .exportUnavailable = {},
+  });
+  CHECK(f.frame());
+  // Select the note, then switch workspaces with the EXPORT tab.
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  const auto tab = f.shell.layout().workspaceTab[4U];
+  CHECK(f.shell.pointerDown(f.controller, press({tab.x + tab.width * 0.5, tab.y + tab.height * 0.5}))
+            .hasValue());
+  CHECK(f.shell.workspace() == Workspace::Export);
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto& tree = f.shell.accessibilityTree();
+  CHECK(tree.virtualizedNoteCount() == 0U);
+  CHECK(!EditorSemanticTree::containsId(tree.root(), "timeline"));
+  CHECK(!EditorSemanticTree::containsId(tree.root(), "shell.lane"));
+  const auto* exportTab = [&]() -> const SemanticNode* {
+    for (const auto& child : tree.root().children)
+      if (child.id == "shell.workspace.export") return &child;
+    return nullptr;
+  }();
+  CHECK(exportTab != nullptr && exportTab->selected);
+  const auto* panel = [&]() -> const SemanticNode* {
+    for (const auto& child : tree.root().children)
+      if (child.id == "shell.export.panel") return &child;
+    return nullptr;
+  }();
+  CHECK(panel != nullptr && panel->value.find("44.1 kHz") != std::string::npos);
+  // The grid under the panel is unreachable by pointer, and plain keys do not edit hidden notes.
+  const auto grid = f.shell.layout().grid;
+  const auto revision = f.controller.documentRevision();
+  CHECK(f.shell.pointerDown(f.controller,
+                            PointerEvent{.position = {grid.x + 300.0, grid.y + 100.0},
+                                         .button = PointerButton::Left, .clickCount = 2})
+            .hasValue());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == 1U);
+  // The run button and its accessible twin both reach the host command.
+  const auto run = f.shell.exportRunButton();
+  CHECK(run.width > 0.0);
+  CHECK(f.shell.pointerDown(f.controller, press({run.x + 10.0, run.y + 10.0})).hasValue());
+  CHECK(runs == 1);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate).hasValue());
+  CHECK(runs == 2);
+  // Escape returns to SING and the score is published again.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.workspace() == Workspace::Sing);
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(f.shell.accessibilityTree().virtualizedNoteCount() == 1U);
+}
+
+TEST_CASE("a host that cannot export says why and never pretends to run") {
+  using native_ui::SemanticAction;
+  using native_ui::SemanticNode;
+  using native_ui::design::ShellHostActions;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = "Export from your DAW"});
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.export", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const SemanticNode* runNode = nullptr;
+  for (const auto& child : f.shell.accessibilityTree().root().children)
+    if (child.id == "shell.export.run") runNode = &child;
+  CHECK(runNode != nullptr);
+  if (runNode) {
+    CHECK(!runNode->enabled);
+    CHECK(runNode->description == "Export from your DAW");
+  }
+  const auto refused = f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate);
+  CHECK(!refused.hasValue());
+  const auto run = f.shell.exportRunButton();
+  const auto clicked = f.shell.pointerDown(f.controller, press({run.x + 10.0, run.y + 10.0}));
+  CHECK(!clicked.hasValue());
+  if (!clicked) CHECK(clicked.error().message == "Export from your DAW");
+  // VOICE opens the real voice browser (a classic surface for now).
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.controller.voicebankBrowserVisible());
 }
