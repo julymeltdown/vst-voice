@@ -2,6 +2,26 @@
 
 This ledger records implementation evidence for [the approved plan](../plans/2026-09-05-1718-feat-full-scope-beta-go-plan.md). It does not replace the plan or authorize release. The complete R1–R20/V01–V18 scope remains mandatory.
 
+2026-09-25 — U22 New Project singer-catalogue visibility and diagnostics, local only; GitHub CI remains deferred and `.github` was not touched. The picker keeps trusted/renderable styles selectable and shows discovered but ineligible singers as disabled entries with their resolver reason. The catalogue now also reports invalid/unsafe roots and package-shaped directories it rejects (missing/malformed manifest, unreadable/missing recipe, invalid recipe identity, or enumeration error) instead of silently making them indistinguishable from an empty catalogue. Its candidate-only `scan()` contract remains intact; `scanDetailed()` performs one pass, caps retained issue rows at 64, and stops after 8,192 package folders with an explicit incomplete-scan marker. All diagnostic rows remain disabled, so this does not weaken trust or stale-choice revalidation. Regressions cover ineligible and malformed entries, invalid roots, preserved valid candidates, issue truncation and the scan ceiling. Debug/Release `seam_u2_tests` pass 71/71 each; the full procedural install journey target passes 17/17 each; macOS source contracts pass 20/20; `seam_editor_native` builds in both configurations; `git diff --check` passes. The earlier cold-launch “No Procedural Singer” trigger remains unproven and was not live-rechecked after this change. This repairs observability and bounded scanning, not U22 closure, singer-quality evidence, or Beta GO.
+
+2026-09-25 — U4.2 English dictionary syllable boundaries generalized, local only; GitHub CI remains deferred by user direction. CMUdict-backed readings no longer depend on a six-word boundary table: boundaries are derived between adjacent vowel nuclei by assigning the longest suffix matching SEAM's current legal-onset inventory to the following syllable. Added `banana` and `computer` role regressions alongside the existing `beautiful`, `hello`, `music`, `project`, `singer`, and `extra` cases. English pronunciation identity advanced from resolver version 4 to 5 so edited role/timing ownership invalidates cached pronunciation state. Release and Debug `seam_language_phonemizer_tests` pass 1/1 each. This is a bounded syllable-structure improvement, not a full English syllabifier, dialect/morphology model, native-speaker review, learned singing quality result, or U4.2/Beta GO closure.
+
+2026-09-25 — U4.2 CMUdict lookup corrected for out-of-order entries, local only; GitHub CI remains deferred by user direction. The pinned 135,166-line resource is not strictly sorted: source inspection found the `sepulveda`→`sepultura` and `stilton`→`stilted` inversions, and the previous raw-file binary search reproducibly missed `sepultura`. Lookup now partitions line views into case-insensitive sorted runs in one pass, then binary-searches each run; comparing matches by source position preserves the first-listed pronunciation for alternate entries without modifying the vendored bytes or sorting the full dictionary at startup. Exact-phone regressions cover both missed entries and the `a`/`a(2)` first-variant contract. English pronunciation identity advanced to v6 because previously missed dictionary words now resolve differently. Release and Debug `seam_language_phonemizer_tests` pass 1/1 each (0.39/0.57 seconds); `git diff --check` passes. This repairs lookup for unordered source runs, not dictionary correctness, dialect coverage, syllable qualification, native-speaker review, or U27/U4.2/Beta GO.
+
+2026-09-25 — U27 English boundary-punctuation normalization, local only; GitHub CI remains deferred by user direction. The phonemizer now strips only surrounding ASCII whitespace, quotation/bracket characters and sentence punctuation before dictionary/fallback lookup, while preserving the original lyric surface, apostrophe-led CMUdict words, internal punctuation and explicit `-`/`~` continuation behavior. Regressions assert exact CMUdict phones for `hello,`, `"hello!"`, `(world!)`, and `'cause`, and verify resolution does not mutate the source region. English pronunciation identity advanced to v7 because attached-punctuation lyrics now resolve to lexical phones instead of fallback/pause. Focused `seam_language_phonemizer_tests` passes Release and Debug (1/1 each); the Release `seam_tests` aggregate passes (1/1, 27.77 seconds); `git diff --check` passes. No broader English accuracy or native-speaker qualification is implied.
+
+2026-09-24 — U31/U37 independent-review hardening, local only; GitHub CI remains deferred by user direction. U31 now preflights the aggregate SMF wire-event count (notes count twice, plus metadata and end markers) before encoder event allocation, refuses project PPQ outside 1..32767 rather than silently clamping, rejects nested repeated-pitch overlaps and conflicting lyric surfaces at one exported track onset, and builds per-region lyric indexes for whole-project conversion. It retains repeated MIDI lyric events in the codec itself; import reports ambiguity rather than rejecting otherwise valid source SMF. The U37 exported-worker checker now verifies response requestId/backendId, binds the native renderer's reported worker SHA to the selected worker, and validates worker/manifest/project hashes plus inference steps in prepared-inputs.json. Added exact/exceeded event-budget, PPQ-boundary, overlap/lyric-identity, lyrics-before-track-names text-budget, selected non-first region, symmetric partial-selection and field-level round-trip regressions. Release `seam_smf_interchange_tests` and `seam_interchange_service_tests` pass 2/2; exported-worker replay unit tests pass 3/3. The full pinned DiffSinger→trained acoustic/vocoder export→two production-worker processes→native authoring render→two-WAV project export command exited 0 with identity/hash/step binding enabled; it remains synthetic and ineligible for singer qualification or release. A prior attempt had emitted passing-looking JSON but exited -6 during runtime teardown; this rerun completed successfully, so both outcomes remain visible rather than treating the earlier process abort as a pass. GitHub workflows and `.github` were not inspected or modified for execution. U31/U37/Beta GO remain open.
+
+2026-09-24 — U31 independent boundary-review repairs, local only; GitHub CI remains deferred. The reviewer reproduced two event-budget defects. Whole-project export now reserves serialized-event slots for each admitted track-name meta event as well as lyrics; selected-region export also omits a track name with an explicit loss when its event slot is unavailable. Names therefore degrade predictably rather than creating invalid scores at event boundaries. `SmfLimits.maximumEvents` bounds source events and diagnostic amplification; the new `maximumSerializedEvents` independently bounds canonical output, including repaired note-offs for input notes missing their release. This preserves the bounded two-source-event missing-note-off repair at an input event limit of two while allowing callers to enforce a stricter serialized output cap. Added regressions for two named tracks at exact serialized limits 10/11/12, selected-region name omission, and the two-event missing-note-off source under both independent ceilings. Focused SMF and interchange-service CTests pass Release, Debug and Sanitizer (2/2 in each configuration); `git diff --check` passes. These repairs have not yet received independent reviewer re-verification. This closes neither external multi-track GUI acceptance nor U31/U32/Beta GO.
+
+2026-09-24 — U37 exported-model authoring-render integration, local only; GitHub CI remains deferred and `.github` was not changed. The pinned DiffSinger diagnostic now optionally composes its actual trained acoustic export with the locally trained synthetic vocoder export, verifies that the saved native test project's resolved phones match the model vocabulary, and exercises both fresh production-worker requests and the normal authoring renderer/project-export path. On this Apple Silicon checkout, the complete command with `--check-onnx --native-probe build/release/seam_onnx_runtime_probe --vocoder-checkout build/neural-runtime/singing-vocoders-source --production-worker build/release/seam_neural_worker --voicebank-cli build/release/seam_voicebank_cli --production-render-binary build/release/seam_neural_production_render` exited 0. Both worker requests returned identity-bound finite non-silent audio; the normal renderer produced 96,000 interleaved samples and exported two WAVs from the saved project. Separate worker renders are not required to be byte-identical because the acoustic diffusion sampler draws random noise. The run remains wholly synthetic and reports `singerQualified=false` / `releaseEligible=false`; its one-step synthetic vocoder's pitch-following diagnostic also failed, so this is path execution evidence, not U35/U36 quality or U37/Beta GO acceptance. The voice-model Python suite passes 457 tests with one skipped; four focused native CTests (production worker, bundle preparation, production render, worker relocatability) pass. No GitHub workflow was run or modified.
+
+2026-09-24 — U31 whole-project multi-track SMF export path, local only; GitHub CI remains deferred by user direction. The conversion API now emits one named Type-1 track per vocal track, places notes and lyrics from all regions at absolute project ticks, retains global tempo/meter, and reports audio tracks plus unsupported SEAM-only controls as losses. The interchange service now uses whole-project export when neither track nor region is specified, preserves explicit one-region export when both are specified, and rejects partial selection. Standalone and CLAP score-export commands no longer implicitly restrict MIDI export to the currently selected region. Service regressions verify two-vocal-track Type-1 import→export→import with names, distinct pitches/lyrics and non-default tempo/meter at tick 960; partial-selection rejection; and multi-region absolute offsets on two output tracks. The focused service target passes Debug, Release and sanitizer builds; the Release aggregate `seam_tests` target passes. `git diff --check` passes. This closes the project-wide multi-track conversion/service gap; it does not establish current multi-track GUI or real-DAW acceptance. U31/U32/Beta GO remain open.
+
+2026-09-24 — U31 pinned-corpus MIDI oracle revalidation, local only; GitHub CI remains deferred. The current Release CLI export of `tests/singing_quality/corpus/original-melody.seam` produced 1,355 bytes and SHA-256 `774231a09739d0f27ad39a4984a380bf0b5429ae5ac128c4259f2eb7a4afb79f`. The external oracle built against pinned OpenUtau `8c0dc4007e6e8c8181f3a12c10205671800eeb8b` and its DryWetMidi dependency read the exact file as Type 1 / 960 PPQ with 80 notes and 80 UTF-8 lyric events, ending `ORACLE_MIDI_OK`. The checked-in export interoperability expectation now pins this externally revalidated hash. This verifies the one-track corpus only; multi-track data exchange with an external host remains open.
+
+2026-09-24 — U32 standalone and CLAP whole-score export wiring, local only; GitHub CI remains deferred. Added host-level regressions that populate a second vocal track, invoke each normal Export Score flow with a currently selected track/region, accept the conversion review, and reimport the resulting MIDI. Both assert that the second named vocal track, lyric, pitch and nonzero timeline position survive, preventing UI wiring from silently narrowing exports back to the selection. `seam_clap_microscope_tests` and `seam_u2_tests` pass in Debug, Release and sanitizer configurations; the Release CLI interop target also passes against the current externally revalidated hash. This verifies the command/service path but not AppKit dialog usability, a real DAW's multi-track GUI behavior, or U32 installed acceptance.
+
 ## Starting state: 2026-09-05
 
 - Branch: `codex/production-readiness-completion`.
@@ -11,6 +31,213 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 - Existing `build/dev` uses Ninja/Debug. Toolchain: Apple clang 21.0.0 targeting arm64 macOS, CMake 4.1.1. Compiler warnings-as-errors remain enabled. Local generated build identity is development identity, not release provenance; the source commit plus working diff must accompany any evidence.
 
 ## Active implementation
+
+2026-09-25 — U22 producer-recording WAV export/hash moved off the owner thread, local only; GitHub CI remains deferred and `.github` was not touched. Stopping a production recording now retains the in-memory capture while an async worker writes the WAV and hashes the exact saved bytes, then starts the existing cancellable import with that digest as an expected identity. The import worker rejects changed bytes before repository commit; a new regression proves this mismatch leaves producer generation, takes and assets unchanged, then imports the unchanged digest-bound WAV through the normal path. Added retained progress/failure status for visual/accessibility surfaces, prevented discard during export/import, and made shutdown drain export before import. Release and Debug `seam_voicebank_studio_native` and `seam_tests` targets build; full `seam_tests` CTest passes 1/1 in Release (29.99 seconds) and Debug (195.30 seconds). The 17 macOS source-contract tests pass; `git diff --check` passes. This removes WAV write/hash work from the production stop interaction and binds import to those exact bytes, but does not establish live microphone, device-disconnect or perceptual acceptance, or close U22/Beta GO.
+
+2026-09-25 — U4.2 creator-to-installed-singer independence regression, local only; GitHub CI remains deferred by user direction and `.github` was not inspected or modified. Strengthened the native singer-song journey to publish through the Designer session, install via the standalone application's `InstallProceduralSinger` command, then destroy the Designer and remove the producer draft, original package, and staging tree before binding/rendering. The installed singer then sings, exports, saves the project, and is reopened in a fresh editor session; installed resource identity/content hash remain stable and the reopened export master SHA-256 exactly matches the first export. Fresh Release and Debug `seam_original_singer_song_journey_tests` builds pass; CTest passes 1/1 in both (19.16 and 95.49 seconds). `git diff --check` passes. This guards against accidental dependence on producer-side files and proves deterministic save/reopen for this fixture; it is not human listening/creator acceptance, cross-machine package portability, or U4.2/Beta GO completion.
+
+2026-09-25 — U38 neural manual-vibrato ownership regression, local only; GitHub CI remains deferred. A new compiled-performance→neural-request→DiffSinger-input test verifies accepted automatic pitch reaches F0 when manual vibrato is off, but an enabled note-level vibrato owns that note's pitch and suppresses the generated lane even before vibrato onset. In that case the neural request equals the score compiler's single score-plus-vibrato contour, and hop-quantized DiffSinger F0 equals the corresponding request samples, preventing a second oscillator/modulation. Release and Debug `seam_neural_worker_protocol_tests` pass 1/1 each. This verifies control-contour ownership using a synthetic model contract, not learned-model audio quality or U38/Beta GO acceptance; the current phrase-aware generator is still structural, not learned. `.github` was not inspected or modified.
+
+2026-09-25 — U22 reviewer-visible dry-take criteria, local only; GitHub CI remains deferred. The human sample-review packet now expands matching, digest-bound dry-take inspection into the WAV sample rate/channel/bit-depth, expected and analyzed root MIDI, peak/RMS/DC measurements, inspector identity/version, and six individual automated outcomes (format, finite samples, clipping, silence, DC offset, root pitch). Every item remains labeled automated; an overall pass still says human review is required, and no reviewer or `ReviewRecord` is synthesized. A native review regression checks the full passing detail set and confirms no human approval. Release and Debug `seam_studio_sample_review_tests` pass 1/1 each; the Voicebank Studio app builds in both configurations; `git diff --check` passes. This improves decision transparency, not perceptual qualification, take approval, or U22/Beta GO completion. `.github` was not inspected or modified.
+
+2026-09-25 — U39 source-filter expression now guards ordinary pitch and phrase duration, local only; GitHub CI remains deferred. Extended the real production-pipeline song regression for formant, breathiness, tension, airiness, gender and growl: each edit must alter PCM, preserve total output frame count, and keep both note fundamentals within 8 cents of its unedited baseline. The bounded autocorrelation oracle uses a sub-sample parabolic peak fit; initial integer-lag measurement falsely reported 10.6 cents on the second note, which disappeared after improving the measurement precision. Release and Debug `seam_expression_on_song_tests` pass 1/1 each. This verifies a synthetic source-filter fixture's pitch/timing invariants, not perceptual intent, all score pitches, alternate carriers, or U39/Beta GO. `.github` was not inspected or modified.
+
+2026-09-25 — U22 human-review packet now surfaces hash-matched dry-take technical inspection, local only; GitHub CI remains deferred. For the exact captured sample candidate, Studio review details now locate `dry-take-inspection.v1` only when both the take ID and raw audio SHA match the review packet, and display the recorded signal-check status, inspector/version and peak/RMS/DC measurements. The status is explicitly labeled automated and says human review is still required; it creates no reviewer identity or approval. A native sample-review regression imports a valid digest-bound fixture and verifies the values appear while `ReviewRecord` remains empty and no reviewer is selected. Release and Debug `seam_studio_sample_review_tests` pass 1/1 each; the Voicebank Studio app builds in both configurations; `git diff --check` passes. This makes existing technical evidence visible at the human decision point; it does not establish listening quality, approve a take or close U22/Beta GO. `.github` was not inspected or modified.
+
+2026-09-25 — U22 raw-take inspection evidence separated from human review, local only; GitHub CI remains deferred. The recording/import path previously wrote the automated dry-take threshold result into the producer's `ReviewRecord` list as `PASS` under the operator's reviewer identity. It now commits a versioned `dry-take-inspection.v1` metadata revision atomically with the content-addressed raw WAV, binding the canonical measurements/status, inspector ID/version, raw SHA-256, take ID, operator and timestamp. Project validation checks the record's exact field set, bounds, digest, raw-take association and derived status. Automated passing signal checks leave the take in MarkerReview and no longer create a human `PASS`; the Studio and `.inspection.json` now label them as signal checks and state human review is pending. A native import regression verifies the metadata binding and absence of a fabricated review, and rejects both a tampered digest and a semantically forged status with a recomputed digest. Release/Debug `seam_u2_tests` and `seam_voicebank_production_tests` pass 2/2 per configuration; the changed native journey is in `seam_tests`, which passes 1/1 in both configurations (1,111 test cases in the Debug run); the macOS Studio app builds in both configurations and `git diff --check` passes. This improves provenance semantics but does not qualify a take, replace marker/pitch/listening review, or close U22/Beta GO. `.github` was not inspected or modified.
+
+2026-09-25 — U39 source-filter timbral-expression integration regressions, local only; GitHub CI remains deferred. The production-path song fixture now verifies all six currently supported timbral curves (formant, breathiness, tension, airiness, gender, and growl) change rendered PCM, survive canonical project-JSON encode/decode with each curve equal after reload, and produce byte-identical PCM before and after that round trip. A separate whole-song invariant proves adding explicit zero-valued automation for all six controls is byte-identical to an unedited baseline. The focused Release `seam_expression_on_song_tests` CTest passes (1/1; per-control audible-change, carrier-refusal, persistence and neutral-identity cases); its target now links the project-format codec explicitly. This closes a source-filter integration and serialization regression gap only: it does not prove intended perceptual quality, ordinary-pitch/timing independence across every route, trained neural expression, full U39, or Beta GO. `.github` was not inspected or modified.
+
+2026-09-25 — U39/U6 procedural project PCM caching, local only; GitHub CI remains deferred. `ProductionProjectRenderer` now loads/stores procedural phrase PCM through the existing bounded `PcmCache`, keyed by the render snapshot's canonical content identity (score, pronunciation, recipe/style, expression, quality/sample rate and render ABI). Cache hits validate sample rate and reconstruct the same mono route; misses store the exact renderer output with procedural provenance. A production-project song regression proves cold render → exact in-memory hit → memory eviction → exact disk hit, then independently edits all six source-filter timbral controls and verifies each gets a distinct cache miss/render followed by an exact warm hit. Release expression, original-singer song and procedural-install journey CTests pass 3/3; `git diff --check` passes. This closes a procedural project-render cache gap and gives U39 expression invalidation evidence, not acoustic qualification, cache-soak/performance qualification, U6/U39 or Beta GO acceptance. `.github` was not inspected or modified.
+
+2026-09-25 — U38 standalone proposal responsiveness, cancellation and stale-result safety, local only; GitHub CI remains deferred by user direction. Automatic performance generation now runs against its immutable captured score on a worker thread instead of blocking the editor command. The native editor polls completion on its owner thread, where the capture's stale-session check guards adoption; the Performance menu distinguishes a running proposal from an empty proposal list and exposes Cancel Generation even when earlier takes already exist. User cancellation requests the worker stop and discards its eventual result without changing the document; controller shutdown also cancels and joins. Regressions change the score during generation and verify Conflict/no publication, and cancel generation at the backend's 4,096-note admission boundary with no published take. Release `seam_tests` passes (1/1 CTest; 1,110 internal cases), the `Project SEAM` Release app builds, and `git diff --check` passes. This improves workflow safety only: the phrase-aware generator remains deterministic/structural rather than a trained singing model, so U38 quality acceptance and Beta GO remain open. `.github` was not inspected or modified.
+
+2026-09-25 — U22 articulation-source listen-and-adjust regression, local only; GitHub CI remains deferred. The existing Designer phrase-preview path is now guarded by an edit/render/undo loop for one unvoiced affricate, one approximant and the breath source. Each authored source edit must change production-stream PCM; undo must restore the exact baseline PCM, and audition identity must remain bound to the selected phone. Release `seam_voice_designer_tests` passes (1/1 CTest); the native `SEAM Voicebank Studio` app builds. This establishes an engineering feedback loop for these three procedural source families, not pronunciation intelligibility, acoustic/listener qualification, full U22 or Beta GO. `.github` was not inspected or modified.
+
+2026-09-25 — U37 neural request memory-boundary hardening, local only; GitHub CI remains deferred. `prepareNeuralScoreRequest` no longer allocates an all-zero breathiness plane when the model/score yields no nonzero breathiness. On first nonzero frame it preflights all three Float32 planes against the configured frame-byte ceiling before allocating that optional plane. Regressions prove the two-plane base fits its exact payload budget, a three-plane request fits at the exact boundary, and one byte below that boundary rejects. Release `seam_neural_worker_protocol_tests`, `seam_neural_render_tests`, `seam_neural_render_workflow_tests`, and both production-render journeys pass 5/5; the three available Debug targets pass 3/3 (production-render targets are not configured in Debug). `git diff --check` passes. This closes a request-preparation allocation gap only; it does not qualify the neural model or U37/U39/Beta GO. `.github` was not modified.
+
+2026-09-25 — Full local Release rebuild and regression sweep, GitHub CI deferred. `cmake --build build/release -j 8` completed all 128 build steps after the Korean Unicode normalization change. `ctest --test-dir build/release --output-on-failure -j 2` ran all 185 registered tests: 184 passed, including the full `seam_tests` aggregate, language phonemizer target, original-singer song journey, singing-quality workflow and voice-model training suite (53.79 seconds); one failed, `seam_tracked_source_closure`, because 18 required source inputs are untracked in this user-owned worktree. Those files were not staged or otherwise altered to force closure green. `git diff --check` passes; no GitHub workflow ran and `.github` remains untouched. This is broad local regression evidence, not a clean source snapshot, install qualification, human listening result, or Beta GO.
+
+2026-09-25 — U28 canonical Unicode Hangul input, local only; GitHub CI remains deferred. The Korean resolver now composes modern Unicode leading/vowel/trailing jamo algorithmically before its existing syllable/rule path. Precomposed and canonically decomposed `꽃잎` produce identical phones, pronunciation sequence identity and resource identity; a compound-vowel `왜` case also passes. Compatibility and archaic jamo are not heuristically composed and keep the existing visible diagnostic behavior. The focused Release `seam_language_phonemizer_tests` passes 1/1 (27 cases), and the aggregate Release `seam_tests` plus the focused target pass 2/2. This improves Unicode input normalization only; Korean still lacks the reviewed lexical/resource coverage and native-speaker/song qualification required by U28/R7. `.github` was not modified.
+
+2026-09-25 — U28 Korean Rule 29 lexical nasal-insertion increment, local only; GitHub CI remains deferred. The built-in Hangul resolver now applies a source-versioned, exact-word allowlist at the compound boundary for nine documented forms (`꽃잎`, `깻잎`, `막일`, `솜이불`, `홑이불`, `한여름`, `나뭇잎`, `논일`, `앞이마`). Insertion runs before the existing coda-assimilation rules, preserving both coda nasalization and the added onset. It deliberately does not infer morpheme boundaries from spelling, and `꽃이` remains ordinary liaison as a negative control. The focused Release `seam_language_phonemizer_tests` passes 1/1 (26 cases); pronunciation resource and sequence hashes are asserted. The Korean resource digest covers the source change, so pronunciation/cache identity changes with the lexicon. Evidence is limited to these curated standard-pronunciation forms; Korean remains a bootstrap service, not a reviewed dictionary, complete G2P, singer-bank match, or Beta GO claim. `.github` was not modified.
+
+2026-09-24 — U31 malformed-text diagnostic quality and bounded DAW return exchange, local only; GitHub CI remains deferred. The second-developer review approved the preceding MIDI intake fix and noted repeated identical warnings/losses could flood review UI. Decode now aggregates malformed comments, malformed lyrics, removed lyric terminators and lyrics made empty by a terminator per source track/category, preserving severity and first/last source ticks; empty and all-NUL lyrics are Losses rather than misleading successful matches. Diagnostic text pluralizes and includes PPQ. Regression coverage includes zero-length/NUL-only lyrics, doubled/embedded NUL, invalid UTF-8 after a terminator, repeated events on separate tracks with disjoint tick ranges, and end-to-end project import retaining notes plus no-matched-lyrics disclosure. MIDI v1 docs state that project import maps lyrics only from `0x05`; ordinary `0x01` text is not interpreted as Soft Karaoke lyrics. The rebuilt Release CLI completed a real FL Studio 2025.2.5 exchange: SEAM MIDI opened in a fresh FL process, FL exported Type-1 four-track MIDI, SEAM imported 80 notes with 39 explicit controller/program/pitch-bend losses and one no-lyrics track warning, then exported a selected-region MIDI with zero export issues. Details/hashes are in `SMF_INTERCHANGE_2026-09-08.md`. This is a bounded round-trip smoke test, not full-project multi-track export or GUI multi-track acceptance. Focused suite passes 27/27 in Release, Debug and sanitizer builds; selected Release CTest targets (`seam_smf_interchange_tests`, `seam_interchange_service_tests`, `seam_tests`) pass 3/3 in 28.30 seconds; `git diff --check` passes. U31 multi-track GUI review, U32 review and Beta GO remain open.
+
+2026-09-24 — U31/U32 Type-1 shared-service boundary, local only; GitHub CI remains deferred. Added a service-level Type-1 import case with a named tempo/meter-only Conductor track followed by named Lead and Harmony tracks at the same onset but different lyrics/keys. Non-default tempo (100→150 BPM) and meter (3/4→5/8) changes on the conductor prove both map into the project at tick 0 and at tick 960 after source 480 PPQ scaling. It also proves the conductor does not create a singer track; each vocal track retains its name, one note/lyric, converted duration, and exact note-to-lyric token binding; the project name is retained and the source hash is unchanged. The independent reviewer approved the per-track behavior and requested these conductor/timing/binding/hash assertions; after noting that default-equal tempo/meter values did not prove import, the second tempo/meter change and scaled-tick assertions were added. `seam_interchange_service_tests` passes in Release, Debug and sanitizer builds (19/19 each); the Release aggregate `seam_tests` CTest passes. This validates the service path, not multi-track UI behavior or project-wide export. U31 GUI multi-track verification and U32 installed/embedded acceptance remain open.
+
+2026-09-24 — U31 deterministic Type-1 track mapping, local only; GitHub CI remains deferred. `SmfScore` now retains source track names/order, and notes/text retain source membership. The encoder writes deterministic multi-track Type-1 output; project import creates separate vocal tracks/regions for note-bearing source tracks and pairs lyrics within each source track. A two-track regression covers decode/encode membership and names plus distinct imported notes/lyrics. The focused `seam_smf_interchange_tests` target passes 19/19 in Debug, Release and sanitizer builds; selected Release CTest targets (`seam_smf_interchange_tests`, `seam_interchange_service_tests`, `seam_tests`) pass 3/3; `git diff --check` passes. This closes the known flattening gap in codec/conversion behavior, but not U31: real-DAW exchange, remaining acceptance evidence and U32 review are still open.
+
+2026-09-24 — U31 second-developer review remediation, local only; GitHub CI remains deferred. Fixed the review's legacy-name compatibility, separate/ambiguous lyric-track mapping, lyric-free/percussion disclosure, stable same-tick text ordering, track-name-first event ordering, selected-region track-name export, project-track-name bounds, and stale OpenUtau evidence wording. Import preserves notes on all note-bearing tracks but warns when a track has no matched lyrics or includes channel-10 percussion; it does not silently infer accompaniment intent or drop notes. Project conversion currently exports one selected region as one named track; project-wide multi-track export remains unimplemented and is not implied by codec support. Export omits invalid/NUL-bearing or over-budget SEAM track names and NUL-bearing lyric text with losses rather than refusing other musical events; same-track lyrics take precedence over fallback lyrics from a separate track. A follow-up review confirmed the NUL-lyric export repair and exposed a pre-existing import edge case: NUL/legacy-encoded text events rejected otherwise valid files. Import now drops invalid UTF-8 or embedded-NUL comments/lyrics with explicit Loss diagnostics, strips one trailing lyric NUL with a Warning, and retains notes; it does not guess legacy encodings. Added regressions for Shift-JIS names and comment/lyric payloads, terminated lyrics, separate lyrics, a conductor-only track with two note tracks and an ambiguous lyric, duplicate names, same-tick lyric order, percussion/no-lyric warnings, import/export name bounds, and NUL-bearing names/lyrics. Focused tests pass 27/27 in Release, Debug and sanitizer builds; selected Release CTest targets (`seam_smf_interchange_tests`, `seam_interchange_service_tests`, `seam_tests`) pass 3/3 in 27.28 seconds; `git diff --check` passes. The earlier OpenUtau GUI receipt is explicitly labeled pre-track-mapping and is not acceptance evidence for the new behavior. Real-DAW return exchange, current multi-track GUI verification, U32 review and Beta GO remain open.
+
+2026-09-24 — U30 exact dynamics-capacity boundary, local only; GitHub CI remains deferred. The
+USTX-to-SEAM converter previously reserved three possible guard anchors even when a curve over the
+entire part emitted none, so an exactly representable 16,384-point dynamics curve was incorrectly
+discarded. Admission now counts the actual start/guard/end anchors for that curve. A regression
+proves the exact point ceiling imports and one point beyond is omitted with an explicit conversion
+loss. The focused USTX interchange target passes in Debug, Release and sanitizer configurations;
+`git diff --check` passes. This does not close parser-budget breadth, GUI-saved file coverage,
+vibrato/audio equivalence or U30/Beta GO.
+
+2026-09-24 — U30 first native desktop OpenUtau open/save smoke test, local only;
+GitHub CI remains deferred. Built the pinned `8c0dc4007e6e8c8181f3a12c10205671800eeb8b`
+OpenUtau source as a local macOS app bundle, opened a disposable copy of the 0.9
+serializer-generated dynamics-curve project, and saved it from the desktop UI.
+OpenUtau displayed `Project saved.` Its output preserved two notes and the 64-point
+`dyn` curve while normalizing part duration from 960 to 1440 ticks. The resulting
+GUI-saved fixture is hashed and covered by a native decode/import regression. This
+is one constructed GUI smoke test, not an independently authored user project,
+official versioned distribution, or audio-equivalence check. The focused
+`seam_ustx_interchange_tests` executable passes 49/49 in Debug, Release and
+sanitizer builds; `git diff --check` passes and `.github` remains unchanged. U30
+remains PARTIAL.
+
+2026-09-24 — U31 SMF active-note allocation bound, local only; GitHub CI remains
+deferred. `decodeSmf` now admits the combined count of completed and active
+notes against `SmfLimits.maximumNotes` before appending each note-on to its
+per-key FIFO. This prevents unmatched notes from consuming the larger event
+budget and being rejected only after parser allocation. A regression with a
+one-note limit verifies the second active note is refused before a later
+malformed track terminator is reached. The focused `seam_smf_interchange_tests`
+suite passes 19/19 in Debug, Release and sanitizer builds. Release
+`seam_interchange_service_tests` and aggregate `seam_tests` also pass (3/3
+selected CTest targets total); `git diff --check` passes and `.github` remains
+unchanged. This is a parser resource-bound repair, not real-DAW interoperability,
+U31 or Beta GO acceptance.
+
+2026-09-24 — U31 independent OpenUtau MIDI round-trip, local only; GitHub CI
+remains deferred. The checked-in `original-melody.seam` exported to Type-1 MIDI
+(1,331 bytes, SHA-256 `6c94cd7575d8e95ae066e4bbd682aa349dec1806a347466b5e53b6819b0927eb`)
+with zero issues. The pinned OpenUtau desktop app opened it and saved it as USTX
+(32,351 bytes, SHA-256
+`344a2bdbc23ac1028f8021f3920a8e284ea854f7f43aa0a2a7bf6bc6c764e120`). SEAM
+imported that GUI-saved project and re-exported MIDI byte-for-byte identical to
+the original. This independently verifies one shared-field round-trip through
+the OpenUtau desktop workflow despite eight explicitly reported USTX losses. It
+is not a DAW-host run or human-authored project; U31/U32 and Beta GO remain
+incomplete. Full receipt is in `SMF_INTERCHANGE_2026-09-08.md`.
+
+2026-09-24 — U23/U24 overlap, overflow and accessibility-boundary regression increment, local only;
+GitHub CI remains deferred. Added layout coverage proving lowest-band reuse at an exact
+end/start boundary, and piano-roll coverage proving direct hit testing and box selection target
+only painted overlap bands while the overlap cycle still exposes every member. Added a Japanese
+compact-lyric assertion that visible truncation uses an ellipsis while retaining the full lyric.
+The broadened native accessibility tree no longer publishes clipped-away expression rows as
+zero-area focus targets; its capability summary retains each control's availability, curve-point
+count and current playhead value. The full `seam_tests` binary passes 1,073/1,073 in Debug and
+Release, `git diff --check` passes, and `.github` is unchanged. This does not establish visual
+polish across installed surfaces, complete dense-note editing semantics, or U23/U24/Beta GO.
+
+2026-09-24 — U20 Japanese voiced-affricate `j` inventory increment, local only; GitHub CI remains
+deferred. The original procedural singer recipe now declares its own same-phone resonance, voiced
+closure, release burst and voiced frication tail for `j`; the lyric journey exercises it with じ.
+The checked-in recipe was regenerated from the production encoder, so its canonical bytes match the
+song-package source and the package manifest declares the phone. Inventory coverage now treats a
+recipe-authored `cv:j:a` as prepared while retaining an explicit refusal case for an unknown phone.
+The inventory suite passes 3/3 and the installed-singer authoring/export journey passes 5/5 in Debug
+and Release; `git diff --check` passes. Parameters are development screening values only: no listener
+has qualified `j`, the singer identity or broader Japanese coverage, and U20/U42/U43/Beta GO remain open.
+
+2026-09-24 — U41 face-anchored mouth overlay rendering regression, local only; GitHub CI remains
+deferred. Added a raster-level test for the normalized `mouthPlacement` path: an alpha-transparent
+mouth sprite leaves the portrait's face pixels intact, while its opaque authored pixel lands inside
+the declared face rectangle. A package-loading regression also proves that a flat PPM corner key is
+made transparent while the authored mouth pixel remains opaque. The focused character-performance
+dock suite passes 7/7 and the package suite passes 9/9 in Debug and Release; `git diff --check` passes.
+This proves package decoding/compositing/placement on the local raster surface, not final character
+art quality, installed-platform display, or U41/Beta GO acceptance.
+
+2026-09-24 — U41 singer-resource binding regression coverage, local only; GitHub CI remains
+deferred. Added a package-level schema-3 case proving that the declared procedural singer identity
+must match kind, ID, version and content digest before character performance can be followed or
+published. The test also keeps schema 3 admitted as the current contract and moves the future-schema
+rejection case to version 4. Focused character-package suite passes 8/8 in Debug and Release;
+`git diff --check` passes. The suite covers code-level binding, not asset rights/provenance, final
+character artwork, installed visual behavior or U41/Beta GO acceptance.
+
+2026-09-24 — U23 dense-overlap layout complexity increment, local only; GitHub CI remains
+deferred. Same-pitch interval groups now use min-heaps for active bands and reusable band indices
+instead of scanning every allocated band for every note. The allocator still releases bands at
+`end <= start` and always reuses the lowest available index, preserving the prior deterministic
+paint ordering while reducing assignment from quadratic to O(n log n) in a dense connected group.
+Debug and Release `seam_native_ui`, `seam_standalone_authoring`, and `seam_clap_editor` target
+builds pass, and `git diff --check` passes. No tests were added or run. This improves the bounded
+editor layout path but does not close all U23/U24 interaction, overflow, accessibility, or Beta GO
+requirements.
+
+2026-09-24 — U23/U24 compact lyric-label overflow increment, local only; GitHub CI remains deferred.
+Compact piano-roll labels now reserve display width for an ellipsis when a lyric does not fit instead
+of silently cutting the text. The complete lyric remains in `EditorLabel::fullText`, the focused-note
+detail and accessibility node; only the short visual label is shortened. Debug/Release native UI,
+standalone-authoring and CLAP editor targets compile, and `git diff --check` passes. No tests were added
+or run. This improves overflow signaling but does not close the full lyric-editing, note-layout or
+Beta GO requirements.
+
+2026-09-24 — U23 dense-overlap note interaction increment, local only; GitHub CI remains deferred.
+The piano-roll layout already paints up to three stable bands for same-pitch overlapping notes and
+offers an overlap detail/cycle path for the full group. Direct hit-testing and box-selection now ignore
+members omitted by that density cap, so clicking or marquee-selecting a visible note cannot target an
+unpainted note that reused the same geometry. The detail/cycle path continues to expose hidden group
+members. Debug/Release editor, native UI, standalone-authoring and CLAP editor targets compile;
+`git diff --check` passes. No tests were added or run. This fixes interaction targeting, not every
+visual overlap/long-lyric presentation issue, and does not close U23/U24/Beta GO.
+
+2026-09-24 — U22 Voice Designer accessibility-description increment, local only; GitHub CI remains deferred.
+The native Voice Designer now gives each accessible control an acoustic explanation rather than the
+generic “validated draft voice parameter” text. Descriptions distinguish pulse shape, spectral tilt,
+aspiration, modulation, oral formant frequency/bandwidth/gain, nasal resonance, frication and plosive
+source controls, while clarifying that audition-pitch selection does not alter the authored song.
+Descriptions also expose the actual accepted numeric bounds and keyboard increments, including the
+strictly ordered formant constraint and the coupled frication/plosive center-to-bandwidth limit; the
+values follow `VoiceRecipe::validate` and the editor's own adjustment steps. The standalone Voicebank
+Studio target compiles in Debug and Release, and `git diff --check` passes. No tests were added or run.
+This improves discoverability and accessible authoring but does not qualify the source-filter voice
+acoustically or close U22/U39/Beta GO.
+
+2026-09-24 — U41 mouth-to-face, active-style and score-range presentation increment, local only; GitHub CI remains deferred.
+Schema-2 character packages may declare a bounded normalized `mouthPlacement`. For such
+packages, the loader keys a uniform mouth-sprite corner background to transparency and
+the native dock composites the current phoneme mouth shape at the declared face rectangle
+instead of beside the energy bar. Raster image drawing now respects source alpha. Existing
+schema-2 packages without placement retain their legacy side indicator. The published render
+identity now carries the selected region's score pitch range through the transient character
+performance read model; the dock identifies acoustic style and score range separately from the
+character art's visual style. Those fields also travel through the controller-owned read model used
+to build the accessibility tree, keeping the screen-reader value in sync on standalone and CLAP
+surfaces. This describes notes in the
+rendered score, not a qualified vocal range. The voice identity panel names a selected
+procedural/neural resource by its actual ID/version/digest prefix and says `Selected` until that
+route has a current, non-stale render at the requested revision and quality, instead of
+mislabeling it as a missing sample bank or treating stale audio as confirmation. Character 01's
+development manifest declares an artwork-specific placement. Debug/Release native targets compile; no
+tests are added or run for this increment. This does not make
+the current concept production art or close U41; package identity, authorized final assets,
+installed visual/accessibility review, and singing-quality qualification remain open.
+
+The character resource association now also supports schema 3's exact singer kind/ID/version/digest
+binding. Rendered performance identity and the transient character binding carry resource kind through
+standalone and CLAP, so a procedural or neural singer can animate only a character package explicitly
+bound to that exact resource; schema 1/2 remain sample-bank-only. See
+`docs/formats/CHARACTER_PACKAGE_V3.md`. This enables the code path but does not supply a qualified
+production character or singer resource.
+
+2026-09-24 — U39/U40 timbral-control accessibility increment, local only; GitHub CI remains
+deferred. The selected-track accessibility tree now exposes a summary of all six singer-control
+capabilities, even when the compact visual inspector shows only a subset; it also exposes per-row
+current values/curve counts and exact renderer refusals for rows visible there. Capability decisions
+come from the host's resolved singer route when available, preserving renderer-specific cases such as
+sample-bank formant support instead of reporting only a carrier-wide approximation. This closes a
+native screen-reader information gap without claiming unsupported controls are implemented. No tests
+were added or run for this increment.
+
+2026-09-24 — U41 development-art direction increment, local only; GitHub CI remains deferred.
+Added a new Character 01 singing-state concept portrait to
+`assets/character-01/production-development/`. It is explicitly not wired into the
+runtime and does not replace existing mouth/portrait assets. Its intended use is to
+guide a more legible performance-avatar treatment; the image digest and prompt summary
+are recorded beside it. U41 remains incomplete: first-party final artwork, provenance
+and artist agreements, complete state assets, installed-platform behavior, and review
+are still required. No tests or builds were run for this art-only increment.
 
 2026-09-24 — U37 neural inference-setting fidelity increment, local only.
 The admitted render snapshot's `inferenceSteps` now reaches the first-party
@@ -2814,3 +3041,1279 @@ export still read the accepted canonical project. Release and Debug macOS app
 targets build with this transition. No runtime audio-device journey or new test
 was run for this increment; accept-click continuity still needs installed-app
 and physical audio verification. GitHub CI remains deferred.
+
+2026-09-24 — U32 native MIDI import review empty-state correction. A fresh
+Release standalone build was exercised through File → “Open USTX or MIDI…”
+with the repository's disposable original-melody MIDI fixture (SHA-256
+`774231a09739d0f27ad39a4984a380bf0b5429ae5ac128c4259f2eb7a4afb79f`). The
+pre-fix native review allocated a large empty striped issues table even for a
+loss-free import. The AppKit review now omits that table when there are no
+issues and displays a compact explicit empty state; issue-bearing reports keep
+their selectable, scrollable table and full-detail pane. Review summaries now
+use singular nouns for one track/region/note/loss/warning.
+
+The rebuilt app's accessibility tree and visual review showed “1 track, 1
+vocal region, 80 notes; 0 losses; 0 warnings,” the source hash, a clear
+overwrite/undo warning, and an explicit unresolved-singer disclosure stating
+that no singer is substituted automatically. Accepting the import yielded an
+80-note native arrangement. This proves the macOS single-track, loss-free MIDI
+review-and-accept path only: the fixture has no usable singer, so no rendering
+or vocal quality is claimed. Multi-track MIDI, issue-bearing native-dialog
+visual review, real DAW round-trip, saved-project reopening, and the complete
+U32 acceptance gate remain open. Conversion-review model tests pass in Debug,
+Release and Sanitizer (3/3); `seam_u2_tests` passes in all three configurations
+(3/3). This is a U32 implementation increment, not unit or Beta GO acceptance.
+GitHub CI remains deferred and no CI configuration is changed.
+
+2026-09-24 — U32 populated conversion-report sizing. A 54-byte disposable MIDI
+fixture with one valid lyric/note and one unsupported meta-event exercised the
+loss-bearing path in the rebuilt Release app. The one-loss report previously
+reserved its maximum 230-point table height, leaving most of the striped table
+empty. The table now sizes to visible issue rows plus the header, with a 46-point
+minimum and the existing 230-point cap; longer reports remain scrollable. The
+native screenshot and accessibility tree show the singular “1 loss” summary,
+the row's tick:480 location and full message, source path/hash, unresolved
+singer warning, and the separate full-detail pane, without the unused rows.
+The loss-free case was also rechecked: it has no table and retains the compact
+explicit empty state. Release, Debug and Sanitizer `seam_u2_tests` pass (3/3),
+and the Release conversion-review model test passes. This closes the two native
+dialog sizing defects found in this pass only; multi-track native GUI import,
+save/discard/cancel journey coverage beyond the existing tests, DAW GUI
+multi-track acceptance and complete U32/Beta GO remain open. GitHub CI stays
+deferred and `.github` remains unchanged.
+
+2026-09-24 — U40 named harmony-scale expansion. The native Create Harmony Track
+workflow now exposes major, natural minor, harmonic minor, melodic minor, and
+the Dorian, Phrygian, Lydian, Mixolydian and Locrian modes, alongside chromatic
+semitone harmony. The standalone controller maps each named choice to explicit
+pitch-class intervals; scale-degree offsets remain diatonic, chromatic offsets
+remain semitones, and source notes outside a selected diatonic scale still fail
+without quantization. Release `seam_harmony_workflow_tests` and `seam_u2_tests`
+pass (2/2); the build compiled both the Objective-C++ menu and controller, and
+`git diff --check` passes. The algorithm remains deterministic interval
+transposition: this does not add voice-leading optimization, chord progression
+analysis, or independent musical/creator qualification. GitHub CI is deferred
+and `.github` remains unchanged.
+
+2026-09-24 — U32 native multi-track import smoke test. A disposable Type-1
+fixture with Conductor, Lead and Harmony source tracks (one lyric/note each on
+the two vocal tracks) was admitted by the Release standalone review as “2
+tracks, 2 vocal regions, 2 notes,” with the expected velocity-conversion loss
+and explicit unresolved-singer warning; accepting the disclosed loss completed
+the normal import path. The imported `.seam` produced by the same codec/service
+was independently inspected and contains named Lead and Harmony tracks, each
+with one lyric/note and the expected offset. The installed editor screenshot
+after acceptance displayed only one piano-roll note (“la”). The missing-singer
+recovery support was active and suppressed the arrangement selector; the
+accessibility tree therefore exposed the selected note but not the other
+track's note or a track selector. This is not multi-track native-editor
+acceptance and does not prove data loss: it confirms bounded conversion and
+review/accept, while simultaneous visibility and selectable track navigation
+remain unverified until the normal arrangement surface is available.
+
+2026-09-24 — U32 track selection synchronization and support-panel navigation.
+The controller's track selection updated its local arrangement/piano-roll state
+but did not update `AuthoringSession`'s selected track/region or the
+`AuthoringRuntime` selection used by singer resolution and rendering. The
+recovery-support surface also replaces the arrangement dock, removing the
+visible track rows. Track changes now notify the host; the standalone host
+updates its runtime and cached selection before the controller rebuilds its
+piano-roll view. The support panel now has visible PREV/NEXT controls and an
+announced selected-track label; mouse, accessibility activation, and
+Option+Left/Right all use the same synchronized, wrapping navigation path. The
+regression tests verify Lead/Harmony navigation through mouse, accessibility,
+and keyboard; host/session/runtime agreement; and that selecting does not dirty
+the document. A separate Type-1 MIDI lifecycle case prepares and accepts
+Conductor/Lead/Harmony source tracks, then navigates to Harmony through the
+dock's accessible NEXT control and verifies its pitch-67 note is active.
+The 960x600 raster fixture shows the enabled controls, selected-track label and
+report cards without overlap; its screenshot was reviewed locally. Release and
+Debug `seam_u2_tests` pass (64/64 each), and Release and Debug `seam_tests`
+pass (1,090/1,090 each). This verifies the imported-session/controller path and
+local raster, not an installed-app screenshot, actual vocal rendering, DAW
+round-trip, or U32/Beta GO acceptance. GitHub CI remains deferred and `.github`
+is unchanged.
+
+2026-09-24 — U6 installed-singer melody export check. The end-to-end song journey
+already required finite, non-silent PCM; it now also pitch-analyzes the final
+sustained E4 vowel from the exported master WAV and checks it against the
+authored MIDI-64 target (12 Hz tolerance). This crosses the installed procedural
+singer, lyric/pronunciation, compiled performance, renderer and WAV-export path;
+it is stronger than checking the score evaluator alone, but is not a full melody,
+intonation, consonant-intelligibility or listening qualification. The focused
+journey passes in Debug (83.07 s) and Release (17.03 s), and `git diff --check`
+passes. U6/U19/U20 and Beta GO remain incomplete. GitHub CI remains deferred;
+no CI configuration was changed.
+
+2026-09-24 — U20 English CV–VC articulated-stream regression. A resolved
+one-note English `s ae1 t` phrase now exercises the language resolver, shared
+procedural timing, recipe-bound /s/ onset, voiced /ae1/ nucleus and /t/ coda,
+then renders the phrase in whole and split/checkpoint windows. A vowel-only
+control verifies that both consonant-owned spans add actual PCM while the
+contextually articulated vowel retains the authored MIDI-60 F0 (12 Hz tolerance).
+The test passes as part of `seam_voice_design_tests` in Debug (23.37 s) and
+Release (10.28 s); `git diff --check` passes. This is deterministic engineering
+coverage for one explicit ARPAbet fixture, not dictionary coverage, an unseen
+phrase, native-speaker intelligibility, listening acceptance or U20/Beta GO.
+GitHub CI remains deferred; no CI configuration was changed.
+
+2026-09-24 — U27 English spelling-estimate increment. The bundled English
+fallback now recognizes common vowel spellings (`ai/ay`, `ee/ea`, `oa/oo`,
+`oi/oy`, `ow/ou`), a narrow final-e pattern, and soft `c/g` before `e/i/y`.
+Regression cases cover `train`, `boat`, `make`, `city` and `gem`. These remain
+explicit `EstimatedPronunciation` outputs, and the English resource fingerprint
+is source-derived so the behavior change invalidates prior resource identities.
+The focused `seam_language_phonemizer_tests` passes in Debug. This improves a
+small set of spelling estimates; it does not provide an English dictionary,
+stress/syllable qualification, dialect handling, or U27 completion. GitHub CI
+remains deferred and `.github` is unchanged.
+
+2026-09-24 — U27 pinned English dictionary integration. Added the unmodified
+135,166-line CMU Pronouncing Dictionary at immutable upstream revision
+`74790861f652b15e4ac49015a90074ad62a27690` (archive SHA-256
+`741c592660bbf10ab93fe3d5aa709b73a3b5ba91e3291a066715440f4137a58d`, data SHA-256
+`81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22`). The
+BSD-2-Clause license and attribution are recorded in the third-party manifest,
+SBOM, repository notice, and distribution Notices payload. CMake embeds the
+bounded 32 KiB raw-literal chunks into the phonemizer library; the dictionary
+content hash participates in the English resource identity. Resolver lookup
+selects the first upstream variant and preserves CMU stress; explicit note
+hints remain highest priority and out-of-lexicon spelling remains marked
+estimated. Debug `seam_language_phonemizer_tests`
+passes (24 cases), and the local license/provenance audit passes. The resource
+has not been reviewed for singing, every dialect, or proper-name accuracy, and
+native-speaker song qualification/U27/Beta GO remain open. GitHub CI is deferred;
+`.github` is unchanged.
+
+2026-09-24 — U28 Korean ㄼ boundary-rule increment. The built-in Hangul path now
+distinguishes 밟- before a following consonant (밟고 [밥꼬], 밟는 [밤는]) from
+vowel liaison (밟아 [발바]), keeps 넓- inflections on the ㄹ reading (넓고
+[널꼬], 넓다 [널따]), and covers the listed 넓적-/넓죽- compound pattern.
+Regressions assert exact phone sequences and the 밟고 behavior across two note
+owners; the resolver leaves the source region unchanged. The focused language
+phonemizer suite passes in Debug and Release. This is a small lexical/context
+rule slice, not a Korean dictionary, dialect/lexical coverage, native-speaker
+review, singing qualification, or U28/Beta GO. GitHub CI remains deferred and
+`.github` is unchanged.
+
+2026-09-24 — U28 Korean ㄾ coda/tensing increment. The built-in Hangul boundary
+logic now reduces ㄾ to [ㄹ] before a consonant and tensifies following ㄱ/ㄷ/ㅅ/ㅈ
+for the represented stem-ending pattern. Exact regressions cover 핥고 [할꼬],
+핥다 [할따], 핥소 [할쏘], 핥지 [할찌], and the vowel-boundary contrast 핥아 [할타].
+The suite also verifies the 핥고 coda/onset assignment across two note owners.
+This follows NIKL Standard Pronunciation Rules 10 and 25. The change remains a
+surface-rule implementation, not a Korean morphology engine or native-speaker
+qualification. GitHub CI remains deferred; `.github` is unchanged.
+
+2026-09-24 — U33 MIDI channel-level volume/expression increment. MIDI 1.0 CC7
+and CC11 now maintain separate normalized per-channel levels, update current
+and later voices on that channel, and multiply independently from targeted CLAP
+per-note volume/expression; CC121 restores channel defaults without overwriting
+note-level controls. Focused regressions measure half-level output, prove
+wrong-channel isolation and event-order independence, and cover active voices
+and reset behavior. `seam_clap_live_events_tests` passes Debug, Release and
+Sanitizer. This does not
+qualify CC7 gain calibration or delivery/mapping in installed hosts; U33/Beta GO
+remain open.
+GitHub CI remains deferred; `.github` is unchanged.
+
+2026-09-25 — Portable WAV receipt oracle made path-exact. The regression now
+maps each of the two allowed `media/<sha256>.wav` paths to its expected content
+hash and frame count, rejects every unexpected packaged media path, and requires
+each expected path exactly once; substring classification no longer treats any
+other media path as the second source. The Release `seam_export_tests` target
+builds, focused CTest passes 1/1 (3.92 seconds), and `git diff --check` passes.
+Test source SHA-256: `383e401ea4fb78ba87e01e03842192a2ccbd4dbf08786d8b75e2ce7d86a1ec12`.
+This oracle tightening does not add product-scope acceptance. GitHub CI remains
+deferred and `.github` is unchanged.
+
+2026-09-25 — Relocated ProjectCopy reopen/render regression. The standalone
+lifecycle test imports and relinks backing WAV, saves the project, moves the
+project directory with its `.media` payload, reopens from the moved path, and
+waits for a Ready render at the reopened document revision. It asserts the
+saved relative path and ownership survive, the relocated bytes match the
+persisted hash, and the render has no missing-media diagnostic for the track.
+The Release `seam_u2_tests` target builds and passes 1/1 CTest (1.12 seconds);
+`git diff --check` passes. Test source SHA-256:
+`e8c4cd3f003978731caba19db5bf3f366cc47b36b6ad323235cdaa43e9b4afde`.
+This is code-owned relocation evidence, not an unaided creator session, human
+audio review, whole-U6 acceptance, or Beta GO. GitHub CI is deferred and
+`.github` is unchanged.
+
+2026-09-24 — U35 training-environment identity increment. Acoustic training now
+captures the active Python executable/runtime identity and content hashes for
+each installed distribution file into checkpoint metadata. Exact resume compares
+that snapshot, refusing a changed package environment instead of silently
+continuing under different dependencies. Capture is bounded by distribution,
+file-count and byte limits; the actual model-training venv was inventoried as
+63 distributions / 31,156 files / 863,940,664 bytes. All 455 voice-model
+training tests pass (1 skipped) under that venv. The build directory had been
+configured to use an unrelated Python 3.14 interpreter without SciPy; after
+correcting only its local `SEAM_VOICE_TRAINING_PYTHON` cache entry, the registered
+`seam_voice_model_training_tests` CTest passes (51.15 s). No repository CMake or
+GitHub CI configuration was changed. This records the environment used but does
+not produce a hash-locked rebuild, prove lawful corpus admission, or qualify a
+trained voice. U35/U36/Beta GO remain open; GitHub CI is deferred and `.github`
+is unchanged.
+
+2026-09-24 — U35 derived-clip dataset join. Schema-2 dataset configurations can
+now bind segment configurations and existing clip artifacts. At every assembly
+or training refresh, the assembler freshly re-admits parent rights, regenerates
+the exact crop, verifies the existing PCM and segment record, requires the
+crop's parent label/score to match the current reviewed parent, and requires
+the child audio/label/score to appear in the separately signed label config.
+Child sources inherit singer identity and song/session/lineage and are included
+in the deterministic pre-augmentation split; their segment and admission hashes
+participate in dataset identity. Reassembly produces the same dataset hash, and
+tampered parent supervision or segment records reject without publishing a
+snapshot. `seam_voice_model_training_tests` passes (456 tests, 1 skipped; 53.47 s).
+The join currently supports hop-aligned derived crops; off-grid crops requiring
+fresh pitch re-extraction still need assembler integration. It does not create
+or independently approve rights, labels, corpus partitions, or a singer. U35/U36/
+Beta GO remain open; GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-24 — U35 off-grid derived-clip revalidation. Schema-3 dataset
+configurations now optionally pin an executable fresh-pitch extractor by exact
+file hash. When a crop start is off the parent label's analysis hop, assembly
+re-runs pitch extraction during every rights/data refresh, verifies the extractor
+did not change around execution, and includes its digest in the child binding;
+aligned crops do not invoke the executable. A signed-label integration fixture
+exercises an actual one-sample-offset crop, captured extractor tampering, and
+fresh dataset assembly; missing or modified extractors fail before snapshot
+publication. `seam_voice_model_training_tests` passes (457 tests, 1 skipped;
+56.79 s). The extractor is bounded, not sandboxed, and still requires an
+operator-selected trusted binary. Lawful corpus and voice-quality acceptance
+remain open; GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-24 — U35 hash-locked training-check environment. Added a composite
+macOS Apple-Silicon/Python-3.11 requirements input and a 63-package lock with
+SHA-256 hashes for binary artifacts, spanning acoustic/vocoder training and
+ONNX export checks. Rebuilt a new isolated venv using `uv pip sync --require-hashes
+--strict`; `pip check` reported no broken requirements. The venv fingerprint
+captured 63 distributions, 31,209 files and 863,305,636 bytes. The full voice
+model training suite passed (457 tests, 1 skipped), and the real pinned DiffSinger
+smoke check passed at revision `336cf01b57f2ad44c6b37a79cf33993043291759`.
+The lock is not portable to Intel macOS, Windows or Linux; trusted upstream code
+still executes without sandboxing. This establishes repeatable dependency
+resolution for this target, not lawful corpus admission, a qualified singer or
+Beta GO. GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-24 — U35 vocoder resume environment identity. Complete and partial
+vocoder checkpoints now include the same bounded fingerprint of the active
+Python runtime and installed distribution contents used by acoustic training.
+The existing exact-resume metadata comparison therefore rejects package-file
+drift before restoring either checkpoint type. Focused regressions cover both
+complete and partial resume mismatch. The 457-test voice-model suite passes
+(1 skipped). An actual two-epoch `train_vocoder` CLI diagnostic then completed
+continuous and separate-process resume paths; model/optimizer/RNG state and
+held-out WAV bytes match exactly. Both retained receipts carry the same
+environment digest `0a279cc99a7743c168b079fdb3d5eaf53e72ca079d8aa19f0eac30244a129726`
+(63 distributions, 31,209 files, 863,305,636 bytes). The fixture's pitch was
+unresolved and spectral distance was 3.970544, as expected for untrained
+synthetic data; this is not singer qualification. Check artifacts remain local
+under `build/neural-runtime/vocoder-env-identity-check-20260924/` (about 1.5 GiB).
+This binds software identity on the macOS Apple-Silicon/Python-3.11 locked target;
+it does not promise bitwise reproduction across hardware or qualify training
+data/model quality. GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-24 — U37 full-graph seeded replay check. The merged acoustic ONNX
+diagnostic now executes each dynamic-shape case in a fresh session and creates a
+second session for the same 16-frame/1-step request, requiring exact mel-byte
+replay. `check_diffsinger_model ... --check-onnx` passed at the pinned DiffSinger
+revision: replay maximum absolute difference was 0; dynamic execution passed at
+frame/step pairs 16/1, 3/4 and 23/8, and offline graph inspection passed.
+This verifies deterministic seeded sampling across fresh ONNX Runtime sessions
+for the synthetic architecture fixture, matching the worker's one-request
+session lifecycle. PyTorch-vs-ONNX stochastic stream parity, native installed
+worker parity, a vocoder-integrated singer and musical qualification remain open.
+GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-25 — Relocated-media render assertion strengthened. The reopened
+standalone regression now also captures the Ready render, mutes the relocated
+ProjectCopy through the normal application command, waits for the new project
+revision to render, and asserts the PCM changes. This verifies the reopened
+backing media contributes to output rather than merely existing beside a
+successful vocal render. Release `seam_u2_tests` passes 1/1 (7.94 seconds), and
+`git diff --check` passes. Final test source SHA-256:
+`7fd2737e1902148e90db0f85d0cd9f4d40a42eed370014775f8893a44cd0d6b2`.
+The earlier 1.12-second result corresponds to the preceding test revision;
+this run supersedes it. GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U37 native fresh-session replay. The C++ ONNX Runtime probe now
+recreates a session from the exact captured graph bytes and replays the same
+request, rejecting any nonfinite or non-identical seeded mel. The full
+`check_diffsinger_model --check-onnx --native-probe build/release/seam_onnx_runtime_probe`
+workflow passed: native replay error was exactly 0, the graph digest was checked,
+native structural inspection passed, and the wrong-digest negative case rejected.
+Python and native ONNX Runtime both passed fresh-session replay for the synthetic
+DiffSinger fixture. One repeated invocation emitted passing JSON but then aborted
+at teardown (exit 134); the next full unpiped invocation exited 0 with the same
+result. This remains an intermittent ONNX Runtime shutdown reliability issue, not
+a passing result to ignore. This does not establish Torch random-stream parity,
+installed production worker/host acceptance, a real singer or musical quality.
+GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-24 — U34 live in-block seconds-timeline mapping. Realtime score-preview
+playback now retains bounded borrowed references to transport events from the
+current CLAP process block and remaps each frame from the latest event anchor,
+instead of applying only the block-start transport to the entire block. The
+audio callback path adds no allocation; malformed transport updates make the
+score preview inaudible from that sample until a later valid transport anchor,
+while live-input voice rendering continues. Added a frame-exact mapper regression
+for samples before, at and after an in-block seconds correction. Release
+`seam_clap_offline_host_tests`, `seam_host_timeline_capture_tests` and
+`seam_host_transport_publication_tests` pass (3/3); the plugin/host targets build
+and `git diff --check` passes. The loaded-host fixture verifies fail-closed
+offline invalidation but does not assert realtime in-block audio against a
+commercial DAW; beat-only event continuity and tempo-ramp playback are not
+qualified. GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U34 event-overflow fail-closed repair. Independent loaded-plugin
+review found that the 1,024-event guard discarded the entire list and continued
+with block-start score mapping, so a transport seek in event 1,025 could escape
+the capture and leave stale score audio audible. Overflow now publishes an
+incomplete-history marker, mutes realtime score mapping for the block, and
+returns `CLAP_PROCESS_ERROR` in offline mode while invalidating later offline
+blocks. Extracted the fixed-state `HostTimelineBlockCursor` so exact sample
+anchors, malformed-history silence and valid-anchor recovery have direct tests.
+The loaded CLAP harness exercises 1,024 events with a transport update, exactly
+1,024 ordinary events, and 1,025 events with a seek; offline output clears at
+the boundary and remains rejected after owner-thread drain until Final rebind.
+Release CLAP plugin/host targets build and the offline-host, timeline-capture,
+and transport-publication CTests pass 3/3; `git diff --check` passes. This
+closes the reproduced overflow defect only. A realtime in-block audio oracle in
+the repository, commercial-DAW qualification, beat-only continuity, ramp
+support, and U34/U13/Beta GO acceptance remain open. GitHub CI stays deferred;
+`.github` is unchanged.
+
+2026-09-24 — U34 overflow recovery-demand correction. Independent exact-snapshot
+review found that the overflow-muted realtime block could return `CLAP_PROCESS_SLEEP`
+while the host transport was playing; a conforming host may then stop calling
+`process()` before the next valid transport block. The plugin now returns
+`CLAP_PROCESS_CONTINUE` for that playing overflow block, without restoring stale
+score audio or depending on a `request_process` wakeup. The loaded-plugin test
+drains the owner callback and calls the next event-free block only after observing
+CONTINUE, matching CLAP's host contract; it verifies the next block restores
+audible score output. The Release offline-host CTest passes with this regression.
+Commercial-DAW behavior and U34/Beta GO remain unqualified. GitHub CI and
+`.github` remain untouched.
+
+2026-09-24 — U37 exported-worker WAV artifact validation. The optional captured-
+model replay previously treated the presence of any `.wav` path as successful
+native authoring export. It now validates each regular WAV's RIFF/chunk sizes,
+encoding, channel count, 48 kHz clock, block alignment, frame payload, and PCM
+content; float PCM must be finite and normalized, and the exported set must
+contain at least one non-silent file. This prevents truncated, malformed,
+wrong-rate, or silent artifacts from satisfying the end-to-end replay gate.
+Focused Python tests pass (6/6), including PCM24 and float32 acceptance and
+silent/truncated/wrong-rate/nonfinite/out-of-range rejection. The expensive
+captured-model/native-render invocation then exited 0 from the pinned local
+DiffSinger and SingingVocoders checkouts. Its production-render report contained
+two 48 kHz non-silent WAVs totaling 96,000 frames, both accepted by the new
+validator; request/worker/bundle/project hashes and inference-step binding also
+matched. This end-to-end run uses generated oscillator data and a synthetic
+vocoder whose pitch-following diagnostic fails, so it verifies the gate and
+execution path only—not a qualified singer or musical quality. GitHub CI is
+deferred and `.github` remains unchanged.
+
+2026-09-24 — U20 Japanese /f/ inventory increment. The authored Japanese song
+now includes ふ, whose resolver output requires an explicit `/f/` onset; the
+original singer recipe and package manifest declare that phone's own bounded
+frication source. The checked-in recipe was regenerated through the production
+encoder, and the documented fixture-regeneration command now performs an
+explicit atomic replacement only when its output path matches the fixture. The
+full installed-singer authoring, render, tune, save/reopen and export journey
+passes 5/5 in the local Debug build. This is engineering integration for one
+Japanese onset, not acoustic/listening qualification or broad phoneme coverage.
+GitHub CI is deferred and `.github` remains unchanged.
+
+2026-09-24 — U20 Japanese voiced/unvoiced fricative contrast increment. The
+installed original-singer song now places ふ and ゔ consecutively. The recipe
+binds unvoiced `/f/` noise separately from `/v/` noise-plus-voicing and its own
+same-phone resonance pose; the package declares both phones. The journey asserts
+that Japanese resolution marks `/f/` unvoiced and `/v/` voiced, then carries the
+phrase through installation, rendering, tuning, save/reopen and export. The full
+journey passes 5/5 in the local Debug build, including a normal run against the
+regenerated canonical recipe. This remains a single contrast with screening
+parameters, not listening or phonetic qualification, broad inventory completion,
+or U20/Beta GO. GitHub CI is deferred and `.github` remains unchanged.
+
+2026-09-24 — U21 Studio campaign resume after restart. The producer UI previously
+enabled campaign resume only when the current controller held an in-memory path,
+so a valid persisted campaign became inaccessible after closing Studio. The
+campaign action now remains available as “Open / resume”; selecting a campaign
+JSON reads bounded retained bytes, hashes those exact bytes, revalidates the
+producer epoch/generation after the modal, and passes the immutable identity to
+the shared campaign-advance service. A fresh-controller regression reopens the
+producer, adopts the selected campaign, verifies its retained preflight, and
+completes both batches as unapproved MarkerReview takes. The Release Studio and
+test targets build, focused Studio campaign and export CTests pass, and
+`git diff --check` passes. This verifies the controller/service resume path and
+control availability, not a physical AppKit picker interaction or U21/Beta GO.
+GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U20 matched-note Japanese fricative PCM regression. Added a
+production `ArticulatedStream` test that resolves `ふ` and `ゔ`, renders both at
+the same MIDI pitch, note duration, `/u/` nucleus and shared frication-noise
+configuration, and verifies the recipe-bound `/f/` and voiced `/v/` routes
+produce materially different PCM while preserving the authored F0. The focused
+voice-design test binary passes 46/46 in Release, and `git diff --check` passes.
+This shows the distinction reaches rendered samples; it is not a phonetic
+intelligibility or listening qualification. U20/Beta GO and acoustic review
+remain open. GitHub CI is deferred and `.github` remains unchanged.
+
+2026-09-24 — U22 five-vowel source-filter starter patch. Studio's New Voice
+action previously created only one `/a/` pose; it now uses the Designer session's
+shared starter factory to create editable `/a i u e o/` neutral poses with
+bounded formant defaults. The accessibility description and status explicitly
+state that this is an unqualified starter with no consonant inventory. The
+Designer regression constructs all five tracts and asynchronously auditions
+each; the focused Release Designer CTest passes, and the native macOS Studio
+target builds. This enables an immediate five-vowel patch workflow, not a
+complete language inventory, qualified singer, recording route or U22/Beta GO.
+GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U22 Japanese starter now shares the installed-song screening
+recipe. Studio's New Voice action and the original-singer journey call the same
+`makeJapaneseStarterRecipe` factory, so a new draft immediately has the partial
+phone models exercised by the 40.5-second Japanese song, rather than only five
+vowels. Studio continues to label it partial and unqualified; the defaults are
+not phonetic qualification and the recipe does not cover all Japanese phones.
+The Designer regression validates and constructs all 13 declared resonance
+poses, checks the consonant model families, and auditions the five vowels. The
+Release Designer CTest and full installed-singer song journey CTest both pass;
+the native macOS Studio target builds and `git diff --check` passes. This proves
+shared recipe and renderability consistency, not listening quality, a complete
+Japanese inventory, voice creation without recordings at product quality, or
+U22/Beta GO. GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U22 built-in Japanese symbol-set starter and compiler coverage.
+Expanded `makeJapaneseStarterRecipe` from the demo song's subset to the full
+symbol families currently emitted by SEAM's built-in Japanese phonemizer:
+vowels, oral and moraic nasals, voiced/voiceless stops and fricatives, both
+unvoiced affricates plus the voiced affricate, approximants, contracted
+palatalized phones, closure events and breath. Studio now describes the action
+as covering the built-in adapter's symbol set while keeping the draft marked
+screening/unqualified. A production-path regression resolves a 60-plus-token
+phone hint containing every supported family, compiles its score and verifies
+the recipe through `ArticulationPlan` and `ArticulatedStream`; the Designer
+regression validates/constructs each declared pose and auditions all five
+vowels. The canonical installed-song fixture was regenerated using the
+production encoder after the shared factory changed. Release Designer, voice
+design and full installed-singer journey CTests pass (3/3); the native macOS
+Studio target builds and `git diff --check` passes. This is symbol routing and
+screening-default coverage, not correct phonetic realization, qualified
+pronunciation, expressive-quality evidence, or U22/Beta GO. GitHub CI remains
+deferred and `.github` is unchanged.
+
+2026-09-24 — U22 Japanese inventory/source-of-truth regression. Added a public,
+sorted unique symbol inventory generated from the built-in kana table plus its
+explicit phone-hint event symbols; strict phone-hint parsing now consumes that
+same inventory rather than maintaining a second private set. The procedural
+coverage regression enumerates the exported inventory, builds a score context
+for every symbol, and verifies all symbols are admitted by both the production
+articulation planner and stream. This means a future mora-table symbol addition
+will fail the voice-source coverage check until the starter can render it. The
+focused phonemizer, voice-design, Designer and installed-singer journey CTests
+pass (4/4); the native macOS Studio target builds and `git diff --check` passes.
+Studio still lacks editable controls for affricate, approximant and breath
+source parameters; completing that is a remaining U22 authoring gap. No
+pronunciation-quality or Beta GO claim is made. GitHub CI remains deferred and
+`.github` is unchanged.
+
+2026-09-24 — U22 Studio articulation-source parameter controls. The Designer
+control list now exposes editable burst/tail spectra and timing for unvoiced
+affricates; burst/tail spectra, closure voicing/low-pass and tail voicing for
+voiced affricates; transition duration for approximants; and center, bandwidth
+and gain for breath sources. Keyboard/drag adjustments and accessible numeric
+edits route through the existing revision-guarded canonical recipe edit, undo
+and dirty-state path. Control values, descriptions and accepted-range text are
+generated for the added families, and source selection bounds were tightened so
+new control rows cannot be mistaken for a frication or plosive. The Release
+macOS Studio target builds; Designer, voice-design and installed-singer journey
+CTest pass (3/3), and `git diff --check` passes. Dedicated source-specific
+audition for affricates, approximants and breaths remains open, so editing these
+values is not yet a complete listen-and-adjust loop or acoustic qualification.
+GitHub CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — U22 Designer phrase audition coverage expanded. Added a one-second
+CV preview that resolves recipe-bound phones and the selected vowel style,
+compiles explicit phone timing, and renders through the same
+`ArticulatedStream` path used by singing. It now covers nasal, palatalized,
+unvoiced/voiced affricate, approximant, breath and closure gestures; declared
+closure is intentionally silent. The background Designer session tags results
+with epoch/revision/pose/pitch and phone identity, so changed selections or
+recipes cannot publish stale audio. Studio keyboard and accessible render/play
+actions expose previews for the editable nasal, palatalized, affricate,
+approximant and breath controls. The regression renders each listed gesture
+family from the Japanese starter, checks finite bounded and deterministic PCM,
+rejects unsupported phones and invalid pitch/pose, checks cancellation, and
+verifies session publication/invalidation. The native macOS Studio and focused
+Designer test targets build; the Designer CTest passes, and `git diff --check`
+passes. This closes the mechanical listen-and-adjust path for these source
+families, not perceptual pronunciation qualification or U22 / Beta GO. GitHub
+CI remains deferred and `.github` is unchanged.
+
+2026-09-24 — R9 flatness/level component ablation result reconciled. The
+previously staged plan was already executed after its recorded Developer-2
+clearance; both isolated e9 arms and a four-arm evaluation exist in the
+external corpus workspace. Independent local receipt loading verified the two
+new checkpoints, exact config/parent/dataset bindings, complete 267-update
+coverage and zero source/timestep/noise mismatches against base. The frozen
+primary errors were base 2.8325, combined 3.7984, flatness-only 3.9403 and
+level-only 3.8243 nats; both isolated arms also fail the frozen UV RMS-range
+and voiced-flatness guardrails. The declared rule therefore stops this
+auxiliary family at the tested setting; no weight/layer sweep is opened. The
+durable receipt and limits are in
+`FLATNESS_COMPONENT_ABLATION_RESULTS_2026-09-22.md`. This is not singer
+qualification; listening remains NOT_REVIEWED, `releaseEligible=false`, and
+`singerQualified=false`. Developer-2 subsequently audited the saved artifacts
+and approved the frozen STOP decision and closure at this tested setting only;
+this does not authorize relaunch, retaining either term, singer qualification
+or release. The 267-step match means source/draw/coverage parity, not 267
+empirically equivalent optimizer updates (the protocol's empirical optimizer
+equivalence is 24 updates at each equal-coefficient corner). Saved evaluation
+receipts also lack evaluator-source, pitch-executable and complete runtime
+identity hashes; add those before any future experiment. See
+`FLATNESS_COMPONENT_ABLATION_RESULTS_2026-09-22.md` for exact audit scope and
+limitations. Follow-up evaluator work adds schema-v3 provenance fields for the
+evaluator source, provenance-helper source, pitch executable and Python/numpy/
+scipy/ONNX Runtime/platform versions. Two dependency-light regression tests,
+Python byte-compilation and `git diff --check` pass; no evaluation/training was
+run, and this does not alter the frozen e9 receipt. GitHub CI remains deferred
+and `.github` is unchanged.
+
+2026-09-25 — U6 installed-singer delivery regression extended to master/stems.
+The 40.5-second authored Japanese development song now exports with both
+`includeMaster` and `includeStems`; its ordinary standalone export journey
+requires a committed export state, the exact authored track-ID stem path and one
+durable receipt entry whose SHA-256 matches both the returned export receipt
+and recomputed file bytes. Decoded master and stem must each be 48 kHz stereo;
+both cover the full 40.5-second score with at most 250 ms natural tail, and
+their deterministic PCM is identical because the fixture has one vocal track
+and no backing media (both project conditions are asserted). The durable receipt's
+frame/channel metadata is also compared to the decoded stem. Both are finite and
+non-silent. The initial strict run
+also corrected a stale 39.5-second comment: the authored ticks at 120 BPM sum
+to 40.5 seconds. After correction, the Release
+`seam_original_singer_song_journey_tests` target builds and the full CTest
+passes (1/1, 19.28 seconds). Developer-2 independently approved the focused
+source review at SHA-256
+`ee9cec1135ebe81332f1a0d7cb4bf6f828f5575a1be197dbc646b71e115215c3`; that
+ review did not rerun the test. This verifies a code-owned development fixture
+ and export route, not whole U6 acceptance, installed-app interaction, qualified
+ singer, perceptual song acceptance, or Beta GO. GitHub CI remains deferred and
+ `.github` is unchanged.
+
+2026-09-25 — U6 score-rest regression follow-up, local only; GitHub CI remains
+deferred. Review found that the installed-singer test's song data did not contain
+the rest described in its comments. The fixture now contains an actual 0.5-second
+score gap between its two sections, bringing the authored duration from 40.5 to
+41 seconds. The end-to-end export check locates that interval through the project
+tempo map and asserts that the center 100 ms in decoded master PCM is near digital
+silence (`peak < 1e-4`), while retaining the full-song master/stem coverage and
+receipt assertions. The Release target builds and the focused CTest passes 1/1
+in 16.80 seconds; `git diff --check` passes. Source SHA-256:
+`89b699e0801485db8cbce7ed69aa9f5e4788f4612ba18a6248e13aa262eb350b`.
+This regression checks score-gap propagation for the code-owned synthetic
+development fixture; it does not establish singer quality, human usability,
+whole U6 acceptance, or Beta GO. The previous independent review applied to the
+ prior source hash and does not cover this rest change. `.github` was not modified.
+
+2026-09-25 — Portable WAV backing-media project export, local only; GitHub CI
+remains deferred. “Include Project” now packages referenced WAV media by content
+hash as `media/<sha256>.wav`, rewrites the exported project's audio tracks to
+relative `ProjectCopy` paths, and retains the live project unchanged. Relative
+source paths resolve only with the explicit project-directory setting. Packaging
+validates WAV content hash plus source rate/channel/frame metadata, deduplicates
+identical files, caps each WAV at the existing 512 MiB decoder limit and all
+packaged media at 2 GiB, then stages and verifies the captured bytes before any
+render begins. Rendering and the exported project consume that staged snapshot;
+a mutation before capture rejects without replacing an existing export, while a
+mutation after capture cannot make rendered audio disagree with bundled media.
+The macOS packaging choice is offered for projects with
+procedural recipes or backing tracks and now explains that WAV backing media is
+included while sample banks and neural models remain external. The project JSON
+format notes were updated accordingly. The regression covers relative-path
+resolution across symlink/parent traversal and a symlink leaf, content-hash
+deduplication, missing-base rejection, project immutability, receipt metadata,
+portable project references and re-render, source mutation before capture with
+existing-export preservation, and source mutation after capture with exact
+render/package snapshot parity. Release `seam_export_tests` passes 1/1 (4.67 seconds); the
+`seam_standalone_authoring` and native Studio targets build; `git diff --check`
+passes. This narrows one portability gap but does not make bank/neural-backed
+projects self-contained or imply redistribution rights, singer quality, U6
+acceptance, or Beta GO. `.github` was not modified. Developer-2's first review
+returned NEEDS CHANGES on three
+points: lexical/canonical media paths could diverge across symlinks; rendering
+used mutable original paths instead of the verified package snapshot; and the
+old mutation test could fail during stem rendering before exercising package
+staging. Repairs now canonicalize each package source once, stage and verify
+those bytes before rendering, route all master/stem renders to the staged files,
+and rewrite packaged references to those same bytes. Regressions now cover a
+symlink-parent `..` path plus a symlink leaf, deduplication, pre-capture mutation
+with preservation of an existing export/receipt, and post-capture mutation with
+exact master-versus-bundled-snapshot parity. The affected Release export suite
+passes 1/1 (4.67 seconds), native Studio and standalone-authoring targets build,
+and `git diff --check` passes. Developer-2 re-review approved this scoped
+change at the supplied hashes and confirmed all three findings were addressed.
+The approval did not rerun builds or tests and does not approve U6 or Beta GO.
+The new success regression compares decoded master PCM with the pre-mutation
+reference mix and separately checks the bundled WAV hash; it does not compare
+master PCM directly with the backing WAV or independently compare the
+mutation-run stem PCM. Future strengthening may add a path-resolution fixture
+whose lexical and filesystem targets contain different bytes and an audible
+symlink-leaf case. These are nonblocking coverage suggestions, not open
+production blockers. `.github` remains unchanged.
+
+2026-09-25 — Portable WAV export symlink regression strengthened. The path
+fixture now gives `link/../backing.wav` a filesystem target with different WAV
+bytes from its lexical-collapse target; an audible symlink-leaf track exercises
+that path through packaging/rendering, while a muted duplicate of that leaf
+continues to verify content-hash deduplication. The reference render uses the
+same canonical file targets and the packaged-project replay must match it. The
+Release `seam_export_tests` target rebuilds, its focused CTest passes 1/1 (3.75
+seconds), and `git diff --check` passes. The approved production implementation
+is unchanged. This added regression is under focused Developer-2 review at test
+source SHA-256 `d5cc2bc8e3dc98c5da424dcb555dc1f8b27d4347d98e19dd99fb55e12e274313`;
+it is not yet independently reviewed and is not U6 or Beta GO acceptance.
+GitHub CI remains deferred; `.github` is unchanged.
+
+2026-09-25 — Relocated ProjectCopy proof corrected after independent review.
+The prior revision's Ready/non-silent/NotFound checks could pass a partial
+Preview that omitted the backing clip. The test now checks the persisted hash;
+the exact audio track path and hash in the publication's `sourceProject`; zero
+diagnostics for that track; `trackCount == 2` for vocal plus backing; and a PCM
+difference after muting the backing through the application command. It also
+asserts the old directory is absent and document identity names the relocated
+project. Release `seam_u2_tests` passes 1/1 (1.19 seconds) and
+`git diff --check` passes. Final test source SHA-256:
+`9ca6daeb09cb97d861f0e598b779f3de182b07e9bece9f94ee93bd797206f4e4`.
+This remains an in-process integration test, not an actual Finder flow or fresh
+process restart. Developer-2 re-review is requested; no acceptance claim is
+made until that review returns. GitHub CI is deferred and `.github` is unchanged.
+
+2026-09-25 — Muted-render wait made fail-closed. Developer-2 confirmed the
+original relocation false pass was closed, then identified that the second
+render's revision/Ready conditions only guarded the PCM comparison. The test
+now explicitly fails unless the muted render matches the expected revision and
+reaches Ready before comparing PCM. Release `seam_u2_tests` passes 1/1 (1.21
+seconds) and `git diff --check` passes. Final test source SHA-256:
+`eb0735f263595d0c0b334a78912742022fa657ca0bb54505d104077e6f407017`.
+Focused re-review is requested; this test remains local app-layer evidence, not
+fresh-process or Finder acceptance. GitHub CI remains deferred and `.github` is
+unchanged.
+
+Developer-2 approved the final muted-render assertion follow-up at test source
+SHA-256 `eb0735f263595d0c0b334a78912742022fa657ca0bb54505d104077e6f407017`.
+The review confirms null, stale-revision, non-Ready and timed-out muted renders
+cannot skip the PCM contribution comparison. This approval is limited to
+in-process relocation and render-path coverage; it does not imply fresh-process,
+Finder, general portability or Beta GO acceptance.
+
+2026-09-25 — U22 source-edit audition regression expanded. A single workflow
+test now proves that changing the recipe's unvoiced-affricate burst, voiced-
+affricate tail voicing, approximant transition, or breath spectrum changes the
+corresponding phrase audition; undo restores the exact baseline PCM for each
+family, editing invalidates the stale preview, and save/reopen preserves the
+changed PCM exactly. The Release Designer CTest
+passes 1/1 (1.60 seconds); the Designer, voice-design and installed-singer
+journey integration tests pass 3/3 (24.66 seconds), and the macOS Studio target
+builds. `git diff --check` passes. This verifies parameter-to-audio wiring,
+undo, and recipe persistence, not phonetic intelligibility or listening
+quality. U22 recording and imported-audio authoring parity and Beta GO remain
+open. GitHub CI remains deferred; `.github` is unchanged.
+
+2026-09-25 — U22 native external-WAV take entry. The Studio now exposes
+Cmd/Ctrl+R “Import WAV” beside live recording. It requires an open producer
+workspace and selected inventory row, uses a WAV-filtered native picker, captures
+the producer epoch/generation/selection before the modal, and revalidates that
+context before routing the chosen file through the existing inspect-and-import
+path. Import remains an unapproved take subject to marker review; cancellation
+does not mutate the project. The macOS Studio builds, the full Release `seam_tests`
+CTest passes 1/1 (28.96 seconds), and `git diff --check` passes. This verifies
+compilation and the shared controller/import regression, not live picker
+interaction, physical-device recording or perceptual qualification. U22's
+complete microphone/import parity lifecycle and Beta GO remain open. GitHub CI
+is deferred; `.github` is unchanged.
+
+2026-09-25 — U22 WAV import made pointer- and accessibility-discoverable. The
+existing keyboard action is now a visible disabled/enabled button with pointer
+activation and a semantic Button action in both ordinary production and
+generation-only views. Its context-bearing semantic ID is rebuilt from the
+producer session epoch, generation and selection; the modal stays guarded while
+the file picker is open. The macOS Studio target builds, the full Release
+`seam_tests` CTest passes 1/1 (29.08 seconds), and `git diff --check` passes.
+This is compile and lower-level suite evidence; VoiceOver interaction and
+screen-reader traversal remain unverified. No GitHub CI was run or changed.
+
+2026-09-25 — U22 imported-WAV inspection moved off the UI thread. The native
+import action now starts the controller's existing guarded production worker;
+the worker snapshots the selected project/row, inspects the WAV, checks
+cancellation before the commit boundary, and publishes only the resulting
+unapproved take. Raw repository import now accepts a stop token through staging
+and durable save. Escape cancellation keeps the visible producer unchanged when
+it wins before commit; an already committed result remains eligible for owner-
+thread adoption. The native UI integration regression now exercises this async
+route through completion and verifies the imported take/review state. Studio and
+test targets build; full Release `seam_tests` passes 1/1 (27.24 seconds), and
+`git diff --check` passes. No live picker, physical mic or human listening
+evidence is claimed. GitHub CI remains deferred; `.github` is unchanged.
+
+2026-09-25 — U22 cancellation propagated through large WAV inspection. Bounded
+file hashing now accepts a stop token and detects short/growing files while
+streaming; path-based WAV loading reads in 64-KiB chunks and passes cancellation
+through PCM decoding. Dry-take inspection propagates that token through both
+identity hashes, frame-wise statistics, and the existing cancellable pitch
+analyzer, without allocating a second mono-mix buffer. Regression checks cover
+pre-cancelled hash/read/inspection and assert peak/RMS/DC results remain exactly
+equal to the established mono-mix analyzer. The async producer-import flow now
+passes its cancellation token into inspection as well as raw asset staging and
+durable save. macOS Studio and full test targets build; Release `seam_tests`
+passes 1/1 (29.68 seconds), and `git diff --check` passes. Cancellation cannot
+interrupt a single OS-level read or allocation, but it is observed between
+64-KiB file chunks and throughout decode/analysis. No GitHub CI was run or
+changed; `.github` remains untouched.
+
+2026-09-25 — U22 microphone take publication moved off the UI thread. After a
+recording is safely written and its WAV digest captured, producer-workspace
+recordings now enter the same cancellable background inspection/import path as
+externally imported WAVs. The in-memory capture and exact saved path/hash remain
+pending until the owner thread adopts a successful durable import; failed or
+cancelled attempts retain them for retry, and successful publication alone
+acknowledges the capture. This removes synchronous WAV inspection, technical
+metadata generation, and repository commit from the recording-stop action.
+Release and Debug macOS Studio plus `seam_tests` targets build; full
+`seam_tests` CTest passes in Release (28.81 seconds) and Debug (195.28 seconds),
+and `git diff --check` passes. This is code/build/test evidence, not a live
+microphone, device-disconnect, or picker/recording parity journey. U22 and Beta
+GO remain incomplete. GitHub CI remains deferred; `.github` was not touched.
+
+2026-09-25 — U22 recording shutdown now drains its publication before exit.
+After moving producer recording import to a worker, the application shutdown
+sequence still cancelled pending production work before finishing the capture;
+an active recording could then start its import too late for final state
+adoption. Shutdown now first finishes the capture, waits by owner-thread polling
+for that capture's cancellable inspection/import to settle, and acknowledges it
+only after successful project adoption. Unrelated in-flight production
+operations retain cancel-on-exit behavior. Release and Debug native Studio
+targets build; Release recording-input, studio-campaign, and full `seam_tests`
+CTest targets pass (3/3, 32.35 seconds), and Debug recording-input/studio-
+campaign tests pass (2/2, 6.20 seconds). `git diff --check` passes. These are
+local build/test results, not a closed-app live recording or device-failure
+journey. U22 and Beta GO remain open. GitHub CI remains deferred; `.github` was
+not touched.
+
+2026-09-25 — U22 pending-recording cancellation/discard boundary. During
+microphone-originated asynchronous publication, Escape now requests worker
+cancellation while retaining the in-memory capture and exact saved WAV. X
+cannot discard the capture until the worker resolves, preventing a durable
+repository commit from racing with an apparent discard. If cancellation arrives
+after the transaction's commit boundary, successful adoption still owns the
+result; if cancellation wins first, the capture remains retryable/discardable.
+The macOS Studio builds in Release and Debug, all 17 macOS source-contract
+tests pass, and `git diff --check` passes. This is source-contract/build
+evidence, not a live keyboard/device race test. U22/Beta GO remain open;
+GitHub CI remains deferred and `.github` was not touched.
+
+2026-09-25 — Native pronunciation-hint editing now matches the registered
+English, Korean, and Japanese phone-hint validators. The macOS Edit menu and
+VoiceOver/keyboard descriptions use language-neutral labels; non-empty input is
+validated against the selected note's language before commit, invalid input
+stays open for correction, and empty input still clears the hint. Native UI
+regressions cover accepted English and Korean hints, rejected English/Japanese
+input, clear/undo, and stale-edit protection. Release `seam_tests` CTest passes
+1/1 (28.57 seconds), and `git diff --check` passes. This closes the manual
+per-note hint entry path only; it does not provide automatic Japanese dictionary
+resource packaging or human pronunciation qualification. Full-scope Beta GO
+remains open. GitHub CI remains deferred; `.github` was not touched.
+
+2026-09-25 — U24 pronunciation-hint validation feedback. A rejected phone hint
+now exposes the language-specific parser error through the native accessibility
+text field and changes the visible bounded-input label to `INVALID PHONE HINT`;
+editing again or cancelling clears the error. The regression verifies that an
+invalid English hint stays active, its reason is available in the accessibility
+tree, and correcting the text in the same editor commits successfully. Release
+`seam_tests` CTest passes 1/1 (27.80 seconds), and `git diff --check` passes.
+This improves correction feedback, not language-resource qualification or the
+full U24/Beta GO gate. GitHub CI remains deferred; `.github` was untouched.
+
+2026-09-25 — U40 performance-take acceptance continuity regression. The
+standalone comparison lifecycle now asserts that immediately after accepting an
+audible alternate take, the published audio is non-null and represents the
+accepted selection, the character-performance read model advances with that
+audible publication, and the handoff eventually reaches a canonical render for
+the current document revision. Release `seam_tests` CTest passes 1/1 (1,114
+cases, 27.09 seconds); `git diff --check` passes. This verifies the in-process
+publication/read-model transition, not physical audio-device output or an
+installed-app accept-click journey; U40 and Beta GO remain open. GitHub CI
+remains deferred; `.github` was not touched.
+
+2026-09-25 — U22 macOS Voice Designer accessibility/runtime smoke. The freshly
+rebuilt Studio opened directly into the Designer; the native accessibility
+surface created an unsaved Japanese source-filter draft, edited aspiration from
+0.05 to 0.12, rendered a one-second vowel preview, pinned reference A, changed
+aspiration to 0.30, and rendered current B while retaining A. Undo restored
+the prior 0.12 recipe and invalidated the current audition. Existing lower-level
+tests prove those parameter changes alter the rendered PCM. The file
+picker was dismissed without selecting a workspace; the test draft was not
+saved and no microphone permission or physical audio output was used. This
+proves the local macOS semantic-control/render/A-B/undo interaction only, not
+audible listening quality, physical recording, producer import, or the full
+U22 creator journey. U22 and Beta GO remain open. GitHub CI remains deferred;
+`.github` was not touched.
+
+2026-09-25 — U22-to-song procedural singer install handoff. Standalone now has
+File → “Install Procedural Singer…” for signed `.seamsinger` packages, separate
+from sample-bank installation and from the subsequent explicit track-selection
+command. The controller installs only into a configured installed-singer root,
+requires an explicitly trusted signing key, preserves existing singer versions,
+and does not alter the open song. A lifecycle regression publishes a signed
+source-filter singer, exercises the native command through the file-dialog
+contract, verifies it appears as a trusted/renderable installed offer with
+declared language/capabilities, and confirms the project bytes/revision/undo
+state remain unchanged. Release `seam_tests` CTest passes 1/1 (27.13 seconds),
+the macOS Studio target builds, and `git diff --check` passes. This closes the
+standalone procedural-package installation entry point only; it does not
+complete the Studio candidate-export/install experience, select or sing with
+the newly installed resource in an end-user journey, or qualify voice quality.
+U22 and full-scope Beta GO remain open. GitHub CI remains deferred; `.github`
+was not touched.
+
+2026-09-25 — U22 designed-voice-to-song journey now uses the standalone installer,
+local only; GitHub CI remains deferred. The end-to-end regression previously
+installed the signed `.seamsinger` package by calling the distribution API
+directly, which left the new native install command outside the actual
+designer-to-song journey. It now publishes the Designer-saved recipe, sends the
+package through `ApplicationCommand::InstallProceduralSinger` and the
+`InstallProceduralSinger` file-dialog contract with the signing key explicitly
+trusted, verifies that installation alone leaves the selected track unbound,
+then selects the installed singer separately and exports the authored lyric song
+from that installed identity. The focused Release
+`seam_original_singer_song_journey_tests` CTest passes 1/1 (17.62 seconds),
+`git diff --check` passes, and `.github` remains untouched. This closes the
+controller-level signed-install handoff in the designed-voice singing regression;
+it does not prove native visual/accessibility interaction or perceptual voice
+quality, and U22/full-scope Beta GO remain open.
+
+2026-09-25 — U22 saved Designer recipe can now be published as a signed singer
+package through a guarded session API, local only; GitHub CI remains deferred.
+`VoiceDesignerSession::publishSavedSinger` refuses a missing/dirty/busy draft,
+re-reads and identity-checks the persisted recipe before signing, rejects an
+output path that would replace the recipe, and requires explicit signer and
+distribution metadata. Regressions verify a clean saved recipe publishes to a
+package trusted by the corresponding public key, with recipe identity preserved;
+unsaved edits and out-of-session file replacement are refused before package
+or staging output is created. Release `seam_voice_designer_tests` passes 1/1,
+the macOS Voicebank Studio app builds, and `git diff --check` passes; `.github`
+was not touched. This is the publish operation/API, not a native publish dialog
+or a complete user-facing Studio candidate-export/install journey. Signature
+validity does not establish voice quality or approval; U22/full-scope Beta GO
+remain open.
+
+2026-09-25 — U22 saved Designer recipe now has a native macOS signed-publish
+workflow, local only; GitHub CI remains deferred. Voice Designer exposes a
+publish action for a clean saved recipe and requires explicit release version,
+display name and language, a selected private signing-key JSON, and a
+`.seamsinger` destination. The command rechecks the Designer epoch/revision
+after each modal, wipes the in-memory private-key bytes on exit, publishes via
+the guarded session API and reports that signing is not quality approval.
+Release `seam_voicebank_studio_native` and `seam_voice_designer_tests` build;
+the focused Release test passes 1/1 (1.55 seconds), and `git diff --check`
+passes. The native dialog/signing flow was not manually exercised this turn;
+Windows remains TODO, and U22/full-scope Beta GO remain open. `.github` was
+not touched.
+
+2026-09-25 — U22 designed-voice-to-song regression now exercises the guarded
+Designer publication boundary, local only; GitHub CI remains deferred. The
+journey previously loaded the saved recipe and called the lower-level
+distribution publisher directly, bypassing `VoiceDesignerSession`'s clean,
+saved, identity-checked publication contract. It now publishes through
+`designer.publishSavedSinger`, then installs through the standalone command,
+selects the installed singer separately, and exports the song from that singer.
+The Release `seam_original_singer_song_journey_tests` target builds and its
+focused CTest passes 1/1 (16.98 seconds); `git diff --check` passes. This closes
+the controller/session-level saved-recipe-to-song regression path, not native
+publish-dialog automation, voice-quality review, or U22/full-scope Beta GO.
+`.github` was not touched.
+
+2026-09-25 — U22 native signed-publish workflow live smoke and status repair,
+local only; GitHub CI remains deferred. Running a separately identified copy of
+the rebuilt macOS Studio, the flow created a voice in the Designer, saved it,
+entered explicit version/name/language, selected an ephemeral signing key,
+and published a `.seamsinger`. The first run exposed that success feedback was
+stored in the audition-status field and cleared by the next idle-audition poll.
+Publication feedback now has its own status, is accessible and visible after
+repaint, and is tied to the published Designer epoch/revision so an edit clears
+the stale notice; the live run verified both behaviors, including disabling
+Publish while the draft is dirty. `seam_bank_tool verify-singer` independently
+confirmed signature validity and trust for the generated package. Release
+`seam_voicebank_studio_native` builds; the Designer and end-to-end singer-song
+focused Release CTests pass 2/2 (18.88 seconds), and `git diff --check` passes.
+The test-only bundle, private key and outputs were moved to Trash. This is a
+macOS workflow smoke, not quality approval, producer listening qualification,
+Windows support or U22/full-scope Beta GO. `.github` was not touched.
+
+2026-09-25 — Bounded evaluation-tool provenance capture, local only; GitHub CI
+remains deferred. Acoustic evaluation provenance now hashes the pitch
+executable in fixed-size chunks, rejects non-regular or over-512-MiB files,
+and checks the open file identity/size/mtime before and after hashing so a
+concurrently changed executable cannot receive a misleading digest. Regressions
+cover oversized input and mutation during hashing; the acoustic-evaluation and
+training-environment focused suites pass 7/7, and `git diff --check` passes.
+This hardens receipt capture only: it does not rerun or replace the frozen
+ablation, add model-quality evidence, qualify a singer, or close U35/Beta GO.
+`.github` remains untouched.
+
+2026-09-25 — U35 training-environment capture now binds actual numerical import
+origins, local only; GitHub CI remains deferred. Environment receipts now
+inventory both active `purelib` and `platlib` roots, reject package roots or
+loaded NumPy/SciPy/PyTorch/ONNX Runtime modules outside the active environment,
+and require each loaded numerical module's origin to appear in the hashed
+distribution inventory. Regressions cover system-path leakage, untracked module
+origins, and a distinct `platlib` install. Focused training-environment,
+evaluation-provenance, vocoder-command, and review suites pass 19/19;
+`git diff --check` passes. This strengthens local reproducibility admission; it
+does not qualify trained audio or close U35/U36/Beta GO. `.github` remains
+untouched.
+
+2026-09-25 — U22 Voice Designer now offers explicit install after signed
+publication, local only; GitHub CI remains deferred. Studio retains the exact
+published package path and the public key selected for signing, and enables
+installation only while the saved Designer epoch/revision still matches that
+package. The action requires that explicit key as the trusted signer, installs
+into the same per-user singer root used by standalone, refuses replacement,
+and reports installation separately from quality approval. The Release native
+Studio and Designer test targets build; `seam_voice_designer_tests` passes 1/1,
+the macOS source-contract suite passes 18/18, and `git diff --check` passes.
+This completes the in-Studio publish-to-install handoff only; choosing the
+installed singer in a song, perceptual qualification, U22 closure and full Beta
+GO remain open. `.github` is unchanged.
+
+2026-09-25 — U22 published-singer installation moved behind the guarded
+Voice Designer session API, local only; GitHub CI remains deferred. The session
+now rechecks the saved recipe on disk, expected Designer epoch/revision, exact
+recipe digest and singer identity, and explicit trusted signer before invoking
+the transactional non-replacing installer. Regressions verify successful
+install, duplicate-install refusal, stale-revision refusal without creating a
+destination, and refusal of a different but valid package signed by the same
+key. Release and Debug Studio/Designer targets build; the focused Designer
+CTest passes 1/1 in each configuration, the macOS source-contract suite passes
+18/18, and `git diff --check` passes. First Release test run exposed and then
+fixed a missing directory in the new test fixture; final reruns pass. This is
+session/install-boundary verification, not full UI journey or voice-quality
+qualification; U22/Beta GO remain open. `.github` is unchanged.
+
+2026-09-25 — U22 install now pins the exact published package bytes, local
+only; GitHub CI remains deferred. The publish result's container digest is
+retained with the package path and signer key, compared during Designer-session
+admission, and passed as an expected-digest constraint into the transactional
+installer so a same-signer package replacement between admission and install is
+refused. Regressions cover a separately published version with the same recipe
+and signer but a different package digest, alongside stale-revision, wrong
+recipe, duplicate-install, and successful-install cases. Release and Debug
+Studio/Designer targets build; focused Designer CTest passes in both
+configurations, Release `seam_tests` passes (1,119 cases), the macOS
+source-contract suite passes 18/18, and `git diff --check` passes. An earlier
+aggregate run failed 8 cases; a direct rerun and the final post-rebuild CTest
+passed, so the transient failure remains disclosed. Full user UI/song journey,
+voice quality, U22 and Beta GO remain open. `.github` is unchanged.
+
+2026-09-25 — U22 signed-publish-to-install native UI smoke now passes in an
+isolated macOS user home, local only; GitHub CI remains deferred. A disposable
+app-bundle copy and signing key exercised the actual Designer dialogs, signed
+`.seamsinger` publication, and explicit install into the temporary standalone
+singer root. CLI verification confirmed the signature/trust, Japanese language,
+41 declared phones, and matching signed/installed manifests and recipe digest.
+The smoke also caught that the post-install status used the internal recipe ID
+instead of the published display name; Studio now retains and reports that
+display name. Release Studio builds, `seam_voice_designer_tests` passes 1/1,
+the macOS source-contract suite passes 18/18, and `git diff --check` passes.
+This is not a standalone song-selection/render journey or perceptual voice
+qualification; U22 and full-scope Beta GO remain open. `.github` is unchanged.
+
+2026-09-25 — U22 standalone selection and one-note export now pass in the live
+macOS editor, local only; GitHub CI remains deferred. Using a separate app copy
+and isolated user-data root, the installed signed singer appeared in File →
+Select Installed Singer, was assigned to a new vocal track, and resolved as a
+Ready `seam.source-filter.v1` route. A Japanese `あ` note produced one phoneme
+with zero warnings; Final export committed a 3-second, 48 kHz stereo WAV whose
+SHA-256 matches its receipt and whose PCM is non-silent (mean -57.5 dBFS,
+peak -36.3 dBFS). The smoke exposed two UI defects: singer-menu errors were
+discarded, and the chooser's 128-character style-label limit rejected the
+longer candidate label. Relevant menu actions now surface errors, and the
+chooser has a strict 1,024-character bound; the live selection/export succeeds.
+Release standalone builds, `seam_original_singer_song_journey_tests` passes,
+the macOS source-contract suite passes 19/19, and `git diff --check` passes.
+This single-note procedural smoke is not a reviewed song, an intelligibility
+or musical-quality result, neural-model qualification, or full U22/Beta GO.
+`.github` remains unchanged.
+
+2026-09-25 — Initial procedural singer selection added to the macOS New Project
+flow, local only; GitHub CI remains deferred. The form now offers the exact
+trusted/renderable installed procedural identities and their declared styles
+alongside the existing sample-voicebank selector. Selecting one seeds the new
+vocal track with its recipe identity/path/style; the controller revalidates the
+exact identity, style, path, trust and renderer compatibility against the live
+catalogue immediately before project replacement, refusing stale dialog
+choices. The feature does not install or approve the singer, and the two singer
+families are mutually exclusive; disabling initial track creation clears both
+selectors. Release `seam_editor_native` and `seam_tests` build, aggregate
+`seam_tests` CTest passes 1/1, the macOS source-contract suite passes 19/19,
+and `git diff --check` passes. Live AppKit smoke in an isolated app-support
+root selected the installed engineering fixture in New Project, saved
+`InitialSingerSmoke2.seam`, and verified its exact procedural recipe identity,
+content hash, path and style. The full original-singer song journey test now
+starts through that same initial-singer project-creation request before running
+the authored lyric-song render, tuning, export and reopen assertions. The
+Designer-created, signed, installed-singer journey also now enters through New
+Project after deleting the producer-side recipe and package, then renders and
+exports through the installed resource and compares the reopened-project
+master digest. Focused CTest passes 1/1. The smoke exposed a stale
+`BANK_MISSING` diagnostic carried
+over from the startup document. Project replacement now clears old diagnostics;
+the regression asserts `BANK_MISSING` exists before replacement and is absent
+after creating a project bound to a procedural singer. The Release aggregate
+suite passed after the fix. This is
+lifecycle and synthetic-fixture render evidence, not live GUI audio output,
+perceptual voice quality, or a reviewed song. Windows support remains TODO;
+U22 and full-scope Beta GO remain open. `.github` was not touched.
+
+Follow-up live recheck after the diagnostics fix: one cold launch against the
+disposable app-support root showed only “No Procedural Singer” despite the
+signed fixture at `Data/Singers/voice-draft/0.0.1-test`. After re-publishing
+and installing that same recipe through the current package tool, the rebuilt
+app exposed both catalog entries; after removing the added second version and
+relaunching, the original singleton remained visible in both File → Select
+Installed Singer and New Project. Selecting it and saving
+`CatalogOnlyOriginalSmoke.seam` preserved its exact recipe identity, hash,
+path and style; the live diagnostics panel no longer showed the old
+`BANK_MISSING` issue. At that point the project had no notes, so this first
+recheck proved catalog, selection, save and diagnostic-reset behavior only.
+The initial empty-catalog result was not reproduced, but its trigger remains
+unknown; a repeatability/causality check is still warranted.
+
+2026-09-25 — Extended the isolated macOS New Project smoke to one live note
+and final audio export, local only; GitHub CI remains deferred. Added Japanese
+`あ` (MIDI 72, 240 ticks) to the selected installed fixture singer; the editor
+reported one phoneme token, zero warnings, and READY preview/render status.
+Export Audio committed a Final PCM24 stereo/48 kHz WAV and receipt at
+`/tmp/seam-new-project-live.L9487u/NewProjectOneNoteSmoke.wav`; the WAV SHA-256
+matches the committed receipt (`09efe20f…188af`). Saving the project preserved
+the note, Japanese lyric, and exact installed recipe identity/hash/path/style
+in `CatalogOnlyOriginalSmoke.seam`. Independent `afinfo`/SoX inspection
+confirmed 0.25 seconds of non-silent PCM (RMS amplitude 0.004522); the WAV
+digest is `09efe20f442f54b6b5284de331db1df918c5fd164810ca9285612210dfe188af`.
+Reopening the saved project through File → Open Recent restored the note and
+lyric, showed the installed recipe as Ready, and returned one phoneme token,
+zero warnings and READY preview status.
+This is a real macOS GUI selection→note→
+render/export persistence smoke using a synthetic engineering fixture; it is
+not independently listened-to voice-quality evidence, a song-quality result,
+neural-model qualification, or full U22/Beta GO. `.github` remains untouched.
+
+2026-09-25 — U22 macOS recording failures now provide actionable recovery
+guidance, local only; GitHub CI remains deferred. CoreAudio input initialization
+and start failures map the SDK's explicit unauthorized/permission statuses to
+Microphone privacy settings, missing/bad-device statuses to Sound → Input, and
+the not-ready status to reconnect/reselect guidance. A missing default device
+now produces a complete user-facing message rather than a zero status detail.
+The Studio already routes these errors into its visible recording status; the
+existing Info.plist usage string explains that microphone access is only for
+explicit recording. Release `seam_editor_native` and `seam_tests` build; the
+Release aggregate `seam_tests` CTest passes 1/1, and the macOS source-contract
+suite passes 20/20. This change was not verified by denying real TCC access or
+disconnecting physical hardware; injected-device tests and that hardware run
+remain separate evidence. `git diff --check` passes; `.github` is untouched.
+
+2026-09-25 — U22 recording status now identifies the selected macOS input
+device, not just the CoreAudio backend, local only; GitHub CI remains deferred.
+The capture adapter stores the device's CoreAudio display name when opening the
+default input and exposes it through `AudioInputDeviceInfo`; Voicebank Studio
+shows backend/name in the MIC banner, a Unicode-safe 44-column label, and the
+accessible operation status (`CAPTURING FROM …`). A recording-session
+regression verifies that the device name is preserved through the session.
+Release `seam_voicebank_studio_native` and `seam_tests` build, aggregate Release
+CTest passes 1/1, the macOS source-contract suite passes 20/20, and
+`git diff --check` passes. No physical microphone was opened in this check.
+The real device/TCC workflow remains an outstanding U22 acceptance item;
+`.github` remains untouched.
+
+2026-09-25 — U23 phrase duplication now transfers time-scoped performance
+ownership and accepted generated-performance selections, local only; GitHub CI
+remains deferred. `CopyNotePerformanceCommand` derives and requires a single
+common translation for the mapped phrase, projects manual ownership and
+accepted selections through the shared `transformRegionPerformance` boundary,
+clips source ranges to the selected phrase window, translates them to the
+duplicate, and adjusts accepted `sourceTickOffset` so copied notes reuse the
+corresponding source-take span. Range/offset overflow, capacity exhaustion,
+nonuniform mappings, and post-merge collisions reject before mutation. Tests
+cover translated manual and accepted ranges, retained take identity, source
+offset, nonuniform refusal, and exact undo/redo through actual phrase
+duplication. Release `seam_performance_command_tests` passes 21/21 and
+`seam_performance_edit_preservation_tests` passes 5/5; both focused CTest
+targets pass 2/2. The broader `seam_tests` attempt could not complete because
+the host data volume had only 121 MiB available: 751 cases passed, while 370
+cases were reported failed. The captured tail showed repeated temporary-
+directory creation failures with `No space left on device`; CTest also could
+not write `LastTestsFailed.log`. This is an environmental aggregate failure,
+not an acceptance pass. No cleanup was performed. `git diff --check` passes;
+`.github` remains untouched.
+
+2026-09-25 — U23 phrase-copy boundary coverage extended; GitHub CI remains
+deferred. A Release command-level regression now checks manual ownership and
+accepted-performance ranges that cross the selected phrase end, as well as
+ranges that begin exactly outside it. The crossing scopes are clipped to the
+phrase window before translation; the outside-only scopes are not duplicated,
+original scopes remain unchanged, accepted source offsets still resolve to the
+original take span, and undo/redo restores exact project snapshots. Release
+`seam_performance_command_tests` passes 22/22 and
+`seam_performance_edit_preservation_tests` passes 5/5 (focused CTest 2/2).
+The broader Release `seam_tests` CTest also passes 1/1 (27.86 seconds). This
+closes a boundary-coverage gap only; it does not mark U23 complete. No
+production feature logic changed in this slice. `.github` remains untouched.
+
+2026-09-25 — U25 selected-note vibrato visualization slice; GitHub CI remains
+deferred. Selected notes with persisted vibrato now show a bounded envelope
+trace in the piano roll. The trace uses the project tempo map for note duration,
+the stored onset/fade/depth/period/phase values, and a capped sample count; it
+does not change note geometry or appear for unselected notes. A raster regression
+checks the visible change, stable geometry, and selection behavior. The focused
+test passes in Debug and Release; the full Release `seam_tests` aggregate passes
+1122/1122, and `git diff --check` passes. This is visualization evidence only:
+interactive vibrato handles, full keyboard/accessibility parity, actual audio
+review, and U25 acceptance remain open. `.github` was not touched.
+
+2026-09-25 — U25 selected-note vibrato onset and depth handles; GitHub CI
+remains deferred. The bounded piano-roll envelope now presents single-selection
+onset and depth handles; dragging updates a visible, non-persistent curve
+preview, and release submits only the corresponding vibrato field through the
+existing `VibratoModel`/performance-command path. Drag state captures the note,
+selection, revision, and geometry; selection/document/layout drift cancels
+without mutation. Regression coverage exercises both handles, preview before
+commit, one-edit undo/redo, and stale-selection rejection. The full unfiltered
+`seam_tests` aggregate passes 1124/1124 in Debug and Release; `git diff --check`
+passes. This closes pointer-based onset/depth editing only. Vibrato fade/period/
+phase handles, keyboard-only handle navigation, full assistive-technology
+qualification, listening review, and U25 acceptance remain open. `.github` was
+not touched.
+
+2026-09-25 — U25 vibrato fade-envelope handles; GitHub CI remains deferred.
+Selected-note onset/depth editing now shares the piano-roll overlay with
+fade-in-end and fade-out-start handles. Fade drags update a live preview and
+commit only their own parameter through `VibratoModel`, clamping each fade to
+the remaining legal span so the combined fade duration stays valid. Tests cover
+both endpoints, untouched counterpart values, preview isolation, exact undo,
+and full-project preservation. Depth drag also now applies pointer displacement
+from the grabbed curve point, so merely grabbing it cannot jump its value; the
+regression checks this before a deliberate depth change. The full unfiltered
+`seam_tests` aggregate passes 1125/1125 in Debug and Release; `git diff --check`
+passes. Period and phase remain inspector-only controls; creating zero-length
+fades from the canvas, keyboard handle navigation, broader accessibility
+qualification, listening review, and U25 acceptance remain open. `.github` was
+not touched.
+
+2026-09-25 — U25 vibrato period/rate handle; GitHub CI remains deferred. The
+selected-note envelope now exposes a period handle at the end of its first full
+cycle when that cycle fits within the active vibrato span with enough pointer
+separation from onset. Dragging previews the adjusted period and commits it
+through `VibratoModel`, with undo/redo coverage. When the cycle cannot fit, the
+canvas hides this handle and leaves the existing inspector control as the
+fallback. Release `seam_tests` passes 1125/1125. The first Debug aggregate run
+overlapped Release and produced render-coordinator readiness timeouts; rerunning
+Debug alone passes 1125/1125, including those coordinator cases. `git diff --check`
+passes. This adds pointer editing for onset, depth, fades, and period;
+phase remains inspector-only, and keyboard handle navigation, broad
+accessibility qualification, listening review, and full U25 acceptance remain
+open. `.github` was not touched.
+
+2026-09-25 — U25 vibrato phase handle; GitHub CI remains deferred. The first
+visible vibrato cycle now includes a separate compact phase track with a
+draggable phase marker. Its preview changes the curve without mutating the
+project; release applies only `phaseTurns` through `VibratoModel`, preserving
+the same undo/redo and stale-target protections as the other handles. The phase
+marker is omitted at zero phase, where it would collide with the onset grip, so
+the inspector remains the fallback. Full unfiltered Debug and Release
+`seam_tests` each pass 1125/1125; the period/phase/onset/depth/fade controller
+regression passes in both. `git diff --check` passes. Keyboard handle
+navigation, broader accessibility qualification, listening review, and full
+U25 acceptance remain open. `.github` was not touched.
+
+2026-09-25 — U25 keyboard vibrato-handle navigation; GitHub CI remains
+deferred. `Alt+V` now enters selected-note handle focus, Left/Right cycles the
+currently available onset/depth/fade/period/phase controls, Up/Down adjusts the
+focused parameter in bounded steps through the same drag-preview and
+`VibratoModel` transaction path, and Escape exits. The selected note's
+accessibility description announces these keys, and a visible focus ring tracks
+the active handle. The new keyboard regression passes in Debug and verifies
+focus, adjustment, raster focus indication, undo, and exit. Release
+`seam_tests` builds successfully. The Debug aggregate reports 1120 passed and 6
+failed: five temporary-directory creation cases report `No space left on
+device`, and one durability assertion fails in that exhausted run. Therefore
+this turn does not claim an aggregate pass; the vibrato pointer and keyboard
+regressions pass in Debug. Release aggregate tests were not rerun after this
+keyboard change. `git diff --check` passes. Direct accessibility-action
+controls, broader assistive-technology qualification, listening review, and
+full U25 acceptance remain open. `.github` was not touched.
+
+2026-09-25 — U25 semantic vibrato-handle controls; GitHub CI remains deferred.
+For exactly one selected vocal note with enabled vibrato, the semantic tree now
+publishes individually named onset, depth, fade, period, and phase controls as
+focusable buttons with current values and keyboard guidance. Set Focus and
+Activate route to the existing keyboard focus state; Up/Down then applies the
+same bounded, undoable `VibratoModel` edit as keyboard and pointer interaction.
+Unavailable handles are omitted, and stale IDs are refused after deselection.
+Tests cover semantic discovery, direct focus, keyboard adjustment, undo, and
+stale-target refusal. Full Debug and Release `seam_tests` pass 1126/1126 each;
+`git diff --check` passes. This verifies the in-process semantic contract, not
+independent VoiceOver/assistive-technology qualification. Broader accessibility
+qualification, listening review, and U25 acceptance remain open. `.github` was
+not touched.
+
+2026-09-25 — U25 zero-length vibrato fade creation; GitHub CI remains
+deferred. Enabled notes now expose fade-in and fade-out grips even when the
+corresponding fade length is zero: the zero endpoints use a separate top-edge
+track so they remain distinguishable from the onset handle. Onset, fade,
+period, and phase drags now apply pointer displacement relative to the grabbed
+handle and captured source value, preventing value jumps when users grab away
+from a marker center and enabling fade creation from zero. Regression coverage
+checks stable no-motion preview, creation of both fades, counterpart
+preservation, semantic visibility, and undo/redo. Full Debug and Release
+`seam_tests` pass 1127/1127 each; `git diff --check` passes. This closes
+pointer-based zero-fade creation only; broader accessibility qualification,
+listening review, and full U25 acceptance remain open. `.github` was not
+touched.
+
+2026-09-25 — U25 macOS AppKit accessibility bridge; GitHub CI remains deferred.
+The native AppKit hierarchy now invalidates its cached snapshot and posts a
+focused-element-changed notification whenever a successful accessibility
+action changes semantic focus, including Activate callbacks that move focus.
+The AppKit integration fixture exposes the selected note's vibrato period
+control and verifies its native button role, title, value, help, focus action,
+focused-element query, press action, and snapshot refresh after focus moves.
+Its note geometry now meets the editor's minimum hit-target dimensions instead
+of relying on an unrenderable tiny vibrato handle. The local `seam_tests`
+runner also accepts an optional test-name substring; the no-argument path still
+runs the complete suite, and an unmatched filter exits nonzero. Full unfiltered
+Debug `seam_tests` passes 1129/1129; the focused AppKit regression passes 1/1
+after its final focus-refresh assertion; Release `seam_native_ui` builds, and
+`git diff --check` passes. This exercises AppKit in-process, not independent
+VoiceOver/user qualification. Broader assistive-technology qualification,
+listening review, and full U25 acceptance remain open. `.github` was not
+touched.
+
+2026-09-25 — U26 persisted Japanese lyric-reading foundation; GitHub CI remains
+deferred. Schema 20 adds a nullable, bounded `readingHint` to each lyric token;
+older project schemas migrate with no reading. The undoable Japanese-reading
+command edits this field independently of visible lyrics and note-level phone
+hints. Surface or language changes clear a stale reading in the same transaction.
+The Japanese phonemizer consumes an authored reading for pronunciation while
+preserving the displayed surface, and resolver input identities/budgets include
+it. MIDI and USTX export report its loss rather than silently implying it
+survives interchange. Focused pronunciation, project-state, MIDI and USTX
+CTest targets pass 4/4 in Debug and Release; full unfiltered `seam_tests`
+passes 1/1 in each configuration. After the last USTX diagnostic-deduplication
+edit, the focused USTX target passed again in both configurations and
+`git diff --check` passed. This is a model, persistence and resolver slice:
+native editing of the field, dictionary trust/shipping decisions, language
+review, U26 acceptance and Beta GO remain open. `.github` was not touched.
