@@ -1,0 +1,1115 @@
+{
+  "assets": {
+    "assets/ui-design/PROVENANCE.md": "8c1f5e64235bd4e596a29127e990bf534d0863af9b512244d0373e1b23e86f46",
+    "assets/ui-design/emo/portrait.png": "1469593c48a0b5d4f8c4790df3399f79511ff5d8ca296f430185800df64f4754",
+    "assets/ui-design/emo/stage.png": "da9a56a047b0327aa28b18004ac7be74c96bcf351b1e1cae57305ab2903d8409",
+    "assets/ui-design/emo/wordmark.png": "a2b8a3d828503ef3680b4a5f650e58b91fafe46f4e273d5f8b0a224587bceec7",
+    "assets/ui-design/manifest.json": "6f2f8615e2eb34b8f2d1fdb532e4144418b15d579715abeedc33b97ca0eaa5dd",
+    "assets/ui-design/scene/portrait.png": "8774f44a9bd729921be96dff9b5e223957388af600046504eb74610da91d1576",
+    "assets/ui-design/scene/stage.png": "db0e843046a81c85a08d1b37bde2cfcae4ef6f6aef369958af244fd36f22c3c3",
+    "assets/ui-design/scene/wordmark.png": "532ad7d0784f2b90bff46b07a760c439ac6f1c18febce4e02312622821dff544"
+  },
+  "backend": "AppKit software raster + NSTextInputClient",
+  "binary": {
+    "path": "build/release/Project SEAM.app/Contents/MacOS/Project SEAM",
+    "sha256": "8af26e712bb20f098e6c9a222ab6de41858ecf7f3b3b8b9158d771eb42318d36"
+  },
+  "build": {
+    "buildDir": "build/release",
+    "builtBeforeCapture": true,
+    "sourceBinding": "built from the recorded source tree immediately before capture",
+    "stepsPerformed": 0
+  },
+  "candidate": "a4630958",
+  "captures": [
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-empty-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-empty-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-empty-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-empty-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-empty-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-empty-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-empty-1600x900",
+      "mode": "emo",
+      "observedRenderState": "cancelled",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-empty-1600x900-software.png",
+      "state": "empty",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-empty-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-empty-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-empty-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-empty-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-empty-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-empty-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-empty-1600x900",
+      "mode": "scene",
+      "observedRenderState": "cancelled",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-empty-1600x900-software.png",
+      "state": "empty",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1600x900",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-ready-1600x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1600x900",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-ready-1600x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-rendering-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "1300",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-rendering-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-rendering-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-rendering-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-rendering-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-rendering-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-rendering-1600x900",
+      "mode": "emo",
+      "observedRenderState": "rendering",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-rendering-1600x900-software.png",
+      "state": "rendering",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-rendering-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "1300",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-rendering-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-rendering-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-rendering-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-rendering-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-rendering-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-rendering-1600x900",
+      "mode": "scene",
+      "observedRenderState": "rendering",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-rendering-1600x900-software.png",
+      "state": "rendering",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-failed-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-failed-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-failed-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-failed-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-failed-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-failed-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-failed-1600x900",
+      "mode": "emo",
+      "observedRenderState": "failed",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-failed-1600x900-software.png",
+      "state": "failed",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-failed-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-failed-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-failed-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-failed-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-failed-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-failed-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-failed-1600x900",
+      "mode": "scene",
+      "observedRenderState": "failed",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-failed-1600x900-software.png",
+      "state": "failed",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-dense-overlap-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-dense-overlap-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-dense-overlap-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-dense-overlap-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-dense-overlap-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-dense-overlap-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-dense-overlap-1600x900",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-dense-overlap-1600x900-software.png",
+      "state": "dense-overlap",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-dense-overlap-1600x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-dense-overlap-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-dense-overlap-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-dense-overlap-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-dense-overlap-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-dense-overlap-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-dense-overlap-1600x900",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-dense-overlap-1600x900-software.png",
+      "state": "dense-overlap",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-720x480-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-720x480",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/emo-ready-720x480-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-720x480-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-720x480",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/scene-ready-720x480-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-860x640-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-860x640",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/emo-ready-860x640-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-860x640-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-860x640",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/scene-ready-860x640-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-1100x720-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1100x720/software.ppm",
+        "--window-width",
+        "1100",
+        "--window-height",
+        "720",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1100x720/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1100x720/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1100x720/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1100x720.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1100x720",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2200,
+        1440
+      ],
+      "softwarePng": "captures/emo-ready-1100x720-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1100,
+        720
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-1100x720-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1100x720/software.ppm",
+        "--window-width",
+        "1100",
+        "--window-height",
+        "720",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1100x720/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1100x720/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1100x720/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1100x720.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1100x720",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2200,
+        1440
+      ],
+      "softwarePng": "captures/scene-ready-1100x720-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1100,
+        720
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-1280x800-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1280x800/software.ppm",
+        "--window-width",
+        "1280",
+        "--window-height",
+        "800",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1280x800/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1280x800/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1280x800/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1280x800.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1280x800",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2560,
+        1600
+      ],
+      "softwarePng": "captures/emo-ready-1280x800-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-1280x800-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1280x800/software.ppm",
+        "--window-width",
+        "1280",
+        "--window-height",
+        "800",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1280x800/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1280x800/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1280x800/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1280x800.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1280x800",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2560,
+        1600
+      ],
+      "softwarePng": "captures/scene-ready-1280x800-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-ready-1440x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1440x900/software.ppm",
+        "--window-width",
+        "1440",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1440x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1440x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1440x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-ready-1440x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1440x900",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2880,
+        1800
+      ],
+      "softwarePng": "captures/emo-ready-1440x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-ready-1440x900-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1440x900/software.ppm",
+        "--window-width",
+        "1440",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1440x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1440x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1440x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-ready-1440x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1440x900",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        2880,
+        1800
+      ],
+      "softwarePng": "captures/scene-ready-1440x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-inspector-720x480-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-inspector-720x480",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/emo-inspector-720x480-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-inspector-720x480-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-inspector-720x480",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/scene-inspector-720x480-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/emo-inspector-860x640-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/emo-inspector-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-inspector-860x640",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/emo-inspector-860x640-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "captured",
+      "appkitAlignment": "client area = capture minus the top title bar",
+      "appkitColor": "converted from embedded profile 'Display' to sRGB (relative colorimetric)",
+      "appkitPng": "captures/scene-inspector-860x640-appkit.png",
+      "appkitTitleBarPixels": 64,
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-cuc97f3_/scene-inspector-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-inspector-860x640",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/scene-inspector-860x640-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    }
+  ],
+  "contract": {
+    "path": "docs/design/ui-fidelity-contract-v1.json",
+    "sha256": "edb8df98dd9eb54c9a336ce93c2dd35196c74667f2aa7c0e4ad5b75fd62057d7"
+  },
+  "deviceScale": 2,
+  "environment": {
+    "macOS": "26.2",
+    "macOSBuild": "25C56",
+    "machine": "arm64",
+    "model": "Mac15,9"
+  },
+  "fixture": {
+    "path": "tests/fixtures/ui-fidelity/sing-phrase.seam",
+    "sha256": {
+      "base": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19",
+      "dense-overlap": "8f0e48c3055d27874e0969e8e6ef7ff2821bc4a94ee446bdf57e6d2fa816ad49",
+      "empty": "5244afd8bf30b0c1645891eea96f8714fa7de323b4c07014dd640d299abdb640",
+      "failed": "e134e39ad9c2ca5b95bd944c365e1cb63d8b79fdbb567ff0365dabf8b5a63055",
+      "inspector": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19",
+      "ready": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19",
+      "rendering": "88ea02b3ec7170412189d130fa5e39ece06c232df1a97c41ea96cbeb85e66d36"
+    }
+  },
+  "fonts": {
+    "/System/Library/Fonts/Avenir Next Condensed.ttc": "2648d9b6344edc3706a4ba14e8c08a03f4640b404090dfca9d991cadbaedeff8",
+    "/System/Library/Fonts/SFNS.ttf": "1b35abd1543cd1810cbf00482de14da43efbd5a9a9c13658c4f547dce552762a",
+    "/System/Library/Fonts/SFNSMono.ttf": "55caaed55254a28ac793847e8976be16c5ba7cbad1ec2ee2d5d86d4e6b3fa0c1"
+  },
+  "notRun": {
+    "flstudio": "owner session in FL Studio",
+    "stale": "stale audio exists only after an edit follows a published render; the standalone command line cannot script an edit, so this state is covered by the shell tests, not by a capture",
+    "voiceover": "owner session"
+  },
+  "schema": "seam-ui-fidelity-packet-v1",
+  "source": {
+    "candidate": "a4630958",
+    "dirty": false,
+    "dirtyContentSha256": null,
+    "dirtyPaths": [],
+    "head": "a46309582b083e8c7e7e73b3bcf3411a86c1e9d4"
+  },
+  "uiZoom": 1.0,
+  "verdicts": {
+    "nativeVisualMatch": "NOT_RUN",
+    "owner": "NOT_RUN",
+    "reviewer": "PENDING"
+  },
+  "voicebank": {
+    "files": {
+      "assets/demo-human-voicebank-public-domain/production-bank/PUBLIC_DOMAIN_NOTICE.md": "2420260ba4330eaacbfae5d341765e9ee62784401a315f12587b215db0ec0362",
+      "assets/demo-human-voicebank-public-domain/production-bank/README.md": "1a05d28df0117e4969002172c4d09a611e8310850dadca1dd2df26b31aeec488",
+      "assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+      "assets/demo-human-voicebank-public-domain/production-bank/manifest.json": "ea199788012edc818459a00504a6043829560b22abe46efd4572fe886df973a5",
+      "assets/demo-human-voicebank-public-domain/production-bank/provenance.json": "cd45f404f8fe4957d027baf525cb2e80596c0e8815b7b07c1378599d61d13788"
+    },
+    "root": "assets/demo-human-voicebank-public-domain/production-bank"
+  }
+}
