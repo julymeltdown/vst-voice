@@ -154,6 +154,13 @@ private:
   void yieldIfModal(NativeEditorController& controller);
   core::Result<void> nudge(NativeEditorController& controller, std::size_t index, int steps);
   core::Result<void> shellPointerDown(NativeEditorController& controller, const PointerEvent& event);
+  core::Result<void> performSemantic(NativeEditorController& controller, std::string_view id,
+                                     SemanticAction action);
+  // Shell focus remembers the controller's focus at the moment it was taken; once the controller's
+  // focus moves, the shell's is dropped.
+  void takeSemanticFocus(const NativeEditorController& controller, std::string id);
+  // Rebuilds the controller's tree and the shell's from the current state and layout.
+  void refreshSemantics(NativeEditorController& controller);
 
   DesignPreferences preferences_;
   bool active_{false};
@@ -174,6 +181,7 @@ private:
   double scrollAccumulator_{0.0};
   AccessibilityTree semantics_;
   std::string semanticFocus_;
+  std::string semanticFocusBaseline_;
   std::function<void()> repaint_;
 
   PixelSurface background_;

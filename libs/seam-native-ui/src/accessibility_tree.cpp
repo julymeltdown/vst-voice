@@ -4,11 +4,15 @@
 
 namespace seam::native_ui {
 
-void AccessibilityTree::rebuildCustom(SemanticNode root, std::string focusedId) {
+void AccessibilityTree::rebuildCustom(SemanticNode root, std::string focusedId,
+                                      VirtualNoteSource notes) {
   model_ = nullptr;
-  virtualizedNoteCount_ = 0U;
+  noteSource_ = notes.tree == this ? VirtualNoteSource{} : std::move(notes);
+  virtualizedNoteCount_ =
+      noteSource_.tree == nullptr ? 0U : noteSource_.tree->virtualizedNoteCount();
   focusedScratch_.reset();
   root_ = std::move(root);
+  root_.virtualizedChildCount = virtualizedNoteCount_;
   focusedId_ = std::move(focusedId);
   applyFocusedId();
 }
@@ -17,6 +21,7 @@ void AccessibilityTree::rebuild(const EditorSceneState& state,
                                 const ui::PianoRollModel& model,
                                 AccessibilityTreeConfig config) {
   state_ = state;
+  noteSource_ = {};
   const auto modal = state.phonemeReview.visible ||
       (state.sampleMicroscope && state.sampleMicroscope->model != nullptr);
   model_ = modal ? nullptr : &model;
@@ -65,6 +70,14 @@ std::size_t AccessibilityTree::materializedNoteCount() const noexcept {
 
 std::optional<SemanticNode> AccessibilityTree::noteNodeAt(
     std::size_t index) const {
+  if (noteSource_.tree != nullptr) {
+    auto node = noteSource_.tree->noteNodeAt(index);
+    if (!node.has_value()) return std::nullopt;
+    // Focus belongs to this surface, not to the tree the note came from.
+    node->focused = node->id == focusedId_;
+    if (noteSource_.present) noteSource_.present(*node);
+    return node;
+  }
   if (model_ == nullptr) return std::nullopt;
   const auto visual = model_->noteAt(index);
   if (!visual.has_value()) return std::nullopt;
@@ -75,6 +88,7 @@ std::optional<SemanticNode> AccessibilityTree::noteNodeAt(
 
 std::optional<std::size_t> AccessibilityTree::noteIndexForId(
     std::string_view id) const {
+  if (noteSource_.tree != nullptr) return noteSource_.tree->noteIndexForId(id);
   constexpr auto prefix = std::string_view{"note."};
   if (model_ == nullptr || !id.starts_with(prefix)) return std::nullopt;
   const auto* region = model_->project().findRegion(model_->regionId());

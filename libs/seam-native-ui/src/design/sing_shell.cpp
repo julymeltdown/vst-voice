@@ -203,6 +203,9 @@ std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
       knobs[i].refusal = row.refusal;
       knobs[i].storedPoints = row.storedPoints;
     }
+    // The knob still reads the region's edge value, but an edit "at the playhead" is refused.
+    if (knobs[i].refusal.empty() && !state.playheadInsideRegion)
+      knobs[i].refusal = "The playhead is outside the selected region";
   }
   return knobs;
 }
@@ -327,8 +330,14 @@ ui::Point SingShell::toLegacy(ui::Point point) const noexcept {
 }
 
 TextInputRequest SingShell::translateTextInput(TextInputRequest request) {
-  // The controller states which geometry the bounds came from; only note-grid anchors move.
-  if (!presented_ || request.anchor != TextInputAnchor::NoteGrid) return request;
+  // The controller states which geometry the bounds came from; only note-grid anchors move. Any
+  // other request has already replaced a lyric composition, so the lyric flag must not survive to
+  // cancel the new field when its classic surface takes the frame.
+  if (request.anchor != TextInputAnchor::NoteGrid) {
+    lyricInputActive_ = false;
+    return request;
+  }
+  if (!presented_) return request;
   lyricInputActive_ = true;
   request.logicalBounds = fromLegacy(request.logicalBounds);
   return request;
@@ -396,6 +405,8 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
     if (lyricInputActive_) controller.cancelTextComposition();
     lyricInputActive_ = false;
   }
+  // The classic surface owns keyboard focus from here on.
+  semanticFocus_.clear();
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
 }
@@ -1511,6 +1522,11 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
                              .revision = controller.documentRevision(),
                              .region = controller.selectedRegion(),
                              .playhead = controller.playheadTick()};
+        // Grabbing a knob gives it keyboard focus, so arrow keys continue the same control.
+        static constexpr std::array<const char*, 6U> kKnobIds{
+            "shell.knob.formant", "shell.knob.breath", "shell.knob.tension",
+            "shell.knob.air",     "shell.knob.gender", "shell.knob.growl"};
+        takeSemanticFocus(controller, kKnobIds[i]);
         return core::success();
       }
     }
@@ -1525,11 +1541,16 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   }
   if (inMusicalArea(p)) {
     forwarding_ = ForwardArea::Grid;
-    return controller.pointerDown(translated(event, forwarding_));
+    auto result = controller.pointerDown(translated(event, forwarding_));
+    // A press in the grid or lane hands keyboard focus to the editor it reached.
+    if (result) semanticFocus_.clear();
+    return result;
   }
   if (inEditableLane(p)) {
     forwarding_ = ForwardArea::Lane;
-    return controller.pointerDown(translated(event, forwarding_));
+    auto result = controller.pointerDown(translated(event, forwarding_));
+    if (result) semanticFocus_.clear();
+    return result;
   }
   return core::success();
 }
@@ -1615,7 +1636,64 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     cancelGestures(controller);
     return true;
   }
+  // Keyboard focus walks the tree the shell published, so it reaches the controls that are on
+  // screen here. Text fields and classic surfaces keep their own Tab behavior.
+  const auto keyboardFocusOwned = presented_ && !event.modifiers.primaryShortcut() &&
+                                  !event.modifiers.alt && !controller.textInputActive() &&
+                                  !controller.legacyModalSurfaceActive();
+  if (event.key == NativeKey::Tab && keyboardFocusOwned) {
+    refreshSemantics(controller);
+    if (!semantics_.focusNext(event.modifiers.shift)) return true;
+    if (const auto* node = semantics_.focusedNode(); node != nullptr) {
+      const auto id = node->id;
+      if (ownsSemantic(id)) {
+        takeSemanticFocus(controller, id);
+      } else {
+        semanticFocus_.clear();
+        if (!controller.dispatchAccessibility(id, SemanticAction::SetFocus)) refreshSemantics(controller);
+      }
+    }
+    repaint();
+    return true;
+  }
+  // While a shell control holds focus, plain keys belong to it and never reach the note editor
+  // (Delete must not delete the selected notes because a knob is focused). Command shortcuts such
+  // as undo and save still pass through.
+  if (keyboardFocusOwned && !semanticFocus_.empty()) {
+    const auto id = semanticFocus_;
+    switch (event.key) {
+      case NativeKey::Escape:
+        semanticFocus_.clear();
+        repaint();
+        break;
+      case NativeKey::Enter:
+      case NativeKey::Space:
+        static_cast<void>(dispatchSemantic(controller, id, SemanticAction::Activate));
+        break;
+      case NativeKey::Up:
+      case NativeKey::Right:
+        static_cast<void>(dispatchSemantic(controller, id, SemanticAction::Increment));
+        break;
+      case NativeKey::Down:
+      case NativeKey::Left:
+        static_cast<void>(dispatchSemantic(controller, id, SemanticAction::Decrement));
+        break;
+      default: break;
+    }
+    return true;
+  }
   return false;
+}
+
+void SingShell::refreshSemantics(NativeEditorController& controller) {
+  controller.rebuildAccessibilityTree();
+  rebuildSemantics(controller, controller.sceneState());
+}
+
+void SingShell::takeSemanticFocus(const NativeEditorController& controller, std::string id) {
+  const auto* controllerFocus = controller.accessibilityTree().focusedNode();
+  semanticFocusBaseline_ = controllerFocus == nullptr ? std::string{} : controllerFocus->id;
+  semanticFocus_ = std::move(id);
 }
 
 // ---- Accessibility ----------------------------------------------------------------------------
@@ -1625,6 +1703,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   const auto& l = layout_;
   const auto& legacy = controller.accessibilityTree().root();
   const auto* legacyFocus = controller.accessibilityTree().focusedNode();
+  // Shell focus lasts only until the controller's own focus moves (a click on a note, a controller
+  // keyboard command); then the controller's focus is the one reported.
+  const std::string legacyFocusId = legacyFocus == nullptr ? std::string{} : legacyFocus->id;
+  if (!semanticFocus_.empty() && legacyFocusId != semanticFocusBaseline_) semanticFocus_.clear();
   std::string focusedId = semanticFocus_;
   SemanticNode root{.id = "shell",
                     .role = SemanticRole::Window,
@@ -1632,10 +1714,17 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                     .bounds = ui::Rect{0.0, 0.0, l.width, l.height}};
   auto& children = root.children;
   const auto add = [&](SemanticNode node) { children.push_back(std::move(node)); };
+  // Controller nodes can be nested (the transport readouts and voice identity live inside the
+  // toolbar group), so the lookup walks the whole tree.
   const auto findLegacy = [&](std::string_view id) -> const SemanticNode* {
-    for (const auto& child : legacy.children)
-      if (child.id == id) return &child;
-    return nullptr;
+    const auto search = [id](const SemanticNode& node, const auto& self) -> const SemanticNode* {
+      for (const auto& child : node.children) {
+        if (child.id == id) return &child;
+        if (const auto* found = self(child, self); found != nullptr) return found;
+      }
+      return nullptr;
+    };
+    return search(legacy, search);
   };
   // A controller node shown by the shell at a shell rectangle keeps its id, name and actions.
   const auto rehome = [&](std::string_view id, ui::Rect bounds) {
@@ -1690,17 +1779,52 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     copy.children.clear();
     add(std::move(copy));
   }
-  for (const auto& note : controller.pianoRoll().visibleNotes()) {
-    auto node = EditorSemanticTree::noteNode(note);
-    node.bounds = note.bounds;
-    node.bounds.y += l.grid.y;
-    node.focused = legacyFocus != nullptr && legacyFocus->id == node.id;
-    add(std::move(node));
+  // Notes stay virtualized in the controller's tree (see the VirtualNoteSource below); only the
+  // selected note's vibrato handles are listed here, clipped to the grid like the notes.
+  const auto grid = l.grid;
+  const auto offsetY = l.grid.y - legacyContentTop_;
+  const auto presentInGrid = [grid, offsetY](SemanticNode& node) {
+    node.bounds.y += offsetY;
+    const auto left = std::max(node.bounds.x, grid.x);
+    const auto top = std::max(node.bounds.y, grid.y);
+    const auto right = std::min(node.bounds.x + node.bounds.width, grid.x + grid.width);
+    const auto bottom = std::min(node.bounds.y + node.bounds.height, grid.y + grid.height);
+    if (right > left && bottom > top) {
+      node.bounds = ui::Rect{left, top, right - left, bottom - top};
+      return;
+    }
+    node.bounds = ui::Rect{std::clamp(node.bounds.x, grid.x, grid.x + grid.width),
+                           std::clamp(node.bounds.y, grid.y, grid.y + grid.height), 0.0, 0.0};
+    node.description += node.description.empty() ? "" : " / ";
+    node.description += "Outside the visible grid; scroll to show it";
+  };
+  {
+    const auto collect = [&](const SemanticNode& node, const auto& self) -> void {
+      for (const auto& child : node.children) {
+        if (child.id.starts_with("editor.vibrato.handle.")) {
+          auto copy = child;
+          presentInGrid(copy);
+          add(std::move(copy));
+        }
+        self(child, self);
+      }
+    };
+    collect(legacy, collect);
   }
   for (const auto& child : legacy.children) {
     if (!child.id.starts_with("overlap-group.") && !child.id.starts_with("detail.")) continue;
     auto copy = child;
-    copy.bounds = fromLegacy(copy.bounds);
+    // Every descendant moves with its group: overlap groups are clipped to the grid like notes,
+    // and the detail popover's rows move with the popover.
+    const auto inGrid = child.id.starts_with("overlap-group.");
+    const auto transform = [&](SemanticNode& node, const auto& self) -> void {
+      if (inGrid)
+        presentInGrid(node);
+      else
+        node.bounds = fromLegacy(node.bounds);
+      for (auto& grandchild : node.children) self(grandchild, self);
+    };
+    transform(copy, transform);
     add(std::move(copy));
   }
 
@@ -1799,15 +1923,32 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
 
   if (focusedId.empty() && legacyFocus != nullptr) focusedId = legacyFocus->id;
-  semantics_.rebuildCustom(std::move(root), focusedId);
+  semantics_.rebuildCustom(std::move(root), focusedId,
+                           VirtualNoteSource{.tree = &controller.accessibilityTree(),
+                                             .present = presentInGrid});
 }
 
 core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
                                                std::string_view id, SemanticAction action) {
   if (!ownsSemantic(id))
     return core::failure(core::ErrorCode::NotFound, "Not a shell accessibility element");
+  if (!presented_ || controller.legacyModalSurfaceActive())
+    return core::failure(core::ErrorCode::InvalidState,
+                         "The redesigned editor is not on screen; this control is unavailable");
+  // Validate against the current layout, capabilities and state, not the last painted tree: a
+  // stale id (a knob removed by the rail layout), an unknown id, a disabled control or an
+  // unsupported action is refused before anything reaches the document.
+  refreshSemantics(controller);
+  return semantics_.dispatch(
+      id, action, [this, &controller](std::string_view target, SemanticAction requested) {
+        return performSemantic(controller, target, requested);
+      });
+}
+
+core::Result<void> SingShell::performSemantic(NativeEditorController& controller,
+                                              std::string_view id, SemanticAction action) {
   if (action == SemanticAction::SetFocus) {
-    semanticFocus_ = std::string{id};
+    takeSemanticFocus(controller, std::string{id});
     repaint();
     return core::success();
   }

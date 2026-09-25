@@ -1596,6 +1596,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
 void NativeEditorApp::resized(double logicalWidth, double logicalHeight,
                               double) noexcept {
   authoring_->controller().resize(logicalWidth, logicalHeight);
+  // The shell's layout follows the size at once (see EditorRuntime::resize).
+  static_cast<void>(shell_.prepareFrame(authoring_->controller(), logicalWidth, logicalHeight));
 }
 
 void NativeEditorApp::pointerDown(
@@ -1667,8 +1669,10 @@ core::Result<void> NativeEditorApp::dispatchAccessibility(
   }
   if (shell_.presentedLastFrame() && native_ui::design::SingShell::ownsSemantic(id))
     return shell_.dispatchSemantic(authoring_->controller(), id, action);
-  shell_.controllerFocusTaken();
-  return authoring_->controller().dispatchAccessibility(id, action);
+  auto result = authoring_->controller().dispatchAccessibility(id, action);
+  // Only a focus transfer that happened moves focus away from a shell control.
+  if (result && action == native_ui::SemanticAction::SetFocus) shell_.controllerFocusTaken();
+  return result;
 }
 
 core::Result<void> NativeEditorApp::setAccessibilityValue(

@@ -589,11 +589,4 @@ void EditorRuntime::setJapaneseReadingResourceResolver(
   japaneseReadingResourceResolver_ = std::move(resolver);
 }
 
-void EditorRuntime::resize(double logicalWidth, double logicalHeight) noexcept {
-  std::lock_guard lock(mutex_);
-  logicalWidth_ = std::max(480.0, logicalWidth);
-  logicalHeight_ = std::max(320.0, logicalHeight);
-  controller_->resize(logicalWidth_, logicalHeight_);
-}
-
 }  // namespace seam::clap_editor

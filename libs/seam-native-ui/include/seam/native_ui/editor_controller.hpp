@@ -536,6 +536,9 @@ private:
   [[nodiscard]] double laneX(time::Tick regionTick) const noexcept;
   [[nodiscard]] time::Tick laneTickAt(double x) const;
   [[nodiscard]] time::Tick regionPlayheadClamped() const noexcept;
+  // The region-local playhead for an edit "at the playhead"; refused while the playhead is outside
+  // the region (reads may clamp for display, writes never move to the region edge).
+  [[nodiscard]] core::Result<time::Tick> regionPlayheadForEdit() const;
   [[nodiscard]] std::optional<ui::Rect> noteWindowBounds(domain::NoteId noteId) const;
   [[nodiscard]] std::optional<domain::PitchAutomationPoint> pitchPointAt(
       ui::Point point, double automationTop, double automationHeight) const;

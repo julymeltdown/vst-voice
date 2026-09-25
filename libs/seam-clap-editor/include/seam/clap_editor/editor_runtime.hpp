@@ -382,6 +382,7 @@ private:
   enum class ShellPointerPhase : std::uint8_t { Down, Move, Up };
   // Returns true when the SING shell presented the last frame and consumed the pointer event.
   bool routeShellPointerLocked(ShellPointerPhase phase, const native_ui::PointerEvent& event);
+  bool shellKeyLocked(const native_ui::KeyEvent& event);
   [[nodiscard]] native_ui::EditorSceneState sceneState();
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();

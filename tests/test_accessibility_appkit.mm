@@ -50,6 +50,9 @@ public:
   seam::application::EditorSession session;
   seam::ui::PianoRollModel model;
   seam::native_ui::AccessibilityTree tree;
+  // A custom surface tree (like the SING shell's) whose notes are delegated to 'tree'.
+  seam::native_ui::AccessibilityTree shellTree;
+  bool presentShell{false};
   std::string lastId;
   std::string lastValue;
   std::filesystem::path openedPath;
@@ -120,7 +123,7 @@ public:
 
   [[nodiscard]] const seam::native_ui::AccessibilityTree* accessibilityTree()
       const noexcept override {
-    return &tree;
+    return presentShell ? &shellTree : &tree;
   }
 
   [[nodiscard]] seam::core::Result<void> dispatchAccessibility(
@@ -128,6 +131,9 @@ public:
     lastId = std::string{id};
     lastAction = action;
     actionReceived = true;
+    if (presentShell && action == seam::native_ui::SemanticAction::SetFocus) {
+      return shellTree.setFocus(id);
+    }
     if (action == seam::native_ui::SemanticAction::SetFocus ||
         (action == seam::native_ui::SemanticAction::Activate &&
          id.starts_with("editor.vibrato.handle."))) {
@@ -324,6 +330,78 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
     [view doCommandBySelector:@selector(insertNewline:)];
     CHECK(client.lastCommit == U"きゃ");
 
+    window.reset();
+  }
+}
+
+TEST_CASE("AppKit pages and focuses notes a custom surface delegates to the editor tree") {
+  @autoreleasepool {
+    NSApplication* application = [NSApplication sharedApplication];
+    [application finishLaunching];
+    AppKitAccessibilityClient client;
+    // The surface moves every note 7 points right and clips it to 100 points wide.
+    client.shellTree.rebuildCustom(
+        seam::native_ui::SemanticNode{
+            .id = "shell",
+            .role = seam::native_ui::SemanticRole::Window,
+            .name = "Shell",
+            .bounds = seam::ui::Rect{0.0, 0.0, 960.0, 680.0},
+            .children = {seam::native_ui::SemanticNode{
+                .id = "shell.settings",
+                .role = seam::native_ui::SemanticRole::Button,
+                .name = "Audio settings",
+                .bounds = seam::ui::Rect{10.0, 10.0, 40.0, 24.0},
+                .actions = {seam::native_ui::SemanticAction::SetFocus}}}},
+        {},
+        seam::native_ui::VirtualNoteSource{
+            .tree = &client.tree,
+            .present = [](seam::native_ui::SemanticNode& node) {
+              node.bounds.x += 7.0;
+              node.bounds.width = std::min(node.bounds.width, 100.0);
+            }});
+    client.presentShell = true;
+    CHECK(client.shellTree.virtualizedNoteCount() == 600U);
+    auto window = seam::native_ui::createNativeWindow();
+    CHECK(window->open(
+        seam::native_ui::NativeWindowConfig{
+            .title = "Delegated Notes Test",
+            .width = 960U,
+            .height = 680U,
+            .scale = 1.0,
+            .restoreLastDocument = false,
+        },
+        client));
+    [application updateWindows];
+    NSWindow* nativeWindow = nil;
+    for (NSWindow* candidate in application.windows) {
+      if ([candidate.title isEqualToString:@"Delegated Notes Test"]) nativeWindow = candidate;
+    }
+    CHECK(nativeWindow != nil);
+    NSView* view = nativeWindow.contentView;
+    NSArray* children = [view accessibilityChildren];
+    CHECK(findAccessibilityElement(children, @"shell.settings") != nil);
+    // No note is materialized eagerly: all 600 are reachable through pages starting at zero.
+    id page = findAccessibilityElement(children, @"timeline.notes.page.0");
+    CHECK(page != nil);
+    CHECK(findAccessibilityElement(children, @"timeline.notes.page.512") != nil);
+    NSArray* notes = [page accessibilityChildren];
+    CHECK(notes.count == 512U);
+    const auto expected = client.tree.materializeNotes(0U, 1U);
+    CHECK(expected.size() == 1U);
+    id first = notes.firstObject;
+    CHECK([[first accessibilityIdentifier]
+        isEqualToString:[NSString stringWithUTF8String:expected.front().id.c_str()]]);
+    // The frame comes from the surface's presentation, not the editor's own geometry.
+    CHECK([first accessibilityFrame].size.width <= 100.0 + 1e-6);
+    // Focusing a delegated note goes through the client and is reported back as focused.
+    [first setAccessibilityFocused:YES];
+    CHECK(client.lastAction == seam::native_ui::SemanticAction::SetFocus);
+    CHECK(client.lastId == expected.front().id);
+    id focused = [view accessibilityFocusedUIElement];
+    CHECK(focused != nil);
+    CHECK([[focused accessibilityIdentifier]
+        isEqualToString:[NSString stringWithUTF8String:expected.front().id.c_str()]]);
+    CHECK([focused accessibilityFrame].size.width <= 100.0 + 1e-6);
     window.reset();
   }
 }

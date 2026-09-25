@@ -343,6 +343,8 @@ TEST_CASE("native formant editing uses resolved sample capabilities and stays un
   native_ui::EditorHostCallbacks callbacks;
   callbacks.validateSingerControl = validate;
   native_ui::NativeEditorController controller{session, f.factory, f.region, callbacks};
+  // Edits "at the playhead" need the playhead inside the region, which starts at tick 137.
+  controller.setPlayheadTick(time::Tick{137});
   CHECK(controller.nudgeFormantShift(7));
   const auto authored = session.project();
   CHECK(f.snapshot(authored));
@@ -412,6 +414,7 @@ TEST_CASE("CLAP sample formant edit reaches a current preview and fixed-audio of
     throw test::Failure{"CLAP formant preview did not publish the current revision"};
   };
   const auto before = ready();
+  runtime.controller().setPlayheadTick(time::Tick{137});
   CHECK(runtime.controller().nudgeFormantShift(7));
   const auto changed = ready();
   CHECK(changed->revision > before->revision); CHECK(changed->fallbackCount == 0U);

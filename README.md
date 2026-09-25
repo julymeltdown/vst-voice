@@ -100,6 +100,10 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
   status have real roles, and assistive actions run the same commands as the pointer. Notes, the
   timeline and the transport are the controller's nodes moved to their shell rectangles. This is
   covered by source tests; **checking with Accessibility Inspector and VoiceOver is NOT_RUN**.
+  Notes stay virtualized and are clipped to the visible grid; Tab walks the shell's own tree and a
+  focused knob owns the plain keys (arrows adjust it, Delete never reaches the notes).
+- Knob edits happen "at the playhead": with the playhead outside the selected region, the knobs
+  show the region's edge value but refuse to edit, leaving the document and undo history alone.
 - Not done yet: VOICE, TUNE, MIX and EXPORT workspaces (tabs are
   visible but inactive); a measured output meter; lyric-field re-anchoring while scrolling (the
   field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host

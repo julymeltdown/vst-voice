@@ -183,6 +183,9 @@ struct EditorSceneState final {
   time::Tick automationOriginTick{0};
   // Length of the active region; a curve is drawn only across the region it belongs to.
   time::Tick automationRegionDuration{0};
+  // False when the playhead lies before or after the active region. Knobs then show the region's
+  // edge value for reading, but an "at the playhead" edit is refused rather than moved to the edge.
+  bool playheadInsideRegion{true};
   // The timbral channel the automation lane is editing, with its own stored curve and unit. The
   // lane is always available; whether the selected singer can render the channel is reported beside
   // it rather than hidden, so a stored curve is never invisible.

@@ -15,11 +15,22 @@ struct AccessibilityTreeConfig final {
   std::size_t maximumMaterializedNotes{512U};
 };
 
+class AccessibilityTree;
+
+// Lets a custom surface (the redesigned shell) publish the editor's notes without copying them:
+// notes stay virtualized in the source tree and are presented through the surface's geometry.
+// The source must outlive every use of the tree that holds it until the next rebuild.
+struct VirtualNoteSource final {
+  const AccessibilityTree* tree{nullptr};
+  std::function<void(SemanticNode&)> present;
+};
+
 class AccessibilityTree final {
 public:
   // Bounded non-score surfaces (for example Voice Designer) share the native
   // bridge without fabricating a piano-roll model or virtual notes.
-  void rebuildCustom(SemanticNode root, std::string focusedId = {});
+  void rebuildCustom(SemanticNode root, std::string focusedId = {},
+                     VirtualNoteSource notes = {});
   void rebuild(const EditorSceneState& state, const ui::PianoRollModel& model,
                AccessibilityTreeConfig config = {});
   [[nodiscard]] const SemanticNode& root() const noexcept { return root_; }
@@ -44,6 +55,7 @@ private:
   SemanticNode root_;
   std::size_t virtualizedNoteCount_{0U};
   std::string focusedId_;
+  VirtualNoteSource noteSource_;
   mutable std::optional<SemanticNode> focusedScratch_;
 
   [[nodiscard]] std::optional<SemanticNode> noteNodeAt(

@@ -423,6 +423,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     state.pitchAutomation = region->pitchAutomation.points();
     state.automationOriginTick = region->startTick;
     state.automationRegionDuration = region->durationTick;
+    state.playheadInsideRegion = regionPlayheadForEdit().hasValue();
   }
   if (expressionLaneVisible_) {
     const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
@@ -3746,6 +3747,18 @@ time::Tick NativeEditorController::regionPlayheadClamped() const noexcept {
   return std::clamp(playheadTick_ - region->startTick, time::Tick{0}, region->durationTick);
 }
 
+core::Result<time::Tick> NativeEditorController::regionPlayheadForEdit() const {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr) return playheadTick_;
+  const auto local = playheadTick_ - region->startTick;
+  if (local < time::Tick{0} || local > region->durationTick)
+    return core::failure<time::Tick>(
+        core::ErrorCode::InvalidArgument,
+        "The playhead is outside the selected region. Move the playhead into the region to edit "
+        "this control at the playhead.");
+  return local;
+}
+
 void NativeEditorController::repaint() const {
   if (callbacks_.requestRepaint) callbacks_.requestRepaint();
 }
@@ -6384,8 +6397,10 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
             allowed.error().message +
             ". Select a Spectral Classic sample route or a source-filter (voice designer) singer."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->formantAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(current + static_cast<float>(steps),
                                                   -domain::kMaximumFormantShiftSemitones,
@@ -6473,8 +6488,10 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->breathinessAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kBreathinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumBreathiness));
@@ -6547,8 +6564,10 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->tensionAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kTensionStep * static_cast<float>(steps), 0.0F, domain::kMaximumTension));
@@ -6618,8 +6637,10 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->airinessAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kAirinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumAiriness));
@@ -6692,8 +6713,10 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->genderAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kGenderStep * static_cast<float>(steps),
@@ -6768,8 +6791,10 @@ core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = region->growlAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kGrowlStep * static_cast<float>(steps), 0.0F, domain::kMaximumGrowl));
@@ -7000,8 +7025,10 @@ core::Result<void> NativeEditorController::nudgeExpressionLane(int steps) {
   auto draft = ensureExpressionDraft();
   if (!draft) return core::Result<void>{draft.error()};
   const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
-  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
-  const auto playheadInRegion = regionPlayheadClamped();
+  // A nudge edits the value at the playhead, which must lie inside the region.
+  const auto editTick = regionPlayheadForEdit();
+  if (!editTick) return core::Result<void>{editTick.error()};
+  const auto playheadInRegion = editTick.value();
   const auto current = draft.value()->valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + descriptor.step * static_cast<float>(steps), descriptor.minimum, descriptor.maximum));

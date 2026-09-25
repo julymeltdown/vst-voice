@@ -86,7 +86,10 @@ SemanticNode EditorSemanticTree::noteNode(const ui::NoteVisual& note,
       .editableValue = note.lyric,
       .description = "MIDI " + std::to_string(note.midiKey) + " / " +
                     std::to_string(note.duration.value()) +
-                    " ticks; Enter edits lyric; Alt+Enter edits a pronunciation phone hint",
+                    " ticks; Enter edits lyric; Alt+Enter edits a pronunciation phone hint" +
+                    (note.hiddenByOverlapDensity
+                         ? std::string{"; drawn inside a dense overlap group, whose detail lists it"}
+                         : std::string{}),
   };
 }
 
@@ -561,8 +564,10 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     bool initialized{false};
   };
   std::vector<OverlapGroup> overlapGroups;
-  const auto overlapVisuals = noteVisuals.empty() ? model.allNotes()
-                                                   : noteVisuals;
+  // Group indices depend on the note set they were computed over. Activation resolves a group
+  // among the visible notes, so groups are always numbered over that same set.
+  const auto overlapVisuals = includeNotes && !includeOffscreenNotes ? noteVisuals
+                                                                      : model.visibleNotes();
   for (const auto& note : overlapVisuals) {
     if (note.overlapMemberCount <= 1U) continue;
     auto group = std::find_if(

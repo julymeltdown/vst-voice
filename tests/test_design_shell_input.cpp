@@ -50,8 +50,8 @@ struct ShellFixture final {
   SingShell shell;
   std::optional<native_ui::TextInputRequest> lastTextInput;
 
-  explicit ShellFixture(time::Tick regionStart = time::Tick{0})
-      : session(makeProject(regionStart)),
+  explicit ShellFixture(time::Tick regionStart = time::Tick{0}, bool wide = false)
+      : session(makeProject(regionStart, wide)),
         controller{session, factory, regionId,
                    native_ui::EditorHostCallbacks{
                        .beginTextInput =
@@ -64,16 +64,32 @@ struct ShellFixture final {
     shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
   }
 
-  domain::Project makeProject(time::Tick regionStart) {
+  // A wide project adds notes far to the right, far above and below, and a dense overlap, so
+  // scrolling moves notes across every grid edge.
+  domain::Project makeProject(time::Tick regionStart, bool wide) {
     auto project = factory.createProject("Design shell");
     project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
     trackId = factory.addVocalTrack(project, "Singer");
-    regionId = factory.addRegion(project, trackId, "Phrase", regionStart, time::Tick{7680});
+    regionId = factory.addRegion(project, trackId, "Phrase", regionStart,
+                                 wide ? time::Tick{96000} : time::Tick{7680});
     auto [lyric, note] =
         factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"\u3042", domain::Language::Japanese);
     auto* region = project.findRegion(regionId);
     region->lyrics.push_back(std::move(lyric));
     region->notes.push_back(std::move(note));
+    if (wide) {
+      const auto addNote = [&](std::int64_t start, std::uint8_t key) {
+        auto [extraLyric, extraNote] = factory.makeNote(time::Tick{start}, time::Tick{960}, key,
+                                                        U"\u3044", domain::Language::Japanese);
+        region->lyrics.push_back(std::move(extraLyric));
+        region->notes.push_back(std::move(extraNote));
+      };
+      addNote(48000, 72U);
+      addNote(960, 30U);
+      addNote(960, 110U);
+      addNote(4800, 57U);  // the bottom row at 1600x890, which that height shows only in part
+      for (int i = 0; i < 3; ++i) addNote(2880, 74U);
+    }
     const auto frozen = voice_design::freezeVoiceRecipeResource(shellRecipe());
     if (!frozen) throw test::Failure{frozen.error().message};
     project.findVocalTrack(trackId)->proceduralRecipe = domain::ProceduralRecipeReference{
@@ -341,8 +357,9 @@ TEST_CASE("a region placed later in the song keeps notes, lane points and playhe
   {
     // A knob nudge writes at the playhead's position inside the region.
     ShellFixture f{kRegionStart};
-    CHECK(f.frame());
     f.controller.setPlayheadTick(kRegionStart + time::Tick{1920});
+    // The painted knobs reflect the playhead: paint after moving it.
+    CHECK(f.frame());
     const auto cell = f.shell.layout().knob[4U];
     const ui::Point c{cell.x + cell.width * 0.5, cell.y + cell.height * 0.5};
     CHECK(f.shell.pointerDown(f.controller, press(c)).hasValue());
@@ -353,15 +370,51 @@ TEST_CASE("a region placed later in the song keeps notes, lane points and playhe
     if (!points.empty()) CHECK(points.front().tick == time::Tick{1920});
   }
   {
-    // A playhead before the region edits the value the knob shows: the region's first tick, never
-    // the absolute playhead tick reinterpreted as a region-local one.
+    // "At the playhead" edits need the playhead inside the region, both ends included. Outside
+    // it, the edit is refused with the document and undo history untouched; it is never moved to
+    // the region edge.
+    const time::Tick kRegionEnd{kRegionStart.value() + 7680};
+    const auto attempt = [&](time::Tick playhead, std::optional<time::Tick> expected) {
+      ShellFixture f{kRegionStart};
+      f.controller.setPlayheadTick(playhead);
+      const auto revision = f.controller.documentRevision();
+      const auto undoable = f.session.canUndo();
+      const auto result = f.controller.nudgeGender(3);
+      const auto& points = f.session.project().findRegion(f.regionId)->genderAutomation.points();
+      CHECK(f.controller.sceneState().playheadInsideRegion == expected.has_value());
+      if (!expected) {
+        CHECK(!result.hasValue());
+        CHECK(f.controller.documentRevision() == revision);
+        CHECK(f.session.canUndo() == undoable);
+        CHECK(points.empty());
+        return;
+      }
+      CHECK(result.hasValue());
+      CHECK(points.size() == 1U);
+      if (!points.empty()) CHECK(points.front().tick == *expected);
+    };
+    attempt(time::Tick{960}, std::nullopt);
+    attempt(time::Tick{kRegionStart.value() - 1}, std::nullopt);
+    attempt(kRegionStart, time::Tick{0});
+    attempt(kRegionEnd, time::Tick{7680});
+    attempt(time::Tick{kRegionEnd.value() + 1}, std::nullopt);
+  }
+  {
+    // The knobs read the edge value but show the refusal, and assistive input is refused too.
     ShellFixture f{kRegionStart};
-    CHECK(f.frame());
+    if (!native_ui::paint::vectorBackendAvailable()) return;
     f.controller.setPlayheadTick(time::Tick{960});
-    CHECK(f.controller.nudgeGender(3).hasValue());
-    const auto& points = f.session.project().findRegion(f.regionId)->genderAutomation.points();
-    CHECK(points.size() == 1U);
-    if (!points.empty()) CHECK(points.front().tick == time::Tick{0});
+    CHECK(f.frame());
+    const auto revision = f.controller.documentRevision();
+    CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.gender",
+                                    native_ui::SemanticAction::Increment).hasValue());
+    CHECK(f.controller.documentRevision() == revision);
+    const auto cell = f.shell.layout().knob[4U];
+    const ui::Point c{cell.x + cell.width * 0.5, cell.y + cell.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(c)).hasValue());
+    CHECK(f.shell.pointerMove(f.controller, press({c.x, c.y - 48.0})).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press({c.x, c.y - 48.0})).hasValue());
+    CHECK(f.controller.documentRevision() == revision);
   }
 }
 
@@ -425,13 +478,31 @@ TEST_CASE("the shell accessibility tree exposes its controls with real roles in 
   const auto* voice = find("shell.workspace.voice");
   CHECK(voice && !voice->enabled);
   CHECK(find("shell.lane-tab.gender") != nullptr);
-  // Notes keep controller ids and sit exactly on their painted rectangles in the grid.
+  // Controller controls nested in the classic toolbar group are re-homed onto the shell's own
+  // header and singer card, keeping their ids, roles and actions.
+  const auto* transport = find("toolbar.transport");
+  const auto* tempo = find("toolbar.tempo");
+  const auto* meter = find("toolbar.meter");
+  const auto* identity = find("voice.identity");
+  CHECK(transport && transport->role == SemanticRole::Button &&
+        transport->bounds.x == l.playButton.x && transport->bounds.y == l.playButton.y);
+  CHECK(tempo && tempo->role == SemanticRole::TextField && tempo->bounds.x == l.tempoReadout.x);
+  CHECK(tempo && std::find(tempo->actions.begin(), tempo->actions.end(), SemanticAction::EditText) !=
+                     tempo->actions.end());
+  CHECK(meter && meter->bounds.x == l.meterReadout.x && meter->bounds.y == l.meterReadout.y);
+  CHECK(identity && identity->role == SemanticRole::Status && identity->bounds.x == l.singer.x);
+  // Notes stay virtualized: they keep controller ids and sit exactly on their painted rectangles.
+  const auto& tree = f.shell.accessibilityTree();
+  CHECK(tree.virtualizedNoteCount() == 1U);
+  CHECK(tree.materializedNoteCount() == 0U);
   const auto visuals = f.controller.pianoRoll().visibleNotes();
   CHECK(!visuals.empty());
   if (!visuals.empty()) {
-    const auto* note = find("note." + visuals.front().noteId.toString());
-    CHECK(note != nullptr);
-    if (note) {
+    const auto notes = tree.materializeNotes(0U, 8U);
+    CHECK(notes.size() == 1U);
+    if (!notes.empty()) {
+      const auto* note = &notes.front();
+      CHECK(note->id == "note." + visuals.front().noteId.toString());
       CHECK_NEAR(note->bounds.y, visuals.front().bounds.y + l.grid.y, 1e-9);
       CHECK(note->bounds.y >= l.grid.y && note->bounds.bottom() <= l.grid.bottom());
     }
@@ -460,4 +531,267 @@ TEST_CASE("shell accessibility actions edit through the same commands as pointer
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.change-voice", SemanticAction::Activate).hasValue());
   CHECK(!f.shell.presentedLastFrame());
   CHECK(!f.controller.hostedGrid().has_value());
+}
+
+TEST_CASE("shell note semantics are clipped to the grid at every edge and stay virtualized") {
+  using native_ui::SemanticNode;
+  ShellFixture f{time::Tick{0}, true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  auto grid = f.shell.layout().grid;
+  const ui::Point anchor{grid.x + grid.width * 0.5, grid.y + grid.height * 0.5};
+  // left, right, top, bottom partial clips, plus notes fully outside the grid.
+  std::array<bool, 4U> clipped{};
+  bool sawOutside = false;
+  std::size_t checks = 0U;
+  const auto verify = [&] {
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto& tree = f.shell.accessibilityTree();
+    const auto& source = f.controller.accessibilityTree();
+    CHECK(tree.virtualizedNoteCount() == source.virtualizedNoteCount());
+    CHECK(tree.materializedNoteCount() == 0U);
+    const auto shellNotes = tree.materializeNotes(0U, 64U);
+    const auto legacyNotes = source.materializeNotes(0U, 64U);
+    CHECK(shellNotes.size() == legacyNotes.size());
+    for (std::size_t i = 0U; i < std::min(shellNotes.size(), legacyNotes.size()); ++i) {
+      ++checks;
+      const auto& note = shellNotes[i];
+      const auto full = f.shell.fromLegacy(legacyNotes[i].bounds);
+      CHECK(note.id == legacyNotes[i].id);
+      const auto left = std::max(full.x, grid.x);
+      const auto right = std::min(full.right(), grid.right());
+      const auto top = std::max(full.y, grid.y);
+      const auto bottom = std::min(full.bottom(), grid.bottom());
+      if (right > left && bottom > top) {
+        // Exactly the visible part of the painted note; never a hit rectangle outside the grid.
+        CHECK_NEAR(note.bounds.x, left, 1e-9);
+        CHECK_NEAR(note.bounds.right(), right, 1e-9);
+        CHECK_NEAR(note.bounds.y, top, 1e-9);
+        CHECK_NEAR(note.bounds.bottom(), bottom, 1e-9);
+        if (full.x < grid.x) clipped[0] = true;
+        if (full.right() > grid.right()) clipped[1] = true;
+        // Vertical scrolling moves whole pitch rows (PitchTransform keeps an integer top key), so
+        // the grid's top edge is always a row boundary and no note can straddle it.
+        CHECK(full.y >= grid.y - 1e-9);
+        if (full.y < grid.y) clipped[2] = true;
+        if (full.bottom() > grid.bottom()) clipped[3] = true;
+      } else {
+        sawOutside = true;
+        CHECK(note.bounds.width == 0.0 && note.bounds.height == 0.0);
+        CHECK(note.bounds.x >= grid.x && note.bounds.x <= grid.right());
+        CHECK(note.bounds.y >= grid.y && note.bounds.y <= grid.bottom());
+        CHECK(note.description.find("Outside the visible grid") != std::string::npos);
+      }
+    }
+  };
+  verify();
+  // Sweep the timeline both ways and the pitch axis both ways without repainting.
+  for (int i = 0; i < 400 && !(clipped[0] && clipped[1]); ++i) {
+    CHECK(f.shell.scroll(f.controller, 60.0, 0.0, anchor, {}));
+    verify();
+  }
+  for (int i = 0; i < 800 && !(clipped[0] && clipped[1]); ++i) {
+    CHECK(f.shell.scroll(f.controller, -60.0, 0.0, anchor, {}));
+    verify();
+  }
+  // Pitch rows are whole (18 pt) and the canonical grid is exactly 28 rows, so a vertical partial
+  // note needs a height that is not a whole number of rows: 1600x890 cuts the bottom row.
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 890.0));
+  grid = f.shell.layout().grid;
+  CHECK(std::fmod(grid.height, f.controller.pianoRoll().pitch().rowHeight()) > 0.0);
+  for (int i = 0; i < 800 && !clipped[3]; ++i) {
+    CHECK(f.shell.scroll(f.controller, -60.0, 0.0, anchor, {}));
+    verify();
+  }
+  for (int i = 0; i < 800 && !clipped[3]; ++i) {
+    CHECK(f.shell.scroll(f.controller, 60.0, 0.0, anchor, {}));
+    verify();
+  }
+  CHECK(checks > 0U);
+  CHECK(sawOutside);
+  CHECK(clipped[0]);
+  CHECK(clipped[1]);
+  CHECK(!clipped[2]);
+  CHECK(clipped[3]);
+}
+
+TEST_CASE("overlap groups and their detail rows move into shell space with every child") {
+  using native_ui::SemanticAction;
+  using native_ui::SemanticNode;
+  ShellFixture f{time::Tick{0}, true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  std::string groupId;
+  for (const auto& child : f.controller.accessibilityTree().root().children)
+    if (child.id.starts_with("overlap-group.")) groupId = child.id;
+  CHECK(!groupId.empty());
+  if (groupId.empty()) return;
+  const auto opened = f.controller.dispatchAccessibility(groupId, SemanticAction::Activate);
+  CHECK(opened.hasValue());
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto grid = f.shell.layout().grid;
+  bool sawGroup = false;
+  bool sawDetail = false;
+  for (const auto& child : f.shell.accessibilityTree().root().children) {
+    if (child.id.starts_with("overlap-group.")) {
+      sawGroup = true;
+      CHECK(child.bounds.x >= grid.x - 1e-9 && child.bounds.right() <= grid.right() + 1e-9);
+      CHECK(child.bounds.y >= grid.y - 1e-9 && child.bounds.bottom() <= grid.bottom() + 1e-9);
+    }
+    if (child.id.starts_with("detail.overlap-group.")) {
+      sawDetail = true;
+      CHECK(!child.children.empty());
+      // Rows are transformed with the popover, so each lies inside it.
+      for (const auto& row : child.children) {
+        CHECK(row.bounds.y >= child.bounds.y - 1e-9);
+        CHECK(row.bounds.bottom() <= child.bounds.bottom() + 1e-9);
+      }
+    }
+  }
+  CHECK(sawGroup);
+  CHECK(sawDetail);
+}
+
+TEST_CASE("keyboard focus has one owner: Tab walks the shell tree and focused controls own plain keys") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto focusedId = [&]() -> std::string {
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto* node = f.shell.accessibilityTree().focusedNode();
+    return node == nullptr ? std::string{} : node->id;
+  };
+  // Tab starts at the first shell control, Shift-Tab from there reaches the last note, which the
+  // controller then owns (the delegated note is focusable through the shell tree).
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+  CHECK(focusedId() == "shell.workspace.sing");
+  CHECK(f.shell.handleShellKey(f.controller,
+                               KeyEvent{.key = NativeKey::Tab, .modifiers = {.shift = true}}));
+  const auto noteId = "note." + f.note().id.toString();
+  CHECK(focusedId() == noteId);
+  const auto* controllerFocus = f.controller.accessibilityTree().focusedNode();
+  CHECK(controllerFocus != nullptr && controllerFocus->id == noteId);
+  // With the note (controller) focused, plain keys are not the shell's.
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+
+  // A focused knob owns plain keys: Delete does not delete the selected note, arrows adjust it.
+  const auto p = f.noteCenter();
+  CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
+  CHECK(focusedId() == "shell.knob.gender");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == 1U);
+  const auto revision = f.controller.documentRevision();
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+  CHECK(f.controller.documentRevision() != revision);
+  CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().size() == 1U);
+  // Command shortcuts still reach the editor.
+  CHECK(!f.shell.handleShellKey(f.controller,
+                                KeyEvent{.key = NativeKey::Z, .modifiers = {.command = true}}));
+  // A failed action does not move focus.
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.emo", SemanticAction::Increment).hasValue());
+  CHECK(focusedId() == "shell.knob.gender");
+  // Enter activates the focused control: the knob opens its curve in the lane.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.sceneState().expressionLabelVisible());
+  // A press in the grid hands focus back to the editor, even onto the same note as before.
+  CHECK(f.frame());
+  CHECK(f.shell.pointerDown(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(f.noteCenter())).hasValue());
+  CHECK(focusedId() != "shell.knob.gender");
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+}
+
+TEST_CASE("shell accessibility actions are validated against the current layout and state") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.nonexistent", SemanticAction::Increment).hasValue());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.emo", SemanticAction::Increment).hasValue());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::Activate).hasValue());
+  // A disabled control can still be focused for its explanation.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::SetFocus).hasValue());
+  // After the rack collapses to a rail, a retained knob element no longer exists.
+  CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
+  CHECK(f.shell.layout().rack == native_ui::design::RackPresentation::Rail);
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::Increment).hasValue());
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+  // While a classic surface is up, shell elements do nothing.
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  f.controller.showAudioSettings();
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.scene", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.mode() == DesignMode::Emo);
+}
+
+TEST_CASE("a rename started over an open lyric field keeps the rename and edits the right target") {
+  {
+    // Ordinary lyric -> track rename -> commit renames the track, not the lyric.
+    ShellFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    CHECK(f.controller.selectTrack(f.trackId).hasValue());
+    CHECK(f.frame());
+    CHECK(f.controller.beginLyricEdit(f.note().id).hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+    CHECK(f.controller.beginSelectedTrackRename().hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::ClassicSurface);
+    CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    CHECK(f.controller.textInputActive());
+    CHECK(f.controller.commitTextComposition(U"Lead").hasValue());
+    CHECK(f.session.project().findVocalTrack(f.trackId)->name == "Lead");
+    const auto* region = f.session.project().findRegion(f.regionId);
+    const auto* lyric = region->findLyric(f.note().lyricTokenId);
+    CHECK(lyric != nullptr && lyric->surface == U"\u3042");
+  }
+  {
+    // Batch lyric -> region rename -> cancel leaves both the region name and the lyrics alone.
+    ShellFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    const auto p = f.noteCenter();
+    CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+    CHECK(f.controller.keyDown(KeyEvent{.key = NativeKey::L, .modifiers = {.shift = true}}).hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+    CHECK(f.controller.beginSelectedRegionRename().hasValue());
+    CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    CHECK(f.controller.textInputActive());
+    f.controller.cancelTextComposition();
+    CHECK(!f.controller.textInputActive());
+    CHECK(f.session.project().findRegion(f.regionId)->name == "Phrase");
+  }
+  {
+    // Batch lyric -> region rename -> commit renames the region.
+    ShellFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    const auto p = f.noteCenter();
+    CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+    CHECK(f.controller.keyDown(KeyEvent{.key = NativeKey::L, .modifiers = {.shift = true}}).hasValue());
+    CHECK(f.controller.beginSelectedRegionRename().hasValue());
+    CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    CHECK(f.controller.commitTextComposition(U"Verse").hasValue());
+    CHECK(f.session.project().findRegion(f.regionId)->name == "Verse");
+  }
+  {
+    // Ordinary lyric -> region rename keeps the rename field open through the next frame.
+    ShellFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    CHECK(f.controller.beginLyricEdit(f.note().id).hasValue());
+    CHECK(f.controller.beginSelectedRegionRename().hasValue());
+    CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    CHECK(f.controller.textInputActive());
+  }
 }

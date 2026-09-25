@@ -260,7 +260,7 @@ void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
 }
 
 void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
-  if (std::lock_guard lock(mutex_); shell_.handleShellKey(*controller_, event)) return;
+  if (std::lock_guard lock(mutex_); shellKeyLocked(event)) return;
   // Score interchange is dispatched before the editor lock is taken. Both operations can open a host
   // dialog through the handoff callbacks, which must not run while this mutex is held: the modal would
   // then deadlock against the conversion that tries to re-enter the same lock. Command-Shift-O opens a
