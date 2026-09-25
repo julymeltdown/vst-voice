@@ -178,6 +178,11 @@ struct EditorSceneState final {
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
+  // Absolute song tick of the active region's start. Pitch and expression automation points are
+  // region-local; painters add this before mapping a point onto the song timeline.
+  time::Tick automationOriginTick{0};
+  // Length of the active region; a curve is drawn only across the region it belongs to.
+  time::Tick automationRegionDuration{0};
   // The timbral channel the automation lane is editing, with its own stored curve and unit. The
   // lane is always available; whether the selected singer can render the channel is reported beside
   // it rather than hidden, so a stored curve is never invisible.

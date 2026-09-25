@@ -1092,7 +1092,7 @@ void EditorScenePainter::paintTechnicalLanes(
       const auto span = std::max(std::abs(channel.maximum - channel.neutral),
                                  std::abs(channel.neutral - channel.minimum));
       const auto scale = automationHeight * layout_.pitchAutomationVerticalScale * 0.5;
-      const auto x = left + model.timeline().tickToPixel(point.tick);
+      const auto x = left + model.timeline().tickToPixel(state.automationOriginTick + point.tick);
       const auto y = span <= 0.0F ? chainY
                                   : chainY - (point.amount - channel.neutral) / span * scale;
       return ui::Point{x, y};
@@ -1250,7 +1250,7 @@ void EditorScenePainter::paintTechnicalLanes(
   if (!state.expressionLabelVisible() && !state.pitchAutomation.empty()) {
     std::optional<std::pair<domain::PitchAutomationPoint, ui::Point>> previous;
     for (const auto& point : state.pitchAutomation) {
-      const auto x = left + model.timeline().tickToPixel(point.tick);
+      const auto x = left + model.timeline().tickToPixel(state.automationOriginTick + point.tick);
       const auto normalized = std::clamp(
           static_cast<double>(point.cents) /
               layout_.pitchAutomationCentsRange,

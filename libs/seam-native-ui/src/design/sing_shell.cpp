@@ -320,9 +320,8 @@ ui::Point SingShell::toLegacy(ui::Point point) const noexcept {
 }
 
 TextInputRequest SingShell::translateTextInput(TextInputRequest request) {
-  // Non-lyric fields use the controller's external target id and belong to classic surfaces.
-  const auto lyric = request.lyricId.value() != std::numeric_limits<std::uint64_t>::max();
-  if (!presented_ || !lyric) return request;
+  // The controller states which geometry the bounds came from; only note-grid anchors move.
+  if (!presented_ || request.anchor != TextInputAnchor::NoteGrid) return request;
   lyricInputActive_ = true;
   request.logicalBounds = fromLegacy(request.logicalBounds);
   return request;
@@ -999,25 +998,36 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   }
   c.restore();
 
+  offscreenHint_.reset();
   const auto total = model.noteCount();
   if (notes.empty() && total > 0U) {
     // Notes exist but are scrolled out of this grid: point at them instead of claiming none exist.
-    std::size_t above = 0U;
-    std::size_t below = 0U;
+    // Count in all four directions; horizontal-only panning has notes left or right, not above.
+    std::array<std::size_t, 4U> away{};  // above, below, earlier (left), later (right)
     for (const auto& note : model.allNotes()) {
-      if (note.bounds.bottom() <= 0.0) ++above;
-      else if (note.bounds.y >= l.grid.height) ++below;
+      if (note.bounds.bottom() <= 0.0) ++away[0];
+      else if (note.bounds.y >= l.grid.height) ++away[1];
+      else if (note.bounds.right() <= l.grid.x) ++away[2];
+      else if (note.bounds.x >= l.grid.right()) ++away[3];
     }
-    const auto hint = above >= below
-                          ? "↑ " + std::to_string(above > 0U ? above : total) + " notes above"
-                          : "↓ " + std::to_string(below) + " notes below";
+    const auto direction = static_cast<std::size_t>(
+        std::max_element(away.begin(), away.end()) - away.begin());
+    static constexpr std::array<const char*, 4U> kArrow{"↑ ", "↓ ", "← ", "→ "};
+    static constexpr std::array<const char*, 4U> kWhere{" notes above", " notes below", " notes earlier",
+                                                        " notes later"};
+    const auto count = away[direction] > 0U ? away[direction] : total;
+    const auto hint = std::string{kArrow[direction]} + std::to_string(count) + kWhere[direction];
     const auto hintStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true);
     const auto chipWidth = c.measure(hint, hintStyle) + 28.0;
-    const ui::Rect hintChip{l.grid.x + (l.grid.width - chipWidth) * 0.5,
-                        above >= below ? l.grid.y + 8.0 : l.grid.bottom() - 30.0, chipWidth, 22.0};
+    const auto centerY = l.grid.y + (l.grid.height - 22.0) * 0.5;
+    const ui::Rect hintChip = direction == 0U ? ui::Rect{l.grid.x + (l.grid.width - chipWidth) * 0.5, l.grid.y + 8.0, chipWidth, 22.0}
+                              : direction == 1U ? ui::Rect{l.grid.x + (l.grid.width - chipWidth) * 0.5, l.grid.bottom() - 30.0, chipWidth, 22.0}
+                              : direction == 2U ? ui::Rect{l.grid.x + 8.0, centerY, chipWidth, 22.0}
+                                                : ui::Rect{l.grid.right() - 8.0 - chipWidth, centerY, chipWidth, 22.0};
     c.fill(Path::capsule(hintChip), withAlpha(t.color.surfaceRaised, 0.92));
     c.stroke(Path::capsule(hintChip), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
     c.text(hintChip, hint, hintStyle, t.color.accent);
+    offscreenHint_ = direction;
   } else if (notes.empty()) {
     const auto cx = l.grid.x + l.grid.width * 0.40;
     const auto cy = l.grid.y + l.grid.height * 0.42;
@@ -1133,21 +1143,26 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            t.color.textSecondary);
   } else {
     const auto& timeline = model.timeline();
+    // The curve belongs to its region: it holds its end values only across the region's span.
+    const auto regionLeft = std::max(plot.x, plot.x + timeline.tickToPixel(state.automationOriginTick));
+    const auto regionRight = std::min(
+        plot.right(),
+        plot.x + timeline.tickToPixel(state.automationOriginTick + state.automationRegionDuration));
     Path curve;
     Path area;
     const auto first = e.points.front();
-    const auto firstX = plot.x + timeline.tickToPixel(first.tick);
-    curve.moveTo({plot.x, yFor(first.amount)}).lineTo({firstX, yFor(first.amount)});
-    area.moveTo({plot.x, plot.bottom()}).lineTo({plot.x, yFor(first.amount)})
+    const auto firstX = plot.x + timeline.tickToPixel(state.automationOriginTick + first.tick);
+    curve.moveTo({regionLeft, yFor(first.amount)}).lineTo({firstX, yFor(first.amount)});
+    area.moveTo({regionLeft, plot.bottom()}).lineTo({regionLeft, yFor(first.amount)})
         .lineTo({firstX, yFor(first.amount)});
     for (std::size_t i = 1U; i < e.points.size(); ++i) {
-      const ui::Point p{plot.x + timeline.tickToPixel(e.points[i].tick), yFor(e.points[i].amount)};
+      const ui::Point p{plot.x + timeline.tickToPixel(state.automationOriginTick + e.points[i].tick), yFor(e.points[i].amount)};
       curve.lineTo(p);
       area.lineTo(p);
     }
     const auto lastY = yFor(e.points.back().amount);
-    curve.lineTo({plot.right(), lastY});
-    area.lineTo({plot.right(), lastY}).lineTo({plot.right(), plot.bottom()}).close();
+    curve.lineTo({regionRight, lastY});
+    area.lineTo({regionRight, lastY}).lineTo({regionRight, plot.bottom()}).close();
     c.fill(area, LinearGradient{{0.0, plot.y}, {0.0, plot.bottom()},
                                 {{0.0, withAlpha(t.color.laneFillTop, 0.42)},
                                  {1.0, withAlpha(t.color.laneFillBottom, 0.05)}}});
@@ -1156,7 +1171,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     c.stroke(curve, t.color.laneFillTop, StrokeStyle{2.0});
     c.restore();
     for (const auto& point : e.points) {
-      const ui::Point p{plot.x + timeline.tickToPixel(point.tick), yFor(point.amount)};
+      const ui::Point p{plot.x + timeline.tickToPixel(state.automationOriginTick + point.tick), yFor(point.amount)};
       c.fill(Path::circle(p, 3.2), t.color.textPrimary);
     }
   }

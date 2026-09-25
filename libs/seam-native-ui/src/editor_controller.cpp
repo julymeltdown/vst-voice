@@ -421,6 +421,8 @@ EditorSceneState NativeEditorController::sceneState() const {
     state.unitOverrides = region->unitSelectionOverrides;
     state.seamOverrides = region->seamOverrides;
     state.pitchAutomation = region->pitchAutomation.points();
+    state.automationOriginTick = region->startTick;
+    state.automationRegionDuration = region->durationTick;
   }
   if (expressionLaneVisible_) {
     const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
@@ -3681,7 +3683,8 @@ bool NativeEditorController::legacyModalSurfaceActive() const {
   return voicebankBrowserVisible_ || audioSettings_.visible || recoverySupportPanel_.view().visible ||
          replacementOpen_ || timeMapPanel_.has_value() || tempoEdit_.has_value() ||
          hintEdit_.has_value() || replacementInput_.has_value() || microscopeUnit_.has_value() ||
-         phonemeReview_.has_value();
+         phonemeReview_.has_value() || renameTrackTarget_.has_value() ||
+         renameRegionTarget_.has_value();
 }
 
 std::uint64_t NativeEditorController::documentRevision() const noexcept {
@@ -3713,6 +3716,34 @@ double NativeEditorController::timelineOriginX() const noexcept {
   if (!hosted_) return layout_.keyboardWidth;
   const auto& viewport = pianoRoll_.viewport();
   return viewport.bounds.x + viewport.keyboardWidth;
+}
+
+// Region automation (pitch and the timbral channels) is stored in region-local ticks; the timeline,
+// the notes and the playhead are absolute song ticks. Every lane conversion goes through these.
+time::Tick NativeEditorController::automationOriginTick() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  return region == nullptr ? time::Tick{0} : region->startTick;
+}
+
+double NativeEditorController::laneX(time::Tick regionTick) const noexcept {
+  return timelineOriginX() +
+         pianoRoll_.timeline().tickToPixel(automationOriginTick() + regionTick);
+}
+
+time::Tick NativeEditorController::laneTickAt(double x) const {
+  const auto* region = session_.project().findRegion(regionId_);
+  auto absolute = pianoRoll_.timeline().pixelToTick(std::max(0.0, x - timelineOriginX()));
+  // Snap on the song grid the notes use, then convert into the region.
+  if (session_.project().settings().snapEnabled)
+    absolute = time::Quantizer(session_.project().settings().snapGrid).snap(absolute);
+  if (region == nullptr) return absolute < time::Tick{0} ? time::Tick{0} : absolute;
+  return std::clamp(absolute - region->startTick, time::Tick{0}, region->durationTick);
+}
+
+time::Tick NativeEditorController::regionPlayheadClamped() const noexcept {
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr) return playheadTick_;
+  return std::clamp(playheadTick_ - region->startTick, time::Tick{0}, region->durationTick);
 }
 
 void NativeEditorController::repaint() const {
@@ -3898,6 +3929,7 @@ core::Result<void> NativeEditorController::beginBatchLyricEdit() {
         .logicalBounds = noteWindowBounds(*first).value_or(
             ui::Rect{layout_.keyboardWidth, layout_.contentTop(), 240.0, 30.0}),
         .currentText = {},
+        .anchor = TextInputAnchor::NoteGrid,
     });
   }
   repaint();
@@ -4500,11 +4532,7 @@ core::Result<void> NativeEditorController::pointerDown(
       return core::success();
     }
     if (!callbacks_.upsertPitchPoint) return core::success();
-    auto tick = pianoRoll_.timeline().pixelToTick(
-        std::max(0.0, event.position.x - timelineOriginX()));
-    if (session_.project().settings().snapEnabled) {
-      tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
-    }
+    const auto tick = laneTickAt(event.position.x);
     const auto normalized = std::clamp(
         (automationTop + automationHeight * layout_.automationCenterFraction -
          event.position.y) /
@@ -5246,13 +5274,7 @@ core::Result<void> NativeEditorController::pointerUp(
         result = core::failure(core::ErrorCode::NotFound,
                                "Pitch automation region is missing");
       } else {
-        auto tick = pianoRoll_.timeline().pixelToTick(
-            std::max(0.0, dragCurrent_.x - timelineOriginX()));
-        tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-        if (session_.project().settings().snapEnabled) {
-          tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
-          tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-        }
+        const auto tick = laneTickAt(dragCurrent_.x);
         const auto normalized = std::clamp(
             (hostedTop +
              hostedHeight * layout_.automationCenterFraction -
@@ -5924,8 +5946,7 @@ std::optional<domain::PitchAutomationPoint> NativeEditorController::pitchPointAt
   std::optional<domain::PitchAutomationPoint> result;
   auto bestDistance = std::numeric_limits<double>::max();
   for (const auto& candidate : region->pitchAutomation.points()) {
-    const auto x = timelineOriginX() +
-                   pianoRoll_.timeline().tickToPixel(candidate.tick);
+    const auto x = laneX(candidate.tick);
     const auto y = centerY -
                    static_cast<double>(candidate.cents) /
                        layout_.pitchAutomationCentsRange *
@@ -6002,6 +6023,7 @@ core::Result<void> NativeEditorController::beginLyricEdit(domain::NoteId noteId)
         .logicalBounds = noteWindowBounds(noteId).value_or(
             ui::Rect{layout_.keyboardWidth, layout_.contentTop(), 160.0, 30.0}),
         .currentText = lyric->surface,
+        .anchor = TextInputAnchor::NoteGrid,
     });
   }
   repaint();
@@ -6335,7 +6357,7 @@ void NativeEditorController::setPlayheadPixel(double value) noexcept {
 
 float NativeEditorController::formantShiftAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->formantAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->formantAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
@@ -6362,7 +6384,9 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
             allowed.error().message +
             ". Select a Spectral Classic sample route or a source-filter (voice designer) singer."}};
   }
-  const auto current = region->formantAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->formantAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(current + static_cast<float>(steps),
                                                   -domain::kMaximumFormantShiftSemitones,
                                                   domain::kMaximumFormantShiftSemitones));
@@ -6370,7 +6394,7 @@ core::Result<void> NativeEditorController::nudgeFormantShift(int steps) {
   if (!(target != 0.0F))
     next = domain::FormantAutomation{};
   else {
-    const auto inserted = next.upsert(domain::FormantAutomationPoint{playheadTick_, target});
+    const auto inserted = next.upsert(domain::FormantAutomationPoint{playheadInRegion, target});
     if (!inserted) return inserted;
   }
   // A nudge that lands on the value already in force is not an edit, and a no-op must not fill the
@@ -6410,7 +6434,7 @@ core::Result<void> NativeEditorController::resetFormantCurve() {
 
 float NativeEditorController::breathinessAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->breathinessAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->breathinessAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
@@ -6449,7 +6473,9 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  const auto current = region->breathinessAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->breathinessAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kBreathinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumBreathiness));
   auto next = region->breathinessAutomation;
@@ -6457,7 +6483,7 @@ core::Result<void> NativeEditorController::nudgeBreathiness(int steps) {
     next = domain::BreathinessAutomation{};
   else {
     const auto inserted =
-        next.upsert(domain::BreathinessAutomationPoint{playheadTick_, target});
+        next.upsert(domain::BreathinessAutomationPoint{playheadInRegion, target});
     if (!inserted) return inserted;
   }
   // A nudge that lands on the value already in force is not an edit, and a no-op must not fill the undo
@@ -6499,7 +6525,7 @@ core::Result<void> NativeEditorController::resetBreathinessCurve() {
 
 float NativeEditorController::tensionAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->tensionAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->tensionAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeTension(int steps) {
@@ -6521,14 +6547,16 @@ core::Result<void> NativeEditorController::nudgeTension(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  const auto current = region->tensionAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->tensionAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kTensionStep * static_cast<float>(steps), 0.0F, domain::kMaximumTension));
   auto next = region->tensionAutomation;
   if (!(target != 0.0F))
     next = domain::TensionAutomation{};
   else {
-    const auto inserted = next.upsert(domain::TensionAutomationPoint{playheadTick_, target});
+    const auto inserted = next.upsert(domain::TensionAutomationPoint{playheadInRegion, target});
     if (!inserted) return inserted;
   }
   if (next == region->tensionAutomation) return core::success();
@@ -6569,7 +6597,7 @@ core::Result<void> NativeEditorController::resetTensionCurve() {
 
 float NativeEditorController::airinessAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->airinessAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->airinessAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
@@ -6590,14 +6618,16 @@ core::Result<void> NativeEditorController::nudgeAiriness(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  const auto current = region->airinessAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->airinessAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kAirinessStep * static_cast<float>(steps), 0.0F, domain::kMaximumAiriness));
   auto next = region->airinessAutomation;
   if (!(target != 0.0F))
     next = domain::AirinessAutomation{};
   else {
-    const auto inserted = next.upsert(domain::AirinessAutomationPoint{playheadTick_, target});
+    const auto inserted = next.upsert(domain::AirinessAutomationPoint{playheadInRegion, target});
     if (!inserted) return inserted;
   }
   if (next == region->airinessAutomation) return core::success();
@@ -6641,7 +6671,7 @@ core::Result<void> NativeEditorController::resetAirinessCurve() {
 
 float NativeEditorController::genderAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->genderAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->genderAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeGender(int steps) {
@@ -6662,7 +6692,9 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  const auto current = region->genderAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->genderAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kGenderStep * static_cast<float>(steps),
       -domain::kMaximumGender, domain::kMaximumGender));
@@ -6670,7 +6702,7 @@ core::Result<void> NativeEditorController::nudgeGender(int steps) {
   if (!(target != 0.0F))
     next = domain::GenderAutomation{};
   else {
-    const auto inserted = next.upsert(domain::GenderAutomationPoint{playheadTick_, target});
+    const auto inserted = next.upsert(domain::GenderAutomationPoint{playheadInRegion, target});
     if (!inserted) return inserted;
   }
   if (next == region->genderAutomation) return core::success();
@@ -6715,7 +6747,7 @@ core::Result<void> NativeEditorController::resetGenderCurve() {
 
 float NativeEditorController::growlAtPlayhead() const noexcept {
   const auto* region = session_.project().findRegion(regionId_);
-  return region == nullptr ? 0.0F : region->growlAutomation.valueAt(playheadTick_);
+  return region == nullptr ? 0.0F : region->growlAutomation.valueAt(regionPlayheadClamped());
 }
 
 core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
@@ -6736,11 +6768,13 @@ core::Result<void> NativeEditorController::nudgeGrowl(int steps) {
             allowed.error().message +
             ". Select a source-filter (voice designer) singer to edit this channel."}};
   }
-  const auto current = region->growlAutomation.valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = region->growlAutomation.valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + kGrowlStep * static_cast<float>(steps), 0.0F, domain::kMaximumGrowl));
   auto next = region->growlAutomation;
-  const auto inserted = next.upsert(domain::GrowlAutomationPoint{playheadTick_, target});
+  const auto inserted = next.upsert(domain::GrowlAutomationPoint{playheadInRegion, target});
   if (!inserted) return inserted;
   // A neutral point can shape the ramp to another non-neutral point. Only collapse a wholly neutral
   // curve; clearing the region here would destroy edits outside the playhead.
@@ -6846,36 +6880,28 @@ core::Result<void> NativeEditorController::commitExpressionDraft() {
 }
 
 float NativeEditorController::expressionValueAtPlayhead() const {
-  if (expressionDraft_) return expressionDraft_->valueAt(playheadTick_);
+  const auto playhead = regionPlayheadClamped();
+  if (expressionDraft_) return expressionDraft_->valueAt(playhead);
   const auto* region = session_.project().findRegion(regionId_);
   if (region == nullptr) return ui::describeExpressionChannel(expressionChannel_).neutral;
   const auto points = ui::readExpressionPoints(*region, expressionChannel_);
   const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
   if (points.empty()) return descriptor.neutral;
-  const auto after = std::lower_bound(points.begin(), points.end(), playheadTick_,
+  const auto after = std::lower_bound(points.begin(), points.end(), playhead,
       [](const ui::ExpressionPoint& point, time::Tick value) { return point.tick < value; });
   if (after == points.begin()) return after->amount;
   if (after == points.end()) return points.back().amount;
-  if (after->tick == playheadTick_) return after->amount;
+  if (after->tick == playhead) return after->amount;
   const auto before = after - 1;
   const auto span = (after->tick - before->tick).value();
   if (span <= 0) return after->amount;
-  const auto position = static_cast<double>((playheadTick_ - before->tick).value()) /
+  const auto position = static_cast<double>((playhead - before->tick).value()) /
                         static_cast<double>(span);
   return static_cast<float>(static_cast<double>(before->amount) +
                             static_cast<double>(after->amount - before->amount) * position);
 }
 
-time::Tick NativeEditorController::expressionTickAt(double x) const {
-  const auto* region = session_.project().findRegion(regionId_);
-  auto tick = pianoRoll_.timeline().pixelToTick(std::max(0.0, x - timelineOriginX()));
-  if (region != nullptr) tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-  if (session_.project().settings().snapEnabled) {
-    tick = time::Quantizer(session_.project().settings().snapGrid).snap(tick);
-    if (region != nullptr) tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-  }
-  return tick < time::Tick{0} ? time::Tick{0} : tick;
-}
+time::Tick NativeEditorController::expressionTickAt(double x) const { return laneTickAt(x); }
 
 float NativeEditorController::expressionAmountAt(double y, double automationTop,
                                                 double automationHeight) const {
@@ -6905,7 +6931,7 @@ std::optional<time::Tick> NativeEditorController::expressionPointAt(ui::Point po
   std::optional<time::Tick> result;
   auto bestDistance = std::numeric_limits<double>::max();
   for (const auto& candidate : points) {
-    const auto x = timelineOriginX() + pianoRoll_.timeline().tickToPixel(candidate.tick);
+    const auto x = laneX(candidate.tick);
     const auto y = centerY - (span <= 0.0F ? 0.0 : (candidate.amount - descriptor.neutral) / span) * scale;
     const auto dx = point.x - x;
     const auto dy = point.y - y;
@@ -6974,25 +7000,27 @@ core::Result<void> NativeEditorController::nudgeExpressionLane(int steps) {
   auto draft = ensureExpressionDraft();
   if (!draft) return core::Result<void>{draft.error()};
   const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
-  const auto current = draft.value()->valueAt(playheadTick_);
+  // The knob shows the value at the playhead clamped into the region; a nudge edits that point.
+  const auto playheadInRegion = regionPlayheadClamped();
+  const auto current = draft.value()->valueAt(playheadInRegion);
   const auto target = snappedToNeutral(std::clamp(
       current + descriptor.step * static_cast<float>(steps), descriptor.minimum, descriptor.maximum));
   auto next = draft.value()->points();
   const auto equalToNeutral = [&descriptor](float value) {
     return std::abs(value - descriptor.neutral) < 1.0e-6F;
   };
-  const auto existing = std::lower_bound(next.begin(), next.end(), playheadTick_,
+  const auto existing = std::lower_bound(next.begin(), next.end(), playheadInRegion,
       [](const ui::ExpressionPoint& point, time::Tick value) { return point.tick < value; });
   if (equalToNeutral(target)) {
-    if (existing != next.end() && existing->tick == playheadTick_) next.erase(existing);
+    if (existing != next.end() && existing->tick == playheadInRegion) next.erase(existing);
     // A neutral point can still shape the ramp to another non-neutral point. Collapse only a curve
     // that is neutral everywhere, so a local nudge cannot erase expression elsewhere in the phrase.
     if (std::all_of(next.begin(), next.end(), [&](const ui::ExpressionPoint& point) {
           return equalToNeutral(point.amount); })) next.clear();
-  } else if (existing != next.end() && existing->tick == playheadTick_) {
+  } else if (existing != next.end() && existing->tick == playheadInRegion) {
     existing->amount = target;
   } else {
-    next.insert(existing, ui::ExpressionPoint{playheadTick_, target});
+    next.insert(existing, ui::ExpressionPoint{playheadInRegion, target});
   }
   const auto replaced = draft.value()->replacePoints(std::move(next));
   if (!replaced) return replaced;

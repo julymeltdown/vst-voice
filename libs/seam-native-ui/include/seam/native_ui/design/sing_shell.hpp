@@ -56,6 +56,7 @@ public:
   [[nodiscard]] DesignMode mode() const noexcept { return preferences_.mode; }
   [[nodiscard]] bool presentedLastFrame() const noexcept { return presented_; }
   [[nodiscard]] const SingLayout& layout() const noexcept { return layout_; }
+  [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
   [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
 
   void setMode(DesignMode mode, bool persist = true);
@@ -148,6 +149,9 @@ private:
   ForwardArea forwarding_{ForwardArea::None};
   bool laneEditable_{false};
   bool lyricInputActive_{false};
+  // Direction of the last off-screen-notes hint (0 above, 1 below, 2 earlier, 3 later); exposed so
+  // the hint's direction is testable without reading pixels.
+  mutable std::optional<std::size_t> offscreenHint_;
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
   double scrollAccumulator_{0.0};

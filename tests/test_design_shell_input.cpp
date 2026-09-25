@@ -47,17 +47,27 @@ struct ShellFixture final {
   application::EditorSession session;
   native_ui::NativeEditorController controller;
   SingShell shell;
+  std::optional<native_ui::TextInputRequest> lastTextInput;
 
-  ShellFixture() : session(makeProject()), controller{session, factory, regionId, {}} {
+  explicit ShellFixture(time::Tick regionStart = time::Tick{0})
+      : session(makeProject(regionStart)),
+        controller{session, factory, regionId,
+                   native_ui::EditorHostCallbacks{
+                       .beginTextInput =
+                           [this](const native_ui::TextInputRequest& request) {
+                             lastTextInput = shell.translateTextInput(request);
+                           },
+                       .endTextInput = [this] { shell.textInputEnded(); },
+                   }} {
     controller.resize(1600.0, 900.0);
     shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
   }
 
-  domain::Project makeProject() {
+  domain::Project makeProject(time::Tick regionStart) {
     auto project = factory.createProject("Design shell");
     project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
     trackId = factory.addVocalTrack(project, "Singer");
-    regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{7680});
+    regionId = factory.addRegion(project, trackId, "Phrase", regionStart, time::Tick{7680});
     auto [lyric, note] =
         factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"\u3042", domain::Language::Japanese);
     auto* region = project.findRegion(regionId);
@@ -206,17 +216,56 @@ TEST_CASE("a knob gesture commits once, and never after Escape or a target chang
   }
 }
 
-TEST_CASE("lyric input moves into shell space and classic-surface input keeps its coordinates") {
+TEST_CASE("text fields move into shell space only when anchored to the note grid") {
   ShellFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
   CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   const auto offset = f.shell.layout().grid.y - native_ui::EditorSceneLayout{}.contentTop();
   const ui::Rect bounds{200.0, 300.0, 80.0, 20.0};
-  const auto lyric = f.shell.translateTextInput({domain::LyricTokenId{7U}, bounds, U""});
-  CHECK_NEAR(lyric.logicalBounds.y, bounds.y + offset, 1e-9);
-  const auto external = f.shell.translateTextInput(
-      {domain::LyricTokenId{std::numeric_limits<std::uint64_t>::max()}, bounds, U""});
-  CHECK_NEAR(external.logicalBounds.y, bounds.y, 1e-9);
+  const auto grid = f.shell.translateTextInput(
+      {domain::LyricTokenId{7U}, bounds, U"", native_ui::TextInputAnchor::NoteGrid});
+  CHECK_NEAR(grid.logicalBounds.y, bounds.y + offset, 1e-9);
+  // The anchor, not the target id, decides: a classic panel keeps classic coordinates.
+  const auto classic = f.shell.translateTextInput(
+      {domain::LyricTokenId{7U}, bounds, U"", native_ui::TextInputAnchor::ClassicSurface});
+  CHECK_NEAR(classic.logicalBounds.y, bounds.y, 1e-9);
+}
+
+TEST_CASE("batch lyric input anchors on the selected note in the shell grid") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto p = f.noteCenter();
+  CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+  // Shift-L distributes lyrics over the selected notes.
+  CHECK(f.controller.keyDown(KeyEvent{.key = NativeKey::L, .modifiers = {.shift = true}}).hasValue());
+  CHECK(f.lastTextInput.has_value());
+  if (!f.lastTextInput) return;
+  // The batch field uses the external target id but sits over the note, in shell space.
+  CHECK(f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+  const auto grid = f.shell.layout().grid;
+  CHECK(f.lastTextInput->logicalBounds.y >= grid.y - 1.0);
+  CHECK(f.lastTextInput->logicalBounds.y < grid.bottom());
+  CHECK(std::abs(f.lastTextInput->logicalBounds.y - p.y) < 40.0);
+  // The shell keeps presenting, and a resize cancels the open field instead of misplacing it.
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.controller.sceneState().lyricEditor.has_value());
+  CHECK(f.shell.prepareFrame(f.controller, 1500.0, 900.0));
+  CHECK(!f.controller.sceneState().lyricEditor.has_value());
+}
+
+TEST_CASE("a track rename field hands the frame to the classic arrangement surface") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.controller.selectTrack(f.trackId).hasValue());
+  CHECK(f.controller.beginSelectedTrackRename().hasValue());
+  CHECK(f.controller.legacyModalSurfaceActive());
+  CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(!f.controller.hostedGrid().has_value());
+  CHECK(f.lastTextInput.has_value());
+  if (f.lastTextInput) CHECK(f.lastTextInput->anchor == native_ui::TextInputAnchor::ClassicSurface);
 }
 
 TEST_CASE("the hosted expression lane edits the curve it draws, and Escape abandons a drag") {
@@ -264,4 +313,72 @@ TEST_CASE("a lane click is not forwarded while no expression channel is open") {
   CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
   CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
   CHECK(f.controller.documentRevision() == revision);
+}
+
+TEST_CASE("a region placed later in the song keeps notes, lane points and playhead edits aligned") {
+  constexpr time::Tick kRegionStart{3840};
+  {
+    // A lane click under the note's start stores the note's region-local tick.
+    ShellFixture f{kRegionStart};
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.controller.openExpressionLane(ui::ExpressionChannel::Gender).hasValue());
+    CHECK(f.frame());
+    const auto visuals = f.controller.pianoRoll().visibleNotes();
+    CHECK(!visuals.empty());
+    if (visuals.empty()) return;
+    const auto noteX = visuals.front().bounds.x;
+    const auto plot = f.shell.layout().laneTimePlot;
+    const ui::Point p{noteX, plot.y + plot.height * 0.25};
+    CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+    const auto& points = f.session.project().findRegion(f.regionId)->genderAutomation.points();
+    CHECK(points.size() == 1U);
+    if (!points.empty()) CHECK(points.front().tick == f.note().startTick);
+    // The scene publishes the region origin that painters add to region-local points.
+    CHECK(f.controller.sceneState().automationOriginTick == kRegionStart);
+  }
+  {
+    // A knob nudge writes at the playhead's position inside the region.
+    ShellFixture f{kRegionStart};
+    CHECK(f.frame());
+    f.controller.setPlayheadTick(kRegionStart + time::Tick{1920});
+    const auto cell = f.shell.layout().knob[4U];
+    const ui::Point c{cell.x + cell.width * 0.5, cell.y + cell.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(c)).hasValue());
+    CHECK(f.shell.pointerMove(f.controller, press({c.x, c.y - 48.0})).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press({c.x, c.y - 48.0})).hasValue());
+    const auto& points = f.session.project().findRegion(f.regionId)->genderAutomation.points();
+    CHECK(points.size() == 1U);
+    if (!points.empty()) CHECK(points.front().tick == time::Tick{1920});
+  }
+  {
+    // A playhead before the region edits the value the knob shows: the region's first tick, never
+    // the absolute playhead tick reinterpreted as a region-local one.
+    ShellFixture f{kRegionStart};
+    CHECK(f.frame());
+    f.controller.setPlayheadTick(time::Tick{960});
+    CHECK(f.controller.nudgeGender(3).hasValue());
+    const auto& points = f.session.project().findRegion(f.regionId)->genderAutomation.points();
+    CHECK(points.size() == 1U);
+    if (!points.empty()) CHECK(points.front().tick == time::Tick{0});
+  }
+}
+
+TEST_CASE("notes panned off horizontally are pointed at earlier or later, never above") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(!f.shell.lastOffscreenHint().has_value());  // the note is visible
+  const auto grid = f.shell.layout().grid;
+  const ui::Point anchor{grid.x + grid.width * 0.5, grid.y + grid.height * 0.5};
+  // Pan the timeline horizontally until the note leaves the visible time range.
+  for (int i = 0; i < 200 && !f.controller.pianoRoll().visibleNotes().empty(); ++i) {
+    CHECK(f.shell.scroll(f.controller, 400.0, 0.0, anchor, {}));
+    CHECK(f.frame());
+  }
+  CHECK(f.controller.pianoRoll().visibleNotes().empty());
+  CHECK(f.frame());
+  const auto hint = f.shell.lastOffscreenHint();
+  CHECK(hint.has_value());
+  if (hint) CHECK(*hint == 2U || *hint == 3U);
 }

@@ -100,10 +100,16 @@ struct KeyEvent final {
   bool repeat{false};
 };
 
+// Which geometry a text field's bounds were computed in. A presenting shell moves only NoteGrid
+// anchors (note bounds from the shared piano-roll viewport); ClassicSurface anchors belong to a
+// classic panel, which takes over the frame while the field is open.
+enum class TextInputAnchor : std::uint8_t { ClassicSurface, NoteGrid };
+
 struct TextInputRequest final {
   domain::LyricTokenId lyricId;
   ui::Rect logicalBounds;
   std::u32string currentText;
+  TextInputAnchor anchor{TextInputAnchor::ClassicSurface};
 };
 
 struct SampleMicroscopeData final {
@@ -379,8 +385,9 @@ public:
   void cancelPointerGesture();
   // True while a surface the SING shell does not host is open: voice browser, audio settings,
   // support panel, replacement review, tempo/meter map or its input, hint/replacement input,
-  // sample microscope or phoneme review. Mirrors SingShell::legacySurfaceRequired(sceneState())
-  // without building the scene state.
+  // sample microscope, phoneme review, or a track/region rename field (anchored in the classic
+  // arrangement dock). Mirrors SingShell::legacySurfaceRequired(sceneState()) without building
+  // the scene state.
   [[nodiscard]] bool legacyModalSurfaceActive() const;
   [[nodiscard]] std::uint64_t documentRevision() const noexcept;
   [[nodiscard]] bool pointerGestureActive() const noexcept;
@@ -524,6 +531,11 @@ private:
   [[nodiscard]] ui::Point modelPoint(ui::Point windowPoint) const noexcept;
   // Window x of tick zero's column origin: the legacy keyboard edge, or the hosted viewport's.
   [[nodiscard]] double timelineOriginX() const noexcept;
+  // Region automation is region-local; the timeline and the playhead are absolute song ticks.
+  [[nodiscard]] time::Tick automationOriginTick() const noexcept;
+  [[nodiscard]] double laneX(time::Tick regionTick) const noexcept;
+  [[nodiscard]] time::Tick laneTickAt(double x) const;
+  [[nodiscard]] time::Tick regionPlayheadClamped() const noexcept;
   [[nodiscard]] std::optional<ui::Rect> noteWindowBounds(domain::NoteId noteId) const;
   [[nodiscard]] std::optional<domain::PitchAutomationPoint> pitchPointAt(
       ui::Point point, double automationTop, double automationHeight) const;
