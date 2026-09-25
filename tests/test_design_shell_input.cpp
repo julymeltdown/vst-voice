@@ -1641,3 +1641,35 @@ TEST_CASE("UI evidence is the presented layout and the published tree, not a cop
   CHECK(virtualized >= 4U);
   CHECK(noteCount == 4U);
 }
+
+TEST_CASE("a failed render's status line names its reason, not only that it failed") {
+  using native_ui::RenderStatusState;
+  using native_ui::design::StatusTone;
+  native_ui::EditorSceneState state;
+  state.audioDeviceOnline = true;
+  state.audioBackend = "CoreAudio";
+  CHECK(native_ui::design::singStatusMessage(state).text == "Audio CoreAudio");
+  CHECK(native_ui::design::singStatusMessage(state).tone == StatusTone::Normal);
+
+  // A render note alone is status, not a warning.
+  state.renderStatus.state = RenderStatusState::Ready;
+  state.renderStatus.diagnostic = "Production multi-track routing render completed";
+  CHECK(native_ui::design::singStatusMessage(state).text == state.renderStatus.diagnostic);
+  CHECK(native_ui::design::singStatusMessage(state).tone == StatusTone::Normal);
+
+  // Failed with a RENDER_FAILED diagnostic: the title and the reason, as a warning.
+  const std::string reason =
+      "Project has no audible rendered tracks: Voicebank cannot cover the phoneme sequence";
+  state.renderStatus.state = RenderStatusState::Failed;
+  state.renderStatus.diagnostic = reason;
+  state.diagnostics.push_back(authoring::Diagnostic{.code = "RENDER_FAILED"});
+  const auto failed = native_ui::design::singStatusMessage(state);
+  CHECK(failed.text.starts_with("Render did not complete"));
+  CHECK(failed.text.ends_with(reason));
+  CHECK(failed.tone == StatusTone::Warning);
+
+  // Any other diagnostic keeps its title; a render that did not fail adds no reason to it.
+  state.renderStatus.state = RenderStatusState::Ready;
+  state.diagnostics.front().code = "BANK_MISSING";
+  CHECK(native_ui::design::singStatusMessage(state).text == "Voicebank needs attention");
+}

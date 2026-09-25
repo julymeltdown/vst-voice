@@ -76,6 +76,16 @@ inline constexpr double kNoteWaveformColumn = 2.0;
 std::size_t noteWaveformColumns(ui::Rect note, double visibleLeft, double visibleRight,
                                 const std::function<void(double, double)>& column);
 
+// The status bar's left message: the audio device, else the most important diagnostic, else the
+// render note. A failed render always names its reason, because "Render did not complete" alone
+// gives the user nothing to act on. The painter elides it at the bar's width.
+enum class StatusTone : std::uint8_t { Normal, Warning };
+struct StatusMessage final {
+  std::string text;
+  StatusTone tone{StatusTone::Normal};
+};
+[[nodiscard]] StatusMessage singStatusMessage(const EditorSceneState& state);
+
 // The SING workspace shell for the EMO and SCENE designs. It paints around the existing editing
 // engine: pointer events inside the musical grid are translated into the legacy controller's
 // coordinates, so note creation, selection, lyric entry and vibrato editing keep their existing

@@ -1588,18 +1588,24 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   const auto online = state.audioDeviceOnline;
   c.fill(Path::circle({l.status.x + 16.0, l.status.y + 14.0}, 3.5),
          online ? t.color.success : t.color.textDisabled);
-  std::string left = online ? "Audio " + state.audioBackend : std::string{"Audio offline"};
-  auto leftColor = t.color.textSecondary;
+  const auto left = singStatusMessage(state);
+  c.text({l.status.x + 28.0, l.status.y, meter.x - l.status.x - 48.0, l.status.height}, left.text,
+         style(FontRole::Ui, t.type.smallLabel),
+         left.tone == StatusTone::Warning ? t.color.warning : t.color.textSecondary);
+}
+
+StatusMessage singStatusMessage(const EditorSceneState& state) {
+  const auto& s = state.renderStatus;
+  const auto failed = s.state == RenderStatusState::Failed;
   if (!state.diagnostics.empty()) {
-    left = presentDiagnostic(state.diagnostics.front()).title;
-    leftColor = t.color.warning;
-  } else if (!s.diagnostic.empty()) {
-    left = s.diagnostic;
-    // A render note is status, not a warning, unless the render itself failed.
-    leftColor = s.state == RenderStatusState::Failed ? t.color.warning : t.color.textSecondary;
+    auto text = presentDiagnostic(state.diagnostics.front()).title;
+    if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += " \u2014 " + s.diagnostic;
+    return {std::move(text), StatusTone::Warning};
   }
-  c.text({l.status.x + 28.0, l.status.y, meter.x - l.status.x - 48.0, l.status.height}, left,
-         style(FontRole::Ui, t.type.smallLabel), leftColor);
+  // A render note is status, not a warning, unless the render itself failed.
+  if (!s.diagnostic.empty()) return {s.diagnostic, failed ? StatusTone::Warning : StatusTone::Normal};
+  return {state.audioDeviceOnline ? "Audio " + state.audioBackend : std::string{"Audio offline"},
+          StatusTone::Normal};
 }
 
 // ---- EXPORT workspace --------------------------------------------------------------------------
