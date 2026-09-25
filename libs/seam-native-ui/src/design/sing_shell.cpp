@@ -472,9 +472,15 @@ void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) 
                 semanticFocus_ == "shell.style" || semanticFocus_.starts_with("shell.knob.") ||
                 (semanticFocus_.empty() && controllerFocus != nullptr &&
                  controllerFocus->id == "voice.identity"));
+  // The open inspector is modal: an open lyric field over the score it covers is abandoned.
+  if (open && lyricInputActive_) {
+    controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
   layout_ = solveSingLayout(layout_.width, layout_.height, open);
-  if (focusInside) {
-    // Closing returns focus to the button that opened the inspector, not to the score.
+  if (open || focusInside) {
+    // Every way of opening it (pointer, keyboard, accessibility) gives the inspector the keyboard,
+    // so no key reaches the score it covers; closing returns focus that was inside to the button.
     refreshSemantics(controller);
     takeSemanticFocus(controller, "shell.inspector");
   }
@@ -2224,13 +2230,14 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     setInspectorOpen(controller, false);
     return true;
   }
-  // The EXPORT workspace hides the score, so no key may edit it from here, whatever holds focus.
-  // Escape always returns to SING. Only the shortcuts the host declares as its own application
-  // commands (it implements them itself) still reach it; every other modified key (Alt-Delete,
-  // Command-D, Command-Delete, a Command-Q the host does not handle) stops here instead of
-  // reaching the note editor.
-  if (presented_ && workspace_ == Workspace::Export && !controller.legacyModalSurfaceActive()) {
-    if (event.key == NativeKey::Escape) {
+  // The EXPORT workspace and the open inspector cover the score, so no key may edit it from here,
+  // whatever holds focus. Escape returns to SING (the inspector handled its Escape above). Only
+  // the shortcuts the host declares as its own application commands (it implements them itself)
+  // still reach it; every other modified key (Alt-Delete, Command-D, Command-Delete, a Command-Q
+  // the host does not handle) stops here instead of reaching the note editor.
+  if (presented_ && (workspace_ == Workspace::Export || layout_.inspectorOpen) &&
+      !controller.legacyModalSurfaceActive()) {
+    if (event.key == NativeKey::Escape && workspace_ == Workspace::Export) {
       setWorkspace(controller, Workspace::Sing);
       return true;
     }
@@ -2262,9 +2269,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that has left the layout (a knob after the rack collapsed) no longer owns them.
   refreshSemantics(controller);
   const auto* focused = semantics_.focusedNode();
-  // With the EXPORT workspace up the score is not on screen, so its plain keys never edit it
-  // (Escape was handled above).
-  const auto scoreHidden = [this] { return workspace_ == Workspace::Export; };
+  // With the EXPORT workspace up or the inspector open the score is covered, so its plain keys
+  // never edit it (Escape was handled above).
+  const auto scoreHidden = [this] { return workspace_ == Workspace::Export || layout_.inspectorOpen; };
   if (focused == nullptr) return scoreHidden();
   const std::string id = focused->id;
   // While a shell control holds focus, plain keys belong to it and never reach the note editor
@@ -2624,6 +2631,17 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .actions = {SemanticAction::SetFocus},
                      .description = waveform_.reason});
   }
+  // The open inspector is modal: only it and the read-only status are published, so Tab stays in
+  // it and no action reaches the score, the lane or a control it covers.
+  if (singShown && l.inspectorOpen) {
+    std::erase_if(children, [](const SemanticNode& node) {
+      return !(node.id == "shell.inspector" || node.id == "shell.change-voice" ||
+               node.id == "shell.style" || node.id.starts_with("shell.knob.") ||
+               node.id == "voice.identity" || node.id == "shell.status" ||
+               node.id == "shell.render-progress");
+    });
+  }
+  const auto scoreCovered = !singShown || l.inspectorOpen;
   if (!singShown) {
     // The EXPORT workspace covers the score: nothing of the grid or lane is published under it.
     std::erase_if(children, [](const SemanticNode& node) {
@@ -2692,13 +2710,13 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     focusedId.clear();
   }
   if (focusedId.empty() && legacyFocus != nullptr) focusedId = legacyFocus->id;
-  // A controller focus inside the hidden score is not reported while EXPORT is up.
-  if (!singShown && !focusedId.empty() && !EditorSemanticTree::containsId(root, focusedId))
+  // A controller focus inside the covered score is not reported while EXPORT or the inspector is up.
+  if (scoreCovered && !focusedId.empty() && !EditorSemanticTree::containsId(root, focusedId))
     focusedId.clear();
   semantics_.rebuildCustom(std::move(root), focusedId,
-                           singShown ? VirtualNoteSource{.tree = &controller.accessibilityTree(),
-                                                         .present = presentNote}
-                                     : VirtualNoteSource{});
+                           !scoreCovered ? VirtualNoteSource{.tree = &controller.accessibilityTree(),
+                                                             .present = presentNote}
+                                         : VirtualNoteSource{});
 }
 
 core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
@@ -2752,11 +2770,9 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     controller.showVoicebankBrowser();
     result = core::success();
   } else if (id == "shell.inspector" && activate) {
-    const auto open = !layout_.inspectorOpen;
-    setInspectorOpen(controller, open);
-    // Opened from the keyboard or assistive technology, focus stays on the button so the next
-    // Tab walks into the inspector.
-    if (open) takeSemanticFocus(controller, "shell.inspector");
+    // Opening moves focus to the button (so the next Tab walks into the inspector); closing
+    // returns focus from inside to it.
+    setInspectorOpen(controller, !layout_.inspectorOpen);
     result = core::success();
   } else if (id == "shell.classic" && activate) {
     setEnabled(controller, false);

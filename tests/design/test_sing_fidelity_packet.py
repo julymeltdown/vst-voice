@@ -175,6 +175,50 @@ class SemanticCheckTests(unittest.TestCase):
         ready = published_tree(geometry, state="READY")
         self.assertEqual(semantic_result(ready, geometry, state="rendering")["result"], "FAIL")
 
+    def test_progress_is_required_by_the_frame_whatever_the_exit_state(self):
+        # Developer 2's I2: a RENDERING frame without its progress node fails for every legal
+        # exit state, not only when the app also logged rendering.
+        geometry = canonical_geometry()
+        semantic = published_tree(geometry, state="RENDERING")
+        for logged in ("rendering", "ready", "failed", "cancelled"):
+            with self.subTest(logged):
+                result = semantic_result(semantic, geometry, state=logged)
+                self.assertEqual(result["result"], "FAIL")
+                self.assertIn("shell.render-progress: not published", result["failures"])
+
+    def modal_tree(self, geometry):
+        regions, controls = geometry["regions"], geometry["controls"]
+        nodes = [{"id": "shell", "parent": "", "bounds": [0, 0, 720, 480], "value": ""},
+                 {"id": "shell.inspector", "parent": "shell", "bounds": controls["inspectorButton"], "value": "Open"},
+                 {"id": "voice.identity", "parent": "shell", "bounds": regions["singer"], "value": ""},
+                 {"id": "shell.change-voice", "parent": "shell", "bounds": controls["singerChange"], "value": ""},
+                 {"id": "shell.style", "parent": "shell", "bounds": regions["style"], "value": ""},
+                 {"id": "shell.status", "parent": "shell", "bounds": regions["status"], "value": "READY: done"}]
+        nodes += [{"id": f"shell.knob.{knob}", "parent": "shell", "bounds": controls[f"knob{i}"], "value": ""}
+                  for i, knob in enumerate(PACKET.KNOBS)]
+        return {"nodes": nodes, "virtualizedNoteCount": 0, "notes": [], "focused": "shell.inspector"}
+
+    def test_the_open_inspector_publishes_only_itself_and_the_status(self):
+        geometry = compact_geometry(True)
+        result = semantic_result(self.modal_tree(geometry), geometry)
+        self.assertEqual(result["result"], "PASS", result["failures"])
+        cases = {
+            "score notes published": lambda s: s.update(virtualizedNoteCount=6, notes=[{"id": "n"}] * 6),
+            "timeline published": lambda s: s["nodes"].append(
+                {"id": "timeline", "parent": "shell", "bounds": [80, 156, 540, 144], "value": ""}),
+            "lane tab published": lambda s: s["nodes"].append(
+                {"id": "shell.lane-tab.air", "parent": "shell", "bounds": [24, 328, 60, 28], "value": ""}),
+            "header control published": lambda s: s["nodes"].append(
+                {"id": "shell.settings", "parent": "shell", "bounds": [648, 32, 32, 32], "value": ""}),
+            "knob missing": lambda s: s.update(nodes=[n for n in s["nodes"] if n["id"] != "shell.knob.air"]),
+            "button missing": lambda s: s.update(nodes=[n for n in s["nodes"] if n["id"] != "shell.inspector"]),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                semantic = self.modal_tree(geometry)
+                mutate(semantic)
+                self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
+
     def test_rendering_needs_progress_and_long_songs_list_up_to_the_limit(self):
         geometry = canonical_geometry()
         semantic = published_tree(geometry, notes=600, state="RENDERING")

@@ -339,6 +339,9 @@ ALWAYS_NODES = (
     "shell.settings", "shell.status", "shell.waveform",
 ) + tuple(f"shell.lane-tab.{lane}" for lane in LANES)
 NOTE_LIMIT = 256
+# Everything the shell may publish while the modal inspector is open (plus the shell.knob.* sliders).
+MODAL_NODES = {"shell", "shell.inspector", "shell.change-voice", "shell.style", "voice.identity",
+               "shell.status", "shell.render-progress"}
 # The evidence (frame, semantics, geometry) is the last presented frame; the app logs its render
 # state later, after shutdown. A render can finish in between, so the log may be the frame's state
 # or a legal successor of it, never an earlier or unrelated one.
@@ -496,14 +499,26 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         if node["parent"] and positive(bounds) and not contains(client, bounds):
             failures.append(f"{node['id']}: bounds outside the client")
 
-    required = list(ALWAYS_NODES)
-    if RACK_CONTROLS_SHOWN(geometry):
-        required += ["shell.change-voice", "shell.style"] + [f"shell.knob.{knob}" for knob in KNOBS]
-    if geometry.get("rack") != "full":
-        required.append("shell.inspector")
-    if positive(regions.get("workspaceTabs")):
-        required += [f"shell.workspace.{name}" for name in WORKSPACES]
-    if render_state == "rendering":
+    # Required nodes follow the captured frame; the state logged later is only checked below as a
+    # legal progression from it.
+    frame_state = frame_render_state(semantic)
+    covered = geometry.get("inspectorOpen") is True
+    rack_nodes = ["shell.change-voice", "shell.style"] + [f"shell.knob.{knob}" for knob in KNOBS]
+    if covered:
+        # The open inspector is modal: it and the read-only status are all that is published.
+        required = ["shell.inspector", "shell.status"] + rack_nodes
+        for node_id in by_id:
+            if node_id not in MODAL_NODES and not node_id.startswith("shell.knob."):
+                failures.append(f"{node_id}: published under the open inspector")
+    else:
+        required = list(ALWAYS_NODES)
+        if RACK_CONTROLS_SHOWN(geometry):
+            required += rack_nodes
+        if geometry.get("rack") != "full":
+            required.append("shell.inspector")
+        if positive(regions.get("workspaceTabs")):
+            required += [f"shell.workspace.{name}" for name in WORKSPACES]
+    if frame_state in ("rendering", "queued"):
         required.append("shell.render-progress")
     for node_id in required:
         if node_id not in by_id:
@@ -529,7 +544,9 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         if node is not None and node["bounds"] != controls.get(f"workspaceTab{index}"):
             failures.append(f"{node['id']}: bounds differ from workspaceTab{index}")
 
-    # Notes: the tree must virtualize exactly the fixture's notes and list them up to the limit.
+    # Notes: the tree must virtualize exactly the fixture's notes and list them up to the limit;
+    # none while the inspector covers the score.
+    expected_notes = 0 if covered else expected_notes
     count = semantic.get("virtualizedNoteCount")
     listed = semantic.get("notes")
     if count != expected_notes:
@@ -539,7 +556,6 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         failures.append(f"{listed_count} note nodes listed; expected {min(expected_notes, NOTE_LIMIT)}")
     # The frame's status and the state the app logged at exit must be the same state or a legal
     # progression (the frame is earlier).
-    frame_state = frame_render_state(semantic)
     allowed = RENDER_SUCCESSORS.get(frame_state or "", {frame_state})
     if not render_state or not frame_state or render_state not in allowed:
         failures.append(f"frame status {frame_state} is not the logged state {render_state} "

@@ -1767,3 +1767,101 @@ TEST_CASE("the compact inspector opens from its drawer button and keeps every ra
   CHECK(frameAt(720.0, 480.0));
   CHECK(!f.shell.inspectorOpen());
 }
+
+TEST_CASE("an inspector opened by pointer owns the keys, and nothing reaches the score it covers") {
+  using native_ui::SemanticAction;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f;
+  const auto frameAt = [&f](double width, double height) {
+    if (!f.shell.prepareFrame(f.controller, width, height)) return false;
+    native_ui::PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    return f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick());
+  };
+  // Developer 2's reproduction: select a note, move it under where the panel will open, open the
+  // inspector with the pointer, then send editing keys as a host would.
+  CHECK(frameAt(860.0, 640.0));
+  const auto start = f.noteCenter();
+  CHECK(f.shell.pointerDown(f.controller, press(start)));
+  CHECK(f.shell.pointerMove(f.controller, press({start.x + 350.0, start.y})));
+  CHECK(f.shell.pointerUp(f.controller, press({start.x + 350.0, start.y})));
+  CHECK(!f.session.selection().empty());
+  CHECK(frameAt(860.0, 640.0));
+  const auto selected = f.noteCenter();
+  const auto button = f.shell.layout().inspectorButton;
+  const ui::Point center{button.x + 22.0, button.y + 22.0};
+  CHECK(f.shell.pointerDown(f.controller, press(center)));
+  CHECK(f.shell.pointerUp(f.controller, press(center)));
+  CHECK(frameAt(860.0, 640.0));
+  CHECK(f.shell.inspectorOpen());
+  const auto panel = f.shell.layout().inspector;
+  CHECK(selected.x >= panel.x && selected.x < panel.right() && selected.y >= panel.y &&
+        selected.y < panel.bottom());  // the selected note really is covered
+
+  // The pointer opening moved focus to the inspector, like the keyboard opening does.
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* focused = f.shell.accessibilityTree().focusedNode();
+  CHECK(focused != nullptr && focused->id == "shell.inspector");
+
+  const auto revision = f.controller.documentRevision();
+  const auto notes = f.session.project().findRegion(f.regionId)->notes.size();
+  const std::vector<KeyEvent> editing{
+      {.key = NativeKey::Delete},
+      {.key = NativeKey::Backspace},
+      {.key = NativeKey::D},
+      {.key = NativeKey::Q},
+      {.key = NativeKey::Up},
+      {.key = NativeKey::Delete, .modifiers = {.alt = true}},
+      {.key = NativeKey::Delete, .modifiers = {.command = true}},
+      {.key = NativeKey::X, .modifiers = {.command = true}},
+      {.key = NativeKey::D, .modifiers = {.command = true}},
+      {.key = NativeKey::Q, .modifiers = {.command = true}},
+      {.key = NativeKey::Up, .modifiers = {.alt = true}},
+  };
+  for (const auto& event : editing) {
+    if (!f.shell.handleShellKey(f.controller, event)) static_cast<void>(f.controller.keyDown(event));
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.shell.inspectorOpen());
+  }
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notes);
+
+  // Even with focus moved off the button (a knob, then cleared), the score stays covered.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+  f.shell.controllerFocusTaken();
+  if (!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}))
+    static_cast<void>(f.controller.keyDown(KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notes);
+
+  // The covered score is not published, so an accessibility action on a note or the timeline is
+  // refused; the inspector's own controls still act.
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(f.shell.accessibilityTree().virtualizedNoteCount() == 0U);
+  const auto& region = *f.session.project().findRegion(f.regionId);
+  const auto noteId = "note." + region.notes.front().id.toString();
+  CHECK(!f.shell.dispatchController(f.controller, noteId, SemanticAction::SetFocus).hasValue());
+  CHECK(!f.shell.dispatchController(f.controller, "timeline", SemanticAction::SetFocus).hasValue());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.classic", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
+
+  // Only shortcuts the host declares as its own commands pass on.
+  f.shell.setHostActions(native_ui::design::ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = {}, .exportBusy = {},
+      .regionWaveform = {},
+      .applicationShortcut = [](const KeyEvent& event) {
+        return event.modifiers.command && !event.modifiers.alt && event.key == NativeKey::S;
+      }});
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::S, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::D, .modifiers = {.command = true}}));
+
+  // Closed again, the score is published and editable as before.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.shell.inspectorOpen());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(f.shell.accessibilityTree().virtualizedNoteCount() == notes);
+  // The same ids act again once the score is uncovered (so the refusals above were real).
+  CHECK(f.shell.dispatchController(f.controller, noteId, SemanticAction::SetFocus).hasValue());
+  CHECK(f.shell.dispatchController(f.controller, "timeline", SemanticAction::SetFocus).hasValue());
+}
