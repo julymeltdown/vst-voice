@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 #include <string>
@@ -84,6 +85,9 @@ public:
   NativeEditorApp& operator=(const NativeEditorApp&) = delete;
 
   void setWindow(native_ui::INativeWindow& window) noexcept;
+  // Stops every background source of repaint requests (envelope workers) and forgets the window,
+  // so the window can be destroyed before this app: after this returns no thread touches it.
+  void detachWindow() noexcept;
   [[nodiscard]] core::Result<void> startAudioForPlayback();
   void stopAudioForPlayback() noexcept;
   void shutdownAudio() noexcept;
@@ -150,6 +154,9 @@ private:
   void setAudioUnavailable(const core::Error& error) noexcept;
   void clearAudioUnavailable() noexcept;
   void record(const core::Result<void>& result) noexcept;
+  // Background threads (render completion, envelope workers) ask for a repaint only through here,
+  // under windowMutex_, so detachWindow() is a real barrier.
+  void requestWindowRepaint() const noexcept;
 
   NativeEditorAppConfig config_;
   std::unique_ptr<AuthoringSession> authoring_;
@@ -187,12 +194,13 @@ private:
   // difference still speaks up.
   std::string dismissedRendererDifference_;
   native_ui::INativeWindow* window_{nullptr};
+  mutable std::mutex windowMutex_;
   std::atomic<bool> closeRequested_{false};
   std::string lastError_;
   // Envelopes of the selected region's rendered audio for the SING notes. Declared last so its
   // workers stop before anything their repaint request touches is destroyed.
   native_ui::RegionEnvelopeCache waveforms_{[this] {
-    if (window_ != nullptr) window_->requestRepaint();
+    requestWindowRepaint();
   }};
 };
 

@@ -331,6 +331,13 @@ int seam_editor_native_main(int argc, char** argv) {
 #endif
   auto window = seam::native_ui::createNativeWindow();
   app->setWindow(*window);
+  // Declared after the window, so it is destroyed first on every return below (open failure, a
+  // startup project that cannot open, a playback error, a normal exit): no background repaint
+  // request can reach the window once it starts to be destroyed.
+  struct WindowDetachGuard final {
+    seam::standalone::NativeEditorApp& app;
+    ~WindowDetachGuard() { app.detachWindow(); }
+  } windowDetachGuard{*app};
   const auto opened = window->open(
       seam::native_ui::NativeWindowConfig{
           .title = "Project SEAM / Production Standalone",
@@ -370,6 +377,9 @@ int seam_editor_native_main(int argc, char** argv) {
   }
 
   const auto result = window->run();
+  // The window is destroyed before the app (declaration order): stop every background repaint
+  // request and forget the window first.
+  app->detachWindow();
   app->shutdownAudio();
   const auto info = app->audioInfo();
   const auto audio = app->audioStats();

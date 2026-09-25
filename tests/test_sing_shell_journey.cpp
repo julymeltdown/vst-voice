@@ -13,6 +13,7 @@
 #include "seam/voicebank/wav.hpp"
 
 #include <chrono>
+#include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <memory>
@@ -359,5 +360,79 @@ TEST_CASE("sing shell journey: the notes show the region's own render, and not o
   CHECK(waveformValue() != "Showing the current render");
   singKo();
   CHECK(waitFor("Showing the current render"));
+  f.app->shutdownAudio();
+}
+
+TEST_CASE("sing shell journey: after detachWindow no render or envelope worker touches the window") {
+  class CountingWindow final : public seam::native_ui::INativeWindow {
+  public:
+    seam::core::Result<void> open(const seam::native_ui::NativeWindowConfig&,
+                                  seam::native_ui::INativeWindowClient&) override {
+      return seam::core::success();
+    }
+    int run() override { return 0; }
+    void requestRepaint() noexcept override { repaints.fetch_add(1U); }
+    void beginTextInput(const seam::native_ui::TextInputRequest&) override {}
+    void endTextInput() noexcept override {}
+    seam::native_ui::PixelSurface snapshot() const override { return seam::native_ui::PixelSurface{1U, 1U}; }
+    std::string backendName() const override { return "counting"; }
+    std::atomic<std::uint64_t> repaints{0U};
+  };
+  const auto root = seam::test::support::temporaryDirectory("journey-detach-window");
+  JourneyApp f{root, {}};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  auto window = std::make_unique<CountingWindow>();
+  f.app->setWindow(*window);
+  f.paint();
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  if (grid == nullptr) return;
+  const auto gridBounds = grid->bounds;
+  const auto addKo = [&](double x) {
+    f.doubleClick({gridBounds.x + x, gridBounds.y + gridBounds.height * 0.5});
+    f.paint();
+    for (const auto& note : f.region()->notes) {
+      if (lyricOf(*f.region(), note) == "\u3053") continue;
+      CHECK(f.app->dispatchAccessibility("note." + note.id.toString(), SemanticAction::EditText));
+      f.app->textCommit(U"\u3053");
+      f.paint();
+      return;
+    }
+  };
+  const auto showing = [&f] {
+    const auto* node = f.find("shell.waveform");
+    return node != nullptr && node->value == "Showing the current render";
+  };
+  addKo(240.0);
+  auto deadline = std::chrono::steady_clock::now() + 60s;
+  while (!showing() && std::chrono::steady_clock::now() < deadline) {
+    f.paint();
+    std::this_thread::sleep_for(20ms);
+  }
+  CHECK(showing());
+  CHECK(window->repaints.load() > 0U);  // the window was really in use
+  f.app->detachWindow();
+  const auto before = window->repaints.load();
+  // A new edit renders on the render thread and builds a new envelope on a worker; neither may
+  // reach the detached window. The window stays alive (so a stray call is counted, not a
+  // use-after-free) until both have completed, then it is destroyed while the app lives on.
+  addKo(600.0);
+  deadline = std::chrono::steady_clock::now() + 60s;
+  while (!showing() && std::chrono::steady_clock::now() < deadline) {
+    f.paint();
+    std::this_thread::sleep_for(20ms);
+  }
+  CHECK(showing());
+  CHECK(before > 0U);
+  CHECK(window->repaints.load() == before);
+  window.reset();
+  addKo(900.0);
+  deadline = std::chrono::steady_clock::now() + 60s;
+  while (!showing() && std::chrono::steady_clock::now() < deadline) {
+    f.paint();
+    std::this_thread::sleep_for(20ms);
+  }
+  CHECK(showing());
   f.app->shutdownAudio();
 }

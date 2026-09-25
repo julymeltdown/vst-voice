@@ -44,11 +44,16 @@ public:
   // Largest absolute sample, for display scaling.
   [[nodiscard]] float peak() const noexcept { return peak_; }
   [[nodiscard]] std::size_t levelCount() const noexcept { return levels_.size(); }
+  // How many range() queries this envelope has answered (drawing cost evidence).
+  [[nodiscard]] std::uint64_t queries() const noexcept {
+    return queries_.load(std::memory_order_relaxed);
+  }
 
 private:
   std::vector<std::vector<EnvelopePair>> levels_;
   std::size_t samples_{0U};
   float peak_{0.0F};
+  mutable std::atomic<std::uint64_t> queries_{0U};
 };
 
 // Everything that identifies the audio an envelope was built from (spec: publication identity,
@@ -88,6 +93,9 @@ public:
                                                                   rendering::SharedPcmBuffer pcm);
   // Forgets the current envelope (no current audio to show).
   void clear();
+  // Forgets the current envelope and waits for every worker to finish, so no ready() callback
+  // runs after it returns. Call it without holding any lock ready() takes.
+  void stop();
 
 private:
   struct Worker final {

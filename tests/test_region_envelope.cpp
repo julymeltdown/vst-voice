@@ -191,3 +191,38 @@ TEST_CASE("the note waveform shows only a current render of the region's own aud
   CHECK(!bind(newer, false, 5U, region).shown());
 }
 
+TEST_CASE("stopping the envelope cache waits for a callback in flight and silences later ones") {
+  std::atomic<bool> inCallback{false};
+  std::atomic<bool> callbackFinished{false};
+  std::atomic<int> calls{0};
+  RegionEnvelopeCache cache{[&] {
+    inCallback = true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{150});
+    ++calls;
+    callbackFinished = true;
+  }};
+  rendering::SharedPcmBuffer pcm{std::vector<float>(4096U, 0.3F)};
+  const RegionEnvelopeKey key{.projectRevision = 1U, .requestId = 1U,
+                              .pcmIdentity = pcm.storageIdentity(), .pcmSamples = pcm.size(),
+                              .sampleRate = 48000U};
+  CHECK(cache.request(key, pcm) == nullptr);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (!inCallback && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::yield();
+  CHECK(inCallback.load());
+  cache.stop();  // must not return while the ready callback is still running
+  CHECK(callbackFinished.load());
+  // A build superseded by stop() never calls back afterwards, and nothing is retained.
+  rendering::SharedPcmBuffer large{std::vector<float>(16'000'000U, 0.2F)};
+  auto next = key;
+  next.requestId = 2U;
+  next.pcmIdentity = large.storageIdentity();
+  next.pcmSamples = large.size();
+  CHECK(cache.request(next, large) == nullptr);
+  cache.stop();
+  const auto after = calls.load();
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(calls.load() == after);
+  CHECK(cache.request(key, pcm) == nullptr);
+}
+

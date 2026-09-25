@@ -762,14 +762,34 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
 }
 
+std::size_t noteWaveformColumns(ui::Rect note, double visibleLeft, double visibleRight,
+                                const std::function<void(double, double)>& column) {
+  // Columns stay on the note's own 2pt phase (anchored at its left edge) so scrolling does not
+  // shimmer, but only the part inside the visible span is walked: a long note at high zoom costs
+  // what is on screen, not its full width.
+  constexpr double kColumn = kNoteWaveformColumn;
+  const auto left = std::max(note.x, visibleLeft);
+  const auto right = std::min(note.right(), visibleRight);
+  if (right <= left || note.width <= 0.0) return 0U;
+  auto x = note.x + std::floor((left - note.x) / kColumn) * kColumn;
+  std::size_t count = 0U;
+  for (; x < right; x += kColumn) {
+    column(x, std::min(note.right(), x + kColumn));
+    ++count;
+  }
+  return count;
+}
+
 namespace {
 
 // The note's slice of its region's rendered audio, as signed min/max columns inside the capsule.
 // Ticks map to frames through the project tempo map and the audio's absolute origin frame, so a
-// region placed later in the song and a tempo change draw the audio under the right note.
-void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, const Path& capsule, ui::Rect b,
-                       const RegionEnvelopeView& view, const time::TempoMap& tempo,
-                       time::Tick start, time::Tick end, bool selected) {
+// region placed later in the song and a tempo change draw the audio under the right note. Only
+// columns inside `visible` (the grid) are computed.
+void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, double radius, ui::Rect b,
+                       ui::Rect visible, const RegionEnvelopeView& view,
+                       const time::TempoMap& tempo, time::Tick start, time::Tick end,
+                       bool selected) {
   const auto& envelope = *view.envelope;
   const auto rate = static_cast<double>(view.key.sampleRate);
   if (rate <= 0.0 || envelope.peak() < 1e-4F || b.width < 4.0 || b.height < 6.0 || end <= start)
@@ -783,25 +803,53 @@ void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, const Path& capsule, 
     const time::Tick tick{start.value() + static_cast<std::int64_t>(std::llround(fraction * duration))};
     return tempo.sampleFrameAt(tick, rate) - view.key.originFrame;
   };
-  constexpr double kColumn = 2.0;
-  Path columns;
+  // One filled outline per contiguous run of columns: the maximum edge left to right, then the
+  // minimum edge back. That is a few hundred edges and no caps for a full grid, where a stroke per
+  // column made the anti-aliasing rasterizer sort thousands of cap curves every frame.
+  struct Column final {
+    double x, top, bottom;
+  };
+  std::vector<Column> run;
+  run.reserve(static_cast<std::size_t>(visible.width / kNoteWaveformColumn) + 4U);
+  Path outline;
   bool any = false;
-  auto first = frameAt(b.x);
-  for (auto x = b.x; x < b.right(); x += kColumn) {
-    const auto last = std::max(first + 1, frameAt(std::min(b.right(), x + kColumn)));
-    if (const auto pair = envelope.range(first, last); pair.has_value()) {
-      const auto top = mid - static_cast<double>(pair->maximum) * scale;
-      const auto bottom = mid - static_cast<double>(pair->minimum) * scale;
-      const auto column = x + kColumn * 0.5;
-      columns.moveTo({column, std::min(top, mid - 0.5)}).lineTo({column, std::max(bottom, mid + 0.5)});
-      any = true;
+  const auto flush = [&] {
+    if (run.empty()) return;
+    const auto half = kNoteWaveformColumn * 0.5;
+    outline.moveTo({run.front().x - half, run.front().top});
+    for (const auto& column : run) outline.lineTo({column.x, column.top});
+    outline.lineTo({run.back().x + half, run.back().top});
+    outline.lineTo({run.back().x + half, run.back().bottom});
+    for (auto it = run.rbegin(); it != run.rend(); ++it) outline.lineTo({it->x, it->bottom});
+    outline.lineTo({run.front().x - half, run.front().bottom});
+    outline.close();
+    run.clear();
+    any = true;
+  };
+  static_cast<void>(noteWaveformColumns(b, visible.x, visible.right(), [&](double x0, double x1) {
+    const auto first = frameAt(x0);
+    const auto last = std::max(first + 1, frameAt(x1));
+    const auto pair = envelope.range(first, last);
+    if (!pair.has_value()) {
+      flush();
+      return;
     }
-    first = last;
-  }
+    const auto top = mid - static_cast<double>(pair->maximum) * scale;
+    const auto bottom = mid - static_cast<double>(pair->minimum) * scale;
+    run.push_back({(x0 + x1) * 0.5, std::min(top, mid - 0.6), std::max(bottom, mid + 0.6)});
+  }));
+  flush();
   if (!any) return;
+  // Clip to the capsule as far as it is visible. A note many screens wide at high zoom would make
+  // the rasterizer build coverage for its whole outline; cutting it just outside the visible span
+  // keeps its real rounded ends wherever they are on screen, and the cut edges off screen.
+  const auto margin = radius + 2.0;
+  const auto left = std::max(b.x, visible.x - margin);
+  const auto right = std::min(b.right(), visible.right() + margin);
+  if (right <= left) return;
   c.save();
-  c.clipPath(capsule);
-  c.stroke(columns, withAlpha(t.color.waveInNote, selected ? 0.9 : 0.7), StrokeStyle{1.4});
+  c.clipPath(Path::roundedRect({left, b.y, right - left, b.height}, radius));
+  c.fill(outline, withAlpha(t.color.waveInNote, selected ? 0.9 : 0.7));
   c.restore();
 }
 
@@ -990,7 +1038,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       if (!waveform_.shown() || region == nullptr) return;
       const auto* source = region->findNote(note.noteId);
       if (source == nullptr) return;
-      paintNoteWaveform(c, t, p, b, *waveform_.view, model.project().tempoMap(),
+      paintNoteWaveform(c, t, radius, b, l.grid, *waveform_.view, model.project().tempoMap(),
                         region->startTick + source->startTick, region->startTick + source->endTick(),
                         note.selected);
     };

@@ -55,6 +55,7 @@ std::shared_ptr<const RegionEnvelope> RegionEnvelope::build(std::span<const floa
 }
 
 std::optional<EnvelopePair> RegionEnvelope::range(std::int64_t first, std::int64_t last) const {
+  queries_.fetch_add(1U, std::memory_order_relaxed);
   const auto total = static_cast<std::int64_t>(samples_);
   first = std::max<std::int64_t>(first, 0);
   last = std::min(last, total);
@@ -83,10 +84,15 @@ std::optional<EnvelopePair> RegionEnvelope::range(std::int64_t first, std::int64
 RegionEnvelopeCache::RegionEnvelopeCache(std::function<void()> ready) : ready_(std::move(ready)) {}
 
 RegionEnvelopeCache::~RegionEnvelopeCache() {
+  stop();
+}
+
+void RegionEnvelopeCache::stop() {
   std::vector<Worker> workers;
   {
     std::lock_guard lock(mutex_);
     requested_.reset();
+    built_.reset();
     if (worker_) workers.push_back(std::move(*worker_));
     worker_.reset();
     for (auto& worker : retired_) workers.push_back(std::move(worker));

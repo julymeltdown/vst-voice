@@ -14,6 +14,8 @@
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -1492,4 +1494,82 @@ TEST_CASE("the notes carry their region's rendered waveform only while it matche
   paintInto(foreignFrame);
   status = publishedNode(f, "shell.waveform");
   CHECK(status != nullptr && status->value == "Other region");
+}
+
+TEST_CASE("a long note at maximum zoom walks only its visible waveform columns") {
+  using native_ui::design::ShellHostActions;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The column walk itself: a note far wider than the grid, starting far to its left.
+  std::size_t walked = 0U;
+  bool phased = true;
+  const ui::Rect huge{-1'000'001.0, 300.0, 3'000'000.0, 12.0};
+  const auto count = native_ui::design::noteWaveformColumns(
+      huge, 80.0, 1120.0, [&](double x0, double x1) {
+        ++walked;
+        const auto phase = std::fmod(x0 - huge.x, native_ui::design::kNoteWaveformColumn);
+        phased = phased && std::abs(phase) < 1e-6 && x1 > x0 && x1 > 80.0 && x0 < 1120.0;
+      });
+  CHECK(count == walked);
+  CHECK(count <= 522U && count >= 519U);
+  CHECK(phased);
+  CHECK(native_ui::design::noteWaveformColumns({2000.0, 0.0, 50.0, 10.0}, 80.0, 1120.0,
+                                               [](double, double) {}) == 0U);
+
+  // Painted: one 90-quarter note at the maximum zoom, scrolled so the grid shows its middle.
+  ShellFixture f{time::Tick{0}, true};
+  auto* region = f.session.project().findRegion(f.regionId);
+  region->notes.front().durationTick = time::Tick{960 * 90};
+  f.controller.pianoRoll().rebuildIndex();
+  std::vector<float> mono(48000U * 50U);
+  for (std::size_t i = 0U; i < mono.size(); ++i)
+    mono[i] = 0.6F * static_cast<float>(std::sin(static_cast<double>(i) * 0.02));
+  const auto envelope = native_ui::RegionEnvelope::build(mono);
+  auto view = std::make_shared<const native_ui::RegionEnvelopeView>(native_ui::RegionEnvelopeView{
+      native_ui::RegionEnvelopeKey{.region = f.regionId, .pcmSamples = mono.size(),
+                                   .sampleRate = 48000U, .originFrame = 0},
+      envelope});
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = {}, .exportBusy = {},
+      .regionWaveform = [view] { return native_ui::RegionWaveform{view, "Waveform", {}}; }});
+  CHECK(f.frame());
+  auto& timeline = f.controller.pianoRoll().timeline();
+  timeline.setPixelsPerQuarter(4096.0);
+  timeline.setOriginTick(time::Tick{960 + 960 * 45});
+  f.controller.pianoRoll().rebuildIndex();
+  const auto before = envelope->queries();
+  CHECK(f.frame());
+  const auto queried = envelope->queries() - before;
+  const auto gridWidth = f.shell.layout().grid.width;
+  const auto bound = static_cast<std::uint64_t>(std::ceil(gridWidth / native_ui::design::kNoteWaveformColumn)) + 2U;
+  const auto visuals = f.controller.pianoRoll().visibleNotes();
+  double longest = 0.0;
+  for (const auto& visual : visuals) longest = std::max(longest, visual.bounds.width);
+  if (queried == 0U || queried > bound)
+    std::cerr << "queried " << queried << " columns, bound " << bound << ", note width " << longest << '\n';
+  CHECK(longest > 100000.0);  // the note really is far wider than the grid
+  CHECK(queried > 0U);
+  CHECK(queried <= bound);
+  // And the frame budget: the waveform adds little to a frame, however long the note. The bound
+  // is coarse (medians of five frames, 25 ms of slack) so a loaded test machine does not flake;
+  // the per-column stroke this replaced cost about 65 ms here.
+  native_ui::RegionWaveform supplied{view, "Waveform", {}};
+  f.shell.setHostActions(ShellHostActions{
+      .exportSet = {}, .exportPlan = {}, .exportUnavailable = {}, .exportBusy = {},
+      .regionWaveform = [&supplied] { return supplied; }});
+  const auto medianFrame = [&f] {
+    std::vector<double> times;
+    for (int i = 0; i < 5; ++i) {
+      const auto started = std::chrono::steady_clock::now();
+      CHECK(f.frame());
+      times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
+    }
+    std::sort(times.begin(), times.end());
+    return times[2];
+  };
+  const auto withWave = medianFrame();
+  supplied = native_ui::RegionWaveform{nullptr, "Out of date", "test"};
+  const auto withoutWave = medianFrame();
+  if (withWave > withoutWave + 25.0)
+    std::cerr << "waveform frame " << withWave << " ms vs " << withoutWave << " ms without\n";
+  CHECK(withWave <= withoutWave + 25.0);
 }

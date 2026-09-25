@@ -195,6 +195,7 @@ core::Result<std::unique_ptr<NativeEditorApp>> NativeEditorApp::create(
 }
 
 NativeEditorApp::~NativeEditorApp() {
+  detachWindow();
   if (applicationMenu_ != nullptr) applicationMenu_->uninstall();
   applicationController_.reset();
   shutdownAudio();
@@ -324,12 +325,12 @@ core::Result<void> NativeEditorApp::initialize() {
       shell_.activate();
   }
   shell_.setRepaintCallback([this] {
-    if (window_ != nullptr) window_->requestRepaint();
+    requestWindowRepaint();
   });
 
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] {
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
       },
       .beginTextInput = [this](const native_ui::TextInputRequest& request) {
         if (window_ != nullptr) window_->beginTextInput(shell_.translateTextInput(request));
@@ -350,14 +351,14 @@ core::Result<void> NativeEditorApp::initialize() {
         } else {
           stopAudioForPlayback();
         }
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
         return core::success();
       },
       .documentChanged = [this] {
         if (applicationController_ != nullptr) {
           record(applicationController_->onDocumentChanged());
         }
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
       },
       .validateSingerControl = [this](domain::TrackId trackId,
                                       synthesis::RendererControl control) {
@@ -370,7 +371,7 @@ core::Result<void> NativeEditorApp::initialize() {
         if (applicationController_ != nullptr) {
           applicationController_->cancelExport();
         }
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
       },
       .previewSeam = [this](domain::PhonemeKey key, bool alternate) {
         if (authoring_ == nullptr) {
@@ -378,7 +379,7 @@ core::Result<void> NativeEditorApp::initialize() {
                                "Standalone authoring runtime is unavailable");
         }
         const auto result = authoring_->runtime().previewSeam(key, alternate);
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
         return result;
       },
       .selectVoicebank = [this](std::string_view id, std::string_view version,
@@ -390,7 +391,7 @@ core::Result<void> NativeEditorApp::initialize() {
         const auto selected = applicationController_->selectVoicebank(
             id, version, contentHash);
         if (selected) refreshCrashRecoveryContext();
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
         return selected;
       },
       .diagnosticAction = [this](const authoring::Diagnostic& diagnostic,
@@ -401,14 +402,14 @@ core::Result<void> NativeEditorApp::initialize() {
         return selectSupportReport(index);
       },
       .viewChanged = [this] {
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
       },
       .applyAudioSettings = [this](authoring::AudioSettings settings)
           -> core::Result<void> {
         auto applied = applyAudioSettings(std::move(settings));
         if (!applied) return core::Result<void>{applied.error()};
         refreshCrashRecoveryContext();
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
         return core::success();
       },
       .reduceMotionEnabled = [] {
@@ -510,14 +511,14 @@ core::Result<void> NativeEditorApp::initialize() {
           .stateChanged = [this] {
             refreshCrashRecoveryContext();
             if (applicationMenu_ != nullptr) applicationMenu_->refresh();
-            if (window_ != nullptr) window_->requestRepaint();
+            requestWindowRepaint();
           },
           .progressChanged = [this] {
-            if (window_ != nullptr) window_->requestRepaint();
+            requestWindowRepaint();
           },
           .openAudioSettings = [this] {
             authoring_->controller().showAudioSettings();
-            if (window_ != nullptr) window_->requestRepaint();
+            requestWindowRepaint();
             return core::success();
           },
           .editPronunciationHint = [this] {
@@ -1183,16 +1184,16 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
         dismissedRendererDifference_ = diagnostic.detail;
         rendererChangedDiagnostic_.reset();
         authoring_->controller().setDiagnostics({});
-        if (window_ != nullptr) window_->requestRepaint();
+        requestWindowRepaint();
         return core::success();
       }
       authoring_->runtime().clearDiagnostics();
       authoring_->controller().setDiagnostics({});
-      if (window_ != nullptr) window_->requestRepaint();
+      requestWindowRepaint();
       return core::success();
     case authoring::DiagnosticAction::Retry:
       authoring_->runtime().requestPreview(true);
-      if (window_ != nullptr) window_->requestRepaint();
+      requestWindowRepaint();
       return core::success();
     case authoring::DiagnosticAction::RecoverAutosave:
       if (applicationController_ == nullptr) {
@@ -1272,7 +1273,7 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
           .actions = authoring::DiagnosticRegistry::actions(
               "SUPPORT_BUNDLE_PREVIEW_READY"),
           .occurrenceCount = 1U}});
-      if (window_ != nullptr) window_->requestRepaint();
+      requestWindowRepaint();
       return core::success();
     }
     case authoring::DiagnosticAction::ExportSupportBundle: {
@@ -1309,7 +1310,7 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
           .actions = authoring::DiagnosticRegistry::actions(
               "SUPPORT_BUNDLE_EXPORTED"),
           .occurrenceCount = 1U}});
-      if (window_ != nullptr) window_->requestRepaint();
+      requestWindowRepaint();
       return core::success();
     }
     case authoring::DiagnosticAction::OpenSupportFolder:
@@ -1336,7 +1337,7 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
       if (supportReports_.empty()) {
         authoring_->controller().setDiagnostics({});
       }
-      if (window_ != nullptr) window_->requestRepaint();
+      requestWindowRepaint();
       return core::success();
     case authoring::DiagnosticAction::ChooseVoicebank:
       authoring_->controller().showVoicebankBrowser();
@@ -1411,7 +1412,21 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
 }
 
 void NativeEditorApp::setWindow(native_ui::INativeWindow& window) noexcept {
+  std::lock_guard lock(windowMutex_);
   window_ = &window;
+}
+
+void NativeEditorApp::detachWindow() noexcept {
+  // Envelope workers first: stop() joins them, and a finishing worker's repaint request takes
+  // windowMutex_, which is not held here yet.
+  waveforms_.stop();
+  std::lock_guard lock(windowMutex_);
+  window_ = nullptr;
+}
+
+void NativeEditorApp::requestWindowRepaint() const noexcept {
+  std::lock_guard lock(windowMutex_);
+  if (window_ != nullptr) window_->requestRepaint();
 }
 
 void NativeEditorApp::shutdownAudio() noexcept {
@@ -1579,11 +1594,10 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
       authoring_->controller().pianoRoll().timeline().tickToPixel(tick);
   // An edit that lands on the playhead needs the tick, not the pixel.
   authoring_->controller().setPlayheadTick(tick);
-  if (window_ != nullptr &&
-      (progress.state == authoring::RenderState::Queued ||
-       progress.state == authoring::RenderState::Rendering ||
-       progress.state == authoring::RenderState::Stale)) {
-    window_->requestRepaint();
+  if (progress.state == authoring::RenderState::Queued ||
+      progress.state == authoring::RenderState::Rendering ||
+      progress.state == authoring::RenderState::Stale) {
+    requestWindowRepaint();
   }
   character_.setDisplayMode(state.characterMode);
   character_.setState(state.characterState);

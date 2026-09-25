@@ -68,6 +68,14 @@ struct ShellHostActions final {
 [[nodiscard]] std::filesystem::path locateDesignAssets(
     const std::filesystem::path& bundleResources = {});
 
+// The in-note waveform is drawn in columns of this width, phased from the note's left edge.
+inline constexpr double kNoteWaveformColumn = 2.0;
+// Calls column(x0, x1) for each waveform column of a note rectangle that lies inside
+// [visibleLeft, visibleRight) and returns how many there were. The work is bounded by the visible
+// span, however long the note is at the current zoom.
+std::size_t noteWaveformColumns(ui::Rect note, double visibleLeft, double visibleRight,
+                                const std::function<void(double, double)>& column);
+
 // The SING workspace shell for the EMO and SCENE designs. It paints around the existing editing
 // engine: pointer events inside the musical grid are translated into the legacy controller's
 // coordinates, so note creation, selection, lyric entry and vibrato editing keep their existing
