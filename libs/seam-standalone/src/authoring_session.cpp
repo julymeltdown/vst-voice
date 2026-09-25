@@ -158,6 +158,16 @@ void AuthoringSession::configureController() {
         }
         return result;
       },
+      .selectTrack = [this](domain::TrackId trackId) {
+        const auto selected = runtime_->selectTrack(trackId);
+        if (!selected) return selected;
+        trackId_ = runtime_->selectedTrack();
+        regionId_ = runtime_->selectedRegion();
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return core::success();
+      },
       .documentChanged = [this] { onDocumentChanged(); },
       .stopPlaying = [this] {
         const auto result = runtime_->transport().stop();
@@ -368,6 +378,10 @@ const character::CharacterPerformanceSnapshot* AuthoringSession::characterPerfor
   request.style = identity.style;
   request.pronunciationIdentity = identity.pronunciationIdentity;
   request.renderRevision = identity.renderRevision;
+  request.resourceKind = identity.resourceKind;
+  if (identity.scorePitchRange.has_value())
+    request.scorePitchRange = character::ScorePitchRange{
+        identity.scorePitchRange->lowestMidiKey, identity.scorePitchRange->highestMidiKey};
   request.sampleRate = identity.sampleRate;
   request.channelCount = 1U;
   request.interleavedStartFrame = result.performanceAudioStartFrame;
@@ -648,6 +662,10 @@ core::Result<void> AuthoringSession::rebindAfterProjectReplacement() {
   }
   static_cast<void>(runtime_->transport().stop());
   configureController();
+  // Diagnostics describe the project that produced them. Carrying a startup or
+  // previous-project voicebank failure across replacement leaves the new
+  // document in a contradictory state before its first render completes.
+  runtime_->clearDiagnostics();
   runtime_->handleDocumentChanged();
   if (controller_) controller_->setDirty(runtime_->document().dirty());
   return core::success();

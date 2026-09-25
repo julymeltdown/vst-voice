@@ -164,6 +164,53 @@ TEST_CASE("diatonic harmony handles a non-C tonic and descending octave boundary
   CHECK(notes[1].midiKey==60U); // E4 -> C4
 }
 
+TEST_CASE("named diatonic modes map scale degrees and distinguish harmonic minor") {
+  using seam::application::DiatonicHarmony;
+  using seam::application::HarmonyRequest;
+  struct Mode final {
+    const char* name;
+    std::vector<std::uint8_t> intervals;
+    std::uint8_t thirdFromC;
+  };
+  const std::vector<Mode> modes{
+      {"major", {0, 2, 4, 5, 7, 9, 11}, 64},
+      {"natural minor", {0, 2, 3, 5, 7, 8, 10}, 63},
+      {"harmonic minor", {0, 2, 3, 5, 7, 8, 11}, 63},
+      {"melodic minor", {0, 2, 3, 5, 7, 9, 11}, 63},
+      {"Dorian", {0, 2, 3, 5, 7, 9, 10}, 63},
+      {"Phrygian", {0, 1, 3, 5, 7, 8, 10}, 63},
+      {"Lydian", {0, 2, 4, 6, 7, 9, 11}, 64},
+      {"Mixolydian", {0, 2, 4, 5, 7, 9, 10}, 64},
+      {"Locrian", {0, 1, 3, 5, 6, 8, 10}, 63},
+  };
+  for (const auto& mode : modes) {
+    Fixture fixture;
+    auto* source = fixture.project.findRegion(fixture.region);
+    source->notes.resize(1U);
+    const auto draft = seam::application::prepareHarmony(fixture.project, fixture.factory,
+        HarmonyRequest{.regionId = fixture.region, .intervalSemitones = 0,
+            .diatonic = DiatonicHarmony{.tonicPitchClass = 0,
+                .scaleIntervals = mode.intervals, .degreeOffset = 2}});
+    (void)mode.name;
+    CHECK(draft);
+    if (draft) CHECK(draft.value().notes.front().midiKey == mode.thirdFromC);
+  }
+
+  const auto targetFor = [](std::uint8_t sourcePitch,
+                            std::vector<std::uint8_t> intervals) {
+    Fixture fixture;
+    fixture.project.findRegion(fixture.region)->notes.back().midiKey = sourcePitch;
+    const auto draft = seam::application::prepareHarmony(fixture.project, fixture.factory,
+        HarmonyRequest{.regionId = fixture.region, .intervalSemitones = 0,
+            .diatonic = DiatonicHarmony{.tonicPitchClass = 0,
+                .scaleIntervals = std::move(intervals), .degreeOffset = 1}});
+    CHECK(draft);
+    return draft ? draft.value().notes.back().midiKey : std::uint8_t{0};
+  };
+  CHECK(targetFor(68U, {0, 2, 3, 5, 7, 8, 10}) == 70U); // Ab -> Bb
+  CHECK(targetFor(68U, {0, 2, 3, 5, 7, 8, 11}) == 71U); // Ab -> B natural
+}
+
 TEST_CASE("harmony keeps shared-lyric melisma and phonetic intent without sharing lead IDs") {
   Fixture fixture;
   auto* source=fixture.project.findRegion(fixture.region);

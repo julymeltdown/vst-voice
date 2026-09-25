@@ -7,6 +7,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/ui/piano_roll_model.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -89,10 +90,13 @@ TEST_CASE("piano roll duplication preserves note expressions through undo and re
   region->performance.takes = {{.id = "diagnostic-take", .sourceRegionId = regionId,
       .resource = {SingerResourceKind::Procedural, "fixture", "1", std::string(64U, 'd')},
       .pronunciation = identity, .generatorId = "fixture", .generatorVersion = "1",
-      .range = {Tick{0}, Tick{240}},
-      .lanes = {{PerformanceChannel::Dynamics, {{Tick{0}, 0.5}, {Tick{240}, 1.0}}}}}};
+      .range = {Tick{0}, Tick{1200}},
+      .lanes = {{PerformanceChannel::Dynamics, {{Tick{0}, 0.5}, {Tick{240}, 1.0},
+          {Tick{480}, 0.8}, {Tick{720}, 0.6}, {Tick{1200}, 0.25}}}}}};
   region->performance.accepted = {
-      {"diagnostic-take", PerformanceChannel::Dynamics, firstNote.id, Tick{0}}};
+      {"diagnostic-take", PerformanceChannel::Dynamics, firstNote.id, Tick{0}},
+      {"diagnostic-take", PerformanceChannel::Dynamics,
+       PerformanceTimeRange{Tick{480}, Tick{720}}, Tick{0}}};
   seam::application::UpsertPhonemeOverrideCommand phoneme{regionId,
       PhonemeOverride{.key = {firstNote.id, 0U}, .timing = {.startOffset = -1400}, .locked = true}};
   CHECK(phoneme.apply(project));
@@ -142,13 +146,38 @@ TEST_CASE("piano roll duplication preserves note expressions through undo and re
   CHECK(resolved);
   CHECK(resolved.value().pronunciation.tokensForNote(firstCopy->id).front().locked);
   const auto& copiedPerformance = session.project().findRegion(regionId)->performance;
-  CHECK(copiedPerformance.ownership.size() == 3U);
+  CHECK(copiedPerformance.ownership.size() == 4U);
   CHECK(copiedPerformance.ownership[1] == before.findRegion(regionId)->performance.ownership[1]);
-  CHECK(std::get<NoteId>(copiedPerformance.ownership.back().scope) == firstCopy->id);
-  CHECK(copiedPerformance.accepted.size() == 2U);
-  CHECK(std::get<NoteId>(copiedPerformance.accepted.back().scope) == firstCopy->id);
-  CHECK(copiedPerformance.accepted.back().sourceTickOffset ==
+  CHECK(std::get<NoteId>(copiedPerformance.ownership[2].scope) == firstCopy->id);
+  const auto* copiedOwnershipRange = std::get_if<PerformanceTimeRange>(
+      &copiedPerformance.ownership[3].scope);
+  CHECK(copiedOwnershipRange != nullptr);
+  const PerformanceTimeRange expectedOwnershipRange{
+      firstCopy->startTick, firstCopy->startTick + Tick{240}};
+  CHECK(*copiedOwnershipRange == expectedOwnershipRange);
+  CHECK(copiedPerformance.accepted.size() == 4U);
+  const auto copiedNoteAcceptance = std::find_if(
+      copiedPerformance.accepted.begin(), copiedPerformance.accepted.end(),
+      [&](const auto& selection) {
+        const auto* noteId = std::get_if<NoteId>(&selection.scope);
+        return noteId != nullptr && *noteId == firstCopy->id;
+      });
+  CHECK(copiedNoteAcceptance != copiedPerformance.accepted.end());
+  CHECK(copiedNoteAcceptance->sourceTickOffset ==
         firstNote.startTick - firstCopy->startTick);
+  const auto copiedRangeAcceptance = std::find_if(
+      copiedPerformance.accepted.begin(), copiedPerformance.accepted.end(),
+      [&](const auto& selection) {
+        const auto* range = std::get_if<PerformanceTimeRange>(&selection.scope);
+        return range != nullptr && range->startTick == firstCopy->startTick + Tick{480};
+      });
+  CHECK(copiedRangeAcceptance != copiedPerformance.accepted.end());
+  const PerformanceTimeRange expectedAcceptedRange{
+      firstCopy->startTick + Tick{480}, firstCopy->startTick + Tick{720}};
+  CHECK(std::get<PerformanceTimeRange>(copiedRangeAcceptance->scope) ==
+        expectedAcceptedRange);
+  CHECK(copiedRangeAcceptance->sourceTickOffset ==
+        Tick{-firstCopy->startTick.value()});
   CHECK(copiedPerformance.takes == before.findRegion(regionId)->performance.takes);
   CHECK(!copiedPerformance.pronunciation.has_value());
   CHECK(secondCopy->midiKey == secondNote.midiKey);

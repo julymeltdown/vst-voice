@@ -21,6 +21,69 @@
 
 namespace seam::standalone {
 
+NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
+    const std::vector<StandaloneApplicationController::InstalledSingerOffer>&
+        offers,
+    const std::vector<distribution::ProceduralCatalogueIssue>& issues,
+    std::size_t omittedIssueCount,
+    bool scanLimitReached) {
+  NativeNewProjectSingerChoices choices;
+  for (const auto& offer : offers) {
+    const auto& candidate = offer.candidate;
+    if (!offer.selectable) {
+      auto label = "Unavailable — " + candidate.manifest.displayName + " (" +
+          candidate.manifest.id + " " + candidate.manifest.version + ")";
+      auto detail = offer.reason.empty()
+          ? std::string{"This installed singer is not trusted or renderable by this build."}
+          : offer.reason;
+      choices.unavailable.push_back(NativeNewProjectUnavailableSingerOption{
+          .label = std::move(label), .detail = std::move(detail)});
+      continue;
+    }
+    for (const auto& style : candidate.manifest.styles) {
+      auto label = candidate.manifest.displayName + " — " + style + " (" +
+          candidate.manifest.language + ")";
+      if (!offer.reviewed) label += " — unreviewed";
+      choices.selectable.push_back(NativeNewProjectSingerOption{
+          .label = std::move(label),
+          .reference = domain::ProceduralRecipeReference{
+              .resource = candidate.renderIdentity,
+              .path = (candidate.resourceRoot / candidate.manifest.recipeEntry).string(),
+              .style = style}});
+    }
+  }
+  for (const auto& issue : issues) {
+    const auto relativePath = issue.packagePath.lexically_relative(issue.root);
+    const bool escapesRoot = !relativePath.empty() && *relativePath.begin() == "..";
+    const bool isRootIssue =
+        issue.packagePath.lexically_normal() == issue.root.lexically_normal();
+    auto location = relativePath.empty() || relativePath == "." || escapesRoot
+        ? issue.packagePath.filename().string()
+        : relativePath.generic_string();
+    if (location.empty()) location = "configured singer folder";
+    auto detail = issue.detail.empty()
+        ? std::string{"This package could not be loaded safely."}
+        : issue.detail;
+    choices.unavailable.push_back(NativeNewProjectUnavailableSingerOption{
+        .label = isRootIssue ? "Unavailable — Singer catalogue root"
+                             : "Unavailable — Package at " + location,
+        .detail = std::move(detail)});
+  }
+  if (omittedIssueCount > 0U) {
+    choices.unavailable.push_back(NativeNewProjectUnavailableSingerOption{
+        .label = "Unavailable — Additional package scan issues",
+        .detail = std::to_string(omittedIssueCount) +
+            " more package issue(s) were found; only the first 64 are listed."});
+  }
+  if (scanLimitReached) {
+    choices.unavailable.push_back(NativeNewProjectUnavailableSingerOption{
+        .label = "Unavailable — Catalogue scan incomplete",
+        .detail = "The installed singer catalogue reached its 8192 package-folder scan limit; "
+                  "some installed resources may not be listed."});
+  }
+  return choices;
+}
+
 namespace {
 
 native_ui::RenderStatusState renderStatusState(
@@ -392,8 +455,30 @@ core::Result<void> NativeEditorApp::initialize() {
                                        }
                                        const auto currentPath =
                                            authoring_->runtime().document().identity().projectPath;
+                                       std::vector<NativeNewProjectSingerOption> proceduralSingers;
+                                       std::vector<NativeNewProjectUnavailableSingerOption>
+                                           unavailableProceduralSingers;
+                                       if (applicationController_ != nullptr) {
+                                         auto catalogue =
+                                             applicationController_->installedSingerCatalogue();
+                                         if (!catalogue) {
+                                           return core::Result<std::optional<authoring::NewProjectRequest>>{
+                                               catalogue.error()};
+                                         }
+                                         auto choices = makeNativeNewProjectSingerChoices(
+                                             catalogue.value().offers,
+                                             catalogue.value().issues,
+                                             catalogue.value().omittedIssueCount,
+                                             catalogue.value().scanLimitReached);
+                                         proceduralSingers = std::move(choices.selectable);
+                                         unavailableProceduralSingers =
+                                             std::move(choices.unavailable);
+                                       }
                                        return dialog->choose(NativeNewProjectDialogConfig{
                                            .candidates = authoring_->runtime().voicebanks().candidates(),
+                                           .proceduralSingers = std::move(proceduralSingers),
+                                           .unavailableProceduralSingers =
+                                               std::move(unavailableProceduralSingers),
                                            .initialDirectory = currentPath.has_value()
                                                                    ? currentPath->parent_path()
                                                                    : std::filesystem::path{},
@@ -604,6 +689,7 @@ core::Result<void> NativeEditorApp::initialize() {
             .id = package->manifest.characterId,
             .version = package->manifest.version,
             .voicebankId = package->manifest.voicebankId,
+            .resourceIdentity = package->manifest.resourceIdentity,
             .accentPrimary = package->manifest.accent.primary,
             .accentSecondary = package->manifest.accent.secondary,
             .hasPerformance = character_.hasPerformanceAssets(),
@@ -1296,6 +1382,11 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   authoring_->controller().pollReplacementReview();
   if (applicationController_ != nullptr) {
     record(applicationController_->tickAutosave());
+    // Proposal generation only reads its captured score on the worker. Adoption
+    // and stale-document validation belong here, on the editor's owner thread.
+    const auto proposal =
+        applicationController_->applyPendingAutomaticPerformanceProposal();
+    if (!proposal) record(proposal.error());
     // A background export committed on its own thread and reported the renderer it used instead of
     // editing the document there. This is the owner thread, so the record becomes an ordinary edit
     // here, once, and only for an export that actually committed.
@@ -1448,7 +1539,15 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   // bound presentation for the currently verified voice identity may animate the dock.
   state.characterPerformance.reset();
   state.characterMouth = nullptr;
+  state.characterMouthPlacement.reset();
+  state.characterVoiceStyle.clear();
+  state.characterScorePitchRange.clear();
   if (state.voiceIdentity.characterActive && character_.hasPerformanceSnapshot()) {
+    if (const auto* snapshot = character_.performanceSnapshot(); snapshot != nullptr) {
+      state.characterVoiceStyle = snapshot->style;
+      if (snapshot->scorePitchRange.has_value())
+        state.characterScorePitchRange = character::scorePitchRangeLabel(*snapshot->scorePitchRange);
+    }
     if (const auto frame = authoring_->characterPerformanceFrameAt(tick); frame.has_value()) {
       state.characterPerformance = native_ui::EditorSceneState::CharacterPerformanceView{
           .mouth = frame->mouth,
@@ -1457,8 +1556,12 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
           .performing = frame->performing,
           .audibleStale = authoring_->characterPerformanceStale(),
           .reducedMotion = platform::currentAccessibilityPreferences().reduceMotion,
+          .voiceStyle = state.characterVoiceStyle,
+          .scorePitchRange = state.characterScorePitchRange,
       };
       state.characterMouth = character_.mouth(frame->mouth);
+      if (state.characterMouth != nullptr)
+        state.characterMouthPlacement = character_.mouthPlacement();
     }
   }
   // The native accessibility tree is rebuilt from the controller's own read model, not from the

@@ -54,6 +54,35 @@ TEST_CASE("note visual layout preserves timeline truth while exposing overlaps")
   }
 }
 
+TEST_CASE("note visual layout reuses the lowest band when an overlap ends at the next start") {
+  using namespace seam;
+  const std::vector<ui::NoteVisualLayoutItem> items{
+      {.noteId = domain::NoteId{1U}, .midiKey = 64U,
+       .start = time::Tick{0}, .end = time::Tick{10},
+       .timelineBounds = ui::Rect{0.0, 0.0, 100.0, 18.0}},
+      {.noteId = domain::NoteId{2U}, .midiKey = 64U,
+       .start = time::Tick{0}, .end = time::Tick{30},
+       .timelineBounds = ui::Rect{0.0, 0.0, 100.0, 18.0}},
+      {.noteId = domain::NoteId{3U}, .midiKey = 64U,
+       .start = time::Tick{2}, .end = time::Tick{20},
+       .timelineBounds = ui::Rect{0.0, 0.0, 100.0, 18.0}},
+      {.noteId = domain::NoteId{4U}, .midiKey = 64U,
+       .start = time::Tick{10}, .end = time::Tick{25},
+       .timelineBounds = ui::Rect{0.0, 0.0, 100.0, 18.0}},
+  };
+
+  const auto layouts = ui::layoutNoteVisuals(items);
+  CHECK(layouts.size() == items.size());
+  // The first note's band becomes free exactly at tick 10. The old linear
+  // allocator released bands whose end was <= the next start and preferred
+  // the lowest available index; the heap-based implementation must preserve it.
+  CHECK(layouts[0].bandIndex == 0U);
+  CHECK(layouts[1].bandIndex == 1U);
+  CHECK(layouts[2].bandIndex == 2U);
+  CHECK(layouts[3].bandIndex == 0U);
+  CHECK(layouts[3].groupIndex == layouts[0].groupIndex);
+}
+
 TEST_CASE("piano roll returns every overlapping note in stable cycle order") {
   seam::application::ProjectFactory factory{220U};
   auto project = factory.createProject("Overlaps");
@@ -80,6 +109,29 @@ TEST_CASE("piano roll returns every overlapping note in stable cycle order") {
   const auto candidates = model.overlapCandidatesAt(
       {visuals.front().bounds.x + 2.0, visuals.front().bounds.y + 2.0});
   CHECK(candidates == expected);
+
+  std::set<seam::domain::NoteId> visibleBandIds;
+  std::size_t hiddenCount = 0U;
+  for (const auto& visual : visuals) {
+    const seam::ui::Point center{
+        visual.bounds.x + visual.bounds.width * 0.5,
+        visual.bounds.y + visual.bounds.height * 0.5};
+    if (visual.hiddenByOverlapDensity) {
+      ++hiddenCount;
+      CHECK(model.hitTest(center) != visual.noteId);
+    } else {
+      visibleBandIds.insert(visual.noteId);
+      CHECK(model.hitTest(center) == visual.noteId);
+    }
+  }
+  CHECK(hiddenCount == 2U);
+  CHECK(visibleBandIds.size() == 3U);
+  const auto selected = model.notesInBox({visuals.front().timelineBounds.x,
+                                         visuals.front().timelineBounds.y,
+                                         visuals.front().timelineBounds.width,
+                                         visuals.front().timelineBounds.height});
+  CHECK(selected.size() == visibleBandIds.size());
+  for (const auto id : selected) CHECK(visibleBandIds.contains(id));
 }
 
 TEST_CASE("spatial index virtualizes a ten-thousand-note project") {

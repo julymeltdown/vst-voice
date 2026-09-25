@@ -22,6 +22,9 @@ enum class SemanticRole {
 
 enum class SemanticAction { Activate, SetFocus, EditText, Toggle };
 
+[[nodiscard]] std::string vibratoHandleSemanticId(
+    domain::NoteId noteId, VibratoHandleKind kind);
+
 struct SemanticNode final {
   std::string id;
   SemanticRole role{SemanticRole::Window};

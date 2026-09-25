@@ -398,12 +398,20 @@ public:
                            "Accessibility client is unavailable");
     }
     const bool hadCustomSurface=client_->accessibilityTree()!=nullptr;
+    const auto focusedId = [](const AccessibilityTree* tree) {
+      const auto* focused = tree == nullptr ? nullptr : tree->focusedNode();
+      return focused == nullptr ? std::string{} : focused->id;
+    };
+    const auto focusedBefore = focusedId(client_->accessibilityTree());
     const auto result = client_->dispatchAccessibility(id, action);
+    const bool focusChanged =
+        result && (action == SemanticAction::SetFocus ||
+                   focusedBefore != focusedId(client_->accessibilityTree()));
     // Navigation can remove the virtual control that previously held focus.
     // Restore the real canvas only when that entire custom surface disappears;
     // ordinary activations may intentionally focus a text editor instead.
     if (result && action==SemanticAction::Activate) restoreCanvasAfterSurfaceExit(hadCustomSurface);
-    if (result && action == SemanticAction::SetFocus && view_ != nil) {
+    if (focusChanged && view_ != nil) {
       accessibilitySnapshotDirty_.store(true, std::memory_order_release);
       NSAccessibilityPostNotification(
           view_, NSAccessibilityFocusedUIElementChangedNotification);

@@ -15,6 +15,7 @@
 #include "seam/ui/text_composition_model.hpp"
 #include "seam/ui/lyric_replacement_job.hpp"
 #include "seam/ui/vibrato_clear_preview.hpp"
+#include "seam/ui/vibrato_model.hpp"
 #include "seam/ui/note_cleanup_preview.hpp"
 #include "seam/ui/dynamics_clear_preview.hpp"
 #include "seam/ui/dynamics_lane_model.hpp"
@@ -116,6 +117,9 @@ struct EditorHostCallbacks final {
   std::function<void(const TextInputRequest&)> beginTextInput;
   std::function<void()> endTextInput;
   std::function<core::Result<void>(bool)> setPlaying;
+  // Keeps host-owned render/voicebank selection aligned with the editor's
+  // selected vocal track. Selection is view state and must not dirty a project.
+  std::function<core::Result<void>(domain::TrackId)> selectTrack;
   std::function<void()> documentChanged;
   // Resolve controls against the selected installed singer. When absent, the
   // editor uses the conservative carrier-wide capability table.
@@ -243,6 +247,7 @@ public:
   void closeSampleMicroscope() noexcept;
 
   [[nodiscard]] core::Result<void> selectTrack(domain::TrackId trackId);
+  [[nodiscard]] core::Result<void> selectAdjacentVocalTrack(int direction);
   [[nodiscard]] core::Result<void> beginTempoEdit(time::Tick tick = time::Tick{0});
   [[nodiscard]] core::Result<void> beginHintEdit(domain::NoteId noteId);
   [[nodiscard]] core::Result<void> beginSelectedHintEdit();
@@ -473,6 +478,18 @@ private:
     MicroscopePitchMark,
     MoveExpressionPoint,
   };
+  struct VibratoHandleDrag final {
+    domain::NoteId noteId;
+    VibratoHandleKind kind{VibratoHandleKind::Onset};
+    ui::Rect bounds;
+    ui::Point handleStart;
+    domain::NoteVibrato source;
+    domain::NoteVibrato preview;
+    std::uint64_t revision{0U};
+    double logicalWidth{0.0};
+    double logicalHeight{0.0};
+    double activeDurationMilliseconds{0.0};
+  };
 
   [[nodiscard]] ui::Point modelPoint(ui::Point windowPoint) const noexcept;
   [[nodiscard]] std::optional<ui::Rect> noteWindowBounds(domain::NoteId noteId) const;
@@ -506,6 +523,11 @@ private:
   [[nodiscard]] core::Result<void> beginDynamicsFieldInput(bool tick);
   [[nodiscard]] core::Result<domain::DynamicsAutomationPoint> dynamicsPointValue() const;
   [[nodiscard]] core::Result<void> dragDynamicsPoint(ui::Point position);
+  [[nodiscard]] core::Result<void> dragVibratoHandle(ui::Point position);
+  [[nodiscard]] core::Result<void> finishVibratoHandleDrag();
+  [[nodiscard]] std::vector<VibratoHandleKind> availableVibratoHandles() const;
+  [[nodiscard]] core::Result<void> focusVibratoHandle(int direction);
+  [[nodiscard]] core::Result<void> adjustFocusedVibratoHandle(int direction);
   [[nodiscard]] core::Result<void> navigateDynamics(ui::DynamicsPlotViewport::Action action, double anchor = 0.5);
   [[nodiscard]] core::Result<void> cycleMeasuredChannel();
   void pollAudioMeasurement();
@@ -541,6 +563,8 @@ private:
   EditorSceneLayout layout_;
   EditorHostCallbacks callbacks_;
   DragMode dragMode_{DragMode::None};
+  std::optional<VibratoHandleDrag> vibratoHandleDrag_;
+  std::optional<VibratoHandleKind> vibratoKeyboardFocus_;
   ui::Point dragStart_;
   ui::Point dragCurrent_;
   bool dragAdditive_{false};
@@ -556,9 +580,11 @@ private:
     domain::RegionId regionId;
     domain::NoteId noteId;
     std::uint64_t revision;
+    domain::Language language;
     std::optional<std::string> before;
   };
   std::optional<HintEditContext> hintEdit_;
+  std::string hintEditError_;
   std::uint64_t hintInteraction_{0U};
   struct ReplacementInput final {
     application::PerformanceJobContext context;

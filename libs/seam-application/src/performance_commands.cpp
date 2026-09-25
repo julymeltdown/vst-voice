@@ -264,6 +264,10 @@ core::Result<void> CopyNotePerformanceCommand::apply(domain::Project& project) {
     std::vector<domain::SeamOverride> copiedSeams;
     std::unordered_set<domain::NoteId> sources;
     std::unordered_set<domain::NoteId> targets;
+    std::optional<std::int64_t> phraseTranslation;
+    auto sourceStart = time::Tick{std::numeric_limits<std::int64_t>::max()};
+    auto sourceEnd = time::Tick{0};
+    auto targetStart = time::Tick{std::numeric_limits<std::int64_t>::max()};
     for (const auto& map : mapping_) {
       if (!sources.insert(map.source).second || !targets.insert(map.target).second) {
         return core::failure(core::ErrorCode::InvalidArgument, "Repeated performance copy mapping");
@@ -280,6 +284,73 @@ core::Result<void> CopyNotePerformanceCommand::apply(domain::Project& project) {
       if (!sourceValid) return sourceValid;
       const auto targetValid = target->validate();
       if (!targetValid) return targetValid;
+      const auto translation = target->startTick.value() - source->startTick.value();
+      if (phraseTranslation.has_value() && *phraseTranslation != translation) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+            "Time-scoped performance can only be copied with one phrase translation");
+      }
+      phraseTranslation = translation;
+      sourceStart = std::min(sourceStart, source->startTick);
+      sourceEnd = std::max(sourceEnd, source->endTick());
+      targetStart = std::min(targetStart, target->startTick);
+    }
+    if (!phraseTranslation.has_value() || sourceStart >= sourceEnd) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Performance copy has no valid source phrase span");
+    }
+    const domain::PerformanceTimeRange sourceWindow{sourceStart, sourceEnd};
+    auto transformedPerformance = domain::transformRegionPerformance(
+        region->performance, region->notes, region->durationTick, mapping_,
+        sourceWindow);
+    if (!transformedPerformance) return core::Result<void>{transformedPerformance.error()};
+
+    const auto translateTick = [&](time::Tick tick) -> std::optional<time::Tick> {
+      const auto value = tick.value();
+      const auto translation = targetStart.value();
+      if ((translation > 0 && value > std::numeric_limits<std::int64_t>::max() - translation) ||
+          (translation < 0 && value < std::numeric_limits<std::int64_t>::min() - translation)) {
+        return std::nullopt;
+      }
+      return time::Tick{value + translation};
+    };
+    if (transformedPerformance.value().ownership.size() >
+            domain::kMaximumPerformanceOwnership - next.ownership.size() ||
+        transformedPerformance.value().accepted.size() >
+            domain::kMaximumPerformanceSelections - next.accepted.size()) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+          "Copied time-scoped performance exceeds region limits");
+    }
+    for (auto copy : transformedPerformance.value().ownership) {
+      if (auto* range = std::get_if<domain::PerformanceTimeRange>(&copy.scope)) {
+        const auto start = translateTick(range->startTick);
+        const auto end = translateTick(range->endTick);
+        if (!start || !end) return core::failure(core::ErrorCode::InvalidArgument,
+            "Copied performance ownership range overflows");
+        range->startTick = *start;
+        range->endTick = *end;
+      }
+      next.ownership.push_back(std::move(copy));
+    }
+    for (auto copy : transformedPerformance.value().accepted) {
+      if (auto* range = std::get_if<domain::PerformanceTimeRange>(&copy.scope)) {
+        const auto start = translateTick(range->startTick);
+        const auto end = translateTick(range->endTick);
+        if (!start || !end) return core::failure(core::ErrorCode::InvalidArgument,
+            "Copied accepted performance range overflows");
+        range->startTick = *start;
+        range->endTick = *end;
+      }
+      const auto offset = copy.sourceTickOffset.value();
+      if (targetStart.value() > 0 && offset <
+          std::numeric_limits<std::int64_t>::min() + targetStart.value()) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+            "Copied performance source offset overflows");
+      }
+      copy.sourceTickOffset = time::Tick{offset - targetStart.value()};
+      next.accepted.push_back(std::move(copy));
+    }
+
+    for (const auto& map : mapping_) {
       for (const auto& edit : region->phonemeOverrides) {
         if (edit.key.noteId != map.source) continue;
         if (copiedPhonemes.size() >= 4096U) {
@@ -309,33 +380,6 @@ core::Result<void> CopyNotePerformanceCommand::apply(domain::Project& project) {
         copy.incomingStartKey.noteId = map.target;
         if (region->findSeamOverride(copy.incomingStartKey)) return core::failure(core::ErrorCode::Conflict, "Copied seam target is occupied");
         copiedSeams.push_back(std::move(copy));
-      }
-      const auto delta = source->startTick.value() - target->startTick.value();
-      for (const auto& owner : region->performance.ownership) {
-        const auto* note = std::get_if<domain::NoteId>(&owner.scope);
-        if (note == nullptr || *note != map.source) continue;
-        if (next.ownership.size() >= domain::kMaximumPerformanceOwnership) {
-          return core::failure(core::ErrorCode::InvalidArgument, "Copied ownership exceeds limit");
-        }
-        auto copy = owner;
-        copy.scope = map.target;
-        next.ownership.push_back(std::move(copy));
-      }
-      for (const auto& selection : region->performance.accepted) {
-        const auto* note = std::get_if<domain::NoteId>(&selection.scope);
-        if (note == nullptr || *note != map.source) continue;
-        if (next.accepted.size() >= domain::kMaximumPerformanceSelections) {
-          return core::failure(core::ErrorCode::InvalidArgument, "Copied selections exceed limit");
-        }
-        const auto offset = selection.sourceTickOffset.value();
-        if ((delta > 0 && offset > std::numeric_limits<std::int64_t>::max() - delta) ||
-            (delta < 0 && offset < std::numeric_limits<std::int64_t>::min() - delta)) {
-          return core::failure(core::ErrorCode::InvalidArgument, "Copied performance offset overflows");
-        }
-        auto copy = selection;
-        copy.scope = map.target;
-        copy.sourceTickOffset = time::Tick{offset + delta};
-        next.accepted.push_back(std::move(copy));
       }
     }
     next.pronunciation.reset();

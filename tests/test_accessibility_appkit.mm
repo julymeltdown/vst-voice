@@ -3,6 +3,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/accessibility_tree.hpp"
+#include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/native_window.hpp"
 
 #import <AppKit/AppKit.h>
@@ -59,11 +60,12 @@ public:
       seam::native_ui::SemanticAction::Activate};
   bool actionReceived{false};
   bool valueReceived{false};
+  bool transportActivationMovesFocus{false};
 
   AppKitAccessibilityClient()
       : session(makeProject()), model(session, factory, regionId) {
     model.pitch().setTopMidiKey(127);
-    model.pitch().setRowHeight(4.0);
+    model.pitch().setRowHeight(12.0);
     model.setViewport(seam::ui::PianoRollViewport{
         .bounds = seam::ui::Rect{0.0, 0.0, 40000.0, 20000.0},
         .keyboardWidth = 0.0,
@@ -73,6 +75,17 @@ public:
     state.logicalWidth = 1440.0;
     state.logicalHeight = 900.0;
     state.renderStatus.hasAudibleAudio = true;
+    auto* region = session.project().findRegion(regionId);
+    if (region != nullptr && !region->notes.empty()) {
+      auto& selected = region->notes.front();
+      selected.vibrato = {.enabled = true, .startFraction = 0.2F,
+          .fadeInFraction = 0.1F, .fadeOutFraction = 0.1F,
+          .depthCents = 75.0F, .periodMilliseconds = 50.0F,
+          .phaseTurns = 0.25F};
+      session.selection().selectOnly(selected.id);
+      state.selectedNoteCount = 1U;
+      state.vibratoEditable = true;
+    }
     tree.rebuild(state, model,
                  seam::native_ui::AccessibilityTreeConfig{
                      .maximumMaterializedNotes = 64U});
@@ -115,6 +128,16 @@ public:
     lastId = std::string{id};
     lastAction = action;
     actionReceived = true;
+    if (action == seam::native_ui::SemanticAction::SetFocus ||
+        (action == seam::native_ui::SemanticAction::Activate &&
+         id.starts_with("editor.vibrato.handle."))) {
+      return tree.setFocus(id);
+    }
+    if (transportActivationMovesFocus &&
+        action == seam::native_ui::SemanticAction::Activate &&
+        id == "toolbar.transport") {
+      return tree.setFocus("toolbar.tempo");
+    }
     return seam::core::success();
   }
 
@@ -137,7 +160,9 @@ private:
     auto* region = project.findRegion(regionId);
     for (std::size_t index = 0U; index < 600U; ++index) {
       auto [lyric, note] = factory.makeNote(
-          seam::time::Tick{static_cast<std::int64_t>(index * 12U)},
+          seam::time::Tick{index == 0U
+              ? 0
+              : static_cast<std::int64_t>(240U + (index - 1U) * 24U)},
           seam::time::Tick{240}, static_cast<std::uint8_t>(60U + index % 12U),
           U"あ", seam::domain::Language::Japanese);
       region->lyrics.push_back(std::move(lyric));
@@ -197,6 +222,32 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
     NSArray* children = [view accessibilityChildren];
     CHECK(children != nil);
 
+    const auto* selectedRegion =
+        client.session.project().findRegion(client.regionId);
+    CHECK(selectedRegion != nullptr);
+    CHECK(!selectedRegion->notes.empty());
+    const auto periodId = seam::native_ui::vibratoHandleSemanticId(
+        selectedRegion->notes.front().id,
+        seam::native_ui::VibratoHandleKind::Period);
+    id period = findAccessibilityElement(
+        children, [NSString stringWithUTF8String:periodId.c_str()]);
+    CHECK(period != nil);
+    CHECK([[period accessibilityRole] isEqual:NSAccessibilityButtonRole]);
+    CHECK([[period accessibilityTitle] isEqualToString:@"Vibrato period"]);
+    CHECK([[period accessibilityValue] isEqualToString:@"50 ms"]);
+    CHECK([[period accessibilityHelp] length] > 0U);
+    [period setAccessibilityFocused:YES];
+    CHECK(client.lastId == periodId);
+    CHECK(client.lastAction == seam::native_ui::SemanticAction::SetFocus);
+    id focusedPeriod = [view accessibilityFocusedUIElement];
+    CHECK(focusedPeriod != nil);
+    CHECK([[focusedPeriod accessibilityIdentifier]
+        isEqualToString:[NSString stringWithUTF8String:periodId.c_str()]]);
+    CHECK([focusedPeriod accessibilityFocused]);
+    CHECK([period accessibilityPerformPress]);
+    CHECK(client.lastId == periodId);
+    CHECK(client.lastAction == seam::native_ui::SemanticAction::Activate);
+
     const auto offscreenNotes = client.tree.materializeNotes(599U, 1U);
     CHECK(offscreenNotes.size() == 1U);
     CHECK(client.tree.setFocus(offscreenNotes.front().id));
@@ -211,13 +262,16 @@ TEST_CASE("AppKit accessibility bridge exposes runtime hierarchy and lazy pages"
     CHECK(transport != nil);
     CHECK([[transport accessibilityRole] isEqual:NSAccessibilityButtonRole]);
     CHECK([transport isAccessibilityEnabled]);
+    client.transportActivationMovesFocus = true;
     CHECK([transport accessibilityPerformPress]);
     CHECK(client.actionReceived);
     CHECK(client.lastId == "toolbar.transport");
     CHECK(client.lastAction == seam::native_ui::SemanticAction::Activate);
+    children = [view accessibilityChildren];
 
     id tempo = findAccessibilityElement(children, @"toolbar.tempo");
     CHECK(tempo != nil);
+    CHECK([tempo accessibilityFocused]);
     CHECK([[tempo accessibilityRole] isEqual:NSAccessibilityTextFieldRole]);
     CHECK([tempo accessibilityIsAttributeSettable:NSAccessibilityValueAttribute]);
     CHECK([tempo accessibilityFrame].size.width > 0.0);

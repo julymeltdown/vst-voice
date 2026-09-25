@@ -245,6 +245,13 @@ EditorSceneState NativeEditorController::sceneState() const {
       .characterDockReserved = characterPortrait_ != nullptr,
   };
   state.selectedNoteCount = session_.selection().noteIds().size();
+  if (vibratoHandleDrag_) {
+    state.vibratoGesturePreview = EditorSceneState::VibratoGesturePreview{
+        .noteId = vibratoHandleDrag_->noteId,
+        .value = vibratoHandleDrag_->preview,
+    };
+  }
+  state.vibratoKeyboardFocus = vibratoKeyboardFocus_;
   state.hoveredNote = interaction_.hoveredNote();
   state.focusedNote = interaction_.focusedNote();
   state.detail = interaction_.detail();
@@ -254,6 +261,23 @@ EditorSceneState NativeEditorController::sceneState() const {
   // same way the automation lane does, rather than only at the channel's neutral.
   state.inspector = TrackInspectorModel::snapshot(session_.project(), selectedTrackId_,
                                                   playheadTick_);
+  if (state.inspector.vocal && callbacks_.validateSingerControl) {
+    // Replace the conservative carrier-only default with the host's admitted-resource decision.
+    // This matters for renderer-specific sample capabilities such as Spectral Classic formant.
+    for (auto& capability : state.inspector.expressionCapabilities) {
+      const auto control = ui::describeExpressionChannel(capability.channel).control;
+      const auto resolved = callbacks_.validateSingerControl(selectedTrackId_, control);
+      capability.refusal = resolved ? std::string{} : resolved.error().message;
+    }
+    for (auto& row : state.inspector.expressionRows) {
+      const auto capability = std::find_if(
+          state.inspector.expressionCapabilities.begin(),
+          state.inspector.expressionCapabilities.end(),
+          [&row](const auto& candidate) { return candidate.channel == row.channel; });
+      if (capability != state.inspector.expressionCapabilities.end())
+        row.refusal = capability->refusal;
+    }
+  }
   state.vibratoEditable = state.inspector.vocal && session_.project().findRegion(regionId_) &&
       !session_.selection().empty() && session_.selection().noteIds().size() <= 10000U;
   const auto* dynamicsRegion = session_.project().findRegion(regionId_);
@@ -271,6 +295,13 @@ EditorSceneState NativeEditorController::sceneState() const {
   }
   if (const auto* track = session_.project().findVocalTrack(selectedTrackId_);
       track != nullptr) {
+    domain::SingerResourceIdentity activeResource{
+        .kind = domain::SingerResourceKind::Sample,
+        .id = track->voicebank.id,
+        .version = track->voicebank.version,
+        .contentHash = track->voicebank.contentHash};
+    if (track->proceduralRecipe) activeResource = track->proceduralRecipe->resource;
+    else if (track->neuralResource) activeResource = track->neuralResource->resource;
     const auto card = std::find_if(voicebankCards_.begin(), voicebankCards_.end(),
                                    [&track](const auto& candidate) {
       return candidate.id == track->voicebank.id &&
@@ -279,6 +310,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     });
     state.voiceIdentity = resolveVoiceIdentity(VoiceIdentityInput{
         .reference = track->voicebank,
+        .activeResource = activeResource,
         .card = card == voicebankCards_.end() ? nullptr : &*card,
         .character = characterBinding_.has_value() ? &*characterBinding_ : nullptr,
         .renderStatus = state.renderStatus,
@@ -292,6 +324,9 @@ EditorSceneState NativeEditorController::sceneState() const {
     switch (state.voiceIdentity.state) {
       case VoiceIdentityState::Missing:
         state.characterState = character::State::Warning;
+        break;
+      case VoiceIdentityState::Selected:
+        state.characterState = character::State::Neutral;
         break;
       case VoiceIdentityState::Ready:
         state.characterState = playing_ ? character::State::Focused
@@ -371,7 +406,8 @@ EditorSceneState NativeEditorController::sceneState() const {
     if (hintEdit_ || replacementInput_) {
       state.hintInputActive = true;
       state.timeMapInputActive = true; // Shared bounded non-lyric input painter.
-      state.boundedInputLabel = "PHONE HINT (EMPTY = CLEAR)";
+      state.boundedInputLabel = hintEditError_.empty() ?
+          "PHONE HINT (EMPTY = CLEAR)" : "INVALID PHONE HINT";
       if (replacementInput_) state.boundedInputLabel = replacementInputError_.empty() ?
           (replacementInput_->diagnostics ? "FIND ACTIVE DIAGNOSTICS (LITERAL)" : replacementInput_->findOnly ? "FIND NOTES (LITERAL; CHOOSE FIELD IN RESULTS)" :
            replacementInput_->query ? "REPLACE WITH (EMPTY ALLOWED)" : "FIND LYRIC (LITERAL)") : replacementInputError_;
@@ -1798,16 +1834,16 @@ void NativeEditorController::rebuildAccessibilityTree() {
   if ((hintEdit_ || replacementInput_) && composition_.active()) {
     const auto prefix = hintSemanticPrefix();
     SemanticNode root; root.id = prefix + "panel"; root.role = SemanticRole::Panel;
-    root.name = "Japanese pronunciation hint";
+    root.name = "Pronunciation hint";
     if (replacementInput_) root.name = replacementInput_->diagnostics ? "Find active diagnostics" : replacementInput_->findOnly ? "Find notes" : "Find and replace lyrics";
     if (replacementInput_ && replacementInput_->vibratoField) root.name = "Edit vibrato draft field";
     if (replacementInput_ && replacementInput_->dynamicsTickField) root.name = "Edit region dynamics point field";
     root.bounds = layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, false);
     SemanticNode input; input.id = prefix + "input"; input.role = SemanticRole::TextField;
-    input.name = "Japanese phone symbols; empty clears hint";
+    input.name = "Space-separated phone symbols; empty clears hint";
     if (replacementInput_) input.name = replacementInput_->diagnostics ? "Nonempty literal diagnostic search query" : replacementInput_->findOnly ? "Nonempty literal note search query" :
         replacementInput_->query ? "Replacement text; empty is allowed" : "Nonempty literal lyric query";
-    input.description = replacementInput_ ? replacementInputError_ : std::string{};
+    input.description = replacementInput_ ? replacementInputError_ : hintEditError_;
     if (replacementInput_ && replacementInput_->vibratoField) input.name = std::string{VibratoInspectorDraft::label(*replacementInput_->vibratoField)};
     if (replacementInput_ && replacementInput_->dynamicsTickField) input.name = *replacementInput_->dynamicsTickField ? "Nonnegative region tick" : "Linear gain: zero to 3.9810717, unity is one";
     input.value = domain::toUtf8(composition_.compositionText()); input.editableValue = input.value;
@@ -1875,6 +1911,41 @@ void NativeEditorController::rebuildAccessibilityTree() {
 
 core::Result<void> NativeEditorController::dispatchAccessibility(
     std::string_view id, SemanticAction action) {
+  constexpr std::string_view vibratoPrefix{"editor.vibrato.handle."};
+  if (id.starts_with(vibratoPrefix)) {
+    const auto selected = session_.selection().noteIds();
+    if (selected.size() != 1U) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Vibrato handle target is no longer selected");
+    }
+    std::optional<VibratoHandleKind> kind;
+    for (const auto candidate : availableVibratoHandles()) {
+      if (vibratoHandleSemanticId(selected.front(), candidate) == id) {
+        kind = candidate;
+        break;
+      }
+    }
+    if (!kind) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Vibrato handle target is no longer available");
+    }
+    if (action != SemanticAction::SetFocus &&
+        action != SemanticAction::Activate) {
+      return core::failure(core::ErrorCode::Unsupported,
+                           "Vibrato handle supports focus and activate actions");
+    }
+    rebuildAccessibilityTree();
+    return accessibilityTree_.dispatch(
+        id, action,
+        [this, kind](std::string_view element,
+                     SemanticAction) -> core::Result<void> {
+          const auto focused = accessibilityTree_.setFocus(element);
+          if (!focused) return focused;
+          vibratoKeyboardFocus_ = *kind;
+          repaint();
+          return core::success();
+        });
+  }
   if (replacementOpen_) {
     const std::string target{id}; const auto prefix = replacementSemanticPrefix();
     if (!target.starts_with(prefix)) return core::failure(core::ErrorCode::Conflict, "Stale or background replacement action");
@@ -2099,6 +2170,16 @@ core::Result<void> NativeEditorController::dispatchAccessibility(
                                  "Support report only supports activation");
           }
           return selectSupportReport(index);
+        }
+        if (element == "support.track.previous" ||
+            element == "support.track.next") {
+          if (requested == SemanticAction::SetFocus) return core::success();
+          if (requested != SemanticAction::Activate) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Track navigation only supports activation");
+          }
+          return selectAdjacentVocalTrack(
+              element == "support.track.next" ? 1 : -1);
         }
         if (element.rfind("audio.device.", 0U) == 0U &&
             requested == SemanticAction::Activate) {
@@ -2768,6 +2849,10 @@ void NativeEditorController::resize(double logicalWidth,
 }
 
 core::Result<void> NativeEditorController::selectTrack(domain::TrackId trackId) {
+  if (callbacks_.selectTrack) {
+    const auto hostSelection = callbacks_.selectTrack(trackId);
+    if (!hostSelection) return hostSelection;
+  }
   auto selected = arrangementPanel_.selectTrack(session_.project(), trackId);
   if (!selected) return selected;
   selectedTrackId_ = arrangementPanel_.selectedTrack();
@@ -2780,6 +2865,32 @@ core::Result<void> NativeEditorController::selectTrack(domain::TrackId trackId) 
   pianoRoll_.rebuildIndex();
   repaint();
   return core::success();
+}
+
+core::Result<void> NativeEditorController::selectAdjacentVocalTrack(
+    int direction) {
+  const auto& tracks = arrangementPanel_.tracks();
+  if (tracks.empty()) {
+    return core::failure(core::ErrorCode::NotFound,
+                         "No vocal tracks are available");
+  }
+  if (direction == 0) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Track navigation direction must be nonzero");
+  }
+  const auto current = std::find_if(
+      tracks.begin(), tracks.end(), [this](const auto& track) {
+        return track.id == selectedTrackId_;
+      });
+  auto index = current == tracks.end()
+                   ? std::size_t{0U}
+                   : static_cast<std::size_t>(current - tracks.begin());
+  if (direction > 0) {
+    index = (index + 1U) % tracks.size();
+  } else {
+    index = index == 0U ? tracks.size() - 1U : index - 1U;
+  }
+  return selectTrack(tracks[index].id);
 }
 
 core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionId) {
@@ -3757,6 +3868,7 @@ core::Result<void> NativeEditorController::beginBatchLyricEdit() {
 
 core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
+  vibratoKeyboardFocus_.reset();
   if (replacementOpen_) {
     if (event.button == PointerButton::Left) {
       const auto view = replacementReviewView();
@@ -3921,6 +4033,18 @@ core::Result<void> NativeEditorController::pointerDown(
     if (event.position.x >= panelX &&
         event.position.y >= layout_.toolbarHeight &&
         event.position.y < layout_.pianoBottom(logicalHeight_)) {
+      if (layout_.supportTrackPreviousBounds(panelX, logicalWidth_)
+              .contains(event.position)) {
+        return arrangementPanel_.tracks().size() > 1U
+                   ? selectAdjacentVocalTrack(-1)
+                   : core::success();
+      }
+      if (layout_.supportTrackNextBounds(panelX, logicalWidth_)
+              .contains(event.position)) {
+        return arrangementPanel_.tracks().size() > 1U
+                   ? selectAdjacentVocalTrack(1)
+                   : core::success();
+      }
       const auto first = std::min(supportView.firstVisibleItem,
                                   supportView.items.size());
       for (std::size_t index = first; index < supportView.items.size(); ++index) {
@@ -4381,6 +4505,74 @@ core::Result<void> NativeEditorController::pointerDown(
       event.position.y >= pianoBottom) {
     return core::success();
   }
+  const auto selectedNotes = session_.selection().noteIds();
+  if (selectedNotes.size() == 1U) {
+    const auto selectedId = selectedNotes.front();
+    const auto* region = session_.project().findRegion(regionId_);
+    const auto* selectedNote = session_.project().findNote(selectedId);
+    if (region != nullptr && selectedNote != nullptr && selectedNote->vibrato.enabled) {
+      const auto visuals = pianoRoll_.visibleNotes();
+      const auto visual = std::find_if(visuals.begin(), visuals.end(),
+          [selectedId](const ui::NoteVisual& candidate) {
+            return candidate.noteId == selectedId;
+          });
+      if (visual != visuals.end()) {
+        auto bounds = visual->bounds;
+        bounds.y += layout_.contentTop();
+        const auto handles = vibratoHandlePositions(
+            *selectedNote, region->startTick, session_.project().tempoMap(), bounds);
+        if (handles) {
+          constexpr double hitRadius = 9.0;
+          auto selectedHandle = VibratoHandleKind::Onset;
+          auto nearestDistance = hitRadius;
+          const auto consider = [&](VibratoHandleKind kind, ui::Point point) {
+            const auto distance = std::hypot(
+                point.x - event.position.x, point.y - event.position.y);
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              selectedHandle = kind;
+            }
+          };
+          consider(VibratoHandleKind::Onset, handles->onset);
+          consider(VibratoHandleKind::Depth, handles->depth);
+          if (handles->fadeIn)
+            consider(VibratoHandleKind::FadeIn, *handles->fadeIn);
+          if (handles->fadeOut)
+            consider(VibratoHandleKind::FadeOut, *handles->fadeOut);
+          if (handles->period)
+            consider(VibratoHandleKind::Period, *handles->period);
+          if (handles->phase)
+            consider(VibratoHandleKind::Phase, *handles->phase);
+          if (nearestDistance < hitRadius) {
+            constexpr double vibratoSampleRate = 48000.0;
+            const auto startFrame = session_.project().tempoMap().sampleFrameAt(
+                region->startTick + selectedNote->startTick,
+                vibratoSampleRate);
+            const auto endFrame = session_.project().tempoMap().sampleFrameAt(
+                region->startTick + selectedNote->endTick(),
+                vibratoSampleRate);
+            const auto activeDurationMilliseconds =
+                (static_cast<double>(endFrame) - static_cast<double>(startFrame)) /
+                48.0 * (1.0 - selectedNote->vibrato.startFraction);
+            vibratoHandleDrag_ = VibratoHandleDrag{
+                .noteId = selectedId,
+                .kind = selectedHandle,
+                .bounds = bounds,
+                .handleStart = event.position,
+                .source = selectedNote->vibrato,
+                .preview = selectedNote->vibrato,
+                .revision = session_.revision(),
+                .logicalWidth = logicalWidth_,
+                .logicalHeight = logicalHeight_,
+                .activeDurationMilliseconds = activeDurationMilliseconds,
+            };
+            repaint();
+            return core::success();
+          }
+        }
+      }
+    }
+  }
   const auto point = modelPoint(event.position);
   if (const auto hit = pianoRoll_.hitTest(point); hit.has_value()) {
     const auto overlapCandidates = pianoRoll_.overlapCandidatesAt(point);
@@ -4520,8 +4712,340 @@ core::Result<void> NativeEditorController::dragDynamicsPoint(ui::Point position)
   ++replacementInteraction_; replacementError_.clear(); repaint(); return core::success();
 }
 
+core::Result<void> NativeEditorController::dragVibratoHandle(ui::Point position) {
+  if (!vibratoHandleDrag_ || !std::isfinite(position.x) ||
+      !std::isfinite(position.y)) {
+    vibratoHandleDrag_.reset();
+    repaint();
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vibrato handle drag is closed or invalid");
+  }
+  auto& drag = *vibratoHandleDrag_;
+  const auto selected = session_.selection().noteIds();
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* note = session_.project().findNote(drag.noteId);
+  const auto visuals = pianoRoll_.visibleNotes();
+  const auto visual = std::find_if(visuals.begin(), visuals.end(),
+      [&drag](const ui::NoteVisual& candidate) {
+        return candidate.noteId == drag.noteId;
+      });
+  auto currentBounds = visual == visuals.end() ? ui::Rect{} : visual->bounds;
+  currentBounds.y += layout_.contentTop();
+  if (session_.revision() != drag.revision || selected.size() != 1U ||
+      selected.front() != drag.noteId || region == nullptr || note == nullptr ||
+      note->vibrato != drag.source || visual == visuals.end() ||
+      currentBounds.x != drag.bounds.x || currentBounds.y != drag.bounds.y ||
+      currentBounds.width != drag.bounds.width ||
+      currentBounds.height != drag.bounds.height ||
+      logicalWidth_ != drag.logicalWidth || logicalHeight_ != drag.logicalHeight) {
+    vibratoHandleDrag_.reset();
+    repaint();
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vibrato target changed; restart the handle edit");
+  }
+
+  auto preview = drag.source;
+  if (drag.kind == VibratoHandleKind::Onset) {
+    const auto maximumStart = std::max(0.0, 1.0 - 8.0 / drag.bounds.width);
+    preview.startFraction = static_cast<float>(std::clamp(
+        static_cast<double>(drag.source.startFraction) +
+            (position.x - drag.handleStart.x) / drag.bounds.width,
+        0.0, maximumStart));
+  } else if (drag.kind == VibratoHandleKind::FadeIn ||
+             drag.kind == VibratoHandleKind::FadeOut) {
+    const auto activeFraction = 1.0 - static_cast<double>(drag.source.startFraction);
+    const auto activeWidth = drag.bounds.width * activeFraction;
+    if (activeWidth <= 0.0) {
+      vibratoHandleDrag_.reset();
+      repaint();
+      return core::failure(core::ErrorCode::Conflict,
+                           "Vibrato fade handle has no active span");
+    }
+    const auto pointerDelta = position.x - drag.handleStart.x;
+    if (drag.kind == VibratoHandleKind::FadeIn) {
+      preview.fadeInFraction = static_cast<float>(std::clamp(
+          static_cast<double>(drag.source.fadeInFraction) +
+              pointerDelta / activeWidth,
+          0.0,
+          1.0 - static_cast<double>(drag.source.fadeOutFraction)));
+    } else {
+      preview.fadeOutFraction = static_cast<float>(std::clamp(
+          static_cast<double>(drag.source.fadeOutFraction) -
+              pointerDelta / activeWidth,
+          0.0,
+          1.0 - static_cast<double>(drag.source.fadeInFraction)));
+    }
+  } else if (drag.kind == VibratoHandleKind::Period) {
+    const auto activeFraction = 1.0 - static_cast<double>(drag.source.startFraction);
+    const auto activeWidth = drag.bounds.width * activeFraction;
+    if (activeWidth <= 0.0 || drag.activeDurationMilliseconds < 5.0) {
+      vibratoHandleDrag_.reset();
+      repaint();
+      return core::failure(core::ErrorCode::Conflict,
+                           "Vibrato period handle has no valid span");
+    }
+    preview.periodMilliseconds = static_cast<float>(std::clamp(
+        static_cast<double>(drag.source.periodMilliseconds) +
+            (position.x - drag.handleStart.x) / activeWidth *
+                drag.activeDurationMilliseconds,
+        5.0,
+        std::min(500.0, drag.activeDurationMilliseconds)));
+  } else if (drag.kind == VibratoHandleKind::Phase) {
+    const auto activeFraction = 1.0 - static_cast<double>(drag.source.startFraction);
+    const auto periodWidth = drag.bounds.width * activeFraction *
+        (static_cast<double>(drag.source.periodMilliseconds) /
+         drag.activeDurationMilliseconds);
+    if (periodWidth <= 0.0 || drag.activeDurationMilliseconds < 5.0) {
+      vibratoHandleDrag_.reset();
+      repaint();
+      return core::failure(core::ErrorCode::Conflict,
+                           "Vibrato phase handle has no valid cycle");
+    }
+    preview.phaseTurns = static_cast<float>(std::clamp(
+        static_cast<double>(drag.source.phaseTurns) +
+            (position.x - drag.handleStart.x) / periodWidth,
+        0.0, 0.999999));
+  } else {
+    const auto visualAmplitude = drag.bounds.height * 0.28;
+    const auto depthDelta = visualAmplitude > 0.0
+        ? (drag.handleStart.y - position.y) / visualAmplitude * 200.0 : 0.0;
+    preview.depthCents = static_cast<float>(std::clamp(
+        static_cast<double>(drag.source.depthCents) + depthDelta, 0.0, 200.0));
+  }
+  const auto valid = preview.validate();
+  if (!valid) return core::Result<void>{valid.error()};
+  drag.preview = preview;
+  repaint();
+  return core::success();
+}
+
+std::vector<VibratoHandleKind>
+NativeEditorController::availableVibratoHandles() const {
+  std::vector<VibratoHandleKind> result;
+  const auto selected = session_.selection().noteIds();
+  if (selected.size() != 1U) return result;
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* note = session_.project().findNote(selected.front());
+  if (region == nullptr || note == nullptr || !note->vibrato.enabled) return result;
+  const auto visuals = pianoRoll_.visibleNotes();
+  const auto visual = std::find_if(visuals.begin(), visuals.end(),
+      [&selected](const ui::NoteVisual& candidate) {
+        return candidate.noteId == selected.front() && !candidate.hiddenByOverlapDensity;
+      });
+  if (visual == visuals.end()) return result;
+  auto bounds = visual->bounds;
+  bounds.y += layout_.contentTop();
+  const auto handles = vibratoHandlePositions(
+      *note, region->startTick, session_.project().tempoMap(), bounds);
+  if (!handles) return result;
+  result = {VibratoHandleKind::Onset, VibratoHandleKind::Depth};
+  if (handles->fadeIn) result.push_back(VibratoHandleKind::FadeIn);
+  if (handles->fadeOut) result.push_back(VibratoHandleKind::FadeOut);
+  if (handles->period) result.push_back(VibratoHandleKind::Period);
+  if (handles->phase) result.push_back(VibratoHandleKind::Phase);
+  return result;
+}
+
+core::Result<void> NativeEditorController::focusVibratoHandle(int direction) {
+  const auto handles = availableVibratoHandles();
+  if (handles.empty()) {
+    vibratoKeyboardFocus_.reset();
+    repaint();
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Select one visible note with vibrato to focus its handles");
+  }
+  const auto current = std::find(handles.begin(), handles.end(),
+                                 vibratoKeyboardFocus_.value_or(handles.front()));
+  const auto index = current == handles.end()
+      ? 0U : static_cast<std::size_t>(std::distance(handles.begin(), current));
+  if (direction == 0) {
+    vibratoKeyboardFocus_ = handles.front();
+    repaint();
+    return core::success();
+  }
+  const auto count = static_cast<std::ptrdiff_t>(handles.size());
+  auto next = static_cast<std::ptrdiff_t>(index) +
+      (direction < 0 ? -1 : 1);
+  next = (next % count + count) % count;
+  vibratoKeyboardFocus_ = handles[static_cast<std::size_t>(next)];
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::adjustFocusedVibratoHandle(
+    int direction) {
+  if (!vibratoKeyboardFocus_) return core::success();
+  const auto selected = session_.selection().noteIds();
+  const auto* region = session_.project().findRegion(regionId_);
+  const auto* note = selected.size() == 1U
+      ? session_.project().findNote(selected.front()) : nullptr;
+  if (note == nullptr || region == nullptr || !note->vibrato.enabled) {
+    vibratoKeyboardFocus_.reset();
+    repaint();
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vibrato keyboard target is no longer selected");
+  }
+  const auto visuals = pianoRoll_.visibleNotes();
+  const auto visual = std::find_if(visuals.begin(), visuals.end(),
+      [&selected](const ui::NoteVisual& candidate) {
+        return candidate.noteId == selected.front() && !candidate.hiddenByOverlapDensity;
+      });
+  if (visual == visuals.end()) return core::failure(
+      core::ErrorCode::NotFound, "Vibrato keyboard target is not visible");
+  auto bounds = visual->bounds;
+  bounds.y += layout_.contentTop();
+  const auto handles = vibratoHandlePositions(
+      *note, region->startTick, session_.project().tempoMap(), bounds);
+  if (!handles) return core::failure(core::ErrorCode::Conflict,
+                                      "Vibrato handles are unavailable");
+  std::optional<ui::Point> currentPoint;
+  switch (*vibratoKeyboardFocus_) {
+    case VibratoHandleKind::Onset: currentPoint = handles->onset; break;
+    case VibratoHandleKind::Depth: currentPoint = handles->depth; break;
+    case VibratoHandleKind::FadeIn: currentPoint = handles->fadeIn; break;
+    case VibratoHandleKind::FadeOut: currentPoint = handles->fadeOut; break;
+    case VibratoHandleKind::Period: currentPoint = handles->period; break;
+    case VibratoHandleKind::Phase: currentPoint = handles->phase; break;
+  }
+  if (!currentPoint) return core::failure(core::ErrorCode::Conflict,
+                                          "Focused vibrato handle is unavailable");
+
+  constexpr double sampleRate = 48000.0;
+  const auto startFrame = session_.project().tempoMap().sampleFrameAt(
+      region->startTick + note->startTick, sampleRate);
+  const auto endFrame = session_.project().tempoMap().sampleFrameAt(
+      region->startTick + note->endTick(), sampleRate);
+  const auto activeDurationMilliseconds =
+      (static_cast<double>(endFrame) - static_cast<double>(startFrame)) / 48.0 *
+      (1.0 - static_cast<double>(note->vibrato.startFraction));
+  if (!std::isfinite(activeDurationMilliseconds) ||
+      (activeDurationMilliseconds < 5.0 &&
+       (*vibratoKeyboardFocus_ == VibratoHandleKind::Period ||
+        *vibratoKeyboardFocus_ == VibratoHandleKind::Phase))) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vibrato keyboard target has no active duration");
+  }
+  auto target = *currentPoint;
+  const auto activeFraction = 1.0 -
+      static_cast<double>(note->vibrato.startFraction);
+  const auto activeWidth = bounds.width * activeFraction;
+  const auto onsetX = bounds.x + bounds.width *
+      static_cast<double>(note->vibrato.startFraction);
+  switch (*vibratoKeyboardFocus_) {
+    case VibratoHandleKind::Onset: {
+      const auto value = std::clamp(
+          static_cast<double>(note->vibrato.startFraction) + direction * 0.01,
+          0.0, std::max(0.0, 1.0 - 8.0 / bounds.width));
+      target.x = bounds.x + bounds.width * value;
+      break;
+    }
+    case VibratoHandleKind::Depth:
+      target.y -= direction * bounds.height * 0.28 * (5.0 / 200.0);
+      break;
+    case VibratoHandleKind::FadeIn: {
+      const auto value = std::clamp(
+          static_cast<double>(note->vibrato.fadeInFraction) + direction * 0.01,
+          0.0, 1.0 - static_cast<double>(note->vibrato.fadeOutFraction));
+      target.x = onsetX + activeWidth * value;
+      break;
+    }
+    case VibratoHandleKind::FadeOut: {
+      const auto value = std::clamp(
+          static_cast<double>(note->vibrato.fadeOutFraction) + direction * 0.01,
+          0.0, 1.0 - static_cast<double>(note->vibrato.fadeInFraction));
+      target.x = onsetX + activeWidth * (1.0 - value);
+      break;
+    }
+    case VibratoHandleKind::Period: {
+      const auto value = std::clamp(
+          static_cast<double>(note->vibrato.periodMilliseconds) +
+              direction * 5.0,
+          5.0, std::min(500.0, activeDurationMilliseconds));
+      target.x = onsetX + activeWidth * value / activeDurationMilliseconds;
+      break;
+    }
+    case VibratoHandleKind::Phase: {
+      const auto value = std::clamp(
+          static_cast<double>(note->vibrato.phaseTurns) + direction * 0.02,
+          0.0, 0.999999);
+      const auto periodWidth = activeWidth *
+          static_cast<double>(note->vibrato.periodMilliseconds) /
+          activeDurationMilliseconds;
+      target.x = onsetX + periodWidth * value;
+      break;
+    }
+  }
+  vibratoHandleDrag_ = VibratoHandleDrag{
+      .noteId = note->id,
+      .kind = *vibratoKeyboardFocus_,
+      .bounds = bounds,
+      .handleStart = *currentPoint,
+      .source = note->vibrato,
+      .preview = note->vibrato,
+      .revision = session_.revision(),
+      .logicalWidth = logicalWidth_,
+      .logicalHeight = logicalHeight_,
+      .activeDurationMilliseconds = activeDurationMilliseconds,
+  };
+  const auto preview = dragVibratoHandle(target);
+  if (!preview) {
+    vibratoHandleDrag_.reset();
+    repaint();
+    return preview;
+  }
+  return finishVibratoHandleDrag();
+}
+
+core::Result<void> NativeEditorController::finishVibratoHandleDrag() {
+  if (!vibratoHandleDrag_) return core::success();
+  const auto drag = *vibratoHandleDrag_;
+  vibratoHandleDrag_.reset();
+  repaint();
+  if (drag.source == drag.preview) return core::success();
+  if (session_.revision() != drag.revision ||
+      session_.selection().noteIds() != std::vector<domain::NoteId>{drag.noteId}) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Vibrato target changed before the handle edit committed");
+  }
+  ui::VibratoFields patch;
+  switch (drag.kind) {
+    case VibratoHandleKind::Onset:
+      patch.startFraction = drag.preview.startFraction;
+      break;
+    case VibratoHandleKind::FadeIn:
+      patch.fadeInFraction = drag.preview.fadeInFraction;
+      break;
+    case VibratoHandleKind::FadeOut:
+      patch.fadeOutFraction = drag.preview.fadeOutFraction;
+      break;
+    case VibratoHandleKind::Period:
+      patch.periodMilliseconds = drag.preview.periodMilliseconds;
+      break;
+    case VibratoHandleKind::Phase:
+      patch.phaseTurns = drag.preview.phaseTurns;
+      break;
+    case VibratoHandleKind::Depth:
+      patch.depthCents = drag.preview.depthCents;
+      break;
+  }
+  auto model = ui::VibratoModel::prepare(session_, regionId_, patch);
+  if (!model) return core::Result<void>{model.error()};
+  const auto applied = model.value().apply(session_, regionId_);
+  if (applied) markDocumentChanged();
+  repaint();
+  return applied;
+}
+
 core::Result<void> NativeEditorController::pointerMove(
     const PointerEvent& event) {
+  if (vibratoHandleDrag_) {
+    if (event.button != PointerButton::Left) {
+      vibratoHandleDrag_.reset();
+      repaint();
+      return core::success();
+    }
+    return dragVibratoHandle(event.position);
+  }
   if (replacementOpen_ && dynamicsGainDragging_) {
     if (event.button != PointerButton::Left) { dynamicsGainDragging_ = false; return core::success(); }
     return dragDynamicsPoint(event.position);
@@ -4595,6 +5119,16 @@ core::Result<void> NativeEditorController::pointerMove(
 
 core::Result<void> NativeEditorController::pointerUp(
     const PointerEvent& event) {
+  if (vibratoHandleDrag_) {
+    if (event.button != PointerButton::Left) {
+      vibratoHandleDrag_.reset();
+      repaint();
+      return core::success();
+    }
+    const auto updated = dragVibratoHandle(event.position);
+    if (!updated) return updated;
+    return finishVibratoHandleDrag();
+  }
   if (replacementOpen_ && dynamicsGainDragging_) {
     if (event.button != PointerButton::Left) { dynamicsGainDragging_ = false; return core::success(); }
     const auto result = dragDynamicsPoint(event.position); dynamicsGainDragging_ = false; return result;
@@ -4893,10 +5427,54 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     if (hintEdit_ || replacementInput_ || batchLyricTarget_) return core::success(); // Native text input owns other keys, not score shortcuts.
   }
 
+  if (recoverySupportPanel_.view().visible && event.modifiers.alt &&
+      !event.modifiers.shift && !event.modifiers.primaryShortcut() &&
+      (event.key == NativeKey::Left || event.key == NativeKey::Right)) {
+    if (arrangementPanel_.tracks().size() < 2U) return core::success();
+    return selectAdjacentVocalTrack(event.key == NativeKey::Right ? 1 : -1);
+  }
+
+  if (event.key == NativeKey::V && event.modifiers.alt &&
+      !event.modifiers.shift && !event.modifiers.primaryShortcut()) {
+    if (vibratoKeyboardFocus_) {
+      vibratoKeyboardFocus_.reset();
+      repaint();
+      return core::success();
+    }
+    return focusVibratoHandle(0);
+  }
+  if (vibratoKeyboardFocus_) {
+    if (event.key == NativeKey::Escape) {
+      vibratoKeyboardFocus_.reset();
+      repaint();
+      return core::success();
+    }
+    if (!event.modifiers.alt && !event.modifiers.primaryShortcut() &&
+        (event.key == NativeKey::Left || event.key == NativeKey::Right)) {
+      return focusVibratoHandle(event.key == NativeKey::Left ? -1 : 1);
+    }
+    if (!event.modifiers.alt && !event.modifiers.primaryShortcut() &&
+        (event.key == NativeKey::Up || event.key == NativeKey::Down)) {
+      return adjustFocusedVibratoHandle(event.key == NativeKey::Up ? 1 : -1);
+    }
+  }
+
   if (event.key == NativeKey::Tab) {
+    vibratoKeyboardFocus_.reset();
     rebuildAccessibilityTree();
     const auto focused = accessibilityTree_.focusNext(event.modifiers.shift);
     if (focused) {
+      if (const auto* node = accessibilityTree_.focusedNode(); node != nullptr) {
+        const auto selected = session_.selection().noteIds();
+        if (selected.size() == 1U) {
+          for (const auto candidate : availableVibratoHandles()) {
+            if (node->id == vibratoHandleSemanticId(selected.front(), candidate)) {
+              vibratoKeyboardFocus_ = candidate;
+              break;
+            }
+          }
+        }
+      }
       syncInteractionToAccessibilityFocus();
       repaint();
     }
@@ -5334,13 +5912,20 @@ core::Result<void> NativeEditorController::beginHintEdit(domain::NoteId noteId) 
   const auto* note = region ? region->findNote(noteId) : nullptr;
   const auto* lyric = note ? region->findLyric(note->lyricTokenId) : nullptr;
   if (!note || !lyric) return core::failure(core::ErrorCode::NotFound, "Hint target is missing from the selected region");
-  if (lyric->language != domain::Language::Japanese && lyric->language != domain::Language::Unspecified)
-    return core::failure(core::ErrorCode::Unsupported, "No registered phone-hint editor for this language");
+  if (lyric->language != domain::Language::Japanese &&
+      lyric->language != domain::Language::English &&
+      lyric->language != domain::Language::Korean &&
+      lyric->language != domain::Language::Unspecified)
+    return core::failure(core::ErrorCode::Unsupported,
+                         "No registered phone-hint editor for this language");
   if (!callbacks_.beginTextInput) return core::failure(core::ErrorCode::Unsupported, "Native hint text input is not connected");
   const auto text = domain::fromUtf8(note->phoneticHint.value_or("")); if (!text) return core::Result<void>{text.error()};
   const auto begun = composition_.begin(externalTextTarget(), text.value()); if (!begun) return begun;
   tempoEdit_.reset(); renameTrackTarget_.reset(); renameRegionTarget_.reset(); batchLyricTarget_.reset();
-  hintEdit_ = HintEditContext{session_.project().id(), regionId_, noteId, session_.revision(), note->phoneticHint};
+  hintEditError_.clear();
+  hintEdit_ = HintEditContext{session_.project().id(), regionId_, noteId,
+                              session_.revision(), lyric->language,
+                              note->phoneticHint};
   ++hintInteraction_;
   callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), text.value()});
   repaint(); return core::success();
@@ -5381,6 +5966,7 @@ core::Result<void> NativeEditorController::beginLyricEdit(domain::NoteId noteId)
 core::Result<void> NativeEditorController::updateTextComposition(
     std::u32string text, ui::CompositionSelection selection) {
   const auto result = composition_.update(std::move(text), selection);
+  if (result && hintEdit_) hintEditError_.clear();
   repaint();
   return result;
 }
@@ -5394,6 +5980,23 @@ core::Result<void> NativeEditorController::commitTextComposition(
   auto updated = composition_.update(std::move(text),
                                       ui::CompositionSelection{});
   if (!updated) return updated;
+  if (hintEdit_ && hintEdit_->revision == session_.revision() &&
+      !composition_.compositionText().empty()) {
+    const auto* region = session_.project().findRegion(hintEdit_->regionId);
+    const auto* note = region ? region->findNote(hintEdit_->noteId) : nullptr;
+    const auto* lyric = note && region ? region->findLyric(note->lyricTokenId) : nullptr;
+    if (!lyric)
+      return core::failure(core::ErrorCode::Conflict,
+                           "Phone-hint target changed; cancel and reopen the editor");
+    const auto hint = domain::toUtf8(composition_.compositionText());
+    const auto valid = phonemizer::validatePhoneHintForLanguage(hintEdit_->language, hint);
+    if (!valid) {
+      hintEditError_ = valid.error().message;
+      repaint();
+      return valid;
+    }
+    hintEditError_.clear();
+  }
   auto commit = composition_.commit(hintEdit_.has_value() || replacementInput_.has_value());
   if (!commit) return core::Result<void>{commit.error()};
 
@@ -5450,8 +6053,10 @@ core::Result<void> NativeEditorController::commitTextComposition(
     const auto expected = *hintEdit_; hintEdit_.reset();
     const auto* region = session_.project().findRegion(expected.regionId);
     const auto* note = region ? region->findNote(expected.noteId) : nullptr;
+    const auto* lyric = note && region ? region->findLyric(note->lyricTokenId) : nullptr;
     if (expected.projectId != session_.project().id() || expected.regionId != regionId_ ||
-        expected.revision != session_.revision() || !note || note->phoneticHint != expected.before)
+        expected.revision != session_.revision() || !note || !lyric ||
+        lyric->language != expected.language || note->phoneticHint != expected.before)
       result = core::failure(core::ErrorCode::Conflict, "Phone-hint edit is stale");
     else {
       const auto value = domain::toUtf8(commit.value().text);
@@ -5462,6 +6067,7 @@ core::Result<void> NativeEditorController::commitTextComposition(
         if (result) markDocumentChanged();
       }
     }
+    hintEditError_.clear();
     finishTextInput(); repaint(); return result;
   }
   if (tempoEdit_) {
@@ -5655,7 +6261,7 @@ void NativeEditorController::cancelTextComposition() noexcept {
   const bool returnToDynamics = replacementInput_ && replacementInput_->dynamicsTickField && dynamicsDraft_;
   composition_.cancel();
   replacementInput_.reset(); replacementInputError_.clear();
-  hintEdit_.reset();
+  hintEdit_.reset(); hintEditError_.clear();
   tempoEdit_.reset();
   renameTrackTarget_.reset();
   renameRegionTarget_.reset();

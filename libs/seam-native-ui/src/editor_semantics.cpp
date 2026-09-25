@@ -21,6 +21,21 @@ bool exportCancellable(authoring::ExportState state) noexcept {
 
 }
 
+std::string vibratoHandleSemanticId(domain::NoteId noteId,
+                                    VibratoHandleKind kind) {
+  std::string_view field;
+  switch (kind) {
+    case VibratoHandleKind::Onset: field = "onset"; break;
+    case VibratoHandleKind::Depth: field = "depth"; break;
+    case VibratoHandleKind::FadeIn: field = "fade-in"; break;
+    case VibratoHandleKind::FadeOut: field = "fade-out"; break;
+    case VibratoHandleKind::Period: field = "period"; break;
+    case VibratoHandleKind::Phase: field = "phase"; break;
+  }
+  return "editor.vibrato.handle." + noteId.toString() + "." +
+      std::string{field};
+}
+
 std::string_view semanticRoleName(SemanticRole role) noexcept {
   switch (role) {
     case SemanticRole::Window: return "window";
@@ -65,7 +80,7 @@ SemanticNode EditorSemanticTree::noteNode(const ui::NoteVisual& note,
       .editableValue = note.lyric,
       .description = "MIDI " + std::to_string(note.midiKey) + " / " +
                     std::to_string(note.duration.value()) +
-                    " ticks; Enter edits lyric; Alt+Enter edits a Japanese phone hint",
+                    " ticks; Enter edits lyric; Alt+Enter edits a pronunciation phone hint",
   };
 }
 
@@ -437,6 +452,18 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
                                ? (includeOffscreenNotes ? model.allNotes()
                                                         : model.visibleNotes())
                                : std::vector<ui::NoteVisual>{};
+  const auto semanticNote = [&](const ui::NoteVisual& note) {
+    auto node = noteNode(note, layout);
+    if (note.selected && state.vibratoEditable) {
+      const auto* source = model.project().findNote(note.noteId);
+      if (source != nullptr && source->vibrato.enabled) {
+        node.description +=
+            "; vibrato handles: Alt+V to focus, Left/Right to choose, "
+            "Up/Down to adjust, Escape to leave handle focus";
+      }
+    }
+    return node;
+  };
   for (const auto& note : noteVisuals) {
     if (!includeOffscreenNotes) {
       auto noteBounds = note.bounds;
@@ -449,12 +476,77 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       const auto bottom = std::min(noteBounds.bottom(), clip.bottom());
       if (right <= left || bottom <= top) continue;
       const auto clipped = ui::Rect{left, top, right - left, bottom - top};
-      auto node = noteNode(note, layout);
+      auto node = semanticNote(note);
       node.bounds = clipped;
       root.children.push_back(std::move(node));
       continue;
     }
-    root.children.push_back(noteNode(note, layout));
+    root.children.push_back(semanticNote(note));
+  }
+  if (state.vibratoEditable && state.selectedNoteCount == 1U) {
+    const auto visibleNotes = model.visibleNotes();
+    const auto visual = std::find_if(visibleNotes.begin(), visibleNotes.end(),
+        [](const auto& note) {
+          return note.selected && !note.hiddenByOverlapDensity;
+        });
+    const auto* region = model.project().findRegion(model.regionId());
+    const auto* source = visual != visibleNotes.end()
+        ? model.project().findNote(visual->noteId) : nullptr;
+    if (region != nullptr && source != nullptr && source->vibrato.enabled &&
+        visual != visibleNotes.end()) {
+      auto bounds = visual->bounds;
+      bounds.y += layout.contentTop();
+      const auto handles = vibratoHandlePositions(
+          *source, region->startTick, model.project().tempoMap(), bounds);
+      if (handles) {
+        const auto addHandle = [&](VibratoHandleKind kind, ui::Point point,
+                                   std::string name, std::string value) {
+          const auto focused = state.vibratoKeyboardFocus == kind;
+          root.children.push_back(SemanticNode{
+              .id = vibratoHandleSemanticId(source->id, kind),
+              .role = SemanticRole::Button,
+              .name = std::move(name),
+              .value = std::move(value),
+              .bounds = ui::Rect{point.x - 7.0, point.y - 7.0, 14.0, 14.0},
+              .enabled = true,
+              .focused = focused,
+              .selected = focused,
+              .actions = {SemanticAction::SetFocus, SemanticAction::Activate},
+              .description =
+                  "Focus this selected-note vibrato control; use Up/Down to "
+                  "adjust, Left/Right to move between controls, Escape to exit",
+          });
+        };
+        addHandle(VibratoHandleKind::Onset, handles->onset,
+                  "Vibrato onset", std::to_string(
+                      static_cast<int>(std::lround(
+                          source->vibrato.startFraction * 100.0F))) + "%");
+        addHandle(VibratoHandleKind::Depth, handles->depth,
+                  "Vibrato depth", std::to_string(
+                      static_cast<int>(std::lround(
+                          source->vibrato.depthCents))) + " cents");
+        if (handles->fadeIn)
+          addHandle(VibratoHandleKind::FadeIn, *handles->fadeIn,
+                    "Vibrato fade-in", std::to_string(
+                        static_cast<int>(std::lround(
+                            source->vibrato.fadeInFraction * 100.0F))) + "%");
+        if (handles->fadeOut)
+          addHandle(VibratoHandleKind::FadeOut, *handles->fadeOut,
+                    "Vibrato fade-out", std::to_string(
+                        static_cast<int>(std::lround(
+                            source->vibrato.fadeOutFraction * 100.0F))) + "%");
+        if (handles->period)
+          addHandle(VibratoHandleKind::Period, *handles->period,
+                    "Vibrato period", std::to_string(
+                        static_cast<int>(std::lround(
+                            source->vibrato.periodMilliseconds))) + " ms");
+        if (handles->phase)
+          addHandle(VibratoHandleKind::Phase, *handles->phase,
+                    "Vibrato phase", std::to_string(
+                        static_cast<int>(std::lround(
+                            source->vibrato.phaseTurns * 360.0F))) + " degrees");
+      }
+    }
   }
   struct OverlapGroup final {
     std::size_t index{0U};
@@ -677,6 +769,10 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
     auto dockValue = std::string{"Full character presentation"};
     if (state.characterPerformance.has_value()) {
       const auto& performance = *state.characterPerformance;
+      if (!performance.voiceStyle.empty())
+        dockValue += "; singer style " + performance.voiceStyle;
+      if (!performance.scorePitchRange.empty())
+        dockValue += "; score pitch range " + performance.scorePitchRange;
       dockValue += performance.performing ? "; singing; mouth " : "; not performing; mouth ";
       dockValue += character::mouthShapeName(performance.mouth);
       dockValue += "; level " +
@@ -720,6 +816,60 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         .children = {},
         .description = support.status,
     };
+    std::size_t vocalTrackCount = 0U;
+    std::size_t selectedTrackPosition = 0U;
+    std::string selectedTrackName;
+    for (const auto& track : state.arrangementTracks) {
+      if (!track.vocal) continue;
+      ++vocalTrackCount;
+      if (track.selected) {
+        selectedTrackPosition = vocalTrackCount;
+        selectedTrackName = track.name;
+      }
+    }
+    panel.children.push_back(SemanticNode{
+        .id = "support.track.current",
+        .role = SemanticRole::Status,
+        .name = "Selected vocal track",
+        .value = selectedTrackName.empty()
+                     ? "No vocal track"
+                     : "Track " + std::to_string(selectedTrackPosition) +
+                           " of " + std::to_string(vocalTrackCount) + ": " +
+                           selectedTrackName,
+        .bounds = layout.supportTrackLabelBounds(editorRight, root.bounds.width),
+        .enabled = true,
+        .focused = false,
+        .actions = {SemanticAction::SetFocus},
+        .children = {},
+    });
+    panel.children.push_back(SemanticNode{
+        .id = "support.track.previous",
+        .role = SemanticRole::Button,
+        .name = "Previous vocal track",
+        .bounds = layout.supportTrackPreviousBounds(editorRight,
+                                                   root.bounds.width),
+        .enabled = vocalTrackCount > 1U,
+        .focused = false,
+        .actions = vocalTrackCount > 1U
+                       ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                     SemanticAction::SetFocus}
+                       : std::vector<SemanticAction>{SemanticAction::SetFocus},
+        .children = {},
+    });
+    panel.children.push_back(SemanticNode{
+        .id = "support.track.next",
+        .role = SemanticRole::Button,
+        .name = "Next vocal track",
+        .bounds = layout.supportTrackNextBounds(editorRight,
+                                               root.bounds.width),
+        .enabled = vocalTrackCount > 1U,
+        .focused = false,
+        .actions = vocalTrackCount > 1U
+                       ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                     SemanticAction::SetFocus}
+                       : std::vector<SemanticAction>{SemanticAction::SetFocus},
+        .children = {},
+    });
     for (std::size_t index = 0U; index < support.items.size(); ++index) {
       const auto visibleIndex = index >= support.firstVisibleItem
                                     ? index - support.firstVisibleItem
@@ -1101,9 +1251,83 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
         style.bounds = {dynamics.bounds.x + dynamics.bounds.width + 4.0, dynamics.bounds.y, dynamics.bounds.width, dynamics.bounds.height};
         if (style.enabled) style.actions = {SemanticAction::SetFocus, SemanticAction::Activate};
         style.description = "Choose an explicit track style and inspect structural phoneme coverage";
+        auto expressionTop = style.bounds.y + style.bounds.height + 4.0;
         panel.children.push_back(std::move(edit));
         panel.children.push_back(std::move(dynamics));
         panel.children.push_back(std::move(style));
+        for (const auto& row : state.inspector.expressionRows) {
+          const auto descriptor = ui::describeExpressionChannel(row.channel);
+          const auto supported = row.refusal.empty();
+          const auto value = supported
+              ? "Supported; " + std::to_string(row.storedPoints) +
+                    " curve points; value " + std::to_string(row.valueAtPlayhead) +
+                    " " + row.unit
+              : "Unavailable";
+          const auto rowBounds = clippedBounds(ui::Rect{
+              editorRight + layout.inspectorTextInsetX,
+              expressionTop,
+              panelWidth - layout.inspectorTextInsetX * 2.0,
+              layout.inspectorFieldAdvance,
+          });
+          // A clipped-away control has no useful spatial focus target. Its
+          // full capability and value remain available in the summary node
+          // below, while only rows with real visible bounds become elements.
+          if (rowBounds.width > 0.0 && rowBounds.height > 0.0) {
+            panel.children.push_back(SemanticNode{
+                .id = "inspector.expression." + std::string{descriptor.id},
+                .role = SemanticRole::Status,
+                .name = row.label + " singer control",
+                .value = value,
+                .bounds = rowBounds,
+                .enabled = supported,
+                .focused = false,
+                .actions = {SemanticAction::SetFocus},
+                .description = supported
+                    ? "This control is supported by the selected singer and renderer."
+                    : row.refusal,
+            });
+          }
+          expressionTop += layout.inspectorFieldAdvance *
+              (supported ? 1.0 : 2.0);
+        }
+        if (!state.inspector.expressionCapabilities.empty()) {
+          std::string capabilityValue;
+          std::string capabilityDetails;
+          for (const auto& row : state.inspector.expressionCapabilities) {
+            if (!capabilityValue.empty()) capabilityValue += "; ";
+            capabilityValue += row.label + (row.refusal.empty()
+                ? ": supported; " + std::to_string(row.storedPoints) +
+                      " curve points; value " + std::to_string(row.valueAtPlayhead) +
+                      " " + row.unit
+                : ": unavailable");
+            if (!capabilityDetails.empty()) capabilityDetails += ". ";
+            capabilityDetails += row.label + (row.refusal.empty()
+                ? " is supported by the selected singer and renderer, has " +
+                      std::to_string(row.storedPoints) + " curve points, and is " +
+                      std::to_string(row.valueAtPlayhead) + " " + row.unit +
+                      " at the playhead"
+                : " is unavailable: " + row.refusal);
+          }
+          const auto capabilityBounds = clippedBounds(ui::Rect{
+              editorRight + layout.inspectorTextInsetX,
+              inspectorTop,
+              panelWidth - layout.inspectorTextInsetX * 2.0,
+              std::max(1.0, panelBottom - inspectorTop),
+          });
+          if (capabilityBounds.width > 0.0 && capabilityBounds.height > 0.0) {
+            panel.children.push_back(SemanticNode{
+                .id = "inspector.expression.capabilities",
+                .role = SemanticRole::Status,
+                .name = "Selected singer timbral control availability",
+                .value = std::move(capabilityValue),
+                .bounds = capabilityBounds,
+                .enabled = true,
+                .focused = false,
+                .actions = {SemanticAction::SetFocus},
+                .description = std::move(capabilityDetails),
+            });
+          }
+        }
       }
     }
     root.children.push_back(std::move(panel));

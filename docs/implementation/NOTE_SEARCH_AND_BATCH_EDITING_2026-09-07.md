@@ -235,7 +235,7 @@ The review-model checkpoint also passes the rebuilt Release core: 552 cases, 11.
 
 ### macOS pronunciation menu entry
 
-The standalone macOS Edit menu now exposes `Edit Japanese Pronunciation Hint…`. A new application command delegates through the standalone configuration to `NativeEditorController::beginSelectedHintEdit`, which is also the Alt+Enter entry point. Exactly one selected note and the existing language/composition/region checks remain mandatory. Opening the field does not itself mutate the document. Missing callback returns Unsupported, and the dispatcher propagates callback failures.
+The standalone macOS Edit menu exposes `Edit Pronunciation Hint…`. A new application command delegates through the standalone configuration to `NativeEditorController::beginSelectedHintEdit`, which is also the Alt+Enter entry point. Exactly one selected note and the existing language/composition/region checks remain mandatory. Japanese, English, and Korean hints use their registered language-specific validators before a non-empty edit can be committed; empty input clears the hint. Invalid text remains in the active editor for correction, and opening the field does not mutate the document. Missing callback returns Unsupported, and the dispatcher propagates callback failures.
 
 Menu failures display a native alert sheet with the returned reason (or a modal alert when no key window exists). Live testing first found that the existing error-recording path alone only logged the empty-selection rejection; the explicit alert fixes that menu usability gap. This does not change all other application menu error handling.
 

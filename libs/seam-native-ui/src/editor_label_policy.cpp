@@ -21,7 +21,13 @@ EditorLabel choose(std::string_view value, double availableWidth,
                                             : EditorLabelMode::Compact;
   const auto columns = static_cast<std::size_t>(std::max(
       1.0, std::floor(availableWidth / compactCharacterWidth)));
-  result.text = text::truncateUtf8ToDisplayWidth(value, columns);
+  const auto truncated = text::utf8DisplayWidth(value) > columns;
+  // Keep the compact note label bounded while making omitted lyric text
+  // visible to sighted creators. `fullText` remains intact for the detail
+  // surface and accessibility tree.
+  result.text = text::truncateUtf8ToDisplayWidth(
+      value, truncated && columns > 0U ? columns - 1U : columns);
+  if (truncated) result.text += "…";
   return result;
 }
 

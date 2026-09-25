@@ -21,6 +21,17 @@
 #include <utility>
 
 namespace seam::standalone {
+
+struct StandaloneApplicationController::AutomaticPerformanceProposalJob final {
+  mutable std::mutex mutex;
+  std::jthread worker;
+  std::stop_source stopSource;
+  bool running{false};
+  bool cancelledByUser{false};
+  std::shared_ptr<authoring::AutomaticPerformanceCapture> capture;
+  std::optional<core::Result<domain::PerformanceTake>> completed;
+};
+
 namespace {
 
 std::filesystem::path initialDirectory(
@@ -178,7 +189,9 @@ StandaloneApplicationController::StandaloneApplicationController(
           .wallClock = {},
       }),
       recentProjects_(config_.recentProjectsPath),
-      voicebankBrowser_(config_.allowDevelopmentVoicebanks) {
+      voicebankBrowser_(config_.allowDevelopmentVoicebanks),
+      automaticPerformanceProposalJob_(
+          std::make_unique<AutomaticPerformanceProposalJob>()) {
   if (!config_.voicebankInstallRoot.empty()) {
     voicebankInstaller_ = std::make_unique<authoring::VoicebankInstallerService>(
         session_.runtime().voicebanks(), config_.voicebankInstallRoot,
@@ -187,6 +200,12 @@ StandaloneApplicationController::StandaloneApplicationController(
 }
 
 StandaloneApplicationController::~StandaloneApplicationController() {
+  if (automaticPerformanceProposalJob_) {
+    automaticPerformanceProposalJob_->stopSource.request_stop();
+    automaticPerformanceProposalJob_->worker.request_stop();
+    if (automaticPerformanceProposalJob_->worker.joinable())
+      automaticPerformanceProposalJob_->worker.join();
+  }
   cancelExport();
   if (exportWorker_.joinable()) exportWorker_.join();
   static_cast<void>(autosave_.flush());
@@ -804,14 +823,90 @@ core::Result<void> StandaloneApplicationController::proposeAutomaticPerformance(
       requested,
       resource, automaticProposalSeed_, takeId);
   if (!prepared) return core::Result<void>{prepared.error()};
-  const auto generated = prepared.value().generate();
-  if (!generated) return core::Result<void>{generated.error()};
-  const auto applied = prepared.value().apply(generated.value(), editable);
-  if (!applied) return applied;
+
+  auto& job = *automaticPerformanceProposalJob_;
+  {
+    std::lock_guard lock(job.mutex);
+    if (job.running || job.completed.has_value())
+      return core::failure(core::ErrorCode::Conflict,
+          "An automatic performance proposal is already running or awaiting adoption");
+  }
+  if (job.worker.joinable()) job.worker.join();
+  auto capture = std::make_shared<authoring::AutomaticPerformanceCapture>(
+      std::move(prepared).value());
+  {
+    std::lock_guard lock(job.mutex);
+    job.capture = capture;
+    job.stopSource = std::stop_source{};
+    job.running = true;
+    job.cancelledByUser = false;
+  }
+  const auto stopToken = job.stopSource.get_token();
+  job.worker = std::jthread([this, &job, capture = std::move(capture), stopToken](
+                                std::stop_token workerStop) mutable {
+    std::stop_callback forwardStop(workerStop, [&job] {
+      job.stopSource.request_stop();
+    });
+    auto generated = capture->generate(stopToken);
+    {
+      std::lock_guard lock(job.mutex);
+      job.completed.emplace(std::move(generated));
+      job.running = false;
+    }
+    notifyProgressChanged();
+  });
+  notifyProgressChanged();
+  return core::success();
+}
+
+bool StandaloneApplicationController::performanceProposalInProgress() const noexcept {
+  const auto& job = *automaticPerformanceProposalJob_;
+  std::lock_guard lock(job.mutex);
+  return job.running;
+}
+
+core::Result<void> StandaloneApplicationController::cancelPerformanceProposal() {
+  auto& job = *automaticPerformanceProposalJob_;
+  {
+    std::lock_guard lock(job.mutex);
+    if (!job.running)
+      return core::failure(core::ErrorCode::Conflict,
+          "There is no automatic performance proposal to cancel");
+    job.cancelledByUser = true;
+    job.stopSource.request_stop();
+    job.worker.request_stop();
+  }
+  notifyProgressChanged();
+  return core::success();
+}
+
+core::Result<bool>
+StandaloneApplicationController::applyPendingAutomaticPerformanceProposal() {
+  auto& job = *automaticPerformanceProposalJob_;
+  std::optional<core::Result<domain::PerformanceTake>> completed;
+  std::shared_ptr<authoring::AutomaticPerformanceCapture> capture;
+  bool cancelledByUser{false};
+  {
+    std::lock_guard lock(job.mutex);
+    if (!job.completed.has_value()) return false;
+    completed.emplace(std::move(*job.completed));
+    job.completed.reset();
+    capture = std::move(job.capture);
+    cancelledByUser = job.cancelledByUser;
+    job.cancelledByUser = false;
+  }
+  if (job.worker.joinable()) job.worker.join();
+  if (cancelledByUser) return true;
+  if (!*completed) return core::Result<bool>{completed->error()};
+  if (!capture) return core::failure<bool>(core::ErrorCode::InvalidState,
+      "Completed automatic performance proposal lost its captured session");
+  auto& editable = session_.runtime().document().session();
+  const auto applied = capture->apply(completed->value(), editable);
+  if (!applied) return core::Result<bool>{applied.error()};
   session_.runtime().handleDocumentChanged();
   static_cast<void>(onDocumentChanged());
   notifyStateChanged();
-  return core::success();
+  return true;
 }
 
 core::Result<void> StandaloneApplicationController::createHarmonyTrack(
@@ -844,11 +939,32 @@ core::Result<void> StandaloneApplicationController::createHarmonyTrack(
     application::DiatonicHarmony scale;
     scale.tonicPitchClass = static_cast<std::uint8_t>(request.tonicPitchClass);
     scale.degreeOffset = request.offset;
-    if (request.scale == platform::HarmonyScale::NaturalMinor)
-      scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 8U, 10U};
-    else if (request.scale != platform::HarmonyScale::Major)
-      return core::failure(core::ErrorCode::InvalidArgument,
-          "Unknown harmony scale");
+    switch (request.scale) {
+      case platform::HarmonyScale::Major:
+        scale.scaleIntervals = {0U, 2U, 4U, 5U, 7U, 9U, 11U}; break;
+      case platform::HarmonyScale::NaturalMinor:
+        scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 8U, 10U}; break;
+      case platform::HarmonyScale::HarmonicMinor:
+        scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 8U, 11U}; break;
+      case platform::HarmonyScale::MelodicMinor:
+        scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 9U, 11U}; break;
+      case platform::HarmonyScale::Dorian:
+        scale.scaleIntervals = {0U, 2U, 3U, 5U, 7U, 9U, 10U}; break;
+      case platform::HarmonyScale::Phrygian:
+        scale.scaleIntervals = {0U, 1U, 3U, 5U, 7U, 8U, 10U}; break;
+      case platform::HarmonyScale::Lydian:
+        scale.scaleIntervals = {0U, 2U, 4U, 6U, 7U, 9U, 11U}; break;
+      case platform::HarmonyScale::Mixolydian:
+        scale.scaleIntervals = {0U, 2U, 4U, 5U, 7U, 9U, 10U}; break;
+      case platform::HarmonyScale::Locrian:
+        scale.scaleIntervals = {0U, 1U, 3U, 5U, 6U, 8U, 10U}; break;
+      case platform::HarmonyScale::Chromatic:
+        return core::failure(core::ErrorCode::InvariantViolation,
+            "Chromatic harmony cannot use diatonic intervals");
+      default:
+        return core::failure(core::ErrorCode::InvalidArgument,
+            "Unknown harmony scale");
+    }
     harmony.diatonic = std::move(scale);
   }
   // Reserve through the document's allocator. A disposable factory would let
@@ -1063,8 +1179,6 @@ core::Result<void> StandaloneApplicationController::exportScoreFromDialog() {
       .format = format,
       .destination = *selected.value(),
   };
-  if (session_.trackId().valid()) request.trackId = session_.trackId();
-  if (session_.regionId().valid()) request.regionId = session_.regionId();
   auto draft = session_.prepareInterchangeExport(std::move(request));
   if (!draft) return core::Result<void>{draft.error()};
   if (!config_.reviewInterchangeExport) {
@@ -1359,6 +1473,20 @@ core::Result<void> StandaloneApplicationController::dispatch(
       if (!installed) return core::Result<void>{installed.error()};
       return core::success();
     }
+    case platform::ApplicationCommand::InstallProceduralSinger: {
+      const auto selected = fileDialog_->choose(platform::FileDialogRequest{
+          .purpose = platform::FileDialogPurpose::InstallProceduralSinger,
+          .title = "Install Procedural Singer",
+          .initialDirectory = {},
+          .suggestedName = {},
+          .extensions = {"seamsinger"},
+      });
+      if (!selected) return core::Result<void>{selected.error()};
+      if (!selected.value().has_value()) return core::success();
+      auto installed = installProceduralSinger(*selected.value());
+      if (!installed) return core::Result<void>{installed.error()};
+      return core::success();
+    }
     case platform::ApplicationCommand::RelinkVoicebank:
       return relinkVoicebankFromDialog();
     case platform::ApplicationCommand::RelinkBackingAudio:
@@ -1435,6 +1563,27 @@ core::Result<void> StandaloneApplicationController::dispatch(
 
 core::Result<void> StandaloneApplicationController::createNewProject(
     authoring::NewProjectRequest request) {
+  if (request.initialProceduralSinger.has_value()) {
+    const auto& reference = request.initialProceduralSinger.value();
+    const auto offers = installedSingerOffers();
+    if (!offers) return core::Result<void>{offers.error()};
+    const auto referencePath = std::filesystem::path{reference.path}.lexically_normal();
+    const auto current = std::find_if(offers.value().begin(), offers.value().end(),
+        [&](const auto& offer) {
+          if (!offer.selectable || offer.candidate.renderIdentity != reference.resource ||
+              std::find(offer.candidate.manifest.styles.begin(),
+                        offer.candidate.manifest.styles.end(), reference.style) ==
+                  offer.candidate.manifest.styles.end()) {
+            return false;
+          }
+          return (offer.candidate.resourceRoot / offer.candidate.manifest.recipeEntry)
+                     .lexically_normal() == referencePath;
+        });
+    if (current == offers.value().end()) {
+      return core::failure(core::ErrorCode::Conflict,
+          "The selected procedural singer is no longer installed, trusted, or renderable; reopen New Project and choose again");
+    }
+  }
   auto created = session_.createNewProject(std::move(request));
   if (created) {
     performanceComparison_.reset();
@@ -1716,13 +1865,18 @@ core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bak
 
   const auto current = session_.runtime().document().session().validatePerformanceJob(context.value());
   if (!current) return current;
-  bool includeRecipes = false;
-  if (!bakeCandidates && std::any_of(context.value().sourceProject().vocalTracks().begin(), context.value().sourceProject().vocalTracks().end(),
-      [](const auto& track) { return track.proceduralRecipe.has_value(); })) {
+  bool includeProjectPackage = false;
+  const auto& exportProject = context.value().sourceProject();
+  const bool hasPackageableResources =
+      std::any_of(exportProject.vocalTracks().begin(), exportProject.vocalTracks().end(),
+          [](const auto& track) { return track.proceduralRecipe.has_value(); }) ||
+      std::any_of(exportProject.audioTracks().begin(), exportProject.audioTracks().end(),
+          [](const auto& track) { return !track.mediaPath.empty(); });
+  if (!bakeCandidates && hasPackageableResources) {
     const auto choice = fileDialog_->chooseRecipePackaging();
     if (!choice) return core::Result<void>{choice.error()};
     if (!choice.value()) return core::success();
-    includeRecipes = *choice.value();
+    includeProjectPackage = *choice.value();
     const auto valid = session_.runtime().document().session().validatePerformanceJob(context.value());
     if (!valid) return valid;
   }
@@ -1735,8 +1889,11 @@ core::Result<void> StandaloneApplicationController::exportSetFromDialog(bool bak
       .includeStems = !bakeCandidates && (!project.vocalTracks().empty() ||
                       !project.audioTracks().empty()),
       .replaceExisting = false,
-      .includeProjectAndRecipes = includeRecipes || bakeCandidates,
+      .includeProjectAndRecipes = includeProjectPackage || bakeCandidates,
       .includeProceduralCandidates = bakeCandidates,
+      .projectDirectory = document.identity().projectPath
+          ? std::optional<std::filesystem::path>{document.identity().projectPath->parent_path()}
+          : std::nullopt,
   };
   native_ui::ExportDialogModel dialog;
   dialog.setDestination(*selected.value());
@@ -1930,6 +2087,37 @@ StandaloneApplicationController::installVoicebank(
   return result;
 }
 
+core::Result<distribution::InstalledProceduralSinger>
+StandaloneApplicationController::installProceduralSinger(
+    const std::filesystem::path& packagePath) {
+  if (packagePath.empty()) {
+    return core::failure<distribution::InstalledProceduralSinger>(
+        core::ErrorCode::InvalidArgument,
+        "Procedural singer installation requires a package path");
+  }
+  const auto roots = config_.proceduralSingerRoots.empty()
+                         ? distribution::defaultProceduralSearchRoots()
+                         : config_.proceduralSingerRoots;
+  const auto installRoot = std::find_if(roots.begin(), roots.end(), [](const auto& root) {
+    return root.kind == distribution::ProceduralRootKind::Installed;
+  });
+  if (installRoot == roots.end() || installRoot->path.empty()) {
+    return core::failure<distribution::InstalledProceduralSinger>(
+        core::ErrorCode::InvalidState,
+        "No installed procedural singer destination is configured");
+  }
+  distribution::InstallProceduralOptions options{};
+  options.verification.trustedPublicKeys = config_.trustedVoicebankKeys;
+  options.verification.requireTrustedSigner = true;
+  options.replaceExisting = false;
+  auto installed = distribution::installProceduralPackage(
+      packagePath, installRoot->path, options);
+  if (!installed)
+    return core::Result<distribution::InstalledProceduralSinger>{installed.error()};
+  notifyStateChanged();
+  return installed;
+}
+
 core::Result<voicebank::VoicebankResolution>
 StandaloneApplicationController::relinkVoicebank(
     domain::TrackId trackId, voicebank::VoicebankSearchRoot root) {
@@ -2035,12 +2223,27 @@ std::string utcTimestampNow() {
 
 core::Result<std::vector<StandaloneApplicationController::InstalledSingerOffer>>
 StandaloneApplicationController::installedSingerOffers() const {
+  auto catalogue = installedSingerCatalogue();
+  if (!catalogue)
+    return core::Result<std::vector<InstalledSingerOffer>>{catalogue.error()};
+  return std::move(catalogue).value().offers;
+}
+
+core::Result<StandaloneApplicationController::InstalledSingerCatalogue>
+StandaloneApplicationController::installedSingerCatalogue() const {
   using Offer = InstalledSingerOffer;
-  auto candidates = installedProceduralSingers();
-  if (!candidates) return core::Result<std::vector<Offer>>{candidates.error()};
+  if (config_.renderableProceduralEngineId.empty())
+    return core::failure<InstalledSingerCatalogue>(
+        core::ErrorCode::Unsupported,
+        "This build does not declare a renderable procedural engine");
+  const auto roots = config_.proceduralSingerRoots.empty()
+                         ? distribution::defaultProceduralSearchRoots()
+                         : config_.proceduralSingerRoots;
+  auto scanned = distribution::ProceduralCatalogue{}.scanDetailed(roots);
+  if (!scanned) return core::Result<InstalledSingerCatalogue>{scanned.error()};
   std::vector<Offer> offers;
-  offers.reserve(candidates.value().size());
-  for (const auto& candidate : candidates.value()) {
+  offers.reserve(scanned.value().candidates.size());
+  for (const auto& candidate : scanned.value().candidates) {
     distribution::ProceduralResolveOptions options;
     options.renderableEngineId = config_.renderableProceduralEngineId;
     options.renderableEngineRevision = config_.renderableProceduralEngineRevision;
@@ -2107,7 +2310,11 @@ StandaloneApplicationController::installedSingerOffers() const {
     }
     offers.push_back(std::move(offer));
   }
-  return offers;
+  return InstalledSingerCatalogue{
+      .offers = std::move(offers),
+      .issues = std::move(scanned.value().issues),
+      .omittedIssueCount = scanned.value().omittedIssueCount,
+      .scanLimitReached = scanned.value().scanLimitReached};
 }
 
 core::Result<void> StandaloneApplicationController::selectInstalledProceduralSinger() {

@@ -20,6 +20,7 @@ enum class ApplicationCommand {
   SaveProjectAs,
   ImportAudio,
   InstallVoicebank,
+  InstallProceduralSinger,
   RelinkVoicebank,
   RelinkBackingAudio,
   OpenAudioSettings,
@@ -135,8 +136,20 @@ struct DocumentationMenuItem final {
 enum class PerformanceEditScope { Whole, SelectedNotes };
 
 // A harmony action is always an explicit creator choice. Degree offset is in
-// scale steps for major/minor, semitones for chromatic; zero is never useful.
-enum class HarmonyScale { Chromatic, Major, NaturalMinor };
+// scale steps for named diatonic modes and semitones for chromatic; zero is
+// never useful.
+enum class HarmonyScale {
+  Major,
+  NaturalMinor,
+  HarmonicMinor,
+  MelodicMinor,
+  Dorian,
+  Phrygian,
+  Lydian,
+  Mixolydian,
+  Locrian,
+  Chromatic,
+};
 struct HarmonyMenuRequest final {
   PerformanceEditScope scope{PerformanceEditScope::Whole};
   HarmonyScale scale{HarmonyScale::Major};
@@ -254,6 +267,15 @@ public:
       PerformanceEditScope, std::vector<std::string> = {}) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Automatic performance proposals are not supported");
+  }
+  // True while a proposal is being generated from a captured score. Implementations
+  // must still apply its result on the document owner thread.
+  [[nodiscard]] virtual bool performanceProposalInProgress() const noexcept {
+    return false;
+  }
+  [[nodiscard]] virtual core::Result<void> cancelPerformanceProposal() {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Automatic performance cancellation is not supported");
   }
   [[nodiscard]] virtual core::Result<void> createHarmonyTrack(
       HarmonyMenuRequest) {

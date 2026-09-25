@@ -12,12 +12,14 @@
 #include "seam/authoring/audio_settings_controller.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/standalone/native_project_dialog.hpp"
 #include "seam/standalone/production_configuration.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/authoring/support_bundle.hpp"
 
 #include <atomic>
 #include <filesystem>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -54,6 +56,13 @@ struct NativeEditorAppConfig final {
       prepareJapaneseReadingResource;
   std::filesystem::path manualsRoot;
 };
+
+[[nodiscard]] NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
+    const std::vector<StandaloneApplicationController::InstalledSingerOffer>&
+        offers,
+    const std::vector<distribution::ProceduralCatalogueIssue>& issues = {},
+    std::size_t omittedIssueCount = 0U,
+    bool scanLimitReached = false);
 
 class NativeEditorApp final : public native_ui::INativeWindowClient {
 public:

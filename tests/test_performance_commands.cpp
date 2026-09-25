@@ -439,6 +439,149 @@ TEST_CASE("performance copy retains fixed region scopes and rejects ownership co
   CHECK(project == before);
 }
 
+TEST_CASE("performance copy translates contained time-range ownership and acceptance") {
+  auto project = expressionProject();
+  auto* region = project.findRegion(RegionId{21U});
+  auto firstCopy = region->notes[0];
+  firstCopy.id = NoteId{35U};
+  firstCopy.startTick = Tick{960};
+  auto secondCopy = region->notes[1];
+  secondCopy.id = NoteId{36U};
+  secondCopy.startTick = Tick{1440};
+  region->notes.push_back(firstCopy);
+  region->notes.push_back(secondCopy);
+
+  using namespace seam::domain;
+  const PronunciationIdentity pronunciation{Language::Japanese, "test-ja", "1",
+      std::string(64U, 'a'), std::string(64U, 'b'), std::string(64U, 'c')};
+  region->performance.ownership = {{PerformanceChannel::Tension,
+      PerformanceTimeRange{Tick{240}, Tick{720}}, ManualPerformanceMode::Replace, {}}};
+  region->performance.takes = {{.id = "range-copy-take", .sourceRegionId = RegionId{21U},
+      .resource = {SingerResourceKind::Procedural, "fixture", "1", std::string(64U, 'd')},
+      .pronunciation = pronunciation, .generatorId = "fixture", .generatorVersion = "1",
+      .range = {Tick{0}, Tick{1920}},
+      .lanes = {{PerformanceChannel::Dynamics, {{Tick{0}, 0.5}, {Tick{1920}, 1.0}}}}}};
+  region->performance.accepted = {{"range-copy-take", PerformanceChannel::Dynamics,
+      PerformanceTimeRange{Tick{240}, Tick{720}}, Tick{0}}};
+  CHECK(project.validate());
+  const auto before = project;
+
+  seam::application::CopyNotePerformanceCommand command{RegionId{21U},
+      {{NoteId{31U}, NoteId{35U}}, {NoteId{32U}, NoteId{36U}}}};
+  CHECK(command.apply(project));
+  region = project.findRegion(RegionId{21U});
+  CHECK(region->performance.ownership.size() == 2U);
+  CHECK(region->performance.ownership[0] == before.findRegion(RegionId{21U})->performance.ownership[0]);
+  const auto* copiedOwnership = std::get_if<PerformanceTimeRange>(
+      &region->performance.ownership[1].scope);
+  CHECK(copiedOwnership != nullptr);
+  const PerformanceTimeRange expectedRange{Tick{1200}, Tick{1680}};
+  CHECK(*copiedOwnership == expectedRange);
+
+  CHECK(region->performance.accepted.size() == 2U);
+  CHECK(region->performance.accepted[0] == before.findRegion(RegionId{21U})->performance.accepted[0]);
+  const auto& copiedAcceptance = region->performance.accepted[1];
+  const auto* copiedAcceptedRange = std::get_if<PerformanceTimeRange>(
+      &copiedAcceptance.scope);
+  CHECK(copiedAcceptedRange != nullptr);
+  CHECK(*copiedAcceptedRange == expectedRange);
+  CHECK(copiedAcceptance.sourceTickOffset == Tick{-960});
+  CHECK(copiedAcceptance.takeId == "range-copy-take");
+  CHECK(region->performance.validate(region->notes, region->durationTick));
+
+  const auto after = project;
+  CHECK(command.revert(project));
+  CHECK(project == before);
+  CHECK(command.apply(project));
+  CHECK(project == after);
+}
+
+TEST_CASE("performance copy clips crossing ranges and skips ranges outside the phrase") {
+  auto project = expressionProject();
+  auto* region = project.findRegion(RegionId{21U});
+  region->durationTick = Tick{3000};
+  auto firstCopy = region->notes[0];
+  firstCopy.id = NoteId{35U};
+  firstCopy.startTick = Tick{1920};
+  auto secondCopy = region->notes[1];
+  secondCopy.id = NoteId{36U};
+  secondCopy.startTick = Tick{2400};
+  region->notes.push_back(firstCopy);
+  region->notes.push_back(secondCopy);
+
+  using namespace seam::domain;
+  const PronunciationIdentity pronunciation{Language::Japanese, "test-ja", "1",
+      std::string(64U, 'a'), std::string(64U, 'b'), std::string(64U, 'c')};
+  region->performance.ownership = {
+      {PerformanceChannel::Tension, PerformanceTimeRange{Tick{0}, Tick{1200}},
+       ManualPerformanceMode::Replace, {}},
+      {PerformanceChannel::Pitch, PerformanceTimeRange{Tick{960}, Tick{1200}},
+       ManualPerformanceMode::Replace, {}}};
+  region->performance.takes = {{.id = "boundary-copy-take", .sourceRegionId = RegionId{21U},
+      .resource = {SingerResourceKind::Procedural, "fixture", "1", std::string(64U, 'd')},
+      .pronunciation = pronunciation, .generatorId = "fixture", .generatorVersion = "1",
+      .range = {Tick{0}, Tick{3000}},
+      .lanes = {{PerformanceChannel::Dynamics, {{Tick{0}, 0.5}, {Tick{3000}, 1.0}}},
+          {PerformanceChannel::Pitch, {{Tick{0}, 0.5}, {Tick{3000}, 1.0}}}}}};
+  region->performance.accepted = {
+      {"boundary-copy-take", PerformanceChannel::Dynamics,
+       PerformanceTimeRange{Tick{0}, Tick{1200}}, Tick{0}},
+      {"boundary-copy-take", PerformanceChannel::Pitch,
+       PerformanceTimeRange{Tick{960}, Tick{1200}}, Tick{0}}};
+  CHECK(project.validate());
+  const auto before = project;
+
+  seam::application::CopyNotePerformanceCommand command{RegionId{21U},
+      {{NoteId{31U}, NoteId{35U}}, {NoteId{32U}, NoteId{36U}}}};
+  CHECK(command.apply(project));
+  region = project.findRegion(RegionId{21U});
+
+  CHECK(region->performance.ownership.size() == 3U);
+  CHECK(region->performance.ownership[0] == before.findRegion(RegionId{21U})->performance.ownership[0]);
+  CHECK(region->performance.ownership[1] == before.findRegion(RegionId{21U})->performance.ownership[1]);
+  CHECK((std::get<PerformanceTimeRange>(region->performance.ownership[2].scope) ==
+      PerformanceTimeRange{Tick{1920}, Tick{2880}}));
+  CHECK(region->performance.accepted.size() == 3U);
+  CHECK(region->performance.accepted[0] == before.findRegion(RegionId{21U})->performance.accepted[0]);
+  CHECK(region->performance.accepted[1] == before.findRegion(RegionId{21U})->performance.accepted[1]);
+  CHECK((std::get<PerformanceTimeRange>(region->performance.accepted[2].scope) ==
+      PerformanceTimeRange{Tick{1920}, Tick{2880}}));
+  CHECK(region->performance.accepted[2].sourceTickOffset == Tick{-1920});
+  CHECK(region->performance.validate(region->notes, region->durationTick));
+
+  const auto after = project;
+  CHECK(command.revert(project));
+  CHECK(project == before);
+  CHECK(command.apply(project));
+  CHECK(project == after);
+}
+
+TEST_CASE("performance copy rejects a nonuniform phrase translation atomically") {
+  auto project = expressionProject();
+  auto* region = project.findRegion(RegionId{21U});
+  region->durationTick = Tick{2400};
+  auto firstCopy = region->notes[0];
+  firstCopy.id = NoteId{35U};
+  firstCopy.startTick = Tick{960};
+  auto secondCopy = region->notes[1];
+  secondCopy.id = NoteId{36U};
+  secondCopy.startTick = Tick{1500};
+  region->notes.push_back(firstCopy);
+  region->notes.push_back(secondCopy);
+  region->performance.ownership = {{seam::domain::PerformanceChannel::Pitch,
+      seam::domain::PerformanceTimeRange{Tick{0}, Tick{960}},
+      seam::domain::ManualPerformanceMode::Replace, {}}};
+  CHECK(project.validate());
+  const auto before = project;
+
+  seam::application::CopyNotePerformanceCommand command{RegionId{21U},
+      {{NoteId{31U}, NoteId{35U}}, {NoteId{32U}, NoteId{36U}}}};
+  const auto result = command.apply(project);
+  CHECK(!result);
+  CHECK(result.error().code == seam::core::ErrorCode::InvalidArgument);
+  CHECK(project == before);
+}
+
 TEST_CASE("performance copy rejects phoneme key collisions without partial ownership changes") {
   auto project = expressionProject();
   auto* region = project.findRegion(RegionId{21U});

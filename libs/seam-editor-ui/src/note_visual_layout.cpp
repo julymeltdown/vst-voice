@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <queue>
+#include <utility>
 #include <vector>
 
 namespace seam::ui {
@@ -50,23 +53,29 @@ std::vector<NoteVisualLayout> layoutNoteVisuals(
         ++groupEnd;
       }
 
-      std::vector<time::Tick> bandEnds;
+      using ActiveBand = std::pair<time::Tick, std::size_t>;
+      std::priority_queue<ActiveBand, std::vector<ActiveBand>,
+                          std::greater<ActiveBand>> activeBands;
+      std::priority_queue<std::size_t, std::vector<std::size_t>,
+                          std::greater<std::size_t>> availableBands;
+      std::size_t bandCount = 0U;
       std::vector<Pending> pending;
       pending.reserve(groupEnd - groupStart);
       for (std::size_t index = groupStart; index < groupEnd; ++index) {
         const auto sourceIndex = order[index];
         const auto& item = items[sourceIndex];
-        std::size_t band = 0U;
-        for (; band < bandEnds.size(); ++band) {
-          if (bandEnds[band] <= item.start) break;
+        while (!activeBands.empty() && activeBands.top().first <= item.start) {
+          availableBands.push(activeBands.top().second);
+          activeBands.pop();
         }
-        if (band == bandEnds.size()) bandEnds.push_back(item.end);
-        else bandEnds[band] = item.end;
+        const auto band = availableBands.empty() ? bandCount++ : availableBands.top();
+        if (!availableBands.empty()) availableBands.pop();
+        activeBands.emplace(item.end, band);
         pending.push_back(Pending{.sourceIndex = sourceIndex,
                                   .groupIndex = groupIndex,
                                   .bandIndex = band});
       }
-      const auto visibleBandCount = std::min<std::size_t>(3U, bandEnds.size());
+      const auto visibleBandCount = std::min<std::size_t>(3U, bandCount);
       const auto hiddenMemberCount = pending.size() > visibleBandCount
                                          ? pending.size() - visibleBandCount
                                          : 0U;

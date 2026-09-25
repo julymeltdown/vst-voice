@@ -15,12 +15,14 @@
 - (void)saveProjectAs:(id)sender;
 - (void)importAudio:(id)sender;
 - (void)installVoicebank:(id)sender;
+- (void)installProceduralSinger:(id)sender;
 - (void)relinkVoicebank:(id)sender;
 - (void)selectProceduralRecipe:(id)sender;
 - (void)relinkProceduralRecipe:(id)sender;
 - (void)bakeProceduralCandidates:(id)sender;
 - (void)proposeAutomaticPerformance:(id)sender;
 - (void)proposeAutomaticPerformanceOverSelectedNotes:(id)sender;
+- (void)cancelAutomaticPerformanceProposal:(id)sender;
 - (void)createHarmonyTrack:(id)sender;
 - (void)createHarmonyTrackFromSelectedNotes:(id)sender;
 - (void)createHarmonyTrackForScope:(seam::platform::PerformanceEditScope)scope;
@@ -122,13 +124,42 @@
 - (void)saveProjectAs:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProjectAs]; }
 - (void)importAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ImportAudio]; }
 - (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
+- (void)installProceduralSinger:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::InstallProceduralSinger
+             errorTitle:@"Could not install procedural singer"];
+}
 - (void)relinkVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkVoicebank]; }
-- (void)selectProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectProceduralRecipe]; }
-- (void)selectInstalledProceduralSinger:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SelectInstalledProceduralSinger]; }
-- (void)copyInstalledSingerToDraft:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::CopyInstalledSingerToDraft]; }
-- (void)reviewInstalledSinger:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ReviewInstalledSinger]; }
-- (void)relinkProceduralRecipe:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::RelinkProceduralRecipe]; }
-- (void)bakeProceduralCandidates:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::BakeProceduralCandidates]; }
+- (void)selectProceduralRecipe:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::SelectProceduralRecipe
+             errorTitle:@"Could not select procedural recipe"];
+}
+- (void)selectInstalledProceduralSinger:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::SelectInstalledProceduralSinger
+             errorTitle:@"Could not select installed singer"];
+}
+- (void)copyInstalledSingerToDraft:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::CopyInstalledSingerToDraft
+             errorTitle:@"Could not copy installed singer to a draft"];
+}
+- (void)reviewInstalledSinger:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::ReviewInstalledSinger
+             errorTitle:@"Could not review installed singer"];
+}
+- (void)relinkProceduralRecipe:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::RelinkProceduralRecipe
+             errorTitle:@"Could not relink procedural recipe"];
+}
+- (void)bakeProceduralCandidates:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::BakeProceduralCandidates
+             errorTitle:@"Could not bake procedural candidates"];
+}
 - (void)proposeAutomaticPerformance:(id)sender {
   (void)sender;
   [self dispatchCommand:seam::platform::ApplicationCommand::ProposeAutomaticPerformance
@@ -139,6 +170,12 @@
   [self dispatchCommand:
       seam::platform::ApplicationCommand::ProposeAutomaticPerformanceOverSelectedNotes
              errorTitle:@"Could not generate take over selected notes"];
+}
+- (void)cancelAutomaticPerformanceProposal:(id)sender {
+  (void)sender;
+  if (_dispatcher == nullptr) return;
+  [self showResult:_dispatcher->cancelPerformanceProposal()
+         errorTitle:@"Could not cancel performance proposal"];
 }
 - (void)createHarmonyTrack:(id)sender {
   (void)sender;
@@ -152,7 +189,7 @@
   if (_dispatcher == nullptr) return;
   auto* alert = [[NSAlert alloc] init];
   alert.messageText = @"Create Harmony Track";
-  alert.informativeText = @"Create an independently editable vocal track with the lead singer and lyric syllables. The interval is in scale steps for major/minor, semitones for chromatic. Major and minor require each note to be in the key.";
+  alert.informativeText = @"Create an independently editable vocal track with the lead singer and lyric syllables. The interval is in scale steps for the selected mode, semitones for chromatic. Diatonic modes require every source note to be in the selected key.";
   [alert addButtonWithTitle:@"Create Track"];
   [alert addButtonWithTitle:@"Cancel"];
 
@@ -160,7 +197,9 @@
   auto* scaleLabel = [NSTextField labelWithString:@"Scale"];
   scaleLabel.frame = NSMakeRect(0, 89, 110, 22);
   auto* scale = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(125, 86, 250, 28) pullsDown:NO];
-  [scale addItemsWithTitles:@[@"Major", @"Natural minor", @"Chromatic"]];
+  [scale addItemsWithTitles:@[@"Major", @"Natural minor", @"Harmonic minor",
+      @"Melodic minor", @"Dorian", @"Phrygian", @"Lydian", @"Mixolydian",
+      @"Locrian", @"Chromatic"]];
   scale.accessibilityLabel = @"Harmony scale";
   auto* keyLabel = [NSTextField labelWithString:@"Key tonic"];
   keyLabel.frame = NSMakeRect(0, 49, 110, 22);
@@ -191,10 +230,18 @@
     return;
   }
   seam::platform::HarmonyScale selectedScale = seam::platform::HarmonyScale::Major;
-  if (scale.indexOfSelectedItem == 1)
-    selectedScale = seam::platform::HarmonyScale::NaturalMinor;
-  else if (scale.indexOfSelectedItem == 2)
-    selectedScale = seam::platform::HarmonyScale::Chromatic;
+  switch (scale.indexOfSelectedItem) {
+    case 1: selectedScale = seam::platform::HarmonyScale::NaturalMinor; break;
+    case 2: selectedScale = seam::platform::HarmonyScale::HarmonicMinor; break;
+    case 3: selectedScale = seam::platform::HarmonyScale::MelodicMinor; break;
+    case 4: selectedScale = seam::platform::HarmonyScale::Dorian; break;
+    case 5: selectedScale = seam::platform::HarmonyScale::Phrygian; break;
+    case 6: selectedScale = seam::platform::HarmonyScale::Lydian; break;
+    case 7: selectedScale = seam::platform::HarmonyScale::Mixolydian; break;
+    case 8: selectedScale = seam::platform::HarmonyScale::Locrian; break;
+    case 9: selectedScale = seam::platform::HarmonyScale::Chromatic; break;
+    default: break;
+  }
   const auto created = _dispatcher->createHarmonyTrack({
       .scope = scope, .scale = selectedScale,
       .tonicPitchClass = static_cast<int>(key.indexOfSelectedItem),
@@ -573,6 +620,8 @@ public:
                             0, target_)];
     [fileMenu_ addItem:item(@"Install Voicebank…", @selector(installVoicebank:), @"",
                             0, target_)];
+    [fileMenu_ addItem:item(@"Install Procedural Singer…", @selector(installProceduralSinger:), @"",
+                            0, target_)];
     [fileMenu_ addItem:item(@"Select Procedural Recipe…", @selector(selectProceduralRecipe:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Select Installed Singer…", @selector(selectInstalledProceduralSinger:), @"", 0, target_)];
     [fileMenu_ addItem:item(@"Copy Installed Singer to Draft…", @selector(copyInstalledSingerToDraft:), @"", 0, target_)];
@@ -624,7 +673,7 @@ public:
                        NSEventModifierFlagCommand | NSEventModifierFlagShift,
                        target_)];
     [edit addItem:[NSMenuItem separatorItem]];
-    [edit addItem:item(@"Edit Japanese Pronunciation Hint…", @selector(editPronunciationHint:), @"",
+    [edit addItem:item(@"Edit Pronunciation Hint…", @selector(editPronunciationHint:), @"",
                        0, target_)];
     [edit addItem:item(@"Find Notes…", @selector(findNotes:), @"f", NSEventModifierFlagCommand, target_)];
     [edit addItem:item(@"Find Active Diagnostics…", @selector(findActiveDiagnostics:), @"", 0, target_)];
@@ -781,8 +830,15 @@ public:
       [performanceMenu_ removeAllItems];
       const auto takes = dispatcher_->performanceTakes();
       const auto comparison = dispatcher_->performanceComparison();
+      if (dispatcher_->performanceProposalInProgress()) {
+        [performanceMenu_ addItem:item(@"Cancel Generation",
+            @selector(cancelAutomaticPerformanceProposal:), @"", 0, target_)];
+        [performanceMenu_ addItem:[NSMenuItem separatorItem]];
+      }
       if (takes.empty()) {
-        auto* empty = [[NSMenuItem alloc] initWithTitle:@"No Performance Proposals"
+        const auto title = dispatcher_->performanceProposalInProgress()
+            ? @"Generating Performance Proposal…" : @"No Performance Proposals";
+        auto* empty = [[NSMenuItem alloc] initWithTitle:title
                                                   action:nil keyEquivalent:@""];
         empty.enabled = NO;
         [performanceMenu_ addItem:empty];

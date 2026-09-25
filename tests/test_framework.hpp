@@ -61,10 +61,15 @@ inline double elapsedSeconds(const std::chrono::steady_clock::time_point& starte
   return std::chrono::duration<double>(elapsed).count();
 }
 
-inline int runAll() {
+inline int runAll(std::string_view nameFilter = {}) {
   std::size_t passed = 0;
   std::size_t failed = 0;
+  std::size_t selected = 0;
   for (const auto& test : registry()) {
+    if (!nameFilter.empty() && test.name.find(nameFilter) == std::string::npos) {
+      continue;
+    }
+    ++selected;
     // A case that hangs under a CTest timeout leaves no evidence of which case it was unless the
     // name is on the stream before the work starts, and an unflushed std::cout is discarded when the
     // process is killed. Both lines are therefore written and flushed around every case; the elapsed
@@ -86,6 +91,12 @@ inline int runAll() {
       std::cerr.flush();
     }
     std::cout.flush();
+  }
+  if (selected == 0U) {
+    std::cerr << "No tests matched the requested name filter: " << nameFilter
+              << '\n';
+    std::cerr.flush();
+    return 2;
   }
   std::cout << "\n" << passed << " passed, " << failed << " failed\n";
   std::cout.flush();

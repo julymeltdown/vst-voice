@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <numbers>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -73,6 +74,81 @@ void ellipsizeToWidth(RasterCanvas& canvas, std::string_view text, ui::Rect boun
   if (bounds.width <= 0.0 || bounds.height <= 0.0 || text.empty()) return;
   const auto fitted = fitUtf8Text(text, bounds.width, characterWidth);
   canvas.drawText(bounds, fitted, color, fontSize);
+}
+
+struct VibratoEnvelopeGeometry final {
+  double activeFrames{0.0};
+  double periodFrames{0.0};
+  double activeWidth{0.0};
+  double baseline{0.0};
+  double amplitude{0.0};
+  double fadeIn{0.0};
+  double fadeOut{0.0};
+  double onsetX{0.0};
+};
+
+std::optional<VibratoEnvelopeGeometry> vibratoGeometry(
+    const domain::Note& note, time::Tick regionStart,
+    const time::TempoMap& tempoMap, ui::Rect bounds) noexcept {
+  const auto& vibrato = note.vibrato;
+  if (!vibrato.enabled || bounds.width < 18.0 || bounds.height < 5.0)
+    return std::nullopt;
+  constexpr double sampleRate = 48000.0;
+  const auto startFrame = tempoMap.sampleFrameAt(regionStart + note.startTick, sampleRate);
+  const auto endFrame = tempoMap.sampleFrameAt(regionStart + note.endTick(), sampleRate);
+  const auto durationFrames = static_cast<double>(endFrame) - static_cast<double>(startFrame);
+  const auto activeFraction = 1.0 - static_cast<double>(vibrato.startFraction);
+  if (!std::isfinite(durationFrames) || durationFrames <= 0.0 ||
+      activeFraction <= 0.0)
+    return std::nullopt;
+  const auto activeFrames = durationFrames * activeFraction;
+  const auto periodFrames = static_cast<double>(vibrato.periodMilliseconds) * 48.0;
+  if (!std::isfinite(activeFrames) || activeFrames <= 0.0 ||
+      !std::isfinite(periodFrames) || periodFrames <= 0.0) return std::nullopt;
+  const auto activeWidth = bounds.width * activeFraction;
+  if (activeWidth < 8.0) return std::nullopt;
+  return VibratoEnvelopeGeometry{
+      .activeFrames = activeFrames,
+      .periodFrames = periodFrames,
+      .activeWidth = activeWidth,
+      .baseline = bounds.y + bounds.height * 0.69,
+      .amplitude = bounds.height * 0.28 *
+          static_cast<double>(vibrato.depthCents) / 200.0,
+      .fadeIn = activeFrames * static_cast<double>(vibrato.fadeInFraction),
+      .fadeOut = activeFrames * static_cast<double>(vibrato.fadeOutFraction),
+      .onsetX = bounds.x + bounds.width * static_cast<double>(vibrato.startFraction),
+  };
+}
+
+void paintVibratoEnvelope(RasterCanvas& canvas, ui::Rect bounds,
+                          const domain::Note& note, time::Tick regionStart,
+                          const time::TempoMap& tempoMap,
+                          Color color, double strokeWidth) {
+  const auto geometry = vibratoGeometry(note, regionStart, tempoMap, bounds);
+  if (!geometry) return;
+
+  const auto cycles = geometry->activeFrames / geometry->periodFrames;
+  const auto sampleCount = static_cast<std::size_t>(std::clamp(
+      std::ceil(cycles * 12.0), 8.0, 192.0));
+  const auto& vibrato = note.vibrato;
+  std::optional<ui::Point> previous;
+  for (std::size_t index = 0U; index <= sampleCount; ++index) {
+    const auto fraction = static_cast<double>(index) / static_cast<double>(sampleCount);
+    const auto position = geometry->activeFrames * fraction;
+    const auto inEnvelope = geometry->fadeIn > 0.0
+        ? std::min(1.0, position / geometry->fadeIn) : 1.0;
+    const auto outEnvelope = geometry->fadeOut > 0.0
+        ? std::min(1.0, (geometry->activeFrames - position) / geometry->fadeOut)
+        : 1.0;
+    const auto envelope = std::max(0.0, std::min(inEnvelope, outEnvelope));
+    const auto phase = position / geometry->periodFrames + static_cast<double>(vibrato.phaseTurns);
+    const auto x = geometry->onsetX + geometry->activeWidth * fraction;
+    const auto y = geometry->baseline - geometry->amplitude * envelope *
+        std::sin(2.0 * std::numbers::pi_v<double> * phase);
+    const ui::Point point{x, y};
+    if (previous) canvas.line(*previous, point, color, strokeWidth);
+    previous = point;
+  }
 }
 
 struct StatusBarColumns final {
@@ -142,6 +218,62 @@ double overlayHeight(const EditorSceneState& state,
 }
 
 }  // namespace
+
+std::optional<VibratoHandlePoints> vibratoHandlePositions(
+    const domain::Note& note, time::Tick regionStart,
+    const time::TempoMap& tempoMap, ui::Rect screenBounds) noexcept {
+  const auto geometry = vibratoGeometry(note, regionStart, tempoMap, screenBounds);
+  if (!geometry) return std::nullopt;
+  const auto pointAt = [&](double fraction) {
+    const auto position = geometry->activeFrames * fraction;
+    const auto fadeIn = geometry->fadeIn > 0.0
+        ? std::min(1.0, position / geometry->fadeIn) : 1.0;
+    const auto fadeOut = geometry->fadeOut > 0.0
+        ? std::min(1.0, (geometry->activeFrames - position) / geometry->fadeOut)
+        : 1.0;
+    const auto envelope = std::max(0.0, std::min(fadeIn, fadeOut));
+    const auto phase = position / geometry->periodFrames +
+        static_cast<double>(note.vibrato.phaseTurns);
+    return ui::Point{
+        geometry->onsetX + geometry->activeWidth * fraction,
+        geometry->baseline - geometry->amplitude * envelope *
+            std::sin(2.0 * std::numbers::pi_v<double> * phase),
+    };
+  };
+  std::optional<ui::Point> fadeIn;
+  if (geometry->fadeIn > 0.0)
+    fadeIn = pointAt(geometry->fadeIn / geometry->activeFrames);
+  else if (geometry->activeWidth > 0.0)
+    fadeIn = ui::Point{geometry->onsetX, screenBounds.y + 1.5};
+  std::optional<ui::Point> fadeOut;
+  if (geometry->fadeOut > 0.0)
+    fadeOut = pointAt(1.0 - geometry->fadeOut / geometry->activeFrames);
+  else if (geometry->activeWidth > 0.0)
+    fadeOut = ui::Point{geometry->onsetX + geometry->activeWidth,
+                        screenBounds.y + 1.5};
+  std::optional<ui::Point> period;
+  std::optional<ui::Point> phaseHandle;
+  const auto periodFraction = geometry->periodFrames / geometry->activeFrames;
+  if (geometry->activeFrames / 48.0 >= 5.0 && periodFraction <= 1.0 &&
+      geometry->activeWidth * periodFraction >= 9.0) {
+    period = pointAt(periodFraction);
+    const auto phaseTurns = static_cast<double>(note.vibrato.phaseTurns);
+    if (phaseTurns > 0.001) {
+      phaseHandle = ui::Point{
+          geometry->onsetX + geometry->activeWidth * periodFraction * phaseTurns,
+          screenBounds.y + 1.5,
+      };
+    }
+  }
+  return VibratoHandlePoints{
+      .onset = {geometry->onsetX, geometry->baseline},
+      .depth = pointAt(0.25),
+      .fadeIn = fadeIn,
+      .fadeOut = fadeOut,
+      .period = period,
+      .phase = phaseHandle,
+  };
+}
 
 TechnicalLaneHeights resolveEditorTechnicalLaneHeights(
     const EditorSceneState& state, const EditorSceneLayout& layout,
@@ -532,7 +664,8 @@ void EditorScenePainter::paintToolbar(RasterCanvas& canvas,
   }
   if (const auto identityBounds = layout_.voiceIdentityBoundsForWidth(width);
       identityBounds.has_value()) {
-    canvas.drawText(*identityBounds, state.voiceIdentity.name,
+    canvas.drawText(*identityBounds,
+                    fitUtf8Text(state.voiceIdentity.name, identityBounds->width, 5.0),
                     state.voiceIdentity.state == VoiceIdentityState::Missing ||
                             state.voiceIdentity.state == VoiceIdentityState::Error
                         ? theme_.diagnosticWarning
@@ -642,9 +775,10 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
                                     const ui::PianoRollModel& model,
                                     const EditorSceneState& state) const noexcept {
   const auto notes = model.visibleNotes();
+  const auto* region = model.project().findRegion(model.regionId());
   struct OverlapGroup final {
     std::size_t index{0U};
-    std::size_t hiddenMembers{0U};
+    std::size_t memberCount{0U};
     ui::Rect bounds;
     bool initialized{false};
   };
@@ -658,10 +792,11 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
       if (group == overlapGroups.end()) {
         overlapGroups.push_back(OverlapGroup{
             .index = note.overlapGroup,
-            .hiddenMembers = note.hiddenOverlapMembers,
+            .memberCount = note.overlapMemberCount,
         });
         group = std::prev(overlapGroups.end());
       }
+      group->memberCount = std::max(group->memberCount, note.overlapMemberCount);
       auto memberBounds = note.bounds;
       memberBounds.y += layout_.contentTop();
       if (!group->initialized) {
@@ -685,6 +820,18 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
     canvas.strokeRect(bounds, note.selected ? theme_.noteSelectedStroke
                                             : theme_.noteStroke,
                       layout_.noteStrokeWidth);
+    if (note.selected && region != nullptr) {
+      if (const auto* source = region->findNote(note.noteId)) {
+        auto displayNote = *source;
+        if (state.vibratoGesturePreview &&
+            state.vibratoGesturePreview->noteId == source->id) {
+          displayNote.vibrato = state.vibratoGesturePreview->value;
+        }
+        paintVibratoEnvelope(canvas, bounds, displayNote, region->startTick,
+                             model.project().tempoMap(), theme_.focusRing,
+                             layout_.automationCurveStrokeWidth);
+      }
+    }
     if (!note.lyric.empty() && note.overlapMemberCount == 1U) {
       const auto labelBounds = layout_.noteLabelBounds(bounds);
       if (!labelBounds.has_value()) continue;
@@ -695,8 +842,58 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
       }
     }
   }
+  if (state.selectedNoteCount == 1U && region != nullptr) {
+    for (const auto& note : notes) {
+      if (!note.selected || note.hiddenByOverlapDensity) continue;
+      const auto* source = region->findNote(note.noteId);
+      if (source == nullptr) continue;
+      auto displayNote = *source;
+      if (state.vibratoGesturePreview &&
+          state.vibratoGesturePreview->noteId == source->id) {
+        displayNote.vibrato = state.vibratoGesturePreview->value;
+      }
+      auto bounds = note.bounds;
+      bounds.y += layout_.contentTop();
+      const auto handles = vibratoHandlePositions(
+          displayNote, region->startTick, model.project().tempoMap(), bounds);
+      if (!handles) continue;
+      const auto drawHandle = [&](VibratoHandleKind kind, ui::Point point,
+                                  double size, Color color) {
+        const ui::Rect handle{point.x - size * 0.5,
+                              point.y - size * 0.5, size, size};
+        canvas.fillRect(handle, color);
+        const auto focused = state.vibratoKeyboardFocus == kind;
+        canvas.strokeRect(handle,
+                          focused ? theme_.focusRing : theme_.background,
+                          focused ? layout_.controlStrokeWidth + 1.0
+                                  : layout_.controlStrokeWidth);
+      };
+      drawHandle(VibratoHandleKind::Onset, handles->onset, 8.0, theme_.accent);
+      drawHandle(VibratoHandleKind::Depth, handles->depth, 8.0, theme_.accent);
+      if (handles->fadeIn)
+        drawHandle(VibratoHandleKind::FadeIn, *handles->fadeIn, 6.0,
+                   theme_.focusRing);
+      if (handles->fadeOut)
+        drawHandle(VibratoHandleKind::FadeOut, *handles->fadeOut, 6.0,
+                   theme_.focusRing);
+      if (handles->period)
+        drawHandle(VibratoHandleKind::Period, *handles->period, 7.0,
+                   theme_.primaryText);
+      if (handles->phase && handles->period) {
+        const auto trackLeft = std::min(handles->onset.x, handles->period->x);
+        const auto trackWidth = std::max(0.0, handles->period->x - trackLeft);
+        const auto trackColor = state.vibratoKeyboardFocus ==
+                                        VibratoHandleKind::Phase
+            ? theme_.focusRing : theme_.secondaryText;
+        canvas.fillRect(ui::Rect{trackLeft, handles->phase->y - 0.5,
+                                 trackWidth, 1.0}, trackColor);
+        drawHandle(VibratoHandleKind::Phase, *handles->phase, 6.0,
+                   theme_.secondaryText);
+      }
+    }
+  }
   for (const auto& group : overlapGroups) {
-    if (!group.initialized || group.hiddenMembers == 0U) continue;
+    if (!group.initialized) continue;
     if (state.overlapDetail.has_value() &&
         state.overlapDetail->groupIndex == group.index) {
       continue;
@@ -705,7 +902,7 @@ void EditorScenePainter::paintNotes(RasterCanvas& canvas,
         group.bounds, model.viewport().bounds.right());
     canvas.fillRect(badge, theme_.panel);
     canvas.strokeRect(badge, theme_.focusRing, layout_.controlStrokeWidth);
-    canvas.drawText(badge, "+" + std::to_string(group.hiddenMembers),
+    canvas.drawText(badge, "x" + std::to_string(group.memberCount),
                     theme_.focusRing, layout_.noteFontSize);
   }
   for (const auto& note : notes) {
@@ -1148,6 +1345,7 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
     canvas.drawText(ui::Rect{textX, top, textWidth, size + 2.0}, text, color, size);
   };
   double textTop = layout_.toolbarHeight + layout_.characterDockPortraitTopInset;
+  std::optional<ui::Rect> fittedPortraitBounds;
   if (presentation == CharacterDockPresentation::Full) {
     const auto portraitBounds = layout_.characterDockPortraitBounds(
         editorRight, contentBottom, canvas.logicalWidth());
@@ -1161,6 +1359,7 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
       const auto fitX = portraitBounds.x + (portraitBounds.width - fitW) * 0.5;
       const auto fitY = portraitBounds.y + (portraitBounds.height - fitH) * 0.5;
       const ui::Rect fittedRect{fitX, fitY, fitW, fitH};
+      fittedPortraitBounds = fittedRect;
       canvas.drawImageNearest(fittedRect, *state.characterPortrait,
                               layout_.characterDockPortraitScale);
       canvas.strokeRect(fittedRect, theme_.gridStrong,
@@ -1176,7 +1375,13 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   line(textTop, state.characterName.empty() ? "CHARACTER 01" : state.characterName,
        theme_.primaryText, layout_.characterDockNameFontSize);
   const auto roleTop = textTop + layout_.characterDockNameToRoleAdvance;
-  line(roleTop, "VOICEBANK AVATAR", theme_.secondaryText, layout_.characterDockDetailFontSize);
+  std::string singerDetail = state.characterVoiceStyle.empty()
+      ? std::string{"VOICEBANK AVATAR"}
+      : "STYLE " + state.characterVoiceStyle;
+  if (!state.characterScorePitchRange.empty())
+    singerDetail += " / SCORE " + state.characterScorePitchRange;
+  line(roleTop, fitUtf8Text(singerDetail, textWidth, 4.2), theme_.secondaryText,
+       layout_.characterDockDetailFontSize);
   const auto stateTop = roleTop + layout_.characterDockRoleToStateAdvance;
   line(stateTop, "STATE " + characterStateLabel(state.characterState), theme_.accent,
        layout_.characterDockDetailFontSize);
@@ -1201,9 +1406,18 @@ void EditorScenePainter::paintCharacter(RasterCanvas& canvas,
   // The glyph is the only part that moves, so it is drawn only where there is room for it beside the
   // level bar, and reduced motion drops it while keeping the label and the measured level.
   if (!performance.reducedMotion && presentation == CharacterDockPresentation::Full) {
-    if (state.characterMouth != nullptr) {
-      // A package that declares performance artwork gets to draw it. The asset replaces the dock's own
-      // drawing rather than sitting beside it, so a reviewed turnaround is what the user sees.
+    if (state.characterMouth != nullptr && state.characterMouthPlacement.has_value() &&
+        fittedPortraitBounds.has_value()) {
+      const auto& placement = *state.characterMouthPlacement;
+      const auto& portrait = *fittedPortraitBounds;
+      canvas.drawImageNearest(ui::Rect{
+          portrait.x + placement.x * portrait.width,
+          portrait.y + placement.y * portrait.height,
+          placement.width * portrait.width,
+          placement.height * portrait.height}, *state.characterMouth);
+    } else if (state.characterMouth != nullptr) {
+      // Legacy schema-2 assets without an anchor remain a side indicator. New packages
+      // declare normalized mouthPlacement and overlay the transparent sprite on the face.
       canvas.drawImageNearest(
           ui::Rect{textX + barWidth, performanceTop - layout_.characterDockMouthAssetHeight,
                    layout_.characterDockMouthAssetWidth, layout_.characterDockMouthAssetHeight},
@@ -1574,6 +1788,48 @@ void EditorScenePainter::paintRecoverySupport(
                   textWidth,
                   layout_.secondaryTextCharacterWidth),
       theme_.secondaryText, layout_.supportPanelFontSize);
+
+  std::size_t vocalTrackCount = 0U;
+  std::size_t selectedTrackPosition = 0U;
+  std::string selectedTrackName;
+  for (const auto& track : state.arrangementTracks) {
+    if (!track.vocal) continue;
+    ++vocalTrackCount;
+    if (track.selected) {
+      selectedTrackPosition = vocalTrackCount;
+      selectedTrackName = track.name;
+    }
+  }
+  const auto previousTrackBounds = layout_.supportTrackPreviousBounds(
+      editorRight, canvas.logicalWidth());
+  const auto nextTrackBounds = layout_.supportTrackNextBounds(
+      editorRight, canvas.logicalWidth());
+  const auto trackLabelBounds = layout_.supportTrackLabelBounds(
+      editorRight, canvas.logicalWidth());
+  const auto canNavigateTracks = vocalTrackCount > 1U;
+  for (const auto& [bounds, label] :
+       {std::pair{previousTrackBounds, std::string_view{"PREV"}},
+        std::pair{nextTrackBounds, std::string_view{"NEXT"}}}) {
+    canvas.fillRect(bounds, canNavigateTracks ? theme_.background : theme_.panel);
+    canvas.strokeRect(bounds, theme_.gridStrong, layout_.controlStrokeWidth);
+    canvas.drawText(ui::Point{bounds.x + 5.0,
+                              bounds.y + layout_.supportTrackNavHeight - 5.0},
+                    label,
+                    canNavigateTracks ? theme_.primaryText
+                                      : theme_.secondaryText,
+                    layout_.supportTrackNavFontSize);
+  }
+  const auto trackLabel = selectedTrackName.empty()
+                              ? std::string{"NO VOCAL TRACK"}
+                              : "TRACK " + std::to_string(selectedTrackPosition) +
+                                    "/" + std::to_string(vocalTrackCount) +
+                                    " - " + selectedTrackName;
+  canvas.drawText(
+      ui::Point{trackLabelBounds.x,
+                trackLabelBounds.y + layout_.supportTrackNavHeight - 5.0},
+      fitUtf8Text(trackLabel, trackLabelBounds.width,
+                  layout_.secondaryTextCharacterWidth),
+      theme_.accent, layout_.supportTrackNavFontSize);
 
   const auto firstItem = std::min(support.firstVisibleItem,
                                   support.items.size());

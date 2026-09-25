@@ -6,6 +6,9 @@
 
 #include "seam/application/project_factory.hpp"
 #include "seam/domain/project.hpp"
+#include "seam/formats/project_json.hpp"
+#include "seam/rendering/project_renderer.hpp"
+#include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/render_snapshot.hpp"
 #include "seam/rendering/render_pipeline.hpp"
 #include "seam/ui/expression_lane.hpp"
@@ -14,6 +17,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,6 +104,49 @@ double relativeEnergyDifference(const std::vector<float>& lhs, const std::vector
   return std::sqrt(difference / reference);
 }
 
+double estimateFundamentalHz(const std::vector<float>& samples, std::size_t start,
+                             double minimumHz, double maximumHz) {
+  constexpr double sampleRate = 48000.0;
+  constexpr std::size_t windowFrames = 6000U;
+  if (start > samples.size() || samples.size() - start < windowFrames) return 0.0;
+  const auto minimumLag = static_cast<std::size_t>(sampleRate / maximumHz);
+  const auto maximumLag = static_cast<std::size_t>(sampleRate / minimumHz);
+  const auto window = std::span<const float>{samples}.subspan(start, windowFrames);
+  const auto normalizedCorrelation = [&](std::size_t lag) {
+    double correlation = 0.0;
+    double energy = 0.0;
+    for (std::size_t index = 0U; index + lag < window.size(); ++index) {
+      const auto current = static_cast<double>(window[index]);
+      correlation += current * static_cast<double>(window[index + lag]);
+      energy += current * current;
+    }
+    return energy > 0.0 ? correlation / energy : -1.0;
+  };
+  double bestCorrelation = -1.0;
+  std::size_t bestLag = minimumLag;
+  for (auto lag = minimumLag; lag <= maximumLag; ++lag) {
+    const auto normalized = normalizedCorrelation(lag);
+    if (normalized > bestCorrelation) {
+      bestCorrelation = normalized;
+      bestLag = lag;
+    }
+  }
+  auto fractionalLag = static_cast<double>(bestLag);
+  if (bestLag > minimumLag && bestLag < maximumLag) {
+    const auto left = normalizedCorrelation(bestLag - 1U);
+    const auto center = normalizedCorrelation(bestLag);
+    const auto right = normalizedCorrelation(bestLag + 1U);
+    const auto curvature = left - 2.0 * center + right;
+    if (curvature < 0.0) fractionalLag += 0.5 * (left - right) / curvature;
+  }
+  return sampleRate / fractionalLag;
+}
+
+double centsBetween(double lhsHz, double rhsHz) {
+  if (lhsHz <= 0.0 || rhsHz <= 0.0) return std::numeric_limits<double>::infinity();
+  return 1200.0 * std::log2(lhsHz / rhsHz);
+}
+
 }  // namespace
 
 TEST_CASE("Editing a supported channel on the song changes the rendered audio") {
@@ -108,6 +156,10 @@ TEST_CASE("Editing a supported channel on the song changes the rendered audio") 
   // The same project rendered twice is deterministic, so a later difference is the edit's.
   const auto repeated = renderSong(song, song.project);
   CHECK(relativeEnergyDifference(baseline, repeated) == 0.0);
+  const auto firstNotePitch = estimateFundamentalHz(baseline, 16'800U, 250.0, 275.0);
+  const auto secondNotePitch = estimateFundamentalHz(baseline, 64'800U, 280.0, 310.0);
+  CHECK(firstNotePitch > 0.0);
+  CHECK(secondNotePitch > 0.0);
 
   const std::vector<std::pair<ui::ExpressionChannel, float>> edits{
       {ui::ExpressionChannel::Formant, 4.0F},
@@ -147,6 +199,150 @@ TEST_CASE("Editing a supported channel on the song changes the rendered audio") 
     const auto rendered = renderSong(song, edited);
     // A drawn curve that does not reach the audio is not editing; this is the audible consequence.
     CHECK(relativeEnergyDifference(baseline, rendered) > 1e-4);
+    CHECK(rendered.size() == baseline.size());
+    const auto firstDrift = std::abs(centsBetween(
+        estimateFundamentalHz(rendered, 16'800U, 250.0, 275.0), firstNotePitch));
+    const auto secondDrift = std::abs(centsBetween(
+        estimateFundamentalHz(rendered, 64'800U, 280.0, 310.0), secondNotePitch));
+    if (firstDrift > 8.0 || secondDrift > 8.0) {
+      throw test::Failure{std::string{ui::describeExpressionChannel(channel).label} +
+          " changed the ordinary-note fundamental by " + std::to_string(firstDrift) +
+          " / " + std::to_string(secondDrift) + " cents"};
+    }
+  }
+}
+
+TEST_CASE("all supported timbral expression curves survive project save and reload") {
+  auto song = makeSong();
+  auto* target = song.project.findRegion(song.region);
+  CHECK(target != nullptr);
+  if (target == nullptr) return;
+
+  CHECK(target->formantAutomation.upsert({time::Tick{0}, 4.0F}).hasValue());
+  CHECK(target->breathinessAutomation.upsert({time::Tick{0}, 0.35F}).hasValue());
+  CHECK(target->tensionAutomation.upsert({time::Tick{0}, 0.35F}).hasValue());
+  CHECK(target->airinessAutomation.upsert({time::Tick{0}, 0.35F}).hasValue());
+  CHECK(target->genderAutomation.upsert({time::Tick{0}, -0.35F}).hasValue());
+  CHECK(target->growlAutomation.upsert({time::Tick{0}, 0.35F}).hasValue());
+
+  const formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(song.project);
+  CHECK(encoded.hasValue());
+  if (!encoded) return;
+  const auto decoded = codec.decode(encoded.value());
+  CHECK(decoded.hasValue());
+  if (!decoded) return;
+
+  const auto* reloaded = decoded.value().findRegion(song.region);
+  CHECK(reloaded != nullptr);
+  if (reloaded == nullptr) return;
+  CHECK(reloaded->formantAutomation == target->formantAutomation);
+  CHECK(reloaded->breathinessAutomation == target->breathinessAutomation);
+  CHECK(reloaded->tensionAutomation == target->tensionAutomation);
+  CHECK(reloaded->airinessAutomation == target->airinessAutomation);
+  CHECK(reloaded->genderAutomation == target->genderAutomation);
+  CHECK(reloaded->growlAutomation == target->growlAutomation);
+
+  const auto beforeSave = renderSong(song, song.project);
+  const auto afterReload = renderSong(song, decoded.value());
+  CHECK(!beforeSave.empty());
+  CHECK(afterReload == beforeSave);
+}
+
+TEST_CASE("neutral timbral automation is exactly identical to an unedited song") {
+  auto song = makeSong();
+  const auto baseline = renderSong(song, song.project);
+  auto neutral = song.project;
+  auto* target = neutral.findRegion(song.region);
+  CHECK(target != nullptr);
+  if (target == nullptr) return;
+
+  CHECK(target->formantAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(target->breathinessAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(target->tensionAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(target->airinessAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(target->genderAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(target->growlAutomation.upsert({time::Tick{0}, 0.0F}).hasValue());
+  CHECK(neutral.validate().hasValue());
+
+  CHECK(renderSong(song, neutral) == baseline);
+}
+
+TEST_CASE("procedural project PCM cache reuses exact expression identity only") {
+  auto song = makeSong();
+  const auto root = test::support::temporaryDirectory("procedural-expression-cache");
+  rendering::PcmCache cache{root / "cache"};
+  const std::vector<rendering::TrackSingerSource> sources{
+      rendering::TrackProceduralSource{song.track, song.resource, "neutral"}};
+  const rendering::ProductionProjectRenderer renderer;
+  const auto render = [&](const domain::Project& project) {
+    return renderer.renderWithSources(project, sources, song.track, song.region, 1U,
+        48000U, rendering::RenderQuality::Final, {}, &cache);
+  };
+
+  const auto cold = render(song.project);
+  CHECK(cold.hasValue());
+  if (!cold) return;
+  const auto warm = render(song.project);
+  CHECK(warm.hasValue());
+  if (!warm) return;
+  CHECK(cold.value().cacheHits == 0U);
+  CHECK(warm.value().cacheHits == 1U);
+  CHECK(warm.value().interleaved == cold.value().interleaved);
+
+  cache.clearMemory();
+  const auto diskWarm = render(song.project);
+  CHECK(diskWarm.hasValue());
+  if (!diskWarm) return;
+  CHECK(diskWarm.value().cacheHits == 1U);
+  CHECK(diskWarm.value().interleaved == cold.value().interleaved);
+  CHECK(cache.stats().diskHits >= 1U);
+
+  const std::vector<std::pair<ui::ExpressionChannel, float>> edits{
+      {ui::ExpressionChannel::Formant, 4.0F},
+      {ui::ExpressionChannel::Breathiness, 0.35F},
+      {ui::ExpressionChannel::Tension, 0.35F},
+      {ui::ExpressionChannel::Airiness, 0.35F},
+      {ui::ExpressionChannel::Gender, -0.35F},
+      {ui::ExpressionChannel::Growl, 0.35F},
+  };
+  for (const auto& [channel, amount] : edits) {
+    auto edited = song.project;
+    auto* target = edited.findRegion(song.region);
+    CHECK(target != nullptr);
+    if (target == nullptr) continue;
+    switch (channel) {
+      case ui::ExpressionChannel::Formant:
+        CHECK(target->formantAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+      case ui::ExpressionChannel::Breathiness:
+        CHECK(target->breathinessAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+      case ui::ExpressionChannel::Tension:
+        CHECK(target->tensionAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+      case ui::ExpressionChannel::Airiness:
+        CHECK(target->airinessAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+      case ui::ExpressionChannel::Gender:
+        CHECK(target->genderAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+      case ui::ExpressionChannel::Growl:
+        CHECK(target->growlAutomation.upsert({time::Tick{0}, amount}).hasValue());
+        break;
+    }
+    const auto changed = render(edited);
+    CHECK(changed.hasValue());
+    if (!changed) continue;
+    CHECK(changed.value().cacheHits == 0U);
+    CHECK(changed.value().phraseContentHashes != cold.value().phraseContentHashes);
+    CHECK(changed.value().interleaved != cold.value().interleaved);
+
+    const auto changedWarm = render(edited);
+    CHECK(changedWarm.hasValue());
+    if (!changedWarm) continue;
+    CHECK(changedWarm.value().cacheHits == 1U);
+    CHECK(changedWarm.value().interleaved == changed.value().interleaved);
   }
 }
 

@@ -19,6 +19,7 @@
 #include "seam/rendering/singer_route.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -237,6 +238,11 @@ public:
   // material on refuses instead of publishing.
   [[nodiscard]] core::Result<void> proposeAutomaticPerformance(
       platform::PerformanceEditScope scope = platform::PerformanceEditScope::Whole);
+  [[nodiscard]] bool performanceProposalInProgress() const noexcept override;
+  [[nodiscard]] core::Result<void> cancelPerformanceProposal() override;
+  // Called from the editor owner thread (normally once per frame). Returns true
+  // when a completed worker result was consumed, even if stale-capture checks reject it.
+  [[nodiscard]] core::Result<bool> applyPendingAutomaticPerformanceProposal();
 
   [[nodiscard]] const std::vector<authoring::VoicebankCard>& voicebankCards()
       const noexcept { return voicebankBrowser_.cards(); }
@@ -244,6 +250,8 @@ public:
       const std::filesystem::path& packagePath,
       authoring::ExistingVoicebankDecision decision =
           authoring::ExistingVoicebankDecision::Reject);
+  [[nodiscard]] core::Result<distribution::InstalledProceduralSinger>
+  installProceduralSinger(const std::filesystem::path& packagePath);
   [[nodiscard]] core::Result<voicebank::VoicebankResolution> relinkVoicebank(
       domain::TrackId trackId, voicebank::VoicebankSearchRoot root);
   [[nodiscard]] core::Result<void> relinkVoicebankFromDialog();
@@ -270,7 +278,14 @@ public:
     // Populated for every offer, including one that cannot be used, where it names the reason.
     std::string capabilitySummary;
   };
+  struct InstalledSingerCatalogue final {
+    std::vector<InstalledSingerOffer> offers;
+    std::vector<distribution::ProceduralCatalogueIssue> issues;
+    std::size_t omittedIssueCount{0U};
+    bool scanLimitReached{false};
+  };
   [[nodiscard]] core::Result<std::vector<InstalledSingerOffer>> installedSingerOffers() const;
+  [[nodiscard]] core::Result<InstalledSingerCatalogue> installedSingerCatalogue() const;
   // Freeze a review candidate for the installed singer this track uses, hash the evidence supplied,
   // and record the decision in the configured store. Reviewing needs a rendered score and audio to
   // examine, so both are required and their digests are computed from the files rather than trusted.
@@ -400,6 +415,8 @@ private:
   // Fixed so the same material and take identity always produce the same proposal;
   // the counter is what makes successive proposals distinct takes.
   std::uint64_t automaticProposalSeed_{1U};
+  struct AutomaticPerformanceProposalJob;
+  std::unique_ptr<AutomaticPerformanceProposalJob> automaticPerformanceProposalJob_;
   // The accepted selections one decision over a take would introduce, using the
   // same span and channel rule for accepting and for comparing.
   [[nodiscard]] core::Result<std::vector<domain::AcceptedPerformanceSelection>>

@@ -49,3 +49,16 @@ zero failures (one CTest target, 29.27 seconds). The focused target is a local
 CMake/CTest target; no GitHub CI
 configuration was changed. This is not evidence for real-host delivery or
 listener quality, so U33 remains incomplete.
+
+## 2026-09-24 MIDI channel-level volume and expression
+
+The live MIDI 1.0 path now handles CC7 channel volume and CC11 expression as
+separate normalized channel states, multiplied independently from targeted
+CLAP per-note volume/expression. Updates affect current and future voices on the
+addressed channel; Reset All Controllers (CC121) restores both levels without
+overwriting note-level expression. Regressions compare rendered energy at half
+level, verify wrong-channel isolation and event-order independence, and exercise
+pre-note, active-voice and reset behavior alongside CC1 vibrato, CC74 timbre and
+channel pressure. The focused live-event
+target passes Debug, Release and Sanitizer. MIDI gain calibration and host-specific
+controller delivery remain separate qualification work; U33 is not accepted.

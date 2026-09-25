@@ -65,6 +65,8 @@ struct ReplacementReviewView final {
 inline constexpr std::array<const char*, 6U> kPhonemeReviewActions{
     "Previous edit", "Next edit", "Close", "Previous sound", "Next sound", "Apply binding"};
 
+enum class VibratoHandleKind { Onset, Depth, FadeIn, FadeOut, Period, Phase };
+
 struct EditorSceneTheme final {
   Color background{16, 15, 19, 255};
   Color toolbarTop{38, 34, 41, 255};
@@ -216,13 +218,21 @@ struct EditorSceneState final {
     bool audibleStale{false};
     // The host's accessibility setting. Movement is dropped, the reported state is not.
     bool reducedMotion{false};
+    // Acoustic identity details from the exact published render. These travel through
+    // the controller read model as well as the painter so accessibility stays in sync.
+    std::string voiceStyle;
+    std::string scorePitchRange;
   };
   std::optional<CharacterPerformanceView> characterPerformance{};
   // The declared mouth artwork for the shape the performance is drawing, when the character package
   // has one. A status-only package leaves this null and the dock draws its own fallback instead.
   const PixelSurface* characterMouth{nullptr};
+  std::optional<character::MouthPlacement> characterMouthPlacement{};
   std::string characterName;
   std::string characterStyle;
+  // Acoustic singer style from the exact published render, not the character artwork's visual style.
+  std::string characterVoiceStyle;
+  std::string characterScorePitchRange;
   const PixelSurface* characterPortrait{nullptr};
   // Whether the loaded character package and the display mode together reserve the dock. Set from
   // CharacterPresentation::dockVisible by the surface that owns the package, so layout does not have to
@@ -275,6 +285,12 @@ struct EditorSceneState final {
   } audioSettings;
   RecoverySupportView recoverySupport;
   std::size_t selectedNoteCount{0U};
+  struct VibratoGesturePreview final {
+    domain::NoteId noteId;
+    domain::NoteVibrato value;
+  };
+  std::optional<VibratoGesturePreview> vibratoGesturePreview;
+  std::optional<VibratoHandleKind> vibratoKeyboardFocus;
   std::optional<domain::NoteId> hoveredNote;
   std::optional<domain::NoteId> focusedNote;
   std::optional<EditorDetail> detail;
@@ -282,6 +298,19 @@ struct EditorSceneState final {
   VoiceIdentityView voiceIdentity;
   std::optional<double> dockWidthOverride;
 };
+
+struct VibratoHandlePoints final {
+  ui::Point onset;
+  ui::Point depth;
+  std::optional<ui::Point> fadeIn;
+  std::optional<ui::Point> fadeOut;
+  std::optional<ui::Point> period;
+  std::optional<ui::Point> phase;
+};
+
+[[nodiscard]] std::optional<VibratoHandlePoints> vibratoHandlePositions(
+    const domain::Note& note, time::Tick regionStart,
+    const time::TempoMap& tempoMap, ui::Rect screenBounds) noexcept;
 
 struct EditorSceneLayout final {
   [[nodiscard]] ui::Rect phonemeReviewOpenBounds(double width, double height) const noexcept {
@@ -534,7 +563,14 @@ struct EditorSceneLayout final {
   double supportPanelSummaryBaseline{30.0};
   double supportPanelStatusBaseline{44.0};
   double supportPanelFontSize{9.0};
-  double supportItemTop{54.0};
+  double supportTrackNavTop{50.0};
+  double supportTrackNavHeight{18.0};
+  double supportTrackNavButtonWidth{38.0};
+  double supportTrackNavButtonGap{4.0};
+  double supportTrackNavRightInset{10.0};
+  double supportTrackNavLabelInset{10.0};
+  double supportTrackNavFontSize{8.0};
+  double supportItemTop{76.0};
   double supportItemHeight{58.0};
   double supportItemGap{6.0};
   double supportItemTextInsetX{8.0};
@@ -949,6 +985,31 @@ struct EditorSceneLayout final {
         std::max(0.0, logicalWidth - x - supportPanelInsetX),
         supportItemHeight,
     };
+  }
+  [[nodiscard]] ui::Rect supportTrackPreviousBounds(
+      double, double logicalWidth) const noexcept {
+    const auto right = logicalWidth - supportTrackNavRightInset;
+    return ui::Rect{right - supportTrackNavButtonWidth * 2.0 -
+                        supportTrackNavButtonGap,
+                    toolbarHeight + supportTrackNavTop,
+                    supportTrackNavButtonWidth, supportTrackNavHeight};
+  }
+  [[nodiscard]] ui::Rect supportTrackNextBounds(
+      double, double logicalWidth) const noexcept {
+    const auto right = logicalWidth - supportTrackNavRightInset;
+    return ui::Rect{right - supportTrackNavButtonWidth,
+                    toolbarHeight + supportTrackNavTop,
+                    supportTrackNavButtonWidth, supportTrackNavHeight};
+  }
+  [[nodiscard]] ui::Rect supportTrackLabelBounds(
+      double editorRight, double logicalWidth) const noexcept {
+    const auto right = supportTrackPreviousBounds(editorRight, logicalWidth).x -
+                       supportTrackNavButtonGap;
+    return ui::Rect{editorRight + supportTrackNavLabelInset,
+                    toolbarHeight + supportTrackNavTop,
+                    std::max(0.0, right - editorRight -
+                                       supportTrackNavLabelInset),
+                    supportTrackNavHeight};
   }
   [[nodiscard]] std::size_t supportVisibleItemCapacity(
       double contentBottom) const noexcept {

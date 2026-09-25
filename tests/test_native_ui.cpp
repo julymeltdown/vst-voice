@@ -23,11 +23,14 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
+#include "seam/formats/json_value.hpp"
+#include "seam/voicebank_production/project_codec.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
+#include "seam/native_ui/editor_label_policy.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -53,6 +56,18 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include <thread>
 
 namespace {
+
+TEST_CASE("compact lyric labels signal overflow and retain the complete lyric") {
+  const std::string lyric = "あいうえおか";
+  const auto label = seam::native_ui::EditorLabelPolicy::note(lyric, 30.0);
+
+  CHECK(label.mode == seam::native_ui::EditorLabelMode::Compact);
+  CHECK(label.fullText == lyric);
+  CHECK(!label.text.empty());
+  CHECK(label.text.ends_with("…"));
+  CHECK(seam::text::utf8DisplayWidth(label.text) <= 5U);
+  CHECK(label.text.size() < label.fullText.size());
+}
 
 struct NativeUiFixture final {
   seam::application::ProjectFactory factory{7000U};
@@ -623,6 +638,11 @@ TEST_CASE("diagnostic recovery controls share visible layout and hit targets") {
 
 TEST_CASE("support panel exposes exact preview and selectable report list") {
   NativeUiFixture fixture;
+  const auto harmony = fixture.factory.addVocalTrack(
+      fixture.session.project(), "Harmony");
+  static_cast<void>(fixture.factory.addRegion(
+      fixture.session.project(), harmony, "Harmony phrase",
+      seam::time::Tick{0}, seam::time::Tick{3840}));
   std::optional<std::size_t> selectedReport;
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId,
@@ -692,6 +712,12 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   controller.rebuildAccessibilityTree();
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
       controller.accessibilityTree().root(), "support.panel"));
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      controller.accessibilityTree().root(), "support.track.current"));
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      controller.accessibilityTree().root(), "support.track.previous"));
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(
+      controller.accessibilityTree().root(), "support.track.next"));
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
       controller.accessibilityTree().root(), "support.item.0"));
 
@@ -827,6 +853,495 @@ TEST_CASE("empty piano roll paints a bounded next-step cue") {
   seam::native_ui::EditorScenePainter painter;
   painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
   CHECK(surface.checksum() != 0U);
+}
+
+TEST_CASE("selected note paints its tempo-aligned vibrato envelope without altering note geometry") {
+  NativeUiFixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  fixture.session.selection().selectOnly(fixture.noteId);
+  seam::native_ui::EditorScenePainter painter;
+  const auto render = [&] {
+    seam::native_ui::PixelSurface surface{960U, 600U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    return surface.checksum();
+  };
+  const auto noteVisuals = controller.pianoRoll().visibleNotes();
+  CHECK(noteVisuals.size() == 1U);
+  const auto noteVisual = noteVisuals.front();
+  const auto originalBounds = noteVisual.bounds;
+  const auto plainSelected = render();
+
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato = {.enabled = true, .startFraction = 0.65F, .fadeInFraction = 0.1F,
+      .fadeOutFraction = 0.1F, .depthCents = 75.0F,
+      .periodMilliseconds = 145.0F, .phaseTurns = 0.25F};
+  CHECK(note->vibrato.validate());
+  const auto vibratoSelected = render();
+  CHECK(vibratoSelected != plainSelected);
+  const auto updatedVisuals = controller.pianoRoll().visibleNotes();
+  CHECK(updatedVisuals.size() == 1U);
+  const auto updatedBounds = updatedVisuals.front().bounds;
+  CHECK_NEAR(updatedBounds.x, originalBounds.x, 0.0001);
+  CHECK_NEAR(updatedBounds.y, originalBounds.y, 0.0001);
+  CHECK_NEAR(updatedBounds.width, originalBounds.width, 0.0001);
+  CHECK_NEAR(updatedBounds.height, originalBounds.height, 0.0001);
+
+  fixture.session.selection().clear();
+  const auto vibratoUnselected = render();
+  note->vibrato.enabled = false;
+  CHECK(render() == vibratoUnselected);
+}
+
+TEST_CASE("selected vibrato onset handle previews then commits one undoable edit") {
+  NativeUiFixture fixture;
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato = {.enabled = true, .startFraction = 0.65F, .fadeInFraction = 0.1F,
+      .fadeOutFraction = 0.1F, .depthCents = 75.0F,
+      .periodMilliseconds = 145.0F, .phaseTurns = 0.25F};
+  const auto original = fixture.session.project();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  fixture.session.selection().selectOnly(fixture.noteId);
+  seam::native_ui::EditorScenePainter painter;
+  const auto visual = controller.pianoRoll().visibleNotes();
+  CHECK(visual.size() == 1U);
+  auto bounds = visual.front().bounds;
+  bounds.y += painter.layout().contentTop();
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  const auto handles = seam::native_ui::vibratoHandlePositions(
+      *note, region->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(handles.has_value());
+  const auto render = [&] {
+    seam::native_ui::PixelSurface surface{960U, 600U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    return surface.checksum();
+  };
+  const auto beforePixels = render();
+  const auto targetFraction = 0.38;
+  const seam::ui::Point target{
+      bounds.x + bounds.width * targetFraction, handles->onset.y};
+  CHECK(controller.pointerDown({.position = handles->onset,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = target,
+      .button = seam::native_ui::PointerButton::Left}));
+  const auto preview = controller.sceneState().vibratoGesturePreview;
+  CHECK(preview.has_value());
+  CHECK_NEAR(preview->value.startFraction, targetFraction, 0.001);
+  CHECK(fixture.session.project() == original);
+  const auto previewPixels = render();
+  CHECK(previewPixels != beforePixels);
+  CHECK(controller.pointerUp({.position = target,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(!controller.sceneState().vibratoGesturePreview.has_value());
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.startFraction,
+             targetFraction, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+  CHECK(fixture.session.redo());
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.startFraction,
+             targetFraction, 0.001);
+
+  const auto afterOnset = fixture.session.project();
+  note = fixture.session.project().findNote(fixture.noteId);
+  const auto* updatedRegion = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(updatedRegion != nullptr);
+  const auto updatedHandles = seam::native_ui::vibratoHandlePositions(
+      *note, updatedRegion->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(updatedHandles.has_value());
+  const auto targetDepth = 140.0;
+  const seam::ui::Point depthTarget{
+      updatedHandles->depth.x,
+      updatedHandles->depth.y - bounds.height * 0.28 *
+          (targetDepth - note->vibrato.depthCents) / 200.0};
+  const auto onsetPixels = render();
+  CHECK(controller.pointerDown({.position = updatedHandles->depth,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = updatedHandles->depth,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.depthCents,
+             note->vibrato.depthCents, 0.001);
+  CHECK(controller.pointerMove({.position = depthTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.depthCents,
+             targetDepth, 0.01);
+  CHECK(render() != onsetPixels);
+  CHECK(controller.pointerUp({.position = depthTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.depthCents,
+             targetDepth, 0.01);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == afterOnset);
+  CHECK(fixture.session.redo());
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.depthCents,
+             targetDepth, 0.01);
+
+  const auto afterDepth = fixture.session.project();
+  note = fixture.session.project().findNote(fixture.noteId);
+  const auto* periodRegion = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(periodRegion != nullptr);
+  const auto periodHandles = seam::native_ui::vibratoHandlePositions(
+      *note, periodRegion->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(periodHandles && periodHandles->period);
+  const auto noteStartSeconds = fixture.session.project().tempoMap().secondsAt(
+      periodRegion->startTick + note->startTick);
+  const auto noteEndSeconds = fixture.session.project().tempoMap().secondsAt(
+      periodRegion->startTick + note->endTick());
+  const auto activeDurationMilliseconds = (noteEndSeconds - noteStartSeconds) *
+      1000.0 * (1.0 - note->vibrato.startFraction);
+  const auto targetPeriod = 220.0;
+  const auto activeFraction = 1.0 - note->vibrato.startFraction;
+  const auto activeWidth = bounds.width * activeFraction;
+  const auto onsetX = bounds.x + bounds.width * note->vibrato.startFraction;
+  const seam::ui::Point periodTarget{
+      onsetX + activeWidth * targetPeriod / activeDurationMilliseconds,
+      periodHandles->period->y};
+  const auto beforePeriodPixels = render();
+  CHECK(controller.pointerDown({.position = *periodHandles->period,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = periodTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.periodMilliseconds,
+             targetPeriod, 0.01);
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.depthCents,
+             targetDepth, 0.01);
+  CHECK(fixture.session.project() == afterDepth);
+  CHECK(render() != beforePeriodPixels);
+  CHECK(controller.pointerUp({.position = periodTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.periodMilliseconds,
+             targetPeriod, 0.01);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == afterDepth);
+  CHECK(fixture.session.redo());
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.periodMilliseconds,
+             targetPeriod, 0.01);
+
+  const auto afterPeriod = fixture.session.project();
+  note = fixture.session.project().findNote(fixture.noteId);
+  const auto phaseHandles = seam::native_ui::vibratoHandlePositions(
+      *note, periodRegion->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(phaseHandles && phaseHandles->phase);
+  const auto targetPhase = 0.62;
+  const auto periodWidth = activeWidth * targetPeriod / activeDurationMilliseconds;
+  const seam::ui::Point phaseTarget{
+      onsetX + periodWidth * targetPhase, phaseHandles->phase->y};
+  const auto beforePhasePixels = render();
+  CHECK(controller.pointerDown({.position = *phaseHandles->phase,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = phaseTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.phaseTurns,
+             targetPhase, 0.001);
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.periodMilliseconds,
+             targetPeriod, 0.01);
+  CHECK(fixture.session.project() == afterPeriod);
+  CHECK(render() != beforePhasePixels);
+  CHECK(controller.pointerUp({.position = phaseTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.phaseTurns,
+             targetPhase, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == afterPeriod);
+  CHECK(fixture.session.redo());
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.phaseTurns,
+             targetPhase, 0.001);
+}
+
+TEST_CASE("selected vibrato fade handles edit envelope and preserve coupled fade limits") {
+  NativeUiFixture fixture;
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato = {.enabled = true, .startFraction = 0.35F,
+      .fadeInFraction = 0.20F, .fadeOutFraction = 0.18F,
+      .depthCents = 90.0F, .periodMilliseconds = 145.0F,
+      .phaseTurns = 0.25F};
+  const auto original = fixture.session.project();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  fixture.session.selection().selectOnly(fixture.noteId);
+  seam::native_ui::EditorScenePainter painter;
+  const auto visual = controller.pianoRoll().visibleNotes();
+  CHECK(visual.size() == 1U);
+  auto bounds = visual.front().bounds;
+  bounds.y += painter.layout().contentTop();
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  const auto handles = seam::native_ui::vibratoHandlePositions(
+      *note, region->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(handles && handles->fadeIn && handles->fadeOut);
+
+  const auto targetFadeIn = 0.32F;
+  const auto activeWidth = bounds.width * (1.0 - note->vibrato.startFraction);
+  const auto onsetX = bounds.x + bounds.width * note->vibrato.startFraction;
+  const seam::ui::Point fadeInTarget{
+      onsetX + activeWidth * targetFadeIn, handles->fadeIn->y};
+  CHECK(controller.pointerDown({.position = *handles->fadeIn,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = fadeInTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeInFraction,
+             targetFadeIn, 0.001);
+  CHECK(fixture.session.project() == original);
+  CHECK(controller.pointerUp({.position = fadeInTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  const auto* afterFadeIn = fixture.session.project().findNote(fixture.noteId);
+  CHECK_NEAR(afterFadeIn->vibrato.fadeInFraction, targetFadeIn, 0.001);
+  CHECK_NEAR(afterFadeIn->vibrato.fadeOutFraction, 0.18, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+
+  note = fixture.session.project().findNote(fixture.noteId);
+  const auto* restoredRegion = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(restoredRegion != nullptr);
+  const auto restoredHandles = seam::native_ui::vibratoHandlePositions(
+      *note, restoredRegion->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(restoredHandles && restoredHandles->fadeOut);
+  const auto targetFadeOut = 0.27F;
+  const seam::ui::Point fadeOutTarget{
+      onsetX + activeWidth * (1.0 - targetFadeOut),
+      restoredHandles->fadeOut->y};
+  CHECK(controller.pointerDown({.position = *restoredHandles->fadeOut,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = fadeOutTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeOutFraction,
+             targetFadeOut, 0.001);
+  CHECK(controller.pointerUp({.position = fadeOutTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  const auto* afterFadeOut = fixture.session.project().findNote(fixture.noteId);
+  CHECK_NEAR(afterFadeOut->vibrato.fadeInFraction, 0.20, 0.001);
+  CHECK_NEAR(afterFadeOut->vibrato.fadeOutFraction, targetFadeOut, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+}
+
+TEST_CASE("zero-length vibrato fades expose stable grips and can be created") {
+  NativeUiFixture fixture;
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato = {.enabled = true, .startFraction = 0.35F,
+      .fadeInFraction = 0.0F, .fadeOutFraction = 0.0F,
+      .depthCents = 90.0F, .periodMilliseconds = 145.0F,
+      .phaseTurns = 0.25F};
+  fixture.session.selection().selectOnly(fixture.noteId);
+  const auto original = fixture.session.project();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  seam::native_ui::EditorScenePainter painter;
+  const auto visuals = controller.pianoRoll().visibleNotes();
+  CHECK(visuals.size() == 1U);
+  auto bounds = visuals.front().bounds;
+  bounds.y += painter.layout().contentTop();
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  auto handles = seam::native_ui::vibratoHandlePositions(
+      *note, region->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(handles && handles->fadeIn && handles->fadeOut);
+  CHECK_NEAR(handles->fadeIn->x,
+             bounds.x + bounds.width * note->vibrato.startFraction, 0.001);
+  CHECK_NEAR(handles->fadeOut->x, bounds.x + bounds.width, 0.001);
+
+  controller.rebuildAccessibilityTree();
+  const auto fadeInId = seam::native_ui::vibratoHandleSemanticId(
+      fixture.noteId, seam::native_ui::VibratoHandleKind::FadeIn);
+  CHECK(std::any_of(controller.accessibilityTree().root().children.begin(),
+                    controller.accessibilityTree().root().children.end(),
+      [&fadeInId](const auto& child) { return child.id == fadeInId; }));
+
+  const auto activeWidth = bounds.width *
+      (1.0 - static_cast<double>(note->vibrato.startFraction));
+  auto fadeInTarget = *handles->fadeIn;
+  fadeInTarget.x += activeWidth * 0.20;
+  CHECK(controller.pointerDown({.position = *handles->fadeIn,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = *handles->fadeIn,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeInFraction,
+             0.0, 0.001);
+  CHECK(fixture.session.project() == original);
+  CHECK(controller.pointerMove({.position = fadeInTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeInFraction,
+             0.20, 0.001);
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeOutFraction,
+             0.0, 0.001);
+  CHECK(controller.pointerUp({.position = fadeInTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.fadeInFraction,
+             0.20, 0.001);
+  const auto afterFadeIn = fixture.session.project();
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+  CHECK(fixture.session.redo());
+  CHECK(fixture.session.project() == afterFadeIn);
+
+  note = fixture.session.project().findNote(fixture.noteId);
+  const auto* updatedRegion = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(updatedRegion != nullptr);
+  handles = seam::native_ui::vibratoHandlePositions(
+      *note, updatedRegion->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(handles && handles->fadeOut);
+  auto fadeOutTarget = *handles->fadeOut;
+  fadeOutTarget.x -= activeWidth * 0.25;
+  CHECK(controller.pointerDown({.position = *handles->fadeOut,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(controller.pointerMove({.position = *handles->fadeOut,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeOutFraction,
+             0.0, 0.001);
+  CHECK(controller.pointerMove({.position = fadeOutTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeOutFraction,
+             0.25, 0.001);
+  CHECK_NEAR(controller.sceneState().vibratoGesturePreview->value.fadeInFraction,
+             0.20, 0.001);
+  CHECK(controller.pointerUp({.position = fadeOutTarget,
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.fadeOutFraction,
+             0.25, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == afterFadeIn);
+}
+
+TEST_CASE("selected vibrato handles support keyboard focus adjustment and exit") {
+  NativeUiFixture fixture;
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato = {.enabled = true, .startFraction = 0.20F,
+      .fadeInFraction = 0.10F, .fadeOutFraction = 0.10F,
+      .depthCents = 75.0F, .periodMilliseconds = 145.0F,
+      .phaseTurns = 0.25F};
+  fixture.session.selection().selectOnly(fixture.noteId);
+  const auto original = fixture.session.project();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  seam::native_ui::EditorScenePainter painter;
+  const auto beforeFocus = [&] {
+    seam::native_ui::PixelSurface surface{960U, 600U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    return surface.checksum();
+  }();
+  const auto semantics = seam::native_ui::EditorSemanticTree::build(
+      controller.sceneState(), controller.pianoRoll(), painter.layout(),
+      false, true);
+  const auto semanticNote = std::find_if(
+      semantics.children.begin(), semantics.children.end(),
+      [&fixture](const auto& child) {
+        return child.id == "note." + fixture.noteId.toString();
+      });
+  CHECK(semanticNote != semantics.children.end());
+  CHECK(semanticNote->description.find("Alt+V to focus") != std::string::npos);
+
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::V,
+      .modifiers = {.alt = true}}));
+  CHECK(controller.sceneState().vibratoKeyboardFocus ==
+        seam::native_ui::VibratoHandleKind::Onset);
+  const auto focusedPixels = [&] {
+    seam::native_ui::PixelSurface surface{960U, 600U};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    return surface.checksum();
+  }();
+  CHECK(focusedPixels != beforeFocus);
+
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Right}));
+  CHECK(controller.sceneState().vibratoKeyboardFocus ==
+        seam::native_ui::VibratoHandleKind::Depth);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Up}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.depthCents,
+             80.0, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+  CHECK(controller.sceneState().vibratoKeyboardFocus ==
+        seam::native_ui::VibratoHandleKind::Depth);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Up}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.depthCents,
+             80.0, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Escape}));
+  CHECK(!controller.sceneState().vibratoKeyboardFocus.has_value());
+
+  controller.rebuildAccessibilityTree();
+  const auto onsetId = seam::native_ui::vibratoHandleSemanticId(
+      fixture.noteId, seam::native_ui::VibratoHandleKind::Onset);
+  const auto accessibleOnset = std::find_if(
+      controller.accessibilityTree().root().children.begin(),
+      controller.accessibilityTree().root().children.end(),
+      [&onsetId](const auto& child) { return child.id == onsetId; });
+  CHECK(accessibleOnset != controller.accessibilityTree().root().children.end());
+  CHECK(accessibleOnset->role == seam::native_ui::SemanticRole::Button);
+  CHECK(accessibleOnset->enabled);
+  CHECK(controller.dispatchAccessibility(
+      onsetId, seam::native_ui::SemanticAction::SetFocus));
+  CHECK(controller.sceneState().vibratoKeyboardFocus ==
+        seam::native_ui::VibratoHandleKind::Onset);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Right}));
+  CHECK(controller.sceneState().vibratoKeyboardFocus ==
+        seam::native_ui::VibratoHandleKind::Depth);
+  CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Up}));
+  CHECK_NEAR(fixture.session.project().findNote(fixture.noteId)->vibrato.depthCents,
+             80.0, 0.001);
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project() == original);
+  fixture.session.selection().clear();
+  CHECK(!controller.dispatchAccessibility(
+      onsetId, seam::native_ui::SemanticAction::SetFocus));
+  CHECK(fixture.session.project() == original);
+}
+
+TEST_CASE("vibrato handle drag refuses selection drift without mutating the project") {
+  NativeUiFixture fixture;
+  auto* note = fixture.session.project().findNote(fixture.noteId);
+  CHECK(note != nullptr);
+  note->vibrato.enabled = true;
+  const auto original = fixture.session.project();
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId};
+  controller.resize(960.0, 600.0);
+  controller.pianoRoll().pitch().setRowHeight(12.0);
+  controller.pianoRoll().pitch().setTopMidiKey(80);
+  fixture.session.selection().selectOnly(fixture.noteId);
+  seam::native_ui::EditorScenePainter painter;
+  const auto visual = controller.pianoRoll().visibleNotes();
+  CHECK(visual.size() == 1U);
+  auto bounds = visual.front().bounds;
+  bounds.y += painter.layout().contentTop();
+  const auto* region = fixture.session.project().findRegion(fixture.regionId);
+  CHECK(region != nullptr);
+  const auto handles = seam::native_ui::vibratoHandlePositions(
+      *note, region->startTick, fixture.session.project().tempoMap(), bounds);
+  CHECK(handles.has_value());
+  CHECK(controller.pointerDown({.position = handles->onset,
+      .button = seam::native_ui::PointerButton::Left}));
+  fixture.session.selection().clear();
+  CHECK(!controller.pointerMove({.position = {handles->onset.x + 12.0,
+                                               handles->onset.y},
+      .button = seam::native_ui::PointerButton::Left}));
+  CHECK(!controller.sceneState().vibratoGesturePreview.has_value());
+  CHECK(fixture.session.project() == original);
 }
 
 TEST_CASE("character dock portrait geometry follows shared layout tokens") {
@@ -2500,12 +3015,34 @@ TEST_CASE("native phone hints reject invalid stale and unsupported edits without
   NativeUiFixture fixture;
   native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
       {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
-  CHECK(!controller.beginHintEdit(fixture.noteId)); // English has no registered hint validator.
   auto* lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  CHECK(controller.beginHintEdit(fixture.noteId)); // English phone hints are editable too.
+  CHECK(!controller.commitTextComposition(U"not-a-phone"));
+  CHECK(controller.textInputActive());
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.accessibilityTree().root().children.front().description.find(
+            "English hint") != std::string::npos);
+  CHECK(controller.sceneState().boundedInputLabel == "INVALID PHONE HINT");
+  CHECK(controller.commitTextComposition(U"hh ah l ow"));
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "hh ah l ow");
+  CHECK(fixture.session.undo());
+  lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  lyric->language = domain::Language::Korean; lyric->surface = U"ga";
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  CHECK(controller.commitTextComposition(U"k a"));
+  CHECK(fixture.session.project().findNote(fixture.noteId)->phoneticHint == "k a");
+  CHECK(fixture.session.undo());
+  lyric = fixture.session.project().findRegion(fixture.regionId)->findLyric(fixture.lyricId);
+  CHECK(controller.beginHintEdit(fixture.noteId));
+  lyric->language = domain::Language::Japanese;
+  CHECK(!controller.commitTextComposition(U"k a"));
+  CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
   lyric->language = domain::Language::Japanese; lyric->surface = U"き";
   CHECK(controller.beginHintEdit(fixture.noteId));
   const auto revision = fixture.session.revision();
   CHECK(!controller.commitTextComposition(U"not-a-phone"));
+  CHECK(controller.textInputActive());
+  controller.cancelTextComposition();
   CHECK(fixture.session.revision() == revision);
   CHECK(!fixture.session.project().findNote(fixture.noteId)->phoneticHint);
   CHECK(controller.beginHintEdit(fixture.noteId));
@@ -4672,17 +5209,79 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   const auto inspectionText = seam::core::readTextFileLimited(
       inspectionPath.value(), 64U * 1024U);
   CHECK(inspectionText);
-  CHECK(inspectionText.value().find("\"status\": \"ACCEPTED\"") !=
+  CHECK(inspectionText.value().find("\"status\": \"SIGNAL_CHECKS_PASSED\"") !=
         std::string::npos);
   CHECK(inspectionText.value().find("\"takeSha256\": ") !=
         std::string::npos);
   CHECK(!controller.persistTakeInspection(takePath));
-  CHECK(controller.importSelectedTake(takePath, "2026-08-31T11:01:00Z"));
+  const auto writtenTakeHash = seam::core::sha256File(takePath);
+  CHECK(writtenTakeHash);
+  if (!writtenTakeHash) return;
+  const auto generationBeforeChangedRecordingImport =
+      controller.productionProject()->lastDurableGeneration;
+  CHECK(controller.beginRawTakeImport(takePath, "2026-08-31T11:01:00Z",
+      std::string(64U, '0')));
+  auto changedRecordingImport = seam::core::success();
+  const auto changedRecordingDeadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (controller.proceduralImportBusy() &&
+      std::chrono::steady_clock::now() < changedRecordingDeadline) {
+    changedRecordingImport = controller.pollProceduralCandidateImport();
+    if (controller.proceduralImportBusy())
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  if (controller.proceduralImportBusy())
+    changedRecordingImport = seam::core::failure(seam::core::ErrorCode::Conflict,
+        "Recorded take hash mismatch check did not finish");
+  CHECK(!changedRecordingImport);
+  CHECK(controller.productionProject()->lastDurableGeneration ==
+        generationBeforeChangedRecordingImport);
+  CHECK(controller.productionProject()->takes.empty());
+  CHECK(controller.productionProject()->assets.empty());
+
+  CHECK(controller.beginRawTakeImport(takePath, "2026-08-31T11:01:00Z",
+      writtenTakeHash.value()));
+  CHECK(controller.proceduralImportBusy());
+  const auto rawImportDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (controller.proceduralImportBusy() && std::chrono::steady_clock::now() < rawImportDeadline) {
+    CHECK(controller.pollProceduralCandidateImport());
+    if (controller.proceduralImportBusy()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(!controller.proceduralImportBusy());
   CHECK(controller.productionProject()->takes.size() == 1U);
-  CHECK(controller.productionProject()->reviews.size() == 1U);
-  CHECK(controller.productionProject()->reviews.front().result == "PASS");
-  CHECK(controller.productionProject()->reviews.front().reviewedAtUtc ==
-        "2026-08-31T11:01:00Z");
+  CHECK(controller.productionProject()->reviews.empty());
+  CHECK(controller.productionProject()->metadataRevisions.size() == 1U);
+  CHECK(controller.productionProject()->metadataRevisions.front().kind == "dry-take-inspection.v1");
+  const auto& technicalInspection = controller.productionProject()->metadataRevisions.front();
+  CHECK(technicalInspection.rawAssetSha256 ==
+        controller.productionProject()->takes.front().rawAssetSha256);
+  CHECK(technicalInspection.operatorId == "operator-a");
+  CHECK(technicalInspection.performedAtUtc == "2026-08-31T11:01:00Z");
+  const auto& technicalValues = technicalInspection.values;
+  CHECK(technicalValues.contains("evidenceJson"));
+  CHECK(technicalValues.contains("evidenceSha256"));
+  if (technicalValues.contains("evidenceJson") && technicalValues.contains("evidenceSha256")) {
+    CHECK(seam::core::sha256Hex(technicalValues.at("evidenceJson")) ==
+          technicalValues.at("evidenceSha256"));
+    CHECK(technicalValues.at("evidenceJson").find("SIGNAL_CHECKS_PASSED") !=
+          std::string::npos);
+  }
+  auto tamperedInspection = *controller.productionProject();
+  tamperedInspection.metadataRevisions.front().values["evidenceSha256"] =
+      std::string(64U, '0');
+  CHECK(!seam::voicebank_production::validateProductionProject(tamperedInspection));
+  auto forgedInspection = *controller.productionProject();
+  auto forgedEvidence = seam::formats::parseJson(
+      forgedInspection.metadataRevisions.front().values.at("evidenceJson"));
+  CHECK(forgedEvidence && forgedEvidence.value().isObject());
+  if (forgedEvidence && forgedEvidence.value().isObject()) {
+    forgedEvidence.value().asObject().insert_or_assign(
+        "status", seam::formats::JsonValue{"SIGNAL_CHECKS_NEED_REVIEW"});
+    auto& forgedValues = forgedInspection.metadataRevisions.front().values;
+    forgedValues["evidenceJson"] = seam::formats::stringifyJson(forgedEvidence.value(), false);
+    forgedValues["evidenceSha256"] = seam::core::sha256Hex(forgedValues.at("evidenceJson"));
+    CHECK(!seam::voicebank_production::validateProductionProject(forgedInspection));
+  }
   CHECK(controller.productionQueues().markerReview == 1U);
   const auto productionRawHash =
       controller.productionProject()->takes.front().rawAssetSha256;
@@ -4720,7 +5319,7 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(!controller.dirty());
   CHECK(controller.productionProject()->takes.front().rawAssetSha256 ==
         productionRawHash);
-  CHECK(controller.productionProject()->metadataRevisions.size() == 1U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 2U);
   CHECK(controller.productionProject()->metadataRevisions.front().rawAssetSha256 ==
         productionRawHash);
   CHECK(controller.productionProject()->lastDurableGeneration == 4U);
@@ -4730,12 +5329,12 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(controller.moveSelectedMarker(
       seam::ui::AcousticMarkerKind::VowelOnset, secondX));
   CHECK(controller.save());
-  CHECK(controller.productionProject()->metadataRevisions.size() == 2U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 3U);
   const auto revisitX = controller.microscope().frameToPixel(firstSavedOnset);
   CHECK(controller.moveSelectedMarker(
       seam::ui::AcousticMarkerKind::VowelOnset, revisitX));
   CHECK(controller.save());
-  CHECK(controller.productionProject()->metadataRevisions.size() == 3U);
+  CHECK(controller.productionProject()->metadataRevisions.size() == 4U);
   CHECK(controller.productionProject()->lastDurableGeneration == 6U);
   const auto exportedProduction = controller.exportProductionInputs(
       directory / "u57-inputs", "2026-08-31T11:02:00Z");
