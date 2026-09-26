@@ -324,6 +324,19 @@ TEST_CASE("the hosted expression lane edits the curve it draws, and Escape aband
     CHECK(f.controller.documentRevision() == revision);
     CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().empty());
     CHECK(f.controller.sceneState().expression.points.empty());
+    // A knob step after the abandoned drag is shown, and the next lane drag commits on release.
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender",
+                                   native_ui::SemanticAction::Increment)
+              .hasValue());
+    CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().size() == 1U);
+    CHECK(f.controller.sceneState().expression.points.size() == 1U);
+    CHECK(!f.controller.sceneState().expression.draftOpen);
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+    CHECK(f.shell.pointerMove(f.controller, press({p.x + 30.0, p.y + 10.0})).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press({p.x + 30.0, p.y + 10.0})).hasValue());
+    CHECK(f.session.project().findRegion(f.regionId)->genderAutomation.points().size() == 2U);
+    CHECK(f.controller.sceneState().expression.points.size() == 2U);
   }
 }
 
@@ -1960,6 +1973,97 @@ TEST_CASE("TUNE and MIX cover the score with their own body, and Escape returns 
   CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuRow[3].x + 12.0,
                                                 l.workspaceMenuRow[3].y + 12.0})).hasValue());
   CHECK(f.shell.workspace() == Workspace::Mix);
+}
+
+TEST_CASE("a TUNE or MIX drag owns the input until it ends, and a resize abandons it") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.mix", SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  const auto fader = [&f] {
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const native_ui::SemanticNode* best = nullptr;
+    for (const auto& node : f.shell.accessibilityTree().root().children)
+      if (node.id.starts_with("shell.mix.track.") && node.role == native_ui::SemanticRole::Slider &&
+          (best == nullptr || node.bounds.height > best->bounds.height))
+        best = &node;
+    CHECK(best != nullptr);
+    return best == nullptr ? native_ui::SemanticNode{} : *best;
+  };
+  const auto drag = [&f](const native_ui::SemanticNode& node) {
+    const ui::Point start{node.bounds.x + node.bounds.width * 0.5,
+                          node.bounds.y + node.bounds.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(start)).hasValue());
+    CHECK(f.shell.pointerMove(f.controller, press({start.x, start.y - 60.0})).hasValue());
+    return ui::Point{start.x, start.y - 60.0};
+  };
+  const auto revision = f.controller.documentRevision();
+
+  // Mid-drag, keys and accessibility actions do nothing; the drag then commits one step.
+  auto node = fader();
+  auto end = drag(node);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Z, .modifiers = {.command = true}}));
+  CHECK(!f.shell.dispatchSemantic(f.controller, node.id, SemanticAction::Increment).hasValue());
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.sing", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.scroll(f.controller, 0.0, 40.0, end, {}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.pointerUp(f.controller, press(end)).hasValue());
+  CHECK(f.controller.documentRevision() == revision + 1U);
+  CHECK(f.session.undo());
+
+  // A resize mid-drag abandons it: the release commits nothing against the new geometry.
+  node = fader();
+  end = drag(node);
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  CHECK(f.shell.pointerUp(f.controller, press(end)).hasValue());
+  CHECK(f.controller.documentRevision() == revision + 2U);  // the undo above counts as one
+  CHECK(f.shell.workspace() == Workspace::Mix);
+}
+
+TEST_CASE("the compact inspector is modal over TUNE and MIX as well as SING") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto* tab : {"shell.workspace.tune", "shell.workspace.mix", "shell.workspace.export"}) {
+    // A rail layout: header tabs are shown and the singer inspector exists.
+    CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
+    CHECK(f.shell.dispatchSemantic(f.controller, tab, SemanticAction::Activate).hasValue());
+    CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    std::vector<std::string> body;
+    for (const auto& n : f.shell.accessibilityTree().root().children)
+      if (n.id.starts_with("shell.tune.") || n.id.starts_with("shell.mix.") ||
+          n.id.starts_with("shell.export."))
+        body.push_back(n.id);
+    CHECK(!body.empty());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.inspector", SemanticAction::Activate).hasValue());
+    CHECK(f.shell.inspectorOpen());
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto revision = f.controller.documentRevision();
+    for (const auto& id : body) {
+      CHECK(findShellNode(f.shell.accessibilityTree().root(), id) == nullptr);
+      CHECK(!f.shell.dispatchSemantic(f.controller, id, SemanticAction::Increment).hasValue());
+      CHECK(!f.shell.dispatchSemantic(f.controller, id, SemanticAction::Activate).hasValue());
+    }
+    // Tab stays inside the inspector.
+    for (int i = 0; i < 24; ++i) {
+      CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+      const auto* focused = f.shell.accessibilityTree().focusedNode();
+      CHECK((focused == nullptr || !(focused->id.starts_with("shell.tune.") ||
+                                     focused->id.starts_with("shell.mix.") ||
+                                     focused->id.starts_with("shell.export."))));
+    }
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(!f.shell.inspectorOpen());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.sing", SemanticAction::Activate).hasValue());
+  }
 }
 
 TEST_CASE("a compact first frame reveals the phrase but later user pitch scrolling is respected") {

@@ -529,6 +529,12 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
       lyricInputActive_ = false;
     }
   }
+  // A TUNE or MIX gesture measures against the body it started in (a fader's travel, a graph's
+  // axis); when that body moves or resizes it is abandoned, never committed against new geometry.
+  const auto bodyMoved = next.editor.x != layout_.editor.x || next.editor.y != layout_.editor.y ||
+                         next.editor.width != layout_.editor.width ||
+                         next.lane.bottom() != layout_.lane.bottom();
+  if (bodyGesture_ && (bodyMoved || !presented_)) cancelGestures(controller);
   const auto previousGridHeight = layout_.grid.height;
   layout_ = next;
   applyGeometry(controller);
@@ -2049,6 +2055,8 @@ core::Result<void> SingShell::dispatchController(NativeEditorController& control
   refreshSemantics(controller);
   if (!semantics_.publishes(id))
     return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
+  if (bodyGesture_ && action != SemanticAction::SetFocus)
+    return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
   auto result = semantics_.dispatch(
       id, action, [&controller](std::string_view target, SemanticAction requested) {
         return controller.dispatchAccessibility(target, requested);
@@ -2064,6 +2072,7 @@ core::Result<void> SingShell::setControllerValue(NativeEditorController& control
   refreshSemantics(controller);
   if (!semantics_.publishes(id))
     return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
+  if (bodyGesture_) return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
   return controller.setAccessibilityValue(id, value);
 }
 
@@ -2412,6 +2421,8 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
                       ui::Point anchor, InputModifiers modifiers) {
   if (workspaceMenuOpen_) return true;
   if (!presented_) return false;
+  // A TUNE or MIX drag owns the pointer until it ends; no knob moves under it.
+  if (bodyGesture_) return true;
   if (knobsShown()) {
     for (std::size_t i = 0U; i < layout_.knob.size(); ++i) {
       if (!contains(layout_.knob[i], anchor)) continue;
@@ -2427,7 +2438,8 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
   }
   if (layout_.inspectorOpen && contains(layout_.inspector, anchor)) return true;
   if (auto* body = bodyWorkspace(); body != nullptr) {
-    if (contains(workspaceArea(), anchor) &&
+    // The open inspector is modal and a body gesture owns the pointer: the body scrolls neither.
+    if (!layout_.inspectorOpen && !bodyGesture_ && contains(workspaceArea(), anchor) &&
         body->scroll(controller, anchor, deltaX, deltaY, workspaceArea()))
       repaint();
     return true;
@@ -2451,6 +2463,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     cancelGestures(controller);
     return true;
   }
+  // A TUNE or MIX drag in progress owns the input: any other key would commit its own edit under
+  // the drag and leave the drag's release against a changed document. Escape (above) cancels it.
+  if (presented_ && bodyGesture_) return true;
   if (event.key == NativeKey::Escape && presented_ && workspaceMenuOpen_) {
     setWorkspaceMenuOpen(controller, false);
     return true;
@@ -2887,7 +2902,9 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
   // The open inspector is modal: only it and the read-only status are published, so Tab stays in
   // it and no action reaches the score, the lane or a control it covers.
-  if (singShown && l.inspectorOpen) {
+  // The open inspector covers whichever workspace is shown, so it is modal over TUNE, MIX and
+  // EXPORT too: their nodes are neither kept here nor added below.
+  if (l.inspectorOpen) {
     std::erase_if(children, [](const SemanticNode& node) {
       return !(node.id == "shell.inspector" || node.id == "shell.change-voice" ||
                node.id == "shell.style" || node.id.starts_with("shell.knob.") ||
@@ -2904,13 +2921,13 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
              node.id.starts_with("shell.lane");
     });
   }
-  if (const auto* body = bodyWorkspace(); body != nullptr) {
+  if (const auto* body = bodyWorkspace(); body != nullptr && !l.inspectorOpen) {
     std::vector<SemanticNode> nodes;
     body->semantics(controller, state, workspaceArea(), nodes);
     for (auto& node : nodes)
       if (node.id.starts_with(body->idPrefix())) add(std::move(node));
   }
-  if (workspace_ == Workspace::Export) {
+  if (workspace_ == Workspace::Export && !l.inspectorOpen) {
     const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
     // Busy is read live here too: accessibility must not offer a run the paint cache still shows.
     const auto busy = exportBusy(controller);
@@ -3000,6 +3017,8 @@ core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controlle
   // stale id (a knob removed by the rail layout), an unknown id, a disabled control or an
   // unsupported action is refused before anything reaches the document.
   refreshSemantics(controller);
+  if (bodyGesture_ && action != SemanticAction::SetFocus)
+    return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
   return semantics_.dispatch(
       id, action, [this, &controller](std::string_view target, SemanticAction requested) {
         return performSemantic(controller, target, requested);
