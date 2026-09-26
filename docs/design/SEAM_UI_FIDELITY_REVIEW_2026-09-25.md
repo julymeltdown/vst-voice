@@ -422,6 +422,13 @@ The compact behaviour now follows §3.4:
 
 The packet adds open-inspector captures at 720×480 and 860×640. It judges a capture's state from the presented frame and accepts a logged exit state only if it is that state or a later stage of it.
 
+**Compact navigation and Unit D workspaces (2026-09-26).** Below 720 pt the header folds the workspace tabs and the EMO/SCENE switch into a 44-pt menu, and a loaded or replaced project scrolls its phrase into view ([evidence/ui-fidelity-62e78c8d](evidence/ui-fidelity-62e78c8d/acceptance.md)). TUNE and MIX are now workspaces behind a shared `ShellWorkspace` interface that covers the score the way EXPORT does:
+
+- **TUNE** shows all six expression channels over one graph on the region's bar and beat axis. The chosen channel is editable (add, drag or remove a point; one undo step per gesture; nothing on Escape). The pitch curve is shown read-only, because pitch edits still reach the controller only through the SING lane. A vibrato card edits the one selected note, and six macro knobs use SING's commands.
+- **MIX** shows a strip per track (pan, mute, solo, gain, route) through track-targeted commands that leave the editor's selection alone. It has a read-only master strip that says it has no level meter, because no measured level reaches the editor, and a device card that shows only what the host reported.
+
+An independent review (CHANGES_REQUESTED, then APPROVED at `209aa9d2`) found and verified fixes for a stale expression draft after Escape (also present in the SING lane), controls left editable under the compact inspector, input committing under a drag, MIX retargeting the editor's selection, an invented device format and holes in the packet checker. The packet now captures TUNE and MIX in both looks at 1600×900 and 720×480 and requires each workspace's core controls inside its body with no score node: [evidence/ui-fidelity-209aa9d2](evidence/ui-fidelity-209aa9d2/acceptance.md), 32/32 captures. Still open for Unit D: the arrangement strip above MIX, a measured output meter, pitch-point editing in TUNE, the re-homed VOICE workspace and overlays, and the FL Studio, VoiceOver and owner checks. The second-developer task could not review this unit: it hit its usage limit, which resets on 2026-09-30.
+
 The specification's successful validation is useful: an implementer now has unambiguous inputs and measurable exits. It is not a substitute for producing the working SING screen.
 
 ## 12. Independent review record
