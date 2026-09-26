@@ -80,6 +80,12 @@ public:
   // The workspace the press that just landed asks the shell to show ("sing": a double-click on a
   // MIX arrangement region opens it there). Read once by the shell after pointerDown; empty stays.
   [[nodiscard]] virtual std::string takeWorkspaceRequest() { return {}; }
+  // Whether this workspace owns Undo/Redo right now. A workspace that does not (no model, or no
+  // history to step through) leaves the command to the rest of the application.
+  [[nodiscard]] virtual bool ownsUndo(bool redo) const {
+    static_cast<void>(redo);
+    return false;
+  }
 };
 
 [[nodiscard]] std::unique_ptr<ShellWorkspace> makeTuneWorkspace();

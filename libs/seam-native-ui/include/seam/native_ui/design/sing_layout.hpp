@@ -44,6 +44,21 @@ struct SingLayout final {
 
   // Tool strip controls inside tools.
   ui::Rect classicToggle, trackLabel, gridLabel;
+  // The protagonist's header avatar (section 8.4): a 28-point circle with a state ring, placed in
+  // the header only where the approved header regions leave room for it, so it never overlaps the
+  // wordmark, the workspace tabs or the mode switch. Zero when they do not, which is the 1440-wide
+  // approved composition and every compact presentation (the menu cases carry no avatar).
+  ui::Rect headerAvatar;
+  // Openers for the re-homed overlays, inside strips the shell already paints: the time map from
+  // the transport's ruler and the phoneme/retained-edit review from the lane strip. Zero when the
+  // strip is too narrow to hold one, so nothing overlaps the controls beside it.
+  ui::Rect rulerTimeMapButton, laneReviewButton;
+  // The slot a re-homed overlay (a popover sheet or the inspector) occupies: the body below the
+  // header, right of the grid's musical axis, above the status bar, sized to the window (never
+  // wider than 62% or taller than the body, and never below the minimum a control needs). Overlay
+  // anchors (the transport display, the phoneme lane, the +N badge) clamp into it. Zero when the
+  // window is too small to place one.
+  ui::Rect overlay;
   // Five workspace tabs, the six expression knob slots, lane tab slots.
   std::array<ui::Rect, 5U> workspaceTab{};
   std::array<ui::Rect, 6U> knob{};
@@ -60,6 +75,9 @@ inline constexpr double kSingStatusHeight = 28.0;
 inline constexpr double kSingMinimumTimeline = 480.0;
 inline constexpr double kSingDrawerWidth = 860.0;
 inline constexpr double kSingRailWidth = 1100.0;
+// The protagonist's header avatar (section 8.4). One size, in one place, because the layout reserves
+// it and the painter draws it.
+inline constexpr double kSingHeaderAvatar = 28.0;
 
 [[nodiscard]] double singRackWidth(double width) noexcept;
 // inspectorOpen only matters for the compact presentations; the full rack has no inspector.

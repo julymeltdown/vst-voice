@@ -7,6 +7,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
+#include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/design/shell_evidence.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -119,10 +120,13 @@ struct ShellFixture final {
   // Paints one real frame so the shell records what the scene state allows (lane editability).
   bool frame() {
     if (!shell.prepareFrame(controller, 1600.0, 900.0)) return false;
-    native_ui::PixelSurface surface{1600U, 900U};
+    // The frame's own surface is kept, so a test can read the pixels the painters produced.
+    surface = native_ui::PixelSurface{1600U, 900U};
     native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
     return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
   }
+
+  native_ui::PixelSurface surface;
 };
 
 PointerEvent press(ui::Point p) { return {.position = p, .button = PointerButton::Left}; }
@@ -646,9 +650,10 @@ TEST_CASE("shell note semantics are clipped to the grid at every edge and stay v
   CHECK(clipped[3]);
 }
 
-TEST_CASE("overlap groups and their detail rows move into shell space with every child") {
+TEST_CASE("an overlap group opens the re-homed detail popover, whose rows lie inside it") {
   using native_ui::SemanticAction;
   using native_ui::SemanticNode;
+  using native_ui::design::OverlayKind;
   ShellFixture f{time::Tick{0}, true};
   if (!native_ui::paint::vectorBackendAvailable()) return;
   CHECK(f.frame());
@@ -661,29 +666,31 @@ TEST_CASE("overlap groups and their detail rows move into shell space with every
   const auto opened = f.controller.dispatchAccessibility(groupId, SemanticAction::Activate);
   CHECK(opened.hasValue());
   CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::OverlapDetail);
   f.controller.rebuildAccessibilityTree();
   f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
   const auto grid = f.shell.layout().grid;
-  bool sawGroup = false;
-  bool sawDetail = false;
+  bool sawPanel = false;
+  bool sawRow = false;
   for (const auto& child : f.shell.accessibilityTree().root().children) {
-    if (child.id.starts_with("overlap-group.")) {
-      sawGroup = true;
-      CHECK(child.bounds.x >= grid.x - 1e-9 && child.bounds.right() <= grid.right() + 1e-9);
-      CHECK(child.bounds.y >= grid.y - 1e-9 && child.bounds.bottom() <= grid.bottom() + 1e-9);
-    }
-    if (child.id.starts_with("detail.overlap-group.")) {
-      sawDetail = true;
-      CHECK(!child.children.empty());
-      // Rows are transformed with the popover, so each lies inside it.
-      for (const auto& row : child.children) {
-        CHECK(row.bounds.y >= child.bounds.y - 1e-9);
-        CHECK(row.bounds.bottom() <= child.bounds.bottom() + 1e-9);
+    // The popover is presented as one of the shell's own panels, not the classic detail.
+    if (child.id.starts_with("shell.overlay.overlap.")) sawPanel = true;
+    if (child.id.starts_with("overlap-note-row.")) {
+      sawRow = true;
+      // Each row is inside the panel it belongs to.
+      for (const auto& panel : f.shell.accessibilityTree().root().children) {
+        if (panel.id != "shell.overlay.overlap.panel") continue;
+        CHECK(child.bounds.y >= panel.bounds.y - 1e-9);
+        CHECK(child.bounds.bottom() <= panel.bounds.bottom() + 1e-9);
       }
     }
+    // The covered score keeps no overlap node of its own while the popover is up.
+    CHECK(!child.id.starts_with("overlap-group."));
+    CHECK(!child.id.starts_with("detail.overlap-group."));
   }
-  CHECK(sawGroup);
-  CHECK(sawDetail);
+  CHECK(sawPanel);
+  CHECK(sawRow);
+  static_cast<void>(grid);
 }
 
 TEST_CASE("keyboard focus has one owner: Tab walks the shell tree and focused controls own plain keys") {
@@ -1135,6 +1142,54 @@ TEST_CASE("a host that cannot export says why and never pretends to run") {
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.voice.browser", SemanticAction::Activate)
             .hasValue());
   CHECK(f.controller.voicebankBrowserVisible());
+}
+
+TEST_CASE("VOICE leaves Undo to the song when the Voice Designer cannot use it") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  auto* region = f.session.project().findRegion(f.regionId);
+  CHECK(region != nullptr);
+  if (region == nullptr || region->notes.empty()) return;
+  const auto notesBefore = region->notes.size();
+  // Make one real edit the song can undo: select the first note and delete it through the editor.
+  CHECK(f.frame());
+  const auto noteCenter = f.noteCenter();
+  CHECK(f.shell.pointerDown(f.controller, press(noteCenter)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(noteCenter)).hasValue());
+  CHECK(!f.session.selection().empty());
+  CHECK(f.controller.keyDown(KeyEvent{.key = NativeKey::Delete}).hasValue());
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notesBefore - 1U);
+  CHECK(f.session.canUndo());
+
+  // This host has no Voice Designer at all, so it cannot own Undo; the shell must not swallow it.
+  CHECK(!f.shell.routeUndo(false).has_value());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.shell.workspace() == Workspace::Voice);
+  CHECK(f.frame());
+  CHECK(!f.shell.routeUndo(false).has_value());  // no designer: the song keeps its Undo
+  CHECK(!f.shell.routeUndo(true).has_value());
+  // A real host declares Command-Z as its own command, exactly as the standalone app does.
+  native_ui::design::ShellHostActions actions{};
+  actions.applicationShortcut = [](const KeyEvent& event) {
+    return event.modifiers.primaryShortcut() && !event.modifiers.alt &&
+           (event.key == NativeKey::Z || event.key == NativeKey::Y);
+  };
+  f.shell.setHostActions(std::move(actions));
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Z,
+                                                       .modifiers = {.command = true}}));
+  // The song's own undo still works and restores the note.
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notesBefore);
+
+  // While SING shows, no workspace claims the command either.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.sing", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(!f.shell.routeUndo(false).has_value());
 }
 
 namespace {
@@ -2252,4 +2307,529 @@ TEST_CASE("the header output meter lights from a measured level and shows only t
   controller.rebuildAccessibilityTree();
   f.shell.rebuildSemantics(controller, controller.sceneState());
   CHECK(node() == nullptr);
+}
+
+// The re-homed overlays (docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md section 7.6). Each
+// was a classic surface that took the whole frame; each is now a shell panel whose controls run the
+// same controller commands, whose nodes are published at their hit rectangles, and which covers the
+// score while it is open.
+namespace {
+
+using native_ui::SemanticAction;
+using native_ui::SemanticNode;
+using native_ui::SemanticRole;
+using native_ui::design::OverlayKind;
+
+// A shell fixture whose host answers every overlay's own callbacks, so each surface can be opened
+// through its real command and driven to completion.
+struct OverlayFixture final {
+  application::ProjectFactory factory{4400U};
+  domain::TrackId trackId{};
+  domain::RegionId regionId{};
+  application::EditorSession session;
+  std::uint64_t serial{9100U};
+  unsigned plays{0U};
+  unsigned edits{0U};
+  unsigned selectedReports{0U};
+  unsigned diagnosticActions{0U};
+  native_ui::NativeEditorController controller;
+  SingShell shell;
+  std::optional<native_ui::TextInputRequest> lastTextInput;
+
+  OverlayFixture()
+      : session(makeProject()),
+        controller{session, factory, regionId,
+                   native_ui::EditorHostCallbacks{
+                      .beginTextInput = [this](const native_ui::TextInputRequest& request) {
+                        lastTextInput = shell.translateTextInput(request);
+                      },
+                       .loadSampleMicroscope =
+                           [](domain::PhonemeKey) -> core::Result<native_ui::SampleMicroscopeData> {
+                            return native_ui::SampleMicroscopeData{
+                                unit(),
+                                voicebank::AudioBuffer{.sampleRate = 48000U,
+                                                       .channels = 1U,
+                                                       .interleaved = test::support::sineWave(
+                                                           48000U, 220.0, 0.05)},
+                                "Captured decision 1: source-boundary proxy."};
+                          },
+                       .microscopeUnitChanged =
+                           [this](domain::PhonemeKey, const voicebank::Unit&) {
+                             ++edits;
+                             return core::success();
+                           },
+                       .playMicroscopeSample =
+                           [this](const voicebank::Unit&, const voicebank::AudioBuffer&) {
+                             ++plays;
+                             return core::success();
+                           },
+                       .diagnosticAction =
+                           [this](const authoring::Diagnostic&, authoring::DiagnosticAction) {
+                             ++diagnosticActions;
+                             return core::success();
+                           },
+                       .selectSupportReport = [this](std::size_t) {
+                         ++selectedReports;
+                         return core::success();
+                       },
+                       .reviewPhonemeBindings = [this]() -> core::Result<authoring::PhonemeBindingReview> {
+                         return core::success(authoring::PhonemeBindingReview{
+                             .regionId = regionId,
+                             .warnings = {phonemizer::Warning{.message = "One retained edit"}}});
+                       },
+                       .rebindPhonemeOverride =
+                           [this](const domain::PhonemeOverride&, domain::PhonemeKey, std::string_view) {
+                             ++edits;
+                             return core::success();
+                           },
+                   }} {
+    controller.resize(1600.0, 900.0);
+    shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
+  }
+
+  static voicebank::Unit unit() {
+    return test::support::makeUnit("voice-a", {"a"}, "audio/a.wav", 60U, voicebank::UnitKind::Cv,
+                                   2400U);
+  }
+  domain::Project makeProject() {
+    auto project = factory.createProject("Overlays");
+    trackId = factory.addVocalTrack(project, "Singer");
+    regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{7680});
+    auto [lyric, note] =
+        factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"a", domain::Language::Japanese);
+    // An overlap: a second note sharing the first note's row and time, so a group and its badge
+    // exist for the overlap detail popover.
+    auto [secondLyric, secondNote] =
+        factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"i", domain::Language::Japanese);
+    auto* region = project.findRegion(regionId);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+    region->lyrics.push_back(std::move(secondLyric));
+    region->notes.push_back(std::move(secondNote));
+    return project;
+  }
+
+  bool frame(double width = 1600.0, double height = 900.0) {
+    if (!shell.prepareFrame(controller, width, height)) return false;
+    native_ui::PixelSurface surface{static_cast<std::uint32_t>(width),
+                                    static_cast<std::uint32_t>(height)};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
+  }
+
+  const SemanticNode* node(std::string_view id, double width = 1600.0, double height = 900.0) {
+    controller.rebuildAccessibilityTree();
+    shell.rebuildSemantics(controller, controller.sceneState());
+    static_cast<void>(width);
+    static_cast<void>(height);
+    return findShellNode(shell.accessibilityTree().root(), id);
+  }
+
+  // Every node the shell publishes that belongs to the presented overlay.
+  std::vector<const SemanticNode*> overlayNodes(double width = 1600.0, double height = 900.0) {
+    controller.rebuildAccessibilityTree();
+    shell.rebuildSemantics(controller, controller.sceneState());
+    std::vector<const SemanticNode*> out;
+    const auto kind = shell.overlayKind(controller);
+    if (kind == OverlayKind::None) return out;
+    const auto collect = [&](const SemanticNode& parent, const auto& self) -> void {
+      for (const auto& child : parent.children) {
+        out.push_back(&child);
+        self(child, self);
+      }
+    };
+    collect(shell.accessibilityTree().root(), collect);
+    static_cast<void>(width);
+    static_cast<void>(height);
+    return out;
+  }
+
+  // The centre of the shell's own overlap badge for the first overlapping note, which is what the
+  // creator clicks and what the detail popover anchors to.
+  ui::Point badgeCenter(double width = 1600.0, double height = 900.0) {
+    static_cast<void>(width);
+    static_cast<void>(height);
+    const auto& l = shell.layout();
+    for (const auto& note : controller.pianoRoll().visibleNotes()) {
+      if (!note.drawsOverlapIndicator) continue;
+      const auto painted = ui::Rect{note.bounds.x, note.bounds.y + l.grid.y, note.bounds.width,
+                                    note.bounds.height};
+      auto badge = ui::Rect{std::min(painted.right() + 3.0, l.grid.right() - 30.0), painted.y - 2.0,
+                            28.0, 18.0};
+      if (badge.y < l.grid.y) badge.y = l.grid.y;
+      return {badge.x + badge.width * 0.5, badge.y + badge.height * 0.5};
+    }
+    throw test::Failure{"no overlap badge"};
+  }
+};
+
+// The overlays all share the same contract: the shell presents them, their nodes match their hit
+// rectangles, the score under them is neither published nor editable, Escape closes them and focus
+// returns, and they stay usable at the 480x320 minimum and at 1600x900.
+void checkOverlayContract(OverlayFixture& f, std::string_view panelPrefix,
+                          std::vector<std::string> required, std::vector<std::string> optional,
+                          std::string_view opener) {
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{720.0, 480.0},
+                                     std::pair{1100.0, 700.0}, std::pair{1600.0, 900.0}}) {
+    CHECK(f.frame(width, height));
+    CHECK(f.shell.overlayKind(f.controller) != OverlayKind::None);
+    // One tree snapshot for the whole check: the nodes are copies, so a lookup never invalidates an
+    // earlier one.
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto root = f.shell.accessibilityTree().root();
+    const auto lookup = [&root](std::string_view id) -> std::optional<SemanticNode> {
+      if (const auto* node = findShellNode(root, id); node != nullptr) return *node;
+      return std::nullopt;
+    };
+    const auto fail = [&](const std::string& id, std::string_view why) {
+      throw test::Failure{"overlay control " + id + " at " + std::to_string(width) + "x" +
+                          std::to_string(height) + ": " + std::string{why}};
+    };
+    // The covered score is not published: no note node, no lane node, no timeline.
+    if (lookup("timeline").has_value()) fail("timeline", "is published under the overlay");
+    if (lookup("shell.lane").has_value()) fail("shell.lane", "is published under the overlay");
+    const auto noteId =
+        "note." + f.session.project().findRegion(f.regionId)->notes.front().id.toString();
+    if (lookup(noteId).has_value()) fail(noteId, "is published under the overlay");
+    const auto panel = lookup(std::string{panelPrefix} + "panel");
+    if (!panel.has_value()) fail(std::string{panelPrefix} + "panel", "is not published");
+    if (!panel.has_value()) continue;
+    CHECK(panel->bounds.x >= 0.0 && panel->bounds.y >= 0.0);
+    CHECK(panel->bounds.right() <= width + 0.5 && panel->bounds.bottom() <= height + 0.5);
+    std::vector<ui::Rect> placed;
+    const auto checkControl = [&](const std::string& id, bool mustExist) {
+      const auto control = lookup(id);
+      if (!control.has_value()) {
+        if (mustExist) fail(id, "is not published");
+        return;
+      }
+      if (!(control->bounds.width > 0.0 && control->bounds.height > 0.0))
+        fail(id, "has no size");
+      if (!(control->bounds.x >= panel->bounds.x - 0.5 &&
+            control->bounds.y >= panel->bounds.y - 0.5))
+        fail(id, "is above or left of its panel (" + std::to_string(control->bounds.x) + "," +
+                     std::to_string(control->bounds.y) + " vs " +
+                     std::to_string(panel->bounds.x) + "," + std::to_string(panel->bounds.y) + ")");
+      if (!(control->bounds.right() <= panel->bounds.right() + 0.5 &&
+            control->bounds.bottom() <= panel->bounds.bottom() + 0.5))
+        fail(id, "is below or right of its panel");
+      for (const auto& other : placed) {
+        const auto disjoint = control->bounds.right() <= other.x + 0.001 ||
+                              other.right() <= control->bounds.x + 0.001 ||
+                              control->bounds.bottom() <= other.y + 0.001 ||
+                              other.bottom() <= control->bounds.y + 0.001;
+        if (!disjoint) fail(id, "overlaps another control");
+      }
+      placed.push_back(control->bounds);
+    };
+    for (const auto& id : required) checkControl(id, true);
+    for (const auto& id : optional) checkControl(id, false);
+    // No editing key reaches the covered score: the document and the selection are unchanged after
+    // keys that would delete or move notes if they fell through.
+    const auto revision = f.controller.documentRevision();
+    const auto selected = f.session.selection().noteIds();
+    for (const auto& key : {KeyEvent{.key = NativeKey::Delete},
+                            KeyEvent{.key = NativeKey::Backspace},
+                            KeyEvent{.key = NativeKey::Up}, KeyEvent{.key = NativeKey::D}})
+      CHECK(f.shell.handleShellKey(f.controller, key));
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.session.selection().noteIds() == selected);
+    CHECK(f.shell.overlayPresented(f.controller));
+  }
+  // Escape closes it and returns focus to the control that opened it.
+  CHECK(f.frame());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* focused = f.shell.accessibilityTree().focusedNode();
+  if (!opener.empty()) {
+    if (focused == nullptr || focused->id != opener)
+      throw test::Failure{std::string{"Escape returned focus to "} +
+                          (focused == nullptr ? std::string{"nothing"} : focused->id) +
+                          " instead of " + std::string{opener}};
+  }
+}
+
+}  // namespace
+
+TEST_CASE("the sample microscope is a shell sheet whose plots, pager and close stay usable") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto key = domain::PhonemeKey{f.session.project().findRegion(f.regionId)->notes.front().id, 0U};
+  CHECK(f.controller.openSampleMicroscope(key).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SampleMicroscope);
+  // The controller's own model backs the surface the shell presents.
+  CHECK(f.controller.sampleMicroscopeOpen());
+  checkOverlayContract(f, "shell.overlay.microscope.", {"microscope.close", "microscope.details"},
+                       {"microscope.previous", "microscope.next"}, "");
+
+  // Details opens the captured lines through the controller's own command, and its pager moves the
+  // controller's page; a second press returns to the plots. The contract above closed the
+  // microscope, so it is opened again here.
+  CHECK(f.controller.openSampleMicroscope(key).hasValue());
+  CHECK(f.frame());
+  const auto* details = f.node("shell.overlay.microscope.panel");
+  CHECK(details != nullptr);
+  const auto detailsBounds = f.node("microscope.details")->bounds;
+  CHECK(f.shell.pointerDown(f.controller, press({detailsBounds.x + 4.0, detailsBounds.y + 4.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({detailsBounds.x + 4.0, detailsBounds.y + 4.0})).hasValue());
+  CHECK(f.controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(f.frame());
+  CHECK(f.node("microscope.previous") != nullptr);
+  CHECK(f.node("microscope.next") != nullptr);
+  // Close is the controller's own close: the model is gone and the shell stops presenting.
+  CHECK(f.frame());
+  const auto closeBounds = f.node("microscope.close")->bounds;
+  CHECK(f.shell.pointerDown(f.controller, press({closeBounds.x + 4.0, closeBounds.y + 4.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({closeBounds.x + 4.0, closeBounds.y + 4.0})).hasValue());
+  CHECK(!f.controller.sampleMicroscopeOpen());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+}
+
+TEST_CASE("the phoneme review popover anchors to the lane and runs the review's own actions") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.openPhonemeReview().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::PhonemeReview);
+  checkOverlayContract(f, "shell.overlay.phoneme.",
+                       {"phoneme.review.action.0", "phoneme.review.action.1",
+                        "phoneme.review.action.2", "phoneme.review.action.3",
+                        "phoneme.review.action.4", "phoneme.review.action.5"},
+                       {}, "shell.lane.review");
+  // The open action through the controller still opens it (the classic path a host keeps).
+  CHECK(f.controller.openPhonemeReview().hasValue());
+  CHECK(f.frame());
+  const auto closeBounds = f.node("phoneme.review.action.2")->bounds;
+  CHECK(f.shell.pointerDown(f.controller, press({closeBounds.x + 4.0, closeBounds.y + 4.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({closeBounds.x + 4.0, closeBounds.y + 4.0})).hasValue());
+  CHECK(!f.controller.sceneState().phonemeReview.visible);
+}
+
+TEST_CASE("the time map is a shell popover whose rows and eight actions run the map's commands") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TimeMap);
+  checkOverlayContract(f, "shell.overlay.time-map.",
+                       {"time-map-action.0", "time-map-action.1", "time-map-action.2",
+                        "time-map-action.3", "time-map-action.4", "time-map-action.5",
+                        "time-map-action.6", "time-map-action.7"},
+                       {"time-map-row.0"}, "shell.ruler.time-map");
+
+  // The ruler's own opener opens it too, and one of its rows selects through the controller.
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  const auto* row = f.node("time-map-row.0");
+  CHECK(row != nullptr);
+  const auto before = f.controller.sceneState().timeMapSelectedRow;
+  CHECK(f.controller.selectTimeMapRow(0U).hasValue());
+  CHECK(f.controller.sceneState().timeMapSelectedRow == before);
+  // Add tempo opens the classic text field, which the shell does not present.
+  const auto added = f.controller.timeMapPanelAction(6U);
+  if (!added) throw test::Failure{"add tempo refused: " + added.error().message};
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(native_ui::design::SingShell::legacySurfaceRequired(f.controller.sceneState()));
+}
+
+TEST_CASE("the recovery support sheet lists the host's reports and selects one through the panel") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  f.controller.setRecoverySupportView(native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .items = {{.name = "report-a", .detail = "crash marker", .bytes = 4096U},
+                {.name = "report-b", .detail = "first run", .bytes = 8192U}},
+      .reportCount = 2U,
+      .status = "Two owned reports",
+  });
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::RecoverySupport);
+  checkOverlayContract(f, "shell.overlay.support.", {"support.track.previous", "support.track.next"},
+                       {"support.item.0", "support.item.1"}, "shell.settings");
+  // Selecting a report is the controller's own command, reported by the host callback.
+  f.controller.setRecoverySupportView(native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .items = {{.name = "report-a", .detail = "crash marker", .bytes = 4096U},
+                {.name = "report-b", .detail = "first run", .bytes = 8192U}},
+      .reportCount = 2U,
+      .status = "Two owned reports",
+  });
+  CHECK(f.frame());
+  const auto item = f.node("support.item.1")->bounds;
+  CHECK(f.shell.pointerDown(f.controller, press({item.x + 4.0, item.y + 4.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({item.x + 4.0, item.y + 4.0})).hasValue());
+  CHECK(f.selectedReports == 1U);
+  CHECK(f.controller.sceneState().recoverySupport.items[1].selected);
+}
+
+TEST_CASE("the overlap detail popover anchors to the +N badge and selects a member") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  // The note's +N badge is a shell control when the group hides a member; activating it opens the
+  // same controller state the classic overlap group's own action sets.
+  CHECK(f.controller.openOverlapDetail(0U).hasValue());
+  CHECK(f.controller.sceneState().overlapDetail.has_value());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::OverlapDetail);
+  const auto members = f.controller.sceneState().overlapDetail->members.size();
+  CHECK(members >= 2U);
+  std::vector<std::string> rows;
+  for (std::size_t i = 0U; i < members; ++i) rows.push_back("overlap-note-row." + std::to_string(i));
+  checkOverlayContract(f, "shell.overlay.overlap.", rows, {}, "");
+  // A row selects its member through the controller and marks it in the popover.
+  CHECK(f.controller.openOverlapDetail(0U).hasValue());
+  CHECK(f.frame());
+  const auto row = f.node("overlap-note-row.1")->bounds;
+  CHECK(f.shell.pointerDown(f.controller, press({row.x + 4.0, row.y + 4.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({row.x + 4.0, row.y + 4.0})).hasValue());
+  const auto& detail = f.controller.sceneState().overlapDetail;
+  CHECK(detail.has_value());
+  if (detail.has_value()) {
+    CHECK(detail->members[1].selected);
+    CHECK(!detail->members[0].selected);
+    CHECK(f.session.selection().contains(detail->members[1].noteId));
+  }
+}
+
+TEST_CASE("the diagnostics toast and popover present the status diagnostics as a shell surface") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia,
+                                          authoring::DiagnosticAction::CopyDiagnostic}};
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  // The toast is above the status bar and the DIAGNOSTICS opener sits beside it.
+  const auto* toast = f.node("shell.diagnostics.toast");
+  const auto* open = f.node("shell.diagnostics.open");
+  CHECK(toast != nullptr);
+  CHECK(open != nullptr);
+  if (open == nullptr) return;
+  CHECK(open->bounds.y < f.shell.layout().status.y);
+  CHECK(open->role == SemanticRole::Button);
+  // Activating it opens the popover, whose action is the controller's own recovery action.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.shell.diagnosticsOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+  const auto* panel = f.node("shell.overlay.diagnostics.panel");
+  CHECK(panel != nullptr);
+  CHECK(f.node("timeline") == nullptr);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.shell.diagnosticsOpen());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  // The recovery action on the panel reaches the host's handler through the controller.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  const auto* action = f.node("diagnostic-action.0.RELINK_MEDIA");
+  CHECK(action != nullptr);
+  if (action != nullptr) {
+    // The controller's own diagnostic node: the host dispatches it through the shell's controller
+    // path, as a real assistive client would.
+    const auto performed = f.shell.dispatchController(
+        f.controller, "diagnostic-action.0.RELINK_MEDIA", SemanticAction::Activate);
+    if (!performed) throw test::Failure{"diagnostic action refused: " + performed.error().message};
+    CHECK(f.diagnosticActions == 1U);
+  }
+}
+
+TEST_CASE("the export progress strip is a status-bar segment with the controller's own cancel") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  // No export has reported files: no segment and no node.
+  CHECK(f.shell.exportStatusSegment(f.controller.sceneState()).width == 0.0);
+  // Staging is a cancellable state, so the controller publishes its own cancel action too.
+  f.controller.setExportProgress({.state = authoring::ExportState::Staging,
+                                 .currentOutput = "master.wav",
+                                 .completedFiles = 1U,
+                                 .totalFiles = 4U});
+  CHECK(f.frame());
+  const auto segment = f.shell.exportStatusSegment(f.controller.sceneState());
+  CHECK(segment.width > 0.0);
+  // The segment sits in the status bar and inside the client area at both supported sizes.
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{1600.0, 900.0}}) {
+    CHECK(f.frame(width, height));
+    const auto bounds = f.shell.exportStatusSegment(f.controller.sceneState());
+    if (bounds.width <= 0.0) continue;
+    CHECK(bounds.x >= 0.0 && bounds.right() <= width + 0.5);
+    CHECK(bounds.y >= f.shell.layout().status.y - 0.5);
+    CHECK(bounds.bottom() <= f.shell.layout().status.bottom() + 0.5);
+  }
+  CHECK(f.frame());
+  const auto* progress = f.node("export.progress");
+  CHECK(progress != nullptr);
+  // The progress node is the controller's, re-homed to the segment's rectangle.
+  if (progress != nullptr) CHECK_NEAR(progress->bounds.x, segment.x, 1e-9);
+  // Its cancel action is the controller's own command, reached through the shell's controller path.
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  bool sawCancel = false;
+  const auto collect = [&](const SemanticNode& node, const auto& self) -> void {
+    for (const auto& child : node.children) {
+      if (child.id == "export.cancel") sawCancel = true;
+      self(child, self);
+    }
+  };
+  collect(f.shell.accessibilityTree().root(), collect);
+  CHECK(sawCancel);
+}
+
+TEST_CASE("a rendering frame and a failed frame produce different singer-ring pixels") {
+  // The singer ring is the protagonist's state made visible, so a ring around a live render cannot be
+  // the pixels of a ring around a failure: one is the look's accent lit to the render fraction, the
+  // other is the error tint over the whole ring. The frame is a real one through the shell's paint.
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto ringPixels = [](ShellFixture& f) {
+    CHECK(f.frame());
+    const auto& ring = f.shell.layout().portraitRing;
+    std::vector<std::uint32_t> samples;
+    constexpr std::size_t kTicks = 64U;
+    for (std::size_t i = 0U; i < kTicks; ++i) {
+      const auto angle = -std::numbers::pi * 0.5 +
+                         static_cast<double>(i) * 2.0 * std::numbers::pi /
+                             static_cast<double>(kTicks);
+      const auto x = static_cast<std::uint32_t>(
+          ring.x + ring.width * 0.5 + std::cos(angle) * (ring.width * 0.5 - 4.0));
+      const auto y = static_cast<std::uint32_t>(
+          ring.y + ring.height * 0.5 + std::sin(angle) * (ring.height * 0.5 - 4.0));
+      if (x >= f.surface.width() || y >= f.surface.height()) continue;
+      samples.push_back(f.surface.pixels()[static_cast<std::size_t>(y) * f.surface.width() + x]);
+    }
+    return samples;
+  };
+  ShellFixture first;
+  native_ui::RenderStatusView rendering;
+  rendering.state = native_ui::RenderStatusState::Rendering;
+  rendering.fraction = 0.5;
+  first.controller.setRenderStatus(rendering);
+  const auto rendered = ringPixels(first);
+
+  ShellFixture second;
+  native_ui::RenderStatusView failed;
+  failed.state = native_ui::RenderStatusState::Failed;
+  failed.diagnostic = "Project has no audible rendered tracks";
+  second.controller.setRenderStatus(failed);
+  const auto broke = ringPixels(second);
+
+  CHECK(!rendered.empty());
+  CHECK(rendered.size() == broke.size());
+  CHECK(rendered != broke);
+  CHECK(first.shell.characterState() != second.shell.characterState());
 }

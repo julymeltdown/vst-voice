@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -279,6 +280,49 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
     slot.stage = paint::loadImage(folder / "stage.png");
     slot.wordmark = paint::loadImage(folder / "wordmark.png");
   }
+  // The character package is optional artwork over the look: when none is present the shell draws
+  // this look's own portrait and invents no state, so a missing package changes nothing it claims.
+  setCharacterPackage(locateCharacterAssets(assetRoot));
+}
+
+void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
+  static_cast<void>(character_.loadPackage(packageRoot));
+  stagePlacement_.reset();
+  stageFade_.reset();
+  repaint();
+}
+
+const PixelSurface* SingShell::characterPortrait(CharacterState state) const {
+  return character_.portrait(state);
+}
+
+const PixelSurface* SingShell::characterMouth(character::MouthShape shape) const {
+  return character_.mouth(shape);
+}
+
+std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
+  const auto* package = character_.package();
+  if (package == nullptr) {
+    listeningPortrait_.reset();
+    listeningPortraitPath_.clear();
+    return {};
+  }
+  const auto path = characterStateAssetPath(*package, CharacterState::Listening);
+  if (path.empty()) {
+    listeningPortrait_.reset();
+    listeningPortraitPath_.clear();
+    return {};
+  }
+  if (listeningPortrait_ != nullptr && listeningPortraitPath_ == path) return listeningPortrait_;
+  listeningPortraitPath_ = path;
+  // The backend decodes the package's PPM through its own image loader, so the hero's ring draws the
+  // declared pose with the same masking and filtering as the look's artwork.
+  listeningPortrait_ = paint::loadImage(path);
+  return listeningPortrait_;
+}
+
+CharacterCanvas SingShell::characterCanvas(paint::Canvas2D& vector) const {
+  return CharacterCanvas{vector, *raster_};
 }
 
 std::filesystem::path locateDesignAssets(const std::filesystem::path& bundleResources) {
@@ -298,16 +342,96 @@ std::filesystem::path locateDesignAssets(const std::filesystem::path& bundleReso
   return {};
 }
 
+std::filesystem::path locateCharacterAssets(const std::filesystem::path& designAssets,
+                                            const std::filesystem::path& bundleResources) {
+  std::vector<std::filesystem::path> candidates;
+  if (const char* root = std::getenv("SEAM_CHARACTER_ASSETS"); root != nullptr && *root != '\0')
+    candidates.emplace_back(root);
+  if (!designAssets.empty()) {
+    // The design assets and the character package sit beside each other in the source tree and in a
+    // bundle's Resources directory, so one location answers for both.
+    candidates.push_back(designAssets.parent_path() / "character-01");
+  }
+  if (!bundleResources.empty()) candidates.push_back(bundleResources / "character-01");
+  if (const auto own = paint::codeBundleResources(); !own.empty())
+    candidates.push_back(own / "character-01");
+#if defined(SEAM_UI_DESIGN_SOURCE_ASSETS)
+  candidates.emplace_back(std::filesystem::path{SEAM_UI_DESIGN_SOURCE_ASSETS}.parent_path() /
+                          "character-01");
+#endif
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (std::filesystem::is_regular_file(candidate / "manifest.json", error)) return candidate;
+  }
+  return {};
+}
+
 bool SingShell::legacySurfaceRequired(const EditorSceneState& state) noexcept {
+  // The re-homed overlays (sample microscope, phoneme review, time map, recovery/support and the
+  // overlap detail) are painted by the shell now, so they are not listed here. What still needs the
+  // classic painter: the voice browser, the audio settings, the replacement review, and the text
+  // fields the classic surfaces own (the time-map event and pronunciation-hint inputs).
   return state.voicebankBrowserVisible || state.audioSettings.visible ||
-         state.recoverySupport.visible || state.replacementReview.visible ||
-         state.timeMapVisible || state.timeMapInputActive || state.hintInputActive ||
-         state.sampleMicroscope.has_value() || state.phonemeReview.visible;
+         state.replacementReview.visible || state.timeMapInputActive || state.hintInputActive;
+}
+
+bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
+  switch (kind) {
+    case OverlayKind::SampleMicroscope:
+    case OverlayKind::PhonemeReview:
+    case OverlayKind::TimeMap:
+    case OverlayKind::RecoverySupport:
+    case OverlayKind::OverlapDetail:
+    case OverlayKind::Diagnostics: return true;
+    case OverlayKind::None: return false;
+  }
+  return false;
+}
+
+const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& controller) const {
+  if (!presented_) return nullptr;
+  const auto state = controller.sceneState();
+  // A classic surface replaces the frame: while one is required the shell presents nothing, so the
+  // overlay's nodes are not published and its panel is not drawn over the classic painter.
+  if (legacySurfaceRequired(state) || controller.legacyModalSurfaceActive()) return nullptr;
+  // The microscope is modal above everything, as the classic painter drew it last; then the
+  // surfaces the shell opens over the score. Only one is ever shown.
+  for (const auto* overlay : {microscopeOverlay_.get(), overlapOverlay_.get(), timeMapOverlay_.get(),
+                              phonemeOverlay_.get(), supportOverlay_.get(),
+                              diagnosticsOverlay_.get()}) {
+    if (overlay == nullptr || !overlay->wanted(controller, state)) continue;
+    // The DIAGNOSTICS popover is the shell's own presentation, so it needs its flag.
+    if (overlay->kind() == OverlayKind::Diagnostics && !diagnosticsOpen_) continue;
+    if (overlay->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
+      continue;
+    return overlay;
+  }
+  return nullptr;
+}
+
+OverlayKind SingShell::overlayKind(const NativeEditorController& controller) const {
+  const auto* overlay = activeOverlay(controller);
+  return overlay == nullptr ? OverlayKind::None : overlay->kind();
+}
+
+bool SingShell::overlayPresented(const NativeEditorController& controller) const {
+  return activeOverlay(controller) != nullptr;
 }
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   preferences_.mode = mode;
   backgroundValid_ = false;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
+  preferences_.reduceMotion = reduceMotion;
+  // The motion the animator was in the middle of is dropped rather than resumed, so a later frame
+  // starts from rest instead of jumping to where the clock had reached.
+  animator_ = CharacterAnimator{};
+  motion_ = {};
+  stageFade_.reset();
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -507,6 +631,9 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     framedRegion_.reset();
     framedTopMidi_.reset();
     lastFramingNoteCount_ = 0U;
+    // A replaced controller is a different document: an open overlay's model went with it, and a
+    // popover the shell holds open would otherwise point at stale state.
+    diagnosticsOpen_ = false;
   }
   if (!enabled() || !available() || controller.legacyModalSurfaceActive()) {
     releaseSurface(controller);
@@ -583,6 +710,14 @@ void SingShell::setWorkspaceMenuOpen(NativeEditorController& controller, bool op
   workspaceMenuOpen_ = open;
   refreshSemantics(controller);
   takeSemanticFocus(controller, "shell.workspace-menu");
+  repaint();
+}
+
+void SingShell::setDiagnosticsOpen(bool open) {
+  // The DIAGNOSTICS popover is presentation only: the controller's diagnostics are unchanged, and
+  // closing it changes no project state. It is closed by a controller replacement like any overlay.
+  if (diagnosticsOpen_ == open) return;
+  diagnosticsOpen_ = open;
   repaint();
 }
 
@@ -750,6 +885,28 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     releaseSurface(controller);
     return false;
   }
+  // The raster front carries the character package's PPM artwork into the same frame the vector
+  // canvas paints; both fronts live only for this call.
+  raster_ = &canvas;
+  struct RasterScope final {
+    RasterCanvas** slot;
+    ~RasterScope() { *slot = nullptr; }
+  } rasterScope{&raster_};
+  // The audition level belongs to the VOICE workspace, whose session owns the player. It is read
+  // before the state is resolved, so the protagonist listens to the audition on the same frame the
+  // hero shows it, and cleared as soon as VOICE is not the visible workspace.
+  if (workspace_ == Workspace::Voice) {
+    auditionLevel_ = voice_->auditionLevel();
+  } else {
+    auditionLevel_.reset();
+  }
+  // One state for the whole frame, from the read models the state already carries. The animation phase
+  // is resolved once too, so the ring, the avatar and the VOICE hero agree within a frame.
+  characterState_ = resolveCharacterState(characterSurfaceInput(state, auditionLevel_));
+  const auto reduceMotion = preferences_.reduceMotion;
+  frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
+  animator_.advance(characterState_, frameNow_, reduceMotion);
+  motion_ = animator_.motion();
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
@@ -765,6 +922,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     // The listening singer uses this look's portrait; finished designer work and a requested
     // audition are collected before the body paints, and frames continue while either runs.
     voice_->setPortrait(assets().portrait);
+    voice_->setListeningPortrait(lookListeningPortrait());
     if (voice_->poll()) repaint();
   }
   if (auto* body = bodyWorkspace(); body != nullptr) {
@@ -807,8 +965,34 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     }
   }
   if (workspaceMenuOpen_) paintWorkspaceMenu(*c, t);
+  // A re-homed overlay is the topmost surface: it covers the score, the lane and the rack with its
+  // own card, so nothing it hides is reachable or published while it is up.
+  if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
+    stageShown_ = false;
+    paintOverlay(*c, t, controller, state, *overlay);
+  }
   c->flush();
+  scheduleAnimationRepaint();
   return true;
+}
+
+void SingShell::scheduleAnimationRepaint() {
+  // A frame is requested only while something is actually animating, so a still protagonist stops the
+  // loop: a held pose (listening, complete, warning, error) and every state under Reduce Motion ask
+  // for nothing at all, and a state that only breathes or spins asks only for as long as it does. The
+  // Stage's own fade is the other source, and it asks until it settles.
+  //
+  // The request is a whole-frame repaint, because the host's repaint callback carries no damage
+  // rectangle: the plan's dirty-rectangle goal (only the avatar and the ring while blinking) needs a
+  // presenter API that does not exist yet, and the fidelity review requires that path be measured
+  // before it is claimed. Until then this bounds the cost by stopping the loop, not by shrinking the
+  // frame.
+  if (stageFade_.fading()) {
+    repaint();
+    return;
+  }
+  if (preferences_.reduceMotion || !characterStateAnimates(characterState_)) return;
+  repaint();
 }
 
 namespace {
@@ -976,6 +1160,16 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.restore();
   }
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
+
+  // The protagonist's avatar, where the header has room for it: the same state the SINGER card
+  // spells out, so the header never disagrees with the rack. It is the singer's status, not a
+  // control, so it carries no actions and is excluded from the accessibility tree with the rest of
+  // the decorative character artwork.
+  if (l.headerAvatar.width > 0.0) {
+    paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
+                         characterPortrait(characterState_), assets().portrait.get(), 1.0,
+                         motion_.blink, motion_.breath);
+  }
 }
 
 void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
@@ -1169,6 +1363,17 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
                style(FontRole::Mono, t.type.rulerMicro + 1.0), t.color.textSecondary);
     }
   }
+  // The re-homed overlays' openers, drawn from the same rectangles their semantics publish.
+  if (l.rulerTimeMapButton.width > 0.0) {
+    const auto& b = l.rulerTimeMapButton;
+    c.fill(Path::roundedRect(b, 6.0), withAlpha(t.color.surfaceSunken, 0.9));
+    c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+    c.text(b, "Time map",
+           fitted(c, "Time map",
+                  style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+                  b.width - 10.0),
+           t.color.textSecondary);
+  }
 
   // Keyboard.
   c.save();
@@ -1206,29 +1411,45 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.restore();
 
   const auto notes = model.visibleNotes();
-  // The singer stands behind the notes and fades back whenever notes share her space. Without the
-  // full rack (§3.4 compact widths) the Stage is off: the portrait lives in the inspector and the
-  // narrow grid keeps every pixel for notes.
-  stageShown_ = false;
-  if (const auto& stage = assets().stage;
-      stage && l.rack == RackPresentation::Full && l.grid.width > 520.0) {
-    stageShown_ = true;
-    const auto height = l.grid.height * 0.94;
-    const auto width = height * stage->width() / stage->height();
-    const ui::Rect figure{l.grid.right() - width - 36.0, l.grid.bottom() - height, width, height};
-    bool crowded = false;
-    for (const auto& note : notes) {
-      auto bounds = note.bounds;
-      bounds.y += l.grid.y;
-      crowded = crowded || intersects(bounds, figure);
+  // The singer stands behind the notes and fades back whenever a note or the pointer shares her
+  // space. She is off in High Contrast, off with an expanded lane and off without the full rack
+  // (§3.4 compact widths), and she is never hit-testable or published to accessibility.
+  StageInput stageInput;
+  stageInput.fullRack = l.rack == RackPresentation::Full && l.grid.width > 520.0;
+  stageInput.highContrast = preferences_.contrast == Contrast::High;
+  stageInput.laneExpanded = laneExpanded(state);
+  stageInput.grid = l.grid;
+  const auto stageAspect = assets().stage
+                               ? static_cast<double>(assets().stage->width()) /
+                                     static_cast<double>(assets().stage->height())
+                               : 0.0;
+  auto placement = resolveStage(stageInput, stageAspect);
+  for (const auto& note : notes) {
+    auto bounds = note.bounds;
+    bounds.y += l.grid.y;
+    if (intersects(bounds, placement.bounds)) {
+      stageInput.noteIntersects = true;
+      break;
     }
-    c.save();
-    c.clipRect(l.grid);
-    c.drawImage(*stage, figure, crowded ? 0.06 : 0.16);
-    c.setBlend(paint::Blend::Screen);
-    c.drawImage(*stage, figure, crowded ? 0.05 : 0.14);
-    c.restore();
   }
+  if (pointerPosition_.has_value()) {
+    const auto& p = *pointerPosition_;
+    stageInput.pointerInside =
+        p.x >= placement.bounds.x && p.x < placement.bounds.right() && p.y >= placement.bounds.y &&
+        p.y < placement.bounds.bottom();
+  }
+  placement = resolveStage(stageInput, stageAspect);
+  stagePlacement_ = placement;
+  stageShown_ = placement.shown;
+  if (placement.shown && assets().stage) {
+    // The figure is drawn before the notes and the pitch curve, so it sits below them, and the fade's
+    // ticking is what keeps frames coming while it settles. Reduce Motion applies the change at once.
+    const auto opacity = stageFade_.advance(placement, frameNow_, preferences_.reduceMotion);
+    paintStageFigure(characterCanvas(c), l.grid, placement, opacity, *assets().stage);
+  } else {
+    static_cast<void>(stageFade_.advance(placement, frameNow_, preferences_.reduceMotion));
+  }
+  stagePointerAt_ = pointerPosition_;
 
   const auto* region = model.project().findRegion(model.regionId());
   c.save();
@@ -1433,12 +1654,11 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     c.text(hintChip, hint, hintStyle, t.color.accent);
     offscreenHint_ = direction;
   } else if (notes.empty()) {
-    const auto cx = l.grid.x + l.grid.width * 0.40;
-    const auto cy = l.grid.y + l.grid.height * 0.42;
-    c.text({cx - 160.0, cy - 22.0, 320.0, 24.0}, "No notes yet",
-           style(FontRole::UiSemibold, 18.0, 0.4, TextAlign::Center), t.color.textPrimary);
-    c.text({cx - 200.0, cy + 6.0, 400.0, 20.0}, "Double-click the grid to add a note",
-           style(FontRole::Ui, t.type.body, 0.0, TextAlign::Center), t.color.textSecondary);
+    // The region genuinely has no notes: the seated pose and the instruction to write the first one.
+    // No pose asset is declared by this package, so the state portrait stands in for it and the line
+    // is the shell's own, shown only here.
+    paintEmptyProject(characterCanvas(c), t, l, characterPortrait(CharacterState::Idle),
+                      assets().portrait.get());
   }
 
   if (state.boxSelection.has_value()) {
@@ -1501,10 +1721,24 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            active ? t.color.accent : t.color.textSecondary);
   }
   const ui::Rect info{l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0, l.laneTabs.y,
-                      l.laneTabs.right() - (l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0),
+                      (l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x - 8.0
+                                                      : l.laneTabs.right()) -
+                          (l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0),
                       l.laneTabs.height};
   const auto plot = l.laneTimePlot;
   sunken(c, t, l.lanePlot, 6.0);
+  // The retained-edit review opener, at the same rectangle its node is published in.
+  if (l.laneReviewButton.width > 0.0) {
+    const auto& b = l.laneReviewButton;
+    c.fill(Path::roundedRect(b, 6.0), withAlpha(t.color.surfaceSunken, 0.9));
+    c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+    const std::string_view label{"Review"};
+    c.text(b, label,
+           fitted(c, label,
+                  style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+                  b.width - 10.0),
+           t.color.textSecondary);
+  }
   if (!open) {
     c.text(info, "Select a channel to draw its curve",
            style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), t.color.textSecondary);
@@ -1605,18 +1839,16 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       c.restore();
     }
     c.fill(Path::circle(center, inner), t.color.surfaceSunken);
-    if (const auto& portrait = assets().portrait; portrait) {
-      c.save();
-      c.clipPath(Path::circle(center, inner));
-      c.drawImage(*portrait, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
-                  voiceReady ? 1.0 : 0.55);
-      c.restore();
-    }
     const auto railColor = identity.state == VoiceIdentityState::Missing ||
                                    identity.state == VoiceIdentityState::Error
                                ? t.color.error
                                : identity.state == VoiceIdentityState::Warning ? t.color.warning
-                                                                               : t.color.accent;
+                                                                              : t.color.accent;
+    static_cast<void>(
+        paintCharacterPortrait(characterCanvas(c),
+                               {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
+                               true, characterPortrait(characterState_),
+                               assets().portrait.get(), voiceReady ? 1.0 : 0.55));
     c.save();
     c.setGlow(withAlpha(railColor, 0.9), 6.0);
     c.stroke(Path::circle(center, inner + 1.0), railColor, StrokeStyle{1.6});
@@ -1641,19 +1873,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
 
   // Portrait inside the ring meter.
   const auto ring = l.portraitRing;
-  const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
-  const auto radius = ring.width * 0.5;
-  const auto inner = radius - 18.0;
-  c.fill(Path::circle(center, inner), RadialGradient{center, inner,
-                                                     {{0.0, t.color.surfaceRaised}, {1.0, t.color.surfaceSunken}}});
-  if (const auto& portrait = assets().portrait; portrait) {
-    c.save();
-    c.clipPath(Path::circle(center, inner));
-    c.drawImage(*portrait, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
-                voiceReady ? 1.0 : 0.55);
-    c.restore();
-  }
-  // Ring: lit segments follow the real render progress or the singer's measured energy.
+  // Ring: lit ticks follow the real render progress or the singer's measured energy, 64 of them, with
+  // the state's own portrait inside.
   double lit = 0.0;
   if (state.characterPerformance && state.characterPerformance->performing)
     lit = std::clamp(static_cast<double>(state.characterPerformance->energy), 0.0, 1.0);
@@ -1661,25 +1882,33 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     lit = std::clamp(state.renderStatus.fraction, 0.0, 1.0);
   else if (state.renderStatus.state == RenderStatusState::Ready && state.renderStatus.hasAudibleAudio)
     lit = 1.0;
-  constexpr int kTicks = 72;
-  for (int i = 0; i < kTicks; ++i) {
-    const auto a = -kPi / 2.0 + i * 2.0 * kPi / kTicks;
-    const auto on = static_cast<double>(i) < lit * kTicks;
-    Color color = t.mode == DesignMode::Scene ? t.trackColors[static_cast<std::size_t>(i / 3) % 4U]
-                                              : t.color.accent;
-    color = withAlpha(color, on ? 1.0 : 0.16);
-    Path tick;
-    tick.moveTo({center.x + std::cos(a) * (radius - 12.0), center.y + std::sin(a) * (radius - 12.0)})
-        .lineTo({center.x + std::cos(a) * (radius - 2.0), center.y + std::sin(a) * (radius - 2.0)});
-    c.save();
-    if (on) c.setGlow(withAlpha(color, 0.9), 5.0);
-    c.stroke(tick, color, StrokeStyle{t.mode == DesignMode::Scene ? 3.2 : 1.6, false});
-    c.restore();
+  const auto performanceState = characterState_;
+  // While singing, the mouth is the shape the published performance reports, drawn from the
+  // package's own sprite at its declared placement. A status-only package declares none, so the
+  // portrait is shown as it is rather than with a mouth the artwork does not have.
+  const PixelSurface* singingMouth = nullptr;
+  std::optional<character::MouthPlacement> singingPlacement;
+  if (characterState_ == CharacterState::Singing) {
+    if (const auto& performance = state.characterPerformance; performance.has_value()) {
+      singingMouth = characterMouth(performance->mouth);
+      singingPlacement = character_.mouthPlacement();
+    }
   }
-  c.save();
-  c.setGlow(withAlpha(t.color.accent, 0.9), 10.0);
-  c.stroke(Path::circle(center, inner + 1.0), withAlpha(t.color.accent, 0.85), StrokeStyle{1.6});
-  c.restore();
+  paintSingerRing(characterCanvas(c), t,
+                  SingerRingSpec{
+                      .bounds = ring,
+                      .state = performanceState,
+                      .lit = lit,
+                      .rotation = motion_.spinner,
+                      .packagePortrait = characterPortrait(performanceState),
+                      .lookPortrait = assets().portrait.get(),
+                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
+                      .mouthSprite = singingMouth,
+                      .mouthPlacement = singingPlacement,
+                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
+                      .breath = motion_.breath,
+                      .blink = motion_.blink,
+                  });
 
   // Footer: the real voice identity and the way to change it.
   const auto footerY = l.singerChange.y;
@@ -1752,13 +1981,11 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
   const auto inner = ring.width * 0.5 - 2.0;
   c.fill(Path::circle(center, inner), t.color.surfaceSunken);
-  if (const auto& portrait = assets().portrait; portrait) {
-    c.save();
-    c.clipPath(Path::circle(center, inner));
-    c.drawImage(*portrait, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
-                voiceReady ? 1.0 : 0.55);
-    c.restore();
-  }
+  static_cast<void>(
+      paintCharacterPortrait(characterCanvas(c),
+                             {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0}, true,
+                             characterPortrait(characterState_), assets().portrait.get(),
+                             voiceReady ? 1.0 : 0.55));
   c.stroke(Path::circle(center, inner + 1.0), withAlpha(t.color.accent, 0.85), StrokeStyle{1.4});
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
@@ -1864,6 +2091,41 @@ void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorScene
 void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
   const auto& l = layout_;
   const auto& s = state.renderStatus;
+  // The diagnostics toast stack above the status bar: the shell's own presentation of what the
+  // classic painter drew as a full-width strip. The topmost diagnostic is a toast; the whole stack
+  // opens as a popover.
+  if (!state.diagnostics.empty()) {
+    const auto& diagnostic = state.diagnostics.front();
+    const auto presentation = presentDiagnostic(diagnostic);
+    const auto tone = diagnostic.severity == authoring::DiagnosticSeverity::Critical
+                          ? t.color.error
+                          : diagnostic.severity == authoring::DiagnosticSeverity::Warning
+                                ? t.color.warning
+                                : t.color.info;
+    auto title = presentation.title;
+    if (state.diagnostics.size() > 1U)
+      title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
+    const auto toast = diagnosticsToastBounds();
+    c.save();
+    c.setGlow(withAlpha(tone, 0.5), 10.0);
+    c.fill(Path::roundedRect(toast, 8.0), withAlpha(t.color.surfaceRaised, 0.97));
+    c.restore();
+    c.stroke(Path::roundedRect(toast, 8.0), withAlpha(tone, 0.9), StrokeStyle{1.0});
+    c.fill(Path::capsule({toast.x + 12.0, toast.y + 9.0, 4.0, toast.height - 18.0}), tone);
+    c.text({toast.x + 24.0, toast.y, std::max(1.0, toast.width - 36.0), toast.height}, title,
+           style(FontRole::UiSemibold, t.type.smallLabel), t.color.textPrimary);
+    if (const auto open = diagnosticsOpenButton(); open.width > 0.0) {
+      c.fill(Path::roundedRect(open, 8.0),
+             diagnosticsOpen_ ? withAlpha(t.color.accent, 0.22) : withAlpha(t.color.surfaceSunken, 0.9));
+      c.stroke(Path::roundedRect(open, 8.0),
+               diagnosticsOpen_ ? t.color.accent : withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+      c.text(open, "Diagnostics",
+             fitted(c, "Diagnostics",
+                    style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+                    open.width - 10.0),
+             diagnosticsOpen_ ? t.color.accent : t.color.textSecondary);
+    }
+  }
   const auto meter = ui::Rect{l.status.right() - 360.0, l.status.y + 6.0, 200.0, 16.0};
   const auto fraction = s.state == RenderStatusState::Ready ? 1.0 : std::clamp(s.fraction, 0.0, 1.0);
   std::string label{renderStatusStateName(s.state)};
@@ -1905,12 +2167,70 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   }
   // Left: audio device and the most important diagnostic.
   const auto online = state.audioDeviceOnline;
+  // The export-progress segment: the classic full-width strip becomes this status-bar segment,
+  // naming the attempt and the current output.
+  if (const auto segment = exportStatusSegment(state); segment.width > 0.0) {
+    const auto& progress = state.exportProgress;
+    const auto exportFraction = std::clamp(
+        static_cast<double>(progress.completedFiles) /
+            static_cast<double>(std::max<std::uint64_t>(1U, progress.totalFiles)),
+        0.0, 1.0);
+    c.fill(Path::roundedRect(segment, 5.0), withAlpha(t.color.surfaceSunken, 0.9));
+    c.fill(Path::roundedRect(
+               {segment.x, segment.y, segment.width * exportFraction, segment.height}, 5.0),
+           withAlpha(t.color.accent, 0.30));
+    c.stroke(Path::roundedRect(segment, 5.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+    auto text = "Export " + std::string{authoring::exportStateName(progress.state)} + " " +
+                std::to_string(progress.completedFiles) + "/" +
+                std::to_string(progress.totalFiles);
+    if (progress.state != authoring::ExportState::Committed &&
+        progress.state != authoring::ExportState::Recovered && !progress.currentOutput.empty())
+      text += " / " + progress.currentOutput;
+    c.text({segment.x + 8.0, segment.y, std::max(1.0, segment.width - 16.0), segment.height}, text,
+           fitted(c, text, style(FontRole::UiSemibold, t.type.smallLabel),
+                  std::max(1.0, segment.width - 16.0)),
+           progress.state == authoring::ExportState::Failed ? t.color.error
+                                                           : t.color.textPrimary);
+  }
   c.fill(Path::circle({l.status.x + 16.0, l.status.y + 14.0}, 3.5),
          online ? t.color.success : t.color.textDisabled);
   const auto left = singStatusMessage(state);
   c.text({l.status.x + 28.0, l.status.y, meter.x - l.status.x - 48.0, l.status.height}, left.text,
          style(FontRole::Ui, t.type.smallLabel),
          left.tone == StatusTone::Warning ? t.color.warning : t.color.textSecondary);
+  // The error toast above the bar: the head-in-hand crop and the reason the line to the left already
+  // carries, for a failed render or a missing voicebank and nothing else. The SINGER card keeps the
+  // recovery action, which stays reachable in the rack to the right of this rectangle.
+  const auto input = characterSurfaceInput(state, auditionLevel_);
+  if (const auto toast = characterErrorToast(l, input, left.text); toast.has_value()) {
+    paintCharacterToast(characterCanvas(c), t, *toast,
+                        characterPortrait(CharacterState::Error), assets().portrait.get());
+  }
+}
+
+bool SingShell::laneExpanded(const EditorSceneState& state) noexcept {
+  // An expanded technical lane gives its height back to the roll and takes the Stage with it, exactly
+  // as the classic layout resolves the same presentations.
+  for (const auto& presentation : state.technicalLanes)
+    if (presentation.mode == domain::TechnicalLaneMode::Expanded) return true;
+  return false;
+}
+
+void SingShell::notePointer(ui::Point point) {
+  const auto moved = !pointerPosition_.has_value() || pointerPosition_->x != point.x ||
+                     pointerPosition_->y != point.y;
+  pointerPosition_ = point;
+  if (!moved) return;
+  // Only the Stage reacts to a hovering pointer, so only a pointer that changed sides of the figure
+  // asks the host for another frame. A pointer that never reaches the Stage repaints nothing.
+  if (!stagePlacement_.has_value() || !stagePlacement_->shown) return;
+  const auto& bounds = stagePlacement_->bounds;
+  const auto inside = point.x >= bounds.x && point.x < bounds.right() && point.y >= bounds.y &&
+                      point.y < bounds.bottom();
+  const auto wasInside = stagePointerAt_.has_value() && stagePointerAt_->x >= bounds.x &&
+                         stagePointerAt_->x < bounds.right() && stagePointerAt_->y >= bounds.y &&
+                         stagePointerAt_->y < bounds.bottom();
+  if (inside != wasInside) repaint();
 }
 
 StatusMessage singStatusMessage(const EditorSceneState& state) {
@@ -2026,6 +2346,127 @@ bool attemptEnded(authoring::ExportState state) noexcept {
 
 }  // namespace
 
+ui::Rect SingShell::overlaySlot(const NativeEditorController& controller,
+                                const EditorSceneState& state) const noexcept {
+  static_cast<void>(controller);
+  static_cast<void>(state);
+  return layout_.overlay;
+}
+
+ui::Rect SingShell::diagnosticsToastBounds() const noexcept {
+  const auto& l = layout_;
+  const auto width = std::min(std::max(240.0, l.status.width * 0.42), 380.0);
+  return {l.status.x, l.status.y - 34.0, width, 28.0};
+}
+
+ui::Rect SingShell::diagnosticsOpenButton() const noexcept {
+  const auto& l = layout_;
+  const auto toast = diagnosticsToastBounds();
+  const auto width = std::min(std::max(0.0, l.status.right() - toast.right() - 8.0), 108.0);
+  if (width < 72.0) return {};
+  return {l.status.right() - width, l.status.y - 34.0, width, 28.0};
+}
+
+ui::Rect SingShell::exportStatusSegment(const EditorSceneState& state) const noexcept {
+  if (state.exportProgress.totalFiles == 0U) return {};
+  const auto& l = layout_;
+  // A segment at the status bar's right end, left of the render meter, so the render readout keeps
+  // its own space.
+  const auto meter = ui::Rect{l.status.right() - 360.0, l.status.y + 6.0, 200.0, 16.0};
+  const auto width = std::min(std::max(0.0, meter.x - l.status.x - 200.0), 260.0);
+  if (width < 140.0) return {};
+  return {meter.x - width - 8.0, l.status.y, width, l.status.height};
+}
+
+std::vector<std::pair<std::size_t, ui::Rect>> SingShell::overlapBadges(
+    const NativeEditorController& controller) const {
+  std::vector<std::pair<std::size_t, ui::Rect>> out;
+  if (!presented_ || workspace_ != Workspace::Sing || layout_.inspectorOpen) return out;
+  const auto& l = layout_;
+  for (const auto& note : controller.pianoRoll().visibleNotes()) {
+    if (!note.drawsOverlapIndicator) continue;
+    const ui::Rect painted{note.bounds.x, note.bounds.y + l.grid.y, note.bounds.width,
+                           note.bounds.height};
+    // Exactly the badge paintEditor draws, so the hit rectangle is the painted rectangle.
+    ui::Rect badge{std::min(painted.right() + 3.0, l.grid.right() - 30.0), painted.y - 2.0, 28.0,
+                   18.0};
+    if (badge.y < l.grid.y) badge.y = l.grid.y;
+    out.emplace_back(note.overlapGroup, badge);
+  }
+  return out;
+}
+
+core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
+                                           const ShellOverlay& overlay) {
+  const auto result = overlay.close(controller);
+  if (overlay.kind() == OverlayKind::Diagnostics) diagnosticsOpen_ = false;
+  return result;
+}
+
+bool SingShell::overlayPublishes(const NativeEditorController& controller,
+                                 std::string_view id) const {
+  const auto* overlay = activeOverlay(controller);
+  if (overlay == nullptr) return false;
+  if (id == std::string{overlay->idPrefix()} + "panel") return true;
+  const auto state = controller.sceneState();
+  const auto card =
+      overlay->panel(controller, state, layout_, overlaySlot(controller, state));
+  for (const auto& control : overlay->controls(controller, state, layout_, card))
+    if (control.id == id) return true;
+  return false;
+}
+
+void SingShell::paintOverlay(Canvas2D& c, const DesignTokens& t,
+                             const NativeEditorController& controller,
+                             const EditorSceneState& state, const ShellOverlay& overlay) const {
+  const auto slot = overlaySlot(controller, state);
+  paintShellOverlay(overlay, c, t, controller, state, layout_, slot);
+}
+
+
+std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorController& controller,
+                                                      const EditorSceneState& state) const {
+  std::vector<SemanticNode> out;
+  const auto* overlay = activeOverlay(controller);
+  if (overlay == nullptr) return out;
+  const auto slot = overlaySlot(controller, state);
+  const auto panel = overlay->panel(controller, state, layout_, slot);
+  if (panel.width <= 0.0) return out;
+  const auto& legacy = controller.accessibilityTree();
+  // The card itself is a panel node, so assistive software reads the surface, not a bare control.
+  out.push_back(SemanticNode{.id = std::string{overlay->idPrefix()} + "panel",
+                             .role = SemanticRole::Panel,
+                             .name = overlay->title(controller, state),
+                             .bounds = panel,
+                             .actions = {SemanticAction::SetFocus},
+                             .description = "Escape closes this surface"});
+  for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
+    // The overlay states the role and name it publishes; where the controller also publishes the
+    // id, its value, description and additional actions merge in, so the surface keeps the
+    // controller's meaning and its real command. Bounds are always the shell's own.
+    SemanticNode node{.id = control.id,
+                      .role = control.role,
+                      .name = control.name,
+                      .bounds = control.bounds,
+                      .enabled = control.enabled,
+                      .selected = control.selected,
+                      .actions = control.activatable
+                                     ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                                   SemanticAction::SetFocus}
+                                     : std::vector<SemanticAction>{SemanticAction::SetFocus}};
+    if (const auto* published = overlayControllerNode(legacy, control.id); published != nullptr) {
+      if (!published->value.empty()) node.value = published->value;
+      if (!published->description.empty()) node.description = published->description;
+      if (!published->enabled) {
+        node.enabled = false;
+        node.actions = {SemanticAction::SetFocus};
+      }
+    }
+    out.push_back(std::move(node));
+  }
+  return out;
+}
+
 ui::Rect SingShell::exportArea() const noexcept {
   const auto& l = layout_;
   return ui::Rect{l.editor.x, l.editor.y, l.editor.width, l.lane.bottom() - l.editor.y};
@@ -2072,6 +2513,9 @@ ShellWorkspace* SingShell::bodyWorkspace() const noexcept {
 
 std::optional<core::Result<void>> SingShell::routeUndo(bool redo) {
   if (!presented_ || workspace_ != Workspace::Voice) return std::nullopt;
+  // The designer owns the command only when it can actually step through its own history;
+  // otherwise the application's Undo and Redo keep working.
+  if (voice_ == nullptr || !voice_->ownsUndo(redo)) return std::nullopt;
   auto result = voice_->undo(redo);
   repaint();
   return result;
@@ -2272,6 +2716,7 @@ core::Result<void> SingShell::nudge(NativeEditorController& controller, std::siz
 core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
                                           const PointerEvent& event) {
   if (!presented_) return controller.pointerDown(event);
+  notePointer(event.position);
   const auto result = shellPointerDown(controller, event);
   yieldIfModal(controller);
   return result;
@@ -2284,6 +2729,32 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   if (knobDrag_ || bodyGesture_) cancelGestures(controller);
   const auto p = event.position;
   const auto& l = layout_;
+  // A re-homed overlay is modal over the score and the rack. A press on one of its controls runs
+  // that control's own command; a press on the card itself is absorbed; a press outside closes it,
+  // as the classic surfaces closed on Escape or their close button alone.
+  if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
+    const auto state = controller.sceneState();
+    const auto slot = overlaySlot(controller, state);
+    const auto panel = overlay->panel(controller, state, layout_, slot);
+    if (event.button == PointerButton::Left) {
+      for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
+        if (!contains(control.bounds, p)) continue;
+        takeSemanticFocus(controller, std::string{overlay->idPrefix()} + "panel");
+        const auto result = overlay->perform(controller, control.id, SemanticAction::Activate);
+        yieldIfModal(controller);
+        repaint();
+        return result;
+      }
+    }
+    // The panel body absorbs the press; the dimmed field outside it closes the overlay.
+    if (!contains(panel, p)) {
+      const auto closed = closeOverlay(controller, *overlay);
+      yieldIfModal(controller);
+      repaint();
+      return closed;
+    }
+    return core::success();
+  }
   if (workspaceMenuOpen_) {
     if (event.button == PointerButton::Left) {
       for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
@@ -2344,6 +2815,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     return core::success();
   }
   if (event.button == PointerButton::Left) {
+    // The +N badge of an overlapping note opens its detail popover, anchored to that badge. The
+    // hit rectangle is the painted badge, so the popover opens where the creator clicked.
+    for (const auto& [group, badge] : overlapBadges(controller)) {
+      if (!contains(badge, p)) continue;
+      return controller.openOverlapDetail(group);
+    }
     // Workspace tabs: SING, VOICE, TUNE, MIX and EXPORT switch the workspace.
     for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
       if (l.workspaceTab[i].width < 24.0 || !contains(l.workspaceTab[i], p)) continue;
@@ -2388,6 +2865,11 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       setEnabled(controller, false);
       return core::success();
     }
+    if (const auto open = diagnosticsOpenButton();
+        open.width > 0.0 && contains(open, p) && !controller.diagnosticPanel().entries().empty()) {
+      setDiagnosticsOpen(!diagnosticsOpen_);
+      return core::success();
+    }
     if (contains(l.singerChange, p)) {
       controller.showVoicebankBrowser();
       repaint();
@@ -2427,6 +2909,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
 core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
                                           const PointerEvent& event) {
   if (!presented_) return controller.pointerMove(event);
+  notePointer(event.position);
   if (bodyGesture_) {
     auto* body = bodyWorkspace();
     if (body == nullptr) return core::success();
@@ -2528,6 +3011,36 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     setEnabled(controller, !enabled());
     return true;
   }
+  // A re-homed overlay owns the keyboard while it is up. Escape closes it and returns focus to the
+  // control that opened it; the overlay's own keys run its real commands; every other plain key
+  // stops here, so nothing reaches the covered score.
+  if (presented_ && !controller.legacyModalSurfaceActive()) {
+    if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
+      if (event.key == NativeKey::Escape) {
+        const auto opener = overlay->openerId(controller, controller.sceneState());
+        static_cast<void>(closeOverlay(controller, *overlay));
+        // The controller's own tree follows the close first, so the focus snapshot the shell keeps
+        // is the tree it will compare against on the next frame (the inspector close does the same).
+        refreshSemantics(controller);
+        // Focus returns to the control that opened it, when the shell publishes that control.
+        if (!opener.empty()) takeSemanticFocus(controller, opener);
+        else semanticFocus_.clear();
+        repaint();
+        return true;
+      }
+      refreshSemantics(controller);
+      const auto* focused = semantics_.focusedNode();
+      const std::string id = focused == nullptr ? std::string{} : focused->id;
+      if (overlay->key(controller, id, event)) {
+        yieldIfModal(controller);
+        repaint();
+        return true;
+      }
+      if (event.modifiers.primaryShortcut() || event.modifiers.alt)
+        return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
+      return true;
+    }
+  }
   if (event.key == NativeKey::Escape && presented_ &&
       (knobDrag_ || bodyGesture_ ||
        (forwarding_ != ForwardArea::None && controller.pointerGestureActive()))) {
@@ -2564,11 +3077,12 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       setWorkspace(controller, Workspace::Sing);
       return true;
     }
-    // VOICE shows the Voice Designer, so its undo and redo are the designer's.
+    // VOICE shows the Voice Designer, so its undo and redo are the designer's while it has a
+    // history to step through. Otherwise the command falls through to the application's own Undo.
     if (workspace_ == Workspace::Voice && event.modifiers.primaryShortcut() &&
         !event.modifiers.alt && (event.key == NativeKey::Z || event.key == NativeKey::Y)) {
-      static_cast<void>(routeUndo(event.key == NativeKey::Y || event.modifiers.shift));
-      return true;
+      if (auto handled = routeUndo(event.key == NativeKey::Y || event.modifiers.shift))
+        return static_cast<void>(std::move(*handled)), true;
     }
     if (event.modifiers.primaryShortcut() || event.modifiers.alt)
       return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
@@ -2991,15 +3505,77 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .numericMinimum = 0.0,
                      .numericMaximum = 100.0});
   }
+  // Diagnostics are presented as the shell's own toast stack and popover, so they are not folded
+  // into the status bar here. Export nodes with no shell rectangle of their own (the cancel action
+  // of a strip too narrow for a segment) keep the status bar's bounds.
   for (const auto& child : legacy.children) {
     if (!child.id.starts_with("diagnostic") && !child.id.starts_with("export.")) continue;
+    if (child.id.starts_with("diagnostic")) continue;
+    if (child.id == "export.progress" && exportStatusSegment(state).width > 0.0) continue;
     auto copy = child;
     copy.bounds = l.status;
+    copy.children.clear();
     add(std::move(copy));
   }
 
   const auto singShown = workspace_ == Workspace::Sing;
+  // The export-progress segment in the status bar, reusing the controller's own export nodes (the
+  // progress status and its cancel action), which are the same commands the classic strip ran.
+  if (const auto segment = exportStatusSegment(state); segment.width > 0.0) {
+    if (const auto* progress = findLegacy("export.progress"); progress != nullptr) {
+      auto copy = *progress;
+      copy.bounds = segment;
+      copy.children.clear();
+      for (const auto& child : progress->children) {
+        if (child.id != "export.cancel") continue;
+        auto cancel = child;
+        // The cancel button sits at the segment's right end, inside the segment's own bounds.
+        const auto width = std::min(84.0, std::max(0.0, segment.width * 0.35));
+        if (width < 48.0) break;
+        cancel.bounds = {segment.right() - width - 4.0, segment.y + 2.0, width,
+                         segment.height - 4.0};
+        copy.children.push_back(std::move(cancel));
+      }
+      add(std::move(copy));
+    }
+  }
+  if (!state.diagnostics.empty()) {
+    // The toast stack above the status bar: the shell's own presentation of the topmost
+    // diagnostic, and the popover opener beside it.
+    add(SemanticNode{.id = "shell.diagnostics.toast", .role = SemanticRole::Status,
+                     .name = "Diagnostic",
+                     .value = presentDiagnostic(state.diagnostics.front()).title +
+                              (state.diagnostics.size() > 1U
+                                   ? " +" + std::to_string(state.diagnostics.size() - 1U) + " more"
+                                   : std::string{}),
+                     .bounds = diagnosticsToastBounds(),
+                     .actions = {SemanticAction::SetFocus}});
+    if (const auto openButton = diagnosticsOpenButton(); openButton.width > 0.0)
+      add(SemanticNode{.id = "shell.diagnostics.open", .role = SemanticRole::Button,
+                       .name = "Diagnostics", .bounds = openButton,
+                       .selected = diagnosticsOpen_,
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+  }
   if (singShown) {
+    // The re-homed overlays' openers, at the rectangles the shell paints them in. Each opens its
+    // surface through the controller's own command.
+    if (l.rulerTimeMapButton.width > 0.0)
+      add(SemanticNode{.id = "shell.ruler.time-map", .role = SemanticRole::Button,
+                       .name = "Tempo and meter events",
+                       .bounds = l.rulerTimeMapButton,
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+    if (l.laneReviewButton.width > 0.0)
+      add(SemanticNode{.id = "shell.lane.review", .role = SemanticRole::Button,
+                       .name = "Review retained edits", .bounds = l.laneReviewButton,
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+    for (const auto& [group, badge] : overlapBadges(controller))
+      add(SemanticNode{.id = "shell.note.overlap." + std::to_string(group),
+                       .role = SemanticRole::Button,
+                       .name = "Overlapping notes",
+                       .value = "Activate to list this group",
+                       .bounds = badge,
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                       .description = "Opens the overlap detail beside the note"});
     // What the notes show of the rendered audio, as painted in this frame.
     add(SemanticNode{.id = "shell.waveform", .role = SemanticRole::Status,
                      .name = "Note waveform",
@@ -3021,7 +3597,9 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                node.id == "shell.render-progress");
     });
   }
-  const auto scoreCovered = !singShown || l.inspectorOpen || workspaceMenuOpen_;
+  const auto* overlay = activeOverlay(controller);
+  const auto scoreCovered =
+      !singShown || l.inspectorOpen || workspaceMenuOpen_ || overlay != nullptr;
   if (!singShown) {
     // TUNE, MIX and EXPORT cover the score: nothing of the grid or lane is published under them.
     std::erase_if(children, [](const SemanticNode& node) {
@@ -3098,6 +3676,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
              !(modesInMenu && node.id.starts_with("shell.mode.")) && node.id != "shell.status" &&
              node.id != "shell.render-progress";
     });
+  }
+  // A re-homed overlay is modal above the shell like the compact inspector: only its own card and
+  // the read-only status remain, so Tab stays inside it, no note node is published under it and no
+  // action reaches the score or the lane it covers.
+  if (overlay != nullptr) {
+    auto nodes = overlaySemantics(controller, state);
+    std::vector<std::string> published;
+    published.reserve(nodes.size());
+    for (const auto& node : nodes) published.push_back(node.id);
+    std::erase_if(children, [&published](const SemanticNode& node) {
+      return std::find(published.begin(), published.end(), node.id) == published.end() &&
+             node.id != "shell.status" && node.id != "shell.render-progress";
+    });
+    for (auto& node : nodes) children.push_back(std::move(node));
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.
@@ -3178,6 +3770,34 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   } else if (id == "shell.settings" && activate) {
     controller.showAudioSettings();
     result = core::success();
+  } else if (id == "shell.ruler.time-map" && activate) {
+    // The transport display's tempo readout opens the time map; the ruler's own button opens the
+    // same panel the classic TIME MAP button did.
+    result = controller.openTimeMapPanel();
+  } else if (id == "shell.lane.review" && activate) {
+    result = controller.openPhonemeReview();
+  } else if (id == "shell.diagnostics.open" && activate) {
+    setDiagnosticsOpen(!diagnosticsOpen_);
+    result = core::success();
+  } else if (id.starts_with("shell.note.overlap.") && activate) {
+    const auto index = id.substr(std::string_view{"shell.note.overlap."}.size());
+    std::size_t group = 0U;
+    const auto parsed = std::from_chars(index.data(), index.data() + index.size(), group);
+    result = parsed.ec == std::errc{} && parsed.ptr == index.data() + index.size()
+                 ? controller.openOverlapDetail(group)
+                 : core::failure(core::ErrorCode::InvalidArgument, "Invalid overlap group");
+  } else if (auto* overlay = const_cast<ShellOverlay*>(activeOverlay(controller));
+             overlay != nullptr && overlayPublishes(controller, id)) {
+    // A control of a presented overlay: its own real command, validated against its current state.
+    refreshSemantics(controller);
+    if (!semantics_.publishes(id)) {
+      result = core::failure(core::ErrorCode::Conflict, "This control is not on screen");
+    } else if (id == std::string{overlay->idPrefix()} + "panel") {
+      result = core::success();
+    } else {
+      result = overlay->perform(controller, id, action);
+      yieldIfModal(controller);
+    }
   } else if (id == "shell.output-meter" && activate) {
     controller.resetOutputClip();
     result = core::success();

@@ -51,6 +51,13 @@ public:
   virtual void setHost(ShellVoiceHost host) = 0;
   // The look's portrait artwork for the listening singer; null draws the ring alone.
   virtual void setPortrait(std::shared_ptr<const paint::Image> portrait) = 0;
+  // The pose the hero holds while an audition plays; empty keeps the portrait above. The shell passes
+  // the package's listening-state asset when it has one and nothing when it does not, so the hero
+  // never invents a pose the artwork does not declare.
+  virtual void setListeningPortrait(std::shared_ptr<const paint::Image> listening) = 0;
+  // The measured peak of the audition block the host's output device last played, or nothing when
+  // nothing plays. The shell reads it so the protagonist's state is the same one VOICE is showing.
+  [[nodiscard]] virtual std::optional<float> auditionLevel() const noexcept = 0;
   // Owner-thread step before each painted VOICE frame: collects the session's finished file and
   // audition work and starts a requested audition once it is rendered. Returns true while work
   // or playback is in progress, so the shell keeps repainting.

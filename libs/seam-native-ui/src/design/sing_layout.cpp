@@ -83,6 +83,8 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.rackArea = {W - kSingEdge - rackWidth, bodyTop, rackWidth, bodyHeight};
 
   const auto editorRight = l.rackArea.x - kSingRackGap;
+  // The body's right edge for an overlay: the rack column is an open inspector's own home, so the
+  // overlay slot uses the editor's width and lets the inspector clamp over the rack itself.
   l.lane = {kSingEdge, bodyBottom - laneHeight, std::max(0.0, editorRight - kSingEdge),
             laneHeight};
   l.editor = {kSingEdge, bodyTop, l.lane.width,
@@ -105,6 +107,13 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   // The lane's 24-point value gutter sits left of the shared musical axis.
   l.laneTimePlot = {l.grid.x, l.lanePlot.y, l.grid.width, l.lanePlot.height};
 
+  // A re-homed overlay (a popover sheet or the inspector) lives in the body, right of the musical
+  // axis and above the status bar. It never covers the header, whose controls stay reachable, and
+  // it is zero when the body is too small for any control.
+  l.overlay = {kSingEdge, bodyTop, std::max(0.0, W - 2.0 * kSingEdge),
+               std::max(0.0, l.status.y - kSingGap - bodyTop)};
+  if (l.overlay.width < 240.0 || l.overlay.height < 110.0) l.overlay = {};
+
   if (l.rack == RackPresentation::Full) {
     const auto expressionHeight = 248.0;
     const auto styleHeight = 104.0;
@@ -125,7 +134,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     for (std::size_t i = 0U; i < l.knob.size(); ++i) {
       const auto column = static_cast<double>(i % 3U);
       const auto row = static_cast<double>(i / 3U);
-      l.knob[i] = {l.expression.x + 16.0 + column * cellWidth, top + row * cellHeight, cellWidth,
+    l.knob[i] = {l.expression.x + 16.0 + column * cellWidth, top + row * cellHeight, cellWidth,
                    cellHeight};
     }
   } else {
@@ -195,6 +204,20 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     l.workspaceTab[i] = {l.workspaceTabs.x + tabWidth * static_cast<double>(i), l.workspaceTabs.y,
                          tabWidth, l.workspaceTabs.height};
 
+  // The header avatar sits in the gap the most constrained header region leaves: right of the
+  // workspace tabs and left of the mode switch. It needs its own width plus a 12-point gap on each
+  // side, so a header that leaves no such gap reserves nothing and the avatar stays out of the
+  // presentation entirely. The approved 1440x900 header has no gap here, which is why the avatar
+  // appears only where the window is wider than the approved composition; the compact menu cases
+  // never reach it, because their tabs are replaced by the menu button.
+  if (l.workspaceTabs.width > 0.0 && l.modeSwitch.width > 0.0) {
+    const auto left = l.workspaceTabs.right() + 12.0;
+    const auto right = l.modeSwitch.x - 12.0;
+    if (right - left >= kSingHeaderAvatar)
+      l.headerAvatar = {left, l.header.y + (headerHeight - kSingHeaderAvatar) * 0.5,
+                        kSingHeaderAvatar, kSingHeaderAvatar};
+  }
+
   const auto readoutTop = l.transport.y + 4.0;
   l.playButton = {l.transport.x + 6.0, l.transport.y + 6.0, 32.0, 32.0};
   const auto innerLeft = l.playButton.right() + 10.0;
@@ -206,6 +229,17 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.trackLabel = {l.tools.x + 4.0, l.tools.y + 2.0, 132.0, 24.0};
   l.classicToggle = {l.tools.right() - 96.0, l.tools.y + 2.0, 92.0, 24.0};
   l.gridLabel = {l.classicToggle.x - 104.0, l.tools.y + 2.0, 96.0, 24.0};
+
+  // The overlays' openers sit at the right end of strips the shell already paints, so they cover
+  // no note label or lane tab. Each stays zero when its strip cannot hold one.
+  const auto timeMapWidth = std::clamp(l.ruler.width * 0.16, 0.0, 96.0);
+  if (timeMapWidth >= 48.0 && l.ruler.width >= 260.0)
+    l.rulerTimeMapButton = {l.ruler.right() - timeMapWidth, l.ruler.y + 2.0, timeMapWidth,
+                            std::max(0.0, l.ruler.height - 4.0)};
+  const auto reviewWidth = std::clamp(l.laneTabs.width * 0.15, 0.0, 108.0);
+  if (reviewWidth >= 52.0 && l.laneTabs.width >= 320.0)
+    l.laneReviewButton = {l.laneTabs.right() - reviewWidth, l.laneTabs.y + 2.0,
+                          reviewWidth, std::max(0.0, l.laneTabs.height - 4.0)};
   return l;
 }
 

@@ -695,6 +695,10 @@ public:
   void setPortrait(std::shared_ptr<const paint::Image> portrait) override {
     portrait_ = std::move(portrait);
   }
+  void setListeningPortrait(std::shared_ptr<const paint::Image> listening) override {
+    listening_ = std::move(listening);
+  }
+  [[nodiscard]] std::optional<float> auditionLevel() const noexcept override { return level_; }
   [[nodiscard]] const std::string& message() const noexcept override { return message_; }
 
   bool poll() override {
@@ -720,6 +724,14 @@ public:
     if (drag_) return core::failure(core::ErrorCode::Conflict, "Finish the drag before undo or redo");
     const auto revision = s->model()->revision();
     return note(redo ? s->redo(s->epoch(), revision) : s->undo(s->epoch(), revision));
+  }
+
+  [[nodiscard]] bool ownsUndo(bool redo) const override {
+    // A designer with no recipe, no history, or a drag in progress cannot consume the command, so
+    // the application's own Undo/Redo stays reachable instead of doing nothing.
+    auto* s = session();
+    if (s == nullptr || s->model() == nullptr || drag_) return false;
+    return redo ? s->model()->canRedo() : s->model()->canUndo();
   }
 
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
@@ -1066,6 +1078,7 @@ private:
 
   ShellVoiceHost host_;
   std::shared_ptr<const paint::Image> portrait_;
+  std::shared_ptr<const paint::Image> listening_;
   mutable bool opened_{false};
   Card view_{Card::Resonance};
   std::optional<Card> menu_;
@@ -1149,10 +1162,13 @@ void VoiceWorkspaceImpl::paintHero(Canvas2D& c, const DesignTokens& t, const Voi
   c.fill(Path::circle(center, inner),
          RadialGradient{center, inner, {{0.0, t.color.surfaceRaised}, {1.0, t.color.surfaceSunken}}});
   c.stroke(Path::circle(center, inner), withAlpha(t.color.accent, playing() ? 0.9 : 0.45), StrokeStyle{1.2});
-  if (portrait_) {
+  // While an audition plays the hero holds the listening pose when the character package declares
+  // one, and otherwise stays on the look's portrait: an undeclared pose is not invented.
+  const auto& pose = playing() && listening_ ? listening_ : portrait_;
+  if (pose) {
     c.save();
     c.clipPath(Path::circle(center, inner));
-    c.drawImage(*portrait_, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
+    c.drawImage(*pose, {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
                 playing() ? 1.0 : 0.7);
     c.restore();
   }

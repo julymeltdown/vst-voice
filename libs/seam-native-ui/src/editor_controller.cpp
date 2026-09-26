@@ -3726,11 +3726,14 @@ ui::Point NativeEditorController::modelPoint(ui::Point windowPoint) const noexce
 }
 
 bool NativeEditorController::legacyModalSurfaceActive() const {
-  return voicebankBrowserVisible_ || audioSettings_.visible || recoverySupportPanel_.view().visible ||
-         replacementOpen_ || timeMapPanel_.has_value() || tempoEdit_.has_value() ||
-         hintEdit_.has_value() || replacementInput_.has_value() || microscopeUnit_.has_value() ||
-         phonemeReview_.has_value() || renameTrackTarget_.has_value() ||
-         renameRegionTarget_.has_value();
+  // The overlays the SING shell re-homes (sample microscope, phoneme review, time map, recovery
+  // support and the overlap detail) are painted inside the shell now, so they no longer hand the
+  // frame to the classic painter. What still does: the voice browser, the audio settings, the
+  // replacement review, a track/region rename field and the classic-only text inputs (which the
+  // shell's own predicate does not list, because it never presents while a modal is open).
+  return voicebankBrowserVisible_ || audioSettings_.visible || replacementOpen_ ||
+         tempoEdit_.has_value() || hintEdit_.has_value() || replacementInput_.has_value() ||
+         renameTrackTarget_.has_value() || renameRegionTarget_.has_value();
 }
 
 std::uint64_t NativeEditorController::documentRevision() const noexcept {
@@ -3835,6 +3838,90 @@ void NativeEditorController::markDocumentChanged() {
 
 core::Result<TempoMeterModel> NativeEditorController::timeMapEvents() const {
   return TempoMeterModel::capture(session_.project(), session_.revision());
+}
+
+core::Result<void> NativeEditorController::selectTimeMapRow(std::size_t pageRow) {
+  if (!timeMapPanel_) return core::failure(core::ErrorCode::Conflict, "Time maps are not open");
+  if (pageRow >= timeMapPanel_->page(timeMapPage_).size())
+    return core::failure(core::ErrorCode::InvalidArgument, "Time-map row is unavailable");
+  const auto selected = timeMapPanel_->select(timeMapPage_ * TempoMeterModel::pageSize + pageRow);
+  repaint();
+  return selected;
+}
+
+core::Result<void> NativeEditorController::navigateTimeMapRow(int direction) {
+  if (!timeMapPanel_) return core::failure(core::ErrorCode::Conflict, "Time maps are not open");
+  auto index = timeMapPanel_->selectedIndex();
+  if (direction < 0 && index > 0U) --index;
+  if (direction > 0 && index + 1U < timeMapPanel_->size()) ++index;
+  const auto selected = timeMapPanel_->select(index);
+  timeMapPage_ = index / TempoMeterModel::pageSize;
+  repaint();
+  return selected;
+}
+
+core::Result<void> NativeEditorController::selectOverlapMemberRow(std::size_t index) {
+  if (!overlapDetail_) return core::failure(core::ErrorCode::Conflict, "No overlap detail is open");
+  if (index >= overlapDetail_->members.size())
+    return core::failure(core::ErrorCode::InvalidArgument, "Overlap row is unavailable");
+  // Selecting a row selects that note and marks it in the popover, exactly as the group's own
+  // activation walks its members.
+  const auto noteId = overlapDetail_->members[index].noteId;
+  if (session_.project().findRegion(regionId_) == nullptr ||
+      session_.project().findRegion(regionId_)->findNote(noteId) == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "The overlapping note is gone");
+  session_.selection().selectOnly(noteId);
+  for (std::size_t i = 0U; i < overlapDetail_->members.size(); ++i)
+    overlapDetail_->members[i].selected = i == index;
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::closeOverlapDetail() {
+  if (!overlapDetail_) return core::failure(core::ErrorCode::InvalidState, "No overlap detail is open");
+  overlapDetail_.reset();
+  rebuildAccessibilityTree();
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::openOverlapDetail(std::size_t groupIndex) {
+  const auto visuals = pianoRoll_.visibleNotes();
+  const auto member = std::find_if(
+      visuals.begin(), visuals.end(), [groupIndex](const ui::NoteVisual& note) {
+        return note.overlapGroup == groupIndex && note.overlapMemberCount > 1U;
+      });
+  if (member == visuals.end())
+    return core::failure(core::ErrorCode::NotFound, "Overlap group is no longer visible");
+  const auto candidates = pianoRoll_.overlapCandidatesAt(
+      ui::Point{member->bounds.x + member->bounds.width * 0.5,
+                member->bounds.y + member->bounds.height * 0.5});
+  if (candidates.empty())
+    return core::failure(core::ErrorCode::NotFound, "Overlap group has no selectable notes");
+  // Opening from the badge shows the group's own members without moving the selection: the member
+  // the creator has selected is the one marked, and a row click is what changes it.
+  const auto selected = session_.selection().noteIds();
+  const auto current = std::find_first_of(candidates.begin(), candidates.end(), selected.begin(),
+                                          selected.end());
+  const auto marked = current == candidates.end() ? candidates.front() : *current;
+  EditorSceneState::OverlapDetail detail{.groupIndex = groupIndex};
+  detail.members.reserve(candidates.size());
+  const auto* region = session_.project().findRegion(regionId_);
+  for (const auto candidate : candidates) {
+    const auto* note = region == nullptr ? nullptr : region->findNote(candidate);
+    const auto* lyric = note == nullptr || region == nullptr ? nullptr
+                                                            : region->findLyric(note->lyricTokenId);
+    detail.members.push_back(EditorSceneState::OverlapDetailMember{
+        .noteId = candidate,
+        .lyric = lyric == nullptr ? std::string{} : domain::toUtf8(lyric->surface),
+        .midiKey = static_cast<std::uint8_t>(note == nullptr ? 0U : note->midiKey),
+        .selected = candidate == marked,
+    });
+  }
+  overlapDetail_ = std::move(detail);
+  rebuildAccessibilityTree();
+  repaint();
+  return core::success();
 }
 
 core::Result<void> NativeEditorController::openTimeMapPanel() {

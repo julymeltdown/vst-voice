@@ -234,6 +234,17 @@ public:
     return recoverySupportPanel_;
   }
   [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
+  // The re-homed overlays' own commands, so a surface the shell draws reaches the same code the
+  // classic painter's controls did. A time-map row is selected by its page-relative index and a
+  // row is stepped with a signed direction; the TEMPO/METER events button is a shell control.
+  [[nodiscard]] core::Result<void> selectTimeMapRow(std::size_t pageRow);
+  [[nodiscard]] core::Result<void> navigateTimeMapRow(int direction);
+  // The overlapping-note popover's rows and its close, addressed by the group member's index.
+  [[nodiscard]] core::Result<void> selectOverlapMemberRow(std::size_t index);
+  [[nodiscard]] core::Result<void> closeOverlapDetail();
+  // Opens the overlapping-note detail popover for a group, from the note's +N badge. The same
+  // state the group's own activation sets, so the host path and the shell path agree.
+  [[nodiscard]] core::Result<void> openOverlapDetail(std::size_t groupIndex);
   [[nodiscard]] TrackInspectorSnapshot trackInspector() const noexcept {
     return TrackInspectorModel::snapshot(session_.project(), selectedTrackId_, playheadTick_);
   }
@@ -437,10 +448,11 @@ public:
   // and capture loss.
   void cancelPointerGesture();
   // True while a surface the SING shell does not host is open: voice browser, audio settings,
-  // support panel, replacement review, tempo/meter map or its input, hint/replacement input,
-  // sample microscope, phoneme review, or a track/region rename field (anchored in the classic
-  // arrangement dock). Mirrors SingShell::legacySurfaceRequired(sceneState()) without building
-  // the scene state.
+  // replacement review, a tempo/meter or hint/replacement text input, or a track/region rename
+  // field (anchored in the classic arrangement dock). The surfaces the shell re-homes (sample
+  // microscope, phoneme review, time map, recovery support, overlap detail) are not listed: the
+  // shell paints them itself. Mirrors SingShell::legacySurfaceRequired(sceneState()) without
+  // building the scene state.
   [[nodiscard]] bool legacyModalSurfaceActive() const;
   [[nodiscard]] std::uint64_t documentRevision() const noexcept;
   [[nodiscard]] bool pointerGestureActive() const noexcept;

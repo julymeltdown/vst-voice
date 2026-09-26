@@ -1,10 +1,12 @@
 #pragma once
 
 #include "seam/native_ui/accessibility_tree.hpp"
+#include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/shell_workspace.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/design/voice_workspace.hpp"
+#include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -22,6 +24,12 @@ namespace seam::native_ui::design {
 struct DesignPreferences final {
   DesignMode mode{DesignMode::Emo};
   Contrast contrast{Contrast::Standard};
+  // Reduce Motion drops blink, breathing, the render spinner and the Stage fade, and makes a state
+  // change immediate. The state itself is unchanged: a screen that reduces motion still says what
+  // the singer is doing. It is the shell's own preference, alongside the look and the contrast, and
+  // it is the same setting the host already publishes to the editor through
+  // platform::AccessibilityPreferences, so both surfaces agree.
+  bool reduceMotion{false};
   bool shellEnabled{true};
 };
 
@@ -73,6 +81,13 @@ struct ShellHostActions final {
 [[nodiscard]] std::filesystem::path locateDesignAssets(
     const std::filesystem::path& bundleResources = {});
 
+// Finds the character package: an explicit override, character-01 beside the design assets, or
+// character-01 in the source tree. Returns an empty path when no package exists, and the shell then
+// draws the look's own portrait and claims no package state.
+[[nodiscard]] std::filesystem::path locateCharacterAssets(
+    const std::filesystem::path& designAssets = {},
+    const std::filesystem::path& bundleResources = {});
+
 // The in-note waveform is drawn in columns of this width, phased from the note's left edge.
 inline constexpr double kNoteWaveformColumn = 2.0;
 // Calls column(x0, x1) for each waveform column of a note rectangle that lies inside
@@ -95,7 +110,11 @@ struct StatusMessage final {
 // engine: pointer events inside the musical grid are translated into the legacy controller's
 // coordinates, so note creation, selection, lyric entry and vibrato editing keep their existing
 // behavior and undo history. Any legacy modal surface (voice browser, audio settings, reviews,
-// tempo/meter entry, microscope) is shown by the legacy painter until it is re-homed.
+// tempo/meter entry, microscope) is shown by the legacy painter until it is re-homed. The surfaces
+// section 7.6 of the redesign plan lists as re-homed (sample microscope, phoneme review, time map,
+// recovery/support, overlap detail, diagnostics and the export progress strip) are painted here as
+// panel and popover surfaces by shell_overlays.hpp; the voice browser, the audio settings, the
+// replacement review and the classic-only text inputs still hand the frame to the legacy painter.
 class SingShell final {
 public:
   // A shell starts inactive: it paints nothing and forwards all input, and it reads neither the
@@ -114,12 +133,38 @@ public:
   [[nodiscard]] const SingLayout& layout() const noexcept { return layout_; }
   // The compact rack's singer inspector (rail and drawer presentations only).
   [[nodiscard]] bool inspectorOpen() const noexcept { return layout_.inspectorOpen; }
+  // The re-homed overlay the shell would present now, or None. Read from the controller's own
+  // state and the window, so a host that never paints still sees which surface is up.
+  [[nodiscard]] OverlayKind overlayKind(const NativeEditorController& controller) const;
+  // The rectangle a re-homed overlay's card may occupy: the body right of the musical axis, never
+  // over the header. Empty when the window is too small to place one.
+  [[nodiscard]] ui::Rect overlaySlot(const NativeEditorController& controller,
+                                     const EditorSceneState& state) const noexcept;
+  // True while the shell paints a re-homed overlay and covers the score with it.
+  [[nodiscard]] bool overlayPresented(const NativeEditorController& controller) const;
+  // The DIAGNOSTICS popover is a presentation the shell owns (the controller folds diagnostics into
+  // the status bar); this opens and closes it.
+  [[nodiscard]] bool diagnosticsOpen() const noexcept { return diagnosticsOpen_; }
+  void setDiagnosticsOpen(bool open);
   // Whether the last SING frame painted the Stage figure; §3.4 keeps it off without the full rack.
   [[nodiscard]] bool lastFrameShowedStage() const noexcept { return stageShown_; }
+  // Where the last SING frame drew the Stage figure, or nothing when it drew none. The figure is
+  // decorative, so this exists for evidence and tests rather than for input: nothing routes to it.
+  [[nodiscard]] std::optional<ui::Rect> lastFrameStageBounds() const noexcept {
+    return stagePlacement_.has_value() && stagePlacement_->shown
+               ? std::optional<ui::Rect>{stagePlacement_->bounds}
+               : std::nullopt;
+  }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
   [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
+  // The overlays this shell re-homes. A surface listed here is painted inside the shell, so it is
+  // not one of the states that still hands the frame to the classic painter.
+  [[nodiscard]] static bool rehomedSurface(OverlayKind kind) noexcept;
 
   void setMode(DesignMode mode, bool persist = true);
+  // Turns motion down. Like the look and the contrast it is an application preference, so the shell
+  // keeps painting the same state with the animation dropped.
+  void setReduceMotion(bool reduceMotion, bool persist = true);
   void setEnabled(bool enabled, bool persist = true);
   // Enables or disables the shell while a controller is attached: gestures are cancelled and the
   // controller's input geometry is returned to the classic editor before the switch.
@@ -128,6 +173,26 @@ public:
   void setHostActions(ShellHostActions actions) {
     hostActions_ = std::move(actions);
     voice_->setHost(hostActions_.voice);
+  }
+  // The host's own character package directory, when it has one it would rather use than the one
+  // beside the design assets. Loading it is optional: an empty path or a refused package leaves the
+  // shell on the look's own portrait alone, and packageError() says why if a package was refused.
+  void setCharacterPackage(const std::filesystem::path& packageRoot);
+  [[nodiscard]] bool characterPackageLoaded() const noexcept {
+    return character_.packageLoaded();
+  }
+  [[nodiscard]] const std::string& characterPackageError() const noexcept {
+    return character_.packageError();
+  }
+  // Set by the VOICE workspace while an audition plays, so the protagonist can listen to it: the
+  // measured peak of the audition the output device last played, or nothing when nothing plays. The
+  // shell reads it once per frame and clears it when VOICE is not the visible workspace.
+  void setAuditionLevel(std::optional<float> level) noexcept { auditionLevel_ = level; }
+  // The clock the character animation reads. The host's injectable UI clock is the intended source,
+  // so a frozen clock freezes the blink, the breathing and the Stage fade along with everything else;
+  // it defaults to the steady clock for a host that injects nothing.
+  void setUiClock(std::function<std::chrono::steady_clock::time_point()> clock) {
+    uiClock_ = std::move(clock);
   }
   [[nodiscard]] Workspace workspace() const noexcept { return workspace_; }
   // The VOICE, TUNE or MIX body while it is shown, else null.
@@ -142,7 +207,13 @@ public:
   void setWorkspace(NativeEditorController& controller, Workspace workspace);
   // The Export workspace's run button, in shell coordinates (empty unless that workspace shows).
   [[nodiscard]] ui::Rect exportRunButton() const noexcept;
+  // The export-progress segment in the status bar: the strip the classic painter drew full width,
+  // now a segment that names the attempt and carries the cancel action. Empty when no export has
+  // ever reported files.
+  [[nodiscard]] ui::Rect exportStatusSegment(const EditorSceneState& state) const noexcept;
   [[nodiscard]] bool assetsLoaded(DesignMode mode) const noexcept;
+  // The protagonist's real state for the last painted frame, from the read models the shell holds.
+  [[nodiscard]] CharacterState characterState() const noexcept { return characterState_; }
 
   // Frame step 1, before the host derives its scene state: chooses the surface and applies its
   // complete geometry (piano-roll viewport and the controller's hosted input geometry) so paint,
@@ -219,6 +290,27 @@ private:
     if (repaint_) repaint_();
   }
   const ModeAssets& assets() const noexcept;
+  // The protagonist's artwork for a state: the package's decoded portrait when the package has one,
+  // else nothing (the caller then draws the look's portrait). Never a mixture of the two.
+  [[nodiscard]] const PixelSurface* characterPortrait(CharacterState state) const;
+  // The declared mouth sprite for a shape, keyed and ready to draw, or nothing.
+  [[nodiscard]] const PixelSurface* characterMouth(character::MouthShape shape) const;
+  // The package's listening-state portrait as vector artwork, for the VOICE hero's own ring, which
+  // draws through the vector front and not the raster one. Empty when no package is loaded, so the
+  // hero keeps the look's portrait. Decoded once and held.
+  [[nodiscard]] std::shared_ptr<const paint::Image> lookListeningPortrait() const;
+  // Both drawing fronts of the current frame, for the character painters that need the raster one for
+  // the package's PPM art. The shell's own canvas is the vector front.
+  [[nodiscard]] CharacterCanvas characterCanvas(paint::Canvas2D& vector) const;
+  [[nodiscard]] bool reduceMotion() const noexcept { return preferences_.reduceMotion; }
+  // Whether any technical lane is expanded. The Stage and the roll's height both read this one
+  // answer, so they cannot disagree.
+  [[nodiscard]] static bool laneExpanded(const EditorSceneState& state) noexcept;
+  // Records the pointer in shell space. A move that changes only which side of the Stage the pointer
+  // is on repaints for the Stage's own fade and nothing else.
+  void notePointer(ui::Point point);
+  // Requests the next frame only while the character is still moving or the Stage is still fading.
+  void scheduleAnimationRepaint();
   void ensureBackground(const RasterCanvas& canvas, const DesignTokens& tokens);
   void paintBackground(paint::Canvas2D& c, const DesignTokens& t) const;
   void paintHeader(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
@@ -243,6 +335,30 @@ private:
     return layout_.rack == RackPresentation::Full || layout_.inspectorOpen;
   }
   void paintStatus(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
+  // A re-homed overlay: the scrim, card and controls, over everything else in the body. `controls`
+  // is the same list its semantics publish, so paint and hit-test share one layout.
+  void paintOverlay(paint::Canvas2D& c, const DesignTokens& t,
+                    const NativeEditorController& controller, const EditorSceneState& state,
+                    const ShellOverlay& overlay) const;
+  [[nodiscard]] std::vector<SemanticNode> overlaySemantics(
+      const NativeEditorController& controller, const EditorSceneState& state) const;
+  [[nodiscard]] const ShellOverlay* activeOverlay(const NativeEditorController& controller) const;
+  // The diagnostics toast the shell stacks above the status bar, and its popover opener. Both are
+  // derived from the status bar's own rectangle, so they move with it.
+  [[nodiscard]] ui::Rect diagnosticsToastBounds() const noexcept;
+  [[nodiscard]] ui::Rect diagnosticsOpenButton() const noexcept;
+  // The +N overlap badges in the grid, exactly as painted, paired with the group they open. The
+  // shell makes each one a hit target, so the overlap popover opens from the badge it anchors to.
+  [[nodiscard]] std::vector<std::pair<std::size_t, ui::Rect>> overlapBadges(
+      const NativeEditorController& controller) const;
+  // True when `id` is one of the presented overlay's own controls (its card id or a control it lays
+  // out). Such an id belongs to the overlay even when it is also a controller id, so its action is
+  // routed to the overlay instead of the controller's own dispatch.
+  [[nodiscard]] bool overlayPublishes(const NativeEditorController& controller,
+                                      std::string_view id) const;
+  // Closes the presented overlay through its own command. The DIAGNOSTICS popover is the shell's
+  // own presentation, so this also drops the flag that shows it.
+  core::Result<void> closeOverlay(NativeEditorController& controller, const ShellOverlay& overlay);
   void paintExport(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   [[nodiscard]] ui::Rect exportArea() const noexcept;
   [[nodiscard]] core::Result<void> runExportSet(NativeEditorController& controller);
@@ -284,8 +400,45 @@ private:
   mutable std::optional<std::size_t> offscreenHint_;
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
+  // The re-homed overlays, one instance each: an overlay holds no state between frames, so the
+  // shell can rebuild its presentation from the controller alone.
+  std::unique_ptr<ShellOverlay> microscopeOverlay_{makeSampleMicroscopeOverlay()};
+  std::unique_ptr<ShellOverlay> phonemeOverlay_{makePhonemeReviewOverlay()};
+  std::unique_ptr<ShellOverlay> timeMapOverlay_{makeTimeMapOverlay()};
+  std::unique_ptr<ShellOverlay> supportOverlay_{makeRecoverySupportOverlay()};
+  std::unique_ptr<ShellOverlay> overlapOverlay_{makeOverlapDetailOverlay()};
+  std::unique_ptr<ShellOverlay> diagnosticsOverlay_{makeDiagnosticsOverlay()};
+  bool diagnosticsOpen_{false};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
+  // The character artwork and its animation, both driven by the read models above.
+  CharacterSurface character_;
+  // The raster front of the frame being painted. Set for the duration of paint() and cleared after,
+  // because the character package's PPM artwork reaches the frame through this canvas and the vector
+  // front cannot address it. Null outside paint, which is a programmer error to draw through. The
+  // pointer is mutable because the painters are const member functions of a const shell while the
+  // pixels they write are the frame's, not the shell's.
+  mutable RasterCanvas* raster_{nullptr};
+  mutable CharacterAnimator animator_;
+  mutable CharacterAnimator::Motion motion_{};
+  std::optional<float> auditionLevel_{};
+  CharacterState characterState_{CharacterState::Idle};
+  // The frame's own clock reading, taken once so every part of one frame animates against the same
+  // instant. The injectable UI clock is the source, so a test's frozen clock freezes all of it.
+  std::chrono::steady_clock::time_point frameNow_{};
+  mutable StageFade stageFade_;
+  mutable std::optional<StagePlacement> stagePlacement_{};
+  // The last shell-space pointer position the shell saw, so the Stage knows whether the pointer is
+  // inside its bounds. Nothing until a pointer event arrives, which is the truth: a shell that has
+  // never seen the pointer cannot claim it rests on the figure.
+  std::optional<ui::Point> pointerPosition_;
+  // The pointer position the Stage's last painted frame was evaluated against, so a change repaints
+  // the Stage and only the Stage.
+  mutable std::optional<ui::Point> stagePointerAt_;
+  // The package's listening-state portrait as vector artwork, decoded once on first use and keyed by
+  // the path it came from, so a package reload does not keep showing the previous pose.
+  mutable std::shared_ptr<const paint::Image> listeningPortrait_;
+  mutable std::filesystem::path listeningPortraitPath_;
   std::uint64_t controllerSerial_{0U};
   std::optional<domain::RegionId> framedRegion_;
   std::optional<std::int32_t> framedTopMidi_;
@@ -296,6 +449,9 @@ private:
   std::string semanticFocus_;
   std::string semanticFocusBaseline_;
   std::function<void()> repaint_;
+  // The character animation's clock. Empty means the steady clock, so a host that injects nothing
+  // still animates and a test that freezes the clock freezes the character with it.
+  std::function<std::chrono::steady_clock::time_point()> uiClock_;
   ShellHostActions hostActions_;
   Workspace workspace_{Workspace::Sing};
   std::unique_ptr<ShellWorkspace> tune_{makeTuneWorkspace()};

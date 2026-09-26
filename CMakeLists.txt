@@ -742,12 +742,14 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   # support is deferred; other platforms keep the classic painter through the stubs.
   target_sources(seam_native_ui PRIVATE
     libs/seam-native-ui/src/design/design_tokens.cpp
+    libs/seam-native-ui/src/design/character_surface.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp
     libs/seam-native-ui/src/design/sing_shell.cpp
     libs/seam-native-ui/src/design/tune_workspace.cpp
     libs/seam-native-ui/src/design/mix_workspace.cpp
     libs/seam-native-ui/src/design/voice_workspace.cpp
     libs/seam-native-ui/src/design/shell_evidence.cpp
+    libs/seam-native-ui/src/design/shell_overlays.cpp
     libs/seam-native-ui/src/paint/path.cpp)
   if(APPLE)
     target_sources(seam_native_ui PRIVATE
@@ -1904,6 +1906,16 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_design_system_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_design_system_tests)
     add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
+    add_executable(seam_design_character_surface_tests
+      tests/test_main.cpp tests/test_design_character_surface.cpp)
+    target_include_directories(seam_design_character_surface_tests PRIVATE tests)
+    target_link_libraries(seam_design_character_surface_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_character_surface_tests)
+    add_test(NAME seam_design_character_surface_tests
+      COMMAND seam_design_character_surface_tests)
+    set_tests_properties(seam_design_character_surface_tests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(seam_design_tune_workspace_tests
       tests/test_main.cpp tests/test_design_tune_workspace.cpp)
     target_include_directories(seam_design_tune_workspace_tests PRIVATE tests)
