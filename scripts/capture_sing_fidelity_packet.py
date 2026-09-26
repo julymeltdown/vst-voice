@@ -55,6 +55,8 @@ MODES = ("emo", "scene")
 CANONICAL_VIEWPORT = (1600, 900)
 # Capture-only state: the ready fixture with the compact singer inspector open.
 INSPECTOR_STATE = "inspector"
+# Capture-only states: the ready fixture with the TUNE or MIX workspace covering the score.
+WORKSPACE_STATES = ("tune", "mix")
 # ROI name -> geometry region, per section 11.2 ("header, portrait, notes, expression, lane,
 # footer separately").
 ROIS = {
@@ -365,7 +367,8 @@ RACK_CONTROLS_SHOWN = lambda geometry: geometry.get("rack") == "full" or geometr
 
 def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
                    expected: dict[str, Any]) -> dict[str, Any]:
-    """expected: {"viewport": [w, h], "mode": "emo"|"scene", optional "inspectorOpen": bool}."""
+    """expected: {"viewport": [w, h], "mode": "emo"|"scene", optional "inspectorOpen": bool,
+    optional "workspace": "sing"|"tune"|"mix"}."""
     canonical = contract["canonical"]
     tolerance = float(canonical["regionTolerancePoints"])
     failures: list[str] = []
@@ -380,8 +383,9 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
         failures.append(f"logicalSize {size} is not the requested viewport {expected['viewport']}")
     if geometry.get("mode") != expected["mode"]:
         failures.append(f"mode {geometry.get('mode')} is not the requested {expected['mode']}")
-    if geometry.get("workspace") != "sing":
-        failures.append(f"workspace {geometry.get('workspace')} is not sing")
+    wanted_workspace = expected.get("workspace", "sing")
+    if geometry.get("workspace") != wanted_workspace:
+        failures.append(f"workspace {geometry.get('workspace')} is not {wanted_workspace}")
     if geometry.get("presented") is not True:
         failures.append("the shell did not present the frame")
     if geometry.get("deviceScale") not in canonical["deviceScales"]:
@@ -486,8 +490,10 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
 
 
 def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
-                    expected_notes: int, render_state: str | None) -> dict[str, Any]:
-    """expected_notes: notes in the fixture; render_state: the state the app logged at exit."""
+                    expected_notes: int, render_state: str | None,
+                    workspace: str = "sing") -> dict[str, Any]:
+    """expected_notes: notes in the fixture; render_state: the state the app logged at exit;
+    workspace: a TUNE or MIX capture covers the score with that workspace's own nodes."""
     failures: list[str] = []
     size = geometry.get("logicalSize") or [0, 0]
     client = [0.0, 0.0, float(size[0]), float(size[1])]
@@ -507,6 +513,7 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
     # legal progression from it.
     frame_state = frame_render_state(semantic)
     covered = geometry.get("inspectorOpen") is True
+    body = workspace if workspace in WORKSPACE_STATES else None
     rack_nodes = ["shell.change-voice", "shell.style"] + [f"shell.knob.{knob}" for knob in KNOBS]
     if covered:
         # The open inspector is modal: it and the read-only status are all that is published.
@@ -518,6 +525,24 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         required = list(ALWAYS_NODES)
         if float(size[0]) < 720:
             required = [node for node in required if not node.startswith("shell.mode.")]
+        if body:
+            # The body replaces the grid and lane: none of their nodes, at least one of its own,
+            # each inside the area it owns (the editor and lane cards).
+            required = [node for node in required
+                        if not node.startswith("shell.lane") and node != "shell.waveform"]
+            prefix = f"shell.{body}."
+            own = [node for node in by_id.values() if node["id"].startswith(prefix)]
+            if not own:
+                failures.append(f"no {prefix}* node is published")
+            editor, lane = regions.get("editor"), regions.get("lane")
+            if positive(editor) and positive(lane):
+                area = [editor[0], editor[1], editor[2], lane[1] + lane[3] - editor[1]]
+                for node in own:
+                    if positive(node["bounds"]) and not contains(area, node["bounds"]):
+                        failures.append(f"{node['id']}: outside the {body} workspace area")
+            for node_id in by_id:
+                if node_id == "timeline" or node_id.startswith("shell.lane") or node_id == "shell.waveform":
+                    failures.append(f"{node_id}: published under the {body} workspace")
         if RACK_CONTROLS_SHOWN(geometry):
             required += rack_nodes
         if geometry.get("rack") != "full":
@@ -557,7 +582,7 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
 
     # Notes: the tree must virtualize exactly the fixture's notes and list them up to the limit;
     # none while the inspector covers the score.
-    expected_notes = 0 if covered else expected_notes
+    expected_notes = 0 if covered or body else expected_notes
     count = semantic.get("virtualizedNoteCount")
     listed = semantic.get("notes")
     if count != expected_notes:
@@ -565,7 +590,7 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
     listed_count = len(listed) if isinstance(listed, list) else 0
     if not isinstance(listed, list) or listed_count != min(expected_notes, NOTE_LIMIT):
         failures.append(f"{listed_count} note nodes listed; expected {min(expected_notes, NOTE_LIMIT)}")
-    if not covered and expected_notes > 0 and frame_state == "ready":
+    if not covered and not body and expected_notes > 0 and frame_state == "ready":
         grid = regions.get("grid")
         if not positive(grid) or not any(positive(note.get("bounds")) and overlaps(note["bounds"], grid)
                    for note in listed or []):
@@ -634,6 +659,8 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     environment.pop("SEAM_UI_INSPECTOR", None)
     if state == INSPECTOR_STATE:
         environment["SEAM_UI_INSPECTOR"] = "open"
+    if state in WORKSPACE_STATES:
+        environment["SEAM_UI_WORKSPACE"] = state
     record: dict[str, Any] = {
         "id": name, "mode": mode, "state": state, "viewport": list(viewport),
         "command": [os.path.relpath(part, ROOT) if part.startswith(str(ROOT)) else part
@@ -688,7 +715,7 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     # A capture shows its state when the presented frame shows it, whatever the render did after.
     record["frameRenderState"] = frame_render_state(record["semantic-bounds"])
     expected = {"ready": "ready", INSPECTOR_STATE: "ready", "failed": "failed", "dense-overlap": "ready",
-                "rendering": "rendering", "empty": None}[state]
+                "rendering": "rendering", "empty": None, "tune": "ready", "mix": "ready"}[state]
     record["stateReached"] = expected is None or record["frameRenderState"] == expected
     return record
 
@@ -759,6 +786,14 @@ def build_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, in
         for viewport in requirements["viewports"]:
             if spec_rack_presentation(float(viewport[0])) != "full":
                 matrix += [(mode, INSPECTOR_STATE, (viewport[0], viewport[1])) for mode in MODES]
+    # TUNE and MIX cover the score with their own body (capture states on the ready fixture), at
+    # the canonical size and the smallest compact contract viewport.
+    compact = min((tuple(v) for v in requirements["viewports"]), key=lambda v: v[0] * v[1])
+    for workspace in WORKSPACE_STATES:
+        if args.states and workspace not in args.states.split(","):
+            continue
+        sizes = [CANONICAL_VIEWPORT] if args.canonical_only else [CANONICAL_VIEWPORT, compact]
+        matrix += [(mode, workspace, size) for size in sizes for mode in MODES]
     return matrix
 
 
@@ -938,10 +973,12 @@ def main() -> int:
                 record["geometryCheck"] = check_geometry(
                     record["geometry"], contract,
                     expected={"viewport": list(viewport), "mode": mode,
-                              "inspectorOpen": state == INSPECTOR_STATE})
+                              "inspectorOpen": state == INSPECTOR_STATE,
+                              "workspace": state if state in WORKSPACE_STATES else "sing"})
                 record["semanticCheck"] = check_semantics(
                     record["semantic-bounds"], record["geometry"],
-                    expected_notes=fixture_notes[state], render_state=record["observedRenderState"])
+                    expected_notes=fixture_notes[state], render_state=record["observedRenderState"],
+                    workspace=state)
                 process_images(record, work / record["id"], out, want_appkit=not args.no_appkit)
             records.append(record)
     finally:

@@ -122,6 +122,47 @@ class GeometryCheckTests(unittest.TestCase):
 
 
 class SemanticCheckTests(unittest.TestCase):
+    def test_a_covering_workspace_publishes_its_own_nodes_and_no_score(self):
+        def body_tree(geometry, workspace):
+            semantic = published_tree(geometry)
+            semantic["nodes"] = [n for n in semantic["nodes"]
+                                 if not n["id"].startswith("shell.lane") and n["id"] != "shell.waveform"]
+            editor = geometry["regions"]["editor"]
+            semantic["nodes"].append({"id": f"shell.{workspace}.panel", "parent": "shell",
+                                      "bounds": [editor[0] + 8, editor[1] + 8, 200, 100], "value": ""})
+            semantic.update(notes=[], virtualizedNoteCount=0)
+            return semantic
+
+        for workspace in PACKET.WORKSPACE_STATES:
+            with self.subTest(workspace):
+                geometry = canonical_geometry()
+                geometry["workspace"] = workspace
+                result = PACKET.check_semantics(body_tree(geometry, workspace), geometry,
+                                                expected_notes=6, render_state="ready",
+                                                workspace=workspace)
+                self.assertEqual(result["result"], "PASS", result["failures"])
+                self.assertEqual(geometry_result(geometry, {**CANONICAL, "workspace": workspace})["result"],
+                                 "PASS")
+                self.assertEqual(geometry_result(geometry)["result"], "FAIL")
+
+        cases = {
+            "no body node": lambda s: s.__setitem__(
+                "nodes", [n for n in s["nodes"] if not n["id"].startswith("shell.tune.")]),
+            "body node outside its area": lambda s: s["nodes"][-1].update(bounds=[1300, 20, 40, 20]),
+            "lane still published": lambda s: s["nodes"].append(
+                {"id": "shell.lane", "parent": "shell", "bounds": [80, 700, 10, 10], "value": ""}),
+            "notes still listed": lambda s: s.update(virtualizedNoteCount=6),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                geometry = canonical_geometry()
+                geometry["workspace"] = "tune"
+                semantic = body_tree(geometry, "tune")
+                mutate(semantic)
+                result = PACKET.check_semantics(semantic, geometry, expected_notes=6,
+                                                render_state="ready", workspace="tune")
+                self.assertEqual(result["result"], "FAIL")
+
     def test_published_bounds_on_the_layout_pass(self):
         geometry = canonical_geometry()
         result = semantic_result(published_tree(geometry), geometry)
