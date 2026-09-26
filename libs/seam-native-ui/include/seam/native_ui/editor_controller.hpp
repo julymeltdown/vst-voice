@@ -194,6 +194,7 @@ public:
                          application::ProjectFactory& factory,
                          domain::RegionId regionId,
                          EditorHostCallbacks callbacks = {});
+  [[nodiscard]] std::uint64_t instanceSerial() const noexcept { return instanceSerial_; }
 
   [[nodiscard]] ui::PianoRollModel& pianoRoll() noexcept { return pianoRoll_; }
   [[nodiscard]] const ui::PianoRollModel& pianoRoll() const noexcept {
@@ -609,6 +610,7 @@ private:
     std::chrono::steady_clock::time_point startedAt{};
   };
 
+  const std::uint64_t instanceSerial_;
   application::EditorSession& session_;
   application::ProjectFactory& factory_;
   domain::TrackId selectedTrackId_{};

@@ -1865,3 +1865,95 @@ TEST_CASE("an inspector opened by pointer owns the keys, and nothing reaches the
   CHECK(f.shell.dispatchController(f.controller, noteId, SemanticAction::SetFocus).hasValue());
   CHECK(f.shell.dispatchController(f.controller, "timeline", SemanticAction::SetFocus).hasValue());
 }
+
+TEST_CASE("compact workspaces and appearance remain reachable without hidden score edits") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.shell.prepareFrame(f.controller, 480.0, 320.0));
+  const auto l = f.shell.layout();
+  CHECK(l.workspaceTabs.width == 0.0);
+  CHECK(l.workspaceMenuButton.width >= 44.0);
+  CHECK(l.modeSwitch.width == 0.0);
+  CHECK(l.workspaceMenu.bottom() < l.status.y);
+  const auto revision = f.controller.documentRevision();
+  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuButton.x + 12.0,
+                                                l.workspaceMenuButton.y + 12.0})).hasValue());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(findShellNode(f.shell.accessibilityTree().root(), "shell.workspace.export") != nullptr);
+  CHECK(findShellNode(f.shell.accessibilityTree().root(), "shell.mode.scene") != nullptr);
+  CHECK(f.shell.accessibilityTree().virtualizedNoteCount() == 0U);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.mode.scene", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.mode() == DesignMode::Scene);
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  CHECK(f.shell.accessibilityTree().focusedNode() != nullptr &&
+        f.shell.accessibilityTree().focusedNode()->id == "shell.workspace-menu");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Delete}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuButton.x + 12.0,
+                                                l.workspaceMenuButton.y + 12.0})).hasValue());
+  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuRow[2].x + 12.0,
+                                                l.workspaceMenuRow[2].y + 12.0})).hasValue());
+  CHECK(f.shell.workspace() == Workspace::Export);
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace-menu", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.sing", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.shell.workspace() == Workspace::Sing);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.export", SemanticAction::Activate)
+            .hasValue() == false);  // menu items disappear when it closes
+}
+
+TEST_CASE("a compact first frame reveals the phrase but later user pitch scrolling is respected") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.controller.pianoRoll().pitch().topMidiKey() == 84);
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  const auto& pitch = f.controller.pianoRoll().pitch();
+  CHECK(pitch.topMidiKey() < 84);
+  const auto noteY = pitch.midiToPixel(f.note().midiKey);
+  CHECK(noteY >= 0.0 && noteY + pitch.rowHeight() <= f.shell.layout().grid.height);
+  f.controller.pianoRoll().pitch().setTopMidiKey(100);
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 440.0));
+  CHECK(f.controller.pianoRoll().pitch().topMidiKey() == 100);
+}
+
+TEST_CASE("notes loaded after an empty first frame are framed when they arrive") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto* region = f.session.project().findRegion(f.regionId);
+  const auto notes = region->notes;
+  region->notes.clear();
+  f.controller.pianoRoll().rebuildIndex();
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  CHECK(f.controller.pianoRoll().pitch().topMidiKey() == 84);
+  region->notes = notes;
+  f.controller.pianoRoll().rebuildIndex();
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  const auto& pitch = f.controller.pianoRoll().pitch();
+  CHECK(pitch.topMidiKey() < 84);
+  CHECK(pitch.midiToPixel(notes.front().midiKey) + pitch.rowHeight() <= f.shell.layout().grid.height);
+}
+
+TEST_CASE("a replacement editor controller with the same region gets its own compact framing") {
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.shell.prepareFrame(f.controller, 720.0, 480.0));
+  CHECK(f.controller.pianoRoll().pitch().topMidiKey() < 84);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.inspector", native_ui::SemanticAction::Activate));
+  CHECK(f.shell.inspectorOpen());
+  native_ui::NativeEditorController replacement{f.session, f.factory, f.regionId};
+  CHECK(replacement.instanceSerial() != f.controller.instanceSerial());
+  CHECK(replacement.pianoRoll().pitch().topMidiKey() == 84);
+  CHECK(f.shell.prepareFrame(replacement, 720.0, 480.0));
+  CHECK(f.shell.inspectorOpen());  // Presentation choice survives a project controller swap.
+  CHECK(replacement.pianoRoll().pitch().topMidiKey() < 84);
+  const auto y = replacement.pianoRoll().pitch().midiToPixel(f.note().midiKey);
+  CHECK(y >= 0.0 && y + replacement.pianoRoll().pitch().rowHeight() <= f.shell.layout().grid.height);
+}

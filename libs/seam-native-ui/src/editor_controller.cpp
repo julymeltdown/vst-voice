@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -24,6 +25,8 @@
 namespace seam::native_ui {
 
 namespace {
+
+std::atomic<std::uint64_t> nextControllerSerial{1U};
 
 // A nudge moves a channel by a fraction of its range, so ten of them have to land exactly on the
 // channel's neutral value rather than a hundred-millionth away from it: the sum of ten tenths is not
@@ -75,7 +78,8 @@ NativeEditorController::NativeEditorController(
     application::ProjectFactory& factory,
     domain::RegionId regionId,
     EditorHostCallbacks callbacks)
-    : session_(session),
+    : instanceSerial_(nextControllerSerial.fetch_add(1U, std::memory_order_relaxed)),
+      session_(session),
       factory_(factory),
       regionId_(regionId),
       pianoRoll_(session, factory, regionId),

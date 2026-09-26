@@ -322,7 +322,7 @@ def spec_rack_presentation(width: float) -> str:
 # presentation is a failure, never a pass. The required sets follow what each presentation must
 # expose; regions that section 3.4 lets collapse are required only at the canonical size.
 ALWAYS_REGIONS = (
-    "header", "wordmark", "modeSwitch", "transport", "settings", "editor", "tools", "ruler",
+    "header", "transport", "settings", "editor", "tools", "ruler",
     "keyboard", "grid", "lane", "laneTabs", "lanePlot", "laneTimePlot", "rack", "portraitRing",
     "status",
 )
@@ -398,6 +398,8 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
 
     at_canonical = [width, height] == list(canonical["logicalSize"])
     required = list(ALWAYS_REGIONS)
+    if width >= 720:
+        required += ["wordmark", "modeSwitch"]
     if RACK_CONTROLS_SHOWN(geometry):
         required += FULL_RACK_REGIONS
     if inspector_open:
@@ -414,6 +416,8 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
         required_controls.append("inspectorButton")
     if positive(regions.get("workspaceTabs")):
         required_controls += [f"workspaceTab{i}" for i in range(len(WORKSPACES))]
+    else:
+        required_controls.append("workspaceMenuButton")
     for name in required_controls:
         if not positive(controls.get(name)):
             failures.append(f"control {name}: missing or empty")
@@ -512,12 +516,16 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
                 failures.append(f"{node_id}: published under the open inspector")
     else:
         required = list(ALWAYS_NODES)
+        if float(size[0]) < 720:
+            required = [node for node in required if not node.startswith("shell.mode.")]
         if RACK_CONTROLS_SHOWN(geometry):
             required += rack_nodes
         if geometry.get("rack") != "full":
             required.append("shell.inspector")
         if positive(regions.get("workspaceTabs")):
             required += [f"shell.workspace.{name}" for name in WORKSPACES]
+        else:
+            required.append("shell.workspace-menu")
     if frame_state in ("rendering", "queued"):
         required.append("shell.render-progress")
     for node_id in required:
@@ -535,6 +543,9 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
         node = by_id.get(node_id)
         if node is not None and node["bounds"] != controls.get(control):
             failures.append(f"{node_id}: bounds differ from {control}")
+    menu = by_id.get("shell.workspace-menu")
+    if menu is not None and menu["bounds"] != controls.get("workspaceMenuButton"):
+        failures.append("shell.workspace-menu: bounds differ from workspaceMenuButton")
     if not RACK_CONTROLS_SHOWN(geometry):
         for node_id in by_id:
             if node_id.startswith("shell.knob.") or node_id in ("shell.change-voice", "shell.style"):
@@ -554,6 +565,11 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
     listed_count = len(listed) if isinstance(listed, list) else 0
     if not isinstance(listed, list) or listed_count != min(expected_notes, NOTE_LIMIT):
         failures.append(f"{listed_count} note nodes listed; expected {min(expected_notes, NOTE_LIMIT)}")
+    if not covered and expected_notes > 0 and frame_state == "ready":
+        grid = regions.get("grid")
+        if not positive(grid) or not any(positive(note.get("bounds")) and overlaps(note["bounds"], grid)
+                   for note in listed or []):
+            failures.append("ready phrase has no note visible inside the grid")
     # The frame's status and the state the app logged at exit must be the same state or a legal
     # progression (the frame is earlier).
     allowed = RENDER_SUCCESSORS.get(frame_state or "", {frame_state})

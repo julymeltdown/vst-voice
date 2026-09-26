@@ -156,14 +156,35 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.transport = {meterLeft - transportWidth, l.outputMeter.y, transportWidth, 44.0};
   const auto switchWidth = W >= 900.0 ? 132.0 : 120.0;
   const auto switchGap = W >= 900.0 ? 28.0 : 16.0;
-  l.modeSwitch = {l.transport.x - switchGap - switchWidth, l.header.y + (headerHeight - 28.0) * 0.5,
-                  switchWidth, 28.0};
+  if (W >= 720.0)
+    l.modeSwitch = {l.transport.x - switchGap - switchWidth,
+                    l.header.y + (headerHeight - 28.0) * 0.5, switchWidth, 28.0};
+  else
+    l.wordmark.width = 0.0;  // The menu carries the identity and appearance at minimum width.
   if (l.modeSwitch.x < l.wordmark.right() + 12.0)
-    l.wordmark.width = std::max(72.0, l.modeSwitch.x - 12.0 - l.wordmark.x);
-  const auto tabsLeft = l.wordmark.right() + 24.0;
+    l.wordmark.width = std::max(0.0, l.modeSwitch.x - 12.0 - l.wordmark.x);
+  const auto tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
   auto tabsWidth = std::clamp(l.modeSwitch.x - 24.0 - tabsLeft, 0.0, 400.0);
   if (tabsWidth < 5.0 * 36.0) tabsWidth = 0.0;
   l.workspaceTabs = {tabsLeft, l.header.y + 8.0, tabsWidth, headerHeight - 16.0};
+  if (tabsWidth == 0.0) {
+    const auto right = l.modeSwitch.width > 0.0 ? l.modeSwitch.x - 12.0 : l.transport.x - 12.0;
+    const auto buttonWidth = std::clamp(right - tabsLeft, 0.0, W < 720.0 ? 92.0 : 120.0);
+    l.workspaceMenuButton = {tabsLeft, l.header.y + (headerHeight - 32.0) * 0.5,
+                             buttonWidth, 32.0};
+    const auto includeModes = l.modeSwitch.width <= 0.0;
+    const auto rows = includeModes ? 5.0 : 3.0;
+    const auto menuWidth = std::min(220.0, W - 2.0 * kSingEdge);
+    const auto menuX = std::min(tabsLeft, W - kSingEdge - menuWidth);
+    l.workspaceMenu = {menuX, l.header.bottom() + 4.0, menuWidth, 16.0 + rows * 32.0};
+    for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
+      l.workspaceMenuRow[i] = {menuX + 8.0, l.workspaceMenu.y + 8.0 + 32.0 * static_cast<double>(i),
+                                menuWidth - 16.0, 32.0};
+    if (includeModes)
+      for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i)
+        l.modeMenuRow[i] = {menuX + 8.0, l.workspaceMenu.y + 104.0 + 32.0 * static_cast<double>(i),
+                             menuWidth - 16.0, 32.0};
+  }
   l.workspaceLabelsVisible = tabsWidth >= 320.0;
   const auto tabWidth = tabsWidth / 5.0;
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i)

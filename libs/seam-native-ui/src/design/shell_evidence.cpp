@@ -72,6 +72,8 @@ formats::JsonValue singLayoutEvidence(const SingShell& shell, double deviceScale
   };
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i)
     controls.emplace("workspaceTab" + std::to_string(i), rect(l.workspaceTab[i]));
+  if (l.workspaceMenuButton.width > 0.0)
+    controls.emplace("workspaceMenuButton", rect(l.workspaceMenuButton));
   for (std::size_t i = 0U; i < l.knob.size(); ++i)
     controls.emplace("knob" + std::to_string(i), rect(l.knob[i]));
   if (const auto run = shell.exportRunButton(); run.width > 0.0) controls.emplace("exportRun", rect(run));

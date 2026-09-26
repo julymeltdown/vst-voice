@@ -208,6 +208,7 @@ private:
   void paintBackground(paint::Canvas2D& c, const DesignTokens& t) const;
   void paintHeader(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                    time::Tick playhead) const;
+  void paintWorkspaceMenu(paint::Canvas2D& c, const DesignTokens& t) const;
   void paintEditor(paint::Canvas2D& c, const DesignTokens& t, ui::PianoRollModel& model,
                    const EditorSceneState& state) const;
   void paintLane(paint::Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
@@ -219,6 +220,7 @@ private:
   // semantics follow before the next paint. Closing returns shell focus that was inside the
   // inspector to its button.
   void setInspectorOpen(NativeEditorController& controller, bool open);
+  void setWorkspaceMenuOpen(NativeEditorController& controller, bool open);
   [[nodiscard]] bool knobsShown() const noexcept {
     return layout_.rack == RackPresentation::Full || layout_.inspectorOpen;
   }
@@ -231,6 +233,7 @@ private:
   [[nodiscard]] PointerEvent translated(const PointerEvent& event, ForwardArea area) const noexcept;
   [[nodiscard]] NativeEditorController::HostedGeometry hostedGeometry() const noexcept;
   void applyGeometry(NativeEditorController& controller);
+  void frameNotesIfNeeded(NativeEditorController& controller, double previousGridHeight);
   void releaseSurface(NativeEditorController& controller);
   // Hands the frame to a classic surface as soon as a shell command opens one, before the repaint.
   void yieldIfModal(NativeEditorController& controller);
@@ -264,6 +267,11 @@ private:
   std::optional<KnobDrag> knobDrag_;
   std::array<bool, 6U> knobRefused_{};
   bool inspectorWanted_{false};
+  bool workspaceMenuOpen_{false};
+  std::uint64_t controllerSerial_{0U};
+  std::optional<domain::RegionId> framedRegion_;
+  std::optional<std::int32_t> framedTopMidi_;
+  std::size_t lastFramingNoteCount_{0U};
   mutable bool stageShown_{false};
   double scrollAccumulator_{0.0};
   AccessibilityTree semantics_;

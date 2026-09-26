@@ -25,7 +25,10 @@ struct SingLayout final {
   bool workspaceLabelsVisible{true};
   bool outputMeterVisible{true};
 
-  ui::Rect header, wordmark, workspaceTabs, modeSwitch, transport, outputMeter, settings;
+  ui::Rect header, wordmark, workspaceTabs, workspaceMenuButton, workspaceMenu;
+  std::array<ui::Rect, 3U> workspaceMenuRow{};
+  std::array<ui::Rect, 2U> modeMenuRow{};
+  ui::Rect modeSwitch, transport, outputMeter, settings;
   ui::Rect editor, tools, ruler, keyboard, grid;
   ui::Rect lane, laneTabs, lanePlot, laneTimePlot;
   ui::Rect rackArea, singer, portraitRing, expression, style;

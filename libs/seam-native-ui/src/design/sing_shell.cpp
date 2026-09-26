@@ -401,6 +401,62 @@ void SingShell::applyGeometry(NativeEditorController& controller) {
   controller.setHostedGrid(hostedGeometry());
 }
 
+void SingShell::frameNotesIfNeeded(NativeEditorController& controller, double previousGridHeight) {
+  auto& model = controller.pianoRoll();
+  auto& pitch = model.pitch();
+  const auto regionId = model.regionId();
+  const auto newRegion = !framedRegion_.has_value() || *framedRegion_ != regionId;
+  const auto* region = model.project().findRegion(regionId);
+  const auto noteCount = region == nullptr ? 0U : region->notes.size();
+  const auto contentAppeared = lastFramingNoteCount_ == 0U && noteCount > 0U;
+  lastFramingNoteCount_ = noteCount;
+  const auto shrunk = previousGridHeight > layout_.grid.height + 1.0;
+  if (!newRegion && !shrunk && !contentAppeared) return;
+  const auto userMovedPitch = newRegion && pitch.topMidiKey() == 84
+                                 ? false
+                                 : framedTopMidi_.has_value()
+                                       ? pitch.topMidiKey() != *framedTopMidi_
+                                       : pitch.topMidiKey() != 84;
+  framedRegion_ = regionId;
+  if (userMovedPitch) {
+    framedTopMidi_.reset();
+    return;
+  }
+  if (region == nullptr || layout_.grid.height < pitch.rowHeight() * 2.0) return;
+  std::array<std::size_t, 128U> pitches{};
+  std::size_t count = 0U;
+  std::size_t visible = 0U;
+  for (const auto& note : region->notes) {
+    const auto start = region->startTick + note.startTick;
+    const auto x = layout_.grid.x + model.timeline().tickToPixel(start);
+    const auto right = x + model.timeline().durationToPixels(note.durationTick);
+    if (right <= layout_.grid.x || x >= layout_.grid.right()) continue;
+    ++pitches[note.midiKey];
+    ++count;
+    const auto y = pitch.midiToPixel(note.midiKey);
+    if (y >= 0.0 && y + pitch.rowHeight() <= layout_.grid.height) ++visible;
+  }
+  if (count == 0U || visible > 0U) {
+    framedTopMidi_ = pitch.topMidiKey();
+    return;
+  }
+  // Place the median visible pitch near the centre. Outlier high and low notes cannot push the
+  // whole phrase away; a user can then scroll for them. This changes only presentation state.
+  std::size_t cumulative = 0U;
+  std::int32_t median = 60;
+  for (std::size_t key = 0U; key < pitches.size(); ++key) {
+    cumulative += pitches[key];
+    if (cumulative > count / 2U) {
+      median = static_cast<std::int32_t>(key);
+      break;
+    }
+  }
+  const auto rows = static_cast<std::int32_t>(std::floor(layout_.grid.height / pitch.rowHeight()));
+  pitch.setTopMidiKey(std::clamp(median + std::max(1, rows / 2), 0, 127));
+  framedTopMidi_ = pitch.topMidiKey();
+  model.rebuildIndex();
+}
+
 void SingShell::cancelGestures(NativeEditorController& controller) {
   const auto hadGesture = knobDrag_.has_value() || forwarding_ != ForwardArea::None;
   knobDrag_.reset();
@@ -419,6 +475,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   }
   // The classic surface owns keyboard focus from here on.
   semanticFocus_.clear();
+  workspaceMenuOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
 }
@@ -432,6 +489,15 @@ void SingShell::yieldIfModal(NativeEditorController& controller) {
 
 bool SingShell::prepareFrame(NativeEditorController& controller, double logicalWidth,
                              double logicalHeight) {
+  if (controllerSerial_ != controller.instanceSerial()) {
+    // Opening or recovering a project replaces the controller and its pitch transform. A region
+    // can keep the same id, so region identity alone cannot tell us that framing was lost.
+    releaseSurface(controller);
+    controllerSerial_ = controller.instanceSerial();
+    framedRegion_.reset();
+    framedTopMidi_.reset();
+    lastFramingNoteCount_ = 0U;
+  }
   if (!enabled() || !available() || controller.legacyModalSurfaceActive()) {
     releaseSurface(controller);
     return false;
@@ -440,6 +506,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   // rack forgets it, so shrinking again starts closed.
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
   if (next.rack == RackPresentation::Full) inspectorWanted_ = false;
+  if (next.workspaceMenuButton.width < 24.0) workspaceMenuOpen_ = false;
   const auto moved = next.grid.x != layout_.grid.x || next.grid.y != layout_.grid.y ||
                      next.grid.width != layout_.grid.width ||
                      next.grid.height != layout_.grid.height ||
@@ -454,8 +521,10 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
       lyricInputActive_ = false;
     }
   }
+  const auto previousGridHeight = layout_.grid.height;
   layout_ = next;
   applyGeometry(controller);
+  frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
   return true;
 }
@@ -484,6 +553,20 @@ void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) 
     refreshSemantics(controller);
     takeSemanticFocus(controller, "shell.inspector");
   }
+  repaint();
+}
+
+void SingShell::setWorkspaceMenuOpen(NativeEditorController& controller, bool open) {
+  if (layout_.workspaceMenuButton.width < 24.0) open = false;
+  if (workspaceMenuOpen_ == open) return;
+  if (open && lyricInputActive_) {
+    controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
+  if (open && (knobDrag_ || forwarding_ != ForwardArea::None)) cancelGestures(controller);
+  workspaceMenuOpen_ = open;
+  refreshSemantics(controller);
+  takeSemanticFocus(controller, "shell.workspace-menu");
   repaint();
 }
 
@@ -613,12 +696,12 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
              withAlpha(t.color.textPrimary, 0.16));
   }
 
-  if (const auto& wordmark = assets().wordmark; wordmark) {
+  if (const auto& wordmark = assets().wordmark; wordmark && l.wordmark.width > 0.0) {
     const auto aspect = static_cast<double>(wordmark->width()) / wordmark->height();
     const auto height = std::min(l.wordmark.height, l.wordmark.width / aspect);
     c.drawImage(*wordmark, {l.wordmark.x, l.wordmark.y + (l.wordmark.height - height) * 0.5,
                             height * aspect, height});
-  } else {
+  } else if (l.wordmark.width > 0.0) {
     c.text(l.wordmark, "SEAM", style(FontRole::Display, 34.0, 6.0), t.color.textPrimary);
   }
 }
@@ -683,6 +766,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       c->restore();
     }
   }
+  if (workspaceMenuOpen_) paintWorkspaceMenu(*c, t);
   c->flush();
   return true;
 }
@@ -726,8 +810,19 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     }
   }
 
+  if (l.workspaceMenuButton.width >= 24.0) {
+    const auto b = l.workspaceMenuButton;
+    c.fill(Path::roundedRect(b, 7.0), withAlpha(t.color.surfaceRaised, 0.96));
+    c.stroke(Path::roundedRect(b, 7.0), workspaceMenuOpen_ ? t.color.accent : t.color.border,
+             StrokeStyle{1.0});
+    const auto label = b.width >= 76.0 ? "SEAM  ▾" : "≡";
+    c.text(b, label, style(FontRole::UiSemibold, 13.0, 0.4, TextAlign::Center),
+           workspaceMenuOpen_ ? t.color.accent : t.color.textPrimary);
+  }
+
   // Mode switch.
   const auto sw = l.modeSwitch;
+  if (sw.width > 0.0) {
   c.fill(Path::capsule(sw), withAlpha(t.color.surfaceSunken, 0.9));
   c.stroke(Path::capsule(sw), t.color.border, StrokeStyle{1.0});
   const auto half = sw.width * 0.5;
@@ -743,6 +838,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
          preferences_.mode == DesignMode::Emo ? t.color.textOnAccent : t.color.textSecondary);
   c.text({sw.x + half, sw.y, half, sw.height}, "Scene", labelStyle,
          preferences_.mode == DesignMode::Scene ? t.color.textOnAccent : t.color.textSecondary);
+  }
 
   // Transport.
   const auto canPlay = state.renderStatus.hasAudibleAudio;
@@ -797,6 +893,33 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
                          0.22));
   }
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
+}
+
+void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
+  const auto& l = layout_;
+  if (l.workspaceMenu.width <= 0.0) return;
+  c.save();
+  c.setGlow(withAlpha(t.color.accent, 0.28), 12.0);
+  c.fill(Path::roundedRect(l.workspaceMenu, 9.0), t.color.surfaceRaised);
+  c.stroke(Path::roundedRect(l.workspaceMenu, 9.0), t.color.borderStrong, StrokeStyle{1.0});
+  c.restore();
+  static constexpr std::array<const char*, 3U> kLabels{"Sing", "Voice browser", "Export"};
+  for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
+    const auto r = l.workspaceMenuRow[i];
+    const auto selected = (i == 0U && workspace_ == Workspace::Sing) ||
+                          (i == 2U && workspace_ == Workspace::Export);
+    if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
+    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, kLabels[i],
+           style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
+  }
+  for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i) {
+    const auto r = l.modeMenuRow[i];
+    if (r.width <= 0.0) continue;
+    const auto selected = (i == 0U) == (preferences_.mode == DesignMode::Emo);
+    if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
+    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, i == 0U ? "Emo look" : "Scene look",
+           style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
+  }
 }
 
 std::size_t noteWaveformColumns(ui::Rect note, double visibleLeft, double visibleRight,
@@ -1846,6 +1969,7 @@ bool SingShell::exportBusy(const NativeEditorController& controller) const {
 }
 
 void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
+  workspaceMenuOpen_ = false;
   if (workspace == workspace_) return;
   // The grid the gestures and any text field belong to leaves the screen with its workspace.
   cancelGestures(controller);
@@ -2034,6 +2158,31 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
                                                const PointerEvent& event) {
   const auto p = event.position;
   const auto& l = layout_;
+  if (workspaceMenuOpen_) {
+    if (event.button == PointerButton::Left) {
+      for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
+        if (!contains(l.workspaceMenuRow[i], p)) continue;
+        setWorkspaceMenuOpen(controller, false);
+        if (i == 0U) setWorkspace(controller, Workspace::Sing);
+        if (i == 1U) controller.showVoicebankBrowser();
+        if (i == 2U) setWorkspace(controller, Workspace::Export);
+        return core::success();
+      }
+      for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i) {
+        if (!contains(l.modeMenuRow[i], p)) continue;
+        setWorkspaceMenuOpen(controller, false);
+        setMode(i == 0U ? DesignMode::Emo : DesignMode::Scene);
+        return core::success();
+      }
+    }
+    setWorkspaceMenuOpen(controller, false);
+    return core::success();
+  }
+  if (event.button == PointerButton::Left && l.workspaceMenuButton.width >= 24.0 &&
+      contains(l.workspaceMenuButton, p)) {
+    setWorkspaceMenuOpen(controller, true);
+    return core::success();
+  }
   // A knob press starts one gesture; the knob takes keyboard focus so arrows continue it.
   const auto pressKnob = [&](ui::Point point) -> std::optional<core::Result<void>> {
     for (std::size_t i = 0U; i < l.knob.size(); ++i) {
@@ -2190,7 +2339,8 @@ core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
 }
 
 bool SingShell::scroll(NativeEditorController& controller, double deltaX, double deltaY,
-                       ui::Point anchor, InputModifiers modifiers) {
+                      ui::Point anchor, InputModifiers modifiers) {
+  if (workspaceMenuOpen_) return true;
   if (!presented_) return false;
   if (knobsShown()) {
     for (std::size_t i = 0U; i < layout_.knob.size(); ++i) {
@@ -2224,6 +2374,10 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     cancelGestures(controller);
     return true;
   }
+  if (event.key == NativeKey::Escape && presented_ && workspaceMenuOpen_) {
+    setWorkspaceMenuOpen(controller, false);
+    return true;
+  }
   // Escape closes the compact inspector first (focus inside it returns to its button).
   if (event.key == NativeKey::Escape && presented_ && layout_.inspectorOpen &&
       !controller.textInputActive() && !controller.legacyModalSurfaceActive()) {
@@ -2235,7 +2389,8 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // the shortcuts the host declares as its own application commands (it implements them itself)
   // still reach it; every other modified key (Alt-Delete, Command-D, Command-Delete, a Command-Q
   // the host does not handle) stops here instead of reaching the note editor.
-  if (presented_ && (workspace_ == Workspace::Export || layout_.inspectorOpen) &&
+  if (presented_ && (workspace_ == Workspace::Export || layout_.inspectorOpen ||
+                     workspaceMenuOpen_) &&
       !controller.legacyModalSurfaceActive()) {
     if (event.key == NativeKey::Escape && workspace_ == Workspace::Export) {
       setWorkspace(controller, Workspace::Sing);
@@ -2271,7 +2426,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   const auto* focused = semantics_.focusedNode();
   // With the EXPORT workspace up or the inspector open the score is covered, so its plain keys
   // never edit it (Escape was handled above).
-  const auto scoreHidden = [this] { return workspace_ == Workspace::Export || layout_.inspectorOpen; };
+  const auto scoreHidden = [this] {
+    return workspace_ == Workspace::Export || layout_.inspectorOpen || workspaceMenuOpen_;
+  };
   if (focused == nullptr) return scoreHidden();
   const std::string id = focused->id;
   // While a shell control holds focus, plain keys belong to it and never reach the note editor
@@ -2412,11 +2569,31 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                     : i == 2U || i == 3U ? "Not available in this build"
                                                          : ""});
   }
+  if (l.workspaceMenuButton.width >= 24.0) {
+    add(SemanticNode{.id = "shell.workspace-menu", .role = SemanticRole::Button,
+                     .name = "Workspaces and appearance",
+                     .value = workspaceMenuOpen_ ? "Open" : "Closed",
+                     .bounds = l.workspaceMenuButton,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+    if (workspaceMenuOpen_) {
+      static constexpr std::array<const char*, 3U> kIds{"sing", "voice", "export"};
+      static constexpr std::array<const char*, 3U> kNames{"Sing", "Voice browser", "Export"};
+      for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
+        add(SemanticNode{.id = std::string{"shell.workspace."} + kIds[i],
+                         .role = SemanticRole::Button, .name = kNames[i],
+                         .bounds = l.workspaceMenuRow[i],
+                         .selected = (i == 0U && workspace_ == Workspace::Sing) ||
+                                     (i == 2U && workspace_ == Workspace::Export),
+                         .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+    }
+  }
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto emo = mode == DesignMode::Emo;
     auto half = l.modeSwitch;
     half.width *= 0.5;
     if (!emo) half.x += half.width;
+    if (half.width <= 0.0 && !workspaceMenuOpen_) continue;
+    if (half.width <= 0.0) half = l.modeMenuRow[emo ? 0U : 1U];
     add(SemanticNode{.id = emo ? "shell.mode.emo" : "shell.mode.scene",
                      .role = SemanticRole::RadioButton,
                      .name = emo ? "EMO look" : "SCENE look",
@@ -2641,7 +2818,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                node.id == "shell.render-progress");
     });
   }
-  const auto scoreCovered = !singShown || l.inspectorOpen;
+  const auto scoreCovered = !singShown || l.inspectorOpen || workspaceMenuOpen_;
   if (!singShown) {
     // The EXPORT workspace covers the score: nothing of the grid or lane is published under it.
     std::erase_if(children, [](const SemanticNode& node) {
@@ -2703,6 +2880,14 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
         .bounds = statusBounds,
                         .actions = {SemanticAction::SetFocus}});
   }
+  if (workspaceMenuOpen_) {
+    const auto modesInMenu = l.modeMenuRow[0].width > 0.0;
+    std::erase_if(children, [modesInMenu](const SemanticNode& node) {
+      return node.id != "shell.workspace-menu" && !node.id.starts_with("shell.workspace.") &&
+             !(modesInMenu && node.id.starts_with("shell.mode.")) && node.id != "shell.status" &&
+             node.id != "shell.render-progress";
+    });
+  }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.
   if (!semanticFocus_.empty() && !EditorSemanticTree::containsId(root, semanticFocus_)) {
@@ -2746,21 +2931,27 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
   core::Result<void> result = core::failure(core::ErrorCode::Unsupported,
                                             "This element does not support that action");
-  if (id == "shell.workspace.sing" && activate) {
+  if (id == "shell.workspace-menu" && activate) {
+    setWorkspaceMenuOpen(controller, !workspaceMenuOpen_);
+    result = core::success();
+  } else if (id == "shell.workspace.sing" && activate) {
     setWorkspace(controller, Workspace::Sing);
     result = core::success();
   } else if (id == "shell.workspace.export" && activate) {
     setWorkspace(controller, Workspace::Export);
     result = core::success();
   } else if (id == "shell.workspace.voice" && activate) {
+    setWorkspaceMenuOpen(controller, false);
     controller.showVoicebankBrowser();
     result = core::success();
   } else if (id == "shell.export.run" && activate) {
     result = runExportSet(controller);
   } else if (id == "shell.mode.emo" && activate) {
+    setWorkspaceMenuOpen(controller, false);
     setMode(DesignMode::Emo);
     result = core::success();
   } else if (id == "shell.mode.scene" && activate) {
+    setWorkspaceMenuOpen(controller, false);
     setMode(DesignMode::Scene);
     result = core::success();
   } else if (id == "shell.settings" && activate) {

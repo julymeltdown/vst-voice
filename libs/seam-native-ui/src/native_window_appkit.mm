@@ -229,7 +229,18 @@ public:
     }
     if (window_.frameAutosaveName.length == 0U ||
         ![window_ setFrameUsingName:window_.frameAutosaveName]) {
-      [window_ center];
+      NSScreen* primary = NSScreen.screens.firstObject;
+      if (config.screenshotPath.has_value() && primary != nil) {
+        // A screenshot run opens on the menu-bar display so every capture in a packet shares one
+        // backing scale, wherever the pointer or the focused window happens to be.
+        const NSRect visible = primary.visibleFrame;
+        const NSRect current = window_.frame;
+        [window_ setFrameOrigin:NSMakePoint(
+                     NSMidX(visible) - current.size.width * 0.5,
+                     NSMidY(visible) - current.size.height * 0.5)];
+      } else {
+        [window_ center];
+      }
     }
     window_.acceptsMouseMovedEvents = YES;
     delegate_ = [[SeamNativeWindowDelegate alloc] init];

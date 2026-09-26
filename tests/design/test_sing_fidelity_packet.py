@@ -147,6 +147,7 @@ class SemanticCheckTests(unittest.TestCase):
                 {"id": "x", "parent": "shell", "bounds": [1590, 10, 40, 10], "value": ""}),
             "notes and count removed": lambda s: s.update(notes=[], virtualizedNoteCount=0),
             "notes removed": lambda s: s.update(notes=[]),
+            "all notes clipped out": lambda s: [n.update(bounds=[100, 300, 0, 0]) for n in s["notes"]],
             "count wrong": lambda s: s.update(virtualizedNoteCount=5),
             "status disagrees": lambda s: node(s, "shell.status").update(value="FAILED: x"),
             "frame later than the log": lambda s: node(s, "shell.status").update(value="READY: x"),
@@ -299,6 +300,7 @@ def compact_geometry(open_inspector):
     for name in ["singerChange"] + [f"knob{i}" for i in range(6)] + [f"workspaceTab{i}" for i in range(5)]:
         c[name] = [0, 0, 0, 0]
     c["inspectorButton"] = [660, 92, 44, 44]
+    c["workspaceMenuButton"] = [128, 32, 60, 32]
     if open_inspector:
         r.update(inspector=[312, 92, 340, 316], singer=[324, 104, 316, 56],
                  portraitRing=[324, 110, 44, 44], style=[380, 138, 260, 18],

@@ -122,6 +122,25 @@ TEST_CASE("compact widths follow section 3.4: a 44-point drawer below 860, a 56-
   CHECK(full.rack == RackPresentation::Full && !full.inspectorOpen && full.inspector.width == 0.0);
 }
 
+TEST_CASE("compact headers keep a reachable workspace menu and never collide with transport") {
+  for (const auto width : {480.0, 600.0, 720.0, 860.0, 1000.0}) {
+    const auto l = solveSingLayout(width, 480.0);
+    if (l.workspaceTabs.width > 0.0) continue;
+    CHECK(l.workspaceMenuButton.width >= 24.0);
+    CHECK(l.workspaceMenuButton.x >= l.header.x);
+    CHECK(l.workspaceMenuButton.right() + 8.0 <=
+          (l.modeSwitch.width > 0.0 ? l.modeSwitch.x : l.transport.x));
+    CHECK(l.workspaceMenu.bottom() <= l.status.y);
+    for (const auto row : l.workspaceMenuRow)
+      CHECK(row.x >= l.workspaceMenu.x && row.right() <= l.workspaceMenu.right() &&
+            row.y >= l.workspaceMenu.y && row.bottom() <= l.workspaceMenu.bottom());
+    if (width < 720.0) {
+      CHECK(l.wordmark.width == 0.0 && l.modeSwitch.width == 0.0);
+      for (const auto row : l.modeMenuRow) CHECK(row.width > 0.0);
+    }
+  }
+}
+
 TEST_CASE("the open inspector holds the singer, all six knobs and the style inside the client") {
   const auto inside = [](seam::ui::Rect inner, seam::ui::Rect outer) {
     return inner.width > 0.0 && inner.height > 0.0 && inner.x >= outer.x - 0.5 &&
