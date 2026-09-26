@@ -11,6 +11,9 @@ cleared for a public release.
 | `emo/wordmark.png`, `scene/wordmark.png` | Header wordmark | Generated with the same tool; lettering reads only "SEAM". |
 
 `manifest.json` records each file's SHA-256 and the SHA-256 of the generator output it was cut from.
+The six final PNG hashes can be checked against the files in this directory. The generator originals
+are not bundled here, so `sourceSha256` is a provenance declaration and cannot be independently
+verified by the asset gate. The gate also cannot establish art rights or visually clear logos.
 
 Rules that hold for every revision:
 

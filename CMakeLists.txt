@@ -2350,6 +2350,18 @@ if(SEAM_BUILD_TESTS)
         -s tests/production -p "test_*.py")
     set_tests_properties(seam_public_release_python_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180)
+    add_test(NAME seam_ui_design_assets
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests.design.test_ui_design_assets)
+    set_tests_properties(seam_ui_design_assets PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    add_test(NAME seam_ui_performance_analysis
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests.design.test_analyze_sing_ui_performance)
+    set_tests_properties(seam_ui_performance_analysis PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
     add_test(NAME seam_tracked_source_closure_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_tracked_source_closure.py)
