@@ -406,4 +406,9 @@ bool ExpressionLaneModel::matches(const application::EditorSession& session,
       static_cast<bool>(session.validatePerformanceJob(context_));
 }
 
+bool ExpressionLaneModel::current(const application::EditorSession& session,
+                                  domain::RegionId activeRegion) const noexcept {
+  return state_ == State::Ready && activeRegion == region_ && session.revision() == revision_;
+}
+
 }  // namespace seam::ui

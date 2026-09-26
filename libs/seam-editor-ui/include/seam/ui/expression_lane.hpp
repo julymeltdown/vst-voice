@@ -95,6 +95,11 @@ public:
   void cancel() noexcept;
   [[nodiscard]] bool matches(const application::EditorSession& session,
                              domain::RegionId activeRegion) const;
+  // True while the draft is open for the active region at the session's current revision. Cheap
+  // enough for every frame; a draft that fails it must not be shown in place of the stored curve.
+  // apply() still runs the full matches() check.
+  [[nodiscard]] bool current(const application::EditorSession& session,
+                             domain::RegionId activeRegion) const noexcept;
 
 private:
   ExpressionLaneModel(application::PerformanceJobContext context, domain::RegionId region,

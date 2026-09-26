@@ -379,17 +379,13 @@ std::optional<ParsedId> parseId(std::string_view id) {
 
 // ---- Commands -------------------------------------------------------------------------------
 
-// One mix edit is one command: the track is selected through the controller's own selection
-// first, and an edit that changes nothing is not committed at all.
+// One mix edit is one command addressed to the strip's track; the editor's track, region and note
+// selection stay where they are, and an edit that changes nothing is not committed at all.
 core::Result<void> commitMix(NativeEditorController& controller, const StripModel& strip, float gainDb,
                              float pan, bool muted, bool solo) {
   if (gainDb == strip.gainDb && pan == strip.pan && muted == strip.muted && solo == strip.solo)
     return core::success();
-  if (controller.selectedTrack() != strip.id) {
-    auto selected = controller.selectTrack(strip.id);
-    if (!selected) return selected;
-  }
-  return controller.setSelectedTrackMix(gainDb, pan, muted, solo);
+  return controller.setTrackMix(strip.id, gainDb, pan, muted, solo);
 }
 
 core::Result<void> cycleRoute(NativeEditorController& controller, const StripModel& strip) {
@@ -408,11 +404,7 @@ core::Result<void> cycleRoute(NativeEditorController& controller, const StripMod
     if (bus.channelCount == 2U) route.matrix = domain::RoutingMatrix::monoToStereo(strip.pan);
     else if (bus.channelCount == 1U) route.matrix = domain::RoutingMatrix::identity(1U);
   }
-  if (controller.selectedTrack() != strip.id) {
-    auto selected = controller.selectTrack(strip.id);
-    if (!selected) return selected;
-  }
-  return controller.setSelectedTrackRoute(std::move(route));
+  return controller.setTrackRoute(strip.id, std::move(route));
 }
 
 float nudgedGain(float gainDb, double step) {
@@ -438,6 +430,16 @@ DeviceSummary deviceSummary(const EditorSceneState& state) {
   for (const auto& device : state.audioSettings.devices)
     if (device.selected) d.name = device.name;
   if (d.name.empty()) d.name = d.online ? state.audioBackend : std::string{"Audio offline"};
+  // The format is the host's report for a running device. Without one, the settings view holds
+  // defaults, which describe no device at all.
+  if (!state.audioSettings.reported) {
+    d.format = "No device reported";
+    return d;
+  }
+  if (!d.online) {
+    d.format = "Device not running";
+    return d;
+  }
   const auto& current = state.audioSettings.current;
   const auto khz = static_cast<double>(current.sampleRate) / 1000.0;
   d.format = (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + " kHz \u00b7 " +

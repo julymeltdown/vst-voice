@@ -319,6 +319,70 @@ TEST_CASE("Escape in the middle of a TUNE gesture commits nothing and stays in T
   CHECK(f.shell.workspace() == Workspace::Tune);
 }
 
+TEST_CASE("an Escaped TUNE graph drag leaves no draft to go stale behind a knob edit") {
+  TuneFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.openTune());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.channel.gender", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  const auto plot = f.bounds("shell.tune.graph");
+  // Press and drag on the graph, Escape, then release.
+  CHECK(f.shell.pointerDown(f.controller, press(at(plot, 0.4, 0.3))).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press(at(plot, 0.6, 0.2))).hasValue());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.pointerUp(f.controller, press(at(plot, 0.6, 0.2))).hasValue());
+  CHECK(!f.controller.sceneState().expression.draftOpen);
+  // The knob writes the stored curve directly; the graph and accessibility must show that point.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.knob.gender", SemanticAction::Increment)
+            .hasValue());
+  CHECK(ui::readExpressionPoints(f.region(), ui::ExpressionChannel::Gender).size() == 1U);
+  CHECK(f.controller.sceneState().expression.points.size() == 1U);
+  CHECK(f.frame());
+  const auto curve = f.node("shell.tune.curve.gender");
+  CHECK(curve && curve->value == "1 point");
+  const auto graph = f.node("shell.tune.graph");
+  CHECK(graph && graph->value.find(" 1 points") != std::string::npos);
+  // The next graph drag edits the current curve and its release commits.
+  CHECK(f.shell.pointerDown(f.controller, press(at(plot, 0.25, 0.5))).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press(at(plot, 0.5, 0.2))).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(at(plot, 0.5, 0.2))).hasValue());
+  CHECK(ui::readExpressionPoints(f.region(), ui::ExpressionChannel::Gender).size() == 2U);
+  CHECK(f.controller.sceneState().expression.points.size() == 2U);
+  CHECK(!f.controller.sceneState().expression.draftOpen);
+  // Two undoable edits: the knob step and the drag.
+  CHECK(f.session.undo().hasValue());
+  CHECK(ui::readExpressionPoints(f.region(), ui::ExpressionChannel::Gender).size() == 1U);
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.region().genderAutomation.points().empty());
+  CHECK(!f.session.canUndo());
+}
+
+TEST_CASE("an untouched expression draft from an older revision is re-read, never reused") {
+  TuneFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.openTune());
+  CHECK(f.controller.openExpressionLane(ui::ExpressionChannel::Gender).hasValue());
+  // A press opens a draft; Escape restores it to the stored curve.
+  CHECK(f.controller.pressExpressionPoint(std::nullopt, time::Tick{1920}, 0.5F).hasValue());
+  f.controller.cancelPointerGesture();
+  CHECK(f.controller.releaseExpressionPoint().hasValue());
+  // Another path edits the stored curve behind the lane.
+  CHECK(f.controller.nudgeGender(2).hasValue());
+  const auto stored = ui::readExpressionPoints(f.region(), ui::ExpressionChannel::Gender);
+  CHECK(stored.size() == 1U);
+  CHECK(f.controller.sceneState().expression.points == stored);
+  // Grabbing the stored point works, because the draft is prepared from the current curve.
+  if (!stored.empty()) {
+    CHECK(f.controller.pressExpressionPoint(stored.front().tick, time::Tick{2880}, 0.3F).hasValue());
+    CHECK(f.controller.dragExpressionPoint(time::Tick{2880}, 0.3F).hasValue());
+    CHECK(f.controller.releaseExpressionPoint().hasValue());
+    const auto moved = ui::readExpressionPoints(f.region(), ui::ExpressionChannel::Gender);
+    CHECK(moved.size() == 1U);
+    if (!moved.empty()) CHECK(moved.front().tick == time::Tick{2880});
+  }
+}
+
 TEST_CASE("a TUNE macro knob edits exactly as the SING knob does") {
   TuneFixture sing;
   TuneFixture tune;
@@ -387,7 +451,16 @@ TEST_CASE("the TUNE vibrato card shows and edits the selected note's stored vibr
   expect("shell.tune.vibrato.period", 150.0, "150 ms");
   expect("shell.tune.vibrato.phase", 90.0, "90\u00B0");
   const auto toggle = f.node("shell.tune.vibrato.enabled");
-  CHECK(toggle && toggle->value == "On" && toggle->role == SemanticRole::Button);
+  CHECK(toggle && toggle->value == "On" && toggle->role == SemanticRole::CheckBox &&
+        toggle->selected);
+  if (toggle) {
+    const auto offers = [&toggle](SemanticAction action) {
+      return std::find(toggle->actions.begin(), toggle->actions.end(), action) !=
+             toggle->actions.end();
+    };
+    CHECK(offers(SemanticAction::Toggle));
+    CHECK(offers(SemanticAction::Activate));
+  }
   // Increment is one undoable step of the stored field.
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.vibrato.depth", SemanticAction::Increment)
             .hasValue());
@@ -414,7 +487,14 @@ TEST_CASE("the TUNE vibrato card shows and edits the selected note's stored vibr
   CHECK(!f.note().vibrato.enabled);
   CHECK(f.frame());
   const auto off = f.node("shell.tune.vibrato.enabled");
-  CHECK(off && off->value == "Off");
+  CHECK(off && off->value == "Off" && off->role == SemanticRole::CheckBox && !off->selected);
+  // Activate flips it back, exactly as Toggle does.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.vibrato.enabled", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.note().vibrato.enabled);
+  CHECK(f.frame());
+  const auto on = f.node("shell.tune.vibrato.enabled");
+  CHECK(on && on->value == "On" && on->selected);
 }
 
 TEST_CASE("TUNE pitch is shown read-only with an honest caption") {

@@ -367,6 +367,11 @@ public:
   [[nodiscard]] core::Result<void> resizeSelectedRegion(time::Tick newDuration);
   [[nodiscard]] core::Result<void> setSelectedTrackMix(
       float gainDb, float pan, bool muted, bool solo);
+  // Mix and routing edits addressed to any track; the editor selection is left as it is.
+  [[nodiscard]] core::Result<void> setTrackMix(
+      domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo);
+  [[nodiscard]] core::Result<void> setTrackRoute(
+      domain::TrackId trackId, domain::TrackOutputRoute route);
   [[nodiscard]] core::Result<void> setSelectedTrackVoicebank(
       domain::VoicebankReference voicebank);
   [[nodiscard]] core::Result<void> setSelectedTrackRoute(
@@ -515,6 +520,7 @@ public:
     audioSettings_.devices = std::move(devices);
     audioSettings_.underflowFrames = underflowFrames;
     audioSettings_.xruns = xruns;
+    audioSettings_.reported = true;
   }
   void showAudioSettings() noexcept {
     audioSettings_.visible = true;

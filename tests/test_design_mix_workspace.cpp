@@ -4,6 +4,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/authoring/audio_settings.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/shell_workspace.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
@@ -37,6 +38,7 @@ struct MixFixture final {
   application::ProjectFactory factory{9600U};
   std::vector<domain::TrackId> tracks;
   domain::RegionId regionId{};
+  domain::NoteId noteId{};  // one note on the first track's region
   application::EditorSession session;
   native_ui::NativeEditorController controller;
   SingShell shell;
@@ -53,7 +55,15 @@ struct MixFixture final {
     for (std::size_t i = 0U; i < trackCount; ++i) {
       const auto id = factory.addVocalTrack(project, "Voice " + std::to_string(i + 1U));
       const auto region = factory.addRegion(project, id, "Phrase", time::Tick{0}, time::Tick{7680});
-      if (i == 0U) regionId = region;
+      if (i == 0U) {
+        regionId = region;
+        auto [lyric, note] =
+            factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"\u3042", domain::Language::Japanese);
+        noteId = note.id;
+        auto* phrase = project.findRegion(region);
+        phrase->lyrics.push_back(std::move(lyric));
+        phrase->notes.push_back(std::move(note));
+      }
       tracks.push_back(id);
     }
     if (trackCount > 1U) {
@@ -215,8 +225,8 @@ TEST_CASE("a fader drag and a pan drag each commit exactly one undoable mix comm
   const auto raised = f.track(2).gainDb;
   CHECK(raised > 0.0F);
   CHECK(raised <= 24.0F);
-  // The strip's track is selected through the controller before the command.
-  CHECK(f.controller.selectedTrack() == f.tracks[2]);
+  // The edit is addressed to the strip's track; the editor stays on the track it was on.
+  CHECK(f.controller.selectedTrack() == startSelected);
   CHECK_NEAR(*f.node(f.controlId(2U, "gain")).numericValue, std::round(raised * 10.0) / 10.0, 1e-4);
   CHECK(f.session.canUndo());
   CHECK(f.session.undo().hasValue());
@@ -254,6 +264,7 @@ TEST_CASE("mute and solo toggle through pointer and accessibility, one command e
   MixFixture f{3U};
   if (!native_ui::paint::vectorBackendAvailable()) return;
   f.openMix();
+  const auto startSelected = f.controller.selectedTrack();
   const auto mute = center(f.node(f.controlId(0U, "mute")).bounds);
   CHECK(f.shell.pointerDown(f.controller, press(mute)).hasValue());
   CHECK(!f.track(0).muted);  // commits on release
@@ -271,7 +282,7 @@ TEST_CASE("mute and solo toggle through pointer and accessibility, one command e
   CHECK(f.shell.dispatchSemantic(f.controller, f.controlId(2U, "mute"), SemanticAction::SetFocus).hasValue());
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Space}));
   CHECK(f.track(2).muted);
-  CHECK(f.controller.selectedTrack() == f.tracks[2]);
+  CHECK(f.controller.selectedTrack() == startSelected);
   // Other fields are untouched, and each toggle is its own undo step.
   CHECK(f.track(0).gainDb == 0.0F && f.track(0).pan == 0.0F);
   CHECK(undoDepth(f.session) == 3U);
@@ -376,6 +387,89 @@ TEST_CASE("the route button cycles the output bus and the audio card opens the r
   CHECK(f.controller.audioSettingsVisible());
   CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   CHECK(!f.session.canUndo());
+}
+
+TEST_CASE("a MIX edit on another strip leaves the editor's track, region and notes selected") {
+  MixFixture f{3U, true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // An audio strip too: soloing one must not leave the editor without a region.
+  const domain::TrackId audioId{9990U};
+  f.session.project().audioTracks().push_back(domain::AudioTrack{
+      .id = audioId, .name = "Backing", .mediaPath = "/tmp/backing.wav", .mediaHash = "backing"});
+  f.openMix();
+  f.session.selection().selectOnly(f.noteId);
+  const auto track = f.controller.selectedTrack();
+  const auto region = f.controller.selectedRegion();
+  CHECK(track == f.tracks[0]);
+  CHECK(region == f.regionId);
+  const auto selectionUnchanged = [&] {
+    CHECK(f.controller.selectedTrack() == track);
+    CHECK(f.controller.selectedRegion() == region);
+    CHECK(f.controller.pianoRoll().regionId() == region);
+    CHECK(f.session.selection().size() == 1U);
+    CHECK(f.session.selection().contains(f.noteId));
+  };
+
+  // Mute on the third strip: one command, the selection stays, one undo restores the value.
+  CHECK(f.shell.dispatchSemantic(f.controller, f.controlId(2U, "mute"), SemanticAction::Toggle).hasValue());
+  CHECK(f.track(2).muted);
+  selectionUnchanged();
+  CHECK(f.session.undo().hasValue());
+  CHECK(!f.track(2).muted);
+  CHECK(!f.session.canUndo());
+  selectionUnchanged();
+
+  // Pan on the second strip.
+  CHECK(f.shell.dispatchSemantic(f.controller, f.controlId(1U, "pan"), SemanticAction::Increment).hasValue());
+  CHECK_NEAR(f.track(1).pan, -0.45, 1e-6);
+  CHECK(f.track(1).gainDb == -6.0F && f.track(1).muted);
+  selectionUnchanged();
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.track(1).pan == -0.5F);
+  CHECK(!f.session.canUndo());
+
+  // Route on the third strip.
+  CHECK(f.shell.dispatchSemantic(f.controller, f.controlId(2U, "route"), SemanticAction::Activate).hasValue());
+  CHECK(f.track(2).outputRoute.bus == domain::BusId{2U});
+  selectionUnchanged();
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.track(2).outputRoute.bus == domain::BusId{1U});
+  CHECK(!f.session.canUndo());
+
+  // Solo on the audio strip.
+  const auto audioSolo = "shell.mix.track." + audioId.toString() + ".solo";
+  CHECK(f.shell.dispatchSemantic(f.controller, audioSolo, SemanticAction::Toggle).hasValue());
+  CHECK(f.session.project().audioTracks().front().solo);
+  selectionUnchanged();
+  CHECK(f.controller.selectedRegion().valid());
+  CHECK(f.session.undo().hasValue());
+  CHECK(!f.session.project().audioTracks().front().solo);
+  CHECK(!f.session.canUndo());
+  selectionUnchanged();
+}
+
+TEST_CASE("the device card states a format only for a device the host reported as running") {
+  MixFixture f{1U};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.openMix();
+  // Nothing reported: the settings defaults are no device's format.
+  auto device = f.node("shell.mix.device").value;
+  CHECK(device.find("No device reported") != std::string::npos);
+  CHECK(device.find("kHz") == std::string::npos);
+  // A running backend without reported settings is still no format.
+  f.controller.setAudioState(true, "CoreAudio");
+  device = f.node("shell.mix.device").value;
+  CHECK(device == "CoreAudio, No device reported");
+
+  f.controller.setAudioSettings(
+      authoring::AudioSettings{.deviceId = "studio", .sampleRate = 44100U, .blockFrames = 512U},
+      {native_ui::EditorSceneState::AudioDeviceOption{.id = "studio", .name = "Studio", .selected = true}},
+      0U, 0U);
+  CHECK(f.node("shell.mix.device").value == "Studio, 44.1 kHz \u00b7 512 frames");
+  // The same device, stopped: its last settings are not a running format.
+  f.controller.setAudioState(false, "CoreAudio");
+  device = f.node("shell.mix.device").value;
+  CHECK(device == "Studio, Device not running");
 }
 
 TEST_CASE("MIX strips never overlap or leave the body, and scroll sideways when they do not fit") {

@@ -285,6 +285,8 @@ struct EditorSceneState final {
   };
   struct AudioSettingsView final {
     bool visible{false};
+    // Set once the host has reported its settings; until then current holds defaults.
+    bool reported{false};
     authoring::AudioSettings current;
     std::vector<AudioDeviceOption> devices;
     std::uint64_t underflowFrames{0U};

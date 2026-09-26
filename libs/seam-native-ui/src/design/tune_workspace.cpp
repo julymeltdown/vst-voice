@@ -1243,8 +1243,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                                .description = "The preview is computed from the stored values"});
     if (target.note != nullptr) {
       const auto v = shownVibrato(*target.note);
+      // A two-state switch: assistive tools read it as a check box with its selected state.
       out.push_back(SemanticNode{
-          .id = "shell.tune.vibrato.enabled", .role = SemanticRole::Button, .name = "Vibrato",
+          .id = "shell.tune.vibrato.enabled", .role = SemanticRole::CheckBox, .name = "Vibrato",
           .value = v.enabled ? "On" : "Off", .bounds = l.vibratoToggle, .selected = v.enabled,
           .actions = {SemanticAction::Toggle, SemanticAction::Activate, SemanticAction::SetFocus}});
       for (std::size_t i = 0U; i < kFields; ++i) {

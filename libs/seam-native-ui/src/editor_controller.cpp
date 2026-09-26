@@ -438,9 +438,14 @@ EditorSceneState NativeEditorController::sceneState() const {
     state.expression.maximum = descriptor.maximum;
     state.expression.neutral = descriptor.neutral;
     state.expression.valueAtPlayhead = expressionValueAtPlayhead();
-    state.expression.draftOpen = expressionDraft_.has_value();
-    state.expression.draftChanged = expressionDraft_ && expressionDraft_->hasChanges();
-    if (expressionDraft_) state.expression.points = expressionDraft_->points();
+    // Only a draft prepared at the current revision stands in for the stored curve; a stale one
+    // would publish points the document no longer holds.
+    const auto* draft = expressionDraft_ && expressionDraft_->current(session_, regionId_)
+                            ? &expressionDraft_.value()
+                            : nullptr;
+    state.expression.draftOpen = draft != nullptr;
+    state.expression.draftChanged = draft != nullptr && draft->hasChanges();
+    if (draft != nullptr) state.expression.points = draft->points();
     else if (const auto* region = session_.project().findRegion(regionId_); region != nullptr)
       state.expression.points = ui::readExpressionPoints(*region, expressionChannel_);
     // The lane reports the same carrier decision the renderer makes, so a stored curve is never
@@ -3570,21 +3575,32 @@ core::Result<void> NativeEditorController::setSelectedTrackMix(
     return core::failure(core::ErrorCode::Conflict,
                          "No track is selected for mix editing");
   }
+  return setTrackMix(selectedTrackId_, gainDb, pan, muted, solo);
+}
+
+// Edits one track's mix without moving the editor's track, region or note selection, so a mixer
+// strip can be changed while the editor stays on what the creator is working on.
+core::Result<void> NativeEditorController::setTrackMix(
+    domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo) {
+  if (!trackId.valid()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Mix editing needs a track");
+  }
   std::unique_ptr<application::ICommand> command;
-  if (session_.project().findVocalTrack(selectedTrackId_) != nullptr) {
+  if (session_.project().findVocalTrack(trackId) != nullptr) {
     command = std::make_unique<application::SetVocalTrackMixCommand>(
-        selectedTrackId_, gainDb, pan, muted, solo);
+        trackId, gainDb, pan, muted, solo);
   } else {
     const auto audio = std::find_if(
         session_.project().audioTracks().begin(),
         session_.project().audioTracks().end(),
-        [this](const auto& track) { return track.id == selectedTrackId_; });
+        [trackId](const auto& track) { return track.id == trackId; });
     if (audio == session_.project().audioTracks().end()) {
       return core::failure(core::ErrorCode::NotFound,
-                           "Selected track is missing");
+                           "Mix track is missing");
     }
     command = std::make_unique<application::SetAudioTrackMixCommand>(
-        selectedTrackId_, gainDb, pan, muted, solo);
+        trackId, gainDb, pan, muted, solo);
   }
   auto result = session_.execute(std::move(command));
   if (result) {
@@ -3619,9 +3635,19 @@ core::Result<void> NativeEditorController::setSelectedTrackRoute(
     return core::failure(core::ErrorCode::Conflict,
                          "No track is selected for routing");
   }
+  return setTrackRoute(selectedTrackId_, std::move(route));
+}
+
+// Routes one track without moving the editor's track, region or note selection.
+core::Result<void> NativeEditorController::setTrackRoute(
+    domain::TrackId trackId, domain::TrackOutputRoute route) {
+  if (!trackId.valid()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Routing needs a track");
+  }
   auto result = session_.execute(
       std::make_unique<application::SetTrackOutputRouteCommand>(
-          selectedTrackId_, std::move(route)));
+          trackId, std::move(route)));
   if (result) {
     arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
     markDocumentChanged();
@@ -3716,8 +3742,13 @@ bool NativeEditorController::pointerGestureActive() const noexcept {
 
 void NativeEditorController::cancelPointerGesture() {
   if (!pointerGestureActive()) return;
-  if (dragMode_ == DragMode::MoveExpressionPoint && expressionDraft_ && expressionGestureSnapshot_)
-    static_cast<void>(expressionDraft_->replacePoints(*expressionGestureSnapshot_));
+  if (dragMode_ == DragMode::MoveExpressionPoint && expressionDraft_ && expressionGestureSnapshot_) {
+    const auto restored = expressionDraft_->replacePoints(*expressionGestureSnapshot_);
+    // A cancelled gesture leaves no draft behind unless edits were pending before it began. A
+    // leftover untouched draft goes stale as soon as another path (a knob nudge, undo) edits the
+    // curve, and would then shadow the stored curve and refuse the next gesture's release.
+    if (!restored || !expressionDraft_->hasChanges()) expressionDraft_.reset();
+  }
   expressionGestureSnapshot_.reset();
   expressionDragTick_.reset();
   vibratoHandleDrag_.reset();
@@ -6898,7 +6929,16 @@ core::Result<void> NativeEditorController::closeExpressionLane() {
 }
 
 core::Result<ui::ExpressionLaneModel*> NativeEditorController::ensureExpressionDraft() {
-  if (expressionDraft_) return &expressionDraft_.value();
+  if (expressionDraft_) {
+    // A draft with pending edits is reused as is; if the document moved on, its apply reports the
+    // conflict instead of overwriting the newer curve. An untouched draft holds nothing to keep:
+    // once the document, region or channel moved on it is re-read from the stored curve.
+    if (expressionDraft_->hasChanges() ||
+        (expressionDraft_->channel() == expressionChannel_ &&
+         expressionDraft_->matches(session_, regionId_)))
+      return &expressionDraft_.value();
+    expressionDraft_.reset();
+  }
   const bool resolved = static_cast<bool>(callbacks_.validateSingerControl);
   if (resolved) {
     const auto allowed = callbacks_.validateSingerControl(
@@ -6924,7 +6964,8 @@ core::Result<void> NativeEditorController::commitExpressionDraft() {
 
 float NativeEditorController::expressionValueAtPlayhead() const {
   const auto playhead = regionPlayheadClamped();
-  if (expressionDraft_) return expressionDraft_->valueAt(playhead);
+  if (expressionDraft_ && expressionDraft_->current(session_, regionId_))
+    return expressionDraft_->valueAt(playhead);
   const auto* region = session_.project().findRegion(regionId_);
   if (region == nullptr) return ui::describeExpressionChannel(expressionChannel_).neutral;
   const auto points = ui::readExpressionPoints(*region, expressionChannel_);
