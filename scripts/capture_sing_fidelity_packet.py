@@ -33,6 +33,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,10 @@ CANONICAL_VIEWPORT = (1600, 900)
 INSPECTOR_STATE = "inspector"
 # Capture-only states: the ready fixture with the TUNE or MIX workspace covering the score.
 WORKSPACE_STATES = ("tune", "mix")
+# Score nodes that must never be published under a covering workspace.
+SCORE_IDS = ("timeline", "shell.waveform")
+SCORE_PREFIXES = ("note.", "editor.vibrato.handle.", "overlap-group.", "detail.", "shell.lane")
+MIX_STRIP_CONTROLS = ("gain", "pan", "mute", "solo", "route")
 # ROI name -> geometry region, per section 11.2 ("header, portrait, notes, expression, lane,
 # footer separately").
 ROIS = {
@@ -67,6 +72,8 @@ ROIS = {
     "lane": "lane",
     "footer": "status",
 }
+# Report columns: TUNE and MIX captures compare their body in place of the notes and lane.
+ROI_COLUMNS = tuple(ROIS) + ("body",)
 # Initial regression targets of section 11.1; uncalibrated until a native golden exists.
 FLAT_MAX_DELTA = 2
 OUTLIER_DELTA = 8
@@ -491,9 +498,10 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
 
 def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
                     expected_notes: int, render_state: str | None,
-                    workspace: str = "sing") -> dict[str, Any]:
+                    workspace: str = "sing", expected_tracks: int | None = None) -> dict[str, Any]:
     """expected_notes: notes in the fixture; render_state: the state the app logged at exit;
-    workspace: a TUNE or MIX capture covers the score with that workspace's own nodes."""
+    workspace: a TUNE or MIX capture covers the score with that workspace's own nodes;
+    expected_tracks: the fixture's track count, bounding the MIX strips."""
     failures: list[str] = []
     size = geometry.get("logicalSize") or [0, 0]
     client = [0.0, 0.0, float(size[0]), float(size[1])]
@@ -534,14 +542,34 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
             own = [node for node in by_id.values() if node["id"].startswith(prefix)]
             if not own:
                 failures.append(f"no {prefix}* node is published")
+            # The workspace's core controls, each with real bounds.
+            if body == "tune":
+                core = ["shell.tune.graph"] + [f"shell.tune.knob.{knob}" for knob in KNOBS]
+            else:
+                core = ["shell.mix.master", "shell.mix.audio-settings"]
+                strips = [node["id"] for node in own
+                          if re.fullmatch(r"shell\.mix\.track\.[0-9a-f]+", node["id"])]
+                if not strips:
+                    failures.append("no MIX channel strip is published")
+                if expected_tracks is not None and len(strips) > expected_tracks:
+                    failures.append(f"{len(strips)} strips for {expected_tracks} tracks")
+                core += [f"{strip}.{control}" for strip in strips for control in MIX_STRIP_CONTROLS]
+            for node_id in core:
+                if node_id not in by_id:
+                    failures.append(f"{node_id}: missing")
+            for node in own:
+                if not positive(node["bounds"]):
+                    failures.append(f"{node['id']}: empty bounds")
             editor, lane = regions.get("editor"), regions.get("lane")
             if positive(editor) and positive(lane):
                 area = [editor[0], editor[1], editor[2], lane[1] + lane[3] - editor[1]]
                 for node in own:
                     if positive(node["bounds"]) and not contains(area, node["bounds"]):
                         failures.append(f"{node['id']}: outside the {body} workspace area")
+            others = [f"shell.{name}." for name in WORKSPACE_STATES + ("export",) if name != body]
             for node_id in by_id:
-                if node_id == "timeline" or node_id.startswith("shell.lane") or node_id == "shell.waveform":
+                if node_id in SCORE_IDS or node_id.startswith(SCORE_PREFIXES) or \
+                        node_id.startswith(tuple(others)):
                     failures.append(f"{node_id}: published under the {body} workspace")
         if RACK_CONTROLS_SHOWN(geometry):
             required += rack_nodes
@@ -759,9 +787,19 @@ def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appk
     record["appkitAlignment"] = "client area = capture minus the top title bar"
     save_srgb(client, out / record["appkitPng"])
     regions = geometry["regions"]
+    rois = dict(ROIS)
+    if record["state"] in WORKSPACE_STATES:
+        # The body covers the grid and lane: compare it as one region, not as notes and lane.
+        rois.pop("notes")
+        rois.pop("lane")
+        editor, lane = regions.get("editor"), regions.get("lane")
+        if positive(editor) and positive(lane):
+            regions = dict(regions, body=[editor[0], editor[1], editor[2],
+                                          lane[1] + lane[3] - editor[1]])
+            rois["body"] = "body"
     record["roi"] = {
         roi: roi_metrics(software, client, regions[region], float(scale))
-        for roi, region in ROIS.items() if positive(regions.get(region))
+        for roi, region in rois.items() if positive(regions.get(region))
     }
     record["imageCheck"]["result"] = "PASS" if not failures else "FAIL"
 
@@ -887,11 +925,11 @@ def acceptance_markdown(manifest: dict[str, Any], records: list[dict[str, Any]],
               "The initial targets of section 11.1 are uncalibrated. The AppKit frame is taken "
               "shortly before the app closes and the software frame at close, so moving content "
               "(meters, progress) can differ legitimately.", "",
-              "| Capture | " + " | ".join(ROIS) + " |", "|---|" + "---|" * len(ROIS)]
+              "| Capture | " + " | ".join(ROI_COLUMNS) + " |", "|---|" + "---|" * len(ROI_COLUMNS)]
     for record in records:
         if "roi" in record:
             cells = []
-            for roi in ROIS:
+            for roi in ROI_COLUMNS:
                 metric = record["roi"].get(roi)
                 cells.append("-" if not metric or not metric["pixels"] else
                              f"{metric['fractionOverDelta8'] * 100:.2f}% ({metric['maxChannelDelta']})")
@@ -954,6 +992,7 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="seam-ui-fidelity-"))
     fixtures: dict[str, Path] = {}
     fixture_notes: dict[str, int] = {}
+    fixture_tracks: dict[str, int] = {}
     fixture_hashes: dict[str, str] = {"base": sha256_file(args.fixture)}
     records: list[dict[str, Any]] = []
     try:
@@ -964,6 +1003,8 @@ def main() -> int:
                 path.write_text(json.dumps(derived, indent=2))
                 fixtures[state] = path
                 fixture_notes[state] = len(region_of(derived)["notes"])
+                fixture_tracks[state] = (len(derived.get("vocalTracks") or []) +
+                                         len(derived.get("audioTracks") or []))
                 fixture_hashes[state] = sha256_file(path)
             project = work / f"{mode}-{state}-{viewport[0]}x{viewport[1]}.seam"
             shutil.copyfile(fixtures[state], project)
@@ -978,7 +1019,7 @@ def main() -> int:
                 record["semanticCheck"] = check_semantics(
                     record["semantic-bounds"], record["geometry"],
                     expected_notes=fixture_notes[state], render_state=record["observedRenderState"],
-                    workspace=state)
+                    workspace=state, expected_tracks=fixture_tracks[state])
                 process_images(record, work / record["id"], out, want_appkit=not args.no_appkit)
             records.append(record)
     finally:

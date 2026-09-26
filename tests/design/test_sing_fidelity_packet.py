@@ -128,8 +128,15 @@ class SemanticCheckTests(unittest.TestCase):
             semantic["nodes"] = [n for n in semantic["nodes"]
                                  if not n["id"].startswith("shell.lane") and n["id"] != "shell.waveform"]
             editor = geometry["regions"]["editor"]
-            semantic["nodes"].append({"id": f"shell.{workspace}.panel", "parent": "shell",
-                                      "bounds": [editor[0] + 8, editor[1] + 8, 200, 100], "value": ""})
+            ids = [f"shell.{workspace}.panel"]
+            if workspace == "tune":
+                ids += ["shell.tune.graph"] + [f"shell.tune.knob.{k}" for k in PACKET.KNOBS]
+            else:
+                ids += ["shell.mix.master", "shell.mix.audio-settings", "shell.mix.track.1a"]
+                ids += [f"shell.mix.track.1a.{c}" for c in PACKET.MIX_STRIP_CONTROLS]
+            for i, node_id in enumerate(ids):
+                semantic["nodes"].append({"id": node_id, "parent": "shell", "value": "",
+                                          "bounds": [editor[0] + 8 + 20 * i, editor[1] + 8, 16, 16]})
             semantic.update(notes=[], virtualizedNoteCount=0)
             return semantic
 
@@ -139,28 +146,47 @@ class SemanticCheckTests(unittest.TestCase):
                 geometry["workspace"] = workspace
                 result = PACKET.check_semantics(body_tree(geometry, workspace), geometry,
                                                 expected_notes=6, render_state="ready",
-                                                workspace=workspace)
+                                                workspace=workspace, expected_tracks=1)
                 self.assertEqual(result["result"], "PASS", result["failures"])
                 self.assertEqual(geometry_result(geometry, {**CANONICAL, "workspace": workspace})["result"],
                                  "PASS")
                 self.assertEqual(geometry_result(geometry)["result"], "FAIL")
 
+        def extra(node_id):
+            return lambda s: s["nodes"].append(
+                {"id": node_id, "parent": "shell", "bounds": [80, 200, 10, 10], "value": ""})
+
+        def drop(prefix):
+            return lambda s: s.__setitem__("nodes", [n for n in s["nodes"] if not n["id"].startswith(prefix)])
+
         cases = {
-            "no body node": lambda s: s.__setitem__(
-                "nodes", [n for n in s["nodes"] if not n["id"].startswith("shell.tune.")]),
-            "body node outside its area": lambda s: s["nodes"][-1].update(bounds=[1300, 20, 40, 20]),
-            "lane still published": lambda s: s["nodes"].append(
-                {"id": "shell.lane", "parent": "shell", "bounds": [80, 700, 10, 10], "value": ""}),
-            "notes still listed": lambda s: s.update(virtualizedNoteCount=6),
+            ("tune", "no body node"): drop("shell.tune."),
+            ("tune", "only one knob"): lambda s: s.__setitem__("nodes", [
+                n for n in s["nodes"] if not n["id"].startswith("shell.tune.")
+                or n["id"] == "shell.tune.knob.formant"]),
+            ("tune", "graph missing"): drop("shell.tune.graph"),
+            ("tune", "body node outside its area"): lambda s: s["nodes"][-1].update(bounds=[1300, 20, 40, 20]),
+            ("tune", "empty bounds"): lambda s: s["nodes"][-1].update(bounds=[0, 0, 0, 0]),
+            ("tune", "lane still published"): extra("shell.lane"),
+            ("tune", "vibrato handle still published"): extra("editor.vibrato.handle.1"),
+            ("tune", "overlap group still published"): extra("overlap-group.1"),
+            ("tune", "notes still listed"): lambda s: s.update(virtualizedNoteCount=6),
+            ("mix", "other workspace's node"): extra("shell.tune.graph"),
+            ("mix", "export node"): extra("shell.export.run"),
+            ("mix", "no strip"): drop("shell.mix.track."),
+            ("mix", "strip without a fader"): drop("shell.mix.track.1a.gain"),
+            ("mix", "more strips than tracks"): extra("shell.mix.track.2b"),
+            ("mix", "master missing"): drop("shell.mix.master"),
         }
-        for name, mutate in cases.items():
+        for (workspace, name), mutate in cases.items():
             with self.subTest(name):
                 geometry = canonical_geometry()
-                geometry["workspace"] = "tune"
-                semantic = body_tree(geometry, "tune")
+                geometry["workspace"] = workspace
+                semantic = body_tree(geometry, workspace)
                 mutate(semantic)
                 result = PACKET.check_semantics(semantic, geometry, expected_notes=6,
-                                                render_state="ready", workspace="tune")
+                                                render_state="ready", workspace=workspace,
+                                                expected_tracks=1)
                 self.assertEqual(result["result"], "FAIL")
 
     def test_published_bounds_on_the_layout_pass(self):
