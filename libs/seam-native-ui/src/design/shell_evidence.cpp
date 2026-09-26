@@ -16,7 +16,13 @@ std::string modeName(DesignMode mode) {
 }
 
 std::string workspaceName(Workspace workspace) {
-  return workspace == Workspace::Export ? "export" : "sing";
+  switch (workspace) {
+    case Workspace::Tune: return "tune";
+    case Workspace::Mix: return "mix";
+    case Workspace::Export: return "export";
+    case Workspace::Sing: break;
+  }
+  return "sing";
 }
 
 std::string rackName(RackPresentation rack) {

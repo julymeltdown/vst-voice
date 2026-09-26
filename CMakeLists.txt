@@ -743,6 +743,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/design/design_tokens.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp
     libs/seam-native-ui/src/design/sing_shell.cpp
+    libs/seam-native-ui/src/design/tune_workspace.cpp
+    libs/seam-native-ui/src/design/mix_workspace.cpp
     libs/seam-native-ui/src/design/shell_evidence.cpp
     libs/seam-native-ui/src/paint/path.cpp)
   if(APPLE)

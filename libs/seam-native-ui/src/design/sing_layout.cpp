@@ -173,17 +173,21 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     l.workspaceMenuButton = {tabsLeft, l.header.y + (headerHeight - 32.0) * 0.5,
                              buttonWidth, 32.0};
     const auto includeModes = l.modeSwitch.width <= 0.0;
-    const auto rows = includeModes ? 5.0 : 3.0;
+    constexpr double kRow = 28.0;
+    const auto workspaceRows = static_cast<double>(l.workspaceMenuRow.size());
+    const auto rows = workspaceRows + (includeModes ? 1.0 : 0.0);
     const auto menuWidth = std::min(220.0, W - 2.0 * kSingEdge);
     const auto menuX = std::min(tabsLeft, W - kSingEdge - menuWidth);
-    l.workspaceMenu = {menuX, l.header.bottom() + 4.0, menuWidth, 16.0 + rows * 32.0};
+    l.workspaceMenu = {menuX, l.header.bottom() + 4.0, menuWidth, 16.0 + rows * kRow};
     for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
-      l.workspaceMenuRow[i] = {menuX + 8.0, l.workspaceMenu.y + 8.0 + 32.0 * static_cast<double>(i),
-                                menuWidth - 16.0, 32.0};
-    if (includeModes)
+      l.workspaceMenuRow[i] = {menuX + 8.0, l.workspaceMenu.y + 8.0 + kRow * static_cast<double>(i),
+                                menuWidth - 16.0, kRow};
+    if (includeModes) {
+      const auto half = (menuWidth - 16.0) * 0.5;
       for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i)
-        l.modeMenuRow[i] = {menuX + 8.0, l.workspaceMenu.y + 104.0 + 32.0 * static_cast<double>(i),
-                             menuWidth - 16.0, 32.0};
+        l.modeMenuRow[i] = {menuX + 8.0 + half * static_cast<double>(i),
+                             l.workspaceMenu.y + 8.0 + kRow * workspaceRows, half, kRow};
+    }
   }
   l.workspaceLabelsVisible = tabsWidth >= 320.0;
   const auto tabWidth = tabsWidth / 5.0;

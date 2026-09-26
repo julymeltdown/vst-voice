@@ -251,9 +251,12 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
     }
   }
   // Captures only: open a workspace other than SING. The workspace is never a saved preference.
-  if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE");
-      workspace != nullptr && std::string_view{workspace} == "export")
-    workspace_ = Workspace::Export;
+  if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE"); workspace != nullptr) {
+    const std::string_view name{workspace};
+    if (name == "export") workspace_ = Workspace::Export;
+    if (name == "tune") workspace_ = Workspace::Tune;
+    if (name == "mix") workspace_ = Workspace::Mix;
+  }
   // Captures only: start with the compact inspector open (ignored at the full rack).
   if (const char* inspector = std::getenv("SEAM_UI_INSPECTOR");
       inspector != nullptr && std::string_view{inspector} == "open")
@@ -458,9 +461,14 @@ void SingShell::frameNotesIfNeeded(NativeEditorController& controller, double pr
 }
 
 void SingShell::cancelGestures(NativeEditorController& controller) {
-  const auto hadGesture = knobDrag_.has_value() || forwarding_ != ForwardArea::None;
+  const auto hadGesture = knobDrag_.has_value() || forwarding_ != ForwardArea::None || bodyGesture_;
   knobDrag_.reset();
   forwarding_ = ForwardArea::None;
+  if (bodyGesture_) {
+    bodyGesture_ = false;
+    tune_->cancelGestures(controller);
+    mix_->cancelGestures(controller);
+  }
   scrollAccumulator_ = 0.0;
   controller.cancelPointerGesture();
   if (hadGesture) repaint();
@@ -745,7 +753,10 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   if (waveform_.shown() && waveform_.view->key.region != model.regionId())
     waveform_ = RegionWaveform{nullptr, "Other region",
                                "The rendered audio belongs to a different region than the one shown."};
-  if (workspace_ == Workspace::Export) {
+  if (auto* body = bodyWorkspace(); body != nullptr) {
+    stageShown_ = false;
+    body->paint(*c, t, controller, state, workspaceArea());
+  } else if (workspace_ == Workspace::Export) {
     stageShown_ = false;
     paintExport(*c, t, state);
   } else {
@@ -774,20 +785,15 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
 void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                             time::Tick playhead) const {
   const auto& l = layout_;
-  // Workspace tabs. SING and EXPORT are workspaces, VOICE opens the voice browser; TUNE and MIX are
-  // not built yet and are drawn disabled.
+  // Workspace tabs. SING, TUNE, MIX and EXPORT are workspaces; VOICE opens the voice browser.
   static constexpr std::array<Icon, 5U> kIcons{Icon::Sing, Icon::Voice, Icon::Tune, Icon::Mix,
                                                Icon::Export};
   static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix", "Export"};
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
     const auto tab = l.workspaceTab[i];
     if (tab.width < 24.0) continue;
-    const auto active = (i == 0U && workspace_ == Workspace::Sing) ||
-                        (i == 4U && workspace_ == Workspace::Export);
-    const auto enabled = i == 0U || i == 1U || i == 4U;
-    const auto color = active    ? t.color.accent
-                       : enabled ? t.color.textSecondary
-                                 : withAlpha(t.color.textSecondary, 0.35);
+    const auto active = tabSelected(i);
+    const auto color = active ? t.color.accent : t.color.textSecondary;
     const auto iconCenter = ui::Point{tab.x + tab.width * 0.5,
                                       tab.y + (l.workspaceLabelsVisible ? tab.height * 0.36
                                                                         : tab.height * 0.5)};
@@ -799,8 +805,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
       c.text({tab.x, tab.y + tab.height * 0.62, tab.width, 16.0}, kNames[i],
              style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Center,
                    true),
-             active ? t.color.accent
-                    : withAlpha(t.color.textSecondary, enabled ? 0.9 : 0.4));
+             active ? t.color.accent : withAlpha(t.color.textSecondary, 0.9));
     if (active) {
       c.save();
       c.setGlow(t.color.accent, 8.0);
@@ -903,11 +908,11 @@ void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
   c.fill(Path::roundedRect(l.workspaceMenu, 9.0), t.color.surfaceRaised);
   c.stroke(Path::roundedRect(l.workspaceMenu, 9.0), t.color.borderStrong, StrokeStyle{1.0});
   c.restore();
-  static constexpr std::array<const char*, 3U> kLabels{"Sing", "Voice browser", "Export"};
+  static constexpr std::array<const char*, 5U> kLabels{"Sing", "Voice browser", "Tune", "Mix",
+                                                       "Export"};
   for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
     const auto r = l.workspaceMenuRow[i];
-    const auto selected = (i == 0U && workspace_ == Workspace::Sing) ||
-                          (i == 2U && workspace_ == Workspace::Export);
+    const auto selected = tabSelected(i);
     if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
     c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, kLabels[i],
            style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
@@ -917,7 +922,7 @@ void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
     if (r.width <= 0.0) continue;
     const auto selected = (i == 0U) == (preferences_.mode == DesignMode::Emo);
     if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
-    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, i == 0U ? "Emo look" : "Scene look",
+    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, i == 0U ? "Emo" : "Scene",
            style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
   }
 }
@@ -1980,6 +1985,37 @@ void SingShell::setWorkspace(NativeEditorController& controller, Workspace works
   repaint();
 }
 
+ShellWorkspace* SingShell::bodyWorkspace() const noexcept {
+  if (workspace_ == Workspace::Tune) return tune_.get();
+  if (workspace_ == Workspace::Mix) return mix_.get();
+  return nullptr;
+}
+
+bool SingShell::tabSelected(std::size_t tab) const noexcept {
+  switch (tab) {
+    case 0U: return workspace_ == Workspace::Sing;
+    case 2U: return workspace_ == Workspace::Tune;
+    case 3U: return workspace_ == Workspace::Mix;
+    case 4U: return workspace_ == Workspace::Export;
+    default: return false;
+  }
+}
+
+void SingShell::openTab(NativeEditorController& controller, std::size_t tab) {
+  switch (tab) {
+    case 0U: setWorkspace(controller, Workspace::Sing); break;
+    case 2U: setWorkspace(controller, Workspace::Tune); break;
+    case 3U: setWorkspace(controller, Workspace::Mix); break;
+    case 4U: setWorkspace(controller, Workspace::Export); break;
+    default:
+      workspaceMenuOpen_ = false;
+      controller.showVoicebankBrowser();
+      yieldIfModal(controller);
+      break;
+  }
+  repaint();
+}
+
 core::Result<void> SingShell::runExportSet(NativeEditorController& controller) {
   if (!hostActions_.exportSet)
     return core::failure(core::ErrorCode::Unsupported, hostActions_.exportUnavailable);
@@ -2163,9 +2199,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
         if (!contains(l.workspaceMenuRow[i], p)) continue;
         setWorkspaceMenuOpen(controller, false);
-        if (i == 0U) setWorkspace(controller, Workspace::Sing);
-        if (i == 1U) controller.showVoicebankBrowser();
-        if (i == 2U) setWorkspace(controller, Workspace::Export);
+        openTab(controller, i);
         return core::success();
       }
       for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i) {
@@ -2220,20 +2254,25 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     return core::success();
   }
   if (event.button == PointerButton::Left) {
-    // Workspace tabs: SING and EXPORT switch the workspace; VOICE opens the voice browser.
+    // Workspace tabs: SING, TUNE, MIX and EXPORT switch the workspace; VOICE opens the browser.
     for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
       if (l.workspaceTab[i].width < 24.0 || !contains(l.workspaceTab[i], p)) continue;
-      if (i == 0U) setWorkspace(controller, Workspace::Sing);
-      if (i == 4U) setWorkspace(controller, Workspace::Export);
-      if (i == 1U) {
-        controller.showVoicebankBrowser();
-        yieldIfModal(controller);
-        repaint();
-      }
+      openTab(controller, i);
       return core::success();
     }
     if (workspace_ == Workspace::Export && contains(exportRunButton(), p))
       return runExportSet(controller);
+  }
+  // TUNE and MIX own every press in their body; a gesture started there stays theirs.
+  if (auto* body = bodyWorkspace(); body != nullptr && contains(workspaceArea(), p)) {
+    semanticFocus_.clear();
+    auto result = body->pointerDown(controller, event, workspaceArea());
+    bodyGesture_ = body->gestureActive();
+    if (auto focus = body->takeFocusRequest(); !focus.empty() && focus.starts_with(body->idPrefix()))
+      takeSemanticFocus(controller, std::move(focus));
+    yieldIfModal(controller);
+    repaint();
+    return result;
   }
   // The export panel covers the grid and lane; nothing under it is reachable.
   if (workspace_ == Workspace::Export && contains(exportArea(), p)) return core::success();
@@ -2293,6 +2332,13 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
 core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
                                           const PointerEvent& event) {
   if (!presented_) return controller.pointerMove(event);
+  if (bodyGesture_) {
+    auto* body = bodyWorkspace();
+    if (body == nullptr) return core::success();
+    auto result = body->pointerMove(controller, event, workspaceArea());
+    repaint();
+    return result;
+  }
   if (knobDrag_) {
     const auto steps = static_cast<int>(std::lround((knobDrag_->startY - event.position.y) / 12.0));
     if (steps != knobDrag_->steps) {
@@ -2314,6 +2360,15 @@ core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
 core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
                                         const PointerEvent& event) {
   if (!presented_) return controller.pointerUp(event);
+  if (bodyGesture_) {
+    bodyGesture_ = false;
+    auto* body = bodyWorkspace();
+    if (body == nullptr) return core::success();
+    auto result = body->pointerUp(controller, event, workspaceArea());
+    yieldIfModal(controller);
+    repaint();
+    return result;
+  }
   if (knobDrag_) {
     const auto drag = *knobDrag_;
     knobDrag_.reset();
@@ -2356,6 +2411,12 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
     }
   }
   if (layout_.inspectorOpen && contains(layout_.inspector, anchor)) return true;
+  if (auto* body = bodyWorkspace(); body != nullptr) {
+    if (contains(workspaceArea(), anchor) &&
+        body->scroll(controller, anchor, deltaX, deltaY, workspaceArea()))
+      repaint();
+    return true;
+  }
   if (inMusicalArea(anchor) ||
       (workspace_ == Workspace::Sing && contains(layout_.laneTimePlot, anchor))) {
     controller.scroll(deltaX, deltaY, toLegacy(anchor), modifiers);
@@ -2370,7 +2431,8 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     return true;
   }
   if (event.key == NativeKey::Escape && presented_ &&
-      (knobDrag_ || (forwarding_ != ForwardArea::None && controller.pointerGestureActive()))) {
+      (knobDrag_ || bodyGesture_ ||
+       (forwarding_ != ForwardArea::None && controller.pointerGestureActive()))) {
     cancelGestures(controller);
     return true;
   }
@@ -2384,15 +2446,15 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
     setInspectorOpen(controller, false);
     return true;
   }
-  // The EXPORT workspace and the open inspector cover the score, so no key may edit it from here,
+  // TUNE, MIX, EXPORT and the open inspector cover the score, so no key may edit it from here,
   // whatever holds focus. Escape returns to SING (the inspector handled its Escape above). Only
   // the shortcuts the host declares as its own application commands (it implements them itself)
   // still reach it; every other modified key (Alt-Delete, Command-D, Command-Delete, a Command-Q
   // the host does not handle) stops here instead of reaching the note editor.
-  if (presented_ && (workspace_ == Workspace::Export || layout_.inspectorOpen ||
+  if (presented_ && (workspace_ != Workspace::Sing || layout_.inspectorOpen ||
                      workspaceMenuOpen_) &&
       !controller.legacyModalSurfaceActive()) {
-    if (event.key == NativeKey::Escape && workspace_ == Workspace::Export) {
+    if (event.key == NativeKey::Escape && workspace_ != Workspace::Sing) {
       setWorkspace(controller, Workspace::Sing);
       return true;
     }
@@ -2427,7 +2489,7 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // With the EXPORT workspace up or the inspector open the score is covered, so its plain keys
   // never edit it (Escape was handled above).
   const auto scoreHidden = [this] {
-    return workspace_ == Workspace::Export || layout_.inspectorOpen || workspaceMenuOpen_;
+    return workspace_ != Workspace::Sing || layout_.inspectorOpen || workspaceMenuOpen_;
   };
   if (focused == nullptr) return scoreHidden();
   const std::string id = focused->id;
@@ -2435,6 +2497,13 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // (Delete must not delete the selected notes because a knob is focused). Command shortcuts such
   // as undo and save still pass through.
   if (ownsSemantic(id)) {
+    if (auto* body = bodyWorkspace(); body != nullptr && id.starts_with(body->idPrefix()) &&
+                                      event.key != NativeKey::Escape &&
+                                      body->key(controller, id, event)) {
+      yieldIfModal(controller);
+      repaint();
+      return true;
+    }
     switch (event.key) {
       case NativeKey::Escape:
         semanticFocus_.clear();
@@ -2558,16 +2627,9 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .role = SemanticRole::Tab,
                      .name = std::string{kWorkspaces[i]} + " workspace",
                      .bounds = l.workspaceTab[i],
-                     .enabled = i == 0U || i == 1U || i == 4U,
-                     .selected = (i == 0U && workspace_ == Workspace::Sing) ||
-                                 (i == 4U && workspace_ == Workspace::Export),
-                     .actions = i == 0U || i == 1U || i == 4U
-                                    ? std::vector<SemanticAction>{SemanticAction::Activate,
-                                                                  SemanticAction::SetFocus}
-                                    : std::vector<SemanticAction>{SemanticAction::SetFocus},
-                     .description = i == 1U   ? "Opens the voice browser"
-                                    : i == 2U || i == 3U ? "Not available in this build"
-                                                         : ""});
+                     .selected = tabSelected(i),
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = i == 1U ? "Opens the voice browser" : ""});
   }
   if (l.workspaceMenuButton.width >= 24.0) {
     add(SemanticNode{.id = "shell.workspace-menu", .role = SemanticRole::Button,
@@ -2576,14 +2638,14 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .bounds = l.workspaceMenuButton,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     if (workspaceMenuOpen_) {
-      static constexpr std::array<const char*, 3U> kIds{"sing", "voice", "export"};
-      static constexpr std::array<const char*, 3U> kNames{"Sing", "Voice browser", "Export"};
+      static constexpr std::array<const char*, 5U> kIds{"sing", "voice", "tune", "mix", "export"};
+      static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice browser", "Tune", "Mix",
+                                                          "Export"};
       for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
         add(SemanticNode{.id = std::string{"shell.workspace."} + kIds[i],
                          .role = SemanticRole::Button, .name = kNames[i],
                          .bounds = l.workspaceMenuRow[i],
-                         .selected = (i == 0U && workspace_ == Workspace::Sing) ||
-                                     (i == 2U && workspace_ == Workspace::Export),
+                         .selected = tabSelected(i),
                          .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     }
   }
@@ -2820,12 +2882,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
   const auto scoreCovered = !singShown || l.inspectorOpen || workspaceMenuOpen_;
   if (!singShown) {
-    // The EXPORT workspace covers the score: nothing of the grid or lane is published under it.
+    // TUNE, MIX and EXPORT cover the score: nothing of the grid or lane is published under them.
     std::erase_if(children, [](const SemanticNode& node) {
       return node.id == "timeline" || node.id.starts_with("editor.vibrato.handle.") ||
              node.id.starts_with("overlap-group.") || node.id.starts_with("detail.") ||
              node.id.starts_with("shell.lane");
     });
+  }
+  if (const auto* body = bodyWorkspace(); body != nullptr) {
+    std::vector<SemanticNode> nodes;
+    body->semantics(controller, state, workspaceArea(), nodes);
+    for (auto& node : nodes)
+      if (node.id.starts_with(body->idPrefix())) add(std::move(node));
+  }
+  if (workspace_ == Workspace::Export) {
     const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
     // Busy is read live here too: accessibility must not offer a run the paint cache still shows.
     const auto busy = exportBusy(controller);
@@ -2937,6 +3007,15 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   } else if (id == "shell.workspace.sing" && activate) {
     setWorkspace(controller, Workspace::Sing);
     result = core::success();
+  } else if (id == "shell.workspace.tune" && activate) {
+    setWorkspace(controller, Workspace::Tune);
+    result = core::success();
+  } else if (id == "shell.workspace.mix" && activate) {
+    setWorkspace(controller, Workspace::Mix);
+    result = core::success();
+  } else if (auto* body = bodyWorkspace(); body != nullptr && id.starts_with(body->idPrefix())) {
+    result = body->perform(controller, id, action);
+    yieldIfModal(controller);
   } else if (id == "shell.workspace.export" && activate) {
     setWorkspace(controller, Workspace::Export);
     result = core::success();

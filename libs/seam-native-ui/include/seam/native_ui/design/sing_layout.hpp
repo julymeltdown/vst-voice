@@ -26,7 +26,8 @@ struct SingLayout final {
   bool outputMeterVisible{true};
 
   ui::Rect header, wordmark, workspaceTabs, workspaceMenuButton, workspaceMenu;
-  std::array<ui::Rect, 3U> workspaceMenuRow{};
+  // SING, VOICE, TUNE, MIX, EXPORT; below 720 pt the two looks share one row under them.
+  std::array<ui::Rect, 5U> workspaceMenuRow{};
   std::array<ui::Rect, 2U> modeMenuRow{};
   ui::Rect modeSwitch, transport, outputMeter, settings;
   ui::Rect editor, tools, ruler, keyboard, grid;

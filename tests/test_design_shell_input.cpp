@@ -21,6 +21,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <tuple>
 
 namespace {
 
@@ -482,7 +483,7 @@ TEST_CASE("the shell accessibility tree exposes its controls with real roles in 
   const auto* sing = find("shell.workspace.sing");
   CHECK(sing && sing->role == SemanticRole::Tab && sing->selected);
   const auto* tune = find("shell.workspace.tune");
-  CHECK(tune && !tune->enabled);
+  CHECK(tune && tune->enabled && !tune->selected);
   CHECK(find("shell.lane-tab.gender") != nullptr);
   // Controller controls nested in the classic toolbar group are re-homed onto the shell's own
   // header and singer card, keeping their ids, roles and actions.
@@ -733,8 +734,8 @@ TEST_CASE("shell accessibility actions are validated against the current layout 
   const auto revision = f.controller.documentRevision();
   CHECK(!f.shell.dispatchSemantic(f.controller, "shell.knob.nonexistent", SemanticAction::Increment).hasValue());
   CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.emo", SemanticAction::Increment).hasValue());
-  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.tune", SemanticAction::Activate).hasValue());
-  // A disabled control can still be focused for its explanation.
+  // EXPORT's run button is not published while SING shows, so it cannot be activated from here.
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.export.run", SemanticAction::Activate).hasValue());
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.tune", SemanticAction::SetFocus).hasValue());
   // After the rack collapses to a rail, a retained knob element no longer exists.
   CHECK(f.shell.prepareFrame(f.controller, 1000.0, 700.0));
@@ -1896,8 +1897,8 @@ TEST_CASE("compact workspaces and appearance remain reachable without hidden sco
   CHECK(f.controller.documentRevision() == revision);
   CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuButton.x + 12.0,
                                                 l.workspaceMenuButton.y + 12.0})).hasValue());
-  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuRow[2].x + 12.0,
-                                                l.workspaceMenuRow[2].y + 12.0})).hasValue());
+  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuRow[4].x + 12.0,
+                                                l.workspaceMenuRow[4].y + 12.0})).hasValue());
   CHECK(f.shell.workspace() == Workspace::Export);
   CHECK(f.controller.documentRevision() == revision);
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace-menu", SemanticAction::Activate)
@@ -1907,6 +1908,58 @@ TEST_CASE("compact workspaces and appearance remain reachable without hidden sco
   CHECK(f.shell.workspace() == Workspace::Sing);
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.export", SemanticAction::Activate)
             .hasValue() == false);  // menu items disappear when it closes
+}
+
+TEST_CASE("TUNE and MIX cover the score with their own body, and Escape returns to SING") {
+  using native_ui::SemanticAction;
+  using native_ui::design::Workspace;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+  const auto notes = f.session.project().findRegion(f.regionId)->notes.size();
+  for (const auto& [tab, workspace, prefix] :
+       {std::tuple{"shell.workspace.tune", Workspace::Tune, "shell.tune."},
+        std::tuple{"shell.workspace.mix", Workspace::Mix, "shell.mix."}}) {
+    CHECK(f.shell.dispatchSemantic(f.controller, tab, SemanticAction::Activate).hasValue());
+    CHECK(f.shell.workspace() == workspace);
+    CHECK(f.shell.bodyWorkspace() != nullptr);
+    CHECK(f.frame());
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    // The score is covered: no note or timeline node, and the body publishes its own nodes.
+    CHECK(f.shell.accessibilityTree().virtualizedNoteCount() == 0U);
+    CHECK(findShellNode(f.shell.accessibilityTree().root(), "timeline") == nullptr);
+    bool bodyNode = false;
+    for (const auto& node : f.shell.accessibilityTree().root().children)
+      bodyNode = bodyNode || node.id.starts_with(prefix);
+    CHECK(bodyNode);
+    const auto* selected = findShellNode(f.shell.accessibilityTree().root(), tab);
+    CHECK(selected != nullptr && selected->selected);
+    // Editing keys never reach the selected note behind the body.
+    for (const auto key : {NativeKey::Delete, NativeKey::Backspace, NativeKey::Up}) {
+      if (!f.shell.handleShellKey(f.controller, KeyEvent{.key = key}))
+        static_cast<void>(f.controller.keyDown(KeyEvent{.key = key}));
+    }
+    // A modified editing shortcut stops at the shell too.
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::D,
+                                                         .modifiers = {.command = true}}));
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.session.project().findRegion(f.regionId)->notes.size() == notes);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(f.shell.workspace() == Workspace::Sing);
+    CHECK(f.shell.bodyWorkspace() == nullptr);
+  }
+  // The compact menu lists all five workspaces and both looks above the status bar.
+  CHECK(f.shell.prepareFrame(f.controller, 480.0, 320.0));
+  const auto l = f.shell.layout();
+  CHECK(l.workspaceMenu.bottom() < l.status.y);
+  CHECK(l.modeMenuRow[1].bottom() <= l.workspaceMenu.bottom());
+  CHECK(l.modeMenuRow[0].y >= l.workspaceMenuRow[4].bottom());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace-menu", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.pointerDown(f.controller, press({l.workspaceMenuRow[3].x + 12.0,
+                                                l.workspaceMenuRow[3].y + 12.0})).hasValue());
+  CHECK(f.shell.workspace() == Workspace::Mix);
 }
 
 TEST_CASE("a compact first frame reveals the phrase but later user pitch scrolling is respected") {

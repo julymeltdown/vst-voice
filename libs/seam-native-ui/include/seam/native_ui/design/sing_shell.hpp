@@ -2,6 +2,7 @@
 
 #include "seam/native_ui/accessibility_tree.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
+#include "seam/native_ui/design/shell_workspace.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -32,9 +33,9 @@ struct ModeAssets final {
   std::shared_ptr<const paint::Image> wordmark;
 };
 
-// The shell's workspaces. VOICE opens the voice browser (a classic surface until it is re-homed);
-// TUNE and MIX are not built yet and stay disabled.
-enum class Workspace : std::uint8_t { Sing, Export };
+// The shell's workspaces. VOICE opens the voice browser (a classic surface until it is re-homed).
+// TUNE, MIX and EXPORT cover the score with their own body.
+enum class Workspace : std::uint8_t { Sing, Tune, Mix, Export };
 
 // What an Export Set will write, as the host computed it. Nothing here is a guess by the shell.
 struct ShellExportPlan final {
@@ -122,6 +123,10 @@ public:
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
   void setHostActions(ShellHostActions actions) { hostActions_ = std::move(actions); }
   [[nodiscard]] Workspace workspace() const noexcept { return workspace_; }
+  // The TUNE or MIX body while it is shown, else null.
+  [[nodiscard]] ShellWorkspace* bodyWorkspace() const noexcept;
+  // The rectangle a covering workspace (TUNE, MIX, EXPORT) owns, in shell coordinates.
+  [[nodiscard]] ui::Rect workspaceArea() const noexcept { return exportArea(); }
   // Switches the visible workspace. Gestures and a note-grid lyric field are abandoned first: the
   // grid they belong to is no longer on screen.
   void setWorkspace(NativeEditorController& controller, Workspace workspace);
@@ -221,6 +226,9 @@ private:
   // inspector to its button.
   void setInspectorOpen(NativeEditorController& controller, bool open);
   void setWorkspaceMenuOpen(NativeEditorController& controller, bool open);
+  // Header tab and menu row order: SING, VOICE, TUNE, MIX, EXPORT.
+  [[nodiscard]] bool tabSelected(std::size_t tab) const noexcept;
+  void openTab(NativeEditorController& controller, std::size_t tab);
   [[nodiscard]] bool knobsShown() const noexcept {
     return layout_.rack == RackPresentation::Full || layout_.inspectorOpen;
   }
@@ -280,6 +288,10 @@ private:
   std::function<void()> repaint_;
   ShellHostActions hostActions_;
   Workspace workspace_{Workspace::Sing};
+  std::unique_ptr<ShellWorkspace> tune_{makeTuneWorkspace()};
+  std::unique_ptr<ShellWorkspace> mix_{makeMixWorkspace()};
+  // A pointer gesture that started inside the TUNE or MIX body.
+  bool bodyGesture_{false};
   // Export progress from the last painted state, so the run button can refuse while one runs.
   bool exportRunning_{false};
   // What this frame drew inside the notes (or why it drew nothing); accessibility reports it.
