@@ -4,6 +4,7 @@
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/shell_workspace.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
+#include "seam/native_ui/design/voice_workspace.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -33,9 +34,9 @@ struct ModeAssets final {
   std::shared_ptr<const paint::Image> wordmark;
 };
 
-// The shell's workspaces. VOICE opens the voice browser (a classic surface until it is re-homed).
-// TUNE, MIX and EXPORT cover the score with their own body.
-enum class Workspace : std::uint8_t { Sing, Tune, Mix, Export };
+// The shell's workspaces. VOICE, TUNE, MIX and EXPORT cover the score with their own body; the
+// voice browser stays behind the singer card's "Change voice".
+enum class Workspace : std::uint8_t { Sing, Voice, Tune, Mix, Export };
 
 // What an Export Set will write, as the host computed it. Nothing here is a guess by the shell.
 struct ShellExportPlan final {
@@ -62,6 +63,9 @@ struct ShellHostActions final {
   // While EXPORT hides the score only these pass on; every other modified key stops at the shell,
   // so a shortcut the host does not implement can never fall through to a note-editing command.
   std::function<bool(const KeyEvent&)> applicationShortcut;
+  // The VOICE workspace's Voice Designer session, dialogs and audition output. A host without a
+  // designer (a plug-in) leaves it empty and VOICE says voice design runs in the standalone app.
+  ShellVoiceHost voice;
 };
 
 // Finds assets/ui-design next to a bundle, in an explicit override, or in the source tree for
@@ -121,10 +125,16 @@ public:
   // controller's input geometry is returned to the classic editor before the switch.
   void setEnabled(NativeEditorController& controller, bool enabled);
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
-  void setHostActions(ShellHostActions actions) { hostActions_ = std::move(actions); }
+  void setHostActions(ShellHostActions actions) {
+    hostActions_ = std::move(actions);
+    voice_->setHost(hostActions_.voice);
+  }
   [[nodiscard]] Workspace workspace() const noexcept { return workspace_; }
-  // The TUNE or MIX body while it is shown, else null.
+  // The VOICE, TUNE or MIX body while it is shown, else null.
   [[nodiscard]] ShellWorkspace* bodyWorkspace() const noexcept;
+  // Undo and redo belong to the Voice Designer while VOICE is shown: the editor's history is not
+  // on screen there. Returns the designer's result then, and nothing in any other workspace.
+  [[nodiscard]] std::optional<core::Result<void>> routeUndo(bool redo);
   // The rectangle a covering workspace (TUNE, MIX, EXPORT) owns, in shell coordinates.
   [[nodiscard]] ui::Rect workspaceArea() const noexcept { return exportArea(); }
   // Switches the visible workspace. Gestures and a note-grid lyric field are abandoned first: the
@@ -290,6 +300,7 @@ private:
   Workspace workspace_{Workspace::Sing};
   std::unique_ptr<ShellWorkspace> tune_{makeTuneWorkspace()};
   std::unique_ptr<ShellWorkspace> mix_{makeMixWorkspace()};
+  std::unique_ptr<VoiceWorkspace> voice_{makeVoiceWorkspace()};
   // A pointer gesture that started inside the TUNE or MIX body.
   bool bodyGesture_{false};
   // Export progress from the last painted state, so the run button can refuse while one runs.

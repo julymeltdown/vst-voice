@@ -149,8 +149,19 @@ TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through re
     first.paint();
     CHECK(first.shellPresents());
 
-    // 1. Voice: the VOICE tab opens the real voice browser; choosing a card selects that bank.
+    // 1. Voice: the VOICE tab opens the Voice Designer workspace, whose session the app creates on
+    // first use; the singer card's Change voice opens the real voice browser, and choosing a card
+    // selects that bank.
     CHECK(first.app->dispatchAccessibility("shell.workspace.voice", SemanticAction::Activate));
+    first.paint();
+    CHECK(first.shellPresents());
+    CHECK(!first.app->authoring().controller().voicebankBrowserVisible());
+    CHECK(first.find("shell.voice.source") != nullptr);
+    CHECK(first.find("shell.voice.envelope") != nullptr);
+    CHECK(first.find("shell.voice.new") != nullptr);
+    CHECK(first.app->dispatchAccessibility("shell.workspace.sing", SemanticAction::Activate));
+    first.paint();
+    CHECK(first.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
     CHECK(first.app->authoring().controller().voicebankBrowserVisible());
     first.paint();
     CHECK(!first.shellPresents());

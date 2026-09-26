@@ -71,9 +71,15 @@ public:
   }
   // True while a pointer gesture started in this workspace is in progress.
   [[nodiscard]] virtual bool gestureActive() const noexcept { return false; }
+  // Closes a transient surface the workspace shows over itself (a card's action menu). Returns
+  // true when one was open, so the shell's Escape closes it instead of leaving the workspace.
+  [[nodiscard]] virtual bool dismissTransient() { return false; }
   // The node a press just landed on, so keyboard focus follows the pointer (as for a SING knob).
   // Read once by the shell after pointerDown; empty leaves focus cleared.
   [[nodiscard]] virtual std::string takeFocusRequest() { return {}; }
+  // The workspace the press that just landed asks the shell to show ("sing": a double-click on a
+  // MIX arrangement region opens it there). Read once by the shell after pointerDown; empty stays.
+  [[nodiscard]] virtual std::string takeWorkspaceRequest() { return {}; }
 };
 
 [[nodiscard]] std::unique_ptr<ShellWorkspace> makeTuneWorkspace();

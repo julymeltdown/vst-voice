@@ -114,6 +114,9 @@ struct StandaloneApplicationControllerConfig final {
   std::optional<authoring::NeuralSelectionSurface> neuralSelection;
   std::filesystem::path neuralResourceRoot{};
   std::size_t neuralMaximumResources{64U};
+  // A surface that owns a command while it is on screen (the VOICE workspace's Voice Designer owns
+  // Undo and Redo) handles it here first; returning nothing leaves the command to this controller.
+  std::function<std::optional<core::Result<void>>(platform::ApplicationCommand)> interceptCommand;
 };
 
 class StandaloneApplicationController final

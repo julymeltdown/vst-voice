@@ -17,6 +17,7 @@ std::string modeName(DesignMode mode) {
 
 std::string workspaceName(Workspace workspace) {
   switch (workspace) {
+    case Workspace::Voice: return "voice";
     case Workspace::Tune: return "tune";
     case Workspace::Mix: return "mix";
     case Workspace::Export: return "export";

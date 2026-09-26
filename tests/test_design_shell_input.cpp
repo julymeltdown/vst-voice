@@ -1119,8 +1119,20 @@ TEST_CASE("a host that cannot export says why and never pretends to run") {
   const auto clicked = f.shell.pointerDown(f.controller, press({run.x + 10.0, run.y + 10.0}));
   CHECK(!clicked.hasValue());
   if (!clicked) CHECK(clicked.error().message == "Export from your DAW");
-  // VOICE opens the real voice browser (a classic surface for now).
+  // VOICE opens the VOICE workspace. This host has no Voice Designer, so VOICE says voice design
+  // runs in the standalone app and offers the browser, which Change voice also still opens.
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.workspace.voice", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.shell.workspace() == native_ui::design::Workspace::Voice);
+  CHECK(!f.controller.voicebankBrowserVisible());
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto& voiceNodes = f.shell.accessibilityTree().root().children;
+  CHECK(std::any_of(voiceNodes.begin(), voiceNodes.end(), [](const SemanticNode& node) {
+    return node.id == "shell.voice.unavailable";
+  }));
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.voice.browser", SemanticAction::Activate)
             .hasValue());
   CHECK(f.controller.voicebankBrowserVisible());
 }
@@ -2124,4 +2136,120 @@ TEST_CASE("a replacement editor controller with the same region gets its own com
   CHECK(replacement.pianoRoll().pitch().topMidiKey() < 84);
   const auto y = replacement.pianoRoll().pitch().midiToPixel(f.note().midiKey);
   CHECK(y >= 0.0 && y + replacement.pianoRoll().pitch().rowHeight() <= f.shell.layout().grid.height);
+}
+
+TEST_CASE("the header output meter lights from a measured level and shows only the empty scale without one") {
+  using native_ui::SemanticAction;
+  ShellFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A controller whose host counts clip resets, shown by the same shell.
+  int hostResets = 0;
+  native_ui::NativeEditorController controller{
+      f.session, f.factory, f.regionId,
+      native_ui::EditorHostCallbacks{.resetOutputClip = [&hostResets] { ++hostResets; }}};
+  controller.resize(1600.0, 900.0);
+  const auto paintInto = [&](native_ui::PixelSurface& surface) {
+    CHECK(f.shell.prepareFrame(controller, 1600.0, 900.0));
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    CHECK(f.shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick()));
+    controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(controller, controller.sceneState());
+  };
+  const auto node = [&]() { return findShellNode(f.shell.accessibilityTree().root(), "shell.output-meter"); };
+  using Level = native_ui::EditorSceneState::OutputLevel;
+
+  native_ui::PixelSurface empty{1600U, 900U};
+  paintInto(empty);
+  const auto meter = f.shell.layout().outputMeter;
+  CHECK(f.shell.layout().outputMeterVisible);
+  // No level: the node says nothing is measured and carries no number.
+  const auto* published = node();
+  CHECK(published != nullptr);
+  if (published == nullptr) return;
+  CHECK(published->value == "Not measured");
+  CHECK(published->value.find("dBFS") == std::string::npos);
+  CHECK(published->bounds.x == meter.x && published->bounds.width == meter.width);
+
+  // Counts pixels that differ between two frames inside and outside a rectangle.
+  const auto differences = [](const native_ui::PixelSurface& a, const native_ui::PixelSurface& b,
+                              ui::Rect r) {
+    std::pair<std::size_t, std::size_t> counts{0U, 0U};
+    for (std::uint32_t y = 0U; y < 900U; ++y)
+      for (std::uint32_t x = 0U; x < 1600U; ++x) {
+        const auto index = static_cast<std::size_t>(y) * 1600U + x;
+        if (a.pixels()[index] == b.pixels()[index]) continue;
+        const auto px = static_cast<double>(x) + 0.5;
+        const auto py = static_cast<double>(y) + 0.5;
+        const bool within = px >= r.x && px <= r.right() && py >= r.y && py <= r.bottom();
+        ++(within ? counts.first : counts.second);
+      }
+    return counts;
+  };
+
+  // A measured stereo level lights segments inside the meter and nothing outside it.
+  controller.setOutputLevel(Level{.peak = {0.5F, 0.25F}, .hold = {0.7F, 0.3F}, .bus = "Master"});
+  native_ui::PixelSurface lit{1600U, 900U};
+  paintInto(lit);
+  const auto [litInside, litOutside] = differences(empty, lit, meter);
+  if (litInside < 40U || litOutside != 0U)
+    std::cerr << "meter pixels inside=" << litInside << " outside=" << litOutside << '\n';
+  CHECK(litInside >= 40U);
+  CHECK(litOutside == 0U);
+  published = node();
+  CHECK(published != nullptr && published->name == "Output level, Master");
+  CHECK(published != nullptr && published->value == "L -6.0 dBFS, R -12.0 dBFS");
+  CHECK(published != nullptr && std::find(published->actions.begin(), published->actions.end(),
+                                          SemanticAction::Activate) == published->actions.end());
+  // A louder level lights more of the scale.
+  controller.setOutputLevel(Level{.peak = {0.95F, 0.9F}, .hold = {0.95F, 0.9F}, .bus = "Master"});
+  native_ui::PixelSurface louder{1600U, 900U};
+  paintInto(louder);
+  CHECK(differences(empty, louder, meter).first > litInside);
+
+  // A latched clip lights the clip light; clicking it resets the shown flag and the host latch.
+  controller.setOutputLevel(
+      Level{.peak = {0.5F, 0.25F}, .hold = {0.7F, 0.3F}, .bus = "Master", .clipped = true});
+  native_ui::PixelSurface clipped{1600U, 900U};
+  paintInto(clipped);
+  const ui::Rect clipArea{meter.right() - 16.0, meter.y, 16.0, meter.height};
+  CHECK(differences(lit, clipped, clipArea).first > 20U);
+  published = node();
+  CHECK(published != nullptr && published->value.find("clipped") != std::string::npos);
+  CHECK(f.shell.pointerDown(controller, press({meter.right() - 7.0, meter.y + 22.0})).hasValue());
+  CHECK(f.shell.pointerUp(controller, press({meter.right() - 7.0, meter.y + 22.0})).hasValue());
+  CHECK(hostResets == 1);
+  CHECK(controller.sceneState().outputLevel.has_value() && !controller.sceneState().outputLevel->clipped);
+  // The accessible route: Activate on the node resets a latched clip too.
+  controller.setOutputLevel(
+      Level{.peak = {0.5F, 0.25F}, .hold = {0.7F, 0.3F}, .bus = "Master", .clipped = true});
+  native_ui::PixelSurface clippedAgain{1600U, 900U};
+  paintInto(clippedAgain);
+  CHECK(f.shell.dispatchSemantic(controller, "shell.output-meter", SemanticAction::Activate).hasValue());
+  CHECK(hostResets == 2);
+  CHECK(!controller.sceneState().outputLevel->clipped);
+
+  // A mono bus is one row and one reading.
+  controller.setOutputLevel(Level{.peak = {0.5F}, .hold = {0.5F}, .bus = "Master"});
+  native_ui::PixelSurface mono{1600U, 900U};
+  paintInto(mono);
+  published = node();
+  CHECK(published != nullptr && published->value == "-6.0 dBFS");
+  CHECK(differences(empty, mono, meter).second == 0U);
+
+  // Cleared again (device stopped): exactly the empty scale, and no value.
+  controller.setOutputLevel(std::nullopt);
+  native_ui::PixelSurface cleared{1600U, 900U};
+  paintInto(cleared);
+  const auto [clearedInside, clearedOutside] = differences(empty, cleared, meter);
+  CHECK(clearedInside == 0U && clearedOutside == 0U);
+  published = node();
+  CHECK(published != nullptr && published->value == "Not measured");
+  CHECK(!f.shell.dispatchSemantic(controller, "shell.output-meter", SemanticAction::Activate).hasValue());
+
+  // A narrow header hides the meter, and its node goes with it.
+  CHECK(f.shell.prepareFrame(controller, 1000.0, 700.0));
+  CHECK(!f.shell.layout().outputMeterVisible);
+  controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(controller, controller.sceneState());
+  CHECK(node() == nullptr);
 }

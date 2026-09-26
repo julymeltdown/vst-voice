@@ -2,6 +2,7 @@
 #include "seam/native_ui/candidate_audition.hpp"
 #include "seam/platform/audio_device.hpp"
 #include <chrono>
+#include <optional>
 
 namespace seam::native_ui {
 // Owner-thread device lifecycle. The device must stop before callback state dies.
@@ -10,6 +11,11 @@ public:
   using Clock = std::chrono::steady_clock;
   ~CandidateAuditionSession() { stop(); }
   [[nodiscard]] bool active() const noexcept { return device_ != nullptr; }
+  // The measured peak of the block the device last played, or nothing when no audition plays.
+  [[nodiscard]] std::optional<float> level() const noexcept {
+    if (!device_ || !processor_) return std::nullopt;
+    return processor_->blockPeak();
+  }
   void stop() noexcept {
     if (device_) device_->stop();
     device_.reset();

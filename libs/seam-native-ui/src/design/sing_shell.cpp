@@ -256,6 +256,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
     if (name == "export") workspace_ = Workspace::Export;
     if (name == "tune") workspace_ = Workspace::Tune;
     if (name == "mix") workspace_ = Workspace::Mix;
+    if (name == "voice") workspace_ = Workspace::Voice;
   }
   // Captures only: start with the compact inspector open (ignored at the full rack).
   if (const char* inspector = std::getenv("SEAM_UI_INSPECTOR");
@@ -468,6 +469,7 @@ void SingShell::cancelGestures(NativeEditorController& controller) {
     bodyGesture_ = false;
     tune_->cancelGestures(controller);
     mix_->cancelGestures(controller);
+    voice_->cancelGestures(controller);
   }
   scrollAccumulator_ = 0.0;
   controller.cancelPointerGesture();
@@ -754,11 +756,17 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   exportRunning_ = exportBusy(controller);
   waveform_ = hostActions_.regionWaveform
                   ? hostActions_.regionWaveform()
-                  : RegionWaveform{nullptr, "No waveform",
-                                   "This host does not give the editor its region's audio."};
+                 : RegionWaveform{nullptr, "No waveform",
+                                  "This host does not give the editor its region's audio."};
   if (waveform_.shown() && waveform_.view->key.region != model.regionId())
     waveform_ = RegionWaveform{nullptr, "Other region",
                                "The rendered audio belongs to a different region than the one shown."};
+  if (workspace_ == Workspace::Voice) {
+    // The listening singer uses this look's portrait; finished designer work and a requested
+    // audition are collected before the body paints, and frames continue while either runs.
+    voice_->setPortrait(assets().portrait);
+    if (voice_->poll()) repaint();
+  }
   if (auto* body = bodyWorkspace(); body != nullptr) {
     stageShown_ = false;
     body->paint(*c, t, controller, state, workspaceArea());
@@ -803,10 +811,23 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   return true;
 }
 
+namespace {
+// The header meter's clip light at the right end of l.outputMeter: what is painted, and the
+// taller strip a click on it lands in. Shared by paint, pointer and semantics.
+struct OutputClipLight final {
+  ui::Rect light;
+  ui::Rect hit;
+};
+OutputClipLight outputClipLight(ui::Rect meter) {
+  return {{meter.right() - 12.0, meter.y + 12.0, 10.0, 20.0},
+          {meter.right() - 16.0, meter.y, 16.0, meter.height}};
+}
+}  // namespace
+
 void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                             time::Tick playhead) const {
   const auto& l = layout_;
-  // Workspace tabs. SING, TUNE, MIX and EXPORT are workspaces; VOICE opens the voice browser.
+  // Workspace tabs: SING, VOICE, TUNE, MIX and EXPORT.
   static constexpr std::array<Icon, 5U> kIcons{Icon::Sing, Icon::Voice, Icon::Tune, Icon::Mix,
                                                Icon::Export};
   static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix", "Export"};
@@ -905,18 +926,54 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.text(l.meterReadout, meterText, fitted(c, meterText, small, l.meterReadout.width - 6.0),
          tempoColor);
 
-  // Output meter: no measured output level is published to the editor yet, so the meter shows
-  // its empty scale instead of an invented level.
+  // Output meter: segments on a -60..0 dBFS scale per channel of the measured bus, a peak-hold
+  // marker and a clip light. Without a measured level (device stopped or unavailable) it shows
+  // only the empty scale: nothing here is ever estimated.
   if (l.outputMeterVisible) {
     const auto m = l.outputMeter;
     c.text({m.x, m.y, 36.0, m.height}, "Out",
            style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Left, true),
            t.color.textSecondary);
-    for (int row = 0; row < 2; ++row)
-      for (int i = 0; i < 20; ++i)
-        c.fill(Path::roundedRect({m.x + 40.0 + i * 6.0, m.y + 12.0 + row * 12.0, 4.0, 8.0}, 1.0),
-               withAlpha(i < 14 ? t.color.meterLow : (i < 18 ? t.color.meterMid : t.color.meterHigh),
-                         0.22));
+    constexpr int kSegments = 18;             // 3.33 dB each
+    constexpr double kFloorDb = -60.0;
+    constexpr double kSegmentDb = -kFloorDb / kSegments;
+    const auto zone = [&t](int i) {
+      return i < 12 ? t.color.meterLow : (i < 16 ? t.color.meterMid : t.color.meterHigh);
+    };
+    const auto toDb = [](float linear) {
+      return linear > 0.0F ? 20.0 * std::log10(static_cast<double>(linear)) : -1000.0;
+    };
+    const auto& level = state.outputLevel;
+    const auto rows = level.has_value() ? std::max<std::size_t>(level->peak.size(), 1U) : 2U;
+    // Rows share the 24pt band below the label baseline; a mono bus is one centred row.
+    const auto pitch = 24.0 / static_cast<double>(rows);
+    const auto rowHeight = std::min(8.0, pitch * 2.0 / 3.0);
+    const auto bandTop = m.y + 22.0 - (static_cast<double>(rows) * pitch) * 0.5;
+    for (std::size_t row = 0U; row < rows; ++row) {
+      const auto y = bandTop + static_cast<double>(row) * pitch + (pitch - rowHeight) * 0.5;
+      const auto db = level.has_value() && row < level->peak.size() ? toDb(level->peak[row])
+                                                                     : -1000.0;
+      for (int i = 0; i < kSegments; ++i) {
+        const auto lit = db > kFloorDb + i * kSegmentDb;
+        c.fill(Path::roundedRect({m.x + 34.0 + i * 6.0, y, 4.0, rowHeight}, 1.0),
+               withAlpha(zone(i), lit ? 1.0 : 0.22));
+      }
+      if (level.has_value() && row < level->hold.size()) {
+        const auto holdDb = toDb(level->hold[row]);
+        if (holdDb > kFloorDb) {
+          const auto x = m.x + 34.0 + std::min(1.0, (holdDb - kFloorDb) / -kFloorDb) *
+                                          (kSegments * 6.0 - 2.0);
+          c.fill(Path::roundedRect({x - 0.75, y - 1.0, 1.5, rowHeight + 2.0}, 0.75),
+                 t.color.textPrimary);
+        }
+      }
+    }
+    const auto clip = outputClipLight(m);
+    const auto clipped = level.has_value() && level->clipped;
+    c.save();
+    if (clipped) c.setGlow(t.color.meterHigh, 6.0);
+    c.fill(Path::roundedRect(clip.light, 2.0), withAlpha(t.color.meterHigh, clipped ? 1.0 : 0.22));
+    c.restore();
   }
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
 }
@@ -929,7 +986,7 @@ void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
   c.fill(Path::roundedRect(l.workspaceMenu, 9.0), t.color.surfaceRaised);
   c.stroke(Path::roundedRect(l.workspaceMenu, 9.0), t.color.borderStrong, StrokeStyle{1.0});
   c.restore();
-  static constexpr std::array<const char*, 5U> kLabels{"Sing", "Voice browser", "Tune", "Mix",
+  static constexpr std::array<const char*, 5U> kLabels{"Sing", "Voice", "Tune", "Mix",
                                                        "Export"};
   for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
     const auto r = l.workspaceMenuRow[i];
@@ -2009,12 +2066,21 @@ void SingShell::setWorkspace(NativeEditorController& controller, Workspace works
 ShellWorkspace* SingShell::bodyWorkspace() const noexcept {
   if (workspace_ == Workspace::Tune) return tune_.get();
   if (workspace_ == Workspace::Mix) return mix_.get();
+  if (workspace_ == Workspace::Voice) return voice_.get();
   return nullptr;
+}
+
+std::optional<core::Result<void>> SingShell::routeUndo(bool redo) {
+  if (!presented_ || workspace_ != Workspace::Voice) return std::nullopt;
+  auto result = voice_->undo(redo);
+  repaint();
+  return result;
 }
 
 bool SingShell::tabSelected(std::size_t tab) const noexcept {
   switch (tab) {
     case 0U: return workspace_ == Workspace::Sing;
+    case 1U: return workspace_ == Workspace::Voice;
     case 2U: return workspace_ == Workspace::Tune;
     case 3U: return workspace_ == Workspace::Mix;
     case 4U: return workspace_ == Workspace::Export;
@@ -2025,14 +2091,11 @@ bool SingShell::tabSelected(std::size_t tab) const noexcept {
 void SingShell::openTab(NativeEditorController& controller, std::size_t tab) {
   switch (tab) {
     case 0U: setWorkspace(controller, Workspace::Sing); break;
+    case 1U: setWorkspace(controller, Workspace::Voice); break;
     case 2U: setWorkspace(controller, Workspace::Tune); break;
     case 3U: setWorkspace(controller, Workspace::Mix); break;
     case 4U: setWorkspace(controller, Workspace::Export); break;
-    default:
-      workspaceMenuOpen_ = false;
-      controller.showVoicebankBrowser();
-      yieldIfModal(controller);
-      break;
+    default: break;
   }
   repaint();
 }
@@ -2281,7 +2344,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     return core::success();
   }
   if (event.button == PointerButton::Left) {
-    // Workspace tabs: SING, TUNE, MIX and EXPORT switch the workspace; VOICE opens the browser.
+    // Workspace tabs: SING, VOICE, TUNE, MIX and EXPORT switch the workspace.
     for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
       if (l.workspaceTab[i].width < 24.0 || !contains(l.workspaceTab[i], p)) continue;
       openTab(controller, i);
@@ -2297,6 +2360,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     bodyGesture_ = body->gestureActive();
     if (auto focus = body->takeFocusRequest(); !focus.empty() && focus.starts_with(body->idPrefix()))
       takeSemanticFocus(controller, std::move(focus));
+    if (body->takeWorkspaceRequest() == "sing") setWorkspace(controller, Workspace::Sing);
     yieldIfModal(controller);
     repaint();
     return result;
@@ -2309,6 +2373,10 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       return core::success();
     }
     if (contains(l.playButton, p)) return controller.keyDown(KeyEvent{.key = NativeKey::Space});
+    if (l.outputMeterVisible && contains(outputClipLight(l.outputMeter).hit, p)) {
+      controller.resetOutputClip();
+      return core::success();
+    }
     if (contains(l.tempoReadout, p)) return controller.beginTempoEdit();
     if (contains(l.meterReadout, p)) return controller.beginMeterEdit();
     if (contains(l.settings, p)) {
@@ -2488,7 +2556,18 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
                      workspaceMenuOpen_) &&
       !controller.legacyModalSurfaceActive()) {
     if (event.key == NativeKey::Escape && workspace_ != Workspace::Sing) {
+      // A workspace's open action menu closes first; the next Escape returns to SING.
+      if (auto* body = bodyWorkspace(); body != nullptr && body->dismissTransient()) {
+        repaint();
+        return true;
+      }
       setWorkspace(controller, Workspace::Sing);
+      return true;
+    }
+    // VOICE shows the Voice Designer, so its undo and redo are the designer's.
+    if (workspace_ == Workspace::Voice && event.modifiers.primaryShortcut() &&
+        !event.modifiers.alt && (event.key == NativeKey::Z || event.key == NativeKey::Y)) {
+      static_cast<void>(routeUndo(event.key == NativeKey::Y || event.modifiers.shift));
       return true;
     }
     if (event.modifiers.primaryShortcut() || event.modifiers.alt)
@@ -2662,7 +2741,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .bounds = l.workspaceTab[i],
                      .selected = tabSelected(i),
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                     .description = i == 1U ? "Opens the voice browser" : ""});
+                     .description = ""});
   }
   if (l.workspaceMenuButton.width >= 24.0) {
     add(SemanticNode{.id = "shell.workspace-menu", .role = SemanticRole::Button,
@@ -2672,7 +2751,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     if (workspaceMenuOpen_) {
       static constexpr std::array<const char*, 5U> kIds{"sing", "voice", "tune", "mix", "export"};
-      static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice browser", "Tune", "Mix",
+      static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix",
                                                           "Export"};
       for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
         add(SemanticNode{.id = std::string{"shell.workspace."} + kIds[i],
@@ -2699,6 +2778,33 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   rehome("toolbar.transport", l.playButton);
   rehome("toolbar.tempo", l.tempoReadout);
   rehome("toolbar.meter", l.meterReadout);
+  if (l.outputMeterVisible) {
+    // The header output meter reads the measured level per channel; without one it says so
+    // rather than reporting a level. Activate clears a latched clip light.
+    SemanticNode meter{.id = "shell.output-meter", .role = SemanticRole::Status,
+                       .name = "Output level", .bounds = l.outputMeter};
+    if (const auto& level = state.outputLevel; level.has_value()) {
+      if (!level->bus.empty()) meter.name += ", " + level->bus;
+      const auto channels = level->peak.size();
+      for (std::size_t i = 0U; i < channels; ++i) {
+        if (i > 0U) meter.value += ", ";
+        if (channels == 2U) meter.value += i == 0U ? "L " : "R ";
+        else if (channels > 2U) meter.value += std::to_string(i + 1U) + " ";
+        meter.value += level->peak[i] > 0.0F
+                           ? format("%.1f dBFS", 20.0 * std::log10(static_cast<double>(level->peak[i])))
+                           : std::string{"-inf dBFS"};
+      }
+      if (level->clipped) {
+        meter.value += "; clipped";
+        meter.actions.push_back(SemanticAction::Activate);
+        meter.description = "Activate to reset the clip light";
+      }
+    } else {
+      meter.value = "Not measured";
+      meter.description = "No output device is playing";
+    }
+    add(std::move(meter));
+  }
   add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = "Audio settings",
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
@@ -3057,8 +3163,7 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     setWorkspace(controller, Workspace::Export);
     result = core::success();
   } else if (id == "shell.workspace.voice" && activate) {
-    setWorkspaceMenuOpen(controller, false);
-    controller.showVoicebankBrowser();
+    setWorkspace(controller, Workspace::Voice);
     result = core::success();
   } else if (id == "shell.export.run" && activate) {
     result = runExportSet(controller);
@@ -3072,6 +3177,9 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     result = core::success();
   } else if (id == "shell.settings" && activate) {
     controller.showAudioSettings();
+    result = core::success();
+  } else if (id == "shell.output-meter" && activate) {
+    controller.resetOutputClip();
     result = core::success();
   } else if (id == "shell.change-voice" && activate) {
     controller.showVoicebankBrowser();

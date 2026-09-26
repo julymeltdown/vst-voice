@@ -3752,6 +3752,7 @@ void NativeEditorController::cancelPointerGesture() {
   }
   expressionGestureSnapshot_.reset();
   expressionDragTick_.reset();
+  pitchGesture_.reset();
   vibratoHandleDrag_.reset();
   dynamicsGainDragging_ = false;
   dynamicsTimeDragging_ = false;
@@ -5226,6 +5227,8 @@ core::Result<void> NativeEditorController::pointerMove(
     repaint();
     return core::success();
   }
+  // A TUNE pitch gesture is driven by dragPitchPoint; lane motion never moves it.
+  if (dragMode_ == DragMode::EditPitchPoint) return core::success();
   if (dragMode_ == DragMode::MoveExpressionPoint) {
     const auto expressionState = sceneState();
     const auto overlayInset = layout_.diagnosticHeight(!expressionState.diagnostics.empty()) +
@@ -5368,6 +5371,7 @@ core::Result<void> NativeEditorController::pointerUp(
     repaint();
     return result;
   }
+  if (dragMode_ == DragMode::EditPitchPoint) return releasePitchPoint();
   if (dragMode_ == DragMode::MoveExpressionPoint) {
     return endExpressionGesture();
   }
@@ -7203,6 +7207,165 @@ core::Result<void> NativeEditorController::dragExpressionPoint(time::Tick songTi
 core::Result<void> NativeEditorController::releaseExpressionPoint() {
   if (dragMode_ != DragMode::MoveExpressionPoint) return core::success();
   return endExpressionGesture();
+}
+
+namespace {
+
+// A region-local pitch tick as the lane stores it: snapped on the song grid the notes use.
+time::Tick pitchRegionTick(const domain::Project& project, const domain::VocalRegion& region,
+                           time::Tick regionTick) {
+  auto absolute = region.startTick + std::clamp(regionTick, time::Tick{0}, region.durationTick);
+  if (project.settings().snapEnabled)
+    absolute = time::Quantizer(project.settings().snapGrid).snap(absolute);
+  return std::clamp(absolute - region.startTick, time::Tick{0}, region.durationTick);
+}
+
+constexpr float kPitchCentsLimit = 4800.0F;
+
+std::optional<domain::PitchAutomationPoint> storedPitchPoint(const domain::VocalRegion& region,
+                                                             time::Tick tick) {
+  const auto& points = region.pitchAutomation.points();
+  const auto found = std::find_if(points.begin(), points.end(),
+                                  [tick](const auto& point) { return point.tick == tick; });
+  if (found == points.end()) return std::nullopt;
+  return *found;
+}
+
+core::Result<void> missingPitchPoint() {
+  return core::failure(core::ErrorCode::NotFound, "That pitch point is no longer stored");
+}
+
+}  // namespace
+
+std::string NativeEditorController::pitchEditRefusal() const {
+  if (!callbacks_.upsertPitchPoint || !callbacks_.movePitchPoint)
+    return "This host cannot edit pitch points";
+  return {};
+}
+
+core::Result<void> NativeEditorController::pressPitchPoint(std::optional<time::Tick> grab,
+                                                          time::Tick regionTick, float cents) {
+  if (pointerGestureActive())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture first");
+  if (!std::isfinite(cents))
+    return core::failure(core::ErrorCode::InvalidArgument, "Pitch automation cents must be finite");
+  if (grab.has_value() ? !callbacks_.movePitchPoint : !callbacks_.upsertPitchPoint)
+    return core::failure(core::ErrorCode::Unsupported,
+                         grab.has_value() ? "This host cannot move pitch points"
+                                          : "This host cannot add pitch points");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Pitch automation region is missing");
+  PitchPointGesture gesture;
+  if (grab.has_value()) {
+    const auto stored = storedPitchPoint(*region, *grab);
+    if (!stored) return missingPitchPoint();
+    gesture.source = grab;
+    gesture.point = *stored;
+  } else {
+    gesture.point = domain::PitchAutomationPoint{
+        .tick = pitchRegionTick(session_.project(), *region, regionTick),
+        .cents = std::clamp(cents, -kPitchCentsLimit, kPitchCentsLimit),
+        .interpolation = domain::CurveInterpolation::Linear,
+    };
+  }
+  pitchGesture_ = gesture;
+  pitchGestureRevision_ = session_.revision();
+  pitchGestureRegion_ = regionId_;
+  dragMode_ = DragMode::EditPitchPoint;
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::dragPitchPoint(time::Tick regionTick, float cents) {
+  if (dragMode_ != DragMode::EditPitchPoint || !pitchGesture_)
+    return core::failure(core::ErrorCode::InvalidState, "No pitch point is being moved");
+  const auto* region = session_.project().findRegion(pitchGestureRegion_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Pitch automation region is missing");
+  if (std::isfinite(cents))
+    pitchGesture_->point.cents = std::clamp(cents, -kPitchCentsLimit, kPitchCentsLimit);
+  pitchGesture_->point.tick = pitchRegionTick(session_.project(), *region, regionTick);
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::releasePitchPoint() {
+  if (dragMode_ != DragMode::EditPitchPoint) return core::success();
+  const auto gesture = pitchGesture_;
+  pitchGesture_.reset();
+  dragMode_ = DragMode::None;
+  repaint();
+  if (!gesture) return core::success();
+  // The release commits only against the document and region the press began on.
+  if (session_.revision() != pitchGestureRevision_ || regionId_ != pitchGestureRegion_)
+    return core::failure(core::ErrorCode::Conflict, "The pitch curve changed during the gesture");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr)
+    return core::failure(core::ErrorCode::NotFound, "Pitch automation region is missing");
+  core::Result<void> result = core::success();
+  if (gesture->source.has_value()) {
+    const auto stored = storedPitchPoint(*region, *gesture->source);
+    if (!stored) return missingPitchPoint();
+    if (*stored == gesture->point) return core::success();
+    if (!callbacks_.movePitchPoint)
+      return core::failure(core::ErrorCode::Unsupported, "This host cannot move pitch points");
+    result = callbacks_.movePitchPoint(*gesture->source, gesture->point);
+  } else {
+    if (!callbacks_.upsertPitchPoint)
+      return core::failure(core::ErrorCode::Unsupported, "This host cannot add pitch points");
+    result = callbacks_.upsertPitchPoint(gesture->point);
+  }
+  if (result) markDocumentChanged();
+  repaint();
+  return result;
+}
+
+core::Result<void> NativeEditorController::removePitchPointAt(time::Tick regionTick) {
+  if (pointerGestureActive())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture first");
+  if (!callbacks_.removePitchPoint)
+    return core::failure(core::ErrorCode::Unsupported, "This host cannot remove pitch points");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr || !storedPitchPoint(*region, regionTick)) return missingPitchPoint();
+  const auto result = callbacks_.removePitchPoint(regionTick);
+  if (result) markDocumentChanged();
+  repaint();
+  return result;
+}
+
+core::Result<void> NativeEditorController::cyclePitchInterpolationAt(time::Tick regionTick) {
+  if (pointerGestureActive())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture first");
+  if (!callbacks_.cyclePitchInterpolation)
+    return core::failure(core::ErrorCode::Unsupported,
+                         "This host cannot change pitch interpolation");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr || !storedPitchPoint(*region, regionTick)) return missingPitchPoint();
+  const auto result = callbacks_.cyclePitchInterpolation(regionTick);
+  if (result) markDocumentChanged();
+  repaint();
+  return result;
+}
+
+core::Result<void> NativeEditorController::nudgePitchPointAt(time::Tick regionTick, float cents) {
+  if (pointerGestureActive())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture first");
+  if (!std::isfinite(cents))
+    return core::failure(core::ErrorCode::InvalidArgument, "Pitch automation cents must be finite");
+  if (!callbacks_.upsertPitchPoint)
+    return core::failure(core::ErrorCode::Unsupported, "This host cannot edit pitch points");
+  const auto* region = session_.project().findRegion(regionId_);
+  if (region == nullptr) return missingPitchPoint();
+  const auto stored = storedPitchPoint(*region, regionTick);
+  if (!stored) return missingPitchPoint();
+  auto next = *stored;
+  next.cents = std::clamp(stored->cents + cents, -kPitchCentsLimit, kPitchCentsLimit);
+  if (next.cents == stored->cents) return core::success();
+  const auto result = callbacks_.upsertPitchPoint(next);
+  if (result) markDocumentChanged();
+  repaint();
+  return result;
 }
 
 core::Result<void> NativeEditorController::applyVibratoToSelection(const ui::VibratoFields& patch) {

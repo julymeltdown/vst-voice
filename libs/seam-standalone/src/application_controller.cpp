@@ -1216,6 +1216,10 @@ core::Result<void> StandaloneApplicationController::openRecent(
 
 core::Result<void> StandaloneApplicationController::dispatch(
     platform::ApplicationCommand command) {
+  if (config_.interceptCommand) {
+    if (auto handled = config_.interceptCommand(command); handled.has_value())
+      return std::move(*handled);
+  }
   switch (command) {
     case platform::ApplicationCommand::ClearRegionDynamicsCurve:
       if (!config_.clearRegionDynamicsCurve) return core::failure(core::ErrorCode::Unsupported, "Region dynamics review is not connected");

@@ -131,6 +131,8 @@ class SemanticCheckTests(unittest.TestCase):
             ids = [f"shell.{workspace}.panel"]
             if workspace == "tune":
                 ids += ["shell.tune.graph"] + [f"shell.tune.knob.{k}" for k in PACKET.KNOBS]
+            elif workspace == "voice":
+                ids += ["shell.voice.envelope"] + [f"shell.voice.{m}" for m in PACKET.VOICE_MODULES]
             else:
                 ids += ["shell.mix.master", "shell.mix.audio-settings", "shell.mix.track.1a"]
                 ids += [f"shell.mix.track.1a.{c}" for c in PACKET.MIX_STRIP_CONTROLS]
@@ -171,6 +173,13 @@ class SemanticCheckTests(unittest.TestCase):
             ("tune", "vibrato handle still published"): extra("editor.vibrato.handle.1"),
             ("tune", "overlap group still published"): extra("overlap-group.1"),
             ("tune", "notes still listed"): lambda s: s.update(virtualizedNoteCount=6),
+            ("voice", "no body node"): drop("shell.voice."),
+            ("voice", "envelope editor missing"): drop("shell.voice.envelope"),
+            ("voice", "a module missing"): drop("shell.voice.noise"),
+            ("voice", "tune node under voice"): extra("shell.tune.graph"),
+            ("voice", "lane still published"): extra("shell.lane"),
+            ("voice", "body node outside its area"): lambda s: s["nodes"][-1].update(bounds=[1300, 20, 40, 20]),
+            ("tune", "voice node under tune"): extra("shell.voice.source"),
             ("mix", "other workspace's node"): extra("shell.tune.graph"),
             ("mix", "export node"): extra("shell.export.run"),
             ("mix", "no strip"): drop("shell.mix.track."),
@@ -188,6 +197,20 @@ class SemanticCheckTests(unittest.TestCase):
                                                 render_state="ready", workspace=workspace,
                                                 expected_tracks=1)
                 self.assertEqual(result["result"], "FAIL")
+
+        # A compact VOICE body shows one module behind tabs: a module's tab stands for it.
+        geometry = canonical_geometry()
+        geometry["workspace"] = "voice"
+        semantic = body_tree(geometry, "voice")
+        semantic["nodes"] = [n for n in semantic["nodes"]
+                             if n["id"] not in ("shell.voice.source", "shell.voice.noise")]
+        editor = geometry["regions"]["editor"]
+        for i, module in enumerate(("source", "noise")):
+            semantic["nodes"].append({"id": f"shell.voice.view.{module}", "parent": "shell", "value": "",
+                                      "bounds": [editor[0] + 8 + 20 * i, editor[1] + 40, 16, 16]})
+        result = PACKET.check_semantics(semantic, geometry, expected_notes=6, render_state="ready",
+                                        workspace="voice", expected_tracks=1)
+        self.assertEqual(result["result"], "PASS", result["failures"])
 
     def test_published_bounds_on_the_layout_pass(self):
         geometry = canonical_geometry()

@@ -587,6 +587,7 @@ add_library(seam_platform
   libs/seam-platform/src/audio_callback.cpp
   libs/seam-platform/src/platform_capabilities.cpp
   libs/seam-platform/src/threaded_audio_device.cpp
+  libs/seam-platform/src/output_level_meter.cpp
   libs/seam-platform/src/pulse_audio_device.cpp
   libs/seam-platform/src/system_audio_device_unavailable.cpp
   libs/seam-platform/src/threaded_audio_input_device.cpp
@@ -745,6 +746,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/design/sing_shell.cpp
     libs/seam-native-ui/src/design/tune_workspace.cpp
     libs/seam-native-ui/src/design/mix_workspace.cpp
+    libs/seam-native-ui/src/design/voice_workspace.cpp
     libs/seam-native-ui/src/design/shell_evidence.cpp
     libs/seam-native-ui/src/paint/path.cpp)
   if(APPLE)
@@ -1470,6 +1472,11 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_recording_input_tests PRIVATE seam_platform)
   seam_apply_compiler_options(seam_recording_input_tests)
   add_test(NAME seam_recording_input_tests COMMAND seam_recording_input_tests)
+  add_executable(seam_output_level_tests tests/test_main.cpp tests/test_output_level.cpp)
+  target_include_directories(seam_output_level_tests PRIVATE tests)
+  target_link_libraries(seam_output_level_tests PRIVATE seam_playback_platform)
+  seam_apply_compiler_options(seam_output_level_tests)
+  add_test(NAME seam_output_level_tests COMMAND seam_output_level_tests)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     add_executable(seam_conversion_review_tests tests/test_main.cpp tests/test_conversion_review_model.cpp)
     target_include_directories(seam_conversion_review_tests PRIVATE tests)
@@ -1918,6 +1925,13 @@ if(SEAM_BUILD_TESTS)
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
     seam_apply_compiler_options(seam_design_mix_workspace_tests)
     add_test(NAME seam_design_mix_workspace_tests COMMAND seam_design_mix_workspace_tests)
+    add_executable(seam_design_voice_workspace_tests
+      tests/test_main.cpp tests/test_design_voice_workspace.cpp)
+    target_include_directories(seam_design_voice_workspace_tests PRIVATE tests)
+    target_link_libraries(seam_design_voice_workspace_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_voice_workspace_tests)
+    add_test(NAME seam_design_voice_workspace_tests COMMAND seam_design_voice_workspace_tests)
     add_executable(seam_japanese_reading_native_tests
       tests/test_main.cpp tests/test_japanese_reading_native.cpp)
     target_include_directories(seam_japanese_reading_native_tests PRIVATE tests)

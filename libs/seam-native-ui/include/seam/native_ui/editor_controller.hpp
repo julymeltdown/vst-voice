@@ -184,6 +184,8 @@ struct EditorHostCallbacks final {
       const domain::SeamOverride&, domain::PhonemeKey)> rebindSeamOverride;
   std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
       prepareJapaneseReadingResource;
+  // Clears the clip latch of the host's output level publisher (the meter's clip light).
+  std::function<void()> resetOutputClip;
 };
 
 class NativeEditorController final {
@@ -292,6 +294,32 @@ public:
                                                         bool erase = false);
   [[nodiscard]] core::Result<void> dragExpressionPoint(time::Tick songTick, float amount);
   [[nodiscard]] core::Result<void> releaseExpressionPoint();
+  // The selected region's pitch points edited in value space by a surface that draws its own pitch
+  // graph (the TUNE workspace). Ticks are region-local and snapped on the song grid as a lane click
+  // is; values are cents, clamped to the stored range. Every edit reaches the host through the same
+  // callbacks as the SING lane, so validation, undo and render invalidation are identical there.
+  // A press grabs the stored point at `grab` or starts a new one at `regionTick`; a drag moves it
+  // without touching the project; the release makes exactly one host call (upsertPitchPoint for a
+  // new point, movePitchPoint for a moved one, none for a grab released in place), and
+  // cancelPointerGesture drops the gesture with nothing committed. A host without the callback a
+  // command needs refuses it with a reason; pitchEditRefusal() says why a surface cannot edit.
+  struct PitchPointGesture final {
+    std::optional<time::Tick> source;    // the grabbed stored point; empty for a new point
+    domain::PitchAutomationPoint point;  // where the release puts it
+  };
+  [[nodiscard]] std::string pitchEditRefusal() const;
+  [[nodiscard]] core::Result<void> pressPitchPoint(std::optional<time::Tick> grab,
+                                                   time::Tick regionTick, float cents);
+  [[nodiscard]] core::Result<void> dragPitchPoint(time::Tick regionTick, float cents);
+  [[nodiscard]] core::Result<void> releasePitchPoint();
+  [[nodiscard]] const std::optional<PitchPointGesture>& pitchPointGesture() const noexcept {
+    return pitchGesture_;
+  }
+  // One host command each: remove the stored point, cycle its interpolation, or move its value by
+  // `cents` in place (clamped; a step that changes nothing commits nothing).
+  [[nodiscard]] core::Result<void> removePitchPointAt(time::Tick regionTick);
+  [[nodiscard]] core::Result<void> cyclePitchInterpolationAt(time::Tick regionTick);
+  [[nodiscard]] core::Result<void> nudgePitchPointAt(time::Tick regionTick, float cents);
   // Replaces the given vibrato fields on every selected note of the region as one undoable edit
   // (the vibrato inspector's apply, without its text fields).
   [[nodiscard]] core::Result<void> applyVibratoToSelection(const ui::VibratoFields& patch);
@@ -527,6 +555,13 @@ public:
   void setOutputLevel(std::optional<EditorSceneState::OutputLevel> level) {
     outputLevel_ = std::move(level);
   }
+  // The creator acknowledged a clip: the shown flag clears now and the host's latch is reset,
+  // so the next measured reading does not raise it again from the old sample.
+  void resetOutputClip() {
+    if (outputLevel_.has_value()) outputLevel_->clipped = false;
+    if (callbacks_.resetOutputClip) callbacks_.resetOutputClip();
+    repaint();
+  }
   void showAudioSettings() noexcept {
     audioSettings_.visible = true;
     voicebankBrowserVisible_ = false;
@@ -550,6 +585,7 @@ private:
     MicroscopeMarker,
     MicroscopePitchMark,
     MoveExpressionPoint,
+    EditPitchPoint,
   };
   struct VibratoHandleDrag final {
     domain::NoteId noteId;
@@ -814,6 +850,11 @@ private:
   double logicalHeight_{900.0};
   std::optional<HostedGeometry> hosted_;
   std::optional<std::vector<ui::ExpressionPoint>> expressionGestureSnapshot_;
+  // A TUNE pitch-point gesture in progress (DragMode::EditPitchPoint) and the document and region
+  // it began on; its release commits only against those.
+  std::optional<PitchPointGesture> pitchGesture_;
+  std::uint64_t pitchGestureRevision_{0U};
+  domain::RegionId pitchGestureRegion_{};
   double playheadPixel_{0.0};
   time::Tick playheadTick_{0};
   std::string characterName_;

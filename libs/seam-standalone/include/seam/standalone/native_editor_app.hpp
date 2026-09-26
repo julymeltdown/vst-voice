@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/core/result.hpp"
+#include "seam/native_ui/candidate_audition_session.hpp"
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -8,6 +9,7 @@
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/audio_device_catalog.hpp"
+#include "seam/platform/output_level_meter.hpp"
 #include "seam/platform/crash_capture.hpp"
 #include "seam/platform/multichannel_ring_buffer_processor.hpp"
 #include "seam/authoring/audio_settings_controller.hpp"
@@ -162,6 +164,9 @@ private:
   // Background threads (render completion, envelope workers) ask for a repaint only through here,
   // under windowMutex_, so detachWindow() is a real barrier.
   void requestWindowRepaint() const noexcept;
+  // VOICE's host side: the Voice Designer session, the Voicebank Studio's dialogs and an audition
+  // output on the system device.
+  [[nodiscard]] native_ui::design::ShellVoiceHost makeVoiceHost();
 
   NativeEditorAppConfig config_;
   std::unique_ptr<AuthoringSession> authoring_;
@@ -174,6 +179,9 @@ private:
   native_ui::EditorScenePainter painter_;
   // The EMO/SCENE SING shell. It paints around the same controller and falls back to painter_.
   native_ui::design::SingShell shell_;
+  // Measures the blocks the device receives (see MultichannelRingBufferAudioProcessor). Declared
+  // before the processor and device so it outlives the audio thread that writes it.
+  platform::OutputLevelMeter outputMeter_;
   std::unique_ptr<platform::MultichannelRingBufferAudioProcessor> processor_;
   std::unique_ptr<platform::IAudioDevice> audioDevice_;
   std::unique_ptr<platform::IAudioDeviceCatalog> audioDeviceCatalog_;
@@ -205,6 +213,10 @@ private:
   double lastPaintScale_{1.0};
   std::atomic<bool> closeRequested_{false};
   std::string lastError_;
+  // VOICE: the Voice Designer session (created the first time VOICE asks for it) and the output
+  // its auditions play through.
+  std::unique_ptr<native_ui::VoiceDesignerSession> voiceDesigner_;
+  native_ui::CandidateAuditionSession voiceAudition_;
   // Envelopes of the selected region's rendered audio for the SING notes. Declared last so its
   // workers stop before anything their repaint request touches is destroyed.
   native_ui::RegionEnvelopeCache waveforms_{[this] {

@@ -4,6 +4,8 @@
 #include "seam/platform/audio_callback.hpp"
 #include "seam/voicebank/wav.hpp"
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <memory>
 
@@ -37,6 +39,7 @@ public:
     if (finished_.load(std::memory_order_relaxed)) return;
     const auto count = std::min(context.frameCount, end_ - cursor_);
     const auto fade = std::min<std::size_t>(audio_->sampleRate / 200U, (end_ - begin_) / 2U);
+    float peak = 0.0F;
     for (std::size_t index = 0U; index < count; ++index) {
       const auto position = cursor_ + index;
       const auto sample = audio_->interleaved[position];
@@ -45,13 +48,17 @@ public:
           static_cast<double>(end_ - 1U - position) / static_cast<double>(fade)});
       const auto value = std::isfinite(sample)
           ? static_cast<float>(std::clamp(static_cast<double>(sample) * gain_ * envelope, -1.0, 1.0)) : 0.0F;
+      peak = std::max(peak, std::abs(value));
       for (std::size_t channel = 0U; channel < channels; ++channel) context.output(channel)[index] = value;
     }
     cursor_ += count;
+    blockPeak_.store(peak, std::memory_order_relaxed);
     if (cursor_ == end_) finished_.store(true, std::memory_order_release);
   }
   [[nodiscard]] bool finished() const noexcept { return finished_.load(std::memory_order_acquire); }
   [[nodiscard]] bool failed() const noexcept { return failed_.load(std::memory_order_acquire); }
+  // The absolute peak of the samples the last callback wrote to the output (0 before the first).
+  [[nodiscard]] float blockPeak() const noexcept { return blockPeak_.load(std::memory_order_relaxed); }
 
 private:
   CandidateAuditionProcessor(std::shared_ptr<const voicebank::AudioBuffer> audio,
@@ -61,5 +68,6 @@ private:
   std::size_t begin_, end_, cursor_;
   float gain_;
   std::atomic<bool> finished_{false}, failed_{false};
+  std::atomic<float> blockPeak_{0.0F};
 };
 }

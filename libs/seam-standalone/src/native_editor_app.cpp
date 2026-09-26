@@ -2,6 +2,7 @@
 
 #include "seam/build/version.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/distribution/procedural_package.hpp"
 #include "seam/platform/accessibility_preferences.hpp"
 #include "seam/platform/application_paths.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -422,6 +423,10 @@ core::Result<void> NativeEditorApp::initialize() {
         return platform::currentAccessibilityPreferences().reduceMotion;
       },
       .prepareJapaneseReadingResource = config_.prepareJapaneseReadingResource,
+      .resetOutputClip = [this] {
+        outputMeter_.resetClip();
+        requestWindowRepaint();
+      },
   };
   auto created = AuthoringSession::create(config_.authoring,
                                           std::move(callbacks));
@@ -682,6 +687,14 @@ core::Result<void> NativeEditorApp::initialize() {
           .clearRegionDynamicsCurve = [this] {
             const auto result = authoring_->controller().openClearDynamicsReview(); record(result); return result;
           },
+          // While VOICE is shown, the menu's Undo and Redo act on the Voice Designer on screen.
+          .interceptCommand = [this](platform::ApplicationCommand command)
+              -> std::optional<core::Result<void>> {
+            if (command != platform::ApplicationCommand::Undo &&
+                command != platform::ApplicationCommand::Redo)
+              return std::nullopt;
+            return shell_.routeUndo(command == platform::ApplicationCommand::Redo);
+          },
       },
       [this] { closeRequested_.store(true, std::memory_order_release); });
   if (!application) return core::Result<void>{application.error()};
@@ -738,6 +751,7 @@ core::Result<void> NativeEditorApp::initialize() {
               default: return false;
             }
           },
+      .voice = makeVoiceHost(),
   });
   applicationMenu_ = platform::createNativeApplicationMenu();
   if (applicationMenu_ != nullptr) {
@@ -784,7 +798,7 @@ core::Result<void> NativeEditorApp::initializeAudio() {
   auto& runtime = authoring_->runtime();
   processor_ = std::make_unique<platform::MultichannelRingBufferAudioProcessor>(
       runtime.transport().ringBuffer(),
-      std::max<std::size_t>(config_.audioBlockFrames, 4096U));
+      std::max<std::size_t>(config_.audioBlockFrames, 4096U), &outputMeter_);
   platform::AudioDeviceConfig deviceConfig{
       .deviceId = startupDeviceId_,
       .sampleRate = runtime.transport().sampleRate(),
@@ -948,7 +962,7 @@ core::Result<void> NativeEditorApp::restartAudio(
     auto nextProcessor =
         std::make_unique<platform::MultichannelRingBufferAudioProcessor>(
             runtime.transport().ringBuffer(),
-            std::max<std::size_t>(requested.blockFrames, 4096U));
+            std::max<std::size_t>(requested.blockFrames, 4096U), &outputMeter_);
     platform::AudioDeviceConfig config{
         .deviceId = requested.deviceId,
         .sampleRate = requested.sampleRate,
@@ -1020,7 +1034,7 @@ core::Result<void> NativeEditorApp::restartAudio(
     auto restoredProcessor =
         std::make_unique<platform::MultichannelRingBufferAudioProcessor>(
             authoring_->runtime().transport().ringBuffer(),
-            std::max<std::size_t>(previous.blockFrames, 4096U));
+            std::max<std::size_t>(previous.blockFrames, 4096U), &outputMeter_);
     const auto restored = previousDevice->open(
         platform::AudioDeviceConfig{
             .deviceId = previousDeviceInfo.deviceId,
@@ -1656,6 +1670,23 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         settings.value(), std::move(devices), processorStats().underflowFrames,
         audioStats().xruns);
   }
+  // The output meter reads what the audio thread measured in the blocks the device received. A
+  // stopped or missing device publishes nothing, so the meter shows its empty scale. While a level
+  // is shown the window keeps repainting so the hold and decay move.
+  if (auto reading = outputMeter_.read(audioDevice_ != nullptr && audioDevice_->running(),
+                                       std::chrono::steady_clock::now())) {
+    authoring_->controller().setOutputLevel(native_ui::EditorSceneState::OutputLevel{
+        .peak = std::move(reading->peak),
+        .hold = std::move(reading->hold),
+        // The editor plays its master mix to the device's first channels; there is no output
+        // pair selection to name.
+        .bus = "Master",
+        .clipped = reading->clipped,
+    });
+    requestWindowRepaint();
+  } else {
+    authoring_->controller().setOutputLevel(std::nullopt);
+  }
   // The surface and its geometry are chosen before the scene state is derived from them.
   const auto shellFrame = shell_.prepareFrame(authoring_->controller(), canvas.logicalWidth(),
                                               canvas.logicalHeight());
@@ -1928,6 +1959,82 @@ platform::MultichannelRingProcessorStats
 NativeEditorApp::processorStats() const noexcept {
   return processor_ == nullptr ? platform::MultichannelRingProcessorStats{}
                                : processor_->stats();
+}
+
+native_ui::design::ShellVoiceHost NativeEditorApp::makeVoiceHost() {
+  native_ui::design::ShellVoiceHost host;
+  // The session exists from the first time VOICE asks for it. Installed singers and banks are
+  // signed, immutable content, so a draft may never be saved inside their roots.
+  host.designer = [this]() -> native_ui::VoiceDesignerSession* {
+    if (voiceDesigner_ == nullptr) {
+      voiceDesigner_ = std::make_unique<native_ui::VoiceDesignerSession>();
+      std::vector<std::filesystem::path> roots{config_.applicationSupportRoot / "Singers",
+                                               config_.applicationSupportRoot / "Voicebanks"};
+      for (const auto& root : distribution::defaultProceduralSearchRoots()) roots.push_back(root.path);
+      voiceDesigner_->setProtectedRoots(std::move(roots));
+    }
+    return voiceDesigner_.get();
+  };
+  // The Voicebank Studio's own dialogs: recipe files, pose naming, exact seeds, discard prompt.
+  const auto dialog = [this]() -> std::unique_ptr<platform::IFileDialog> {
+    return config_.fileDialogFactory ? config_.fileDialogFactory() : platform::createNativeFileDialog();
+  };
+  const auto missing = [] { return core::Error{core::ErrorCode::Unsupported, "No native dialog is available", {}}; };
+  host.choosePath = [dialog, missing](bool save, const std::filesystem::path& current)
+      -> core::Result<std::optional<std::filesystem::path>> {
+    auto files = dialog();
+    if (!files) return missing();
+    return files->choose(platform::FileDialogRequest{
+        .purpose = save ? platform::FileDialogPurpose::SaveDesignerRecipe
+                        : platform::FileDialogPurpose::SelectProceduralRecipe,
+        .title = save ? "Save Draft Voice Recipe" : "Open Draft Voice Recipe",
+        .initialDirectory = current.parent_path(),
+        .suggestedName = save ? "voice-recipe.json" : "",
+        .extensions = {"json"}});
+  };
+  host.confirmDiscard = [dialog, missing]() -> core::Result<bool> {
+    auto files = dialog();
+    if (!files) return missing();
+    return files->confirmDiscardDesignerChanges();
+  };
+  host.choosePoseIdentity = [dialog, missing](bool frication)
+      -> core::Result<std::optional<std::pair<std::string, std::string>>> {
+    using Output = std::optional<std::pair<std::string, std::string>>;
+    auto files = dialog();
+    if (!files) return missing();
+    const auto identity = files->chooseDesignerPoseIdentity(
+        frication ? platform::IFileDialog::DesignerPoseKind::Frication
+                  : platform::IFileDialog::DesignerPoseKind::Voiced);
+    if (!identity) return core::Result<Output>{identity.error()};
+    if (!identity.value()) return Output{};
+    return Output{std::pair{identity.value()->phone, identity.value()->style}};
+  };
+  host.chooseSeed = [dialog, missing](const std::string& current, bool frication)
+      -> core::Result<std::optional<std::string>> {
+    auto files = dialog();
+    if (!files) return missing();
+    return files->chooseDesignerSeed(current, frication);
+  };
+  // Auditions play the way the Voicebank Studio plays them: a one-shot stream on the system output.
+  host.play = [this](std::shared_ptr<const voicebank::AudioBuffer> audio) -> core::Result<void> {
+    if (!audio) return core::failure(core::ErrorCode::InvalidArgument, "No audition audio to play");
+    auto device = config_.systemAudioDeviceFactory ? config_.systemAudioDeviceFactory()
+                                                   : platform::createSystemAudioDevice();
+    const auto frames = audio->frameCount();
+    auto started = voiceAudition_.start(std::move(device), std::move(audio), 0U, frames, 0.25F);
+    if (started) requestWindowRepaint();
+    return started;
+  };
+  host.stop = [this] { voiceAudition_.stop(); };
+  host.level = [this]() -> std::optional<float> {
+    const auto polled = voiceAudition_.poll();
+    if (!polled) {
+      record(core::Result<void>{polled.error()});
+      return std::nullopt;
+    }
+    return voiceAudition_.level();
+  };
+  return host;
 }
 
 void NativeEditorApp::record(const core::Result<void>& result) noexcept {

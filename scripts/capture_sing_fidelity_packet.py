@@ -56,8 +56,10 @@ MODES = ("emo", "scene")
 CANONICAL_VIEWPORT = (1600, 900)
 # Capture-only state: the ready fixture with the compact singer inspector open.
 INSPECTOR_STATE = "inspector"
-# Capture-only states: the ready fixture with the TUNE or MIX workspace covering the score.
-WORKSPACE_STATES = ("tune", "mix")
+# Capture-only states: the ready fixture with the VOICE, TUNE or MIX workspace covering the score.
+WORKSPACE_STATES = ("voice", "tune", "mix")
+# VOICE's modules. A compact body shows one at a time behind a tab (shell.voice.view.<module>).
+VOICE_MODULES = ("source", "resonance", "noise")
 # Score nodes that must never be published under a covering workspace.
 SCORE_IDS = ("timeline", "shell.waveform")
 SCORE_PREFIXES = ("note.", "editor.vibrato.handle.", "overlap-group.", "detail.", "shell.lane")
@@ -375,7 +377,7 @@ RACK_CONTROLS_SHOWN = lambda geometry: geometry.get("rack") == "full" or geometr
 def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
                    expected: dict[str, Any]) -> dict[str, Any]:
     """expected: {"viewport": [w, h], "mode": "emo"|"scene", optional "inspectorOpen": bool,
-    optional "workspace": "sing"|"tune"|"mix"}."""
+    optional "workspace": "sing"|"voice"|"tune"|"mix"}."""
     canonical = contract["canonical"]
     tolerance = float(canonical["regionTolerancePoints"])
     failures: list[str] = []
@@ -500,7 +502,7 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
                     expected_notes: int, render_state: str | None,
                     workspace: str = "sing", expected_tracks: int | None = None) -> dict[str, Any]:
     """expected_notes: notes in the fixture; render_state: the state the app logged at exit;
-    workspace: a TUNE or MIX capture covers the score with that workspace's own nodes;
+    workspace: a VOICE, TUNE or MIX capture covers the score with that workspace's own nodes;
     expected_tracks: the fixture's track count, bounding the MIX strips."""
     failures: list[str] = []
     size = geometry.get("logicalSize") or [0, 0]
@@ -545,6 +547,12 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
             # The workspace's core controls, each with real bounds.
             if body == "tune":
                 core = ["shell.tune.graph"] + [f"shell.tune.knob.{knob}" for knob in KNOBS]
+            elif body == "voice":
+                # The spectral envelope editor, and each module shown or one tab away.
+                core = ["shell.voice.envelope"]
+                for module in VOICE_MODULES:
+                    if f"shell.voice.{module}" not in by_id and f"shell.voice.view.{module}" not in by_id:
+                        failures.append(f"shell.voice.{module}: neither the module nor its tab is published")
             else:
                 core = ["shell.mix.master", "shell.mix.audio-settings"]
                 strips = [node["id"] for node in own
@@ -743,7 +751,8 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     # A capture shows its state when the presented frame shows it, whatever the render did after.
     record["frameRenderState"] = frame_render_state(record["semantic-bounds"])
     expected = {"ready": "ready", INSPECTOR_STATE: "ready", "failed": "failed", "dense-overlap": "ready",
-                "rendering": "rendering", "empty": None, "tune": "ready", "mix": "ready"}[state]
+                "rendering": "rendering", "empty": None, "voice": "ready", "tune": "ready",
+                "mix": "ready"}[state]
     record["stateReached"] = expected is None or record["frameRenderState"] == expected
     return record
 
@@ -824,7 +833,7 @@ def build_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, in
         for viewport in requirements["viewports"]:
             if spec_rack_presentation(float(viewport[0])) != "full":
                 matrix += [(mode, INSPECTOR_STATE, (viewport[0], viewport[1])) for mode in MODES]
-    # TUNE and MIX cover the score with their own body (capture states on the ready fixture), at
+    # VOICE, TUNE and MIX cover the score with their own body (capture states on the ready fixture), at
     # the canonical size and the smallest compact contract viewport.
     compact = min((tuple(v) for v in requirements["viewports"]), key=lambda v: v[0] * v[1])
     for workspace in WORKSPACE_STATES:
