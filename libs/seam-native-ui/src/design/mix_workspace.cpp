@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -53,6 +55,22 @@ constexpr std::array<std::pair<double, double>, 7U> kFaderCurve{{{0.0, -120.0},
 // Vertical drag distance that sweeps the pan knob across its whole range (the ArcKnob rule).
 constexpr double kPanDragPoints = 240.0;
 
+// The arrangement overview above the strips: a ruler of bar numbers over one lane per track.
+constexpr double kArrangementPad = 6.0;
+constexpr double kRuler = 16.0;
+constexpr double kLaneTall = 22.0;
+// Lanes at least this tall leave regular strips below them; thinner lanes (down to kLaneThin)
+// share the body with compact strips; below that the overview hides and the strips keep the body.
+constexpr double kLaneRegular = 10.0;
+constexpr double kLaneThin = 4.0;
+constexpr double kLaneNames = 76.0;
+// A compact strip's controls end 110 points below its top.
+constexpr double kCompactStripHeight = 112.0;
+
+// The master meter's scale, in dBFS.
+constexpr double kMeterFloorDb = -60.0;
+constexpr std::array<double, 8U> kMeterTicks{0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
+
 std::string format(const char* pattern, double value) {
   char buffer[48];
   std::snprintf(buffer, sizeof(buffer), pattern, value);
@@ -76,6 +94,11 @@ ui::Rect intersection(ui::Rect a, ui::Rect b) noexcept {
 TextStyle style(FontRole role, double size, double tracking = 0.0,
                 TextAlign align = TextAlign::Left, bool upper = false) {
   return TextStyle{role, size, tracking, align, upper};
+}
+
+// Perceived brightness in 0..1, to pick readable text over a track-colored block.
+double brightness(Color c) noexcept {
+  return (0.299 * c.red + 0.587 * c.green + 0.114 * c.blue) / 255.0;
 }
 
 // Tightens tracking, then steps the size down to the 11-point floor for essential text; anything
@@ -231,7 +254,8 @@ struct StripGeometry final {
 
 struct MixLayout final {
   bool compact{false};
-  ui::Rect title, body, viewport, scrollBand, master, device, settings;
+  // arrangement is empty when the body is too short for it next to the strips.
+  ui::Rect title, body, arrangement, viewport, scrollBand, master, meter, device, settings;
   double stripWidth{0.0};
   double contentWidth{0.0};
   double maxOffset{0.0};
@@ -278,29 +302,57 @@ StripGeometry stripGeometry(ui::Rect s, bool compact) {
   return g;
 }
 
+// The arrangement overview's height: its preferred size where regular strips still fit under it,
+// otherwise what compact strips leave, and nothing when not even compact strips would fit.
+ui::Rect arrangementRect(ui::Rect body, std::size_t count) {
+  if (count == 0U || body.width < 160.0) return {};
+  const auto n = static_cast<double>(count);
+  const auto fixed = 2.0 * kArrangementPad + kRuler;
+  const auto preferred = fixed + n * kLaneTall;
+  const auto regularRoom = body.height - kScrollBand - kRegularStripHeight - kGap;
+  const auto compactRoom = body.height - kScrollBand - kCompactStripHeight - kGap;
+  double height = 0.0;
+  if (regularRoom >= fixed + n * kLaneRegular)
+    height = std::min({preferred, regularRoom, std::max(fixed + n * kLaneRegular, body.height * 0.4)});
+  else if (compactRoom >= fixed + n * kLaneThin)
+    height = std::min(preferred, compactRoom);
+  height = std::floor(height);
+  if (height <= 0.0) return {};
+  return {body.x, body.y, body.width, height};
+}
+
 MixLayout mixLayout(ui::Rect area, std::size_t count, double offset) {
   MixLayout l;
   l.body = {area.x + kPad, area.y + kHeader, std::max(0.0, area.width - 2.0 * kPad),
             std::max(0.0, area.height - kHeader - kBottomPad)};
-  l.compact = l.body.height - kScrollBand < kRegularStripHeight;
+  l.arrangement = arrangementRect(l.body, count);
+  // The strips, master and device card share the deck under the arrangement.
+  const auto deckTop = l.arrangement.height > 0.0 ? l.arrangement.bottom() + kGap : l.body.y;
+  const ui::Rect deck{l.body.x, deckTop, l.body.width, std::max(0.0, l.body.bottom() - deckTop)};
+  l.compact = deck.height - kScrollBand < kRegularStripHeight;
   const auto masterWidth = l.compact ? 116.0 : 132.0;
   if (l.compact) {
     // The device card folds into a header button so the strips keep the body.
     const auto width = std::clamp(area.width - 2.0 * kPad - 88.0, 0.0, 220.0);
     l.settings = {area.right() - kPad - width, area.y + 7.0, width, 24.0};
     l.device = l.settings;
-    l.master = {l.body.right() - masterWidth, l.body.y, masterWidth, l.body.height};
+    l.master = {deck.right() - masterWidth, deck.y, masterWidth, deck.height};
     l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, l.settings.x - 8.0 - (area.x + 32.0)),
                22.0};
   } else {
-    l.device = {l.body.right() - masterWidth, l.body.bottom() - kDeviceCardHeight, masterWidth,
+    l.device = {deck.right() - masterWidth, deck.bottom() - kDeviceCardHeight, masterWidth,
                 kDeviceCardHeight};
     l.settings = {l.device.x + 10.0, l.device.bottom() - 36.0, l.device.width - 20.0, 26.0};
-    l.master = {l.device.x, l.body.y, masterWidth,
-                std::max(0.0, l.body.height - kDeviceCardHeight - kGap)};
+    l.master = {l.device.x, deck.y, masterWidth,
+                std::max(0.0, deck.height - kDeviceCardHeight - kGap)};
     l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, area.width - 32.0 - kPad), 22.0};
   }
-  l.viewport = {l.body.x, l.body.y, std::max(0.0, l.master.x - kGap - l.body.x), l.body.height};
+  // The meter well fills the master strip under its bus name and format.
+  const auto meterTop = l.master.y + (l.compact ? 62.0 : 66.0);
+  l.meter = {l.master.x + 10.0, meterTop, std::max(0.0, l.master.width - 20.0),
+             std::max(0.0, l.master.bottom() - 10.0 - meterTop)};
+  if (l.meter.height < 20.0) l.meter = {};
+  l.viewport = {deck.x, deck.y, std::max(0.0, l.master.x - kGap - deck.x), deck.height};
   l.stripWidth = l.compact ? kCompactStripWidth : kRegularStripWidth;
   const auto n = static_cast<double>(count);
   l.contentWidth = count == 0U ? 0.0 : n * l.stripWidth + (n - 1.0) * kGap;
@@ -334,12 +386,272 @@ ui::Rect scrollThumb(const MixLayout& l) noexcept {
   return {x, l.scrollBand.y + 3.0, width, 4.0};
 }
 
+// ---- Arrangement ----------------------------------------------------------------------------
+
+struct ArrangementRegion final {
+  domain::RegionId id;
+  domain::TrackId track;
+  std::size_t lane{0U};
+  std::string trackName;
+  std::string name;
+  std::int64_t start{0};
+  std::int64_t end{0};
+  bool selected{false};
+};
+
+// An audio track's media on the song axis, shown for context; only vocal regions are selectable.
+struct ArrangementClip final {
+  std::size_t lane{0U};
+  std::int64_t start{0};
+  std::int64_t end{0};
+};
+
+struct ArrangementModel final {
+  std::vector<ArrangementRegion> regions;
+  std::vector<ArrangementClip> clips;
+  // Every bar start along the axis, then the axis end (also a bar line).
+  std::vector<std::int64_t> bars;
+  std::int64_t playhead{0};
+
+  [[nodiscard]] std::int64_t end() const noexcept {
+    return bars.empty() ? 1 : std::max<std::int64_t>(1, bars.back());
+  }
+};
+
+// The song as the strips order it (vocal tracks, then audio tracks), one lane per track, on an
+// axis of whole bars from the song start past the last region (and the playhead), at least four.
+ArrangementModel arrangementModel(const NativeEditorController& controller) {
+  const auto& project = controller.project();
+  const auto selected = controller.selectedRegion();
+  ArrangementModel m;
+  std::int64_t end = 0;
+  std::size_t lane = 0U;
+  for (const auto& track : project.vocalTracks()) {
+    for (const auto& region : track.regions) {
+      const auto start = region.startTick.value();
+      const auto stop = start + std::max<std::int64_t>(1, region.durationTick.value());
+      m.regions.push_back(ArrangementRegion{.id = region.id, .track = track.id, .lane = lane,
+                                            .trackName = track.name, .name = region.name,
+                                            .start = start, .end = stop,
+                                            .selected = region.id == selected});
+      end = std::max(end, stop);
+    }
+    ++lane;
+  }
+  const auto& tempo = project.tempoMap();
+  for (const auto& track : project.audioTracks()) {
+    const auto last = track.trimEndFrame.value_or(track.sourceFrameCount);
+    if (track.sourceSampleRate > 0U && last > track.trimStartFrame) {
+      const auto seconds = static_cast<double>(last - track.trimStartFrame) /
+                           static_cast<double>(track.sourceSampleRate);
+      const auto start = track.startTick.value();
+      const auto stop = std::max(start + 1, tempo.tickAtSeconds(tempo.secondsAt(track.startTick) + seconds).value());
+      m.clips.push_back(ArrangementClip{.lane = lane, .start = start, .end = stop});
+      end = std::max(end, stop);
+    }
+    ++lane;
+  }
+  m.playhead = std::max<std::int64_t>(0, controller.playheadTick().value());
+  end = std::max(end, m.playhead);
+  const auto& meters = project.meterMap();
+  std::int64_t tick = 0;
+  for (;;) {
+    m.bars.push_back(tick);
+    if ((tick > end && m.bars.size() > 4U) || m.bars.size() > 4096U) break;
+    tick += std::max<std::int64_t>(1, meters.ticksPerBar(meters.meterAt(time::Tick{tick})).value());
+  }
+  return m;
+}
+
+std::string barRange(const time::MeterMap& meters, const ArrangementRegion& region) {
+  const auto first = meters.barBeatAt(time::Tick{region.start}).bar;
+  const auto last = meters.barBeatAt(time::Tick{std::max(region.start, region.end - 1)}).bar;
+  if (first == last) return "bar " + std::to_string(first);
+  return "bars " + std::to_string(first) + " to " + std::to_string(last);
+}
+
+struct ArrangementGeometry final {
+  ui::Rect frame, ruler, plot;
+  // Width of the track-name column; zero when the lanes are too thin for a name.
+  double names{0.0};
+  double laneHeight{0.0};
+
+  [[nodiscard]] ui::Rect lane(std::size_t index) const noexcept {
+    return {frame.x + kArrangementPad, plot.y + static_cast<double>(index) * laneHeight,
+            frame.width - 2.0 * kArrangementPad, laneHeight};
+  }
+};
+
+ArrangementGeometry arrangementGeometry(ui::Rect frame, std::size_t count) {
+  ArrangementGeometry g;
+  g.frame = frame;
+  if (frame.width <= 0.0 || frame.height <= 0.0 || count == 0U) return g;
+  const ui::Rect inner{frame.x + kArrangementPad, frame.y + kArrangementPad,
+                       std::max(0.0, frame.width - 2.0 * kArrangementPad),
+                       std::max(0.0, frame.height - 2.0 * kArrangementPad)};
+  g.laneHeight = std::max(0.0, (inner.height - kRuler) / static_cast<double>(count));
+  g.names = g.laneHeight >= 14.0 && inner.width >= 360.0 ? kLaneNames : 0.0;
+  const auto left = inner.x + (g.names > 0.0 ? g.names : 8.0);
+  g.ruler = {left, inner.y, std::max(0.0, inner.right() - left), kRuler};
+  g.plot = {left, g.ruler.bottom(), g.ruler.width, std::max(0.0, inner.bottom() - g.ruler.bottom())};
+  return g;
+}
+
+double tickX(const ArrangementGeometry& g, const ArrangementModel& m, std::int64_t tick) noexcept {
+  return g.plot.x + g.plot.width * static_cast<double>(tick) / static_cast<double>(m.end());
+}
+
+// A region's block in its lane, which is also its hit rectangle: a hairline gap separates blocks
+// that touch, and a very short region keeps a width that can still be clicked.
+ui::Rect blockRect(const ArrangementGeometry& g, const ArrangementModel& m, std::size_t lane,
+                   std::int64_t start, std::int64_t end) noexcept {
+  if (g.laneHeight <= 0.0 || g.plot.width <= 0.0) return {};
+  const auto row = g.lane(lane);
+  const auto inset = g.laneHeight >= 10.0 ? 2.0 : 1.0;
+  const auto x0 = tickX(g, m, start);
+  const auto span = tickX(g, m, end) - x0;
+  const auto width = std::max(4.0, span - (span > 6.0 ? 1.0 : 0.0));
+  return intersection({x0, row.y + inset, width, row.height - 2.0 * inset}, g.plot);
+}
+
+// Selection is view state: the track first, so a host's singer follows it, then the region.
+core::Result<void> selectArrangementRegion(NativeEditorController& controller,
+                                           const ArrangementRegion& region) {
+  if (controller.selectedTrack() != region.track) {
+    auto track = controller.selectTrack(region.track);
+    if (!track) return track;
+  }
+  if (controller.selectedRegion() != region.id) return controller.selectRegion(region.id);
+  return core::success();
+}
+
+// ---- Master meter ---------------------------------------------------------------------------
+
+double decibels(float linear) noexcept {
+  if (!std::isfinite(linear) || linear <= 0.0F) return -std::numeric_limits<double>::infinity();
+  return 20.0 * std::log10(static_cast<double>(linear));
+}
+
+std::string dbfsText(double db) {
+  if (!std::isfinite(db)) return "-inf dBFS";
+  const auto shown = roundTo(db, 0.1);
+  if (shown == 0.0) return "0.0 dBFS";
+  return format(shown > 0.0 ? "+%.1f dBFS" : "%.1f dBFS", shown);
+}
+
+double meterFraction(double db) noexcept {
+  if (!std::isfinite(db)) return 0.0;
+  return std::clamp((db - kMeterFloorDb) / -kMeterFloorDb, 0.0, 1.0);
+}
+
+struct MeterChannel final {
+  std::string label;
+  std::string spoken;
+  double peakDb{0.0};
+  double holdDb{0.0};
+};
+
+struct MeterReading final {
+  std::vector<MeterChannel> channels;
+  std::string bus;
+  bool clipped{false};
+  // The loudest held peak, which the readout shows.
+  double loudestDb{0.0};
+};
+
+// The host's measurement, or nothing: a meter never shows a level nobody measured.
+std::optional<MeterReading> meterReading(const EditorSceneState& state) {
+  if (!state.outputLevel || state.outputLevel->peak.empty()) return std::nullopt;
+  const auto& level = *state.outputLevel;
+  MeterReading r;
+  r.bus = level.bus.empty() ? std::string{"Output"} : level.bus;
+  r.clipped = level.clipped;
+  r.loudestDb = -std::numeric_limits<double>::infinity();
+  const auto count = level.peak.size();
+  for (std::size_t i = 0U; i < count; ++i) {
+    MeterChannel ch;
+    if (count == 1U) {
+      ch.label = "M";
+      ch.spoken = "mono";
+    } else if (count == 2U) {
+      ch.label = i == 0U ? "L" : "R";
+      ch.spoken = i == 0U ? "left" : "right";
+    } else {
+      ch.label = std::to_string(i + 1U);
+      ch.spoken = "channel " + ch.label;
+    }
+    ch.peakDb = decibels(level.peak[i]);
+    ch.holdDb = i < level.hold.size() ? std::max(decibels(level.hold[i]), ch.peakDb) : ch.peakDb;
+    r.loudestDb = std::max(r.loudestDb, ch.holdDb);
+    r.channels.push_back(std::move(ch));
+  }
+  return r;
+}
+
+std::string meterDetail(const MeterReading& r) {
+  std::string text = r.bus + " bus";
+  for (std::size_t i = 0U; i < r.channels.size(); ++i)
+    text += (i == 0U ? ": " : ", ") + r.channels[i].spoken + " " + dbfsText(r.channels[i].peakDb);
+  text += r.clipped ? ". Clipped." : ".";
+  return text;
+}
+
+struct MeterGeometry final {
+  // Tall wells stand the bars up; a short well lays them along its width.
+  bool vertical{false};
+  ui::Rect caption, readout, clip, scale;
+  std::vector<ui::Rect> bars;
+  std::vector<ui::Rect> channelLabels;
+};
+
+MeterGeometry meterGeometry(ui::Rect well, std::size_t channels) {
+  MeterGeometry g;
+  const auto n = static_cast<double>(std::clamp<std::size_t>(channels, 1U, 8U));
+  const auto x = well.x + 6.0;
+  const auto width = std::max(0.0, well.width - 12.0);
+  g.vertical = well.height >= 110.0;
+  if (g.vertical) {
+    g.clip = {x + width - 34.0, well.y + 6.0, 34.0, 15.0};
+    g.caption = {x, well.y + 6.0, std::max(0.0, width - 38.0), 15.0};
+    g.readout = {x, well.bottom() - 5.0 - 16.0, width, 16.0};
+    const auto labelRow = g.readout.y - 14.0;
+    const auto top = g.caption.bottom() + 10.0;
+    const auto height = std::max(0.0, labelRow - 4.0 - top);
+    constexpr double scaleWidth = 24.0;
+    g.scale = {x, top, scaleWidth, height};
+    const auto zone = std::max(0.0, width - scaleWidth - 4.0);
+    const auto barWidth = std::max(2.0, std::min(12.0, (zone - (n - 1.0) * 3.0) / n));
+    const auto total = n * barWidth + (n - 1.0) * 3.0;
+    const auto bx = x + scaleWidth + 4.0 + std::max(0.0, (zone - total) * 0.5);
+    for (double i = 0.0; i < n; i += 1.0) {
+      g.bars.push_back({bx + i * (barWidth + 3.0), top, barWidth, height});
+      g.channelLabels.push_back({bx + i * (barWidth + 3.0) - 4.0, labelRow, barWidth + 8.0, 12.0});
+    }
+    return g;
+  }
+  g.caption = {x, well.y + 4.0, width, 14.0};
+  g.readout = g.caption;
+  constexpr double ledWidth = 8.0;
+  const auto zone = std::max(0.0, width - ledWidth - 4.0);
+  const auto gap = n <= 2.0 ? 2.0 : 1.0;
+  const auto barHeight = n <= 2.0 ? 5.0 : std::max(1.5, (12.0 - (n - 1.0) * gap) / n);
+  const auto top = g.caption.bottom() + 4.0;
+  for (double i = 0.0; i < n; i += 1.0) g.bars.push_back({x, top + i * (barHeight + gap), zone, barHeight});
+  const auto bottom = g.bars.back().bottom();
+  g.clip = {x + zone + 4.0, top, ledWidth, bottom - top};
+  g.scale = {x, bottom + 2.0, zone, 12.0};
+  return g;
+}
+
 // ---- Ids ------------------------------------------------------------------------------------
 
-enum class Control : std::uint8_t { Strip, Gain, Pan, Mute, Solo, Route, Settings, Scroll, Master, Device };
+enum class Control : std::uint8_t {
+  Strip, Gain, Pan, Mute, Solo, Route, Settings, Scroll, Master, Meter, Device, Arrangement, Region
+};
 
 constexpr std::string_view kPrefix = "shell.mix.";
 constexpr std::string_view kTrackPrefix = "shell.mix.track.";
+constexpr std::string_view kRegionPrefix = "shell.mix.region.";
 
 std::string_view controlSuffix(Control control) noexcept {
   switch (control) {
@@ -356,16 +668,22 @@ std::string trackNodeId(domain::TrackId id, Control control) {
   return std::string{kTrackPrefix} + id.toString() + std::string{controlSuffix(control)};
 }
 
+std::string regionNodeId(domain::RegionId id) { return std::string{kRegionPrefix} + id.toString(); }
+
 struct ParsedId final {
   Control control{Control::Strip};
-  std::string track;  // hex id, for track controls
+  std::string track;  // hex id, for track controls and regions
 };
 
 std::optional<ParsedId> parseId(std::string_view id) {
   if (id == "shell.mix.audio-settings") return ParsedId{Control::Settings, {}};
   if (id == "shell.mix.scroll") return ParsedId{Control::Scroll, {}};
   if (id == "shell.mix.master") return ParsedId{Control::Master, {}};
+  if (id == "shell.mix.master-meter") return ParsedId{Control::Meter, {}};
   if (id == "shell.mix.device") return ParsedId{Control::Device, {}};
+  if (id == "shell.mix.arrangement") return ParsedId{Control::Arrangement, {}};
+  if (id.starts_with(kRegionPrefix))
+    return ParsedId{Control::Region, std::string{id.substr(kRegionPrefix.size())}};
   if (!id.starts_with(kTrackPrefix)) return std::nullopt;
   auto rest = id.substr(kTrackPrefix.size());
   const auto dot = rest.find('.');
@@ -463,6 +781,7 @@ public:
     header(c, t, area, l.title, "Mix", !strips.empty());
     c.save();
     c.clipRect(area);
+    paintArrangement(c, t, controller, l, strips, anySolo);
     c.save();
     c.clipRect(l.viewport);
     for (std::size_t i = 0U; i < strips.size(); ++i) {
@@ -480,7 +799,7 @@ public:
              withAlpha(t.color.textPrimary, 0.08));
       c.fill(Path::capsule(scrollThumb(l)), withAlpha(t.color.accent, 0.75));
     }
-    paintMaster(c, t, controller, l, strips.size());
+    paintMaster(c, t, controller, state, l);
     paintDevice(c, t, state, l);
     c.restore();
   }
@@ -489,6 +808,7 @@ public:
                                  ui::Rect area) override {
     gesture_.reset();
     focusRequest_.clear();
+    workspaceRequest_.clear();
     lastArea_ = area;
     if (event.button != PointerButton::Left) return core::success();
     const auto p = event.position;
@@ -508,6 +828,25 @@ public:
     if (l.scrolls() && contains(l.scrollBand, p)) {
       focusRequest_ = "shell.mix.scroll";
       begin(Control::Scroll, l.scrollBand, {}, l.offset);
+      return core::success();
+    }
+    if (contains(l.arrangement, p)) {
+      focusRequest_ = "shell.mix.arrangement";
+      const auto g = arrangementGeometry(l.arrangement, strips.size());
+      const auto m = arrangementModel(controller);
+      // Later regions are drawn on top, so they are hit first.
+      for (auto it = m.regions.rbegin(); it != m.regions.rend(); ++it) {
+        if (!contains(blockRect(g, m, it->lane, it->start, it->end), p)) continue;
+        focusRequest_ = regionNodeId(it->id);
+        auto selected = selectArrangementRegion(controller, *it);
+        // A double-click opens the region in SING, where its notes are edited.
+        if (selected && event.clickCount >= 2) workspaceRequest_ = "sing";
+        return selected;
+      }
+      return core::success();
+    }
+    if (contains(l.meter, p)) {
+      focusRequest_ = "shell.mix.master-meter";
       return core::success();
     }
     if (contains(l.master, p)) {
@@ -644,6 +983,27 @@ public:
                                .value = std::to_string(strips.size()) +
                                         (strips.size() == 1U ? " track" : " tracks"),
                                .bounds = area, .actions = {SemanticAction::SetFocus}});
+    if (l.arrangement.height > 0.0) {
+      const auto g = arrangementGeometry(l.arrangement, strips.size());
+      const auto m = arrangementModel(controller);
+      const auto& meters = controller.project().meterMap();
+      out.push_back(SemanticNode{
+          .id = "shell.mix.arrangement", .role = SemanticRole::Timeline, .name = "Arrangement",
+          .value = std::to_string(m.regions.size()) + (m.regions.size() == 1U ? " region" : " regions") +
+                   ", playhead at bar " + std::to_string(meters.barBeatAt(time::Tick{m.playhead}).bar),
+          .bounds = l.arrangement, .actions = {SemanticAction::SetFocus}});
+      for (const auto& region : m.regions) {
+        const auto bounds = blockRect(g, m, region.lane, region.start, region.end);
+        if (bounds.width <= 0.0 || bounds.height <= 0.0) continue;
+        out.push_back(SemanticNode{
+            .id = regionNodeId(region.id), .role = SemanticRole::Button,
+            .name = region.trackName + ", " + (region.name.empty() ? std::string{} : region.name + ", ") +
+                    barRange(meters, region),
+            .value = region.selected ? "Selected" : "", .bounds = bounds, .selected = region.selected,
+            .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+            .description = "Selects the region; double-click opens it in Sing"});
+      }
+    }
     std::size_t firstShown = strips.size();
     std::size_t lastShown = 0U;
     for (std::size_t i = 0U; i < strips.size(); ++i) {
@@ -709,8 +1069,26 @@ public:
           .numericValue = l.offset, .numericMinimum = 0.0, .numericMaximum = l.maxOffset,
           .numericStep = l.stripWidth + kGap});
     out.push_back(SemanticNode{.id = "shell.mix.master", .role = SemanticRole::Status,
-                               .name = "Master", .value = masterSummary(controller),
+                               .name = "Master", .value = masterSummary(controller, state),
                                .bounds = l.master, .actions = {SemanticAction::SetFocus}});
+    if (l.meter.width > 0.0) {
+      if (const auto reading = meterReading(state)) {
+        out.push_back(SemanticNode{.id = "shell.mix.master-meter", .role = SemanticRole::ProgressIndicator,
+                                   .name = "Output level", .value = dbfsText(reading->loudestDb),
+                                   .bounds = l.meter, .actions = {SemanticAction::SetFocus},
+                                   .description = meterDetail(*reading),
+                                   .numericValue = std::isfinite(reading->loudestDb)
+                                                       ? std::clamp(roundTo(reading->loudestDb, 0.1),
+                                                                    kMeterFloorDb, 0.0)
+                                                       : kMeterFloorDb,
+                                   .numericMinimum = kMeterFloorDb, .numericMaximum = 0.0});
+      } else {
+        out.push_back(SemanticNode{.id = "shell.mix.master-meter", .role = SemanticRole::Status,
+                                   .name = "Output level", .value = "Not measured",
+                                   .bounds = l.meter, .actions = {SemanticAction::SetFocus},
+                                   .description = "The host reports no measured output level"});
+      }
+    }
     const auto device = deviceSummary(state);
     if (!l.compact)
       out.push_back(SemanticNode{.id = "shell.mix.device", .role = SemanticRole::Status,
@@ -746,8 +1124,16 @@ public:
         return core::success();
       }
       case Control::Master:
+      case Control::Meter:
+      case Control::Arrangement:
       case Control::Device:
       case Control::Strip: return unsupported();
+      case Control::Region: {
+        if (action != SemanticAction::Activate) return unsupported();
+        for (const auto& region : arrangementModel(controller).regions)
+          if (region.id.toString() == parsed->track) return selectArrangementRegion(controller, region);
+        return core::failure(core::ErrorCode::NotFound, "The region is no longer in the project");
+      }
       default: break;
     }
     const auto strip = findStrip(controller, parsed->track);
@@ -807,6 +1193,10 @@ public:
 
   [[nodiscard]] std::string takeFocusRequest() override { return std::exchange(focusRequest_, {}); }
 
+  [[nodiscard]] std::string takeWorkspaceRequest() override {
+    return std::exchange(workspaceRequest_, {});
+  }
+
 private:
   struct Gesture final {
     Control control{Control::Gain};
@@ -842,7 +1232,8 @@ private:
     return strip;
   }
 
-  static std::string masterSummary(const NativeEditorController& controller) {
+  static std::string masterSummary(const NativeEditorController& controller,
+                                   const EditorSceneState& state) {
     const auto& routing = controller.project().routing();
     const auto* bus = routing.findBus(routing.masterBus);
     std::string text = bus != nullptr ? bus->name + " bus, " +
@@ -852,8 +1243,9 @@ private:
                                                  : std::to_string(bus->channelCount) + " channels") +
                                             ", " + gainText(bus->gainDb)
                                       : std::string{"No master bus"};
-    // No measured output level reaches the editor, so no meter is shown.
-    return text + ". Output level is not measured here.";
+    if (const auto reading = meterReading(state))
+      return text + ". Output peak " + dbfsText(reading->loudestDb) + (reading->clipped ? ", clipped." : ".");
+    return text + ". Output level not measured.";
   }
 
   void paintStrip(Canvas2D& c, const DesignTokens& t, const StripGeometry& g, const StripModel& s,
@@ -1020,7 +1412,7 @@ private:
   }
 
   void paintMaster(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
-                   const MixLayout& l, std::size_t trackCount) const {
+                   const EditorSceneState& state, const MixLayout& l) const {
     const auto m = l.master;
     if (m.width <= 0.0 || m.height <= 0.0) return;
     card(c, t, m, 10.0, 0.94);
@@ -1040,19 +1432,228 @@ private:
       c.text({x, m.y + 42.0, w, 16.0}, info, fitted(c, info, style(FontRole::Ui, t.type.smallLabel), w),
              t.color.textSecondary);
     }
-    // The editor receives no measured output level, so the meter well stays empty and says so.
-    const ui::Rect well{x, m.y + (l.compact ? 62.0 : 66.0), w,
-                        std::max(0.0, m.bottom() - 10.0 - (m.y + (l.compact ? 62.0 : 66.0)))};
-    if (well.height >= 20.0) {
-      sunken(c, t, well, 6.0);
-      c.text({well.x + 4.0, well.y + well.height * 0.5 - (l.compact ? 8.0 : 16.0), well.width - 8.0, 16.0},
-             "No level meter", style(FontRole::UiMedium, t.type.smallLabel, 0.0, TextAlign::Center),
-             t.color.textSecondary);
-      if (!l.compact && well.height >= 48.0)
-        c.text({well.x + 4.0, well.y + well.height * 0.5 + 2.0, well.width - 8.0, 16.0},
-               std::to_string(trackCount) + (trackCount == 1U ? " track" : " tracks"),
-               style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Center), t.color.textDisabled);
+    paintMeter(c, t, meterReading(state), l.meter, bus != nullptr ? bus->channelCount : 2U);
+  }
+
+  // The master LevelMeter: one bar per measured channel on a -60..0 dBFS scale, a peak-hold
+  // marker, the clip light, the measured bus and the loudest held peak. Without a measurement the
+  // scale stays empty and says "Not measured".
+  static void paintMeter(Canvas2D& c, const DesignTokens& t, const std::optional<MeterReading>& reading,
+                         ui::Rect well, std::size_t busChannels) {
+    if (well.width <= 0.0 || well.height <= 0.0) return;
+    sunken(c, t, well, 6.0);
+    const auto g = meterGeometry(well, reading ? reading->channels.size() : std::max<std::size_t>(1U, busChannels));
+    const auto small = style(FontRole::UiMedium, t.type.smallLabel);
+    const auto clipped = reading && reading->clipped;
+
+    // Caption and readout.
+    if (reading) {
+      const auto readout = dbfsText(reading->loudestDb);
+      const auto readoutColor = clipped ? t.color.error : t.color.textPrimary;
+      if (g.vertical) {
+        c.text(g.caption, reading->bus, fitted(c, reading->bus, small, g.caption.width), t.color.textSecondary);
+        const auto s = style(FontRole::UiSemibold, t.type.label, 0.0, TextAlign::Center);
+        c.text(g.readout, readout, fitted(c, readout, s, g.readout.width), readoutColor);
+      } else {
+        const auto s = fitted(c, readout, style(FontRole::UiSemibold, t.type.smallLabel, 0.0, TextAlign::Right),
+                              g.caption.width);
+        const auto width = std::min(g.caption.width, c.measure(readout, s) + 2.0);
+        c.text({g.caption.right() - width, g.caption.y, width, g.caption.height}, readout, s, readoutColor);
+        const ui::Rect name{g.caption.x, g.caption.y, std::max(0.0, g.caption.width - width - 6.0),
+                            g.caption.height};
+        // The bus name shows only whole; the accessibility description always carries it.
+        const auto nameStyle = fitted(c, reading->bus, small, name.width);
+        if (name.width > 0.0 && c.measure(reading->bus, nameStyle) <= name.width)
+          c.text(name, reading->bus, nameStyle, t.color.textSecondary);
+      }
+    } else {
+      const auto where = g.vertical ? g.readout : g.caption;
+      const auto s = style(FontRole::UiMedium, t.type.smallLabel, 0.0, g.vertical ? TextAlign::Center : TextAlign::Left);
+      c.text(where, "Not measured", fitted(c, "Not measured", s, where.width), t.color.textSecondary);
     }
+
+    // Clip light.
+    const auto light = Path::roundedRect(g.clip, g.vertical ? 4.0 : 2.0);
+    if (clipped) {
+      c.save();
+      c.setGlow(withAlpha(t.color.error, 0.75), t.light.glowSmall);
+      c.fill(light, t.color.error);
+      c.restore();
+    } else {
+      c.fill(light, withAlpha(t.color.error, 0.12));
+      c.stroke(light, withAlpha(t.color.error, 0.35), StrokeStyle{1.0});
+    }
+    if (g.vertical)
+      c.text(g.clip, "CLIP", fitted(c, "CLIP", style(FontRole::UiBold, t.type.smallLabel, 0.0, TextAlign::Center), g.clip.width),
+             clipped ? kWhite : t.color.textDisabled);
+
+    // Bars: the zones show faintly as the empty scale; the measured peak lights them.
+    const auto f18 = meterFraction(-18.0);
+    const auto f6 = meterFraction(-6.0);
+    const auto zones = [&](ui::Rect b, double alpha) {
+      const auto from = g.vertical ? ui::Point{b.x, b.bottom()} : ui::Point{b.x, b.y};
+      const auto to = g.vertical ? ui::Point{b.x, b.y} : ui::Point{b.right(), b.y};
+      return LinearGradient{from, to,
+                            {{0.0, withAlpha(t.color.meterLow, alpha)}, {f18, withAlpha(t.color.meterLow, alpha)},
+                             {f18 + 0.002, withAlpha(t.color.meterMid, alpha)}, {f6, withAlpha(t.color.meterMid, alpha)},
+                             {f6 + 0.002, withAlpha(t.color.meterHigh, alpha)}, {1.0, withAlpha(t.color.meterHigh, alpha)}}};
+    };
+    for (std::size_t i = 0U; i < g.bars.size(); ++i) {
+      const auto b = g.bars[i];
+      c.fill(Path::roundedRect(b, 2.0), withAlpha(t.color.textPrimary, 0.05));
+      c.fill(Path::roundedRect(b, 2.0), zones(b, 0.16));
+      if (!reading || i >= reading->channels.size()) continue;
+      const auto& ch = reading->channels[i];
+      if (const auto f = meterFraction(ch.peakDb); f > 0.0) {
+        const ui::Rect lit = g.vertical ? ui::Rect{b.x, b.bottom() - b.height * f, b.width, b.height * f}
+                                        : ui::Rect{b.x, b.y, b.width * f, b.height};
+        c.fill(Path::roundedRect(lit, 2.0), zones(b, 1.0));
+      }
+      if (const auto f = meterFraction(ch.holdDb); f > 0.0) {
+        Path marker;
+        if (g.vertical) {
+          const auto y = std::max(b.y + 1.0, b.bottom() - b.height * f);
+          marker.moveTo({b.x - 1.0, y}).lineTo({b.right() + 1.0, y});
+        } else {
+          const auto x = std::min(b.right() - 1.0, b.x + b.width * f);
+          marker.moveTo({x, b.y - 1.0}).lineTo({x, b.bottom() + 1.0});
+        }
+        c.stroke(marker, ch.holdDb >= -6.0 ? t.color.meterHigh : withAlpha(t.color.textPrimary, 0.85),
+                 StrokeStyle{2.0});
+      }
+    }
+    if (g.vertical && g.bars.front().width >= 6.0) {
+      const auto labels = reading ? reading->channels.size() : g.bars.size();
+      for (std::size_t i = 0U; i < g.bars.size() && i < labels; ++i) {
+        const auto label = reading ? reading->channels[i].label
+                           : g.bars.size() == 2U ? std::string{i == 0U ? "L" : "R"}
+                           : g.bars.size() == 1U ? std::string{"M"}
+                                                 : std::to_string(i + 1U);
+        c.text(g.channelLabels[i], label, style(FontRole::UiMedium, t.type.smallLabel, 0.0, TextAlign::Center),
+               t.color.textSecondary);
+      }
+    }
+
+    // dB scale: ticks for every mark, labels where they do not collide.
+    const auto first = g.bars.front();
+    const auto last = g.bars.back();
+    const auto scaleStyle = style(FontRole::Ui, t.type.smallLabel, 0.0, g.vertical ? TextAlign::Right : TextAlign::Center);
+    double lastLabel = -1.0e9;
+    for (const auto db : kMeterTicks) {
+      const auto f = meterFraction(db);
+      const auto text = db == 0.0 ? std::string{"0"} : std::to_string(static_cast<int>(db));
+      Path tick;
+      if (g.vertical) {
+        const auto y = first.bottom() - first.height * f;
+        tick.moveTo({first.x - 4.0, y}).lineTo({first.x - 1.0, y});
+        c.stroke(tick, withAlpha(t.color.textPrimary, 0.3), StrokeStyle{1.0});
+        if (std::abs(y - lastLabel) < 12.0 || g.scale.height <= 0.0) continue;
+        lastLabel = y;
+        c.text({g.scale.x, y - 6.0, g.scale.width - 3.0, 12.0}, text, scaleStyle, t.color.textSecondary);
+      } else {
+        const auto x = first.x + first.width * f;
+        tick.moveTo({x, last.bottom()}).lineTo({x, last.bottom() + 2.0});
+        c.stroke(tick, withAlpha(t.color.textPrimary, 0.3), StrokeStyle{1.0});
+        if (g.scale.bottom() > well.bottom() - 1.0) continue;
+        const auto width = c.measure(text, scaleStyle) + 2.0;
+        const auto left = std::clamp(x - width * 0.5, g.scale.x, g.scale.right() - width);
+        // Labels walk from 0 dBFS leftwards; one that would touch its neighbour is skipped.
+        if (lastLabel > -1.0e8 && left + width > lastLabel - 3.0) continue;
+        lastLabel = left;
+        c.text({left, g.scale.y, width, g.scale.height}, text, scaleStyle, t.color.textSecondary);
+      }
+    }
+  }
+
+  // The song at a glance above the strips: one lane per track in strip order and color, regions
+  // as rounded blocks on a shared bar axis, the playhead, and the selected region lit.
+  void paintArrangement(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
+                        const MixLayout& l, const std::vector<StripModel>& strips, bool anySolo) const {
+    const auto a = l.arrangement;
+    if (a.width <= 0.0 || a.height <= 0.0 || strips.empty()) return;
+    sunken(c, t, a, 10.0);
+    const auto g = arrangementGeometry(a, strips.size());
+    const auto m = arrangementModel(controller);
+    const auto colorOf = [&](std::size_t lane) { return t.trackColors[lane % t.trackColors.size()]; };
+    const auto audible = [&](std::size_t lane) {
+      return lane < strips.size() && !strips[lane].muted && (!anySolo || strips[lane].solo);
+    };
+    c.save();
+    c.clipRect(a);
+    for (std::size_t i = 0U; i < strips.size(); ++i) {
+      const auto lane = g.lane(i);
+      if (strips[i].selected) c.fill(Path::rect(lane), withAlpha(t.color.accent, 0.08));
+      else if (i % 2U == 1U) c.fill(Path::rect(lane), withAlpha(t.color.textPrimary, 0.03));
+      const auto inset = lane.height >= 8.0 ? 2.0 : 0.5;
+      c.fill(Path::capsule({lane.x, lane.y + inset, 3.0, std::max(1.0, lane.height - 2.0 * inset)}),
+             withAlpha(colorOf(i), audible(i) ? 1.0 : 0.4));
+      if (g.names > 0.0) {
+        const ui::Rect label{lane.x + 9.0, lane.y, g.names - 15.0, lane.height};
+        c.text(label, strips[i].name, fitted(c, strips[i].name, style(FontRole::UiMedium, t.type.smallLabel), label.width),
+               strips[i].selected ? t.color.textPrimary : t.color.textSecondary);
+      }
+    }
+    // The playhead cap may reach a little left of the first bar line.
+    c.save();
+    c.clipRect({g.plot.x - 5.0, g.ruler.y, g.plot.width + 6.0, g.plot.bottom() - g.ruler.y});
+    const auto barCount = m.bars.size() - 1U;
+    const auto barWidth = g.plot.width / static_cast<double>(std::max<std::size_t>(1U, barCount));
+    std::size_t every = 1U;
+    while (barWidth * static_cast<double>(every) < 28.0 && every < barCount) every *= 2U;
+    const auto numberStyle = style(FontRole::UiMedium, t.type.smallLabel);
+    for (std::size_t k = 0U; k <= barCount; ++k) {
+      const auto x = tickX(g, m, m.bars[k]);
+      const auto numbered = k % every == 0U && k < barCount;
+      if (!numbered && barWidth < 6.0) continue;
+      Path line;
+      line.moveTo({x, numbered ? g.ruler.y + 3.0 : g.plot.y}).lineTo({x, g.plot.bottom()});
+      c.stroke(line, withAlpha(t.color.textPrimary, numbered ? 0.16 : 0.06), StrokeStyle{1.0});
+      const auto labelWidth = std::min(barWidth * static_cast<double>(every) - 4.0, g.plot.right() - x - 3.0);
+      if (numbered && labelWidth > 6.0)
+        c.text({x + 3.0, g.ruler.y, labelWidth, g.ruler.height}, std::to_string(k + 1U), numberStyle,
+               t.color.textSecondary);
+    }
+    for (const auto& clip : m.clips) {
+      const auto r = blockRect(g, m, clip.lane, clip.start, clip.end);
+      if (r.width <= 0.0 || r.height <= 0.0) continue;
+      const auto p = Path::roundedRect(r, std::min(3.0, r.height * 0.5));
+      c.fill(p, withAlpha(colorOf(clip.lane), audible(clip.lane) ? 0.22 : 0.1));
+      c.stroke(p, withAlpha(colorOf(clip.lane), 0.55), StrokeStyle{1.0, true, {3.0, 3.0}});
+    }
+    for (const auto& region : m.regions) {
+      const auto r = blockRect(g, m, region.lane, region.start, region.end);
+      if (r.width <= 0.0 || r.height <= 0.0) continue;
+      const auto color = colorOf(region.lane);
+      const auto alive = audible(region.lane);
+      const auto p = Path::roundedRect(r, std::min(4.0, r.height * 0.5));
+      c.save();
+      if (region.selected) c.setGlow(withAlpha(t.color.accent, 0.55), t.light.glowSmall);
+      c.fill(p, LinearGradient{{r.x, r.y}, {r.x, r.bottom()},
+                               {{0.0, withAlpha(color, alive ? 0.8 : 0.34)},
+                                {1.0, withAlpha(color, alive ? 0.52 : 0.22)}}});
+      c.restore();
+      c.stroke(p, region.selected ? t.color.accent : withAlpha(color, 0.95),
+               StrokeStyle{region.selected ? 1.5 : 1.0});
+      if (r.width >= 36.0 && r.height >= 13.0 && !region.name.empty()) {
+        const ui::Rect label{r.x + 5.0, r.y, r.width - 10.0, r.height};
+        // A light track color takes the canvas color for its text.
+        const auto light = alive && brightness(color) * 0.8 > 0.5;
+        c.text(label, region.name, fitted(c, region.name, style(FontRole::UiSemibold, t.type.smallLabel), label.width),
+               light ? t.color.canvas : t.color.textPrimary);
+      }
+    }
+    const auto px = tickX(g, m, m.playhead);
+    Path head;
+    head.moveTo({px, g.ruler.y}).lineTo({px, g.plot.bottom()});
+    Path cap;
+    cap.moveTo({px - 4.0, g.ruler.y}).lineTo({px + 4.0, g.ruler.y}).lineTo({px, g.ruler.y + 6.0}).close();
+    c.save();
+    c.setGlow(withAlpha(t.color.accent, 0.7), t.light.glowSmall);
+    c.stroke(head, t.color.accent, StrokeStyle{1.5});
+    c.fill(cap, t.color.accent);
+    c.restore();
+    c.restore();
+    c.restore();
   }
 
   static void paintDevice(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
@@ -1093,6 +1694,7 @@ private:
   double offset_{0.0};
   std::optional<Gesture> gesture_;
   std::string focusRequest_;
+  std::string workspaceRequest_;
   // The body rectangle of the last paint, semantics pass or gesture, for accessibility scrolling.
   mutable ui::Rect lastArea_;
 };

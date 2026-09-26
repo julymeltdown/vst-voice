@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -42,6 +43,9 @@ struct MixFixture final {
   application::EditorSession session;
   native_ui::NativeEditorController controller;
   SingShell shell;
+  // The pixels of the last frame(), for checks on what was drawn.
+  std::vector<std::uint32_t> pixels;
+  double pixelWidth{0.0};
 
   explicit MixFixture(std::size_t trackCount = 3U, bool secondBus = false)
       : session(makeProject(trackCount, secondBus)), controller{session, factory, regionId} {
@@ -91,7 +95,10 @@ struct MixFixture final {
     if (!shell.prepareFrame(controller, width, height)) return false;
     native_ui::PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
     native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
-    return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
+    const auto painted = shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
+    pixels.assign(surface.pixels().begin(), surface.pixels().end());
+    pixelWidth = width;
+    return painted;
   }
 
   // Presents the shell and opens MIX through its real tab.
@@ -136,6 +143,8 @@ struct MixFixture final {
   std::string controlId(std::size_t index, std::string_view control) const {
     return stripId(index) + "." + std::string{control};
   }
+  domain::RegionId region(std::size_t index) const { return track(index).regions.front().id; }
+  std::string regionNode(std::size_t index) const { return "shell.mix.region." + region(index).toString(); }
 };
 
 PointerEvent press(ui::Point p, bool shift = false, int clicks = 1) {
@@ -153,6 +162,23 @@ bool inside(ui::Rect inner, ui::Rect outer) {
   constexpr double e = 1e-6;
   return inner.x >= outer.x - e && inner.y >= outer.y - e && inner.right() <= outer.right() + e &&
          inner.bottom() <= outer.bottom() + e;
+}
+
+// Pixels that differ between two frames of the same size, counted where `where` says.
+template <typename Where>
+std::size_t changedPixels(const std::vector<std::uint32_t>& a, const std::vector<std::uint32_t>& b,
+                          double width, Where where) {
+  std::size_t changed = 0U;
+  const auto columns = static_cast<std::size_t>(width);
+  for (std::size_t i = 0U; i < a.size() && i < b.size(); ++i) {
+    const ui::Point p{static_cast<double>(i % columns) + 0.5, static_cast<double>(i / columns) + 0.5};
+    if (a[i] != b[i] && where(p)) ++changed;
+  }
+  return changed;
+}
+
+bool within(ui::Rect r, ui::Point p) {
+  return p.x >= r.x && p.y >= r.y && p.x < r.right() && p.y < r.bottom();
 }
 
 std::size_t undoDepth(application::EditorSession& session) {
@@ -483,17 +509,41 @@ TEST_CASE("MIX strips never overlap or leave the body, and scroll sideways when 
     const auto area = f.shell.workspaceArea();
     const auto nodes = f.mixNodes();
     std::vector<SemanticNode> strips;
-    std::vector<SemanticNode> panels;  // master, device card, settings, scroll band
+    std::vector<SemanticNode> panels;  // arrangement, master, device card, settings, scroll band
+    std::vector<SemanticNode> regions;
     for (const auto& node : nodes) {
       CHECK(node.bounds.width > 0.0 && node.bounds.height > 0.0);
       CHECK(inside(node.bounds, area));
-      if (node.id == "shell.mix.panel") continue;
+      if (node.id == "shell.mix.panel" || node.id == "shell.mix.master-meter") continue;
       const auto isStrip = node.id.starts_with("shell.mix.track.") &&
                            node.id.find('.', std::string_view{"shell.mix.track."}.size()) == std::string::npos;
       if (isStrip) strips.push_back(node);
+      else if (node.id.starts_with("shell.mix.region.")) regions.push_back(node);
       else if (!node.id.starts_with("shell.mix.track.")) panels.push_back(node);
     }
     CHECK(!strips.empty());
+    // Strips keep their minimum size: compact strips where the body is short, regular ones above.
+    for (const auto& strip : strips) CHECK(strip.bounds.height >= 112.0 - 1e-6);
+    // The meter sits inside the master strip.
+    CHECK(inside(f.node("shell.mix.master-meter").bounds, f.node("shell.mix.master").bounds));
+    // The arrangement strip hides only where compact strips need the whole body (480x320). Where
+    // shown, it holds one region per track, lane by lane in track order, none overlapping.
+    const auto arrangementShown = f.published("shell.mix.arrangement");
+    CHECK(arrangementShown == (height > 320.0));
+    if (arrangementShown) {
+      const auto arrangement = f.node("shell.mix.arrangement").bounds;
+      CHECK_NEAR(arrangement.width, area.width - 24.0, 1e-6);  // full body width
+      CHECK(regions.size() == 7U);
+      for (std::size_t i = 0U; i < regions.size(); ++i) {
+        CHECK(regions[i].id == f.regionNode(i));
+        CHECK(inside(regions[i].bounds, arrangement));
+        if (i > 0U) CHECK(regions[i].bounds.y >= regions[i - 1U].bounds.bottom() - 1e-6);
+        for (std::size_t j = i + 1U; j < regions.size(); ++j) CHECK(!overlaps(regions[i].bounds, regions[j].bounds));
+      }
+      for (const auto& strip : strips) CHECK(strip.bounds.y >= arrangement.bottom());
+    } else {
+      CHECK(regions.empty());
+    }
     for (std::size_t i = 0U; i < strips.size(); ++i) {
       for (std::size_t j = i + 1U; j < strips.size(); ++j) CHECK(!overlaps(strips[i].bounds, strips[j].bounds));
       std::vector<ui::Rect> controls;
@@ -506,7 +556,8 @@ TEST_CASE("MIX strips never overlap or leave the body, and scroll sideways when 
       }
       for (const auto& panel : panels) CHECK(!overlaps(panel.bounds, strips[i].bounds));
     }
-    // Master, the device card (with its settings button inside) and the scroll band stay apart.
+    // The arrangement, master, device card (with its settings button inside) and scroll band stay
+    // apart.
     for (std::size_t a = 0U; a < panels.size(); ++a)
       for (std::size_t b = a + 1U; b < panels.size(); ++b) {
         const auto& x = panels[a];
@@ -549,4 +600,136 @@ TEST_CASE("MIX strips never overlap or leave the body, and scroll sideways when 
     CHECK_NEAR(f.node(f.stripId(0U)).bounds.x, before.x, 1e-6);
   }
   CHECK(!f.session.canUndo());
+}
+
+TEST_CASE("the master meter lights from a measured output level and stays an empty scale without one") {
+  MixFixture f{3U};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.openMix();
+  const auto revision = f.controller.documentRevision();
+  const auto master = f.node("shell.mix.master").bounds;
+  auto meter = f.node("shell.mix.master-meter");
+  CHECK(meter.role == SemanticRole::Status);
+  CHECK(meter.value == "Not measured");
+  CHECK(!meter.numericValue.has_value());
+  CHECK(inside(meter.bounds, master));
+  CHECK(f.node("shell.mix.master").value.find("not measured") != std::string::npos);
+  const auto empty = f.pixels;
+
+  // Stereo, -6 dBFS left and -12 dBFS right, held peaks -3.1 and -10.5, clipped since the reset.
+  f.controller.setOutputLevel(native_ui::EditorSceneState::OutputLevel{
+      .peak = {0.5F, 0.25F}, .hold = {0.7F, 0.3F}, .bus = "Master", .clipped = true});
+  CHECK(f.frame());
+  meter = f.node("shell.mix.master-meter");
+  CHECK(meter.role == SemanticRole::ProgressIndicator);
+  CHECK(meter.value == "-3.1 dBFS");
+  CHECK_NEAR(*meter.numericValue, -3.1, 1e-9);
+  CHECK(*meter.numericMinimum == -60.0);
+  CHECK(*meter.numericMaximum == 0.0);
+  CHECK(meter.description == "Master bus: left -6.0 dBFS, right -12.0 dBFS. Clipped.");
+  CHECK(f.node("shell.mix.master").value.find("Output peak -3.1 dBFS, clipped") != std::string::npos);
+  // The bars, hold markers, clip light and readout change the meter well and nothing else in MIX.
+  const auto area = f.shell.workspaceArea();
+  const auto lit = f.pixels;
+  CHECK(changedPixels(empty, lit, f.pixelWidth, [&](ui::Point p) { return within(meter.bounds, p); }) > 200U);
+  CHECK(changedPixels(empty, lit, f.pixelWidth,
+                      [&](ui::Point p) { return within(area, p) && !within(meter.bounds, p); }) == 0U);
+
+  // A silent output is measured too: the scale floor, not "Not measured".
+  f.controller.setOutputLevel(native_ui::EditorSceneState::OutputLevel{.peak = {0.0F, 0.0F}, .hold = {}, .bus = "Master"});
+  meter = f.node("shell.mix.master-meter");
+  CHECK(meter.role == SemanticRole::ProgressIndicator);
+  CHECK(meter.value == "-inf dBFS");
+  CHECK(*meter.numericValue == -60.0);
+
+  // When the host stops measuring, the meter returns to the empty scale it started with.
+  f.controller.setOutputLevel(std::nullopt);
+  CHECK(f.frame());
+  CHECK(f.node("shell.mix.master-meter").value == "Not measured");
+  CHECK(changedPixels(empty, f.pixels, f.pixelWidth, [&](ui::Point p) { return within(area, p); }) == 0U);
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+}
+
+TEST_CASE("an arrangement region click selects its track and region without changing the document") {
+  MixFixture f{3U};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.openMix();
+  const auto arrangement = f.node("shell.mix.arrangement");
+  CHECK(arrangement.role == SemanticRole::Timeline);
+  CHECK(arrangement.value == "3 regions, playhead at bar 1");
+  std::vector<SemanticNode> nodes;
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    const auto node = f.node(f.regionNode(i));
+    CHECK(node.role == SemanticRole::Button);
+    CHECK(node.name == "Voice " + std::to_string(i + 1U) + ", Phrase, bars 1 to 2");
+    CHECK(node.selected == (i == 0U));
+    CHECK(inside(node.bounds, arrangement.bounds));
+    // Every region starts at the song start and lasts two bars of the four-bar axis.
+    if (i > 0U) {
+      CHECK(node.bounds.y >= nodes.back().bounds.bottom());
+      CHECK_NEAR(node.bounds.x, nodes.back().bounds.x, 1e-6);
+      CHECK_NEAR(node.bounds.width, nodes.back().bounds.width, 1e-6);
+    }
+    nodes.push_back(node);
+  }
+  f.session.selection().selectOnly(f.noteId);
+  const auto revision = f.controller.documentRevision();
+
+  // One click selects the second track and its region as view state only.
+  const auto second = center(nodes[1].bounds);
+  CHECK(f.shell.pointerDown(f.controller, press(second)).hasValue());
+  CHECK(!f.shell.bodyWorkspace()->gestureActive());
+  CHECK(f.shell.pointerUp(f.controller, press(second)).hasValue());
+  CHECK(f.controller.selectedTrack() == f.tracks[1]);
+  CHECK(f.controller.selectedRegion() == f.region(1));
+  CHECK(f.controller.pianoRoll().regionId() == f.region(1));
+  CHECK(f.shell.workspace() == Workspace::Mix);
+  CHECK(f.focusedId() == f.regionNode(1));
+  CHECK(f.node(f.regionNode(1)).selected);
+  CHECK(!f.node(f.regionNode(0)).selected);
+  CHECK(f.node(f.stripId(1U)).selected);
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+
+  // Activate does the same for assistive technology.
+  CHECK(f.shell.dispatchSemantic(f.controller, f.regionNode(2), SemanticAction::Activate).hasValue());
+  CHECK(f.controller.selectedTrack() == f.tracks[2]);
+  CHECK(f.controller.selectedRegion() == f.region(2));
+  CHECK(!f.shell.dispatchSemantic(f.controller, f.regionNode(2), SemanticAction::Increment).hasValue());
+
+  // Node bounds are the hit rectangles: every corner selects that region, just past its end is
+  // the empty lane (which focuses the arrangement and leaves the selection alone).
+  CHECK(f.frame());
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    const auto b = f.node(f.regionNode(i)).bounds;
+    for (const auto p : {ui::Point{b.x + 0.5, b.y + 0.5}, ui::Point{b.right() - 0.5, b.bottom() - 0.5},
+                         ui::Point{b.x + 0.5, b.bottom() - 0.5}, center(b)}) {
+      CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+      CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+      CHECK(f.focusedId() == f.regionNode(i));
+      CHECK(f.controller.selectedRegion() == f.region(i));
+    }
+    const ui::Point past{b.right() + 1.5, b.y + b.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(past)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(past)).hasValue());
+    CHECK(f.focusedId() == "shell.mix.arrangement");
+    CHECK(f.controller.selectedRegion() == f.region(i));
+  }
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+
+  // A double-click opens SING on the region.
+  const auto target = center(f.node(f.regionNode(1)).bounds);
+  CHECK(f.shell.pointerDown(f.controller, press(target)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(target)).hasValue());
+  CHECK(f.shell.workspace() == Workspace::Mix);
+  CHECK(f.shell.pointerDown(f.controller, press(target, false, 2)).hasValue());
+  CHECK(f.shell.workspace() == Workspace::Sing);
+  CHECK(f.shell.pointerUp(f.controller, press(target, false, 2)).hasValue());
+  CHECK(f.controller.selectedTrack() == f.tracks[1]);
+  CHECK(f.controller.selectedRegion() == f.region(1));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+  CHECK(f.frame());
 }
