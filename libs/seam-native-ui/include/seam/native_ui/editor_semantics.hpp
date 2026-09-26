@@ -27,6 +27,8 @@ enum class SemanticRole {
   Tab,
   // Determinate progress with a numeric value in [minimum, maximum] (render progress).
   ProgressIndicator,
+  // An on/off control; selected marks it on and value reads "On" or "Off" (mute, solo).
+  CheckBox,
 };
 
 enum class SemanticAction { Activate, SetFocus, EditText, Toggle, Increment, Decrement };

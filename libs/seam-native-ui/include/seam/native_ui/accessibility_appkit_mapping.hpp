@@ -35,6 +35,7 @@ namespace seam::native_ui::appkit_ax {
     case SemanticRole::RadioButton:
     case SemanticRole::Tab: return NSAccessibilityRadioButtonRole;
     case SemanticRole::ProgressIndicator: return NSAccessibilityProgressIndicatorRole;
+    case SemanticRole::CheckBox: return NSAccessibilityCheckBoxRole;
   }
   return NSAccessibilityGroupRole;
 }
@@ -43,10 +44,11 @@ namespace seam::native_ui::appkit_ax {
   return node.role == SemanticRole::Tab ? NSAccessibilityTabButtonSubrole : nil;
 }
 
-// Sliders and progress report numbers; radio buttons and tabs report their selection as 1/0.
+// Sliders and progress report numbers; radio buttons, tabs and check boxes report 1/0.
 [[nodiscard]] inline NSNumber* numericValue(const SemanticNode& node) {
   if (node.numericValue.has_value()) return @(*node.numericValue);
-  if (node.role == SemanticRole::RadioButton || node.role == SemanticRole::Tab)
+  if (node.role == SemanticRole::RadioButton || node.role == SemanticRole::Tab ||
+      node.role == SemanticRole::CheckBox)
     return @(node.selected ? 1 : 0);
   return nil;
 }

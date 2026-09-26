@@ -235,6 +235,9 @@ public:
   [[nodiscard]] TrackInspectorSnapshot trackInspector() const noexcept {
     return TrackInspectorModel::snapshot(session_.project(), selectedTrackId_, playheadTick_);
   }
+  // Read-only document view for surfaces that show every track at once (the MIX workspace).
+  // Edits still go through the controller's commands.
+  [[nodiscard]] const domain::Project& project() const noexcept { return session_.project(); }
   [[nodiscard]] domain::TrackId selectedTrack() const noexcept {
     return selectedTrackId_;
   }
@@ -279,6 +282,19 @@ public:
   [[nodiscard]] core::Result<void> resetExpressionLaneDraft();
   [[nodiscard]] bool expressionLaneOpen() const noexcept { return expressionLaneVisible_; }
   [[nodiscard]] core::Result<void> closeExpressionLane();
+  // The selected channel's curve edited in value space by a surface that draws its own graph (the
+  // TUNE workspace). A press grabs the stored region-local point `grab` (Shift-style `erase` removes
+  // it at once) or inserts one at `songTick`, snapped and clamped into the region as a lane click
+  // is; a drag moves it; the release commits one undoable edit, and cancelPointerGesture restores
+  // the curve as it was before the press.
+  [[nodiscard]] core::Result<void> pressExpressionPoint(std::optional<time::Tick> grab,
+                                                        time::Tick songTick, float amount,
+                                                        bool erase = false);
+  [[nodiscard]] core::Result<void> dragExpressionPoint(time::Tick songTick, float amount);
+  [[nodiscard]] core::Result<void> releaseExpressionPoint();
+  // Replaces the given vibrato fields on every selected note of the region as one undoable edit
+  // (the vibrato inspector's apply, without its text fields).
+  [[nodiscard]] core::Result<void> applyVibratoToSelection(const ui::VibratoFields& patch);
   [[nodiscard]] core::Result<void> openStyleCoverageSheet();
   [[nodiscard]] core::Result<void> openJapaneseReadingReview();
   void setJapaneseReadingResourceResolver(std::function<core::Result<authoring::StagedJapaneseReadingResource>()> resolver) {

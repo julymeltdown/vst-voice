@@ -51,6 +51,7 @@ std::string_view semanticRoleName(SemanticRole role) noexcept {
     case SemanticRole::RadioButton: return "radio-button";
     case SemanticRole::Tab: return "tab";
     case SemanticRole::ProgressIndicator: return "progress-indicator";
+    case SemanticRole::CheckBox: return "check-box";
   }
   return "unknown";
 }

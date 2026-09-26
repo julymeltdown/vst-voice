@@ -7082,4 +7082,94 @@ core::Result<void> NativeEditorController::resetExpressionLaneDraft() {
   return core::success();
 }
 
+namespace {
+
+// A song tick as the lane stores it: snapped on the song grid the notes use, then region-local.
+time::Tick expressionRegionTick(const domain::Project& project, domain::RegionId regionId,
+                                time::Tick songTick) {
+  auto absolute = std::max(songTick, time::Tick{0});
+  if (project.settings().snapEnabled)
+    absolute = time::Quantizer(project.settings().snapGrid).snap(absolute);
+  const auto* region = project.findRegion(regionId);
+  if (region == nullptr) return absolute;
+  return std::clamp(absolute - region->startTick, time::Tick{0}, region->durationTick);
+}
+
+}  // namespace
+
+core::Result<void> NativeEditorController::pressExpressionPoint(std::optional<time::Tick> grab,
+                                                               time::Tick songTick, float amount,
+                                                               bool erase) {
+  if (pointerGestureActive())
+    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture first");
+  auto draft = ensureExpressionDraft();
+  if (!draft) return core::Result<void>{draft.error()};
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  const auto clamped = std::isfinite(amount)
+                           ? std::clamp(amount, descriptor.minimum, descriptor.maximum)
+                           : descriptor.neutral;
+  if (grab.has_value()) {
+    const auto& points = draft.value()->points();
+    if (std::none_of(points.begin(), points.end(),
+                     [&grab](const ui::ExpressionPoint& point) { return point.tick == *grab; }))
+      return core::failure(core::ErrorCode::NotFound, "That expression point is no longer stored");
+    if (erase) {
+      const auto erased = draft.value()->erase(*grab);
+      if (!erased) return erased;
+      return commitExpressionDraft();
+    }
+    expressionGestureSnapshot_ = points;
+    expressionDragTick_ = grab;
+    dragMode_ = DragMode::MoveExpressionPoint;
+    repaint();
+    return core::success();
+  }
+  expressionGestureSnapshot_ = draft.value()->points();
+  const auto tick = expressionRegionTick(session_.project(), regionId_, songTick);
+  const auto inserted = draft.value()->upsert(ui::ExpressionPoint{tick, clamped});
+  if (!inserted) {
+    expressionGestureSnapshot_.reset();
+    return inserted;
+  }
+  expressionDragTick_ = tick;
+  dragMode_ = DragMode::MoveExpressionPoint;
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::dragExpressionPoint(time::Tick songTick, float amount) {
+  if (dragMode_ != DragMode::MoveExpressionPoint || !expressionDraft_ ||
+      !expressionDragTick_.has_value())
+    return core::failure(core::ErrorCode::InvalidState, "No expression point is being moved");
+  const auto descriptor = ui::describeExpressionChannel(expressionChannel_);
+  const auto clamped = std::isfinite(amount)
+                           ? std::clamp(amount, descriptor.minimum, descriptor.maximum)
+                           : descriptor.neutral;
+  const auto tick = expressionRegionTick(session_.project(), regionId_, songTick);
+  if (tick == *expressionDragTick_) {
+    const auto replaced = expressionDraft_->upsert(ui::ExpressionPoint{tick, clamped});
+    if (!replaced) return replaced;
+  } else {
+    const auto moved = expressionDraft_->move(*expressionDragTick_, ui::ExpressionPoint{tick, clamped});
+    if (!moved) return moved;
+    expressionDragTick_ = tick;
+  }
+  repaint();
+  return core::success();
+}
+
+core::Result<void> NativeEditorController::releaseExpressionPoint() {
+  if (dragMode_ != DragMode::MoveExpressionPoint) return core::success();
+  return endExpressionGesture();
+}
+
+core::Result<void> NativeEditorController::applyVibratoToSelection(const ui::VibratoFields& patch) {
+  auto model = ui::VibratoModel::prepare(session_, regionId_, patch);
+  if (!model) return core::Result<void>{model.error()};
+  const auto applied = model.value().apply(session_, regionId_);
+  if (applied) markDocumentChanged();
+  repaint();
+  return applied;
+}
+
 }  // namespace seam::native_ui

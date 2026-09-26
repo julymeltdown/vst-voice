@@ -104,6 +104,7 @@ int controlType(const SemanticNode& node) noexcept {
     case SemanticRole::RadioButton: return UIA_RadioButtonControlTypeId;
     case SemanticRole::Tab: return UIA_TabItemControlTypeId;
     case SemanticRole::ProgressIndicator: return UIA_ProgressBarControlTypeId;
+    case SemanticRole::CheckBox: return UIA_CheckBoxControlTypeId;
   }
   return UIA_CustomControlTypeId;
 }
