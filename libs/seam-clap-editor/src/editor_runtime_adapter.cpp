@@ -531,6 +531,7 @@ void EditorRuntime::configureControllerCallbacks() {
         }
         return resolver();
       },
+      .resetOutputClip = [this] { resetOutputClip(); },
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));

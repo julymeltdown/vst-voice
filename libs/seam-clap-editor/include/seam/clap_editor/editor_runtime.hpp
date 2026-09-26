@@ -188,6 +188,11 @@ public:
   // signal it explicitly. CLAP can request a main-thread host-state notification.
   void setPersistentStateChangeCallback(std::function<void()> callback);
   void setRenderReadyCallback(std::function<void()> callback);
+  // Owner thread. The measured level of the plug-in's output as its audio thread last reported it,
+  // or nothing while the host is not processing; the header meter paints it.
+  void setOutputLevel(std::optional<native_ui::EditorSceneState::OutputLevel> level);
+  // Called when the creator clears the meter's clip light, to reset the publisher's latch.
+  void setOutputClipResetCallback(std::function<void()> callback);
   void setTextInputCallbacks(
       std::function<void(const native_ui::TextInputRequest&)> begin,
       std::function<void()> end);
@@ -434,6 +439,9 @@ private:
   std::function<void()> persistentStateChangeCallback_;
   mutable std::uint64_t lastSignalledRevision_{0U};
   std::function<void()> renderReadyCallback_;
+  std::function<void()> outputClipResetCallback_;
+  // Runs the clip reset callback outside the lock (the controller calls it from an edit).
+  void resetOutputClip();
   std::function<void(const native_ui::TextInputRequest&)> beginTextInput_;
   std::function<void()> endTextInput_;
   std::function<core::Result<void>()> voicebankInstallerHandoff_;

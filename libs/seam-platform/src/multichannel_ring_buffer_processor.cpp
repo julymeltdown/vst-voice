@@ -7,9 +7,10 @@ namespace seam::platform {
 
 MultichannelRingBufferAudioProcessor::MultichannelRingBufferAudioProcessor(
     rendering::SpscInterleavedAudioRingBuffer& ring,
-    std::size_t maximumBlockFrames)
+    std::size_t maximumBlockFrames, OutputLevelMeter* outputMeter)
     : ring_(ring),
-      scratch_(maximumBlockFrames * ring.channelCount(), 0.0F) {}
+      scratch_(maximumBlockFrames * ring.channelCount(), 0.0F),
+      outputMeter_(outputMeter) {}
 
 void MultichannelRingBufferAudioProcessor::process(
     AudioProcessContext context) noexcept {
@@ -41,6 +42,8 @@ void MultichannelRingBufferAudioProcessor::process(
                 output.end(), 0.0F);
     }
   }
+  // The device plays these spans as they are now; the meter reads exactly them.
+  if (outputMeter_ != nullptr) outputMeter_->measure(context);
 
   callbacks_.fetch_add(1U, std::memory_order_relaxed);
   requestedFrames_.fetch_add(frames, std::memory_order_relaxed);

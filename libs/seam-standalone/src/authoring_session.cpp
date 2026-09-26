@@ -315,6 +315,7 @@ void AuthoringSession::configureController() {
         return runtime_->technicalEdits().rebindSeamOverride(review, edit, target);
       },
       .prepareJapaneseReadingResource = externalCallbacks_.prepareJapaneseReadingResource,
+      .resetOutputClip = externalCallbacks_.resetOutputClip,
   };
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       runtime_->document().session(), runtime_->document().factory(),

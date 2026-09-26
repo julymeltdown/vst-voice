@@ -10,6 +10,28 @@ void EditorRuntime::activateDesignShell() {
   activateDesignShellWith(std::nullopt);
 }
 
+// The header output meter: the plug-in's audio thread measures what it returns to the host, and
+// the GUI timer hands the reading to the controller here.
+void EditorRuntime::setOutputLevel(
+    std::optional<native_ui::EditorSceneState::OutputLevel> level) {
+  std::lock_guard lock(mutex_);
+  if (controller_ != nullptr) controller_->setOutputLevel(std::move(level));
+}
+
+void EditorRuntime::setOutputClipResetCallback(std::function<void()> callback) {
+  std::lock_guard lock(mutex_);
+  outputClipResetCallback_ = std::move(callback);
+}
+
+void EditorRuntime::resetOutputClip() {
+  std::function<void()> reset;
+  {
+    std::lock_guard lock(mutex_);
+    reset = outputClipResetCallback_;
+  }
+  if (reset) reset();
+}
+
 void EditorRuntime::activateDesignShell(native_ui::design::DesignPreferences preferences) {
   activateDesignShellWith(preferences);
 }

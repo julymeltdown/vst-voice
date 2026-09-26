@@ -7,6 +7,7 @@
 #include "seam/live_voice/midi1_decoder.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/file_dialog.hpp"
+#include "seam/platform/output_level_meter.hpp"
 #include "seam/standalone/native_project_dialog.hpp"
 
 #include <clap/clap.h>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +26,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -185,6 +188,8 @@ public:
     });
     runtime_->setVoicebankInstallerHandoff(
         [] { return openStandaloneVoicebankInstaller(); });
+    // The header meter's clip light clears the latch of the meter this process() feeds.
+    runtime_->setOutputClipResetCallback([this] { outputMeter_.resetClip(); });
     runtime_->activateDesignShell();
     // Score interchange in the embedded editor. The runtime runs the conversion and the adoption;
     // this supplies the destination and keeps the review decision conservative by default.
@@ -255,6 +260,7 @@ public:
     if (runtime_) {
       runtime_->setRenderReadyCallback({});
       runtime_->setPersistentStateChangeCallback({});
+      runtime_->setOutputClipResetCallback({});
     }
     unregisterTimer(*this);
     view_.reset();
@@ -387,6 +393,30 @@ private:
     }
   }
 
+  // Owner thread. Hands the editor what process() measured in the buffers it returned to the
+  // host, or nothing while the host is not processing (or stopped calling process()), so the
+  // meter shows its empty scale rather than a stale level.
+  static void publishOutputLevel(PluginInstance& instance) noexcept {
+    try {
+      auto reading = instance.outputMeter_.read(
+          instance.meterRunning_.load(std::memory_order_acquire),
+          std::chrono::steady_clock::now());
+      if (!reading) {
+        instance.runtime_->setOutputLevel(std::nullopt);
+        return;
+      }
+      instance.runtime_->setOutputLevel(native_ui::EditorSceneState::OutputLevel{
+          .peak = std::move(reading->peak),
+          .hold = std::move(reading->hold),
+          // The plug-in's one output port, by the name the host shows for it.
+          .bus = "SEAM Editor Output",
+          .clipped = reading->clipped,
+      });
+    } catch (...) {
+      instance.runtime_->setOutputLevel(std::nullopt);
+    }
+  }
+
   static bool CLAP_ABI pluginActivate(const clap_plugin_t* plugin,
                                       double sampleRate,
                                       std::uint32_t minimumFrames,
@@ -435,6 +465,7 @@ private:
     auto* instance = self(plugin);
     if (instance == nullptr) return;
     instance->processing_ = false;
+    instance->meterRunning_.store(false, std::memory_order_release);
     instance->active_ = false;
     instance->liveScratch_.clear();
     instance->runtime_->resetLive();
@@ -449,12 +480,15 @@ private:
     if (instance->renderMode_.load(std::memory_order_acquire) == CLAP_RENDER_OFFLINE &&
         !instance->runtime_->offlineRenderReady()) return false;
     instance->processing_ = true;
+    instance->meterRunning_.store(true, std::memory_order_release);
     return true;
   }
 
   static void CLAP_ABI pluginStopProcessing(const clap_plugin_t* plugin) {
     auto* instance = self(plugin);
-    if (instance != nullptr) instance->processing_ = false;
+    if (instance == nullptr) return;
+    instance->processing_ = false;
+    instance->meterRunning_.store(false, std::memory_order_release);
   }
 
   static void CLAP_ABI pluginReset(const clap_plugin_t* plugin) {
@@ -865,6 +899,16 @@ private:
     if (offline && !instance->runtime_->offlineRenderReady()) {
       clearOutput(output, process->frames_count);
       return CLAP_PROCESS_ERROR;
+    }
+    // Meter the block exactly as the host receives it (atomics only; see OutputLevelMeter).
+    if (output.data32 != nullptr) {
+      instance->outputMeter_.measure(
+          std::span<const float* const>{output.data32, output.channel_count},
+          process->frames_count);
+    } else {
+      instance->outputMeter_.measure(
+          std::span<const double* const>{output.data64, output.channel_count},
+          process->frames_count);
     }
     // An intentional rest is still part of a prepared score. SLEEP would let a
     // host omit later vocal entrances when no incoming note event wakes us.
@@ -1288,6 +1332,7 @@ private:
     // place to drain a report from a host that did not deliver the requested callback.
     drainHostTransport(*instance);
     if (instance->view_ != nullptr && timerId == instance->timerId_) {
+      publishOutputLevel(*instance);
       instance->view_->onTimer();
       instance->synchronizeAudioPortConfiguration();
     }
@@ -1331,6 +1376,7 @@ private:
     instance->synchronizeAudioPortConfiguration();
     if (instance->view_ != nullptr &&
         instance->timerId_ == CLAP_INVALID_ID) {
+      publishOutputLevel(*instance);
       instance->view_->onTimer();
     }
     instance->publishHostStateDirty();
@@ -1400,6 +1446,9 @@ private:
   // What the host told us about its transport, handed to the editor runtime from the owner
   // thread. The audio callback only ever stores into this; it never locks the runtime.
   clap_editor::HostTransportPublication transportPublication_;
+  // Written by process() on the audio thread, read by the owner thread's timer.
+  platform::OutputLevelMeter outputMeter_;
+  std::atomic<bool> meterRunning_{false};
   std::atomic<std::uint8_t> outputChannels_{2U};
   std::atomic<std::uint8_t> desiredOutputChannels_{2U};
   std::atomic<clap_plugin_render_mode> renderMode_{CLAP_RENDER_REALTIME};

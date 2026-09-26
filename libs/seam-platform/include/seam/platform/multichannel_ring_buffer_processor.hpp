@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/platform/audio_callback.hpp"
+#include "seam/platform/output_level_meter.hpp"
 #include "seam/rendering/interleaved_audio_ring_buffer.hpp"
 
 #include <atomic>
@@ -21,9 +22,11 @@ struct MultichannelRingProcessorStats final {
 
 class MultichannelRingBufferAudioProcessor final : public IAudioProcessor {
 public:
+  // outputMeter, when given, measures every block exactly as it is handed back to the device
+  // (after gain and padding). It must outlive the processor.
   MultichannelRingBufferAudioProcessor(
       rendering::SpscInterleavedAudioRingBuffer& ring,
-      std::size_t maximumBlockFrames);
+      std::size_t maximumBlockFrames, OutputLevelMeter* outputMeter = nullptr);
 
   void process(AudioProcessContext context) noexcept override;
   void setGain(float gain) noexcept;
@@ -32,6 +35,7 @@ public:
 private:
   rendering::SpscInterleavedAudioRingBuffer& ring_;
   std::vector<float> scratch_;
+  OutputLevelMeter* outputMeter_{nullptr};
   std::atomic<float> gain_{1.0F};
   std::atomic<std::uint64_t> callbacks_{0U};
   std::atomic<std::uint64_t> requestedFrames_{0U};
