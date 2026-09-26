@@ -756,6 +756,21 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   if (auto* body = bodyWorkspace(); body != nullptr) {
     stageShown_ = false;
     body->paint(*c, t, controller, state, workspaceArea());
+    // The keyboard focus ring for the body's focused control, at the bounds it publishes now.
+    if (semanticFocus_.starts_with(body->idPrefix())) {
+      std::vector<SemanticNode> nodes;
+      body->semantics(controller, state, workspaceArea(), nodes);
+      for (const auto& node : nodes) {
+        if (node.id != semanticFocus_ || node.bounds.width <= 0.0) continue;
+        const auto& r = node.bounds;
+        c->save();
+        c->setGlow(t.color.focusRing, 6.0);
+        c->stroke(Path::roundedRect({r.x - 2, r.y - 2, r.width + 4, r.height + 4}, 5),
+                  t.color.focusRing, StrokeStyle{2.0});
+        c->restore();
+        break;
+      }
+    }
   } else if (workspace_ == Workspace::Export) {
     stageShown_ = false;
     paintExport(*c, t, state);
