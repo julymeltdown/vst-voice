@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -315,19 +316,25 @@ double vibratoCents(const domain::NoteVibrato& v, double durationMs, double elap
 
 // ---- Layout -------------------------------------------------------------------------------------
 
-enum class View { Curves, Vibrato };
+// The compact views, in tab order.
+enum class View : std::size_t { Curves, Pitch, Vibrato };
+constexpr std::size_t kViews = 3U;
+constexpr std::array<const char*, kViews> kViewLabels{"Curves", "Pitch", "Vibrato"};
+constexpr std::array<const char*, kViews> kViewIds{"shell.tune.view.curves", "shell.tune.view.pitch",
+                                                   "shell.tune.view.vibrato"};
 
-// One geometry for paint, hit-testing and accessibility. Below 600 points of width the graph and
-// the vibrato card share the middle through two view tabs instead of squeezing side by side; the
-// pitch strip appears once the curve column is tall enough to give both graphs a readable height.
+// One geometry for paint, hit-testing and accessibility. Below 600 points of width the graph, the
+// pitch strip and the vibrato card share the middle through three view tabs instead of squeezing
+// side by side; wider, the pitch strip sits under the graph once the curve column is tall enough to
+// give both a readable height.
 struct TuneLayout final {
   bool compact{false};
   bool shortBody{false};
   ui::Rect header, caption;
   std::array<ui::Rect, kChannels> chip{};
-  std::array<ui::Rect, 2U> view{};
+  std::array<ui::Rect, kViews> view{};
   ui::Rect graph, graphCaption, graphGutter, graphPlot;
-  ui::Rect pitch, pitchCaption, pitchPlot;
+  ui::Rect pitch, pitchCaption, pitchGutter, pitchPlot;
   ui::Rect vibrato, vibratoTitle, vibratoToggle, vibratoPreview, vibratoMessage;
   std::array<ui::Rect, kFields> field{};
   ui::Rect macro;
@@ -376,10 +383,10 @@ TuneLayout solveTuneLayout(ui::Rect area, View view) {
   const auto macroHeight = l.shortBody ? 34.0 : inner.height >= 420.0 ? 58.0 : 48.0;
   l.header = {inner.x, inner.y, inner.width, headerHeight};
   if (l.compact) {
-    const auto width = std::min(92.0, std::max(0.0, (inner.width - 6.0) * 0.3));
+    const auto width = std::min(92.0, std::max(0.0, (inner.width - 12.0) * 0.24));
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       l.view[i] = {inner.x + static_cast<double>(i) * (width + 6.0), inner.y, width, headerHeight};
-    const auto x = l.view[1].right() + 12.0;
+    const auto x = l.view.back().right() + 12.0;
     l.caption = {x, inner.y, std::max(0.0, inner.right() - x), headerHeight};
   } else {
     // Chips first; the hint beside them only where it has room to be read.
@@ -397,18 +404,22 @@ TuneLayout solveTuneLayout(ui::Rect area, View view) {
   const auto middleTop = l.header.bottom() + gap;
   const ui::Rect middle{inner.x, middleTop, inner.width, std::max(0.0, l.macro.y - gap - middleTop)};
   ui::Rect curves{};
+  ui::Rect pitchCard{};
   if (!l.compact) {
     const auto cardWidth = std::clamp(inner.width * 0.3, 236.0, 320.0);
     l.vibrato = {middle.right() - cardWidth, middle.y, cardWidth, middle.height};
     curves = {middle.x, middle.y, std::max(0.0, middle.width - cardWidth - gap), middle.height};
   } else if (view == View::Vibrato) {
     l.vibrato = middle;
+  } else if (view == View::Pitch) {
+    pitchCard = middle;
   } else {
     curves = middle;
   }
   if (usable(curves)) {
-    const auto pitchHeight =
-        curves.height >= 220.0 ? std::clamp(curves.height * 0.3, 70.0, 170.0) : 0.0;
+    const auto pitchHeight = !l.compact && curves.height >= 220.0
+                                 ? std::clamp(curves.height * 0.3, 70.0, 170.0)
+                                 : 0.0;
     l.graph = {curves.x, curves.y, curves.width,
                curves.height - (pitchHeight > 0.0 ? pitchHeight + gap : 0.0)};
     const auto captionHeight = l.shortBody ? 18.0 : 22.0;
@@ -418,13 +429,14 @@ TuneLayout solveTuneLayout(ui::Rect area, View view) {
                    std::max(0.0, l.graph.width - 48.0),
                    std::max(0.0, l.graph.height - captionHeight - 8.0)};
     l.graphGutter = {l.graph.x + 4.0, l.graphPlot.y, 32.0, l.graphPlot.height};
-    if (pitchHeight > 0.0) {
-      l.pitch = {curves.x, l.graph.bottom() + gap, curves.width, pitchHeight};
-      l.pitchCaption = {l.pitch.x + 12.0, l.pitch.y + 3.0, std::max(0.0, l.pitch.width - 24.0),
-                        18.0};
-      l.pitchPlot = {l.pitch.x + 40.0, l.pitch.y + 24.0, std::max(0.0, l.pitch.width - 48.0),
-                     std::max(0.0, l.pitch.height - 30.0)};
-    }
+    if (pitchHeight > 0.0) pitchCard = {curves.x, l.graph.bottom() + gap, curves.width, pitchHeight};
+  }
+  if (usable(pitchCard)) {
+    l.pitch = pitchCard;
+    l.pitchCaption = {l.pitch.x + 12.0, l.pitch.y + 3.0, std::max(0.0, l.pitch.width - 24.0), 18.0};
+    l.pitchPlot = {l.pitch.x + 40.0, l.pitch.y + 24.0, std::max(0.0, l.pitch.width - 48.0),
+                   std::max(0.0, l.pitch.height - 30.0)};
+    l.pitchGutter = {l.pitch.x + 4.0, l.pitchPlot.y, 32.0, l.pitchPlot.height};
   }
   if (usable(l.vibrato)) layoutVibrato(l, l.shortBody);
   return l;
@@ -461,6 +473,120 @@ float valueAtY(const ui::Rect& plot, const ui::ExpressionChannelDescriptor& d, d
   return static_cast<float>(d.minimum + fraction * (d.maximum - d.minimum));
 }
 
+// ---- The region's pitch curve -------------------------------------------------------------------
+
+// Pitch points store a cents offset from the notes' own pitch. A press or drag snaps to this step,
+// and a point's Increment and Decrement move it by one.
+constexpr double kPitchStepCents = 5.0;
+constexpr double kPitchMinimumRange = 200.0;
+constexpr double kPitchMaximumRange = 4800.0;
+constexpr std::string_view kPitchPointPrefix = "shell.tune.pitch.point.";
+
+// The strip's vertical scale: symmetric around the notes' pitch, in whole semitones and at least
+// two. It is sized from the stored points only, so it holds still while a drag is in progress.
+struct PitchScale final {
+  ui::Rect plot;
+  double range{kPitchMinimumRange};
+
+  PitchScale(ui::Rect p, const std::vector<domain::PitchAutomationPoint>& stored) : plot(p) {
+    double largest = 0.0;
+    for (const auto& point : stored) largest = std::max(largest, std::abs(static_cast<double>(point.cents)));
+    range = std::clamp(std::ceil(largest * 1.15 / 100.0) * 100.0, kPitchMinimumRange,
+                       kPitchMaximumRange);
+  }
+  [[nodiscard]] double centerY() const noexcept { return plot.y + plot.height * 0.5; }
+  [[nodiscard]] double half() const noexcept {
+    return std::max(1e-6, plot.height * 0.5 - kPlotMargin);
+  }
+  [[nodiscard]] double y(double cents) const noexcept {
+    return centerY() - std::clamp(cents / range, -1.0, 1.0) * half();
+  }
+  [[nodiscard]] float cents(double py) const noexcept {
+    const auto raw = (centerY() - py) / half() * range;
+    return static_cast<float>(
+        std::clamp(std::round(raw / kPitchStepCents) * kPitchStepCents, -range, range));
+  }
+};
+
+ui::Rect intersection(ui::Rect a, ui::Rect b) noexcept {
+  const auto x = std::max(a.x, b.x);
+  const auto y = std::max(a.y, b.y);
+  return {x, y, std::max(0.0, std::min(a.right(), b.right()) - x),
+          std::max(0.0, std::min(a.bottom(), b.bottom()) - y)};
+}
+
+// The press target of a point: the grab radius around it, kept inside the pitch card.
+ui::Rect pitchPointRect(const TuneLayout& l, ui::Point center) noexcept {
+  return intersection({center.x - kPointGrabRadius, center.y - kPointGrabRadius,
+                       2.0 * kPointGrabRadius, 2.0 * kPointGrabRadius},
+                      l.pitch);
+}
+
+std::string pitchPointId(time::Tick tick) {
+  return std::string{kPitchPointPrefix} + std::to_string(tick.value());
+}
+
+std::string centsText(double cents) {
+  return std::abs(cents) < 0.5 ? std::string{"0 ct"} : format("%+.0f ct", cents);
+}
+
+std::string semitoneLabel(double cents) {
+  if (std::abs(cents) < 0.5) return "0";
+  return (cents > 0.0 ? std::string{"+"} : std::string{"\u2212"}) +
+         format("%.0f st", std::abs(cents) / 100.0);
+}
+
+std::string noteName(std::uint8_t key) {
+  static constexpr std::array<const char*, 12U> kNames{"C",  "C#", "D",  "D#", "E",  "F",
+                                                       "F#", "G",  "G#", "A",  "A#", "B"};
+  return std::string{kNames[key % 12U]} + std::to_string(static_cast<int>(key / 12U) - 1);
+}
+
+// The curve a surface should show: the stored points with a gesture in progress applied, exactly
+// as its release would store them.
+domain::PitchAutomation shownPitch(const NativeEditorController& controller,
+                                   const domain::VocalRegion& region) {
+  auto shown = region.pitchAutomation;
+  if (const auto& gesture = controller.pitchPointGesture()) {
+    if (gesture->source) static_cast<void>(shown.erase(*gesture->source));
+    static_cast<void>(shown.upsert(gesture->point));
+  }
+  return shown;
+}
+
+// The stored point a press at p grabs: the nearest within the grab radius.
+std::optional<time::Tick> pitchPointNear(const Axis& axis, const PitchScale& scale,
+                                         const domain::VocalRegion& region, ui::Point p) {
+  std::optional<time::Tick> grab;
+  auto best = kPointGrabRadius * kPointGrabRadius;
+  for (const auto& point : region.pitchAutomation.points()) {
+    const auto dx = axis.x(point.tick) - p.x;
+    const auto dy = scale.y(point.cents) - p.y;
+    if (dx * dx + dy * dy > best) continue;
+    best = dx * dx + dy * dy;
+    grab = point.tick;
+  }
+  return grab;
+}
+
+// A point's marker says its interpolation toward the next point: square steps, round glides
+// linearly, a diamond eases.
+Path pitchMarker(ui::Point p, domain::CurveInterpolation interpolation, double r) {
+  switch (interpolation) {
+    case domain::CurveInterpolation::Step:
+      return Path::roundedRect({p.x - r, p.y - r, 2.0 * r, 2.0 * r}, 1.0);
+    case domain::CurveInterpolation::Smooth: {
+      Path diamond;
+      const auto d = r * 1.3;
+      diamond.moveTo({p.x, p.y - d}).lineTo({p.x + d, p.y}).lineTo({p.x, p.y + d})
+          .lineTo({p.x - d, p.y}).close();
+      return diamond;
+    }
+    case domain::CurveInterpolation::Linear: break;
+  }
+  return Path::circle(p, r);
+}
+
 // ---- The workspace ------------------------------------------------------------------------------
 
 class TuneWorkspace final : public ShellWorkspace {
@@ -490,7 +616,7 @@ public:
     for (std::size_t i = 0U; i < l.view.size(); ++i) {
       if (!l.compact || !contains(l.view[i], p)) continue;
       focusRequest_ = viewId(i);
-      view_ = i == 0U ? View::Curves : View::Vibrato;
+      view_ = static_cast<View>(i);
       return core::success();
     }
     for (std::size_t i = 0U; i < kChannels; ++i) {
@@ -549,7 +675,9 @@ public:
       graphDrag_ = result && controller.pointerGestureActive();
       return result;
     }
-    if (usable(l.pitchPlot) && contains(l.pitchPlot, p)) focusRequest_ = "shell.tune.pitch";
+    if (usable(l.pitchPlot) && contains(intersection(inset(l.pitchPlot, -kPointGrabRadius,
+                                                           -kPointGrabRadius), l.pitch), p))
+      return pressPitch(controller, event, l);
     return core::success();
   }
 
@@ -576,6 +704,20 @@ public:
       const auto descriptor = ui::describeExpressionChannel(ui::expressionChannelAt(*active));
       return controller.dragExpressionPoint(axis.songTick(p.x),
                                             valueAtY(l.graphPlot, descriptor, p.y));
+    }
+    if (pitchDrag_) {
+      // Something else (a resize, a surface switch) cancelled the gesture: the drag is over.
+      if (!controller.pitchPointGesture()) {
+        pitchDrag_.reset();
+        return core::success();
+      }
+      const auto l = solveTuneLayout(area, view_);
+      const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
+      const auto axis = axisFor(controller, l.pitchPlot);
+      if (region == nullptr || !axis.valid()) return core::success();
+      const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
+      const ui::Point target{p.x + pitchDrag_->x, p.y + pitchDrag_->y};
+      return controller.dragPitchPoint(axis.songTick(target.x) - axis.start, scale.cents(target.y));
     }
     return core::success();
   }
@@ -606,6 +748,10 @@ public:
     if (graphDrag_) {
       graphDrag_ = false;
       return controller.releaseExpressionPoint();
+    }
+    if (pitchDrag_) {
+      pitchDrag_.reset();
+      return controller.releasePitchPoint();
     }
     return core::success();
   }
@@ -642,10 +788,14 @@ public:
       graphDrag_ = false;
       controller.cancelPointerGesture();
     }
+    if (pitchDrag_) {
+      pitchDrag_.reset();
+      controller.cancelPointerGesture();
+    }
   }
 
   [[nodiscard]] bool gestureActive() const noexcept override {
-    return knobDrag_.has_value() || fieldDrag_.has_value() || graphDrag_;
+    return knobDrag_.has_value() || fieldDrag_.has_value() || graphDrag_ || pitchDrag_.has_value();
   }
 
   [[nodiscard]] std::string takeFocusRequest() override {
@@ -671,14 +821,52 @@ private:
     double value{0.0};
   };
 
-  static std::string viewId(std::size_t i) {
-    return i == 0U ? "shell.tune.view.curves" : "shell.tune.view.vibrato";
-  }
+  static std::string viewId(std::size_t i) { return kViewIds[i % kViews]; }
 
   static Axis axisFor(const NativeEditorController& controller, ui::Rect plot) {
     const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
     if (region == nullptr) return Axis{plot};
     return Axis{plot, region->startTick, region->durationTick};
+  }
+
+  // Why the pitch strip is read-only, or empty when it edits.
+  static std::string pitchRefusal(const NativeEditorController& controller) {
+    if (controller.pianoRoll().project().findRegion(controller.selectedRegion()) == nullptr)
+      return "Select a region to shape its pitch";
+    return controller.pitchEditRefusal();
+  }
+
+  // A press on the pitch strip: Shift removes the grabbed point, Alt (or a double click) cycles its
+  // interpolation, otherwise it grabs the point or starts a new one at the snapped tick and value.
+  // The last two become one host command on release.
+  core::Result<void> pressPitch(NativeEditorController& controller, const PointerEvent& event,
+                                const TuneLayout& l) {
+    const auto p = event.position;
+    focusRequest_ = "shell.tune.pitch";
+    const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
+    const auto axis = axisFor(controller, l.pitchPlot);
+    if (region == nullptr || !axis.valid() || !pitchRefusal(controller).empty())
+      return core::success();
+    const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
+    const auto grab = pitchPointNear(axis, scale, *region, p);
+    if (grab) {
+      if (event.modifiers.shift) return controller.removePitchPointAt(*grab);
+      focusRequest_ = pitchPointId(*grab);
+      if (event.modifiers.alt || event.clickCount >= 2)
+        return controller.cyclePitchInterpolationAt(*grab);
+    } else if (event.modifiers.shift || !contains(l.pitchPlot, p)) {
+      return core::success();
+    }
+    ui::Point offset{};
+    if (grab) {
+      const auto stored = std::find_if(region->pitchAutomation.points().begin(),
+                                       region->pitchAutomation.points().end(),
+                                       [&](const auto& point) { return point.tick == *grab; });
+      offset = {axis.x(stored->tick) - p.x, scale.y(stored->cents) - p.y};
+    }
+    auto result = controller.pressPitchPoint(grab, axis.songTick(p.x) - axis.start, scale.cents(p.y));
+    if (result && controller.pointerGestureActive()) pitchDrag_ = offset;
+    return result;
   }
 
   static double fieldAt(const domain::NoteVibrato& v, std::size_t field, ui::Rect cell, double x) {
@@ -713,6 +901,8 @@ private:
   std::optional<KnobDrag> knobDrag_;
   std::optional<FieldDrag> fieldDrag_;
   bool graphDrag_{false};
+  // The grabbed point's offset from the pointer while a pitch gesture is in progress.
+  std::optional<ui::Point> pitchDrag_;
   double scrollAccumulator_{0.0};
   std::string focusRequest_;
 };
@@ -746,8 +936,8 @@ void TuneWorkspace::paintHeader(Canvas2D& c, const DesignTokens& t, const Editor
                                 const TuneLayout& l) const {
   const auto active = activeChannel(state);
   if (l.compact) {
-    tab(c, t, l.view[0], "Curves", view_ == View::Curves, std::nullopt);
-    tab(c, t, l.view[1], "Vibrato", view_ == View::Vibrato, std::nullopt);
+    for (std::size_t i = 0U; i < kViews; ++i)
+      tab(c, t, l.view[i], kViewLabels[i], view_ == static_cast<View>(i), std::nullopt);
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
       tab(c, t, l.chip[i], kLabels[i], active == i, channelColor(t, i));
@@ -895,57 +1085,114 @@ void TuneWorkspace::paintPitch(Canvas2D& c, const DesignTokens& t,
                                const EditorSceneState& state, const TuneLayout& l) const {
   glassPanel(c, t, l.pitch, t.shape.card);
   const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
-  const auto count = state.pitchAutomation.size();
-  c.text(l.pitchCaption,
-         "Pitch  \u2022  " + std::to_string(count) +
-             (count == 1U ? " point" : " points") + "  \u2022  read-only here; edit points in SING",
-         style(FontRole::UiMedium, t.type.smallLabel, 0.4), t.color.textSecondary);
+  const auto refusal = pitchRefusal(controller);
+  const auto& gesture = controller.pitchPointGesture();
+  const auto count = region == nullptr ? 0U : region->pitchAutomation.points().size();
+  // Caption: what is stored, the value a drag would commit, or why the strip cannot edit.
+  std::string caption = "Pitch  \u2022  " + std::to_string(count) +
+                        (count == 1U ? " point" : " points");
+  auto captionColor = t.color.textSecondary;
+  if (!refusal.empty()) {
+    caption = "Pitch  \u2022  read-only: " + refusal;
+    if (region != nullptr) captionColor = t.color.warning;
+  } else if (gesture) {
+    caption += "  \u2022  " + centsText(gesture->point.cents) + "  \u2022  release to commit";
+  } else {
+    caption += "  \u2022  click adds, drag moves, Shift removes, Alt changes the curve";
+  }
+  c.text(l.pitchCaption, caption, style(FontRole::UiMedium, t.type.smallLabel, 0.4), captionColor);
   const auto plot = l.pitchPlot;
   sunken(c, t, plot, 6.0);
   if (region == nullptr || !usable(plot)) return;
   const Axis axis{plot, region->startTick, region->durationTick};
   if (!axis.valid()) return;
-  double range = 100.0;
-  for (const auto& point : state.pitchAutomation)
-    range = std::max(range, std::abs(static_cast<double>(point.cents)) * 1.15);
-  const auto centerY = plot.y + plot.height * 0.5;
-  const auto half = std::max(0.0, plot.height * 0.5 - kPlotMargin);
-  const auto yFor = [&](double cents) { return centerY - std::clamp(cents / range, -1.0, 1.0) * half; };
+  const PitchScale scale{plot, region->pitchAutomation.points()};
+  const auto centerY = scale.centerY();
+  // Scale in semitones: the range at the top and bottom, the notes' own pitch in the middle.
+  if (usable(l.pitchGutter)) {
+    const auto gutterStyle = style(FontRole::Mono, t.type.rulerMicro, 0.0, TextAlign::Right);
+    const auto label = [&](double cents, double y) {
+      c.text({l.pitchGutter.x, y, l.pitchGutter.width, 12.0}, semitoneLabel(cents), gutterStyle,
+             t.color.textSecondary);
+    };
+    label(scale.range, plot.y);
+    if (plot.height >= 26.0) label(-scale.range, plot.bottom() - 12.0);
+    if (plot.height >= 40.0) label(0.0, centerY - 6.0);
+  }
   c.save();
   c.clipRect(plot);
+  // A row per semitone (or per few, where single ones would crowd), then the notes' pitch.
+  const auto semitonePixels = scale.half() * 100.0 / scale.range;
+  auto every = 1;
+  for (const int candidate : {1, 2, 3, 6, 12, 24}) {
+    every = candidate;
+    if (semitonePixels * candidate >= 6.0) break;
+  }
+  for (auto s = every; s * 100.0 < scale.range - 1e-6; s += every) {
+    for (const double sign : {-1.0, 1.0}) {
+      Path row;
+      const auto y = scale.y(sign * s * 100.0);
+      row.moveTo({plot.x, y}).lineTo({plot.right(), y});
+      c.stroke(row, t.color.gridWeak, StrokeStyle{s % 12 == 0 ? 1.0 : 0.6});
+    }
+  }
   Path zero;
   zero.moveTo({plot.x, centerY}).lineTo({plot.right(), centerY});
   c.stroke(zero, withAlpha(t.color.textSecondary, 0.35), StrokeStyle{1.0, true, {3.0, 4.0}});
-  // Where the notes sit, so the curve reads against the phrase; the selected note is lit.
+  // Each note's own pitch is the baseline the offset bends; the selected note is lit.
   const auto target = noteTarget(controller);
   for (const auto& note : region->notes) {
     const auto x0 = axis.x(note.startTick);
     const auto x1 = axis.x(note.endTick());
     const auto selected = target.note != nullptr && target.note->id == note.id;
-    c.fill(Path::capsule({x0 + 1.0, plot.bottom() - 7.0, std::max(2.0, x1 - x0 - 2.0), 3.0}),
+    c.fill(Path::capsule({x0 + 1.0, centerY - 1.5, std::max(2.0, x1 - x0 - 2.0), 3.0}),
            selected ? t.color.accent : withAlpha(t.color.noteStroke, 0.55));
+    if (x1 - x0 >= 30.0 && plot.height >= 40.0)
+      c.text({x0 + 3.0, centerY + 3.0, x1 - x0 - 6.0, 12.0}, noteName(note.midiKey),
+             style(FontRole::Mono, t.type.rulerMicro), withAlpha(t.color.textSecondary, 0.8));
   }
-  if (count > 0U) {
+  const auto shown = shownPitch(controller, *region);
+  if (!shown.points().empty()) {
+    // The offset across the region, dim where nothing sings; lit over each note, where it is the
+    // pitch the note is rendered at.
     Path curve;
-    const auto step = 2.0;
-    for (double x = plot.x; x <= plot.right(); x += step) {
+    for (double x = plot.x; x <= plot.right(); x += 2.0) {
       const auto local = axis.songTick(x) - axis.start;
-      const ui::Point p{x, yFor(region->pitchAutomation.valueAt(local))};
+      const ui::Point p{x, scale.y(shown.valueAt(local))};
       if (x == plot.x) curve.moveTo(p);
       else curve.lineTo(p);
     }
-    c.save();
-    c.setGlow(withAlpha(t.color.pitchGlow, 0.8), 6.0);
-    c.stroke(curve, t.color.pitchCurve, StrokeStyle{1.8});
-    c.restore();
-    for (const auto& point : state.pitchAutomation) {
-      const ui::Point p{axis.x(point.tick), yFor(point.cents)};
-      c.fill(Path::circle(p, 3.2), t.color.textPrimary);
-      c.stroke(Path::circle(p, 3.2), t.color.pitchCurve, StrokeStyle{1.0});
+    c.stroke(curve, withAlpha(t.color.pitchCurve, 0.45), StrokeStyle{1.2});
+    for (const auto& note : region->notes) {
+      const auto x0 = axis.x(note.startTick);
+      const auto x1 = axis.x(note.endTick());
+      if (x1 - x0 < 1.0) continue;
+      c.save();
+      c.clipRect({x0, plot.y, x1 - x0, plot.height});
+      c.setGlow(withAlpha(t.color.pitchGlow, 0.8), 6.0);
+      c.stroke(curve, t.color.pitchCurve, StrokeStyle{1.8});
+      c.restore();
+    }
+    for (const auto& point : shown.points()) {
+      const ui::Point p{axis.x(point.tick), scale.y(point.cents)};
+      const auto moving = gesture && gesture->point.tick == point.tick;
+      const auto marker = pitchMarker(p, point.interpolation, moving ? 4.4 : 3.4);
+      c.save();
+      if (moving) c.setGlow(withAlpha(t.color.accent, 0.9), 8.0);
+      c.fill(marker, moving ? t.color.accent : t.color.textPrimary);
+      c.restore();
+      c.stroke(marker, t.color.pitchCurve, StrokeStyle{1.0});
     }
   } else if (plot.height >= 30.0) {
-    c.text(inset(plot, 10.0, 0.0), "No pitch points stored",
+    c.text({plot.x + 10.0, plot.y + 2.0, std::max(0.0, plot.width - 20.0), 14.0},
+           refusal.empty() ? "Click to add a pitch point" : "No pitch points stored",
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  }
+  if (state.playheadInsideRegion) {
+    const auto x = axis.x(controller.playheadTick() - region->startTick);
+    Path head;
+    head.moveTo({x, plot.y}).lineTo({x, plot.bottom()});
+    c.stroke(head, withAlpha(t.color.accentTime, 0.7), StrokeStyle{1.0});
   }
   c.restore();
 }
@@ -1157,15 +1404,16 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
   const auto active = activeChannel(state);
   const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
   if (l.compact) {
-    static constexpr std::array<const char*, 2U> kViews{"Curves", "Vibrato"};
+    static constexpr std::array<const char*, kViews> kViewDescriptions{
+        "Shows the expression graph", "Shows the region's pitch curve",
+        "Shows the selected note's vibrato"};
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       out.push_back(SemanticNode{
-          .id = viewId(i), .role = SemanticRole::Tab, .name = std::string{kViews[i]} + " view",
+          .id = viewId(i), .role = SemanticRole::Tab, .name = std::string{kViewLabels[i]} + " view",
           .bounds = l.view[i],
-          .selected = (i == 0U) == (view_ == View::Curves),
+          .selected = view_ == static_cast<View>(i),
           .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-          .description = i == 0U ? "Shows the expression and pitch graphs"
-                                 : "Shows the selected note's vibrato"});
+          .description = kViewDescriptions[i]});
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
       out.push_back(SemanticNode{.id = std::string{"shell.tune.channel."} + kIds[i],
@@ -1217,15 +1465,62 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     out.push_back(std::move(graph));
   }
   if (usable(l.pitchPlot)) {
-    out.push_back(SemanticNode{
+    const auto refusal = pitchRefusal(controller);
+    const auto editable = refusal.empty();
+    const auto count = region == nullptr ? 0U : region->pitchAutomation.points().size();
+    SemanticNode pitch{
         .id = "shell.tune.pitch",
         .role = SemanticRole::Lane,
         .name = "Pitch curve",
-        .value = std::to_string(state.pitchAutomation.size()) +
-                 (state.pitchAutomation.size() == 1U ? " point" : " points"),
+        .value = std::to_string(count) + (count == 1U ? " point" : " points"),
         .bounds = l.pitchPlot,
+        .enabled = editable,
         .actions = {SemanticAction::SetFocus},
-        .description = "Read-only here; pitch points are edited in the SING lane"});
+        .description = editable
+                           ? "Click to add a point, drag to move it, Shift-click removes, "
+                             "Alt-click changes its curve; Escape cancels a drag. Each point's "
+                             "Increment and Decrement move it by 5 cents"
+                           : "Read-only: " + refusal};
+    const auto axis = axisFor(controller, l.pitchPlot);
+    if (region != nullptr && axis.valid()) {
+      const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
+      const auto quarter = std::max<std::int64_t>(1, controller.pianoRoll().timeline().ppq());
+      const auto quartersPerBar = std::max<std::int64_t>(
+          1, static_cast<std::int64_t>(state.meter.numerator) * 4 /
+                 std::max<std::int64_t>(1, state.meter.denominator));
+      const auto& points = region->pitchAutomation.points();
+      for (std::size_t i = 0U; i < points.size(); ++i) {
+        const auto& point = points[i];
+        const auto song = (region->startTick + point.tick).value();
+        const auto bar = song / (quarter * quartersPerBar) + 1;
+        const auto beat = static_cast<double>(song % (quarter * quartersPerBar)) /
+                              static_cast<double>(quarter) + 1.0;
+        const auto where = "bar " + std::to_string(bar) + " beat " +
+                           (std::abs(beat - std::round(beat)) < 1e-6 ? format("%.0f", beat)
+                                                                     : format("%.2f", beat));
+        pitch.children.push_back(SemanticNode{
+            .id = pitchPointId(point.tick),
+            .role = SemanticRole::Slider,
+            .name = "Pitch point " + std::to_string(i + 1U) + " of " + std::to_string(points.size()),
+            .value = centsText(point.cents) + ", " +
+                     std::string{domain::curveInterpolationName(point.interpolation)} + ", " + where,
+            .bounds = pitchPointRect(l, {axis.x(point.tick), scale.y(point.cents)}),
+            .enabled = editable,
+            .actions = editable ? std::vector<SemanticAction>{SemanticAction::Increment,
+                                                              SemanticAction::Decrement,
+                                                              SemanticAction::Activate,
+                                                              SemanticAction::SetFocus}
+                                : std::vector<SemanticAction>{SemanticAction::SetFocus},
+            .description = editable ? "Increment and Decrement move it by 5 cents; Activate "
+                                      "changes its curve"
+                                    : "Read-only: " + refusal,
+            .numericValue = static_cast<double>(point.cents),
+            .numericMinimum = -kPitchMaximumRange,
+            .numericMaximum = kPitchMaximumRange,
+            .numericStep = kPitchStepCents});
+      }
+    }
+    out.push_back(std::move(pitch));
   }
   if (usable(l.vibrato)) {
     const auto target = noteTarget(controller);
@@ -1307,9 +1602,10 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
       if (name == kIds[i]) return i;
     return std::nullopt;
   };
-  if (id == "shell.tune.view.curves" || id == "shell.tune.view.vibrato") {
+  for (std::size_t i = 0U; i < kViews; ++i) {
+    if (id != kViewIds[i]) continue;
     if (!activate) return unsupported();
-    view_ = id == "shell.tune.view.curves" ? View::Curves : View::Vibrato;
+    view_ = static_cast<View>(i);
     return core::success();
   }
   if (id.starts_with("shell.tune.channel.")) {
@@ -1332,6 +1628,19 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
     const auto active = activeChannel(controller);
     if (!active || step == 0) return unsupported();
     return nudge(controller, *active, step);
+  }
+  if (id.starts_with(kPitchPointPrefix)) {
+    const auto digits = id.substr(kPitchPointPrefix.size());
+    std::int64_t tick = 0;
+    const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), tick);
+    if (parsed.ec != std::errc{} || parsed.ptr != digits.data() + digits.size()) return unsupported();
+    if (const auto refusal = pitchRefusal(controller); !refusal.empty())
+      return core::failure(core::ErrorCode::Unsupported, refusal);
+    if (step != 0)
+      return controller.nudgePitchPointAt(time::Tick{tick},
+                                          static_cast<float>(step * kPitchStepCents));
+    if (activate) return controller.cyclePitchInterpolationAt(time::Tick{tick});
+    return unsupported();
   }
   if (id == "shell.tune.vibrato.enabled") {
     const auto target = noteTarget(controller);

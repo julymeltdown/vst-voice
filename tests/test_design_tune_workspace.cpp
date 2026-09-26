@@ -6,6 +6,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/application/render_commands.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
@@ -19,6 +20,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -61,6 +63,8 @@ struct TuneFixture final {
   application::ProjectFactory factory{9600U};
   domain::TrackId trackId{};
   domain::RegionId regionId{};
+  // Every pitch command the host received, in order ("upsert", "move", "remove", "cycle").
+  std::vector<std::string> pitchCalls;
   application::EditorSession session;
   native_ui::NativeEditorController controller;
   SingShell shell;
@@ -68,11 +72,68 @@ struct TuneFixture final {
   double width{1600.0};
   double height{900.0};
 
-  TuneFixture()
+  // pitchHost: the host wires the pitch callbacks as the standalone does (TechnicalEditController:
+  // normalize, then one undoable command each); otherwise it offers none and cannot edit pitch.
+  explicit TuneFixture(bool pitchHost = false)
       : session(makeProject()),
-        controller{session, factory, regionId, native_ui::EditorHostCallbacks{}} {
+        controller{session, factory, regionId,
+                   pitchHost ? pitchCallbacks() : native_ui::EditorHostCallbacks{}} {
     controller.resize(width, height);
     shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
+  }
+
+  domain::PitchAutomationPoint normalized(domain::PitchAutomationPoint point) const {
+    point.cents = std::clamp(point.cents, -4800.0F, 4800.0F);
+    point.tick = std::clamp(point.tick, time::Tick{0}, region().durationTick);
+    return point;
+  }
+
+  native_ui::EditorHostCallbacks pitchCallbacks() {
+    native_ui::EditorHostCallbacks callbacks;
+    callbacks.upsertPitchPoint = [this](domain::PitchAutomationPoint point) {
+      pitchCalls.emplace_back("upsert");
+      return session.execute(std::make_unique<application::UpsertPitchAutomationPointCommand>(
+          regionId, normalized(point)));
+    };
+    callbacks.movePitchPoint = [this](time::Tick from, domain::PitchAutomationPoint point) {
+      pitchCalls.emplace_back("move");
+      auto command = std::make_unique<application::CompositeCommand>("Move pitch automation point");
+      command->add(std::make_unique<application::RemovePitchAutomationPointCommand>(regionId, from));
+      command->add(std::make_unique<application::UpsertPitchAutomationPointCommand>(
+          regionId, normalized(point)));
+      return session.execute(std::move(command));
+    };
+    callbacks.removePitchPoint = [this](time::Tick tick) {
+      pitchCalls.emplace_back("remove");
+      return session.execute(
+          std::make_unique<application::RemovePitchAutomationPointCommand>(regionId, tick));
+    };
+    callbacks.cyclePitchInterpolation = [this](time::Tick tick) -> core::Result<void> {
+      pitchCalls.emplace_back("cycle");
+      const auto& points = region().pitchAutomation.points();
+      const auto found = std::find_if(points.begin(), points.end(),
+                                      [tick](const auto& point) { return point.tick == tick; });
+      if (found == points.end())
+        return core::failure(core::ErrorCode::NotFound, "Pitch automation point is missing");
+      auto updated = *found;
+      updated.interpolation = updated.interpolation == domain::CurveInterpolation::Step
+                                  ? domain::CurveInterpolation::Linear
+                              : updated.interpolation == domain::CurveInterpolation::Linear
+                                  ? domain::CurveInterpolation::Smooth
+                                  : domain::CurveInterpolation::Step;
+      return session.execute(
+          std::make_unique<application::UpsertPitchAutomationPointCommand>(regionId, updated));
+    };
+    return callbacks;
+  }
+
+  const std::vector<domain::PitchAutomationPoint>& pitch() const {
+    return region().pitchAutomation.points();
+  }
+
+  void storePitch(time::Tick tick, float cents) {
+    if (!session.project().findRegion(regionId)->pitchAutomation.upsert({tick, cents}))
+      throw test::Failure{"could not store a pitch point"};
   }
 
   domain::Project makeProject() {
@@ -497,51 +558,246 @@ TEST_CASE("the TUNE vibrato card shows and edits the selected note's stored vibr
   CHECK(on && on->value == "On" && on->selected);
 }
 
-TEST_CASE("TUNE pitch is shown read-only with an honest caption") {
+TEST_CASE("TUNE pitch add, move and remove are one host command and one undo step each") {
+  TuneFixture f{true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.openTune());
+  const auto group = f.node("shell.tune.pitch");
+  CHECK(group && group->enabled && group->description.find("Read-only") == std::string::npos);
+  const auto plot = f.bounds("shell.tune.pitch");
+  // Press on empty space starts a new point; the drag shapes it and nothing reaches the host.
+  CHECK(f.shell.pointerDown(f.controller, press(at(plot, 0.25, 0.4))).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press(at(plot, 0.5, 0.2))).hasValue());
+  CHECK(f.controller.pitchPointGesture().has_value());
+  CHECK(f.frame());
+  CHECK(f.pitchCalls.empty());
+  CHECK(f.pitch().empty());
+  CHECK(!f.session.canUndo());
+  CHECK(f.shell.pointerUp(f.controller, press(at(plot, 0.5, 0.2))).hasValue());
+  CHECK(f.pitchCalls == std::vector<std::string>{"upsert"});
+  CHECK(f.pitch().size() == 1U);
+  if (f.pitch().size() != 1U) return;
+  const auto added = f.pitch().front();
+  // Half-way across the 7680-tick region, 60% of the way up the two-semitone half range, snapped.
+  CHECK(std::abs(added.tick.value() - 3840) <= 240);
+  CHECK(added.cents > 90.0F && added.cents < 150.0F);
+  CHECK(std::fmod(added.cents, 5.0F) == 0.0F);
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.pitch().empty());
+  CHECK(!f.session.canUndo());
+  CHECK(f.session.redo().hasValue());
+  CHECK(f.frame());
+
+  // A press grabs the point within 8 points of it and focuses it; the release is one move.
+  const auto id = "shell.tune.pitch.point." + std::to_string(added.tick.value());
+  const auto hit = f.bounds(id);
+  CHECK(std::abs(hit.width - 16.0) < 0.01 && std::abs(hit.height - 16.0) < 0.01);
+  const ui::Point grabAt{hit.x + 12.0, hit.y + 5.0};
+  CHECK(f.shell.pointerDown(f.controller, press(grabAt)).hasValue());
+  CHECK(f.focusedId() == id);
+  CHECK(f.shell.pointerMove(f.controller, press({grabAt.x + plot.width * 0.25, grabAt.y + 20.0}))
+            .hasValue());
+  CHECK(f.pitchCalls.size() == 1U);
+  CHECK(f.shell.pointerUp(f.controller, press({grabAt.x + plot.width * 0.25, grabAt.y + 20.0}))
+            .hasValue());
+  CHECK((f.pitchCalls == std::vector<std::string>{"upsert", "move"}));
+  CHECK(f.pitch().size() == 1U);
+  if (f.pitch().size() != 1U) return;
+  const auto moved = f.pitch().front();
+  CHECK(std::abs(moved.tick.value() - 5760) <= 240);
+  CHECK(moved.cents < added.cents - 20.0F);
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.pitch().size() == 1U && f.pitch().front() == added);
+  CHECK(f.session.redo().hasValue());
+  CHECK(f.frame());
+
+  // A click on a point that does not move it sends nothing.
+  const auto movedId = "shell.tune.pitch.point." + std::to_string(moved.tick.value());
+  const auto still = at(f.bounds(movedId), 0.5, 0.5);
+  CHECK(f.shell.pointerDown(f.controller, press(still)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(still)).hasValue());
+  CHECK(f.pitchCalls.size() == 2U);
+
+  // Shift-press removes it, as one command and one undo step.
+  const auto revision = f.controller.documentRevision();
+  CHECK(f.shell.pointerDown(f.controller, press(still, true)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(still, true)).hasValue());
+  CHECK((f.pitchCalls == std::vector<std::string>{"upsert", "move", "remove"}));
+  CHECK(f.pitch().empty());
+  CHECK(f.controller.documentRevision() == revision + 1U);
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.pitch().size() == 1U && f.pitch().front() == moved);
+}
+
+TEST_CASE("Escape in the middle of a TUNE pitch drag commits nothing") {
+  TuneFixture f{true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.storePitch(time::Tick{1920}, 50.0F);
+  CHECK(f.openTune());
+  const auto revision = f.controller.documentRevision();
+  const auto plot = f.bounds("shell.tune.pitch");
+  // A new point abandoned mid-drag.
+  CHECK(f.shell.pointerDown(f.controller, press(at(plot, 0.6, 0.3))).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press(at(plot, 0.7, 0.2))).hasValue());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.workspace() == Workspace::Tune);
+  CHECK(!f.controller.pitchPointGesture().has_value());
+  CHECK(f.shell.pointerUp(f.controller, press(at(plot, 0.7, 0.2))).hasValue());
+  // A stored point grabbed and abandoned mid-drag.
+  const auto point = at(f.bounds("shell.tune.pitch.point.1920"), 0.5, 0.5);
+  CHECK(f.shell.pointerDown(f.controller, press(point)).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press({point.x + 80.0, point.y + 20.0})).hasValue());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.pointerUp(f.controller, press({point.x + 80.0, point.y + 20.0})).hasValue());
+  CHECK(f.pitchCalls.empty());
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(!f.session.canUndo());
+  CHECK(f.pitch().size() == 1U && f.pitch().front().tick == time::Tick{1920} &&
+        f.pitch().front().cents == 50.0F);
+  // The controller commands behave the same: cancel drops the gesture and release sends nothing.
+  CHECK(f.controller.pressPitchPoint(std::nullopt, time::Tick{3840}, 100.0F).hasValue());
+  CHECK(f.controller.dragPitchPoint(time::Tick{4800}, 150.0F).hasValue());
+  f.controller.cancelPointerGesture();
+  CHECK(f.controller.releasePitchPoint().hasValue());
+  CHECK(f.pitchCalls.empty());
+  CHECK(f.pitch().size() == 1U);
+}
+
+TEST_CASE("TUNE pitch points step and change their curve as one command each") {
+  TuneFixture f{true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.storePitch(time::Tick{1920}, 50.0F);
+  CHECK(f.openTune());
+  const auto group = f.node("shell.tune.pitch");
+  CHECK(group.has_value());
+  if (!group) return;
+  CHECK(group->value == "1 point");
+  CHECK(group->children.size() == 1U);
+  const auto point = f.node("shell.tune.pitch.point.1920");
+  CHECK(point.has_value());
+  if (!point) return;
+  CHECK(point->role == SemanticRole::Slider && point->enabled);
+  CHECK(point->numericValue && *point->numericValue == 50.0);
+  CHECK(point->numericStep && *point->numericStep == 5.0);
+  CHECK(point->value.find("+50 ct") != std::string::npos);
+  CHECK(point->value.find("bar 1 beat 3") != std::string::npos);
+  CHECK(inside(point->bounds, f.shell.workspaceArea()));
+  CHECK(f.shell.dispatchSemantic(f.controller, point->id, SemanticAction::Increment).hasValue());
+  CHECK(f.pitch().front().cents == 55.0F);
+  CHECK(f.shell.dispatchSemantic(f.controller, point->id, SemanticAction::Decrement).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, point->id, SemanticAction::Decrement).hasValue());
+  CHECK(f.pitch().front().cents == 45.0F);
+  CHECK((f.pitchCalls == std::vector<std::string>{"upsert", "upsert", "upsert"}));
+  CHECK(f.session.undo().hasValue());
+  CHECK(f.pitch().front().cents == 50.0F);
+  // Activate cycles the interpolation; so does an Alt-press on the point, which also focuses it.
+  CHECK(f.shell.dispatchSemantic(f.controller, point->id, SemanticAction::Activate).hasValue());
+  CHECK(f.pitch().front().interpolation == domain::CurveInterpolation::Smooth);
+  CHECK(f.frame());
+  const auto c = at(f.bounds(point->id), 0.5, 0.5);
+  PointerEvent alt = press(c);
+  alt.modifiers.alt = true;
+  CHECK(f.shell.pointerDown(f.controller, alt).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, alt).hasValue());
+  CHECK(f.pitch().front().interpolation == domain::CurveInterpolation::Step);
+  CHECK(f.focusedId() == point->id);
+  CHECK(f.pitchCalls.size() == 5U && f.pitchCalls[3] == "cycle" && f.pitchCalls[4] == "cycle");
+  CHECK(!f.controller.pointerGestureActive());
+  CHECK(f.pitch().size() == 1U);
+}
+
+TEST_CASE("a host without pitch callbacks refuses pitch edits and TUNE shows them read-only") {
   TuneFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
-  CHECK(f.session.project().findRegion(f.regionId)->pitchAutomation.upsert(
-      domain::PitchAutomationPoint{time::Tick{1920}, 50.0F}).hasValue());
+  f.storePitch(time::Tick{1920}, 50.0F);
   CHECK(f.openTune());
+  CHECK(f.controller.pitchEditRefusal() == "This host cannot edit pitch points");
   const auto pitch = f.node("shell.tune.pitch");
   CHECK(pitch.has_value());
   if (!pitch) return;
   CHECK(pitch->value == "1 point");
-  CHECK(pitch->description.find("Read-only") != std::string::npos);
-  CHECK(std::find(pitch->actions.begin(), pitch->actions.end(), SemanticAction::Increment) ==
-        pitch->actions.end());
+  CHECK(!pitch->enabled);
+  CHECK(pitch->description == "Read-only: This host cannot edit pitch points");
+  const auto point = f.node("shell.tune.pitch.point.1920");
+  CHECK(point && !point->enabled &&
+        point->actions == std::vector<SemanticAction>{SemanticAction::SetFocus});
+  const auto refused = f.shell.dispatchSemantic(f.controller, "shell.tune.pitch.point.1920",
+                                                SemanticAction::Increment);
+  CHECK(!refused.hasValue());
+  CHECK(f.pitch().front().cents == 50.0F);
+  // The controller commands name what the host cannot do.
+  const auto add = f.controller.pressPitchPoint(std::nullopt, time::Tick{960}, 20.0F);
+  CHECK(!add.hasValue() && add.error().message == "This host cannot add pitch points");
+  const auto move = f.controller.pressPitchPoint(time::Tick{1920}, time::Tick{960}, 20.0F);
+  CHECK(!move.hasValue() && move.error().message == "This host cannot move pitch points");
+  const auto remove = f.controller.removePitchPointAt(time::Tick{1920});
+  CHECK(!remove.hasValue() && remove.error().message == "This host cannot remove pitch points");
+  const auto cycle = f.controller.cyclePitchInterpolationAt(time::Tick{1920});
+  CHECK(!cycle.hasValue() &&
+        cycle.error().message == "This host cannot change pitch interpolation");
+  CHECK(!f.controller.pointerGestureActive());
+  // A press on the strip only focuses it.
   const auto revision = f.controller.documentRevision();
   CHECK(f.shell.pointerDown(f.controller, press(at(pitch->bounds, 0.5, 0.5))).hasValue());
   CHECK(f.shell.pointerUp(f.controller, press(at(pitch->bounds, 0.5, 0.5))).hasValue());
   CHECK(f.controller.documentRevision() == revision);
   CHECK(f.focusedId() == "shell.tune.pitch");
+  CHECK(f.pitch().size() == 1U && f.pitch().front().cents == 50.0F);
 }
 
 TEST_CASE("TUNE controls never overlap or leave the workspace at any contract size") {
   for (const auto& [w, h] : {std::pair{480.0, 320.0}, std::pair{720.0, 480.0},
                              std::pair{1100.0, 720.0}, std::pair{1600.0, 900.0}}) {
-    TuneFixture f;
+    TuneFixture f{true};
     if (!native_ui::paint::vectorBackendAvailable()) return;
     f.session.selection().selectOnly(f.note().id);
+    // Two pitch points, so their press targets are checked with everything else.
+    f.storePitch(time::Tick{0}, 150.0F);
+    f.storePitch(time::Tick{5760}, -120.0F);
     CHECK(f.openTune());
     CHECK(f.frameAt(w, h));
     const auto area = f.shell.workspaceArea();
-    for (const bool vibratoView : {false, true}) {
-      if (vibratoView) {
-        if (!f.node("shell.tune.view.vibrato")) break;  // side by side: nothing to switch
-        CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.view.vibrato",
+    // Side by side, one pass covers everything; compact, each of the three views is checked.
+    const auto compact = f.node("shell.tune.view.curves").has_value();
+    for (const std::string_view view : {"curves", "pitch", "vibrato"}) {
+      if (compact) {
+        CHECK(f.shell.dispatchSemantic(f.controller, "shell.tune.view." + std::string{view},
                                        SemanticAction::Activate).hasValue());
         CHECK(f.frame());
+        const auto tab = f.node("shell.tune.view." + std::string{view});
+        CHECK(tab && tab->selected);
+      } else if (view != "curves") {
+        break;
       }
       std::vector<SemanticNode> tune;
-      for (const auto& node : f.nodes())
-        if (node.id.starts_with("shell.tune.")) tune.push_back(node);
-      // The knobs are always there; the graph or the vibrato controls fill the middle.
+      std::size_t pitchPoints = 0U;
+      for (const auto& node : f.nodes()) {
+        if (!node.id.starts_with("shell.tune.")) continue;
+        tune.push_back(node);
+        if (node.id != "shell.tune.pitch") continue;
+        for (const auto& point : node.children) {
+          CHECK(inside(point.bounds, area));
+          tune.push_back(point);
+          ++pitchPoints;
+        }
+      }
+      // The pitch strip and both its points are reachable at every size: under the graph side by
+      // side, in its own view when compact.
+      const auto pitchShown = compact ? view == "pitch" : true;
+      if (pitchPoints != (pitchShown ? 2U : 0U))
+        throw test::Failure{"pitch points " + std::to_string(pitchPoints) + " in the " +
+                            std::string{view} + " view at " + std::to_string(w) + "x" +
+                            std::to_string(h)};
+      // The knobs are always there; the graph, the pitch strip or the vibrato controls fill the
+      // middle.
       CHECK(std::count_if(tune.begin(), tune.end(), [](const SemanticNode& n) {
               return n.id.starts_with("shell.tune.knob.");
             }) == 6);
+      const std::string_view middle = view == "vibrato" ? "shell.tune.vibrato.depth"
+                                      : view == "pitch" ? "shell.tune.pitch"
+                                                        : "shell.tune.graph";
       CHECK(std::any_of(tune.begin(), tune.end(), [&](const SemanticNode& n) {
-        return n.id == (vibratoView ? "shell.tune.vibrato.depth" : "shell.tune.graph");
+        return n.id == middle;
       }));
       for (std::size_t i = 0U; i < tune.size(); ++i) {
         const auto& a = tune[i];
@@ -551,7 +807,10 @@ TEST_CASE("TUNE controls never overlap or leave the workspace at any contract si
           const auto& b = tune[j];
           // The vibrato panel carries its own switch and sliders.
           const auto nested = (a.id == "shell.tune.vibrato" && b.id.starts_with("shell.tune.vibrato.")) ||
-                              (b.id == "shell.tune.vibrato" && a.id.starts_with("shell.tune.vibrato."));
+                              (b.id == "shell.tune.vibrato" && a.id.starts_with("shell.tune.vibrato.")) ||
+                              // The pitch strip carries its points.
+                              (a.id == "shell.tune.pitch" && b.id.starts_with("shell.tune.pitch.")) ||
+                              (b.id == "shell.tune.pitch" && a.id.starts_with("shell.tune.pitch."));
           if (nested) continue;
           if (intersects(a.bounds, b.bounds))
             throw test::Failure{a.id + " overlaps " + b.id + " at " + std::to_string(w) + "x" +
