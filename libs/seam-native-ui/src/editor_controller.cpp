@@ -290,6 +290,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   state.voicebankBrowserVisible = voicebankBrowserVisible_;
   state.voicebankCards = voicebankCards_;
   state.audioSettings = audioSettings_;
+  state.outputLevel = outputLevel_;
   state.recoverySupport = recoverySupportPanel_.view();
   state.exportProgress = exportProgress_;
   state.lastExport = lastExport_;

@@ -294,6 +294,19 @@ struct EditorSceneState final {
     std::string diagnostic;
   } audioSettings;
   RecoverySupportView recoverySupport;
+  // The measured level of the editor's output bus, as the host's audio thread last reported it.
+  // Absent when the host measures nothing (a meter then shows its empty scale, never a guess).
+  struct OutputLevel final {
+    // Linear peak (0..1+, >1 is over full scale) per channel over the last reporting window, and
+    // the held peak for the peak-hold marker. One entry per channel of the measured bus.
+    std::vector<float> peak;
+    std::vector<float> hold;
+    // The bus the numbers belong to ("Master", "Out 1/2"); a mono bus has one entry.
+    std::string bus;
+    // True when a sample reached or exceeded full scale since the clip indicator was reset.
+    bool clipped{false};
+  };
+  std::optional<OutputLevel> outputLevel;
   std::size_t selectedNoteCount{0U};
   struct VibratoGesturePreview final {
     domain::NoteId noteId;

@@ -522,6 +522,11 @@ public:
     audioSettings_.xruns = xruns;
     audioSettings_.reported = true;
   }
+  // The host's measured output level (UI thread, from what its audio thread published). An empty
+  // value means nothing is measured, and meters show their empty scale.
+  void setOutputLevel(std::optional<EditorSceneState::OutputLevel> level) {
+    outputLevel_ = std::move(level);
+  }
   void showAudioSettings() noexcept {
     audioSettings_.visible = true;
     voicebankBrowserVisible_ = false;
@@ -819,6 +824,7 @@ private:
   bool voicebankBrowserVisible_{false};
   std::vector<authoring::VoicebankCard> voicebankCards_;
   EditorSceneState::AudioSettingsView audioSettings_;
+  std::optional<EditorSceneState::OutputLevel> outputLevel_;
   ArrangementPanelModel arrangementPanel_;
   AccessibilityTree accessibilityTree_;
   DiagnosticPanelModel diagnosticPanel_;
