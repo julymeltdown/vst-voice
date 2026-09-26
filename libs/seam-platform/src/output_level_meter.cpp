@@ -33,6 +33,11 @@ void OutputLevelMeter::raise(std::size_t channel, float peak) noexcept {
 }
 
 void OutputLevelMeter::finishBlock(std::size_t channels, bool clipped) noexcept {
+  // A block that carries fewer channels than an earlier one did leaves nothing measured for the
+  // channels it did not carry; without this a narrower block would keep showing an older, wider
+  // block's peak.
+  for (std::size_t channel = channels; channel < kMaxChannels; ++channel)
+    windowPeak_[channel].store(0.0F, std::memory_order_relaxed);
   if (clipped) clipped_.store(true, std::memory_order_relaxed);
   channels_.store(static_cast<std::uint32_t>(channels), std::memory_order_relaxed);
   blocks_.fetch_add(1U, std::memory_order_release);

@@ -225,3 +225,41 @@ TEST_CASE("output level loses no transient while the audio thread and UI run con
   if (const auto reading = meter.read(true, at)) loudest = std::max(loudest, reading->hold[0]);
   CHECK(near(loudest, 0.95F));
 }
+
+TEST_CASE("a narrower block leaves nothing measured for the channels it does not carry") {
+  // The loud channel is only read while the source reports eight channels; a later narrow block
+  // carries fewer, so the pairs it does not carry were measured by nothing. The quiet wide block
+  // that follows raises only 0.02, and since a raise keeps the maximum it must not resurrect the
+  // loud peak from the earlier run.
+  OutputLevelMeter meter{OutputLevelMeter::Ballistics{}};
+  std::vector<std::array<float, 8>> wide(8, std::array<float, 8>{0.02F});
+  wide[5].fill(0.9F);
+  std::vector<const float*> widePointers;
+  for (const auto& channel : wide) widePointers.push_back(channel.data());
+  meter.measure(widePointers, wide[0].size());
+
+  // A narrow block arrives before any read, so this read reports two channels and consumes only
+  // those; the eight-channel run's peak for channel 5 is still in the meter.
+  auto at = Clock::now();
+  at += milliseconds{1};
+  StereoBlock quiet{0.02F, 0.02F};
+  meter.measure(quiet.context());
+  auto reading = meter.read(true, at);
+  CHECK(reading.has_value());
+  CHECK(reading->peak.size() == 2U);
+  for (int block = 0; block < 400; ++block) meter.measure(quiet.context());
+  at += std::chrono::seconds{3};
+  reading = meter.read(true, at);
+  CHECK(reading.has_value());
+
+  std::vector<std::array<float, 8>> quietWide(8, std::array<float, 8>{0.02F});
+  std::vector<const float*> quietPointers;
+  for (const auto& channel : quietWide) quietPointers.push_back(channel.data());
+  meter.measure(quietPointers, quietWide[0].size());
+  at += milliseconds{1};
+  reading = meter.read(true, at);
+  CHECK(reading.has_value());
+  CHECK(reading->peak.size() == 8U);
+  for (const auto peak : reading->peak) CHECK(near(peak, 0.02F));
+  for (const auto hold : reading->hold) CHECK(near(hold, 0.02F));
+}
