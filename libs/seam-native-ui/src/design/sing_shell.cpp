@@ -2216,6 +2216,9 @@ core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
 
 core::Result<void> SingShell::shellPointerDown(NativeEditorController& controller,
                                                const PointerEvent& event) {
+  // A press while an earlier gesture is still open means its release never arrived (a host that
+  // dropped a pointer-up). That gesture is abandoned, so this press can never drive or commit it.
+  if (knobDrag_ || bodyGesture_) cancelGestures(controller);
   const auto p = event.position;
   const auto& l = layout_;
   if (workspaceMenuOpen_) {

@@ -2023,6 +2023,17 @@ TEST_CASE("a TUNE or MIX drag owns the input until it ends, and a resize abandon
   CHECK(f.shell.pointerUp(f.controller, press(end)).hasValue());
   CHECK(f.controller.documentRevision() == revision + 2U);  // the undo above counts as one
   CHECK(f.shell.workspace() == Workspace::Mix);
+
+  // A press after a lost release abandons the open drag; the new press never commits it.
+  node = fader();
+  end = drag(node);
+  const auto before = f.controller.documentRevision();
+  const auto header = f.shell.layout().header;
+  const ui::Point outside{header.x + 3.0, header.y + 3.0};  // the header's corner, no control
+  CHECK(f.shell.pointerDown(f.controller, press(outside)).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press({outside.x, outside.y + 50.0})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({outside.x, outside.y + 50.0})).hasValue());
+  CHECK(f.controller.documentRevision() == before);
 }
 
 TEST_CASE("the compact inspector is modal over TUNE and MIX as well as SING") {
