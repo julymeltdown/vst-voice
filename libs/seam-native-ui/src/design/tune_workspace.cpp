@@ -515,7 +515,8 @@ ui::Rect intersection(ui::Rect a, ui::Rect b) noexcept {
           std::max(0.0, std::min(a.bottom(), b.bottom()) - y)};
 }
 
-// The press target of a point: the grab radius around it, kept inside the pitch card.
+// The press target of a point: the grab radius around it, kept inside the pitch card. The published
+// node and the grab test are the same rectangle, so a press anywhere in a point's bounds grabs it.
 ui::Rect pitchPointRect(const TuneLayout& l, ui::Point center) noexcept {
   return intersection({center.x - kPointGrabRadius, center.y - kPointGrabRadius,
                        2.0 * kPointGrabRadius, 2.0 * kPointGrabRadius},
@@ -554,16 +555,21 @@ domain::PitchAutomation shownPitch(const NativeEditorController& controller,
   return shown;
 }
 
-// The stored point a press at p grabs: the nearest within the grab radius.
+// The stored point a press at p grabs: the nearest one whose published bounds contain p, so the
+// rectangle a click or an accessibility action targets is exactly the press target.
 std::optional<time::Tick> pitchPointNear(const Axis& axis, const PitchScale& scale,
-                                         const domain::VocalRegion& region, ui::Point p) {
+                                         const TuneLayout& l, const domain::VocalRegion& region,
+                                         ui::Point p) {
   std::optional<time::Tick> grab;
-  auto best = kPointGrabRadius * kPointGrabRadius;
+  auto best = kPointGrabRadius * kPointGrabRadius * 4.0;
   for (const auto& point : region.pitchAutomation.points()) {
-    const auto dx = axis.x(point.tick) - p.x;
-    const auto dy = scale.y(point.cents) - p.y;
-    if (dx * dx + dy * dy > best) continue;
-    best = dx * dx + dy * dy;
+    const ui::Point center{axis.x(point.tick), scale.y(point.cents)};
+    if (!contains(pitchPointRect(l, center), p)) continue;
+    const auto dx = center.x - p.x;
+    const auto dy = center.y - p.y;
+    const auto distance = dx * dx + dy * dy;
+    if (distance > best) continue;
+    best = distance;
     grab = point.tick;
   }
   return grab;
@@ -848,7 +854,7 @@ private:
     if (region == nullptr || !axis.valid() || !pitchRefusal(controller).empty())
       return core::success();
     const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
-    const auto grab = pitchPointNear(axis, scale, *region, p);
+    const auto grab = pitchPointNear(axis, scale, l, *region, p);
     if (grab) {
       if (event.modifiers.shift) return controller.removePitchPointAt(*grab);
       focusRequest_ = pitchPointId(*grab);

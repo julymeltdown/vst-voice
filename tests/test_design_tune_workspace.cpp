@@ -706,6 +706,33 @@ TEST_CASE("TUNE pitch points step and change their curve as one command each") {
   CHECK(f.pitch().size() == 1U);
 }
 
+TEST_CASE("every corner of a pitch point's published bounds grabs that point") {
+  TuneFixture f{true};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.storePitch(time::Tick{1920}, 60.0F);
+  CHECK(f.openTune());
+  const auto point = f.node("shell.tune.pitch.point.1920");
+  CHECK(point.has_value());
+  if (!point) return;
+  CHECK(f.frame());
+  const auto r = f.bounds(point->id);
+  // The four corners of the node are inside the press target: a press there grabs the stored point
+  // rather than adding a new one at the drawn marker.
+  for (const auto corner : {ui::Point{r.x + 1.0, r.y + 1.0}, ui::Point{r.right() - 1.0, r.y + 1.0},
+                            ui::Point{r.x + 1.0, r.bottom() - 1.0},
+                            ui::Point{r.right() - 1.0, r.bottom() - 1.0}}) {
+    f.pitchCalls.clear();
+    const auto revision = f.controller.documentRevision();
+    CHECK(f.shell.pointerDown(f.controller, press(corner)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(corner)).hasValue());
+    CHECK(f.pitchCalls.empty());                 // grabbed and released in place: no host call
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.pitch().size() == 1U);
+    CHECK(f.pitch().front().cents == 60.0F);
+    CHECK(f.focusedId() == point->id);
+  }
+}
+
 TEST_CASE("a host without pitch callbacks refuses pitch edits and TUNE shows them read-only") {
   TuneFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
