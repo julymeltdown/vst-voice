@@ -9,10 +9,10 @@ This is a description of source, not an acceptance claim. Native visual acceptan
 host rows, VoiceOver, the owner rubric and release readiness remain as recorded in
 [the fidelity review](SEAM_UI_FIDELITY_REVIEW_2026-09-25.md) and its evidence packets.
 
-**In progress on another branch while this was written** (not in `74a59b32`): the project's
-default character display mode changes from Minimal to Full, the SINGER menu gains a
-Full/Minimal/Off switch, and MIX gains an Add Region action. The sections below describe the code
-at `74a59b32` and flag these where they apply.
+**Since `74a59b32`** (branch `codex/review-round5-fixes`): the project's default character
+display mode is Full, the SINGER menu has a Full/Minimal/Off switch, and MIX and the Edit menu
+have an Add Region action. The sections below describe the code at `74a59b32` with these
+included.
 
 ## 1. What the shell is
 
@@ -253,8 +253,9 @@ any transient menu the workspace has open. TUNE and MIX implement `ShellWorkspac
   output route) through track-targeted commands that leave the editor's selection alone, a master
   strip with the measured output level, and a device card with only what the host reported. In the
   plug-in, MIX track and region choices move the plug-in's own render selection, and the master card
-  steps the host-owned output channels (1/2/4/6/8). Add Region is in progress on another branch and
-  is **Not shipped** at `74a59b32`.
+  steps the host-owned output channels (1/2/4/6/8). The header's Add region button (and Edit ▸ Add
+  Region in the standalone app) adds a four-bar region after the selected vocal track's last one;
+  it is disabled, with its reason, while no vocal track is selected.
 - **EXPORT** is a card with what the host says an Export Set will write (rate, channels, format,
   master and stems), a run button, live progress and the last committed receipt. A host that cannot
   export from the editor (the plug-in) states why and instead offers the final bounce's timing
@@ -408,9 +409,8 @@ The character display mode is the project's `CharacterDisplayMode`
 (`libs/seam-domain/include/seam/domain/project.hpp`). Full draws everything; Minimal drops the
 Stage; Off draws no character artwork anywhere in the editor, while the ring ticks, the avatar's
 state ring, the toast text and the empty-project line remain. The About sheet is application chrome
-and keeps its art. The `C` key cycles the mode while the score has focus. At `74a59b32` the project
-default is Minimal; the change to Full and a switch in the SINGER menu are in progress on another
-branch.
+and keeps its art. The `C` key cycles the mode while the score has focus, and the SINGER menu's
+last row is a Full / Minimal / Off switch. A new project defaults to Full.
 
 Motion from plan §9 beyond the above (tab cross-fade, note-add scale, render-complete sweep, mode
 cross-fade, toast in and out) is **Not shipped**.
@@ -535,5 +535,4 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
 - `scripts/check_brand_terms.py`.
 - The §10 timing budgets (the cache memory budget is met).
 - Windows and Linux editor surfaces.
-- MIX Add Region, the Full default and the SINGER-menu Full/Minimal/Off switch (in progress).
 - Native visual acceptance, FL Studio F02–F05, VoiceOver and the owner rubric (NOT_RUN).

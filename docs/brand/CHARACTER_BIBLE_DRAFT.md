@@ -7,8 +7,8 @@ and the phase `FILE_TREE.txt` listings). The draft label also still describes he
 "Character 01" is an internal name, and every runtime asset is development art that is not cleared
 for release (§9).
 
-In progress on another branch while this was written (not in `74a59b32`): the project's default
-display mode changes from Minimal to Full, and the SINGER menu gains a Full/Minimal/Off switch.
+Since `74a59b32` (branch `codex/review-round5-fixes`): a new project's display mode defaults to
+Full, and the SINGER menu has a Full/Minimal/Off switch.
 
 ## 1. Product role
 
@@ -131,8 +131,9 @@ user choice:
   toast text and the empty-project line still carry her status. The About sheet is application
   chrome and keeps its art.
 
-The `C` key cycles Full → Minimal → Off while the score has focus. At `74a59b32` a new project
-defaults to Minimal; the switch to Full and a SINGER menu control are in progress.
+The `C` key cycles Full → Minimal → Off while the score has focus, and the SINGER menu's last row
+is a Full / Minimal / Off switch with the current mode selected. A new project defaults to Full
+(it defaulted to Minimal at `74a59b32`).
 
 Reduce Motion stops the blink, the breathing and the spinner and makes the Stage fade immediate;
 her state still changes. High Contrast turns the Stage off and removes glows. A static mouth under
