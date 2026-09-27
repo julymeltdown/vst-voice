@@ -664,3 +664,20 @@ TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, ne
   CHECK(largestChange(without, with, *diagnostics) <= 8);
   CHECK(largestChange(without, with, *error) <= 8);
 }
+
+TEST_CASE("the About sheet fits the minimum window, and a refusal would name the About sheet") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  // The layout never goes below 480x320, where the sheet still has room: it opens.
+  CHECK(f.frame(480.0, 320.0));
+  CHECK(f.shell.setAboutOpen(f.controller, true).hasValue());
+  CHECK(f.shell.aboutOpen());
+  CHECK(f.shell.setAboutOpen(f.controller, false).hasValue());
+  // Its refusal is its own sentence, not the singer menu's.
+  using seam::native_ui::design::englishShellString;
+  using seam::native_ui::design::Str;
+  CHECK(englishShellString(Str::TheWindowIsTooSmallForTheAbout) ==
+        "The window is too small for the About sheet");
+  CHECK(englishShellString(Str::TheWindowIsTooSmallForTheAbout) !=
+        englishShellString(Str::TheWindowIsTooSmallFor));
+}

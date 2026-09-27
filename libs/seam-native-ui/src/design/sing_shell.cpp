@@ -964,7 +964,7 @@ core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, b
     return core::failure(core::ErrorCode::Conflict, tr(Str::CloseTheOpenSurfaceFirst));
   const auto state = controller.sceneState();
   if (aboutOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
-    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallFor));
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallForTheAbout));
   if (lyricInputActive_) {
     controller.cancelTextComposition();
     lyricInputActive_ = false;

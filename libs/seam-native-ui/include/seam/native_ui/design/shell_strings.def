@@ -589,3 +589,4 @@ SEAM_SHELL_STRING(ShowsTheSingerFullMinimalOrOff, "Full shows the singer everywh
 SEAM_SHELL_STRING(AddRegion, "Add region")
 SEAM_SHELL_STRING(AddsAFourBarRegionAfter, "Adds a four-bar region after the selected track's last region")
 SEAM_SHELL_STRING(SelectAVocalTrackToAddA, "Select a vocal track to add a region")
+SEAM_SHELL_STRING(TheWindowIsTooSmallForTheAbout, "The window is too small for the About sheet")
