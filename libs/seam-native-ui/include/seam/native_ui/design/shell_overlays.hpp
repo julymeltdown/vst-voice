@@ -112,6 +112,12 @@ public:
   // Closes the surface through the controller's own command, so the state the classic painter read
   // changes exactly as it did when its close control ran.
   [[nodiscard]] virtual core::Result<void> close(NativeEditorController& controller) const = 0;
+  // Escape's first step, for a surface with an inner page it returns from before closing (the
+  // microscope's details). Returns true when it stepped back and the surface stays open.
+  [[nodiscard]] virtual bool back(NativeEditorController& controller) const {
+    static_cast<void>(controller);
+    return false;
+  }
   // Called once when the shell starts presenting the overlay, so a presentation-only position (a
   // popover's page) starts from the top each time it opens.
   virtual void presented() const {}

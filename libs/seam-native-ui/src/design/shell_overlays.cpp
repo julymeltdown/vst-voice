@@ -210,6 +210,14 @@ public:
     controller.closeSampleMicroscope();
     return core::success();
   }
+  bool back(NativeEditorController& controller) const override {
+    // As the classic microscope bound Escape: the details page returns to the waveform first.
+    if (!controller.sceneState().sampleMicroscope.has_value() ||
+        !controller.sceneState().sampleMicroscope->detailsVisible)
+      return false;
+    static_cast<void>(controller.dispatchAccessibility("microscope.details", SemanticAction::Activate));
+    return true;
+  }
 };
 
 std::vector<OverlayControl> SampleMicroscopeOverlay::controls(
@@ -256,7 +264,8 @@ void SampleMicroscopeOverlay::paint(Canvas2D& c, const DesignTokens& t,
   if (const auto* close = findControl(controls, "microscope.close"))
     paintOverlayControl(c, t, *close, "Close", SemanticRole::Button, true, false, false);
   if (const auto* details = findControl(controls, "microscope.details"))
-    paintOverlayControl(c, t, *details, "Details", SemanticRole::Button, true, false, false);
+    paintOverlayControl(c, t, *details, detailsVisibleLabel(state), SemanticRole::Button, true,
+                        false, false);
 
   if (view.detailsVisible) {
     // The captured selection and destination, exactly the lines the controller publishes.
@@ -385,6 +394,11 @@ bool SampleMicroscopeOverlay::key(NativeEditorController& controller, std::strin
                                   const KeyEvent& event) const {
   if (event.key == NativeKey::Enter || event.key == NativeKey::Space) {
     static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+    return true;
+  }
+  if (event.key == NativeKey::D) {
+    // D toggles the details page, as it did on the classic microscope.
+    static_cast<void>(controller.dispatchAccessibility("microscope.details", SemanticAction::Activate));
     return true;
   }
   if (event.key == NativeKey::Left || event.key == NativeKey::Right) {

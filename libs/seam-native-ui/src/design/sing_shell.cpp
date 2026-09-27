@@ -3060,6 +3060,12 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   if (presented_ && !controller.legacyModalSurfaceActive()) {
     if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
       if (event.key == NativeKey::Escape) {
+        // A surface with an inner page returns from it first and stays open.
+        if (overlay->back(controller)) {
+          refreshSemantics(controller);
+          repaint();
+          return true;
+        }
         const auto opener = overlay->openerId(controller, controller.sceneState());
         static_cast<void>(closeOverlay(controller, *overlay));
         // The controller's own tree follows the close first, so the focus snapshot the shell keeps

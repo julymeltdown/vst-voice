@@ -2411,10 +2411,23 @@ struct OverlayFixture final {
 
   bool frame(double width = 1600.0, double height = 900.0) {
     if (!shell.prepareFrame(controller, width, height)) return false;
-    native_ui::PixelSurface surface{static_cast<std::uint32_t>(width),
-                                    static_cast<std::uint32_t>(height)};
+    // The frame's pixels are kept, so a test can compare what two states painted.
+    surface = native_ui::PixelSurface{static_cast<std::uint32_t>(width),
+                                      static_cast<std::uint32_t>(height)};
     native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
     return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
+  }
+  native_ui::PixelSurface surface;
+
+  // The last frame's pixels inside a rectangle, row by row.
+  std::vector<std::uint32_t> pixelsIn(ui::Rect r) const {
+    std::vector<std::uint32_t> out;
+    const auto w = static_cast<std::int64_t>(surface.width());
+    for (auto y = static_cast<std::int64_t>(r.y); y < static_cast<std::int64_t>(r.bottom()); ++y)
+      for (auto x = static_cast<std::int64_t>(r.x); x < static_cast<std::int64_t>(r.right()); ++x)
+        if (x >= 0 && y >= 0 && x < w && y < static_cast<std::int64_t>(surface.height()))
+          out.push_back(surface.pixels()[static_cast<std::size_t>(y * w + x)]);
+    return out;
   }
 
   const SemanticNode* node(std::string_view id, double width = 1600.0, double height = 900.0) {
@@ -2596,6 +2609,41 @@ TEST_CASE("the sample microscope is a shell sheet whose plots, pager and close s
   CHECK(f.shell.pointerUp(f.controller, press({closeBounds.x + 4.0, closeBounds.y + 4.0})).hasValue());
   CHECK(!f.controller.sampleMicroscopeOpen());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+}
+
+TEST_CASE("the microscope's Details button says what it will do, and D and Escape work as before") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto key = domain::PhonemeKey{f.session.project().findRegion(f.regionId)->notes.front().id, 0U};
+  CHECK(f.controller.openSampleMicroscope(key).hasValue());
+  CHECK(f.frame());
+  const auto button = f.node("microscope.details")->bounds;
+  CHECK(f.node("microscope.details")->name == "Details");
+  const auto waveformPixels = f.pixelsIn(button);
+  // D opens the details page, the node says the button now returns to the waveform, and the
+  // painted label changes with it.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::D}));
+  CHECK(f.controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(f.frame());
+  CHECK(f.node("microscope.details")->name == "Waveform");
+  CHECK(f.node("microscope.details")->bounds.x == button.x);
+  CHECK(f.pixelsIn(button) != waveformPixels);
+  // D again returns to the waveform.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::D}));
+  CHECK(!f.controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(f.frame());
+  CHECK(f.pixelsIn(button) == waveformPixels);
+  // Escape on the details page returns to the waveform first and keeps the microscope open; the
+  // next Escape closes it.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::D}));
+  CHECK(f.frame());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.controller.sampleMicroscopeOpen());
+  CHECK(!f.controller.sceneState().sampleMicroscope->detailsVisible);
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SampleMicroscope);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.controller.sampleMicroscopeOpen());
 }
 
 TEST_CASE("the phoneme review popover anchors to the lane and runs the review's own actions") {
