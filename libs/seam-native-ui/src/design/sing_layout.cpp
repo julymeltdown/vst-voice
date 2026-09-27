@@ -36,6 +36,7 @@ void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
   l.singer = {inner.x, inner.y, inner.width, kSingerRow};
   l.portraitRing = {l.singer.x, l.singer.y + 6.0, 44.0, 44.0};
   l.singerChange = {l.singer.right() - 100.0, l.singer.y + 6.0, 100.0, 22.0};
+  l.singerMenu = {l.singerChange.x - 6.0 - 32.0, l.singerChange.y, 32.0, 22.0};
   l.style = {l.portraitRing.right() + 12.0, l.singer.y + 34.0,
              l.singer.right() - l.portraitRing.right() - 12.0, 18.0};
   l.expression = {inner.x, l.singer.bottom() + kSingGap, inner.width,
@@ -127,6 +128,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
                                  288.0);
     l.portraitRing = {l.singer.x + (l.singer.width - ring) * 0.5, l.singer.y + 40.0, ring, ring};
     l.singerChange = {l.singer.right() - 116.0, l.singer.bottom() - 30.0, 100.0, 22.0};
+    l.singerMenu = {l.singerChange.x - 8.0 - 32.0, l.singerChange.y, 32.0, 22.0};
     const auto columns = 3.0;
     const auto cellWidth = (l.expression.width - 32.0) / columns;
     const auto top = l.expression.y + 44.0;
