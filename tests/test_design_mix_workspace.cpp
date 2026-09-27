@@ -402,7 +402,7 @@ TEST_CASE("the route button cycles the output bus and the audio card opens the r
   CHECK(undoDepth(f.session) == 2U);
   CHECK(f.track(0).outputRoute.bus == domain::BusId{1U});
 
-  // The settings button opens the existing audio settings; the shell yields to that surface.
+  // The settings button opens the existing audio settings as the shell's own sheet over MIX.
   CHECK(f.frame());
   const auto settings = f.node("shell.mix.audio-settings");
   CHECK(settings.role == SemanticRole::Button);
@@ -411,7 +411,9 @@ TEST_CASE("the route button cycles the output bus and the audio card opens the r
   CHECK(!f.controller.audioSettingsVisible());
   CHECK(f.shell.pointerUp(f.controller, press(s)).hasValue());
   CHECK(f.controller.audioSettingsVisible());
-  CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.shell.overlayKind(f.controller) == native_ui::design::OverlayKind::AudioSettings);
+  CHECK(f.shell.workspace() == native_ui::design::Workspace::Mix);
   CHECK(!f.session.canUndo());
 }
 
