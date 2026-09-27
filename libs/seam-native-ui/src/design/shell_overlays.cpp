@@ -2147,6 +2147,10 @@ std::vector<OverlayControl> VoicebankBrowserOverlay::controls(const NativeEditor
         {card.language.empty() ? std::string{tr(Str::LanguageUnknown)} : card.language, cardRange(card),
          std::to_string(card.styles.size()), std::to_string(card.enabledUnitCount),
          std::to_string(card.disabledUnitCount), cardFeatures(card), card.contentHashAbbreviation});
+    // The compact card's count line may elide. Preserve its full localized wording for readers.
+    control.description += " / " + trf(Str::VoiceCardCounts,
+                                       {std::to_string(card.styles.size()),
+                                        std::to_string(card.enabledUnitCount), cardFeatures(card)});
     for (const auto& diagnostic : card.diagnostics) control.description += " / " + diagnostic;
     if (!card.selectable) control.description = trf(Str::NotSelectableNotTrusted, {control.description});
     out.push_back(std::move(control));

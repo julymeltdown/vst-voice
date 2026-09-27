@@ -29,7 +29,8 @@ struct SingLayout final {
   // SING, VOICE, TUNE, MIX, EXPORT; below 720 pt the two looks share one row under them.
   std::array<ui::Rect, 5U> workspaceMenuRow{};
   std::array<ui::Rect, 2U> modeMenuRow{};
-  ui::Rect modeSwitch, transport, outputMeter, settings;
+  // language is the header's language control, beside the settings gear.
+  ui::Rect modeSwitch, transport, outputMeter, settings, language;
   ui::Rect editor, tools, ruler, keyboard, grid;
   ui::Rect lane, laneTabs, lanePlot, laneTimePlot;
   ui::Rect rackArea, singer, portraitRing, expression, style;

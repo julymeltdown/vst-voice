@@ -300,6 +300,13 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   persist_ = false;
   ++artGeneration_;
   layers_.invalidate();
+  // The translation files sit beside the design assets; the preferences name the language.
+  translations_ = locateShellTranslations(assetRoot);
+  uninstallShellStrings(strings_.get());
+  strings_.reset();
+  stringsLanguage_ = shellLanguages().front().code;
+  languageReport_ = {};
+  applyLanguage();
   // An Increase Contrast change in System Settings repaints an idle editor: a frame reads the
   // system setting itself, but nothing else would ask for one.
   if (available()) displayOptionsObservation_ = observeSystemDisplayOptions([this] { repaint(); });
@@ -411,6 +418,24 @@ std::filesystem::path locateCharacterAssets(const std::filesystem::path& designA
   return {};
 }
 
+std::filesystem::path locateShellTranslations(const std::filesystem::path& designAssets) {
+  std::vector<std::filesystem::path> candidates;
+  if (const char* root = std::getenv("SEAM_L10N_ASSETS"); root != nullptr && *root != '\0')
+    candidates.emplace_back(root);
+  // Beside the design assets, as the character package is: assets/l10n in the source tree and
+  // Resources/l10n in a bundle.
+  if (!designAssets.empty()) candidates.push_back(designAssets.parent_path() / "l10n");
+  if (const auto own = paint::codeBundleResources(); !own.empty()) candidates.push_back(own / "l10n");
+#if defined(SEAM_UI_DESIGN_SOURCE_ASSETS)
+  candidates.emplace_back(std::filesystem::path{SEAM_UI_DESIGN_SOURCE_ASSETS}.parent_path() / "l10n");
+#endif
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (std::filesystem::is_directory(candidate, error)) return candidate;
+  }
+  return {};
+}
+
 bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
   switch (kind) {
     case OverlayKind::SampleMicroscope:
@@ -503,6 +528,62 @@ void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   stageFade_.reset();
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
+}
+
+SingShell::~SingShell() { uninstallShellStrings(strings_.get()); }
+
+void SingShell::applyLanguage() {
+  preferences_.language = std::string{shellLanguageFor(
+      preferences_.languageFollowsSystem ? systemPreferredLanguage() : preferences_.language)};
+  if (stringsLanguage_ != preferences_.language) {
+    uninstallShellStrings(strings_.get());
+    strings_.reset();
+    languageReport_ = {};
+    stringsLanguage_ = preferences_.language;
+    // English is compiled in. Any other language reads its file; a missing or unreadable file
+    // leaves the shell in English rather than half-translated.
+    if (preferences_.language != shellLanguages().front().code && !translations_.empty()) {
+      if (auto loaded = loadShellStrings(translations_ / (preferences_.language + ".json"))) {
+        languageReport_ = std::move(loaded.value().report);
+        strings_ = std::make_unique<ShellStringTable>(std::move(loaded.value().table));
+      }
+    }
+    // Every cached layer drew the previous language's words.
+    layers_.invalidate();
+    ++artGeneration_;
+    repaint();
+  }
+  // An English shell installs nothing, so it never replaces a table someone else installed.
+  if (strings_ != nullptr) installShellStrings(strings_.get());
+}
+
+void SingShell::setLanguage(std::string_view language, bool persist) {
+  preferences_.language = std::string{shellLanguageFor(language)};
+  preferences_.languageFollowsSystem = false;
+  applyLanguage();
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::followSystemLanguage(bool persist) {
+  preferences_.languageFollowsSystem = true;
+  applyLanguage();
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::cycleLanguage(int direction, bool persist) {
+  // Choices: the system's language, then each offered language in order.
+  const auto& languages = shellLanguages();
+  const auto choices = static_cast<int>(languages.size()) + 1;
+  auto current = 0;
+  if (!preferences_.languageFollowsSystem) {
+    for (std::size_t i = 0U; i < languages.size(); ++i)
+      if (languages[i].code == preferences_.language) current = static_cast<int>(i) + 1;
+  }
+  const auto next = ((current + (direction < 0 ? -1 : 1)) % choices + choices) % choices;
+  if (next == 0) followSystemLanguage(persist);
+  else setLanguage(languages[static_cast<std::size_t>(next - 1)].code, persist);
 }
 
 bool SingShell::assetsLoaded(DesignMode mode) const noexcept {
@@ -1115,6 +1196,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       return false;
     }
   }
+  // Another shell (a second plug-in instance) may have installed its table since the last frame.
+  if (strings_ != nullptr) installShellStrings(strings_.get());
   auto& model = controller.pianoRoll();
   laneEditable_ = state.expressionLabelVisible() && state.expression.refusal.empty();
   const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
@@ -1440,6 +1523,17 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.restore();
   }
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
+  // The language control: the current language's code in a keyline, the gear's neighbour.
+  if (l.language.width > 0.0) {
+    std::string code{preferences_.language};
+    std::transform(code.begin(), code.end(), code.begin(),
+                   [](char ch) { return ch >= 'a' && ch <= 'z' ? static_cast<char>(ch - 'a' + 'A') : ch; });
+    const auto box = ui::Rect{l.language.x + 3.0, l.language.y + 6.0, l.language.width - 6.0,
+                              l.language.height - 12.0};
+    c.stroke(Path::roundedRect(box, 5.0), t.color.textSecondary, StrokeStyle{1.25});
+    c.text(box, code, style(FontRole::UiSemibold, t.type.rulerMicro + 1.0, 0.4, TextAlign::Center),
+           t.color.textSecondary);
+  }
 
   // The protagonist's avatar, where the header has room for it: the same state the SINGER card
   // spells out, so the header never disagrees with the rack. It is the singer's status, not a
@@ -3735,6 +3829,10 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       repaint();
       return core::success();
     }
+    if (contains(l.language, p)) {
+      cycleLanguage(1);
+      return core::success();
+    }
     if (const auto open = diagnosticsOpenButton();
         open.width > 0.0 && contains(open, p) && !controller.diagnosticPanel().entries().empty()) {
       setDiagnosticsOpen(!diagnosticsOpen_);
@@ -4174,6 +4272,7 @@ bool SingShell::rehomedControl(std::string_view id) noexcept {
 }
 
 void SingShell::refreshSemantics(NativeEditorController& controller) {
+  if (strings_ != nullptr) installShellStrings(strings_.get());
   controller.rebuildAccessibilityTree();
   rebuildSemantics(controller, controller.sceneState());
 }
@@ -4322,6 +4421,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = tr(Str::AudioSettings),
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+  {
+    const auto& languages = shellLanguages();
+    const auto current = std::find_if(languages.begin(), languages.end(), [this](const ShellLanguage& language) {
+      return language.code == preferences_.language;
+    });
+    const std::string name{current != languages.end() ? current->name : languages.front().name};
+    add(SemanticNode{.id = "shell.language", .role = SemanticRole::Button, .name = tr(Str::Language),
+                     .value = preferences_.languageFollowsSystem ? trf(Str::LanguageFollowsSystem, {name})
+                                                                 : name,
+                     .bounds = l.language,
+                     .actions = {SemanticAction::Activate, SemanticAction::Increment,
+                                 SemanticAction::Decrement, SemanticAction::SetFocus},
+                     .description = tr(Str::LanguageControlDescription)});
+  }
   // The track chip is painted only above the SING score; a covering workspace paints its own body
   // there, so it does not publish it.
   if (workspace_ == Workspace::Sing) {
@@ -4889,6 +5002,10 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     result = core::success();
   } else if (id == "shell.settings" && activate) {
     controller.showAudioSettings();
+    result = core::success();
+  } else if (id == "shell.language" && (activate || action == SemanticAction::Increment ||
+                                         action == SemanticAction::Decrement)) {
+    cycleLanguage(action == SemanticAction::Decrement ? -1 : 1);
     result = core::success();
   } else if (id == "shell.ruler.time-map" && activate) {
     // The transport display's tempo readout opens the time map; the ruler's own button opens the

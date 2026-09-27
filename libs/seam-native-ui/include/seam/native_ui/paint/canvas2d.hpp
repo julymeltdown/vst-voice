@@ -260,6 +260,11 @@ public:
 private:
   bool previous_{false};
 };
+// True when every character of utf8 draws with a real glyph, from the face the style names or from
+// its fallback, and never with the platform's last-resort placeholder: the check that a language's
+// script is covered (Hangul falls back to Apple SD Gothic Neo in every role). False where there is
+// no vector backend.
+[[nodiscard]] bool textRenderable(std::string_view utf8, const TextStyle& style);
 // Contents/Resources of the bundle whose binary contains this code (the app, or the plug-in inside
 // a host), or empty when it cannot be determined.
 [[nodiscard]] std::filesystem::path codeBundleResources();

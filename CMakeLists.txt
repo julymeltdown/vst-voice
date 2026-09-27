@@ -918,6 +918,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/ui-design"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/l10n"
       VERBATIM)
     install(TARGETS seam_editor_native BUNDLE DESTINATION ".")
   elseif(WIN32)
@@ -1148,6 +1151,9 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
       "${SEAM_EDITOR_RESOURCE_ROOT}/ui-design"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
+      "${SEAM_EDITOR_RESOURCE_ROOT}/l10n"
     VERBATIM)
 
   install(TARGETS seam_clap_editor_plugin
@@ -1965,7 +1971,7 @@ if(SEAM_BUILD_TESTS)
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
     seam_apply_compiler_options(seam_design_layout_property_tests)
     # One ctest entry per sweep so they run in parallel; each argument selects test cases by name.
-    foreach(sweep IN ITEMS workspaces overlay sheets contrast string pseudo)
+    foreach(sweep IN ITEMS workspaces overlay sheets contrast string pseudo l10n korean)
       if(sweep STREQUAL "workspaces")
         set(filter "every workspace")
       elseif(sweep STREQUAL "overlay")
@@ -1976,6 +1982,10 @@ if(SEAM_BUILD_TESTS)
         set(filter "switching contrast")
       elseif(sweep STREQUAL "string")
         set(filter "shell string table")
+      elseif(sweep STREQUAL "l10n")
+        set(filter "translation")
+      elseif(sweep STREQUAL "korean")
+        set(filter "Korean shell")
       else()
         set(filter "pseudo-localized")
       endif()

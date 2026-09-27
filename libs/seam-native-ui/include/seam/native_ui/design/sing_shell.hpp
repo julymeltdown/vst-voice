@@ -41,12 +41,21 @@ struct DesignPreferences final {
   // it is the same setting the host already publishes to the editor through
   // platform::AccessibilityPreferences, so both surfaces agree.
   bool reduceMotion{false};
+  // The language the shell reads in: a code from shellLanguages() ("en", "ko"). When
+  // languageFollowsSystem is set it is the platform's preferred language, when the shell offers it,
+  // and English otherwise; an explicit choice made in the app clears the flag and wins, for this app
+  // alone, until the user returns it to the system. The default is English, so a test fixture that
+  // builds its own preferences reads English whatever the machine's language is.
+  std::string language{"en"};
+  bool languageFollowsSystem{false};
 };
 
 [[nodiscard]] DesignPreferences loadDesignPreferences();
 void saveDesignPreferences(const DesignPreferences& preferences);
 // The platform's Increase Contrast accessibility setting (false where the platform has none).
 [[nodiscard]] bool systemIncreaseContrast();
+// The platform's first preferred language tag ("ko-KR"), or empty where the platform has none.
+[[nodiscard]] std::string systemPreferredLanguage();
 // Runs onChange whenever the system's accessibility display options change (Increase Contrast,
 // Reduce Motion, Reduce Transparency), on the thread that posts the change. The observation ends
 // when the returned token is released. Empty where the platform has no such notification.
@@ -109,6 +118,11 @@ struct ShellHostActions final {
     const std::filesystem::path& designAssets = {},
     const std::filesystem::path& bundleResources = {});
 
+// Finds the translation files: an explicit override (SEAM_L10N_ASSETS), l10n beside the design
+// assets, or assets/l10n in the source tree. Empty when there are none, and the shell reads English.
+[[nodiscard]] std::filesystem::path locateShellTranslations(
+    const std::filesystem::path& designAssets = {});
+
 // The in-note waveform is drawn in columns of this width, phased from the note's left edge.
 inline constexpr double kNoteWaveformColumn = 2.0;
 // Calls column(x0, x1) for each waveform column of a note rectangle that lies inside
@@ -141,6 +155,9 @@ public:
   // design assets. Every host activates it; the no-argument form reads the saved preferences, and
   // tests pass an explicit preference set so they never observe the user's saved design mode.
   SingShell() = default;
+  // A shell's own translation table is installed for lookups while it is active; dropping the
+  // shell uninstalls it.
+  ~SingShell();
   // The system display-options observer calls back into this shell, so it never moves.
   SingShell(SingShell&&) = delete;
   SingShell& operator=(SingShell&&) = delete;
@@ -209,6 +226,21 @@ public:
   // Turns motion down. Like the look and the contrast it is an application preference, so the shell
   // keeps painting the same state with the animation dropped.
   void setReduceMotion(bool reduceMotion, bool persist = true);
+  // The language the shell reads in (a code from shellLanguages()), and the in-app override: an
+  // explicit language that wins over the system's, or following the system again. An offered
+  // language whose translation file is missing or unreadable reads as English.
+  [[nodiscard]] const std::string& language() const noexcept { return preferences_.language; }
+  [[nodiscard]] bool languageFollowsSystem() const noexcept {
+    return preferences_.languageFollowsSystem;
+  }
+  void setLanguage(std::string_view language, bool persist = true);
+  void followSystemLanguage(bool persist = true);
+  // The header's language control steps System, then each offered language, then System again.
+  void cycleLanguage(int direction, bool persist = true);
+  // What loading the current language's translation file reported (empty for English).
+  [[nodiscard]] const ShellStringLoadReport& languageReport() const noexcept {
+    return languageReport_;
+  }
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
   void setHostActions(ShellHostActions actions) {
     hostActions_ = std::move(actions);
@@ -621,6 +653,13 @@ private:
   bool exportRunning_{false};
   // What this frame drew inside the notes (or why it drew nothing); accessibility reports it.
   RegionWaveform waveform_;
+  // The translation directory found at activation, the table of the current language (none for
+  // English) and the language it was loaded for.
+  std::filesystem::path translations_;
+  std::unique_ptr<ShellStringTable> strings_;
+  std::string stringsLanguage_{"en"};
+  ShellStringLoadReport languageReport_;
+  void applyLanguage();
 
   // The frame pipeline: the cached layers, what the last frame changed and rasterized, and the
   // generation of the artwork every recorded image and portrait belongs to (a reload changes it, so
