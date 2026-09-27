@@ -72,7 +72,7 @@ struct ProjectSettings final {
   // which is what a project means by default; Follow Host uses the timing the host reported
   // for the rendered range and is an explicit choice, never an inference.
   BounceTimingAuthority bounceTimingAuthority{BounceTimingAuthority::FixedAudio};
-  CharacterDisplayMode characterDisplay{CharacterDisplayMode::Minimal};
+  CharacterDisplayMode characterDisplay{CharacterDisplayMode::Full};
   std::array<TechnicalLanePresentation, kTechnicalLaneCount> technicalLanes{};
   bool snapEnabled{true};
   time::Tick snapGrid{time::Tick{time::kDefaultPpq / 4}};

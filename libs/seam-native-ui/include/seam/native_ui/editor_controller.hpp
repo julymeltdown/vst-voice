@@ -447,6 +447,11 @@ public:
   [[nodiscard]] core::Result<void> applySelectedSeamPreset(SeamPreset preset);
   [[nodiscard]] core::Result<void> resetSelectedSeam();
   [[nodiscard]] core::Result<void> toggleSelectedSeamPreview();
+  // Full, Minimal or Off for the project's character surfaces (view state, not an edit).
+  void setCharacterDisplay(domain::CharacterDisplayMode mode);
+  [[nodiscard]] domain::CharacterDisplayMode characterDisplay() const noexcept {
+    return session_.project().settings().characterDisplay;
+  }
   [[nodiscard]] core::Result<void> setSelectedUnitLoopPrint(float value);
   [[nodiscard]] core::Result<void> setSelectedUnitSourcePitchResidual(float value);
   [[nodiscard]] core::Result<void> splitSelectedRegion(time::Tick splitTick);

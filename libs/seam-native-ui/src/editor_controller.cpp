@@ -146,6 +146,21 @@ void NativeEditorController::beginLayoutTransition(
   };
 }
 
+// The project's character display: view state kept with the project (C cycles it, the SINGER
+// menu's switch sets it). It never schedules a render or dirties the document.
+void NativeEditorController::setCharacterDisplay(domain::CharacterDisplayMode mode) {
+  auto& current = session_.project().settings().characterDisplay;
+  if (current == mode) return;
+  const auto fromState = sceneState();
+  current = mode;
+  beginLayoutTransition(fromState);
+  if (callbacks_.viewChanged) {
+    callbacks_.viewChanged();
+  } else {
+    repaint();
+  }
+}
+
 void NativeEditorController::applyLayoutTransition(
     EditorSceneState& state) const {
   if (!layoutTransition_.has_value() || reduceMotionEnabled()) return;
@@ -5668,21 +5683,12 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     const auto selected = session_.selection().noteIds();
     if (!selected.empty()) result = beginLyricEdit(selected.front());
   } else if (event.key == NativeKey::C) {
-    const auto fromState = sceneState();
-    auto& mode = session_.project().settings().characterDisplay;
-    if (mode == domain::CharacterDisplayMode::Full) {
-      mode = domain::CharacterDisplayMode::Minimal;
-    } else if (mode == domain::CharacterDisplayMode::Minimal) {
-      mode = domain::CharacterDisplayMode::Off;
-    } else {
-      mode = domain::CharacterDisplayMode::Full;
-    }
-    beginLayoutTransition(fromState);
-    if (callbacks_.viewChanged) {
-      callbacks_.viewChanged();
-    } else {
-      repaint();
-    }
+    const auto mode = session_.project().settings().characterDisplay;
+    setCharacterDisplay(mode == domain::CharacterDisplayMode::Full
+                            ? domain::CharacterDisplayMode::Minimal
+                        : mode == domain::CharacterDisplayMode::Minimal
+                            ? domain::CharacterDisplayMode::Off
+                            : domain::CharacterDisplayMode::Full);
   } else if (event.key == NativeKey::V) {
     if (recoverySupportPanel_.view().visible) return core::success();
     voicebankBrowserVisible_ = !voicebankBrowserVisible_;

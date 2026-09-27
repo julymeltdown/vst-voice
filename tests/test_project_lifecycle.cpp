@@ -66,8 +66,9 @@ TEST_CASE("project_lifecycle_new_project_creates_valid_canonical_document") {
   CHECK(project.meterMap().meterAt(seam::time::Tick{0}).numerator == 7U);
   CHECK(project.meterMap().meterAt(seam::time::Tick{0}).denominator == 8U);
   CHECK_NEAR(project.settings().sampleRate, 44100.0, 1e-9);
+  // New projects show the protagonist: character display defaults to Full.
   CHECK(project.settings().characterDisplay ==
-        seam::domain::CharacterDisplayMode::Minimal);
+        seam::domain::CharacterDisplayMode::Full);
   CHECK(project.routing().deviceOutputChannels == 4U);
   CHECK(project.routing().buses.size() == 1U);
   CHECK(project.routing().buses.front().channelCount == 4U);
