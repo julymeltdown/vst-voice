@@ -155,6 +155,10 @@ public:
                ? std::optional<ui::Rect>{stagePlacement_->bounds}
                : std::nullopt;
   }
+  // Where the last frame drew the character's error toast, or nothing when it drew none.
+  [[nodiscard]] std::optional<ui::Rect> lastFrameErrorToast() const noexcept {
+    return errorToast_.has_value() ? std::optional<ui::Rect>{errorToast_->bounds} : std::nullopt;
+  }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
   [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
   // The overlays this shell re-homes. A surface listed here is painted inside the shell, so it is
@@ -199,6 +203,8 @@ public:
   [[nodiscard]] ShellWorkspace* bodyWorkspace() const noexcept;
   // Undo and redo belong to the Voice Designer while VOICE is shown: the editor's history is not
   // on screen there. Returns the designer's result then, and nothing in any other workspace.
+  // While a workspace body drag is in progress it returns a refusal in every workspace, so neither
+  // history moves under the gesture and the application menu does not fall through to the song.
   [[nodiscard]] std::optional<core::Result<void>> routeUndo(bool redo);
   // The rectangle a covering workspace (TUNE, MIX, EXPORT) owns, in shell coordinates.
   [[nodiscard]] ui::Rect workspaceArea() const noexcept { return exportArea(); }
@@ -421,6 +427,11 @@ private:
   mutable RasterCanvas* raster_{nullptr};
   mutable CharacterAnimator animator_;
   mutable CharacterAnimator::Motion motion_{};
+  // Whether a surface painted this frame showed that motion (the header avatar, the full rack's
+  // ring). Only then does the frame ask for the next one; the Stage's fade asks on its own.
+  mutable bool motionShown_{false};
+  // The error toast the last frame's status bar painted, if any.
+  mutable std::optional<CharacterToast> errorToast_{};
   std::optional<float> auditionLevel_{};
   CharacterState characterState_{CharacterState::Idle};
   // The frame's own clock reading, taken once so every part of one frame animates against the same

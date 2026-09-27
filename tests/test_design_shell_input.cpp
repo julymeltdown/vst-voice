@@ -2075,12 +2075,21 @@ TEST_CASE("a TUNE or MIX drag owns the input until it ends, and a resize abandon
   auto end = drag(node);
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Z, .modifiers = {.command = true}}));
+  // The application menu's Undo and Redo ask routeUndo first and fall through to the song only when
+  // it answers nothing: mid-drag it answers with a refusal, so the song's history is not stepped.
+  for (const auto redo : {false, true}) {
+    const auto routed = f.shell.routeUndo(redo);
+    CHECK(routed.has_value());
+    if (routed) CHECK(!routed->hasValue());
+  }
   CHECK(!f.shell.dispatchSemantic(f.controller, node.id, SemanticAction::Increment).hasValue());
   CHECK(!f.shell.dispatchSemantic(f.controller, "shell.workspace.sing", SemanticAction::Activate).hasValue());
   CHECK(f.shell.scroll(f.controller, 0.0, 40.0, end, {}));
   CHECK(f.controller.documentRevision() == revision);
   CHECK(f.shell.pointerUp(f.controller, press(end)).hasValue());
   CHECK(f.controller.documentRevision() == revision + 1U);
+  // Once the drag has ended MIX claims nothing, and Undo is the song's again.
+  CHECK(!f.shell.routeUndo(false).has_value());
   CHECK(f.session.undo());
 
   // A resize mid-drag abandons it: the release commits nothing against the new geometry.

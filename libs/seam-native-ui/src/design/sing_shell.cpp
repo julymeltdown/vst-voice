@@ -907,6 +907,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
   animator_.advance(characterState_, frameNow_, reduceMotion);
   motion_ = animator_.motion();
+  motionShown_ = false;
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
@@ -991,7 +992,9 @@ void SingShell::scheduleAnimationRepaint() {
     repaint();
     return;
   }
-  if (preferences_.reduceMotion || !characterStateAnimates(characterState_)) return;
+  // The state animating is not enough: at a width whose rack is a rail or a drawer and whose header
+  // has no avatar, no painted surface carries the motion and the next frame would be identical.
+  if (preferences_.reduceMotion || !characterStateAnimates(characterState_) || !motionShown_) return;
   repaint();
 }
 
@@ -1166,9 +1169,10 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   // control, so it carries no actions and is excluded from the accessibility tree with the rest of
   // the decorative character artwork.
   if (l.headerAvatar.width > 0.0) {
-    paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
-                         characterPortrait(characterState_), assets().portrait.get(), 1.0,
-                         motion_.blink, motion_.breath);
+    motionShown_ |= paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
+                                         characterPortrait(characterState_),
+                                         assets().portrait.get(), 1.0, motion_.blink,
+                                         motion_.breath);
   }
 }
 
@@ -1894,21 +1898,21 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       singingPlacement = character_.mouthPlacement();
     }
   }
-  paintSingerRing(characterCanvas(c), t,
-                  SingerRingSpec{
-                      .bounds = ring,
-                      .state = performanceState,
-                      .lit = lit,
-                      .rotation = motion_.spinner,
-                      .packagePortrait = characterPortrait(performanceState),
-                      .lookPortrait = assets().portrait.get(),
-                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
-                      .mouthSprite = singingMouth,
-                      .mouthPlacement = singingPlacement,
-                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
-                      .breath = motion_.breath,
-                      .blink = motion_.blink,
-                  });
+  motionShown_ |= paintSingerRing(characterCanvas(c), t,
+                                  SingerRingSpec{
+                                      .bounds = ring,
+                                      .state = performanceState,
+                                      .lit = lit,
+                                      .rotation = motion_.spinner,
+                                      .packagePortrait = characterPortrait(performanceState),
+                                      .lookPortrait = assets().portrait.get(),
+                                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
+                                      .mouthSprite = singingMouth,
+                                      .mouthPlacement = singingPlacement,
+                                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
+                                      .breath = motion_.breath,
+                                      .blink = motion_.blink,
+                                  });
 
   // Footer: the real voice identity and the way to change it.
   const auto footerY = l.singerChange.y;
@@ -2201,9 +2205,14 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   // The error toast above the bar: the head-in-hand crop and the reason the line to the left already
   // carries, for a failed render or a missing voicebank and nothing else. The SINGER card keeps the
   // recovery action, which stays reachable in the rack to the right of this rectangle.
+  // It stacks above the diagnostics toast when one shows, and is left out where it cannot.
   const auto input = characterSurfaceInput(state, auditionLevel_);
-  if (const auto toast = characterErrorToast(l, input, left.text); toast.has_value()) {
-    paintCharacterToast(characterCanvas(c), t, *toast,
+  errorToast_ = characterErrorToast(l, input, left.text,
+                                    state.diagnostics.empty()
+                                        ? std::nullopt
+                                        : std::optional<ui::Rect>{diagnosticsToastBounds()});
+  if (errorToast_.has_value()) {
+    paintCharacterToast(characterCanvas(c), t, *errorToast_,
                         characterPortrait(CharacterState::Error), assets().portrait.get());
   }
 }
@@ -2512,7 +2521,14 @@ ShellWorkspace* SingShell::bodyWorkspace() const noexcept {
 }
 
 std::optional<core::Result<void>> SingShell::routeUndo(bool redo) {
-  if (!presented_ || workspace_ != Workspace::Voice) return std::nullopt;
+  if (!presented_) return std::nullopt;
+  // A drag in a workspace body (a VOICE knob or formant, a TUNE or MIX handle) is an edit still in
+  // progress, and its release commits against the history it started from. Undo underneath it, the
+  // designer's or the song's, is refused, and refused here: returning nothing would let the menu's
+  // Undo fall through to the hidden song mid-drag.
+  if (const auto* body = bodyWorkspace(); bodyGesture_ || (body != nullptr && body->gestureActive()))
+    return core::failure(core::ErrorCode::Conflict, "Finish the drag before undo or redo");
+  if (workspace_ != Workspace::Voice) return std::nullopt;
   // The designer owns the command only when it can actually step through its own history;
   // otherwise the application's Undo and Redo keep working.
   if (voice_ == nullptr || !voice_->ownsUndo(redo)) return std::nullopt;

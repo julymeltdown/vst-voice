@@ -81,6 +81,13 @@ struct CharacterSurfaceInput final {
 // held pose (listening, complete, warning, error) animates nothing and schedules no frame.
 [[nodiscard]] bool characterStateAnimates(CharacterState state) noexcept;
 
+// Whether a surface painted in this state actually shows the animator's motion. The breathing and
+// the blink move the figure, so they show only where a figure was drawn; the render spinner turns
+// the ring's ticks, so it shows only where a ring was drawn. A state that animates is not enough on
+// its own: a frame in which no painted surface moved is identical to the one before it.
+[[nodiscard]] bool characterMotionShown(CharacterState state, bool figureDrawn,
+                                        bool ringDrawn) noexcept;
+
 // ---- artwork ------------------------------------------------------------------------------------
 
 // The package declares one asset per state, and Manifest::assetFor already falls back to the
@@ -175,6 +182,12 @@ inline constexpr std::string_view kEmptyProjectPrompt =
 // The error toast above the status bar: a 40-point head-in-hand crop and the reason the status line
 // already carries. It appears for a failed render and for a missing voicebank, and for nothing else.
 // The recovery action stays reachable in the SINGER card, which this rectangle never covers.
+//
+// When the diagnostics toast shows (a missing voicebank always brings one), the error toast stacks
+// above it, so the diagnostic's title and its DIAGNOSTICS opener stay visible and reachable. It
+// never covers the status bar or the lane's tab strip (the lane tabs and the review opener) either,
+// and where no such place exists, as in the compact windows, there is no error toast: the
+// diagnostics toast and the status line already carry the same problem, and its recovery.
 struct CharacterToast final {
   ui::Rect bounds;
   ui::Rect pose;
@@ -183,7 +196,8 @@ struct CharacterToast final {
 };
 
 [[nodiscard]] std::optional<CharacterToast> characterErrorToast(
-    const SingLayout& layout, const CharacterSurfaceInput& input, std::string_view diagnostic);
+    const SingLayout& layout, const CharacterSurfaceInput& input, std::string_view diagnostic,
+    std::optional<ui::Rect> diagnosticsToast = std::nullopt);
 
 // ---- the animator (section 8.3) -----------------------------------------------------------------
 
@@ -277,8 +291,10 @@ struct SingerRingSpec final {
   double blink{0.0};
 };
 
-void paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
-                     const SingerRingSpec& spec);
+// Returns whether the ring showed motion (characterMotionShown), so the caller can tell whether the
+// next frame would differ from this one.
+[[nodiscard]] bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
+                                   const SingerRingSpec& spec);
 
 // A portrait into a circle (circular = true) or a rounded square, preferring the package's decoded
 // state asset and drawing the look's portrait when there is no package art. Drawing nothing when
@@ -315,10 +331,13 @@ void paintCharacterMouth(CharacterCanvas canvas, ui::Rect portraitBounds,
 // SINGER card spells out.
 inline constexpr double kHeaderAvatarSize = 28.0;
 
-void paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui::Rect bounds,
-                          CharacterState state, const PixelSurface* packagePortrait,
-                          const paint::Image* lookPortrait, double opacity,
-                          double blink = 0.0, double breath = 0.0);
+// Returns whether the avatar showed motion: it carries the blink and the breathing on its figure and
+// no spinner, so it moves only in a breathing state and only when a portrait was drawn.
+[[nodiscard]] bool paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens,
+                                        ui::Rect bounds, CharacterState state,
+                                        const PixelSurface* packagePortrait,
+                                        const paint::Image* lookPortrait, double opacity,
+                                        double blink = 0.0, double breath = 0.0);
 
 // The Stage figure into the roll: drawn before the notes and curves so it sits below them.
 void paintStageFigure(CharacterCanvas canvas, ui::Rect clip, const StagePlacement& placement,
