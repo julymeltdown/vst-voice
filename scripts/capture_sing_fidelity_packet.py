@@ -351,8 +351,8 @@ ALWAYS_NODES = (
 ) + tuple(f"shell.lane-tab.{lane}" for lane in LANES)
 NOTE_LIMIT = 256
 # Everything the shell may publish while the modal inspector is open (plus the shell.knob.* sliders).
-MODAL_NODES = {"shell", "shell.inspector", "shell.change-voice", "shell.style", "voice.identity",
-               "shell.status", "shell.render-progress"}
+MODAL_NODES = {"shell", "shell.inspector", "shell.change-voice", "shell.singer-menu", "shell.style",
+               "voice.identity", "shell.status", "shell.render-progress"}
 # The evidence (frame, semantics, geometry) is the last presented frame; the app logs its render
 # state later, after shutdown. A render can finish in between, so the log may be the frame's state
 # or a legal successor of it, never an earlier or unrelated one.
