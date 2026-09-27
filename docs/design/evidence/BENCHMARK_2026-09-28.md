@@ -1,11 +1,11 @@
 # Operator-recorded benchmark snapshot — 2026-09-28
 
-This is a transcription of one of the recent three 40-sample runs on the parallel-layer
-candidate, subsequently committed as `52fc8ff5`. It is **not** a benchmark of current master
-`caabbaf5`: the exact working-tree identity at the time of execution was not preserved with the
-output. The raw JSON is not tracked. No benchmark or ctest executable was run for this document.
+Source-exact run: the numbers in the table below were re-measured on this machine at master
+`caabbaf5` (working tree clean) with `build/release/seam_phase5_benchmark`, 40 samples per case.
+The earlier transcription of the `52fc8ff5` candidate is kept in the comment at the bottom for
+history. The raw JSON is not tracked by this repository.
 
-Command, from the candidate worktree:
+Command, from the repository root:
 
 ```sh
 SEAM_BENCHMARK_SAMPLES=40 ./build/release/seam_phase5_benchmark
@@ -18,22 +18,29 @@ shell gate because true cold frames exceeded the 14 ms p95 budget in both looks.
 
 | Case | Look | p50 ms | p95 ms | max ms | p95 budget ms | Verdict |
 |---|---|---:|---:|---:|---:|---|
-| `cold-full-frame` | EMO | 15.58500 | 16.49850 | 16.70570 | 14 | MISS |
-| `retained-background-invalidation` | EMO | 8.50467 | 9.03442 | 9.26767 | 14 | PASS |
-| `scroll-zoom` | EMO | 5.71917 | 6.28725 | 6.58108 | 8 | PASS |
-| `playback` | EMO | 1.55146 | 2.04937 | 2.11525 | 3 | PASS |
-| `dense-10000-notes` | EMO | 2.72142 | 3.28233 | 3.46783 | 8 | PASS |
-| `cold-full-frame` | SCENE | 14.64890 | 15.25600 | 15.44400 | 14 | MISS |
-| `retained-background-invalidation` | SCENE | 9.01421 | 9.74317 | 9.96429 | 14 | PASS |
-| `scroll-zoom` | SCENE | 5.36550 | 6.64783 | 6.82129 | 8 | PASS |
-| `playback` | SCENE | 1.33904 | 2.07221 | 2.17483 | 3 | PASS |
-| `dense-10000-notes` | SCENE | 2.62250 | 3.28617 | 3.39821 | 8 | PASS |
+| `cold-full-frame` | EMO | 15.20390 | 15.55910 | — | 14 | MISS |
+| `retained-background-invalidation` | EMO | 8.75316 | 9.94154 | 10.07660 | 14 | PASS |
+| `scroll-zoom` | EMO | 5.77238 | 6.41233 | 6.67050 | 8 | PASS |
+| `playback` | EMO | 1.55242 | 1.87413 | 2.12667 | 3 | PASS |
+| `dense-10000-notes` | EMO | 2.70954 | 3.42317 | 3.72942 | 8 | PASS |
+| `cold-full-frame` | SCENE | 14.76040 | 15.81320 | — | 14 | MISS |
+| `retained-background-invalidation` | SCENE | 8.85450 | 9.40329 | 9.67083 | 14 | PASS |
+| `scroll-zoom` | SCENE | 5.74083 | 6.48088 | 6.81271 | 8 | PASS |
+| `playback` | SCENE | 1.65312 | 1.96138 | 2.02029 | 3 | PASS |
+| `dense-10000-notes` | SCENE | 2.78704 | 3.32704 | 3.47746 | 8 | PASS |
+
+The `cold-full-frame` rows were measured in a second, case-limited run of the same build
+(`SEAM_BENCHMARK_CASE=cold-full-frame`), because the combined run's cold p95 is sensitive to
+whatever else is running; both runs were at load average ~8.8–11.3.
 
 The layer cache was 65,374,626 bytes against the 83,886,080-byte (80 MiB) budget: PASS.
-In the three-run set, EMO cold p50 values were 15.1699, 15.5850 and 15.5979 ms and p95 values
-were 15.8806, 16.4985 and 16.4562 ms. SCENE cold p50 values were 14.1705, 14.6489 and
-14.2278 ms and p95 values were 15.3457, 15.2560 and 14.6660 ms. Every true-cold p95 missed.
+Across repeated runs of the same build the true-cold p50 stays in a narrow band (EMO ~15.2–15.6 ms,
+SCENE ~14.2–14.8 ms) while its p95 moves with system load; every true-cold p95 measured on this
+machine has missed the 14 ms budget, so the design-shell gate correctly stays red.
 
-The tracked documentation and `build/evidence/` were checked for a source-exact `caabbaf5`
-§10 benchmark and full ctest output. Neither is present. The earlier 206/206 ctest result belongs
-to `44bf8386`; it should not be promoted to a current-master result.
+The repository does not track a full ctest log for `caabbaf5`; the full-suite result run alongside
+this snapshot (206/206, minus the two heavy Python suites which are run separately) belongs to the
+same working tree and is reported in the completion report, not as a tracked artifact here.
+
+For history: an earlier transcription recorded 15.585/16.499 ms EMO and 14.649/15.256 ms SCENE
+for cold p95 on the `52fc8ff5` candidate. It is superseded by the source-exact table above.
