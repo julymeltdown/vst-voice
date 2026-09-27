@@ -122,4 +122,16 @@ ScopedFullResolutionGlow::~ScopedFullResolutionGlow() { fullResolutionGlow = pre
 
 bool ScopedFullResolutionGlow::active() noexcept { return fullResolutionGlow; }
 
+namespace {
+thread_local bool concurrentCanvas = false;
+}  // namespace
+
+ScopedConcurrentCanvas::ScopedConcurrentCanvas() noexcept : previous_{concurrentCanvas} {
+  concurrentCanvas = true;
+}
+
+ScopedConcurrentCanvas::~ScopedConcurrentCanvas() { concurrentCanvas = previous_; }
+
+bool ScopedConcurrentCanvas::active() noexcept { return concurrentCanvas; }
+
 }  // namespace seam::native_ui::paint

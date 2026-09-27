@@ -1,5 +1,7 @@
 #include "seam/native_ui/paint/layer_cache.hpp"
 
+#include "seam/native_ui/paint/display_list.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -7,8 +9,85 @@
 #include <unordered_map>
 #include <utility>
 
+#if defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#endif
+
 namespace seam::native_ui::paint {
 namespace {
+
+// The background is recorded once and rasterized in horizontal bands of this many device rows on
+// as many cores as are free. Each band draws into a surface of its own, moved up by whole device
+// rows and clipped to the band, through a concurrent canvas (ScopedConcurrentCanvas), and is then
+// copied into place. Bands are drawn the same way when they run one after another, and depend only
+// on the surface, so every composition of a background yields the same pixels however the bands
+// were scheduled.
+constexpr std::uint32_t kBackgroundBandRows = 64U;
+
+void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer& background) {
+  if (!background.paint) return;
+  auto measurer = makeCanvas(snapshot, scale);
+  if (measurer == nullptr) return;
+  const auto width = static_cast<double>(snapshot.width()) / scale;
+  const auto height = static_cast<double>(snapshot.height()) / scale;
+  RecordingCanvas recorded{width, height, scale, [&measurer](std::string_view text, const TextStyle& style) {
+                             return measurer->measure(text, style);
+                           }};
+  recorded.setLayer(Layer::Background);
+  background.paint(recorded);
+  // Bands land on whole device pixels only at a whole scale, and a raster drawing addresses the
+  // snapshot itself; either way the background draws in one pass.
+  const auto banded = scale == std::round(scale) && recorded.rasterBounds(Layer::Background).empty();
+  const auto rows = banded ? kBackgroundBandRows : snapshot.height();
+  const auto bands = (snapshot.height() + rows - 1U) / rows;
+  struct Job final {
+    PixelSurface* snapshot;
+    const RecordingCanvas* recorded;
+    double scale;
+    std::uint32_t rows;
+    Color clear;
+  } job{&snapshot, &recorded, scale, rows, background.clear};
+  const auto band = [](void* context, std::size_t k) {
+    const auto& j = *static_cast<const Job*>(context);
+    const ScopedConcurrentCanvas concurrent;
+    auto& target = *j.snapshot;
+    const auto y0 = static_cast<std::uint32_t>(k) * j.rows;
+    const auto y1 = std::min(target.height(), y0 + j.rows);
+    const auto whole = y0 == 0U && y1 == target.height();
+    PixelSurface local;
+    if (!whole) {
+      local = PixelSurface{target.width(), y1 - y0};
+      local.clear(j.clear);
+    }
+    auto& surface = whole ? target : local;
+    auto canvas = makeCanvas(surface, j.scale);
+    if (canvas == nullptr) return;
+    RasterCanvas raster{surface, j.scale, nullptr};
+    const auto top = static_cast<double>(y0) / j.scale;
+    if (whole) {
+      j.recorded->replay(Layer::Background, *canvas, raster);
+      canvas->flush();
+      return;
+    }
+    canvas->translate(0.0, -top);
+    const ui::Rect clip{0.0, top, static_cast<double>(target.width()) / j.scale,
+                        static_cast<double>(y1 - y0) / j.scale};
+    j.recorded->replay(Layer::Background, *canvas, raster, &clip);
+    canvas->flush();
+    const auto from = local.pixels();
+    std::copy(from.begin(), from.end(),
+              target.pixels().begin() + static_cast<std::ptrdiff_t>(y0) * target.width());
+  };
+  // A text capture and the full-resolution glow hook observe the calling thread only.
+  const auto serial = ScopedTextCapture::active() || ScopedFullResolutionGlow::active();
+#if defined(__APPLE__)
+  if (!serial && bands > 1U) {
+    dispatch_apply_f(bands, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), &job, band);
+    return;
+  }
+#endif
+  for (std::size_t k = 0U; k < bands; ++k) band(&job, k);
+}
 
 // Outward to whole device pixels, inside the surface.
 ui::Rect snapToPixels(ui::Rect r, double scale, double width, double height) noexcept {
@@ -290,19 +369,15 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
       }
       if (i == 0U) {
         snapshot.clear(background.clear);
+        paintBackground(snapshot, scale, background);
       } else {
         const auto& lower = snapshots_[i - 1U].pixels();
         std::copy(lower.begin(), lower.end(), snapshot.pixels().begin());
-      }
-      auto canvas = makeCanvas(snapshot, scale);
-      if (canvas != nullptr) {
-        RasterCanvas raster{snapshot, scale, nullptr};
-        if (i == 0U) {
-          if (background.paint) background.paint(*canvas);
-        } else {
+        if (auto canvas = makeCanvas(snapshot, scale); canvas != nullptr) {
+          RasterCanvas raster{snapshot, scale, nullptr};
           frame.replay(static_cast<Layer>(i), *canvas, raster);
+          canvas->flush();
         }
-        canvas->flush();
       }
       out.rasterized[i] = true;
     }

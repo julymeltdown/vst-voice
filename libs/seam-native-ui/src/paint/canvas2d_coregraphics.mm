@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -219,7 +220,8 @@ private:
 class CoreGraphicsCanvas final : public Canvas2D {
 public:
   CoreGraphicsCanvas(PixelSurface& surface, double scale)
-      : surface_(surface), scale_(std::isfinite(scale) ? std::clamp(scale, 0.5, 4.0) : 1.0) {
+      : surface_(surface), scale_(std::isfinite(scale) ? std::clamp(scale, 0.5, 4.0) : 1.0),
+        concurrent_(ScopedConcurrentCanvas::active()) {
     context_ = CfRef<CGContextRef>{CGBitmapContextCreate(
         surface.pixels().data(), surface.width(), surface.height(), 8U, surface.strideBytes(),
         srgb(),
@@ -305,11 +307,13 @@ public:
     if (fillRectInSoftware(path, color)) return;
     const auto p = toCgPath(path);
     const auto c = cgColor(color);
+    const GlowShape shape{.path = &path, .stroke = nullptr, .color = color};
     glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
+      if (ctx == context_.get() && coverageDraw(shape, p.get())) return;
       CGContextAddPath(ctx, p.get());
       CGContextSetFillColorWithColor(ctx, c.get());
       CGContextFillPath(ctx);
-    }, GlowShape{.path = &path, .stroke = nullptr, .alpha = color.alpha});
+    }, shape);
   }
   void fill(const Path& path, const LinearGradient& gradient) override {
     const auto g = toCgGradient(gradient.stops);
@@ -344,14 +348,16 @@ public:
     if (path.empty()) return;
     const auto p = toCgPath(path);
     const auto c = cgColor(color);
+    const GlowShape shape{.path = &path, .stroke = &style, .color = color};
     glowed(strokeBounds(p.get(), style), [&](CGContextRef ctx) {
+      if (ctx == context_.get() && coverageDraw(shape, p.get())) return;
       CGContextSaveGState(ctx);
       applyStroke(ctx, style);
       CGContextAddPath(ctx, p.get());
       CGContextSetStrokeColorWithColor(ctx, c.get());
       CGContextStrokePath(ctx);
       CGContextRestoreGState(ctx);
-    }, GlowShape{.path = &path, .stroke = &style, .alpha = color.alpha});
+    }, shape);
   }
   void stroke(const Path& path, const LinearGradient& gradient,
               const StrokeStyle& style) override {
@@ -500,8 +506,248 @@ private:
   struct GlowShape final {
     const Path* path{nullptr};
     const StrokeStyle* stroke{nullptr};  // null: the path is filled
-    std::uint8_t alpha{255U};
+    Color color{};
   };
+
+  // On a concurrent canvas, a translucent shape without a CoreGraphics shadow is drawn as opaque
+  // coverage in an alpha-only mask (see ScopedConcurrentCanvas) and its colour composited here.
+  bool coverageDraw(const GlowShape& shape, CGPathRef path) {
+    if (!concurrent_ || cgShadow_ || !softwareState()) return false;
+    if (shape.color.alpha == 255U && tracked_.alpha >= 1.0) return false;
+    auto* ctx = context_.get();
+    const auto ctm = CGContextGetCTM(ctx);
+    // Only where the shape can paint inside the clip: the union of its pieces' control hulls,
+    // grown by the stroke and the anti-aliased edge, so a long thin curve costs its length.
+    const auto margin =
+        (shape.stroke != nullptr ? 0.5 * std::max(0.0, shape.stroke->width) *
+                                       std::max(std::abs(ctm.a) + std::abs(ctm.c),
+                                                std::abs(ctm.b) + std::abs(ctm.d))
+                                 : 0.0) +
+        2.0;
+    const auto device = hullBounds(*shape.path, ctm, margin, tracked_.clip);
+    if (CGRectIsNull(device) || CGRectIsEmpty(device)) return true;
+    const auto x0 = static_cast<std::int64_t>(std::floor(CGRectGetMinX(device)));
+    const auto y0 = static_cast<std::int64_t>(std::floor(CGRectGetMinY(device)));
+    const auto x1 = static_cast<std::int64_t>(std::ceil(CGRectGetMaxX(device)));
+    const auto y1 = static_cast<std::int64_t>(std::ceil(CGRectGetMaxY(device)));
+    // One alpha-only mask the size of the surface serves every shape: only the region is cleared,
+    // drawn and read.
+    const auto width = static_cast<std::int64_t>(surface_.width());
+    const auto height = static_cast<std::int64_t>(surface_.height());
+    if (!mask_) {
+      coverage_.assign(static_cast<std::size_t>(width * height), 0U);
+      mask_ = CfRef<CGContextRef>{CGBitmapContextCreate(coverage_.data(), static_cast<std::size_t>(width),
+                                                        static_cast<std::size_t>(height), 8U,
+                                                        static_cast<std::size_t>(width), nullptr,
+                                                        kCGImageAlphaOnly)};
+      if (!mask_) return false;
+      CGContextSetShouldAntialias(mask_.get(), true);
+      CGContextSetAllowsAntialiasing(mask_.get(), true);
+      CGContextSetLineJoin(mask_.get(), kCGLineJoinRound);
+    }
+    for (auto y = y0; y < y1; ++y)
+      std::memset(coverage_.data() + (height - 1 - y) * width + x0, 0, static_cast<std::size_t>(x1 - x0));
+    auto* m = mask_.get();
+    CGContextSaveGState(m);
+    CGContextClipToRect(m, CGRectMake(static_cast<CGFloat>(x0), static_cast<CGFloat>(y0),
+                                      static_cast<CGFloat>(x1 - x0), static_cast<CGFloat>(y1 - y0)));
+    CGContextConcatCTM(m, ctm);
+    // A long undashed stroke is given to CoreGraphics only where it passes near the region: the
+    // run of its pieces that reach it, and one piece more at each cut end, so no cut end and no cap
+    // lands in the region.
+    CfRef<CGPathRef> reduced;
+    if (shape.stroke != nullptr && shape.stroke->dash.empty())
+      reduced = reducedStroke(*shape.path, ctm, margin, device);
+    CGContextAddPath(m, reduced ? reduced.get() : path);
+    if (shape.stroke != nullptr) {
+      applyStroke(m, *shape.stroke);
+      CGContextSetGrayStrokeColor(m, 1.0, 1.0);
+      CGContextStrokePath(m);
+    } else {
+      CGContextSetGrayFillColor(m, 1.0, 1.0);
+      CGContextFillPath(m);
+    }
+    CGContextRestoreGState(m);
+    CGContextFlush(m);
+    compositeCoverage(coverage_.data(), width, height, 0, 0, shape.color,
+                      CGRectMake(static_cast<CGFloat>(x0), static_cast<CGFloat>(y0),
+                                 static_cast<CGFloat>(x1 - x0), static_cast<CGFloat>(y1 - y0)));
+    return true;
+  }
+
+  // Device bounds of what a path may paint inside clip: each piece's control points (cubics split
+  // in eight) grown by margin, united.
+  static CGRect hullBounds(const Path& path, CGAffineTransform ctm, double margin, CGRect clip) {
+    auto result = CGRectNull;
+    CGPoint last = CGPointZero;
+    CGPoint start = CGPointZero;
+    const auto add = [&](std::initializer_list<CGPoint> points) {
+      auto minX = std::numeric_limits<double>::infinity();
+      auto minY = minX;
+      auto maxX = -minX;
+      auto maxY = -minX;
+      for (const auto& p : points) {
+        minX = std::min<double>(minX, p.x);
+        maxX = std::max<double>(maxX, p.x);
+        minY = std::min<double>(minY, p.y);
+        maxY = std::max<double>(maxY, p.y);
+      }
+      const auto piece = CGRectIntersection(
+          CGRectMake(minX - margin, minY - margin, maxX - minX + 2.0 * margin, maxY - minY + 2.0 * margin),
+          clip);
+      if (!CGRectIsNull(piece) && !CGRectIsEmpty(piece)) result = CGRectUnion(result, piece);
+    };
+    const auto device = [&](ui::Point p) { return CGPointApplyAffineTransform(CGPointMake(p.x, p.y), ctm); };
+    const auto lerp = [](CGPoint a, CGPoint b, double t) {
+      return CGPointMake(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    };
+    for (const auto& e : path.elements()) {
+      switch (e.verb) {
+        case Path::Verb::Move:
+          last = start = device(e.a);
+          add({last});
+          break;
+        case Path::Verb::Line: {
+          const auto p = device(e.a);
+          add({last, p});
+          last = p;
+          break;
+        }
+        case Path::Verb::Quad: {
+          const auto c = device(e.a);
+          const auto p = device(e.b);
+          add({last, c, p});
+          last = p;
+          break;
+        }
+        case Path::Verb::Cubic: {
+          std::array<CGPoint, 4> q{last, device(e.a), device(e.b), device(e.c)};
+          // Eight pieces: the first 1/8 of what remains, seven times, then the rest.
+          for (int k = 0; k < 8; ++k) {
+            if (k == 7) {
+              add({q[0], q[1], q[2], q[3]});
+              break;
+            }
+            const auto t = 1.0 / static_cast<double>(8 - k);
+            const auto ab = lerp(q[0], q[1], t), bc = lerp(q[1], q[2], t), cd = lerp(q[2], q[3], t);
+            const auto abc = lerp(ab, bc, t), bcd = lerp(bc, cd, t), mid = lerp(abc, bcd, t);
+            add({q[0], ab, abc, mid});
+            q = {mid, bcd, cd, q[3]};
+          }
+          last = device(e.c);
+          break;
+        }
+        case Path::Verb::Close:
+          add({last, start});
+          last = start;
+          break;
+      }
+    }
+    return result;
+  }
+
+  // The pieces of a stroked path (lines, quads, cubics split in eight) near region, as runs of
+  // whole pieces each with one more piece at either end; null when every piece is kept.
+  static CfRef<CGPathRef> reducedStroke(const Path& path, CGAffineTransform ctm, double margin,
+                                        CGRect region) {
+    struct Piece final {
+      int kind;  // 1 line, 2 quad, 3 cubic
+      std::array<CGPoint, 4> p;  // user space
+      bool near;
+      bool starts;  // first piece of its subpath
+      bool closes;  // the closing line of its subpath
+    };
+    std::vector<Piece> pieces;
+    const auto nearRegion = [&](std::initializer_list<CGPoint> points) {
+      auto minX = std::numeric_limits<double>::infinity();
+      auto minY = minX;
+      auto maxX = -minX;
+      auto maxY = -minX;
+      for (const auto& u : points) {
+        const auto d = CGPointApplyAffineTransform(u, ctm);
+        minX = std::min<double>(minX, d.x);
+        maxX = std::max<double>(maxX, d.x);
+        minY = std::min<double>(minY, d.y);
+        maxY = std::max<double>(maxY, d.y);
+      }
+      return CGRectIntersectsRect(CGRectMake(minX - margin, minY - margin, maxX - minX + 2.0 * margin,
+                                             maxY - minY + 2.0 * margin),
+                                  region);
+    };
+    const auto lerp = [](CGPoint a, CGPoint b, double t) {
+      return CGPointMake(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+    };
+    const auto point = [](ui::Point p) { return CGPointMake(p.x, p.y); };
+    CGPoint last = CGPointZero;
+    CGPoint start = CGPointZero;
+    bool first = true;
+    for (const auto& e : path.elements()) {
+      switch (e.verb) {
+        case Path::Verb::Move:
+          last = start = point(e.a);
+          first = true;
+          break;
+        case Path::Verb::Line: {
+          const auto p = point(e.a);
+          pieces.push_back({1, {last, p, p, p}, nearRegion({last, p}), first, false});
+          first = false;
+          last = p;
+          break;
+        }
+        case Path::Verb::Quad: {
+          const auto c = point(e.a);
+          const auto p = point(e.b);
+          pieces.push_back({2, {last, c, p, p}, nearRegion({last, c, p}), first, false});
+          first = false;
+          last = p;
+          break;
+        }
+        case Path::Verb::Cubic: {
+          std::array<CGPoint, 4> q{last, point(e.a), point(e.b), point(e.c)};
+          for (int k = 0; k < 8; ++k) {
+            std::array<CGPoint, 4> piece = q;
+            if (k < 7) {
+              const auto t = 1.0 / static_cast<double>(8 - k);
+              const auto ab = lerp(q[0], q[1], t), bc = lerp(q[1], q[2], t), cd = lerp(q[2], q[3], t);
+              const auto abc = lerp(ab, bc, t), bcd = lerp(bc, cd, t), mid = lerp(abc, bcd, t);
+              piece = {q[0], ab, abc, mid};
+              q = {mid, bcd, cd, q[3]};
+            }
+            pieces.push_back({3, piece, nearRegion({piece[0], piece[1], piece[2], piece[3]}), first, false});
+            first = false;
+          }
+          last = point(e.c);
+          break;
+        }
+        case Path::Verb::Close:
+          // A closed outline keeps its joins only whole: it is not reduced.
+          return {};
+      }
+    }
+    std::vector<bool> keep(pieces.size(), false);
+    for (std::size_t i = 0U; i < pieces.size(); ++i) {
+      if (!pieces[i].near) continue;
+      keep[i] = true;
+      if (i > 0U && !pieces[i].starts) keep[i - 1U] = true;
+      if (i + 1U < pieces.size() && !pieces[i + 1U].starts) keep[i + 1U] = true;
+    }
+    if (std::all_of(keep.begin(), keep.end(), [](bool k) { return k; })) return {};
+    CGMutablePathRef reduced = CGPathCreateMutable();
+    bool open = false;
+    for (std::size_t i = 0U; i < pieces.size(); ++i) {
+      if (!keep[i]) {
+        open = false;
+        continue;
+      }
+      const auto& p = pieces[i];
+      if (!open || p.starts) CGPathMoveToPoint(reduced, nullptr, p.p[0].x, p.p[0].y);
+      open = true;
+      if (p.kind == 1) CGPathAddLineToPoint(reduced, nullptr, p.p[1].x, p.p[1].y);
+      else if (p.kind == 2) CGPathAddQuadCurveToPoint(reduced, nullptr, p.p[1].x, p.p[1].y, p.p[2].x, p.p[2].y);
+      else CGPathAddCurveToPoint(reduced, nullptr, p.p[1].x, p.p[1].y, p.p[2].x, p.p[2].y, p.p[3].x, p.p[3].y);
+    }
+    return CfRef<CGPathRef>{reduced};
+  }
 
   // Sets the current glow as the context's shadow (blur in device space, not affected by the CTM).
   void applyShadow(CGContextRef ctx, double blurScale = 1.0) const {
@@ -527,7 +773,9 @@ private:
       if (glow_.on) {
         CGContextSaveGState(ctx);
         applyShadow(ctx);
+        cgShadow_ = true;
         draw(ctx);
+        cgShadow_ = false;
         CGContextRestoreGState(ctx);
       } else {
         draw(ctx);
@@ -546,7 +794,9 @@ private:
       }
       CGContextSaveGState(ctx);
       applyShadow(ctx);
+      cgShadow_ = true;
       draw(ctx);
+      cgShadow_ = false;
       CGContextRestoreGState(ctx);
       return;
     }
@@ -691,7 +941,7 @@ private:
     std::vector<std::int64_t> key;
     key.reserve(16U + elements.size() * 7U);
     key.push_back(shape.stroke != nullptr ? 1 : 0);
-    key.push_back(shape.alpha);
+    key.push_back(shape.color.alpha);
     key.push_back(box);
     key.push_back(width);
     key.push_back(height);
@@ -879,11 +1129,13 @@ private:
   // The colour painted through a coverage mask (row 0 at the top) whose lower-left device pixel is
   // (left, bottom), inside the tracked clip.
   void compositeCoverage(const std::uint8_t* coverage, std::int64_t width, std::int64_t height,
-                         std::int64_t left, std::int64_t bottom, Color color) {
+                         std::int64_t left, std::int64_t bottom, Color color,
+                         CGRect limit = CGRectInfinite) {
     std::array<std::uint32_t, 256U> source{};
     for (std::size_t m = 1U; m < source.size(); ++m)
       source[m] = premultiplied(color, static_cast<double>(m) / 255.0);
-    const auto& clip = tracked_.clip;
+    const auto clip = CGRectIntersection(tracked_.clip, limit);
+    if (CGRectIsNull(clip) || CGRectIsEmpty(clip)) return;
     const auto cx0 = std::max(left, static_cast<std::int64_t>(CGRectGetMinX(clip)));
     const auto cx1 = std::min(left + width, static_cast<std::int64_t>(CGRectGetMaxX(clip)));
     const auto cy0 = std::max(bottom, static_cast<std::int64_t>(CGRectGetMinY(clip)));
@@ -982,6 +1234,10 @@ private:
   CfRef<CGContextRef> context_;
   Glow glow_{};
   std::vector<Glow> glowStack_;
+  bool concurrent_{false};
+  bool cgShadow_{false};  // a CoreGraphics shadow is set around the drawing in progress
+  std::vector<std::uint8_t> coverage_;
+  CfRef<CGContextRef> mask_;  // alpha-only, over coverage_, made on first use
   // What the software paths need to know of the state, kept alongside CoreGraphics' own.
   struct Tracked final {
     bool rectClip{true};  // the clip is the one whole-pixel rectangle below

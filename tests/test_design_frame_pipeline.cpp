@@ -457,6 +457,29 @@ TEST_CASE("a large glow blurred at half resolution keeps the full-resolution sha
   CHECK(meanDifference < 2.0);
 }
 
+TEST_CASE("a background drawn in parallel bands equals the same bands drawn one after another") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    Pipeline p{mode, 2.0};
+    const auto compose = [&](bool serial) {
+      CHECK(p.reference.prepareFrame(p.controller, kWidth, kHeight));
+      p.reference.invalidateLayers();
+      PixelSurface surface{p.retained.width(), p.retained.height()};
+      RasterCanvas canvas{surface, p.scale};
+      if (serial) {
+        // A live text capture keeps every band on the calling thread.
+        const native_ui::paint::ScopedTextCapture capture;
+        CHECK(p.reference.paint(canvas, p.controller, p.scene({}), time::Tick{0}));
+      } else {
+        CHECK(p.reference.paint(canvas, p.controller, p.scene({}), time::Tick{0}));
+      }
+      return surface.checksum();
+    };
+    const auto serial = compose(true);
+    for (int run = 0; run < 4; ++run) CHECK(compose(false) == serial);
+  }
+}
+
 TEST_CASE("a small glow cast from a cached sprite keeps the shadow's energy and its first drawing") {
   using native_ui::paint::Path;
   using native_ui::paint::StrokeStyle;
