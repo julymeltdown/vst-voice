@@ -2685,6 +2685,48 @@ TEST_CASE("an open overlay holds the keyboard: its first control is focused and 
   CHECK(f.controller.sceneState().timeMapInputActive);
 }
 
+TEST_CASE("modified keys over an overlay are application commands, never the overlay's keys") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The standalone host declares Command-N, Command-O, Command-S and friends as its own commands.
+  std::vector<KeyEvent> routed;
+  f.shell.setHostActions(native_ui::design::ShellHostActions{
+      .applicationShortcut = [&routed](const KeyEvent& event) {
+        if (!event.modifiers.primaryShortcut() || event.key != NativeKey::N) return false;
+        routed.push_back(event);
+        return true;
+      }});
+  CHECK(f.frame());
+  // A removable event, selected, so a Command-Delete that fell through would remove it.
+  CHECK(f.controller.editTempo(f.controller.documentRevision(), time::Tick{1920}, 90.0).hasValue());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  {
+    const auto rows = f.controller.sceneState().timeMapRows;
+    for (std::size_t i = 0U; i < rows.size(); ++i)
+      if (rows[i].find("1920") != std::string::npos) CHECK(f.controller.selectTimeMapRow(i).hasValue());
+  }
+  const auto events = f.controller.sceneState().timeMapRows;
+  const auto revision = f.controller.documentRevision();
+  // Command-N and Command-Shift-N go to the host (New Project), and add no tempo or meter event.
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::N, .modifiers = {.command = true}}));
+  CHECK(!f.shell.handleShellKey(
+      f.controller, KeyEvent{.key = NativeKey::N, .modifiers = {.shift = true, .command = true}}));
+  CHECK(routed.size() == 2U);
+  CHECK(!f.controller.sceneState().timeMapInputActive);
+  // Command-Delete and Option-R are not host commands: they stop at the card and do nothing.
+  for (const auto& key : {KeyEvent{.key = NativeKey::Delete, .modifiers = {.command = true}},
+                          KeyEvent{.key = NativeKey::Backspace, .modifiers = {.alt = true}},
+                          KeyEvent{.key = NativeKey::R, .modifiers = {.alt = true}}})
+    CHECK(f.shell.handleShellKey(f.controller, key));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.controller.sceneState().timeMapRows == events);
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TimeMap);
+  // The plain keys are still the time map's own: N adds a tempo event through its field.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::N}));
+  CHECK(f.controller.sceneState().timeMapInputActive);
+}
+
 TEST_CASE("the recovery support sheet lists the host's reports and selects one through the panel") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;

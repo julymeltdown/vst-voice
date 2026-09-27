@@ -3028,10 +3028,14 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         repaint();
         return true;
       }
+      // An overlay's own keys are plain keys (Shift allowed). A Command or Option chord is an
+      // application command, never an overlay key: Command-N is New Project, not Add Tempo, and
+      // Command-Delete removes nothing. The host's own shortcuts pass through; the rest stop here.
+      if (event.modifiers.primaryShortcut() || event.modifiers.alt)
+        return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
       // Tab walks the overlay's own controls, as the classic panels walked theirs; nothing under
       // the card is reachable, and the card itself is skipped.
-      if (event.key == NativeKey::Tab && !event.modifiers.primaryShortcut() &&
-          !event.modifiers.alt) {
+      if (event.key == NativeKey::Tab) {
         refreshSemantics(controller);
         const auto panelId = std::string{overlay->idPrefix()} + "panel";
         for (std::size_t step = 0U; step < 256U; ++step) {
@@ -3054,8 +3058,6 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         repaint();
         return true;
       }
-      if (event.modifiers.primaryShortcut() || event.modifiers.alt)
-        return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
       return true;
     }
   }
