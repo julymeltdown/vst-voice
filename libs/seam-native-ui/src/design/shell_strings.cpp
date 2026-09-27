@@ -1,9 +1,13 @@
 #include "seam/native_ui/design/shell_strings.hpp"
 
+#include "seam/core/file_io.hpp"
+#include "seam/formats/json_value.hpp"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <set>
 
 namespace seam::native_ui::design {
 namespace {
@@ -164,6 +168,89 @@ ShellPlaceholders shellPlaceholders(std::string_view text) {
 
 void installShellStrings(const ShellStringTable* table) noexcept {
   installed.store(table, std::memory_order_release);
+}
+
+void uninstallShellStrings(const ShellStringTable* table) noexcept {
+  auto expected = table;
+  installed.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel);
+}
+
+core::Result<LoadedShellStrings> parseShellStrings(std::string_view json) {
+  auto parsed = formats::parseJson(json);
+  if (!parsed) return core::failure<LoadedShellStrings>(core::ErrorCode::ParseError, parsed.error().message);
+  const auto& root = parsed.value();
+  if (!root.isObject())
+    return core::failure<LoadedShellStrings>(core::ErrorCode::ParseError,
+                                             "A translation file is a JSON object");
+  const auto& object = root.asObject();
+  const auto field = [&object](std::string_view name) -> const formats::JsonValue* {
+    const auto found = object.find(name);
+    return found == object.end() ? nullptr : &found->second;
+  };
+  const auto* language = field("language");
+  const auto* strings = field("strings");
+  if (language == nullptr || !language->isString() || language->asString().empty())
+    return core::failure<LoadedShellStrings>(core::ErrorCode::ParseError,
+                                             "A translation file names its \"language\"");
+  if (strings == nullptr || !strings->isObject())
+    return core::failure<LoadedShellStrings>(core::ErrorCode::ParseError,
+                                             "A translation file has a \"strings\" object");
+  LoadedShellStrings out;
+  out.report.language = language->asString();
+  if (const auto* name = field("name"); name != nullptr && name->isString())
+    out.report.name = name->asString();
+  const auto& entries = strings->asObject();
+  std::set<std::string_view> seen;
+  for (const auto& [key, value] : entries) {
+    const auto found = std::find_if(std::begin(kEntries), std::end(kEntries),
+                                    [&key](const Entry& entry) { return entry.key == key; });
+    if (found == std::end(kEntries)) {
+      out.report.unknownKeys.push_back(key);
+      continue;
+    }
+    seen.insert(found->key);
+    // The translation must carry exactly the values English does, each at least once.
+    const auto english = shellPlaceholders(found->english);
+    const auto translated = value.isString() ? shellPlaceholders(value.asString()) : ShellPlaceholders{};
+    if (!value.isString() || !translated.valid || translated != english) {
+      out.report.rejectedKeys.push_back(key);
+      continue;
+    }
+    out.table.set(key, value.asString());
+    ++out.report.translated;
+  }
+  for (const auto& entry : kEntries)
+    if (!seen.contains(entry.key)) out.report.missingKeys.emplace_back(entry.key);
+  return out;
+}
+
+core::Result<LoadedShellStrings> loadShellStrings(const std::filesystem::path& file) {
+  constexpr std::uint64_t kLimit = 4U * 1024U * 1024U;
+  auto text = core::readTextFileLimited(file, kLimit);
+  if (!text) return core::failure<LoadedShellStrings>(text.error().code, text.error().message,
+                                                       file.string());
+  auto loaded = parseShellStrings(text.value());
+  if (!loaded) return core::failure<LoadedShellStrings>(loaded.error().code, loaded.error().message,
+                                                         file.string());
+  return loaded;
+}
+
+const std::vector<ShellLanguage>& shellLanguages() {
+  // Each name is written in its own language and script; see the header.
+  static const std::vector<ShellLanguage> languages{{"en", "English"}, {"ko", "\uD55C\uAD6D\uC5B4"}};
+  return languages;
+}
+
+std::string_view shellLanguageFor(std::string_view tag) noexcept {
+  const auto base = tag.substr(0U, std::min(tag.find('-'), tag.find('_')));
+  for (const auto& language : shellLanguages()) {
+    if (base.size() != language.code.size()) continue;
+    if (std::equal(base.begin(), base.end(), language.code.begin(), [](char a, char b) {
+          return (a >= 'A' && a <= 'Z' ? static_cast<char>(a - 'A' + 'a') : a) == b;
+        }))
+      return language.code;
+  }
+  return shellLanguages().front().code;
 }
 
 ScopedShellStrings::ScopedShellStrings(const ShellStringTable& table) noexcept

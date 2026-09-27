@@ -610,11 +610,15 @@ std::optional<MeterReading> meterReading(const EditorSceneState& state) {
 }
 
 std::string meterDetail(const MeterReading& r) {
-  std::string text = trf(Str::NamedBus, {r.bus});
-  for (std::size_t i = 0U; i < r.channels.size(); ++i)
-    text += (i == 0U ? ": " : ", ") + r.channels[i].spoken + " " + dbfsText(r.channels[i].peakDb);
-  text += r.clipped ? tr(Str::Clipped2) : ".";
-  return text;
+  // The channel readings are a list inside one sentence: "Master bus: L -6.0 dBFS, R -7.1 dBFS."
+  std::string levels;
+  for (std::size_t i = 0U; i < r.channels.size(); ++i) {
+    if (i > 0U) levels += ", ";
+    levels += trf(Str::ChannelLevel, {r.channels[i].spoken, dbfsText(r.channels[i].peakDb)});
+  }
+  if (r.channels.empty())
+    return trf(r.clipped ? Str::NamedBusClipped : Str::NamedBusSentence, {r.bus});
+  return trf(r.clipped ? Str::BusLevelsClipped : Str::BusLevels, {r.bus, levels});
 }
 
 struct MeterGeometry final {

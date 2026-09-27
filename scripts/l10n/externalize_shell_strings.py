@@ -13,11 +13,16 @@ in a constexpr or static const declaration becomes Str::Key (no lookup: a static
 first table it saw), so the compiler points at every use that now needs tr(); fix those by hand.
 
 Usage: scripts/l10n/externalize_shell_strings.py [--check]
-  --check  exit 1 (and change nothing) if any source still has an unexternalized literal.
+  --check  exit 1 (and change nothing) if any source still has an unexternalized literal, if a
+           source glues a looked-up entry to other text with + (a sentence built from fragments:
+           use one entry with {0}, {1} placeholders and trf() instead), or if a translation file
+           in assets/l10n is not complete and exact: every key of the table, no unknown key, and
+           each entry with exactly the English entry's placeholders.
 """
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import sys
@@ -43,7 +48,11 @@ HEADERS = [
     "voice_workspace.hpp",
 ]
 TABLE = ROOT / "libs/seam-native-ui/include/seam/native_ui/design/shell_strings.def"
+TRANSLATIONS = ROOT / "assets/l10n"
 INCLUDE = '#include "seam/native_ui/design/shell_strings.hpp"'
+# A looked-up entry joined to more text with +, on one line: "tr(Str::X) + n" or "s + tr(Str::X)".
+FRAGMENT = re.compile(r"\btrf?\([^()]*\)\s*\+(?![+=])|[^+=]\+\s*(?:std::string\{)?trf?\(")
+PLACEHOLDER = re.compile(r"\{(\d+)\}")
 
 # Text preceding a literal that makes it a key, an identifier or a comparison, never display text.
 NON_DISPLAY_CONTEXT = re.compile(
@@ -149,6 +158,56 @@ def read_table() -> dict[str, str]:
     return table
 
 
+def placeholders(text: str) -> set[str] | None:
+    """The placeholder numbers of a text, or None when a brace is malformed."""
+    stripped = text.replace("{{", "").replace("}}", "")
+    numbers = set(PLACEHOLDER.findall(stripped))
+    if "{" in PLACEHOLDER.sub("", stripped) or "}" in PLACEHOLDER.sub("", stripped):
+        return None
+    return numbers
+
+
+def check_translations(table: dict[str, str]) -> int:
+    english = {key: json.loads(f'"{text}"') for key, text in table.items()}
+    problems = 0
+    for path in sorted(TRANSLATIONS.glob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            print(f"{path.name}: not JSON: {error}")
+            problems += 1
+            continue
+        strings = document.get("strings") if isinstance(document, dict) else None
+        if not isinstance(strings, dict) or not isinstance(document.get("language"), str):
+            print(f"{path.name}: needs a \"language\" and a \"strings\" object")
+            problems += 1
+            continue
+        for key in sorted(set(strings) - set(english)):
+            print(f"{path.name}: unknown key {key}")
+            problems += 1
+        for key in [key for key in english if key not in strings]:
+            print(f"{path.name}: missing key {key}")
+            problems += 1
+        for key, text in strings.items():
+            if key not in english:
+                continue
+            if not isinstance(text, str) or placeholders(text) != placeholders(english[key]):
+                print(f"{path.name}: {key} must carry the placeholders of {english[key]!r}")
+                problems += 1
+    return problems
+
+
+def check_fragments() -> int:
+    problems = 0
+    for path in [DESIGN / name for name in SOURCES]:
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if line.lstrip().startswith("//") or not FRAGMENT.search(line):
+                continue
+            print(f"{path.name}:{number}: sentence built from fragments: {line.strip()}")
+            problems += 1
+    return problems
+
+
 def main() -> int:
     check = "--check" in sys.argv
     table = read_table()
@@ -183,7 +242,8 @@ def main() -> int:
     if check:
         if pending:
             print(f"{pending} display literals are not in the shell string table")
-        return 1 if pending else 0
+        problems = pending + check_fragments() + check_translations(table)
+        return 1 if problems else 0
     lines = [
         "// The EMO/SCENE shell's user-visible English, one entry per distinct text. Generated and",
         "// extended by scripts/l10n/externalize_shell_strings.py; keys are stable translation keys.",
