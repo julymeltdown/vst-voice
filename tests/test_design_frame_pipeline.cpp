@@ -251,12 +251,22 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   CHECK(onlyDynamic(r.layers));
   in.box = false;
 
-  // A selection changes the content layer; the grid stays cached.
+  // A selection changes the content layer; the grid stays cached. Only the notes whose look changed
+  // (and what they overlap) are redrawn, so the damage is theirs, not the surface.
   p.controller.pianoRoll().selectInBox({0.0, 0.0, 400.0, 2000.0});
   r = p.frame(in);
   CHECK(r.identical);
-  CHECK(r.damage.full);
+  CHECK(r.covered);
+  CHECK(!r.damage.full);
+  CHECK(damagedArea(r.damage) < kWidth * kHeight * 0.5);
   CHECK(!r.layers[0]);
+  CHECK(!r.layers[1]);
+  CHECK(r.layers[2]);
+  // Selecting other notes damages the notes that changed on both sides.
+  p.controller.pianoRoll().selectInBox({500.0, 0.0, 200.0, 2000.0});
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(!r.layers[1]);
   CHECK(r.layers[2]);
 
@@ -266,6 +276,7 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   p.controller.pianoRoll().rebuildIndex();
   r = p.frame(in);
   CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(!r.layers[0]);
   CHECK(r.layers[1]);
   CHECK(r.layers[2]);
@@ -273,6 +284,7 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   p.controller.pianoRoll().rebuildIndex();
   r = p.frame(in);
   CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(r.layers[1]);
 
   // Playback over the scrolled view is dynamic-only again.
@@ -525,4 +537,190 @@ TEST_CASE("a recorded layer hashes only its own drawing and replays like direct 
     canvas->flush();      // which here is already layer order
   }
   CHECK(replayed.checksum() == direct.checksum());
+}
+
+TEST_CASE("a large glow blurred at half resolution keeps the full-resolution shadow's energy") {
+  using native_ui::paint::Path;
+  using native_ui::paint::StrokeStyle;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  constexpr double kScale = 2.0;
+  constexpr std::uint32_t kW = 700U;
+  constexpr std::uint32_t kH = 300U;
+  const native_ui::Color background{11, 10, 12, 255};
+  // A pitch-curve-like stroke long enough to take the half-resolution path.
+  Path curve;
+  curve.moveTo({20.0, 80.0});
+  for (int i = 1; i <= 64; ++i)
+    curve.lineTo({20.0 + i * 5.0, 80.0 + 40.0 * std::sin(i * 0.3)});
+  const auto draw = [&](PixelSurface& surface) {
+    surface.clear(background);
+    auto c = native_ui::paint::makeCanvas(surface, kScale);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    c->save();
+    c->setGlow(native_ui::Color{209, 20, 58, 230}, 7.0);
+    c->stroke(curve, native_ui::Color{242, 238, 234, 255}, StrokeStyle{2.0});
+    c->restore();
+    c->flush();
+  };
+  PixelSurface half{kW, kH};
+  PixelSurface full{kW, kH};
+  draw(half);
+  {
+    const native_ui::paint::ScopedFullResolutionGlow direct;
+    draw(full);
+  }
+  // The glow's energy: red above the background, summed.
+  const auto energy = [&](const PixelSurface& s) {
+    double total = 0.0;
+    for (const auto p : s.pixels()) total += std::max(0.0, ((p >> 16U) & 0xFFU) - 11.0);
+    return total;
+  };
+  const auto halfEnergy = energy(half);
+  const auto fullEnergy = energy(full);
+  std::cout << "[glow-energy] half=" << halfEnergy << " full=" << fullEnergy << '\n';
+  CHECK(fullEnergy > 0.0);
+  CHECK(std::abs(halfEnergy - fullEnergy) <= 0.10 * fullEnergy);
+  double difference = 0.0;
+  for (std::size_t i = 0U; i < half.pixels().size(); ++i)
+    difference += std::abs(static_cast<double>((half.pixels()[i] >> 16U) & 0xFFU) -
+                           static_cast<double>((full.pixels()[i] >> 16U) & 0xFFU));
+  const auto meanDifference = difference / static_cast<double>(half.pixels().size());
+  std::cout << "[glow-mean-red-difference] " << meanDifference << '\n';
+  CHECK(meanDifference < 2.0);
+}
+
+TEST_CASE("a background drawn in parallel bands equals the same bands drawn one after another") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    Pipeline p{mode, 2.0};
+    const auto compose = [&](bool serial) {
+      CHECK(p.reference.prepareFrame(p.controller, kWidth, kHeight));
+      p.reference.invalidateLayers();
+      PixelSurface surface{p.retained.width(), p.retained.height()};
+      RasterCanvas canvas{surface, p.scale};
+      if (serial) {
+        // A live text capture keeps every band on the calling thread.
+        const native_ui::paint::ScopedTextCapture capture;
+        CHECK(p.reference.paint(canvas, p.controller, p.scene({}), time::Tick{0}));
+      } else {
+        CHECK(p.reference.paint(canvas, p.controller, p.scene({}), time::Tick{0}));
+      }
+      return surface.checksum();
+    };
+    const auto serial = compose(true);
+    for (int run = 0; run < 4; ++run) CHECK(compose(false) == serial);
+  }
+}
+
+TEST_CASE("a small glow cast from a cached sprite keeps the shadow's energy and its first drawing") {
+  using native_ui::paint::Path;
+  using native_ui::paint::StrokeStyle;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  constexpr double kScale = 2.0;
+  constexpr std::uint32_t kW = 900U;
+  constexpr std::uint32_t kH = 240U;
+  const native_ui::Color background{11, 10, 12, 255};
+  // Note outlines as the score draws them: small rounded rectangles at whole, half and odd
+  // fractional places, two of the same size, plus a small glowing fill.
+  const auto draw = [&](PixelSurface& surface, double shift) {
+    surface.clear(background);
+    auto c = native_ui::paint::makeCanvas(surface, kScale);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    c->save();
+    c->clipRect({0.0, 0.0, 450.0, 120.0});
+    for (int i = 0; i < 6; ++i) {
+      const ui::Rect note{20.0 + i * 70.0 + shift + (i % 3) * 0.37, 30.0 + (i % 2) * 20.0,
+                          i < 2 ? 48.0 : 30.0 + i * 5.0, 14.0};
+      c->save();
+      c->setGlow(native_ui::Color{214, 196, 255, 140}, 5.0);
+      c->stroke(Path::roundedRect(note, 5.0), native_ui::Color{214, 196, 255, 204}, StrokeStyle{1.1});
+      c->restore();
+    }
+    c->save();
+    c->setGlow(native_ui::Color{209, 20, 58, 230}, 7.0);
+    c->fill(Path::circle({380.0 + shift, 95.0}, 6.0), native_ui::Color{242, 238, 234, 255});
+    c->restore();
+    c->restore();
+    c->flush();
+  };
+  PixelSurface cold{kW, kH};
+  PixelSurface warm{kW, kH};
+  PixelSurface shadow{kW, kH};
+  draw(cold, 0.0);
+  // Other shapes in between, so the second drawing takes sprites another drawing may have made.
+  PixelSurface other{kW, kH};
+  draw(other, 0.25);
+  draw(warm, 0.0);
+  CHECK(cold.checksum() == warm.checksum());
+  {
+    const native_ui::paint::ScopedFullResolutionGlow direct;
+    draw(shadow, 0.0);
+  }
+  const auto energy = [&](const PixelSurface& s) {
+    double total = 0.0;
+    for (const auto p : s.pixels()) total += std::max(0.0, ((p >> 16U) & 0xFFU) - 11.0);
+    return total;
+  };
+  const auto spriteEnergy = energy(cold);
+  const auto shadowEnergy = energy(shadow);
+  std::cout << "[small-glow-energy] sprite=" << spriteEnergy << " shadow=" << shadowEnergy << '\n';
+  CHECK(shadowEnergy > 0.0);
+  CHECK(std::abs(spriteEnergy - shadowEnergy) <= 0.10 * shadowEnergy);
+  double difference = 0.0;
+  for (std::size_t i = 0U; i < cold.pixels().size(); ++i)
+    difference += std::abs(static_cast<double>((cold.pixels()[i] >> 16U) & 0xFFU) -
+                           static_cast<double>((shadow.pixels()[i] >> 16U) & 0xFFU));
+  const auto meanDifference = difference / static_cast<double>(cold.pixels().size());
+  std::cout << "[small-glow-mean-red-difference] " << meanDifference << '\n';
+  CHECK(meanDifference < 2.0);
+  CHECK(native_ui::paint::glowSpriteCacheBytes() > 0U);
+}
+
+TEST_CASE("a sprite glow falls off like the shadow and ends where the shadow does") {
+  using native_ui::paint::Path;
+  using native_ui::paint::StrokeStyle;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // Upward from the top edge of a glowing fill and of a glowing outline, at 1x and 2x.
+  for (const bool outline : {false, true}) {
+    for (const double scale : {1.0, 2.0}) {
+      const auto draw = [&](PixelSurface& s) {
+        s.clear({0, 0, 0, 255});
+        auto c = native_ui::paint::makeCanvas(s, scale);
+        CHECK(c != nullptr);
+        if (c == nullptr) return;
+        c->save();
+        const auto shape = Path::roundedRect({40.0, 40.0, 20.0, 12.0}, outline ? 5.0 : 4.0);
+        if (outline) {
+          c->setGlow(native_ui::Color{255, 0, 0, 140}, 5.0);
+          c->stroke(shape, native_ui::Color{255, 0, 0, 204}, StrokeStyle{1.1});
+        } else {
+          c->setGlow(native_ui::Color{255, 0, 0, 191}, 6.0);
+          c->fill(shape, native_ui::Color{255, 0, 0, 255});
+        }
+        c->restore();
+        c->flush();
+      };
+      const auto n = static_cast<std::uint32_t>(100.0 * scale);
+      PixelSurface sprite{n, n};
+      PixelSurface shadow{n, n};
+      draw(sprite);
+      {
+        const native_ui::paint::ScopedFullResolutionGlow direct;
+        draw(shadow);
+      }
+      const auto x = static_cast<std::uint32_t>(50.0 * scale);
+      int worst = 0;
+      bool beyond = false;  // the sprite visibly lights a pixel the shadow leaves dark
+      for (auto y = static_cast<std::uint32_t>(20.0 * scale); y < static_cast<std::uint32_t>(40.0 * scale); ++y) {
+        const auto a = static_cast<int>((sprite.pixels()[y * n + x] >> 16U) & 0xFFU);
+        const auto b = static_cast<int>((shadow.pixels()[y * n + x] >> 16U) & 0xFFU);
+        worst = std::max(worst, std::abs(a - b));
+        beyond = beyond || (b == 0 && a > 2);
+      }
+      CHECK(worst <= 4);
+      CHECK(!beyond);
+    }
+  }
 }

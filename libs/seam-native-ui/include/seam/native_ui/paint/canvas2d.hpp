@@ -226,6 +226,40 @@ private:
 };
 
 [[nodiscard]] bool vectorBackendAvailable() noexcept;
+
+// Bytes held by the backend's shared cache of small glow sprites (bounded, rebuilt on use).
+[[nodiscard]] std::size_t glowSpriteCacheBytes() noexcept;
+
+// Test and evidence hook: while one is alive on this thread, every glow is drawn at full resolution
+// (the backend's own shadow), so a test can measure the half-resolution glow against it.
+class ScopedFullResolutionGlow final {
+public:
+  ScopedFullResolutionGlow() noexcept;
+  ~ScopedFullResolutionGlow();
+  ScopedFullResolutionGlow(const ScopedFullResolutionGlow&) = delete;
+  ScopedFullResolutionGlow& operator=(const ScopedFullResolutionGlow&) = delete;
+  [[nodiscard]] static bool active() noexcept;
+
+private:
+  bool previous_{false};
+};
+
+// While one is alive on this thread, canvases made on it may draw at the same time as canvases on
+// other threads (each on its own surface). CoreGraphics' own drawing of translucent solid colours
+// is not safe to run on several threads at once (its anti-aliased edges come out differently), so
+// such a canvas draws them as opaque coverage in an alpha-only mask, which is, and composites the
+// colour itself. Gradients, images, text and alpha-only masks are drawn as usual.
+class ScopedConcurrentCanvas final {
+public:
+  ScopedConcurrentCanvas() noexcept;
+  ~ScopedConcurrentCanvas();
+  ScopedConcurrentCanvas(const ScopedConcurrentCanvas&) = delete;
+  ScopedConcurrentCanvas& operator=(const ScopedConcurrentCanvas&) = delete;
+  [[nodiscard]] static bool active() noexcept;
+
+private:
+  bool previous_{false};
+};
 // Contents/Resources of the bundle whose binary contains this code (the app, or the plug-in inside
 // a host), or empty when it cannot be determined.
 [[nodiscard]] std::filesystem::path codeBundleResources();
