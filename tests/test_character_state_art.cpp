@@ -578,6 +578,19 @@ seam::ui::Rect grown(seam::ui::Rect r, double by) {
   return {r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by};
 }
 
+// The largest per-channel change between two frames inside a rectangle.
+int largestChange(const PixelSurface& a, const PixelSurface& b, seam::ui::Rect r) {
+  int worst = 0;
+  for (auto y = std::max(0.0, std::floor(r.y)); y < std::min<double>(a.height(), r.bottom()); y += 1.0)
+    for (auto x = std::max(0.0, std::floor(r.x)); x < std::min<double>(a.width(), r.right()); x += 1.0) {
+      const auto i = static_cast<std::size_t>(y) * a.width() + static_cast<std::size_t>(x);
+      for (const auto shift : {0U, 8U, 16U})
+        worst = std::max(worst, std::abs(static_cast<int>((a.pixels()[i] >> shift) & 255U) -
+                                         static_cast<int>((b.pixels()[i] >> shift) & 255U)));
+    }
+  return worst;
+}
+
 PixelSurface paintScene(SplashFixture& f, const seam::native_ui::EditorSceneState& state,
                         double width = 1600.0, double height = 900.0) {
   f.controller.resize(width, height);
@@ -612,4 +625,42 @@ TEST_CASE("High Contrast keeps the singer ring's glow off the card around it") {
   CHECK(spill(Contrast::Standard) > 0U);
   // ...and High Contrast draws none there.
   CHECK(spill(Contrast::High) == 0U);
+}
+
+TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, never over them") {
+  using seam::native_ui::RenderStatusState;
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  // The drawn expression lane carries the lane's playhead, in the dynamic layer.
+  CHECK(f.controller.openExpressionLane(seam::ui::ExpressionChannel::Breathiness).hasValue());
+  auto state = f.controller.sceneState();
+  state.renderStatus.state = RenderStatusState::Failed;
+  state.renderStatus.diagnostic = "Voicebank cannot cover the phoneme sequence";
+  state.diagnostics.push_back(seam::authoring::Diagnostic{.code = "RENDER_FAILED"});
+  state.playheadPixel = -1.0;
+  const auto without = paintScene(f, state);
+  const auto error = f.shell.lastFrameErrorToast();
+  // The toast's node, published from the same scene the frame painted.
+  f.shell.rebuildSemantics(f.controller, state);
+  std::optional<seam::ui::Rect> diagnostics;
+  for (const auto& node : f.shell.accessibilityTree().root().children)
+    if (node.id == "shell.diagnostics.toast") diagnostics = node.bounds;
+  CHECK(error.has_value());
+  CHECK(diagnostics.has_value());
+  if (!error || !diagnostics) return;
+  // A playhead through both toasts, in the same (cached) shell: the partial frame recomposes the
+  // dynamic layer, where the playhead is.
+  const auto x = std::floor(error->x + 60.0) + 0.5;
+  CHECK(x < diagnostics->right());
+  state.playheadPixel = x - f.shell.layout().grid.x;
+  const auto with = paintScene(f, state);
+  // The playhead is drawn: the lane's plot column above the toasts changed...
+  const auto plot = f.shell.layout().laneTimePlot;
+  CHECK(plot.y < error->y - 4.0);
+  const seam::ui::Rect above{x - 3.0, plot.y, 6.0, error->y - 4.0 - plot.y};
+  CHECK(largestChange(without, with, above) > 40);
+  // ...and neither toast is drawn over: at most the few levels its 97% card lets through from
+  // underneath, never the line itself.
+  CHECK(largestChange(without, with, *diagnostics) <= 8);
+  CHECK(largestChange(without, with, *error) <= 8);
 }

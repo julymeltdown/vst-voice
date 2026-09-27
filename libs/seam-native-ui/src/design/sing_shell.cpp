@@ -2754,6 +2754,9 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     if (state.diagnostics.size() > 1U)
       title += " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More);
     const auto toast = diagnosticsToastBounds();
+    // The toast stands over the lane, whose playhead is dynamic: it is dynamic too, recorded after
+    // that playhead, so a moving playhead never draws across it.
+    const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "diagnostics-toast"};
     c.save();
     c.setGlow(withAlpha(tone, 0.5), 10.0);
     c.fill(Path::roundedRect(toast, 8.0), withAlpha(t.color.surfaceRaised, 0.97));
@@ -2857,6 +2860,8 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                                         : std::optional<ui::Rect>{diagnosticsToastBounds()});
   if (errorToast_.has_value()) {
     const auto toast = *errorToast_;
+    // Over the lane like the diagnostics toast, and so above the lane's playhead for the same reason.
+    const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "error-toast"};
     const auto* package = characterPortrait(CharacterState::Error);
     const auto* look = lookPortrait();
     const auto hash = paint::ContentHash{}
