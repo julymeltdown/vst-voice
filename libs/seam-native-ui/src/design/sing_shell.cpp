@@ -3582,10 +3582,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = "Audio settings",
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
-  add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
-                   .name = "Switch to the classic editor", .bounds = l.classicToggle,
-                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                   .description = "Command-Shift-Space returns to this design"});
+  // The tool strip (track chip and Classic toggle) is painted only above the SING score; a covering
+  // workspace paints its own body there, so it publishes neither. Command-Shift-Space still
+  // switches to the classic editor from every workspace.
+  if (workspace_ == Workspace::Sing) {
+    add(SemanticNode{.id = "shell.track", .role = SemanticRole::Status, .name = "Track",
+                     .value = state.inspector.valid && !state.inspector.name.empty()
+                                  ? state.inspector.name
+                                  : std::string{"No track"},
+                     .bounds = l.trackLabel});
+    add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
+                     .name = "Switch to the classic editor", .bounds = l.classicToggle,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = "Command-Shift-Space returns to this design"});
+  }
 
   // Timeline and the notes visible in the grid, in shell coordinates.
   if (const auto* timeline = findLegacy("timeline"); timeline != nullptr) {
@@ -3695,7 +3705,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       .enabled = laneEditable_,
       .actions = {SemanticAction::SetFocus},
       .description = laneEditable_ ? "Click to add a point, drag to move, Escape cancels a drag"
-                                   : "Select a channel tab to edit its curve"});
+                                   : "Select a channel to draw its curve"});
 
   // Singer rack.
   // Compact presentations publish the inspector button; its contents follow it in the tree (so Tab

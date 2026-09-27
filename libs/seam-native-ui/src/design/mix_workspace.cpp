@@ -58,14 +58,15 @@ constexpr double kPanDragPoints = 240.0;
 // The arrangement overview above the strips: a ruler of bar numbers over one lane per track.
 constexpr double kArrangementPad = 6.0;
 constexpr double kRuler = 16.0;
-constexpr double kLaneTall = 22.0;
+// A lane at its preferred height gives each region a 24-point target (the lane less its insets).
+constexpr double kLaneTall = 28.0;
 // Lanes at least this tall leave regular strips below them; thinner lanes (down to kLaneThin)
 // share the body with compact strips; below that the overview hides and the strips keep the body.
 constexpr double kLaneRegular = 10.0;
 constexpr double kLaneThin = 4.0;
 constexpr double kLaneNames = 76.0;
-// A compact strip's controls end 110 points below its top.
-constexpr double kCompactStripHeight = 112.0;
+// A compact strip's controls end 112 points below its top.
+constexpr double kCompactStripHeight = 114.0;
 
 // The master meter's scale, in dBFS.
 constexpr double kMeterFloorDb = -60.0;
@@ -278,12 +279,13 @@ StripGeometry stripGeometry(ui::Rect s, bool compact) {
     // the output route.
     g.name = {ix, s.y + 8.0, iw, 16.0};
     g.pan = {ix, s.y + 28.0, 30.0, 30.0};
-    g.solo = {ix + iw - 22.0, s.y + 31.0, 22.0, 24.0};
-    g.mute = {g.solo.x - 24.0, s.y + 31.0, 22.0, 24.0};
+    // Every control is at least a 24-point target.
+    g.solo = {ix + iw - 24.0, s.y + 31.0, 24.0, 24.0};
+    g.mute = {g.solo.x - 26.0, s.y + 31.0, 24.0, 24.0};
     g.panValue = {g.pan.right() + 4.0, s.y + 28.0, g.mute.x - 4.0 - (g.pan.right() + 4.0), 30.0};
-    g.faderValue = {ix + iw - 50.0, s.y + 62.0, 50.0, 22.0};
-    g.fader = {ix, s.y + 62.0, g.faderValue.x - 4.0 - ix, 22.0};
-    g.route = {ix, s.y + 88.0, iw, 22.0};
+    g.faderValue = {ix + iw - 50.0, s.y + 61.0, 50.0, 24.0};
+    g.fader = {ix, s.y + 61.0, g.faderValue.x - 4.0 - ix, 24.0};
+    g.route = {ix, s.y + 88.0, iw, 24.0};
     g.horizontalFader = true;
     return g;
   }
@@ -311,9 +313,15 @@ ui::Rect arrangementRect(ui::Rect body, std::size_t count) {
   const auto preferred = fixed + n * kLaneTall;
   const auto regularRoom = body.height - kScrollBand - kRegularStripHeight - kGap;
   const auto compactRoom = body.height - kScrollBand - kCompactStripHeight - kGap;
+  const auto cap = std::max(fixed + n * kLaneRegular, body.height * 0.4);
   double height = 0.0;
-  if (regularRoom >= fixed + n * kLaneRegular)
-    height = std::min({preferred, regularRoom, std::max(fixed + n * kLaneRegular, body.height * 0.4)});
+  // Lanes keep their preferred height, where each region is a 24-point target, for as long as any
+  // strip form fits under them: regular strips first, then compact ones. Only when neither does
+  // do the lanes compress, down to the thin overview.
+  if (std::min(regularRoom, cap) >= preferred || std::min(compactRoom, cap) >= preferred)
+    height = preferred;
+  else if (regularRoom >= fixed + n * kLaneRegular)
+    height = std::min({preferred, regularRoom, cap});
   else if (compactRoom >= fixed + n * kLaneThin)
     height = std::min(preferred, compactRoom);
   height = std::floor(height);

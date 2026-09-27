@@ -664,7 +664,8 @@ std::vector<OverlayControl> TimeMapOverlay::controls(const NativeEditorControlle
   constexpr double kActionHeight = 26.0;
   const auto actionsHeight = 2.0 * (kActionHeight + 8.0) - 8.0;
   const auto actionsTop = panel.bottom() - 12.0 - actionsHeight;
-  constexpr double kRowHeight = 20.0;
+  // Each row is a 24-point hit target with a 2-point gap.
+  constexpr double kRowHeight = 26.0;
   // The prompt (or the event field) sits above the rows, never under them.
   const auto rowsTop = panel.y + (editing ? 76.0 : 62.0);
   const auto capacity = actionsTop > rowsTop
@@ -989,7 +990,7 @@ public:
     // ever drawn off screen.
     const auto width = std::min(slot.width, std::min(std::max(260.0, slot.width * 0.5), 360.0));
     const auto height = std::min(
-        slot.height, 26.0 + static_cast<double>(state.overlapDetail->members.size()) * 20.0 + 8.0);
+        slot.height, 26.0 + static_cast<double>(state.overlapDetail->members.size()) * 26.0 + 8.0);
     if (width < kMinimumPanelWidth || height < 44.0) return {};
     auto anchor = badge(controller, state, layout);
     if (anchor.width <= 0.0) anchor = ui::Rect{slot.x, slot.y, 0.0, 0.0};
@@ -1011,8 +1012,8 @@ public:
     for (std::size_t i = 0U; i < state.overlapDetail->members.size(); ++i) {
       const auto& member = state.overlapDetail->members[i];
       const auto lyric = member.lyric.empty() ? std::string{"(no lyric)"} : member.lyric;
-      const ui::Rect row{panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 20.0,
-                         std::max(1.0, panel.width - 24.0), 18.0};
+      const ui::Rect row{panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 26.0,
+                         std::max(1.0, panel.width - 24.0), 24.0};
       // A row that would end below the card is not laid out at all: its node and hit rectangle
       // would otherwise lie outside the popover the creator sees.
       if (row.bottom() > panel.bottom() - 4.0) break;
@@ -1395,10 +1396,12 @@ ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& v
   const auto actionsTop = panel.bottom() - 10.0 - (compact ? actionHeight : 2.0 * actionHeight + 6.0);
   const auto cells = grid(panel, actionsTop, actionHeight, 6U, compact ? 6U : 3U, 6.0);
   for (std::size_t i = 0U; i < cells.size() && i < g.actions.size(); ++i) g.actions[i] = cells[i];
-  g.status = {panel.x + kPanelInset, panel.y + 42.0, inner, compact ? 16.0 : 34.0};
+  // The status line also carries the row pager's buttons, so even compact it keeps them at the
+  // 24-point minimum, as it does the rows.
+  g.status = {panel.x + kPanelInset, panel.y + 42.0, inner, compact ? 24.0 : 34.0};
   const auto top = g.status.bottom() + 6.0;
   const auto bottom = actionsTop - 8.0;
-  const auto rowHeight = compact ? 18.0 : 24.0;
+  const auto rowHeight = 24.0;
   const auto rowStride = rowHeight + 2.0;
   auto rowsBottom = bottom;
   if (view.dynamicsPlot) {
