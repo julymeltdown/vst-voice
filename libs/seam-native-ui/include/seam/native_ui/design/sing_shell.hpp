@@ -478,6 +478,9 @@ private:
   // Shell focus remembers the controller's focus at the moment it was taken; once the controller's
   // focus moves, the shell's is dropped.
   void takeSemanticFocus(NativeEditorController& controller, std::string id);
+  // After the About sheet closes (Close, the host, or setAboutOpen(false)), focus returns to the
+  // control that had it when the sheet opened, exactly as Escape returns it.
+  void returnFocusToOverlayOpener(NativeEditorController& controller);
   // Rebuilds the controller's tree and the shell's from the current state and layout.
   void refreshSemantics(NativeEditorController& controller);
   // Controller controls the shell shows at its own rectangles (not notes, the timeline or vibrato

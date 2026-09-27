@@ -953,8 +953,7 @@ core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, b
   if (!open) {
     if (!aboutOpen_) return core::success();
     aboutOpen_ = false;
-    semanticFocus_.clear();
-    refreshSemantics(controller);
+    returnFocusToOverlayOpener(controller);
     repaint();
     return core::success();
   }
@@ -3099,8 +3098,20 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   }
   // The About sheet's one control is Close.
-  if (overlay.kind() == OverlayKind::About && result) aboutOpen_ = false;
+  if (overlay.kind() == OverlayKind::About && result && aboutOpen_) {
+    aboutOpen_ = false;
+    returnFocusToOverlayOpener(controller);
+  }
   return result;
+}
+
+void SingShell::returnFocusToOverlayOpener(NativeEditorController& controller) {
+  const auto opener = std::exchange(overlayOpener_, std::string{});
+  refreshSemantics(controller);
+  if (!opener.empty() && semantics_.publishes(opener))
+    takeSemanticFocus(controller, opener);
+  else
+    semanticFocus_.clear();
 }
 
 void SingShell::cancelCoveredLyric(NativeEditorController& controller) {

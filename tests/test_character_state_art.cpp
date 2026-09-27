@@ -601,6 +601,13 @@ PixelSurface paintScene(SplashFixture& f, const seam::native_ui::EditorSceneStat
   return surface;
 }
 
+std::string focusedId(SplashFixture& f) {
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* node = f.shell.accessibilityTree().focusedNode();
+  return node != nullptr ? node->id : std::string{};
+}
+
 }  // namespace
 
 TEST_CASE("High Contrast keeps the singer ring's glow off the card around it") {
@@ -663,6 +670,43 @@ TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, ne
   // underneath, never the line itself.
   CHECK(largestChange(without, with, *diagnostics) <= 8);
   CHECK(largestChange(without, with, *error) <= 8);
+}
+
+TEST_CASE("About's Close returns the keyboard to the control that opened it, as Escape does") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  CHECK(f.frame(1280.0, 800.0));
+  const std::string opener{"shell.workspace.sing"};
+  for (const auto way : {"close button", "pointer", "host", "escape"}) {
+    CHECK(f.shell.dispatchSemantic(f.controller, opener, seam::native_ui::SemanticAction::SetFocus)
+              .hasValue());
+    CHECK(focusedId(f) == opener);
+    CHECK(f.shell.setAboutOpen(f.controller, true).hasValue());
+    CHECK(f.frame(1280.0, 800.0));
+    CHECK(focusedId(f) != opener);
+    const std::string_view how{way};
+    if (how == "close button") {
+      CHECK(f.shell.dispatchSemantic(f.controller, seam::native_ui::design::kAboutCloseId,
+                                     seam::native_ui::SemanticAction::Activate)
+                .hasValue());
+    } else if (how == "pointer") {
+      const auto close = f.nodeBounds(seam::native_ui::design::kAboutCloseId);
+      CHECK(close.has_value());
+      if (!close) continue;
+      const seam::native_ui::PointerEvent press{
+          .position = {close->x + close->width * 0.5, close->y + close->height * 0.5},
+          .button = seam::native_ui::PointerButton::Left};
+      CHECK(f.shell.pointerDown(f.controller, press).hasValue());
+      CHECK(f.shell.pointerUp(f.controller, press).hasValue());
+    } else if (how == "host") {
+      CHECK(f.shell.setAboutOpen(f.controller, false).hasValue());
+    } else {
+      CHECK(f.shell.handleShellKey(f.controller,
+                                   seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::Escape}));
+    }
+    CHECK(!f.shell.aboutOpen());
+    if (focusedId(f) != opener) throw seam::test::Failure{std::string{"focus lost after "} + way};
+  }
 }
 
 TEST_CASE("the About sheet fits the minimum window, and a refusal would name the About sheet") {
