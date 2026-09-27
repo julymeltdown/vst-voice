@@ -181,8 +181,8 @@ TEST_CASE("native retained phoneme review selects explicitly applies and closes 
        }}};
   controller.resize(480.0, 320.0);
   const seam::native_ui::EditorSceneLayout layout;
-  const auto open = layout.phonemeReviewOpenBounds(480.0, 320.0);
-  CHECK(controller.pointerDown({.position = {open.x + 5.0, open.y + 5.0}, .button = seam::native_ui::PointerButton::Left}));
+  // The SING shell's lane Review button opens the review through the controller.
+  CHECK(controller.openPhonemeReview());
   CHECK(controller.sceneState().phonemeReview.visible);
   CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
   CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Tab}));
@@ -782,16 +782,8 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   CHECK(selectedReport == 1U);
 
   const auto supportState = controller.sceneState();
-  const auto editorRight = 960.0 - seam::native_ui::EditorSceneLayout{}.characterDockWidth;
-  const auto firstRow = seam::native_ui::EditorSceneLayout{}.supportItemBounds(
-      editorRight, 960.0, 0U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{firstRow.x + firstRow.width * 0.5,
-                                  firstRow.y + firstRow.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(controller.dispatchAccessibility(
+      "support.item.0", seam::native_ui::SemanticAction::Activate));
   CHECK(selectedReport == 0U);
   CHECK(supportState.recoverySupport.reportCount == 2U);
 
@@ -2454,41 +2446,30 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
+  // The SING shell's transport buttons run these controller actions; a ruler press still reaches
+  // the controller as a pointer (the shell forwards its ruler into the hosted grid).
+  const auto activate = [&controller](std::string_view id) {
+    controller.rebuildAccessibilityTree();
+    return controller.dispatchAccessibility(id, seam::native_ui::SemanticAction::Activate);
+  };
+  const auto ruler = [&controller](double x, bool shift) {
+    return controller.pointerDown(seam::native_ui::PointerEvent{
+        .position = seam::ui::Point{x, 80.0},
+        .button = seam::native_ui::PointerButton::Left,
+        .modifiers = {.shift = shift},
+        .clickCount = 1,
+    });
+  };
 
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.transport"));
   CHECK(playing);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{470.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.stop"));
   CHECK(stopRequests == 1U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{240.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(ruler(240.0, false));
   CHECK(seeks.size() == 1U);
   CHECK(seeks.front() > seam::time::Tick{0});
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{420.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {.shift = true},
-      .clickCount = 1,
-  }));
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{620.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {.shift = true},
-      .clickCount = 1,
-  }));
+  CHECK(ruler(420.0, true));
+  CHECK(ruler(620.0, true));
   CHECK(loops.size() == 1U);
   CHECK(loops.front().first < loops.front().second);
   CHECK(controller.keyDown(seam::native_ui::KeyEvent{
@@ -2498,21 +2479,10 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
   }));
   CHECK(loopToggles == 1U);
   controller.resize(1440.0, 900.0);
-  controller.rebuildAccessibilityTree();
-  CHECK(controller.dispatchAccessibility(
-      "toolbar.loop", seam::native_ui::SemanticAction::Activate));
+  CHECK(activate("toolbar.loop"));
   CHECK(loopToggles == 2U);
   CHECK(controller.sceneState().loopEnabled);
-  const auto wideLayout = seam::native_ui::EditorSceneLayout{};
-  const auto wideLoop = wideLayout.loopBoundsForWidth(1440.0, false);
-  CHECK(wideLoop.width > 0.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{wideLoop.x + wideLoop.width * 0.5,
-                                  wideLoop.y + wideLoop.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.loop"));
   CHECK(loopToggles == 3U);
   CHECK(!controller.sceneState().loopEnabled);
 
@@ -2537,18 +2507,14 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
   }));
   CHECK(retryRequests == 1U);
 
+  // Without an audible render the transport refuses and play state does not move.
   controller.setRenderStatus(seam::native_ui::RenderStatusView{
       .state = seam::native_ui::RenderStatusState::Failed,
       .requestedRevision = 4U,
       .hasAudibleAudio = false,
   });
   playing = false;
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(!activate("toolbar.transport"));
   CHECK(!playing);
 
   controller.resize(480.0, 320.0);
@@ -2558,28 +2524,9 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
       .audibleRevision = 4U,
       .hasAudibleAudio = true,
   });
-  const auto narrowLayout = seam::native_ui::EditorSceneLayout{};
-  const auto narrowTransport = narrowLayout.transportBoundsForWidth(480.0);
-  const auto narrowStop = narrowLayout.stopBoundsForWidth(480.0);
-  const auto narrowTempo = narrowLayout.bpmBoundsForWidth(480.0);
-  CHECK(narrowTransport.right() <= 480.0);
-  CHECK(narrowStop.right() <= 480.0);
-  CHECK(narrowTempo.right() <= 480.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{narrowTransport.x + narrowTransport.width * 0.5,
-                                  narrowTransport.y + narrowTransport.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.transport"));
   CHECK(playing);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{narrowStop.x + narrowStop.width * 0.5,
-                                  narrowStop.y + narrowStop.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.stop"));
   CHECK(stopRequests == 2U);
 }
 
@@ -2603,23 +2550,12 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .hasAudibleAudio = true,
   });
 
-  const auto result = controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
-  CHECK(!result);
-  CHECK(result.error().code == seam::core::ErrorCode::Conflict);
-  CHECK(requests == 1U);
-  CHECK(!controller.playing());
-
   controller.rebuildAccessibilityTree();
   const auto semanticResult = controller.dispatchAccessibility(
       "toolbar.transport", seam::native_ui::SemanticAction::Activate);
   CHECK(!semanticResult);
   CHECK(semanticResult.error().code == seam::core::ErrorCode::Conflict);
-  CHECK(requests == 2U);
+  CHECK(requests == 1U);
   CHECK(!controller.playing());
 
   seam::native_ui::NativeEditorController stopController{
@@ -2638,13 +2574,9 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
-  const auto stopResult = stopController.pointerDown(
-      seam::native_ui::PointerEvent{
-          .position = seam::ui::Point{470.0, 25.0},
-          .button = seam::native_ui::PointerButton::Left,
-          .modifiers = {},
-          .clickCount = 1,
-      });
+  stopController.rebuildAccessibilityTree();
+  const auto stopResult = stopController.dispatchAccessibility(
+      "toolbar.stop", seam::native_ui::SemanticAction::Activate);
   CHECK(!stopResult);
   CHECK(stopResult.error().code == seam::core::ErrorCode::Conflict);
   CHECK(stopController.playing());
@@ -2686,17 +2618,9 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
-  const auto loopBounds =
-      seam::native_ui::EditorSceneLayout{}.loopBoundsForWidth(
-          1440.0, false);
-  const auto loopResult = loopController.pointerDown(
-      seam::native_ui::PointerEvent{
-          .position = seam::ui::Point{loopBounds.x + loopBounds.width * 0.5,
-                                      loopBounds.y + loopBounds.height * 0.5},
-          .button = seam::native_ui::PointerButton::Left,
-          .modifiers = {},
-          .clickCount = 1,
-      });
+  loopController.rebuildAccessibilityTree();
+  const auto loopResult = loopController.dispatchAccessibility(
+      "toolbar.loop", seam::native_ui::SemanticAction::Activate);
   CHECK(!loopResult);
   CHECK(loopResult.error().code == seam::core::ErrorCode::Conflict);
   CHECK(!loopController.sceneState().loopEnabled);
@@ -2714,13 +2638,6 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
           },
       }};
   controller.resize(1440.0, 900.0);
-  const auto layout = seam::native_ui::EditorSceneLayout{};
-  const auto bounds = layout.bounceTimingBoundsForWidth(1440.0, false);
-  CHECK(bounds.width > 0.0);
-  // The control never covers the loop control it follows, or the project header.
-  const auto loop = layout.loopBoundsForWidth(1440.0, false);
-  CHECK(loop.width > 0.0);
-  CHECK(bounds.x >= loop.right());
 
   CHECK(controller.sceneState().bounceTimingAvailable);
   CHECK(!controller.sceneState().bounceFollowHost);
@@ -2731,13 +2648,8 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
   CHECK(requests.front());
   CHECK(controller.sceneState().bounceFollowHost);
 
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
-                                  bounds.y + bounds.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  // The SING shell's EXPORT bounce button toggles through the same controller command.
+  CHECK(controller.toggleBounceTiming());
   CHECK(requests.size() == 2U);
   CHECK(!requests.back());
   CHECK(!controller.sceneState().bounceFollowHost);
@@ -2752,13 +2664,7 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
           },
       }};
   refusing.resize(1440.0, 900.0);
-  const auto refused = refusing.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
-                                  bounds.y + bounds.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
+  const auto refused = refusing.toggleBounceTiming();
   CHECK(!refused);
   CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
   CHECK(!refusing.sceneState().bounceFollowHost);
@@ -3094,9 +3000,8 @@ TEST_CASE("phone hint semantics isolate active input and reject old interaction 
   const auto revision = fixture.session.revision();
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
   CHECK(fixture.session.revision() == revision);
-  const native_ui::EditorSceneLayout layout;
-  const auto bounds = layout.hintCancelBounds(controller.sceneState().logicalWidth, controller.sceneState().logicalHeight);
-  CHECK(controller.pointerDown({.position = {bounds.x + 2.0, bounds.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  // The shell's inline field card cancels through the controller, as its Escape does.
+  controller.cancelTextComposition();
   CHECK(!controller.textInputActive());
 }
 
@@ -3740,8 +3645,7 @@ TEST_CASE("shared review rows actions and text input fit supported short windows
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
     static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
-  const auto cancel = layout.timeMapActionBounds(480.0,320.0,4U);
-  CHECK(controller.pointerDown({.position={cancel.x + 2.0,cancel.y + 2.0},.button=native_ui::PointerButton::Left}));
+  CHECK(controller.replacementReviewAction(4U));  // the review sheet's Cancel
   CHECK(!controller.replacementReviewOpen()); CHECK(fixture.session.revision() == 0U);
 }
 
@@ -3914,9 +3818,7 @@ TEST_CASE("native time-map panel opens selects edits refreshes removes and block
   CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{960}, 90.0));
   native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
       {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
-  native_ui::EditorSceneLayout layout;
-  const auto button = layout.timeMapOpenBounds();
-  CHECK(controller.pointerDown({.position = {button.x + 2.0, button.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(controller.openTimeMapPanel());  // the SING ruler's Time map button
   CHECK(controller.sceneState().timeMapVisible); CHECK(controller.sceneState().timeMapRows.size() == 3U);
   controller.resize(720.0, 520.0);
   if (const auto* capture = std::getenv("SEAM_TIME_MAP_CAPTURE")) {
@@ -4099,19 +4001,15 @@ TEST_CASE("native arrangement exposes IME rename and keyboard reorder affordance
   fixture.session.project().settings().characterDisplay =
       seam::domain::CharacterDisplayMode::Off;
   controller.resize(1280.0, 720.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{1280.0 - 238.0 + 12.0, 99.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 2,
-  }));
+  // The shell's MIX track list renames a double-clicked track through this controller command.
+  CHECK(controller.beginSelectedTrackRename());
   CHECK(beginRequests == 3U);
   CHECK(controller.commitTextComposition(U"Pointer renamed"));
   CHECK(fixture.session.project().vocalTracks().front().name ==
         "Pointer renamed");
 }
 
-TEST_CASE("native arrangement toolbar exposes pointer and accessibility actions") {
+TEST_CASE("native arrangement toolbar exposes accessibility actions") {
   NativeUiFixture fixture;
   std::size_t beginRequests = 0U;
   seam::native_ui::NativeEditorController controller{
@@ -4123,31 +4021,15 @@ TEST_CASE("native arrangement toolbar exposes pointer and accessibility actions"
   fixture.session.project().settings().characterDisplay =
       seam::domain::CharacterDisplayMode::Off;
   controller.resize(1280.0, 720.0);
-  const auto layout = seam::native_ui::EditorSceneLayout{};
-  const auto actionPoint = [&](std::size_t index) {
-    const auto bounds = layout.arrangementActionBoundsForWidth(1280.0, index);
-    return seam::ui::Point{bounds.x + 4.0, bounds.y + 8.0};
+  const auto activate = [&controller](std::string_view id) {
+    controller.rebuildAccessibilityTree();
+    return controller.dispatchAccessibility(id, seam::native_ui::SemanticAction::Activate);
   };
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(0U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.add-track"));
   CHECK(fixture.session.project().vocalTracks().size() == 2U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(1U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.add-region"));
   CHECK(controller.selectedRegion().valid());
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(2U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.rename"));
   CHECK(beginRequests == 1U);
   CHECK(controller.commitTextComposition(U"Toolbar region"));
 
@@ -4178,9 +4060,9 @@ TEST_CASE("native vibrato inspector edits drafts through fields and applies the 
   controller.resize(480.0, 320.0);
   auto view = controller.sceneState().replacementReview; CHECK(view.dockedInspector); CHECK(view.rows.size() == 6U); CHECK(!view.enabled[3]);
   std::string oldApply;
-  const native_ui::EditorSceneLayout layout;
-  const auto row = layout.reviewRowBounds(480.0, 320.0, 0U, true);
-  CHECK(controller.pointerDown({.position = {row.x + 5.0, row.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(controller.replacementReviewSemanticPrefix() + "row.0",
+                                         native_ui::SemanticAction::Activate));
   CHECK(initial.empty()); CHECK(controller.sceneState().boundedInputLabel.starts_with("VIBRATO:"));
   CHECK(controller.commitTextComposition(U"On")); CHECK(controller.sceneState().replacementReview.visible);
   controller.rebuildAccessibilityTree();
@@ -4237,7 +4119,7 @@ TEST_CASE("native vibrato inspector rejects stale field input and keeps responsi
   CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == source);
 }
 
-TEST_CASE("arrangement inspector visibility and pointer bounds agree with paint including overlays") {
+TEST_CASE("arrangement inspector visibility and semantic bounds agree with its layout including overlays") {
   using namespace seam;
   for (const auto height : {320.0, 640.0}) for (const bool diagnostic : {false, true}) {
     NativeUiFixture fixture; fixture.session.project().settings().characterDisplay = domain::CharacterDisplayMode::Off;
@@ -4255,11 +4137,11 @@ TEST_CASE("arrangement inspector visibility and pointer bounds agree with paint 
       CHECK(bounds.y >= *top); CHECK(bounds.bottom() <= bottom);
       CHECK(bounds.y == *top + layout.inspectorNameBaseline + layout.inspectorNameToFirstFieldAdvance + layout.inspectorFieldAdvance * 3.0);
       const auto track = controller.selectedTrack(); const auto before = fixture.session.project();
-      CHECK(controller.pointerDown({.position = {bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::Activate));
       CHECK(fixture.session.project().findVocalTrack(track)->muted); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
       CHECK(controller.dispatchAccessibility("inspector.solo", native_ui::SemanticAction::SetFocus));
       const auto solo = controller.accessibilityTree().focusedNode()->bounds; CHECK(solo.x == bounds.right()); CHECK(solo.y == bounds.y);
-      CHECK(controller.pointerDown({.position = {solo.x + solo.width * 0.5, solo.y + solo.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(controller.dispatchAccessibility("inspector.solo", native_ui::SemanticAction::Activate));
       CHECK(fixture.session.project().findVocalTrack(track)->solo); CHECK(!fixture.session.project().findVocalTrack(track)->muted);
       CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
       if (height == 640.0 && diagnostic) if (const auto* capture = std::getenv("SEAM_INSPECTOR_LAYOUT_CAPTURE")) {

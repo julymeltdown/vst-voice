@@ -173,11 +173,7 @@ public:
     return errorToast_.has_value() ? std::optional<ui::Rect>{errorToast_->bounds} : std::nullopt;
   }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
-  // False for every state: kept so a host or test can still ask whether a state needs the classic
-  // painter while the shell is enabled.
-  [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
-  // The overlays this shell re-homes. A surface listed here is painted inside the shell, so it is
-  // not one of the states that still hands the frame to the classic painter.
+  // The overlays this shell re-homes: each is painted inside the shell as a sheet or inline field.
   [[nodiscard]] static bool rehomedSurface(OverlayKind kind) noexcept;
 
   void setMode(DesignMode mode, bool persist = true);

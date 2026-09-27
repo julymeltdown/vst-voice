@@ -364,16 +364,6 @@ std::filesystem::path locateCharacterAssets(const std::filesystem::path& designA
   return {};
 }
 
-bool SingShell::legacySurfaceRequired(const EditorSceneState& state) noexcept {
-  // Every surface the classic painter drew over the editor is presented by the shell now: the
-  // overlays of section 7.6, the voice browser, the audio settings and the replacement review as
-  // sheets, and the classic-only text fields (tempo/meter, phone hint, find/replace, draft fields,
-  // renames) as inline fields. No state hands the frame back to the classic painter; it paints
-  // only while the shell is disabled.
-  static_cast<void>(state);
-  return false;
-}
-
 bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
   switch (kind) {
     case OverlayKind::SampleMicroscope:
@@ -984,11 +974,11 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
 
 bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
                       const EditorSceneState& state, time::Tick playhead) {
-  if (!presented_ || legacySurfaceRequired(state) ||
+  if (!presented_ ||
       layout_.width != std::max(canvas.logicalWidth(), 480.0) ||
       layout_.height != std::max(canvas.logicalHeight(), 320.0)) {
     // prepareFrame did not run for this canvas (or the shell was disabled meanwhile).
-    if (!presented_ || legacySurfaceRequired(state) ||
+    if (!presented_ ||
         !prepareFrame(controller, canvas.logicalWidth(), canvas.logicalHeight())) {
       releaseSurface(controller);
       return false;

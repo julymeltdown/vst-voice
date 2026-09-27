@@ -3797,14 +3797,6 @@ ui::Point NativeEditorController::modelPoint(ui::Point windowPoint) const noexce
   return ui::Point{windowPoint.x, windowPoint.y - layout_.contentTop()};
 }
 
-bool NativeEditorController::legacyModalSurfaceActive() const {
-  // The modal surfaces the classic painter draws over its own layout. The SING shell presents all
-  // of them itself and no longer consults this; it describes the controller for the classic path.
-  return voicebankBrowserVisible_ || audioSettings_.visible || replacementOpen_ ||
-         tempoEdit_.has_value() || hintEdit_.has_value() || replacementInput_.has_value() ||
-         renameTrackTarget_.has_value() || renameRegionTarget_.has_value();
-}
-
 std::uint64_t NativeEditorController::documentRevision() const noexcept {
   return session_.revision();
 }
@@ -4161,6 +4153,11 @@ core::Result<void> NativeEditorController::beginBatchLyricEdit() {
 core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
   vibratoKeyboardFocus_.reset();
+  // Pointer input arrives only from the SING shell, which forwards presses in its grid and lane (in
+  // this controller's hosted geometry) and the plots of its microscope and dynamics sheets (in the
+  // controller's own plot coordinates). Every other control -- toolbar, panels, review rows and
+  // buttons, fields -- is the shell's own and reaches the controller through its commands and
+  // accessibility actions, so a modal surface here only has to keep a press off the score.
   if (replacementOpen_) {
     if (event.button == PointerButton::Left) {
       const auto view = replacementReviewView();
@@ -4185,70 +4182,16 @@ core::Result<void> NativeEditorController::pointerDown(
           dynamicsGainDragging_ = true; dynamicsDragBounds_ = view.dynamicsPlot->bounds; return core::success();
         }
       }
-      if (view.rowsInspectable) for (std::size_t i = 0U; i < view.rows.size(); ++i)
-        if (layout_.reviewRowBounds(logicalWidth_, logicalHeight_, i, view.dockedInspector).contains(event.position)) return openReplacementRow(i);
-      for (std::size_t i = 0U; i < view.enabled.size(); ++i)
-        if (view.enabled[i] && layout_.reviewButtonBounds(logicalWidth_, logicalHeight_, i, view.dockedInspector).contains(event.position)) return replacementReviewAction(i);
     }
     return core::success();
   }
-  if (hintEdit_ || replacementInput_) {
-    if (event.button == PointerButton::Left &&
-        layout_.hintCancelBounds(logicalWidth_, logicalHeight_).contains(event.position)) cancelTextComposition();
-    return core::success();
-  }
-  if (timeMapPanel_) {
-    if (event.button != PointerButton::Left || composition_.active()) return core::success();
-    const auto rows = timeMapPanel_->page(timeMapPage_);
-    for (std::size_t i = 0U; i < rows.size(); ++i) {
-      if (layout_.timeMapRowBounds(logicalWidth_, logicalHeight_, i).contains(event.position)) {
-        const auto selected = timeMapPanel_->select(timeMapPage_ * TempoMeterModel::pageSize + i);
-        repaint(); if (!selected) return selected;
-        return event.clickCount >= 2 ? timeMapPanelAction(2U) : core::success();
-      }
-    }
-    for (std::size_t i = 0U; i < 8U; ++i)
-      if (layout_.timeMapActionBounds(logicalWidth_, logicalHeight_, i).contains(event.position)) return timeMapPanelAction(i);
-    return core::success();
-  }
-  if (event.button == PointerButton::Left && layout_.timeMapOpenBounds().contains(event.position)) return openTimeMapPanel();
-  if (!phonemeReview_ && !sampleMicroscopeOpen() && event.button == PointerButton::Left &&
-      layout_.tempoInputBoundsForWidth(logicalWidth_).contains(event.position)) return beginTempoEdit();
-  if (!phonemeReview_ && !sampleMicroscopeOpen() && event.button == PointerButton::Left &&
-      layout_.meterInputBoundsForWidth(logicalWidth_).contains(event.position)) return beginMeterEdit();
-  if (phonemeReview_) {
-    if (event.button == PointerButton::Left) {
-      for (std::size_t i = 0U; i < 6U; ++i) {
-        if (layout_.phonemeReviewButtonBounds(logicalWidth_, logicalHeight_, i).contains(event.position)) {
-          return sceneState().phonemeReview.enabled[i] ? activatePhonemeReview(i) : core::success();
-        }
-      }
-    }
-    return core::success();
-  }
-  if (!hosted_ && !sampleMicroscopeOpen() && callbacks_.reviewPhonemeBindings &&
-      callbacks_.rebindPhonemeOverride &&
-      event.button == PointerButton::Left && layout_.phonemeReviewOpenBounds(logicalWidth_, logicalHeight_).contains(event.position)) {
-    return openPhonemeReview();
-  }
+  if (hintEdit_ || replacementInput_ || timeMapPanel_ || phonemeReview_) return core::success();
   if (sampleMicroscopeOpen()) {
     if (event.button == PointerButton::Right) {
       closeSampleMicroscope();
       return core::success();
     }
-    if (event.button != PointerButton::Left) return core::success();
-    if (layout_.microscopeCloseBounds(logicalWidth_, logicalHeight_).contains(event.position)) {
-      closeSampleMicroscope(); return core::success();
-    }
-    if (layout_.microscopeDetailsToggleBounds(logicalWidth_, logicalHeight_).contains(event.position))
-      return microscopeDetailsAction(0U);
-    if (microscopeDetailsVisible_) {
-      if (layout_.microscopeDetailsPageBounds(logicalWidth_, logicalHeight_, false).contains(event.position))
-        return microscopeDetailsAction(1U);
-      if (layout_.microscopeDetailsPageBounds(logicalWidth_, logicalHeight_, true).contains(event.position))
-        return microscopeDetailsAction(2U);
-      return core::success();
-    }
+    if (event.button != PointerButton::Left || microscopeDetailsVisible_) return core::success();
     if (event.clickCount >= 2) {
       if (callbacks_.playMicroscopeSample && microscopeUnit_.has_value()) {
         const auto played = callbacks_.playMicroscopeSample(
@@ -4288,310 +4231,6 @@ core::Result<void> NativeEditorController::pointerDown(
     return core::success();
   }
   if (event.button != PointerButton::Left) return core::success();
-  const auto diagnosticsBounds = layout_.diagnosticBounds(
-      logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U);
-  if (!hosted_ && diagnosticsBounds.contains(event.position) &&
-      !diagnosticPanel_.entries().empty()) {
-    const auto& diagnostic = diagnosticPanel_.entries().front().diagnostic;
-    const auto presentation = presentDiagnostic(diagnostic);
-    const auto actionCount = std::min<std::size_t>(
-        2U, presentation.primaryActionKinds.size());
-    for (std::size_t index = 0U; index < actionCount; ++index) {
-      const auto bounds = layout_.diagnosticActionBounds(
-          logicalWidth_, logicalHeight_, exportProgress_.totalFiles != 0U,
-          actionCount, index);
-      if (bounds.contains(event.position)) {
-        return activateDiagnostic(0U, presentation.primaryActionKinds[index]);
-      }
-    }
-    return core::success();
-  }
-  if (!hosted_ && exportCancellable(exportProgress_.state) &&
-      exportProgress_.totalFiles != 0U &&
-      layout_.exportCancelBounds(logicalWidth_, logicalHeight_)
-          .contains(event.position)) {
-    if (!callbacks_.cancelExport) {
-      return core::failure(core::ErrorCode::Unsupported,
-                           "Export cancellation is not connected");
-    }
-    callbacks_.cancelExport();
-    repaint();
-    return core::success();
-  }
-  const auto& supportView = recoverySupportPanel_.view();
-  if (supportView.visible) {
-    const auto panelX = std::max(
-        layout_.keyboardWidth + layout_.minimumTimelineWidth,
-        logicalWidth_ - layout_.characterDockWidth);
-    if (event.position.x >= panelX &&
-        event.position.y >= layout_.toolbarHeight &&
-        event.position.y < layout_.pianoBottom(logicalHeight_)) {
-      if (layout_.supportTrackPreviousBounds(panelX, logicalWidth_)
-              .contains(event.position)) {
-        return arrangementPanel_.tracks().size() > 1U
-                   ? selectAdjacentVocalTrack(-1)
-                   : core::success();
-      }
-      if (layout_.supportTrackNextBounds(panelX, logicalWidth_)
-              .contains(event.position)) {
-        return arrangementPanel_.tracks().size() > 1U
-                   ? selectAdjacentVocalTrack(1)
-                   : core::success();
-      }
-      const auto first = std::min(supportView.firstVisibleItem,
-                                  supportView.items.size());
-      for (std::size_t index = first; index < supportView.items.size(); ++index) {
-        const auto row = layout_.supportItemBounds(panelX, logicalWidth_,
-                                                   index - first);
-        if (row.y >= layout_.pianoBottom(logicalHeight_)) break;
-        if (!row.contains(event.position)) continue;
-        return supportView.mode == RecoverySupportMode::Reports
-                   ? selectSupportReport(index)
-                   : core::success();
-      }
-      return core::success();
-    }
-  }
-  if (!hosted_ && !voicebankBrowserVisible_ && !audioSettings_.visible &&
-      !supportView.visible &&
-      session_.project().settings().characterDisplay ==
-          domain::CharacterDisplayMode::Off &&
-      !arrangementPanel_.tracks().empty()) {
-    const auto arrangementState = sceneState();
-    const auto dockWidth = resolveEditorDockWidth(arrangementState, layout_);
-    const auto panelBottom = logicalHeight_ - layout_.statusHeight -
-        layout_.diagnosticHeight(!arrangementState.diagnostics.empty()) -
-        layout_.exportHeight(arrangementState.exportProgress.totalFiles != 0U);
-    const auto panelX = std::max(
-        layout_.keyboardWidth + layout_.minimumTimelineWidth,
-        logicalWidth_ - dockWidth);
-    if (dockWidth > 0.0 && event.position.x >= panelX &&
-        event.position.y >= layout_.toolbarHeight &&
-        event.position.y < panelBottom) {
-      for (std::size_t index = 0U; index < 5U; ++index) {
-        const auto actionBounds =
-            layout_.arrangementActionBoundsForWidth(logicalWidth_, index);
-        if (!actionBounds.contains(event.position)) continue;
-        if (index == 0U) {
-          auto added = addVocalTrack(
-              "Voice " + std::to_string(
-                  session_.project().vocalTracks().size() + 1U));
-          if (!added) return core::Result<void>{added.error()};
-          return core::success();
-        }
-        if (index == 1U) {
-          const auto* track =
-              session_.project().findVocalTrack(selectedTrackId_);
-          if (track == nullptr) {
-            return core::failure(core::ErrorCode::Conflict,
-                                 "A vocal track must be selected first");
-          }
-          auto added = addVocalRegion(
-              "Region " + std::to_string(track->regions.size() + 1U),
-              time::Tick{0}, time::Tick{15360});
-          if (!added) return core::Result<void>{added.error()};
-          return core::success();
-        }
-        if (index == 2U) {
-          return regionId_.valid() ? beginSelectedRegionRename()
-                                   : beginSelectedTrackRename();
-        }
-        return reorderSelectedTrackBy(index == 3U ? -1 : 1);
-      }
-      double y = layout_.toolbarHeight + layout_.trackListTop;
-      for (const auto& track : arrangementPanel_.tracks()) {
-        if (y + layout_.trackRowHeight > panelBottom) break;
-        if (event.position.y >= y + layout_.trackRowTopOffset &&
-            event.position.y < y + layout_.trackRowTopOffset + layout_.trackRowHeight) {
-          if (event.clickCount >= 2) return beginSelectedTrackRename();
-          return selectTrack(track.id);
-        }
-        y += layout_.trackRowAdvance;
-        for (const auto& region : track.regions) {
-          if (y + layout_.regionAdvance - layout_.regionBottomPadding > panelBottom) break;
-          if (event.position.y >= y &&
-              event.position.y < y + layout_.regionAdvance -
-                                      layout_.regionBottomPadding) {
-            if (event.clickCount >= 2) return beginSelectedRegionRename();
-            return selectRegion(region.id);
-          }
-          y += layout_.regionAdvance;
-        }
-      }
-      const auto inspector = trackInspector();
-      if (const auto resolvedTop = resolveArrangementInspectorTop(arrangementState, layout_, panelBottom)) {
-        const auto inspectorTop = *resolvedTop;
-        const auto firstFieldBaseline =
-            inspectorTop + layout_.inspectorNameBaseline +
-            layout_.inspectorNameToFirstFieldAdvance;
-        const auto toggleTop = firstFieldBaseline +
-                               layout_.inspectorFieldAdvance * 3.0;
-        const auto toggleWidth = std::max(
-            1.0, (logicalWidth_ - panelX - layout_.inspectorTextInsetX * 2.0) *
-                     0.5);
-        const ui::Rect muteBounds{panelX + layout_.inspectorTextInsetX,
-                                  toggleTop, toggleWidth,
-                                  layout_.inspectorFieldAdvance};
-        const ui::Rect soloBounds{
-            muteBounds.right(), toggleTop, toggleWidth,
-            layout_.inspectorFieldAdvance};
-        const ui::Rect routeBounds{
-            panelX + layout_.inspectorTextInsetX,
-            firstFieldBaseline + layout_.inspectorFieldAdvance * 4.0,
-            std::max(1.0, logicalWidth_ - panelX -
-                              layout_.inspectorTextInsetX * 2.0),
-            layout_.inspectorFieldAdvance};
-        if (muteBounds.contains(event.position)) {
-          return setSelectedTrackMix(inspector.gainDb, inspector.pan,
-                                     !inspector.muted, inspector.solo);
-        }
-        if (soloBounds.contains(event.position)) {
-          return setSelectedTrackMix(inspector.gainDb, inspector.pan,
-                                     inspector.muted, !inspector.solo);
-        }
-        if (routeBounds.contains(event.position)) {
-          return cycleSelectedTrackRoute();
-        }
-        const ui::Rect vibratoBounds{panelX + layout_.inspectorTextInsetX, firstFieldBaseline + layout_.inspectorFieldAdvance * 5.0,
-            (logicalWidth_ - panelX - layout_.inspectorTextInsetX * 2.0 - 8.0) / 3.0, 22.0};
-        if (arrangementState.vibratoEditable && vibratoBounds.contains(event.position)) return openVibratoInspector();
-        const ui::Rect dynamicsBounds{vibratoBounds.x + vibratoBounds.width + 4.0, vibratoBounds.y, vibratoBounds.width, vibratoBounds.height};
-        if (arrangementState.dynamicsEditable && dynamicsBounds.contains(event.position)) return openDynamicsInspector();
-        const ui::Rect styleBounds{dynamicsBounds.x + dynamicsBounds.width + 4.0, dynamicsBounds.y, dynamicsBounds.width, dynamicsBounds.height};
-        if (arrangementState.styleEditable && styleBounds.contains(event.position)) return openStyleCoverageSheet();
-      }
-    }
-  }
-  if (audioSettings_.visible) {
-    const auto panelX = std::max(
-        layout_.keyboardWidth + layout_.minimumTimelineWidth,
-        logicalWidth_ - layout_.characterDockWidth);
-    if (event.position.x >= panelX &&
-        event.position.y >= layout_.toolbarHeight &&
-        event.position.y < layout_.pianoBottom(logicalHeight_)) {
-      const auto rowX = panelX + layout_.audioSettingsInsetX;
-      const auto rowWidth = std::max(
-          1.0, logicalWidth_ - panelX - layout_.audioSettingsInsetX * 2.0);
-      const auto rowY = layout_.toolbarHeight + layout_.audioSettingsRowTop;
-      for (std::size_t index = 0U; index < audioSettings_.devices.size(); ++index) {
-        const ui::Rect row{
-            rowX,
-            rowY + static_cast<double>(index) *
-                       (layout_.audioSettingsRowHeight +
-                        layout_.audioSettingsRowGap),
-            rowWidth,
-            layout_.audioSettingsRowHeight,
-        };
-        if (!row.contains(event.position)) continue;
-        return selectAudioDevice(index);
-      }
-      const auto fieldsTop = rowY +
-                             static_cast<double>(audioSettings_.devices.size()) *
-                                 (layout_.audioSettingsRowHeight +
-                                  layout_.audioSettingsRowGap);
-      const auto fieldIndex = static_cast<int>(
-          (event.position.y - fieldsTop) /
-          (layout_.audioSettingsRowHeight + layout_.audioSettingsRowGap));
-      if (fieldIndex >= 0 && fieldIndex < 3) {
-        return cycleAudioSettings(
-            static_cast<AudioSettingsField>(fieldIndex), 1);
-      }
-    }
-  }
-  if (voicebankBrowserVisible_) {
-    const auto panelX = std::max(
-        layout_.keyboardWidth + layout_.minimumTimelineWidth,
-        logicalWidth_ - layout_.characterDockWidth);
-    if (event.position.x >= panelX &&
-        event.position.y >= layout_.toolbarHeight &&
-        event.position.y < layout_.pianoBottom(logicalHeight_)) {
-      const auto cardX = panelX + layout_.voicebankCardInsetX;
-      const auto cardWidth = std::max(
-          1.0, logicalWidth_ - panelX - layout_.voicebankCardInsetX * 2.0);
-      for (std::size_t index = 0U; index < voicebankCards_.size(); ++index) {
-        const ui::Rect cardBounds{
-            cardX,
-            layout_.toolbarHeight + layout_.voicebankCardTop +
-                static_cast<double>(index) *
-                    (layout_.voicebankCardHeight + layout_.voicebankCardGap),
-            cardWidth,
-            layout_.voicebankCardHeight,
-        };
-        if (!cardBounds.contains(event.position)) continue;
-        return selectVoicebankCard(index);
-      }
-    }
-  }
-  if (event.position.y >= layout_.toolbarControlTop &&
-      event.position.y < layout_.toolbarControlTop +
-                              layout_.toolbarControlHeight) {
-    const auto transportBounds =
-        layout_.transportBoundsForWidth(logicalWidth_);
-    if (transportBounds.contains(event.position)) {
-      if (!renderStatus_.view().hasAudibleAudio) {
-        repaint();
-        return core::success();
-      }
-      const auto requestedPlaying = !playing_;
-      if (callbacks_.setPlaying) {
-        const auto result = callbacks_.setPlaying(requestedPlaying);
-        if (!result) {
-          repaint();
-          return result;
-        }
-      }
-      playing_ = requestedPlaying;
-      repaint();
-      return core::success();
-    }
-    const auto stopBounds = layout_.stopBoundsForWidth(logicalWidth_);
-    if (stopBounds.contains(event.position)) {
-      if (callbacks_.stopPlaying) {
-        const auto result = callbacks_.stopPlaying();
-        if (!result) {
-          repaint();
-          return result;
-        }
-      }
-      playing_ = false;
-      repaint();
-      return core::success();
-    }
-    const auto portraitVisible =
-        !layout_.compactToolbar(logicalWidth_) &&
-        session_.project().settings().characterDisplay ==
-            domain::CharacterDisplayMode::Minimal &&
-        sceneState().voiceIdentity.characterActive &&
-        characterPortrait_ != nullptr;
-    const auto batchLyricsBounds =
-        layout_.batchLyricsBoundsForWidth(logicalWidth_, portraitVisible);
-    if (batchLyricsBounds.width > 0.0 &&
-        batchLyricsBounds.contains(event.position)) {
-      return beginBatchLyricEdit();
-    }
-    const auto loopBounds =
-        layout_.loopBoundsForWidth(logicalWidth_, portraitVisible);
-    if (callbacks_.toggleLoop && loopBounds.width > 0.0 &&
-        loopBounds.contains(event.position)) {
-      if (!renderStatus_.view().hasAudibleAudio) {
-        repaint();
-        return core::success();
-      }
-      const auto result = callbacks_.toggleLoop();
-      if (result) loopEnabled_ = !loopEnabled_;
-      repaint();
-      return result;
-    }
-    const auto bounceBounds =
-        layout_.bounceTimingBoundsForWidth(logicalWidth_, portraitVisible);
-    if (callbacks_.setBounceTiming && bounceBounds.width > 0.0 &&
-        bounceBounds.contains(event.position)) {
-      const auto result = callbacks_.setBounceTiming(!bounceFollowHost_);
-      if (result) bounceFollowHost_ = !bounceFollowHost_;
-      repaint();
-      return result;
-    }
-  }
   if (event.position.y >= layout_.toolbarHeight &&
       event.position.y < layout_.contentTop()) {
     const auto tick = pianoRoll_.timeline().pixelToTick(

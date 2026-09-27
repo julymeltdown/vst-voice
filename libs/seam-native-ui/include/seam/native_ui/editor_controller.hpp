@@ -499,12 +499,6 @@ public:
   // draft is restored to its state before the gesture). Used on Escape, surface switches, resizes
   // and capture loss.
   void cancelPointerGesture();
-  // True while one of the modal surfaces the classic painter draws over its own layout is open:
-  // voice browser, audio settings, replacement review, a tempo/meter or hint/replacement text input,
-  // or a track/region rename field. It describes the controller, not who paints: the SING shell
-  // presents every one of these itself (sheets and inline fields), so it no longer hands the frame
-  // to the classic painter for them. The classic painter draws them when the shell is disabled.
-  [[nodiscard]] bool legacyModalSurfaceActive() const;
   [[nodiscard]] std::uint64_t documentRevision() const noexcept;
   [[nodiscard]] bool pointerGestureActive() const noexcept;
   [[nodiscard]] core::Result<void> pointerDown(const PointerEvent& event);

@@ -159,8 +159,7 @@ TEST_CASE("native style sheet stages rows and rejects changed bank before exact 
   controller.resize(960.0, 640.0); controller.rebuildAccessibilityTree();
   CHECK(controller.dispatchAccessibility("inspector.style", native_ui::SemanticAction::SetFocus));
   const auto* entry = controller.accessibilityTree().focusedNode(); CHECK(entry); CHECK(entry->id == "inspector.style");
-  const auto bounds = entry->bounds;
-  CHECK(controller.pointerDown({.position = {bounds.x + 5.0, bounds.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(controller.dispatchAccessibility("inspector.style", native_ui::SemanticAction::Activate));
   CHECK(controller.replacementReviewOpen());
   controller.resize(480.0, 320.0);
   controller.rebuildAccessibilityTree();

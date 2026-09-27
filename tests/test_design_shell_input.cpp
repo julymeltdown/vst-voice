@@ -310,8 +310,6 @@ TEST_CASE("a track rename field is an inline field card in the shell") {
   CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   CHECK(f.controller.selectTrack(f.trackId).hasValue());
   CHECK(f.controller.beginSelectedTrackRename().hasValue());
-  // The controller still reports its modal surface; the shell presents it instead of yielding.
-  CHECK(f.controller.legacyModalSurfaceActive());
   CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   CHECK(f.controller.hostedGrid().has_value());
   CHECK(f.shell.overlayKind(f.controller) == native_ui::design::OverlayKind::TextField);
@@ -2769,7 +2767,6 @@ TEST_CASE("the time map is a shell popover whose rows and eight actions run the 
   if (!added) throw test::Failure{"add tempo refused: " + added.error().message};
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TimeMap);
-  CHECK(!native_ui::design::SingShell::legacySurfaceRequired(f.controller.sceneState()));
   const auto field = f.controller.textFieldView();
   CHECK(field.kind == native_ui::NativeEditorController::TextFieldView::Kind::TimeMap);
   const auto* input = f.node(field.inputId);
@@ -3404,7 +3401,6 @@ TEST_CASE("a review is a shell sheet whose rows and actions are the controller's
   succeeds(f.controller.openClearVibratoReview(), "opening the review");
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
-  CHECK(!SingShell::legacySurfaceRequired(f.controller.sceneState()));
   const auto prefix = f.controller.replacementReviewSemanticPrefix();
   std::vector<std::string> required{prefix + "status"};
   for (std::size_t i = 0U; i < 6U; ++i) required.push_back(prefix + "action." + std::to_string(i));
@@ -3526,7 +3522,6 @@ TEST_CASE("the audio settings sheet lists the devices and applies every change t
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
-  CHECK(!SingShell::legacySurfaceRequired(f.controller.sceneState()));
   checkOverlayContract(f, "shell.overlay.audio.",
                        {"shell.overlay.audio.close", "audio.device.0", "audio.sample-rate",
                         "audio.block-frames", "audio.channels", "audio.diagnostics"},
@@ -3633,7 +3628,6 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.change-voice", SemanticAction::Activate).hasValue());
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::VoicebankBrowser);
-  CHECK(!SingShell::legacySurfaceRequired(f.controller.sceneState()));
   std::vector<std::string> optional{"shell.overlay.voicebank.previous", "shell.overlay.voicebank.next"};
   for (std::size_t i = 1U; i < cards.size(); ++i) optional.push_back("voicebank.card." + std::to_string(i));
   checkOverlayContract(f, "shell.overlay.voicebank.",
@@ -3719,7 +3713,6 @@ TEST_CASE("the hint and transport fields are inline shell fields on the lyric fi
     openHint();
     CHECK(f.frame(width, height));
     CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
-    CHECK(!SingShell::legacySurfaceRequired(f.controller.sceneState()));
     const auto field = f.controller.textFieldView();
     CHECK(field.kind == native_ui::NativeEditorController::TextFieldView::Kind::Bounded);
     const auto panel = overlayPanel(f, "shell.overlay.field.");
