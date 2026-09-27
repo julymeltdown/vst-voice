@@ -25,6 +25,16 @@ The six SCENE-mode portraits (`runtime/scene/*.ppm`), their mouth sprites (`runt
 - `scripts/build_character_state_art.py import --outfit scene` stores the masters and records their SHA-256 in `source/states/sources.json`; `build` derives the runtime PPMs and the SCENE mouth sprites exactly as for the shared set. The generator outputs are not committed.
 - The per-state `eyes` boxes in `manifest.json` were placed by hand on the shared portraits (runtime pixels in the script's `EYES` table) and checked on `previews/eye-boxes.png`, which draws them over both sets. The SCENE set keeps the same poses, so it uses the same boxes.
 
+## Character Package v4 development derivatives (2026-09-28)
+
+`source/stage/emo-full-body.png` and `source/stage/scene-full-body.png` are Codex built-in image-generator edits of the committed `source/states/neutral.png` and `source/states/scene/neutral.png` masters, respectively. The edit prompts extended the cropped standing figures to complete legs and original unbranded black shoes, requested genuine transparency, and forbade text, logos, stars, band references, and watermarks. Both outputs were viewed before import. They are **AI-generated development art**, not approved production art or a cleared trademark. The new lower-body detail was generated, not present in the reference masters.
+
+`source/poses/emo-listening.png` and `source/poses/scene-listening.png` are built-in image-generator edits of those same committed neutral masters, changing the pose to a hand beside the ear on a transparent square. Both outputs were viewed before import. The seated `empty` pose is a deterministic crop of each mode's committed splash; the `error` and `complete` poses derive from their corresponding committed state masters.
+
+`scripts/build_character_state_art.py build` deterministically derives the v4 QOI ring portraits, avatars, separate stage body/head/fringe layers, eye variants, mouth sprites, poses and previews from those two stage sources and the existing state masters. The ring portraits and pose crops do not introduce a new character identity; the stage eye variants are procedural overlays pending an artist redraw. The original schema-two PPMs remain in the package for old readers. `developmentOnly` stays true in `manifest.json` and continues to travel with the package.
+
+The v4 stage and poses are internal development visuals. The final first-party redraw, rights review and character-IP approval below still apply.
+
 ## Restrictions
 
 - Internal concept and technical evaluation only.

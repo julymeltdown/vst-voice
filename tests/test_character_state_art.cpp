@@ -16,6 +16,7 @@
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
+#include "seam/native_ui/paint/qoi.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "test_support.hpp"
 
@@ -98,6 +99,57 @@ TEST_CASE("the shipped character package loads a distinct 320x480 portrait for e
       CHECK(meanDifference(*a, *b) > 6.0);
     }
   }
+}
+
+TEST_CASE("schema-four rings, stage layers and poses decode at their declared sizes") {
+  if (auto loaded = seam::character::loadPackage(kPackage); !loaded)
+    std::fprintf(stderr, "schema-four package: %s (%s)\n", loaded.error().message.c_str(),
+                 loaded.error().context.c_str());
+  CharacterSurface surface;
+  CHECK(surface.loadPackage(kPackage));
+  if (!surface.packageLoaded()) return;
+  CHECK(surface.package()->manifest.schemaVersion == seam::character::kLayeredManifestSchema);
+  CHECK(surface.package()->manifest.developmentOnly);
+  for (const auto* mode : {"emo", "scene"}) {
+    surface.setOutfit(mode);
+    for (const auto state : kOnePerPackageState) {
+      const auto* ring = surface.ringPortrait(state);
+      CHECK(ring != nullptr);
+      if (ring) CHECK(ring->width() == 512U && ring->height() == 512U);
+    }
+    for (const auto pose : {seam::character::Pose::Empty, seam::character::Pose::Error,
+                            seam::character::Pose::Complete, seam::character::Pose::Listening}) {
+      const auto* art = surface.pose(pose);
+      CHECK(art != nullptr);
+      if (art) CHECK(art->width() == 800U && art->height() == 800U);
+    }
+    const auto* stage = surface.stageManifest();
+    CHECK(stage != nullptr);
+    if (stage) CHECK(stage->width == 900U && stage->height == 1600U);
+    CHECK(surface.stageLayers().size() == 3U);
+    CHECK(surface.stageEyes(seam::character::StageEyes::Open) != nullptr);
+    CHECK(surface.stageEyes(seam::character::StageEyes::Half) != nullptr);
+    CHECK(surface.stageEyes(seam::character::StageEyes::Closed) != nullptr);
+  }
+}
+
+TEST_CASE("QOI decoder is pixel exact against the original PPM and rejects trailing bytes") {
+  auto ppm = PixelSurface::loadPpm(kPackage / "runtime/neutral.ppm");
+  auto qoi = seam::native_ui::paint::loadQoi(kPackage / "runtime/v4/ppm-equivalence-neutral.qoi");
+  CHECK(ppm.hasValue());
+  CHECK(qoi.hasValue());
+  if (!ppm || !qoi) return;
+  CHECK(ppm.value().width() == qoi.value().width());
+  CHECK(ppm.value().height() == qoi.value().height());
+  CHECK(std::equal(ppm.value().pixels().begin(), ppm.value().pixels().end(),
+                   qoi.value().pixels().begin(), qoi.value().pixels().end()));
+  auto encoded = seam::core::readFileBytesLimited(kPackage / "runtime/v4/ppm-equivalence-neutral.qoi",
+                                                   32ULL * 1024ULL * 1024ULL);
+  CHECK(encoded.hasValue());
+  if (!encoded) return;
+  auto bytes = encoded.value();
+  bytes.insert(bytes.end() - 8, std::byte{0x00});
+  CHECK(!seam::native_ui::paint::decodeQoi(bytes).hasValue());
 }
 
 TEST_CASE("the shipped singing mouths sit on the singing face without a visible edge") {
