@@ -158,15 +158,20 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   const auto wordmarkWidth = W >= 1180.0 ? 208.0 : 132.0;
   l.wordmark = {l.header.x + 16.0, l.header.y + (headerHeight - 48.0) * 0.5, wordmarkWidth, 48.0};
   l.settings = {l.header.right() - 56.0, l.header.y + (headerHeight - 32.0) * 0.5, 32.0, 32.0};
-  // The language control is the gear's neighbour, the same size. The meter keeps a narrower gap to
-  // the pair than it kept to the gear alone, so the approved composition's tabs keep their labels.
-  l.language = {l.settings.x - 36.0, l.settings.y, 32.0, 32.0};
   l.outputMeterVisible = W >= 1180.0;
+  // With a meter, the 24-point language target fits the canonical gap before Settings. Without a
+  // meter, stack the two settings controls so the compact transport and wordmark keep their width.
+  if (l.outputMeterVisible) {
+    l.language = {l.settings.x - 28.0, l.settings.y + 4.0, 24.0, 24.0};
+  } else {
+    l.settings.y = l.header.y + (headerHeight - 60.0) * 0.5;
+    l.language = {l.settings.x + 4.0, l.settings.bottom() + 4.0, 24.0, 24.0};
+  }
   const auto meterWidth = l.outputMeterVisible ? 160.0 : 0.0;
-  l.outputMeter = {l.language.x - 12.0 - meterWidth, l.header.y + (headerHeight - 44.0) * 0.5,
+  l.outputMeter = {l.settings.x - 32.0 - meterWidth, l.header.y + (headerHeight - 44.0) * 0.5,
                    meterWidth, 44.0};
   const auto transportWidth = std::clamp(W * 0.27, 248.0, 432.0);
-  const auto meterLeft = l.outputMeterVisible ? l.outputMeter.x - 24.0 : l.language.x - 24.0;
+  const auto meterLeft = l.outputMeterVisible ? l.outputMeter.x - 24.0 : l.settings.x - 24.0;
   l.transport = {meterLeft - transportWidth, l.outputMeter.y, transportWidth, 44.0};
   const auto switchWidth = W >= 900.0 ? 132.0 : 120.0;
   const auto switchGap = W >= 900.0 ? 28.0 : 16.0;
@@ -187,7 +192,8 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     constexpr double kMenuButtonRoom = 88.0;
     if (l.wordmark.width > 0.0 && right - tabsLeft < kMenuButtonRoom) {
       l.wordmark.width = std::max(0.0, right - kMenuButtonRoom - 24.0 - l.wordmark.x);
-      if (l.wordmark.width < 64.0) l.wordmark.width = 0.0;
+      // A narrower slot would elide the fallback SEAM wordmark. The menu carries the identity.
+      if (l.wordmark.width < 100.0) l.wordmark.width = 0.0;
       tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
     }
     const auto buttonWidth = std::clamp(right - tabsLeft, 0.0, W < 720.0 ? 92.0 : 120.0);
