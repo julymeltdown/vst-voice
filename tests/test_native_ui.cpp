@@ -21,6 +21,9 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/application/lyric_commands.hpp"
+#include "seam/application/note_commands.hpp"
+#include "seam/phonemizer/language_resolver.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
@@ -155,12 +158,71 @@ TEST_CASE("native phoneme inspection shares resolver tokens and bounded failures
     static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(output));
   }
+  // A lyric over the resolver's bound (only a document written outside the session can hold one):
+  // a controller opened on it shows the bounded failure. Edits reach an open controller through the
+  // session, whose revision re-resolves the scene's pronunciation.
   region->lyrics.front().surface = std::u32string(4097U, U'あ');
-  const auto bounded = controller.sceneState();
+  seam::native_ui::NativeEditorController reopened{
+      fixture.session, fixture.factory, fixture.regionId, {}};
+  const auto bounded = reopened.sceneState();
   CHECK(bounded.phonemes.tokens.empty());
   CHECK(bounded.phonemes.warnings.size() == 1U);
   CHECK(bounded.phonemes.warnings.front().code == seam::phonemizer::WarningCode::ResolutionFailure);
   CHECK(!bounded.phonemes.warnings.front().message.empty());
+}
+
+TEST_CASE("scene pronunciation is resolved once per revision and equals a fresh resolution") {
+  NativeUiFixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId, {}};
+  const auto region = [&]() -> const seam::domain::VocalRegion& {
+    return *fixture.session.project().findRegion(fixture.regionId);
+  };
+  // The scene's pronunciation after every kind of document change equals what the resolver
+  // computes from scratch for the region as it now is.
+  const auto matchesFresh = [&] {
+    const auto scene = controller.sceneState();
+    const auto fresh = seam::phonemizer::inspectPronunciation(region());
+    CHECK(scene.phonemes.tokens == fresh.tokens);
+    CHECK(scene.phonemes.warnings == fresh.warnings);
+  };
+  matchesFresh();
+  // A steady frame reuses the resolved result rather than resolving the region again.
+  const auto* first = &controller.regionPronunciation(region());
+  const auto firstTokens = first->tokens;
+  CHECK(&controller.regionPronunciation(region()) == first);
+  CHECK(controller.regionPronunciation(region()).tokens == firstTokens);
+
+  // A lyric edit.
+  CHECK(fixture.session.execute(std::make_unique<seam::application::SetLyricCommand>(
+      fixture.lyricId, U"shine", seam::domain::Language::English)));
+  matchesFresh();
+  CHECK(controller.regionPronunciation(region()).tokens != firstTokens);
+  // A note added with its own lyric.
+  auto [lyric, note] = fixture.factory.makeNote(seam::time::Tick{2880}, seam::time::Tick{960}, 67U,
+                                                U"moon", seam::domain::Language::English);
+  const auto addedNote = note.id;
+  CHECK(fixture.session.execute(std::make_unique<seam::application::AddNoteCommand>(
+      fixture.regionId, std::move(lyric), std::move(note))));
+  matchesFresh();
+  // A locked phoneme override.
+  CHECK(fixture.session.execute(std::make_unique<seam::application::UpsertPhonemeOverrideCommand>(
+      fixture.regionId, seam::domain::PhonemeOverride{.key = {addedNote, 0U},
+                                                      .timing = {.startOffset = -500},
+                                                      .locked = true})));
+  matchesFresh();
+  // Undo and redo each change the revision too.
+  CHECK(fixture.session.undo());
+  matchesFresh();
+  CHECK(fixture.session.undo());
+  matchesFresh();
+  CHECK(fixture.session.redo());
+  matchesFresh();
+  // A replaced document, same region id.
+  auto replacement = fixture.session.project();
+  replacement.findRegion(fixture.regionId)->lyrics.front().surface = U"rain";
+  CHECK(fixture.session.replaceProject(std::move(replacement)));
+  matchesFresh();
 }
 
 TEST_CASE("native retained phoneme review selects explicitly applies and closes accessibly") {

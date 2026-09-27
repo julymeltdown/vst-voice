@@ -10,6 +10,7 @@
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/voice_identity.hpp"
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -303,6 +304,33 @@ struct CharacterCanvas final {
   RasterCanvas& raster;
 };
 
+// A glow drawn once. A glow is the costliest thing the vector backend draws, so a stroke that glows the
+// same way on every frame is rasterized, glow and all, into a transparent sprite at device resolution
+// the first time it is needed, and composited onto the frame after that. The sprite keeps the
+// stroke's own sub-pixel position (its origin is a whole device pixel), so a composed sprite is the
+// stroke as it would have been drawn, up to the rounding of the one extra composite.
+struct GlowSprite final {
+  PixelSurface pixels;  // premultiplied, transparent where nothing was drawn
+  std::int32_t x{0};    // device origin
+  std::int32_t y{0};
+  bool ready{false};
+};
+
+// The singer ring's glows: one sprite per lit tick and one for the state ring. Each set is dropped
+// when its key (geometry, scale, colours) changes.
+class RingGlowCache final {
+public:
+  [[nodiscard]] GlowSprite& tick(std::uint64_t key, std::size_t index);
+  [[nodiscard]] GlowSprite& outline(std::uint64_t key);
+  [[nodiscard]] std::size_t bytes() const noexcept;
+
+private:
+  std::uint64_t tickKey_{0U};
+  std::array<GlowSprite, kSingerRingTicks> ticks_{};
+  std::uint64_t outlineKey_{0U};
+  GlowSprite outline_{};
+};
+
 struct SingerRingSpec final {
   // The outer square of the ring; the portrait is inscribed within it.
   ui::Rect bounds;
@@ -333,6 +361,9 @@ struct SingerRingSpec final {
   // eyes no lid is drawn: a lid somewhere else on the face would claim an eye that is not there.
   std::vector<character::EyeBox> eyes{};
   std::optional<Color> lidTone{};
+  // Where the lit ticks' and the state ring's glows are kept between frames. Without one they are
+  // stroked with their glows directly.
+  RingGlowCache* glows{nullptr};
 };
 
 // The idle blink's lids: for each declared eye, the top part of its box closed by the blink amount,
@@ -354,6 +385,14 @@ struct BlinkLid final {
 // next frame would differ from this one.
 [[nodiscard]] bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
                                    const SingerRingSpec& spec);
+// paintSingerRing is these two in order. The base is what holds still while the singer sings (the
+// portrait's backdrop and every tick unlit), so a frame pipeline can keep it with the content and
+// redraw only the live part: the lit ticks, one glow per colour, then the portrait, the mouth, the
+// blink and the state ring.
+void paintSingerRingBase(paint::Canvas2D& vector, const DesignTokens& tokens,
+                         const SingerRingSpec& spec);
+[[nodiscard]] bool paintSingerRingLive(CharacterCanvas canvas, const DesignTokens& tokens,
+                                       const SingerRingSpec& spec);
 
 // A portrait into a circle (circular = true) or a rounded square, preferring the package's decoded
 // state asset and drawing the look's portrait when there is no package art. Drawing nothing when
