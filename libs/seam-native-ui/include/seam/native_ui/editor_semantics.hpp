@@ -74,4 +74,8 @@ public:
 [[nodiscard]] std::string_view semanticRoleName(SemanticRole role) noexcept;
 [[nodiscard]] std::string_view semanticActionName(SemanticAction action) noexcept;
 
+// What a host publishes where the SING shell cannot present (no vector backend): the one notice
+// paintEditorUnavailable draws, over the whole view, and nothing of the editor behind it.
+[[nodiscard]] SemanticNode editorUnavailableSemantics(double width, double height);
+
 }

@@ -77,6 +77,33 @@ class WindowsSourceContractTests(unittest.TestCase):
         self.assertIn(".actions = {},", bridge[page_start:page_end])
         self.assertIn("UIA_E_ELEMENTNOTAVAILABLE", bridge)
 
+    def test_embedded_view_without_the_vector_backend_publishes_only_its_notice(self) -> None:
+        # Where the shell cannot present, the view paints the "editor unavailable" notice; the
+        # accessibility tree must say the same and nothing of the controller behind it.
+        runtime = (ROOT / "libs/seam-clap-editor/src/editor_runtime_accessibility.cpp").read_text()
+        self.assertIn("native_ui::paint::vectorBackendAvailable()", runtime)
+        snapshot_start = runtime.index("EditorRuntime::accessibilitySnapshot()")
+        snapshot = runtime[snapshot_start : runtime.index("\n}\n", snapshot_start)]
+        notice = snapshot.index("editorUnavailableSemantics(")
+        self.assertLess(snapshot.index("if (!editorSurfaceAvailable())"), notice)
+        self.assertLess(notice, snapshot.index("rebuildAccessibilityTree()"))
+        for entry in (
+            "EditorRuntime::accessibilityFocusedNode()",
+            "EditorRuntime::accessibilityNotes(",
+            "EditorRuntime::dispatchAccessibility(",
+            "EditorRuntime::setAccessibilityValue(",
+        ):
+            start = runtime.index(entry)
+            body = runtime[start : runtime.index("\n}\n", start)]
+            gate = body.index("editorSurfaceAvailable()")
+            self.assertLess(gate, body.index("controller_->"), entry)
+        semantics = (ROOT / "libs/seam-native-ui/src/editor_semantics.cpp").read_text()
+        start = semantics.index("SemanticNode editorUnavailableSemantics(")
+        body = semantics[start : semantics.index("\n}\n", start)]
+        self.assertIn("kEditorUnavailableTitle", body)
+        self.assertNotIn(".children", body)
+        self.assertNotIn(".actions", body)
+
     def test_wide_window_classes_use_a_wide_cursor_resource(self) -> None:
         sources = (
             "apps/seam-clap-editor-host/platform_host_win32.cpp",

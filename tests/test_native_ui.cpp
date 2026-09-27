@@ -5254,3 +5254,15 @@ TEST_CASE("voicebank studio marker labels use Unicode display width") {
   CHECK(labels.front().width <
         static_cast<double>(markers.front().label.size()) * 3.8 + 4.0);
 }
+
+TEST_CASE("a view without the design shell publishes one notice node and nothing to operate") {
+  const auto node = seam::native_ui::editorUnavailableSemantics(800.0, 600.0);
+  CHECK(node.id == "editor.unavailable");
+  CHECK(node.role == seam::native_ui::SemanticRole::Status);
+  CHECK(node.name == seam::native_ui::kEditorUnavailableTitle);
+  CHECK(node.value == seam::native_ui::kEditorUnavailableDetail);
+  CHECK(node.children.empty());
+  CHECK(node.actions.empty());
+  CHECK(node.bounds.x == 0.0 && node.bounds.y == 0.0);
+  CHECK(node.bounds.width == 800.0 && node.bounds.height == 600.0);
+}
