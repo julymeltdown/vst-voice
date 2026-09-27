@@ -2531,8 +2531,9 @@ std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorControll
       }
     }
     // What the overlay states itself wins: the full text a painted label elides, a field's text as
-    // typed, a device's kind. A field takes text; a stepped setting steps either way.
-    if (!control.value.empty()) node.value = control.value;
+    // typed, a device's kind. A field's text as typed wins even when empty: a cleared field never
+    // reads the committed value under it. A field takes text; a stepped setting steps either way.
+    if (control.editable || !control.value.empty()) node.value = control.value;
     if (!control.description.empty()) node.description = control.description;
     if (control.editable && node.enabled) {
       node.actions = {SemanticAction::SetFocus, SemanticAction::EditText};

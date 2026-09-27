@@ -4024,3 +4024,24 @@ TEST_CASE("Escape returns focus to the opener after a review steps back from its
   if (focused != "shell.lane-tab.dynamics")
     throw test::Failure{"Escape returned focus to " + (focused.empty() ? std::string{"nothing"} : focused)};
 }
+
+TEST_CASE("a cleared inline field publishes its empty text, not the committed value under it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  // The creator clears the field: the node reads what is typed, never the toolbar's "120".
+  CHECK(f.controller.updateTextComposition(U"", {}).hasValue());
+  const auto cleared = nodeNow(f, "toolbar.tempo");
+  CHECK(cleared.has_value());
+  if (!cleared.has_value()) return;
+  CHECK(cleared->role == native_ui::SemanticRole::TextField);
+  if (!cleared->value.empty()) throw test::Failure{"the cleared field reads " + cleared->value};
+  CHECK(cleared->editableValue.empty());
+  CHECK(f.controller.updateTextComposition(U"9", {}).hasValue());
+  const auto typed = nodeNow(f, "toolbar.tempo");
+  CHECK(typed.has_value() && typed->value == "9");
+  f.controller.cancelTextComposition();
+}
