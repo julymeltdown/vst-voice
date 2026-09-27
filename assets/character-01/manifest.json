@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "characterId": "official.character.01",
   "displayName": "Character 01",
-  "version": "0.3.0",
+  "version": "0.4.0-dev",
   "voicebankId": "official.voice.01",
   "style": "early-2000s-emo-ink",
   "defaultState": "neutral",
@@ -136,6 +136,293 @@
         "y": 0.1875,
         "width": 0.075,
         "height": 0.05
+      }
+    }
+  },
+  "defaultOutfit": "emo",
+  "poses": {
+    "emo": {
+      "empty": "runtime/v4/emo/pose/empty.qoi",
+      "error": "runtime/v4/emo/pose/error.qoi",
+      "complete": "runtime/v4/emo/pose/complete.qoi",
+      "listening": "runtime/v4/emo/pose/listening.qoi"
+    },
+    "scene": {
+      "empty": "runtime/v4/scene/pose/empty.qoi",
+      "error": "runtime/v4/scene/pose/error.qoi",
+      "complete": "runtime/v4/scene/pose/complete.qoi",
+      "listening": "runtime/v4/scene/pose/listening.qoi"
+    }
+  },
+  "portraits": {
+    "emo": {
+      "states": {
+        "neutral": "runtime/v4/emo/ring/neutral.qoi",
+        "focused": "runtime/v4/emo/ring/focused.qoi",
+        "rendering": "runtime/v4/emo/ring/rendering.qoi",
+        "complete": "runtime/v4/emo/ring/complete.qoi",
+        "warning": "runtime/v4/emo/ring/warning.qoi",
+        "error": "runtime/v4/emo/ring/error.qoi"
+      },
+      "avatars": {
+        "neutral": "runtime/v4/emo/avatar/neutral.qoi",
+        "focused": "runtime/v4/emo/avatar/focused.qoi",
+        "rendering": "runtime/v4/emo/avatar/rendering.qoi",
+        "complete": "runtime/v4/emo/avatar/complete.qoi",
+        "warning": "runtime/v4/emo/avatar/warning.qoi",
+        "error": "runtime/v4/emo/avatar/error.qoi"
+      },
+      "mouths": {
+        "closed": "runtime/v4/emo/mouth/closed.qoi",
+        "narrow": "runtime/v4/emo/mouth/narrow.qoi",
+        "nasal": "runtime/v4/emo/mouth/nasal.qoi",
+        "open": "runtime/v4/emo/mouth/open.qoi",
+        "wide": "runtime/v4/emo/mouth/wide.qoi",
+        "round": "runtime/v4/emo/mouth/round.qoi"
+      },
+      "mouthPlacement": {
+        "x": 0.462890625,
+        "y": 0.28125,
+        "width": 0.07421875,
+        "height": 0.07421875
+      },
+      "eyes": {
+        "neutral": [
+          {
+            "x": 0.3875,
+            "y": 0.25625,
+            "width": 0.05625,
+            "height": 0.0375
+          },
+          {
+            "x": 0.49375,
+            "y": 0.225,
+            "width": 0.075,
+            "height": 0.040625
+          }
+        ],
+        "focused": [
+          {
+            "x": 0.38125,
+            "y": 0.215625,
+            "width": 0.0625,
+            "height": 0.034375
+          },
+          {
+            "x": 0.4875,
+            "y": 0.19375,
+            "width": 0.075,
+            "height": 0.034375
+          }
+        ],
+        "rendering": [
+          {
+            "x": 0.375,
+            "y": 0.28125,
+            "width": 0.06875,
+            "height": 0.05
+          },
+          {
+            "x": 0.48125,
+            "y": 0.24375,
+            "width": 0.08125,
+            "height": 0.05
+          }
+        ],
+        "complete": [
+          {
+            "x": 0.38125,
+            "y": 0.26875,
+            "width": 0.0625,
+            "height": 0.05
+          },
+          {
+            "x": 0.48125,
+            "y": 0.21875,
+            "width": 0.08125,
+            "height": 0.046875
+          }
+        ],
+        "warning": [
+          {
+            "x": 0.38125,
+            "y": 0.25625,
+            "width": 0.0625,
+            "height": 0.0375
+          },
+          {
+            "x": 0.4875,
+            "y": 0.21875,
+            "width": 0.075,
+            "height": 0.04375
+          }
+        ],
+        "error": [
+          {
+            "x": 0.43125,
+            "y": 0.3,
+            "width": 0.1125,
+            "height": 0.05625
+          }
+        ]
+      }
+    },
+    "scene": {
+      "states": {
+        "neutral": "runtime/v4/scene/ring/neutral.qoi",
+        "focused": "runtime/v4/scene/ring/focused.qoi",
+        "rendering": "runtime/v4/scene/ring/rendering.qoi",
+        "complete": "runtime/v4/scene/ring/complete.qoi",
+        "warning": "runtime/v4/scene/ring/warning.qoi",
+        "error": "runtime/v4/scene/ring/error.qoi"
+      },
+      "avatars": {
+        "neutral": "runtime/v4/scene/avatar/neutral.qoi",
+        "focused": "runtime/v4/scene/avatar/focused.qoi",
+        "rendering": "runtime/v4/scene/avatar/rendering.qoi",
+        "complete": "runtime/v4/scene/avatar/complete.qoi",
+        "warning": "runtime/v4/scene/avatar/warning.qoi",
+        "error": "runtime/v4/scene/avatar/error.qoi"
+      },
+      "mouths": {
+        "closed": "runtime/v4/scene/mouth/closed.qoi",
+        "narrow": "runtime/v4/scene/mouth/narrow.qoi",
+        "nasal": "runtime/v4/scene/mouth/nasal.qoi",
+        "open": "runtime/v4/scene/mouth/open.qoi",
+        "wide": "runtime/v4/scene/mouth/wide.qoi",
+        "round": "runtime/v4/scene/mouth/round.qoi"
+      },
+      "mouthPlacement": {
+        "x": 0.462890625,
+        "y": 0.28125,
+        "width": 0.07421875,
+        "height": 0.07421875
+      },
+      "eyes": {
+        "neutral": [
+          {
+            "x": 0.3875,
+            "y": 0.25625,
+            "width": 0.05625,
+            "height": 0.0375
+          },
+          {
+            "x": 0.49375,
+            "y": 0.225,
+            "width": 0.075,
+            "height": 0.040625
+          }
+        ],
+        "focused": [
+          {
+            "x": 0.38125,
+            "y": 0.215625,
+            "width": 0.0625,
+            "height": 0.034375
+          },
+          {
+            "x": 0.4875,
+            "y": 0.19375,
+            "width": 0.075,
+            "height": 0.034375
+          }
+        ],
+        "rendering": [
+          {
+            "x": 0.375,
+            "y": 0.28125,
+            "width": 0.06875,
+            "height": 0.05
+          },
+          {
+            "x": 0.48125,
+            "y": 0.24375,
+            "width": 0.08125,
+            "height": 0.05
+          }
+        ],
+        "complete": [
+          {
+            "x": 0.38125,
+            "y": 0.26875,
+            "width": 0.0625,
+            "height": 0.05
+          },
+          {
+            "x": 0.48125,
+            "y": 0.21875,
+            "width": 0.08125,
+            "height": 0.046875
+          }
+        ],
+        "warning": [
+          {
+            "x": 0.38125,
+            "y": 0.25625,
+            "width": 0.0625,
+            "height": 0.0375
+          },
+          {
+            "x": 0.4875,
+            "y": 0.21875,
+            "width": 0.075,
+            "height": 0.04375
+          }
+        ],
+        "error": [
+          {
+            "x": 0.43125,
+            "y": 0.3,
+            "width": 0.1125,
+            "height": 0.05625
+          }
+        ]
+      }
+    }
+  },
+  "stage": {
+    "emo": {
+      "size": [
+        900,
+        1600
+      ],
+      "layers": [
+        "runtime/v4/emo/stage/body.qoi",
+        "runtime/v4/emo/stage/head.qoi",
+        "runtime/v4/emo/stage/hair-front.qoi"
+      ],
+      "eyes": {
+        "box": {
+          "x": 338,
+          "y": 232,
+          "width": 225,
+          "height": 78
+        },
+        "open": "runtime/v4/emo/stage/eyes-open.qoi",
+        "half": "runtime/v4/emo/stage/eyes-half.qoi",
+        "closed": "runtime/v4/emo/stage/eyes-closed.qoi"
+      }
+    },
+    "scene": {
+      "size": [
+        900,
+        1600
+      ],
+      "layers": [
+        "runtime/v4/scene/stage/body.qoi",
+        "runtime/v4/scene/stage/head.qoi",
+        "runtime/v4/scene/stage/hair-front.qoi"
+      ],
+      "eyes": {
+        "box": {
+          "x": 338,
+          "y": 232,
+          "width": 225,
+          "height": 78
+        },
+        "open": "runtime/v4/scene/stage/eyes-open.qoi",
+        "half": "runtime/v4/scene/stage/eyes-half.qoi",
+        "closed": "runtime/v4/scene/stage/eyes-closed.qoi"
       }
     }
   }

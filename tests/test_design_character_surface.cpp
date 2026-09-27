@@ -831,8 +831,9 @@ TEST_CASE("a singing frame draws the published mouth shape onto the ring portrai
   // Singing takes the mouth from the published performance and the sprite from the package. Two
   // different shapes must not produce the same pixels on the face, or the mouth is not following the
   // phrase at all.
-  const auto singingChecksum = [](character::MouthShape shape) {
+  const auto singingChecksum = [](character::MouthShape shape, bool reduceMotion = false) {
     ShellFixture f;
+    if (reduceMotion) f.shell.setReduceMotion(true);
     f.controller.setPlaying(true);
     auto view = native_ui::EditorSceneState::CharacterPerformanceView{};
     view.mouth = shape;
@@ -858,6 +859,26 @@ TEST_CASE("a singing frame draws the published mouth shape onto the ring portrai
   const auto closed = singingChecksum(character::MouthShape::Closed);
   const auto wide = singingChecksum(character::MouthShape::Wide);
   CHECK(closed != wide);
+  CHECK(singingChecksum(character::MouthShape::Closed, true) ==
+        singingChecksum(character::MouthShape::Wide, true));
+}
+
+TEST_CASE("a committed export shows Complete briefly and returns to Idle") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  ShellFixture f;
+  f.shell.setWorkspace(f.controller, native_ui::design::Workspace::Export);
+  authoring::ExportResult receipt;
+  receipt.state = authoring::ExportState::Committed;
+  receipt.masterPath = "development-master.wav";
+  receipt.masterSha256 = "2c2f8f7c";
+  f.controller.setLastExport(receipt);
+  CHECK(f.frame());
+  CHECK(f.shell.characterState() == CharacterState::Complete);
+  CHECK(f.repaints > 0);
+  f.now += std::chrono::seconds{2};
+  CHECK(f.frame());
+  CHECK(f.shell.characterState() == CharacterState::Idle);
 }
 
 TEST_CASE("an animating frame asks for the next one, and a still frame asks for nothing") {

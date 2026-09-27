@@ -1,6 +1,7 @@
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/paint/display_list.hpp"
+#include "seam/native_ui/paint/qoi.hpp"
 
 #include "seam/native_ui/diagnostic_presentation.hpp"
 
@@ -1119,6 +1120,15 @@ void CharacterSurface::clearPackage() noexcept {
 
 void CharacterSurface::dropDecoded() noexcept {
   portraits_.clear();
+  ringPortraits_.clear();
+  avatars_.clear();
+  ringMouths_.clear();
+  ringLidTones_.clear();
+  poses_.clear();
+  poseImages_.clear();
+  stageLayers_.clear();
+  stageEyes_.clear();
+  stageDecoded_ = false;
   mouths_.clear();
   lidTones_.clear();
   placement_.reset();
@@ -1146,6 +1156,136 @@ const PixelSurface* CharacterSurface::portrait(CharacterState state) const {
   auto [slot, inserted] = portraits_.emplace(state, std::move(decoded));
   static_cast<void>(inserted);
   return slot->second.has_value() ? &*slot->second : nullptr;
+}
+
+const PixelSurface* CharacterSurface::ringPortrait(CharacterState state) const {
+  if (!package_.has_value()) return nullptr;
+  const auto* ring = package_->manifest.ringPortraitsFor(outfit_);
+  if (ring == nullptr) return portrait(state);
+  if (const auto found = ringPortraits_.find(state); found != ringPortraits_.end())
+    return found->second.has_value() ? &*found->second : nullptr;
+  std::optional<PixelSurface> image;
+  const auto found = ring->states.find(characterPackageState(state));
+  if (found != ring->states.end()) {
+    auto decoded = paint::loadQoi(package_->root / found->second);
+    if (decoded) image = std::move(decoded.value());
+  }
+  auto [it, inserted] = ringPortraits_.emplace(state, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.has_value() ? &*it->second : nullptr;
+}
+
+const PixelSurface* CharacterSurface::avatar(CharacterState state) const {
+  if (!package_.has_value()) return nullptr;
+  const auto* ring = package_->manifest.ringPortraitsFor(outfit_);
+  if (ring == nullptr || ring->avatars.empty()) return portrait(state);
+  if (const auto found = avatars_.find(state); found != avatars_.end())
+    return found->second.has_value() ? &*found->second : nullptr;
+  std::optional<PixelSurface> image;
+  const auto found = ring->avatars.find(characterPackageState(state));
+  if (found != ring->avatars.end()) {
+    auto decoded = paint::loadQoi(package_->root / found->second);
+    if (decoded) image = std::move(decoded.value());
+  }
+  auto [it, inserted] = avatars_.emplace(state, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.has_value() ? &*it->second : nullptr;
+}
+
+const PixelSurface* CharacterSurface::ringMouth(character::MouthShape shape) const {
+  if (!package_.has_value()) return nullptr;
+  const auto* ring = package_->manifest.ringPortraitsFor(outfit_);
+  if (ring == nullptr) return mouth(shape);
+  if (const auto found = ringMouths_.find(shape); found != ringMouths_.end())
+    return found->second.has_value() ? &*found->second : nullptr;
+  std::optional<PixelSurface> image;
+  const auto found = ring->mouths.find(shape);
+  if (found != ring->mouths.end()) {
+    auto decoded = paint::loadQoi(package_->root / found->second);
+    if (decoded) image = std::move(decoded.value());
+  }
+  auto [it, inserted] = ringMouths_.emplace(shape, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.has_value() ? &*it->second : nullptr;
+}
+
+std::optional<character::MouthPlacement> CharacterSurface::ringMouthPlacement() const noexcept {
+  if (package_.has_value())
+    if (const auto* ring = package_->manifest.ringPortraitsFor(outfit_); ring != nullptr)
+      return ring->mouthPlacement;
+  return mouthPlacement();
+}
+
+std::vector<character::EyeBox> CharacterSurface::ringEyes(CharacterState state) const {
+  if (package_.has_value())
+    if (const auto* ring = package_->manifest.ringPortraitsFor(outfit_); ring != nullptr)
+      if (const auto found = ring->eyes.find(characterPackageState(state)); found != ring->eyes.end())
+        return found->second;
+  return eyes(state);
+}
+
+std::optional<Color> CharacterSurface::ringLidTone(CharacterState state) const {
+  if (const auto found = ringLidTones_.find(state); found != ringLidTones_.end()) return found->second;
+  std::optional<Color> tone;
+  if (const auto* image = ringPortrait(state); image != nullptr)
+    tone = eyelidTone(*image, ringEyes(state));
+  ringLidTones_.emplace(state, tone);
+  return tone;
+}
+
+const PixelSurface* CharacterSurface::pose(character::Pose poseName) const {
+  if (!package_.has_value() || !package_->manifest.layered()) return nullptr;
+  if (const auto found = poses_.find(poseName); found != poses_.end())
+    return found->second.has_value() ? &*found->second : nullptr;
+  std::optional<PixelSurface> image;
+  const auto path = package_->posePath(poseName, outfit_);
+  if (!path.empty()) {
+    auto decoded = paint::loadQoi(path);
+    if (decoded) image = std::move(decoded.value());
+  }
+  auto [it, inserted] = poses_.emplace(poseName, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.has_value() ? &*it->second : nullptr;
+}
+
+const paint::Image* CharacterSurface::poseImage(character::Pose poseName) const {
+  if (const auto found = poseImages_.find(poseName); found != poseImages_.end())
+    return found->second.get();
+  const auto* pixels = pose(poseName);
+  auto image = pixels == nullptr ? nullptr : paint::imageFromPixels(*pixels);
+  auto [it, inserted] = poseImages_.emplace(poseName, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.get();
+}
+
+const character::StageFigure* CharacterSurface::stageManifest() const noexcept {
+  return package_.has_value() ? package_->manifest.stageFor(outfit_) : nullptr;
+}
+
+const std::vector<std::shared_ptr<const paint::Image>>& CharacterSurface::stageLayers() const {
+  if (stageDecoded_) return stageLayers_;
+  stageDecoded_ = true;
+  const auto* manifest = stageManifest();
+  if (manifest == nullptr || !package_.has_value()) return stageLayers_;
+  for (const auto& relative : manifest->layers) {
+    auto decoded = paint::loadQoi(package_->root / relative);
+    if (!decoded) { stageLayers_.clear(); return stageLayers_; }
+    auto image = paint::imageFromPixels(decoded.value());
+    if (!image) { stageLayers_.clear(); return stageLayers_; }
+    stageLayers_.push_back(std::move(image));
+  }
+  return stageLayers_;
+}
+
+const paint::Image* CharacterSurface::stageEyes(character::StageEyes eyes) const {
+  const auto* manifest = stageManifest();
+  if (manifest == nullptr || !package_.has_value()) return nullptr;
+  if (const auto found = stageEyes_.find(eyes); found != stageEyes_.end()) return found->second.get();
+  auto decoded = paint::loadQoi(package_->root / manifest->eyes.at(eyes));
+  auto image = decoded ? paint::imageFromPixels(decoded.value()) : nullptr;
+  auto [it, inserted] = stageEyes_.emplace(eyes, std::move(image));
+  static_cast<void>(inserted);
+  return it->second.get();
 }
 
 const PixelSurface* CharacterSurface::mouth(character::MouthShape shape) const {

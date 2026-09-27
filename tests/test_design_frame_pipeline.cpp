@@ -9,6 +9,7 @@
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/character/character.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -68,8 +69,8 @@ struct Pipeline final {
   std::chrono::steady_clock::time_point now{at(10.0)};
 
   Pipeline(DesignMode mode, double backingScale, Contrast contrast = Contrast::Standard,
-           bool empty = false)
-      : session{makeProject(empty)}, controller{session, factory, regionId}, scale{backingScale},
+           bool empty = false, bool showCharacter = false)
+      : session{makeProject(empty, showCharacter)}, controller{session, factory, regionId}, scale{backingScale},
         retained{static_cast<std::uint32_t>(kWidth * backingScale),
                  static_cast<std::uint32_t>(kHeight * backingScale)} {
     controller.resize(kWidth, kHeight);
@@ -81,9 +82,10 @@ struct Pipeline final {
   }
 
   // An empty project has one region and no notes: the roll shows the empty-project splash.
-  domain::Project makeProject(bool empty) {
+  domain::Project makeProject(bool empty, bool showCharacter) {
     auto project = factory.createProject("Frame pipeline");
-    project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
+    project.settings().characterDisplay = showCharacter ? domain::CharacterDisplayMode::Full
+                                                       : domain::CharacterDisplayMode::Off;
     const auto track = factory.addVocalTrack(project, "Singer");
     regionId = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{96000});
     if (empty) return project;
@@ -105,6 +107,8 @@ struct Pipeline final {
     float level{0.0F};
     bool hover{false};
     bool box{false};
+    bool performing{false};
+    character::MouthShape mouth{character::MouthShape::Closed};
   };
 
   native_ui::EditorSceneState scene(const Inputs& in) {
@@ -113,6 +117,13 @@ struct Pipeline final {
     // Playing from the first frame: starting playback also swaps the play button for stop, which
     // is content, and the steps below isolate what moves while it plays.
     state.playing = true;
+    if (in.performing) {
+      native_ui::EditorSceneState::CharacterPerformanceView performance;
+      performance.performing = true;
+      performance.energy = 0.7F;
+      performance.mouth = in.mouth;
+      state.characterPerformance = performance;
+    }
     if (in.level > 0.0F)
       state.outputLevel = native_ui::EditorSceneState::OutputLevel{
           .peak = {in.level, in.level * 0.8F}, .hold = {0.8F, 0.7F}, .bus = "Master"};
@@ -365,6 +376,28 @@ TEST_CASE("cached and partial SING frames equal a full composition in both looks
   if (!std::filesystem::is_directory(designAssetRoot())) return;
   runPipeline(DesignMode::Emo, 1.0);
   runPipeline(DesignMode::Scene, 1.0);
+}
+
+TEST_CASE("layered Stage, ring mouth and outfit switches keep cached frames pixel exact") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  Pipeline p{DesignMode::Emo, 1.0, Contrast::Standard, false, true};
+  CHECK(p.cached.characterPackageLoaded());
+  Pipeline::Inputs in;
+  in.performing = true;
+  in.mouth = character::MouthShape::Closed;
+  auto r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(p.cached.lastFrameShowedStage());
+  in.mouth = character::MouthShape::Wide;
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
+  p.cached.setMode(DesignMode::Scene, false);
+  p.reference.setMode(DesignMode::Scene, false);
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.full);
 }
 
 TEST_CASE("cached and partial SING frames equal a full composition in both looks at 2x") {

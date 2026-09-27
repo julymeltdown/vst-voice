@@ -1,5 +1,21 @@
 # Character 01 runtime asset
 
+## Character Package v4 (development)
+
+`manifest.json` is schema 4 and retains the schema-two `states`, `mouths`, and `outfits`
+declarations and their PPM files. Older schema-two packages remain loadable: they draw their
+320×480 state portraits, while the Stage uses the look's existing image and the empty-project
+surface uses the state portrait or splash. In this package, `portraits` supplies 512×512
+QOI portraits, 64×64 avatars, ring mouth sprites and per-state eye boxes for EMO and SCENE;
+`stage` supplies three separate 900×1600 layers and open/half/closed eye sprites; `poses`
+supplies four 800×800 pictures per mode. A missing non-default v4 outfit falls back to EMO's
+layered assets. The loader checks the referenced files, paths, dimensions and byte limits before
+decoding, and the decoder rejects malformed or trailing data. `developmentOnly` remains true.
+
+Run `/usr/local/bin/python3 scripts/build_character_state_art.py build` from the repository root
+to regenerate the QOI assets and `previews/v4-emo.png`, `previews/v4-scene.png` from the committed
+masters. The generated full-body stage sources and their limits are documented in `PROVENANCE.md`.
+
 This package is the Phase 5.1 canonical character integration asset.
 
 - The character is a **voicebank / synthesis-product avatar**, not a singer or band frontwoman.

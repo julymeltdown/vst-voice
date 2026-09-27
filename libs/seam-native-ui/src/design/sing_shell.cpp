@@ -6,6 +6,7 @@
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
+#include "seam/native_ui/paint/qoi.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -329,6 +330,8 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
 
 void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
   static_cast<void>(character_.loadPackage(packageRoot));
+  listeningPortrait_.reset();
+  listeningPortraitPath_.clear();
   // A mode with its own state set in the package draws it; any other mode draws the shared set.
   character_.setOutfit(std::string{designModeName(preferences_.mode)});
   // Recorded portraits are hashed by identity: a reload may reuse an address, so every layer that
@@ -361,7 +364,9 @@ std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
     listeningPortraitPath_.clear();
     return {};
   }
-  const auto path = characterStateAssetPath(*package, CharacterState::Listening, character_.outfit());
+  const auto path = package->manifest.layered()
+      ? package->posePath(character::Pose::Listening, character_.outfit())
+      : characterStateAssetPath(*package, CharacterState::Listening, character_.outfit());
   if (path.empty()) {
     listeningPortrait_.reset();
     listeningPortraitPath_.clear();
@@ -370,9 +375,14 @@ std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
   if (listeningPortrait_ != nullptr && listeningPortraitPath_ == path) return listeningPortrait_;
   listeningPortraitPath_ = path;
   ++artGeneration_;
-  // The backend decodes the package's PPM through its own image loader, so the hero's ring draws the
-  // declared pose with the same masking and filtering as the look's artwork.
-  listeningPortrait_ = paint::loadImage(path);
+  // The hero's pose is decoded once through the relevant PPM or QOI path and then uses the same
+  // masking and filtering as the look's artwork.
+  if (path.extension() == ".qoi") {
+    auto pixels = paint::loadQoi(path);
+    listeningPortrait_ = pixels ? paint::imageFromPixels(pixels.value()) : nullptr;
+  } else {
+    listeningPortrait_ = paint::loadImage(path);
+  }
   return listeningPortrait_;
 }
 
@@ -1227,7 +1237,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   // painter below draws through this one canvas.
   frame.setGlowless(t.contrast == Contrast::High);
   auto* c = &frame;
-  // The raster front carries the character package's PPM artwork into the same frame the vector
+  // The raster front carries the character package's state or QOI ring artwork into the same frame the vector
   // canvas paints; both fronts live only for this call.
   raster_ = &canvas;
   struct RasterScope final {
@@ -1248,6 +1258,17 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   characterDisplay_ = state.characterMode;
   const auto reduceMotion = preferences_.reduceMotion;
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
+  // A committed receipt is the only export signal that can briefly show the complete pose.
+  // Keep the dwell tied to the receipt identity, not to a paint count or export progress.
+  if (state.lastExport && state.lastExport->state == authoring::ExportState::Committed) {
+    const auto key = state.lastExport->masterPath.string() + ":" + state.lastExport->masterSha256;
+    if (key != lastCompletedExportKey_) {
+      lastCompletedExportKey_ = key;
+      exportCompleteUntil_ = frameNow_ + std::chrono::milliseconds{1500};
+    }
+    if (frameNow_ < exportCompleteUntil_ && characterState_ == CharacterState::Idle)
+      characterState_ = CharacterState::Complete;
+  }
   animator_.advance(characterState_, frameNow_, reduceMotion);
   motion_ = animator_.motion();
   motionShown_ = false;
@@ -1362,6 +1383,10 @@ void SingShell::scheduleAnimationRepaint() {
   // The request asks for a frame; what that frame costs is decided when it is composed. A blink or a
   // breath changes only the avatar and ring items of the dynamic layer, so the frame rasterizes that
   // layer alone and lastFrameDamage() names just those rectangles for the presenter to invalidate.
+  if (characterState_ == CharacterState::Complete && frameNow_ < exportCompleteUntil_) {
+    repaint();
+    return;
+  }
   if (stageFade_.fading()) {
     repaint();
     return;
@@ -1562,15 +1587,16 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   if (l.headerAvatar.width > 0.0) {
     // The avatar blinks and breathes: a dynamic item, drawn through both fronts at composition.
     const paint::LayerScope avatarLayer{c, paint::Layer::Dynamic, "avatar"};
-    const auto* package = characterPortrait(characterState_);
+    const auto* package = characterDisplay_ == domain::CharacterDisplayMode::Off
+        ? nullptr : character_.avatar(characterState_);
     const auto* look = lookPortrait();
     const auto bounds = l.headerAvatar;
     const auto pose = characterState_;
     const auto blink = motion_.blink;
     const auto breath = motion_.breath;
     // The lid closes over this state's eyes, in the outfit the mode draws.
-    auto eyes = character_.eyes(pose);
-    const auto lidTone = character_.lidTone(pose);
+    auto eyes = character_.ringEyes(pose);
+    const auto lidTone = character_.ringLidTone(pose);
     paint::ContentHash h;
     h.add(std::string_view{"avatar"}).add(static_cast<const void*>(&t)).add(bounds)
         .add(static_cast<std::uint64_t>(pose)).add(std::string_view{character_.outfit()})
@@ -1841,10 +1867,11 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   stageInput.grid = l.grid;
   stageInput.splashShown = notes.empty() && model.noteCount() == 0U &&
                            emptyProjectSplashBounds(l.grid, assets().splash.get()).has_value();
-  const auto stageAspect = assets().stage
-                               ? static_cast<double>(assets().stage->width()) /
-                                     static_cast<double>(assets().stage->height())
-                               : 0.0;
+  const auto* layeredStage = character_.stageManifest();
+  const auto stageAspect = layeredStage != nullptr
+      ? static_cast<double>(layeredStage->width) / layeredStage->height
+      : assets().stage ? static_cast<double>(assets().stage->width()) / assets().stage->height()
+                       : 0.0;
   auto placement = resolveStage(stageInput, stageAspect);
   for (const auto& note : notes) {
     auto bounds = note.bounds;
@@ -1863,11 +1890,31 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   placement = resolveStage(stageInput, stageAspect);
   stagePlacement_ = placement;
   stageShown_ = placement.shown;
-  if (placement.shown && assets().stage) {
+  if (placement.shown && (layeredStage != nullptr || assets().stage)) {
     // The figure is drawn before the notes and the pitch curve, so it sits below them, and the fade's
     // ticking is what keeps frames coming while it settles. Reduce Motion applies the change at once.
     const auto opacity = stageFade_.advance(placement, frameNow_, preferences_.reduceMotion);
-    paintStageFigure(characterCanvas(c), l.grid, placement, opacity, *assets().stage);
+    const auto& layers = character_.stageLayers();
+    if (!layers.empty()) {
+      for (const auto& layer : layers)
+        paintStageFigure(characterCanvas(c), l.grid, placement, opacity, *layer);
+      const auto eyes = characterState_ == CharacterState::Singing
+          ? character::StageEyes::Half
+          : motion_.blink > 0.5 ? character::StageEyes::Closed : character::StageEyes::Open;
+      if (const auto* sprite = character_.stageEyes(eyes); sprite != nullptr) {
+        const auto scaleX = placement.bounds.width / layeredStage->width;
+        const auto scaleY = placement.bounds.height / layeredStage->height;
+        const auto& box = layeredStage->eyeBox;
+        c.save();
+        c.clipRect(l.grid);
+        c.drawImage(*sprite, {placement.bounds.x + box.x * scaleX,
+                              placement.bounds.y + box.y * scaleY,
+                              box.width * scaleX, box.height * scaleY}, opacity);
+        c.restore();
+      }
+    } else if (assets().stage) {
+      paintStageFigure(characterCanvas(c), l.grid, placement, opacity, *assets().stage);
+    }
   } else {
     static_cast<void>(stageFade_.advance(placement, frameNow_, preferences_.reduceMotion));
   }
@@ -2100,7 +2147,10 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // The region genuinely has no notes: the seated pose and the instruction to write the first one.
     // No pose asset is declared by this package, so the state portrait stands in for it and the line
     // is the shell's own, shown only here.
-    const auto* package = characterPortrait(CharacterState::Idle);
+    const auto* package = character_.pose(character::Pose::Empty) != nullptr &&
+                                  characterDisplay_ != domain::CharacterDisplayMode::Off
+                              ? character_.pose(character::Pose::Empty)
+                              : characterPortrait(CharacterState::Idle);
     const auto* look = lookPortrait();
     // The mode's key art stands in for the seated pose when the roll can hold it; it is character
     // artwork too, so a display that is Off draws only the line.
@@ -2620,10 +2670,13 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   // portrait is shown as it is rather than with a mouth the artwork does not have.
   const PixelSurface* singingMouth = nullptr;
   std::optional<character::MouthPlacement> singingPlacement;
-  if (characterState_ == CharacterState::Singing) {
+  if (characterState_ == CharacterState::Singing &&
+      characterDisplay_ != domain::CharacterDisplayMode::Off) {
     if (const auto& performance = state.characterPerformance; performance.has_value()) {
-      singingMouth = characterMouth(performance->mouth);
-      singingPlacement = character_.mouthPlacement();
+      // A held, neutral vowel gives singing a stable face when Reduce Motion is enabled.
+      singingMouth = character_.ringMouth(preferences_.reduceMotion
+          ? character::MouthShape::Open : performance->mouth);
+      singingPlacement = character_.ringMouthPlacement();
     }
   }
   const SingerRingSpec spec{
@@ -2631,7 +2684,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .state = performanceState,
       .lit = lit,
       .rotation = motion_.spinner,
-      .packagePortrait = characterPortrait(performanceState),
+      .packagePortrait = characterDisplay_ == domain::CharacterDisplayMode::Off
+          ? nullptr : character_.ringPortrait(performanceState),
       .lookPortrait = lookPortrait(),
       .portraitOpacity = voiceReady ? 1.0 : 0.55,
       .mouthSprite = singingMouth,
@@ -2639,8 +2693,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .mouthOpacity = voiceReady ? 1.0 : 0.55,
       .breath = motion_.breath,
       .blink = motion_.blink,
-      .eyes = character_.eyes(performanceState),
-      .lidTone = character_.lidTone(performanceState),
+      .eyes = character_.ringEyes(performanceState),
+      .lidTone = character_.ringLidTone(performanceState),
       // The glow sprites composite straight onto the surface, past the glowless canvas High
       // Contrast replays through, so High Contrast draws the ring without them (and without glow).
       .glows = t.contrast == Contrast::High ? nullptr : &ringGlows_,
@@ -2990,7 +3044,10 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     const auto toast = *errorToast_;
     // Over the lane like the diagnostics toast, and so above the lane's playhead for the same reason.
     const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "error-toast"};
-    const auto* package = characterPortrait(CharacterState::Error);
+    const auto* package = characterDisplay_ == domain::CharacterDisplayMode::Off
+        ? nullptr : character_.pose(character::Pose::Error) != nullptr
+                        ? character_.pose(character::Pose::Error)
+                        : characterPortrait(CharacterState::Error);
     const auto* look = lookPortrait();
     const auto hash = paint::ContentHash{}
                           .add(std::string_view{"toast"}).add(static_cast<const void*>(&t))
@@ -3738,6 +3795,14 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
                                                        last->masterSha256.substr(0U, 12U)})
                            : last->masterPath.filename().string(),
                        t.color.textPrimary});
+    if (!p.compact && last->state == authoring::ExportState::Committed &&
+        characterDisplay_ != domain::CharacterDisplayMode::Off) {
+      if (const auto* complete = character_.poseImage(character::Pose::Complete); complete != nullptr) {
+        const auto side = std::min(180.0, std::max(0.0, area.width - p.columnWidth - 96.0));
+        if (side > 0.0)
+          c.drawImage(*complete, {area.right() - side - 32.0, area.y + 62.0, side, side}, 0.88);
+      }
+    }
   } else {
     lines.push_back({tr(Str::LastExport), tr(Str::NothingExportedInThisSession), t.color.textSecondary});
   }

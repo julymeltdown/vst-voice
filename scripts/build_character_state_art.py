@@ -36,6 +36,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import struct
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -51,6 +52,8 @@ STATES = ("neutral", "focused", "rendering", "complete", "warning", "error")
 MOUTHS = ("closed", "narrow", "nasal", "open", "wide", "round")
 MODES = ("emo", "scene")
 OUTFITS = ("scene",)
+POSES = {"empty": "neutral", "error": "error", "complete": "complete",
+         "listening": "focused"}
 
 RUNTIME_SIZE = (320, 480)  # The standing-frame convention character_surface.cpp crops against.
 MASTER_SIZE = (640, 960)  # 2x the runtime frame.
@@ -94,6 +97,48 @@ def write_ppm(image: Image.Image, path: Path) -> None:
     height, width = rgb.shape[:2]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(f"P6\n{width} {height}\n255\n".encode("ascii") + rgb.tobytes())
+
+
+def write_qoi(image: Image.Image, path: Path) -> None:
+    """Encode straight RGBA/RGB pixels with the QOI chunk rules, without a codec dependency."""
+    image = image.convert("RGBA")
+    width, height = image.size
+    pixels = image.tobytes()
+    header = b"qoif" + struct.pack(">IIBB", width, height, 4, 0)
+    index = [(0, 0, 0, 0)] * 64
+    previous = (0, 0, 0, 255)
+    chunks = bytearray()
+    run = 0
+    count = width * height
+    for offset in range(count):
+        pixel = tuple(pixels[offset * 4:offset * 4 + 4])
+        if pixel == previous:
+            run += 1
+            if run == 62 or offset == count - 1:
+                chunks.append(0xC0 | (run - 1))
+                run = 0
+            continue
+        if run:
+            chunks.append(0xC0 | (run - 1))
+            run = 0
+        slot = (pixel[0] * 3 + pixel[1] * 5 + pixel[2] * 7 + pixel[3] * 11) % 64
+        if index[slot] == pixel:
+            chunks.append(slot)
+        else:
+            index[slot] = pixel
+            if pixel[3] != previous[3]:
+                chunks.extend((0xFF, *pixel))
+            else:
+                dr, dg, db = (pixel[i] - previous[i] for i in range(3))
+                if -2 <= dr <= 1 and -2 <= dg <= 1 and -2 <= db <= 1:
+                    chunks.append(0x40 | ((dr + 2) << 4) | ((dg + 2) << 2) | (db + 2))
+                elif -32 <= dg <= 31 and -8 <= dr - dg <= 7 and -8 <= db - dg <= 7:
+                    chunks.extend((0x80 | (dg + 32), ((dr - dg + 8) << 4) | (db - dg + 8)))
+                else:
+                    chunks.extend((0xFE, *pixel[:3]))
+        previous = pixel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(header + chunks + bytes((0, 0, 0, 0, 0, 0, 0, 1)))
 
 
 def cover(image: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -333,6 +378,127 @@ def build_set(outfit: str | None) -> tuple[dict[str, Image.Image], dict]:
     return portraits, fragment
 
 
+def build_v4(manifest: dict) -> None:
+    """Derive v4's bounded QOI assets from the reviewed development masters.
+
+    Existing state poses remain their authored pictures. The two full-body stage sources were
+    generated as edits of the corresponding neutral masters and are recorded in PROVENANCE.md.
+    Layer splitting, crops, mouths and eye variants are deterministic image operations.
+    """
+    manifest["schemaVersion"] = 4
+    manifest["version"] = "0.4.0-dev"
+    manifest["defaultOutfit"] = "emo"
+    rings, stages, poses = {}, {}, {}
+    for mode in MODES:
+        source = masters_dir(None if mode == "emo" else mode)
+        base = CHARACTER / "runtime/v4" / mode
+        prefix = f"runtime/v4/{mode}"
+        state_paths, avatar_paths = {}, {}
+        for state in STATES:
+            master = Image.open(source / f"{state}.png").convert("RGBA")
+            ring = master.crop((0, 0, 640, 640)).resize((512, 512), Image.Resampling.LANCZOS)
+            ring_mask = Image.new("L", (512, 512))
+            ImageDraw.Draw(ring_mask).ellipse((0, 0, 511, 511), fill=255)
+            ring.putalpha(ring_mask)
+            avatar = ring.resize((64, 64), Image.Resampling.LANCZOS)
+            write_qoi(ring, base / "ring" / f"{state}.qoi")
+            write_qoi(avatar, base / "avatar" / f"{state}.qoi")
+            state_paths[state] = f"{prefix}/ring/{state}.qoi"
+            avatar_paths[state] = f"{prefix}/avatar/{state}.qoi"
+        # The original keyed 24px sprites are reused: only the magenta key becomes transparent.
+        mouth_paths = {}
+        for shape in MOUTHS:
+            original = Image.open(runtime_dir(None if mode == "emo" else mode) /
+                                  f"mouth-{shape}.ppm").convert("RGB")
+            rgb = np.asarray(original)
+            alpha = np.where(np.all(rgb == MOUTH_KEY, axis=2), 0, 255).astype(np.uint8)
+            rgba = np.dstack((rgb, alpha))
+            mouth = Image.fromarray(rgba, "RGBA").resize((38, 38), Image.Resampling.NEAREST)
+            write_qoi(mouth, base / "mouth" / f"{shape}.qoi")
+            mouth_paths[shape] = f"{prefix}/mouth/{shape}.qoi"
+        rings[mode] = {
+            "states": state_paths, "avatars": avatar_paths, "mouths": mouth_paths,
+            "mouthPlacement": {"x": 237 / 512, "y": 144 / 512,
+                               "width": 38 / 512, "height": 38 / 512},
+            "eyes": {state: [{"x": l / 320, "y": t / 320,
+                               "width": (r-l) / 320, "height": (b-t) / 320}
+                              for l, t, r, b in EYES[state]] for state in STATES},
+        }
+        full = Image.open(CHARACTER / "source/stage" / f"{mode}-full-body.png").convert("RGBA")
+        # Preserve the full figure's aspect and transparency within the promised 900x1600 canvas.
+        fitted = Image.new("RGBA", (900, 1600))
+        contained = full.copy()
+        contained.thumbnail((900, 1600), Image.Resampling.LANCZOS)
+        at = ((900 - contained.width) // 2, (1600 - contained.height) // 2)
+        fitted.alpha_composite(contained, at)
+        # The head and body are independent alpha layers. The fringe is isolated for a future
+        # over-eye pass; at rest the three layers compose to the approved full-body picture.
+        body = fitted.copy()
+        head = Image.new("RGBA", fitted.size)
+        head.paste(fitted.crop((0, 0, 900, 510)), (0, 0))
+        ImageDraw.Draw(body).rectangle((0, 0, 899, 509), fill=(0, 0, 0, 0))
+        eye_box = (338, 232, 225, 78)
+        ImageDraw.Draw(head).rectangle((eye_box[0], eye_box[1],
+                                        eye_box[0] + eye_box[2] - 1,
+                                        eye_box[1] + eye_box[3] - 1), fill=(0, 0, 0, 0))
+        fringe = Image.new("RGBA", fitted.size)
+        fringe.paste(fitted.crop((300, 0, 620, 210)), (300, 0))
+        ImageDraw.Draw(head).rectangle((300, 0, 619, 209), fill=(0, 0, 0, 0))
+        stage_layers = []
+        for name, layer in (("body", body), ("head", head), ("hair-front", fringe)):
+            write_qoi(layer, base / "stage" / f"{name}.qoi")
+            stage_layers.append(f"{prefix}/stage/{name}.qoi")
+        eye_image = fitted.crop((eye_box[0], eye_box[1], eye_box[0] + eye_box[2],
+                                 eye_box[1] + eye_box[3]))
+        stage_eyes = {"box": {"x": eye_box[0], "y": eye_box[1],
+                              "width": eye_box[2], "height": eye_box[3]}}
+        for name, closedness in (("open", 0.0), ("half", 0.35), ("closed", 0.68)):
+            sprite = eye_image.copy()
+            if closedness:
+                veil = Image.new("RGBA", sprite.size, (151, 141, 143, round(220 * closedness)))
+                sprite = Image.alpha_composite(sprite, veil)
+                draw = ImageDraw.Draw(sprite)
+                y = round(sprite.height * (0.45 + closedness * 0.25))
+                draw.line((28, y, 88, y + 3, 125, y - 2, 198, y), fill=(29, 23, 28, 230),
+                          width=round(2 + closedness * 4))
+            write_qoi(sprite, base / "stage" / f"eyes-{name}.qoi")
+            stage_eyes[name] = f"{prefix}/stage/eyes-{name}.qoi"
+        stages[mode] = {"size": [900, 1600], "layers": stage_layers, "eyes": stage_eyes}
+        poses[mode] = {}
+        pose_previews = {}
+        for pose, state in POSES.items():
+            if pose == "empty":
+                splash = Image.open(UI_DESIGN / mode / "splash.png").convert("RGBA")
+                crop = splash.crop((600, 0, 1600, 1000)).resize((800, 800), Image.Resampling.LANCZOS)
+            elif pose == "listening":
+                crop = Image.open(CHARACTER / "source/poses" /
+                                  f"{mode}-listening.png").convert("RGBA").resize(
+                                      (800, 800), Image.Resampling.LANCZOS)
+            else:
+                master = Image.open(source / f"{state}.png").convert("RGBA")
+                crop = master.crop((0, 0, 640, 640)).resize((800, 800), Image.Resampling.LANCZOS)
+            write_qoi(crop, base / "pose" / f"{pose}.qoi")
+            poses[mode][pose] = f"{prefix}/pose/{pose}.qoi"
+            pose_previews[pose] = crop
+        sheet = Image.new("RGB", (6 * 256, 512), (20, 20, 24))
+        for col, state in enumerate(STATES):
+            ring = Image.open(source / f"{state}.png").convert("RGB")
+            sheet.paste(ring.crop((0, 0, 640, 640)).resize((256, 256)), (col * 256, 0))
+        sheet.paste(fitted.convert("RGB").resize((144, 256)), (0, 256))
+        for col, pose in enumerate(POSES):
+            sheet.paste(pose_previews[pose].convert("RGB").resize((256, 256)),
+                        (144 + col * 256, 256))
+        PREVIEWS.mkdir(parents=True, exist_ok=True)
+        sheet.save(PREVIEWS / f"v4-{mode}.png", optimize=True)
+    # A byte-exact RGB twin of an existing PPM verifies the decoder independent of resizing.
+    write_qoi(Image.open(RUNTIME / "neutral.ppm"), CHARACTER / "runtime/v4/ppm-equivalence-neutral.qoi")
+    manifest.pop("ringPortraits", None)
+    manifest.pop("stages", None)
+    manifest["portraits"] = rings
+    manifest["stage"] = stages
+    manifest["poses"] = poses
+
+
 def build() -> None:
     manifest_path = CHARACTER / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -351,6 +517,7 @@ def build() -> None:
         manifest["outfits"] = outfits
     else:
         manifest.pop("outfits", None)
+    build_v4(manifest)
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     eye_sheet(sets).save(PREVIEWS / "eye-boxes.png", optimize=True)
     print(json.dumps({"sets": list(sets), "eyes": manifest["eyes"]["neutral"]}, indent=2))

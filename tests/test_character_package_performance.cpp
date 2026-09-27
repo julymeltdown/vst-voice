@@ -323,7 +323,7 @@ TEST_CASE("A partial or contradictory package is refused by cause") {
   CHECK(flagged.error().code == core::ErrorCode::InvariantViolation);
 
   const auto future = character::loadPackage(writePackage(
-      test::support::temporaryDirectory("character-future"), 4, Mouths::Complete, false));
+      test::support::temporaryDirectory("character-future"), 5, Mouths::Complete, false));
   CHECK(!future.hasValue());
   CHECK(future.error().code == core::ErrorCode::Unsupported);
 }
