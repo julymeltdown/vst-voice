@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Verify the bounded, shipped EMO/SCENE UI asset set.
 
+Each mode ships a portrait, a stage figure, a wordmark and a 1600x1000 splash key art.
+
 This checks exact runtime paths, manifest metadata, PNG integrity and decoded
 alpha. It cannot establish art ownership, visual brand clearance, or the hashes
 of generator originals that are not bundled with this repository.
@@ -21,7 +23,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ASSETS = ROOT / "assets/ui-design"
 MODES = ("emo", "scene")
-ROLES = ("portrait", "stage", "wordmark")
+ROLES = ("portrait", "stage", "wordmark", "splash")
 MAX_ENCODED = 8 * 1024 * 1024  # Same limit as paint::ImageLimits.
 MAX_PIXELS = 4096 * 4096
 MAX_MANIFEST = 64 * 1024
@@ -140,7 +142,7 @@ def verify(asset_root: Path = DEFAULT_ASSETS) -> list[str]:
         errors.append("developmentOnly must remain true until an independently cleared release")
     entries = manifest.get("assets")
     if not isinstance(entries, list) or len(entries) != len(MODES) * len(ROLES):
-        return errors + ["manifest must list exactly six mode/role assets"]
+        return errors + [f"manifest must list exactly {len(MODES) * len(ROLES)} mode/role assets"]
     expected_paths = {f"{mode}/{role}.png" for mode in MODES for role in ROLES}
     seen: set[str] = set()
     for entry in entries:
@@ -221,7 +223,8 @@ def main() -> int:
         for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    print("PASS: six EMO/SCENE PNGs, manifest, alpha, hashes and provenance references")
+    print(f"PASS: {len(MODES) * len(ROLES)} EMO/SCENE PNGs, manifest, alpha, hashes and "
+          "provenance references")
     print("NOT_VERIFIED: generator originals, art rights, visual brand clearance")
     return 0
 

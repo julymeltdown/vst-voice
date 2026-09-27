@@ -1907,7 +1907,8 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_design_system_tests)
     add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
     add_executable(seam_design_character_surface_tests
-      tests/test_main.cpp tests/test_design_character_surface.cpp)
+      tests/test_main.cpp tests/test_design_character_surface.cpp
+      tests/test_character_state_art.cpp)
     target_include_directories(seam_design_character_surface_tests PRIVATE tests)
     target_link_libraries(seam_design_character_surface_tests PRIVATE
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
