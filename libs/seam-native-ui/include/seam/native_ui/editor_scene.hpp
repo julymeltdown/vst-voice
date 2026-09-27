@@ -1293,56 +1293,8 @@ struct EditorSceneLayout final {
 [[nodiscard]] std::optional<double> resolveArrangementInspectorTop(
     const EditorSceneState& state, const EditorSceneLayout& layout, double contentBottom) noexcept;
 
-class EditorScenePainter final {
-public:
-  explicit EditorScenePainter(EditorSceneTheme theme = {}) noexcept
-      : theme_(theme) {}
-
-  [[nodiscard]] EditorSceneLayout layout() const noexcept { return layout_; }
-  [[nodiscard]] EditorSceneTheme theme() const noexcept { return theme_; }
-  void paint(RasterCanvas& canvas, ui::PianoRollModel& model,
-             const EditorSceneState& state) const noexcept;
-
-private:
-  void paintToolbar(RasterCanvas& canvas, const EditorSceneState& state) const noexcept;
-  void paintGrid(RasterCanvas& canvas, const ui::PianoRollModel& model,
-                 double editorRight, double contentBottom) const noexcept;
-  void paintKeyboard(RasterCanvas& canvas, const ui::PianoRollModel& model,
-                     double contentBottom) const noexcept;
-  void paintNotes(RasterCanvas& canvas,
-                  const ui::PianoRollModel& model,
-                  const EditorSceneState& state) const noexcept;
-  void paintEmptyPianoRoll(RasterCanvas& canvas, double editorRight,
-                           double pianoBottom) const noexcept;
-  void paintTechnicalLanes(RasterCanvas& canvas, const ui::PianoRollModel& model,
-                           const EditorSceneState& state,
-                           double editorRight) const noexcept;
-  void paintCharacter(RasterCanvas& canvas, const EditorSceneState& state,
-                      double editorRight, double contentBottom) const noexcept;
-  void paintArrangement(RasterCanvas& canvas, const EditorSceneState& state,
-                        double editorRight, double contentBottom) const noexcept;
-  void paintVoicebankBrowser(RasterCanvas& canvas,
-                             const EditorSceneState& state,
-                             double editorRight, double contentBottom) const noexcept;
-  void paintAudioSettings(RasterCanvas& canvas,
-                          const EditorSceneState& state,
-                          double editorRight, double contentBottom) const noexcept;
-  void paintRecoverySupport(RasterCanvas& canvas,
-                            const EditorSceneState& state,
-                            double editorRight,
-                            double contentBottom) const noexcept;
-  void paintDiagnostics(RasterCanvas& canvas,
-                        const EditorSceneState& state) const noexcept;
-  void paintExportProgress(RasterCanvas& canvas,
-                           const EditorSceneState& state) const noexcept;
-  void paintSampleMicroscope(RasterCanvas& canvas,
-                             const EditorSceneState& state) const noexcept;
-  void paintPhonemeReview(RasterCanvas& canvas, const EditorSceneState& state) const noexcept;
-  void paintStatus(RasterCanvas& canvas, const ui::PianoRollModel& model,
-                   const EditorSceneState& state) const noexcept;
-
-  EditorSceneTheme theme_;
-  EditorSceneLayout layout_;
-};
+// What a host draws where the SING shell cannot present (a platform without the vector backend):
+// a notice, never an editor. Windows and Linux editor surfaces are a TODO (README, Windows TODO).
+void paintEditorUnavailable(RasterCanvas& canvas, const EditorSceneTheme& theme = {}) noexcept;
 
 }  // namespace seam::native_ui

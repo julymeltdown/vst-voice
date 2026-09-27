@@ -6,14 +6,6 @@
 
 namespace seam::native_ui {
 
-CharacterDockPresentation resolveCharacterDockPresentation(
-    double dockWidth, double portraitMinimumWidth) noexcept {
-  // Written as negated comparisons so a non-finite width hides the dock instead of drawing a fragment.
-  if (!(dockWidth >= kCharacterDockCompactMinimumWidth)) return CharacterDockPresentation::Hidden;
-  if (!(dockWidth >= portraitMinimumWidth)) return CharacterDockPresentation::Compact;
-  return CharacterDockPresentation::Full;
-}
-
 TechnicalLaneHeights resolveTechnicalLaneHeights(
     const TechnicalLaneLayoutInput& input) noexcept {
   TechnicalLaneHeights result;
@@ -43,53 +35,6 @@ TechnicalLaneHeights resolveTechnicalLaneHeights(
   const auto used = std::accumulate(result.values.begin(), result.values.end(), 0.0);
   result.pianoBottom = std::max(input.contentTop, input.contentBottom - used);
   return result;
-}
-
-EditorFrameLayout buildEditorFrameLayout(
-    const EditorFrameLayoutInput& input) noexcept {
-  const auto width = std::max(0.0, input.logicalWidth);
-  const auto height = std::max(0.0, input.logicalHeight);
-  const auto dockWidth = input.dockVisible ? std::max(0.0, input.dockWidth) : 0.0;
-  const auto editorRight = std::clamp(
-      std::max(input.keyboardWidth + input.minimumTimelineWidth,
-               width - dockWidth),
-      0.0, width);
-  const auto contentTop = std::clamp(input.toolbarHeight + input.rulerHeight,
-                                     0.0, height);
-  const auto statusTop = std::clamp(height - input.statusHeight, contentTop,
-                                    height);
-  const auto contentBottom = std::clamp(
-      height - input.statusHeight - input.bottomInset, contentTop, statusTop);
-  const auto pianoBottom = std::clamp(input.pianoBottom, contentTop,
-                                      contentBottom);
-  const auto phonemeTop = pianoBottom;
-  const auto unitTop = phonemeTop + std::max(0.0, input.phonemeHeight);
-  const auto seamTop = unitTop + std::max(0.0, input.unitHeight);
-  const auto pitchTop = seamTop + std::max(0.0, input.seamHeight);
-  return EditorFrameLayout{
-      .toolbar = ui::Rect{0.0, 0.0, width, std::max(0.0, input.toolbarHeight)},
-      .ruler = ui::Rect{0.0, input.toolbarHeight, editorRight,
-                        std::max(0.0, input.rulerHeight)},
-      .timeline = ui::Rect{input.keyboardWidth, contentTop,
-                           std::max(0.0, editorRight - input.keyboardWidth),
-                           std::max(0.0, pianoBottom - contentTop)},
-      .keyboard = ui::Rect{0.0, contentTop, input.keyboardWidth,
-                           std::max(0.0, pianoBottom - contentTop)},
-      .phonemeLane = ui::Rect{0.0, phonemeTop, editorRight,
-                              std::max(0.0, input.phonemeHeight)},
-      .unitLane = ui::Rect{0.0, unitTop, editorRight,
-                           std::max(0.0, input.unitHeight)},
-      .seamLane = ui::Rect{0.0, seamTop, editorRight,
-                           std::max(0.0, input.seamHeight)},
-      .pitchLane = ui::Rect{0.0, pitchTop, editorRight,
-                            std::max(0.0, input.pitchHeight)},
-      .status = ui::Rect{0.0, statusTop, width,
-                         std::max(0.0, input.statusHeight)},
-      .dock = ui::Rect{editorRight, input.toolbarHeight,
-                       std::max(0.0, width - editorRight),
-                       std::max(0.0, contentBottom - input.toolbarHeight)},
-      .editorRight = editorRight,
-  };
 }
 
 }

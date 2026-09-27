@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -68,7 +69,7 @@ TEST_CASE("native dynamics navigation clips curves and keeps score and main time
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_ZOOM_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Right}));
   CHECK(controller.sceneState().replacementReview.dynamicsPlot->startTick == 2880);
@@ -197,7 +198,7 @@ TEST_CASE("native dynamics inspector edits point drafts and publishes the region
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_INSPECTOR_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   auto expected = source;
   CHECK(expected.findRegion(fixture.regionId)->dynamicsAutomation.replacePoints({{time::Tick{0}, 0.25F}, {time::Tick{960}, 1.0F}}));
@@ -391,7 +392,7 @@ TEST_CASE("dynamics inspector explains generated overrides and preserves manual 
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_INFLUENCE_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.openReplacementRow(0U)); CHECK(controller.openReplacementRow(1U));
   CHECK(controller.commitTextComposition(U"0.25")); CHECK(controller.replacementReviewAction(3U));

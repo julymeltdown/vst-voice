@@ -59,9 +59,10 @@ struct NativeEditorAppConfig final {
   std::function<core::Result<authoring::StagedJapaneseReadingResource>()>
       prepareJapaneseReadingResource;
   std::filesystem::path manualsRoot;
-  // Presents the EMO/SCENE SING workspace. The shipping app enables it; tests keep the classic
-  // editor so their pixel and hit-test expectations stay independent of the user's preferences.
-  bool designShell{false};
+  // The SING shell is always the editor surface. The shipping app reads and writes the user's
+  // saved look (EMO/SCENE, contrast, motion); a host that leaves this off (tests) gets the default
+  // look and never touches the user's preferences.
+  bool persistDesignPreferences{false};
   // Test seams. The shipping app leaves these empty and uses the native file dialog, the native
   // unsaved-changes prompt and the saved design preferences.
   std::function<std::unique_ptr<platform::IFileDialog>()> fileDialogFactory;
@@ -176,8 +177,8 @@ private:
   std::unique_ptr<StandaloneApplicationController> applicationController_;
   std::unique_ptr<platform::IApplicationMenu> applicationMenu_;
   native_ui::CharacterPresentation character_;
-  native_ui::EditorScenePainter painter_;
-  // The EMO/SCENE SING shell. It paints around the same controller and falls back to painter_.
+  // The EMO/SCENE SING shell: the one editor surface. Where it cannot present (no vector backend)
+  // the window shows native_ui::paintEditorUnavailable.
   native_ui::design::SingShell shell_;
   // Measures the blocks the device receives (see MultichannelRingBufferAudioProcessor). Declared
   // before the processor and device so it outlives the audio thread that writes it.

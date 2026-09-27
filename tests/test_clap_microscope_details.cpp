@@ -40,8 +40,27 @@ domain::PhonemeKey keyFor(clap_editor::EditorRuntime& runtime, const clap_editor
   CHECK(!preview.unitPlan.empty()); CHECK(preview.unitPlan.front().tokenStart < phones.tokens.size());
   return phones.tokens[preview.unitPlan.front().tokenStart].key;
 }
-void click(clap_editor::EditorRuntime& runtime, ui::Rect bounds) {
-  runtime.pointerDown({{bounds.x + 1.0, bounds.y + 1.0}, native_ui::PointerButton::Left, {}, 1});
+// Paints one frame, so the SING shell presents and publishes its own control geometry.
+void paintFrame(clap_editor::EditorRuntime& runtime, std::uint32_t width, std::uint32_t height) {
+  runtime.resize(width, height);
+  native_ui::PixelSurface surface{width, height};
+  native_ui::RasterCanvas canvas{surface};
+  runtime.paint(canvas);
+}
+std::optional<ui::Rect> publishedBounds(const std::vector<native_ui::SemanticNode>& nodes, std::string_view suffix) {
+  for (const auto& node : nodes) {
+    if (node.id.ends_with(suffix)) return node.bounds;
+    if (auto found = publishedBounds(node.children, suffix)) return found;
+  }
+  return std::nullopt;
+}
+// Presses the centre of the control the shell publishes under an id ending in the suffix.
+void press(clap_editor::EditorRuntime& runtime, std::string_view suffix) {
+  const auto bounds = publishedBounds(runtime.accessibilitySnapshot().children, suffix);
+  CHECK(bounds.has_value()); if (!bounds) return;
+  const ui::Point center{bounds->x + bounds->width * 0.5, bounds->y + bounds->height * 0.5};
+  runtime.pointerDown({center, native_ui::PointerButton::Left, {}, 1});
+  runtime.pointerUp({center, native_ui::PointerButton::Left, {}, 1});
 }
 }
 
@@ -65,7 +84,9 @@ TEST_CASE("CLAP microscope shares full captured selection details and working po
   }
   CHECK(complete == expected);
   const native_ui::EditorSceneLayout layout;
-  click(runtime, layout.microscopeDetailsToggleBounds(480.0, 320.0));
+  // The pointer reaches the microscope's controls through the shell's sheet, the one surface.
+  paintFrame(runtime, 480U, 320U);
+  press(runtime, "microscope.details");
   CHECK(!runtime.controller().sceneState().sampleMicroscope->detailsVisible);
   runtime.keyDown({.key = native_ui::NativeKey::D});
   CHECK(runtime.controller().sceneState().sampleMicroscope->detailsVisible);
@@ -73,7 +94,8 @@ TEST_CASE("CLAP microscope shares full captured selection details and working po
   CHECK(runtime.controller().sceneState().sampleMicroscope->detailsText == expected);
   runtime.resize(480.0, 320.0);
   CHECK(runtime.sampleMicroscope()->spectrogramBounds().bottom() <= layout.microscopePanelBounds(480.0, 320.0).bottom());
-  click(runtime, layout.microscopeCloseBounds(480.0, 320.0));
+  paintFrame(runtime, 480U, 320U);
+  press(runtime, "microscope.close");
   CHECK(!runtime.sampleMicroscopeOpen()); CHECK(!runtime.selectedUnitId());
   CHECK(runtime.projectCopy() == project); CHECK(runtime.revision() == revision);
 }

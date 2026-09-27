@@ -127,9 +127,6 @@ core::Result<void> EditorRuntime::replaceProject(domain::Project project) {
   preparedHostTimeline_.reset();
   const auto replaced = authoring_->document().replaceProject(std::move(project));
   if (!replaced) return replaced;
-  selectedUnitKey_.reset();
-  draggingPhonemeKey_.reset();
-  draggingPitchTick_.reset();
   trackId_ = replacementTrack;
   regionId_ = replacementRegion;
   static_cast<void>(authoring_->selectTrack(trackId_));
@@ -513,7 +510,6 @@ core::Result<void> EditorRuntime::selectTrack(domain::TrackId trackId) {
   rebuildController();
   controller_->setCharacterMetadata(character_.displayName(),
                                     character_.styleName());
-  rebuildTechnicalModelsLocked();
   requestRender(renderSampleRate_);
   requestRepaint();
   return core::success();
@@ -533,7 +529,6 @@ core::Result<void> EditorRuntime::selectRegion(domain::RegionId regionId) {
   rebuildController();
   controller_->setCharacterMetadata(character_.displayName(),
                                     character_.styleName());
-  rebuildTechnicalModelsLocked();
   requestRender(renderSampleRate_);
   requestRepaint();
   return core::success();

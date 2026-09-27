@@ -79,7 +79,6 @@ struct JourneyApp final {
         .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
         .kind = seam::voicebank::VoicebankRootKind::Development,
     }};
-    config.designShell = true;
     config.designPreferences = seam::native_ui::design::DesignPreferences{
         .mode = seam::native_ui::design::DesignMode::Scene};
     auto owned = std::make_unique<JourneyDialog>(std::move(answers));

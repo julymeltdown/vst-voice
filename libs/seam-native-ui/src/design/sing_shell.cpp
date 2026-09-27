@@ -3192,7 +3192,9 @@ core::Result<void> SingShell::nudge(NativeEditorController& controller, std::siz
 
 core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
                                           const PointerEvent& event) {
-  if (!presented_) return controller.pointerDown(event);
+  // The shell is the only editor surface: with nothing presented there is nothing under the
+  // pointer, so no press reaches the controller at coordinates nobody drew.
+  if (!presented_) return core::success();
   notePointer(event.position);
   const auto result = shellPointerDown(controller, event);
   return result;
@@ -3427,7 +3429,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
 
 core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
                                           const PointerEvent& event) {
-  if (!presented_) return controller.pointerMove(event);
+  if (!presented_) return core::success();
   notePointer(event.position);
   if (overlayGesture_) {
     const auto* overlay = activeOverlay(controller);
@@ -3466,7 +3468,7 @@ core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
 
 core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
                                         const PointerEvent& event) {
-  if (!presented_) return controller.pointerUp(event);
+  if (!presented_) return core::success();
   if (overlayGesture_) {
     const auto gesture = *overlayGesture_;
     overlayGesture_.reset();
@@ -3512,7 +3514,7 @@ core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
 bool SingShell::scroll(NativeEditorController& controller, double deltaX, double deltaY,
                       ui::Point anchor, InputModifiers modifiers) {
   if (workspaceMenuOpen_) return true;
-  if (!presented_) return false;
+  if (!presented_) return true;  // nothing is on screen to scroll
   // An overlay is modal: a scroll over its card is its own (a long list pages, a plot pans), and
   // nothing under the dimmed field scrolls.
   if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {

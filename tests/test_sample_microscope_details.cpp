@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -79,7 +80,7 @@ void capture(native_ui::NativeEditorController& controller, std::uint32_t width,
   auto engine = text::TextEngine::createSystem(); CHECK(engine);
   native_ui::PixelSurface surface{width, height};
   native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-  native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.writePpm(directory / name));
 }
 }  // namespace
@@ -102,14 +103,8 @@ TEST_CASE("sample microscope plots and paged details fit compact and desktop win
     contained(panel, layout.microscopeCloseBounds(size.first, size.second));
     contained(panel, layout.microscopeDetailsToggleBounds(size.first, size.second));
     CHECK(layout.microscopeDetailsToggleBounds(size.first, size.second).right() < layout.microscopeCloseBounds(size.first, size.second).x);
-    if (size.first == 480U) {
-      capture(controller, size.first, size.second, "compact-waveform.ppm");
-      native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface};
-      native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
-      // This point is in the background Time Map button and in the inspector
-      // header's empty gap. The modal must paint over that background control.
-      CHECK(surface.pixels()[74U * 480U + 70U] != native_ui::EditorSceneTheme{}.panel.bgra());
-    }
+    // The shell presents the microscope as a sheet over its own frame (test_design_shell_input).
+    if (size.first == 480U) capture(controller, size.first, size.second, "compact-waveform.ppm");
     CHECK(controller.dispatchAccessibility("microscope.details", native_ui::SemanticAction::Activate));
     const auto view = *controller.sceneState().sampleMicroscope;
     CHECK(view.detailsVisible);

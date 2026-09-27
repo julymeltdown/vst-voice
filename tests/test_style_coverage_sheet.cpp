@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 #include "seam/native_ui/style_coverage_sheet.hpp"
 #include "seam/application/project_factory.hpp"
@@ -111,7 +112,7 @@ TEST_CASE("native style crossfade selects an explicit pair and amount through dr
   if (const auto* capture = std::getenv("SEAM_STYLE_BLEND_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.replacementReviewAction(3U));
   const auto& selection = session.project().findVocalTrack(f.track)->styleSelection;
@@ -171,7 +172,7 @@ TEST_CASE("native style sheet stages rows and rejects changed bank before exact 
   if (const auto* capture = std::getenv("SEAM_STYLE_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(!controller.openReplacementRow(6U)); CHECK(!controller.openDynamicsInspector());
   auto trusted = f.bank; f.bank.candidate->trust = voicebank::VoicebankTrust::UntrustedInstalled;
@@ -221,7 +222,7 @@ TEST_CASE("native coverage issues expose full paged diagnostics without changing
   if (const auto* capture = std::getenv("SEAM_STYLE_DETAIL_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   std::string reconstructed;
   for (;;) {
