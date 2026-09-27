@@ -227,6 +227,9 @@ private:
 
 [[nodiscard]] bool vectorBackendAvailable() noexcept;
 
+// Bytes held by the backend's shared cache of small glow sprites (bounded, rebuilt on use).
+[[nodiscard]] std::size_t glowSpriteCacheBytes() noexcept;
+
 // Test and evidence hook: while one is alive on this thread, every glow is drawn at full resolution
 // (the backend's own shadow), so a test can measure the half-resolution glow against it.
 class ScopedFullResolutionGlow final {

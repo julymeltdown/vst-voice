@@ -13,9 +13,14 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -160,6 +165,57 @@ NSFont* fontFor(const TextStyle& style) {
   return [NSFont systemFontOfSize:size];
 }
 
+// The blurred coverage of a small glowing shape, keyed by the shape exactly as it is rasterized: its
+// device geometry relative to a whole device pixel, in 1/64 pixel steps, its paint and its blur.
+// A sprite is a pure function of its key, so a frame drawn whole and one drawn in rectangles agree
+// whichever of them drew the sprite first.
+struct GlowSprite final {
+  std::vector<std::int64_t> key;
+  std::int64_t width{0};
+  std::int64_t height{0};
+  std::vector<std::uint8_t> coverage;  // row 0 at the top
+};
+
+class GlowSprites final {
+public:
+  static GlowSprites& shared() {
+    static GlowSprites sprites;
+    return sprites;
+  }
+  std::shared_ptr<const GlowSprite> find(std::uint64_t hash, const std::vector<std::int64_t>& key) {
+    const std::lock_guard lock{mutex_};
+    const auto found = sprites_.find(hash);
+    if (found == sprites_.end() || found->second->key != key) return nullptr;
+    return found->second;
+  }
+  void insert(std::uint64_t hash, std::shared_ptr<const GlowSprite> sprite) {
+    const std::lock_guard lock{mutex_};
+    const auto size = sprite->coverage.size() + sprite->key.size() * sizeof(std::int64_t);
+    // A bounded set: when it would outgrow its budget it starts over (the sprites are redrawn on use).
+    if (bytes_ + size > kBudgetBytes) {
+      sprites_.clear();
+      bytes_ = 0U;
+    }
+    if (auto& slot = sprites_[hash]; slot != nullptr) {
+      bytes_ -= slot->coverage.size() + slot->key.size() * sizeof(std::int64_t);
+      slot = std::move(sprite);
+    } else {
+      slot = std::move(sprite);
+    }
+    bytes_ += size;
+  }
+  [[nodiscard]] std::size_t bytes() {
+    const std::lock_guard lock{mutex_};
+    return bytes_;
+  }
+
+private:
+  static constexpr std::size_t kBudgetBytes = 6U * 1024U * 1024U;
+  std::mutex mutex_;
+  std::unordered_map<std::uint64_t, std::shared_ptr<const GlowSprite>> sprites_;
+  std::size_t bytes_{0U};
+};
+
 class CoreGraphicsCanvas final : public Canvas2D {
 public:
   CoreGraphicsCanvas(PixelSurface& surface, double scale)
@@ -253,7 +309,7 @@ public:
       CGContextAddPath(ctx, p.get());
       CGContextSetFillColorWithColor(ctx, c.get());
       CGContextFillPath(ctx);
-    });
+    }, GlowShape{.path = &path, .stroke = nullptr, .alpha = color.alpha});
   }
   void fill(const Path& path, const LinearGradient& gradient) override {
     const auto g = toCgGradient(gradient.stops);
@@ -295,7 +351,7 @@ public:
       CGContextSetStrokeColorWithColor(ctx, c.get());
       CGContextStrokePath(ctx);
       CGContextRestoreGState(ctx);
-    });
+    }, GlowShape{.path = &path, .stroke = &style, .alpha = color.alpha});
   }
   void stroke(const Path& path, const LinearGradient& gradient,
               const StrokeStyle& style) override {
@@ -440,6 +496,13 @@ private:
     double radius{0.0};
   };
 
+  // A shape painted in one flat colour, which a small glow can be cast from in software.
+  struct GlowShape final {
+    const Path* path{nullptr};
+    const StrokeStyle* stroke{nullptr};  // null: the path is filled
+    std::uint8_t alpha{255U};
+  };
+
   // Sets the current glow as the context's shadow (blur in device space, not affected by the CTM).
   void applyShadow(CGContextRef ctx, double blurScale = 1.0) const {
     if (!glow_.on) return;
@@ -458,7 +521,7 @@ private:
   // is drawn crisp over it. The layer depends only on the shape and on the clip grown well past the
   // blur, so a frame drawn in damaged rectangles and a frame drawn whole agree pixel for pixel.
   template <typename Draw>
-  void glowed(CGRect userBounds, Draw&& draw) {
+  void glowed(CGRect userBounds, Draw&& draw, std::optional<GlowShape> shape = std::nullopt) {
     auto* ctx = context_.get();
     if (!glow_.on || glow_.radius <= 0.0) {
       if (glow_.on) {
@@ -477,6 +540,10 @@ private:
     const auto device = CGRectInset(CGRectApplyAffineTransform(userBounds, ctm), -reach, -reach);
     if (halfResolutionGlowDisabled() ||
         device.size.width * device.size.height < kHalfResolutionGlowArea) {
+      if (shape && !halfResolutionGlowDisabled() && softwareState() && spriteGlow(*shape, blur, ctm)) {
+        draw(ctx);
+        return;
+      }
       CGContextSaveGState(ctx);
       applyShadow(ctx);
       draw(ctx);
@@ -565,6 +632,168 @@ private:
   static constexpr double kHalfResolutionGlowArea = 256.0 * 256.0;
   static constexpr double kGlowGrid = 64.0;
   static bool halfResolutionGlowDisabled() noexcept { return ScopedFullResolutionGlow::active(); }
+
+  // A small glow cast in software: the shape's coverage (times its paint's alpha, as a shadow takes
+  // it), blurred at full resolution by three box passes (the shadow's Gaussian, sigma half the
+  // blur), is kept as a sprite and painted in the glow colour. The shape is rasterized from its
+  // device geometry snapped to 1/64 pixel, the sprite's key, so the sprite depends on nothing else.
+  bool spriteGlow(const GlowShape& shape, double blur, CGAffineTransform ctm) {
+    if (ctm.b != 0.0 || ctm.c != 0.0 || ctm.a == 0.0 || std::abs(ctm.a) != std::abs(ctm.d))
+      return false;
+    const auto sigma = blur * 0.5;
+    auto box = static_cast<std::int64_t>(std::lround(std::sqrt(4.0 * sigma * sigma + 1.0)));
+    if (box % 2 == 0) ++box;
+    const auto s = std::abs(ctm.a);
+    const auto half = shape.stroke != nullptr ? 0.5 * std::max(0.0, shape.stroke->width) * s : 0.0;
+    const auto pad = 3 * (box / 2) + 2;  // the blur's reach, and the anti-aliased edge
+    auto minX = std::numeric_limits<double>::infinity();
+    auto minY = minX;
+    auto maxX = -minX;
+    auto maxY = -minX;
+    const auto& elements = shape.path->elements();
+    const auto points = [](Path::Verb verb) {
+      switch (verb) {
+        case Path::Verb::Move:
+        case Path::Verb::Line: return 1;
+        case Path::Verb::Quad: return 2;
+        case Path::Verb::Cubic: return 3;
+        case Path::Verb::Close: return 0;
+      }
+      return 0;
+    };
+    const auto point = [&](const Path::Element& e, int k) {
+      const auto& p = k == 0 ? e.a : k == 1 ? e.b : e.c;
+      return CGPointMake(ctm.a * p.x + ctm.tx, ctm.d * p.y + ctm.ty);
+    };
+    for (const auto& e : elements) {
+      for (int k = 0; k < points(e.verb); ++k) {
+        const auto d = point(e, k);
+        if (!std::isfinite(d.x) || !std::isfinite(d.y)) return false;
+        minX = std::min(minX, d.x);
+        maxX = std::max(maxX, d.x);
+        minY = std::min(minY, d.y);
+        maxY = std::max(maxY, d.y);
+      }
+    }
+    if (!(minX <= maxX)) return true;
+    const auto x0 = static_cast<std::int64_t>(std::floor(minX - half)) - pad;
+    const auto y0 = static_cast<std::int64_t>(std::floor(minY - half)) - pad;
+    const auto x1 = static_cast<std::int64_t>(std::ceil(maxX + half)) + pad;
+    const auto y1 = static_cast<std::int64_t>(std::ceil(maxY + half)) + pad;
+    const auto width = x1 - x0;
+    const auto height = y1 - y0;
+    if (width * height > 2 * static_cast<std::int64_t>(kHalfResolutionGlowArea)) return false;
+    const auto& clip = tracked_.clip;
+    if (static_cast<double>(x1) <= CGRectGetMinX(clip) || static_cast<double>(x0) >= CGRectGetMaxX(clip) ||
+        static_cast<double>(y1) <= CGRectGetMinY(clip) || static_cast<double>(y0) >= CGRectGetMaxY(clip))
+      return true;  // none of the glow lands
+    const auto q = [](double v) { return static_cast<std::int64_t>(std::llround(v * 64.0)); };
+    std::vector<std::int64_t> key;
+    key.reserve(16U + elements.size() * 7U);
+    key.push_back(shape.stroke != nullptr ? 1 : 0);
+    key.push_back(shape.alpha);
+    key.push_back(box);
+    key.push_back(width);
+    key.push_back(height);
+    if (shape.stroke != nullptr) {
+      key.push_back(q(std::max(0.0, shape.stroke->width) * s));
+      key.push_back(shape.stroke->roundCaps ? 1 : 0);
+      key.push_back(static_cast<std::int64_t>(shape.stroke->dash.size()));
+      for (const auto length : shape.stroke->dash) key.push_back(q(length * s));
+    }
+    const auto geometry = key.size();
+    for (const auto& e : elements) {
+      key.push_back(static_cast<std::int64_t>(e.verb));
+      for (int k = 0; k < points(e.verb); ++k) {
+        const auto d = point(e, k);
+        key.push_back(q(d.x - static_cast<double>(x0)));
+        key.push_back(q(d.y - static_cast<double>(y0)));
+      }
+    }
+    std::uint64_t hash = 0x9E3779B97F4A7C15ULL;
+    for (const auto v : key) {
+      hash ^= static_cast<std::uint64_t>(v) + 0x9E3779B97F4A7C15ULL + (hash << 6U) + (hash >> 2U);
+      hash *= 0xBF58476D1CE4E5B9ULL;
+    }
+    auto& sprites = GlowSprites::shared();
+    auto sprite = sprites.find(hash, key);
+    if (sprite == nullptr) {
+      sprite = drawSprite(std::move(key), geometry, box, width, height);
+      if (sprite == nullptr) return false;
+      sprites.insert(hash, sprite);
+    }
+    compositeCoverage(sprite->coverage.data(), width, height, x0, y0, glow_.color);
+    return true;
+  }
+
+  // Rasterizes a sprite's shape from its key alone and blurs it.
+  static std::shared_ptr<const GlowSprite> drawSprite(std::vector<std::int64_t> key,
+                                                      std::size_t geometry, std::int64_t box,
+                                                      std::int64_t width, std::int64_t height) {
+    auto sprite = std::make_shared<GlowSprite>();
+    sprite->width = width;
+    sprite->height = height;
+    const auto w = static_cast<std::size_t>(width);
+    const auto h = static_cast<std::size_t>(height);
+    sprite->coverage.assign(w * h, 0U);
+    CfRef<CGContextRef> mask{CGBitmapContextCreate(sprite->coverage.data(), w, h, 8U, w, nullptr,
+                                                   kCGImageAlphaOnly)};
+    if (!mask) return nullptr;
+    auto* m = mask.get();
+    CGContextSetShouldAntialias(m, true);
+    CGContextSetAllowsAntialiasing(m, true);
+    CGContextSetLineJoin(m, kCGLineJoinRound);
+    const auto at = [&](std::size_t i) { return static_cast<CGFloat>(key[i]) / 64.0; };
+    CfRef<CGMutablePathRef> path{CGPathCreateMutable()};
+    for (auto i = geometry; i < key.size();) {
+      switch (static_cast<Path::Verb>(key[i++])) {
+        case Path::Verb::Move: CGPathMoveToPoint(path.get(), nullptr, at(i), at(i + 1U)); i += 2U; break;
+        case Path::Verb::Line: CGPathAddLineToPoint(path.get(), nullptr, at(i), at(i + 1U)); i += 2U; break;
+        case Path::Verb::Quad:
+          CGPathAddQuadCurveToPoint(path.get(), nullptr, at(i), at(i + 1U), at(i + 2U), at(i + 3U));
+          i += 4U;
+          break;
+        case Path::Verb::Cubic:
+          CGPathAddCurveToPoint(path.get(), nullptr, at(i), at(i + 1U), at(i + 2U), at(i + 3U),
+                                at(i + 4U), at(i + 5U));
+          i += 6U;
+          break;
+        case Path::Verb::Close: CGPathCloseSubpath(path.get()); break;
+      }
+    }
+    const auto alpha = static_cast<CGFloat>(key[1]) / 255.0;
+    CGContextAddPath(m, path.get());
+    if (key[0] == 1) {
+      CGContextSetLineWidth(m, at(5U));
+      CGContextSetLineCap(m, key[6] != 0 ? kCGLineCapRound : kCGLineCapButt);
+      if (const auto dashes = static_cast<std::size_t>(key[7]); dashes > 0U) {
+        std::vector<CGFloat> lengths;
+        for (std::size_t k = 0U; k < dashes; ++k) lengths.push_back(at(8U + k));
+        CGContextSetLineDash(m, 0.0, lengths.data(), lengths.size());
+      }
+      CGContextSetGrayStrokeColor(m, 1.0, alpha);
+      CGContextStrokePath(m);
+    } else {
+      CGContextSetGrayFillColor(m, 1.0, alpha);
+      CGContextFillPath(m);
+    }
+    CGContextFlush(m);
+    if (box > 1) {
+      std::vector<std::uint8_t> scratch(w * h, 0U);
+      vImage_Buffer a{sprite->coverage.data(), h, w, w};
+      vImage_Buffer b{scratch.data(), h, w, w};
+      const auto size = static_cast<std::uint32_t>(box);
+      for (int pass = 0; pass < 3; ++pass) {
+        if (vImageBoxConvolve_Planar8(&a, &b, nullptr, 0, 0, size, size, 0,
+                                      kvImageBackgroundColorFill) != kvImageNoError)
+          return nullptr;
+        std::swap(a, b);
+      }
+      if (a.data != sprite->coverage.data()) sprite->coverage.swap(scratch);
+    }
+    sprite->key = std::move(key);
+    return sprite;
+  }
 
   // ---- software paths ----------------------------------------------------------------------------
   // Where the state is plain (the clip one whole-pixel rectangle, normal blending), a few costly
@@ -662,9 +891,19 @@ private:
     for (auto y = cy0; y < cy1; ++y) {
       const auto* mask = coverage + (bottom + height - 1 - y) * width - left;
       auto* pixels = row(y);
-      for (auto x = cx0; x < cx1; ++x) {
+      for (auto x = cx0; x < cx1;) {
+        // A glow's coverage is mostly empty: eight empty samples are passed over at once.
+        if (x + 8 <= cx1) {
+          std::uint64_t eight = 0U;
+          std::memcpy(&eight, mask + x, sizeof eight);
+          if (eight == 0U) {
+            x += 8;
+            continue;
+          }
+        }
         const auto m = mask[x];
         if (m != 0U) pixels[x] = over(source[m], pixels[x]);
+        ++x;
       }
     }
   }
@@ -799,6 +1038,8 @@ std::unique_ptr<Canvas2D> makeCanvas(PixelSurface& surface, double scale) {
 }
 
 bool vectorBackendAvailable() noexcept { return true; }
+
+std::size_t glowSpriteCacheBytes() noexcept { return GlowSprites::shared().bytes(); }
 
 CGColorSpaceRef presentationColorSpace() noexcept { return srgb(); }
 

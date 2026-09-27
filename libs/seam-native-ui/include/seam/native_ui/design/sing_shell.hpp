@@ -274,7 +274,7 @@ public:
     return lastLayers_;
   }
   [[nodiscard]] std::size_t layerCacheBytes() const noexcept {
-    return layers_.bytes() + ringGlows_.bytes();
+    return layers_.bytes() + ringGlows_.bytes() + paint::glowSpriteCacheBytes();
   }
   // Forgets every cached layer, so the next frame is composed from nothing.
   void invalidateLayers() noexcept;
