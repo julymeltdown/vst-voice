@@ -1,6 +1,6 @@
 # Native Editor Design System
 
-Status: describes the EMO/SCENE design shell at master `1e424fd1` (2026-09-28). It is
+Status: describes the EMO/SCENE design shell at master `85b0a1dd` (2026-09-28). It is
 the document §16 of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) asks for. Where
 this text and a plan disagree, this text says what the code does and the plan says what was
 intended. Anything the plans describe that the code does not do is marked **Not shipped**.
@@ -11,8 +11,8 @@ host rows, VoiceOver, the owner rubric and release readiness remain as recorded 
 
 This snapshot includes the Full new-project default, the SINGER Full/Minimal/Off switch, Add Region
 in MIX and Edit, bundled OFL fonts, tooltips, Korean localization, Character Package v4 and the
-measured frame pipeline. A separate Settings sheet and plan §9 motion work are in progress outside
-this pinned source; neither is counted here.
+measured frame pipeline, the consolidated Settings sheet, and plan §9 shell motion. The true
+first-paint frame currently misses its §10 budget in both looks (§11 below).
 
 ## 1. What the shell is
 
@@ -34,7 +34,8 @@ coordinates, so undo history, validation and render invalidation are the control
 | String table | `libs/seam-native-ui/include/seam/native_ui/design/shell_strings.hpp`, `shell_strings.def`, `libs/seam-native-ui/src/design/shell_strings.cpp` |
 | Vector canvas (CoreGraphics/CoreText) | `libs/seam-native-ui/include/seam/native_ui/paint/canvas2d.hpp`, `libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm`, `libs/seam-native-ui/src/paint/path.cpp` |
 | Frame recorder, layer cache, damage | `libs/seam-native-ui/include/seam/native_ui/paint/display_list.hpp`, `libs/seam-native-ui/include/seam/native_ui/paint/layer_cache.hpp`, `libs/seam-native-ui/include/seam/native_ui/frame_damage.hpp` |
-| Preferences (look, contrast, motion) | `libs/seam-native-ui/src/design/design_preferences_appkit.mm` |
+| Preferences (look, contrast, motion, language) | `libs/seam-native-ui/src/design/design_preferences_appkit.mm`, `libs/seam-native-ui/src/design/shell_overlays.cpp` |
+| Finite shell motion | `libs/seam-native-ui/include/seam/native_ui/design/motion.hpp`, `libs/seam-native-ui/src/design/sing_shell.cpp` |
 | Evidence export (geometry, semantics) | `libs/seam-native-ui/include/seam/native_ui/design/shell_evidence.hpp`, `libs/seam-native-ui/src/design/shell_evidence.cpp` |
 
 The plan's separate `kit/`, `layout/frame_tree`, `workspaces/`, `character/` and
@@ -93,8 +94,7 @@ the selection gradient. Both turn texture and glow off (`textureAlpha`, `glowAlp
 Contrast has two sources (`design_preferences_appkit.mm`): the system's Increase Contrast, re-read
 every frame while `contrastFollowsSystem` is set, or an explicit `standard`/`high` stored under
 `contrast` in the defaults suite, which wins for this app alone. The shell API has `setContrast`
-and `followSystemContrast`. An in-app menu or control for contrast is **Not shipped**; today the
-shell follows the system unless the stored key is set.
+and `followSystemContrast`; the Settings sheet offers System, Standard, and High choices.
 
 ### 2.3 Measured WCAG ratios
 
@@ -227,8 +227,10 @@ not.
 
 Left to right: the mode's wordmark image, five workspace tabs (SING, VOICE, TUNE, MIX, EXPORT), the
 optional avatar, the EMO/SCENE switch, the transport display, the output meter, a language control
-where space permits, and a settings button that opens the audio settings sheet. The separate
-appearance Settings sheet is in progress outside this snapshot.
+where space permits, and a settings button that opens the consolidated Settings sheet. Its Audio,
+Appearance, Language, and About sections include look, System/Standard/High Contrast,
+System/On/Off Reduce Motion, character Full/Minimal/Off, language choice, and About. The MIX device
+card still opens audio settings directly.
 
 ### 6.2 SING
 
@@ -298,7 +300,7 @@ the shell (`OverlayKind` in `shell_overlays.hpp`):
 | Overlap detail | A note's "+N" badge |
 | Diagnostics | The DIAGNOSTICS opener beside the toast |
 | Replacement review, and the find, cleanup, vibrato, dynamics, style and Japanese reading reviews shown in that panel | The singer menu |
-| Audio settings | The header's settings button or the MIX device card |
+| Audio settings | The header's Settings sheet, Audio section, or the MIX device card |
 | Voice browser | Change voice or the singer menu |
 | Text field (tempo or meter, phone hint, find/replace, draft fields, renames) | The command that asked for text |
 | Singer menu | The SINGER card's "⋯" button |
@@ -408,6 +410,12 @@ English and 한국어, with an explicit choice stored in the shared design prefe
 (`libs/seam-native-ui/src/design/design_preferences_appkit.mm`, `sing_shell.cpp`). Unsupported
 system languages use English. See [L10N.md](L10N.md).
 
+Each `SingShell` owns its loaded string table. The active table is scoped while that shell paints
+or handles input, so two plug-in instances can display different languages in the same process
+(`ScopedActiveShellStrings` in `shell_strings.cpp`, `sing_shell.cpp`). Capture packets record the
+effective runtime font face for each role, alongside the bundled manifest inventory; a bundled
+file's presence alone is not evidence that the renderer selected it.
+
 ## 10. Character surfaces
 
 The protagonist appears only through read models the shell already holds; nothing is inferred from a
@@ -449,8 +457,8 @@ state ring, the toast text and the empty-project line remain. The About sheet is
 and keeps its art. The `C` key cycles the mode while the score has focus, and the SINGER menu's
 last row is a Full / Minimal / Off switch. A new project defaults to Full.
 
-Motion from plan §9 beyond the above (tab cross-fade, note-add scale, render-complete sweep, mode
-cross-fade, toast in and out) is **In progress** on a separate feature branch, not in this source.
+Plan §9 shell motion is shipped here: tab and mode cross-fades, note-add feedback, render sweep,
+and toast entry/exit. Reduce Motion resolves these transitions immediately (§11).
 
 ## 11. Frame pipeline and damage
 
@@ -477,27 +485,40 @@ a first frame damages everything. The AppKit window and the CLAP view keep the p
 repaint only the damaged rectangles when nothing below L3 changed, and invalidate the view per
 damaged rectangle (`7982609d`). Win32 and X11 presenters are unchanged.
 
+Motion: the shell uses finite tweens from `motion.hpp` for tab and mode cross-fades, toast entry
+and exit, note-add feedback, and the render sweep. It requests another frame while a tween or
+live character state is active. Reduce Motion resolves tweens immediately and suppresses the
+animated character cycle (`sing_shell.cpp`). These source behaviors implement plan §9; host visual
+acceptance remains open.
+
 Budgets and measurements: `benchmarks/phase5_benchmark.cpp` times
 `SingShell::prepareFrame` plus `SingShell::paint` over a 10,000-note project at 1440×900 on a 2×
-surface in both looks with glow on, five warmups and 120 samples per case. It exits non-zero when a
-case exceeds the plan §10 p95 budget or the 80 MiB layer-cache budget. The figures below are the
-reported Apple Silicon measurements for this implementation; no raw benchmark report is tracked
-with this document, so rerun the command in §14 for a fresh machine-specific result.
+surface in both looks with glow on. Its default is five warmups and 120 samples per case; the
+recorded run below used 40 samples per case on an M3 Max at load average ~11. It exits 1 while
+any case exceeds the plan §10 p95 budget or the 80 MiB layer-cache budget. No raw benchmark report
+is tracked with this document, so rerun the command in §14 for a fresh machine-specific result.
 
-| Case | §10 budget | EMO p95 | SCENE p95 | Layers drawn | §10 result |
-|---|---|---|---|---|---|
-| Cold full frame | 14 ms | 9.5 ms | 11.2 ms | L0–L3; keyed background raster reused | Met |
-| Scroll or zoom | 8 ms | ~6 ms | ~6 ms | L1–L3 | Met |
-| Playback | 3 ms | ~1.8 ms | ~1.8 ms | L3 only | Met |
-| 10,000 notes, glow on | 8 ms | ~3.2 ms | ~3.2 ms | L2–L3 | Met |
-| Layer cache memory | 80 MiB | ~65 MiB | ~65 MiB | — | Met |
+| Case | §10 p95 budget | Recorded p50 / p95 | Layers drawn | Result |
+|---|---|---|---|---|
+| `cold-full-frame`, true first paint | 14 ms | EMO 26.6 / 36.0 ms; SCENE 19.1 / 24.5 ms | L0 painter and L1–L3 | **MISS in both looks** |
+| `retained-background-invalidation` | 14 ms | EMO 9.9 / 10.5 ms; SCENE 9.5 / 10.0 ms | L0 snapshot reused; upper layers recomposed | PASS |
+| Scroll or zoom | 8 ms | ~6.1 / ~7.1 ms | L1–L3 | PASS |
+| Playback | 3 ms | EMO ~1.7 / ~2.9 ms; SCENE ~1.7 / ~2.1 ms | L3 only | PASS; EMO p95 is only ~0.1 ms below budget |
+| 10,000 notes, glow on | 8 ms | ~3.0 / ~3.7 ms | L2–L3 | PASS |
+| Layer cache memory | 80 MiB | Within budget | — | PASS |
+
+The previous 9.5 ms EMO / 11.2 ms SCENE “cold” figures described reuse of a retained L0
+background, not a first paint. The corrected benchmark separately invalidates L0 for
+`cold-full-frame` and reuses its snapshot for `retained-background-invalidation`. This changes
+the meaning of the result: the true cold budget is unmet, even though retained-background work
+passes. A bounds-safe glow sprite fix and this split are part of round 6.
 
 These are shell frame numbers, not end-to-end presentation or host display timing. The benchmark
 reports host scene-state derivation separately as `hostStateP95Ms`; it does not include it in the
-budgeted shell time. Process memory is separate from the approximately 65 MiB layer cache. The
+budgeted shell time. Process memory is separate from the layer cache. The
 ignored `build/evidence/ui-fidelity/r6-full/` packet contains 36 software captures with geometry,
 semantic and image checks passing and paint p50 of 0.7–3.5 ms; its manifest records source
-`74ba8a6c`, not `1e424fd1`, and AppKit windows were not captured. FL Studio remains unverified.
+`74ba8a6c`, not `85b0a1dd`, and AppKit windows were not captured. FL Studio remains unverified.
 
 ## 12. Brand rules
 
@@ -576,9 +597,7 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
 
 ## 15. Not shipped, in one place
 
-- **In progress:** plan §9 motion tweens beyond the character's established blink, breath and Stage fade;
-  a consolidated Settings sheet. Neither is in `1e424fd1`.
-- In-app controls for contrast and Reduce Motion, and the Stage as a separate preference at this snapshot.
+- The Stage as a separate preference.
 - Reusable popover, scroll-view and text-field components.
 - The plan's `Pixel` font role.
 - Windows and Linux editor surfaces.
