@@ -1,6 +1,6 @@
 # Native Editor Design System
 
-Status: describes the EMO/SCENE design shell at master `85b0a1dd` (2026-09-28). It is
+Status: describes the EMO/SCENE design shell at master `44bf8386` (2026-09-28). It is
 the document §16 of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) asks for. Where
 this text and a plan disagree, this text says what the code does and the plan says what was
 intended. Anything the plans describe that the code does not do is marked **Not shipped**.
@@ -476,6 +476,10 @@ The cache keeps three cumulative snapshots (background; plus grid; plus content)
 raster is reused when its complete key is unchanged, including after composition invalidation.
 A changed layer rebuilds its snapshot and every one above it, and the dynamic layer is drawn over the content
 snapshot into the target, so the target's bytes always equal a composition from nothing (tested).
+On a fully damaged cold frame, the compositor builds the result in place, avoiding redundant
+full-window snapshot copies. The procedural wash writes EMO ink strands or SCENE sparkles and radial
+gradients directly into the parallel band surfaces through a software rasterizer. The bands share
+immutable seeded strand geometry prepared once for the surface (`sing_shell.cpp`, `layer_cache.cpp`).
 Character art that needs the raster front is recorded as a deferred drawing with a content hash.
 
 Damage (`FrameDamage`) compares the dynamic layer's named items with the previous frame's: an item
@@ -494,31 +498,42 @@ acceptance remains open.
 Budgets and measurements: `benchmarks/phase5_benchmark.cpp` times
 `SingShell::prepareFrame` plus `SingShell::paint` over a 10,000-note project at 1440×900 on a 2×
 surface in both looks with glow on. Its default is five warmups and 120 samples per case; the
-recorded run below used 40 samples per case on an M3 Max at load average ~11. It exits 1 while
+recorded run below used 40 samples per case on an M3 Max at load average ~6.8–10.5. It exits 1 while
 any case exceeds the plan §10 p95 budget or the 80 MiB layer-cache budget. No raw benchmark report
 is tracked with this document, so rerun the command in §14 for a fresh machine-specific result.
 
-| Case | §10 p95 budget | Recorded p50 / p95 | Layers drawn | Result |
+| Case | §10 p95 budget | Recorded timing | Layers drawn | Result |
 |---|---|---|---|---|
-| `cold-full-frame`, true first paint | 14 ms | EMO 26.6 / 36.0 ms; SCENE 19.1 / 24.5 ms | L0 painter and L1–L3 | **MISS in both looks** |
-| `retained-background-invalidation` | 14 ms | EMO 9.9 / 10.5 ms; SCENE 9.5 / 10.0 ms | L0 snapshot reused; upper layers recomposed | PASS |
-| Scroll or zoom | 8 ms | ~6.1 / ~7.1 ms | L1–L3 | PASS |
-| Playback | 3 ms | EMO ~1.7 / ~2.9 ms; SCENE ~1.7 / ~2.1 ms | L3 only | PASS; EMO p95 is only ~0.1 ms below budget |
-| 10,000 notes, glow on | 8 ms | ~3.0 / ~3.7 ms | L2–L3 | PASS |
+| `cold-full-frame`, true first paint | 14 ms | EMO 17.0 / 18.96 ms; SCENE 17.3 / 30.43 ms | L0 painter and L1–L3, in-place full composition | **MISS in both looks** |
+| `retained-background-invalidation` | 14 ms | EMO p95 10.6 ms; SCENE p95 10.9 ms | L0 snapshot reused; upper layers recomposed | PASS |
+| Scroll or zoom | 8 ms | Passed measured gate | L1–L3 | PASS |
+| Playback | 3 ms | Passed measured gate | L3 only | PASS |
+| 10,000 notes, glow on | 8 ms | Passed measured gate | L2–L3 | PASS |
 | Layer cache memory | 80 MiB | Within budget | — | PASS |
 
 The previous 9.5 ms EMO / 11.2 ms SCENE “cold” figures described reuse of a retained L0
 background, not a first paint. The corrected benchmark separately invalidates L0 for
 `cold-full-frame` and reuses its snapshot for `retained-background-invalidation`. This changes
 the meaning of the result: the true cold budget is unmet, even though retained-background work
-passes. A bounds-safe glow sprite fix and this split are part of round 6.
+passes. A bounds-safe glow sprite fix and this split are part of round 6. The merged-tree ctest
+run at `44bf8386` passed 206/206; this documentation update did not rerun it.
+
+The software wash differs from the preceding CoreGraphics wash by at most 14 channels over 9.23%
+of EMO pixels and 8 channels over 6.03% of SCENE pixels. This reference difference is not a
+replacement for the plan §14 visual packet or a human native review. Stage diagnostics measured
+L0 at ~7.2–7.8 ms EMO / ~5.6–6.9 ms SCENE, grid plus content replay at ~7.1–8.1 ms and snapshot
+copying at ~0.24–0.36 ms; frame preparation and dynamic replay make up the remainder. Repeated
+CoreGraphics chrome replay in L0 bands is the next performance lever. A single full-surface replay
+was measured at 45–50 ms and rejected. An opaque 3-bytes-per-pixel underlay cache showed no
+first-paint improvement, and a half-resolution wash still exceeded 14 ms with larger visual drift;
+both remain rejected experiments.
 
 These are shell frame numbers, not end-to-end presentation or host display timing. The benchmark
 reports host scene-state derivation separately as `hostStateP95Ms`; it does not include it in the
 budgeted shell time. Process memory is separate from the layer cache. The
 ignored `build/evidence/ui-fidelity/r6-full/` packet contains 36 software captures with geometry,
 semantic and image checks passing and paint p50 of 0.7–3.5 ms; its manifest records source
-`74ba8a6c`, not `85b0a1dd`, and AppKit windows were not captured. FL Studio remains unverified.
+`74ba8a6c`, not `44bf8386`, and AppKit windows were not captured. FL Studio remains unverified.
 
 ## 12. Brand rules
 
