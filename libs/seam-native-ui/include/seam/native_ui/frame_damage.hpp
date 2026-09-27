@@ -13,8 +13,9 @@ namespace seam::native_ui {
 // whole surface changed (first frame, resize, a cached layer below the dynamic one was repainted).
 // An empty damage means the frame is identical to the previous one.
 struct FrameDamage final {
-  // Beyond this many rectangles the damage collapses to their bounding rectangle: a presenter pays a
-  // fixed cost per rectangle, and a handful of strips is what a playback frame produces.
+  // Beyond this many rectangles the two whose union adds the least area are merged, until this many
+  // remain: a presenter pays a fixed cost per rectangle, and a handful of strips is what a playback
+  // frame produces. Two far-apart strips stay two strips.
   static constexpr std::size_t kMaximumRects = 8U;
 
   bool full{false};
@@ -27,22 +28,26 @@ struct FrameDamage final {
   // Adds a rectangle, merging it with any rectangle it touches.
   void add(ui::Rect r) {
     if (full || r.width <= 0.0 || r.height <= 0.0) return;
-    for (bool merged = true; merged;) {
-      merged = false;
-      for (auto it = rects.begin(); it != rects.end(); ++it) {
-        if (it->x <= r.right() && r.x <= it->right() && it->y <= r.bottom() && r.y <= it->bottom()) {
-          r = unite(*it, r);
-          rects.erase(it);
-          merged = true;
-          break;
+    insert(r);
+    while (rects.size() > kMaximumRects) {
+      std::size_t first = 0U;
+      std::size_t second = 1U;
+      double cheapest = -1.0;
+      for (std::size_t i = 0U; i < rects.size(); ++i) {
+        for (std::size_t j = i + 1U; j < rects.size(); ++j) {
+          const auto merged = unite(rects[i], rects[j]);
+          const auto added = area(merged) - area(rects[i]) - area(rects[j]);
+          if (cheapest < 0.0 || added < cheapest) {
+            cheapest = added;
+            first = i;
+            second = j;
+          }
         }
       }
-    }
-    rects.push_back(r);
-    if (rects.size() > kMaximumRects) {
-      auto bounds = rects.front();
-      for (const auto& rect : rects) bounds = unite(bounds, rect);
-      rects.assign(1U, bounds);
+      const auto merged = unite(rects[first], rects[second]);
+      rects.erase(rects.begin() + static_cast<std::ptrdiff_t>(second));
+      rects.erase(rects.begin() + static_cast<std::ptrdiff_t>(first));
+      insert(merged);
     }
   }
 
@@ -59,6 +64,25 @@ struct FrameDamage final {
     const auto left = std::min(a.x, b.x);
     const auto top = std::min(a.y, b.y);
     return {left, top, std::max(a.right(), b.right()) - left, std::max(a.bottom(), b.bottom()) - top};
+  }
+
+  [[nodiscard]] static double area(ui::Rect r) noexcept { return r.width * r.height; }
+
+private:
+  // Adds r, merged with every rectangle it touches (transitively).
+  void insert(ui::Rect r) {
+    for (bool merged = true; merged;) {
+      merged = false;
+      for (auto it = rects.begin(); it != rects.end(); ++it) {
+        if (it->x <= r.right() && r.x <= it->right() && it->y <= r.bottom() && r.y <= it->bottom()) {
+          r = unite(*it, r);
+          rects.erase(it);
+          merged = true;
+          break;
+        }
+      }
+    }
+    rects.push_back(r);
   }
 };
 

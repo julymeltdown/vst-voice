@@ -1758,12 +1758,13 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     static_cast<void>(stageFade_.advance(placement, frameNow_, preferences_.reduceMotion));
   }
   stagePointerAt_ = pointerPosition_;
-  layerTo(paint::Layer::Content);
 
   const auto* region = model.project().findRegion(model.regionId());
   c.save();
   c.clipRect(l.grid);
-  // Score pitch line: note targets with short glides between adjacent notes, broken at rests.
+  // Score pitch line: note targets with short glides between adjacent notes, broken at rests. It is
+  // the last thing the grid layer draws: it lies directly on the grid and under every note, and it
+  // follows the notes' places but not their selection, so selecting notes never redraws its glow.
   {
     std::vector<ui::Rect> ordered;
     for (const auto& note : notes) {
@@ -1798,6 +1799,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     c.stroke(line, withAlpha(t.color.pitchCurve, 0.85), StrokeStyle{1.8});
     c.restore();
   }
+  layerTo(paint::Layer::Content);
 
   // Notes as capsules.
   std::vector<ui::Rect> capsules;
@@ -2525,8 +2527,14 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .blink = motion_.blink,
       .eyes = character_.eyes(performanceState),
       .lidTone = character_.lidTone(performanceState),
+      // The glow sprites composite straight onto the surface, past the glowless canvas High
+      // Contrast replays through, so High Contrast draws the ring without them (and without glow).
+      .glows = t.contrast == Contrast::High ? nullptr : &ringGlows_,
   };
   {
+    // What holds still while the singer sings (the backdrop and the unlit ticks) is content; only
+    // the lit ticks, the portrait and the state ring are redrawn as they move.
+    paintSingerRingBase(c, t, spec);
     // The ring lights with the singer's energy and the render, and the portrait breathes and
     // blinks inside it: a dynamic item.
     const paint::LayerScope ringLayer{c, paint::Layer::Dynamic, "ring"};
@@ -2543,7 +2551,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       h.add(spec.mouthPlacement->x).add(spec.mouthPlacement->y).add(spec.mouthPlacement->width)
           .add(spec.mouthPlacement->height);
     characterArt(c, grown(ring, kGlowReach), h.value(), [&t, spec](CharacterCanvas art) {
-      static_cast<void>(paintSingerRing(art, t, spec));
+      static_cast<void>(paintSingerRingLive(art, t, spec));
     });
     // What paintSingerRing returns, known before it is drawn.
     if (ring.width > 0.0 && ring.height > 0.0)

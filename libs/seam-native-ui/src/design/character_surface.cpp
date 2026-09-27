@@ -1,13 +1,17 @@
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
+#include "seam/native_ui/paint/display_list.hpp"
 
 #include "seam/native_ui/diagnostic_presentation.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <numbers>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace seam::native_ui::design {
@@ -76,6 +80,23 @@ void blit(RasterCanvas& canvas, ui::Rect destination, ui::Rect maskBounds, const
   auto framePixels = frame.pixels();
   const auto maskWidth = maskBounds.width > 0.0 ? maskBounds.width : destination.width;
   const auto maskHeight = maskBounds.height > 0.0 ? maskBounds.height : destination.height;
+  // Everything that depends only on the column (or only on the source alpha) is worked out once per
+  // blit rather than once per pixel; the arithmetic is the same, so the pixels are too.
+  std::vector<std::size_t> columnImageX(static_cast<std::size_t>(width));
+  std::vector<double> columnMaskU(static_cast<std::size_t>(width));
+  for (auto column = 0; column < width; ++column) {
+    const auto sourceU = (static_cast<double>(column) + 0.5) / static_cast<double>(width);
+    columnMaskU[static_cast<std::size_t>(column)] =
+        (destination.x - maskBounds.x + (static_cast<double>(column) + 0.5) / scale) / maskWidth;
+    columnImageX[static_cast<std::size_t>(column)] = std::min<std::size_t>(
+        image.width() - 1U, static_cast<std::size_t>(sourceX + sourceU * sourceWidth));
+  }
+  std::array<std::uint32_t, 256U> blendedFor{};
+  for (std::uint32_t sourceAlpha = 0U; sourceAlpha < 256U; ++sourceAlpha)
+    blendedFor[sourceAlpha] = static_cast<std::uint32_t>(
+        std::lround(alpha * static_cast<double>(sourceAlpha)));
+  const auto firstColumn = std::max(0, -left);
+  const auto endColumn = std::min(width, static_cast<std::int32_t>(target) - left);
   for (auto row = 0; row < height; ++row) {
     const auto frameY = top + row;
     if (frameY < 0 || frameY >= static_cast<std::int32_t>(targetRows)) continue;
@@ -86,25 +107,19 @@ void blit(RasterCanvas& canvas, ui::Rect destination, ui::Rect maskBounds, const
     // The mask is sampled in the shape's own space, so an inset portrait is cut by the shape.
     const auto maskV =
         (destination.y - maskBounds.y + (static_cast<double>(row) + 0.5) / scale) / maskHeight;
-    for (auto column = 0; column < width; ++column) {
+    const auto* sourceRow = pixels.data() + imageY * image.width();
+    auto* frameRow = framePixels.data() + static_cast<std::size_t>(frameY) * target;
+    for (auto column = firstColumn; column < endColumn; ++column) {
       const auto frameX = left + column;
-      if (frameX < 0 || frameX >= static_cast<std::int32_t>(target)) continue;
-      const auto sourceU = (static_cast<double>(column) + 0.5) / static_cast<double>(width);
-      const auto maskU =
-          (destination.x - maskBounds.x + (static_cast<double>(column) + 0.5) / scale) / maskWidth;
-      if (!maskCovers(mask, maskU, maskV, cornerFraction)) continue;
-      const auto imageX = std::min<std::size_t>(
-          image.width() - 1U,
-          static_cast<std::size_t>(sourceX + sourceU * sourceWidth));
-      const auto sample = pixels[imageY * image.width() + imageX];
+      if (!maskCovers(mask, columnMaskU[static_cast<std::size_t>(column)], maskV, cornerFraction))
+        continue;
+      const auto sample = sourceRow[columnImageX[static_cast<std::size_t>(column)]];
       const auto sourceAlpha = static_cast<std::uint32_t>((sample >> 24U) & 0xFFU);
       if (sourceAlpha == 0U) continue;
-      const auto blended = static_cast<std::uint32_t>(
-          std::lround(alpha * static_cast<double>(sourceAlpha)));
+      const auto blended = blendedFor[sourceAlpha];
       if (blended == 0U) continue;
       const auto inverse = 255U - std::min(255U, blended);
-      auto& pixel =
-          framePixels[static_cast<std::size_t>(frameY) * target + static_cast<std::size_t>(frameX)];
+      auto& pixel = frameRow[static_cast<std::size_t>(frameX)];
       const auto destinationBlue = pixel & 0xFFU;
       const auto destinationGreen = (pixel >> 8U) & 0xFFU;
       const auto destinationRed = (pixel >> 16U) & 0xFFU;
@@ -687,25 +702,185 @@ void paintCharacterMouth(CharacterCanvas canvas, ui::Rect portraitBounds,
        opacity);
 }
 
+namespace {
+
+// The ring's geometry, shared by its still base and its live part.
+struct RingGeometry final {
+  bool scene{false};
+  ui::Point center{};
+  double tickInner{0.0};
+  double tickOuter{0.0};
+  double portraitRadius{0.0};
+  Color tint{};
+  bool alarming{false};
+};
+
+RingGeometry ringGeometry(const DesignTokens& tokens, const SingerRingSpec& spec) {
+  const auto& r = spec.bounds;
+  RingGeometry g;
+  g.scene = tokens.mode == DesignMode::Scene;
+  g.center = {r.x + r.width * 0.5, r.y + r.height * 0.5};
+  const auto radius = std::min(r.width, r.height) * 0.5;
+  const auto tickLength = g.scene ? 9.0 : 7.0;
+  g.tickOuter = radius;
+  g.tickInner = radius - tickLength;
+  g.portraitRadius = std::max(2.0, g.tickInner - (g.scene ? 5.0 : 4.0));
+  g.tint = stateTint(tokens, spec.state);
+  g.alarming = spec.state == CharacterState::Warning || spec.state == CharacterState::Error;
+  return g;
+}
+
+// Scene cycles the look's four segment colours three ticks at a time; Emo draws one accent, and an
+// alarming state recolors the ring amber or red over either look.
+std::size_t tickColorGroup(const RingGeometry& g, std::size_t tick) noexcept {
+  return g.scene && !g.alarming ? (tick / 3U) % 4U : 0U;
+}
+
+Color tickColor(const DesignTokens& tokens, const RingGeometry& g, std::size_t group) noexcept {
+  if (g.alarming) return g.tint;
+  return g.scene ? tokens.trackColors[group] : tokens.color.accent;
+}
+
+std::pair<ui::Point, ui::Point> tickEnds(const RingGeometry& g, std::size_t tick) {
+  const auto angle = -kPi * 0.5 +
+                     static_cast<double>(tick) * 2.0 * kPi / static_cast<double>(kSingerRingTicks);
+  return {{g.center.x + std::cos(angle) * g.tickInner, g.center.y + std::sin(angle) * g.tickInner},
+          {g.center.x + std::cos(angle) * g.tickOuter, g.center.y + std::sin(angle) * g.tickOuter}};
+}
+
+void addTick(Path& path, const RingGeometry& g, std::size_t tick) {
+  const auto [inner, outer] = tickEnds(g, tick);
+  path.moveTo(inner).lineTo(outer);
+}
+
+ui::Rect tickBounds(const RingGeometry& g, std::size_t tick, double reach) {
+  const auto [inner, outer] = tickEnds(g, tick);
+  const auto left = std::min(inner.x, outer.x) - reach;
+  const auto top = std::min(inner.y, outer.y) - reach;
+  return {left, top, std::abs(outer.x - inner.x) + 2.0 * reach,
+          std::abs(outer.y - inner.y) + 2.0 * reach};
+}
+
+// A glow reaches about its radius; the sprite keeps twice that, so none of it is cut.
+constexpr double kGlowSpriteReach = 2.0;
+
+// Rasterizes draw (logical coordinates, as on the frame) into the sprite covering logical.
+bool renderGlowSprite(GlowSprite& sprite, ui::Rect logical, double scale,
+                      const std::function<void(paint::Canvas2D&)>& draw) {
+  sprite.ready = false;
+  const auto x0 = static_cast<std::int32_t>(std::floor(logical.x * scale));
+  const auto y0 = static_cast<std::int32_t>(std::floor(logical.y * scale));
+  const auto x1 = static_cast<std::int32_t>(std::ceil(logical.right() * scale));
+  const auto y1 = static_cast<std::int32_t>(std::ceil(logical.bottom() * scale));
+  if (x1 <= x0 || y1 <= y0) return false;
+  if (!sprite.pixels.resize(static_cast<std::uint32_t>(x1 - x0),
+                            static_cast<std::uint32_t>(y1 - y0)))
+    return false;
+  std::fill(sprite.pixels.pixels().begin(), sprite.pixels.pixels().end(), 0U);
+  auto canvas = paint::makeCanvas(sprite.pixels, scale);
+  if (!canvas) return false;
+  canvas->translate(-static_cast<double>(x0) / scale, -static_cast<double>(y0) / scale);
+  draw(*canvas);
+  canvas->flush();
+  sprite.x = x0;
+  sprite.y = y0;
+  sprite.ready = true;
+  return true;
+}
+
+// Premultiplied source-over onto the opaque frame.
+void compositeGlowSprite(RasterCanvas& raster, const GlowSprite& sprite) {
+  auto& frame = raster.surface();
+  const auto frameWidth = static_cast<std::int32_t>(frame.width());
+  const auto frameHeight = static_cast<std::int32_t>(frame.height());
+  const auto width = static_cast<std::int32_t>(sprite.pixels.width());
+  const auto height = static_cast<std::int32_t>(sprite.pixels.height());
+  const auto source = sprite.pixels.pixels();
+  auto target = frame.pixels();
+  const auto firstColumn = std::max(0, -sprite.x);
+  const auto endColumn = std::min(width, frameWidth - sprite.x);
+  for (auto row = std::max(0, -sprite.y); row < height && sprite.y + row < frameHeight; ++row) {
+    const auto* from = source.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    auto* to = target.data() +
+               static_cast<std::size_t>(sprite.y + row) * static_cast<std::size_t>(frameWidth) +
+               static_cast<std::size_t>(sprite.x);
+    for (auto column = firstColumn; column < endColumn; ++column) {
+      const auto s = from[column];
+      const auto alpha = s >> 24U;
+      if (alpha == 0U) continue;
+      auto& d = to[column];
+      if (alpha == 255U) {
+        d = s;
+        continue;
+      }
+      const auto inverse = 255U - alpha;
+      const auto channel = [&](std::uint32_t shift) {
+        const auto value = ((s >> shift) & 0xFFU) + (((d >> shift) & 0xFFU) * inverse + 127U) / 255U;
+        return std::min(value, 255U) << shift;
+      };
+      d = channel(0U) | channel(8U) | channel(16U) | 0xFF000000U;
+    }
+  }
+}
+
+}  // namespace
+
+GlowSprite& RingGlowCache::tick(std::uint64_t key, std::size_t index) {
+  if (key != tickKey_) {
+    for (auto& sprite : ticks_) sprite.ready = false;
+    tickKey_ = key;
+  }
+  return ticks_[index % kSingerRingTicks];
+}
+
+GlowSprite& RingGlowCache::outline(std::uint64_t key) {
+  if (key != outlineKey_) {
+    outline_.ready = false;
+    outlineKey_ = key;
+  }
+  return outline_;
+}
+
+std::size_t RingGlowCache::bytes() const noexcept {
+  std::size_t total = outline_.pixels.pixels().size_bytes();
+  for (const auto& sprite : ticks_) total += sprite.pixels.pixels().size_bytes();
+  return total;
+}
+
+void paintSingerRingBase(paint::Canvas2D& vector, const DesignTokens& tokens,
+                         const SingerRingSpec& spec) {
+  const auto& r = spec.bounds;
+  if (r.width <= 0.0 || r.height <= 0.0) return;
+  const auto g = ringGeometry(tokens, spec);
+  vector.fill(Path::circle(g.center, g.portraitRadius),
+              paint::RadialGradient{g.center, g.portraitRadius,
+                                    {{0.0, tokens.color.surfaceRaised},
+                                     {1.0, tokens.color.surfaceSunken}}});
+  // Every tick, unlit: the live part lights some of them over this, whatever the level.
+  std::array<Path, 4U> unlit;
+  for (std::size_t i = 0U; i < kSingerRingTicks; ++i) addTick(unlit[tickColorGroup(g, i)], g, i);
+  for (std::size_t group = 0U; group < unlit.size(); ++group) {
+    if (unlit[group].empty()) continue;
+    vector.stroke(unlit[group], withAlpha(tickColor(tokens, g, group), 0.16),
+                  StrokeStyle{g.scene ? 2.6 : 1.2, false});
+  }
+}
+
 bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
                      const SingerRingSpec& spec) {
+  paintSingerRingBase(canvas.vector, tokens, spec);
+  return paintSingerRingLive(canvas, tokens, spec);
+}
+
+bool paintSingerRingLive(CharacterCanvas canvas, const DesignTokens& tokens,
+                         const SingerRingSpec& spec) {
   const auto& r = spec.bounds;
   if (r.width <= 0.0 || r.height <= 0.0) return false;
   auto& vector = canvas.vector;
-  const auto scene = tokens.mode == DesignMode::Scene;
-  const ui::Point center{r.x + r.width * 0.5, r.y + r.height * 0.5};
-  const auto radius = std::min(r.width, r.height) * 0.5;
-  const auto tickLength = scene ? 9.0 : 7.0;
-  const auto tickOuter = radius;
-  const auto tickInner = radius - tickLength;
-  const auto portraitRadius = std::max(2.0, tickInner - (scene ? 5.0 : 4.0));
-  const auto tint = stateTint(tokens, spec.state);
-  const auto alarming = spec.state == CharacterState::Warning ||
-                        spec.state == CharacterState::Error;
-  vector.fill(Path::circle(center, portraitRadius),
-              paint::RadialGradient{center, portraitRadius,
-                                    {{0.0, tokens.color.surfaceRaised},
-                                     {1.0, tokens.color.surfaceSunken}}});
+  const auto g = ringGeometry(tokens, spec);
+  const auto center = g.center;
+  const auto portraitRadius = g.portraitRadius;
+  const auto tint = g.tint;
   // The idle breathing moves the figure inside its ring rather than moving the ring, so the ring, the
   // ticks and the state colour stay exactly where the layout put them.
   const ui::Rect portraitBox{center.x - portraitRadius, center.y - portraitRadius,
@@ -717,25 +892,57 @@ bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
       (spec.rotation - std::floor(spec.rotation)) * static_cast<double>(kSingerRingTicks)));
   rotationTicks %= static_cast<std::ptrdiff_t>(kSingerRingTicks);
   if (rotationTicks < 0) rotationTicks += static_cast<std::ptrdiff_t>(kSingerRingTicks);
+  // The lit ticks, one path and one glow per colour: a glow per tick made the ring the costliest
+  // thing a playback frame drew.
+  std::array<Path, 4U> lit;
   for (std::size_t i = 0U; i < kSingerRingTicks; ++i) {
     const auto index = (static_cast<std::ptrdiff_t>(i) + rotationTicks) %
                        static_cast<std::ptrdiff_t>(kSingerRingTicks);
-    const auto on = index < static_cast<std::ptrdiff_t>(litCount);
-    const auto angle = -kPi * 0.5 +
-                       static_cast<double>(i) * 2.0 * kPi /
-                           static_cast<double>(kSingerRingTicks);
-    // Scene cycles the look's segments; Emo draws one thin accent tick, and an alarming state
-    // recolors the ring amber or red over either look.
-    auto color = scene ? tokens.trackColors[(i / 3U) % 4U] : tokens.color.accent;
-    if (alarming) color = tint;
-    color = withAlpha(color, on ? 1.0 : 0.16);
+    if (index < static_cast<std::ptrdiff_t>(litCount)) addTick(lit[tickColorGroup(g, i)], g, i);
+  }
+  const auto tickWidth = g.scene ? 2.6 : 1.2;
+  const auto scale = canvas.raster.scale();
+  const auto strokeTick = [&](paint::Canvas2D& target, std::size_t i) {
+    const auto color = tickColor(tokens, g, tickColorGroup(g, i));
     Path tick;
-    tick.moveTo({center.x + std::cos(angle) * tickInner, center.y + std::sin(angle) * tickInner})
-        .lineTo({center.x + std::cos(angle) * tickOuter, center.y + std::sin(angle) * tickOuter});
-    vector.save();
-    if (on) vector.setGlow(withAlpha(color, 0.9), 5.0);
-    vector.stroke(tick, color, StrokeStyle{scene ? 2.6 : 1.2, false});
-    vector.restore();
+    addTick(tick, g, i);
+    target.save();
+    target.setGlow(withAlpha(color, 0.9), 5.0);
+    target.stroke(tick, color, StrokeStyle{tickWidth, false});
+    target.restore();
+  };
+  if (spec.glows != nullptr) {
+    // Each lit tick with its own glow, as a sprite drawn once for this ring and composited.
+    vector.flush();
+    paint::ContentHash key;
+    key.add(scale).add(g.center).add(g.tickInner).add(g.tickOuter).add(tickWidth);
+    for (std::size_t group = 0U; group < 4U; ++group) key.add(tickColor(tokens, g, group));
+    for (std::size_t i = 0U; i < kSingerRingTicks; ++i) {
+      const auto index = (static_cast<std::ptrdiff_t>(i) + rotationTicks) %
+                         static_cast<std::ptrdiff_t>(kSingerRingTicks);
+      if (index >= static_cast<std::ptrdiff_t>(litCount)) continue;
+      auto& sprite = spec.glows->tick(key.value(), i);
+      if (!sprite.ready) {
+        const auto reach = tickWidth * 0.5 + 5.0 * kGlowSpriteReach;
+        static_cast<void>(renderGlowSprite(sprite, tickBounds(g, i, reach), scale,
+                                           [&](paint::Canvas2D& target) { strokeTick(target, i); }));
+      }
+      if (sprite.ready) {
+        compositeGlowSprite(canvas.raster, sprite);
+      } else {
+        strokeTick(vector, i);
+        vector.flush();
+      }
+    }
+  } else {
+    for (std::size_t group = 0U; group < lit.size(); ++group) {
+      if (lit[group].empty()) continue;
+      const auto color = tickColor(tokens, g, group);
+      vector.save();
+      vector.setGlow(withAlpha(color, 0.9), 5.0);
+      vector.stroke(lit[group], color, StrokeStyle{tickWidth, false});
+      vector.restore();
+    }
   }
   // The portrait is drawn after the vector work is on the surface, because the raster front writes
   // pixels directly and would otherwise be overdrawn by a later vector pass.
@@ -753,11 +960,29 @@ bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
   if (spec.blink > 0.0 && fittedPortrait.width > 0.0)
     paintBlinkLid(canvas.vector, fittedPortrait, spec.eyes, spec.blink, spec.lidTone,
                   tokens.color.canvas);
-  vector.save();
-  vector.setGlow(withAlpha(tint, 0.9), 10.0);
-  vector.stroke(Path::circle(center, portraitRadius + 1.0), withAlpha(tint, 0.85),
-                StrokeStyle{1.6});
-  vector.restore();
+  const auto strokeOutline = [&](paint::Canvas2D& target) {
+    target.save();
+    target.setGlow(withAlpha(tint, 0.9), 10.0);
+    target.stroke(Path::circle(center, portraitRadius + 1.0), withAlpha(tint, 0.85),
+                  StrokeStyle{1.6});
+    target.restore();
+  };
+  if (spec.glows != nullptr) {
+    vector.flush();
+    auto& sprite = spec.glows->outline(
+        paint::ContentHash{}.add(scale).add(center).add(portraitRadius).add(tint).value());
+    if (!sprite.ready) {
+      const auto reach = portraitRadius + 1.0 + 0.8 + 10.0 * kGlowSpriteReach;
+      static_cast<void>(renderGlowSprite(
+          sprite, {center.x - reach, center.y - reach, reach * 2.0, reach * 2.0}, scale,
+          strokeOutline));
+    }
+    if (sprite.ready) {
+      compositeGlowSprite(canvas.raster, sprite);
+      return characterMotionShown(spec.state, fittedPortrait.width > 0.0, true);
+    }
+  }
+  strokeOutline(vector);
   return characterMotionShown(spec.state, fittedPortrait.width > 0.0, true);
 }
 
