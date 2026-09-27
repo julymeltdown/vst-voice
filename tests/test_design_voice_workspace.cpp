@@ -5,6 +5,7 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/domain/project.hpp"
@@ -223,6 +224,60 @@ TEST_CASE("a VOICE knob drag is one session undo step with the recipe value chan
   CHECK(f.controller.documentRevision() == songRevision);
   CHECK(f.shell.routeUndo(true).has_value());
   CHECK(std::abs(f.recipe().modulation.rateHz - 0.1) < 1e-9);
+}
+
+TEST_CASE("Undo in the middle of a VOICE drag is refused, and the menu never reaches the song") {
+  VoiceFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The hidden song has an edit of its own to undo, so a menu Undo that fell through would show.
+  const auto trackId = f.session.project().vocalTracks().front().id;
+  CHECK(f.session.execute(std::make_unique<application::RenameVocalTrackCommand>(trackId, "Lead")));
+  CHECK(f.session.canUndo());
+  CHECK(f.openVoice());
+  // One committed designer edit, so the designer has history the drag must not step through.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.voice.knob.rate", SemanticAction::Increment).hasValue());
+  CHECK(f.canUndo());
+  const auto rate = f.recipe().modulation.rateHz;
+  const auto songRevision = f.controller.documentRevision();
+  // The application menu's Undo is the host's interceptCommand: the shell's answer when it has
+  // one, else the song's own Undo. This is that path, as native_editor_app wires it.
+  const auto menuUndo = [&f](bool redo) -> core::Result<void> {
+    if (auto handled = f.shell.routeUndo(redo); handled.has_value()) return std::move(*handled);
+    return redo ? f.session.redo() : f.session.undo();
+  };
+  const auto knob = center(f.bounds("shell.voice.knob.open-quotient"));
+  const auto before = f.recipe().phonation.openQuotient;
+  CHECK(f.shell.pointerDown(f.controller, press(knob)).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press({knob.x, knob.y - 24.0})).hasValue());
+  CHECK(f.designer.model()->gestureActive());
+  // Both commands, both paths: a refusal naming the drag, with no history moved on either side.
+  for (const auto redo : {false, true}) {
+    const auto routed = f.shell.routeUndo(redo);
+    CHECK(routed.has_value());
+    if (routed) {
+      CHECK(!routed->hasValue());
+      if (!routed->hasValue()) CHECK(routed->error().message == "Finish the drag before undo or redo");
+    }
+    CHECK(!menuUndo(redo).hasValue());
+  }
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Z, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller,
+                               KeyEvent{.key = NativeKey::Z, .modifiers = {.shift = true, .command = true}}));
+  CHECK(f.controller.documentRevision() == songRevision);
+  CHECK(f.session.project().vocalTracks().front().name == "Lead");
+  CHECK(f.designer.model()->gestureActive());
+  CHECK(f.recipe().modulation.rateHz == rate);
+  // The release commits the drag as one step, and Undo is the designer's again.
+  CHECK(f.shell.pointerUp(f.controller, press({knob.x, knob.y - 24.0})).hasValue());
+  CHECK(f.recipe().phonation.openQuotient != before);
+  CHECK(menuUndo(false).hasValue());
+  CHECK(f.recipe().phonation.openQuotient == before);
+  CHECK(menuUndo(false).hasValue());
+  CHECK(f.recipe().modulation.rateHz == 0.0);
+  CHECK(f.controller.documentRevision() == songRevision);
+  // With no designer history left the command falls through to the song again.
+  CHECK(!f.canUndo());
+  CHECK(!f.shell.routeUndo(false).has_value());
 }
 
 TEST_CASE("a formant handle drag moves frequency and gain; Shift-drag sets its bandwidth") {

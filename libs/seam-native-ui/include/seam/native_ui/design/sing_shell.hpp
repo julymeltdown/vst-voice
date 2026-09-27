@@ -199,6 +199,8 @@ public:
   [[nodiscard]] ShellWorkspace* bodyWorkspace() const noexcept;
   // Undo and redo belong to the Voice Designer while VOICE is shown: the editor's history is not
   // on screen there. Returns the designer's result then, and nothing in any other workspace.
+  // While a workspace body drag is in progress it returns a refusal in every workspace, so neither
+  // history moves under the gesture and the application menu does not fall through to the song.
   [[nodiscard]] std::optional<core::Result<void>> routeUndo(bool redo);
   // The rectangle a covering workspace (TUNE, MIX, EXPORT) owns, in shell coordinates.
   [[nodiscard]] ui::Rect workspaceArea() const noexcept { return exportArea(); }

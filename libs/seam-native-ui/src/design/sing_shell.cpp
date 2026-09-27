@@ -2512,7 +2512,14 @@ ShellWorkspace* SingShell::bodyWorkspace() const noexcept {
 }
 
 std::optional<core::Result<void>> SingShell::routeUndo(bool redo) {
-  if (!presented_ || workspace_ != Workspace::Voice) return std::nullopt;
+  if (!presented_) return std::nullopt;
+  // A drag in a workspace body (a VOICE knob or formant, a TUNE or MIX handle) is an edit still in
+  // progress, and its release commits against the history it started from. Undo underneath it, the
+  // designer's or the song's, is refused, and refused here: returning nothing would let the menu's
+  // Undo fall through to the hidden song mid-drag.
+  if (const auto* body = bodyWorkspace(); bodyGesture_ || (body != nullptr && body->gestureActive()))
+    return core::failure(core::ErrorCode::Conflict, "Finish the drag before undo or redo");
+  if (workspace_ != Workspace::Voice) return std::nullopt;
   // The designer owns the command only when it can actually step through its own history;
   // otherwise the application's Undo and Redo keep working.
   if (voice_ == nullptr || !voice_->ownsUndo(redo)) return std::nullopt;
