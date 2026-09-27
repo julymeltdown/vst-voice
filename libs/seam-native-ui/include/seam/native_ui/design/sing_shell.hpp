@@ -273,7 +273,9 @@ public:
   [[nodiscard]] const std::array<bool, paint::kLayerCount>& lastFrameLayers() const noexcept {
     return lastLayers_;
   }
-  [[nodiscard]] std::size_t layerCacheBytes() const noexcept { return layers_.bytes(); }
+  [[nodiscard]] std::size_t layerCacheBytes() const noexcept {
+    return layers_.bytes() + ringGlows_.bytes();
+  }
   // Forgets every cached layer, so the next frame is composed from nothing.
   void invalidateLayers() noexcept;
   // A host whose presenter keeps the painted surface between frames (the AppKit window and the
@@ -582,6 +584,8 @@ private:
   FrameDamage lastDamage_{FrameDamage::everything()};
   std::array<bool, paint::kLayerCount> lastLayers_{};
   mutable std::uint64_t artGeneration_{0U};
+  // The singer ring's glows, drawn once and composited on every frame after.
+  mutable RingGlowCache ringGlows_;
   bool retainedSurface_{false};
   PixelSurface metricsSurface_;
   std::unique_ptr<paint::Canvas2D> metrics_;

@@ -2217,8 +2217,12 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .mouthOpacity = voiceReady ? 1.0 : 0.55,
       .breath = motion_.breath,
       .blink = motion_.blink,
+      .glows = &ringGlows_,
   };
   {
+    // What holds still while the singer sings (the backdrop and the unlit ticks) is content; only
+    // the lit ticks, the portrait and the state ring are redrawn as they move.
+    paintSingerRingBase(c, t, spec);
     // The ring lights with the singer's energy and the render, and the portrait breathes and
     // blinks inside it: a dynamic item.
     const paint::LayerScope ringLayer{c, paint::Layer::Dynamic, "ring"};
@@ -2233,7 +2237,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       h.add(spec.mouthPlacement->x).add(spec.mouthPlacement->y).add(spec.mouthPlacement->width)
           .add(spec.mouthPlacement->height);
     characterArt(c, grown(ring, kGlowReach), h.value(), [&t, spec](CharacterCanvas art) {
-      static_cast<void>(paintSingerRing(art, t, spec));
+      static_cast<void>(paintSingerRingLive(art, t, spec));
     });
     // What paintSingerRing returns, known before it is drawn.
     if (ring.width > 0.0 && ring.height > 0.0)
