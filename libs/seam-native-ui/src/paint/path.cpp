@@ -110,4 +110,16 @@ void ScopedTextCapture::record(TextRecord record) {
 
 bool ScopedTextCapture::active() noexcept { return activeTextCapture != nullptr; }
 
+namespace {
+thread_local bool fullResolutionGlow = false;
+}  // namespace
+
+ScopedFullResolutionGlow::ScopedFullResolutionGlow() noexcept : previous_{fullResolutionGlow} {
+  fullResolutionGlow = true;
+}
+
+ScopedFullResolutionGlow::~ScopedFullResolutionGlow() { fullResolutionGlow = previous_; }
+
+bool ScopedFullResolutionGlow::active() noexcept { return fullResolutionGlow; }
+
 }  // namespace seam::native_ui::paint

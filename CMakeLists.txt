@@ -729,7 +729,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_APPKIT=1)
     target_link_libraries(seam_native_ui PRIVATE
-      "-framework AppKit" "-framework CoreGraphics" "-framework CoreFoundation" "-framework Foundation")
+      "-framework Accelerate" "-framework AppKit" "-framework CoreGraphics"
+      "-framework CoreFoundation" "-framework Foundation")
   elseif(UNIX AND X11_FOUND)
     target_compile_definitions(seam_native_ui PRIVATE SEAM_NATIVE_X11=1)
     target_include_directories(seam_native_ui PRIVATE ${X11_INCLUDE_DIR})

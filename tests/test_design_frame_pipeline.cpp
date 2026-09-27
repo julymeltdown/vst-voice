@@ -393,3 +393,54 @@ TEST_CASE("a recorded layer hashes only its own drawing and replays like direct 
   }
   CHECK(replayed.checksum() == direct.checksum());
 }
+
+TEST_CASE("a large glow blurred at half resolution keeps the full-resolution shadow's energy") {
+  using native_ui::paint::Path;
+  using native_ui::paint::StrokeStyle;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  constexpr double kScale = 2.0;
+  constexpr std::uint32_t kW = 700U;
+  constexpr std::uint32_t kH = 300U;
+  const native_ui::Color background{11, 10, 12, 255};
+  // A pitch-curve-like stroke long enough to take the half-resolution path.
+  Path curve;
+  curve.moveTo({20.0, 80.0});
+  for (int i = 1; i <= 64; ++i)
+    curve.lineTo({20.0 + i * 5.0, 80.0 + 40.0 * std::sin(i * 0.3)});
+  const auto draw = [&](PixelSurface& surface) {
+    surface.clear(background);
+    auto c = native_ui::paint::makeCanvas(surface, kScale);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    c->save();
+    c->setGlow(native_ui::Color{209, 20, 58, 230}, 7.0);
+    c->stroke(curve, native_ui::Color{242, 238, 234, 255}, StrokeStyle{2.0});
+    c->restore();
+    c->flush();
+  };
+  PixelSurface half{kW, kH};
+  PixelSurface full{kW, kH};
+  draw(half);
+  {
+    const native_ui::paint::ScopedFullResolutionGlow direct;
+    draw(full);
+  }
+  // The glow's energy: red above the background, summed.
+  const auto energy = [&](const PixelSurface& s) {
+    double total = 0.0;
+    for (const auto p : s.pixels()) total += std::max(0.0, ((p >> 16U) & 0xFFU) - 11.0);
+    return total;
+  };
+  const auto halfEnergy = energy(half);
+  const auto fullEnergy = energy(full);
+  std::cout << "[glow-energy] half=" << halfEnergy << " full=" << fullEnergy << '\n';
+  CHECK(fullEnergy > 0.0);
+  CHECK(std::abs(halfEnergy - fullEnergy) <= 0.10 * fullEnergy);
+  double difference = 0.0;
+  for (std::size_t i = 0U; i < half.pixels().size(); ++i)
+    difference += std::abs(static_cast<double>((half.pixels()[i] >> 16U) & 0xFFU) -
+                           static_cast<double>((full.pixels()[i] >> 16U) & 0xFFU));
+  const auto meanDifference = difference / static_cast<double>(half.pixels().size());
+  std::cout << "[glow-mean-red-difference] " << meanDifference << '\n';
+  CHECK(meanDifference < 2.0);
+}

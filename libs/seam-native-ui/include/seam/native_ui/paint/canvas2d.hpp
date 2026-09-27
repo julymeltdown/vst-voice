@@ -226,6 +226,20 @@ private:
 };
 
 [[nodiscard]] bool vectorBackendAvailable() noexcept;
+
+// Test and evidence hook: while one is alive on this thread, every glow is drawn at full resolution
+// (the backend's own shadow), so a test can measure the half-resolution glow against it.
+class ScopedFullResolutionGlow final {
+public:
+  ScopedFullResolutionGlow() noexcept;
+  ~ScopedFullResolutionGlow();
+  ScopedFullResolutionGlow(const ScopedFullResolutionGlow&) = delete;
+  ScopedFullResolutionGlow& operator=(const ScopedFullResolutionGlow&) = delete;
+  [[nodiscard]] static bool active() noexcept;
+
+private:
+  bool previous_{false};
+};
 // Contents/Resources of the bundle whose binary contains this code (the app, or the plug-in inside
 // a host), or empty when it cannot be determined.
 [[nodiscard]] std::filesystem::path codeBundleResources();

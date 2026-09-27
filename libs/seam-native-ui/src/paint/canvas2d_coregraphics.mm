@@ -2,6 +2,7 @@
 #include "seam/native_ui/paint/presentation_color.hpp"
 
 #import <AppKit/AppKit.h>
+#import <Accelerate/Accelerate.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
 #import <ImageIO/ImageIO.h>
@@ -10,9 +11,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace seam::native_ui::paint {
 namespace {
@@ -147,8 +150,17 @@ public:
   [[nodiscard]] double height() const noexcept override { return surface_.height() / scale_; }
   [[nodiscard]] double scale() const noexcept override { return scale_; }
 
-  void save() override { CGContextSaveGState(context_.get()); }
-  void restore() override { CGContextRestoreGState(context_.get()); }
+  void save() override {
+    CGContextSaveGState(context_.get());
+    glowStack_.push_back(glow_);
+  }
+  void restore() override {
+    CGContextRestoreGState(context_.get());
+    if (!glowStack_.empty()) {
+      glow_ = glowStack_.back();
+      glowStack_.pop_back();
+    }
+  }
   void translate(double dx, double dy) override { CGContextTranslateCTM(context_.get(), dx, dy); }
   void clipRect(ui::Rect r) override {
     CGContextClipToRect(context_.get(), CGRectMake(r.x, r.y, std::max(0.0, r.width),
@@ -168,76 +180,79 @@ public:
                                                                    : kCGBlendModeNormal);
   }
   void setGlow(Color color, double radius) override {
-    const auto c = cgColor(color);
-    // Shadow blur is specified in device space, not affected by the CTM.
-    CGContextSetShadowWithColor(context_.get(), CGSizeZero,
-                                std::max(0.0, radius) * scale_, c.get());
+    glow_ = Glow{.on = true, .color = color, .radius = std::max(0.0, radius)};
   }
-  void clearGlow() override { CGContextSetShadowWithColor(context_.get(), CGSizeZero, 0.0, nullptr); }
+  void clearGlow() override { glow_ = Glow{}; }
 
   void fill(const Path& path, Color color) override {
     if (path.empty()) return;
     const auto p = toCgPath(path);
     const auto c = cgColor(color);
-    CGContextAddPath(context_.get(), p.get());
-    CGContextSetFillColorWithColor(context_.get(), c.get());
-    CGContextFillPath(context_.get());
+    glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
+      CGContextAddPath(ctx, p.get());
+      CGContextSetFillColorWithColor(ctx, c.get());
+      CGContextFillPath(ctx);
+    });
   }
   void fill(const Path& path, const LinearGradient& gradient) override {
     const auto g = toCgGradient(gradient.stops);
     if (path.empty() || !g) return;
     const auto p = toCgPath(path);
-    auto* ctx = context_.get();
-    CGContextSaveGState(ctx);
-    CGContextAddPath(ctx, p.get());
-    CGContextClip(ctx);
-    CGContextDrawLinearGradient(ctx, g.get(), CGPointMake(gradient.from.x, gradient.from.y),
-                                CGPointMake(gradient.to.x, gradient.to.y),
-                                kCGGradientDrawsBeforeStartLocation |
-                                    kCGGradientDrawsAfterEndLocation);
-    CGContextRestoreGState(ctx);
+    glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
+      CGContextSaveGState(ctx);
+      CGContextAddPath(ctx, p.get());
+      CGContextClip(ctx);
+      CGContextDrawLinearGradient(ctx, g.get(), CGPointMake(gradient.from.x, gradient.from.y),
+                                  CGPointMake(gradient.to.x, gradient.to.y),
+                                  kCGGradientDrawsBeforeStartLocation |
+                                      kCGGradientDrawsAfterEndLocation);
+      CGContextRestoreGState(ctx);
+    });
   }
   void fill(const Path& path, const RadialGradient& gradient) override {
     const auto g = toCgGradient(gradient.stops);
     if (path.empty() || !g) return;
     const auto p = toCgPath(path);
-    auto* ctx = context_.get();
-    CGContextSaveGState(ctx);
-    CGContextAddPath(ctx, p.get());
-    CGContextClip(ctx);
-    const auto c = CGPointMake(gradient.center.x, gradient.center.y);
-    CGContextDrawRadialGradient(ctx, g.get(), c, 0.0, c, std::max(0.0, gradient.radius),
-                                kCGGradientDrawsAfterEndLocation);
-    CGContextRestoreGState(ctx);
+    glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
+      CGContextSaveGState(ctx);
+      CGContextAddPath(ctx, p.get());
+      CGContextClip(ctx);
+      const auto c = CGPointMake(gradient.center.x, gradient.center.y);
+      CGContextDrawRadialGradient(ctx, g.get(), c, 0.0, c, std::max(0.0, gradient.radius),
+                                  kCGGradientDrawsAfterEndLocation);
+      CGContextRestoreGState(ctx);
+    });
   }
   void stroke(const Path& path, Color color, const StrokeStyle& style) override {
     if (path.empty()) return;
     const auto p = toCgPath(path);
     const auto c = cgColor(color);
-    auto* ctx = context_.get();
-    CGContextSaveGState(ctx);
-    applyStroke(style);
-    CGContextAddPath(ctx, p.get());
-    CGContextSetStrokeColorWithColor(ctx, c.get());
-    CGContextStrokePath(ctx);
-    CGContextRestoreGState(ctx);
+    glowed(strokeBounds(p.get(), style), [&](CGContextRef ctx) {
+      CGContextSaveGState(ctx);
+      applyStroke(ctx, style);
+      CGContextAddPath(ctx, p.get());
+      CGContextSetStrokeColorWithColor(ctx, c.get());
+      CGContextStrokePath(ctx);
+      CGContextRestoreGState(ctx);
+    });
   }
   void stroke(const Path& path, const LinearGradient& gradient,
               const StrokeStyle& style) override {
     const auto g = toCgGradient(gradient.stops);
     if (path.empty() || !g) return;
     const auto p = toCgPath(path);
-    auto* ctx = context_.get();
-    CGContextSaveGState(ctx);
-    applyStroke(style);
-    CGContextAddPath(ctx, p.get());
-    CGContextReplacePathWithStrokedPath(ctx);
-    CGContextClip(ctx);
-    CGContextDrawLinearGradient(ctx, g.get(), CGPointMake(gradient.from.x, gradient.from.y),
-                                CGPointMake(gradient.to.x, gradient.to.y),
-                                kCGGradientDrawsBeforeStartLocation |
-                                    kCGGradientDrawsAfterEndLocation);
-    CGContextRestoreGState(ctx);
+    glowed(strokeBounds(p.get(), style), [&](CGContextRef ctx) {
+      CGContextSaveGState(ctx);
+      applyStroke(ctx, style);
+      CGContextAddPath(ctx, p.get());
+      CGContextReplacePathWithStrokedPath(ctx);
+      CGContextClip(ctx);
+      CGContextDrawLinearGradient(ctx, g.get(), CGPointMake(gradient.from.x, gradient.from.y),
+                                  CGPointMake(gradient.to.x, gradient.to.y),
+                                  kCGGradientDrawsBeforeStartLocation |
+                                      kCGGradientDrawsAfterEndLocation);
+      CGContextRestoreGState(ctx);
+    });
   }
   void drawImage(const Image& image, ui::Rect destination, double opacity) override {
     const auto* cg = dynamic_cast<const CoreGraphicsImage*>(&image);
@@ -283,6 +298,7 @@ public:
     auto* ctx = context_.get();
     recordText(bounds, {x, baseline - ascent, width, ascent + descent}, utf8, naturalWidth, elided);
     CGContextSaveGState(ctx);
+    applyShadow(ctx);
     CGContextClipToRect(ctx, CGRectMake(bounds.x - 2.0, bounds.y - 4.0, bounds.width + 4.0,
                                         bounds.height + 8.0));
     CGContextSetTextMatrix(ctx, CGAffineTransformMakeScale(1.0, -1.0));
@@ -320,8 +336,134 @@ private:
         .elided = elided});
   }
 
-  void applyStroke(const StrokeStyle& style) {
+  // The glow as the canvas holds it: CoreGraphics' shadow is set only around the drawing that casts
+  // it, so a glow can also be drawn another way.
+  struct Glow final {
+    bool on{false};
+    Color color{};
+    double radius{0.0};
+  };
+
+  // Sets the current glow as the context's shadow (blur in device space, not affected by the CTM).
+  void applyShadow(CGContextRef ctx, double blurScale = 1.0) const {
+    if (!glow_.on) return;
+    const auto c = cgColor(glow_.color);
+    CGContextSetShadowWithColor(ctx, CGSizeZero, glow_.radius * scale_ * blurScale, c.get());
+  }
+
+  static CGRect strokeBounds(CGPathRef path, const StrokeStyle& style) {
+    const auto half = std::max(0.0, style.width);
+    return CGRectInset(CGPathGetBoundingBox(path), -half, -half);
+  }
+
+  // Draws a shape (draw paints it into the context it is given) with the current glow. A glow over
+  // a large area is blurred at half resolution (plan section 3.4): the shape's shadow alone is cast
+  // into a half-resolution layer anchored on even device pixels, drawn back upscaled, and the shape
+  // is drawn crisp over it. The layer depends only on the shape and on the clip grown well past the
+  // blur, so a frame drawn in damaged rectangles and a frame drawn whole agree pixel for pixel.
+  template <typename Draw>
+  void glowed(CGRect userBounds, Draw&& draw) {
     auto* ctx = context_.get();
+    if (!glow_.on || glow_.radius <= 0.0) {
+      if (glow_.on) {
+        CGContextSaveGState(ctx);
+        applyShadow(ctx);
+        draw(ctx);
+        CGContextRestoreGState(ctx);
+      } else {
+        draw(ctx);
+      }
+      return;
+    }
+    const auto blur = glow_.radius * scale_;  // device pixels
+    const auto ctm = CGContextGetCTM(ctx);
+    const auto reach = 2.0 * blur + 2.0;
+    const auto device = CGRectInset(CGRectApplyAffineTransform(userBounds, ctm), -reach, -reach);
+    if (halfResolutionGlowDisabled() ||
+        device.size.width * device.size.height < kHalfResolutionGlowArea) {
+      CGContextSaveGState(ctx);
+      applyShadow(ctx);
+      draw(ctx);
+      CGContextRestoreGState(ctx);
+      return;
+    }
+    // The layer covers the whole glow whatever the clip: a clip only decides which of its pixels
+    // land, never how they are computed.
+    const auto clip = CGRectApplyAffineTransform(CGContextGetClipBoundingBox(ctx), ctm);
+    const auto region = device;
+    if (CGRectIntersectsRect(region, clip)) {
+      // Anchored on a coarse device grid on every side, so the blur sees the same layer grid
+      // whichever part of the shape a clip asks for.
+      const auto x0 = std::floor(region.origin.x / kGlowGrid) * kGlowGrid;
+      const auto y0 = std::floor(region.origin.y / kGlowGrid) * kGlowGrid;
+      const auto x1 = std::ceil(CGRectGetMaxX(region) / kGlowGrid) * kGlowGrid;
+      const auto y1 = std::ceil(CGRectGetMaxY(region) / kGlowGrid) * kGlowGrid;
+      const auto width = static_cast<std::size_t>((x1 - x0) / 2.0);
+      const auto height = static_cast<std::size_t>((y1 - y0) / 2.0);
+      glowMask_.assign(width * height, 0U);
+      glowScratch_.assign(width * height, 0U);
+      // The shape's coverage (times its paint's alpha, as a shadow takes it) at half resolution.
+      CfRef<CGContextRef> mask{CGBitmapContextCreate(glowMask_.data(), width, height, 8U, width,
+                                                     nullptr, kCGImageAlphaOnly)};
+      if (mask) {
+        auto* m = mask.get();
+        CGContextSetShouldAntialias(m, true);
+        CGContextSetAllowsAntialiasing(m, true);
+        CGContextSetLineJoin(m, kCGLineJoinRound);
+        auto toMask = CGAffineTransformConcat(ctm, CGAffineTransformMakeTranslation(-x0, -y0));
+        toMask = CGAffineTransformConcat(toMask, CGAffineTransformMakeScale(0.5, 0.5));
+        CGContextConcatCTM(m, toMask);
+        draw(m);
+        CGContextFlush(m);
+        // Three box passes approximate the shadow's Gaussian (sigma about half the blur).
+        const auto sigma = blur * 0.25;  // half-resolution pixels
+        auto box = static_cast<std::uint32_t>(std::lround(std::sqrt(4.0 * sigma * sigma + 1.0)));
+        if (box % 2U == 0U) ++box;
+        vImage_Buffer a{glowMask_.data(), height, width, width};
+        vImage_Buffer b{glowScratch_.data(), height, width, width};
+        if (box > 1U) {
+          for (int pass = 0; pass < 3; ++pass) {
+            if (vImageBoxConvolve_Planar8(&a, &b, nullptr, 0, 0, box, box, 0,
+                                          kvImageBackgroundColorFill) != kvImageNoError)
+              break;
+            std::swap(a, b);
+          }
+        }
+        // Upsampled to device resolution here (vImage), so CoreGraphics composites it 1:1.
+        const auto deviceWidth = width * 2U;
+        const auto deviceHeight = height * 2U;
+        glowDevice_.resize(deviceWidth * deviceHeight);
+        vImage_Buffer up{glowDevice_.data(), deviceHeight, deviceWidth, deviceWidth};
+        if (vImageScale_Planar8(&a, &up, nullptr, kvImageNoFlags) != kvImageNoError)
+          std::fill(glowDevice_.begin(), glowDevice_.end(), std::uint8_t{0});
+        // The glow colour painted through the blurred coverage.
+        CfRef<CGDataProviderRef> provider{CGDataProviderCreateWithData(
+            nullptr, up.data, deviceWidth * deviceHeight, nullptr)};
+        // An image mask paints the fill colour where its samples say (decoded so 255 paints).
+        static constexpr CGFloat kDecode[2] = {1.0, 0.0};
+        CfRef<CGImageRef> coverage{CGImageMaskCreate(deviceWidth, deviceHeight, 8U, 8U,
+                                                     deviceWidth, provider.get(), kDecode, false)};
+        if (coverage) {
+          const auto c = cgColor(glow_.color);
+          const auto rect = CGRectMake(x0, y0, x1 - x0, y1 - y0);
+          CGContextSaveGState(ctx);
+          CGContextConcatCTM(ctx, CGAffineTransformInvert(ctm));
+          // Bilinear, as the plan asks: the canvas's high-quality filter costs more than the glow.
+          CGContextSetInterpolationQuality(ctx, kCGInterpolationLow);
+          CGContextSetFillColorWithColor(ctx, c.get());
+          CGContextDrawImage(ctx, rect, coverage.get());
+          CGContextRestoreGState(ctx);
+        }
+      }
+    }
+    draw(ctx);
+  }
+
+  static constexpr double kHalfResolutionGlowArea = 256.0 * 256.0;
+  static constexpr double kGlowGrid = 64.0;
+  static bool halfResolutionGlowDisabled() noexcept { return ScopedFullResolutionGlow::active(); }
+
+  static void applyStroke(CGContextRef ctx, const StrokeStyle& style) {
     CGContextSetLineWidth(ctx, std::max(0.0, style.width));
     CGContextSetLineCap(ctx, style.roundCaps ? kCGLineCapRound : kCGLineCapButt);
     if (!style.dash.empty()) {
@@ -333,6 +475,7 @@ private:
   void drawCgImage(CGImageRef image, ui::Rect destination, double opacity) {
     auto* ctx = context_.get();
     CGContextSaveGState(ctx);
+    applyShadow(ctx);
     CGContextSetAlpha(ctx, std::clamp(opacity, 0.0, 1.0));
     // The canvas is y-down; CGContextDrawImage puts row 0 at the rectangle's lower edge.
     CGContextTranslateCTM(ctx, destination.x, destination.y + destination.height);
@@ -363,6 +506,11 @@ private:
   CGAffineTransform baseInverse_{CGAffineTransformIdentity};
   double scale_{1.0};
   CfRef<CGContextRef> context_;
+  Glow glow_{};
+  std::vector<Glow> glowStack_;
+  std::vector<std::uint8_t> glowMask_;
+  std::vector<std::uint8_t> glowScratch_;
+  std::vector<std::uint8_t> glowDevice_;
 };
 
 }  // namespace
