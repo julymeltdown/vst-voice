@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "$comment": "Each entry allows one deny-listed term in the listed files only, with the reason. Host and format names are nominative: they say which host or plug-in format SEAM works with, and never appear in the UI string table or in art. Licensor names appear where a license requires attribution.",
+  "allow": [
+    {
+      "term": "VST3",
+      "paths": [
+        "docs/manual/*.md",
+        "THIRD_PARTY_NOTICES.md",
+        "packaging/macos/installer-ownership.json",
+        "packaging/windows/ProjectSEAM.nsi",
+        "packaging/windows/installer-ownership.json"
+      ],
+      "reason": "Plug-in format name and the operating system's standard VST3 plug-in folder the installers write to; the SDK is attributed in the notices."
+    },
+    {
+      "term": "Steinberg",
+      "paths": [
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "reason": "Licensor attribution for the VST3 SDK, required by its license."
+    },
+    {
+      "term": "OpenUtau",
+      "paths": [
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "reason": "Attribution of the reference implementation the notices must credit."
+    },
+    {
+      "term": "FL Studio",
+      "paths": [
+        "docs/manual/*.md",
+        "docs/support/*.md",
+        "docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+      ],
+      "reason": "Host name in host-compatibility documentation (nominative use)."
+    },
+    {
+      "term": "REAPER",
+      "paths": [
+        "docs/manual/*.md",
+        "docs/support/*.md",
+        "docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+      ],
+      "reason": "Host name in the acceptance host matrix (nominative use)."
+    },
+    {
+      "term": "Bitwig",
+      "paths": [
+        "docs/manual/*.md",
+        "docs/support/*.md",
+        "docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+      ],
+      "reason": "Host name in the acceptance host matrix (nominative use)."
+    },
+    {
+      "term": "Logic Pro",
+      "paths": [
+        "docs/manual/*.md",
+        "docs/support/*.md",
+        "docs/product/EXTERNAL_BETA_ACCEPTANCE.md"
+      ],
+      "reason": "Host name in the acceptance host matrix (nominative use)."
+    }
+  ]
+}
