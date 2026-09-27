@@ -1,0 +1,34 @@
+{
+  "complete": {
+    "generatorSha256": "d180f0fd0013255988b0423534d95b99bbf4cacc6ca9c47bade905a86164e641",
+    "masterSha256": "54e7179c1078fa174b8a9f1a01946d5dcc54d1682a78c181725fc7a60c6adf26"
+  },
+  "error": {
+    "generatorSha256": "c9b252d9e6e4e185344c21086d74e29f6d1ada358466807c5015c475c5ec6318",
+    "masterSha256": "0bc303f02cebfda39240584b3e41f84ecb4121c44190902ea7f31f2aa27cb191"
+  },
+  "focused": {
+    "generatorSha256": "a08020aa03c1a75691c8be494e6d3cf3feefbf64b3fed569d1972d502bbb3c7e",
+    "masterSha256": "e8f56a5004f22e8744d2ae752fa5bb77f12ebb2c62e5b69ce45e0a14803c11ce"
+  },
+  "neutral": {
+    "generatorSha256": "da50431a99f38f76cc793257ec5c8a30c39d39c8b0f70f28a8ee57386843de76",
+    "masterSha256": "bc9fb4ce5a90dac4614410e6b9a37777912b0f845db60224a973705187ca480d"
+  },
+  "rendering": {
+    "generatorSha256": "60ff58196572e0ce6ee986a292236a3d8db29e894392aff390d37e70d3e35476",
+    "masterSha256": "3c676ea8c93da66739f73436bcd01e389f5f8c5002b5830ba43acd2ba1253800"
+  },
+  "splash-emo": {
+    "generatorSha256": "2516ead1995669b4574677608577fc848ae44dfd39b8548cfdf7c4689698a5ae",
+    "runtimeSha256": "483314645c8d4bf2d09eca07eb23c7a1bb02f6478a0b5335319d1e6875457f6c"
+  },
+  "splash-scene": {
+    "generatorSha256": "a651fb6f6fd109efdef7904c7b28c14b431554e75a670172d68367c27f07faea",
+    "runtimeSha256": "99e13b831ef40cec1a858025f9126afbaf9d9a767577f84a8293c37d8bc011a2"
+  },
+  "warning": {
+    "generatorSha256": "0af74dd5a3fdc16b8317521a90cf5ad5d588e2923cc9495e454a49894c6e5c06",
+    "masterSha256": "62b8e5ba7aca949c352fd43227b4e292cb1ee4931cca4983952bd5873ef2fc7a"
+  }
+}

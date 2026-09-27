@@ -661,6 +661,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   semanticFocus_.clear();
   overlayOpener_.clear();
   presentedOverlay_ = OverlayKind::None;
+  fieldOpenedOver_ = OverlayKind::None;
   workspaceMenuOpen_ = false;
   singerMenuOpen_ = false;
   presented_ = false;
@@ -684,6 +685,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     fieldAnchor_.reset();
   }
   // Every modal surface the controller opens is presented by the shell itself, so only a disabled
@@ -748,6 +750,12 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   applyGeometry(controller);
   frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
+  // The DIAGNOSTICS popover vanishes with the last diagnostic; the shell's flag goes with it, so the
+  // next failure shows its toast and never reopens the popover modally on its own.
+  if (diagnosticsOpen_ && controller.sceneState().diagnostics.empty()) diagnosticsOpen_ = false;
+  // A surface opened since the last frame (by the host's menu, a recovery action or a shell
+  // control) covers the score: a lyric field open under it goes.
+  cancelCoveredLyric(controller);
   return true;
 }
 
@@ -2571,6 +2579,17 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
   return result;
 }
 
+void SingShell::cancelCoveredLyric(NativeEditorController& controller) {
+  if (!presented_ || activeOverlay(controller) == nullptr) return;
+  // The lyric composition is the only one without a field kind; every other field is the surface's
+  // own (an inline field card, the time map's event field) and stays open.
+  const auto lyricOpen =
+      controller.textInputActive() &&
+      controller.textFieldView().kind == NativeEditorController::TextFieldView::Kind::None;
+  if (lyricOpen) controller.cancelTextComposition();
+  lyricInputActive_ = false;
+}
+
 bool SingShell::overlayPublishes(const NativeEditorController& controller,
                                  std::string_view id) const {
   const auto* overlay = activeOverlay(controller);
@@ -2645,8 +2664,9 @@ std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorControll
       }
     }
     // What the overlay states itself wins: the full text a painted label elides, a field's text as
-    // typed, a device's kind. A field takes text; a stepped setting steps either way.
-    if (!control.value.empty()) node.value = control.value;
+    // typed, a device's kind. A field's text as typed wins even when empty: a cleared field never
+    // reads the committed value under it. A field takes text; a stepped setting steps either way.
+    if (control.editable || !control.value.empty()) node.value = control.value;
     if (!control.description.empty()) node.description = control.description;
     if (control.editable && node.enabled) {
       node.actions = {SemanticAction::SetFocus, SemanticAction::EditText};
@@ -2985,6 +3005,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   // A re-homed overlay is modal over the score and the rack. A press on one of its controls runs
   // that control's own command; a press on the card itself is absorbed; a press outside closes it,
   // as the classic surfaces closed on Escape or their close button alone.
+  cancelCoveredLyric(controller);
   if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
@@ -3001,6 +3022,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       }
       for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
         if (!contains(control.bounds, p)) continue;
+        // A disabled control (a time-map row while the event field is open, a pager at its end)
+        // absorbs the press and runs nothing, as the classic panel ignored it.
+        if (!control.enabled) {
+          repaint();
+          return core::success();
+        }
         // A field keeps the keyboard where it is (its input client); any other control takes it.
         if (control.role != SemanticRole::TextField)
           takeSemanticFocus(controller, std::string{overlay->idPrefix()} + "panel");
@@ -3331,11 +3358,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that opened it; the overlay's own keys run its real commands; every other plain key
   // stops here, so nothing reaches the covered score.
   if (presented_) {
+    // A surface that opened without a frame in between still takes the keyboard from a lyric.
+    cancelCoveredLyric(controller);
     if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
       // A field open in the overlay (the time map's event field, an inline field card) has the
       // host's text input client: every key but Escape is the controller's own text handling
-      // (Enter and Tab commit, as they did on the classic surface).
-      if (controller.textInputActive() && event.key != NativeKey::Escape) return false;
+      // (Enter and Tab commit, as they did on the classic surface). Only a field the overlay owns
+      // passes keys through; a composition without a field kind is never the overlay's.
+      if (controller.textInputActive() &&
+          controller.textFieldView().kind != NativeEditorController::TextFieldView::Kind::None &&
+          event.key != NativeKey::Escape)
+        return false;
       // A drag inside the card owns the input; Escape cancels it without committing.
       if (overlayGesture_) {
         if (event.key == NativeKey::Escape) cancelGestures(controller);
@@ -3353,7 +3386,6 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         }
         const auto fallback = overlay->openerId(controller, controller.sceneState());
         const auto opener = overlayOpener_.empty() ? fallback : overlayOpener_;
-        overlayOpener_.clear();
         const auto kind = overlay->kind();
         static_cast<void>(closeOverlay(controller, *overlay));
         // The controller's own tree follows the close first, so the focus snapshot the shell keeps
@@ -3363,6 +3395,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         // field that returned to the surface under it (a review's draft field) leaves the keyboard
         // with that surface.
         const auto* next = activeOverlay(controller);
+        // A close that only stepped back (a review's detail to its list, a draft field to its
+        // review) leaves the surface up: its opener is kept for the Escape that closes it.
+        if (next == nullptr) overlayOpener_.clear();
         const auto uncovered = next != nullptr && next->kind() != kind;
         if (uncovered) {
           semanticFocus_.clear();  // the surface that is up now takes focus on the next rebuild
@@ -4084,7 +4119,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // action reaches the score or the lane it covers.
   if (overlay != nullptr) {
     if (overlay->kind() != presentedOverlay_) {
-      overlay->presented();
+      if (presentedOverlay_ == OverlayKind::TextField && overlay->kind() == fieldOpenedOver_)
+        overlay->resumed();
+      else
+        overlay->presented();
+      fieldOpenedOver_ =
+          overlay->kind() == OverlayKind::TextField ? presentedOverlay_ : OverlayKind::None;
       // The control that opened the surface from the shell (MIX's Settings, VOICE's browser
       // button) is where Escape returns focus; a surface that follows another keeps the first one.
       if (presentedOverlay_ == OverlayKind::None)
@@ -4144,6 +4184,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     for (auto& node : nodes) children.push_back(std::move(node));
   } else {
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     overlayField_.clear();
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives

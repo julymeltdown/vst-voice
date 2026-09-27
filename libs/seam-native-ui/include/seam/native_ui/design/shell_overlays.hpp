@@ -150,6 +150,9 @@ public:
   // Called once when the shell starts presenting the overlay, so a presentation-only position (a
   // popover's page) starts from the top each time it opens.
   virtual void presented() const {}
+  // Called instead of presented() when the overlay is shown again because a field it opened over
+  // itself (a review's draft field) closed, so the place it was showing is kept.
+  virtual void resumed() const {}
   // A press the overlay handles itself before its controls are hit-tested (a plot it forwards to
   // the controller). Unhandled by default.
   [[nodiscard]] virtual OverlayPress press(NativeEditorController& controller,

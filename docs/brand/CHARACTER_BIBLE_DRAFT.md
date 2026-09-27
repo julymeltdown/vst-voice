@@ -71,3 +71,7 @@ Windows/macOS platform work must not turn Character 01 into a desktop assistant,
 ## Phase 13B release status
 
 Deterministic development key art, portrait, thumbnail, silhouette and palette now exist under `assets/character-01/production-development/`. They are not a front/side/back turnaround and are explicitly blocked from commercial-release acceptance. `Character 01` remains an internal name pending trademark, domain, social-handle and legal clearance.
+
+## Development per-state art (2026-09-27)
+
+The runtime state portraits are no longer one image repeated six times. `assets/character-01/runtime/` now holds six distinct half-body portraits in the hand-inked EMO rendering of the protagonist reference sheet (`docs/design/references/protagonist-reference-sheet-2026-09-25.png`), replacing the violet low-poly figure at runtime: neutral (idle/listening), focused (singing), rendering, complete, warning and error, with mouth sprites cut from the singing face. The EMO and SCENE splash key art (`assets/ui-design/<mode>/splash.png`, 1600×1000) shows her seated, knees drawn up. The sneakers in all art are plain original high-tops whose only mark is a stitched seam on the ankle; the reference sheet's star ankle patch and brand-like toe cap/sole are not reproduced. All of it is AI-generated development art (`developmentOnly`), provenance in `assets/character-01/PROVENANCE.md` and `assets/ui-design/PROVENANCE.md`, and `scripts/build_character_state_art.py` rebuilds the runtime files from the committed masters.

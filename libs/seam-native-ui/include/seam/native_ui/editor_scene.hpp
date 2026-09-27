@@ -60,6 +60,9 @@ struct ReplacementReviewView final {
   std::array<const char*, 6U> labels = kReplacementReviewActions;
   bool rowsInspectable{false};
   bool dockedInspector{false};
+  // The controller's page of rows (a detail's own page while one is open), so a surface that
+  // shows fewer rows than a page can start each new page from its first row.
+  std::size_t page{0U};
   std::optional<DynamicsPlot> dynamicsPlot;
 };
 inline constexpr std::array<const char*, 6U> kPhonemeReviewActions{
