@@ -30,6 +30,10 @@ const ShellStringTable& englishTable() {
 }
 
 std::atomic<const ShellStringTable*> installed{nullptr};
+thread_local const ShellStringTable* activeTable = nullptr;
+thread_local bool activeScope = false;
+thread_local const ShellStringTable* explicitTable = nullptr;
+thread_local bool explicitScope = false;
 
 // Accented stand-ins for ASCII letters, as UTF-8, so pseudo-localized text keeps its word shapes.
 std::string_view accented(char c) noexcept {
@@ -103,7 +107,8 @@ ShellStringTable ShellStringTable::pseudoLocalized(double expansion) {
 }
 
 const char* tr(Str id) noexcept {
-  const auto* table = installed.load(std::memory_order_acquire);
+  const auto* table = explicitScope ? explicitTable
+      : activeScope ? activeTable : installed.load(std::memory_order_acquire);
   return (table != nullptr ? *table : englishTable()).text(id);
 }
 
@@ -254,10 +259,28 @@ std::string_view shellLanguageFor(std::string_view tag) noexcept {
 }
 
 ScopedShellStrings::ScopedShellStrings(const ShellStringTable& table) noexcept
-    : previous_{installed.load(std::memory_order_acquire)} {
+    : previous_{installed.load(std::memory_order_acquire)},
+      previousOverride_{explicitTable}, previousOverrideActive_{explicitScope} {
+  explicitTable = &table;
+  explicitScope = true;
   installShellStrings(&table);
 }
 
-ScopedShellStrings::~ScopedShellStrings() { installShellStrings(previous_); }
+ScopedShellStrings::~ScopedShellStrings() {
+  explicitTable = previousOverride_;
+  explicitScope = previousOverrideActive_;
+  installShellStrings(previous_);
+}
+
+ScopedActiveShellStrings::ScopedActiveShellStrings(const ShellStringTable* table) noexcept
+    : previous_{activeTable}, previousActive_{activeScope} {
+  activeTable = table;
+  activeScope = true;
+}
+
+ScopedActiveShellStrings::~ScopedActiveShellStrings() {
+  activeTable = previous_;
+  activeScope = previousActive_;
+}
 
 }  // namespace seam::native_ui::design
