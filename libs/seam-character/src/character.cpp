@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <fstream>
 #include <system_error>
 
 namespace seam::character {
@@ -18,6 +19,9 @@ constexpr std::array<State, 6> kStates{
 constexpr std::array<MouthShape, 6> kMouthShapes{
     MouthShape::Closed, MouthShape::Narrow, MouthShape::Nasal,
     MouthShape::Open, MouthShape::Wide, MouthShape::Round};
+
+constexpr std::array<Pose, 4> kPoses{Pose::Empty, Pose::Error, Pose::Complete, Pose::Listening};
+constexpr std::array<StageEyes, 3> kStageEyes{StageEyes::Open, StageEyes::Half, StageEyes::Closed};
 
 bool safeRelativeAsset(const std::filesystem::path& path) {
   if (path.empty() || path.is_absolute()) return false;
@@ -138,6 +142,150 @@ core::Result<std::map<MouthShape, std::filesystem::path>> parseMouths(
   return result;
 }
 
+// ---- schema four -------------------------------------------------------------------------------
+
+// Layered art is QOI, whose header the loader reads before anything is decoded.
+bool safeQoiAsset(const std::filesystem::path& path) {
+  return safeRelativeAsset(path) && path.extension() == ".qoi";
+}
+
+core::Result<std::uint32_t> parseCount(const formats::JsonValue* value, std::string_view what) {
+  if (value == nullptr || !value->isNumber())
+    return core::failure<std::uint32_t>(core::ErrorCode::ParseError,
+                                        "Character pixel value must be a number", std::string{what});
+  const auto number = value->asNumber();
+  if (!std::isfinite(number) || number < 0.0 || number > 65535.0 || std::floor(number) != number)
+    return core::failure<std::uint32_t>(core::ErrorCode::ParseError,
+                                        "Character pixel value must be a whole number",
+                                        std::string{what});
+  return static_cast<std::uint32_t>(number);
+}
+
+core::Result<PixelBox> parsePixelBox(const formats::JsonValue* value, std::string_view what) {
+  if (value == nullptr || !value->isObject())
+    return core::failure<PixelBox>(core::ErrorCode::ParseError,
+                                   "Character pixel box must be an object", std::string{what});
+  PixelBox box;
+  for (const auto& [key, slot] : {std::pair{"x", &box.x}, std::pair{"y", &box.y},
+                                  std::pair{"width", &box.width}, std::pair{"height", &box.height}}) {
+    auto parsed = parseCount(value->find(key), what);
+    if (!parsed) return core::Result<PixelBox>{parsed.error()};
+    *slot = parsed.value();
+  }
+  return box;
+}
+
+core::Result<std::filesystem::path> parsePath(const formats::JsonValue* value, std::string_view what) {
+  if (value == nullptr || !value->isString() || value->asString().empty())
+    return core::failure<std::filesystem::path>(core::ErrorCode::ParseError,
+                                                "Character asset path is missing", std::string{what});
+  return std::filesystem::path{value->asString()};
+}
+
+core::Result<RingPortraits> parseRingPortraits(const formats::JsonValue& value,
+                                               const std::string& outfit) {
+  if (!value.isObject())
+    return core::failure<RingPortraits>(core::ErrorCode::ParseError,
+                                        "Character ring portraits must be an object", outfit);
+  RingPortraits ring;
+  auto states = parseStates(value.find("states"));
+  if (!states) return core::Result<RingPortraits>{states.error()};
+  ring.states = std::move(states.value());
+  if (const auto* avatars = value.find("avatars"); avatars != nullptr) {
+    auto parsed = parseStates(avatars);
+    if (!parsed) return core::Result<RingPortraits>{parsed.error()};
+    ring.avatars = std::move(parsed.value());
+  }
+  if (const auto* mouths = value.find("mouths"); mouths != nullptr) {
+    auto parsed = parseMouths(*mouths);
+    if (!parsed) return core::Result<RingPortraits>{parsed.error()};
+    ring.mouths = std::move(parsed.value());
+  }
+  if (const auto* placement = value.find("mouthPlacement"); placement != nullptr) {
+    auto rect = parseRect(*placement, outfit);
+    if (!rect) return core::Result<RingPortraits>{rect.error()};
+    ring.mouthPlacement = rect.value();
+  }
+  if (const auto* eyes = value.find("eyes"); eyes != nullptr) {
+    auto parsed = parseEyes(*eyes);
+    if (!parsed) return core::Result<RingPortraits>{parsed.error()};
+    ring.eyes = std::move(parsed.value());
+  }
+  return ring;
+}
+
+core::Result<StageFigure> parseStageFigure(const formats::JsonValue& value,
+                                           const std::string& outfit) {
+  if (!value.isObject())
+    return core::failure<StageFigure>(core::ErrorCode::ParseError,
+                                      "Character stage must be an object", outfit);
+  StageFigure stage;
+  const auto* size = value.find("size");
+  if (size == nullptr || !size->isArray() || size->asArray().size() != 2U)
+    return core::failure<StageFigure>(core::ErrorCode::ParseError,
+                                      "Character stage size must be [width, height]", outfit);
+  auto width = parseCount(&size->asArray()[0], outfit);
+  auto height = parseCount(&size->asArray()[1], outfit);
+  if (!width) return core::Result<StageFigure>{width.error()};
+  if (!height) return core::Result<StageFigure>{height.error()};
+  stage.width = width.value();
+  stage.height = height.value();
+  const auto* layers = value.find("layers");
+  if (layers == nullptr || !layers->isArray())
+    return core::failure<StageFigure>(core::ErrorCode::ParseError,
+                                      "Character stage layers must be a list", outfit);
+  for (const auto& layer : layers->asArray()) {
+    auto path = parsePath(&layer, outfit);
+    if (!path) return core::Result<StageFigure>{path.error()};
+    stage.layers.push_back(std::move(path.value()));
+  }
+  const auto* eyes = value.find("eyes");
+  if (eyes == nullptr || !eyes->isObject())
+    return core::failure<StageFigure>(core::ErrorCode::ParseError,
+                                      "Character stage eyes must be an object", outfit);
+  auto box = parsePixelBox(eyes->find("box"), outfit);
+  if (!box) return core::Result<StageFigure>{box.error()};
+  stage.eyeBox = box.value();
+  for (const auto variant : kStageEyes) {
+    auto path = parsePath(eyes->find(stageEyesName(variant)), outfit);
+    if (!path) return core::Result<StageFigure>{path.error()};
+    stage.eyes.emplace(variant, std::move(path.value()));
+  }
+  return stage;
+}
+
+core::Result<std::map<Pose, std::filesystem::path>> parsePoses(const formats::JsonValue& value,
+                                                               const std::string& outfit) {
+  using Poses = std::map<Pose, std::filesystem::path>;
+  if (!value.isObject())
+    return core::failure<Poses>(core::ErrorCode::ParseError, "Character poses must be an object",
+                                outfit);
+  Poses poses;
+  for (const auto pose : kPoses) {
+    auto path = parsePath(value.find(poseName(pose)), outfit + "/" + std::string{poseName(pose)});
+    if (!path) return core::Result<Poses>{path.error()};
+    poses.emplace(pose, std::move(path.value()));
+  }
+  return poses;
+}
+
+// { "<outfit>": <section>, ... } for one schema-four section.
+template <typename T, typename Parse>
+core::Result<std::map<std::string, T>> parseByOutfit(const formats::JsonValue& value,
+                                                     const char* section, Parse parse) {
+  using Sections = std::map<std::string, T>;
+  if (!value.isObject())
+    return core::failure<Sections>(core::ErrorCode::ParseError,
+                                   "Character layered section must be an object", section);
+  Sections result;
+  for (const auto& [outfit, entry] : value.asObject()) {
+    auto parsed = parse(entry, outfit);
+    if (!parsed) return core::Result<Sections>{parsed.error()};
+    result.emplace(outfit, std::move(parsed.value()));
+  }
+  return result;
+}
+
 bool validOutfitName(std::string_view name) noexcept {
   if (name.empty() || name.size() > 32U) return false;
   for (const auto c : name)
@@ -160,6 +308,69 @@ core::Result<void> validateEyes(const std::map<State, std::vector<EyeBox>>& eyes
   return core::success();
 }
 
+core::Result<void> invalid(const char* message, std::string context = {}) {
+  return core::failure(core::ErrorCode::InvariantViolation, message, std::move(context));
+}
+
+core::Result<void> validateLayered(const Manifest& m) {
+  if (!validOutfitName(m.defaultOutfit))
+    return invalid("A schema-four character package names a valid default outfit");
+  if (!m.ringPortraits.contains(m.defaultOutfit) || !m.stages.contains(m.defaultOutfit) ||
+      !m.poses.contains(m.defaultOutfit))
+    return invalid("The default outfit declares ring portraits, a Stage figure and poses",
+                   m.defaultOutfit);
+  for (const auto& [name, ring] : m.ringPortraits) {
+    if (!validOutfitName(name)) return invalid("Character outfit name is invalid", name);
+    for (const auto state : kStates)
+      if (!ring.states.contains(state) || !safeQoiAsset(ring.states.at(state)))
+        return invalid("Character ring portrait is missing, unsafe or not QOI", name);
+    if (!ring.avatars.empty())
+      for (const auto state : kStates)
+        if (!ring.avatars.contains(state) || !safeQoiAsset(ring.avatars.at(state)))
+          return invalid("Character avatars are all six QOI states or none", name);
+    if (!ring.mouths.empty()) {
+      for (const auto shape : kMouthShapes)
+        if (!ring.mouths.contains(shape) || !safeQoiAsset(ring.mouths.at(shape)))
+          return invalid("Character ring mouths are all six QOI shapes or none", name);
+      if (!ring.mouthPlacement.has_value() || !insideUnitSquare(*ring.mouthPlacement))
+        return invalid("Character ring mouths need a placement inside the portrait", name);
+    } else if (ring.mouthPlacement.has_value()) {
+      return invalid("Character ring portraits place mouths they do not declare", name);
+    }
+    if (auto valid = validateEyes(ring.eyes); !valid) return valid;
+  }
+  for (const auto& [name, stage] : m.stages) {
+    if (!validOutfitName(name)) return invalid("Character outfit name is invalid", name);
+    if (stage.width == 0U || stage.height == 0U || stage.width > kMaximumStageDimension ||
+        stage.height > kMaximumStageDimension)
+      return invalid("Character stage size is empty or too large", name);
+    if (stage.layers.empty() || stage.layers.size() > kMaximumStageLayers)
+      return invalid("Character stage has one to three layers", name);
+    for (const auto& layer : stage.layers)
+      if (!safeQoiAsset(layer)) return invalid("Character stage layer is unsafe or not QOI", name);
+    const auto& box = stage.eyeBox;
+    if (box.width == 0U || box.height == 0U || box.x + box.width > stage.width ||
+        box.y + box.height > stage.height)
+      return invalid("Character stage eye box is empty or outside the figure", name);
+    for (const auto variant : kStageEyes)
+      if (!stage.eyes.contains(variant) || !safeQoiAsset(stage.eyes.at(variant)))
+        return invalid("Character stage eye sprite is missing, unsafe or not QOI", name);
+  }
+  for (const auto& [name, poses] : m.poses) {
+    if (!validOutfitName(name)) return invalid("Character outfit name is invalid", name);
+    for (const auto pose : kPoses)
+      if (!poses.contains(pose) || !safeQoiAsset(poses.at(pose)))
+        return invalid("Character pose is missing, unsafe or not QOI", name);
+  }
+  return core::success();
+}
+
+// A layered asset is a regular QOI file inside the root whose header declares exactly the size the
+// manifest fixes for it, read before any pixel is decoded.
+core::Result<void> checkQoiAsset(const std::filesystem::path& canonicalRoot,
+                                 const std::filesystem::path& relativeAsset, std::uint32_t width,
+                                 std::uint32_t height);
+
 // A declared asset must be a regular file that stays inside the package root.
 core::Result<void> checkAsset(const std::filesystem::path& canonicalRoot,
                               const std::filesystem::path& relativeAsset, const char* what) {
@@ -176,7 +387,95 @@ core::Result<void> checkAsset(const std::filesystem::path& canonicalRoot,
   return core::success();
 }
 
+core::Result<void> checkQoiAsset(const std::filesystem::path& canonicalRoot,
+                                 const std::filesystem::path& relativeAsset, std::uint32_t width,
+                                 std::uint32_t height) {
+  if (auto regular = checkAsset(canonicalRoot, relativeAsset,
+                                "Character layered asset is not a regular file");
+      !regular)
+    return regular;
+  const auto path = canonicalRoot / relativeAsset;
+  std::error_code error;
+  const auto bytes = std::filesystem::file_size(path, error);
+  if (error || bytes < 22U || bytes > kMaximumLayeredAssetBytes)
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Character layered asset is empty or exceeds the size limit",
+                         path.string());
+  std::array<unsigned char, 14> header{};
+  std::ifstream stream{path, std::ios::binary};
+  if (!stream.read(reinterpret_cast<char*>(header.data()), header.size()))
+    return core::failure(core::ErrorCode::IoError, "Character layered asset cannot be read",
+                         path.string());
+  const auto be32 = [&header](std::size_t at) {
+    return (static_cast<std::uint32_t>(header[at]) << 24U) |
+           (static_cast<std::uint32_t>(header[at + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(header[at + 2U]) << 8U) |
+           static_cast<std::uint32_t>(header[at + 3U]);
+  };
+  if (header[0] != 'q' || header[1] != 'o' || header[2] != 'i' || header[3] != 'f' ||
+      (header[12] != 3U && header[12] != 4U) || header[13] > 1U)
+    return core::failure(core::ErrorCode::ParseError, "Character layered asset is not QOI",
+                         path.string());
+  if (be32(4U) != width || be32(8U) != height)
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Character layered asset size does not match its declaration",
+                         path.string() + " is " + std::to_string(be32(4U)) + "x" +
+                             std::to_string(be32(8U)) + ", declared " + std::to_string(width) +
+                             "x" + std::to_string(height));
+  return core::success();
+}
+
+// A placement's size in a square frame's pixels, which the sprite at it must have exactly.
+std::uint32_t pixelsOf(double fraction, std::uint32_t frame) noexcept {
+  return static_cast<std::uint32_t>(std::lround(fraction * static_cast<double>(frame)));
+}
+
+core::Result<void> checkLayeredAssets(const std::filesystem::path& root, const Manifest& m) {
+  for (const auto& [name, ring] : m.ringPortraits) {
+    for (const auto& [state, path] : ring.states)
+      if (auto ok = checkQoiAsset(root, path, kRingPortraitSize, kRingPortraitSize); !ok) return ok;
+    for (const auto& [state, path] : ring.avatars)
+      if (auto ok = checkQoiAsset(root, path, kAvatarSize, kAvatarSize); !ok) return ok;
+    if (ring.mouthPlacement.has_value()) {
+      const auto w = pixelsOf(ring.mouthPlacement->width, kRingPortraitSize);
+      const auto h = pixelsOf(ring.mouthPlacement->height, kRingPortraitSize);
+      for (const auto& [shape, path] : ring.mouths)
+        if (auto ok = checkQoiAsset(root, path, w, h); !ok) return ok;
+    }
+  }
+  for (const auto& [name, stage] : m.stages) {
+    for (const auto& layer : stage.layers)
+      if (auto ok = checkQoiAsset(root, layer, stage.width, stage.height); !ok) return ok;
+    for (const auto& [variant, path] : stage.eyes)
+      if (auto ok = checkQoiAsset(root, path, stage.eyeBox.width, stage.eyeBox.height); !ok)
+        return ok;
+  }
+  for (const auto& [name, poses] : m.poses)
+    for (const auto& [pose, path] : poses)
+      if (auto ok = checkQoiAsset(root, path, kPoseSize, kPoseSize); !ok) return ok;
+  return core::success();
+}
+
 }  // namespace
+
+std::string_view poseName(Pose pose) noexcept {
+  switch (pose) {
+    case Pose::Empty: return "empty";
+    case Pose::Error: return "error";
+    case Pose::Complete: return "complete";
+    case Pose::Listening: return "listening";
+  }
+  return "empty";
+}
+
+std::string_view stageEyesName(StageEyes eyes) noexcept {
+  switch (eyes) {
+    case StageEyes::Open: return "open";
+    case StageEyes::Half: return "half";
+    case StageEyes::Closed: return "closed";
+  }
+  return "open";
+}
 
 std::string_view stateName(State state) noexcept {
   switch (state) {
@@ -202,11 +501,16 @@ State parseState(std::string_view value) noexcept {
 core::Result<void> Manifest::validate() const {
   if (schemaVersion != kStatusOnlyManifestSchema &&
       schemaVersion != kPerformanceManifestSchema &&
-      schemaVersion != kResourceBoundManifestSchema) {
+      schemaVersion != kResourceBoundManifestSchema && schemaVersion != kLayeredManifestSchema) {
     return core::failure(core::ErrorCode::Unsupported,
                          "Unsupported character manifest schema",
                          std::to_string(schemaVersion));
   }
+  const auto declaresLayered = !defaultOutfit.empty() || !ringPortraits.empty() ||
+                               !stages.empty() || !poses.empty();
+  if (declaresLayered && schemaVersion != kLayeredManifestSchema)
+    return core::failure(core::ErrorCode::InvariantViolation,
+                         "Layered character art requires character schema four");
   if (schemaVersion == kStatusOnlyManifestSchema) {
     // A status-only package cannot claim a performance field of any kind: that would let a package
     // look like a turnaround while its schema says a reader may not expect one.
@@ -230,9 +534,16 @@ core::Result<void> Manifest::validate() const {
     if (voicebankId != resourceIdentity->id)
       return core::failure(core::ErrorCode::InvariantViolation,
                            "Character legacy voicebank ID must match its bound singer resource ID");
+  } else if (schemaVersion == kLayeredManifestSchema && resourceIdentity.has_value()) {
+    // Schema four may carry schema three's exact binding; when it does, the same rules hold.
+    const auto identity = resourceIdentity->validate();
+    if (!identity) return identity;
+    if (voicebankId != resourceIdentity->id)
+      return core::failure(core::ErrorCode::InvariantViolation,
+                           "Character legacy voicebank ID must match its bound singer resource ID");
   } else if (resourceIdentity.has_value()) {
     return core::failure(core::ErrorCode::InvariantViolation,
-                         "An exact singer resource identity requires character schema three");
+                         "An exact singer resource identity requires character schema three or four");
   }
   if (!validHexColor(accent.primary) || !validHexColor(accent.secondary)) {
     return core::failure(core::ErrorCode::InvariantViolation,
@@ -247,7 +558,7 @@ core::Result<void> Manifest::validate() const {
     }
   }
   if (schemaVersion == kPerformanceManifestSchema ||
-      schemaVersion == kResourceBoundManifestSchema) {
+      schemaVersion == kResourceBoundManifestSchema || schemaVersion == kLayeredManifestSchema) {
     for (const auto shape : kMouthShapes) {
       const auto iterator = mouthAssets.find(shape);
       if (iterator == mouthAssets.end() || !safeRelativeAsset(iterator->second)) {
@@ -295,6 +606,7 @@ core::Result<void> Manifest::validate() const {
       if (auto valid = validateEyes(outfit.eyes); !valid) return valid;
     }
   }
+  if (schemaVersion == kLayeredManifestSchema) return validateLayered(*this);
   return core::success();
 }
 
@@ -365,6 +677,39 @@ std::filesystem::path Package::mouthAssetPath(MouthShape shape, std::string_view
   return relative.empty() ? std::filesystem::path{} : root / relative;
 }
 
+namespace {
+template <typename T>
+const T* ownOrDefault(const std::map<std::string, T>& sections, std::string_view outfit,
+                      const std::string& fallback) {
+  if (!outfit.empty())
+    if (const auto own = sections.find(std::string{outfit}); own != sections.end())
+      return &own->second;
+  const auto shared = sections.find(fallback);
+  return shared == sections.end() ? nullptr : &shared->second;
+}
+}  // namespace
+
+const RingPortraits* Manifest::ringPortraitsFor(std::string_view outfitName) const {
+  return layered() ? ownOrDefault(ringPortraits, outfitName, defaultOutfit) : nullptr;
+}
+
+const StageFigure* Manifest::stageFor(std::string_view outfitName) const {
+  return layered() ? ownOrDefault(stages, outfitName, defaultOutfit) : nullptr;
+}
+
+std::filesystem::path Manifest::poseFor(Pose pose, std::string_view outfitName) const {
+  if (!layered()) return {};
+  const auto* set = ownOrDefault(poses, outfitName, defaultOutfit);
+  if (set == nullptr) return {};
+  const auto iterator = set->find(pose);
+  return iterator == set->end() ? std::filesystem::path{} : iterator->second;
+}
+
+std::filesystem::path Package::posePath(Pose pose, std::string_view outfitName) const {
+  const auto relative = manifest.poseFor(pose, outfitName);
+  return relative.empty() ? std::filesystem::path{} : root / relative;
+}
+
 core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
                                   std::uint64_t maximumManifestBytes) {
   if (packageRoot.empty()) {
@@ -384,7 +729,7 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
   auto parsed = formats::parseJson(text.value(), formats::JsonParseLimits{
       .maximumInputBytes = static_cast<std::size_t>(maximumManifestBytes),
       .maximumDepth = 16U,
-      .maximumNodes = 512U,
+      .maximumNodes = 2048U,
       .maximumStringBytes = 64U * 1024U,
       .maximumCollectionEntries = 128U,
   });
@@ -505,6 +850,28 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
       manifest.outfits.emplace(outfitName, std::move(outfit));
     }
   }
+  // Schema four's layered sections, read whenever present and refused below by any other schema.
+  if (const auto* outfit = parsed.value().find("defaultOutfit"); outfit != nullptr) {
+    if (!outfit->isString())
+      return core::failure<Package>(core::ErrorCode::ParseError,
+                                    "Character defaultOutfit must be a string");
+    manifest.defaultOutfit = outfit->asString();
+  }
+  if (const auto* section = parsed.value().find("portraits"); section != nullptr) {
+    auto ring = parseByOutfit<RingPortraits>(*section, "portraits", parseRingPortraits);
+    if (!ring) return core::Result<Package>{ring.error()};
+    manifest.ringPortraits = std::move(ring.value());
+  }
+  if (const auto* section = parsed.value().find("stage"); section != nullptr) {
+    auto stages = parseByOutfit<StageFigure>(*section, "stage", parseStageFigure);
+    if (!stages) return core::Result<Package>{stages.error()};
+    manifest.stages = std::move(stages.value());
+  }
+  if (const auto* section = parsed.value().find("poses"); section != nullptr) {
+    auto poses = parseByOutfit<std::map<Pose, std::filesystem::path>>(*section, "poses", parsePoses);
+    if (!poses) return core::Result<Package>{poses.error()};
+    manifest.poses = std::move(poses.value());
+  }
   if (const auto* developmentOnly = parsed.value().find("developmentOnly");
       developmentOnly != nullptr) {
     if (!developmentOnly->isBool()) {
@@ -540,6 +907,8 @@ core::Result<Package> loadPackage(const std::filesystem::path& packageRoot,
       if (!checked) return core::Result<Package>{checked.error()};
     }
   }
+  if (auto layered = checkLayeredAssets(canonicalRoot, manifest); !layered)
+    return core::Result<Package>{layered.error()};
   return Package{.root = canonicalRoot, .manifest = std::move(manifest)};
 }
 

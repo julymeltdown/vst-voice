@@ -97,6 +97,9 @@ struct ImageLimits final {
 
 [[nodiscard]] std::shared_ptr<const Image> loadImage(const std::filesystem::path& path,
                                                      ImageLimits limits = {});
+// A backend image from decoded straight-alpha pixels (a QOI or PPM the character package ships),
+// premultiplied once here so drawing never pays for it. Nothing without a vector backend.
+[[nodiscard]] std::shared_ptr<const Image> imageFromPixels(const PixelSurface& pixels);
 
 // Anti-aliased vector drawing in logical top-left coordinates over an opaque PixelSurface.
 // The legacy RasterCanvas may draw into the same surface between flush() calls.

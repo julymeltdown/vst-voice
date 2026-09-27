@@ -31,6 +31,28 @@ enum class State {
 inline constexpr std::int32_t kStatusOnlyManifestSchema{1};
 inline constexpr std::int32_t kPerformanceManifestSchema{2};
 inline constexpr std::int32_t kResourceBoundManifestSchema{3};
+// Schema four (redesign plan section 8.1) keeps every schema-two field, so a reader that only knows
+// the half-body state set still finds it, and adds per-outfit layered art in QOI: 512x512 ring
+// portraits with 64x64 avatars and their own mouths and eyes, a layered Stage figure with separate
+// open, half and closed eyes, and four separate poses. It may carry schema three's singer binding.
+inline constexpr std::int32_t kLayeredManifestSchema{4};
+
+// The sizes schema four fixes (plan section 8.2), checked against each file's own header before any
+// pixel is decoded.
+inline constexpr std::uint32_t kRingPortraitSize{512U};
+inline constexpr std::uint32_t kAvatarSize{64U};
+inline constexpr std::uint32_t kPoseSize{800U};
+inline constexpr std::uint32_t kMaximumStageDimension{2048U};
+inline constexpr std::size_t kMaximumStageLayers{3U};
+inline constexpr std::uint64_t kMaximumLayeredAssetBytes{32ULL * 1024ULL * 1024ULL};
+
+// The four poses the plan draws apart from the state portraits.
+enum class Pose : std::uint8_t { Empty, Error, Complete, Listening };
+[[nodiscard]] std::string_view poseName(Pose pose) noexcept;
+
+// The Stage figure's three eye sprites.
+enum class StageEyes : std::uint8_t { Open, Half, Closed };
+[[nodiscard]] std::string_view stageEyesName(StageEyes eyes) noexcept;
 
 struct Accent final {
   std::string primary{"#8B4C69"};
@@ -68,6 +90,37 @@ struct Outfit final {
   std::map<State, std::vector<EyeBox>> eyes;
 };
 
+// A rectangle in an image's own pixels.
+struct PixelBox final {
+  std::uint32_t x{0U};
+  std::uint32_t y{0U};
+  std::uint32_t width{0U};
+  std::uint32_t height{0U};
+
+  friend bool operator==(const PixelBox&, const PixelBox&) = default;
+};
+
+// Schema four's ring portraits for one outfit: six square 512x512 state portraits framed head and
+// shoulders, optional 64x64 avatars cut from them, and the mouths and eyes placed on that square.
+// Mouths are all six or none and are sized to their placement; avatars are all six or none.
+struct RingPortraits final {
+  std::map<State, std::filesystem::path> states;
+  std::map<State, std::filesystem::path> avatars;
+  std::map<MouthShape, std::filesystem::path> mouths;
+  std::optional<MouthPlacement> mouthPlacement;
+  std::map<State, std::vector<EyeBox>> eyes;
+};
+
+// Schema four's layered Stage figure for one outfit: one to three full-frame layers of the same size,
+// drawn in order, and the three eye sprites that go over them at one box in the figure's pixels.
+struct StageFigure final {
+  std::uint32_t width{0U};
+  std::uint32_t height{0U};
+  std::vector<std::filesystem::path> layers;
+  PixelBox eyeBox;
+  std::map<StageEyes, std::filesystem::path> eyes;
+};
+
 struct Manifest final {
   std::int32_t schemaVersion{1};
   std::string characterId;
@@ -90,6 +143,12 @@ struct Manifest final {
   std::map<State, std::vector<EyeBox>> eyes;
   // Per-mode state sets keyed by a lowercase name ("scene"); a mode without one uses the shared set.
   std::map<std::string, Outfit> outfits;
+  // Schema four: the outfit whose layered art every other outfit falls back to ("emo"), and the
+  // layered art itself, each keyed by outfit name. The default outfit declares all three.
+  std::string defaultOutfit;
+  std::map<std::string, RingPortraits> ringPortraits;
+  std::map<std::string, StageFigure> stages;
+  std::map<std::string, std::map<Pose, std::filesystem::path>> poses;
   // Whether this artwork is a development turnaround. It travels in the package's own bytes, so moving
   // or renaming the directory cannot promote it to production.
   bool developmentOnly{false};
@@ -110,6 +169,11 @@ struct Manifest final {
                                                     std::string_view outfitName) const;
   [[nodiscard]] std::optional<MouthPlacement> mouthPlacementFor(std::string_view outfitName) const;
   [[nodiscard]] std::vector<EyeBox> eyesFor(State state, std::string_view outfitName = {}) const;
+  [[nodiscard]] bool layered() const noexcept { return schemaVersion == kLayeredManifestSchema; }
+  // The outfit's own layered art, else the default outfit's; nothing below schema four.
+  [[nodiscard]] const RingPortraits* ringPortraitsFor(std::string_view outfitName) const;
+  [[nodiscard]] const StageFigure* stageFor(std::string_view outfitName) const;
+  [[nodiscard]] std::filesystem::path poseFor(Pose pose, std::string_view outfitName) const;
 };
 
 struct Package final {
@@ -121,6 +185,7 @@ struct Package final {
   [[nodiscard]] std::filesystem::path assetPath(State state, std::string_view outfitName) const;
   [[nodiscard]] std::filesystem::path mouthAssetPath(MouthShape shape,
                                                      std::string_view outfitName) const;
+  [[nodiscard]] std::filesystem::path posePath(Pose pose, std::string_view outfitName) const;
 };
 
 [[nodiscard]] core::Result<Package> loadPackage(

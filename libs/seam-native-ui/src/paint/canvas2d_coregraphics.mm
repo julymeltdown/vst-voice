@@ -1310,6 +1310,40 @@ std::shared_ptr<const Image> loadImage(const std::filesystem::path& path, ImageL
   }
 }
 
+std::shared_ptr<const Image> imageFromPixels(const PixelSurface& pixels) {
+  const auto w = pixels.width();
+  const auto h = pixels.height();
+  if (w == 0U || h == 0U) return nullptr;
+  @autoreleasepool {
+    // BGRA in memory, premultiplied: the same layout loadImage decodes into.
+    CfRef<CGContextRef> bitmap{CGBitmapContextCreate(
+        nullptr, w, h, 8U, 0U, srgb(),
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Little)};
+    if (!bitmap) return nullptr;
+    auto* data = static_cast<std::uint8_t*>(CGBitmapContextGetData(bitmap.get()));
+    if (data == nullptr) return nullptr;
+    const auto stride = CGBitmapContextGetBytesPerRow(bitmap.get());
+    const auto source = pixels.pixels();
+    for (std::uint32_t y = 0U; y < h; ++y) {
+      auto* row = reinterpret_cast<std::uint32_t*>(data + static_cast<std::size_t>(y) * stride);
+      for (std::uint32_t x = 0U; x < w; ++x) {
+        const auto p = source[static_cast<std::size_t>(y) * w + x];
+        const auto a = (p >> 24U) & 0xFFU;
+        if (a == 255U) {
+          row[x] = p;
+          continue;
+        }
+        const auto premultiply = [a](std::uint32_t channel) { return (channel * a + 127U) / 255U; };
+        row[x] = premultiply(p & 0xFFU) | (premultiply((p >> 8U) & 0xFFU) << 8U) |
+                 (premultiply((p >> 16U) & 0xFFU) << 16U) | (a << 24U);
+      }
+    }
+    CfRef<CGImageRef> image{CGBitmapContextCreateImage(bitmap.get())};
+    if (!image) return nullptr;
+    return std::make_shared<CoreGraphicsImage>(std::move(image));
+  }
+}
+
 std::unique_ptr<Canvas2D> makeCanvas(PixelSurface& surface, double scale) {
   if (surface.width() == 0U || surface.height() == 0U) return nullptr;
   auto canvas = std::make_unique<CoreGraphicsCanvas>(surface, scale);
