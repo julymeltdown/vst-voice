@@ -1926,6 +1926,11 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_design_system_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_design_system_tests)
     add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
+    add_executable(seam_design_paint_tests tests/test_main.cpp tests/test_design_paint.cpp)
+    target_include_directories(seam_design_paint_tests PRIVATE tests)
+    target_link_libraries(seam_design_paint_tests PRIVATE seam_native_ui)
+    seam_apply_compiler_options(seam_design_paint_tests)
+    add_test(NAME seam_design_paint_tests COMMAND seam_design_paint_tests)
     # The same font checks with the bundled faces switched off: every role falls back to a system
     # face. A separate process, because registration is fixed for the life of one.
     add_test(NAME seam_design_fonts_system_fallback
