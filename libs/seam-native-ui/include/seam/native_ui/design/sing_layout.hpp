@@ -64,8 +64,9 @@ struct SingLayout final {
   std::array<ui::Rect, 6U> knob{};
   // Transport internals.
   ui::Rect playButton, positionReadout, tempoReadout, meterReadout;
-  // Singer card actions.
-  ui::Rect singerChange;
+  // Singer card actions: Change voice, and the overflow button left of it that opens the singer
+  // menu (reviews, inspectors and voicebank commands).
+  ui::Rect singerChange, singerMenu;
 };
 
 inline constexpr double kSingEdge = 16.0;
