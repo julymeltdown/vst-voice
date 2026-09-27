@@ -2031,9 +2031,8 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   const auto unit = descriptor.unit == "semitones" ? tr(Str::St) : " %";
   std::string infoText = format("%.1f", e.valueAtPlayhead * scale) + unit + tr(Str::AtPlayhead);
   if (e.draftChanged) infoText += tr(Str::UnsavedDraft);
-  c.text(info, e.refusal.empty() ? infoText : e.refusal,
-         style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
-         e.refusal.empty() ? t.color.textSecondary : t.color.warning);
+  c.text(info, infoText, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
+         t.color.textSecondary);
   // The same value-to-y mapping the controller uses to hit-test and edit this lane, applied to the
   // hosted lane rectangle, so a drawn point is exactly where a click edits it.
   const EditorSceneLayout legacyLayout{};
@@ -2056,10 +2055,16 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   c.stroke(neutral, withAlpha(t.color.textSecondary, 0.35), StrokeStyle{1.0, true, {3.0, 4.0}});
   c.save();
   c.clipRect(plot);
+  // The lane's first line: why the selected singer refuses this channel, else that no curve is
+  // stored. The refusal lives here, at every window size, because the tab row's info slot is only
+  // a few points wide below very wide windows; the elided text is whole on the lane's node.
+  const ui::Rect firstLine{plot.x + 12.0, plot.y + 4.0, plot.width - 24.0, 18.0};
+  if (!e.refusal.empty())
+    c.text(firstLine, e.refusal, style(FontRole::Ui, t.type.smallLabel), t.color.warning);
   if (e.points.empty()) {
-    c.text({plot.x + 12.0, plot.y + 4.0, plot.width - 24.0, 18.0},
-           tr(Str::NoCurveStoredForThisChannel), style(FontRole::Ui, t.type.smallLabel),
-           t.color.textSecondary);
+    if (e.refusal.empty())
+      c.text(firstLine, tr(Str::NoCurveStoredForThisChannel), style(FontRole::Ui, t.type.smallLabel),
+             t.color.textSecondary);
   } else {
     const auto& timeline = model.timeline();
     // The curve belongs to its region: it holds its end values only across the region's span.
