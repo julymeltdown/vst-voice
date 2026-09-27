@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -734,4 +735,83 @@ TEST_CASE("an arrangement region click selects its track and region without chan
   CHECK(f.controller.documentRevision() == revision);
   CHECK(!f.session.canUndo());
   CHECK(f.frame());
+}
+
+TEST_CASE("MIX's Add Region button adds a region after the selected track's last one") {
+  MixFixture f{3U};
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // At every size the button sits in the header, clear of every other MIX control.
+  for (const auto [width, height] : {std::pair{1600.0, 900.0}, std::pair{1100.0, 720.0},
+                                     std::pair{720.0, 480.0}, std::pair{480.0, 320.0}}) {
+    // The compact header folds the workspace tabs into a menu; MIX is selected directly here.
+    CHECK(f.frame(width, height));
+    f.shell.setWorkspace(f.controller, Workspace::Mix);
+    CHECK(f.frame(width, height));
+    const auto nodes = f.mixNodes();
+    const auto button = std::find_if(nodes.begin(), nodes.end(),
+                                     [](const auto& n) { return n.id == "shell.mix.add-region"; });
+    if (button == nodes.end())
+      throw test::Failure{"no Add Region at " + std::to_string(width) + "x" + std::to_string(height)};
+    CHECK(button->role == SemanticRole::Button && button->enabled);
+    CHECK(button->name == "Add region");
+    CHECK(button->bounds.width >= 24.0 && button->bounds.height >= 24.0);
+    const auto panel = f.node("shell.mix.panel");
+    CHECK(inside(button->bounds, panel.bounds));
+    for (const auto& other : nodes) {
+      if (other.id == button->id || other.id == "shell.mix.panel") continue;
+      if (overlaps(button->bounds, other.bounds))
+        throw test::Failure{"Add Region overlaps " + other.id};
+    }
+  }
+  CHECK(f.frame());
+  const auto revision = f.controller.documentRevision();
+
+  // A click adds a four-bar region to the selected (first) track, after its two-bar phrase, and
+  // selects it; the arrangement shows it and one undo removes it.
+  const auto at = center(f.node("shell.mix.add-region").bounds);
+  CHECK(f.shell.pointerDown(f.controller, press(at)).hasValue());
+  CHECK(f.track(0).regions.size() == 1U);
+  CHECK(f.shell.pointerUp(f.controller, press(at)).hasValue());
+  CHECK(f.track(0).regions.size() == 2U);
+  const auto& added = f.track(0).regions.back();
+  CHECK(added.startTick == time::Tick{7680});
+  CHECK(added.durationTick == time::Tick{15360});
+  CHECK(f.controller.selectedRegion() == added.id);
+  CHECK(f.controller.documentRevision() != revision);
+  CHECK(f.focusedId() == "shell.mix.add-region");
+  CHECK(f.frame());
+  CHECK(f.published("shell.mix.region." + added.id.toString()));
+  CHECK(f.node("shell.mix.region." + added.id.toString()).selected);
+  // A press that leaves the button before release adds nothing.
+  CHECK(f.shell.pointerDown(f.controller, press(at)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({at.x, at.y + 200.0})).hasValue());
+  CHECK(f.track(0).regions.size() == 2U);
+
+  // Activate does the same on the track an arrangement click selected.
+  CHECK(f.shell.dispatchSemantic(f.controller, f.regionNode(2), SemanticAction::Activate).hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.mix.add-region", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.track(2).regions.size() == 2U);
+  CHECK(f.track(2).regions.back().startTick == time::Tick{7680});
+  CHECK(f.controller.selectedRegion() == f.track(2).regions.back().id);
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mix.add-region", SemanticAction::Increment)
+             .hasValue());
+  CHECK(undoDepth(f.session) == 2U);
+
+  // With no vocal track selected the button is disabled with its reason and refuses.
+  MixFixture empty{1U};
+  empty.openMix();
+  CHECK(empty.controller.removeSelectedTrack().hasValue());
+  CHECK(!empty.controller.selectedTrack().valid());
+  CHECK(empty.frame());
+  const auto disabled = empty.node("shell.mix.add-region");
+  CHECK(!disabled.enabled);
+  CHECK(disabled.description == "Select a vocal track to add a region");
+  CHECK(std::find(disabled.actions.begin(), disabled.actions.end(), SemanticAction::Activate) ==
+        disabled.actions.end());
+  CHECK(!empty.shell.dispatchSemantic(empty.controller, "shell.mix.add-region", SemanticAction::Activate)
+             .hasValue());
+  CHECK(empty.shell.pointerDown(empty.controller, press(center(disabled.bounds))).hasValue());
+  CHECK(empty.shell.pointerUp(empty.controller, press(center(disabled.bounds))).hasValue());
+  CHECK(empty.session.project().vocalTracks().empty());
 }

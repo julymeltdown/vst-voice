@@ -431,6 +431,9 @@ public:
       std::string name);
   [[nodiscard]] core::Result<domain::RegionId> addVocalRegion(
       std::string name, time::Tick start, time::Tick duration);
+  // A four-bar region on the selected vocal track, after its last region (Add Region in MIX, the
+  // Edit menu and the arrangement toolbar). Refused when no vocal track is selected.
+  [[nodiscard]] core::Result<domain::RegionId> addRegionToSelectedTrack();
   [[nodiscard]] core::Result<void> removeSelectedTrack();
   [[nodiscard]] core::Result<void> renameSelectedTrack(std::string name);
   [[nodiscard]] core::Result<void> beginSelectedTrackRename();

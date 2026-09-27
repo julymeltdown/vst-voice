@@ -39,6 +39,8 @@ constexpr double kRegularStripHeight = 264.0;
 constexpr double kRegularStripWidth = 100.0;
 constexpr double kCompactStripWidth = 128.0;
 constexpr double kDeviceCardHeight = 112.0;
+// The header's Add Region button, right of the title.
+constexpr double kAddRegionWidth = 112.0;
 
 // The fader reads and writes the full range the mix command accepts. The curve spends most of its
 // travel near unity, as a console fader does.
@@ -257,7 +259,7 @@ struct StripGeometry final {
 struct MixLayout final {
   bool compact{false};
   // arrangement is empty when the body is too short for it next to the strips.
-  ui::Rect title, body, arrangement, viewport, scrollBand, master, meter, device, settings;
+  ui::Rect title, body, arrangement, viewport, scrollBand, master, meter, device, settings, addRegion;
   double stripWidth{0.0};
   double contentWidth{0.0};
   double maxOffset{0.0};
@@ -342,11 +344,13 @@ MixLayout mixLayout(ui::Rect area, std::size_t count, double offset) {
   const auto masterWidth = l.compact ? 116.0 : 132.0;
   if (l.compact) {
     // The device card folds into a header button so the strips keep the body.
-    const auto width = std::clamp(area.width - 2.0 * kPad - 88.0, 0.0, 220.0);
+    const auto width =
+        std::clamp(area.width - 2.0 * kPad - 88.0 - kAddRegionWidth - kGap, 0.0, 220.0);
     l.settings = {area.right() - kPad - width, area.y + 7.0, width, 24.0};
     l.device = l.settings;
+    l.addRegion = {l.settings.x - kGap - kAddRegionWidth, area.y + 7.0, kAddRegionWidth, 24.0};
     l.master = {deck.right() - masterWidth, deck.y, masterWidth, deck.height};
-    l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, l.settings.x - 8.0 - (area.x + 32.0)),
+    l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, l.addRegion.x - 8.0 - (area.x + 32.0)),
                22.0};
   } else {
     l.device = {deck.right() - masterWidth, deck.bottom() - kDeviceCardHeight, masterWidth,
@@ -354,7 +358,15 @@ MixLayout mixLayout(ui::Rect area, std::size_t count, double offset) {
     l.settings = {l.device.x + 10.0, l.device.bottom() - 36.0, l.device.width - 20.0, 26.0};
     l.master = {l.device.x, deck.y, masterWidth,
                 std::max(0.0, deck.height - kDeviceCardHeight - kGap)};
-    l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, area.width - 32.0 - kPad), 22.0};
+    l.addRegion = {area.right() - kPad - kAddRegionWidth, area.y + 7.0, kAddRegionWidth, 24.0};
+    l.title = {area.x + 32.0, area.y + 8.0, std::max(0.0, l.addRegion.x - 8.0 - (area.x + 32.0)),
+               22.0};
+  }
+  // A header too narrow for the button and a title keeps the title; the Edit menu still adds one.
+  if (l.title.width < 48.0) {
+    l.addRegion = {};
+    l.title.width = std::max(0.0, (l.compact ? l.settings.x : area.right() - kPad) - 8.0 -
+                                      (area.x + 32.0));
   }
   // The meter well fills the master strip under its bus name and format.
   const auto meterTop = l.master.y + (l.compact ? 62.0 : 66.0);
@@ -656,7 +668,7 @@ MeterGeometry meterGeometry(ui::Rect well, std::size_t channels) {
 
 enum class Control : std::uint8_t {
   Strip, Gain, Pan, Mute, Solo, Route, Settings, Scroll, Master, Meter, Device, Arrangement, Region,
-  Output
+  Output, AddRegion
 };
 
 constexpr std::string_view kPrefix = "shell.mix.";
@@ -693,6 +705,7 @@ std::optional<ParsedId> parseId(std::string_view id) {
   if (id == "shell.mix.device") return ParsedId{Control::Device, {}};
   if (id == "shell.mix.arrangement") return ParsedId{Control::Arrangement, {}};
   if (id == "shell.mix.output-channels") return ParsedId{Control::Output, {}};
+  if (id == "shell.mix.add-region") return ParsedId{Control::AddRegion, {}};
   if (id.starts_with(kRegionPrefix))
     return ParsedId{Control::Region, std::string{id.substr(kRegionPrefix.size())}};
   if (!id.starts_with(kTrackPrefix)) return std::nullopt;
@@ -756,6 +769,19 @@ core::Result<void> stepOutputChannels(NativeEditorController& controller, bool u
       steppedOutputChannels(controller.project().routing().deviceOutputChannels, up));
 }
 
+// Add Region acts on the selected track, which must be a vocal track (audio tracks carry media,
+// not regions).
+bool canAddRegion(const std::vector<StripModel>& strips) {
+  return std::any_of(strips.begin(), strips.end(), [](const auto& s) { return s.selected && s.vocal; });
+}
+
+core::Result<void> addRegion(NativeEditorController& controller) {
+  if (!canAddRegion(stripModels(controller)))
+    return core::failure(core::ErrorCode::Conflict, tr(Str::SelectAVocalTrackToAddA));
+  auto added = controller.addRegionToSelectedTrack();
+  return added ? core::success() : core::Result<void>{added.error()};
+}
+
 // The master card's format row, a 24-point button when the output channels can be set here.
 ui::Rect outputChannelsButton(const MixLayout& l) {
   if (l.master.height < 64.0 || l.master.width < 60.0) return {};
@@ -816,6 +842,7 @@ public:
     card(c, t, area, t.shape.card, 0.97);
     const auto anySolo = std::any_of(strips.begin(), strips.end(), [](const auto& s) { return s.solo; });
     header(c, t, area, l.title, tr(Str::Mix), !strips.empty());
+    paintAddRegion(c, t, l, canAddRegion(strips));
     c.save();
     c.clipRect(area);
     paintArrangement(c, t, controller, l, strips, anySolo);
@@ -857,6 +884,11 @@ public:
                          .startValue = value, .value = value, .fine = event.modifiers.shift,
                          .revision = controller.documentRevision()};
     };
+    if (contains(l.addRegion, p)) {
+      focusRequest_ = "shell.mix.add-region";
+      if (canAddRegion(strips)) begin(Control::AddRegion, l.addRegion, {}, 0.0);
+      return core::success();
+    }
     if (contains(l.settings, p)) {
       focusRequest_ = "shell.mix.audio-settings";
       begin(Control::Settings, l.settings, {}, 0.0);
@@ -982,6 +1014,7 @@ public:
     }
     if (g.control == Control::Output)
       return inside ? stepOutputChannels(controller, !event.modifiers.shift) : core::success();
+    if (g.control == Control::AddRegion) return inside ? addRegion(controller) : core::success();
     if (g.control == Control::Scroll) return core::success();
     // The release commits only against the document the gesture began on.
     if (controller.documentRevision() != g.revision) return core::success();
@@ -1028,6 +1061,16 @@ public:
                                .value = std::to_string(strips.size()) +
                                         (strips.size() == 1U ? tr(Str::Track2) : tr(Str::Tracks)),
                                .bounds = area, .actions = {SemanticAction::SetFocus}});
+    if (l.addRegion.width > 0.0) {
+      const auto enabled = canAddRegion(strips);
+      out.push_back(SemanticNode{
+          .id = "shell.mix.add-region", .role = SemanticRole::Button, .name = tr(Str::AddRegion),
+          .bounds = l.addRegion, .enabled = enabled,
+          .actions = enabled ? std::vector<SemanticAction>{SemanticAction::Activate,
+                                                           SemanticAction::SetFocus}
+                             : std::vector<SemanticAction>{SemanticAction::SetFocus},
+          .description = enabled ? tr(Str::AddsAFourBarRegionAfter) : tr(Str::SelectAVocalTrackToAddA)});
+    }
     if (l.arrangement.height > 0.0) {
       const auto g = arrangementGeometry(l.arrangement, strips.size());
       const auto m = arrangementModel(controller);
@@ -1171,6 +1214,9 @@ public:
         if (!activate) return unsupported();
         controller.showAudioSettings();
         return core::success();
+      case Control::AddRegion:
+        if (action != SemanticAction::Activate) return unsupported();
+        return addRegion(controller);
       case Control::Output:
         if (!controller.outputChannelsConfigurable()) return unsupported();
         if (activate || action == SemanticAction::Increment) return stepOutputChannels(controller, true);
@@ -1726,6 +1772,20 @@ private:
     c.restore();
     c.restore();
     c.restore();
+  }
+
+  // The header's Add Region button: an accent capsule, dimmed while no vocal track is selected.
+  static void paintAddRegion(Canvas2D& c, const DesignTokens& t, const MixLayout& l, bool enabled) {
+    const auto b = l.addRegion;
+    if (b.width <= 0.0) return;
+    const auto shape = Path::capsule(b);
+    c.fill(shape, withAlpha(t.color.accent, enabled ? 0.18 : 0.06));
+    c.stroke(shape, withAlpha(enabled ? t.color.accent : t.color.border, enabled ? 0.8 : 0.9),
+             StrokeStyle{1.0});
+    const auto label = tr(Str::AddRegion);
+    const auto s = style(FontRole::UiBold, t.type.smallLabel, 1.0, TextAlign::Center, true);
+    c.text({b.x + 8.0, b.y, b.width - 16.0, b.height}, label, fitted(c, label, s, b.width - 16.0),
+           enabled ? t.color.textPrimary : t.color.textDisabled);
   }
 
   static void paintDevice(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,

@@ -2364,14 +2364,7 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
           return added ? core::success() : core::Result<void>{added.error()};
         }
         if (element == "arrangement.add-region") {
-          const auto* track = session_.project().findVocalTrack(selectedTrackId_);
-          if (track == nullptr) {
-            return core::failure(core::ErrorCode::Conflict,
-                                 "A vocal track must be selected first");
-          }
-          auto added = addVocalRegion(
-              "Region " + std::to_string(track->regions.size() + 1U),
-              time::Tick{0}, time::Tick{15360});
+          auto added = addRegionToSelectedTrack();
           return added ? core::success() : core::Result<void>{added.error()};
         }
         if (element == "arrangement.rename") {
@@ -3077,6 +3070,20 @@ core::Result<domain::RegionId> NativeEditorController::addVocalRegion(
   markDocumentChanged();
   repaint();
   return core::success(id);
+}
+
+core::Result<domain::RegionId> NativeEditorController::addRegionToSelectedTrack() {
+  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
+  if (track == nullptr) {
+    return core::failure<domain::RegionId>(core::ErrorCode::Conflict,
+                                           "A vocal track must be selected first");
+  }
+  // After the track's last region, so a new region never lands on existing notes.
+  time::Tick start{0};
+  for (const auto& region : track->regions)
+    start = std::max(start, region.startTick + region.durationTick);
+  return addVocalRegion("Region " + std::to_string(track->regions.size() + 1U), start,
+                        time::Tick{4 * 4 * time::kDefaultPpq});
 }
 
 core::Result<void> NativeEditorController::removeSelectedTrack() {
