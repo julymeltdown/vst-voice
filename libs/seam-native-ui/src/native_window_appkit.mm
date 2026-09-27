@@ -898,7 +898,7 @@ private:
   void updateScaleAndSurface() noexcept {
     if (view_ == nil || window_ == nil) return;
     const auto backing = window_.backingScaleFactor;
-    scale_ = config_.scale * static_cast<double>(backing <= 0.0 ? 1.0 : backing);
+    scale_ = nativeWindowRasterScale(config_, static_cast<double>(backing));
     const auto width = static_cast<std::uint32_t>(std::max(
         1.0, std::ceil(static_cast<double>(view_.bounds.size.width) * scale_)));
     const auto height = static_cast<std::uint32_t>(std::max(

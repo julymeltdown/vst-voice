@@ -39,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,7 +62,11 @@ CANONICAL_VIEWPORT = (1600, 900)
 # Capture-only state: the ready fixture with the compact singer inspector open.
 INSPECTOR_STATE = "inspector"
 # Capture-only states: the ready fixture with the VOICE, TUNE or MIX workspace covering the score.
-WORKSPACE_STATES = ("voice", "tune", "mix")
+WORKSPACE_STATES = ("voice", "tune", "mix", "export")
+# Plan section 14.4: four responsive widths, five distinct score states.
+PLAN_VIEWPORTS = ((1600, 900), (1100, 720), (860, 640), (720, 480))
+PLAN_STATES = ("empty", "dense-overlap", "selection", "rendering", "failed")
+CONTRASTS = ("standard", "high")
 # VOICE's modules. A compact body shows one at a time behind a tab (shell.voice.view.<module>).
 VOICE_MODULES = ("source", "resonance", "noise")
 # Score nodes that must never be published under a covering workspace.
@@ -149,10 +154,27 @@ def source_identity() -> dict[str, Any]:
 
 def hash_tree(root: Path) -> dict[str, str]:
     return {
-        str(path.relative_to(ROOT)): sha256_file(path)
+        str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path.relative_to(root)): sha256_file(path)
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != ".DS_Store"
     }
+
+
+def capture_resource_roots(app: Path) -> dict[str, Path]:
+    resources = next((p / "Resources" for p in app.parents if p.name == "Contents"), None)
+    return {name: resources / name if resources is not None and (resources / name).is_dir()
+            else ROOT / "assets" / name for name in ("ui-design", "character-01", "fonts", "l10n")}
+
+
+def capture_environment(app: Path, mode: str, contrast: str) -> dict[str, str]:
+    # Render-affecting diagnostic flags and asset overrides must not leak from the parent shell.
+    environment = {k: v for k, v in os.environ.items() if not k.startswith("SEAM_")}
+    roots = capture_resource_roots(app)
+    environment.update(SEAM_UI_DESIGN=mode, SEAM_UI_CONTRAST=contrast, SEAM_UI_CAPTURE_PROFILE="1",
+                       SEAM_UI_FREEZE_CLOCK="1", SEAM_UI_ASSETS=str(roots["ui-design"]),
+                       SEAM_CHARACTER_ASSETS=str(roots["character-01"]), SEAM_UI_FONTS=str(roots["fonts"]),
+                       SEAM_L10N_ASSETS=str(roots["l10n"]))
+    return environment
 
 
 def font_identity(app: Path, runtime: dict[str, Any]) -> dict[str, Any]:
@@ -440,6 +462,13 @@ def check_geometry(geometry: dict[str, Any], contract: dict[str, Any], *,
         failures.append("the shell did not present the frame")
     if geometry.get("deviceScale") not in canonical["deviceScales"]:
         failures.append(f"deviceScale {geometry.get('deviceScale')} is not one of {canonical['deviceScales']}")
+    if expected.get("deviceScale") is not None and geometry.get("deviceScale") != expected["deviceScale"]:
+        failures.append(f"deviceScale {geometry.get('deviceScale')} is not the requested {expected['deviceScale']}")
+    if "contrast" in expected and geometry.get("contrast") != expected["contrast"]:
+        failures.append(f"contrast {geometry.get('contrast')} is not the requested {expected['contrast']}")
+    if expected.get("captureProfile"):
+        if geometry.get("language") != "en" or geometry.get("reduceMotion") is not False:
+            failures.append("effective language/motion differ from the evidence profile")
     presentation = geometry.get("rack")
     wanted = spec_rack_presentation(float(width))
     if presentation != wanted:
@@ -594,6 +623,11 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
                 for module in VOICE_MODULES:
                     if f"shell.voice.{module}" not in by_id and f"shell.voice.view.{module}" not in by_id:
                         failures.append(f"shell.voice.{module}: neither the module nor its tab is published")
+            elif body == "export":
+                core = ["shell.export.panel", "shell.export.run"]
+                run = by_id.get("shell.export.run")
+                if run is not None and run["bounds"] != controls.get("exportRun"):
+                    failures.append("shell.export.run: bounds differ from exportRun")
             else:
                 core = ["shell.mix.master", "shell.mix.audio-settings"]
                 strips = [node["id"] for node in own
@@ -615,7 +649,7 @@ def check_semantics(semantic: dict[str, Any], geometry: dict[str, Any], *,
                 for node in own:
                     if positive(node["bounds"]) and not contains(area, node["bounds"]):
                         failures.append(f"{node['id']}: outside the {body} workspace area")
-            others = [f"shell.{name}." for name in WORKSPACE_STATES + ("export",) if name != body]
+            others = [f"shell.{name}." for name in WORKSPACE_STATES if name != body]
             for node_id in by_id:
                 if node_id in SCORE_IDS or node_id.startswith(SCORE_PREFIXES) or \
                         node_id.startswith(tuple(others)):
@@ -712,9 +746,18 @@ def stop_child(process: Any, reason: str) -> tuple[str, str, str]:
     return (stdout if isinstance(stdout, str) else ""), (stderr if isinstance(stderr, str) else ""), reason
 
 
+def capture_id(mode: str, state: str, viewport: tuple[int, int],
+               contrast: str = "standard", device_scale: int | None = None) -> str:
+    base = f"{mode}-{state}-{viewport[0]}x{viewport[1]}"
+    # Preserve the existing native-scale packet names for consumers of v1 packets.
+    return base if contrast == "standard" and device_scale is None else \
+        f"{base}-{contrast}-{device_scale or 'native'}x"
+
+
 def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
-            viewport: tuple[int, int], project: Path) -> dict[str, Any]:
-    name = f"{mode}-{state}-{viewport[0]}x{viewport[1]}"
+            viewport: tuple[int, int], project: Path, *, contrast: str = "standard",
+            device_scale: int | None = None) -> dict[str, Any]:
+    name = capture_id(mode, state, viewport, contrast, device_scale)
     folder = work / name
     folder.mkdir(parents=True)
     evidence = folder / "evidence"
@@ -731,17 +774,19 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
         "--application-support-root", str(support), "--force-threaded-audio",
         "--evidence-dir", str(evidence), "--window-id-file", str(window_id), str(project),
     ]
-    environment = dict(os.environ, SEAM_UI_DESIGN=mode)
-    environment.pop("SEAM_UI_WORKSPACE", None)
-    environment.pop("SEAM_UI_INSPECTOR", None)
+    if device_scale is not None:
+        command += ["--screenshot-scale", str(device_scale)]
+    if state == "selection":
+        command.append("--evidence-select-first-note")
+    environment = capture_environment(args.app, mode, contrast)
     # The animation clock is frozen so two packets of the same build hash identically (section 14.4).
-    environment["SEAM_UI_FREEZE_CLOCK"] = "1"
     if state == INSPECTOR_STATE:
         environment["SEAM_UI_INSPECTOR"] = "open"
     if state in WORKSPACE_STATES:
         environment["SEAM_UI_WORKSPACE"] = state
     record: dict[str, Any] = {
         "id": name, "mode": mode, "state": state, "viewport": list(viewport),
+        "contrast": contrast, "requestedDeviceScale": device_scale,
         "command": [os.path.relpath(part, ROOT) if part.startswith(str(ROOT)) else part
                     for part in command[1:]],
     }
@@ -795,8 +840,10 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     record["frameRenderState"] = frame_render_state(record["semantic-bounds"])
     expected = {"ready": "ready", INSPECTOR_STATE: "ready", "failed": "failed", "dense-overlap": "ready",
                 "rendering": "rendering", "empty": None, "voice": "ready", "tune": "ready",
-                "mix": "ready"}[state]
+                "mix": "ready", "export": "ready", "selection": "ready"}[state]
     record["stateReached"] = expected is None or record["frameRenderState"] == expected
+    if state == "selection":
+        record["stateReached"] &= any(n.get("selected") for n in record["semantic-bounds"].get("notes", []))
     return record
 
 def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appkit: bool) -> None:
@@ -865,29 +912,61 @@ def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appk
 
 def build_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, int]]]:
     requirements = json.loads(CONTRACT.read_text())["captureRequirements"]
-    states = [state for state in requirements["states"] if state != "stale"]
-    if args.states:
-        wanted = args.states.split(",")
-        states = [state for state in states if state in wanted]
-    matrix = [(mode, state, CANONICAL_VIEWPORT) for state in states for mode in MODES]
-    if not args.canonical_only:
+    known = set(requirements["states"]) | set(WORKSPACE_STATES) | {INSPECTOR_STATE, "selection"}
+    requested = set(args.states.split(",")) if args.states else None
+    if requested is not None and (not requested or requested - known):
+        raise PacketError(f"unknown capture states: {sorted(requested - known)}")
+    if requested is not None and "stale" in requested:
+        raise PacketError(STALE_REASON)
+    full = getattr(args, "full_matrix", False)
+    if full:
+        if args.canonical_only:
+            raise PacketError("--full-matrix and --canonical-only are mutually exclusive")
+        states = [s for s in PLAN_STATES if requested is None or s in requested]
+        matrix = [(m, s, v) for v in PLAN_VIEWPORTS for s in states for m in MODES]
+    else:
+        states = [state for state in requirements["states"] if state != "stale"]
+        if requested is not None:
+            states = [state for state in states + ["selection"] if state in requested]
+        matrix = [(mode, state, CANONICAL_VIEWPORT) for state in states for mode in MODES]
+    if not args.canonical_only and not full:
         for viewport in requirements["viewports"]:
-            if tuple(viewport) != CANONICAL_VIEWPORT:
+            if tuple(viewport) != CANONICAL_VIEWPORT and (requested is None or "ready" in requested):
                 matrix += [(mode, "ready", (viewport[0], viewport[1])) for mode in MODES]
         # The compact presentations also show their singer inspector open (a capture state, not a
         # contract render state): its knobs, voice and style must be reachable and inside it.
         for viewport in requirements["viewports"]:
-            if spec_rack_presentation(float(viewport[0])) != "full":
+            if spec_rack_presentation(float(viewport[0])) != "full" and \
+                    (requested is None or INSPECTOR_STATE in requested):
                 matrix += [(mode, INSPECTOR_STATE, (viewport[0], viewport[1])) for mode in MODES]
     # VOICE, TUNE and MIX cover the score with their own body (capture states on the ready fixture), at
     # the canonical size and the smallest compact contract viewport.
     compact = min((tuple(v) for v in requirements["viewports"]), key=lambda v: v[0] * v[1])
     for workspace in WORKSPACE_STATES:
-        if args.states and workspace not in args.states.split(","):
+        if requested is not None and workspace not in requested:
             continue
         sizes = [CANONICAL_VIEWPORT] if args.canonical_only else [CANONICAL_VIEWPORT, compact]
         matrix += [(mode, workspace, size) for size in sizes for mode in MODES]
     return matrix
+
+
+def capture_matrix(args: argparse.Namespace) -> list[tuple[str, str, tuple[int, int], str, int | None]]:
+    full = getattr(args, "full_matrix", False)
+    contrasts = (getattr(args, "contrasts", None) or ("standard,high" if full else "standard")).split(",")
+    scale_text = (getattr(args, "scales", None) or ("1,2" if full else "native")).split(",")
+    if len(set(contrasts)) != len(contrasts) or any(c not in CONTRASTS for c in contrasts):
+        raise PacketError("--contrasts must contain standard and/or high, without duplicates")
+    if len(set(scale_text)) != len(scale_text) or any(s not in ("native", "1", "2") for s in scale_text):
+        raise PacketError("--scales must contain native, 1 and/or 2, without duplicates")
+    if "native" in scale_text and len(scale_text) != 1:
+        raise PacketError("native scale cannot be combined with an explicit raster scale")
+    if scale_text != ["native"] and not args.no_appkit:
+        raise PacketError("explicit software raster scales require --no-appkit; they do not change the monitor")
+    scales = [None if s == "native" else int(s) for s in scale_text]
+    result = [(m, s, v, c, z) for m, s, v in build_matrix(args) for c in contrasts for z in scales]
+    if not result:
+        raise PacketError("the requested matrix has no captures")
+    return result
 
 
 PARITY_KEYS = ("logicalSize", "deviceScale", "workspace", "presented", "rack", "compactHeader",
@@ -898,13 +977,15 @@ def mode_parity(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Same state and viewport must have the same geometry in both modes (section 11.3).
 
     Every key needs exactly one capture per mode with geometry; a missing partner is a failure."""
-    groups: dict[tuple[str, tuple[int, ...]], dict[str, list[dict[str, Any]]]] = {}
+    groups: dict[tuple[str, tuple[int, ...], str, int | None], dict[str, list[dict[str, Any]]]] = {}
     for record in records:
-        key = (record["state"], tuple(record["viewport"]))
+        key = (record["state"], tuple(record["viewport"]), record.get("contrast", "standard"),
+               record.get("requestedDeviceScale"))
         groups.setdefault(key, {}).setdefault(record["mode"], []).append(record)
     results = []
-    for (state, viewport), by_mode in groups.items():
-        entry = {"state": state, "viewport": list(viewport)}
+    for (state, viewport, contrast, scale), by_mode in groups.items():
+        entry = {"state": state, "viewport": list(viewport), "contrast": contrast,
+                 "requestedDeviceScale": scale}
         problems = [f"{len(by_mode.get(mode, []))} {mode} captures" for mode in MODES
                     if len(by_mode.get(mode, [])) != 1 or "geometry" not in by_mode[mode][0]]
         if problems:
@@ -932,7 +1013,8 @@ def acceptance_markdown(manifest: dict[str, Any], records: list[dict[str, Any]],
         f"Source {source['head']} (dirty: {source['dirty']}), binary sha256 "
         f"{manifest['binary']['sha256']}, macOS {environment['macOS']} "
         f"({environment['macOSBuild']}), backend: {manifest['backend']}, device scale "
-        f"{manifest['deviceScale']}.",
+        f"{manifest.get('deviceScales', [manifest['deviceScale']])}.",
+        manifest.get("scaleEvidence", ""),
         "",
         "Measurements only. Native visual acceptance, FL Studio, VoiceOver and the reviewer and "
         "owner verdicts are not decided by this tool.",
@@ -1012,6 +1094,10 @@ def main() -> int:
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--output", type=Path, help="default build/evidence/ui-fidelity/<candidate>")
     parser.add_argument("--states", help="comma-separated subset of the contract states")
+    parser.add_argument("--full-matrix", action="store_true",
+                        help="plan 14.4 score matrix plus wide/compact workspace captures")
+    parser.add_argument("--contrasts", help="standard, high, or standard,high (both with --full-matrix)")
+    parser.add_argument("--scales", help="native, 1, 2, or 1,2 (both with --full-matrix); overrides need --no-appkit")
     parser.add_argument("--canonical-only", action="store_true",
                         help="only 1600x900 (skip the responsive ready captures)")
     parser.add_argument("--no-appkit", action="store_true", help="skip the OS window captures")
@@ -1029,6 +1115,7 @@ def main() -> int:
     args.app = args.app.resolve()
     args.voicebank_root = args.voicebank_root.resolve()
     args.fixture = args.fixture.resolve()
+    matrix = capture_matrix(args)
 
     if sys.platform != "darwin":
         raise PacketError("the packet captures the macOS AppKit window; run it on macOS")
@@ -1051,7 +1138,7 @@ def main() -> int:
     fixture_hashes: dict[str, str] = {"base": sha256_file(args.fixture)}
     records: list[dict[str, Any]] = []
     try:
-        for mode, state, viewport in build_matrix(args):
+        for mode, state, viewport, contrast, device_scale in matrix:
             if state not in fixtures:
                 path = work / f"fixture-{state}.seam"
                 derived = derive_fixture(base, state)
@@ -1061,14 +1148,16 @@ def main() -> int:
                 fixture_tracks[state] = (len(derived.get("vocalTracks") or []) +
                                          len(derived.get("audioTracks") or []))
                 fixture_hashes[state] = sha256_file(path)
-            project = work / f"{mode}-{state}-{viewport[0]}x{viewport[1]}.seam"
+            project = work / f"{capture_id(mode, state, viewport, contrast, device_scale)}.seam"
             shutil.copyfile(fixtures[state], project)
-            print(f"capture {mode} {state} {viewport[0]}x{viewport[1]}", flush=True)
-            record = capture(args, work, mode, state, viewport, project)
+            print(f"capture {mode} {state} {viewport[0]}x{viewport[1]} {contrast} {device_scale or 'native'}x", flush=True)
+            record = capture(args, work, mode, state, viewport, project,
+                             contrast=contrast, device_scale=device_scale)
             if "error" not in record:
                 record["geometryCheck"] = check_geometry(
                     record["geometry"], contract,
                     expected={"viewport": list(viewport), "mode": mode,
+                              "contrast": contrast, "deviceScale": device_scale, "captureProfile": True,
                               "inspectorOpen": state == INSPECTOR_STATE,
                               "workspace": state if state in WORKSPACE_STATES else "sing"})
                 record["semanticCheck"] = check_semantics(
@@ -1082,35 +1171,55 @@ def main() -> int:
         shutil.move(str(work), str(Path.home() / ".Trash" / work.name))
 
     for record in records:
-        if record["state"] == "ready" and tuple(record["viewport"]) == CANONICAL_VIEWPORT:
+        if record["state"] == "ready" and tuple(record["viewport"]) == CANONICAL_VIEWPORT and \
+                record["contrast"] == "standard" and record["requestedDeviceScale"] in (None, 2):
             for kind in ("software", "appkit"):
                 if f"{kind}Png" in record:
                     shutil.copyfile(out / record[f"{kind}Png"], out / f"{record['mode']}-{kind}.png")
     parity = mode_parity(records)
     bank_in_repo = args.voicebank_root.is_relative_to(ROOT)
+    observed_scales = sorted({r["geometry"]["deviceScale"] for r in records if "geometry" in r})
+    errors = [r["id"] for r in records if "error" in r]
+    failed = [r["id"] for r in records if "error" not in r and
+              (any(r[check]["result"] != "PASS" for check in ("geometryCheck", "semanticCheck", "imageCheck"))
+               or not r["stateReached"])]
+    failed += [f"parity {p['state']} {p['viewport']} {p['contrast']} {p['requestedDeviceScale']}"
+               for p in parity if p["result"] != "PASS"]
+    if all(z is None for _, _, _, _, z in matrix) and len(observed_scales) > 1:
+        failed.append(f"captures disagree on the device scale: {observed_scales}")
     manifest = {
-        "schema": "seam-ui-fidelity-packet-v1",
+        "schema": "seam-ui-fidelity-packet-v2",
+        "captureRunId": str(uuid.uuid4()),
+        "result": "FAIL" if errors or failed else "PASS",
         "candidate": source["candidate"],
         "source": source,
         "binary": {"path": os.path.relpath(args.app, ROOT), "sha256": sha256_file(args.app)},
         "build": build,
         "environment": environment_identity(),
         "backend": next((r["log"].get("window_backend") for r in records if r.get("log")), "unknown"),
-        "deviceScale": next((r["geometry"]["deviceScale"] for r in records if "geometry" in r), None),
+        "deviceScale": observed_scales[0] if len(observed_scales) == 1 else None,
+        "deviceScales": observed_scales,
+        "requestedMatrix": {"contrasts": sorted({c for _, _, _, c, _ in matrix}),
+                            "scales": sorted({str(z or 'native') for _, _, _, _, z in matrix}),
+                            "captureCount": len(matrix)},
+        "scaleEvidence": "software raster override; OS/DAW backing-scale acceptance not established"
+                         if any(z is not None for _, _, _, _, z in matrix) else "native monitor backing scale",
         "uiZoom": 1.0,
-        "fonts": font_identity(args.app, next(r["font-identity"] for r in records
-                                              if "font-identity" in r)),
-        "assets": hash_tree(DESIGN_ASSETS),
+        "fonts": font_identity(args.app, next((r["font-identity"] for r in records
+                                               if "font-identity" in r), {})),
+        "assets": {name: {"root": str(root), "files": hash_tree(root)}
+                   for name, root in capture_resource_roots(args.app).items()},
         "fixture": {"path": os.path.relpath(args.fixture, ROOT), "sha256": fixture_hashes},
         "voicebank": {
             "root": os.path.relpath(args.voicebank_root, ROOT) if bank_in_repo else str(args.voicebank_root),
-            "files": hash_tree(args.voicebank_root) if bank_in_repo else {},
+            "files": hash_tree(args.voicebank_root),
         },
         "contract": {"path": os.path.relpath(CONTRACT, ROOT), "sha256": sha256_file(CONTRACT)},
         "captures": [
             {key: record[key] for key in (
-                "id", "mode", "state", "viewport", "exitCode", "observedRenderState",
+                "id", "mode", "state", "viewport", "contrast", "requestedDeviceScale", "exitCode", "observedRenderState",
                 "stateReached", "appkit", "appkitColor", "appkitTitleBarPixels", "appkitAlignment",
+                "geometryCheck", "semanticCheck", "imageCheck",
                 "softwarePng", "appkitPng", "softwarePixels", "softwarePixelSha256", "command",
                 "error") if key in record}
             for record in records
@@ -1150,15 +1259,6 @@ def main() -> int:
     (out / "acceptance.md").write_text(acceptance_markdown(manifest, records, parity),
                                        encoding="utf-8")
 
-    errors = [r["id"] for r in records if "error" in r]
-    failed = [r["id"] for r in records
-              if "error" not in r and ("FAIL" in (r["geometryCheck"]["result"], r["semanticCheck"]["result"],
-                                                  r["imageCheck"]["result"])
-                                       or not r["stateReached"])]
-    failed += [f"parity {p['state']} {p['viewport']}" for p in parity if p["result"] == "FAIL"]
-    scales = {r["geometry"].get("deviceScale") for r in records if "geometry" in r}
-    if len(scales) > 1:
-        failed.append(f"captures disagree on the device scale: {sorted(map(str, scales))}")
     print(out)
     print(f"captures={len(records)} errors={len(errors)} failed_or_unreached={len(failed)}")
     for item in errors + failed:

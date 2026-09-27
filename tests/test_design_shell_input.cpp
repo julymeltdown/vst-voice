@@ -1708,6 +1708,7 @@ TEST_CASE("UI evidence is the presented layout and the published tree, not a cop
   const auto geometry = native_ui::design::singLayoutEvidence(f.shell, 2.0);
   CHECK(geometry.find("presented")->asBool());
   CHECK(geometry.find("mode")->asString() == "emo");
+  CHECK(geometry.find("contrast")->asString() == "standard");
   CHECK(geometry.find("workspace")->asString() == "sing");
   CHECK(geometry.find("deviceScale")->asNumber() == 2.0);
   CHECK(geometry.find("rack")->asString() == "full");
@@ -1754,6 +1755,13 @@ TEST_CASE("UI evidence is the presented layout and the published tree, not a cop
   const auto virtualized = static_cast<std::size_t>(semantic.find("virtualizedNoteCount")->asNumber());
   CHECK(virtualized >= 4U);
   CHECK(noteCount == 4U);
+  f.shell.setContrast(native_ui::design::Contrast::High, false);
+  f.shell.setReduceMotion(true, false);
+  CHECK(f.frame());
+  const auto high = native_ui::design::singLayoutEvidence(f.shell, 1.0);
+  CHECK(high.find("contrast")->asString() == "high");
+  CHECK(high.find("reduceMotion")->asBool());
+  CHECK(high.find("language")->asString() == f.shell.language());
 }
 
 TEST_CASE("a failed render's status line names its reason, not only that it failed") {

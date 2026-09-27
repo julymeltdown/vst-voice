@@ -137,6 +137,25 @@ TEST_CASE("native window minimum stays logical at scaled surfaces") {
   CHECK(!seam::native_ui::nativeWindowConfigSizeIsValid(tooNarrow));
 }
 
+TEST_CASE("screenshot raster scale is bounded and independent of logical window size") {
+  using namespace seam::native_ui;
+  NativeWindowConfig config{.width=720U, .height=480U};
+  CHECK(nativeWindowRasterScale(config, 2.0) == 2.0);
+  config.screenshotScale = 1.0;
+  CHECK(!nativeWindowConfigSizeIsValid(config));
+  config.screenshotPath = "capture.ppm";
+  CHECK(nativeWindowConfigSizeIsValid(config));
+  CHECK(nativeWindowRasterScale(config, 2.0) == 1.0);
+  CHECK(nativeWindowMinimumPhysicalWidth(config) == 480U);
+  config.screenshotScale = 2.0;
+  CHECK(nativeWindowConfigSizeIsValid(config));
+  CHECK(nativeWindowRasterScale(config, 1.0) == 2.0);
+  config.screenshotScale = 0.5;
+  CHECK(!nativeWindowConfigSizeIsValid(config));
+  config.screenshotScale = std::numeric_limits<double>::infinity();
+  CHECK(!nativeWindowConfigSizeIsValid(config));
+}
+
 TEST_CASE("native phoneme inspection shares resolver tokens and bounded failures") {
   NativeUiFixture fixture;
   auto* region = fixture.session.project().findRegion(fixture.regionId);

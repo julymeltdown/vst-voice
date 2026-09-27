@@ -613,10 +613,20 @@ std::string barsBeatsTicks(time::Tick tick, std::int64_t ppq, const time::MeterE
 }  // namespace
 
 void SingShell::activate(const std::filesystem::path& assetRoot) {
-  auto preferences = loadDesignPreferences();
+  const auto captureProfile = std::getenv("SEAM_UI_CAPTURE_PROFILE") != nullptr;
+  // Evidence uses explicit English, motion and contrast defaults, without reading or writing the
+  // shared user preference suite. The project still owns its character display setting.
+  auto preferences = captureProfile ? DesignPreferences{} : loadDesignPreferences();
   if (const char* forced = std::getenv("SEAM_UI_DESIGN"); forced != nullptr) {
     // Captures only: force a look (emo or scene) without touching the saved preference.
     preferences.mode = parseDesignMode(forced, preferences.mode);
+  }
+  if (const char* contrast = std::getenv("SEAM_UI_CONTRAST"); contrast != nullptr) {
+    const std::string_view value{contrast};
+    if (value == "standard" || value == "high") {
+      preferences.contrast = value == "high" ? Contrast::High : Contrast::Standard;
+      preferences.contrastFollowsSystem = false;
+    }
   }
   // Captures only: open a workspace other than SING. The workspace is never a saved preference.
   if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE"); workspace != nullptr) {
@@ -636,7 +646,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
   if (std::getenv("SEAM_UI_FREEZE_CLOCK") != nullptr)
     setUiClock([] { return std::chrono::steady_clock::time_point{} + std::chrono::seconds{10}; });
   activate(assetRoot, preferences);
-  persist_ = true;
+  persist_ = !captureProfile;
 }
 
 void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferences preferences) {

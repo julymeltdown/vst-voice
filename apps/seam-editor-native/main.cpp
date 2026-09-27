@@ -22,6 +22,8 @@ namespace {
 struct CommandLine final {
   std::chrono::milliseconds autoClose{0};
   std::optional<std::filesystem::path> screenshot;
+  std::optional<double> screenshotScale;
+  bool evidenceSelectFirstNote{false};
   std::optional<std::filesystem::path> evidenceDir;
   std::optional<std::filesystem::path> windowIdFile;
   std::uint32_t windowWidth{1440U};
@@ -45,6 +47,8 @@ void printUsage() {
       << "Usage: seam_editor_native [options]\n"
       << "  --auto-close-ms N       close automatically after N milliseconds\n"
       << "  --screenshot PATH       write the final software-raster frame as PPM\n"
+      << "  --screenshot-scale N    software evidence at 1x or 2x; requires --screenshot\n"
+      << "  --evidence-select-first-note  select a real note for the evidence frame\n"
       << "  --evidence-dir PATH     write UI-fidelity evidence of the final frame (geometry,\n"
       << "                          semantic bounds, paint timings, memory)\n"
       << "  --window-id-file PATH   write the open window's window-server id (capture tooling)\n"
@@ -138,6 +142,16 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
       result.screenshot = std::filesystem::path{argv[++index]};
       continue;
     }
+    if (argument == "--screenshot-scale" && index + 1 < argc) {
+      const std::string_view value{argv[++index]};
+      if (value != "1" && value != "2") return std::nullopt;
+      result.screenshotScale = value == "1" ? 1.0 : 2.0;
+      continue;
+    }
+    if (argument == "--evidence-select-first-note") {
+      result.evidenceSelectFirstNote = true;
+      continue;
+    }
     if (argument == "--evidence-dir" && index + 1 < argc) {
       result.evidenceDir = std::filesystem::path{argv[++index]};
       continue;
@@ -183,6 +197,8 @@ std::optional<CommandLine> parseArguments(int argc, char** argv) {
     std::cerr << "Unknown argument: " << argument << '\n';
     return std::nullopt;
   }
+  if (result.screenshotScale.has_value() && !result.screenshot.has_value()) return std::nullopt;
+  if (result.evidenceSelectFirstNote && !result.evidenceDir.has_value()) return std::nullopt;
   return result;
 }
 
@@ -360,6 +376,7 @@ int seam_editor_native_main(int argc, char** argv) {
           .restoreLastDocument = commandLine->openProjects.empty(),
           .autoCloseAfter = commandLine->autoClose,
           .screenshotPath = commandLine->screenshot,
+          .screenshotScale = commandLine->screenshotScale,
           .windowIdPath = commandLine->windowIdFile,
       },
       *app);
@@ -390,6 +407,17 @@ int seam_editor_native_main(int argc, char** argv) {
     }
   }
 
+  if (commandLine->evidenceSelectFirstNote) {
+    auto& roll = app->authoring().controller().pianoRoll();
+    const auto note = roll.noteAt(0U);
+    if (!note.has_value()) {
+      std::cerr << "Selection evidence requires a note in the active region\n";
+      return 6;
+    }
+    const auto& r = note->bounds;
+    roll.selectInBox({r.x + r.width * 0.5, r.y + r.height * 0.5, 0.1, 0.1});
+    window->requestRepaint();
+  }
   const auto result = window->run();
   if (commandLine->evidenceDir.has_value()) {
     const auto evidence = app->writeUiEvidence(*commandLine->evidenceDir);

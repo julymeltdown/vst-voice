@@ -2478,6 +2478,12 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_ui_performance_analysis PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    add_test(NAME seam_ui_fidelity_packet_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests.design.test_sing_fidelity_packet tests.design.test_compare_fidelity_packets)
+    set_tests_properties(seam_ui_fidelity_packet_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
     add_test(NAME seam_tracked_source_closure_unit
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/test_tracked_source_closure.py)

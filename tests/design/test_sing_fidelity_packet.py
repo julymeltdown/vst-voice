@@ -32,7 +32,7 @@ def canonical_geometry():
     controls |= {f"knob{i}": [1170 + 140 * (i % 3), 530 + 100 * (i // 3), 56, 56] for i in range(6)}
     controls |= {f"workspaceTab{i}": [264 + 80 * i, 24, 80, 64] for i in range(5)}
     return {
-        "logicalSize": [1600, 900], "deviceScale": 2, "mode": "emo", "workspace": "sing",
+        "logicalSize": [1600, 900], "deviceScale": 2, "contrast": "standard", "mode": "emo", "workspace": "sing",
         "presented": True, "rack": "full", "compactHeader": False,
         "workspaceLabelsVisible": True, "outputMeterVisible": True,
         "regions": regions, "controls": controls,
@@ -124,6 +124,15 @@ class GeometryCheckTests(unittest.TestCase):
         geometry["regions"]["status"][2] -= 2
         self.assertEqual(geometry_result(geometry)["result"], "PASS")
 
+    def test_requested_scale_and_contrast_are_observed_not_just_labeled(self):
+        geometry = canonical_geometry()
+        expected = CANONICAL | {"deviceScale": 1, "contrast": "high"}
+        self.assertEqual(geometry_result(geometry, expected)["result"], "FAIL")
+        geometry.update(deviceScale=1, contrast="high")
+        self.assertEqual(geometry_result(geometry, expected)["result"], "PASS")
+        geometry.pop("contrast")
+        self.assertEqual(geometry_result(geometry, expected)["result"], "FAIL")
+
     def test_compact_presentations_follow_section_3_4(self):
         self.assertEqual([PACKET.spec_rack_presentation(w) for w in (720, 860, 1099, 1100)],
                          ["drawer", "rail", "rail", "full"])
@@ -151,12 +160,16 @@ class SemanticCheckTests(unittest.TestCase):
                 ids += ["shell.tune.graph"] + [f"shell.tune.knob.{k}" for k in PACKET.KNOBS]
             elif workspace == "voice":
                 ids += ["shell.voice.envelope"] + [f"shell.voice.{m}" for m in PACKET.VOICE_MODULES]
+            elif workspace == "export":
+                ids += ["shell.export.run"]
             else:
                 ids += ["shell.mix.master", "shell.mix.audio-settings", "shell.mix.track.1a"]
                 ids += [f"shell.mix.track.1a.{c}" for c in PACKET.MIX_STRIP_CONTROLS]
             for i, node_id in enumerate(ids):
                 semantic["nodes"].append({"id": node_id, "parent": "shell", "value": "",
                                           "bounds": [editor[0] + 8 + 20 * i, editor[1] + 8, 16, 16]})
+                if node_id == "shell.export.run":
+                    geometry["controls"]["exportRun"] = list(semantic["nodes"][-1]["bounds"])
             semantic.update(notes=[], virtualizedNoteCount=0)
             return semantic
 
@@ -204,6 +217,9 @@ class SemanticCheckTests(unittest.TestCase):
             ("mix", "strip without a fader"): drop("shell.mix.track.1a.gain"),
             ("mix", "more strips than tracks"): extra("shell.mix.track.2b"),
             ("mix", "master missing"): drop("shell.mix.master"),
+            ("export", "run missing"): drop("shell.export.run"),
+            ("export", "score beneath panel"): extra("timeline"),
+            ("export", "wrong run bounds"): lambda s: s["nodes"][-1].update(bounds=[100, 200, 20, 20]),
         }
         for (workspace, name), mutate in cases.items():
             with self.subTest(name):
@@ -358,6 +374,48 @@ class SemanticCheckTests(unittest.TestCase):
         self.assertEqual(semantic_result(semantic, geometry)["result"], "FAIL")
 
 
+class CaptureMatrixTests(unittest.TestCase):
+    def args(self, **overrides):
+        values = dict(states=None, canonical_only=False, full_matrix=False,
+                      contrasts=None, scales=None, no_appkit=True)
+        return argparse.Namespace(**(values | overrides))
+
+    def test_capture_isolates_render_flags_and_pins_resource_roots(self):
+        with mock.patch.dict(PACKET.os.environ, {"SEAM_WASH_VECTOR_REFERENCE": "1",
+                                               "SEAM_UI_ASSETS": "/wrong", "PATH": "/bin"}, clear=True):
+            env = PACKET.capture_environment(Path("/missing/app"), "scene", "high")
+        self.assertNotIn("SEAM_WASH_VECTOR_REFERENCE", env)
+        self.assertEqual(env["SEAM_UI_ASSETS"], str(ROOT / "assets/ui-design"))
+        self.assertEqual(env["SEAM_UI_CAPTURE_PROFILE"], "1")
+        self.assertEqual(env["SEAM_UI_CONTRAST"], "high")
+        self.assertEqual(env["PATH"], "/bin")
+
+    def test_complete_plan_score_matrix_is_160_distinct_cases(self):
+        cases = PACKET.capture_matrix(self.args(full_matrix=True, states=",".join(PACKET.PLAN_STATES)))
+        self.assertEqual(len(cases), 160)
+        self.assertEqual(len(set(cases)), 160)
+        self.assertEqual({v for _, _, v, _, _ in cases}, set(PACKET.PLAN_VIEWPORTS))
+        self.assertEqual({(c, z) for _, _, _, c, z in cases},
+                         {("standard", 1), ("standard", 2), ("high", 1), ("high", 2)})
+        names = {PACKET.capture_id(*case[:3], *case[3:]) for case in cases}
+        self.assertEqual(len(names), 160)
+
+    def test_default_includes_export_and_filter_never_adds_unrequested_states(self):
+        self.assertEqual(len(PACKET.capture_matrix(self.args())), 40)
+        self.assertEqual(len(PACKET.capture_matrix(self.args(full_matrix=True))), 224)
+        cases = PACKET.capture_matrix(self.args(states="export", contrasts="standard,high", scales="1,2"))
+        self.assertEqual(len(cases), 16)
+        self.assertEqual({s for _, s, _, _, _ in cases}, {"export"})
+
+    def test_bad_matrix_requests_fail_before_launching_an_app(self):
+        for options in ({"states": "typo"}, {"states": "stale"}, {"scales": "0"},
+                        {"scales": "native,1"}, {"scales": "1,1"}, {"contrasts": "bogus"},
+                        {"scales": "1", "no_appkit": False},
+                        {"full_matrix": True, "canonical_only": True}):
+            with self.subTest(options), self.assertRaises(PACKET.PacketError):
+                PACKET.capture_matrix(self.args(**options))
+
+
 class ParityTests(unittest.TestCase):
     def record(self, mode, geometry, state="ready"):
         return {"state": state, "viewport": [1600, 900], "mode": mode, "geometry": geometry}
@@ -366,6 +424,17 @@ class ParityTests(unittest.TestCase):
         results = PACKET.mode_parity([self.record("emo", canonical_geometry()),
                                       self.record("scene", canonical_geometry())])
         self.assertEqual([r["result"] for r in results], ["PASS"])
+
+    def test_different_contrasts_and_scales_form_independent_pairs(self):
+        records = []
+        for contrast in PACKET.CONTRASTS:
+            for scale in (1, 2):
+                for mode in PACKET.MODES:
+                    geometry = canonical_geometry() | {"contrast": contrast, "deviceScale": scale}
+                    records.append(self.record(mode, geometry) |
+                                   {"contrast": contrast, "requestedDeviceScale": scale})
+        self.assertEqual([r["result"] for r in PACKET.mode_parity(records)], ["PASS"] * 4)
+        self.assertIn("FAIL", [r["result"] for r in PACKET.mode_parity(records[:-1])])
 
     def test_identity_differences_and_missing_partners_fail(self):
         cases = {

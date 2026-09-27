@@ -26,6 +26,9 @@ struct NativeWindowConfig final {
   std::uint32_t minimumHeight{320U};
   std::chrono::milliseconds autoCloseAfter{0};
   std::optional<std::filesystem::path> screenshotPath;
+  // Software evidence only: render the same logical viewport at an explicit pixel density.
+  // This does not change the monitor's backing scale or certify OS/DAW presentation at that scale.
+  std::optional<double> screenshotScale;
   // Capture tooling: where to write the window-server id of the open window (macOS CGWindowID),
   // so an OS-composited capture of this exact window can be taken while it runs.
   std::optional<std::filesystem::path> windowIdPath;
@@ -63,8 +66,16 @@ struct NativeWindowConfig final {
       config.scale < 0.5 || config.scale > 4.0) {
     return false;
   }
+  if (config.screenshotScale.has_value() &&
+      (!config.screenshotPath.has_value() || !std::isfinite(*config.screenshotScale) ||
+       (*config.screenshotScale != 1.0 && *config.screenshotScale != 2.0))) return false;
   return config.width >= nativeWindowMinimumPhysicalWidth(config) &&
          config.height >= nativeWindowMinimumPhysicalHeight(config);
+}
+
+[[nodiscard]] inline double nativeWindowRasterScale(
+    const NativeWindowConfig& config, double backingScale) noexcept {
+  return config.screenshotScale.value_or(config.scale * (backingScale > 0.0 ? backingScale : 1.0));
 }
 
 [[nodiscard]] inline bool nativeWindowShouldRestoreSavedFrame(
