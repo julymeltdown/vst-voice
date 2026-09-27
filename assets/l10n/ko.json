@@ -525,7 +525,7 @@
     "VoicesInstalledCount": "보이스 / {0}개 설치됨",
     "VoiceCardValue": "{0} / {1}",
     "VoiceCardValueSelected": "{0} / {1} / 선택됨",
-    "VoiceCardDescription": "{0} / {1} / 스타일 {2}개 / 유닛 {3}개 사용, {4}개 사용 안 함 / {5} / 해시 {6}",
+    "VoiceCardDescription": "{0} / {1} / 스타일 {2}개 / 유닛 {3}개 사용, {4}개 사용 안 함 / {5} / 해시 {6} / {7}",
     "VoiceCardSummary": "{0} · {1} · {2}",
     "VoiceCardCounts": "스타일 {0}개 · 유닛 {1}개 · {2}",
     "HashValue": "해시 {0}",
