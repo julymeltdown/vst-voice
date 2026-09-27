@@ -9,8 +9,10 @@ Two steps, both deterministic for a given Pillow/NumPy version:
           generator output's SHA-256 is recorded in source/states/sources.json and, for the
           splash, as the ui-design manifest's sourceSha256.
   build   Derives everything the runtime loads from the committed masters: the six 320x480
-          P6 state portraits, six mouth sprites cut from the singing (focused) face so they sit
-          exactly on it, the manifest's mouthPlacement, and a PNG contact sheet for review.
+          P6 state portraits, six 24x24 mouth sprites cut from the singing (focused) face so they
+          sit exactly on it, the manifest's mouthPlacement, and a PNG contact sheet for review.
+          A placed sprite's flat corner colour is transparent at runtime, so every sprite pixel
+          the redrawn lips leave unchanged is written as that key colour.
 
 Usage:
   build_character_state_art.py import --state neutral=/path/a.png ... --splash emo=/path/e.png ...
@@ -48,11 +50,13 @@ SPLASH_SIZE = (1600, 1000)  # Redesign plan section 8.2.
 
 # The singing mouth in runtime pixels, measured on the focused master: the sprite box the
 # manifest's normalized mouthPlacement declares, and the lips' centre and half extents in it.
-MOUTH_BOX = (144, 90, 32, 24)
+MOUTH_BOX = (148, 90, 24, 24)
 MOUTH_CENTER = (160.0, 101.5)
-MOUTH_ERASE_RADII = (11.5, 9.5)
-MOUTH_SCALE = 1.2  # The drawn shapes relative to their base half extents below.
+MOUTH_ERASE_RADII = (10.8, 9.0)
+MOUTH_SCALE = 1.15  # The drawn shapes relative to their base half extents below.
 SUPERSAMPLE = 4  # Drawing scale over the master for the mouth shapes.
+# The sprite key: no pixel of the monochrome ink face is pure magenta.
+MOUTH_KEY = (255, 0, 255)
 
 # PPM payload bytes that the header's single trailing whitespace makes ambiguous.
 PPM_WHITESPACE = {9, 10, 11, 12, 13, 32}
@@ -173,7 +177,8 @@ def mouth_sprites(focused_master: Image.Image) -> dict[str, Image.Image]:
     """Each sprite is the focused portrait's own face under MOUTH_BOX with the lips redrawn.
 
     The whole master is re-downscaled with the patch replaced, so the sprite's border pixels are
-    exactly the portrait's pixels and the overlay has no visible edge.
+    exactly the portrait's pixels and the overlay has no visible edge. Pixels equal to the
+    portrait become MOUTH_KEY, which the runtime keys out, so only the retouched lips are drawn.
     """
     erased = erase_mouth(np.asarray(focused_master.convert("RGB")))
     x, y, w, h = MOUTH_BOX
@@ -181,6 +186,8 @@ def mouth_sprites(focused_master: Image.Image) -> dict[str, Image.Image]:
     patch = Image.fromarray(np.clip(erased[top:bottom, left:right].round(), 0, 255)
                             .astype(np.uint8), "RGB")
     scale = SUPERSAMPLE * 2  # canvas pixels per runtime pixel
+    portrait = np.asarray(focused_master.convert("RGB").resize(RUNTIME_SIZE, Image.LANCZOS)
+                          .crop((x, y, x + w, y + h)), dtype=np.int16)
     sprites = {}
     for shape in MOUTHS:
         canvas = patch.resize((patch.width * SUPERSAMPLE, patch.height * SUPERSAMPLE),
@@ -190,8 +197,20 @@ def mouth_sprites(focused_master: Image.Image) -> dict[str, Image.Image]:
         composed = focused_master.convert("RGB").copy()
         composed.paste(canvas.resize(patch.size, Image.LANCZOS), (left, top))
         runtime = composed.resize(RUNTIME_SIZE, Image.LANCZOS)
-        sprites[shape] = runtime.crop((x, y, x + w, y + h))
+        sprite = np.asarray(runtime.crop((x, y, x + w, y + h)), dtype=np.uint8).copy()
+        changed = np.abs(sprite.astype(np.int16) - portrait).max(axis=2) > 0
+        if changed[0, 0] or changed[0, -1] or changed[-1, 0] or changed[-1, -1]:
+            raise SystemExit(f"mouth-{shape} changes a corner pixel; the key would be lost")
+        if np.all(sprite[changed] == MOUTH_KEY, axis=1).any():
+            raise SystemExit(f"mouth-{shape} contains the key colour")
+        sprite[~changed] = MOUTH_KEY
+        sprites[shape] = Image.fromarray(sprite, "RGB")
     return sprites
+
+
+def key_mask(sprite: Image.Image) -> Image.Image:
+    rgb = np.asarray(sprite.convert("RGB"))
+    return Image.fromarray(np.where(np.all(rgb == MOUTH_KEY, axis=2), 0, 255).astype(np.uint8), "L")
 
 
 def contact_sheet(portraits: dict[str, Image.Image], focused: Image.Image,
@@ -213,7 +232,7 @@ def contact_sheet(portraits: dict[str, Image.Image], focused: Image.Image,
         sheet.paste(crop, (x0 + (width - ring) // 2, gap * 2 + height), mask)
         shape = MOUTHS[index]
         composed = focused.copy()
-        composed.paste(sprites[shape], MOUTH_BOX[:2])
+        composed.paste(sprites[shape], MOUTH_BOX[:2], key_mask(sprites[shape]))
         region = composed.crop((96, 40, 224, 168)).resize((face * 2, face * 2), Image.NEAREST)
         sheet.paste(region, (x0 + (width - face * 2) // 2, gap * 3 + height + ring))
     return sheet

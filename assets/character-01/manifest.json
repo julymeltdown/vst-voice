@@ -28,9 +28,9 @@
     "round": "runtime/mouth-round.ppm"
   },
   "mouthPlacement": {
-    "x": 0.45,
+    "x": 0.4625,
     "y": 0.1875,
-    "width": 0.1,
+    "width": 0.075,
     "height": 0.05
   }
 }

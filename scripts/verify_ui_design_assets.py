@@ -11,6 +11,7 @@ of generator originals that are not bundled with this repository.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -31,6 +32,9 @@ SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+# The decode is pure Python and a 1600x1000 splash takes seconds, so identical bytes are decoded
+# once per process; any changed byte is a different key and is decoded again.
+@functools.lru_cache(maxsize=32)
 def _png_alpha_range(encoded: bytes) -> tuple[tuple[int, int], tuple[int, int]]:
     if not encoded.startswith(PNG_SIGNATURE):
         raise ValueError("PNG signature is missing")

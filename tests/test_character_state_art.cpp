@@ -56,6 +56,8 @@ double meanDifference(const PixelSurface& a, const PixelSurface& b) {
   return total / (3.0 * static_cast<double>(left.size()));
 }
 
+bool transparent(std::uint32_t pixel) { return (pixel >> 24U) == 0U; }
+
 }  // namespace
 
 TEST_CASE("the shipped character package loads a distinct 320x480 portrait for every state") {
@@ -99,35 +101,54 @@ TEST_CASE("the shipped singing mouths sit on the singing face without a visible 
   const auto top = static_cast<std::uint32_t>(std::lround(placement->y * kPortraitHeight));
   const auto width = static_cast<std::uint32_t>(std::lround(placement->width * kPortraitWidth));
   const auto height = static_cast<std::uint32_t>(std::lround(placement->height * kPortraitHeight));
-  std::array<const PixelSurface*, kMouths.size()> sprites{};
+  // Each shape composited over the singing portrait's box, to compare the shapes as seen.
+  std::array<PixelSurface, kMouths.size()> composites{};
   for (std::size_t index = 0U; index < kMouths.size(); ++index) {
     const auto* sprite = surface.mouth(kMouths[index]);
-    sprites[index] = sprite;
     CHECK(sprite != nullptr);
     if (sprite == nullptr) continue;
     // The sprite is exactly the declared box, drawn 1:1 over the portrait's own pixels.
     CHECK(sprite->width() == width);
     CHECK(sprite->height() == height);
     if (sprite->width() != width || sprite->height() != height) continue;
-    // Its outer ring of pixels is the singing portrait's face at the same place, so the overlay has
-    // no seam; a sprite cut from another frame or placed a few pixels off fails this.
+    const auto pixels = sprite->pixels();
+    // The placed-overlay contract: one flat corner colour, keyed out, so only the lips are drawn.
+    CHECK(transparent(pixels.front()));
+    CHECK(transparent(pixels[width - 1U]));
+    CHECK(transparent(pixels[(height - 1U) * width]));
+    CHECK(transparent(pixels.back()));
+    // Every opaque pixel on the edge of the drawn region (next to a keyed pixel or the box edge) is
+    // the singing portrait's face at the same place, so the overlay has no seam; a sprite cut from
+    // another frame or placed a few pixels off fails this.
+    const auto at = [&](std::uint32_t x, std::uint32_t y) { return pixels[y * width + x]; };
     long long total = 0;
     std::size_t count = 0U;
+    std::size_t opaque = 0U;
+    composites[index] = PixelSurface{width, height};
     for (std::uint32_t y = 0U; y < height; ++y) {
       for (std::uint32_t x = 0U; x < width; ++x) {
-        if (x != 0U && y != 0U && x + 1U != width && y + 1U != height) continue;
-        total += colorDistance(sprite->pixels()[y * width + x],
-                               singing->pixels()[(top + y) * kPortraitWidth + left + x]);
+        const auto face = singing->pixels()[(top + y) * kPortraitWidth + left + x];
+        const auto pixel = at(x, y);
+        composites[index].pixels()[y * width + x] = transparent(pixel) ? face : pixel;
+        if (transparent(pixel)) continue;
+        ++opaque;
+        const auto edge = x == 0U || y == 0U || x + 1U == width || y + 1U == height ||
+                          transparent(at(x - 1U, y)) || transparent(at(x + 1U, y)) ||
+                          transparent(at(x, y - 1U)) || transparent(at(x, y + 1U));
+        if (!edge) continue;
+        total += colorDistance(pixel, face);
         ++count;
       }
     }
-    CHECK(static_cast<double>(total) / (3.0 * static_cast<double>(count)) < 4.0);
+    CHECK(opaque > 20U);
+    CHECK(count > 0U);
+    if (count > 0U) CHECK(static_cast<double>(total) / (3.0 * static_cast<double>(count)) < 4.0);
   }
-  // Each shape is its own drawing.
-  for (std::size_t i = 0U; i < sprites.size(); ++i) {
-    for (std::size_t j = i + 1U; j < sprites.size(); ++j) {
-      if (sprites[i] == nullptr || sprites[j] == nullptr) continue;
-      CHECK(meanDifference(*sprites[i], *sprites[j]) > 1.0);
+  // Each shape is its own drawing as it appears on the face.
+  for (std::size_t i = 0U; i < composites.size(); ++i) {
+    for (std::size_t j = i + 1U; j < composites.size(); ++j) {
+      if (composites[i].width() != width || composites[j].width() != width) continue;
+      CHECK(meanDifference(composites[i], composites[j]) > 1.0);
     }
   }
 }
