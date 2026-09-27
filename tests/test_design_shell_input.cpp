@@ -2925,6 +2925,31 @@ TEST_CASE("the overlap detail popover anchors to the +N badge and selects a memb
   }
 }
 
+TEST_CASE("overlap popover rows never extend below the card, however large the group") {
+  OverlayFixture f;
+  const auto overlay = native_ui::design::makeOverlapDetailOverlay();
+  native_ui::EditorSceneState state;
+  native_ui::EditorSceneState::OverlapDetail detail{.groupIndex = 0U};
+  for (int i = 0; i < 12; ++i) detail.members.push_back({.lyric = "a", .midiKey = 60U});
+  state.overlapDetail = detail;
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{720.0, 480.0},
+                                     std::pair{1100.0, 720.0}, std::pair{1600.0, 900.0}}) {
+    const auto layout = native_ui::design::solveSingLayout(width, height, false);
+    const auto panel = overlay->panel(f.controller, state, layout, layout.overlay);
+    CHECK(panel.width > 0.0);
+    const auto controls = overlay->controls(f.controller, state, layout, panel);
+    CHECK(!controls.empty());
+    for (const auto& control : controls) {
+      if (control.bounds.bottom() > panel.bottom() - 4.0 + 1e-9)
+        throw test::Failure{control.id + " ends " +
+                            std::to_string(control.bounds.bottom() - panel.bottom()) +
+                            " pt below its card at " + std::to_string(width) + "x" +
+                            std::to_string(height)};
+      CHECK(control.bounds.y >= panel.y);
+    }
+  }
+}
+
 TEST_CASE("the diagnostics toast and popover present the status diagnostics as a shell surface") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;

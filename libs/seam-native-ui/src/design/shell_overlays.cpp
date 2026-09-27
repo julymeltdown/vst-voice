@@ -886,13 +886,16 @@ public:
     for (std::size_t i = 0U; i < state.overlapDetail->members.size(); ++i) {
       const auto& member = state.overlapDetail->members[i];
       const auto lyric = member.lyric.empty() ? std::string{"(no lyric)"} : member.lyric;
+      const ui::Rect row{panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 20.0,
+                         std::max(1.0, panel.width - 24.0), 18.0};
+      // A row that would end below the card is not laid out at all: its node and hit rectangle
+      // would otherwise lie outside the popover the creator sees.
+      if (row.bottom() > panel.bottom() - 4.0) break;
       out.push_back({"overlap-note-row." + std::to_string(i),
-                     {panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 20.0,
-                      std::max(1.0, panel.width - 24.0), 18.0},
+                     row,
                      "Overlap note " + std::to_string(i + 1U) + ": " + lyric + " / MIDI " +
                          std::to_string(member.midiKey),
                      SemanticRole::Button, true, member.selected});
-      if (panel.y + 26.0 + static_cast<double>(i + 1U) * 20.0 > panel.bottom() - 4.0) break;
     }
     return out;
   }
