@@ -151,6 +151,12 @@ public:
   // the status bar); this opens and closes it.
   [[nodiscard]] bool diagnosticsOpen() const noexcept { return diagnosticsOpen_; }
   void setDiagnosticsOpen(bool open);
+  // The SINGER card's overflow menu (its ⋯ button, shell.singer-menu) is the shell's own popover
+  // too. Opening it is refused while another surface is up or the card's button is not on screen;
+  // it closes on Escape, a press outside, a command that ran, a workspace switch, a resize and a
+  // replaced controller, and focus returns to the button.
+  [[nodiscard]] bool singerMenuOpen() const noexcept { return singerMenuOpen_; }
+  core::Result<void> setSingerMenuOpen(NativeEditorController& controller, bool open);
   // Whether the last SING frame painted the Stage figure; §3.4 keeps it off without the full rack.
   [[nodiscard]] bool lastFrameShowedStage() const noexcept { return stageShown_; }
   // Where the last SING frame drew the Stage figure, or nothing when it drew none. The figure is
@@ -411,6 +417,14 @@ private:
   // Closes the presented overlay through its own command. The DIAGNOSTICS popover is the shell's
   // own presentation, so this also drops the flag that shows it.
   core::Result<void> closeOverlay(NativeEditorController& controller, const ShellOverlay& overlay);
+  // A note-grid lyric field belongs to the score. When a surface is presented over the score (the
+  // voice browser, audio settings, diagnostics, any re-homed overlay), the lyric is cancelled, never
+  // committed, as opening a classic surface cancelled it; its input client leaves with it.
+  void cancelCoveredLyric(NativeEditorController& controller);
+  // Runs one of the presented overlay's controls. A singer menu item whose command ran closes the
+  // menu and returns focus to its button (a surface the command opened takes it from there).
+  core::Result<void> performOverlay(NativeEditorController& controller, const ShellOverlay& overlay,
+                                    std::string_view id, SemanticAction action);
   void paintExport(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   [[nodiscard]] ui::Rect exportArea() const noexcept;
   [[nodiscard]] core::Result<void> runExportSet(NativeEditorController& controller);
@@ -469,6 +483,7 @@ private:
   std::unique_ptr<ShellOverlay> audioOverlay_{makeAudioSettingsOverlay()};
   std::unique_ptr<ShellOverlay> voicebankOverlay_{makeVoicebankBrowserOverlay()};
   std::unique_ptr<ShellOverlay> fieldOverlay_{makeTextFieldOverlay()};
+  std::unique_ptr<ShellOverlay> singerMenuOverlay_{makeSingerMenuOverlay()};
   // A plot gesture an overlay started (the dynamics inspector's points).
   std::optional<OverlayGesture> overlayGesture_;
   // The shell control that had focus when the presented overlay opened (MIX's Settings, VOICE's
@@ -478,9 +493,13 @@ private:
   // appears inside an open card takes the keyboard once.
   std::string overlayField_;
   bool diagnosticsOpen_{false};
+  bool singerMenuOpen_{false};
   // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
   // gives its first control the keyboard.
   OverlayKind presentedOverlay_{OverlayKind::None};
+  // The surface an open inline field was opened over (a review, for its draft field), so the
+  // surface it returns to is resumed where it was rather than presented anew.
+  OverlayKind fieldOpenedOver_{OverlayKind::None};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
   // The character artwork and its animation, both driven by the read models above.

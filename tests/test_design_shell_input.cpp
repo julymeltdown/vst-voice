@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <set>
@@ -3170,6 +3171,33 @@ TEST_CASE("the diagnostics toast and popover present the status diagnostics as a
   }
 }
 
+TEST_CASE("the diagnostics popover closes with the last diagnostic and does not reopen by itself") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+  // The last diagnostic is resolved: the popover is gone, and so is the flag that presented it.
+  f.controller.setDiagnostics({});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(!f.shell.diagnosticsOpen());
+  // The next failure shows its toast; the popover stays closed until the creator opens it.
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.node("shell.diagnostics.toast") != nullptr);
+  CHECK(f.node("timeline") != nullptr);
+}
+
 TEST_CASE("every diagnostic's recovery actions are reachable from the popover, not only the first") {
   const auto issue = [](std::string code, authoring::DiagnosticSeverity severity,
                         std::vector<authoring::DiagnosticAction> actions) {
@@ -3796,4 +3824,696 @@ TEST_CASE("the hint and transport fields are inline shell fields on the lyric fi
   const auto refused = f.controller.documentRevision();
   CHECK(!f.shell.setControllerValue(f.controller, "toolbar.tempo", "fast").hasValue());
   CHECK(f.controller.documentRevision() == refused);
+}
+
+TEST_CASE("a surface presented over the score cancels an open lyric, whose keys never commit it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto lyricSurface = [&f] {
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) return std::u32string{U"<no note>"};
+    const auto* lyric = region->findLyric(region->notes.front().lyricTokenId);
+    return lyric == nullptr ? std::u32string{} : lyric->surface;
+  };
+  const auto before = lyricSurface();
+  // The host's key path: the shell first, then the controller for a key the shell did not take.
+  const auto key = [&f](NativeKey k) {
+    const KeyEvent event{.key = k};
+    if (!f.shell.handleShellKey(f.controller, event))
+      static_cast<void>(f.controller.keyDown(event));
+  };
+  const auto openLyric = [&] {
+    CHECK(f.frame());
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) throw test::Failure{"the note is gone"};
+    CHECK(f.controller.beginLyricEdit(region->notes.front().id).hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+    CHECK(f.controller.updateTextComposition(U"zz", {}).hasValue());
+  };
+  // Each surface the shell does not open itself: the host's menu (voice browser, Audio
+  // Settings...), and the shell's own DIAGNOSTICS popover.
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const std::vector<std::pair<std::string, std::function<void()>>> openers{
+      {"voice browser", [&f] { f.controller.showVoicebankBrowser(); }},
+      {"audio settings", [&f] { f.controller.showAudioSettings(); }},
+      {"diagnostics", [&f, &issue] {
+         f.controller.setDiagnostics({issue});
+         f.shell.setDiagnosticsOpen(true);
+       }}};
+  for (const auto& [name, open] : openers) {
+    for (const auto framed : {false, true}) {
+      openLyric();
+      open();
+      // With or without a frame in between, Enter, Tab and Backspace are the surface's keys: the
+      // hidden lyric is cancelled, never committed, and its input client is gone.
+      if (framed) CHECK(f.frame());
+      if (f.shell.overlayKind(f.controller) == OverlayKind::None)
+        throw test::Failure{name + " is not presented"};
+      for (const auto k : {NativeKey::Backspace, NativeKey::Tab, NativeKey::Enter}) key(k);
+      if (f.controller.textInputActive())
+        throw test::Failure{"the lyric stays open under the " + name};
+      if (lyricSurface() != before) throw test::Failure{"the " + name + " committed the lyric"};
+      CHECK(f.shell.overlayKind(f.controller) != OverlayKind::None);
+      // Close it for the next opener.
+      for (int i = 0; i < 3 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i)
+        CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+      CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+      f.controller.setDiagnostics({});
+    }
+  }
+  // An inline field the surface owns keeps its keys: the transport's tempo field still commits.
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.textInputActive());
+  f.controller.cancelTextComposition();
+}
+
+TEST_CASE("a disabled overlay control absorbs a press and pagers never count past their end") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A second tempo event, so the time map has a row that a press could select.
+  CHECK(f.frame());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "1920")
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "90")
+            .hasValue());
+  // The map lists the new event after its own Refresh, as the classic panel required.
+  CHECK(f.controller.timeMapPanelAction(4U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.sceneState().timeMapRows.size() >= 2U);
+  CHECK(f.controller.selectTimeMapRow(0U).hasValue());
+  // Add tempo opens the event field: the rows are disabled, and a press on one selects nothing and
+  // leaves the field open.
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  const auto selected = f.controller.sceneState().timeMapSelectedRow;
+  const auto row = nodeNow(f, "time-map-row.1");
+  CHECK(row.has_value() && !row->enabled);
+  if (row.has_value()) {
+    CHECK(f.shell.pointerDown(f.controller, press(centre(row->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(row->bounds))).hasValue());
+  }
+  CHECK(f.controller.sceneState().timeMapSelectedRow == selected);
+  CHECK(f.controller.textFieldView().kind ==
+        native_ui::NativeEditorController::TextFieldView::Kind::TimeMap);
+  f.controller.cancelTextComposition();
+  CHECK(f.controller.timeMapPanelAction(5U).hasValue());
+
+  // The audio sheet pages its devices when they outnumber its rows. Pressing a disabled "Later
+  // devices" or scrolling past the end never runs the counter on, so one step back moves the list.
+  std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
+  for (std::size_t i = 0U; i < 14U; ++i)
+    devices.push_back({.id = "device-" + std::to_string(i),
+                       .name = "Device " + std::to_string(i),
+                       .physical = true,
+                       .selected = i == 0U});
+  f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "device-0",
+                                                         .sampleRate = 48000U,
+                                                         .blockFrames = 256U,
+                                                         .outputChannels = 2U},
+                                devices, 0U, 0U);
+  f.controller.showAudioSettings();
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
+  const auto firstShown = [&f] {
+    std::size_t first = 99U;
+    for (std::size_t i = 0U; i < 14U; ++i)
+      if (nodeNow(f, "audio.device." + std::to_string(i)).has_value()) {
+        first = i;
+        break;
+      }
+    return first;
+  };
+  const auto pressNode = [&f](std::string_view id) {
+    const auto node = nodeNow(f, id);
+    if (!node.has_value()) throw test::Failure{std::string{id} + " is not published"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.frame(720.0, 480.0));
+  };
+  CHECK(firstShown() == 0U);
+  // More than one row is shown, so a counter past the last full page would be hidden by the layout.
+  CHECK(nodeNow(f, "audio.device.1").has_value());
+  for (int i = 0; i < 30; ++i) pressNode("shell.overlay.audio.devices-down");
+  const auto last = firstShown();
+  CHECK(last > 0U && last < 14U);
+  const auto down = nodeNow(f, "shell.overlay.audio.devices-down");
+  CHECK(down.has_value() && !down->enabled);
+  pressNode("shell.overlay.audio.devices-up");
+  CHECK(firstShown() + 1U == last);
+  // The wheel over the sheet stops at the same end.
+  const auto panel = nodeNow(f, "shell.overlay.audio.panel");
+  CHECK(panel.has_value());
+  if (!panel.has_value()) return;
+  for (int i = 0; i < 30; ++i)
+    CHECK(f.shell.scroll(f.controller, 0.0, -1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() == last);
+  CHECK(f.shell.scroll(f.controller, 0.0, 1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() + 1U == last);
+}
+
+TEST_CASE("Escape returns focus to the opener after a review steps back from its field and detail") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.session.project().findRegion(f.regionId)->dynamicsAutomation.replacePoints(
+      {{time::Tick{0}, 0.25F}, {time::Tick{480}, 0.75F}}));
+  CHECK(f.frame());
+  // The lane's DYNAMICS tab opens the inspector from the keyboard, so it is the opener.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::SetFocus)
+            .hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  static_cast<void>(f.focusedId());
+  // A point's detail page, then its tick field, which replaces the review while it is open.
+  const auto prefix = f.controller.replacementReviewSemanticPrefix();
+  succeeds(f.shell.dispatchController(f.controller, prefix + "point.0", SemanticAction::Activate),
+           "opening the point");
+  CHECK(f.frame());
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row.0",
+                                      SemanticAction::Activate),
+           "opening the tick field");
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  // Each Escape steps back one level (field, then detail, then the review itself); only the last
+  // one closes the surface, and it returns focus to the tab that opened it.
+  for (int i = 0; i < 4 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i) {
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(f.frame());
+    static_cast<void>(f.focusedId());
+  }
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  const auto focused = f.focusedId();
+  if (focused != "shell.lane-tab.dynamics")
+    throw test::Failure{"Escape returned focus to " + (focused.empty() ? std::string{"nothing"} : focused)};
+}
+
+TEST_CASE("a cleared inline field publishes its empty text, not the committed value under it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  // The creator clears the field: the node reads what is typed, never the toolbar's "120".
+  CHECK(f.controller.updateTextComposition(U"", {}).hasValue());
+  const auto cleared = nodeNow(f, "toolbar.tempo");
+  CHECK(cleared.has_value());
+  if (!cleared.has_value()) return;
+  CHECK(cleared->role == native_ui::SemanticRole::TextField);
+  if (!cleared->value.empty()) throw test::Failure{"the cleared field reads " + cleared->value};
+  CHECK(cleared->editableValue.empty());
+  CHECK(f.controller.updateTextComposition(U"9", {}).hasValue());
+  const auto typed = nodeNow(f, "toolbar.tempo");
+  CHECK(typed.has_value() && typed->value == "9");
+  f.controller.cancelTextComposition();
+}
+
+TEST_CASE("a review's row pager keeps its place across a draft field and restarts on a new page") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // Enough notes with vibrato for the Clear vibrato review to have three pages of six rows.
+  auto* region = f.session.project().findRegion(f.regionId);
+  for (std::uint32_t i = 0U; i < 14U; ++i) {
+    auto [lyric, note] = f.factory.makeNote(time::Tick{2160 + 360 * i}, time::Tick{240},
+                                            static_cast<std::uint8_t>(60U + i % 12U), U"a",
+                                            domain::Language::Japanese);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  }
+  std::vector<domain::NoteId> ids;
+  for (auto& note : region->notes) {
+    note.vibrato.enabled = true;
+    ids.push_back(note.id);
+  }
+  f.session.selection().selectOnly(ids.front());
+  for (const auto& id : ids) f.session.selection().add(id);
+  constexpr double kWidth = 480.0;
+  constexpr double kHeight = 320.0;
+  const auto shown = [&f](std::size_t row) {
+    return nodeNow(f, f.controller.replacementReviewSemanticPrefix() + "row." + std::to_string(row))
+        .has_value();
+  };
+  const auto pageDown = [&f] {
+    const auto down = nodeNow(f, "shell.overlay.review.rows-down");
+    if (!down.has_value() || !down->enabled)
+      throw test::Failure{"the card shows every row; no row pager to test"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(down->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(down->bounds))).hasValue());
+  };
+
+  // The controller's next page starts from its first row, wherever the card had paged to.
+  CHECK(f.frame(kWidth, kHeight));
+  succeeds(f.controller.openClearVibratoReview(), "opening the review");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  CHECK(shown(0U));
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "action.1",
+                                      SemanticAction::Activate),
+           "moving to the next page");
+  CHECK(f.frame(kWidth, kHeight));
+  if (!shown(0U)) throw test::Failure{"the next page opened on a later row"};
+  CHECK(f.shell.dispatchController(f.controller,
+                                   f.controller.replacementReviewSemanticPrefix() + "action.4",
+                                   SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame(kWidth, kHeight));
+
+  // A draft field opened from a paged inspector returns to the same rows.
+  succeeds(f.controller.openVibratoInspector(), "opening the vibrato inspector");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  std::size_t visible = 99U;
+  for (std::size_t i = 1U; i < 6U && visible == 99U; ++i)
+    if (shown(i)) visible = i;
+  CHECK(visible < 6U);
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row." +
+                                          std::to_string(visible),
+                                      SemanticAction::Activate),
+           "opening the field");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  if (shown(0U)) throw test::Failure{"the review returned from its field at its first row"};
+  CHECK(shown(visible));
+}
+
+// ---- The SINGER card's overflow menu ------------------------------------------------------------
+
+namespace {
+
+using native_ui::design::kSingerMenuButtonId;
+using native_ui::design::singerMenuItemIds;
+
+const std::string kMenuPrefix{"shell.overlay.singer-menu."};
+const std::string kMenuButton{kSingerMenuButtonId};
+
+// Frames the shell at a size with the SINGER card on screen: the full rack shows it, and the compact
+// presentations open the inspector that carries it.
+void showSingerCard(OverlayFixture& f, double width, double height) {
+  CHECK(f.frame(width, height));
+  if (f.shell.layout().rack != native_ui::design::RackPresentation::Full &&
+      !f.shell.inspectorOpen()) {
+    succeeds(f.shell.dispatchSemantic(f.controller, "shell.inspector", SemanticAction::Activate),
+             "opening the inspector");
+    CHECK(f.frame(width, height));
+  }
+}
+
+void openSingerMenu(OverlayFixture& f, double width = 1600.0, double height = 900.0) {
+  showSingerCard(f, width, height);
+  succeeds(f.shell.dispatchSemantic(f.controller, kMenuButton, SemanticAction::Activate),
+           "opening the singer menu");
+  CHECK(f.frame(width, height));
+  if (f.shell.overlayKind(f.controller) != OverlayKind::SingerMenu)
+    throw test::Failure{"the singer menu did not open"};
+}
+
+// Closes whatever surface is up with Escape, as the creator would.
+void escapeAll(OverlayFixture& f) {
+  for (int i = 0; i < 4 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i)
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+}
+
+bool disjoint(ui::Rect a, ui::Rect b) {
+  return a.right() <= b.x + 0.001 || b.right() <= a.x + 0.001 || a.bottom() <= b.y + 0.001 ||
+         b.bottom() <= a.y + 0.001;
+}
+
+bool inside(ui::Rect inner, ui::Rect outer) {
+  return inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 &&
+         inner.right() <= outer.right() + 0.5 && inner.bottom() <= outer.bottom() + 0.5;
+}
+
+void click(OverlayFixture& f, ui::Point at) {
+  CHECK(f.shell.pointerDown(f.controller, press(at)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(at)).hasValue());
+}
+
+}  // namespace
+
+TEST_CASE("the SINGER card's overflow button opens a modal menu laid out inside the window") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto ids = singerMenuItemIds();
+  CHECK(ids.size() == 9U);
+  const auto noteId =
+      "note." + f.session.project().findRegion(f.regionId)->notes.front().id.toString();
+  for (const auto [width, height] : {std::pair{720.0, 480.0}, std::pair{1100.0, 720.0},
+                                     std::pair{480.0, 320.0}, std::pair{1600.0, 900.0}}) {
+    const auto where = " at " + std::to_string(width) + "x" + std::to_string(height);
+    showSingerCard(f, width, height);
+    const auto button = nodeNow(f, kMenuButton);
+    if (!button.has_value()) throw test::Failure{"no singer menu button" + where};
+    CHECK(button->role == SemanticRole::Button);
+    CHECK(button->value == "Closed");
+    CHECK(offers(*button, SemanticAction::Activate));
+    // The published button is the painted one, on the card beside Change voice.
+    const auto painted = f.shell.layout().singerMenu;
+    CHECK(button->bounds.x == painted.x && button->bounds.y == painted.y &&
+          button->bounds.width == painted.width && button->bounds.height == painted.height);
+    const auto change = nodeNow(f, "shell.change-voice");
+    CHECK(change.has_value() && disjoint(button->bounds, change->bounds));
+    CHECK(inside(button->bounds, f.shell.layout().singer));
+
+    // A press on the button opens the menu, and its first item takes the keyboard.
+    click(f, centre(button->bounds));
+    CHECK(f.shell.singerMenuOpen());
+    CHECK(f.frame(width, height));
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SingerMenu);
+    CHECK(f.focusedId() == ids.front());
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto root = f.shell.accessibilityTree().root();
+    const auto* panel = findShellNode(root, kMenuPrefix + "panel");
+    if (panel == nullptr) throw test::Failure{"no singer menu panel" + where};
+    const ui::Rect window{0.0, 0.0, width, height};
+    CHECK(inside(panel->bounds, window));
+    CHECK(inside(panel->bounds, f.shell.layout().overlay));
+    // Modal: nothing of the score, the lane or the card under it is published.
+    CHECK(findShellNode(root, "timeline") == nullptr);
+    CHECK(findShellNode(root, noteId) == nullptr);
+    CHECK(findShellNode(root, "shell.lane") == nullptr);
+    CHECK(findShellNode(root, kMenuButton) == nullptr);
+    CHECK(findShellNode(root, "shell.change-voice") == nullptr);
+    std::vector<ui::Rect> placed;
+    std::set<double> columns;
+    for (const auto& id : ids) {
+      const auto* item = findShellNode(root, id);
+      if (item == nullptr) throw test::Failure{id + " is not published" + where};
+      CHECK(item->role == SemanticRole::Button);
+      CHECK(item->enabled && offers(*item, SemanticAction::Activate));
+      CHECK(!item->name.empty() && !item->description.empty());
+      CHECK(item->bounds.width >= 120.0 && item->bounds.height >= 24.0);
+      if (!inside(item->bounds, panel->bounds)) throw test::Failure{id + " leaves its card" + where};
+      for (const auto& other : placed)
+        if (!disjoint(item->bounds, other)) throw test::Failure{id + " overlaps an item" + where};
+      placed.push_back(item->bounds);
+      columns.insert(item->bounds.x);
+    }
+    // One column where the body is tall enough (720x480 and up); the 480x320 minimum folds the
+    // items into columns rather than dropping any.
+    if (height >= 480.0) CHECK(columns.size() == 1U);
+    else CHECK(columns.size() > 1U);
+    // The whole label is on the node, whatever the painted row elides.
+    const auto* install = findShellNode(root, kMenuPrefix + "install-voicebank");
+    CHECK(install != nullptr && install->name == "Install or relink voicebank");
+
+    // A press outside the card closes it and runs nothing.
+    click(f, {2.0, height - 2.0});
+    CHECK(!f.shell.singerMenuOpen());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    CHECK(f.installerOpens == 0U && f.voicebankRefreshes == 0U);
+    // Escape closes it and returns the keyboard to the button.
+    succeeds(f.shell.dispatchSemantic(f.controller, kMenuButton, SemanticAction::Activate),
+             "reopening the singer menu");
+    CHECK(f.frame(width, height));
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SingerMenu);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(!f.shell.singerMenuOpen());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    CHECK(f.focusedId() == kMenuButton);
+    const auto closed = nodeNow(f, kMenuButton);
+    CHECK(closed.has_value() && closed->value == "Closed");
+  }
+}
+
+TEST_CASE("the singer menu owns the keyboard: Tab and arrows walk it, chords pass, Escape returns") {
+  using native_ui::design::ShellHostActions;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The host handles Command-S itself; every other chord stops at the menu.
+  ShellHostActions actions;
+  actions.applicationShortcut = [](const KeyEvent& event) { return event.key == NativeKey::S; };
+  f.shell.setHostActions(std::move(actions));
+  const auto ids = singerMenuItemIds();
+  CHECK(f.frame());
+  // The button takes focus and Enter opens the menu from the keyboard alone.
+  succeeds(f.shell.dispatchSemantic(f.controller, kMenuButton, SemanticAction::SetFocus),
+           "focusing the button");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.focusedId() == ids[0]);
+  const auto tab = [&f](bool shift) {
+    CHECK(f.shell.handleShellKey(f.controller,
+                                 KeyEvent{.key = NativeKey::Tab, .modifiers = {.shift = shift}}));
+    return f.focusedId();
+  };
+  CHECK(tab(false) == ids[1]);
+  CHECK(tab(false) == ids[2]);
+  CHECK(tab(true) == ids[1]);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Down}));
+  CHECK(f.focusedId() == ids[2]);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
+  CHECK(f.focusedId() == ids[1]);
+  // Tab never leaves the menu: a full lap lands only on its own items.
+  for (std::size_t i = 0U; i < ids.size() + 2U; ++i) {
+    const auto id = tab(false);
+    CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+  }
+  // Plain editing keys never reach the covered score.
+  const auto revision = f.controller.documentRevision();
+  const auto selected = f.session.selection().noteIds();
+  for (const auto key : {NativeKey::Delete, NativeKey::Backspace, NativeKey::D, NativeKey::Left})
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = key}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.session.selection().noteIds() == selected);
+  // Command and Option chords are application commands: the host's own pass through, the rest stop.
+  CHECK(!f.shell.handleShellKey(f.controller,
+                                KeyEvent{.key = NativeKey::S, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller,
+                               KeyEvent{.key = NativeKey::D, .modifiers = {.command = true}}));
+  CHECK(f.shell.handleShellKey(f.controller,
+                               KeyEvent{.key = NativeKey::Delete, .modifiers = {.alt = true}}));
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.shell.singerMenuOpen());
+  CHECK(f.installerOpens == 0U && f.voicebankRefreshes == 0U);
+  // Escape closes it and the keyboard is back on the button.
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.focusedId() == kMenuButton);
+}
+
+TEST_CASE("every singer menu item runs the controller's own command by pointer, keys and host path") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The vibrato inspector edits the selected notes.
+  f.session.selection().selectOnly(f.session.project().findRegion(f.regionId)->notes.front().id);
+  const auto revision = f.controller.documentRevision();
+  const auto ids = singerMenuItemIds();
+  const auto item = [](std::string_view key) { return kMenuPrefix + std::string{key}; };
+
+  // Every item takes focus through the host's accessibility path; the button under the menu is
+  // not on screen, so it is refused there.
+  openSingerMenu(f);
+  for (const auto& id : ids) {
+    succeeds(f.shell.dispatchController(f.controller, id, SemanticAction::SetFocus), "focus " + id);
+    CHECK(f.focusedId() == id);
+  }
+  CHECK(!f.shell.dispatchController(f.controller, kMenuButton, SemanticAction::SetFocus).hasValue());
+
+  // Replacement review (host path): the controller's find/replace field opens, and the menu is gone.
+  succeeds(f.shell.dispatchController(f.controller, item("replacement-review"),
+                                      SemanticAction::Activate),
+           "replacement review");
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  CHECK(f.controller.textInputActive());
+  escapeAll(f);
+  CHECK(!f.controller.textInputActive());
+  CHECK(f.focusedId() == kMenuButton);
+
+  // Dynamics inspector (pointer): the review sheet with the dynamics plot.
+  openSingerMenu(f);
+  const auto dynamics = nodeNow(f, item("dynamics"));
+  CHECK(dynamics.has_value());
+  if (dynamics.has_value()) click(f, centre(dynamics->bounds));
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  CHECK(f.controller.sceneState().replacementReview.dynamicsPlot.has_value());
+  escapeAll(f);
+  CHECK(f.focusedId() == kMenuButton);
+
+  // Vibrato inspector (Enter on the focused item).
+  openSingerMenu(f);
+  succeeds(f.shell.dispatchController(f.controller, item("vibrato"), SemanticAction::SetFocus),
+           "focus vibrato");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  CHECK(f.controller.sceneState().replacementReview.visible);
+  escapeAll(f);
+
+  // Phoneme review (Space on the focused item).
+  openSingerMenu(f);
+  succeeds(f.shell.dispatchController(f.controller, item("phoneme-review"),
+                                      SemanticAction::SetFocus),
+           "focus phoneme review");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Space}));
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::PhonemeReview);
+  escapeAll(f);
+  CHECK(f.focusedId() == kMenuButton);
+
+  // Change voice (the shell's own dispatch): the voice browser, whose Escape returns to the button
+  // the creator opened it from.
+  openSingerMenu(f);
+  succeeds(f.shell.dispatchSemantic(f.controller, item("change-voice"), SemanticAction::Activate),
+           "change voice");
+  CHECK(f.frame());
+  CHECK(f.controller.voicebankBrowserVisible());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::VoicebankBrowser);
+  escapeAll(f);
+  CHECK(!f.controller.voicebankBrowserVisible());
+  CHECK(f.focusedId() == kMenuButton);
+
+  // Install or relink (host path) and rescan (pointer) reach the host's own commands once each; no
+  // surface follows, so the keyboard is back on the button.
+  openSingerMenu(f);
+  succeeds(f.shell.dispatchController(f.controller, item("install-voicebank"),
+                                      SemanticAction::Activate),
+           "install voicebank");
+  CHECK(f.installerOpens == 1U);
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.focusedId() == kMenuButton);
+  openSingerMenu(f);
+  const auto rescan = nodeNow(f, item("refresh-voicebanks"));
+  CHECK(rescan.has_value());
+  if (rescan.has_value()) click(f, centre(rescan->bounds));
+  CHECK(f.voicebankRefreshes == 1U);
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  // Opening reviews and browsers edits nothing.
+  CHECK(f.controller.documentRevision() == revision);
+}
+
+TEST_CASE("a singer command the controller refuses is disabled with its reason until the menu reopens") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto revision = f.controller.documentRevision();
+  const auto style = kMenuPrefix + "style";
+  const auto reading = kMenuPrefix + "japanese-reading";
+  openSingerMenu(f);
+  // This host connects no style bank: the controller refuses, and says why.
+  const auto refused = f.shell.dispatchController(f.controller, style, SemanticAction::Activate);
+  CHECK(!refused.hasValue());
+  if (refused.hasValue()) return;
+  const auto reason = refused.error().message;
+  CHECK(reason.find("not connected") != std::string::npos);
+  // The menu stays up with the item disabled and the controller's reason on it.
+  CHECK(f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SingerMenu);
+  const auto disabled = nodeNow(f, style);
+  CHECK(disabled.has_value());
+  if (!disabled.has_value()) return;
+  CHECK(!disabled->enabled);
+  CHECK(disabled->name == "Style coverage");
+  CHECK(disabled->description == reason);
+  CHECK(!offers(*disabled, SemanticAction::Activate));
+  CHECK(offers(*disabled, SemanticAction::SetFocus));
+  // Neither the pointer, Enter nor the host path runs it again; the menu stays open.
+  click(f, centre(disabled->bounds));
+  CHECK(f.shell.singerMenuOpen());
+  succeeds(f.shell.dispatchController(f.controller, style, SemanticAction::SetFocus), "focus style");
+  CHECK(f.focusedId() == style);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.shell.singerMenuOpen());
+  CHECK(!f.shell.dispatchController(f.controller, style, SemanticAction::Activate).hasValue());
+  // Japanese reading is refused through Space, for this host's own reason.
+  succeeds(f.shell.dispatchController(f.controller, reading, SemanticAction::SetFocus),
+           "focus Japanese reading");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Space}));
+  CHECK(f.shell.singerMenuOpen());
+  const auto readingNode = nodeNow(f, reading);
+  CHECK(readingNode.has_value() && !readingNode->enabled &&
+        readingNode->description.find("not connected") != std::string::npos);
+  // Every other item is still enabled.
+  for (const auto& id : singerMenuItemIds()) {
+    if (id == style || id == reading) continue;
+    const auto other = nodeNow(f, id);
+    CHECK(other.has_value() && other->enabled);
+  }
+  CHECK(f.frame());
+  // A new opening asks the controller again.
+  escapeAll(f);
+  openSingerMenu(f);
+  const auto reopened = nodeNow(f, style);
+  CHECK(reopened.has_value() && reopened->enabled && reopened->description != reason);
+  CHECK(!f.shell.dispatchController(f.controller, style, SemanticAction::Activate).hasValue());
+  CHECK(f.controller.documentRevision() == revision);
+}
+
+TEST_CASE("the singer menu closes on a workspace switch, a resize and a replaced controller") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A workspace switch (a host command while the menu is up) closes it.
+  openSingerMenu(f);
+  f.shell.setWorkspace(f.controller, Workspace::Tune);
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  // The card, and its menu, stay usable beside TUNE; returning to SING closes it again.
+  succeeds(f.shell.dispatchSemantic(f.controller, kMenuButton, SemanticAction::Activate),
+           "opening the menu over TUNE");
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::SingerMenu);
+  f.shell.setWorkspace(f.controller, Workspace::Sing);
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+
+  // A resize closes it; the button, still on the card, keeps the keyboard.
+  openSingerMenu(f);
+  CHECK(f.frame(1100.0, 720.0));
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.focusedId() == kMenuButton);
+
+  // A replaced controller (a project opened or recovered) starts with no menu.
+  openSingerMenu(f, 1100.0, 720.0);
+  native_ui::NativeEditorController replacement{f.session, f.factory, f.regionId, {}};
+  replacement.resize(1100.0, 720.0);
+  CHECK(f.shell.prepareFrame(replacement, 1100.0, 720.0));
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.shell.overlayKind(replacement) == OverlayKind::None);
+  replacement.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(replacement, replacement.sceneState());
+  CHECK(findShellNode(f.shell.accessibilityTree().root(), kMenuPrefix + "panel") == nullptr);
 }

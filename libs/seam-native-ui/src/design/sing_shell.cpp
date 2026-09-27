@@ -409,6 +409,7 @@ bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
     case OverlayKind::ReplacementReview:
     case OverlayKind::AudioSettings:
     case OverlayKind::VoicebankBrowser:
+    case OverlayKind::SingerMenu:
     case OverlayKind::TextField: return true;
     case OverlayKind::None: return false;
   }
@@ -429,10 +430,12 @@ const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& contr
   for (const auto* overlay :
        {microscopeOverlay_.get(), fieldOverlay_.get(), overlapOverlay_.get(), reviewOverlay_.get(),
         voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
-        supportOverlay_.get(), diagnosticsOverlay_.get()}) {
+        supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get()}) {
     if (overlay == nullptr || !overlay->wanted(controller, state)) continue;
     // The DIAGNOSTICS popover is the shell's own presentation, so it needs its flag.
     if (overlay->kind() == OverlayKind::Diagnostics && !diagnosticsOpen_) continue;
+    // So is the singer menu, which is last: any surface the controller opens is above it.
+    if (overlay->kind() == OverlayKind::SingerMenu && !singerMenuOpen_) continue;
     if (overlay->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
       continue;
     return overlay;
@@ -667,7 +670,9 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   semanticFocus_.clear();
   overlayOpener_.clear();
   presentedOverlay_ = OverlayKind::None;
+  fieldOpenedOver_ = OverlayKind::None;
   workspaceMenuOpen_ = false;
+  singerMenuOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
   // Whatever paints next is not a shell frame, so the next shell frame starts from nothing.
@@ -688,9 +693,11 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     // A replaced controller is a different document: an open overlay's model went with it, and a
     // popover the shell holds open would otherwise point at stale state.
     diagnosticsOpen_ = false;
+    singerMenuOpen_ = false;
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     fieldAnchor_.reset();
   }
   // Every modal surface the controller opens is presented by the shell itself, so only a disabled
@@ -704,6 +711,13 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
   if (next.rack == RackPresentation::Full) inspectorWanted_ = false;
   if (next.workspaceMenuButton.width < 24.0) workspaceMenuOpen_ = false;
+  // The singer menu is anchored to its button: a resize closes it, and focus returns to the button
+  // (a layout that no longer shows the button drops that focus on the next rebuild).
+  if (singerMenuOpen_ && presented_ &&
+      (next.width != layout_.width || next.height != layout_.height)) {
+    singerMenuOpen_ = false;
+    takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+  }
   const auto moved = next.grid.x != layout_.grid.x || next.grid.y != layout_.grid.y ||
                      next.grid.width != layout_.grid.width ||
                      next.grid.height != layout_.grid.height ||
@@ -739,6 +753,12 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   applyGeometry(controller);
   frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
+  // The DIAGNOSTICS popover vanishes with the last diagnostic; the shell's flag goes with it, so the
+  // next failure shows its toast and never reopens the popover modally on its own.
+  if (diagnosticsOpen_ && controller.sceneState().diagnostics.empty()) diagnosticsOpen_ = false;
+  // A surface opened since the last frame (by the host's menu, a recovery action or a shell
+  // control) covers the score: a lyric field open under it goes.
+  cancelCoveredLyric(controller);
   return true;
 }
 
@@ -751,6 +771,7 @@ void SingShell::setInspectorOpen(NativeEditorController& controller, bool open) 
   const auto* controllerFocus = controller.accessibilityTree().focusedNode();
   const auto focusInside =
       !open && (semanticFocus_ == "shell.inspector" || semanticFocus_ == "shell.change-voice" ||
+                semanticFocus_ == kSingerMenuButtonId ||
                 semanticFocus_ == "shell.style" || semanticFocus_.starts_with("shell.knob.") ||
                 (semanticFocus_.empty() && controllerFocus != nullptr &&
                  controllerFocus->id == "voice.identity"));
@@ -846,6 +867,41 @@ void SingShell::characterArt(paint::Canvas2D& c, ui::Rect bounds, std::uint64_t 
     return;
   }
   draw(characterCanvas(c));
+}
+
+core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controller, bool open) {
+  if (!open) {
+    if (!singerMenuOpen_) return core::success();
+    singerMenuOpen_ = false;
+    overlayOpener_.clear();
+    refreshSemantics(controller);
+    takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+    repaint();
+    return core::success();
+  }
+  if (singerMenuOpen_) return core::success();
+  if (!presented_ || !knobsShown() || layout_.singerMenu.width <= 0.0)
+    return core::failure(core::ErrorCode::InvalidState, "The singer card is not on screen");
+  if (activeOverlay(controller) != nullptr)
+    return core::failure(core::ErrorCode::Conflict, "Close the open surface first");
+  const auto state = controller.sceneState();
+  if (singerMenuOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <=
+      0.0)
+    return core::failure(core::ErrorCode::InvalidState, "The window is too small for the singer menu");
+  // The menu is modal like the workspace menu: a lyric field or gesture over the score it covers
+  // is abandoned first.
+  if (lyricInputActive_) {
+    controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
+  if (knobDrag_ || forwarding_ != ForwardArea::None) cancelGestures(controller);
+  // The button holds focus as the menu opens, so it is the opener Escape and a finished command
+  // return focus to, however the menu was opened.
+  takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+  singerMenuOpen_ = true;
+  refreshSemantics(controller);
+  repaint();
+  return core::success();
 }
 
 void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
@@ -2017,6 +2073,27 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   c.restore();
 }
 
+namespace {
+
+// The SINGER card's ⋯ button beside Change voice, in the same capsule. It lights while its menu
+// is open and carries the focus ring while it holds the keyboard.
+void paintSingerMenuButton(Canvas2D& c, const DesignTokens& t, ui::Rect r, bool open, bool focused) {
+  if (r.width <= 0.0 || r.height <= 0.0) return;
+  c.fill(Path::capsule(r), withAlpha(t.color.accent, open ? 0.32 : 0.14));
+  c.stroke(Path::capsule(r), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
+  const ui::Point centre{r.x + r.width * 0.5, r.y + r.height * 0.5};
+  for (const auto dx : {-5.0, 0.0, 5.0})
+    c.fill(Path::circle({centre.x + dx, centre.y}, 1.6), t.color.accent);
+  if (!focused) return;
+  c.save();
+  c.setGlow(t.color.focusRing, 6.0);
+  c.stroke(Path::capsule({r.x - 2.0, r.y - 2.0, r.width + 4.0, r.height + 4.0}), t.color.focusRing,
+           StrokeStyle{2.0});
+  c.restore();
+}
+
+}  // namespace
+
 void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const {
   const auto& l = layout_;
   const auto& identity = state.voiceIdentity;
@@ -2146,17 +2223,18 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
                                                    : std::string{"No voice selected"};
-  c.text({l.singer.x + 18.0, footerY - 2.0, l.singerChange.x - l.singer.x - 28.0, 16.0}, name,
+  c.text({l.singer.x + 18.0, footerY - 2.0, l.singerMenu.x - l.singer.x - 28.0, 16.0}, name,
          style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
   const auto detail = identity.state == VoiceIdentityState::Missing && !identity.recovery.empty()
                           ? identity.recovery
                           : identity.identity;
-  c.text({l.singer.x + 18.0, footerY + 13.0, l.singerChange.x - l.singer.x - 28.0, 14.0}, detail,
+  c.text({l.singer.x + 18.0, footerY + 13.0, l.singerMenu.x - l.singer.x - 28.0, 14.0}, detail,
          style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
   c.text(l.singerChange, "Change voice",
          style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true), t.color.accent);
+  paintSingerMenuButton(c, t, l.singerMenu, singerMenuOpen_, semanticFocus_ == kSingerMenuButtonId);
 
   // Expression knobs.
   cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
@@ -2230,7 +2308,7 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
                     : !state.characterName.empty() ? state.characterName
                                                    : std::string{"No voice selected"};
   const auto textX = ring.right() + 12.0;
-  c.text({textX, l.singer.y + 4.0, l.singerChange.x - 8.0 - textX, 18.0}, name,
+  c.text({textX, l.singer.y + 4.0, l.singerMenu.x - 8.0 - textX, 18.0}, name,
          style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
   std::string styles;
   for (const auto& card : state.voicebankCards)
@@ -2244,6 +2322,7 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
   c.text(l.singerChange, "Change voice",
          style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true), t.color.accent);
+  paintSingerMenuButton(c, t, l.singerMenu, singerMenuOpen_, semanticFocus_ == kSingerMenuButtonId);
 
   cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
   paintKnobs(c, t, state);
@@ -2653,7 +2732,33 @@ core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
                                            const ShellOverlay& overlay) {
   const auto result = overlay.close(controller);
   if (overlay.kind() == OverlayKind::Diagnostics) diagnosticsOpen_ = false;
+  if (overlay.kind() == OverlayKind::SingerMenu) singerMenuOpen_ = false;
   return result;
+}
+
+core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
+                                             const ShellOverlay& overlay, std::string_view id,
+                                             SemanticAction action) {
+  auto result = overlay.perform(controller, id, action);
+  if (overlay.kind() == OverlayKind::SingerMenu && result && singerMenuOpen_) {
+    // The command ran: its own surface (a review, the voice browser, a field) is up now, or the
+    // host ran it. Focus returns to the button; a surface that opened takes it on the next rebuild,
+    // and Escape there still returns to the button.
+    singerMenuOpen_ = false;
+    takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+  }
+  return result;
+}
+
+void SingShell::cancelCoveredLyric(NativeEditorController& controller) {
+  if (!presented_ || activeOverlay(controller) == nullptr) return;
+  // The lyric composition is the only one without a field kind; every other field is the surface's
+  // own (an inline field card, the time map's event field) and stays open.
+  const auto lyricOpen =
+      controller.textInputActive() &&
+      controller.textFieldView().kind == NativeEditorController::TextFieldView::Kind::None;
+  if (lyricOpen) controller.cancelTextComposition();
+  lyricInputActive_ = false;
 }
 
 bool SingShell::overlayPublishes(const NativeEditorController& controller,
@@ -2673,7 +2778,21 @@ void SingShell::paintOverlay(Canvas2D& c, const DesignTokens& t,
                              const NativeEditorController& controller,
                              const EditorSceneState& state, const ShellOverlay& overlay) const {
   const auto slot = overlaySlot(controller, state);
-  paintShellOverlay(overlay, c, t, controller, state, layout_, slot);
+  const auto panel = paintShellOverlay(overlay, c, t, controller, state, layout_, slot);
+  // The menu shows which item holds the keyboard, since arrows and Tab walk it.
+  if (overlay.kind() != OverlayKind::SingerMenu || panel.width <= 0.0 || semanticFocus_.empty())
+    return;
+  for (const auto& control : overlay.controls(controller, state, layout_, panel)) {
+    if (control.id != semanticFocus_) continue;
+    const auto& r = control.bounds;
+    c.save();
+    c.setGlow(t.color.focusRing, 6.0);
+    c.stroke(Path::roundedRect({r.x - 2.0, r.y - 2.0, r.width + 4.0, r.height + 4.0},
+                               t.shape.control + 2.0),
+             t.color.focusRing, StrokeStyle{2.0});
+    c.restore();
+    break;
+  }
 }
 
 
@@ -2716,8 +2835,9 @@ std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorControll
       }
     }
     // What the overlay states itself wins: the full text a painted label elides, a field's text as
-    // typed, a device's kind. A field takes text; a stepped setting steps either way.
-    if (!control.value.empty()) node.value = control.value;
+    // typed, a device's kind. A field's text as typed wins even when empty: a cleared field never
+    // reads the committed value under it. A field takes text; a stepped setting steps either way.
+    if (control.editable || !control.value.empty()) node.value = control.value;
     if (!control.description.empty()) node.description = control.description;
     if (control.editable && node.enabled) {
       node.actions = {SemanticAction::SetFocus, SemanticAction::EditText};
@@ -2760,6 +2880,8 @@ bool SingShell::exportBusy(const NativeEditorController& controller) const {
 void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
   workspaceMenuOpen_ = false;
   if (workspace == workspace_) return;
+  // The singer menu belongs to the workspace it was opened over, like any sheet.
+  singerMenuOpen_ = false;
   // A sheet or field opened over one workspace does not follow the creator to the next one.
   dismissOverlay(controller);
   // The grid the gestures and any text field belong to leaves the screen with its workspace.
@@ -2873,7 +2995,7 @@ core::Result<void> SingShell::dispatchController(NativeEditorController& control
             return core::success();
           }
           if (target == panelId) return core::success();
-          return overlay->perform(controller, target, requested);
+          return performOverlay(controller, *overlay, target, requested);
         });
     repaint();
     return result;
@@ -3054,6 +3176,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   // A re-homed overlay is modal over the score and the rack. A press on one of its controls runs
   // that control's own command; a press on the card itself is absorbed; a press outside closes it,
   // as the classic surfaces closed on Escape or their close button alone.
+  cancelCoveredLyric(controller);
   if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
@@ -3070,6 +3193,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       }
       for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
         if (!contains(control.bounds, p)) continue;
+        // A disabled control (a time-map row while the event field is open, a pager at its end)
+        // absorbs the press and runs nothing, as the classic panel ignored it.
+        if (!control.enabled) {
+          repaint();
+          return core::success();
+        }
         // A field keeps the keyboard where it is (its input client); any other control takes it.
         if (control.role != SemanticRole::TextField)
           takeSemanticFocus(controller, std::string{overlay->idPrefix()} + "panel");
@@ -3077,7 +3206,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
           repaint();
           return core::success();
         }
-        const auto result = overlay->perform(controller, control.id, SemanticAction::Activate);
+        const auto result = performOverlay(controller, *overlay, control.id, SemanticAction::Activate);
         repaint();
         return result;
       }
@@ -3146,6 +3275,8 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       repaint();
       return core::success();
     }
+    if (l.singerMenu.width > 0.0 && contains(l.singerMenu, p))
+      return setSingerMenuOpen(controller, true);
     if (auto knob = pressKnob(p)) return std::move(*knob);
     return core::success();
   }
@@ -3209,6 +3340,8 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       repaint();
       return core::success();
     }
+    if (knobsShown() && l.singerMenu.width > 0.0 && contains(l.singerMenu, p))
+      return setSingerMenuOpen(controller, true);
     if (l.inspectorButton.width > 0.0 && contains(l.inspectorButton, p)) {
       setInspectorOpen(controller, true);
       return core::success();
@@ -3396,11 +3529,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that opened it; the overlay's own keys run its real commands; every other plain key
   // stops here, so nothing reaches the covered score.
   if (presented_) {
+    // A surface that opened without a frame in between still takes the keyboard from a lyric.
+    cancelCoveredLyric(controller);
     if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
       // A field open in the overlay (the time map's event field, an inline field card) has the
       // host's text input client: every key but Escape is the controller's own text handling
-      // (Enter and Tab commit, as they did on the classic surface).
-      if (controller.textInputActive() && event.key != NativeKey::Escape) return false;
+      // (Enter and Tab commit, as they did on the classic surface). Only a field the overlay owns
+      // passes keys through; a composition without a field kind is never the overlay's.
+      if (controller.textInputActive() &&
+          controller.textFieldView().kind != NativeEditorController::TextFieldView::Kind::None &&
+          event.key != NativeKey::Escape)
+        return false;
       // A drag inside the card owns the input; Escape cancels it without committing.
       if (overlayGesture_) {
         if (event.key == NativeKey::Escape) cancelGestures(controller);
@@ -3418,7 +3557,6 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         }
         const auto fallback = overlay->openerId(controller, controller.sceneState());
         const auto opener = overlayOpener_.empty() ? fallback : overlayOpener_;
-        overlayOpener_.clear();
         const auto kind = overlay->kind();
         static_cast<void>(closeOverlay(controller, *overlay));
         // The controller's own tree follows the close first, so the focus snapshot the shell keeps
@@ -3428,6 +3566,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         // field that returned to the surface under it (a review's draft field) leaves the keyboard
         // with that surface.
         const auto* next = activeOverlay(controller);
+        // A close that only stepped back (a review's detail to its list, a draft field to its
+        // review) leaves the surface up: its opener is kept for the Escape that closes it.
+        if (next == nullptr) overlayOpener_.clear();
         const auto uncovered = next != nullptr && next->kind() != kind;
         if (uncovered) {
           semanticFocus_.clear();  // the surface that is up now takes focus on the next rebuild
@@ -3447,12 +3588,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       if (event.modifiers.primaryShortcut() || event.modifiers.alt)
         return !(hostActions_.applicationShortcut && hostActions_.applicationShortcut(event));
       // Tab walks the overlay's own controls, as the classic panels walked theirs; nothing under
-      // the card is reachable, and the card itself is skipped.
-      if (event.key == NativeKey::Tab) {
+      // the card is reachable, and the card itself is skipped. The singer menu's arrows walk its
+      // items the same way (Up is Shift-Tab).
+      const auto menu = overlay->kind() == OverlayKind::SingerMenu;
+      if (event.key == NativeKey::Tab ||
+          (menu && (event.key == NativeKey::Up || event.key == NativeKey::Down))) {
+        const auto backwards =
+            event.key == NativeKey::Tab ? event.modifiers.shift : event.key == NativeKey::Up;
         refreshSemantics(controller);
         const auto panelId = std::string{overlay->idPrefix()} + "panel";
         for (std::size_t step = 0U; step < 256U; ++step) {
-          if (!semantics_.focusNext(event.modifiers.shift)) break;
+          if (!semantics_.focusNext(backwards)) break;
           const auto* node = semantics_.focusedNode();
           if (node == nullptr) break;
           if (node->id == panelId || !overlayPublishes(controller, node->id)) continue;
@@ -3466,6 +3612,14 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       refreshSemantics(controller);
       const auto* focused = semantics_.focusedNode();
       const std::string id = focused == nullptr ? std::string{} : focused->id;
+      // Enter and Space run the focused menu item; a command that ran closes the menu.
+      if (menu && (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
+        if (overlayPublishes(controller, id))
+          static_cast<void>(performOverlay(controller, *overlay, id, SemanticAction::Activate));
+        refreshSemantics(controller);
+        repaint();
+        return true;
+      }
       if (overlay->key(controller, id, event)) {
         repaint();
         return true;
@@ -3887,6 +4041,15 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = "Change voice",
                      .bounds = l.singerChange,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+    if (l.singerMenu.width > 0.0)
+      add(SemanticNode{.id = std::string{kSingerMenuButtonId},
+                       .role = SemanticRole::Button,
+                       .name = "Singer actions",
+                       .value = singerMenuOpen_ ? "Open" : "Closed",
+                       .bounds = l.singerMenu,
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                       .description = "Opens the singer's reviews, inspectors and voicebank "
+                                      "commands; Escape closes the menu"});
     const auto knobs = knobModels(state);
     for (std::size_t i = 0U; i < knobs.size(); ++i) {
       const auto& k = knobs[i];
@@ -4024,12 +4187,17 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   if (l.inspectorOpen) {
     std::erase_if(children, [](const SemanticNode& node) {
       return !(node.id == "shell.inspector" || node.id == "shell.change-voice" ||
+               node.id == kSingerMenuButtonId ||
                node.id == "shell.style" || node.id.starts_with("shell.knob.") ||
                node.id == "voice.identity" || node.id == "shell.status" ||
                node.id == "shell.render-progress");
     });
   }
   const auto* overlay = activeOverlay(controller, state);
+  // A surface the controller opened while the singer menu was up (a host command) replaces the
+  // menu; it does not come back when that surface closes.
+  if (singerMenuOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::SingerMenu)
+    singerMenuOpen_ = false;
   const auto scoreCovered =
       !singShown || l.inspectorOpen || workspaceMenuOpen_ || overlay != nullptr;
   if (!singShown) {
@@ -4114,7 +4282,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // action reaches the score or the lane it covers.
   if (overlay != nullptr) {
     if (overlay->kind() != presentedOverlay_) {
-      overlay->presented();
+      if (presentedOverlay_ == OverlayKind::TextField && overlay->kind() == fieldOpenedOver_)
+        overlay->resumed();
+      else
+        overlay->presented();
+      fieldOpenedOver_ =
+          overlay->kind() == OverlayKind::TextField ? presentedOverlay_ : OverlayKind::None;
       // The control that opened the surface from the shell (MIX's Settings, VOICE's browser
       // button) is where Escape returns focus; a surface that follows another keeps the first one.
       if (presentedOverlay_ == OverlayKind::None)
@@ -4174,6 +4347,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     for (auto& node : nodes) children.push_back(std::move(node));
   } else {
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     overlayField_.clear();
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
@@ -4279,7 +4453,7 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     } else if (id == std::string{overlay->idPrefix()} + "panel") {
       result = core::success();
     } else {
-      result = overlay->perform(controller, id, action);
+      result = performOverlay(controller, *overlay, id, action);
     }
   } else if (id == "shell.output-meter" && activate) {
     controller.resetOutputClip();
@@ -4287,6 +4461,8 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   } else if (id == "shell.change-voice" && activate) {
     controller.showVoicebankBrowser();
     result = core::success();
+  } else if (id == kSingerMenuButtonId && activate) {
+    result = setSingerMenuOpen(controller, !singerMenuOpen_);
   } else if (id == "shell.inspector" && activate) {
     // Opening moves focus to the button (so the next Tab walks into the inspector); closing
     // returns focus from inside to it.

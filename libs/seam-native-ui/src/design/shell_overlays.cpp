@@ -7,6 +7,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <map>
 #include <string>
 
 namespace seam::native_ui::design {
@@ -1337,7 +1338,10 @@ public:
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
                                                      const EditorSceneState& state,
                                                      const SingLayout&, ui::Rect panel) const override;
-  void presented() const override { firstRow_ = 0U; }
+  void presented() const override {
+    firstRow_ = 0U;
+    rowsKey_.clear();
+  }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -1363,6 +1367,7 @@ public:
               ui::Rect panel, ui::Point anchor, double deltaX, double deltaY,
               InputModifiers modifiers) const override {
     const auto& view = state.replacementReview;
+    followRows(controller, view);
     const auto g = geometry(view, panel);
     if (view.dynamicsPlot && contains(g.plot, anchor)) {
       // The plot pans and zooms through the controller's own wheel handling, at the pointer.
@@ -1379,9 +1384,25 @@ private:
            p.y < r.bottom();
   }
   [[nodiscard]] ReviewGeometry geometry(const ReplacementReviewView& view, ui::Rect panel) const;
+  // The card's row pager starts again at the top of each page of rows the controller shows (its
+  // page, its list or a detail). The review prefix without its counters names that page: the
+  // interaction id the controller renews on every action and on a draft field, and the selected
+  // field, change without changing the rows.
+  void followRows(const NativeEditorController& controller, const ReplacementReviewView& view) const {
+    std::string key;
+    for (const auto ch : controller.replacementReviewSemanticPrefix())
+      if (ch < '0' || ch > '9') key.push_back(ch);
+    key += "#" + std::to_string(view.page);
+    if (key == rowsKey_) return;
+    firstRow_ = 0U;
+    rowsKey_ = std::move(key);
+  }
   // The rows a short card shows start here; the controller pages its rows by six, and this pages
   // within the controller's page when fewer fit.
   mutable std::size_t firstRow_{0U};
+  mutable std::string rowsKey_;
+  // The last first row the layout can show, as last laid out; the pager never counts past it.
+  mutable std::size_t lastFirstRow_{0U};
 };
 
 ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& view,
@@ -1424,6 +1445,9 @@ ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& v
     g.rowsDown = {g.rowsUp.right() + 4.0, g.status.y, 26.0, g.status.height};
     g.firstRow = std::min(firstRow_, view.rows.size() - capacity);
   }
+  // The counter is what the card shows, so a pager press always moves the visible rows.
+  firstRow_ = g.firstRow;
+  lastFirstRow_ = g.rowPager ? view.rows.size() - capacity : 0U;
   for (std::size_t i = g.firstRow; i < view.rows.size() && i < g.firstRow + capacity; ++i)
     g.rows.push_back({panel.x + kPanelInset, top + static_cast<double>(i - g.firstRow) * rowStride,
                       inner, rowHeight});
@@ -1437,6 +1461,7 @@ std::vector<OverlayControl> ReplacementReviewOverlay::controls(
   const auto& view = state.replacementReview;
   if (panel.width <= 0.0 || !view.visible) return out;
   const auto prefix = controller.replacementReviewSemanticPrefix();
+  followRows(controller, view);
   const auto g = geometry(view, panel);
   OverlayControl status{prefix + "status", g.status, "Review status and counts",
                         SemanticRole::Status, true, false, false};
@@ -1603,6 +1628,7 @@ OverlayPress ReplacementReviewOverlay::press(NativeEditorController& controller,
                                              ui::Rect panel, const PointerEvent& event) const {
   const auto& view = state.replacementReview;
   if (!view.dynamicsPlot || !view.dynamicsPlot->editable) return {};
+  followRows(controller, view);
   const auto g = geometry(view, panel);
   if (g.plot.width <= 0.0) return {};
   const auto& plot = *view.dynamicsPlot;
@@ -1636,7 +1662,7 @@ core::Result<void> ReplacementReviewOverlay::perform(NativeEditorController& con
     return core::failure(core::ErrorCode::Unsupported, "This control only activates");
   if (id == "shell.overlay.review.rows-up" || id == "shell.overlay.review.rows-down") {
     if (id.ends_with("up")) firstRow_ = firstRow_ > 0U ? firstRow_ - 1U : 0U;
-    else ++firstRow_;  // the layout clamps it to the last row that still fills the card
+    else if (firstRow_ < lastFirstRow_) ++firstRow_;
     return core::success();
   }
   // Rows, actions, navigation and points: the controller's own accessibility command, which checks
@@ -1708,15 +1734,20 @@ public:
     controller.closeAudioSettings();
     return core::success();
   }
-  bool scroll(NativeEditorController&, const EditorSceneState& state, const SingLayout&,
-              ui::Rect, ui::Point, double, double deltaY, InputModifiers) const override {
-    if (deltaY < 0.0 && firstDevice_ + 1U < state.audioSettings.devices.size()) ++firstDevice_;
+  bool scroll(NativeEditorController& controller, const EditorSceneState& state,
+              const SingLayout& layout, ui::Rect panel, ui::Point, double, double deltaY,
+              InputModifiers) const override {
+    // The list's current layout bounds the scroll: it stops at the last device row that fills it.
+    static_cast<void>(controls(controller, state, layout, panel));
+    if (deltaY < 0.0 && firstDevice_ < lastFirstDevice_) ++firstDevice_;
     else if (deltaY > 0.0 && firstDevice_ > 0U) --firstDevice_;
     return true;
   }
 
 private:
   mutable std::size_t firstDevice_{0U};
+  // The last first device the list can show, as last laid out; paging never counts past it.
+  mutable std::size_t lastFirstDevice_{0U};
 };
 
 std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorController&,
@@ -1745,6 +1776,9 @@ std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorCon
       std::max(0.0, fieldsTop - 8.0 - listTop + (stride - rowHeight)) / stride);
   const auto paged = audio.devices.size() > capacity && capacity > 0U;
   const auto first = paged ? std::min(firstDevice_, audio.devices.size() - capacity) : 0U;
+  // The counter is what the list shows, so a pager press or a scroll always moves the rows.
+  firstDevice_ = first;
+  lastFirstDevice_ = paged ? audio.devices.size() - capacity : 0U;
   if (paged) {
     // Beside the caption, or in the header left of Close when the caption is dropped.
     const auto pagerRight = compact ? close.x - 8.0 : panel.right() - kPanelInset;
@@ -1863,7 +1897,7 @@ core::Result<void> AudioSettingsOverlay::perform(NativeEditorController& control
     return core::success();
   }
   if (id == "shell.overlay.audio.devices-down") {
-    ++firstDevice_;  // the layout clamps it
+    if (firstDevice_ < lastFirstDevice_) ++firstDevice_;
     return core::success();
   }
   constexpr std::string_view kDevice{"audio.device."};
@@ -2312,6 +2346,210 @@ public:
   }
 };
 
+// ---- SINGER card menu --------------------------------------------------------------------------
+
+// One entry of the singer menu: the controller's own public command, run exactly as its existing
+// opener runs it. The menu adds no behavior of its own; a command the controller refuses reports
+// its own reason, which the menu keeps on the item (disabled) until it opens again.
+struct SingerMenuItem final {
+  std::string_view key;
+  std::string_view name;
+  std::string_view description;
+  core::Result<void> (*run)(NativeEditorController&);
+};
+
+const std::array<SingerMenuItem, 9U>& singerMenuItems() {
+  static const std::array<SingerMenuItem, 9U> items{{
+      {"replacement-review", "Replacement review",
+       "Find lyrics and review every replacement before it is applied",
+       [](NativeEditorController& c) { return c.beginReplacementInput(); }},
+      {"dynamics", "Dynamics inspector", "Review and draw the region's dynamics curve",
+       [](NativeEditorController& c) { return c.openDynamicsInspector(); }},
+      {"vibrato", "Vibrato inspector", "Review and edit the vibrato of the selected notes",
+       [](NativeEditorController& c) { return c.openVibratoInspector(); }},
+      {"style", "Style coverage", "Review which styles the selected singer covers here",
+       [](NativeEditorController& c) { return c.openStyleCoverageSheet(); }},
+      {"japanese-reading", "Japanese reading",
+       "Resolve the kana reading of the selected notes, or of the whole region",
+       [](NativeEditorController& c) { return c.openJapaneseReadingReview(); }},
+      {"phoneme-review", "Phoneme review", "Review phoneme bindings and retained render edits",
+       [](NativeEditorController& c) { return c.openPhonemeReview(); }},
+      {"change-voice", "Change voice", "Open the voice browser and choose the track's voicebank",
+       [](NativeEditorController& c) -> core::Result<void> {
+         c.showVoicebankBrowser();
+         return core::success();
+       }},
+      {"install-voicebank", "Install or relink voicebank",
+       "Open the voicebank installer to add, replace or relink a trusted voicebank",
+       [](NativeEditorController& c) { return c.openVoicebankInstaller(); }},
+      {"refresh-voicebanks", "Rescan voicebanks", "Rescan the installed voicebanks",
+       [](NativeEditorController& c) { return c.refreshVoicebanks(); }},
+  }};
+  return items;
+}
+
+constexpr std::string_view kSingerMenuPrefix{"shell.overlay.singer-menu."};
+// The card header's rule sits 38 points down; items start below it, 26-point rows on a 28 pitch.
+constexpr double kSingerMenuTop = 46.0;
+constexpr double kSingerMenuRow = 26.0;
+constexpr double kSingerMenuPitch = 28.0;
+constexpr double kSingerMenuBottom = 10.0;
+constexpr double kSingerMenuInset = 12.0;
+constexpr double kSingerMenuColumn = 236.0;
+constexpr double kSingerMenuMinColumn = 132.0;
+
+struct SingerMenuGeometry final {
+  ui::Rect panel;
+  std::size_t rows{0U};
+  double columnWidth{0.0};
+};
+
+// A popover under the ⋯ button (above it when the body has no room below), its right edge on the
+// button's, clamped into the overlay slot. A slot too short for one column takes two or three, so
+// every item stays on screen at the minimum window; a slot that holds none places no menu.
+SingerMenuGeometry singerMenuGeometry(ui::Rect anchor, ui::Rect slot) {
+  const auto count = singerMenuItems().size();
+  if (anchor.width <= 0.0 || slot.width <= 0.0 || slot.height <= 0.0) return {};
+  for (std::size_t columns = 1U; columns <= 3U; ++columns) {
+    const auto rows = (count + columns - 1U) / columns;
+    const auto height = kSingerMenuTop + static_cast<double>(rows) * kSingerMenuPitch -
+                        (kSingerMenuPitch - kSingerMenuRow) + kSingerMenuBottom;
+    const auto gaps = 8.0 * static_cast<double>(columns - 1U);
+    const auto width = std::min(
+        slot.width, 2.0 * kSingerMenuInset + gaps + static_cast<double>(columns) * kSingerMenuColumn);
+    const auto columnWidth =
+        (width - 2.0 * kSingerMenuInset - gaps) / static_cast<double>(columns);
+    if (height > slot.height || width < kMinimumPanelWidth || columnWidth < kSingerMenuMinColumn)
+      continue;
+    auto top = anchor.bottom() + 6.0;
+    if (top + height > slot.bottom()) {
+      const auto above = anchor.y - 6.0 - height;
+      top = above >= slot.y ? above : slot.bottom() - height;
+    }
+    top = std::clamp(top, slot.y, std::max(slot.y, slot.bottom() - height));
+    const auto left =
+        std::clamp(anchor.right() - width, slot.x, std::max(slot.x, slot.right() - width));
+    return {{left, top, width, height}, rows, columnWidth};
+  }
+  return {};
+}
+
+class SingerMenuOverlay final : public ShellOverlay {
+public:
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::SingerMenu; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override { return kSingerMenuPrefix; }
+  // The menu is the shell's own presentation: the shell's flag decides whether it is up.
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState&) const
+      noexcept override {
+    return true;
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+                               const SingLayout& layout, ui::Rect slot) const override {
+    return singerMenuGeometry(layout.singerMenu, slot).panel;
+  }
+  [[nodiscard]] std::string title(const NativeEditorController&,
+                                  const EditorSceneState&) const override {
+    return "Singer";
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
+                                                     const EditorSceneState&,
+                                                     const SingLayout& layout,
+                                                     ui::Rect panel) const override {
+    std::vector<OverlayControl> out;
+    const auto g = singerMenuGeometry(layout.singerMenu, panel);
+    if (panel.width <= 0.0 || g.rows == 0U) return out;
+    const auto& items = singerMenuItems();
+    for (std::size_t i = 0U; i < items.size(); ++i) {
+      const auto& item = items[i];
+      const auto column = static_cast<double>(i / g.rows);
+      const auto row = static_cast<double>(i % g.rows);
+      const auto refused = refusals_.find(item.key);
+      const auto enabled = refused == refusals_.end();
+      out.push_back(OverlayControl{
+          .id = std::string{kSingerMenuPrefix} + std::string{item.key},
+          .bounds = {panel.x + kSingerMenuInset + column * (g.columnWidth + 8.0),
+                     panel.y + kSingerMenuTop + row * kSingerMenuPitch, g.columnWidth,
+                     kSingerMenuRow},
+          .name = std::string{item.name},
+          .role = SemanticRole::Button,
+          .enabled = enabled,
+          .activatable = enabled,
+          .description = enabled ? std::string{item.description} : refused->second,
+      });
+    }
+    return out;
+  }
+  [[nodiscard]] std::string openerId(const NativeEditorController&,
+                                     const EditorSceneState&) const override {
+    return std::string{kSingerMenuButtonId};
+  }
+  // Refusals belong to one opening of the menu: the next one asks the controller again.
+  void presented() const override { refusals_.clear(); }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
+             const EditorSceneState&, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override {
+    c.save();
+    c.clipRect(panel);
+    const auto labelStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.2);
+    const auto reasonStyle = style(FontRole::Ui, t.type.smallLabel);
+    for (const auto& control : controls) {
+      const auto& r = control.bounds;
+      const auto p = Path::roundedRect(r, t.shape.control);
+      c.fill(p, control.enabled ? withAlpha(t.color.surfaceSunken, 0.9)
+                                : withAlpha(t.color.surface, 0.6));
+      c.stroke(p, withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+      // Both texts elide inside the row; the item's node carries the whole name and reason.
+      const auto inner = std::max(1.0, r.width - 20.0);
+      if (control.enabled) {
+        c.text({r.x + 10.0, r.y, inner, r.height}, control.name, labelStyle, t.color.textPrimary);
+        continue;
+      }
+      const auto labelWidth = std::min(c.measure(control.name, labelStyle) + 4.0, inner * 0.55);
+      c.text({r.x + 10.0, r.y, labelWidth, r.height}, control.name, labelStyle,
+             t.color.textDisabled);
+      const auto reasonX = r.x + 10.0 + labelWidth + 8.0;
+      if (r.right() - 10.0 - reasonX >= 12.0)
+        c.text({reasonX, r.y, r.right() - 10.0 - reasonX, r.height}, control.description,
+               reasonStyle, t.color.warning);
+    }
+    c.restore();
+  }
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override {
+    if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
+      return core::failure(core::ErrorCode::Unsupported, "This menu item only activates");
+    if (!id.starts_with(kSingerMenuPrefix))
+      return core::failure(core::ErrorCode::NotFound, "Unknown singer menu item");
+    const auto key = id.substr(kSingerMenuPrefix.size());
+    for (const auto& item : singerMenuItems()) {
+      if (item.key != key) continue;
+      if (const auto refused = refusals_.find(key); refused != refusals_.end())
+        return core::failure(core::ErrorCode::Conflict, refused->second);
+      auto result = item.run(controller);
+      if (!result)
+        refusals_.insert_or_assign(std::string{key}, result.error().message.empty()
+                                                         ? std::string{"The singer refused this command"}
+                                                         : result.error().message);
+      return result;
+    }
+    return core::failure(core::ErrorCode::NotFound, "Unknown singer menu item");
+  }
+  // Enter and Space run the focused item through the shell, which closes the menu when the command
+  // ran; arrows walk the items there too. The menu has no keys of its own.
+  bool key(NativeEditorController&, std::string_view, const KeyEvent&) const override {
+    return false;
+  }
+  core::Result<void> close(NativeEditorController& controller) const override {
+    // Nothing to close in the controller: the shell drops its own presentation of the menu.
+    static_cast<void>(controller);
+    return core::success();
+  }
+
+private:
+  // Why the controller refused an item during this opening of the menu, by item key.
+  mutable std::map<std::string, std::string, std::less<>> refusals_;
+};
+
 }  // namespace
 
 // ---- Shared paint and lookup -------------------------------------------------------------------
@@ -2459,5 +2697,15 @@ std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay() {
   return std::make_unique<VoicebankBrowserOverlay>();
 }
 std::unique_ptr<ShellOverlay> makeTextFieldOverlay() { return std::make_unique<TextFieldOverlay>(); }
+std::unique_ptr<ShellOverlay> makeSingerMenuOverlay() {
+  return std::make_unique<SingerMenuOverlay>();
+}
+
+std::vector<std::string> singerMenuItemIds() {
+  std::vector<std::string> out;
+  for (const auto& item : singerMenuItems())
+    out.push_back(std::string{kSingerMenuPrefix} + std::string{item.key});
+  return out;
+}
 
 }  // namespace seam::native_ui::design

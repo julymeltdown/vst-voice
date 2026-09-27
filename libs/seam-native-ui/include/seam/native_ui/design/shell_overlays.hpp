@@ -37,6 +37,7 @@ enum class OverlayKind : std::uint8_t {
   AudioSettings,
   VoicebankBrowser,
   TextField,
+  SingerMenu,
 };
 
 // One control of a re-homed overlay: the controller node it re-homes and the rectangle the shell
@@ -149,6 +150,9 @@ public:
   // Called once when the shell starts presenting the overlay, so a presentation-only position (a
   // popover's page) starts from the top each time it opens.
   virtual void presented() const {}
+  // Called instead of presented() when the overlay is shown again because a field it opened over
+  // itself (a review's draft field) closed, so the place it was showing is kept.
+  virtual void resumed() const {}
   // A press the overlay handles itself before its controls are hit-tested (a plot it forwards to
   // the controller). Unhandled by default.
   [[nodiscard]] virtual OverlayPress press(NativeEditorController& controller,
@@ -209,6 +213,15 @@ public:
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeAudioSettingsOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeTextFieldOverlay();
+// The SINGER card's overflow menu: a popover anchored to the card's ⋯ button listing the
+// controller's own singer commands (the replacement review, the dynamics, vibrato and style
+// inspectors, Japanese reading, phoneme review, the voice browser and the voicebank installer and
+// rescan). Each item runs that public command and nothing else; an item the controller refused is
+// disabled with the controller's reason until the menu opens again.
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeSingerMenuOverlay();
+// The ids of the singer menu's items, in menu order, and the shell id of the button that opens it.
+inline constexpr std::string_view kSingerMenuButtonId{"shell.singer-menu"};
+[[nodiscard]] std::vector<std::string> singerMenuItemIds();
 
 // Where a classic-only text field sits in the shell, for a request anchored to it. The shell moves
 // the host's text input client there (translateTextInput), and the overlay that draws the field
