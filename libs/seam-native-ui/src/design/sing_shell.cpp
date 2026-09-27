@@ -429,6 +429,22 @@ void SingShell::setMode(DesignMode mode, bool persist) {
   repaint();
 }
 
+void SingShell::setContrast(Contrast contrast, bool persist) {
+  preferences_.contrast = contrast;
+  preferences_.contrastFollowsSystem = false;
+  backgroundValid_ = false;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::followSystemContrast(bool persist) {
+  preferences_.contrastFollowsSystem = true;
+  preferences_.contrast = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
+  backgroundValid_ = false;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
 void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   preferences_.reduceMotion = reduceMotion;
   // The motion the animator was in the middle of is dropped rather than resumed, so a later frame
@@ -670,6 +686,15 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     releaseSurface(controller);
     return false;
   }
+  // Following the system, the frame reads Increase Contrast itself, so switching it in System
+  // Settings changes the open editor on its next frame without any notification plumbing.
+  if (preferences_.contrastFollowsSystem) {
+    const auto system = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
+    if (system != preferences_.contrast) {
+      preferences_.contrast = system;
+      backgroundValid_ = false;
+    }
+  }
   // The inspector exists only in the compact presentations; a window that grows back to the full
   // rack forgets it, so shrinking again starts closed.
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
@@ -767,7 +792,7 @@ void SingShell::ensureBackground(const RasterCanvas& canvas, const DesignTokens&
   const auto& surface = const_cast<RasterCanvas&>(canvas).surface();
   if (backgroundValid_ && background_.width() == surface.width() &&
       background_.height() == surface.height() && backgroundScale_ == canvas.scale() &&
-      backgroundMode_ == preferences_.mode)
+      backgroundMode_ == preferences_.mode && backgroundContrast_ == preferences_.contrast)
     return;
   backgroundValid_ = false;
   if (!background_.resize(surface.width(), surface.height())) return;
@@ -778,6 +803,7 @@ void SingShell::ensureBackground(const RasterCanvas& canvas, const DesignTokens&
   c->flush();
   backgroundScale_ = canvas.scale();
   backgroundMode_ = preferences_.mode;
+  backgroundContrast_ = preferences_.contrast;
   backgroundValid_ = true;
 }
 
@@ -922,11 +948,15 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   } else {
     surface.clear(t.color.canvas);
   }
-  auto c = paint::makeCanvas(surface, canvas.scale());
-  if (!c) {
+  auto vectorCanvas = paint::makeCanvas(surface, canvas.scale());
+  if (!vectorCanvas) {
     releaseSurface(controller);
     return false;
   }
+  // High Contrast paints without glow: every painter below draws through this one canvas.
+  std::optional<paint::GlowlessCanvas> glowless;
+  if (t.contrast == Contrast::High) glowless.emplace(*vectorCanvas);
+  Canvas2D* const c = glowless ? static_cast<Canvas2D*>(&*glowless) : vectorCanvas.get();
   // The raster front carries the character package's PPM artwork into the same frame the vector
   // canvas paints; both fronts live only for this call.
   raster_ = &canvas;

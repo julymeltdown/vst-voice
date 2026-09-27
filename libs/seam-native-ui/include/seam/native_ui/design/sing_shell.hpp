@@ -23,7 +23,12 @@ namespace seam::native_ui::design {
 // Application preferences for the redesigned shell. They are never project data.
 struct DesignPreferences final {
   DesignMode mode{DesignMode::Emo};
+  // The contrast the shell paints with. When contrastFollowsSystem is set it is the system's own
+  // Increase Contrast setting, re-read every frame, so turning that setting on or off in System
+  // Settings changes the open editor. An explicit choice made in the app clears the flag and wins
+  // over the system, for this app alone, until the user returns it to the system.
   Contrast contrast{Contrast::Standard};
+  bool contrastFollowsSystem{false};
   // Reduce Motion drops blink, breathing, the render spinner and the Stage fade, and makes a state
   // change immediate. The state itself is unchanged: a screen that reduces motion still says what
   // the singer is doing. It is the shell's own preference, alongside the look and the contrast, and
@@ -35,6 +40,8 @@ struct DesignPreferences final {
 
 [[nodiscard]] DesignPreferences loadDesignPreferences();
 void saveDesignPreferences(const DesignPreferences& preferences);
+// The platform's Increase Contrast accessibility setting (false where the platform has none).
+[[nodiscard]] bool systemIncreaseContrast();
 
 struct ModeAssets final {
   std::shared_ptr<const paint::Image> portrait;
@@ -168,6 +175,14 @@ public:
   [[nodiscard]] static bool rehomedSurface(OverlayKind kind) noexcept;
 
   void setMode(DesignMode mode, bool persist = true);
+  [[nodiscard]] Contrast contrast() const noexcept { return preferences_.contrast; }
+  [[nodiscard]] bool contrastFollowsSystem() const noexcept {
+    return preferences_.contrastFollowsSystem;
+  }
+  // The in-app override: an explicit Standard or High that wins over the system setting.
+  void setContrast(Contrast contrast, bool persist = true);
+  // Drops the override, so the shell follows the system's Increase Contrast again.
+  void followSystemContrast(bool persist = true);
   // Turns motion down. Like the look and the contrast it is an application preference, so the shell
   // keeps painting the same state with the animation dropped.
   void setReduceMotion(bool reduceMotion, bool persist = true);
@@ -504,6 +519,7 @@ private:
   PixelSurface background_;
   double backgroundScale_{0.0};
   DesignMode backgroundMode_{DesignMode::Emo};
+  Contrast backgroundContrast_{Contrast::Standard};
   bool backgroundValid_{false};
 };
 

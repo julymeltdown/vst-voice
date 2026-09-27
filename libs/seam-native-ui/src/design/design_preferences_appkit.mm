@@ -25,7 +25,19 @@ DesignPreferences loadDesignPreferences() {
       preferences.mode = parseDesignMode(mode.UTF8String, preferences.mode);
     if ([defaults objectForKey:@"shellEnabled"] != nil)
       preferences.shellEnabled = [defaults boolForKey:@"shellEnabled"];
-    if ([defaults boolForKey:@"highContrast"]) preferences.contrast = Contrast::High;
+    // Contrast, like motion, has two sources: an explicit choice made in the app, and otherwise the
+    // system's Increase Contrast. The older boolean key only ever recorded an explicit High.
+    NSString* contrast = [defaults stringForKey:@"contrast"];
+    if (contrast != nil && [contrast isEqualToString:@"high"]) {
+      preferences.contrast = Contrast::High;
+    } else if (contrast != nil && [contrast isEqualToString:@"standard"]) {
+      preferences.contrast = Contrast::Standard;
+    } else if ([defaults boolForKey:@"highContrast"]) {
+      preferences.contrast = Contrast::High;
+    } else {
+      preferences.contrastFollowsSystem = true;
+      preferences.contrast = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
+    }
     // Two sources, one setting: an explicit preference when the user has set one, and otherwise the
     // system's own Reduce Motion, which is what the editor already honors. The stored value wins so a
     // user can turn motion back on for this app alone without changing the system setting.
@@ -48,8 +60,20 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
                                                encoding:NSUTF8StringEncoding]
                  forKey:@"mode"];
     [defaults setBool:preferences.shellEnabled forKey:@"shellEnabled"];
-    [defaults setBool:preferences.contrast == Contrast::High forKey:@"highContrast"];
+    // Following the system stores nothing, so a later change to Increase Contrast still applies.
+    [defaults removeObjectForKey:@"highContrast"];
+    if (preferences.contrastFollowsSystem)
+      [defaults removeObjectForKey:@"contrast"];
+    else
+      [defaults setObject:(preferences.contrast == Contrast::High ? @"high" : @"standard")
+                   forKey:@"contrast"];
     [defaults setBool:preferences.reduceMotion forKey:@"reduceMotion"];
+  }
+}
+
+bool systemIncreaseContrast() {
+  @autoreleasepool {
+    return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast;
   }
 }
 
