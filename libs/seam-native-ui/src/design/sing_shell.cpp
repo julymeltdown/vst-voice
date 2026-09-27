@@ -1754,16 +1754,17 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       shownTooltip_ = ShownTooltip{tip->id, tip->text, tip->target, placed.box};
     }
   }
+  const auto softwareWash = std::getenv("SEAM_WASH_VECTOR_REFERENCE") == nullptr;
   const auto composed = layers_.compose(
       canvas,
       paint::BackgroundLayer{.key = backgroundKey(t, surface, scale),
                              .clear = t.color.canvas,
                              .paint = [this, &t](Canvas2D& background) { paintBackground(background, t); },
-                             .paintBase = [&t](PixelSurface& band, double bandScale,
+                             .paintBase = [&t, softwareWash](PixelSurface& band, double bandScale,
                                                std::uint32_t top, std::uint32_t fullHeight) {
-                               if (std::getenv("SEAM_WASH_VECTOR_REFERENCE") == nullptr)
-                                 paintBaseWash(band, bandScale, top, fullHeight, t);
-                             }},
+                               if (softwareWash) paintBaseWash(band, bandScale, top, fullHeight, t);
+                             },
+                             .paintBaseOverwritesBand = softwareWash},
       frame, retainedSurface_);
   lastDamage_ = composed.damage;
   lastLayers_ = composed.rasterized;

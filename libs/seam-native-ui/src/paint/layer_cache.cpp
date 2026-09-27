@@ -129,7 +129,7 @@ void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer
     PixelSurface local;
     if (!whole) {
       local = PixelSurface{target.width(), y1 - y0};
-      local.clear(j.clear);
+      if (!j.background->paintBase || !j.background->paintBaseOverwritesBand) local.clear(j.clear);
     }
     auto& surface = whole ? target : local;
     if (j.background->paintBase) j.background->paintBase(surface, j.scale, y0, target.height());

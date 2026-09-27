@@ -17,6 +17,7 @@
 #include "seam/native_ui/paint/layer_cache.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -551,6 +552,57 @@ TEST_CASE("cold content-only snapshot materializes L0 on demand, then reuses it"
   cache.invalidateBackground();
   static_cast<void>(cache.compose(raster, background, frame));
   CHECK(paints == 3);
+}
+
+TEST_CASE("background bands clear unless an opaque base overwrites every pixel") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  using native_ui::paint::BackgroundLayer;
+  using native_ui::paint::LayerCache;
+  using native_ui::paint::RecordingCanvas;
+  constexpr std::uint32_t width = 8U;
+  constexpr std::uint32_t height = 65U;  // Three 32-row bands, including a short final band.
+  const native_ui::Color clear{12, 10, 14, 255};
+  const native_ui::Color first{25, 60, 90, 255};
+  const native_ui::Color later{120, 80, 30, 255};
+  const auto compose = [&](const BackgroundLayer& background) {
+    LayerCache cache;
+    PixelSurface surface{width, height};
+    RasterCanvas raster{surface, 1.0};
+    RecordingCanvas frame{static_cast<double>(width), static_cast<double>(height), 1.0,
+                          [](std::string_view, const native_ui::paint::TextStyle&) { return 0.0; }};
+    static_cast<void>(cache.compose(raster, background, frame));
+    return surface;
+  };
+  const auto blankPaint = [](native_ui::paint::Canvas2D&) {};
+
+  // The default contract preserves the configured clear even with an empty vector recording.
+  const auto defaultBase = compose(BackgroundLayer{.key = 1U, .clear = clear, .paint = blankPaint});
+  for (const auto pixel : defaultBase.pixels()) CHECK(pixel == clear.bgra());
+
+  std::atomic<int> bands{0};
+  std::atomic<bool> validGeometry{true};
+  const auto opaqueBase = compose(BackgroundLayer{
+      .key = 2U, .clear = clear, .paint = blankPaint,
+      .paintBase = [&](PixelSurface& band, double scale, std::uint32_t top,
+                       std::uint32_t fullHeight) {
+        if (scale != 1.0 || fullHeight != height || top % 32U != 0U)
+          validGeometry.store(false, std::memory_order_relaxed);
+        bands.fetch_add(1, std::memory_order_relaxed);
+        band.clear(top == 0U ? first : later);
+      },
+      .paintBaseOverwritesBand = true});
+  CHECK(bands.load(std::memory_order_relaxed) == 3);
+  CHECK(validGeometry.load(std::memory_order_relaxed));
+  for (std::uint32_t y = 0U; y < height; ++y)
+    for (std::uint32_t x = 0U; x < width; ++x)
+      CHECK(opaqueBase.pixels()[static_cast<std::size_t>(y) * width + x] ==
+            (y < 32U ? first : later).bgra());
+
+  // The vector-wash reference has a no-op base painter; it must still receive the clear.
+  const auto noOpBase = compose(BackgroundLayer{
+      .key = 3U, .clear = clear, .paint = blankPaint,
+      .paintBase = [](PixelSurface&, double, std::uint32_t, std::uint32_t) {}});
+  for (const auto pixel : noOpBase.pixels()) CHECK(pixel == clear.bgra());
 }
 
 TEST_CASE("a glowless recording keeps a raster drawing's glow off when it replays") {

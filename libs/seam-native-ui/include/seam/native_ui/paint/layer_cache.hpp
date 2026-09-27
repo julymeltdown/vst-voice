@@ -21,6 +21,9 @@ struct BackgroundLayer final {
   // band's first device row in the full surface; fullHeight is the full device height.
   std::function<void(PixelSurface&, double scale, std::uint32_t top,
                      std::uint32_t fullHeight)> paintBase;
+  // Only set when paintBase overwrites every pixel of the band, including its opaque base colour.
+  // Partial or no-op base painters still need the normal clear before vector replay.
+  bool paintBaseOverwritesBand{false};
 };
 
 struct Composition final {
