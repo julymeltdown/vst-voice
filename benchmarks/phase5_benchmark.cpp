@@ -1,7 +1,9 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
+#include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/ring_buffer_processor.hpp"
@@ -15,13 +17,25 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <algorithm>
+#include <array>
 #include <numeric>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+#if !defined(_WIN32)
+#include <cstdlib>
+#endif
 
 namespace {
 using namespace std::chrono_literals;
@@ -62,9 +76,249 @@ std::shared_ptr<const seam::rendering::PlaybackTimeline> makeTimeline() {
   });
   return added ? timeline : nullptr;
 }
+
+// ---- Design shell frame pipeline (redesign plan section 10) ------------------------------------
+//
+// Every case paints the SING shell over the same 10,000-note project at 1440x900 logical points on a
+// 2x surface (2880x1800 pixels), with the look's glows on (Standard contrast). A sample is the
+// shell's own frame work, prepareFrame plus paint; deriving the scene state is host work and is
+// reported separately. Each case fails above its p95 budget.
+
+struct Quantiles final {
+  double p50{0.0};
+  double p95{0.0};
+  double max{0.0};
+};
+
+Quantiles quantiles(std::vector<double> samples) {
+  if (samples.empty()) return {};
+  std::sort(samples.begin(), samples.end());
+  const auto at = [&samples](double p) {
+    const auto index = static_cast<std::size_t>(
+        std::ceil(static_cast<double>(samples.size()) * p)) - 1U;
+    return samples[std::min(samples.size() - 1U, index)];
+  };
+  return {at(0.50), at(0.95), samples.back()};
+}
+
+std::string machineName() {
+#if defined(__APPLE__)
+  const auto read = [](const char* key) {
+    std::size_t size = 0U;
+    if (sysctlbyname(key, nullptr, &size, nullptr, 0U) != 0 || size == 0U) return std::string{};
+    std::string value(size, '\0');
+    if (sysctlbyname(key, value.data(), &size, nullptr, 0U) != 0) return std::string{};
+    while (!value.empty() && value.back() == '\0') value.pop_back();
+    return value;
+  };
+  return read("machdep.cpu.brand_string") + " / " + read("hw.model");
+#else
+  return "unknown";
+#endif
+}
+
+double loadAverage() {
+#if !defined(_WIN32)
+  double load[1]{0.0};
+  return getloadavg(load, 1) == 1 ? load[0] : -1.0;
+#else
+  return -1.0;
+#endif
+}
+
+struct DesignCase final {
+  std::string name;
+  std::string mode;
+  double budgetMs{0.0};
+  std::vector<double> samples;
+  std::vector<double> stateSamples;
+  std::string layers;  // which layers the last sampled frame rasterized, when known
+  std::size_t visibleNotes{0U};
+
+  [[nodiscard]] bool pass() const { return !samples.empty() && quantiles(samples).p95 <= budgetMs; }
+};
+
+struct DesignRig final {
+  seam::application::ProjectFactory factory{9100U};
+  seam::domain::RegionId regionId;
+  seam::application::EditorSession session;
+  seam::native_ui::NativeEditorController controller;
+  seam::native_ui::design::SingShell shell;
+  seam::native_ui::PixelSurface surface{2880U, 1800U};
+  seam::native_ui::RasterCanvas canvas{surface, 2.0, nullptr};
+  seam::time::Tick playhead{0};
+  std::uint64_t frameIndex{0U};
+
+  explicit DesignRig(seam::native_ui::design::DesignMode mode)
+      : session(makeProject(factory, regionId)), controller(session, factory, regionId) {
+    controller.resize(1440.0, 900.0);
+    shell.activate(seam::native_ui::design::locateDesignAssets(),
+                   seam::native_ui::design::DesignPreferences{.mode = mode});
+    // As the AppKit window and the CLAP view do: the surface keeps the previous frame.
+    shell.setRetainedSurface(true);
+  }
+
+  // One frame: the host's state derivation (timed apart), then the shell's frame work.
+  double frame(DesignCase& record, bool playing) {
+    const auto stateStart = std::chrono::steady_clock::now();
+    if (!shell.prepareFrame(controller, 1440.0, 900.0)) return -1.0;
+    controller.setPlaying(playing);
+    auto state = controller.sceneState();
+    const auto stateEnd = std::chrono::steady_clock::now();
+    state.playheadPixel = controller.pianoRoll().timeline().tickToPixel(playhead);
+    controller.setPlayheadTick(playhead);
+    if (playing) {
+      // A measured stereo level that moves every frame, as the audio thread reports it.
+      const auto phase = static_cast<double>(frameIndex) * 0.37;
+      const auto left = static_cast<float>(0.35 + 0.3 * std::sin(phase));
+      const auto right = static_cast<float>(0.30 + 0.3 * std::cos(phase));
+      state.outputLevel = seam::native_ui::EditorSceneState::OutputLevel{
+          .peak = {left, right}, .hold = {0.7F, 0.66F}, .bus = "Master", .clipped = false};
+    }
+    ++frameIndex;
+    const auto paintStart = std::chrono::steady_clock::now();
+    static_cast<void>(shell.prepareFrame(controller, 1440.0, 900.0));
+    const auto painted = shell.paint(canvas, controller, state, playhead);
+    const auto paintEnd = std::chrono::steady_clock::now();
+    if (!painted) return -1.0;
+    record.stateSamples.push_back(
+        std::chrono::duration<double, std::milli>(stateEnd - stateStart).count());
+    return std::chrono::duration<double, std::milli>(paintEnd - paintStart).count();
+  }
+};
+
+std::string layerSummary(const seam::native_ui::design::SingShell& shell) {
+  const auto& layers = shell.lastFrameLayers();
+  std::string text;
+  static constexpr std::array<const char*, 4U> kNames{"L0", "L1", "L2", "L3"};
+  for (std::size_t i = 0U; i < layers.size(); ++i)
+    if (layers[i]) text += std::string{text.empty() ? "" : "+"} + kNames[i];
+  return text.empty() ? "none" : text;
+}
+
+struct DesignReport final {
+  bool available{false};
+  bool pass{true};
+  std::string json;
+};
+
+DesignReport runDesignShellBenchmark() {
+  using seam::native_ui::design::DesignMode;
+  DesignReport report;
+  if (!seam::native_ui::paint::vectorBackendAvailable()) {
+    report.json = "{\"available\": false, \"reason\": \"no vector backend on this platform\"}";
+    return report;
+  }
+  report.available = true;
+  // SEAM_BENCHMARK_CASE limits the run to one case name (profiling); SEAM_BENCHMARK_SAMPLES
+  // overrides the sample count. Neither is set for evidence runs.
+  const char* onlyCase = std::getenv("SEAM_BENCHMARK_CASE");
+  const char* samplesOverride = std::getenv("SEAM_BENCHMARK_SAMPLES");
+  constexpr std::size_t kWarmup = 5U;
+  const std::size_t kSamples =
+      samplesOverride != nullptr ? static_cast<std::size_t>(std::max(1, std::atoi(samplesOverride)))
+                                 : 120U;
+  constexpr double kCacheBudgetBytes = 80.0 * 1024.0 * 1024.0;
+  const auto loadBefore = loadAverage();
+  std::vector<DesignCase> cases;
+  std::size_t cacheBytes = 0U;
+
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    const std::string modeName = mode == DesignMode::Emo ? "emo" : "scene";
+    DesignRig rig{mode};
+    auto& model = rig.controller.pianoRoll();
+    const auto baseOrigin = seam::time::Tick{960 * 8};
+    const auto run = [&](DesignCase record, bool playing,
+                         const std::function<void(std::size_t)>& step) {
+      if (onlyCase != nullptr && record.name != onlyCase) return;
+      for (std::size_t i = 0U; i < kWarmup + kSamples; ++i) {
+        step(i);
+        const auto ms = rig.frame(record, playing);
+        if (ms < 0.0) {
+          record.samples.clear();
+          break;
+        }
+        if (i >= kWarmup) record.samples.push_back(ms);
+      }
+      record.layers = layerSummary(rig.shell);
+      record.visibleNotes = model.visibleNotes().size();
+      cacheBytes = std::max(cacheBytes, rig.shell.layerCacheBytes());
+      cases.push_back(std::move(record));
+    };
+    const auto resetView = [&](double pixelsPerQuarter) {
+      model.timeline().setPixelsPerQuarter(pixelsPerQuarter);
+      model.timeline().setOriginTick(baseOrigin);
+      model.rebuildIndex();
+    };
+
+    // Cold: every layer from nothing, as after a resize or a mode switch.
+    resetView(100.0);
+    run(DesignCase{.name = "cold-full-frame", .mode = modeName, .budgetMs = 14.0}, false,
+        [&](std::size_t) { rig.shell.invalidateLayers(); });
+    // Scroll and zoom: the grid and the notes move, the background stays.
+    run(DesignCase{.name = "scroll-zoom", .mode = modeName, .budgetMs = 8.0}, false,
+        [&](std::size_t i) {
+          model.timeline().setPixelsPerQuarter(i % 8U == 7U ? 110.0 : 100.0);
+          model.timeline().setOriginTick(baseOrigin + seam::time::Tick{
+              static_cast<std::int64_t>(i % 64U) * 48});
+          model.rebuildIndex();
+        });
+    // Playback: the playhead, the output meter and the singer's ring move; nothing else does.
+    resetView(100.0);
+    run(DesignCase{.name = "playback", .mode = modeName, .budgetMs = 3.0}, true,
+        [&](std::size_t i) {
+          rig.playhead = baseOrigin + seam::time::Tick{static_cast<std::int64_t>(i) * 40};
+        });
+    // The 10,000-note case: a zoomed-out grid full of notes whose content changes every frame
+    // (the selection moves), so the notes, their glows and the lyrics are repainted each time.
+    resetView(25.0);
+    rig.playhead = seam::time::Tick{0};
+    run(DesignCase{.name = "dense-10000-notes", .mode = modeName, .budgetMs = 8.0}, false,
+        [&](std::size_t i) {
+          const auto x = static_cast<double>(40 + (i % 16U) * 60);
+          model.selectInBox({x, 0.0, 50.0, 2000.0});
+        });
+  }
+  const auto loadAfter = loadAverage();
+
+  std::ostringstream out;
+  out << "{\n    \"available\": true,\n"
+      << "    \"machine\": \"" << machineName() << "\",\n"
+      << "    \"loadAverageBefore\": " << loadBefore << ",\n"
+      << "    \"loadAverageAfter\": " << loadAfter << ",\n"
+      << "    \"logicalSize\": [1440, 900],\n    \"scale\": 2,\n"
+      << "    \"projectNotes\": 10000,\n    \"samplesPerCase\": " << kSamples << ",\n"
+      << "    \"timingScope\": \"SingShell::prepareFrame + SingShell::paint wall time\",\n"
+      << "    \"cases\": [\n";
+  for (std::size_t i = 0U; i < cases.size(); ++i) {
+    const auto& c = cases[i];
+    const auto q = quantiles(c.samples);
+    const auto state = quantiles(c.stateSamples);
+    report.pass = report.pass && c.pass();
+    out << "      {\"case\": \"" << c.name << "\", \"mode\": \"" << c.mode << "\", \"p50Ms\": "
+        << q.p50 << ", \"p95Ms\": " << q.p95 << ", \"maxMs\": " << q.max
+        << ", \"budgetP95Ms\": " << c.budgetMs << ", \"pass\": " << (c.pass() ? "true" : "false")
+        << ", \"lastFrameLayers\": \"" << c.layers << "\", \"visibleNotes\": " << c.visibleNotes
+        << ", \"hostStateP95Ms\": " << state.p95 << "}" << (i + 1U < cases.size() ? "," : "")
+        << "\n";
+  }
+  const auto cachePass = static_cast<double>(cacheBytes) <= kCacheBudgetBytes;
+  report.pass = report.pass && cachePass;
+  out << "    ],\n    \"layerCacheBytes\": " << cacheBytes
+      << ",\n    \"layerCacheBudgetBytes\": " << static_cast<std::uint64_t>(kCacheBudgetBytes)
+      << ",\n    \"layerCachePass\": " << (cachePass ? "true" : "false")
+      << ",\n    \"pass\": " << (report.pass ? "true" : "false") << "\n  }";
+  report.json = out.str();
+  return report;
+}
 }  // namespace
 
 int main() {
+  if (std::getenv("SEAM_BENCHMARK_DESIGN_ONLY") != nullptr) {
+    const auto design = runDesignShellBenchmark();
+    std::cout << "{\n  \"designShell\": " << design.json << "\n}\n";
+    return design.pass ? 0 : 1;
+  }
   seam::application::ProjectFactory factory{9000U};
   seam::domain::RegionId regionId;
   seam::application::EditorSession session{makeProject(factory, regionId)};
@@ -139,6 +393,7 @@ int main() {
   const auto audio = device->stats();
   const auto feederStats = service.stats();
   const auto callback = processor.stats();
+  const auto design = runDesignShellBenchmark();
   std::cout << "{\n"
             << "  \"phase\": \"5.0\",\n"
             << "  \"projectNotes\": 10000,\n"
@@ -158,7 +413,8 @@ int main() {
             << "  \"audioCallbacks\": " << audio.callbacks << ",\n"
             << "  \"feederFrames\": " << feederStats.framesFed << ",\n"
             << "  \"deliveredFrames\": " << callback.deliveredFrames << ",\n"
-            << "  \"underflowFrames\": " << callback.underflowFrames << "\n"
+            << "  \"underflowFrames\": " << callback.underflowFrames << ",\n"
+            << "  \"designShell\": " << design.json << "\n"
             << "}\n";
-  return callback.deliveredFrames > 0U && paintBudgetPass ? 0 : 1;
+  return callback.deliveredFrames > 0U && paintBudgetPass && design.pass ? 0 : 1;
 }
