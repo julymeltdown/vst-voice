@@ -630,6 +630,11 @@ void SingShell::activate(const std::filesystem::path& assetRoot) {
   if (const char* inspector = std::getenv("SEAM_UI_INSPECTOR");
       inspector != nullptr && std::string_view{inspector} == "open")
     inspectorWanted_ = true;
+  // Captures only: freeze the animation clock, so two runs of the same build draw the same frame
+  // (the packet's reproducibility rule). The clock is the host's injectable one, so this freezes the
+  // blink, the breathing, the ring's phase and every tween together, without changing what is drawn.
+  if (std::getenv("SEAM_UI_FREEZE_CLOCK") != nullptr)
+    setUiClock([] { return std::chrono::steady_clock::time_point{} + std::chrono::seconds{10}; });
   activate(assetRoot, preferences);
   persist_ = true;
 }

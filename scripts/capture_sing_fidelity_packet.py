@@ -734,6 +734,8 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
     environment = dict(os.environ, SEAM_UI_DESIGN=mode)
     environment.pop("SEAM_UI_WORKSPACE", None)
     environment.pop("SEAM_UI_INSPECTOR", None)
+    # The animation clock is frozen so two packets of the same build hash identically (section 14.4).
+    environment["SEAM_UI_FREEZE_CLOCK"] = "1"
     if state == INSPECTOR_STATE:
         environment["SEAM_UI_INSPECTOR"] = "open"
     if state in WORKSPACE_STATES:
@@ -806,6 +808,9 @@ def process_images(record: dict[str, Any], folder: Path, out: Path, *, want_appk
     software, _ = srgb_image(Image.open(folder / "software.ppm"), None)
     save_srgb(software, captures / f"{record['id']}-software.png")
     record["softwarePng"] = f"captures/{record['id']}-software.png"
+    # The pixels alone, so two packets of the same build can be compared for reproducibility
+    # (section 14.4) without the PNG file's creation-time metadata standing in the way.
+    record["softwarePixelSha256"] = hashlib.sha256(software.convert("RGBA").tobytes()).hexdigest()
     record["softwarePixels"] = list(software.size)
     geometry = record["geometry"]
     scale = geometry.get("deviceScale")
@@ -1106,7 +1111,8 @@ def main() -> int:
             {key: record[key] for key in (
                 "id", "mode", "state", "viewport", "exitCode", "observedRenderState",
                 "stateReached", "appkit", "appkitColor", "appkitTitleBarPixels", "appkitAlignment",
-                "softwarePng", "appkitPng", "softwarePixels", "command", "error") if key in record}
+                "softwarePng", "appkitPng", "softwarePixels", "softwarePixelSha256", "command",
+                "error") if key in record}
             for record in records
         ],
         "notRun": {
