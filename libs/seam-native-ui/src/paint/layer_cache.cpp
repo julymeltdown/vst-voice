@@ -23,7 +23,7 @@ namespace {
 // copied into place. Bands are drawn the same way when they run one after another, and depend only
 // on the surface, so every composition of a background yields the same pixels however the bands
 // were scheduled.
-constexpr std::uint32_t kBackgroundBandRows = 64U;
+constexpr std::uint32_t kBackgroundBandRows = 32U;
 
 // Forwards the state and the text of what is replayed onto it and drops every other drawing: a live
 // text capture sees the background's lines as one whole pass draws them.
@@ -117,7 +117,8 @@ void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer
     double scale;
     std::uint32_t rows;
     Color clear;
-  } job{&snapshot, &recorded, scale, rows, background.clear};
+    const BackgroundLayer* background;
+  } job{&snapshot, &recorded, scale, rows, background.clear, &background};
   const auto band = [](void* context, std::size_t k) {
     const auto& j = *static_cast<const Job*>(context);
     const ScopedConcurrentCanvas concurrent;
@@ -131,6 +132,7 @@ void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer
       local.clear(j.clear);
     }
     auto& surface = whole ? target : local;
+    if (j.background->paintBase) j.background->paintBase(surface, j.scale, y0, target.height());
     auto canvas = makeCanvas(surface, j.scale);
     if (canvas == nullptr) return;
     RasterCanvas raster{surface, j.scale, nullptr};

@@ -17,6 +17,10 @@ struct BackgroundLayer final {
   std::uint64_t key{0U};
   Color clear{};
   std::function<void(Canvas2D&)> paint;
+  // Paint the base into one device-pixel band before replaying vector chrome. top is the
+  // band's first device row in the full surface; fullHeight is the full device height.
+  std::function<void(PixelSurface&, double scale, std::uint32_t top,
+                     std::uint32_t fullHeight)> paintBase;
 };
 
 struct Composition final {
