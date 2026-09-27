@@ -131,6 +131,18 @@ struct ShellHostActions final {
 
 // The in-note waveform is drawn in columns of this width, phased from the note's left edge.
 inline constexpr double kNoteWaveformColumn = 2.0;
+// Keep compressed overlap bands filled rather than shrinking them to hairline outlines. These
+// are paint bounds only: musical duration, pitch, selection and gesture geometry stay in the model.
+[[nodiscard]] ui::Rect singNoteCapsuleBounds(const ui::NoteVisual& note, ui::Rect grid) noexcept;
+struct SingOverlapBadge final {
+  std::size_t group{0U};
+  std::size_t members{0U};
+  ui::Rect bounds;
+};
+// One inspectable badge for every overlapping group, including two- and three-note groups with
+// no hidden members. Paint, pointer, semantics and the detail popover share this exact layout.
+[[nodiscard]] std::vector<SingOverlapBadge> layoutSingOverlapBadges(
+    const std::vector<ui::NoteVisual>& notes, ui::Rect grid);
 // Calls column(x0, x1) for each waveform column of a note rectangle that lies inside
 // [visibleLeft, visibleRight) and returns how many there were. The work is bounded by the visible
 // span, however long the note is at the current zoom.
@@ -146,6 +158,10 @@ struct StatusMessage final {
   StatusTone tone{StatusTone::Normal};
 };
 [[nodiscard]] StatusMessage singStatusMessage(const EditorSceneState& state);
+// The error toast's cause: the failed render's own reason, else the first diagnostic's impact,
+// else the status line. The toast's title already names the failure, so the cause never repeats
+// it; the status line keeps the complete message.
+[[nodiscard]] std::string singErrorToastCause(const EditorSceneState& state);
 
 // The SING workspace shell for the EMO and SCENE designs, and the one editor surface on platforms
 // with the vector backend. It paints around the existing editing engine: pointer events inside the

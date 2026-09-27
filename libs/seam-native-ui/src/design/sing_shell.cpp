@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <numbers>
@@ -611,6 +612,72 @@ std::string barsBeatsTicks(time::Tick tick, std::int64_t ppq, const time::MeterE
 }
 
 }  // namespace
+
+ui::Rect singNoteCapsuleBounds(const ui::NoteVisual& note, ui::Rect grid) noexcept {
+  auto b = note.bounds;
+  const auto inset = std::min(std::max(0.0, b.height) * 0.1,
+                              note.overlapMemberCount > 1U ? 0.35 : 1.5);
+  b.y += grid.y + inset;
+  b.height = std::max(0.0, b.height - 2.0 * inset);
+  return b;
+}
+
+std::vector<SingOverlapBadge> layoutSingOverlapBadges(
+    const std::vector<ui::NoteVisual>& notes, ui::Rect grid) {
+  std::vector<SingOverlapBadge> result;
+  if (grid.width < 44.0 || grid.height < 24.0) return result;
+  struct Group final { ui::Rect bounds; std::size_t members{0U}; };
+  std::map<std::size_t, Group> groups;
+  std::vector<ui::Rect> occupied;
+  occupied.reserve(notes.size());
+  for (const auto& note : notes) {
+    auto b = note.bounds;
+    b.y += grid.y;
+    if (!note.hiddenByOverlapDensity) occupied.push_back(b);
+    if (note.overlapMemberCount < 2U) continue;
+    auto full = note.timelineBounds;
+    full.y += grid.y;
+    const auto [it, inserted] = groups.try_emplace(note.overlapGroup, Group{full, note.overlapMemberCount});
+    if (!inserted) {
+      auto& bounds = it->second.bounds;
+      const auto right = std::max(bounds.right(), full.right());
+      const auto bottom = std::max(bounds.bottom(), full.bottom());
+      bounds.x = std::min(bounds.x, full.x);
+      bounds.y = std::min(bounds.y, full.y);
+      bounds.width = right - bounds.x;
+      bounds.height = bottom - bounds.y;
+    }
+  }
+  const auto overlapArea = [](ui::Rect a, ui::Rect b) {
+    return std::max(0.0, std::min(a.right(), b.right()) - std::max(a.x, b.x)) *
+           std::max(0.0, std::min(a.bottom(), b.bottom()) - std::max(a.y, b.y));
+  };
+  for (const auto& [id, group] : groups) {
+    // Prefer the end of the whole group, not the first member's end, which can lie under another
+    // note. Nearby free slots preserve the connection to the stack without moving musical data.
+    const auto width = std::min(grid.width, std::max(36.0,
+        18.0 + 8.0 * static_cast<double>(std::to_string(group.members).size())));
+    const auto& b = group.bounds;
+    const std::array<ui::Point, 6U> positions{{
+        {b.right() + 6.0, b.y + (b.height - 24.0) * 0.5},
+        {b.right() - width, b.y - 26.0}, {b.x, b.y - 26.0},
+        {b.right() - width, b.bottom() + 2.0}, {b.x, b.bottom() + 2.0},
+        {b.x - width - 6.0, b.y + (b.height - 24.0) * 0.5}}};
+    ui::Rect chosen;
+    auto leastOverlap = std::numeric_limits<double>::max();
+    for (const auto& p : positions) {
+      const ui::Rect candidate{std::clamp(p.x, grid.x, grid.right() - width),
+                                std::clamp(p.y, grid.y, grid.bottom() - 24.0), width, 24.0};
+      double overlap = 0.0;
+      for (const auto& note : occupied) overlap += overlapArea(candidate, note);
+      for (const auto& badge : result) overlap += overlapArea(candidate, badge.bounds) * 4.0;
+      if (overlap < leastOverlap) { chosen = candidate; leastOverlap = overlap; }
+      if (overlap == 0.0) break;
+    }
+    result.push_back({id, group.members, chosen});
+  }
+  return result;
+}
 
 void SingShell::activate(const std::filesystem::path& assetRoot) {
   const auto captureProfile = std::getenv("SEAM_UI_CAPTURE_PROFILE") != nullptr;
@@ -2450,10 +2517,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   std::vector<ui::Rect> capsules;
   for (const auto& note : notes) {
     if (note.hiddenByOverlapDensity) continue;
-    auto b = note.bounds;
-    b.y += l.grid.y + 1.5;
-    b.height = std::max(3.0, b.height - 3.0);
-    b.width = std::max(2.0, b.width);
+    const auto b = singNoteCapsuleBounds(note, l.grid);
     capsules.push_back(b);
     if (const auto added = addedNotes_.find(note.noteId);
         added != addedNotes_.end() && added->second.running(frameNow_, preferences_.reduceMotion))
@@ -2481,9 +2545,14 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       c.fill(p, LinearGradient{{b.x, b.y}, {b.x, b.bottom()},
                                {{0.0, note.midiKey % 2U == 0U ? t.color.noteFillAlt : t.color.noteFill},
                                 {1.0, t.color.surfaceSunken}}});
+      if (note.overlapMemberCount > 1U) {
+        // The old inset and halo consumed most of a compressed band's height. A filled body
+        // separates the members without changing any note's musical duration or pitch.
+        c.fill(p, withAlpha(t.color.noteStroke, 0.30 + 0.10 * static_cast<double>(note.overlapBand)));
+      }
       wave();
       c.save();
-      c.setGlow(withAlpha(t.color.noteStroke, 0.55), 5.0);
+      c.setGlow(withAlpha(t.color.noteStroke, 0.55), note.overlapMemberCount > 1U ? 1.0 : 5.0);
       c.stroke(p, withAlpha(t.color.noteStroke, 0.8), StrokeStyle{1.1});
       c.restore();
     }
@@ -2494,10 +2563,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     if (added == addedNotes_.end() || note.hiddenByOverlapDensity) continue;
     const auto progress = added->second.eased(frameNow_, preferences_.reduceMotion);
     const auto scale = 0.92 + 0.08 * progress;
-    auto bounds = note.bounds;
-    bounds.y += l.grid.y + 1.5;
-    bounds.height = std::max(3.0, bounds.height - 3.0);
-    bounds.width = std::max(2.0, bounds.width);
+    auto bounds = singNoteCapsuleBounds(note, l.grid);
     const auto dx = bounds.width * (1.0 - scale) * 0.5;
     const auto dy = bounds.height * (1.0 - scale) * 0.5;
     bounds = {bounds.x + dx, bounds.y + dy, bounds.width * scale, bounds.height * scale};
@@ -2515,10 +2581,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   for (const auto& note : notes) {
     if (note.hiddenByOverlapDensity || note.selected) continue;
     if (state.hoveredNote != note.noteId && state.focusedNote != note.noteId) continue;
-    auto b = note.bounds;
-    b.y += l.grid.y + 1.5;
-    b.height = std::max(3.0, b.height - 3.0);
-    b.width = std::max(2.0, b.width);
+    const auto b = singNoteCapsuleBounds(note, l.grid);
     c.stroke(Path::roundedRect(b, std::min(t.shape.note, b.height * 0.5)), t.color.noteStroke,
              StrokeStyle{1.6});
   }
@@ -2555,6 +2618,9 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     }
   }
 
+  const auto badges = layoutSingOverlapBadges(notes, l.grid);
+  // Badge slots also reserve space from lyric labels; a count must never obscure a syllable.
+  for (const auto& badge : badges) capsules.push_back(badge.bounds);
   // Lyric labels: allocated in priority order into free slots so that labels never overlap each
   // other or another note, and never leave the grid.
   {
@@ -2591,6 +2657,9 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
         if (!inside && (slot.y < l.grid.y || slot.right() > l.grid.right())) continue;
         bool free = std::none_of(placed.begin(), placed.end(),
                                  [&](const ui::Rect& other) { return intersects(slot, other); });
+        free = free && std::none_of(badges.begin(), badges.end(), [&](const auto& badge) {
+          return intersects(slot, badge.bounds);
+        });
         if (!inside) {
           free = free && std::none_of(capsules.begin(), capsules.end(), [&](const ui::Rect& other) {
                    return intersects(slot, other);
@@ -2608,16 +2677,12 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     }
   }
 
-  // Overlap badges.
-  for (const auto& note : notes) {
-    if (!note.drawsOverlapIndicator) continue;
-    auto b = note.bounds;
-    b.y += l.grid.y;
-    const ui::Rect badge{std::min(b.right() + 3.0, l.grid.right() - 30.0), b.y - 2.0, 28.0, 18.0};
-    c.fill(Path::capsule(badge), t.color.surfaceRaised);
-    c.stroke(Path::capsule(badge), t.color.focusRing, StrokeStyle{1.0});
-    c.text(badge, "x" + std::to_string(note.overlapMemberCount),
-           style(FontRole::UiBold, t.type.smallLabel, 0.0, TextAlign::Center), t.color.focusRing);
+  // Small stacks are discoverable too; editing each member remains in the detail popover.
+  for (const auto& badge : badges) {
+    c.fill(Path::capsule(badge.bounds), t.color.surfaceRaised);
+    c.stroke(Path::capsule(badge.bounds), t.color.focusRing, StrokeStyle{1.0});
+    c.text(badge.bounds, "\xC3\x97" + std::to_string(badge.members),
+           style(FontRole::UiBold, t.type.label, 0.0, TextAlign::Center), t.color.focusRing);
   }
   c.restore();
 
@@ -2774,8 +2839,29 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     return;
   }
   if (!open) {
-    c.text(info, tr(Str::SelectAChannelToDrawIts),
-           style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), t.color.textSecondary);
+    // The unused band gives readable guidance, not a hint elided between eight tabs. Failure
+    // toasts own this space when present; do not put competing instructions under them.
+    if (characterState_ != CharacterState::Error && state.diagnostics.empty()) {
+      c.save();
+      c.clipRect(plot);
+      const auto heading = style(FontRole::UiSemibold, t.type.body, 0.0, TextAlign::Center);
+      const auto body = style(FontRole::Ui, t.type.label, 0.0, TextAlign::Center);
+      const auto lines = wrapTooltipText(tr(Str::LaneGettingStarted),
+          std::max(1.0, plot.width - 32.0), body,
+          [&](std::string_view text, const TextStyle& textStyle) { return c.measure(text, textStyle); },
+          plot.height >= 76.0 ? 2U : 1U);
+      const auto total = 24.0 + static_cast<double>(lines.size()) * 18.0;
+      auto y = plot.y + std::max(0.0, (plot.height - total) * 0.5);
+      c.text({plot.x + 16.0, y, std::max(1.0, plot.width - 32.0), 22.0},
+             tr(Str::SelectAChannelToDrawIts), heading, t.color.textPrimary);
+      y += 24.0;
+      for (const auto& line : lines) {
+        c.text({plot.x + 16.0, y, std::max(1.0, plot.width - 32.0), 18.0}, line,
+               body, t.color.textSecondary);
+        y += 18.0;
+      }
+      c.restore();
+    }
     return;
   }
   const auto& e = state.expression;
@@ -3557,15 +3643,22 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.text({l.status.x + 28.0, l.status.y, meter.x - l.status.x - 48.0, l.status.height}, left.text,
          style(FontRole::Ui, t.type.smallLabel),
          left.tone == StatusTone::Warning ? t.color.warning : t.color.textSecondary);
-  // The error toast above the bar: the head-in-hand crop and the reason the line to the left already
-  // carries, for a failed render or a missing voicebank and nothing else. The SINGER card keeps the
-  // recovery action, which stays reachable in the rack to the right of this rectangle.
+  // The error toast above the bar: the head-in-hand crop, a title naming the failure and the cause
+  // behind the line to the left, for a failed render or a missing voicebank and nothing else. The
+  // SINGER card keeps the recovery action, which stays reachable in the rack to the right of this
+  // rectangle.
   // It stacks above the diagnostics toast when one shows, and is left out where it cannot.
   const auto input = characterSurfaceInput(state, auditionLevel_);
-  errorToast_ = characterErrorToast(l, input, left.text,
+  // Sized to the wrapped reason, measured with the font the toast paints, so a one-line cause
+  // leaves the lane and its playhead visible above the card.
+  const CharacterToastMeasure toastMeasure{
+      characterToastReasonStyle(t),
+      [&c](std::string_view text, const TextStyle& textStyle) { return c.measure(text, textStyle); }};
+  errorToast_ = characterErrorToast(l, input, singErrorToastCause(state),
                                     state.diagnostics.empty()
                                         ? std::nullopt
-                                        : std::optional<ui::Rect>{diagnosticsToastBounds()});
+                                        : std::optional<ui::Rect>{diagnosticsToastBounds()},
+                                    &toastMeasure);
   if (errorToast_.has_value()) {
     const auto toast = *errorToast_;
     // Over the lane like the diagnostics toast, and so above the lane's playhead for the same reason.
@@ -3727,6 +3820,16 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
           StatusTone::Normal};
 }
 
+std::string singErrorToastCause(const EditorSceneState& state) {
+  const auto& s = state.renderStatus;
+  if (s.state == RenderStatusState::Failed && !s.diagnostic.empty()) return s.diagnostic;
+  if (!state.diagnostics.empty()) {
+    auto presentation = presentDiagnostic(state.diagnostics.front());
+    if (!presentation.impact.empty()) return std::move(presentation.impact);
+  }
+  return singStatusMessage(state).text;
+}
+
 // ---- EXPORT workspace --------------------------------------------------------------------------
 
 namespace {
@@ -3873,17 +3976,8 @@ std::vector<std::pair<std::size_t, ui::Rect>> SingShell::overlapBadges(
     const NativeEditorController& controller) const {
   std::vector<std::pair<std::size_t, ui::Rect>> out;
   if (!presented_ || workspace_ != Workspace::Sing || layout_.inspectorOpen) return out;
-  const auto& l = layout_;
-  for (const auto& note : controller.pianoRoll().visibleNotes()) {
-    if (!note.drawsOverlapIndicator) continue;
-    const ui::Rect painted{note.bounds.x, note.bounds.y + l.grid.y, note.bounds.width,
-                           note.bounds.height};
-    // Exactly the badge paintEditor draws, so the hit rectangle is the painted rectangle.
-    ui::Rect badge{std::min(painted.right() + 3.0, l.grid.right() - 30.0), painted.y - 2.0, 28.0,
-                   18.0};
-    if (badge.y < l.grid.y) badge.y = l.grid.y;
-    out.emplace_back(note.overlapGroup, badge);
-  }
+  for (const auto& badge : layoutSingOverlapBadges(controller.pianoRoll().visibleNotes(), layout_.grid))
+    out.emplace_back(badge.group, badge.bounds);
   return out;
 }
 
@@ -5265,16 +5359,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     collect(legacy, collect);
   }
   for (const auto& child : legacy.children) {
-    if (!child.id.starts_with("overlap-group.") && !child.id.starts_with("detail.")) continue;
+    // The visible count badge is the group's one actionable shell control. Importing the old
+    // score-sized group control too gives screen-reader users two conflicting activation paths.
+    if (!child.id.starts_with("detail.")) continue;
     auto copy = child;
-    // Every descendant moves with its group: overlap groups are clipped to the grid like notes,
-    // and the detail popover's rows move with the popover.
-    const auto inGrid = child.id.starts_with("overlap-group.");
     const auto transform = [&](SemanticNode& node, const auto& self) -> void {
-      if (inGrid)
-        presentInGrid(node);
-      else
-        node.bounds = fromLegacy(node.bounds);
+      node.bounds = fromLegacy(node.bounds);
       for (auto& grandchild : node.children) self(grandchild, self);
     };
     transform(copy, transform);
@@ -5341,7 +5431,9 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
         .enabled = laneEditable_,
         .actions = {SemanticAction::SetFocus},
         .description = laneEditable_ ? tr(Str::ClickToAddAPointDrag)
-                                     : tr(Str::SelectAChannelToDrawIts)});
+                         : !open ? trf(Str::WithNote, {tr(Str::SelectAChannelToDrawIts),
+                                                        tr(Str::LaneGettingStarted)})
+                                 : state.expression.refusal});
   }
 
   // Singer rack.
@@ -5489,12 +5581,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       add(SemanticNode{.id = "shell.lane.review", .role = SemanticRole::Button,
                        .name = tr(Str::ReviewRetainedEdits), .bounds = l.laneReviewButton,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
-    for (const auto& [group, badge] : overlapBadges(controller))
-      add(SemanticNode{.id = "shell.note.overlap." + std::to_string(group),
+    for (const auto& badge : layoutSingOverlapBadges(controller.pianoRoll().visibleNotes(), l.grid))
+      add(SemanticNode{.id = "shell.note.overlap." + std::to_string(badge.group),
                        .role = SemanticRole::Button,
                        .name = tr(Str::OverlappingNotes),
-                       .value = tr(Str::ActivateToListThisGroup),
-                       .bounds = badge,
+                       .value = trf(Str::OverlappingNoteCount, {std::to_string(badge.members)}),
+                       .bounds = badge.bounds,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
                        .description = tr(Str::OpensTheOverlapDetailBesideThe)});
     // What the notes show of the rendered audio, as painted in this frame.

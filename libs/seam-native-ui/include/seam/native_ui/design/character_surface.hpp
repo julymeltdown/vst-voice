@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -221,9 +222,13 @@ inline constexpr double kSplashPromptSize = 18.0;
 ui::Rect paintSplashText(paint::Canvas2D& canvas, ui::Rect area,
                          const std::vector<SplashLine>& lines);
 
-// The error toast above the status bar: a 40-point head-in-hand crop and the reason the status line
-// already carries. It appears for a failed render and for a missing voicebank, and for nothing else.
+// The error toast above the status bar: a 40-point head-in-hand crop, a title naming the failure and
+// the cause behind the status line's message (singErrorToastCause). It appears for a failed render
+// and for a missing voicebank, and for nothing else.
 // The recovery action stays reachable in the SINGER card, which this rectangle never covers.
+// The card uses up to 720 points of the lane and reserves up to three 18-point cause rows. Painting
+// wraps the supplied reason using the actual body font, without replacing or abbreviating its data;
+// only the final visible row may elide when the lane cannot hold the whole reason.
 //
 // When the diagnostics toast shows (a missing voicebank always brings one), the error toast stacks
 // above it, so the diagnostic's title and its DIAGNOSTICS opener stay visible and reachable. It
@@ -237,9 +242,21 @@ struct CharacterToast final {
   std::string reason;
 };
 
+// The reason's body text style, shared by the layout that sizes the card and the painter.
+[[nodiscard]] paint::TextStyle characterToastReasonStyle(const DesignTokens& tokens) noexcept;
+
+// Text measurement for sizing the card to its reason. With it, the card holds only the rows the
+// wrapped reason needs (at least one, at most three and the available lane height), so a short
+// cause leaves the rest of the lane visible. Without it, the card reserves every row that fits.
+struct CharacterToastMeasure final {
+  paint::TextStyle style;
+  std::function<double(std::string_view, const paint::TextStyle&)> width;
+};
+
 [[nodiscard]] std::optional<CharacterToast> characterErrorToast(
     const SingLayout& layout, const CharacterSurfaceInput& input, std::string_view diagnostic,
-    std::optional<ui::Rect> diagnosticsToast = std::nullopt);
+    std::optional<ui::Rect> diagnosticsToast = std::nullopt,
+    const CharacterToastMeasure* measure = nullptr);
 
 // ---- the animator (section 8.3) -----------------------------------------------------------------
 
@@ -450,7 +467,8 @@ void paintEmptyProject(CharacterCanvas canvas, const DesignTokens& tokens,
                        const SingLayout& layout, const PixelSurface* packagePortrait,
                        const paint::Image* lookPortrait, const paint::Image* splash = nullptr);
 
-// The error toast above the status bar: the 40-point head-in-hand crop, its title and the reason.
+// The error toast above the status bar: the 40-point head-in-hand crop, its title and the wrapped
+// reason. High Contrast has an opaque backdrop and no glow; this held error state has no motion.
 void paintCharacterToast(CharacterCanvas canvas, const DesignTokens& tokens,
                          const CharacterToast& toast, const PixelSurface* packagePortrait,
                          const paint::Image* lookPortrait);

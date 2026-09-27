@@ -22,6 +22,7 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/voice_identity.hpp"
+#include "seam/text/unicode.hpp"
 
 #include <algorithm>
 #include <array>
@@ -135,6 +136,36 @@ CharacterSurfaceInput readyInput() {
   input.voiceIdentity = VoiceIdentityState::Ready;
   input.render = RenderStatusState::Idle;
   return input;
+}
+
+bool toastContains(ui::Rect outer, ui::Rect inner) {
+  return inner.x >= outer.x - 0.01 && inner.y >= outer.y - 0.01 &&
+         inner.right() <= outer.right() + 0.01 && inner.bottom() <= outer.bottom() + 0.01;
+}
+
+// Wrapping may move whitespace to a line boundary, but it must not lose any part of a cause or
+// damage a UTF-8 character, including an unspaced package identifier or path.
+std::string withoutSpacing(std::string_view text) {
+  std::string result;
+  for (const auto byte : text)
+    if (byte != ' ' && byte != '\t' && byte != '\n' && byte != '\r') result.push_back(byte);
+  return result;
+}
+
+std::vector<native_ui::paint::TextRecord> toastText(
+    const native_ui::design::CharacterToast& toast, DesignMode mode, Contrast contrast,
+    double scale = 1.0) {
+  native_ui::PixelSurface surface{static_cast<std::uint32_t>(1600.0 * scale),
+                                 static_cast<std::uint32_t>(900.0 * scale)};
+  const auto& tokens = native_ui::design::tokensFor(mode, contrast);
+  surface.clear(tokens.color.canvas);
+  auto vector = native_ui::paint::makeCanvas(surface, scale);
+  CHECK(vector != nullptr);
+  native_ui::RasterCanvas raster{surface, scale};
+  native_ui::paint::ScopedTextCapture capture;
+  native_ui::design::paintCharacterToast({*vector, raster}, tokens, toast, nullptr, nullptr);
+  vector->flush();
+  return capture.records();
 }
 
 }  // namespace
@@ -636,6 +667,217 @@ TEST_CASE("the error toast appears for a failed render and a missing voicebank, 
     CHECK(failedToast->pose.width == failedToast->pose.height);
   }
   static_cast<void>(kStageOpacityRest);
+}
+
+TEST_CASE("error toast cause rows use the available lane without breaking compact stacking") {
+  using native_ui::design::characterErrorToast;
+  using native_ui::design::solveSingLayout;
+  auto failed = readyInput();
+  failed.render = RenderStatusState::Failed;
+  for (const auto width : {480.0, 720.0, 1100.0, 1600.0}) {
+    const auto height = width < 1100.0 ? 480.0 : 900.0;
+    const auto layout = solveSingLayout(width, height);
+    const ui::Rect diagnostics{layout.status.x, layout.status.y - 34.0, 280.0, 28.0};
+    for (const auto stacked : {false, true}) {
+      const auto toast = characterErrorToast(
+          layout, failed, "Voicebank has multiple styles; select a style before rendering",
+          stacked ? std::optional<ui::Rect>{diagnostics} : std::nullopt);
+      // Compact lanes retain the one-row card when it fits and omit the second toast when the
+      // diagnostics row leaves less than that minimum, just as the existing recovery flow does.
+      CHECK(toast.has_value() == !(stacked && height < 720.0));
+      if (!toast) continue;
+      CHECK(toastContains(layout.lane, toast->bounds));
+      CHECK(toastContains(toast->bounds, toast->pose));
+      CHECK(!toast->bounds.intersects(layout.laneTabs));
+      CHECK(!toast->bounds.intersects(layout.status));
+      CHECK(!toast->bounds.intersects(layout.rackArea));
+      CHECK_NEAR(toast->pose.width, 40.0, 1e-9);
+      CHECK_NEAR(toast->pose.height, 40.0, 1e-9);
+      CHECK_NEAR(toast->bounds.height, height < 720.0 ? 56.0 : stacked ? 74.0 : 92.0, 1e-9);
+      if (stacked) CHECK(toast->bounds.bottom() <= diagnostics.y - 8.0);
+    }
+  }
+  // The public layout helper also accepts a narrower lane: its minimum still leaves a real text
+  // column beside the fixed head crop, and a lane one point smaller cannot produce that card.
+  auto narrow = solveSingLayout(1600.0, 900.0);
+  narrow.lane.width = 192.0;
+  const auto minimum = characterErrorToast(narrow, failed, "BANK_MISSING");
+  CHECK(minimum.has_value());
+  CHECK_NEAR(minimum->bounds.width, 160.0, 1e-9);
+  CHECK(toastContains(narrow.lane, minimum->bounds));
+  narrow.lane.width = 191.0;
+  CHECK(!characterErrorToast(narrow, failed, "BANK_MISSING").has_value());
+}
+
+TEST_CASE("a measured error toast holds only the rows its wrapped reason needs") {
+  using native_ui::design::CharacterToastMeasure;
+  using native_ui::design::characterErrorToast;
+  auto failed = readyInput();
+  failed.render = RenderStatusState::Failed;
+  const auto layout = native_ui::design::solveSingLayout(1600.0, 900.0);
+  // A fixed advance keeps the row count independent of the installed fonts.
+  const CharacterToastMeasure measure{
+      native_ui::design::characterToastReasonStyle(
+          native_ui::design::tokensFor(DesignMode::Emo, Contrast::Standard)),
+      [](std::string_view text, const native_ui::paint::TextStyle&) {
+        return 7.0 * static_cast<double>(text.size());
+      }};
+  const std::string shortReason = "Voicebank root is unavailable";
+  std::string longReason = "Voicebank root is unavailable:";
+  for (std::size_t i = 0U; i < 40U; ++i) longReason += " segment";
+  const ui::Rect diagnostics{layout.status.x, layout.status.y - 34.0, 280.0, 28.0};
+  for (const auto stacked : {false, true}) {
+    const auto below = stacked ? std::optional<ui::Rect>{diagnostics} : std::nullopt;
+    const auto reserved = characterErrorToast(layout, failed, shortReason, below);
+    const auto one = characterErrorToast(layout, failed, shortReason, below, &measure);
+    const auto many = characterErrorToast(layout, failed, longReason, below, &measure);
+    CHECK(reserved.has_value());
+    CHECK(one.has_value());
+    CHECK(many.has_value());
+    if (!reserved || !one || !many) continue;
+    // A short cause gets one row on the same floor, with the head crop centred on it.
+    CHECK_NEAR(one->bounds.height, 56.0, 1e-9);
+    CHECK_NEAR(one->bounds.bottom(), reserved->bounds.bottom(), 1e-9);
+    CHECK_NEAR(one->pose.y - one->bounds.y, 8.0, 1e-9);
+    CHECK(one->reason == shortReason);
+    // A long cause takes every row that fits and never more than the reserved card.
+    CHECK_NEAR(many->bounds.height, reserved->bounds.height, 1e-9);
+    CHECK(many->bounds.height > one->bounds.height);
+  }
+  // An empty cause keeps the one-row minimum.
+  const auto empty = characterErrorToast(layout, failed, "", std::nullopt, &measure);
+  CHECK(empty.has_value());
+  if (empty) CHECK_NEAR(empty->bounds.height, 56.0, 1e-9);
+}
+
+TEST_CASE("error toast paints complete long ASCII and CJK causes as measured body text") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto failed = readyInput();
+  failed.render = RenderStatusState::Failed;
+  const auto layout = native_ui::design::solveSingLayout(1600.0, 900.0);
+  // The actual resource-error wording with deliberately long fixture paths. These remain the
+  // supplied causes, including non-ASCII path components; the painter must not substitute prose.
+  const std::string ascii =
+      "Voicebank root is unavailable: /Users/test/Music/SEAM/Voicebanks/"
+      "official.voice.01.phase2.synthetic/versions/0.2.0-dev/sources/"
+      "voicebank-with-a-long-package-path-for-the-render-failure-fixture";
+  std::string cjk = "Voicebank root is unavailable: /음성자료/";
+  for (std::size_t i = 0U; i < 12U; ++i) cjk += "가나다音声";
+  cjk += "/source.wav";
+  const std::string renderFailure =
+      "Render did not complete — Project has no audible rendered tracks: "
+      "Voicebank cannot cover the phoneme sequence";
+  for (const auto& reason : {ascii, cjk, renderFailure}) {
+    // The captured production failure must also fit above an existing diagnostics toast, where
+    // the canonical lane holds two cause rows. The longer path fixtures use all three rows.
+    const auto stacked = reason == renderFailure;
+    const auto diagnostics = stacked
+        ? std::optional<ui::Rect>{{layout.status.x, layout.status.y - 34.0, 380.0, 28.0}}
+        : std::nullopt;
+    const auto toast = native_ui::design::characterErrorToast(layout, failed, reason, diagnostics);
+    CHECK(toast.has_value());
+    CHECK(toast->reason == reason);
+    for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+      for (const auto contrast : {Contrast::Standard, Contrast::High}) {
+        for (const auto scale : {1.0, 2.0}) {
+          const auto lines = toastText(*toast, mode, contrast, scale);
+          CHECK(lines.size() >= (stacked ? 2U : 3U));
+          CHECK(lines.size() <= (stacked ? 3U : 4U));
+          CHECK(lines.front().text == toast->title);
+          std::string paintedReason;
+          for (std::size_t i = 0U; i < lines.size(); ++i) {
+            const auto& line = lines[i];
+            CHECK(!line.elided);
+            CHECK(line.naturalWidth <= line.bounds.width + 0.01);
+            CHECK(toastContains(toast->bounds, line.bounds));
+            CHECK(toastContains(toast->bounds, line.ink));
+            CHECK(toastContains(line.clip, line.ink));
+            CHECK(text::decodeUtf8Strict(line.text).hasValue());
+            if (i > 0U) {
+              CHECK(line.bounds.y >= lines[i - 1U].bounds.bottom());
+              paintedReason += line.text;
+            }
+          }
+          CHECK(withoutSpacing(paintedReason) == withoutSpacing(reason));
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("error toast bounds long causes and only elides the final cause row at narrow widths") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto failed = readyInput();
+  failed.render = RenderStatusState::Failed;
+  std::string cjk = "Voicebank root is unavailable: /";
+  for (std::size_t i = 0U; i < 96U; ++i) cjk += "音声가";
+  const std::string ascii = "Voicebank root is unavailable: /" + std::string(400U, 'W');
+  for (const auto width : {160.0, 240.0, 356.0, 720.0}) {
+    auto layout = native_ui::design::solveSingLayout(1600.0, 900.0);
+    layout.lane.width = width + 32.0;
+    const ui::Rect diagnostics{layout.status.x, layout.status.y - 34.0, 120.0, 28.0};
+    for (const auto stacked : {false, true}) {
+      for (const auto& reason : {ascii, cjk}) {
+        const auto toast = native_ui::design::characterErrorToast(
+            layout, failed, reason, stacked ? std::optional<ui::Rect>{diagnostics} : std::nullopt);
+        CHECK(toast.has_value());
+        CHECK(toast->reason == reason);
+        const auto lines = toastText(*toast, DesignMode::Emo, Contrast::High);
+        CHECK(lines.size() == (stacked ? 3U : 4U));
+        CHECK(lines.back().elided);
+        for (std::size_t i = 0U; i < lines.size(); ++i) {
+          const auto& line = lines[i];
+          CHECK(text::decodeUtf8Strict(line.text).hasValue());
+          CHECK(toastContains(toast->bounds, line.bounds));
+          CHECK(toastContains(toast->bounds, line.ink));
+          CHECK(toastContains(line.clip, line.ink));
+          // A title may also elide at this deliberately minimal width; earlier cause rows fit.
+          if (i > 0U && i + 1U < lines.size()) CHECK(!line.elided);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("error toast keeps its head crop and paints High Contrast without a halo") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto failed = readyInput();
+  failed.render = RenderStatusState::Failed;
+  const auto toast = native_ui::design::characterErrorToast(
+      native_ui::design::solveSingLayout(1600.0, 900.0), failed, "Voicebank root is unavailable");
+  CHECK(toast.has_value());
+  native_ui::PixelSurface portrait{20U, 40U};
+  constexpr native_ui::Color head{180U, 110U, 80U, 255U};
+  portrait.clear(native_ui::Color{20U, 40U, 220U, 255U});
+  std::fill_n(portrait.pixels().begin(), 20U * 17U, head.bgra());
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    const auto& tokens = native_ui::design::tokensFor(mode, Contrast::High);
+    native_ui::PixelSurface surface{1600U, 900U};
+    surface.clear(tokens.color.canvas);
+    auto vector = native_ui::paint::makeCanvas(surface, 1.0);
+    CHECK(vector != nullptr);
+    native_ui::RasterCanvas raster{surface, 1.0};
+    // No GlowlessCanvas wrapper: the standalone painter honors the contrast token itself.
+    native_ui::design::paintCharacterToast({*vector, raster}, tokens, *toast, &portrait, nullptr);
+    vector->flush();
+    const auto pixel = [&](double x, double y) {
+      return surface.pixels()[static_cast<std::size_t>(y) * surface.width() +
+                              static_cast<std::size_t>(x)];
+    };
+    CHECK(pixel(toast->pose.x + 20.0, toast->pose.y + 30.0) == head.bgra());
+    CHECK(pixel(toast->bounds.x + 100.0, toast->bounds.bottom() - 4.0) ==
+          tokens.color.surfaceRaised.bgra());
+    // All drawing stays in the card plus its half-point border; High Contrast adds no halo.
+    const ui::Rect painted{toast->bounds.x - 1.0, toast->bounds.y - 1.0,
+                           toast->bounds.width + 2.0, toast->bounds.height + 2.0};
+    for (std::uint32_t y = 0U; y < surface.height(); ++y) {
+      for (std::uint32_t x = 0U; x < surface.width(); ++x) {
+        if (painted.contains({static_cast<double>(x) + 0.5, static_cast<double>(y) + 0.5})) continue;
+        CHECK(surface.pixels()[static_cast<std::size_t>(y) * surface.width() + x] ==
+              tokens.color.canvas.bgra());
+      }
+    }
+  }
 }
 
 namespace {

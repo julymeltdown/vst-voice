@@ -967,6 +967,56 @@ TEST_CASE("delegated note semantics use the painted overlap layout") {
   CHECK(sawHidden);
 }
 
+TEST_CASE("compressed note capsules retain their body and never cross their allocated band") {
+  const ui::Rect grid{80.0, 172.0, 1040.0, 504.0};
+  for (const auto height : {1.0, 2.0, 5.333333, 8.0, 16.0}) {
+    ui::NoteVisual note{.bounds = {305.0, 220.0, 112.0, height}, .overlapMemberCount = 3U};
+    const auto capsule = native_ui::design::singNoteCapsuleBounds(note, grid);
+    CHECK_NEAR(capsule.x, note.bounds.x, 1e-9);
+    CHECK_NEAR(capsule.width, note.bounds.width, 1e-9);
+    CHECK(capsule.y >= grid.y + note.bounds.y);
+    CHECK(capsule.bottom() <= grid.y + note.bounds.bottom());
+    CHECK(capsule.height >= height * 0.8 - 1e-9);
+  }
+}
+
+TEST_CASE("small overlap badges count the entire group and stay clear of ordinary note bodies") {
+  const ui::Rect grid{80.0, 172.0, 1040.0, 504.0};
+  std::vector<ui::NoteVisual> notes{
+      {.bounds = {300.0, 100.0, 90.0, 8.0}, .timelineBounds = {300.0, 100.0, 90.0, 16.0},
+       .overlapGroup = 2U, .overlapMemberCount = 2U},
+      {.bounds = {330.0, 108.0, 140.0, 8.0}, .timelineBounds = {330.0, 100.0, 140.0, 16.0},
+       .overlapGroup = 2U, .overlapMemberCount = 2U},
+      {.bounds = {476.0, 100.0, 80.0, 16.0}, .timelineBounds = {476.0, 100.0, 80.0, 16.0}}};
+  const auto badges = native_ui::design::layoutSingOverlapBadges(notes, grid);
+  CHECK(badges.size() == 1U); // No raw overflow indicator: neither member was hidden.
+  CHECK(badges.front().members == 2U);
+  CHECK(badges.front().group == 2U);
+  CHECK(badges.front().bounds.height >= 24.0);
+  CHECK(badges.front().bounds.width >= 24.0);
+  for (const auto& note : notes) {
+    auto b = note.bounds;
+    b.y += grid.y;
+    CHECK(!badges.front().bounds.intersects(b));
+  }
+  for (const auto offset : {-500.0, 0.0, 800.0}) {
+    auto edge = notes;
+    for (auto& note : edge) {
+      note.bounds.x += offset;
+      note.bounds.y += offset;
+      note.timelineBounds.x += offset;
+      note.timelineBounds.y += offset;
+    }
+    const auto clipped = native_ui::design::layoutSingOverlapBadges(edge, grid);
+    CHECK(clipped.size() == 1U);
+    const auto b = clipped.front().bounds;
+    CHECK(b.x >= grid.x);
+    CHECK(b.y >= grid.y);
+    CHECK(b.right() <= grid.right());
+    CHECK(b.bottom() <= grid.bottom());
+  }
+}
+
 TEST_CASE("leaving a vibrato handle through shell Tab returns arrows to the note") {
   using native_ui::SemanticAction;
   ShellFixture f;
@@ -1789,11 +1839,57 @@ TEST_CASE("a failed render's status line names its reason, not only that it fail
   CHECK(failed.text.starts_with("Render did not complete"));
   CHECK(failed.text.ends_with(reason));
   CHECK(failed.tone == StatusTone::Warning);
+  // The error toast's title already says the render did not complete; its cause is the reason.
+  CHECK(native_ui::design::singErrorToastCause(state) == reason);
 
   // Any other diagnostic keeps its title; a render that did not fail adds no reason to it.
   state.renderStatus.state = RenderStatusState::Ready;
   state.diagnostics.front().code = "BANK_MISSING";
   CHECK(native_ui::design::singStatusMessage(state).text == "Voicebank needs attention");
+  // The toast titled "Voicebank needs attention" explains the impact instead of repeating it.
+  CHECK(native_ui::design::singErrorToastCause(state) ==
+        "This track cannot render until its exact voicebank is available.");
+}
+
+TEST_CASE("the unopened expression lane paints readable guidance without inventing automation") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f;
+  const auto revision = f.controller.documentRevision();
+  using native_ui::design::Str;
+  for (const auto [width, height] : {std::pair{720.0, 480.0}, std::pair{860.0, 640.0},
+                                     std::pair{1100.0, 720.0}, std::pair{1600.0, 900.0}}) {
+    CHECK(f.shell.prepareFrame(f.controller, width, height));
+    native_ui::PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    native_ui::paint::ScopedTextCapture capture;
+    CHECK(f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()));
+    const auto plot = f.shell.layout().laneTimePlot;
+    bool sawHeading = false;
+    std::size_t hintLines = 0U;
+    for (const auto& line : capture.records()) {
+      if (line.bounds.x < plot.x || line.bounds.right() > plot.right() ||
+          line.bounds.y < plot.y || line.bounds.bottom() > plot.bottom()) continue;
+      if (line.text == native_ui::design::tr(Str::SelectAChannelToDrawIts)) {
+        sawHeading = true;
+        CHECK(!line.elided);
+      } else if (std::string_view{native_ui::design::tr(Str::LaneGettingStarted)}.find(line.text) !=
+                 std::string_view::npos) {
+        ++hintLines;
+        CHECK(!line.elided);
+      }
+    }
+    CHECK(sawHeading);
+    CHECK(hintLines > 0U);
+    CHECK(!f.controller.sceneState().expressionLabelVisible());
+    CHECK(f.controller.documentRevision() == revision);
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    bool accessible = false;
+    for (const auto& node : f.shell.accessibilityTree().root().children)
+      if (node.id == "shell.lane")
+        accessible = node.description.find(native_ui::design::tr(Str::LaneGettingStarted)) != std::string::npos;
+    CHECK(accessible);
+  }
 }
 
 TEST_CASE("the seam hint and the empty-project line are whole sentences from the string table") {
@@ -2588,15 +2684,9 @@ struct OverlayFixture final {
     static_cast<void>(width);
     static_cast<void>(height);
     const auto& l = shell.layout();
-    for (const auto& note : controller.pianoRoll().visibleNotes()) {
-      if (!note.drawsOverlapIndicator) continue;
-      const auto painted = ui::Rect{note.bounds.x, note.bounds.y + l.grid.y, note.bounds.width,
-                                    note.bounds.height};
-      auto badge = ui::Rect{std::min(painted.right() + 3.0, l.grid.right() - 30.0), painted.y - 2.0,
-                            28.0, 18.0};
-      if (badge.y < l.grid.y) badge.y = l.grid.y;
-      return {badge.x + badge.width * 0.5, badge.y + badge.height * 0.5};
-    }
+    for (const auto& badge : native_ui::design::layoutSingOverlapBadges(
+             controller.pianoRoll().visibleNotes(), l.grid))
+      return {badge.bounds.x + badge.bounds.width * 0.5, badge.bounds.y + badge.bounds.height * 0.5};
     throw test::Failure{"no overlap badge"};
   }
 };
@@ -3130,6 +3220,60 @@ TEST_CASE("the overlap detail popover anchors to the +N badge and selects a memb
     CHECK(detail->members[1].selected);
     CHECK(!detail->members[0].selected);
     CHECK(f.session.selection().contains(detail->members[1].noteId));
+  }
+}
+
+TEST_CASE("a two-note overlap opens its detail through the exact painted badge") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto badges = native_ui::design::layoutSingOverlapBadges(
+      f.controller.pianoRoll().visibleNotes(), f.shell.layout().grid);
+  CHECK(badges.size() == 1U);
+  const auto& badge = badges.front();
+  const auto* node = f.node("shell.note.overlap." + std::to_string(badge.group));
+  CHECK(node != nullptr);
+  CHECK_NEAR(node->bounds.x, badge.bounds.x, 1e-9);
+  CHECK_NEAR(node->bounds.y, badge.bounds.y, 1e-9);
+  CHECK_NEAR(node->bounds.width, badge.bounds.width, 1e-9);
+  CHECK_NEAR(node->bounds.height, badge.bounds.height, 1e-9);
+  CHECK(node->value == "2 overlapping notes");
+  for (const auto& child : f.shell.accessibilityTree().root().children)
+    CHECK(!child.id.starts_with("overlap-group."));
+  const auto point = f.badgeCenter();
+  CHECK(f.shell.pointerDown(f.controller, press(point)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(point)).hasValue());
+  CHECK(f.controller.sceneState().overlapDetail.has_value());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::OverlapDetail);
+  CHECK(f.controller.sceneState().overlapDetail->members.size() == 2U);
+  const auto overlay = native_ui::design::makeOverlapDetailOverlay();
+  const auto anchor = overlay->badge(f.controller, f.controller.sceneState(), f.shell.layout());
+  CHECK_NEAR(anchor.x, badge.bounds.x, 1e-9);
+  CHECK_NEAR(anchor.y, badge.bounds.y, 1e-9);
+}
+
+TEST_CASE("overlap count badges never paint over an in-note lyric in a packed score") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto* region = f.session.project().findRegion(f.regionId);
+  // Fill every nearby alternative slot: the badge must stay bounded, and any lyric under its
+  // unavoidable overlay must yield to the badge rather than becoming partially hidden text.
+  for (const auto key : {70U, 71U, 73U, 74U}) {
+    auto [lyric, note] = f.factory.makeNote(time::Tick{0}, time::Tick{7680},
+                                            static_cast<std::uint8_t>(key), U"packed-lyric");
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  }
+  f.controller.pianoRoll().rebuildIndex();
+  native_ui::paint::ScopedTextCapture capture;
+  CHECK(f.frame());
+  const auto badges = native_ui::design::layoutSingOverlapBadges(
+      f.controller.pianoRoll().visibleNotes(), f.shell.layout().grid);
+  CHECK(!badges.empty());
+  for (const auto& line : capture.records()) {
+    if (line.text != "a" && line.text != "i" && line.text != "packed-lyric") continue;
+    for (const auto& badge : badges) CHECK(!line.bounds.intersects(badge.bounds));
   }
 }
 

@@ -1,5 +1,6 @@
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
+#include "seam/native_ui/design/tooltip.hpp"
 #include "seam/native_ui/paint/display_list.hpp"
 #include "seam/native_ui/paint/qoi.hpp"
 
@@ -23,6 +24,15 @@ using paint::Path;
 using paint::StrokeStyle;
 
 constexpr double kPi = std::numbers::pi;
+constexpr double kToastTitleTop = 9.0;
+constexpr double kToastTitleHeight = 18.0;
+constexpr double kToastReasonTop = 29.0;
+constexpr double kToastLineHeight = 18.0;
+constexpr double kToastBottomPadding = 9.0;
+constexpr std::size_t kToastMaximumLines = 3U;
+// The reason column beside the head crop: the 12-point inset, the 40-point pose, a 12-point gap
+// and the 14-point right inset. The layout and the painter both use it.
+constexpr double kToastTextInset = 12.0 + 40.0 + 12.0 + 14.0;
 
 // A nearest-sampled, source-over blit of one PixelSurface into the frame, with an optional shape mask
 // and source rectangle. The pixel surfaces the character package decodes are PPM files the vector
@@ -546,30 +556,50 @@ ui::Rect paintSplashText(Canvas2D& canvas, ui::Rect area, const std::vector<Spla
 std::optional<CharacterToast> characterErrorToast(const SingLayout& layout,
                                                 const CharacterSurfaceInput& input,
                                                 std::string_view diagnostic,
-                                                std::optional<ui::Rect> diagnosticsToast) {
+                                                std::optional<ui::Rect> diagnosticsToast,
+                                                const CharacterToastMeasure* measure) {
   const auto missing = input.bankMissing;
   const auto failed = input.render == RenderStatusState::Failed;
   if (!missing && !failed) return std::nullopt;
   const auto region = layout.lane;
   constexpr double kPose = 40.0;
   constexpr double kPadding = 12.0;
-  constexpr double kHeight = 56.0;
-  const auto width = std::min(440.0, region.width - 32.0);
+  constexpr double kMinimumHeight = kToastReasonTop + kToastLineHeight + kToastBottomPadding;
+  const auto width = std::min(720.0, region.width - 32.0);
   if (width < kPose + 120.0 || region.height <= 0.0) return std::nullopt;
   // The floor is the status bar, or the diagnostics toast's row when one shows, which the toast
   // stacks above. The ceiling is the lane's tab strip, whose tabs and review opener stay reachable.
   const auto stacked = diagnosticsToast.has_value() && diagnosticsToast->height > 0.0;
-  const auto bottom = stacked ? diagnosticsToast->y - 8.0 : layout.status.y - 12.0;
+  const auto bottom = std::min({region.bottom(), layout.status.y - 12.0,
+                                stacked ? diagnosticsToast->y - 8.0 : region.bottom()});
   const auto ceiling =
       (layout.laneTabs.height > 0.0 ? layout.laneTabs.bottom() : region.y) + 4.0;
-  if (bottom - kHeight < ceiling) return std::nullopt;
+  const auto available = bottom - ceiling;
+  if (available < kMinimumHeight) return std::nullopt;
+  // Keep the same one-row minimum for compact stacking. The rows that fit bound the card; with a
+  // measure, the card takes only the rows the wrapped reason needs, so a short cause leaves the
+  // lane visible above it. The painter wraps the same reason with the same style and width.
+  auto lines = std::min(static_cast<double>(kToastMaximumLines),
+                        std::floor((available - kToastReasonTop - kToastBottomPadding) /
+                                   kToastLineHeight));
+  if (measure != nullptr && measure->width) {
+    const auto wrapped = wrapTooltipText(diagnostic, std::max(0.0, width - kToastTextInset),
+                                         measure->style, measure->width, kToastMaximumLines);
+    lines = std::clamp(static_cast<double>(wrapped.size()), 1.0, lines);
+  }
+  const auto height = kToastReasonTop + lines * kToastLineHeight + kToastBottomPadding;
   CharacterToast toast;
-  toast.bounds = {region.x + 16.0, bottom - kHeight, width, kHeight};
-  toast.pose = {toast.bounds.x + kPadding, toast.bounds.y + (kHeight - kPose) * 0.5, kPose, kPose};
+  toast.bounds = {region.x + 16.0, bottom - height, width, height};
+  toast.pose = {toast.bounds.x + kPadding, toast.bounds.y + (height - kPose) * 0.5, kPose, kPose};
   toast.title = missing ? std::string{tr(Str::VoicebankNeedsAttention)}
                         : std::string{tr(Str::RenderDidNotComplete)};
   toast.reason = std::string{diagnostic};
   return toast;
+}
+
+paint::TextStyle characterToastReasonStyle(const DesignTokens& tokens) noexcept {
+  return paint::TextStyle{paint::FontRole::Ui, tokens.type.body, 0.0, paint::TextAlign::Left,
+                          false};
 }
 
 CharacterAnimator::CharacterAnimator(std::uint64_t seed) noexcept
@@ -1076,10 +1106,13 @@ void paintCharacterToast(CharacterCanvas canvas, const DesignTokens& tokens,
   auto& vector = canvas.vector;
   const auto& bounds = toast.bounds;
   if (bounds.width <= 0.0 || bounds.height <= 0.0) return;
+  const auto highContrast = tokens.contrast == Contrast::High;
   vector.save();
-  vector.setGlow(withAlpha(tokens.color.error, 0.35), 14.0);
+  vector.clearGlow();
+  vector.save();
+  if (!highContrast) vector.setGlow(withAlpha(tokens.color.error, 0.35), 14.0);
   vector.fill(Path::roundedRect(bounds, tokens.shape.card),
-              withAlpha(tokens.color.surfaceRaised, 0.97));
+              withAlpha(tokens.color.surfaceRaised, highContrast ? 1.0 : 0.97));
   vector.restore();
   vector.stroke(Path::roundedRect(bounds, tokens.shape.card),
                 withAlpha(tokens.color.error, 0.85), StrokeStyle{1.0});
@@ -1090,15 +1123,29 @@ void paintCharacterToast(CharacterCanvas canvas, const DesignTokens& tokens,
   static_cast<void>(paintCharacterPortrait(canvas, toast.pose, false, packagePortrait, lookPortrait,
                                            1.0, PortraitFit::HeadSquare));
   const auto textX = toast.pose.right() + 12.0;
-  const auto textWidth = bounds.right() - 14.0 - textX;
-  vector.text({textX, bounds.y + 9.0, textWidth, 18.0}, toast.title,
+  const auto textWidth = std::max(0.0, bounds.width - kToastTextInset);
+  vector.clipRect(bounds);
+  vector.text({textX, bounds.y + kToastTitleTop, textWidth, kToastTitleHeight}, toast.title,
               paint::TextStyle{paint::FontRole::UiSemibold, tokens.type.label, 0.6,
                                paint::TextAlign::Left, true},
               tokens.color.error);
-  vector.text({textX, bounds.y + 29.0, textWidth, 18.0}, toast.reason,
-              paint::TextStyle{paint::FontRole::Ui, tokens.type.smallLabel, 0.0,
-                               paint::TextAlign::Left, false},
-              tokens.color.textSecondary);
+  const auto lineCount = static_cast<std::size_t>(std::clamp(
+      std::floor((bounds.height - kToastReasonTop - kToastBottomPadding) / kToastLineHeight),
+      0.0, static_cast<double>(kToastMaximumLines)));
+  const auto reasonStyle = characterToastReasonStyle(tokens);
+  const auto lines = wrapTooltipText(
+      toast.reason, textWidth, reasonStyle,
+      [&vector](std::string_view text, const paint::TextStyle& style) {
+        return vector.measure(text, style);
+      },
+      lineCount);
+  auto y = bounds.y + kToastReasonTop;
+  for (const auto& line : lines) {
+    vector.text({textX, y, textWidth, kToastLineHeight}, line, reasonStyle,
+                tokens.color.textSecondary);
+    y += kToastLineHeight;
+  }
+  vector.restore();
 }
 
 core::Result<void> CharacterSurface::loadPackage(const std::filesystem::path& packageRoot) {

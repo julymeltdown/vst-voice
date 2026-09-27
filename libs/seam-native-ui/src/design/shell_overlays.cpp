@@ -1017,14 +1017,8 @@ public:
                                const EditorSceneState& state,
                                const SingLayout& layout) const override {
     if (!state.overlapDetail.has_value()) return {};
-    for (const auto& note : controller.pianoRoll().visibleNotes()) {
-      if (!note.drawsOverlapIndicator || note.overlapGroup != state.overlapDetail->groupIndex)
-        continue;
-      const ui::Rect painted{note.bounds.x, note.bounds.y + layout.grid.y, note.bounds.width,
-                             note.bounds.height};
-      return {std::min(painted.right() + 3.0, layout.grid.right() - 30.0), painted.y - 2.0, 28.0,
-              18.0};
-    }
+    for (const auto& item : layoutSingOverlapBadges(controller.pianoRoll().visibleNotes(), layout.grid))
+      if (item.group == state.overlapDetail->groupIndex) return item.bounds;
     return {};
   }
   [[nodiscard]] ui::Rect panel(const NativeEditorController& controller, const EditorSceneState& state,

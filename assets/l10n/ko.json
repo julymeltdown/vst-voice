@@ -40,6 +40,7 @@
     "Dynamics": "다이내믹스",
     "Review": "검토",
     "SelectAChannelToDrawIts": "커브를 그릴 채널을 선택하세요",
+    "LaneGettingStarted": "위의 탭을 선택해 표현을 편집하세요. 음소 탭에서는 타이밍과 유닛의 세부 정보를 확인할 수 있습니다.",
     "NoCurveStoredForThisChannel": "이 채널에 저장된 커브가 없습니다",
     "Singer": "싱어",
     "NoVoiceSelected": "선택된 보이스 없음",
