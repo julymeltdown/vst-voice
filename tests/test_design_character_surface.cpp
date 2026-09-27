@@ -639,7 +639,8 @@ const std::filesystem::path& designAssetRoot() {
 
   domain::Project makeProject(bool emptyRegion) {
     auto project = factory.createProject("Character surface");
-    project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
+    // Full: every character surface this file checks is drawn; the modes have their own test.
+    project.settings().characterDisplay = domain::CharacterDisplayMode::Full;
     trackId = factory.addVocalTrack(project, "Singer");
     regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{7680});
     if (emptyRegion) return project;
@@ -1053,4 +1054,109 @@ TEST_CASE("a frozen clock freezes the character, so a capture is reproducible") 
   // it is waiting on so a capture can place itself between blinks.
   frameAt(f, at(3.6));
   CHECK(f.surface.checksum() != first);
+}
+
+// The project's character display mode in the shell (the parity checklist's "character
+// Full/Minimal/Off", with the modes as the fidelity review's section 9 defines them): Full draws the
+// Stage and every portrait; Minimal keeps the compact identity (ring, avatar, the empty project's
+// pose) and drops the Stage; Off draws no character artwork, while the ring's ticks, the avatar's
+// state ring and the empty project's line still carry the singer's status. C cycles the modes.
+TEST_CASE("the character display mode shows, trims or removes each character surface") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  using Mode = domain::CharacterDisplayMode;
+  const auto checksum = [](const ShellFixture& f, ui::Rect r) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (auto y = static_cast<std::uint32_t>(std::max(0.0, r.y));
+         y < static_cast<std::uint32_t>(std::max(0.0, r.bottom())) && y < f.surface.height(); ++y)
+      for (auto x = static_cast<std::uint32_t>(std::max(0.0, r.x));
+           x < static_cast<std::uint32_t>(std::max(0.0, r.right())) && x < f.surface.width(); ++x) {
+        hash ^= f.surface.pixels()[static_cast<std::size_t>(y) * f.surface.width() + x];
+        hash *= 1099511628211ULL;
+      }
+    return hash;
+  };
+  // The middle of a circle, where only the portrait is drawn.
+  const auto core = [](ui::Rect r, double share) {
+    return ui::Rect{r.x + r.width * (0.5 - share * 0.5), r.y + r.height * (0.5 - share * 0.5),
+                    r.width * share, r.height * share};
+  };
+  // Where the ring's state ticks are painted, as the ring-pixel test samples them.
+  const auto ticks = [](const ShellFixture& f) {
+    const auto& ring = f.shell.layout().portraitRing;
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (std::size_t i = 0U; i < 64U; ++i) {
+      const auto angle = -std::numbers::pi * 0.5 + static_cast<double>(i) * 2.0 * std::numbers::pi / 64.0;
+      const auto x = static_cast<std::uint32_t>(ring.x + ring.width * 0.5 + std::cos(angle) * (ring.width * 0.5 - 4.0));
+      const auto y = static_cast<std::uint32_t>(ring.y + ring.height * 0.5 + std::sin(angle) * (ring.height * 0.5 - 4.0));
+      if (x >= f.surface.width() || y >= f.surface.height()) continue;
+      hash ^= f.surface.pixels()[static_cast<std::size_t>(y) * f.surface.width() + x];
+      hash *= 1099511628211ULL;
+    }
+    return hash;
+  };
+  struct Look final {
+    bool stage{false};
+    std::uint64_t ring{0U};
+    std::uint64_t ringTicks{0U};
+    std::uint64_t avatar{0U};
+    std::uint64_t emptyPose{0U};
+  };
+  // A header wide enough for the avatar, and the full rack for the Stage.
+  constexpr double kWidth = 2200.0;
+  constexpr double kHeight = 900.0;
+  const auto look = [&](Mode mode) {
+    Look out;
+    ShellFixture f;
+    f.session.project().settings().characterDisplay = mode;
+    CHECK(f.frame(kWidth, kHeight));
+    CHECK(f.controller.sceneState().characterMode == mode);
+    const auto& l = f.shell.layout();
+    CHECK(l.headerAvatar.width > 0.0);
+    CHECK(l.portraitRing.width > 0.0);
+    out.stage = f.shell.lastFrameShowedStage();
+    out.ring = checksum(f, core(l.portraitRing, 0.5));
+    out.ringTicks = ticks(f);
+    out.avatar = checksum(f, core(l.headerAvatar, 0.5));
+    ShellFixture empty{true};
+    empty.session.project().settings().characterDisplay = mode;
+    CHECK(empty.frame(kWidth, kHeight));
+    // The seated pose's box, centred on the roll above the line (paintEmptyProject).
+    const auto& grid = empty.shell.layout().grid;
+    const auto pose = std::min(grid.height * 0.42, 208.0);
+    out.emptyPose = checksum(empty, {grid.x + grid.width * 0.5 - pose * 0.5,
+                                     grid.y + grid.height * 0.42 - pose, pose, pose});
+    return out;
+  };
+  const auto full = look(Mode::Full);
+  const auto minimal = look(Mode::Minimal);
+  const auto off = look(Mode::Off);
+  // The Stage is Full's alone.
+  CHECK(full.stage);
+  CHECK(!minimal.stage);
+  CHECK(!off.stage);
+  // Minimal keeps the compact identity exactly as Full draws it.
+  CHECK(minimal.ring == full.ring);
+  CHECK(minimal.avatar == full.avatar);
+  CHECK(minimal.emptyPose == full.emptyPose);
+  // Off removes the portraits and the pose, and keeps the ring's status ticks.
+  CHECK(off.ring != full.ring);
+  CHECK(off.avatar != full.avatar);
+  CHECK(off.emptyPose != full.emptyPose);
+  CHECK(off.ringTicks == full.ringTicks);
+
+  // C is not the shell's key: it reaches the editor, which cycles Full, Minimal, Off and back, and
+  // the next frame follows.
+  ShellFixture f;
+  f.session.project().settings().characterDisplay = Mode::Full;
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.lastFrameShowedStage());
+  for (const auto expected : {Mode::Minimal, Mode::Off, Mode::Full}) {
+    const native_ui::KeyEvent c{.key = native_ui::NativeKey::C};
+    CHECK(!f.shell.handleShellKey(f.controller, c));
+    CHECK(f.controller.keyDown(c).hasValue());
+    CHECK(f.session.project().settings().characterDisplay == expected);
+    CHECK(f.frame(kWidth, kHeight));
+    CHECK(f.shell.lastFrameShowedStage() == (expected == Mode::Full));
+  }
 }

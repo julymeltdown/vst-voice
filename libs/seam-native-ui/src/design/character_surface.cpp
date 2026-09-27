@@ -311,7 +311,8 @@ std::optional<Color> keyCornerColor(PixelSurface& surface) noexcept {
 
 StagePlacement resolveStage(const StageInput& input, double stageAspect) noexcept {
   StagePlacement placement;
-  if (!input.fullRack || input.highContrast || input.laneExpanded) return placement;
+  if (!input.fullRack || !input.displayFull || input.highContrast || input.laneExpanded)
+    return placement;
   if (!(stageAspect > 0.0) || !std::isfinite(stageAspect)) return placement;
   const auto height = input.grid.height * kStageHeightFraction;
   const auto width = height * stageAspect;
