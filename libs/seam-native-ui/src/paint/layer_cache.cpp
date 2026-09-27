@@ -284,6 +284,7 @@ void LayerCache::invalidate() noexcept {
 
 void LayerCache::release() noexcept {
   invalidate();
+  backgroundSnapshotValid_ = false;
   for (auto& snapshot : snapshots_) snapshot = PixelSurface{};
   for (auto& ops : previousOps_) OpKeys{}.swap(ops);
   std::vector<std::uint32_t>{}.swap(backup_);
@@ -455,7 +456,15 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
         return out;
       }
       if (i == 0U) {
-        paintBackground(snapshot, scale, background);
+        // A forced full composition still has the same L0 pixels when its key is unchanged. The
+        // snapshot itself is the raster cache, with no extra full-window allocation. Captures and
+        // the full-resolution glow diagnostic must run the painter on the calling thread.
+        if (!backgroundSnapshotValid_ || backgroundSnapshotKey_ != background.key ||
+            ScopedTextCapture::active() || ScopedFullResolutionGlow::active()) {
+          paintBackground(snapshot, scale, background);
+          backgroundSnapshotKey_ = background.key;
+          backgroundSnapshotValid_ = true;
+        }
       } else {
         copyPixels(std::as_const(snapshots_[i - 1U]).pixels(), snapshot.pixels());
         if (auto canvas = makeCanvas(snapshot, scale); canvas != nullptr) {

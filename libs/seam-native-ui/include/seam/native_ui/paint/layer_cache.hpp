@@ -47,7 +47,8 @@ class LayerCache final {
 public:
   Composition compose(RasterCanvas& target, const BackgroundLayer& background,
                       const RecordingCanvas& frame, bool targetRetained = false);
-  // Drops every snapshot's validity (not its memory); the next frame is composed from nothing.
+  // Drops composition validity. L0's pixels remain reusable while its complete background key
+  // matches, so an explicit full-frame invalidation need not repaint unchanged artwork.
   void invalidate() noexcept;
   // Frees the snapshots as well.
   void release() noexcept;
@@ -62,6 +63,9 @@ private:
               const RecordingCanvas& frame, Layer layer, const OpKeys& ops,
               const std::vector<ui::Rect>& damage, double scale);
   std::array<PixelSurface, kSnapshots> snapshots_{};
+  // L0 pixels remain reusable after an explicit full-frame invalidation when its key is unchanged.
+  std::uint64_t backgroundSnapshotKey_{0U};
+  bool backgroundSnapshotValid_{false};
   std::array<std::uint64_t, kSnapshots> keys_{};
   std::array<bool, kSnapshots> valid_{};
   // The previous frame's calls of the grid and content layers, when their snapshot holds them.
