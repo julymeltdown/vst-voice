@@ -507,7 +507,7 @@ struct Chips final {
 };
 
 std::string poseLabel(const voice_design::VoicePose& pose) {
-  return pose.style == "neutral" || pose.style.empty() ? pose.phone : pose.phone + tr(Str::Text11) + pose.style;
+  return pose.style == "neutral" || pose.style.empty() ? pose.phone : trf(Str::PoseStyle, {pose.phone, pose.style});
 }
 
 double chipWidth(const voice_design::VoicePose& pose) {
@@ -970,7 +970,7 @@ private:
     if (!host_.play) return core::failure(core::ErrorCode::Unsupported, host_.playUnavailable);
     auto played = host_.play(audio);
     if (played) {
-      message_ = std::string{tr(Str::Playing)} + std::string{which} + tr(Str::NotApproved);
+      message_ = trf(Str::PlayingNotApproved, {which});
       level_ = 0.0F;
     }
     return played;
@@ -1051,7 +1051,7 @@ private:
     auto* s = session();
     if (s == nullptr || s->model() == nullptr) return tr(Str::NoVoiceRecipeIsOpen);
     const auto name = s->path().empty() ? std::string{tr(Str::UnsavedDraft2)} : s->path().filename().string();
-    return s->model()->recipe().id + tr(Str::Text) + name + (s->model()->dirty() ? tr(Str::Edited2) : "");
+    return trf(s->model()->dirty() ? Str::RecipeFileEdited : Str::RecipeFile, {s->model()->recipe().id, name});
   }
   std::string auditionStatus() const {
     auto* s = session();
@@ -1690,8 +1690,8 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
       if (!allowed.value()) return core::success();
       auto opened = s->beginOpen(*chosen.value(), true);
       if (opened) {
-        message_ = tr(Str::Opening) + chosen.value()->filename().string() + tr(Str::Text5);
-        fileDone_ = tr(Str::Opened) + chosen.value()->filename().string();
+        message_ = trf(Str::OpeningFile, {chosen.value()->filename().string()});
+        fileDone_ = trf(Str::OpenedFile, {chosen.value()->filename().string()});
       }
       return note(std::move(opened));
     }
@@ -1700,7 +1700,7 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
         auto saved = s->beginSave(s->path());
         if (saved) {
           message_ = tr(Str::Saving);
-          fileDone_ = tr(Str::Saved) + s->path().filename().string();
+          fileDone_ = trf(Str::SavedFile, {s->path().filename().string()});
         }
         return note(std::move(saved));
       }
@@ -1714,8 +1714,8 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
         return note(core::failure(core::ErrorCode::Conflict, tr(Str::TheVoiceChangedWhileChoosingA)));
       auto saved = s->beginSave(*chosen.value());
       if (saved) {
-        message_ = tr(Str::Saving2) + chosen.value()->filename().string() + tr(Str::Text5);
-        fileDone_ = tr(Str::Saved) + chosen.value()->filename().string();
+        message_ = trf(Str::SavingFile, {chosen.value()->filename().string()});
+        fileDone_ = trf(Str::SavedFile, {chosen.value()->filename().string()});
       }
       return note(std::move(saved));
     }
@@ -1809,7 +1809,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
     // The open menu is modal: its button and its items are all that is published.
     const auto i = static_cast<std::size_t>(*menu_);
     out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
-                   .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Open), .bounds = l.more[i],
+                   .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Open), .bounds = l.more[i],
                    .actions = pressable});
     const auto items = menuFor(*menu_);
     const auto rows = menuRows(area, l.more[i], items.size());
@@ -1838,7 +1838,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
   if (l.mode == Mode::Tabbed) {
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       out.push_back(SemanticNode{.id = std::string{"shell.voice.view."} + kCardIds[i], .role = SemanticRole::Tab,
-                     .name = std::string{tr(kCardTitles[i])} + tr(Str::Module), .bounds = l.view[i],
+                     .name = trf(Str::NamedModule, {tr(kCardTitles[i])}), .bounds = l.view[i],
                      .selected = static_cast<std::size_t>(view_) == i, .actions = pressable});
   }
   out.push_back(SemanticNode{.id = "shell.voice.singer", .role = SemanticRole::Status, .name = tr(Str::Singer),
@@ -1847,13 +1847,13 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
   for (std::size_t i = 0U; i < 4U; ++i) {
     if (!usable(l.card[i])) continue;
     std::string value = r == nullptr ? std::string{tr(Str::NoVoiceRecipeIsOpen)} : std::string{};
-    if (r != nullptr && i == 1U && hasPose) value = tr(Str::Pose) + poseLabel(r->poses[p]);
+    if (r != nullptr && i == 1U && hasPose) value = trf(Str::NamedPose, {poseLabel(r->poses[p])});
     if (i == 3U) value = auditionStatus();
-    out.push_back(SemanticNode{.id = cardId(i), .role = SemanticRole::Panel, .name = std::string{tr(kCardTitles[i])} + tr(Str::Module),
+    out.push_back(SemanticNode{.id = cardId(i), .role = SemanticRole::Panel, .name = trf(Str::NamedModule, {tr(kCardTitles[i])}),
                    .value = value, .bounds = l.card[i]});
     if (usable(l.more[i]))
       out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
-                     .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Closed), .bounds = l.more[i],
+                     .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Closed), .bounds = l.more[i],
                      .actions = pressable});
   }
   if (cardShown(l, Card::Source))
@@ -1868,7 +1868,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
       const auto chips = layoutChips(l.chipStrip, *r, p);
       for (const auto& [index, rect] : chips.chips)
         out.push_back(SemanticNode{.id = "shell.voice.pose." + std::to_string(index), .role = SemanticRole::RadioButton,
-                       .name = tr(Str::Pose) + poseLabel(r->poses[index]), .bounds = rect, .selected = index == p,
+                       .name = trf(Str::NamedPose, {poseLabel(r->poses[index])}), .bounds = rect, .selected = index == p,
                        .actions = pressable});
       if (usable(chips.previous))
         out.push_back(SemanticNode{.id = "shell.voice.pose.previous", .role = SemanticRole::Button, .name = tr(Str::PreviousPose),
@@ -1881,7 +1881,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
                      .description = tr(Str::CopiesTheSelectedPoseUnderA)});
     }
     SemanticNode envelope{.id = "shell.voice.envelope", .role = SemanticRole::Lane, .name = tr(Str::SpectralEnvelope),
-                          .value = hasPose ? std::to_string(r->poses[p].formants.size()) + tr(Str::Resonances80HzTo8KHz)
+                          .value = hasPose ? trf(Str::ResonanceCount, {std::to_string(r->poses[p].formants.size())})
                                            : std::string{tr(Str::NoVoiceRecipeIsOpen)},
                           .bounds = l.plot, .enabled = hasPose, .actions = focusable,
                           .description = tr(Str::DragAFormantToMoveIts)};
@@ -1894,8 +1894,8 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
         envelope.children.push_back(SemanticNode{
             .id = "shell.voice.formant." + std::to_string(h.band + 1U), .role = SemanticRole::Slider,
             .name = "F" + std::to_string(h.band + 1U),
-            .value = format("%.0f Hz", band.frequencyHz) + ", " + format("%+.1f dB", band.gainDb) + tr(Str::Bandwidth) +
-                     format("%.0f Hz", band.bandwidthHz),
+            .value = trf(Str::FormantValue, {format("%.0f", band.frequencyHz), format("%+.1f", band.gainDb),
+                                              format("%.0f", band.bandwidthHz)}),
             .bounds = h.hit,
             .actions = {SemanticAction::Increment, SemanticAction::Decrement, SemanticAction::SetFocus},
             .description = tr(Str::IncrementAndDecrementMoveItsFrequency),
@@ -1914,13 +1914,13 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
       for (const auto& row : layoutNoiseRows(l.list, fricationsFor(*r, p), noiseScroll_)) {
         const auto& source = r->frications[row.index];
         const auto base = "shell.voice.frication." + std::to_string(row.index);
-        out.push_back(SemanticNode{.id = base, .role = SemanticRole::RadioButton, .name = tr(Str::Frication) + source.phone,
+        out.push_back(SemanticNode{.id = base, .role = SemanticRole::RadioButton, .name = trf(Str::NamedFrication, {source.phone}),
                        .bounds = row.label, .selected = selected == row.index, .actions = pressable});
         for (std::size_t f = 0U; f < 3U; ++f) {
           const auto value = noiseValue(source.source, f);
           const auto [lo, hi] = noiseRange(source.source, f);
           out.push_back(SemanticNode{.id = base + "." + kNoiseFieldIds[f], .role = SemanticRole::Slider,
-                         .name = source.phone + " " + tr(kNoiseFieldLabels[f]),
+                         .name = trf(Str::PhoneField, {source.phone, tr(kNoiseFieldLabels[f])}),
                          .value = f == 2U ? format("%.3f", value) : format("%.0f Hz", value), .bounds = row.slider[f],
                          .actions = {SemanticAction::Increment, SemanticAction::Decrement, SemanticAction::SetFocus},
                          .numericValue = value, .numericMinimum = lo, .numericMaximum = hi,

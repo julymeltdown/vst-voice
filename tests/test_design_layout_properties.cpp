@@ -717,20 +717,41 @@ TEST_CASE("pseudo-localized text 40% longer elides with its full text on an acce
   const std::array<std::pair<Str, std::string_view>, 12U> compactForms{{
       {Str::Out, "header output meter label; node: Output level"},
       {Str::Unavailable, "refused knob caption; node value: the refusal reason"},
-      {Str::PitchReadOnly, "TUNE pitch caption; node description words it differently"},
+      {Str::PitchCaptionReadOnly, "TUNE pitch caption; node description words it differently"},
       {Str::Text9, "TUNE pitch ruler tick sign; ticks are decorative"},
       {Str::Stereo, "MIX master format line; node value: channel layout"},
       {Str::CLIP, "MIX clip light; node: clip state"},
       {Str::AudioOffline, "MIX compact device button; node: Audio settings"},
       {Str::Source, "phoneme review field label; node names the field"},
-      {Str::MIDI2, "overlap row key readout; node: MIDI after a separator"},
+      {Str::MidiKey, "overlap row key readout; node: MIDI after a separator"},
       {Str::Refresh, "voice browser toolbar; node: Refresh installed voices"},
       {Str::Install, "voice browser toolbar; node: Install a voicebank"},
-      {Str::Styles, "voice card counts; node value words them separately"},
+      {Str::VoiceCardCounts, "voice card counts; node value words them separately"},
   }};
+  // A form with values in it is recognised by its longest run of fixed words: the painted text has
+  // the values filled in where the entry has {0}, {1}.
+  const auto fixedWords = [&](Str id) {
+    const std::string_view text{pseudo.text(id)};
+    std::string_view longest;
+    std::size_t start = 0U;
+    while (start <= text.size()) {
+      auto open = text.find('{', start);
+      if (open == std::string_view::npos) open = text.size();
+      auto words = text.substr(start, open - start);  // without the pseudo brackets and padding
+      while (!words.empty() && std::string_view{"[]~"}.find(words.front()) != std::string_view::npos)
+        words.remove_prefix(1U);
+      while (!words.empty() && std::string_view{"[]~"}.find(words.back()) != std::string_view::npos)
+        words.remove_suffix(1U);
+      if (words.size() > longest.size()) longest = words;
+      const auto close = text.find('}', open);
+      if (close == std::string_view::npos) break;
+      start = close + 1U;
+    }
+    return std::string{longest};
+  };
   for (auto it = checker.order.begin(); it != checker.order.end();) {
     const auto known = std::any_of(compactForms.begin(), compactForms.end(), [&](const auto& form) {
-      return it->find(pseudo.text(form.first)) != std::string::npos;
+      return it->find(fixedWords(form.first)) != std::string::npos;
     });
     if (known) {
       checker.problems.erase(*it);

@@ -11,6 +11,7 @@
 // names, lyrics, device names) is data and is never looked up here.
 
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,6 +49,23 @@ private:
 // valid while that table is installed and unchanged.
 [[nodiscard]] const char* tr(Str id) noexcept;
 
+// Whole sentences with values in them use numbered placeholders, so a translation keeps the full
+// sentence and may reorder the values: "{0} notes above" or "{1}개 중 {0}". trf() looks the entry
+// up and fills {0}, {1}, ... with args; "{{" and "}}" are literal braces. A placeholder with no
+// argument is left as written, which a test would notice.
+[[nodiscard]] std::string trf(Str id, std::initializer_list<std::string_view> args);
+[[nodiscard]] std::string formatShellText(std::string_view text,
+                                          std::initializer_list<std::string_view> args);
+// The placeholder numbers a text uses, sorted and without repeats ("{1} of {0}" gives 0, 1), or
+// nothing when a brace is malformed (an unclosed "{", a "{x}"): such text is never accepted from a
+// translation file.
+struct ShellPlaceholders final {
+  bool valid{true};
+  std::vector<std::size_t> indices;
+  friend bool operator==(const ShellPlaceholders&, const ShellPlaceholders&) = default;
+};
+[[nodiscard]] ShellPlaceholders shellPlaceholders(std::string_view text);
+
 // Installs a table for every later lookup on the UI thread; null returns to English. The table
 // must outlive its installation.
 void installShellStrings(const ShellStringTable* table) noexcept;
@@ -65,4 +83,3 @@ private:
 };
 
 }  // namespace seam::native_ui::design
-

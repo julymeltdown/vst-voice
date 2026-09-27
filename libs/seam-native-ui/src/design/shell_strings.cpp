@@ -1,5 +1,6 @@
 #include "seam/native_ui/design/shell_strings.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -102,6 +103,65 @@ const char* tr(Str id) noexcept {
   return (table != nullptr ? *table : englishTable()).text(id);
 }
 
+std::string formatShellText(std::string_view text, std::initializer_list<std::string_view> args) {
+  std::string out;
+  out.reserve(text.size() + 16U);
+  for (std::size_t i = 0U; i < text.size(); ++i) {
+    const auto c = text[i];
+    if ((c == '{' || c == '}') && i + 1U < text.size() && text[i + 1U] == c) {
+      out += c;
+      ++i;
+      continue;
+    }
+    if (c == '{') {
+      const auto close = text.find('}', i);
+      std::size_t index = 0U;
+      auto digits = close != std::string_view::npos && close > i + 1U;
+      for (auto j = i + 1U; digits && j < close; ++j) {
+        if (text[j] < '0' || text[j] > '9') digits = false;
+        else index = index * 10U + static_cast<std::size_t>(text[j] - '0');
+      }
+      if (digits && index < args.size()) {
+        out += *(args.begin() + index);
+        i = close;
+        continue;
+      }
+    }
+    out += c;
+  }
+  return out;
+}
+
+std::string trf(Str id, std::initializer_list<std::string_view> args) {
+  return formatShellText(tr(id), args);
+}
+
+ShellPlaceholders shellPlaceholders(std::string_view text) {
+  ShellPlaceholders result;
+  for (std::size_t i = 0U; i < text.size(); ++i) {
+    const auto c = text[i];
+    if ((c == '{' || c == '}') && i + 1U < text.size() && text[i + 1U] == c) {
+      ++i;
+      continue;
+    }
+    if (c == '}') return ShellPlaceholders{.valid = false};
+    if (c != '{') continue;
+    const auto close = text.find('}', i);
+    if (close == std::string_view::npos || close == i + 1U) return ShellPlaceholders{.valid = false};
+    std::size_t index = 0U;
+    for (auto j = i + 1U; j < close; ++j) {
+      if (text[j] < '0' || text[j] > '9' || close - i > 4U) return ShellPlaceholders{.valid = false};
+      index = index * 10U + static_cast<std::size_t>(text[j] - '0');
+    }
+    result.indices.push_back(index);
+    i = close;
+  }
+  std::sort(result.indices.begin(), result.indices.end());
+  result.indices.erase(std::unique(result.indices.begin(), result.indices.end()),
+                       result.indices.end());
+  return result;
+}
+
 void installShellStrings(const ShellStringTable* table) noexcept {
   installed.store(table, std::memory_order_release);
 }
@@ -114,4 +174,3 @@ ScopedShellStrings::ScopedShellStrings(const ShellStringTable& table) noexcept
 ScopedShellStrings::~ScopedShellStrings() { installShellStrings(previous_); }
 
 }  // namespace seam::native_ui::design
-

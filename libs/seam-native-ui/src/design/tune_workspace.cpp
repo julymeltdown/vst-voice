@@ -951,7 +951,7 @@ void TuneWorkspace::paintHeader(Canvas2D& c, const DesignTokens& t, const Editor
   }
   std::string caption = active ? tr(Str::DragToDrawShiftClickRemoves)
                                : tr(Str::ChooseAChannelToEditIts);
-  if (l.compact) caption = active ? std::string{tr(kLabels[*active])} + tr(Str::Selected2) : tr(Str::PickAKnob);
+  if (l.compact) caption = active ? trf(Str::NamedSelected, {tr(kLabels[*active])}) : tr(Str::PickAKnob);
   c.text(l.caption, caption, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          t.color.textSecondary);
 }
@@ -972,12 +972,11 @@ void TuneWorkspace::paintGraph(Canvas2D& c, const DesignTokens& t,
     caption = tr(Str::SelectARegionToShapeIts2);
   } else if (active) {
     const auto& k = knobs[*active];
-    caption = std::string{tr(kLabels[*active])} + "  " +
-              valueText(k.descriptor, state.expression.valueAtPlayhead) + tr(Str::AtPlayhead2) +
-              std::to_string(state.expression.points.size()) + tr(Str::Points);
-    if (state.expression.draftChanged) caption += tr(Str::Editing);
+    caption = trf(state.expression.draftChanged ? Str::CurveCaptionEditing : Str::CurveCaption,
+                  {tr(kLabels[*active]), valueText(k.descriptor, state.expression.valueAtPlayhead),
+                   std::to_string(state.expression.points.size())});
     if (!state.expression.refusal.empty()) {
-      caption = std::string{tr(kLabels[*active])} + ": " + state.expression.refusal;
+      caption = trf(Str::NamedRefusal, {tr(kLabels[*active]), state.expression.refusal});
       captionColor = t.color.warning;
     }
   } else {
@@ -1096,16 +1095,17 @@ void TuneWorkspace::paintPitch(Canvas2D& c, const DesignTokens& t,
   const auto& gesture = controller.pitchPointGesture();
   const auto count = region == nullptr ? 0U : region->pitchAutomation.points().size();
   // Caption: what is stored, the value a drag would commit, or why the strip cannot edit.
-  std::string caption = tr(Str::Pitch2) + std::to_string(count) +
-                        (count == 1U ? tr(Str::Point) : tr(Str::Points));
+  const auto stored = std::to_string(count);
+  std::string caption;
   auto captionColor = t.color.textSecondary;
   if (!refusal.empty()) {
-    caption = tr(Str::PitchReadOnly) + refusal;
+    caption = trf(Str::PitchCaptionReadOnly, {refusal});
     if (region != nullptr) captionColor = t.color.warning;
   } else if (gesture) {
-    caption += tr(Str::Text) + centsText(gesture->point.cents) + tr(Str::ReleaseToCommit);
+    caption = trf(count == 1U ? Str::PitchCaptionDraggingOne : Str::PitchCaptionDragging,
+                  {stored, centsText(gesture->point.cents)});
   } else {
-    caption += tr(Str::ClickAddsDragMovesShiftRemoves);
+    caption = trf(count == 1U ? Str::PitchCaptionOne : Str::PitchCaption, {stored});
   }
   c.text(l.pitchCaption, caption, style(FontRole::UiMedium, t.type.smallLabel, 0.4), captionColor);
   const auto plot = l.pitchPlot;
@@ -1214,8 +1214,7 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
   if (target.note == nullptr) {
     const auto message = target.selected == 0U
                              ? std::string{tr(Str::SelectOneNoteInSINGTo)}
-                             : std::to_string(target.selected) +
-                                   tr(Str::NotesAreSelectedSelectOneTo);
+                             : trf(Str::NotesAreSelectedSelectOneTo, {std::to_string(target.selected)});
     c.text({l.vibratoMessage.x, l.vibratoMessage.y, l.vibratoMessage.width,
             std::min(20.0, l.vibratoMessage.height)},
            message, style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
@@ -1416,7 +1415,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         Str::ShowsTheSelectedNoteSVibrato};
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       out.push_back(SemanticNode{
-          .id = viewId(i), .role = SemanticRole::Tab, .name = std::string{tr(kViewLabels[i])} + tr(Str::View),
+          .id = viewId(i), .role = SemanticRole::Tab, .name = trf(Str::NamedView, {tr(kViewLabels[i])}),
           .bounds = l.view[i],
           .selected = view_ == static_cast<View>(i),
           .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
@@ -1425,7 +1424,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     for (std::size_t i = 0U; i < kChannels; ++i)
       out.push_back(SemanticNode{.id = std::string{"shell.tune.channel."} + kIds[i],
                                  .role = SemanticRole::Tab,
-                                 .name = std::string{tr(kLabels[i])} + tr(Str::Channel),
+                                 .name = trf(Str::NamedChannel, {tr(kLabels[i])}),
                                  .bounds = l.chip[i],
                                  .selected = active == i,
                                  .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
@@ -1436,13 +1435,13 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     SemanticNode graph{
         .id = "shell.tune.graph",
         .role = SemanticRole::Lane,
-        .name = active ? std::string{tr(kLabels[*active])} + tr(Str::Curve) : std::string{tr(Str::ExpressionCurves)},
+        .name = active ? trf(Str::NamedCurve, {tr(kLabels[*active])}) : std::string{tr(Str::ExpressionCurves)},
         .value = !active ? tr(Str::NoChannelSelected)
                  : !state.expression.refusal.empty()
                      ? state.expression.refusal
-                     : valueText(knobs[*active].descriptor, state.expression.valueAtPlayhead) +
-                           tr(Str::AtThePlayhead) + std::to_string(state.expression.points.size()) +
-                           tr(Str::Points),
+                     : trf(Str::ValueAtPlayheadPoints,
+                           {valueText(knobs[*active].descriptor, state.expression.valueAtPlayhead),
+                            std::to_string(state.expression.points.size())}),
         .bounds = l.graphPlot,
         .enabled = region != nullptr,
         .actions = editable ? std::vector<SemanticAction>{SemanticAction::Increment,
@@ -1460,9 +1459,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
       graph.children.push_back(SemanticNode{
           .id = std::string{"shell.tune.curve."} + kIds[i],
           .role = SemanticRole::Lane,
-          .name = std::string{tr(kLabels[i])} + tr(Str::Curve),
+          .name = trf(Str::NamedCurve, {tr(kLabels[i])}),
           .value = count == 0U ? std::string{tr(Str::NoCurveStored)}
-                               : std::to_string(count) + (count == 1U ? tr(Str::Point) : tr(Str::Points)),
+                               : trf(count == 1U ? Str::PointCountOne : Str::PointCount, {std::to_string(count)}),
           .bounds = l.graphPlot,
           .selected = active == i,
           .description = knobs[i].refusal});
@@ -1477,13 +1476,13 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         .id = "shell.tune.pitch",
         .role = SemanticRole::Lane,
         .name = tr(Str::PitchCurve),
-        .value = std::to_string(count) + (count == 1U ? tr(Str::Point) : tr(Str::Points)),
+        .value = trf(count == 1U ? Str::PointCountOne : Str::PointCount, {std::to_string(count)}),
         .bounds = l.pitchPlot,
         .enabled = editable,
         .actions = {SemanticAction::SetFocus},
         .description = editable
                            ? tr(Str::ClickToAddAPointDrag3)
-                           : tr(Str::ReadOnly) + refusal};
+                           : trf(Str::ReadOnlyReason, {refusal})};
     const auto axis = axisFor(controller, l.pitchPlot);
     if (region != nullptr && axis.valid()) {
       const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
@@ -1498,13 +1497,13 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         const auto bar = song / (quarter * quartersPerBar) + 1;
         const auto beat = static_cast<double>(song % (quarter * quartersPerBar)) /
                               static_cast<double>(quarter) + 1.0;
-        const auto where = tr(Str::Bar) + std::to_string(bar) + tr(Str::Beat) +
-                           (std::abs(beat - std::round(beat)) < 1e-6 ? format("%.0f", beat)
-                                                                     : format("%.2f", beat));
+        const auto where = trf(Str::BarBeat, {std::to_string(bar), std::abs(beat - std::round(beat)) < 1e-6
+                                                                  ? format("%.0f", beat)
+                                                                  : format("%.2f", beat)});
         pitch.children.push_back(SemanticNode{
             .id = pitchPointId(point.tick),
             .role = SemanticRole::Slider,
-            .name = tr(Str::PitchPoint) + std::to_string(i + 1U) + tr(Str::Of) + std::to_string(points.size()),
+            .name = trf(Str::PitchPointOf, {std::to_string(i + 1U), std::to_string(points.size())}),
             .value = centsText(point.cents) + ", " +
                      std::string{domain::curveInterpolationName(point.interpolation)} + ", " + where,
             .bounds = pitchPointRect(l, {axis.x(point.tick), scale.y(point.cents)}),
@@ -1515,7 +1514,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                                                               SemanticAction::SetFocus}
                                 : std::vector<SemanticAction>{SemanticAction::SetFocus},
             .description = editable ? tr(Str::IncrementAndDecrementMoveItBy)
-                                    : tr(Str::ReadOnly) + refusal,
+                                    : trf(Str::ReadOnlyReason, {refusal}),
             .numericValue = static_cast<double>(point.cents),
             .numericMinimum = -kPitchMaximumRange,
             .numericMaximum = kPitchMaximumRange,
@@ -1528,12 +1527,12 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     const auto target = noteTarget(controller);
     std::string summary = target.selected == 0U ? tr(Str::SelectOneNoteInSINGTo)
                           : target.note == nullptr
-                              ? std::to_string(target.selected) + tr(Str::NotesAreSelectedSelectOne)
+                              ? trf(Str::NotesSelectedSelectOne, {std::to_string(target.selected)})
                               : "";
     if (target.note != nullptr) {
       const auto v = shownVibrato(*target.note);
-      summary = std::string{v.enabled ? tr(Str::On) : tr(Str::Off)} + tr(Str::Depth2) + fieldText(Depth, v.depthCents) +
-                tr(Str::Period2) + fieldText(Period, v.periodMilliseconds);
+      summary = trf(v.enabled ? Str::VibratoSummaryOn : Str::VibratoSummaryOff,
+                    {fieldText(Depth, v.depthCents), fieldText(Period, v.periodMilliseconds)});
     }
     out.push_back(SemanticNode{.id = "shell.tune.vibrato", .role = SemanticRole::Panel,
                                .name = tr(Str::NoteVibrato2), .value = summary, .bounds = l.vibrato,
@@ -1552,7 +1551,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         out.push_back(SemanticNode{
             .id = std::string{"shell.tune.vibrato."} + kFieldIds[i],
             .role = SemanticRole::Slider,
-            .name = std::string{tr(Str::Vibrato2)} + tr(kFieldLabels[i]),
+            .name = trf(Str::VibratoField, {tr(kFieldLabels[i])}),
             .value = fieldText(i, fieldValue(v, i)),
             .bounds = l.field[i],
             .actions = {SemanticAction::Increment, SemanticAction::Decrement,
