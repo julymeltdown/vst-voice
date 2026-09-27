@@ -388,6 +388,10 @@ private:
       const domain::Project& project) noexcept;
   void rebuildController();
   void configureControllerCallbacks();
+  // The shell moved the editor's track or region (MIX, track navigation): the host's render,
+  // voicebank and technical edits follow, without rebuilding the controller mid-call.
+  [[nodiscard]] core::Result<void> followEditorSelection(domain::TrackId trackId,
+                                                         domain::RegionId regionId);
   void requestRepaint() const;
   void requestRenderAfterEdit();
   enum class ShellPointerPhase : std::uint8_t { Down, Move, Up };

@@ -138,6 +138,13 @@ struct EditorHostCallbacks final {
   // Keeps host-owned render/voicebank selection aligned with the editor's
   // selected vocal track. Selection is view state and must not dirty a project.
   std::function<core::Result<void>(domain::TrackId)> selectTrack;
+  // The same for a region picked inside the selected track (the MIX arrangement). The editor
+  // selects the region itself; the host follows so its render and preview name that region.
+  std::function<core::Result<void>(domain::RegionId)> selectRegion;
+  // Sets the project's output channel count (1 to 8) where the host, not an audio device, owns
+  // that choice: a plug-in's output ports. The standalone app leaves it empty and sets channels
+  // through applyAudioSettings, so MIX shows the control only where this is connected.
+  std::function<core::Result<void>(std::uint8_t)> configureOutputChannels;
   std::function<void()> documentChanged;
   // Resolve controls against the selected installed singer. When absent, the
   // editor uses the conservative carrier-wide capability table.
@@ -457,6 +464,12 @@ public:
       domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo);
   [[nodiscard]] core::Result<void> setTrackRoute(
       domain::TrackId trackId, domain::TrackOutputRoute route);
+  // The project's output channel count, offered only where the host owns it
+  // (EditorHostCallbacks::configureOutputChannels); elsewhere it is refused.
+  [[nodiscard]] bool outputChannelsConfigurable() const noexcept {
+    return static_cast<bool>(callbacks_.configureOutputChannels);
+  }
+  [[nodiscard]] core::Result<void> configureOutputChannels(std::uint8_t channels);
   [[nodiscard]] core::Result<void> setSelectedTrackVoicebank(
       domain::VoicebankReference voicebank);
   [[nodiscard]] core::Result<void> setSelectedTrackRoute(

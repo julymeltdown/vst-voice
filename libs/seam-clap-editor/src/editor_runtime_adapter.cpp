@@ -435,6 +435,9 @@ void EditorRuntime::configureControllerCallbacks() {
         requestRepaint();
         return core::success();
       },
+      // MIX region and track choices move the host's render; output channels are the plug-in's ports.
+      .selectTrack = [this](domain::TrackId id) { return followEditorSelection(id, {}); }, .selectRegion = [this](domain::RegionId id) { return followEditorSelection({}, id); },
+      .configureOutputChannels = [this](std::uint8_t channels) { return configureOutputChannels(channels); },
       .documentChanged = [this] {
         authoring_->handleDocumentChanged();
         dirty_ = authoring_->document().dirty();
@@ -473,10 +476,7 @@ void EditorRuntime::configureControllerCallbacks() {
       .loadSampleMicroscope = [this](domain::PhonemeKey key) {
         return loadSampleMicroscope(key);
       },
-      .selectVoicebank = [this](std::string_view id, std::string_view version,
-                                std::string_view contentHash) {
-        return selectVoicebank(id, version, contentHash);
-      },
+      .selectVoicebank = [this](std::string_view id, std::string_view version, std::string_view hash) { return selectVoicebank(id, version, hash); },
       .refreshVoicebanks = [this] { return refreshVoicebanks(); },
       .openVoicebankInstaller = [this] {
         std::function<core::Result<void>()> callback;
