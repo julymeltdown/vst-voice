@@ -395,6 +395,10 @@ TEST_CASE("the Stage is off in High Contrast, with an expanded lane and outside 
   auto compact = input;
   compact.fullRack = false;  // the rail and the drawer
   CHECK(!resolveStage(compact, aspect).shown);
+  // The empty project's splash already shows her seated, so the standing figure stays off.
+  auto splash = input;
+  splash.splashShown = true;
+  CHECK(!resolveStage(splash, aspect).shown);
   // A roll too short to hold a figure behind the notes keeps it off rather than drawing a smear.
   auto shortRoll = input;
   shortRoll.grid = ui::Rect{80.0, 172.0, 1040.0, 120.0};

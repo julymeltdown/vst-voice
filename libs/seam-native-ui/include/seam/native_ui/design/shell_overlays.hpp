@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <functional>
 
 namespace seam::native_ui::design {
 
@@ -38,6 +39,7 @@ enum class OverlayKind : std::uint8_t {
   VoicebankBrowser,
   TextField,
   SingerMenu,
+  About,
 };
 
 // One control of a re-homed overlay: the controller node it re-homes and the rectangle the shell
@@ -222,6 +224,16 @@ public:
 // The ids of the singer menu's items, in menu order, and the shell id of the button that opens it.
 inline constexpr std::string_view kSingerMenuButtonId{"shell.singer-menu"};
 [[nodiscard]] std::vector<std::string> singerMenuItemIds();
+
+// The About sheet (the app menu's "About Project SEAM"): the current mode's splash key art with the
+// product name, version and build over the art's scrimmed left clear area, and a Close button. The
+// art is read through the callback at paint time, so a mode switch while it is open shows the new
+// mode's art. The shell holds whether it is open; Close, Escape and a press outside close it.
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeAboutOverlay(
+    std::function<const paint::Image*()> art);
+inline constexpr std::string_view kAboutCloseId{"shell.overlay.about.close"};
+// The art's rectangle inside the About card.
+[[nodiscard]] ui::Rect aboutArtBounds(ui::Rect panel) noexcept;
 
 // Where a classic-only text field sits in the shell, for a request anchored to it. The shell moves
 // the host's text input client there (translateTextInput), and the overlay that draws the field

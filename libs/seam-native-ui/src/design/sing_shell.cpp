@@ -280,6 +280,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
     slot.portrait = paint::loadImage(folder / "portrait.png");
     slot.stage = paint::loadImage(folder / "stage.png");
     slot.wordmark = paint::loadImage(folder / "wordmark.png");
+    slot.splash = paint::loadImage(folder / "splash.png");
   }
   // The character package is optional artwork over the look: when none is present the shell draws
   // this look's own portrait and invents no state, so a missing package changes nothing it claims.
@@ -288,6 +289,8 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
 
 void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
   static_cast<void>(character_.loadPackage(packageRoot));
+  // A mode with its own state set in the package draws it; any other mode draws the shared set.
+  character_.setOutfit(std::string{designModeName(preferences_.mode)});
   stagePlacement_.reset();
   stageFade_.reset();
   repaint();
@@ -308,7 +311,7 @@ std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
     listeningPortraitPath_.clear();
     return {};
   }
-  const auto path = characterStateAssetPath(*package, CharacterState::Listening);
+  const auto path = characterStateAssetPath(*package, CharacterState::Listening, character_.outfit());
   if (path.empty()) {
     listeningPortrait_.reset();
     listeningPortraitPath_.clear();
@@ -389,6 +392,7 @@ bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
     case OverlayKind::AudioSettings:
     case OverlayKind::VoicebankBrowser:
     case OverlayKind::SingerMenu:
+    case OverlayKind::About:
     case OverlayKind::TextField: return true;
     case OverlayKind::None: return false;
   }
@@ -403,13 +407,16 @@ const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& contr
   // surfaces the shell opens over the score. Only one is ever shown.
   for (const auto* overlay :
        {microscopeOverlay_.get(), fieldOverlay_.get(), overlapOverlay_.get(), reviewOverlay_.get(),
-        voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
-        supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get()}) {
+       voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
+        supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get(),
+        aboutOverlay_.get()}) {
     if (overlay == nullptr || !overlay->wanted(controller, state)) continue;
     // The DIAGNOSTICS popover is the shell's own presentation, so it needs its flag.
     if (overlay->kind() == OverlayKind::Diagnostics && !diagnosticsOpen_) continue;
     // So is the singer menu, which is last: any surface the controller opens is above it.
     if (overlay->kind() == OverlayKind::SingerMenu && !singerMenuOpen_) continue;
+    // And the About sheet, which only opens when nothing else is up.
+    if (overlay->kind() == OverlayKind::About && !aboutOpen_) continue;
     if (overlay->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
       continue;
     return overlay;
@@ -428,6 +435,7 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   preferences_.mode = mode;
+  character_.setOutfit(std::string{designModeName(mode)});
   backgroundValid_ = false;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
@@ -664,6 +672,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   fieldOpenedOver_ = OverlayKind::None;
   workspaceMenuOpen_ = false;
   singerMenuOpen_ = false;
+  aboutOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
 }
@@ -682,6 +691,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     // popover the shell holds open would otherwise point at stale state.
     diagnosticsOpen_ = false;
     singerMenuOpen_ = false;
+    aboutOpen_ = false;
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
@@ -841,6 +851,34 @@ core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controll
   takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   singerMenuOpen_ = true;
   refreshSemantics(controller);
+  repaint();
+  return core::success();
+}
+
+core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, bool open) {
+  if (!open) {
+    if (!aboutOpen_) return core::success();
+    aboutOpen_ = false;
+    semanticFocus_.clear();
+    refreshSemantics(controller);
+    repaint();
+    return core::success();
+  }
+  if (aboutOpen_) return core::success();
+  if (!presented_) return core::failure(core::ErrorCode::InvalidState, tr(Str::TheAboutSheetNeedsTheDesign));
+  if (activeOverlay(controller) != nullptr)
+    return core::failure(core::ErrorCode::Conflict, tr(Str::CloseTheOpenSurfaceFirst));
+  const auto state = controller.sceneState();
+  if (aboutOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallFor));
+  if (lyricInputActive_) {
+    controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
+  if (knobDrag_ || forwarding_ != ForwardArea::None) cancelGestures(controller);
+  aboutOpen_ = true;
+  refreshSemantics(controller);
+  takeSemanticFocus(controller, std::string{kAboutCloseId});
   repaint();
   return core::success();
 }
@@ -1301,7 +1339,8 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     motionShown_ |= paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
                                          characterPortrait(characterState_),
                                          assets().portrait.get(), 1.0, motion_.blink,
-                                         motion_.breath);
+                                         motion_.breath, character_.eyes(characterState_),
+                                         character_.lidTone(characterState_));
   }
 }
 
@@ -1552,6 +1591,8 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   stageInput.highContrast = preferences_.contrast == Contrast::High;
   stageInput.laneExpanded = laneExpanded(state);
   stageInput.grid = l.grid;
+  stageInput.splashShown = notes.empty() && model.noteCount() == 0U &&
+                           emptyProjectSplashBounds(l.grid, assets().splash.get()).has_value();
   const auto stageAspect = assets().stage
                                ? static_cast<double>(assets().stage->width()) /
                                      static_cast<double>(assets().stage->height())
@@ -1791,7 +1832,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // No pose asset is declared by this package, so the state portrait stands in for it and the line
     // is the shell's own, shown only here.
     paintEmptyProject(characterCanvas(c), t, l, characterPortrait(CharacterState::Idle),
-                      assets().portrait.get());
+                      assets().portrait.get(), assets().splash.get());
   }
 
   if (state.boxSelection.has_value()) {
@@ -2062,6 +2103,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
                                       .mouthOpacity = voiceReady ? 1.0 : 0.55,
                                       .breath = motion_.breath,
                                       .blink = motion_.blink,
+                                      .eyes = character_.eyes(performanceState),
+                                      .lidTone = character_.lidTone(performanceState),
                                   });
 
   // Footer: the real voice identity and the way to change it.
@@ -2562,6 +2605,7 @@ core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
   const auto result = overlay.close(controller);
   if (overlay.kind() == OverlayKind::Diagnostics) diagnosticsOpen_ = false;
   if (overlay.kind() == OverlayKind::SingerMenu) singerMenuOpen_ = false;
+  if (overlay.kind() == OverlayKind::About) aboutOpen_ = false;
   return result;
 }
 
@@ -2576,6 +2620,8 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
     singerMenuOpen_ = false;
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   }
+  // The About sheet's one control is Close.
+  if (overlay.kind() == OverlayKind::About && result) aboutOpen_ = false;
   return result;
 }
 
@@ -3442,7 +3488,8 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       const auto* focused = semantics_.focusedNode();
       const std::string id = focused == nullptr ? std::string{} : focused->id;
       // Enter and Space run the focused menu item; a command that ran closes the menu.
-      if (menu && (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
+      if ((menu || overlay->kind() == OverlayKind::About) &&
+          (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
         if (overlayPublishes(controller, id))
           static_cast<void>(performOverlay(controller, *overlay, id, SemanticAction::Activate));
         refreshSemantics(controller);
@@ -4035,6 +4082,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // menu; it does not come back when that surface closes.
   if (singerMenuOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::SingerMenu)
     singerMenuOpen_ = false;
+  if (aboutOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::About) aboutOpen_ = false;
   const auto scoreCovered =
       !singShown || l.inspectorOpen || workspaceMenuOpen_ || overlay != nullptr;
   if (!singShown) {
