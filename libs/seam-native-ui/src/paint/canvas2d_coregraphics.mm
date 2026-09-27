@@ -880,6 +880,14 @@ private:
   }
 
   static constexpr double kHalfResolutionGlowArea = 256.0 * 256.0;
+  // A sprite glow's faintest coverage, which the shadow's tail never shows, is dropped.
+  static constexpr std::size_t kGlowFloor = 2U;
+  // Where a sprite key keeps what it says (see spriteGlow).
+  static constexpr std::size_t kKeyKind = 0U;
+  static constexpr std::size_t kKeyAlpha = 1U;
+  static constexpr std::size_t kKeyLineWidth = 7U;
+  static constexpr std::size_t kKeyCaps = 8U;
+  static constexpr std::size_t kKeyDashes = 9U;
   static constexpr double kGlowGrid = 64.0;
   static bool halfResolutionGlowDisabled() noexcept { return ScopedFullResolutionGlow::active(); }
 
@@ -890,12 +898,10 @@ private:
   bool spriteGlow(const GlowShape& shape, double blur, CGAffineTransform ctm) {
     if (ctm.b != 0.0 || ctm.c != 0.0 || ctm.a == 0.0 || std::abs(ctm.a) != std::abs(ctm.d))
       return false;
-    const auto sigma = blur * 0.5;
-    auto box = static_cast<std::int64_t>(std::lround(std::sqrt(4.0 * sigma * sigma + 1.0)));
-    if (box % 2 == 0) ++box;
+    const auto boxes = boxesFor(blur * 0.5);
     const auto s = std::abs(ctm.a);
     const auto half = shape.stroke != nullptr ? 0.5 * std::max(0.0, shape.stroke->width) * s : 0.0;
-    const auto pad = 3 * (box / 2) + 2;  // the blur's reach, and the anti-aliased edge
+    const auto pad = boxes[0] / 2 + boxes[1] / 2 + boxes[2] / 2 + 2;  // the blur's reach, and the edge
     auto minX = std::numeric_limits<double>::infinity();
     auto minY = minX;
     auto maxX = -minX;
@@ -940,15 +946,15 @@ private:
     const auto q = [](double v) { return static_cast<std::int64_t>(std::llround(v * 64.0)); };
     std::vector<std::int64_t> key;
     key.reserve(16U + elements.size() * 7U);
-    key.push_back(shape.stroke != nullptr ? 1 : 0);
-    key.push_back(shape.color.alpha);
-    key.push_back(box);
-    key.push_back(width);
-    key.push_back(height);
+    key.push_back(shape.stroke != nullptr ? 1 : 0);  // kKeyKind
+    key.push_back(shape.color.alpha);                // kKeyAlpha
+    key.push_back(width);                            // kKeyWidth
+    key.push_back(height);                           // kKeyHeight
+    for (const auto b : boxes) key.push_back(b);     // kKeyBoxes, three of them
     if (shape.stroke != nullptr) {
-      key.push_back(q(std::max(0.0, shape.stroke->width) * s));
-      key.push_back(shape.stroke->roundCaps ? 1 : 0);
-      key.push_back(static_cast<std::int64_t>(shape.stroke->dash.size()));
+      key.push_back(q(std::max(0.0, shape.stroke->width) * s));             // kKeyLineWidth
+      key.push_back(shape.stroke->roundCaps ? 1 : 0);                       // kKeyCaps
+      key.push_back(static_cast<std::int64_t>(shape.stroke->dash.size()));  // kKeyDashes, then each
       for (const auto length : shape.stroke->dash) key.push_back(q(length * s));
     }
     const auto geometry = key.size();
@@ -968,17 +974,20 @@ private:
     auto& sprites = GlowSprites::shared();
     auto sprite = sprites.find(hash, key);
     if (sprite == nullptr) {
-      sprite = drawSprite(std::move(key), geometry, box, width, height);
+      sprite = drawSprite(std::move(key), geometry, boxes, width, height);
       if (sprite == nullptr) return false;
       sprites.insert(hash, sprite);
     }
-    compositeCoverage(sprite->coverage.data(), width, height, x0, y0, glow_.color);
+    // Without its faintest tail, as the shadow has none: a glow never tints what lies past its reach.
+    compositeCoverage(sprite->coverage.data(), width, height, x0, y0, glow_.color, CGRectInfinite,
+                      true);
     return true;
   }
 
   // Rasterizes a sprite's shape from its key alone and blurs it.
   static std::shared_ptr<const GlowSprite> drawSprite(std::vector<std::int64_t> key,
-                                                      std::size_t geometry, std::int64_t box,
+                                                      std::size_t geometry,
+                                                      std::array<std::int64_t, 3> boxes,
                                                       std::int64_t width, std::int64_t height) {
     auto sprite = std::make_shared<GlowSprite>();
     sprite->width = width;
@@ -1011,14 +1020,14 @@ private:
         case Path::Verb::Close: CGPathCloseSubpath(path.get()); break;
       }
     }
-    const auto alpha = static_cast<CGFloat>(key[1]) / 255.0;
+    const auto alpha = static_cast<CGFloat>(key[kKeyAlpha]) / 255.0;
     CGContextAddPath(m, path.get());
-    if (key[0] == 1) {
-      CGContextSetLineWidth(m, at(5U));
-      CGContextSetLineCap(m, key[6] != 0 ? kCGLineCapRound : kCGLineCapButt);
-      if (const auto dashes = static_cast<std::size_t>(key[7]); dashes > 0U) {
+    if (key[kKeyKind] == 1) {
+      CGContextSetLineWidth(m, at(kKeyLineWidth));
+      CGContextSetLineCap(m, key[kKeyCaps] != 0 ? kCGLineCapRound : kCGLineCapButt);
+      if (const auto dashes = static_cast<std::size_t>(key[kKeyDashes]); dashes > 0U) {
         std::vector<CGFloat> lengths;
-        for (std::size_t k = 0U; k < dashes; ++k) lengths.push_back(at(8U + k));
+        for (std::size_t k = 0U; k < dashes; ++k) lengths.push_back(at(kKeyDashes + 1U + k));
         CGContextSetLineDash(m, 0.0, lengths.data(), lengths.size());
       }
       CGContextSetGrayStrokeColor(m, 1.0, alpha);
@@ -1028,21 +1037,36 @@ private:
       CGContextFillPath(m);
     }
     CGContextFlush(m);
-    if (box > 1) {
-      std::vector<std::uint8_t> scratch(w * h, 0U);
-      vImage_Buffer a{sprite->coverage.data(), h, w, w};
-      vImage_Buffer b{scratch.data(), h, w, w};
+    std::vector<std::uint8_t> scratch(w * h, 0U);
+    vImage_Buffer a{sprite->coverage.data(), h, w, w};
+    vImage_Buffer b{scratch.data(), h, w, w};
+    for (const auto box : boxes) {
+      if (box <= 1) continue;
       const auto size = static_cast<std::uint32_t>(box);
-      for (int pass = 0; pass < 3; ++pass) {
-        if (vImageBoxConvolve_Planar8(&a, &b, nullptr, 0, 0, size, size, 0,
-                                      kvImageBackgroundColorFill) != kvImageNoError)
-          return nullptr;
-        std::swap(a, b);
-      }
-      if (a.data != sprite->coverage.data()) sprite->coverage.swap(scratch);
+      if (vImageBoxConvolve_Planar8(&a, &b, nullptr, 0, 0, size, size, 0,
+                                    kvImageBackgroundColorFill) != kvImageNoError)
+        return nullptr;
+      std::swap(a, b);
     }
+    if (a.data != sprite->coverage.data()) sprite->coverage.swap(scratch);
     sprite->key = std::move(key);
     return sprite;
+  }
+
+  // Three odd box widths whose passes together blur like a Gaussian of this sigma: m passes of the
+  // widest odd width at most the ideal one and the rest two wider, m chosen for the nearest variance.
+  static std::array<std::int64_t, 3> boxesFor(double sigma) {
+    if (!(sigma > 0.0)) return {1, 1, 1};
+    const auto ideal = std::sqrt(4.0 * sigma * sigma + 1.0);
+    auto lower = static_cast<std::int64_t>(std::floor(ideal));
+    if (lower % 2 == 0) --lower;
+    lower = std::max<std::int64_t>(1, lower);
+    const auto l = static_cast<double>(lower);
+    const auto m = std::clamp<std::int64_t>(
+        std::llround((12.0 * sigma * sigma - 3.0 * l * l - 12.0 * l - 9.0) / (-4.0 * l - 4.0)), 0, 3);
+    std::array<std::int64_t, 3> boxes{};
+    for (std::int64_t i = 0; i < 3; ++i) boxes[static_cast<std::size_t>(i)] = i < m ? lower : lower + 2;
+    return boxes;
   }
 
   // ---- software paths ----------------------------------------------------------------------------
@@ -1130,10 +1154,10 @@ private:
   // (left, bottom), inside the tracked clip.
   void compositeCoverage(const std::uint8_t* coverage, std::int64_t width, std::int64_t height,
                          std::int64_t left, std::int64_t bottom, Color color,
-                         CGRect limit = CGRectInfinite) {
+                         CGRect limit = CGRectInfinite, bool glowTail = false) {
     std::array<std::uint32_t, 256U> source{};
     for (std::size_t m = 1U; m < source.size(); ++m)
-      source[m] = premultiplied(color, static_cast<double>(m) / 255.0);
+      source[m] = glowTail && m <= kGlowFloor ? 0U : premultiplied(color, static_cast<double>(m) / 255.0);
     const auto clip = CGRectIntersection(tracked_.clip, limit);
     if (CGRectIsNull(clip) || CGRectIsEmpty(clip)) return;
     const auto cx0 = std::max(left, static_cast<std::int64_t>(CGRectGetMinX(clip)));

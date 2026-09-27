@@ -544,3 +544,50 @@ TEST_CASE("a small glow cast from a cached sprite keeps the shadow's energy and 
   CHECK(meanDifference < 2.0);
   CHECK(native_ui::paint::glowSpriteCacheBytes() > 0U);
 }
+
+TEST_CASE("a sprite glow falls off like the shadow and ends where the shadow does") {
+  using native_ui::paint::Path;
+  using native_ui::paint::StrokeStyle;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // Upward from the top edge of a glowing fill and of a glowing outline, at 1x and 2x.
+  for (const bool outline : {false, true}) {
+    for (const double scale : {1.0, 2.0}) {
+      const auto draw = [&](PixelSurface& s) {
+        s.clear({0, 0, 0, 255});
+        auto c = native_ui::paint::makeCanvas(s, scale);
+        CHECK(c != nullptr);
+        if (c == nullptr) return;
+        c->save();
+        const auto shape = Path::roundedRect({40.0, 40.0, 20.0, 12.0}, outline ? 5.0 : 4.0);
+        if (outline) {
+          c->setGlow(native_ui::Color{255, 0, 0, 140}, 5.0);
+          c->stroke(shape, native_ui::Color{255, 0, 0, 204}, StrokeStyle{1.1});
+        } else {
+          c->setGlow(native_ui::Color{255, 0, 0, 191}, 6.0);
+          c->fill(shape, native_ui::Color{255, 0, 0, 255});
+        }
+        c->restore();
+        c->flush();
+      };
+      const auto n = static_cast<std::uint32_t>(100.0 * scale);
+      PixelSurface sprite{n, n};
+      PixelSurface shadow{n, n};
+      draw(sprite);
+      {
+        const native_ui::paint::ScopedFullResolutionGlow direct;
+        draw(shadow);
+      }
+      const auto x = static_cast<std::uint32_t>(50.0 * scale);
+      int worst = 0;
+      bool beyond = false;  // the sprite visibly lights a pixel the shadow leaves dark
+      for (auto y = static_cast<std::uint32_t>(20.0 * scale); y < static_cast<std::uint32_t>(40.0 * scale); ++y) {
+        const auto a = static_cast<int>((sprite.pixels()[y * n + x] >> 16U) & 0xFFU);
+        const auto b = static_cast<int>((shadow.pixels()[y * n + x] >> 16U) & 0xFFU);
+        worst = std::max(worst, std::abs(a - b));
+        beyond = beyond || (b == 0 && a > 2);
+      }
+      CHECK(worst <= 4);
+      CHECK(!beyond);
+    }
+  }
+}
