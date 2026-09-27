@@ -211,35 +211,45 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
   };
   struct GradientSample final { std::uint16_t blue, green, red, inverse; };
   struct GradientTable final {
+    bool valid{false};
     std::uint32_t color{0U};
-    std::array<GradientSample, 4097U> samples{};
+    std::array<GradientSample, 4097U> rampSamples{};
+    // Index by squared radius so the inner pixel loop needs no square root. The 32K entries
+    // keep the composited frame within one channel value of the original ramp lookup.
+    std::array<GradientSample, 32769U> radiusSamples{};
   };
   thread_local std::array<GradientTable, 2U> gradientTables;
   std::size_t gradientIndex = 0U;
   const auto gradient = [&](ui::Point center, double radius, Color color) {
     auto& table = gradientTables[gradientIndex++];
-    if (table.color != color.bgra()) {
+    if (!table.valid || table.color != color.bgra()) {
+      table.valid = true;
       table.color = color.bgra();
-      for (std::size_t i = 0; i < table.samples.size(); ++i) {
-        const auto ramp = static_cast<double>(i) / 4096.0;
+      const auto sample = [&](double ramp) {
         const auto alpha = (color.alpha / 255.0) * ramp;
-        table.samples[i] = {
+        return GradientSample{
             static_cast<std::uint16_t>(std::lround(color.blue * ramp * alpha)),
             static_cast<std::uint16_t>(std::lround(color.green * ramp * alpha)),
             static_cast<std::uint16_t>(std::lround(color.red * ramp * alpha)),
             static_cast<std::uint16_t>(255U - static_cast<unsigned>(std::lround(alpha * 255.0)))};
-      }
+      };
+      for (std::size_t i = 0; i < table.rampSamples.size(); ++i)
+        table.rampSamples[i] = sample(static_cast<double>(i) / 4096.0);
+      for (std::size_t i = 0; i < table.radiusSamples.size(); ++i)
+        table.radiusSamples[i] = sample(1.0 - std::sqrt(static_cast<double>(i) / 32768.0));
     }
     std::vector<double> xDistance2(width);
+    const auto exactSqrt = std::getenv("SEAM_WASH_EXACT_SQRT") != nullptr;
     for (std::uint32_t x = 0; x < width; ++x) {
       const auto dx = (static_cast<double>(x) + 0.5) / scale - center.x;
       xDistance2[x] = dx * dx;
     }
+    const auto radius2 = radius * radius;
+    const auto radiusIndexScale = 32768.0 / radius2;
     for (std::uint32_t y = 0; y < height; ++y) {
       const auto py = (static_cast<double>(top + y) + 0.5) / scale;
       const auto dy = py - center.y;
       const auto dy2 = dy * dy;
-      const auto radius2 = radius * radius;
       if (dy2 >= radius2) continue;
       const auto halfRow = std::sqrt(radius2 - dy2) * scale;
       const auto centerX = center.x * scale - 0.5;
@@ -248,10 +258,14 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
       const auto x1 = static_cast<std::uint32_t>(std::clamp(
           std::floor(centerX + halfRow) + 1.0, 0.0, static_cast<double>(width)));
       for (std::uint32_t x = x0; x < x1; ++x) {
-        const auto ramp = 1.0 - std::sqrt(xDistance2[x] + dy2) / radius;
-        if (ramp > 0.0) {
-          const auto index = std::min(4096U, static_cast<unsigned>(ramp * 4096.0 + 0.5));
-          const auto s = table.samples[index];
+        const auto distance2 = xDistance2[x] + dy2;
+        if (distance2 < radius2) {
+          const auto s = exactSqrt
+              ? table.rampSamples[std::min(4096U, static_cast<unsigned>(
+                    (1.0 - std::sqrt(distance2) / radius) * 4096.0 + 0.5))]
+              : table.radiusSamples[std::min(32768U, static_cast<unsigned>(
+                    distance2 * radiusIndexScale + 0.5))];
+          if (s.inverse == 255U && s.blue == 0U && s.green == 0U && s.red == 0U) continue;
           auto& pixel = pixels[static_cast<std::size_t>(y) * width + x];
           const auto channel = [&](unsigned shift, std::uint16_t source) {
             return static_cast<std::uint32_t>(source +
@@ -285,6 +299,8 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
         const auto before = ui::Point{segment.before.x, segment.before.y - static_cast<double>(top)};
         const auto after = ui::Point{segment.after.x, segment.after.y - static_cast<double>(top)};
         const auto radius = strokeWidth * 0.5;
+        const auto outside2 = (radius + 0.5) * (radius + 0.5);
+        const auto inside2 = radius >= 0.5 ? (radius - 0.5) * (radius - 0.5) : -1.0;
         if (std::max(before.y, after.y) + radius + 1.0 < 0.0 ||
             std::min(before.y, after.y) - radius - 1.0 >= height) {
           continue;
@@ -302,8 +318,10 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
           const auto u = length2 > 0.0 ? std::clamp((px * vx + py * vy) / length2, 0.0, 1.0) : 0.0;
           const auto dx = px - u * vx;
           const auto dy = py - u * vy;
-          const auto distance = std::sqrt(dx * dx + dy * dy);
-          const auto value = static_cast<float>(std::clamp(radius + 0.5 - distance, 0.0, 1.0));
+          const auto distance2 = dx * dx + dy * dy;
+          if (distance2 >= outside2) continue;
+          const auto value = static_cast<float>(distance2 <= inside2 ? 1.0
+              : radius + 0.5 - std::sqrt(distance2));
           if (value <= 0.0F) continue;
           const auto index = static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x);
           if (coverage[index] == 0.0F) { coverage[index] = value; touched.push_back(index); }

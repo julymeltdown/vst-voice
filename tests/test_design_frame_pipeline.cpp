@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -732,6 +733,34 @@ TEST_CASE("a background drawn in parallel bands equals the same bands drawn one 
     };
     const auto serial = compose(true);
     for (int run = 0; run < 4; ++run) CHECK(compose(false) == serial);
+  }
+}
+
+TEST_CASE("squared radius wash table stays within the cold frame pixel tolerance") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    setenv("SEAM_WASH_EXACT_SQRT", "1", 1);
+    Pipeline exact{mode, 2.0};
+    static_cast<void>(exact.frame({}));
+    unsetenv("SEAM_WASH_EXACT_SQRT");
+    Pipeline lookup{mode, 2.0};
+    static_cast<void>(lookup.frame({}));
+    std::size_t differing = 0U;
+    unsigned maximum = 0U;
+    for (std::size_t i = 0U; i < exact.retained.pixels().size(); ++i) {
+      const auto a = exact.retained.pixels()[i];
+      const auto b = lookup.retained.pixels()[i];
+      if (a != b) ++differing;
+      for (unsigned shift : {0U, 8U, 16U, 24U})
+        maximum = std::max(maximum, static_cast<unsigned>(std::abs(
+            static_cast<int>((a >> shift) & 255U) - static_cast<int>((b >> shift) & 255U))));
+    }
+    std::cout << "[radius-lookup-difference] " << (mode == DesignMode::Emo ? "emo" : "scene")
+              << " max=" << maximum << " pixels="
+              << 100.0 * static_cast<double>(differing) /
+                     static_cast<double>(exact.retained.pixels().size()) << "%\n";
+    CHECK(maximum <= 2U);
+    CHECK(differing * 1000U <= exact.retained.pixels().size());
   }
 }
 
