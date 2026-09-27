@@ -3171,6 +3171,33 @@ TEST_CASE("the diagnostics toast and popover present the status diagnostics as a
   }
 }
 
+TEST_CASE("the diagnostics popover closes with the last diagnostic and does not reopen by itself") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+  // The last diagnostic is resolved: the popover is gone, and so is the flag that presented it.
+  f.controller.setDiagnostics({});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(!f.shell.diagnosticsOpen());
+  // The next failure shows its toast; the popover stays closed until the creator opens it.
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.node("shell.diagnostics.toast") != nullptr);
+  CHECK(f.node("timeline") != nullptr);
+}
+
 TEST_CASE("every diagnostic's recovery actions are reachable from the popover, not only the first") {
   const auto issue = [](std::string code, authoring::DiagnosticSeverity severity,
                         std::vector<authoring::DiagnosticAction> actions) {

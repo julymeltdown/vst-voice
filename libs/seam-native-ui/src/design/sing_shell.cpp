@@ -710,6 +710,9 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   applyGeometry(controller);
   frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
+  // The DIAGNOSTICS popover vanishes with the last diagnostic; the shell's flag goes with it, so the
+  // next failure shows its toast and never reopens the popover modally on its own.
+  if (diagnosticsOpen_ && controller.sceneState().diagnostics.empty()) diagnosticsOpen_ = false;
   // A surface opened since the last frame (by the host's menu, a recovery action or a shell
   // control) covers the score: a lyric field open under it goes.
   cancelCoveredLyric(controller);
