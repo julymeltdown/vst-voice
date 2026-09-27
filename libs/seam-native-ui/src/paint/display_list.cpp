@@ -236,10 +236,14 @@ ui::Rect RecordingCanvas::deviceBounds(ui::Rect local, double extra) const noexc
 
 void RecordingCanvas::record(Payload payload, std::uint64_t payloadHash, ui::Rect bounds) {
   auto& target = layers_[index(layer_)];
-  std::uint32_t item = 0U;
-  for (; item < target.items.size(); ++item)
-    if (target.items[item].name == item_) break;
-  if (item == target.items.size()) target.items.push_back(LayerItem{item_, 0U, {}});
+  const auto found = target.itemIndex.find(item_);
+  const auto item = found == target.itemIndex.end()
+                        ? static_cast<std::uint32_t>(target.items.size())
+                        : found->second;
+  if (found == target.itemIndex.end()) {
+    target.items.push_back(LayerItem{item_, 0U, {}});
+    target.itemIndex.emplace(item_, item);
+  }
   const auto opHash = mix(payloadHash, stateHash(state_));
   target.hash = mix(target.hash, opHash);
   auto& named = target.items[item];

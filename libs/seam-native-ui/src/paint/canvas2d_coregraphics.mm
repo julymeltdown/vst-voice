@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -133,6 +134,51 @@ private:
 };
 
 CfRef<CGPathRef> toCgPath(const Path& path) {
+  struct Entry final {
+    Path path;
+    CfRef<CGPathRef> cg;
+  };
+  thread_local std::unordered_map<std::uint64_t, std::vector<Entry>> cache;
+  thread_local std::size_t cachedCount = 0U;
+  std::uint64_t hash = 0xcbf29ce484222325ULL;
+  const auto word = [&](std::uint64_t value) {
+    hash ^= value;
+    hash *= 0x100000001b3ULL;
+  };
+  const auto coordinate = [&](double value) { word(std::bit_cast<std::uint64_t>(value)); };
+  word(path.elements().size());
+  for (const auto& e : path.elements()) {
+    word(static_cast<std::uint64_t>(e.verb));
+    if (e.verb != Path::Verb::Close) {
+      coordinate(e.a.x); coordinate(e.a.y);
+    }
+    if (e.verb == Path::Verb::Quad || e.verb == Path::Verb::Cubic) {
+      coordinate(e.b.x); coordinate(e.b.y);
+    }
+    if (e.verb == Path::Verb::Cubic) {
+      coordinate(e.c.x); coordinate(e.c.y);
+    }
+  }
+  const auto same = [](const Path& a, const Path& b) {
+    if (a.elements().size() != b.elements().size()) return false;
+    for (std::size_t i = 0U; i < a.elements().size(); ++i) {
+      const auto& x = a.elements()[i];
+      const auto& y = b.elements()[i];
+      if (x.verb != y.verb) return false;
+      const auto point = [](ui::Point p, ui::Point q) {
+        return std::bit_cast<std::uint64_t>(p.x) == std::bit_cast<std::uint64_t>(q.x) &&
+               std::bit_cast<std::uint64_t>(p.y) == std::bit_cast<std::uint64_t>(q.y);
+      };
+      if (x.verb != Path::Verb::Close && !point(x.a, y.a)) return false;
+      if ((x.verb == Path::Verb::Quad || x.verb == Path::Verb::Cubic) && !point(x.b, y.b))
+        return false;
+      if (x.verb == Path::Verb::Cubic && !point(x.c, y.c)) return false;
+    }
+    return true;
+  };
+  if (const auto found = cache.find(hash); found != cache.end())
+    for (const auto& entry : found->second)
+      if (same(entry.path, path)) return CfRef<CGPathRef>{CGPathRetain(entry.cg.get())};
   CGMutablePathRef result = CGPathCreateMutable();
   for (const auto& e : path.elements()) {
     switch (e.verb) {
@@ -147,7 +193,16 @@ CfRef<CGPathRef> toCgPath(const Path& path) {
       case Path::Verb::Close: CGPathCloseSubpath(result); break;
     }
   }
-  return CfRef<CGPathRef>{result};
+  CfRef<CGPathRef> cg{result};
+  if (cg) {
+    if (cachedCount >= 4096U) {
+      cache.clear();
+      cachedCount = 0U;
+    }
+    cache[hash].push_back(Entry{path, CfRef<CGPathRef>{CGPathRetain(cg.get())}});
+    ++cachedCount;
+  }
+  return cg;
 }
 
 CfRef<CGGradientRef> toCgGradient(const std::vector<GradientStop>& stops) {
@@ -1476,6 +1531,14 @@ private:
   }
 
   CfRef<CTLineRef> makeLine(std::string_view utf8, const TextStyle& style, Color color) {
+    using Key = std::tuple<std::string, int, double, double, bool, std::uint32_t>;
+    static std::mutex mutex;
+    static std::map<Key, CfRef<CTLineRef>> lines;
+    const Key key{std::string{utf8}, static_cast<int>(style.role), style.size, style.tracking,
+                  style.uppercase, color.bgra()};
+    const std::lock_guard lock{mutex};
+    if (const auto found = lines.find(key); found != lines.end())
+      return CfRef<CTLineRef>{static_cast<CTLineRef>(CFRetain(found->second.get()))};
     NSString* string = [[NSString alloc] initWithBytes:utf8.data()
                                                 length:utf8.size()
                                               encoding:NSUTF8StringEncoding];
@@ -1489,8 +1552,13 @@ private:
     };
     NSAttributedString* attributed = [[NSAttributedString alloc] initWithString:string
                                                                      attributes:attributes];
-    return CfRef<CTLineRef>{
+    CfRef<CTLineRef> line{
         CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)attributed)};
+    if (line) {
+      if (lines.size() >= 2048U) lines.clear();
+      lines.emplace(key, CfRef<CTLineRef>{static_cast<CTLineRef>(CFRetain(line.get()))});
+    }
+    return line;
   }
 
   PixelSurface& surface_;
