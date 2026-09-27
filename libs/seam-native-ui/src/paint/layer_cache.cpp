@@ -72,7 +72,9 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
   const auto scale = target.scale();
   const auto width = surface.width();
   const auto height = surface.height();
-  if (width != width_ || height != height_ || scale != scale_) {
+  // A text capture observes every line the frame draws, and a cached layer draws none: while one is
+  // alive, every layer is rasterized again (to the same pixels) so the capture sees the whole frame.
+  if (width != width_ || height != height_ || scale != scale_ || ScopedTextCapture::active()) {
     invalidate();
     width_ = width;
     height_ = height;
