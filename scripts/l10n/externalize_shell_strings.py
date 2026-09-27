@@ -32,6 +32,7 @@ SOURCES = [
     "mix_workspace.cpp",
     "voice_workspace.cpp",
     "character_surface.cpp",
+    "tooltip.cpp",
 ]
 # Headers carry display text too (a constant a painter draws); they are scanned the same way.
 HEADERS = [
@@ -40,6 +41,7 @@ HEADERS = [
     "shell_workspace.hpp",
     "sing_layout.hpp",
     "sing_shell.hpp",
+    "tooltip.hpp",
     "voice_workspace.hpp",
 ]
 TABLE = ROOT / "libs/seam-native-ui/include/seam/native_ui/design/shell_strings.def"

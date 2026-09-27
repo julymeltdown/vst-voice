@@ -6,6 +6,7 @@
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/shell_workspace.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
+#include "seam/native_ui/design/tooltip.hpp"
 #include "seam/native_ui/design/voice_workspace.hpp"
 #include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -194,6 +195,26 @@ public:
     return errorToast_.has_value() ? std::optional<ui::Rect>{errorToast_->bounds} : std::nullopt;
   }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
+  // The kit tooltip the last frame showed (tooltip.hpp), or nothing: the published node or elided
+  // label it explains, its text, the target it keeps clear of and its card, in shell points.
+  struct ShownTooltip final {
+    std::string subject;
+    std::string text;
+    ui::Rect target;
+    ui::Rect box;
+  };
+  [[nodiscard]] const std::optional<ShownTooltip>& lastFrameTooltip() const noexcept {
+    return shownTooltip_;
+  }
+  // When a frame is next needed for a tooltip that is waiting out its delay, in the shell's UI
+  // clock, or nothing. A host that paints only on request (the standalone window) asks for a frame
+  // then; one that paints on a timer (the plug-in) needs nothing.
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue() const noexcept;
+  // What a tooltip over a point, or for a published node, would say: the node's description, after
+  // the whole text of a label the last frame elided inside it; for an elided label outside any
+  // control, its whole text. Read from the last published tree and the last frame.
+  [[nodiscard]] std::optional<TooltipSubject> tooltipSubjectAt(ui::Point point) const;
+  [[nodiscard]] std::optional<TooltipSubject> tooltipSubjectFor(std::string_view id) const;
   // The overlays this shell re-homes: each is painted inside the shell as a sheet or inline field.
   [[nodiscard]] static bool rehomedSurface(OverlayKind kind) noexcept;
 
@@ -410,6 +431,13 @@ private:
   // Records the pointer in shell space. A move that changes only which side of the Stage the pointer
   // is on repaints for the Stage's own fade and nothing else.
   void notePointer(ui::Point point);
+  // The shell's UI clock now (the injected clock, else the steady clock).
+  [[nodiscard]] std::chrono::steady_clock::time_point uiNow() const;
+  [[nodiscard]] std::optional<TooltipSubject> tooltipSubjectForNode(const SemanticNode& node) const;
+  [[nodiscard]] bool pointerGestureActive() const noexcept;
+  // Reports the pointer's and the keyboard's tooltip candidates to the timer, and repaints when what
+  // it would show changed.
+  void updateTooltip(std::chrono::steady_clock::time_point now);
   // Requests the next frame only while the character is still moving or the Stage is still fading.
   void scheduleAnimationRepaint();
   void paintBackground(paint::Canvas2D& c, const DesignTokens& t) const;
@@ -635,6 +663,13 @@ private:
   PixelSurface metricsSurface_;
   std::unique_ptr<paint::Canvas2D> metrics_;
   mutable std::unordered_map<std::string, double> measureCache_;
+  // The kit tooltip: its timer, the labels the last frame drew elided, what the last frame showed
+  // and when it painted. Keyboard input since the last press makes shell focus a tooltip candidate.
+  TooltipTimer tooltip_;
+  std::vector<paint::RecordingCanvas::ElidedText> elidedLabels_;
+  std::optional<ShownTooltip> shownTooltip_;
+  std::optional<std::chrono::steady_clock::time_point> lastPaintAt_;
+  bool keyboardInput_{false};
 };
 
 }  // namespace seam::native_ui::design

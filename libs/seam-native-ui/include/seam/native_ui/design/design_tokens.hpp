@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/paint/canvas2d.hpp"
 
 #include <array>
 #include <cstdint>
@@ -44,6 +45,11 @@ struct TypeScale final {
   double transport{22.0};
   double panelTitleTracking{2.2};
   double labelTracking{1.1};
+  // The look's own faces, as roles the canvas maps to the bundled fonts (assets/fonts): headings
+  // (card and panel titles) and display text (the wordmark, the About title). EMO draws both in its
+  // condensed display face, SCENE in its rounded one; body text and readouts share Ui and Mono.
+  paint::FontRole heading{paint::FontRole::Display};
+  paint::FontRole display{paint::FontRole::Display};
 };
 
 struct ShapeTokens final {

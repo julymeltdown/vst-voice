@@ -97,6 +97,8 @@ DesignTokens makeEmo(Contrast contrast) noexcept {
 DesignTokens makeScene(Contrast contrast) noexcept {
   DesignTokens t;
   t.mode = DesignMode::Scene;
+  t.type.heading = paint::FontRole::DisplayRounded;
+  t.type.display = paint::FontRole::DisplayRounded;
   t.contrast = contrast;
   auto& c = t.color;
   // Neon pink, cyan, lime and violet over deep night glass; glitter and checker for attitude.

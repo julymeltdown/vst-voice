@@ -122,6 +122,21 @@ mapping boundaries, and MIT license are recorded in
 `libs/seam-phonemizer/OPENUTAU_REFERENCE_NOTICE.md`. No OpenUtau runtime,
 dictionary, voicebank, or singing audio is shipped by these tests.
 
+## Bundled fonts
+
+The macOS standalone application and the CLAP plug-in bundle these unmodified faces under
+`Resources/fonts` (source: `assets/fonts`, pinned by SHA-256 in `assets/fonts/manifest.json`).
+Each is licensed under the SIL Open Font License, Version 1.1; the license text with each family's
+copyright line ships beside the faces as `OFL.txt`. The faces are registered for the application's
+own process only and are not sold separately.
+
+- **Barlow** (Regular, Medium, SemiBold, Bold), Copyright 2017 The Barlow Project Authors, OFL-1.1.
+- **Barlow Condensed** (SemiBold), Copyright 2017 The Barlow Project Authors, OFL-1.1.
+- **Fredoka** (variable), Copyright 2016 The Fredoka Project Authors, OFL-1.1.
+- **DM Mono** (Medium), Copyright 2020 The DM Mono Project Authors, OFL-1.1.
+
+Downloaded from the Google Fonts repository at commit `23e54b51ddffbc7713c583748e3bd86f62b1fa4a`.
+
 ## Development tools
 
 CMake, compilers, Python, Ninja, Git, Xvfb, GitHub Actions runners, and optional

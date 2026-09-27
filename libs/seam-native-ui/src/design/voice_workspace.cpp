@@ -1144,7 +1144,7 @@ void VoiceWorkspaceImpl::paintKnob(Canvas2D& c, const DesignTokens& t, ui::Rect 
 void VoiceWorkspaceImpl::paintHonest(Canvas2D& c, const DesignTokens& t, ui::Rect area) const {
   const auto panel = inset(area, 12.0, 12.0);
   c.text({panel.x + 16.0, panel.y + 16.0, panel.width - 32.0, 24.0}, tr(Str::Voice),
-         style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
+         style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
          t.color.textPrimary);
   c.text({panel.x + 16.0, panel.y + 48.0, panel.width - 32.0, 22.0}, host_.unavailable,
          fitted(c, host_.unavailable, style(FontRole::Ui, t.type.body), panel.width - 32.0),
@@ -1461,7 +1461,7 @@ void VoiceWorkspaceImpl::paint(Canvas2D& c, const DesignTokens& t, const NativeE
       c.fill(Path::circle({l.card[i].x + 16.0, l.card[i].y + 16.0}, 3.5), lit ? t.color.accent : t.color.textDisabled);
       c.restore();
       c.text({l.card[i].x + 26.0, l.card[i].y + 6.0, l.card[i].width - 70.0, 20.0}, tr(kCardTitles[i]),
-             style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
+             style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
              t.color.textPrimary);
     } else if (i == 3U) {
       sunken(c, t, l.card[i], 8.0);
@@ -1810,7 +1810,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
     const auto i = static_cast<std::size_t>(*menu_);
     out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
                    .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Open), .bounds = l.more[i],
-                   .actions = pressable});
+                   .actions = pressable, .description = tr(Str::TipModuleActions)});
     const auto items = menuFor(*menu_);
     const auto rows = menuRows(area, l.more[i], items.size());
     for (std::size_t k = 0U; k < items.size(); ++k) {
@@ -1854,7 +1854,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
     if (usable(l.more[i]))
       out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
                      .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Closed), .bounds = l.more[i],
-                     .actions = pressable});
+                     .actions = pressable, .description = tr(Str::TipModuleActions)});
   }
   if (cardShown(l, Card::Source))
     for (std::size_t i = 0U; i < kSourceKnobs.size(); ++i) {

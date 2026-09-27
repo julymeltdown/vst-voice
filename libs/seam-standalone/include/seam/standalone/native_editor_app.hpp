@@ -146,6 +146,8 @@ public:
       std::string_view id, std::string_view value) override;
   [[nodiscard]] bool requestClose() noexcept override;
   [[nodiscard]] bool wantsClose() const noexcept override;
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue()
+      const noexcept override;
 
 private:
   explicit NativeEditorApp(NativeEditorAppConfig config)

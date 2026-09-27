@@ -6,6 +6,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
 #import <ImageIO/ImageIO.h>
+#include <CommonCrypto/CommonDigest.h>
 
 #include <dlfcn.h>
 
@@ -17,6 +18,7 @@
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -149,9 +151,160 @@ CfRef<CGGradientRef> toCgGradient(const std::vector<GradientStop>& stops) {
       srgb(), components.data(), locations.data(), stops.size())};
 }
 
-NSFont* fontFor(const TextStyle& style) {
-  const auto size = static_cast<CGFloat>(std::clamp(style.size, 4.0, 256.0));
-  switch (style.role) {
+std::size_t roleIndex(FontRole role) noexcept { return static_cast<std::size_t>(role); }
+
+std::optional<FontRole> parseRole(NSString* name) {
+  static const std::array<std::pair<NSString*, FontRole>, kFontRoleCount> kRoles{{
+      {@"Ui", FontRole::Ui},
+      {@"UiMedium", FontRole::UiMedium},
+      {@"UiSemibold", FontRole::UiSemibold},
+      {@"UiBold", FontRole::UiBold},
+      {@"Mono", FontRole::Mono},
+      {@"Display", FontRole::Display},
+      {@"DisplayRounded", FontRole::DisplayRounded},
+  }};
+  for (const auto& [text, role] : kRoles)
+    if ([name isEqualToString:text]) return role;
+  return std::nullopt;
+}
+
+std::string hexSha256(NSData* data) {
+  std::array<unsigned char, CC_SHA256_DIGEST_LENGTH> digest{};
+  CC_SHA256(data.bytes, static_cast<CC_LONG>(data.length), digest.data());
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string out;
+  out.reserve(digest.size() * 2U);
+  for (const auto byte : digest) {
+    out.push_back(kHex[byte >> 4U]);
+    out.push_back(kHex[byte & 0x0FU]);
+  }
+  return out;
+}
+
+// The descriptors of the bundled faces, per role, for the process. Written once under the call_once
+// in bundledFonts() and read-only afterwards.
+struct RoleDescriptors final {
+  std::array<CfRef<CTFontDescriptorRef>, kFontRoleCount> descriptor;
+};
+RoleDescriptors& processDescriptors() {
+  static RoleDescriptors descriptors;
+  return descriptors;
+}
+
+std::uint32_t axisTag(NSString* tag) {
+  const char* t = tag.UTF8String;
+  std::uint32_t code = 0U;
+  for (std::size_t i = 0U; i < 4U; ++i)
+    code = (code << 8U) | static_cast<std::uint32_t>(static_cast<unsigned char>(t[i]));
+  return code;
+}
+
+BundledFonts registerInto(const std::filesystem::path& directory, RoleDescriptors* out) {
+  BundledFonts result;
+  if (directory.empty()) return result;
+  constexpr NSUInteger kMaximumFaceBytes = 4U * 1024U * 1024U;
+  @autoreleasepool {
+    NSString* root = [NSString stringWithUTF8String:directory.string().c_str()];
+    NSData* manifestData =
+        [NSData dataWithContentsOfFile:[root stringByAppendingPathComponent:@"manifest.json"]];
+    id manifest = manifestData == nil ? nil
+                                      : [NSJSONSerialization JSONObjectWithData:manifestData
+                                                                        options:0
+                                                                          error:nil];
+    NSArray* faces = [manifest isKindOfClass:[NSDictionary class]] ? manifest[@"faces"] : nil;
+    if (![faces isKindOfClass:[NSArray class]]) {
+      result.refused.emplace_back("manifest.json is missing or unreadable");
+      return result;
+    }
+    result.directory = directory;
+    for (id entry in faces) {
+      if (![entry isKindOfClass:[NSDictionary class]]) continue;
+      NSDictionary* face = entry;
+      NSString* file = face[@"file"];
+      NSString* postScript = face[@"postScriptName"];
+      NSString* expected = face[@"sha256"];
+      NSArray* roles = face[@"roles"];
+      if (![file isKindOfClass:[NSString class]] || ![postScript isKindOfClass:[NSString class]] ||
+          ![expected isKindOfClass:[NSString class]] || ![roles isKindOfClass:[NSArray class]] ||
+          [file containsString:@".."] || [file hasPrefix:@"/"]) {
+        result.refused.emplace_back("a manifest entry is incomplete or leaves the directory");
+        continue;
+      }
+      const std::string name = file.UTF8String;
+      NSString* path = [root stringByAppendingPathComponent:file];
+      NSData* bytes = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:nil];
+      if (bytes == nil || bytes.length == 0U || bytes.length > kMaximumFaceBytes) {
+        result.refused.push_back(name + ": missing, empty or too large");
+        continue;
+      }
+      if (hexSha256(bytes) != std::string{expected.UTF8String}) {
+        result.refused.push_back(name + ": SHA-256 differs from the manifest");
+        continue;
+      }
+      NSURL* url = [NSURL fileURLWithPath:path];
+      CFErrorRef error = nullptr;
+      if (!CTFontManagerRegisterFontsForURL((__bridge CFURLRef)url, kCTFontManagerScopeProcess,
+                                            &error)) {
+        const auto code = error != nullptr ? CFErrorGetCode(error) : 0;
+        if (error != nullptr) CFRelease(error);
+        // The same file registered earlier in this process (a second plug-in instance) is fine.
+        if (code != kCTFontManagerErrorAlreadyRegistered) {
+          result.refused.push_back(name + ": registration failed (" + std::to_string(code) + ")");
+          continue;
+        }
+      }
+      // The face is taken from this file's own descriptors, so a same-named face installed on the
+      // system can never stand in for the pinned one.
+      CfRef<CFArrayRef> descriptors{CTFontManagerCreateFontDescriptorsFromURL((__bridge CFURLRef)url)};
+      CTFontDescriptorRef match = nullptr;
+      for (CFIndex i = 0; descriptors && i < CFArrayGetCount(descriptors.get()); ++i) {
+        auto* candidate = static_cast<CTFontDescriptorRef>(
+            const_cast<void*>(CFArrayGetValueAtIndex(descriptors.get(), i)));
+        CfRef<CFStringRef> candidateName{static_cast<CFStringRef>(
+            CTFontDescriptorCopyAttribute(candidate, kCTFontNameAttribute))};
+        if (candidateName && [(__bridge NSString*)candidateName.get() isEqualToString:postScript]) {
+          match = candidate;
+          break;
+        }
+      }
+      if (match == nullptr) {
+        result.refused.push_back(name + ": no face named " + postScript.UTF8String);
+        continue;
+      }
+      CfRef<CTFontDescriptorRef> descriptor{static_cast<CTFontDescriptorRef>(CFRetain(match))};
+      if (NSDictionary* variation = face[@"variation"];
+          [variation isKindOfClass:[NSDictionary class]] && variation.count > 0U) {
+        NSMutableDictionary* axes = [NSMutableDictionary dictionary];
+        for (NSString* tag in variation) {
+          NSNumber* value = variation[tag];
+          if (![tag isKindOfClass:[NSString class]] || tag.length != 4U ||
+              ![value isKindOfClass:[NSNumber class]])
+            continue;
+          axes[@(axisTag(tag))] = value;
+        }
+        descriptor = CfRef<CTFontDescriptorRef>{CTFontDescriptorCreateCopyWithAttributes(
+            descriptor.get(),
+            (__bridge CFDictionaryRef)@{(__bridge id)kCTFontVariationAttribute : axes})};
+      }
+      for (NSString* roleName in roles) {
+        const auto role = [roleName isKindOfClass:[NSString class]] ? parseRole(roleName)
+                                                                   : std::nullopt;
+        if (!role.has_value()) {
+          result.refused.push_back(name + ": unknown role");
+          continue;
+        }
+        result.face[roleIndex(*role)] = postScript.UTF8String;
+        if (out != nullptr)
+          out->descriptor[roleIndex(*role)] =
+              CfRef<CTFontDescriptorRef>{static_cast<CTFontDescriptorRef>(CFRetain(descriptor.get()))};
+      }
+    }
+  }
+  return result;
+}
+
+NSFont* systemFontFor(FontRole role, CGFloat size) {
+  switch (role) {
     case FontRole::Ui: return [NSFont systemFontOfSize:size weight:NSFontWeightRegular];
     case FontRole::UiMedium: return [NSFont systemFontOfSize:size weight:NSFontWeightMedium];
     case FontRole::UiSemibold: return [NSFont systemFontOfSize:size weight:NSFontWeightSemibold];
@@ -161,6 +314,13 @@ NSFont* fontFor(const TextStyle& style) {
     case FontRole::Display: {
       NSFont* condensed = [NSFont fontWithName:@"AvenirNextCondensed-DemiBold" size:size];
       return condensed != nil ? condensed : [NSFont systemFontOfSize:size weight:NSFontWeightHeavy];
+    }
+    case FontRole::DisplayRounded: {
+      NSFont* base = [NSFont systemFontOfSize:size weight:NSFontWeightSemibold];
+      NSFontDescriptor* rounded =
+          [base.fontDescriptor fontDescriptorWithDesign:NSFontDescriptorSystemDesignRounded];
+      NSFont* font = rounded != nil ? [NSFont fontWithDescriptor:rounded size:size] : nil;
+      return font != nil ? font : base;
     }
   }
   return [NSFont systemFontOfSize:size];
@@ -216,6 +376,18 @@ private:
   std::unordered_map<std::uint64_t, std::shared_ptr<const GlowSprite>> sprites_;
   std::size_t bytes_{0U};
 };
+NSFont* fontFor(const TextStyle& style) {
+  const auto size = static_cast<CGFloat>(std::clamp(style.size, 4.0, 256.0));
+  static_cast<void>(bundledFonts());
+  const auto role = roleIndex(style.role) < kFontRoleCount ? style.role : FontRole::Ui;
+  const auto& descriptor = processDescriptors().descriptor[roleIndex(role)];
+  if (!descriptor) return systemFontFor(role, size);
+  // CoreText keeps its own cache of fonts made from a descriptor, and cascades to the system
+  // fallback list for characters the face lacks (Hangul, kana, symbols).
+  CTFontRef font = CTFontCreateWithFontDescriptor(descriptor.get(), size, nullptr);
+  if (font == nullptr) return systemFontFor(role, size);
+  return (__bridge_transfer NSFont*)font;
+}
 
 class CoreGraphicsCanvas final : public Canvas2D {
 public:
@@ -1333,6 +1505,41 @@ std::filesystem::path codeBundleResources() {
   const auto contents = binary.parent_path().parent_path();
   if (contents.filename() != "Contents") return {};
   return contents / "Resources";
+}
+
+std::filesystem::path locateBundledFonts() {
+  std::vector<std::filesystem::path> candidates;
+  if (const char* root = std::getenv("SEAM_UI_FONTS"); root != nullptr && *root != '\0') {
+    if (std::string_view{root} == "system") return {};
+    candidates.emplace_back(root);
+  }
+  if (const auto own = codeBundleResources(); !own.empty()) candidates.push_back(own / "fonts");
+#if defined(SEAM_UI_FONTS_SOURCE)
+  candidates.emplace_back(SEAM_UI_FONTS_SOURCE);
+#endif
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (std::filesystem::is_regular_file(candidate / "manifest.json", error)) return candidate;
+  }
+  return {};
+}
+
+BundledFonts registerBundledFonts(const std::filesystem::path& directory) {
+  return registerInto(directory, nullptr);
+}
+
+const BundledFonts& bundledFonts() {
+  static BundledFonts fonts;
+  static std::once_flag once;
+  std::call_once(once, [] { fonts = registerInto(locateBundledFonts(), &processDescriptors()); });
+  return fonts;
+}
+
+std::string fontFaceName(FontRole role) {
+  @autoreleasepool {
+    NSFont* font = fontFor(TextStyle{.role = role, .size = 13.0});
+    return font.fontName != nil ? std::string{font.fontName.UTF8String} : std::string{};
+  }
 }
 
 }  // namespace seam::native_ui::paint

@@ -126,7 +126,7 @@ void cardHeader(Canvas2D& c, const DesignTokens& t, ui::Rect card, std::string_v
          lit ? t.color.accent : t.color.textDisabled);
   c.restore();
   c.text({card.x + 32.0, card.y + 10.0, card.width - 120.0, 20.0}, title,
-         style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking,
+         style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking,
                TextAlign::Left, true),
          t.color.textPrimary);
   Path rule;
@@ -303,6 +303,9 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   // An Increase Contrast change in System Settings repaints an idle editor: a frame reads the
   // system setting itself, but nothing else would ask for one.
   if (available()) displayOptionsObservation_ = observeSystemDisplayOptions([this] { repaint(); });
+  // The bundled faces are registered for this process when the shell is activated (the standalone
+  // app and the plug-in both activate one), before the first frame measures any text.
+  if (available()) static_cast<void>(paint::bundledFonts());
   if (assetRoot.empty() || !available()) return;
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto folder = assetRoot / std::string{designModeName(mode)};
@@ -1099,7 +1102,7 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
     c.drawImage(*wordmark, {l.wordmark.x, l.wordmark.y + (l.wordmark.height - height) * 0.5,
                             height * aspect, height});
   } else if (l.wordmark.width > 0.0) {
-    c.text(l.wordmark, tr(Str::SEAM), style(FontRole::Display, 34.0, 6.0), t.color.textPrimary);
+    c.text(l.wordmark, tr(Str::SEAM), style(t.type.display, 34.0, 6.0), t.color.textPrimary);
   }
 }
 
@@ -1237,6 +1240,23 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     stageShown_ = false;
     const paint::LayerScope overlayLayer{*c, paint::Layer::Dynamic, "overlay"};
     paintOverlay(*c, t, controller, state, *overlay);
+  }
+  // The kit tooltip is the topmost item, over overlays and menus, and a dynamic item of its own:
+  // showing, moving or hiding it damages only its card. Its candidates are read against this
+  // frame's elided labels.
+  elidedLabels_ = frame.elidedText();
+  lastPaintAt_ = frameNow_;
+  updateTooltip(frameNow_);
+  shownTooltip_.reset();
+  if (const auto* tip = tooltip_.shown(frameNow_); tip != nullptr) {
+    const auto placed = layoutTooltip(
+        tip->text, tip->target, ui::Rect{0.0, 0.0, layout_.width, layout_.height}, t,
+        [this](std::string_view utf8, const paint::TextStyle& s) { return measureText(utf8, s); });
+    if (!placed.empty()) {
+      const paint::LayerScope tooltipLayer{*c, paint::Layer::Dynamic, "tooltip"};
+      paintTooltip(*c, t, placed);
+      shownTooltip_ = ShownTooltip{tip->id, tip->text, tip->target, placed.box};
+    }
   }
   const auto composed = layers_.compose(
       canvas,
@@ -2912,6 +2932,102 @@ void SingShell::notePointer(ui::Point point) {
   if (inside != wasInside) repaint();
 }
 
+std::chrono::steady_clock::time_point SingShell::uiNow() const {
+  return uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
+}
+
+bool SingShell::pointerGestureActive() const noexcept {
+  return knobDrag_.has_value() || bodyGesture_ || overlayGesture_.has_value() ||
+         forwarding_ != ForwardArea::None;
+}
+
+std::optional<TooltipSubject> SingShell::tooltipSubjectForNode(const SemanticNode& node) const {
+  if (!tooltipRole(node.role) || node.bounds.width <= 0.0 || node.bounds.height <= 0.0)
+    return std::nullopt;
+  std::string text;
+  // The whole text of a label the frame elided inside this control comes first: it is what the
+  // control shows cut short, and the node carries it at this place (section 8).
+  for (auto it = elidedLabels_.rbegin(); it != elidedLabels_.rend(); ++it) {
+    const ui::Point middle{it->bounds.x + it->bounds.width * 0.5, it->bounds.y + it->bounds.height * 0.5};
+    if (contains(node.bounds, middle)) {
+      text = it->text;
+      break;
+    }
+  }
+  if (!node.description.empty() && node.description != text) {
+    if (!text.empty()) text += '\n';
+    text += node.description;
+  }
+  if (text.empty()) return std::nullopt;
+  return TooltipSubject{node.id, node.bounds, std::move(text)};
+}
+
+std::optional<TooltipSubject> SingShell::tooltipSubjectFor(std::string_view id) const {
+  const auto search = [id](const SemanticNode& node, const auto& self) -> const SemanticNode* {
+    for (const auto& child : node.children) {
+      if (child.id == id) return &child;
+      if (const auto* found = self(child, self); found != nullptr) return found;
+    }
+    return nullptr;
+  };
+  const auto* node = search(semantics_.root(), search);
+  return node != nullptr ? tooltipSubjectForNode(*node) : std::nullopt;
+}
+
+std::optional<TooltipSubject> SingShell::tooltipSubjectAt(ui::Point point) const {
+  if (!presented_) return std::nullopt;
+  // The smallest control under the point is the one the pointer is on (a button on its card). A
+  // field, a note, a lane or the timeline under it means the pointer is editing: no tooltip.
+  const SemanticNode* best = nullptr;
+  auto blocked = false;
+  const auto visit = [&](const SemanticNode& node, const auto& self) -> void {
+    for (const auto& child : node.children) {
+      if (contains(child.bounds, point)) {
+        if (child.role == SemanticRole::TextField || child.role == SemanticRole::Note ||
+            child.role == SemanticRole::Lane || child.role == SemanticRole::Timeline)
+          blocked = true;
+        if (tooltipRole(child.role) &&
+            (best == nullptr ||
+             child.bounds.width * child.bounds.height < best->bounds.width * best->bounds.height))
+          best = &child;
+      }
+      self(child, self);
+    }
+  };
+  visit(semantics_.root(), visit);
+  if (best != nullptr) return tooltipSubjectForNode(*best);
+  if (blocked || inMusicalArea(point) || inEditableLane(point)) return std::nullopt;
+  // A label the frame elided outside any control: the topmost one under the point, when it is on
+  // the surface that is up (an open overlay or menu covers everything drawn before it).
+  for (auto it = elidedLabels_.rbegin(); it != elidedLabels_.rend(); ++it) {
+    if (!contains(it->bounds, point)) continue;
+    if (presentedOverlay_ != OverlayKind::None && it->item != "overlay") continue;
+    if (workspaceMenuOpen_ && it->item != "menu") continue;
+    return TooltipSubject{"label:" + it->text, it->bounds, it->text};
+  }
+  return std::nullopt;
+}
+
+void SingShell::updateTooltip(std::chrono::steady_clock::time_point now) {
+  // Shell focus is a candidate only after keyboard input: a click that focuses a control is not a
+  // request to explain it.
+  tooltip_.focus(keyboardInput_ && !semanticFocus_.empty() ? tooltipSubjectFor(semanticFocus_)
+                                                           : std::nullopt,
+                 now);
+  tooltip_.hover(pointerPosition_.has_value() && !pointerGestureActive()
+                     ? tooltipSubjectAt(*pointerPosition_)
+                     : std::nullopt,
+                 now);
+}
+
+std::optional<std::chrono::steady_clock::time_point> SingShell::nextFrameDue() const noexcept {
+  if (!presented_) return std::nullopt;
+  const auto at = tooltip_.showsAt();
+  // Once a frame has painted at or after that time, the tip is on screen (or had no room).
+  if (!at.has_value() || (lastPaintAt_.has_value() && *lastPaintAt_ >= *at)) return std::nullopt;
+  return at;
+}
+
 StatusMessage singStatusMessage(const EditorSceneState& state) {
   const auto& s = state.renderStatus;
   const auto failed = s.state == RenderStatusState::Failed;
@@ -3562,6 +3678,11 @@ core::Result<void> SingShell::pointerDown(NativeEditorController& controller,
   // pointer, so no press reaches the controller at coordinates nobody drew.
   if (!presented_) return core::success();
   notePointer(event.position);
+  // A press hides the tooltip; it stays hidden until the pointer moves to another target.
+  keyboardInput_ = false;
+  updateTooltip(uiNow());
+  tooltip_.dismiss();
+  if (shownTooltip_.has_value()) repaint();
   const auto result = shellPointerDown(controller, event);
   return result;
 }
@@ -3804,6 +3925,15 @@ core::Result<void> SingShell::pointerMove(NativeEditorController& controller,
                                           const PointerEvent& event) {
   if (!presented_) return core::success();
   notePointer(event.position);
+  {
+    // The tooltip follows the pointer: a new target starts its delay, leaving one hides it.
+    const auto now = uiNow();
+    updateTooltip(now);
+    const auto* tip = tooltip_.shown(now);
+    if ((tip != nullptr) != shownTooltip_.has_value() ||
+        (tip != nullptr && tip->id != shownTooltip_->subject))
+      repaint();
+  }
   if (overlayGesture_) {
     const auto* overlay = activeOverlay(controller);
     if (overlay == nullptr) {
@@ -3886,6 +4016,9 @@ core::Result<void> SingShell::pointerUp(NativeEditorController& controller,
 
 bool SingShell::scroll(NativeEditorController& controller, double deltaX, double deltaY,
                       ui::Point anchor, InputModifiers modifiers) {
+  // A scroll hides the tooltip.
+  tooltip_.dismiss();
+  if (shownTooltip_.has_value()) repaint();
   if (workspaceMenuOpen_) return true;
   if (!presented_) return true;  // nothing is on screen to scroll
   // An overlay is modal: a scroll over its card is its own (a long list pages, a plot pans), and
@@ -3935,6 +4068,16 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that opened it; the overlay's own keys run its real commands; every other plain key
   // stops here, so nothing reaches the covered score.
   if (presented_) {
+    keyboardInput_ = true;
+    // Escape hides a shown tooltip and does nothing else, so focus and any open surface stay
+    // (WCAG 1.4.13). Other keys hide a tip the pointer opened; a keyboard tip follows focus.
+    if (event.key == NativeKey::Escape && shownTooltip_.has_value() &&
+        tooltip_.shown(uiNow()) != nullptr) {
+      tooltip_.dismiss();
+      repaint();
+      return true;
+    }
+    if (!tooltip_.fromKeyboard() && event.key != NativeKey::Tab) tooltip_.dismiss();
     // A surface that opened without a frame in between still takes the keyboard from a lyric.
     cancelCoveredLyric(controller);
     if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
@@ -4240,6 +4383,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
 
   // Header: workspaces, look, transport, settings.
   static constexpr std::array<Str, 5U> kWorkspaces{Str::Sing, Str::Voice, Str::Tune, Str::Mix, Str::Export};
+  // The tabs show only their icons below the label width, so each explains itself on hover.
+  static constexpr std::array<Str, 5U> kWorkspaceTips{Str::TipSingWorkspace, Str::TipVoiceWorkspace,
+                                                      Str::TipTuneWorkspace, Str::TipMixWorkspace,
+                                                      Str::TipExportWorkspace};
   for (std::size_t i = 0U; i < kWorkspaces.size(); ++i) {
     if (l.workspaceTab[i].width <= 0.0 || l.workspaceTabs.width <= 0.0) break;
     add(SemanticNode{.id = "shell.workspace." + lowercase(englishShellString(kWorkspaces[i])),
@@ -4248,14 +4395,15 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .bounds = l.workspaceTab[i],
                      .selected = tabSelected(i),
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                     .description = ""});
+                     .description = tr(kWorkspaceTips[i])});
   }
   if (l.workspaceMenuButton.width >= 24.0) {
     add(SemanticNode{.id = "shell.workspace-menu", .role = SemanticRole::Button,
                      .name = tr(Str::WorkspacesAndAppearance),
                      .value = workspaceMenuOpen_ ? tr(Str::Open) : tr(Str::Closed),
                      .bounds = l.workspaceMenuButton,
-                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = tr(Str::TipWorkspaceMenu)});
     if (workspaceMenuOpen_) {
       static constexpr std::array<const char*, 5U> kIds{"sing", "voice", "tune", "mix", "export"};
       static constexpr std::array<Str, 5U> kNames{Str::Sing, Str::Voice, Str::Tune, Str::Mix,
@@ -4283,6 +4431,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
   }
   rehome("toolbar.transport", l.playButton);
+  // The play button is an icon: it says what it does, or why it cannot.
+  if (!children.empty() && children.back().id == "toolbar.transport")
+    children.back().description =
+        children.back().enabled ? tr(Str::TipPlayStop) : tr(Str::TipNothingToPlay);
   rehome("toolbar.tempo", l.tempoReadout);
   rehome("toolbar.meter", l.meterReadout);
   if (l.outputMeterVisible) {
@@ -4314,7 +4466,8 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
   add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = tr(Str::AudioSettings),
                    .bounds = l.settings,
-                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                   .description = tr(Str::TipAudioSettings)});
   // The track chip is painted only above the SING score; a covering workspace paints its own body
   // there, so it does not publish it.
   if (workspace_ == Workspace::Sing) {
@@ -4531,7 +4684,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   add(SemanticNode{.id = "shell.status", .role = SemanticRole::Status, .name = tr(Str::RenderStatus),
                    .value = std::string{renderStatusStateName(s.state)} +
                             (s.diagnostic.empty() ? "" : ": " + s.diagnostic),
-                   .bounds = l.status});
+                   .bounds = l.status,
+                   // The bar's left message (the audio device, the leading diagnostic or the
+                   // render note), which narrow windows elide: said whole here and in its tooltip.
+                   .description = singStatusMessage(state).text});
   if (s.state == RenderStatusState::Rendering || s.state == RenderStatusState::Queued) {
     add(SemanticNode{.id = "shell.render-progress", .role = SemanticRole::ProgressIndicator,
                      .name = tr(Str::RenderProgress),
@@ -4599,7 +4755,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       add(SemanticNode{.id = "shell.ruler.time-map", .role = SemanticRole::Button,
                        .name = tr(Str::TempoAndMeterEvents),
                        .bounds = l.rulerTimeMapButton,
-                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
+                       .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                       // The button's painted caption, which it may show elided: its tooltip and
+                       // a screen reader then say the same words.
+                       .description = tr(Str::TimeMap)});
     if (l.laneReviewButton.width > 0.0)
       add(SemanticNode{.id = "shell.lane.review", .role = SemanticRole::Button,
                        .name = tr(Str::ReviewRetainedEdits), .bounds = l.laneReviewButton,

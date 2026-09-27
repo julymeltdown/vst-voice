@@ -333,7 +333,14 @@ double RecordingCanvas::text(ui::Rect bounds, std::string_view utf8, const TextS
   const auto area = deviceBounds({bounds.x - 2.0, bounds.y - 4.0, bounds.width + 4.0,
                                   bounds.height + 8.0}, 0.0);
   record(DrawText{bounds, std::string{utf8}, style, color}, h.value(), area);
-  return std::min(measure(utf8, style), bounds.width);
+  const auto natural = measure(utf8, style);
+  if (natural > bounds.width + 0.5) {
+    auto shown = ui::Rect{bounds.x + state_.dx, bounds.y + state_.dy, bounds.width, bounds.height};
+    if (state_.clip >= 0) shown = intersect(shown, clips_[static_cast<std::size_t>(state_.clip)].bounds);
+    if (shown.width > 0.0 && shown.height > 0.0)
+      elided_.push_back(ElidedText{shown, std::string{utf8}, layer_, item_});
+  }
+  return std::min(natural, bounds.width);
 }
 
 double RecordingCanvas::measure(std::string_view utf8, const TextStyle& style) {
