@@ -2906,6 +2906,23 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     }
     if (l.rack == RackPresentation::Full)
       if (auto knob = pressKnob(p)) return std::move(*knob);
+    // The ruler's time-map opener and the lane's review opener are painted controls inside strips
+    // the score owns: a press on them opens their surface with the command their nodes run, and
+    // never reaches the ruler (a seek) or the lane.
+    if (workspace_ == Workspace::Sing && l.rulerTimeMapButton.width > 0.0 &&
+        contains(l.rulerTimeMapButton, p)) {
+      takeSemanticFocus(controller, "shell.ruler.time-map");
+      auto opened = controller.openTimeMapPanel();
+      repaint();
+      return opened;
+    }
+    if (workspace_ == Workspace::Sing && l.laneReviewButton.width > 0.0 &&
+        contains(l.laneReviewButton, p)) {
+      takeSemanticFocus(controller, "shell.lane.review");
+      auto opened = controller.openPhonemeReview();
+      repaint();
+      return opened;
+    }
     const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
     for (std::size_t i = 0U; i < 7U; ++i) {
       const ui::Rect tab{l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0), l.laneTabs.y,

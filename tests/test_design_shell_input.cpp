@@ -2785,6 +2785,41 @@ TEST_CASE("every overlay control acts through the host's accessibility path") {
   }
 }
 
+TEST_CASE("the painted time-map and review openers open their surfaces and never reach the score") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto [width, height] : {std::pair{1600.0, 900.0}, std::pair{1100.0, 720.0}}) {
+    CHECK(f.frame(width, height));
+    const auto ruler = f.shell.layout().rulerTimeMapButton;
+    if (ruler.width <= 0.0) throw test::Failure{"no time-map opener at this size"};
+    const auto playhead = f.controller.playheadTick();
+    const auto revision = f.controller.documentRevision();
+    const ui::Point r{ruler.x + ruler.width * 0.5, ruler.y + ruler.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(r)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(r)).hasValue());
+    CHECK(f.controller.sceneState().timeMapVisible);
+    CHECK(f.controller.playheadTick() == playhead);
+    CHECK(f.controller.documentRevision() == revision);
+    CHECK(f.frame(width, height));
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TimeMap);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(f.focusedId() == "shell.ruler.time-map");
+
+    CHECK(f.frame(width, height));
+    const auto review = f.shell.layout().laneReviewButton;
+    if (review.width <= 0.0) throw test::Failure{"no review opener at this size"};
+    const ui::Point v{review.x + review.width * 0.5, review.y + review.height * 0.5};
+    CHECK(f.shell.pointerDown(f.controller, press(v)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(v)).hasValue());
+    CHECK(f.controller.sceneState().phonemeReview.visible);
+    CHECK(f.frame(width, height));
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::PhonemeReview);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(!f.controller.sceneState().phonemeReview.visible);
+    CHECK(f.focusedId() == "shell.lane.review");
+  }
+}
+
 TEST_CASE("modified keys over an overlay are application commands, never the overlay's keys") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
