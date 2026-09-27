@@ -1644,4 +1644,20 @@ std::string fontFaceName(FontRole role) {
   }
 }
 
+std::filesystem::path fontFaceFile(FontRole role) {
+  @autoreleasepool {
+    NSFont* font = fontFor(TextStyle{.role = role, .size = 13.0});
+    NSURL* url = [font.fontDescriptor objectForKey:(__bridge NSString*)kCTFontURLAttribute];
+    if (url == nil && font.fontName != nil) {
+      CfRef<CTFontRef> resolved{CTFontCreateWithName((__bridge CFStringRef)font.fontName, 13.0, nullptr)};
+      if (resolved) {
+        CfRef<CFURLRef> location{static_cast<CFURLRef>(CTFontCopyAttribute(resolved.get(), kCTFontURLAttribute))};
+        if (location) url = (__bridge NSURL*)location.get();
+      }
+    }
+    return url != nil && url.isFileURL ? std::filesystem::path{url.path.UTF8String}
+                                       : std::filesystem::path{};
+  }
+}
+
 }  // namespace seam::native_ui::paint

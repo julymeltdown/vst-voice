@@ -302,5 +302,7 @@ struct BundledFonts final {
 const BundledFonts& bundledFonts();
 // The PostScript name of the face a role draws with at the moment (bundled or fallback).
 [[nodiscard]] std::string fontFaceName(FontRole role);
+// The resolved file behind that face, when CoreText exposes it.
+[[nodiscard]] std::filesystem::path fontFaceFile(FontRole role);
 
 }  // namespace seam::native_ui::paint
