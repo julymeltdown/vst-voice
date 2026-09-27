@@ -245,7 +245,7 @@ void RecordingCanvas::record(Payload payload, std::uint64_t payloadHash, ui::Rec
   auto& named = target.items[item];
   named.hash = mix(named.hash, opHash);
   named.bounds = unite(named.bounds, bounds);
-  target.ops.push_back(Op{state_, item, bounds, std::move(payload)});
+  target.ops.push_back(Op{state_, item, bounds, std::move(payload), opHash});
 }
 
 void RecordingCanvas::drawRaster(ui::Rect bounds, std::uint64_t contentHash, RasterDrawing drawing) {
@@ -350,6 +350,14 @@ std::size_t RecordingCanvas::layerSize(Layer layer) const noexcept {
 
 std::vector<LayerItem> RecordingCanvas::items(Layer layer) const { return layers_[index(layer)].items; }
 
+std::vector<RecordingCanvas::OpKey> RecordingCanvas::opKeys(Layer layer) const {
+  const auto& ops = layers_[index(layer)].ops;
+  std::vector<OpKey> out;
+  out.reserve(ops.size());
+  for (const auto& op : ops) out.push_back(OpKey{op.hash, op.bounds});
+  return out;
+}
+
 std::vector<ui::Rect> RecordingCanvas::rasterBounds(Layer layer) const {
   std::vector<ui::Rect> out;
   for (const auto& op : layers_[index(layer)].ops)
@@ -367,7 +375,7 @@ void RecordingCanvas::applyClip(Canvas2D& target, const Clip& clip) const {
 }
 
 void RecordingCanvas::replay(Layer layer, Canvas2D& target, RasterCanvas& raster,
-                             const ui::Rect* clip) const {
+                             const ui::Rect* clip, const std::vector<ui::Rect>* touching) const {
   const auto& ops = layers_[index(layer)].ops;
   if (ops.empty()) return;
   // Clips are nested save levels; the drawing attributes live in one more level above them, so a
@@ -382,6 +390,10 @@ void RecordingCanvas::replay(Layer layer, Canvas2D& target, RasterCanvas& raster
     // Drawing that cannot reach the clip is skipped outright; its bounds include every stroke,
     // glow and anti-aliased edge it may touch.
     if (clip != nullptr && emptyRect(intersect(op.bounds, *clip))) continue;
+    if (touching != nullptr &&
+        std::none_of(touching->begin(), touching->end(),
+                     [&](const ui::Rect& r) { return !emptyRect(intersect(op.bounds, r)); }))
+      continue;
     const auto& s = op.state;
     chain.clear();
     for (auto c = s.clip; c >= 0; c = clips_[static_cast<std::size_t>(c)].parent) chain.push_back(c);

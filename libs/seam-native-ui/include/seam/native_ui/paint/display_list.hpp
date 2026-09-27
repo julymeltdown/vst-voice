@@ -81,6 +81,13 @@ public:
 
   [[nodiscard]] std::uint64_t layerHash(Layer layer) const noexcept;
   [[nodiscard]] std::size_t layerSize(Layer layer) const noexcept;
+  // One recorded drawing call as a frame compares it with the previous frame's: the hash of the call
+  // with its whole state, and the bounds it may paint.
+  struct OpKey final {
+    std::uint64_t hash{0U};
+    ui::Rect bounds{};
+  };
+  [[nodiscard]] std::vector<OpKey> opKeys(Layer layer) const;
   // The layer's named items in first-drawn order.
   [[nodiscard]] std::vector<LayerItem> items(Layer layer) const;
   // The bounds of the layer's raster drawings. The raster front writes pixels without the vector
@@ -89,8 +96,11 @@ public:
   // Draws one recorded layer onto target, whose surface the raster front addresses. With a clip,
   // only drawing whose bounds meet it runs, clipped to it; a raster drawing that meets the clip
   // must lie inside it (see rasterBounds).
+  // With touching, only drawing whose bounds meet one of those rectangles runs, and it runs
+  // unclipped, exactly as it does in a whole frame (a clip changes how the backend rasterizes).
   void replay(Layer layer, Canvas2D& target, RasterCanvas& raster,
-              const ui::Rect* clip = nullptr) const;
+              const ui::Rect* clip = nullptr,
+              const std::vector<ui::Rect>* touching = nullptr) const;
 
   [[nodiscard]] double width() const noexcept override { return width_; }
   [[nodiscard]] double height() const noexcept override { return height_; }
@@ -154,6 +164,7 @@ private:
     std::uint32_t item{0U};
     ui::Rect bounds{};
     Payload payload;
+    std::uint64_t hash{0U};
   };
   struct LayerRecord final {
     std::vector<Op> ops;

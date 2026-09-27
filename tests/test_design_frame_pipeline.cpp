@@ -245,12 +245,22 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   CHECK(onlyDynamic(r.layers));
   in.box = false;
 
-  // A selection changes the content layer; the grid stays cached.
+  // A selection changes the content layer; the grid stays cached. Only the notes whose look changed
+  // (and what they overlap) are redrawn, so the damage is theirs, not the surface.
   p.controller.pianoRoll().selectInBox({0.0, 0.0, 400.0, 2000.0});
   r = p.frame(in);
   CHECK(r.identical);
-  CHECK(r.damage.full);
+  CHECK(r.covered);
+  CHECK(!r.damage.full);
+  CHECK(damagedArea(r.damage) < kWidth * kHeight * 0.5);
   CHECK(!r.layers[0]);
+  CHECK(!r.layers[1]);
+  CHECK(r.layers[2]);
+  // Selecting other notes damages the notes that changed on both sides.
+  p.controller.pianoRoll().selectInBox({500.0, 0.0, 200.0, 2000.0});
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(!r.layers[1]);
   CHECK(r.layers[2]);
 
@@ -260,6 +270,7 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   p.controller.pianoRoll().rebuildIndex();
   r = p.frame(in);
   CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(!r.layers[0]);
   CHECK(r.layers[1]);
   CHECK(r.layers[2]);
@@ -267,6 +278,7 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   p.controller.pianoRoll().rebuildIndex();
   r = p.frame(in);
   CHECK(r.identical);
+  CHECK(r.covered);
   CHECK(r.layers[1]);
 
   // Playback over the scrolled view is dynamic-only again.
