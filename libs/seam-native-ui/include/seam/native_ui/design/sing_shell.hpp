@@ -557,6 +557,11 @@ private:
   mutable std::optional<CharacterToast> errorToast_{};
   std::optional<float> auditionLevel_{};
   CharacterState characterState_{CharacterState::Idle};
+  // The project's character display mode for this frame (Full, Minimal, Off). Minimal keeps the
+  // compact identity and drops the Stage; Off draws no character artwork anywhere, while the ring,
+  // the avatar's state ring, the toast and the empty-project line still carry the singer's status.
+  domain::CharacterDisplayMode characterDisplay_{domain::CharacterDisplayMode::Full};
+  [[nodiscard]] const paint::Image* lookPortrait() const;
   // The frame's own clock reading, taken once so every part of one frame animates against the same
   // instant. The injectable UI clock is the source, so a test's frozen clock freezes all of it.
   std::chrono::steady_clock::time_point frameNow_{};

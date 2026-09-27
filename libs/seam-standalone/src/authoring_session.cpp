@@ -168,6 +168,17 @@ void AuthoringSession::configureController() {
         }
         return core::success();
       },
+      // A region picked in MIX: the render, preview and technical edits follow it.
+      .selectRegion = [this](domain::RegionId regionId) {
+        const auto selected = runtime_->selectRegion(regionId);
+        if (!selected) return selected;
+        trackId_ = runtime_->selectedTrack();
+        regionId_ = runtime_->selectedRegion();
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return core::success();
+      },
       .documentChanged = [this] { onDocumentChanged(); },
       .stopPlaying = [this] {
         const auto result = runtime_->transport().stop();

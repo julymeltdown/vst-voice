@@ -534,6 +534,29 @@ core::Result<void> EditorRuntime::selectRegion(domain::RegionId regionId) {
   return core::success();
 }
 
+// The controller already moved its own selection; only the host side follows here. A region names
+// its track, so a region selection moves both.
+core::Result<void> EditorRuntime::followEditorSelection(domain::TrackId trackId,
+                                                        domain::RegionId regionId) {
+  std::lock_guard lock(mutex_);
+  const auto selected = regionId.valid() ? authoring_->selectRegion(regionId)
+                                         : authoring_->selectTrack(trackId);
+  if (!selected) return selected;
+  const auto trackChanged = authoring_->selectedTrack() != trackId_;
+  const auto regionChanged = authoring_->selectedRegion() != regionId_;
+  trackId_ = authoring_->selectedTrack();
+  regionId_ = authoring_->selectedRegion();
+  if (trackChanged) {
+    refreshAllVoicebankResolutionsLocked();
+    if (controller_)
+      controller_->setAudioState(voicebankResolution_.resolved(),
+                                 voicebankStatusLabel(voicebankResolution_));
+  }
+  if (trackChanged || regionChanged) requestRender(renderSampleRate_);
+  requestRepaint();
+  return core::success();
+}
+
 core::Result<void> EditorRuntime::setTrackMix(
     domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo) {
   std::lock_guard lock(mutex_);

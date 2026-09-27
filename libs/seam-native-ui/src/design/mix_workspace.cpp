@@ -655,7 +655,8 @@ MeterGeometry meterGeometry(ui::Rect well, std::size_t channels) {
 // ---- Ids ------------------------------------------------------------------------------------
 
 enum class Control : std::uint8_t {
-  Strip, Gain, Pan, Mute, Solo, Route, Settings, Scroll, Master, Meter, Device, Arrangement, Region
+  Strip, Gain, Pan, Mute, Solo, Route, Settings, Scroll, Master, Meter, Device, Arrangement, Region,
+  Output
 };
 
 constexpr std::string_view kPrefix = "shell.mix.";
@@ -691,6 +692,7 @@ std::optional<ParsedId> parseId(std::string_view id) {
   if (id == "shell.mix.master-meter") return ParsedId{Control::Meter, {}};
   if (id == "shell.mix.device") return ParsedId{Control::Device, {}};
   if (id == "shell.mix.arrangement") return ParsedId{Control::Arrangement, {}};
+  if (id == "shell.mix.output-channels") return ParsedId{Control::Output, {}};
   if (id.starts_with(kRegionPrefix))
     return ParsedId{Control::Region, std::string{id.substr(kRegionPrefix.size())}};
   if (!id.starts_with(kTrackPrefix)) return std::nullopt;
@@ -732,6 +734,32 @@ core::Result<void> cycleRoute(NativeEditorController& controller, const StripMod
     else if (bus.channelCount == 1U) route.matrix = domain::RoutingMatrix::identity(1U);
   }
   return controller.setTrackRoute(strip.id, std::move(route));
+}
+
+// The output channel counts the master card steps through where the host owns them (a plug-in's
+// output ports), as the classic plug-in overlay did: 1, 2, 4, 6, 8, and around again.
+constexpr std::array<std::uint8_t, 5U> kOutputChannelSteps{1U, 2U, 4U, 6U, 8U};
+
+std::uint8_t steppedOutputChannels(std::uint8_t current, bool up) {
+  if (up) {
+    for (const auto step : kOutputChannelSteps)
+      if (step > current) return step;
+    return kOutputChannelSteps.front();
+  }
+  for (auto it = kOutputChannelSteps.rbegin(); it != kOutputChannelSteps.rend(); ++it)
+    if (*it < current) return *it;
+  return kOutputChannelSteps.back();
+}
+
+core::Result<void> stepOutputChannels(NativeEditorController& controller, bool up) {
+  return controller.configureOutputChannels(
+      steppedOutputChannels(controller.project().routing().deviceOutputChannels, up));
+}
+
+// The master card's format row, a 24-point button when the output channels can be set here.
+ui::Rect outputChannelsButton(const MixLayout& l) {
+  if (l.master.height < 64.0 || l.master.width < 60.0) return {};
+  return {l.master.x + 10.0, l.master.y + 38.0, l.master.width - 20.0, 24.0};
 }
 
 float nudgedGain(float gainDb, double step) {
@@ -858,6 +886,12 @@ public:
       focusRequest_ = "shell.mix.master-meter";
       return core::success();
     }
+    if (const auto output = outputChannelsButton(l);
+        controller.outputChannelsConfigurable() && contains(output, p)) {
+      focusRequest_ = "shell.mix.output-channels";
+      begin(Control::Output, output, {}, 0.0);
+      return core::success();
+    }
     if (contains(l.master, p)) {
       focusRequest_ = "shell.mix.master";
       return core::success();
@@ -946,6 +980,8 @@ public:
       if (inside) controller.showAudioSettings();
       return core::success();
     }
+    if (g.control == Control::Output)
+      return inside ? stepOutputChannels(controller, !event.modifiers.shift) : core::success();
     if (g.control == Control::Scroll) return core::success();
     // The release commits only against the document the gesture began on.
     if (controller.documentRevision() != g.revision) return core::success();
@@ -1080,6 +1116,17 @@ public:
     out.push_back(SemanticNode{.id = "shell.mix.master", .role = SemanticRole::Status,
                                .name = tr(Str::Master2), .value = masterSummary(controller, state),
                                .bounds = l.master, .actions = {SemanticAction::SetFocus}});
+    if (const auto output = outputChannelsButton(l);
+        controller.outputChannelsConfigurable() && output.width > 0.0)
+      out.push_back(SemanticNode{
+          .id = "shell.mix.output-channels", .role = SemanticRole::Button,
+          .name = tr(Str::OutputChannels),
+          .value = std::to_string(controller.project().routing().deviceOutputChannels) +
+                   tr(Str::Channels),
+          .bounds = output,
+          .actions = {SemanticAction::Activate, SemanticAction::Increment,
+                      SemanticAction::Decrement, SemanticAction::SetFocus},
+          .description = tr(Str::ActivateOrIncrementForTheNext)});
     if (l.meter.width > 0.0) {
       if (const auto reading = meterReading(state)) {
         out.push_back(SemanticNode{.id = "shell.mix.master-meter", .role = SemanticRole::ProgressIndicator,
@@ -1124,6 +1171,11 @@ public:
         if (!activate) return unsupported();
         controller.showAudioSettings();
         return core::success();
+      case Control::Output:
+        if (!controller.outputChannelsConfigurable()) return unsupported();
+        if (activate || action == SemanticAction::Increment) return stepOutputChannels(controller, true);
+        if (action == SemanticAction::Decrement) return stepOutputChannels(controller, false);
+        return unsupported();
       case Control::Scroll: {
         if (action != SemanticAction::Increment && action != SemanticAction::Decrement)
           return unsupported();
@@ -1438,8 +1490,19 @@ private:
     if (bus != nullptr) {
       const auto info = (bus->channelCount == 2U ? std::string{tr(Str::Stereo)} : std::to_string(bus->channelCount) + tr(Str::Ch2)) +
                         tr(Str::Text4) + gainText(bus->gainDb);
-      c.text({x, m.y + 42.0, w, 16.0}, info, fitted(c, info, style(FontRole::Ui, t.type.smallLabel), w),
-             t.color.textSecondary);
+      // Where the host owns the output channels, the format row is the sunken control that steps them.
+      if (const auto output = outputChannelsButton(l);
+          controller.outputChannelsConfigurable() && output.width > 0.0) {
+        sunken(c, t, output, t.shape.control);
+        const ui::Rect label{output.x + 6.0, output.y, output.width - 12.0, output.height};
+        c.text(label, info,
+               fitted(c, info, style(FontRole::UiMedium, t.type.smallLabel, 0.0, TextAlign::Center),
+                      label.width),
+               t.color.textPrimary);
+      } else {
+        c.text({x, m.y + 42.0, w, 16.0}, info, fitted(c, info, style(FontRole::Ui, t.type.smallLabel), w),
+               t.color.textSecondary);
+      }
     }
     paintMeter(c, t, meterReading(state), l.meter, bus != nullptr ? bus->channelCount : 2U);
   }

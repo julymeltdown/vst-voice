@@ -427,7 +427,8 @@ struct SplashFixture final {
 
   seam::domain::Project makeProject(bool empty) {
     auto project = factory.createProject("Splash");
-    project.settings().characterDisplay = seam::domain::CharacterDisplayMode::Off;
+    // Full: the splash is character artwork, which a display that is Off does not draw.
+    project.settings().characterDisplay = seam::domain::CharacterDisplayMode::Full;
     trackId = factory.addVocalTrack(project, "Singer");
     regionId = factory.addRegion(project, trackId, "Phrase", seam::time::Tick{0},
                                  seam::time::Tick{7680});

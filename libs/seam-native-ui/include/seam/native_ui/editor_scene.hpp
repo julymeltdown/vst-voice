@@ -180,6 +180,9 @@ struct EditorSceneState final {
   std::vector<domain::SeamOverride> seamOverrides;
   std::optional<domain::PhonemeKey> selectedSeam;
   bool seamPreviewAlternate{false};
+  // Whether the host can audition a seam's alternate (B) render. A plug-in cannot: the DAW plays
+  // the canonical render, so B is refused there and the shell says so.
+  bool seamPreviewConnected{false};
   std::vector<domain::PitchAutomationPoint> pitchAutomation;
   // Absolute song tick of the active region's start. Pitch and expression automation points are
   // region-local; painters add this before mapping a point onto the song timeline.

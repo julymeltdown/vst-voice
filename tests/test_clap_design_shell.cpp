@@ -5,6 +5,7 @@
 #include "test_support.hpp"
 
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/application/project_factory.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 
@@ -13,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 #ifndef SEAM_SOURCE_PRODUCTION_VOICEBANK
 #error SEAM_SOURCE_PRODUCTION_VOICEBANK is required
@@ -128,4 +130,169 @@ TEST_CASE("CLAP shell: the notes show the region's own preview render once it is
     std::cerr << "CLAP waveform stayed '" << (last ? last->value : "<missing>") << "' ("
               << (last ? last->description : "") << ")\n";
   CHECK(last.has_value() && last->value == "Showing the current render");
+}
+
+namespace {
+
+// Every published node, depth first, so a test can find a control wherever the shell nests it.
+const SemanticNode* findNode(const std::vector<SemanticNode>& nodes, std::string_view id) {
+  for (const auto& node : nodes) {
+    if (node.id == id) return &node;
+    if (const auto* found = findNode(node.children, id)) return found;
+  }
+  return nullptr;
+}
+
+// A second vocal track with two regions, beside the default track, so track and region choices in
+// MIX have somewhere to go.
+struct MixProject final {
+  domain::TrackId firstTrack;
+  domain::RegionId firstRegion;
+  domain::TrackId harmony;
+  domain::RegionId harmonyA;
+  domain::RegionId harmonyB;
+};
+
+MixProject addHarmony(clap_editor::EditorRuntime& runtime) {
+  auto project = runtime.projectCopy();
+  application::ProjectFactory factory{8000U};
+  factory.synchronizeWith(project);
+  MixProject ids{.firstTrack = runtime.trackId(), .firstRegion = runtime.regionId()};
+  ids.harmony = factory.addVocalTrack(project, "HARMONY");
+  ids.harmonyA = factory.addRegion(project, ids.harmony, "HARMONY A", time::Tick{960}, time::Tick{3840});
+  ids.harmonyB = factory.addRegion(project, ids.harmony, "HARMONY B", time::Tick{7680}, time::Tick{3840});
+  CHECK(runtime.replaceProject(std::move(project)).hasValue());
+  return ids;
+}
+
+}  // namespace
+
+// The classic plug-in overlay cycled the track and the region, toggled mute and solo and stepped the
+// output channels 1/2/4/6/8. In the shell all of them live in MIX, and each one moves the plug-in's
+// own state: the runtime's track and region (what it renders) and the project's output channels
+// (what the plug-in's ports follow), not just the controller's view of them.
+TEST_CASE("CLAP shell: MIX reaches track and region selection, mute, solo and output channels") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.activateDesignShell(
+      native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Emo});
+  runtime.resize(1600.0, 900.0);
+  const auto ids = addHarmony(runtime);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility("shell.workspace.mix", SemanticAction::Activate));
+  paintFrame(runtime);
+  const auto region = [](domain::RegionId id) { return "shell.mix.region." + id.toString(); };
+  const auto track = [](domain::TrackId id, std::string_view control) {
+    return "shell.mix.track." + id.toString() + std::string{control};
+  };
+  const auto snapshot = runtime.accessibilitySnapshot();
+  for (const auto& id : {region(ids.firstRegion), region(ids.harmonyA), region(ids.harmonyB),
+                         track(ids.harmony, ".mute"), track(ids.harmony, ".solo"),
+                         std::string{"shell.mix.output-channels"}}) {
+    if (findNode(snapshot.children, id) == nullptr) std::cerr << "MIX does not publish " << id << '\n';
+    CHECK(findNode(snapshot.children, id) != nullptr);
+  }
+
+  // A region on another track moves the track with it; a second region on that track moves only
+  // the region; the first track's region moves both back. Each is the runtime's own selection.
+  CHECK(runtime.dispatchAccessibility(region(ids.harmonyA), SemanticAction::Activate));
+  CHECK(runtime.trackId() == ids.harmony);
+  CHECK(runtime.regionId() == ids.harmonyA);
+  CHECK(runtime.controller().selectedRegion() == ids.harmonyA);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility(region(ids.harmonyB), SemanticAction::Activate));
+  CHECK(runtime.trackId() == ids.harmony);
+  CHECK(runtime.regionId() == ids.harmonyB);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility(region(ids.firstRegion), SemanticAction::Activate));
+  CHECK(runtime.trackId() == ids.firstTrack);
+  CHECK(runtime.regionId() == ids.firstRegion);
+  CHECK(runtime.controller().selectedTrack() == ids.firstTrack);
+
+  // Mute and solo are the strip's own toggles, one project edit each, on the strip's track only.
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility(track(ids.harmony, ".mute"), SemanticAction::Activate));
+  CHECK(runtime.projectCopy().findVocalTrack(ids.harmony)->muted);
+  CHECK(!runtime.projectCopy().findVocalTrack(ids.firstTrack)->muted);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility(track(ids.harmony, ".solo"), SemanticAction::Activate));
+  CHECK(runtime.projectCopy().findVocalTrack(ids.harmony)->solo);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility(track(ids.harmony, ".mute"), SemanticAction::Activate));
+  CHECK(!runtime.projectCopy().findVocalTrack(ids.harmony)->muted);
+  CHECK(runtime.regionId() == ids.firstRegion);
+
+  // The master card's output-channel control steps the project's (and so the ports') channel count
+  // through 1, 2, 4, 6 and 8 and around, and back down with Decrement.
+  const auto channels = [&runtime] {
+    return static_cast<unsigned>(runtime.projectCopy().routing().deviceOutputChannels);
+  };
+  CHECK(channels() == 2U);
+  for (const unsigned expected : {4U, 6U, 8U, 1U, 2U}) {
+    paintFrame(runtime);
+    CHECK(runtime.dispatchAccessibility("shell.mix.output-channels", SemanticAction::Activate));
+    CHECK(channels() == expected);
+  }
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility("shell.mix.output-channels", SemanticAction::Decrement));
+  CHECK(channels() == 1U);
+  paintFrame(runtime);
+  const auto* output = findNode(runtime.accessibilitySnapshot().children, "shell.mix.output-channels");
+  CHECK(output != nullptr);
+  if (output != nullptr) CHECK(output->value.starts_with("1"));
+  const auto routed = runtime.projectCopy();
+  const auto* master = routed.routing().findBus(routed.routing().masterBus);
+  CHECK(master != nullptr);
+  if (master != nullptr) CHECK(master->channelCount == 1U);
+}
+
+// A plug-in cannot audition a seam's alternate render: the DAW plays the song's own render. The
+// shell says so instead of offering B: the Phonemes lane's hint and the status line name the
+// refusal, and B changes nothing.
+TEST_CASE("CLAP shell: seam B preview is refused honestly in the plug-in") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.activateDesignShell(
+      native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Emo});
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  CHECK(!runtime.controller().sceneState().seamPreviewConnected);
+  // Open the Phonemes lane and press the seam band at the first note's start.
+  const auto tab = findNode(runtime.accessibilitySnapshot().children, "shell.lane-tab.phonemes");
+  CHECK(tab != nullptr);
+  if (tab == nullptr) return;
+  const ui::Point tabCenter{tab->bounds.x + tab->bounds.width * 0.5, tab->bounds.y + tab->bounds.height * 0.5};
+  runtime.pointerDown({tabCenter, native_ui::PointerButton::Left, {}, 1});
+  runtime.pointerUp({tabCenter, native_ui::PointerButton::Left, {}, 1});
+  paintFrame(runtime);
+  const auto snapshot = runtime.accessibilitySnapshot();
+  const auto* seamBand = findNode(snapshot.children, "shell.lane.band.seam");
+  const auto notes = runtime.accessibilityNotes(0U, 1U);
+  CHECK(seamBand != nullptr);
+  CHECK(!notes.empty());
+  if (seamBand == nullptr || notes.empty()) return;
+  const ui::Point seam{notes.front().bounds.x + 1.0, seamBand->bounds.y + seamBand->bounds.height * 0.5};
+  runtime.pointerDown({seam, native_ui::PointerButton::Left, {}, 1});
+  runtime.pointerUp({seam, native_ui::PointerButton::Left, {}, 1});
+  const auto selected = runtime.controller().sceneState();
+  CHECK(selected.selectedSeam.has_value());
+  if (!selected.selectedSeam.has_value()) return;
+  const auto status = native_ui::design::singStatusMessage(selected);
+  CHECK(status.text.find("Seam B preview is not available in the plug-in") != std::string::npos);
+  const auto revision = runtime.revision();
+  runtime.keyDown(KeyEvent{.key = NativeKey::B});
+  CHECK(!runtime.controller().sceneState().seamPreviewAlternate);
+  CHECK(runtime.revision() == revision);
+  const auto refused = runtime.controller().toggleSelectedSeamPreview();
+  CHECK(!refused);
+  if (!refused) {
+    CHECK(refused.error().code == core::ErrorCode::Unsupported);
+    CHECK(refused.error().message.find("plug-in") != std::string::npos);
+  }
 }

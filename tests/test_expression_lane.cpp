@@ -29,6 +29,7 @@
 #include <functional>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 #include <cstdlib>
 #include <iostream>
@@ -536,53 +537,70 @@ TEST_CASE("The expression lane reports its channel, unit, value and refusal to a
   CHECK(bankValue.find("refused") != std::string::npos);
 }
 
-// 8.2: Variable-length editor strings (such as an expression refusal) are fitted to the lane's
-// info slot in the lane's tab row: the long text changes no pixel outside that slot, so it never
-// paints over the channel tabs, the lane plot, the rack or the rest of the shell.
-// The slot is the room between the tabs and the Review button, which only a wide window has: at
-// 1440 points and below it is under 10 points, so the shell shows no refusal text in the lane
-// there (reported as a shell layout gap; the refusal is still published to accessibility).
+// 8.2: Variable-length editor strings (such as an expression refusal) stay bounded to the lane. The
+// refusal is the lane plot's first line at every window size, so it is visible at the normal
+// 1100x720 and 1440x900 windows too, where the tab row's info slot beside the Review button is only
+// a few points wide; the elided text is whole on the lane's accessibility node. A long refusal
+// changes pixels in that first line and none outside the lane.
 TEST_CASE("Long refusal and unit strings are ellipsized and stay bounded to the lane") {
-  LaneFixture fixture{false};
-  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
-  controller.resize(1920.0, 1080.0);
-  CHECK(controller.openExpressionLane(ExpressionChannel::Breathiness).hasValue());
-  native_ui::design::SingShell shell;
-  shell.activate({}, native_ui::design::DesignPreferences{});
-  if (!shell.prepareFrame(controller, 1920.0, 1080.0)) return;  // no vector backend: no shell
-  const auto baseline = controller.sceneState();
-  auto refused = baseline;
-  refused.expression.unit = "extremely_long_measurement_unit_that_greatly_exceeds_the_allocated_horizontal_space_in_lane";
-  refused.expression.refusal = "The selected singer carrier refuses this channel because the voice model requires an external source-filter excitation that was not bundled with the current release and therefore cannot be rendered";
+  for (const auto& [width, height] : {std::pair{1100.0, 720.0}, std::pair{1440.0, 900.0},
+                                      std::pair{1920.0, 1080.0}}) {
+    LaneFixture fixture{false};
+    native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+    controller.resize(width, height);
+    CHECK(controller.openExpressionLane(ExpressionChannel::Breathiness).hasValue());
+    native_ui::design::SingShell shell;
+    shell.activate({}, native_ui::design::DesignPreferences{});
+    if (!shell.prepareFrame(controller, width, height)) return;  // no vector backend: no shell
+    const auto baseline = controller.sceneState();
+    auto refused = baseline;
+    refused.expression.unit = "extremely_long_measurement_unit_that_greatly_exceeds_the_allocated_horizontal_space_in_lane";
+    refused.expression.refusal = "The selected singer carrier refuses this channel because the voice model requires an external source-filter excitation that was not bundled with the current release and therefore cannot be rendered";
 
-  const auto paint = [&](const native_ui::EditorSceneState& state) {
-    native_ui::PixelSurface surface{1920U, 1080U};
-    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
-    CHECK(shell.paint(canvas, controller, state, controller.playheadTick()));
-    return surface;
-  };
-  const auto plain = paint(baseline);
-  const auto withRefusal = paint(refused);
+    const auto w = static_cast<std::uint32_t>(width);
+    const auto h = static_cast<std::uint32_t>(height);
+    const auto paint = [&](const native_ui::EditorSceneState& state) {
+      native_ui::PixelSurface surface{w, h};
+      native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+      CHECK(shell.paint(canvas, controller, state, controller.playheadTick()));
+      return surface;
+    };
+    const auto plain = paint(baseline);
+    const auto withRefusal = paint(refused);
 
-  // The info slot sits after the eight channel tabs, as the shell lays its tab row out.
-  const auto& l = shell.layout();
-  const auto tabWidth = native_ui::design::singLaneTabWidth(l);
-  const auto slotLeft = l.laneTabs.x + 8.0 * (tabWidth + 4.0);
-  const auto slotRight = l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x : l.laneTabs.right();
-  bool changed = false;
-  bool leaked = false;
-  for (std::uint32_t y = 0U; y < plain.height(); ++y) {
-    for (std::uint32_t x = 0U; x < plain.width(); ++x) {
-      const auto index = static_cast<std::size_t>(y) * plain.width() + x;
-      if (plain.pixels()[index] == withRefusal.pixels()[index]) continue;
-      changed = true;
-      const auto inSlot = x + 1.0 >= slotLeft && x <= slotRight && y + 1.0 >= l.laneTabs.y &&
-                          y <= l.laneTabs.bottom();
-      if (!inSlot) leaked = true;
+    const auto& l = shell.layout();
+    const auto plot = l.laneTimePlot;
+    CHECK(plot.height >= 22.0);
+    const auto inside = [](ui::Rect r, std::uint32_t x, std::uint32_t y) {
+      return x + 1.0 >= r.x && x <= r.right() && y + 1.0 >= r.y && y <= r.bottom();
+    };
+    const ui::Rect firstLine{plot.x, plot.y, plot.width, 24.0};
+    bool shownInLane = false;
+    bool leaked = false;
+    for (std::uint32_t y = 0U; y < plain.height(); ++y) {
+      for (std::uint32_t x = 0U; x < plain.width(); ++x) {
+        const auto index = static_cast<std::size_t>(y) * plain.width() + x;
+        if (plain.pixels()[index] == withRefusal.pixels()[index]) continue;
+        if (inside(firstLine, x, y)) shownInLane = true;
+        if (!inside(l.lane, x, y)) leaked = true;
+      }
+    }
+    if (!shownInLane) std::cerr << "refusal not drawn in the lane at " << width << "x" << height << "\n";
+    CHECK(shownInLane);
+    CHECK(!leaked);
+    // The words the plot elides are whole on the lane's node, at the plot it is drawn in.
+    controller.rebuildAccessibilityTree();
+    shell.rebuildSemantics(controller, refused);
+    const native_ui::SemanticNode* lane = nullptr;
+    for (const auto& node : shell.accessibilityTree().root().children)
+      if (node.id == "shell.lane") lane = &node;
+    CHECK(lane != nullptr);
+    if (lane != nullptr) {
+      CHECK(lane->value == refused.expression.refusal);
+      CHECK(lane->bounds.x == plot.x);
+      CHECK(lane->bounds.y == plot.y);
     }
   }
-  CHECK(changed);
-  CHECK(!leaked);
 }
 
 

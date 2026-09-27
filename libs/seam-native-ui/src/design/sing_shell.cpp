@@ -327,7 +327,14 @@ void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
 }
 
 const PixelSurface* SingShell::characterPortrait(CharacterState state) const {
+  if (characterDisplay_ == domain::CharacterDisplayMode::Off) return nullptr;
   return character_.portrait(state);
+}
+
+// The look's own portrait, the fallback for a package that has none; nothing when the display is Off.
+const paint::Image* SingShell::lookPortrait() const {
+  if (characterDisplay_ == domain::CharacterDisplayMode::Off) return nullptr;
+  return assets().portrait.get();
 }
 
 const PixelSurface* SingShell::characterMouth(character::MouthShape shape) const {
@@ -1149,6 +1156,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   // One state for the whole frame, from the read models the state already carries. The animation phase
   // is resolved once too, so the ring, the avatar and the VOICE hero agree within a frame.
   characterState_ = resolveCharacterState(characterSurfaceInput(state, auditionLevel_));
+  characterDisplay_ = state.characterMode;
   const auto reduceMotion = preferences_.reduceMotion;
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
   animator_.advance(characterState_, frameNow_, reduceMotion);
@@ -1168,8 +1176,9 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   if (workspace_ == Workspace::Voice) {
     // The listening singer uses this look's portrait; finished designer work and a requested
     // audition are collected before the body paints, and frames continue while either runs.
-    voice_->setPortrait(assets().portrait);
-    voice_->setListeningPortrait(lookListeningPortrait());
+    const auto artShown = characterDisplay_ != domain::CharacterDisplayMode::Off;
+    voice_->setPortrait(artShown ? assets().portrait : nullptr);
+    voice_->setListeningPortrait(artShown ? lookListeningPortrait() : nullptr);
     if (voice_->poll()) repaint();
   }
   if (auto* body = bodyWorkspace(); body != nullptr) {
@@ -1437,7 +1446,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     // The avatar blinks and breathes: a dynamic item, drawn through both fronts at composition.
     const paint::LayerScope avatarLayer{c, paint::Layer::Dynamic, "avatar"};
     const auto* package = characterPortrait(characterState_);
-    const auto* look = assets().portrait.get();
+    const auto* look = lookPortrait();
     const auto bounds = l.headerAvatar;
     const auto pose = characterState_;
     const auto blink = motion_.blink;
@@ -1704,12 +1713,14 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
 
   const auto notes = model.visibleNotes();
   // The singer stands behind the notes and fades back whenever a note or the pointer shares her
-  // space. She is off in High Contrast, off with an expanded lane and off without the full rack
-  // (§3.4 compact widths), and she is never hit-testable or published to accessibility.
+  // space. She is off in High Contrast, off with an expanded lane, off without the full rack
+  // (§3.4 compact widths) and off unless the project's character display is Full, and she is never
+  // hit-testable or published to accessibility.
   StageInput stageInput;
   stageInput.fullRack = l.rack == RackPresentation::Full && l.grid.width > 520.0;
   stageInput.highContrast = preferences_.contrast == Contrast::High;
   stageInput.laneExpanded = laneExpanded(state);
+  stageInput.displayFull = state.characterMode == domain::CharacterDisplayMode::Full;
   stageInput.grid = l.grid;
   stageInput.splashShown = notes.empty() && model.noteCount() == 0U &&
                            emptyProjectSplashBounds(l.grid, assets().splash.get()).has_value();
@@ -1972,9 +1983,11 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // No pose asset is declared by this package, so the state portrait stands in for it and the line
     // is the shell's own, shown only here.
     const auto* package = characterPortrait(CharacterState::Idle);
-    const auto* look = assets().portrait.get();
-    // The mode's key art stands in for the seated pose when the roll can hold it.
-    const auto* splash = assets().splash.get();
+    const auto* look = lookPortrait();
+    // The mode's key art stands in for the seated pose when the roll can hold it; it is character
+    // artwork too, so a display that is Off draws only the line.
+    const auto* splash =
+        characterDisplay_ == domain::CharacterDisplayMode::Off ? nullptr : assets().splash.get();
     const auto hash = paint::ContentHash{}
                           .add(std::string_view{"empty-project"}).add(static_cast<const void*>(&t))
                           .add(l.grid).add(static_cast<const void*>(package))
@@ -2070,10 +2083,12 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            t.color.textSecondary);
   }
   if (technicalLane_) {
-    const auto hint = state.selectedSeam.has_value()
-                          ? std::string{tr(Str::SeamArrowsEditCCurveB)} +
-                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview)
-                          : std::string{tr(Str::DragPhonemeEdgesClickAUnit)};
+    // B auditions the seam's alternate render only where the host can play it; a plug-in cannot.
+    const auto hint = !state.selectedSeam.has_value() ? std::string{tr(Str::DragPhonemeEdgesClickAUnit)}
+                      : !state.seamPreviewConnected
+                          ? std::string{tr(Str::SeamArrowsEditCCurveB2)}
+                          : std::string{tr(Str::SeamArrowsEditCCurveB)} +
+                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview);
     if (info.width > 24.0)
       c.text(info, hint,
              fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
@@ -2093,9 +2108,8 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   const auto unit = descriptor.unit == "semitones" ? tr(Str::St) : " %";
   std::string infoText = format("%.1f", e.valueAtPlayhead * scale) + unit + tr(Str::AtPlayhead);
   if (e.draftChanged) infoText += tr(Str::UnsavedDraft);
-  c.text(info, e.refusal.empty() ? infoText : e.refusal,
-         style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
-         e.refusal.empty() ? t.color.textSecondary : t.color.warning);
+  c.text(info, infoText, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
+         t.color.textSecondary);
   // The same value-to-y mapping the controller uses to hit-test and edit this lane, applied to the
   // hosted lane rectangle, so a drawn point is exactly where a click edits it.
   const EditorSceneLayout legacyLayout{};
@@ -2118,10 +2132,16 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   c.stroke(neutral, withAlpha(t.color.textSecondary, 0.35), StrokeStyle{1.0, true, {3.0, 4.0}});
   c.save();
   c.clipRect(plot);
+  // The lane's first line: why the selected singer refuses this channel, else that no curve is
+  // stored. The refusal lives here, at every window size, because the tab row's info slot is only
+  // a few points wide below very wide windows; the elided text is whole on the lane's node.
+  const ui::Rect firstLine{plot.x + 12.0, plot.y + 4.0, plot.width - 24.0, 18.0};
+  if (!e.refusal.empty())
+    c.text(firstLine, e.refusal, style(FontRole::Ui, t.type.smallLabel), t.color.warning);
   if (e.points.empty()) {
-    c.text({plot.x + 12.0, plot.y + 4.0, plot.width - 24.0, 18.0},
-           tr(Str::NoCurveStoredForThisChannel), style(FontRole::Ui, t.type.smallLabel),
-           t.color.textSecondary);
+    if (e.refusal.empty())
+      c.text(firstLine, tr(Str::NoCurveStoredForThisChannel), style(FontRole::Ui, t.type.smallLabel),
+             t.color.textSecondary);
   } else {
     const auto& timeline = model.timeline();
     // The curve belongs to its region: it holds its end values only across the region's span.
@@ -2426,7 +2446,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     {
       const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
       const auto* package = characterPortrait(characterState_);
-      const auto* look = assets().portrait.get();
+      const auto* look = lookPortrait();
       const auto opacity = voiceReady ? 1.0 : 0.55;
       const auto hash = paint::ContentHash{}
                             .add(std::string_view{"rail-portrait"}).add(box)
@@ -2491,7 +2511,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .lit = lit,
       .rotation = motion_.spinner,
       .packagePortrait = characterPortrait(performanceState),
-      .lookPortrait = assets().portrait.get(),
+      .lookPortrait = lookPortrait(),
       .portraitOpacity = voiceReady ? 1.0 : 0.55,
       .mouthSprite = singingMouth,
       .mouthPlacement = singingPlacement,
@@ -2603,7 +2623,7 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   {
     const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
     const auto* package = characterPortrait(characterState_);
-    const auto* look = assets().portrait.get();
+    const auto* look = lookPortrait();
     const auto opacity = voiceReady ? 1.0 : 0.55;
     const auto hash = paint::ContentHash{}
                           .add(std::string_view{"inspector-portrait"}).add(box)
@@ -2838,7 +2858,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   if (errorToast_.has_value()) {
     const auto toast = *errorToast_;
     const auto* package = characterPortrait(CharacterState::Error);
-    const auto* look = assets().portrait.get();
+    const auto* look = lookPortrait();
     const auto hash = paint::ContentHash{}
                           .add(std::string_view{"toast"}).add(static_cast<const void*>(&t))
                           .add(toast.bounds).add(toast.pose).add(toast.title).add(toast.reason)
@@ -2883,6 +2903,11 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
     if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += tr(Str::Text3) + s.diagnostic;
     return {std::move(text), StatusTone::Warning};
   }
+  // A selected seam in a host that cannot audition its B render says so in the status line, the
+  // one place visible at every window size; a failed render's reason still comes first.
+  if (state.selectedSeam.has_value() && !state.seamPreviewConnected && !failed)
+    return {tr(Str::SeamBPreviewIsNotAvailable),
+            StatusTone::Normal};
   // A render note is status, not a warning, unless the render itself failed.
   if (!s.diagnostic.empty()) return {s.diagnostic, failed ? StatusTone::Warning : StatusTone::Normal};
   return {state.audioDeviceOnline ? tr(Str::Audio) + state.audioBackend : std::string{tr(Str::AudioOffline)},

@@ -137,6 +137,9 @@ struct StageInput final {
   bool highContrast{false};
   // An expanded technical lane gives its height back to the roll and takes the Stage with it.
   bool laneExpanded{false};
+  // The project's character display is Full. Minimal keeps only the compact identity and Off draws
+  // no character artwork, so both keep the figure off (the fidelity review's section 9).
+  bool displayFull{true};
   ui::Rect grid;
   bool pointerInside{false};
   bool noteIntersects{false};

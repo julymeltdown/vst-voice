@@ -83,6 +83,8 @@ struct LayoutFixture final {
                              static_cast<void>(shell.translateTextInput(request));
                            },
                        .endTextInput = [this] { shell.textInputEnded(); },
+                       // A plug-in's host owns the output channels, so MIX shows their control.
+                       .configureOutputChannels = [](std::uint8_t) { return core::success(); },
                        .loadSampleMicroscope =
                            [](domain::PhonemeKey) -> core::Result<native_ui::SampleMicroscopeData> {
                          return native_ui::SampleMicroscopeData{

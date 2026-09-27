@@ -225,6 +225,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .seamOverrides = {},
       .selectedSeam = seamTarget_,
       .seamPreviewAlternate = seamPreviewAlternate_,
+      .seamPreviewConnected = static_cast<bool>(callbacks_.previewSeam),
       .pitchAutomation = {},
       .technicalLanes = session_.project().settings().technicalLanes,
       .technicalLaneAvailable = {
@@ -2991,6 +2992,10 @@ core::Result<void> NativeEditorController::selectAdjacentVocalTrack(
 }
 
 core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionId) {
+  if (callbacks_.selectRegion) {
+    const auto hostSelection = callbacks_.selectRegion(regionId);
+    if (!hostSelection) return hostSelection;
+  }
   auto selected = arrangementPanel_.selectRegion(session_.project(), regionId);
   if (!selected) return selected;
   selectedTrackId_ = arrangementPanel_.selectedTrack();
@@ -3434,7 +3439,8 @@ core::Result<void> NativeEditorController::toggleSelectedSeamPreview() {
   }
   if (!callbacks_.previewSeam) {
     return core::failure(core::ErrorCode::Unsupported,
-                         "Seam A/B preview is not connected");
+                         "Seam B preview is not available in the plug-in: "
+                         "the DAW plays the song's own render");
   }
   const auto next = !seamPreviewAlternate_;
   const auto result = callbacks_.previewSeam(*seamTarget_, next);
@@ -3725,6 +3731,19 @@ core::Result<void> NativeEditorController::setTrackRoute(
     arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
     markDocumentChanged();
   }
+  repaint();
+  return result;
+}
+
+// The host applies the channel count (a plug-in reconfigures its output ports from the project), so
+// the edit is its command, not one executed here; a host without that choice refuses it.
+core::Result<void> NativeEditorController::configureOutputChannels(std::uint8_t channels) {
+  if (!callbacks_.configureOutputChannels) {
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Output channels follow the audio device settings");
+  }
+  auto result = callbacks_.configureOutputChannels(channels);
+  if (result) arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   repaint();
   return result;
 }
