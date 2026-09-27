@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -24,10 +25,41 @@ namespace {
 // were scheduled.
 constexpr std::uint32_t kBackgroundBandRows = 64U;
 
+// A whole-surface copy (20 MB at 1440x900 on a 2x display) in slices on as many cores as are
+// free: one core cannot use the memory bandwidth there is.
+void copyPixels(std::span<const std::uint32_t> from, std::span<std::uint32_t> to) {
+  const auto count = std::min(from.size(), to.size());
+#if defined(__APPLE__)
+  constexpr std::size_t kSlices = 8U;
+  if (count >= (std::size_t{1} << 20U)) {
+    struct Job final {
+      const std::uint32_t* from;
+      std::uint32_t* to;
+      std::size_t count;
+    } job{from.data(), to.data(), count};
+    dispatch_apply_f(kSlices, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), &job,
+                     [](void* context, std::size_t k) {
+                       const auto& j = *static_cast<const Job*>(context);
+                       const auto begin = j.count * k / kSlices;
+                       const auto end = j.count * (k + 1U) / kSlices;
+                       std::copy(j.from + begin, j.from + end, j.to + begin);
+                     });
+    return;
+  }
+#endif
+  std::copy_n(from.begin(), count, to.begin());
+}
+
 void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer& background) {
-  if (!background.paint) return;
+  if (!background.paint) {
+    snapshot.clear(background.clear);
+    return;
+  }
   auto measurer = makeCanvas(snapshot, scale);
-  if (measurer == nullptr) return;
+  if (measurer == nullptr) {
+    snapshot.clear(background.clear);
+    return;
+  }
   const auto width = static_cast<double>(snapshot.width()) / scale;
   const auto height = static_cast<double>(snapshot.height()) / scale;
   RecordingCanvas recorded{width, height, scale, [&measurer](std::string_view text, const TextStyle& style) {
@@ -40,6 +72,8 @@ void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer
   const auto banded = scale == std::round(scale) && recorded.rasterBounds(Layer::Background).empty();
   const auto rows = banded ? kBackgroundBandRows : snapshot.height();
   const auto bands = (snapshot.height() + rows - 1U) / rows;
+  // Bands cover every row with their own cleared surfaces; one pass draws over the cleared snapshot.
+  if (!banded) snapshot.clear(background.clear);
   struct Job final {
     PixelSurface* snapshot;
     const RecordingCanvas* recorded;
@@ -368,11 +402,9 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
         return out;
       }
       if (i == 0U) {
-        snapshot.clear(background.clear);
         paintBackground(snapshot, scale, background);
       } else {
-        const auto& lower = snapshots_[i - 1U].pixels();
-        std::copy(lower.begin(), lower.end(), snapshot.pixels().begin());
+        copyPixels(std::as_const(snapshots_[i - 1U]).pixels(), snapshot.pixels());
         if (auto canvas = makeCanvas(snapshot, scale); canvas != nullptr) {
           RasterCanvas raster{snapshot, scale, nullptr};
           frame.replay(static_cast<Layer>(i), *canvas, raster);
@@ -421,8 +453,7 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
       out.rasterized[static_cast<std::size_t>(Layer::Dynamic)] = true;
     }
   } else {
-    const auto& pixels = content.pixels();
-    std::copy(pixels.begin(), pixels.end(), surface.pixels().begin());
+    copyPixels(content.pixels(), surface.pixels());
     if (frame.layerSize(Layer::Dynamic) > 0U) {
       if (auto canvas = makeCanvas(surface, scale); canvas != nullptr) {
         frame.replay(Layer::Dynamic, *canvas, target);
