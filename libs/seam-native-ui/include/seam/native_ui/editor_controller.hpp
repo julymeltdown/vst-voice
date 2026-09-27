@@ -215,6 +215,13 @@ public:
     return pianoRoll_;
   }
   [[nodiscard]] EditorSceneState sceneState() const;
+  // The pronunciation of a region as phonemizer::inspectPronunciation resolves it, resolved once per
+  // document revision: every edit goes through the session and changes its revision, so a frame
+  // that changes nothing in the document reuses the last result instead of resolving the whole
+  // region again. The region's identity and sizes are part of the key as well, so a document
+  // replaced or reshaped behind the session's back is never answered from the cache.
+  [[nodiscard]] const phonemizer::Result& regionPronunciation(
+      const domain::VocalRegion& region) const;
   [[nodiscard]] core::Result<void> openPhonemeReview();
   [[nodiscard]] core::Result<void> activatePhonemeReview(std::size_t action);
   [[nodiscard]] bool playing() const noexcept { return playing_; }
@@ -966,6 +973,17 @@ private:
   EditorInteractionState interaction_;
   std::optional<EditorSceneState::OverlapDetail> overlapDetail_;
   std::optional<LayoutTransitionState> layoutTransition_;
+  struct PronunciationCache final {
+    bool valid{false};
+    std::uint64_t revision{0U};
+    domain::RegionId region{};
+    const domain::VocalRegion* address{nullptr};
+    std::size_t notes{0U};
+    std::size_t lyrics{0U};
+    std::size_t overrides{0U};
+    phonemizer::Result result;
+  };
+  mutable PronunciationCache pronunciation_;
 };
 
 }  // namespace seam::native_ui
