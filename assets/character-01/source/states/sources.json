@@ -19,6 +19,30 @@
     "generatorSha256": "60ff58196572e0ce6ee986a292236a3d8db29e894392aff390d37e70d3e35476",
     "masterSha256": "3c676ea8c93da66739f73436bcd01e389f5f8c5002b5830ba43acd2ba1253800"
   },
+  "scene/complete": {
+    "generatorSha256": "def504a1e3f318883c73f105bee75050f50e1f7408f269ab78f2d50fe6369a31",
+    "masterSha256": "7aef40ae50f52643055da75eec44dc85fae0ec404dcb1dfa3ef6cee28b029f12"
+  },
+  "scene/error": {
+    "generatorSha256": "f91a769096be0c899f368fa883694c03b3a8d7528192792c82c6589ef6d88ad8",
+    "masterSha256": "97d7b20922f9b778b6c639949e96029f974eb43beb6113b740024697022b0a27"
+  },
+  "scene/focused": {
+    "generatorSha256": "b9c1a107b8758fa16bcca43ec6d988b4f6a60576b4194804915e07d85389102f",
+    "masterSha256": "95dd2094a738b9d2bf8a4e5606627f609526525c74021aa672b236716a8d32a7"
+  },
+  "scene/neutral": {
+    "generatorSha256": "4f4fe0edfbda75e6e1cd11c7792c5b6ab2915f01f950fd5d6c3ca664614a33be",
+    "masterSha256": "d3ec6760cab99f48d7746dc2b161b4d69b6ae938a778101252ab9d4e7b9f371c"
+  },
+  "scene/rendering": {
+    "generatorSha256": "dcad9269055dc9dea5570bbea7a4f676ecdffe5f46059aba8715bea481996d15",
+    "masterSha256": "df5ab5f40e05eb45d63856e3535697eb800e5052319c0a207691a337178fd3d7"
+  },
+  "scene/warning": {
+    "generatorSha256": "0cd4977778ed71f661d9e9fa7bd37ff479b73ebcf59c038a242ba847918b193f",
+    "masterSha256": "d3e0416b6cb9cc1785136963864c3831c50036677baeb732ec91ac77a1fadfb5"
+  },
   "splash-emo": {
     "generatorSha256": "2516ead1995669b4574677608577fc848ae44dfd39b8548cfdf7c4689698a5ae",
     "runtimeSha256": "483314645c8d4bf2d09eca07eb23c7a1bb02f6478a0b5335319d1e6875457f6c"

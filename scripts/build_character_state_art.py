@@ -16,7 +16,14 @@ Two steps, both deterministic for a given Pillow/NumPy version:
 
 Usage:
   build_character_state_art.py import --state neutral=/path/a.png ... --splash emo=/path/e.png ...
+  build_character_state_art.py import --outfit scene --state neutral=/path/s.png ...
   build_character_state_art.py build
+
+The shared set (source/states/, runtime/) is the EMO look. A design mode may supply its own set,
+an outfit (source/states/<outfit>/, runtime/<outfit>/), declared under the manifest's
+"outfits"; the runtime selects it by design mode and falls back to the shared set. An outfit
+keeps the shared framing, so it inherits the shared per-state eye boxes, but its mouth sprites
+are cut from its own singing face because a sprite carries that picture's pixels.
 
 The masters are AI-generated development art made from the owner's reference sheet; see
 assets/character-01/PROVENANCE.md. Nothing here decides whether the art is releasable.
@@ -43,6 +50,7 @@ UI_DESIGN = ROOT / "assets/ui-design"
 STATES = ("neutral", "focused", "rendering", "complete", "warning", "error")
 MOUTHS = ("closed", "narrow", "nasal", "open", "wide", "round")
 MODES = ("emo", "scene")
+OUTFITS = ("scene",)
 
 RUNTIME_SIZE = (320, 480)  # The standing-frame convention character_surface.cpp crops against.
 MASTER_SIZE = (640, 960)  # 2x the runtime frame.
@@ -60,6 +68,18 @@ MOUTH_KEY = (255, 0, 255)
 
 # PPM payload bytes that the header's single trailing whitespace makes ambiguous.
 PPM_WHITESPACE = {9, 10, 11, 12, 13, 32}
+
+# Each state's eyes in runtime pixels (left, top, right, bottom), in image order (viewer's left
+# first), measured on the shared masters. The idle blink closes a lid inside these boxes; a state
+# whose other eye is hidden (the error pose's hand and hair) lists only the visible one.
+EYES = {
+    "neutral": ((124, 82, 142, 94), (158, 72, 182, 85)),
+    "focused": ((122, 69, 142, 80), (156, 62, 180, 73)),
+    "rendering": ((120, 90, 142, 106), (154, 78, 180, 94)),
+    "complete": ((122, 86, 142, 102), (154, 70, 180, 85)),
+    "warning": ((122, 82, 142, 94), (156, 70, 180, 84)),
+    "error": ((138, 96, 174, 114),),
+}
 
 
 def sha256(path: Path) -> str:
@@ -87,15 +107,25 @@ def cover(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return scaled.crop((left, top, left + width, top + height))
 
 
-def import_art(states: dict[str, Path], splashes: dict[str, Path]) -> None:
+def masters_dir(outfit: str | None) -> Path:
+    return MASTERS / outfit if outfit else MASTERS
+
+
+def runtime_dir(outfit: str | None) -> Path:
+    return RUNTIME / outfit if outfit else RUNTIME
+
+
+def import_art(states: dict[str, Path], splashes: dict[str, Path], outfit: str | None) -> None:
     sources_path = MASTERS / "sources.json"
     sources = json.loads(sources_path.read_text(encoding="utf-8")) if sources_path.is_file() else {}
-    MASTERS.mkdir(parents=True, exist_ok=True)
+    directory = masters_dir(outfit)
+    directory.mkdir(parents=True, exist_ok=True)
     for state, source in states.items():
         image = cover(Image.open(source).convert("RGB"), MASTER_SIZE)
-        target = MASTERS / f"{state}.png"
+        target = directory / f"{state}.png"
         image.save(target, optimize=True)
-        sources[state] = {"generatorSha256": sha256(source), "masterSha256": sha256(target)}
+        key = f"{outfit}/{state}" if outfit else state
+        sources[key] = {"generatorSha256": sha256(source), "masterSha256": sha256(target)}
     manifest_path = UI_DESIGN / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for mode, source in splashes.items():
@@ -188,6 +218,12 @@ def mouth_sprites(focused_master: Image.Image) -> dict[str, Image.Image]:
     scale = SUPERSAMPLE * 2  # canvas pixels per runtime pixel
     portrait = np.asarray(focused_master.convert("RGB").resize(RUNTIME_SIZE, Image.LANCZOS)
                           .crop((x, y, x + w, y + h)), dtype=np.int16)
+    # Only the lips' ellipse (plus a two-pixel margin) is replaced in the master, so every master
+    # pixel outside it is untouched and the runtime pixels away from the lips stay bit-identical.
+    lips = Image.new("L", patch.size, 0)
+    cx, cy = (MOUTH_CENTER[0] - x) * 2.0, (MOUTH_CENTER[1] - y) * 2.0
+    rx, ry = MOUTH_ERASE_RADII[0] * 2.0 + 2.0, MOUTH_ERASE_RADII[1] * 2.0 + 2.0
+    ImageDraw.Draw(lips).ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=255)
     sprites = {}
     for shape in MOUTHS:
         canvas = patch.resize((patch.width * SUPERSAMPLE, patch.height * SUPERSAMPLE),
@@ -195,7 +231,7 @@ def mouth_sprites(focused_master: Image.Image) -> dict[str, Image.Image]:
         draw_mouth(ImageDraw.Draw(canvas), shape, (MOUTH_CENTER[0] - x) * scale,
                    (MOUTH_CENTER[1] - y) * scale, scale)
         composed = focused_master.convert("RGB").copy()
-        composed.paste(canvas.resize(patch.size, Image.LANCZOS), (left, top))
+        composed.paste(canvas.resize(patch.size, Image.LANCZOS), (left, top), lips)
         runtime = composed.resize(RUNTIME_SIZE, Image.LANCZOS)
         sprite = np.asarray(runtime.crop((x, y, x + w, y + h)), dtype=np.uint8).copy()
         changed = np.abs(sprite.astype(np.int16) - portrait).max(axis=2) > 0
@@ -238,32 +274,86 @@ def contact_sheet(portraits: dict[str, Image.Image], focused: Image.Image,
     return sheet
 
 
-def build() -> None:
-    masters = {state: Image.open(MASTERS / f"{state}.png").convert("RGB") for state in STATES}
+def normalized(box: tuple[int, int, int, int]) -> dict[str, float]:
+    left, top, right, bottom = box
+    width, height = RUNTIME_SIZE
+    return {"x": left / width, "y": top / height, "width": (right - left) / width,
+            "height": (bottom - top) / height}
+
+
+def eye_sheet(sets: dict[str, dict[str, Image.Image]]) -> Image.Image:
+    """Each set's six faces (rows) with the declared eye boxes outlined, 2x, for review."""
+    crop = (96, 40, 224, 136)
+    scale = 2
+    w, h = (crop[2] - crop[0]) * scale, (crop[3] - crop[1]) * scale
+    gap = 8
+    sheet = Image.new("RGB", (gap + len(STATES) * (w + gap), gap + len(sets) * (h + gap)),
+                      (58, 58, 64))
+    for row, portraits in enumerate(sets.values()):
+        for column, state in enumerate(STATES):
+            face = portraits[state].crop(crop).resize((w, h), Image.NEAREST)
+            draw = ImageDraw.Draw(face)
+            for left, top, right, bottom in EYES[state]:
+                draw.rectangle(((left - crop[0]) * scale, (top - crop[1]) * scale,
+                                (right - crop[0]) * scale - 1, (bottom - crop[1]) * scale - 1),
+                               outline=(0, 255, 120))
+            sheet.paste(face, (gap + column * (w + gap), gap + row * (h + gap)))
+    return sheet
+
+
+def build_set(outfit: str | None) -> tuple[dict[str, Image.Image], dict]:
+    """Writes one set's runtime PPMs and returns its portraits and manifest fragment."""
+    source = masters_dir(outfit)
+    target = runtime_dir(outfit)
+    prefix = f"runtime/{outfit}/" if outfit else "runtime/"
+    masters = {state: Image.open(source / f"{state}.png").convert("RGB") for state in STATES}
     portraits = {}
     for state, master in masters.items():
         if master.size != MASTER_SIZE:
-            raise SystemExit(f"{state} master is {master.size}, expected {MASTER_SIZE}")
+            raise SystemExit(f"{outfit or 'shared'} {state} master is {master.size}")
         portraits[state] = master.resize(RUNTIME_SIZE, Image.LANCZOS)
-        write_ppm(portraits[state], RUNTIME / f"{state}.ppm")
+        write_ppm(portraits[state], target / f"{state}.ppm")
     sprites = mouth_sprites(masters["focused"])
     for shape, sprite in sprites.items():
-        write_ppm(sprite, RUNTIME / f"mouth-{shape}.ppm")
-    manifest_path = CHARACTER / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        write_ppm(sprite, target / f"mouth-{shape}.ppm")
     x, y, w, h = MOUTH_BOX
-    manifest["mouthPlacement"] = {"x": x / RUNTIME_SIZE[0], "y": y / RUNTIME_SIZE[1],
-                                  "width": w / RUNTIME_SIZE[0], "height": h / RUNTIME_SIZE[1]}
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    fragment = {
+        "states": {state: f"{prefix}{state}.ppm" for state in STATES},
+        "mouths": {shape: f"{prefix}mouth-{shape}.ppm" for shape in MOUTHS},
+        "mouthPlacement": normalized((x, y, x + w, y + h)),
+    }
+    name = f"{outfit}-" if outfit else ""
     PREVIEWS.mkdir(parents=True, exist_ok=True)
     contact_sheet(portraits, portraits["focused"], sprites).save(
-        PREVIEWS / "state-contact-sheet.png", optimize=True)
+        PREVIEWS / f"{name}state-contact-sheet.png", optimize=True)
     digests = [hashlib.sha256((RUNTIME / f"{state}.ppm").read_bytes()).hexdigest()
                for state in STATES]
     if len(set(digests)) != len(STATES):
         raise SystemExit("two state portraits are byte-identical")
-    print(json.dumps({"states": dict(zip(STATES, digests)),
-                      "mouthPlacement": manifest["mouthPlacement"]}, indent=2))
+    return portraits, fragment
+
+
+def build() -> None:
+    manifest_path = CHARACTER / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    shared, fragment = build_set(None)
+    manifest["states"] = fragment["states"]
+    manifest["mouths"] = fragment["mouths"]
+    manifest["mouthPlacement"] = fragment["mouthPlacement"]
+    manifest["eyes"] = {state: [normalized(box) for box in EYES[state]] for state in STATES}
+    sets = {"shared": shared}
+    outfits = {}
+    for outfit in OUTFITS:
+        if not (masters_dir(outfit) / "neutral.png").is_file():
+            continue
+        sets[outfit], outfits[outfit] = build_set(outfit)
+    if outfits:
+        manifest["outfits"] = outfits
+    else:
+        manifest.pop("outfits", None)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    eye_sheet(sets).save(PREVIEWS / "eye-boxes.png", optimize=True)
+    print(json.dumps({"sets": list(sets), "eyes": manifest["eyes"]["neutral"]}, indent=2))
 
 
 def pairs(values: list[str], allowed: tuple[str, ...], flag: str) -> dict[str, Path]:
@@ -281,12 +371,14 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     importer = commands.add_parser("import", help="copy generator output into the masters")
+    importer.add_argument("--outfit", choices=OUTFITS, help="import into this mode's own set")
     importer.add_argument("--state", action="append", default=[], metavar="STATE=PATH")
     importer.add_argument("--splash", action="append", default=[], metavar="MODE=PATH")
     commands.add_parser("build", help="derive the runtime assets from the masters")
     args = parser.parse_args(argv)
     if args.command == "import":
-        import_art(pairs(args.state, STATES, "--state"), pairs(args.splash, MODES, "--splash"))
+        import_art(pairs(args.state, STATES, "--state"), pairs(args.splash, MODES, "--splash"),
+                   args.outfit)
     build()
     return 0
 
