@@ -340,13 +340,13 @@ ALWAYS_REGIONS = (
 FULL_RACK_REGIONS = ("singer", "expression", "style")
 COLLAPSIBLE_REGIONS = ("workspaceTabs", "outputMeter")
 ALWAYS_CONTROLS = (
-    "classicToggle", "trackLabel", "gridLabel", "playButton", "positionReadout", "tempoReadout",
+    "trackLabel", "gridLabel", "playButton", "positionReadout", "tempoReadout",
     "meterReadout",
 )
 WORKSPACES = ("sing", "voice", "tune", "mix", "export")
 LANES = ("dynamics", "formant", "breath", "tension", "air", "gender", "growl")
 ALWAYS_NODES = (
-    "shell.classic", "shell.lane", "shell.mode.emo", "shell.mode.scene",
+    "shell.lane", "shell.mode.emo", "shell.mode.scene",
     "shell.settings", "shell.status", "shell.waveform",
 ) + tuple(f"shell.lane-tab.{lane}" for lane in LANES)
 NOTE_LIMIT = 256

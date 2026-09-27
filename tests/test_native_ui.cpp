@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 #include "native_ui_design_fixture.hpp"
 #include "seam/native_ui/appkit_shortcut_key.hpp"
@@ -27,8 +28,8 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/native_ui/character_presentation.hpp"
-#include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
 #include "seam/native_ui/editor_label_policy.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -44,6 +45,7 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/voicebank_production/repository.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <chrono>
 #include <cstdlib>
 #include <cmath>
@@ -150,8 +152,7 @@ TEST_CASE("native phoneme inspection shares resolver tokens and bounded failures
     controller.resize(960.0, 720.0);
     seam::native_ui::PixelSurface surface{960U, 720U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    seam::native_ui::EditorScenePainter painter;
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(output));
   }
   region->lyrics.front().surface = std::u32string(4097U, U'あ');
@@ -180,8 +181,8 @@ TEST_CASE("native retained phoneme review selects explicitly applies and closes 
        }}};
   controller.resize(480.0, 320.0);
   const seam::native_ui::EditorSceneLayout layout;
-  const auto open = layout.phonemeReviewOpenBounds(480.0, 320.0);
-  CHECK(controller.pointerDown({.position = {open.x + 5.0, open.y + 5.0}, .button = seam::native_ui::PointerButton::Left}));
+  // The SING shell's lane Review button opens the review through the controller.
+  CHECK(controller.openPhonemeReview());
   CHECK(controller.sceneState().phonemeReview.visible);
   CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
   CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Tab}));
@@ -204,8 +205,7 @@ TEST_CASE("native retained phoneme review selects explicitly applies and closes 
   CHECK(controller.sceneState().phonemeReview.enabled[5U]);
   seam::native_ui::PixelSurface surface{480U, 320U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  seam::native_ui::EditorScenePainter painter;
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   if (const auto* output = std::getenv("SEAM_PHONEME_REVIEW_CAPTURE")) CHECK(surface.writePpm(output));
   CHECK(controller.dispatchAccessibility("phoneme.review.action.5", seam::native_ui::SemanticAction::SetFocus));
   CHECK(controller.keyDown({.key = seam::native_ui::NativeKey::Enter}));
@@ -240,11 +240,27 @@ TEST_CASE("embedded dynamics inspector receives complete drag gestures without l
   runtime.controller().resize(480.0, 320.0); CHECK(runtime.controller().openDynamicsInspector());
   const auto before = runtime.projectCopy();
   const auto originalState = clap_editor::encodeEditorState(before); CHECK(originalState);
-  const auto plot = runtime.controller().sceneState().replacementReview.dynamicsPlot; CHECK(plot);
-  runtime.pointerDown({.position = plot->handles[0].position, .button = native_ui::PointerButton::Left});
-  runtime.pointerMove({.position = {plot->bounds.x, plot->bounds.bottom()}, .button = native_ui::PointerButton::Left});
+  CHECK(runtime.controller().sceneState().replacementReview.dynamicsPlot);
+  // The gesture arrives the way a host delivers it: through the SING shell's inspector sheet, at
+  // the handle and curve rectangles the shell publishes for this frame.
+  runtime.resize(960.0, 600.0);
+  native_ui::PixelSurface frame{960U, 600U}; native_ui::RasterCanvas frameCanvas{frame};
+  runtime.paint(frameCanvas);
+  std::optional<ui::Rect> handle; std::optional<ui::Rect> curve;
+  const std::function<void(const std::vector<native_ui::SemanticNode>&)> find = [&](const auto& nodes) {
+    for (const auto& node : nodes) {
+      if (node.id.ends_with("point.0")) handle = node.bounds;
+      if (node.id.ends_with("curve")) curve = node.bounds;
+      find(node.children);
+    }
+  };
+  find(runtime.accessibilitySnapshot().children);
+  CHECK(handle.has_value()); CHECK(curve.has_value()); if (!handle || !curve) return;
+  runtime.pointerDown({.position = {handle->x + handle->width * 0.5, handle->y + handle->height * 0.5},
+                       .button = native_ui::PointerButton::Left});
+  runtime.pointerMove({.position = {curve->x, curve->bottom()}, .button = native_ui::PointerButton::Left});
   CHECK(runtime.controller().sceneState().replacementReview.rows[1] == "Linear gain: 0");
-  runtime.pointerUp({.position = {plot->bounds.x, plot->bounds.y}, .button = native_ui::PointerButton::Left});
+  runtime.pointerUp({.position = {curve->x, curve->y}, .button = native_ui::PointerButton::Left});
   CHECK(runtime.controller().sceneState().replacementReview.rows[1] != "Linear gain: 0");
   CHECK(runtime.projectCopy() == before);
   CHECK(runtime.controller().replacementReviewAction(3U)); CHECK(runtime.projectCopy() == before);
@@ -336,8 +352,7 @@ TEST_CASE("native retained review applies unit and seam edits through the shared
   if (const auto* output = std::getenv("SEAM_RENDER_REVIEW_CAPTURE")) {
     seam::native_ui::PixelSurface surface{480U, 320U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    seam::native_ui::EditorScenePainter painter;
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(output));
   }
   CHECK(!controller.sceneState().phonemeReview.enabled[5U]);
@@ -692,13 +707,12 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   CHECK(state.recoverySupport.archiveSha256 == std::string(64U, 'a'));
   CHECK(seam::native_ui::editorDockVisible(state));
 
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{960U, 600U};
   auto supportTextEngine = seam::text::TextEngine::createSystem();
   seam::native_ui::RasterCanvas canvas{
       surface, 1.0,
       supportTextEngine ? supportTextEngine.value().get() : nullptr};
-  painter.paint(canvas, controller.pianoRoll(), state);
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   const auto* supportCaptureRoot =
       std::getenv("SEAM_NATIVE_UI_SUPPORT_CAPTURE_DIR");
@@ -757,7 +771,7 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
     seam::native_ui::RasterCanvas reportsCanvas{
         reportsSurface, 1.0,
         supportTextEngine ? supportTextEngine.value().get() : nullptr};
-    painter.paint(reportsCanvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(reportsCanvas, controller));
     CHECK(reportsSurface.writePpm(
         std::filesystem::path{supportCaptureRoot} /
         "support-reports-960x600.ppm"));
@@ -768,16 +782,8 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   CHECK(selectedReport == 1U);
 
   const auto supportState = controller.sceneState();
-  const auto editorRight = 960.0 - painter.layout().characterDockWidth;
-  const auto firstRow = painter.layout().supportItemBounds(
-      editorRight, 960.0, 0U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{firstRow.x + firstRow.width * 0.5,
-                                  firstRow.y + firstRow.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(controller.dispatchAccessibility(
+      "support.item.0", seam::native_ui::SemanticAction::Activate));
   CHECK(selectedReport == 0U);
   CHECK(supportState.recoverySupport.reportCount == 2U);
 
@@ -820,8 +826,8 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   CHECK(focusedSupportItem != nullptr);
   if (focusedSupportItem != nullptr) {
     CHECK(focusedSupportItem->id == "support.item.3");
-    const auto expectedFocusedBounds = painter.layout().supportItemBounds(
-        focusedSupportItem->bounds.x - painter.layout().supportPanelInsetX,
+    const auto expectedFocusedBounds = seam::native_ui::EditorSceneLayout{}.supportItemBounds(
+        focusedSupportItem->bounds.x - seam::native_ui::EditorSceneLayout{}.supportPanelInsetX,
         480.0, 0U);
     CHECK_NEAR(focusedSupportItem->bounds.y, expectedFocusedBounds.y, 0.001);
     CHECK_NEAR(focusedSupportItem->bounds.height,
@@ -832,7 +838,7 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
     seam::native_ui::RasterCanvas compactCanvas{
         compactSurface, 1.0,
         supportTextEngine ? supportTextEngine.value().get() : nullptr};
-    painter.paint(compactCanvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(compactCanvas, controller));
     CHECK(compactSurface.writePpm(
         std::filesystem::path{supportCaptureRoot} /
         "support-preview-480x320-scrolled.ppm"));
@@ -850,8 +856,7 @@ TEST_CASE("empty piano roll paints a bounded next-step cue") {
   controller.resize(960.0, 600.0);
   seam::native_ui::PixelSurface surface{960U, 600U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  seam::native_ui::EditorScenePainter painter;
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
 }
 
@@ -863,11 +868,10 @@ TEST_CASE("selected note paints its tempo-aligned vibrato envelope without alter
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
   fixture.session.selection().selectOnly(fixture.noteId);
-  seam::native_ui::EditorScenePainter painter;
   const auto render = [&] {
     seam::native_ui::PixelSurface surface{960U, 600U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     return surface.checksum();
   };
   const auto noteVisuals = controller.pianoRoll().visibleNotes();
@@ -912,11 +916,10 @@ TEST_CASE("selected vibrato onset handle previews then commits one undoable edit
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
   fixture.session.selection().selectOnly(fixture.noteId);
-  seam::native_ui::EditorScenePainter painter;
   const auto visual = controller.pianoRoll().visibleNotes();
   CHECK(visual.size() == 1U);
   auto bounds = visual.front().bounds;
-  bounds.y += painter.layout().contentTop();
+  bounds.y += seam::native_ui::EditorSceneLayout{}.contentTop();
   const auto* region = fixture.session.project().findRegion(fixture.regionId);
   CHECK(region != nullptr);
   const auto handles = seam::native_ui::vibratoHandlePositions(
@@ -925,7 +928,7 @@ TEST_CASE("selected vibrato onset handle previews then commits one undoable edit
   const auto render = [&] {
     seam::native_ui::PixelSurface surface{960U, 600U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     return surface.checksum();
   };
   const auto beforePixels = render();
@@ -1074,11 +1077,10 @@ TEST_CASE("selected vibrato fade handles edit envelope and preserve coupled fade
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
   fixture.session.selection().selectOnly(fixture.noteId);
-  seam::native_ui::EditorScenePainter painter;
   const auto visual = controller.pianoRoll().visibleNotes();
   CHECK(visual.size() == 1U);
   auto bounds = visual.front().bounds;
-  bounds.y += painter.layout().contentTop();
+  bounds.y += seam::native_ui::EditorSceneLayout{}.contentTop();
   const auto* region = fixture.session.project().findRegion(fixture.regionId);
   CHECK(region != nullptr);
   const auto handles = seam::native_ui::vibratoHandlePositions(
@@ -1145,11 +1147,10 @@ TEST_CASE("zero-length vibrato fades expose stable grips and can be created") {
   controller.resize(960.0, 600.0);
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
-  seam::native_ui::EditorScenePainter painter;
   const auto visuals = controller.pianoRoll().visibleNotes();
   CHECK(visuals.size() == 1U);
   auto bounds = visuals.front().bounds;
-  bounds.y += painter.layout().contentTop();
+  bounds.y += seam::native_ui::EditorSceneLayout{}.contentTop();
   const auto* region = fixture.session.project().findRegion(fixture.regionId);
   CHECK(region != nullptr);
   auto handles = seam::native_ui::vibratoHandlePositions(
@@ -1236,15 +1237,14 @@ TEST_CASE("selected vibrato handles support keyboard focus adjustment and exit")
   controller.resize(960.0, 600.0);
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
-  seam::native_ui::EditorScenePainter painter;
   const auto beforeFocus = [&] {
     seam::native_ui::PixelSurface surface{960U, 600U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     return surface.checksum();
   }();
   const auto semantics = seam::native_ui::EditorSemanticTree::build(
-      controller.sceneState(), controller.pianoRoll(), painter.layout(),
+      controller.sceneState(), controller.pianoRoll(), seam::native_ui::EditorSceneLayout{},
       false, true);
   const auto semanticNote = std::find_if(
       semantics.children.begin(), semantics.children.end(),
@@ -1261,7 +1261,7 @@ TEST_CASE("selected vibrato handles support keyboard focus adjustment and exit")
   const auto focusedPixels = [&] {
     seam::native_ui::PixelSurface surface{960U, 600U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     return surface.checksum();
   }();
   CHECK(focusedPixels != beforeFocus);
@@ -1324,11 +1324,10 @@ TEST_CASE("vibrato handle drag refuses selection drift without mutating the proj
   controller.pianoRoll().pitch().setRowHeight(12.0);
   controller.pianoRoll().pitch().setTopMidiKey(80);
   fixture.session.selection().selectOnly(fixture.noteId);
-  seam::native_ui::EditorScenePainter painter;
   const auto visual = controller.pianoRoll().visibleNotes();
   CHECK(visual.size() == 1U);
   auto bounds = visual.front().bounds;
-  bounds.y += painter.layout().contentTop();
+  bounds.y += seam::native_ui::EditorSceneLayout{}.contentTop();
   const auto* region = fixture.session.project().findRegion(fixture.regionId);
   CHECK(region != nullptr);
   const auto handles = seam::native_ui::vibratoHandlePositions(
@@ -1501,47 +1500,20 @@ TEST_CASE("editor scene remains logically identical at one and two times scale")
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId};
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
 
   seam::native_ui::PixelSurface one{1280U, 720U};
   seam::native_ui::RasterCanvas oneCanvas{one, 1.0};
-  painter.paint(oneCanvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(oneCanvas, controller));
 
   seam::native_ui::PixelSurface two{2560U, 1440U};
   seam::native_ui::RasterCanvas twoCanvas{two, 2.0};
-  painter.paint(twoCanvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(twoCanvas, controller));
 
   CHECK(one.checksum() != 0U);
   CHECK(two.checksum() != 0U);
   CHECK(one.width() * 2U == two.width());
   CHECK(one.height() * 2U == two.height());
   CHECK(controller.pianoRoll().visibleNotes().size() == 1U);
-}
-
-TEST_CASE("native scene paints a visible keyboard focus ring") {
-  NativeUiFixture fixture;
-  seam::native_ui::NativeEditorController controller{
-      fixture.session, fixture.factory, fixture.regionId};
-  controller.resize(1280.0, 720.0);
-  controller.rebuildAccessibilityTree();
-  CHECK(!controller.sceneState().focusedElementBounds.has_value());
-  CHECK(controller.dispatchAccessibility(
-      "toolbar.transport", seam::native_ui::SemanticAction::SetFocus));
-  const auto state = controller.sceneState();
-  CHECK(state.focusedElementBounds.has_value());
-
-  seam::native_ui::EditorScenePainter painter;
-  seam::native_ui::PixelSurface focusedSurface{1280U, 720U};
-  seam::native_ui::RasterCanvas focusedCanvas{focusedSurface, 1.0};
-  painter.paint(focusedCanvas, controller.pianoRoll(), state);
-  CHECK(focusedSurface.checksum() != 0U);
-
-  auto unfocusedState = state;
-  unfocusedState.focusedElementBounds.reset();
-  seam::native_ui::PixelSurface unfocusedSurface{1280U, 720U};
-  seam::native_ui::RasterCanvas unfocusedCanvas{unfocusedSurface, 1.0};
-  painter.paint(unfocusedCanvas, controller.pianoRoll(), unfocusedState);
-  CHECK(focusedSurface.checksum() != unfocusedSurface.checksum());
 }
 
 TEST_CASE("native design fixture matrix is deterministic across target viewports") {
@@ -1555,7 +1527,6 @@ TEST_CASE("native design fixture matrix is deterministic across target viewports
       .actions = {seam::authoring::DiagnosticAction::ChooseVoicebank,
                   seam::authoring::DiagnosticAction::RelinkVoicebank},
   }});
-  seam::native_ui::EditorScenePainter painter;
   controller.pianoRoll().pitch().setTopMidiKey(72);
   const auto textEngine = seam::text::TextEngine::createSystem();
   CHECK(textEngine);
@@ -1581,11 +1552,11 @@ TEST_CASE("native design fixture matrix is deterministic across target viewports
         seam::native_ui::PixelSurface first{physicalWidth, physicalHeight};
         seam::native_ui::RasterCanvas firstCanvas{first, scale,
                                                    textEngine.value().get()};
-        painter.paint(firstCanvas, controller.pianoRoll(), controller.sceneState());
+        static_cast<void>(seam::test::paintEditorFrame(firstCanvas, controller));
         seam::native_ui::PixelSurface second{physicalWidth, physicalHeight};
         seam::native_ui::RasterCanvas secondCanvas{second, scale,
                                                     textEngine.value().get()};
-        painter.paint(secondCanvas, controller.pianoRoll(), controller.sceneState());
+        static_cast<void>(seam::test::paintEditorFrame(secondCanvas, controller));
         CHECK(first.checksum() != 0U);
         CHECK(first.checksum() == second.checksum());
 
@@ -1615,13 +1586,12 @@ TEST_CASE("native design journey fixtures cover detail identity and motion state
   }
   const auto textEngine = seam::text::TextEngine::createSystem();
   CHECK(textEngine);
-  seam::native_ui::EditorScenePainter painter;
   const auto capture = [&](seam::native_ui::NativeEditorController& controller,
                            std::string_view name) {
     seam::native_ui::PixelSurface surface{960U, 600U};
     seam::native_ui::RasterCanvas canvas{surface, 1.0,
                                           textEngine.value().get()};
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.checksum() != 0U);
     if (!captureDirectory.empty()) {
       CHECK(surface.writePpm(captureDirectory / std::string{name}));
@@ -1803,14 +1773,13 @@ TEST_CASE("native scene captures a subpixel-duration note without collapsing it"
 
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId};
-  seam::native_ui::EditorScenePainter painter;
   controller.resize(1440.0, 900.0);
   const auto scaleOneNotes = controller.pianoRoll().visibleNotes();
   CHECK(scaleOneNotes.size() == 1U);
   CHECK(scaleOneNotes.front().bounds.width > 0.0);
   seam::native_ui::PixelSurface scaleOne{1440U, 900U};
   seam::native_ui::RasterCanvas scaleOneCanvas{scaleOne, 1.0};
-  painter.paint(scaleOneCanvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(scaleOneCanvas, controller));
 
   controller.resize(720.0, 450.0);
   const auto scaleTwoNotes = controller.pianoRoll().visibleNotes();
@@ -1818,7 +1787,7 @@ TEST_CASE("native scene captures a subpixel-duration note without collapsing it"
   CHECK(scaleTwoNotes.front().bounds.width > 0.0);
   seam::native_ui::PixelSurface scaleTwo{1440U, 900U};
   seam::native_ui::RasterCanvas scaleTwoCanvas{scaleTwo, 2.0};
-  painter.paint(scaleTwoCanvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(scaleTwoCanvas, controller));
   CHECK(scaleOne.checksum() != 0U);
   CHECK(scaleTwo.checksum() != 0U);
 
@@ -2080,16 +2049,15 @@ TEST_CASE("editor status bar paints within the supported minimum width") {
       .hasAudibleAudio = true,
       .diagnostic = "Voicebank is missing",
   });
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{480U, 320U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
 
   controller.resize(1440.0, 900.0);
   seam::native_ui::PixelSurface normalSurface{1440U, 900U};
   seam::native_ui::RasterCanvas normalCanvas{normalSurface, 1.0};
-  painter.paint(normalCanvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(normalCanvas, controller));
   CHECK(normalSurface.checksum() != 0U);
 
   if (const auto* captureRoot = std::getenv("SEAM_NATIVE_UI_STATUS_CAPTURE_DIR");
@@ -2110,7 +2078,7 @@ TEST_CASE("editor status bar paints within the supported minimum width") {
     });
     seam::native_ui::PixelSurface noAudioSurface{1440U, 900U};
     seam::native_ui::RasterCanvas noAudioCanvas{noAudioSurface, 1.0};
-    painter.paint(noAudioCanvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(noAudioCanvas, controller));
     CHECK(noAudioSurface.writePpm(directory / "render-status-no-audio.ppm"));
   }
 }
@@ -2282,8 +2250,7 @@ TEST_CASE("standalone controller opens a read-only sample microscope overlay") {
   auto textEngine = seam::text::TextEngine::createSystem();
   seam::native_ui::RasterCanvas canvas{
       surface, 1.0, textEngine ? textEngine.value().get() : nullptr};
-  seam::native_ui::EditorScenePainter painter;
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   if (const auto* captureRoot = std::getenv("SEAM_NATIVE_UI_MICROSCOPE_CAPTURE_DIR");
       captureRoot != nullptr && *captureRoot != '\0') {
@@ -2479,41 +2446,30 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
+  // The SING shell's transport buttons run these controller actions; a ruler press still reaches
+  // the controller as a pointer (the shell forwards its ruler into the hosted grid).
+  const auto activate = [&controller](std::string_view id) {
+    controller.rebuildAccessibilityTree();
+    return controller.dispatchAccessibility(id, seam::native_ui::SemanticAction::Activate);
+  };
+  const auto ruler = [&controller](double x, bool shift) {
+    return controller.pointerDown(seam::native_ui::PointerEvent{
+        .position = seam::ui::Point{x, 80.0},
+        .button = seam::native_ui::PointerButton::Left,
+        .modifiers = {.shift = shift},
+        .clickCount = 1,
+    });
+  };
 
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.transport"));
   CHECK(playing);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{470.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.stop"));
   CHECK(stopRequests == 1U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{240.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(ruler(240.0, false));
   CHECK(seeks.size() == 1U);
   CHECK(seeks.front() > seam::time::Tick{0});
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{420.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {.shift = true},
-      .clickCount = 1,
-  }));
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{620.0, 80.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {.shift = true},
-      .clickCount = 1,
-  }));
+  CHECK(ruler(420.0, true));
+  CHECK(ruler(620.0, true));
   CHECK(loops.size() == 1U);
   CHECK(loops.front().first < loops.front().second);
   CHECK(controller.keyDown(seam::native_ui::KeyEvent{
@@ -2523,21 +2479,10 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
   }));
   CHECK(loopToggles == 1U);
   controller.resize(1440.0, 900.0);
-  controller.rebuildAccessibilityTree();
-  CHECK(controller.dispatchAccessibility(
-      "toolbar.loop", seam::native_ui::SemanticAction::Activate));
+  CHECK(activate("toolbar.loop"));
   CHECK(loopToggles == 2U);
   CHECK(controller.sceneState().loopEnabled);
-  const auto wideLayout = seam::native_ui::EditorScenePainter{}.layout();
-  const auto wideLoop = wideLayout.loopBoundsForWidth(1440.0, false);
-  CHECK(wideLoop.width > 0.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{wideLoop.x + wideLoop.width * 0.5,
-                                  wideLoop.y + wideLoop.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.loop"));
   CHECK(loopToggles == 3U);
   CHECK(!controller.sceneState().loopEnabled);
 
@@ -2562,18 +2507,14 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
   }));
   CHECK(retryRequests == 1U);
 
+  // Without an audible render the transport refuses and play state does not move.
   controller.setRenderStatus(seam::native_ui::RenderStatusView{
       .state = seam::native_ui::RenderStatusState::Failed,
       .requestedRevision = 4U,
       .hasAudibleAudio = false,
   });
   playing = false;
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(!activate("toolbar.transport"));
   CHECK(!playing);
 
   controller.resize(480.0, 320.0);
@@ -2583,28 +2524,9 @@ TEST_CASE("native controller routes transport controls through host callbacks") 
       .audibleRevision = 4U,
       .hasAudibleAudio = true,
   });
-  const auto narrowLayout = seam::native_ui::EditorScenePainter{}.layout();
-  const auto narrowTransport = narrowLayout.transportBoundsForWidth(480.0);
-  const auto narrowStop = narrowLayout.stopBoundsForWidth(480.0);
-  const auto narrowTempo = narrowLayout.bpmBoundsForWidth(480.0);
-  CHECK(narrowTransport.right() <= 480.0);
-  CHECK(narrowStop.right() <= 480.0);
-  CHECK(narrowTempo.right() <= 480.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{narrowTransport.x + narrowTransport.width * 0.5,
-                                  narrowTransport.y + narrowTransport.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.transport"));
   CHECK(playing);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{narrowStop.x + narrowStop.width * 0.5,
-                                  narrowStop.y + narrowStop.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("toolbar.stop"));
   CHECK(stopRequests == 2U);
 }
 
@@ -2628,23 +2550,12 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .hasAudibleAudio = true,
   });
 
-  const auto result = controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{340.0, 25.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
-  CHECK(!result);
-  CHECK(result.error().code == seam::core::ErrorCode::Conflict);
-  CHECK(requests == 1U);
-  CHECK(!controller.playing());
-
   controller.rebuildAccessibilityTree();
   const auto semanticResult = controller.dispatchAccessibility(
       "toolbar.transport", seam::native_ui::SemanticAction::Activate);
   CHECK(!semanticResult);
   CHECK(semanticResult.error().code == seam::core::ErrorCode::Conflict);
-  CHECK(requests == 2U);
+  CHECK(requests == 1U);
   CHECK(!controller.playing());
 
   seam::native_ui::NativeEditorController stopController{
@@ -2663,13 +2574,9 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
-  const auto stopResult = stopController.pointerDown(
-      seam::native_ui::PointerEvent{
-          .position = seam::ui::Point{470.0, 25.0},
-          .button = seam::native_ui::PointerButton::Left,
-          .modifiers = {},
-          .clickCount = 1,
-      });
+  stopController.rebuildAccessibilityTree();
+  const auto stopResult = stopController.dispatchAccessibility(
+      "toolbar.stop", seam::native_ui::SemanticAction::Activate);
   CHECK(!stopResult);
   CHECK(stopResult.error().code == seam::core::ErrorCode::Conflict);
   CHECK(stopController.playing());
@@ -2711,17 +2618,9 @@ TEST_CASE("native transport keeps play state unchanged when host rejects it") {
       .audibleRevision = 1U,
       .hasAudibleAudio = true,
   });
-  const auto loopBounds =
-      seam::native_ui::EditorScenePainter{}.layout().loopBoundsForWidth(
-          1440.0, false);
-  const auto loopResult = loopController.pointerDown(
-      seam::native_ui::PointerEvent{
-          .position = seam::ui::Point{loopBounds.x + loopBounds.width * 0.5,
-                                      loopBounds.y + loopBounds.height * 0.5},
-          .button = seam::native_ui::PointerButton::Left,
-          .modifiers = {},
-          .clickCount = 1,
-      });
+  loopController.rebuildAccessibilityTree();
+  const auto loopResult = loopController.dispatchAccessibility(
+      "toolbar.loop", seam::native_ui::SemanticAction::Activate);
   CHECK(!loopResult);
   CHECK(loopResult.error().code == seam::core::ErrorCode::Conflict);
   CHECK(!loopController.sceneState().loopEnabled);
@@ -2739,13 +2638,6 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
           },
       }};
   controller.resize(1440.0, 900.0);
-  const auto layout = seam::native_ui::EditorScenePainter{}.layout();
-  const auto bounds = layout.bounceTimingBoundsForWidth(1440.0, false);
-  CHECK(bounds.width > 0.0);
-  // The control never covers the loop control it follows, or the project header.
-  const auto loop = layout.loopBoundsForWidth(1440.0, false);
-  CHECK(loop.width > 0.0);
-  CHECK(bounds.x >= loop.right());
 
   CHECK(controller.sceneState().bounceTimingAvailable);
   CHECK(!controller.sceneState().bounceFollowHost);
@@ -2756,13 +2648,8 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
   CHECK(requests.front());
   CHECK(controller.sceneState().bounceFollowHost);
 
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
-                                  bounds.y + bounds.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  // The SING shell's EXPORT bounce button toggles through the same controller command.
+  CHECK(controller.toggleBounceTiming());
   CHECK(requests.size() == 2U);
   CHECK(!requests.back());
   CHECK(!controller.sceneState().bounceFollowHost);
@@ -2777,13 +2664,7 @@ TEST_CASE("native bounce timing control chooses and reports the host authority")
           },
       }};
   refusing.resize(1440.0, 900.0);
-  const auto refused = refusing.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{bounds.x + bounds.width * 0.5,
-                                  bounds.y + bounds.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
+  const auto refused = refusing.toggleBounceTiming();
   CHECK(!refused);
   CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
   CHECK(!refusing.sceneState().bounceFollowHost);
@@ -2858,8 +2739,7 @@ TEST_CASE("native seam controls expose presets, fields, reset, and A/B preview")
           },
       }};
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
-  const auto layout = painter.layout();
+  const auto layout = seam::native_ui::EditorSceneLayout{};
   const auto state = controller.sceneState();
   const auto technical = seam::native_ui::resolveTechnicalLaneHeights(
       seam::native_ui::TechnicalLaneLayoutInput{
@@ -3090,7 +2970,7 @@ TEST_CASE("phone hint semantics isolate active input and reject old interaction 
   CHECK(controller.updateTextComposition(U"sh a N cl k a", {}));
   if (const auto* capture = std::getenv("SEAM_HINT_INPUT_CAPTURE")) {
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(capture));
   }
   CHECK(!controller.dispatchAccessibility("toolbar.time-map", native_ui::SemanticAction::Activate));
@@ -3120,9 +3000,8 @@ TEST_CASE("phone hint semantics isolate active input and reject old interaction 
   const auto revision = fixture.session.revision();
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Delete}));
   CHECK(fixture.session.revision() == revision);
-  const native_ui::EditorSceneLayout layout;
-  const auto bounds = layout.hintCancelBounds(controller.sceneState().logicalWidth, controller.sceneState().logicalHeight);
-  CHECK(controller.pointerDown({.position = {bounds.x + 2.0, bounds.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  // The shell's inline field card cancels through the controller, as its Escape does.
+  controller.cancelTextComposition();
   CHECK(!controller.textInputActive());
 }
 
@@ -3178,7 +3057,7 @@ TEST_CASE("native replacement review pages isolates refreshes and applies one un
   CHECK(controller.replacementReviewAction(2U));
   if (const auto* capture = std::getenv("SEAM_REPLACEMENT_REVIEW_CAPTURE")) {
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(capture));
   }
   const auto staleApply = id(3U);
@@ -3230,7 +3109,7 @@ TEST_CASE("native diagnostic Find works without a vocal region and never runs re
   if (const auto* capture = std::getenv("SEAM_DIAGNOSTIC_FIND_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   std::string full;
   for (unsigned page = 0U; page < 20U; ++page) {
@@ -3318,7 +3197,7 @@ TEST_CASE("native Find preparation keeps Close available and never revives cance
     controller.resize(480.0, 320.0);
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   controller.rebuildAccessibilityTree();
   const auto pendingStatus = controller.accessibilityTree().root().children.back().id;
@@ -3407,7 +3286,7 @@ TEST_CASE("native Find input fields and complete result inspection select withou
   if (const auto* capture = std::getenv("SEAM_FIND_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.replacementReviewAction(3U)); CHECK(!controller.replacementReviewOpen());
   CHECK(fixture.session.selection().noteIds() == std::vector<domain::NoteId>{fixture.noteId});
@@ -3544,7 +3423,7 @@ TEST_CASE("replacement detail exposes every before and after byte and never appl
   if (const auto* capture = std::getenv("SEAM_REPLACEMENT_DETAIL_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(capture));
   }
   std::string expected; for (int i = 0; i < 400; ++i) expected += "日本";
@@ -3669,7 +3548,7 @@ TEST_CASE("native clear vibrato review pages guards selection and commits only o
   if (const auto* capture = std::getenv("SEAM_CLEAR_VIBRATO_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U); CHECK(!controller.replacementReviewOpen());
   auto expected = before; expected.findNote(fixture.noteId)->vibrato.enabled = false;
@@ -3712,7 +3591,7 @@ TEST_CASE("native cleanup review shows outcomes guards grid changes and applies 
       CHECK(codec.save(before, root / (std::string{name} + ".seam")));
       auto engine = text::TextEngine::createSystem(); CHECK(engine);
       native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-      native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+      static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
       CHECK(surface.writePpm(root / (std::string{name} + ".ppm")));
     }
     CHECK(controller.replacementReviewAction(2U));
@@ -3764,10 +3643,9 @@ TEST_CASE("shared review rows actions and text input fit supported short windows
   if (const auto* capture = std::getenv("SEAM_SHORT_REVIEW_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
-  const auto cancel = layout.timeMapActionBounds(480.0,320.0,4U);
-  CHECK(controller.pointerDown({.position={cancel.x + 2.0,cancel.y + 2.0},.button=native_ui::PointerButton::Left}));
+  CHECK(controller.replacementReviewAction(4U));  // the review sheet's Cancel
   CHECK(!controller.replacementReviewOpen()); CHECK(fixture.session.revision() == 0U);
 }
 
@@ -3807,7 +3685,7 @@ TEST_CASE("native dynamics clear explicitly reviews the entire region and preser
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_CLEAR_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.replacementReviewAction(3U)); CHECK(changes == 1U);
   auto expected = source; expected.findRegion(fixture.regionId)->dynamicsAutomation = {};
@@ -3940,14 +3818,12 @@ TEST_CASE("native time-map panel opens selects edits refreshes removes and block
   CHECK(fixture.session.project().tempoMap().addOrReplace(time::Tick{960}, 90.0));
   native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
       {.beginTextInput = [](const native_ui::TextInputRequest&) {}}};
-  native_ui::EditorSceneLayout layout;
-  const auto button = layout.timeMapOpenBounds();
-  CHECK(controller.pointerDown({.position = {button.x + 2.0, button.y + 2.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(controller.openTimeMapPanel());  // the SING ruler's Time map button
   CHECK(controller.sceneState().timeMapVisible); CHECK(controller.sceneState().timeMapRows.size() == 3U);
   controller.resize(720.0, 520.0);
   if (const auto* capture = std::getenv("SEAM_TIME_MAP_CAPTURE")) {
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     CHECK(surface.writePpm(capture));
   }
   CHECK(!controller.setAccessibilityValue("toolbar.tempo", "50"));
@@ -4053,7 +3929,7 @@ TEST_CASE("time-map composition has visible shared input geometry in toolbar and
   CHECK(state.compositionPreview == "9223372036854775807");
   if (const auto* capture = std::getenv("SEAM_TIME_MAP_INPUT_CAPTURE")) {
     native_ui::PixelSurface surface{720U, 520U}; native_ui::RasterCanvas canvas{surface, 1.0};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), state); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   controller.cancelTextComposition(); CHECK(!controller.sceneState().lyricEditor);
 }
@@ -4125,19 +4001,15 @@ TEST_CASE("native arrangement exposes IME rename and keyboard reorder affordance
   fixture.session.project().settings().characterDisplay =
       seam::domain::CharacterDisplayMode::Off;
   controller.resize(1280.0, 720.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{1280.0 - 238.0 + 12.0, 99.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 2,
-  }));
+  // The shell's MIX track list renames a double-clicked track through this controller command.
+  CHECK(controller.beginSelectedTrackRename());
   CHECK(beginRequests == 3U);
   CHECK(controller.commitTextComposition(U"Pointer renamed"));
   CHECK(fixture.session.project().vocalTracks().front().name ==
         "Pointer renamed");
 }
 
-TEST_CASE("native arrangement toolbar exposes pointer and accessibility actions") {
+TEST_CASE("native arrangement toolbar exposes accessibility actions") {
   NativeUiFixture fixture;
   std::size_t beginRequests = 0U;
   seam::native_ui::NativeEditorController controller{
@@ -4149,31 +4021,15 @@ TEST_CASE("native arrangement toolbar exposes pointer and accessibility actions"
   fixture.session.project().settings().characterDisplay =
       seam::domain::CharacterDisplayMode::Off;
   controller.resize(1280.0, 720.0);
-  const auto layout = seam::native_ui::EditorScenePainter{}.layout();
-  const auto actionPoint = [&](std::size_t index) {
-    const auto bounds = layout.arrangementActionBoundsForWidth(1280.0, index);
-    return seam::ui::Point{bounds.x + 4.0, bounds.y + 8.0};
+  const auto activate = [&controller](std::string_view id) {
+    controller.rebuildAccessibilityTree();
+    return controller.dispatchAccessibility(id, seam::native_ui::SemanticAction::Activate);
   };
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(0U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.add-track"));
   CHECK(fixture.session.project().vocalTracks().size() == 2U);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(1U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.add-region"));
   CHECK(controller.selectedRegion().valid());
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = actionPoint(2U),
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  }));
+  CHECK(activate("arrangement.rename"));
   CHECK(beginRequests == 1U);
   CHECK(controller.commitTextComposition(U"Toolbar region"));
 
@@ -4204,9 +4060,9 @@ TEST_CASE("native vibrato inspector edits drafts through fields and applies the 
   controller.resize(480.0, 320.0);
   auto view = controller.sceneState().replacementReview; CHECK(view.dockedInspector); CHECK(view.rows.size() == 6U); CHECK(!view.enabled[3]);
   std::string oldApply;
-  const native_ui::EditorSceneLayout layout;
-  const auto row = layout.reviewRowBounds(480.0, 320.0, 0U, true);
-  CHECK(controller.pointerDown({.position = {row.x + 5.0, row.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(controller.replacementReviewSemanticPrefix() + "row.0",
+                                         native_ui::SemanticAction::Activate));
   CHECK(initial.empty()); CHECK(controller.sceneState().boundedInputLabel.starts_with("VIBRATO:"));
   CHECK(controller.commitTextComposition(U"On")); CHECK(controller.sceneState().replacementReview.visible);
   controller.rebuildAccessibilityTree();
@@ -4228,7 +4084,7 @@ TEST_CASE("native vibrato inspector edits drafts through fields and applies the 
   if (const auto* capture = std::getenv("SEAM_VIBRATO_INSPECTOR_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(fixture.session.project() == source); CHECK(changes == 0U);
   CHECK(!controller.dispatchAccessibility(oldApply, native_ui::SemanticAction::Activate));
@@ -4263,7 +4119,7 @@ TEST_CASE("native vibrato inspector rejects stale field input and keeps responsi
   CHECK(controller.replacementReviewAction(4U)); CHECK(fixture.session.project() == source);
 }
 
-TEST_CASE("arrangement inspector visibility and pointer bounds agree with paint including overlays") {
+TEST_CASE("arrangement inspector visibility and semantic bounds agree with its layout including overlays") {
   using namespace seam;
   for (const auto height : {320.0, 640.0}) for (const bool diagnostic : {false, true}) {
     NativeUiFixture fixture; fixture.session.project().settings().characterDisplay = domain::CharacterDisplayMode::Off;
@@ -4281,17 +4137,17 @@ TEST_CASE("arrangement inspector visibility and pointer bounds agree with paint 
       CHECK(bounds.y >= *top); CHECK(bounds.bottom() <= bottom);
       CHECK(bounds.y == *top + layout.inspectorNameBaseline + layout.inspectorNameToFirstFieldAdvance + layout.inspectorFieldAdvance * 3.0);
       const auto track = controller.selectedTrack(); const auto before = fixture.session.project();
-      CHECK(controller.pointerDown({.position = {bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::Activate));
       CHECK(fixture.session.project().findVocalTrack(track)->muted); CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
       CHECK(controller.dispatchAccessibility("inspector.solo", native_ui::SemanticAction::SetFocus));
       const auto solo = controller.accessibilityTree().focusedNode()->bounds; CHECK(solo.x == bounds.right()); CHECK(solo.y == bounds.y);
-      CHECK(controller.pointerDown({.position = {solo.x + solo.width * 0.5, solo.y + solo.height * 0.5}, .button = native_ui::PointerButton::Left}));
+      CHECK(controller.dispatchAccessibility("inspector.solo", native_ui::SemanticAction::Activate));
       CHECK(fixture.session.project().findVocalTrack(track)->solo); CHECK(!fixture.session.project().findVocalTrack(track)->muted);
       CHECK(fixture.session.undo()); CHECK(fixture.session.project() == before);
       if (height == 640.0 && diagnostic) if (const auto* capture = std::getenv("SEAM_INSPECTOR_LAYOUT_CAPTURE")) {
         auto engine = text::TextEngine::createSystem(); CHECK(engine);
         native_ui::PixelSurface surface{960U,640U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-        native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+        static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
       }
     } else CHECK(!controller.dispatchAccessibility("inspector.mute", native_ui::SemanticAction::Activate));
   }
@@ -4447,12 +4303,11 @@ TEST_CASE("native arrangement and diagnostics surfaces capture current layout") 
       .messageKey = "media.missing",
       .actions = {seam::authoring::DiagnosticAction::RelinkMedia},
   }});
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{1280U, 720U};
   auto textEngine = seam::text::TextEngine::createSystem();
   seam::native_ui::RasterCanvas canvas{
       surface, 1.0, textEngine ? textEngine.value().get() : nullptr};
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   if (const auto* captureRoot = std::getenv("SEAM_NATIVE_UI_ARRANGEMENT_CAPTURE_DIR");
       captureRoot != nullptr && *captureRoot != '\0') {
@@ -4470,7 +4325,7 @@ TEST_CASE("native arrangement and diagnostics surfaces capture current layout") 
     seam::native_ui::PixelSurface exportSurface{1280U, 720U};
     seam::native_ui::RasterCanvas exportCanvas{
         exportSurface, 1.0, textEngine ? textEngine.value().get() : nullptr};
-    painter.paint(exportCanvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(exportCanvas, controller));
     CHECK(exportSurface.writePpm(
         directory / "arrangement-diagnostics-export-cjk.ppm"));
     controller.resize(480.0, 320.0);
@@ -4478,8 +4333,7 @@ TEST_CASE("native arrangement and diagnostics surfaces capture current layout") 
     seam::native_ui::RasterCanvas exportNarrowCanvas{
         exportNarrowSurface, 1.0,
         textEngine ? textEngine.value().get() : nullptr};
-    painter.paint(exportNarrowCanvas, controller.pianoRoll(),
-                  controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(exportNarrowCanvas, controller));
     CHECK(exportNarrowSurface.writePpm(
         directory / "export-diagnostics-narrow.ppm"));
     controller.setExportProgress(seam::authoring::ExportProgress{
@@ -4496,8 +4350,7 @@ TEST_CASE("native arrangement and diagnostics surfaces capture current layout") 
     seam::native_ui::PixelSurface committedSurface{1280U, 720U};
     seam::native_ui::RasterCanvas committedCanvas{
         committedSurface, 1.0, textEngine ? textEngine.value().get() : nullptr};
-    painter.paint(committedCanvas, controller.pianoRoll(),
-                  controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(committedCanvas, controller));
     CHECK(committedSurface.writePpm(
         directory / "arrangement-diagnostics-export-committed.ppm"));
   }
@@ -4909,7 +4762,6 @@ TEST_CASE("native scene renders phoneme unit pitch and full character dock") {
   seam::native_ui::NativeEditorController controller{
       fixture.session, fixture.factory, fixture.regionId};
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface character{64U, 96U};
   character.clear(seam::native_ui::Color{40, 30, 48, 255});
   seam::native_ui::PixelSurface target{1280U, 720U};
@@ -4918,7 +4770,7 @@ TEST_CASE("native scene renders phoneme unit pitch and full character dock") {
   state.characterName = "Character 01";
   state.characterStyle = "emo-low-poly";
   state.characterPortrait = &character;
-  painter.paint(canvas, controller.pianoRoll(), state);
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   controller.setCharacterPortrait(&character);
   controller.rebuildAccessibilityTree();
   const auto& liveTree = controller.accessibilityTree().root();
@@ -4966,10 +4818,9 @@ TEST_CASE("native scene paints exact voicebank browser cards") {
       .key = seam::native_ui::NativeKey::V, .modifiers = {}, .repeat = false}));
   CHECK(controller.voicebankBrowserVisible());
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{1280U, 720U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   if (const auto* captureRoot =
           std::getenv("SEAM_NATIVE_UI_VOICEBANK_CAPTURE_DIR");
@@ -5010,10 +4861,9 @@ TEST_CASE("native voicebank browser routes refresh and standalone recovery") {
   CHECK(installerRequests == 1U);
 
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{1280U, 720U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   if (const auto* captureRoot =
           std::getenv("SEAM_NATIVE_UI_VOICEBANK_CAPTURE_DIR");
@@ -5067,10 +4917,9 @@ TEST_CASE("native scene exposes transactional audio settings controls") {
   controller.showAudioSettings();
   CHECK(controller.audioSettingsVisible());
 
-  seam::native_ui::EditorScenePainter painter;
   seam::native_ui::PixelSurface surface{1280U, 720U};
   seam::native_ui::RasterCanvas canvas{surface, 1.0};
-  painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.checksum() != 0U);
   if (const auto* captureRoot = std::getenv(
           "SEAM_NATIVE_UI_AUDIO_SETTINGS_CAPTURE_DIR");

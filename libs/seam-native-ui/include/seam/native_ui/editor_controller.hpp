@@ -307,6 +307,10 @@ public:
   [[nodiscard]] core::Result<void> resetExpressionLaneDraft();
   [[nodiscard]] bool expressionLaneOpen() const noexcept { return expressionLaneVisible_; }
   [[nodiscard]] core::Result<void> closeExpressionLane();
+  // Collapses a technical lane (the project's lane presentation, undoable) or returns it to its
+  // automatic height. The SING shell's Phonemes lane hides a collapsed band's content.
+  [[nodiscard]] core::Result<void> setTechnicalLaneCollapsed(domain::TechnicalLane lane,
+                                                             bool collapsed);
   // The selected channel's curve edited in value space by a surface that draws its own graph (the
   // TUNE workspace). A press grabs the stored region-local point `grab` (Shift-style `erase` removes
   // it at once) or inserts one at `songTick`, snapped and clamped into the region as a lane click
@@ -480,6 +484,12 @@ public:
     // Fraction of the hosted lane height an expression curve spans (the classic lane uses
     // EditorSceneLayout::pitchAutomationVerticalScale). Paint and hit-testing share it.
     static constexpr double kExpressionVerticalScale = 0.84;
+    // The phoneme, unit and seam lanes, when the shell hosts them in its lane band in place of an
+    // expression curve (the SING shell's Phonemes tab). They stack from pianoBottom in that order,
+    // with laneHeight zero, and reach the same boundary, unit and seam gestures as ever.
+    double phonemeHeight{0.0};
+    double unitHeight{0.0};
+    double seamHeight{0.0};
     friend bool operator==(const HostedGeometry&, const HostedGeometry&) = default;
   };
   void setHostedGrid(std::optional<HostedGeometry> geometry) noexcept { hosted_ = geometry; }
@@ -489,12 +499,6 @@ public:
   // draft is restored to its state before the gesture). Used on Escape, surface switches, resizes
   // and capture loss.
   void cancelPointerGesture();
-  // True while one of the modal surfaces the classic painter draws over its own layout is open:
-  // voice browser, audio settings, replacement review, a tempo/meter or hint/replacement text input,
-  // or a track/region rename field. It describes the controller, not who paints: the SING shell
-  // presents every one of these itself (sheets and inline fields), so it no longer hands the frame
-  // to the classic painter for them. The classic painter draws them when the shell is disabled.
-  [[nodiscard]] bool legacyModalSurfaceActive() const;
   [[nodiscard]] std::uint64_t documentRevision() const noexcept;
   [[nodiscard]] bool pointerGestureActive() const noexcept;
   [[nodiscard]] core::Result<void> pointerDown(const PointerEvent& event);
@@ -514,6 +518,9 @@ public:
   void setPlaying(bool playing) noexcept { playing_ = playing; }
   void setLoopEnabled(bool enabled) noexcept { loopEnabled_ = enabled; }
   void setBounceFollowHost(bool followHost) noexcept { bounceFollowHost_ = followHost; }
+  // Switches a final bounce between the host's own timing and the score's tempo map, through the
+  // host's setBounceTiming callback (a plug-in's EXPORT workspace offers it).
+  [[nodiscard]] core::Result<void> toggleBounceTiming();
   void setRenderStatus(RenderStatusView status) noexcept;
   void setExportProgress(authoring::ExportProgress progress) noexcept {
     exportProgress_ = std::move(progress);

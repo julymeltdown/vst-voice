@@ -70,9 +70,6 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
   if (runtime.controller().voicebankBrowserVisible())
     runtime.keyDown({.key = native_ui::NativeKey::V});
   runtime.resize(1100.0, 720.0);
-  const native_ui::EditorSceneLayout layout;
-  const native_ui::EditorScenePainter painter;
-  const auto dockLeft = 1100.0 - layout.characterDockWidth;
   const auto check = [&](clap_editor::HostTimelineState host,
                           character::MouthShape mouth, bool performing) {
     runtime.setHostTimelineState(host);
@@ -92,70 +89,8 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
       std::cerr << " expected=" << character::mouthShapeName(mouth) << '/' << performing << '\n';
       return false;
     }
-    const auto& performance = *state.characterPerformance;
-    const auto overlay = layout.diagnosticHeight(!state.diagnostics.empty()) +
-                         layout.exportHeight(state.exportProgress.totalFiles != 0U);
-    const auto portrait = layout.characterDockPortraitBounds(
-        dockLeft, 720.0 - layout.statusHeight - overlay, 1100.0);
-    const auto top = layout.characterDockMetadataTop(portrait) +
-        layout.characterDockNameToRoleAdvance + layout.characterDockRoleToStateAdvance +
-        layout.characterDockStateToModeAdvance + layout.characterDockPerformanceAdvance;
-    ui::Rect mouthBounds{
-        dockLeft + layout.characterDockTextInsetX + layout.characterDockPerformanceBarWidth,
-        top - layout.characterDockMouthAssetHeight,
-        layout.characterDockMouthAssetWidth, layout.characterDockMouthAssetHeight};
-    // The dock draws the portrait of the state it is in; the package's states are distinct art.
-    const auto* portraitImage = artwork.portrait(state.characterState);
-    std::optional<ui::Rect> fittedPortrait;
-    if (portraitImage != nullptr && portraitImage->width() > 0U &&
-        portraitImage->height() > 0U) {
-      const auto imageWidth = static_cast<double>(portraitImage->width());
-      const auto imageHeight = static_cast<double>(portraitImage->height());
-      const auto scale = std::min(portrait.width / imageWidth,
-                                  portrait.height / imageHeight);
-      const auto width = imageWidth * scale;
-      const auto height = imageHeight * scale;
-      fittedPortrait = ui::Rect{portrait.x + (portrait.width - width) * 0.5,
-                                portrait.y + (portrait.height - height) * 0.5,
-                                width, height};
-    }
-    const auto placement = artwork.mouthPlacement();
-    if (placement && fittedPortrait) {
-      mouthBounds = ui::Rect{
-          fittedPortrait->x + placement->x * fittedPortrait->width,
-          fittedPortrait->y + placement->y * fittedPortrait->height,
-          placement->width * fittedPortrait->width,
-          placement->height * fittedPortrait->height};
-    }
-    native_ui::PixelSurface expected{1100U, 720U};
-    native_ui::RasterCanvas expectedCanvas{expected};
-    expected.clear(painter.theme().characterBackground);
-    if (placement && fittedPortrait) {
-      expectedCanvas.drawImageNearest(*fittedPortrait, *portraitImage,
-                                      layout.characterDockPortraitScale);
-    }
-    if (!performance.reducedMotion) {
-      if (const auto* asset = artwork.mouth(mouth); asset != nullptr) {
-        expectedCanvas.drawImageNearest(mouthBounds, *asset,
-                                        placement ? 1.0 : layout.characterDockPortraitScale);
-      } else {
-        const auto height = layout.characterDockPerformanceGlyphHeight *
-                            (0.2 + 0.8 * performance.energy);
-        expectedCanvas.fillRect({mouthBounds.x, top - height,
-                                  layout.characterDockPerformanceGlyphWidth, height},
-            performing ? painter.theme().accent : painter.theme().gridStrong);
-      }
-    }
-    for (auto y = static_cast<std::uint32_t>(mouthBounds.y);
-         y < static_cast<std::uint32_t>(mouthBounds.bottom()); ++y) {
-      for (auto x = static_cast<std::uint32_t>(mouthBounds.x);
-           x < static_cast<std::uint32_t>(mouthBounds.right()); ++x) {
-        if (actual.pixels()[y * 1100U + x] != expected.pixels()[y * 1100U + x]) {
-          std::cerr << "CLAP mouth artwork/fallback pixel mismatch at " << x << ',' << y << '\n';
-          return false;
-        }
-      }
-    }
+    // The runtime paints through the SING shell, whose singer ring draws this read model; the mouth
+    // pixels themselves are covered by test_design_character_surface.
     return true;
   };
   const auto firstVowel = project.tempoMap().secondsAt(time::Tick{500});
@@ -333,8 +268,8 @@ int main() {
   std::filesystem::remove_all(statusRoot);
   std::filesystem::remove_all(performanceRoot);
 
-  runtime.resize(480.0, 320.0);
-  const seam::native_ui::EditorSceneLayout compactLayout;
+  // Pitch points are edited in the SING shell's TUNE workspace, the one editor surface; the CLAP
+  // runtime reaches them through the same shell semantics a host's accessibility client uses.
   const auto compactTick = seam::time::Tick{480};
   if (!runtime.upsertPitchPoint(seam::domain::PitchAutomationPoint{
           .tick = compactTick,
@@ -342,43 +277,30 @@ int main() {
           .interpolation = seam::domain::CurveInterpolation::Linear})) {
     return 30;
   }
-  const auto compactProject = runtime.projectCopy();
-  const auto* compactLayoutRegion = compactProject.findRegion(runtime.regionId());
-  if (compactLayoutRegion == nullptr) return 31;
-  const auto compactTechnical = seam::native_ui::resolveTechnicalLaneHeights(
-      seam::native_ui::TechnicalLaneLayoutInput{
-          .presentation = compactProject.settings().technicalLanes,
-          .populated = {true, !compactLayoutRegion->unitSelectionOverrides.empty(),
-                        !compactLayoutRegion->seamOverrides.empty(), true},
-          .previewHeights = {compactLayout.phonemeLaneHeight,
-                             compactLayout.unitLaneHeight,
-                             compactLayout.seamLaneHeight,
-                             compactLayout.automationLaneHeight},
-          .contentTop = compactLayout.contentTop(),
-          .contentBottom = 320.0 - compactLayout.statusHeight,
-      });
-  const auto compactX = compactLayout.keyboardWidth +
-                        runtime.controller().pianoRoll().timeline().tickToPixel(
-                            compactTick);
-  const auto compactPitchTop = compactTechnical.pianoBottom +
-                               compactTechnical.values[0U] +
-                               compactTechnical.values[1U] +
-                               compactTechnical.values[2U];
-  const auto compactY = compactPitchTop +
-                        compactTechnical.values[3U] *
-                            compactLayout.automationCenterFraction;
-  runtime.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{compactX, compactY},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
-  runtime.pointerUp(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{compactX, compactY + 4.0},
-      .button = seam::native_ui::PointerButton::Left,
-      .modifiers = {},
-      .clickCount = 1,
-  });
+  const auto paintShellFrame = [&runtime](double width, double height) {
+    runtime.resize(width, height);
+    seam::native_ui::PixelSurface surface{static_cast<std::uint32_t>(width),
+                                          static_cast<std::uint32_t>(height)};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0};
+    runtime.paint(canvas);
+  };
+  // The voicebank browser opened above is modal; close it before changing workspace.
+  if (runtime.controller().voicebankBrowserVisible())
+    runtime.keyDown({.key = seam::native_ui::NativeKey::V});
+  paintShellFrame(960.0, 600.0);
+  if (const auto tune = runtime.dispatchAccessibility("shell.workspace.tune",
+                                                      seam::native_ui::SemanticAction::Activate);
+      !tune) {
+    std::cerr << "TUNE workspace refused: " << tune.error().message << '\n';
+    return 31;
+  }
+  paintShellFrame(960.0, 600.0);
+  const auto pointId = "shell.tune.pitch.point." + std::to_string(compactTick.value());
+  if (const auto stepped = runtime.dispatchAccessibility(pointId, seam::native_ui::SemanticAction::Increment);
+      !stepped) {
+    std::cerr << "TUNE pitch point refused: " << stepped.error().message << '\n';
+    return 32;
+  }
   const auto compactAfter = runtime.projectCopy();
   const auto* compactRegion = compactAfter.findRegion(runtime.regionId());
   if (compactRegion == nullptr) return 31;
@@ -390,6 +312,9 @@ int main() {
       std::abs(compactPoint->cents) < 1.0F) {
     return 32;
   }
+  if (!runtime.dispatchAccessibility("shell.workspace.sing",
+                                     seam::native_ui::SemanticAction::Activate)) return 31;
+  runtime.resize(480.0, 320.0);
 
   if (compactRegion->notes.empty() ||
       !runtime.openSampleMicroscope(seam::domain::PhonemeKey{
@@ -419,15 +344,16 @@ int main() {
     return 34;
   }
   const auto microscopeAccessibility = runtime.accessibilitySnapshot();
-  const auto microscopePanel = std::find_if(
-      microscopeAccessibility.children.begin(),
-      microscopeAccessibility.children.end(),
-      [](const auto& child) { return child.id == "microscope.panel"; });
-  if (microscopePanel == microscopeAccessibility.children.end() ||
-      !seam::native_ui::EditorSemanticTree::containsId(
-          *microscopePanel, "microscope.close") ||
-      seam::native_ui::EditorSemanticTree::containsId(
-          *microscopePanel, "toolbar.controls")) {
+  // The shell presents the microscope as a modal sheet: its panel and the microscope's own controls
+  // are published, and nothing of the background toolbar is.
+  const auto published = [&](std::string_view id) {
+    return std::any_of(microscopeAccessibility.children.begin(),
+                       microscopeAccessibility.children.end(), [id](const auto& child) {
+                         return seam::native_ui::EditorSemanticTree::containsId(child, id);
+                       });
+  };
+  if (!published("shell.overlay.microscope.panel") || !published("microscope.close") ||
+      published("toolbar.controls")) {
     return 35;
   }
   if (!runtime.dispatchAccessibility(

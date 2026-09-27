@@ -325,12 +325,12 @@ core::Result<void> NativeEditorApp::initialize() {
     lastError_ = persistedSettings.error().message;
   }
 
-  if (config_.designShell) {
-    if (config_.designPreferences)
-      shell_.activate(native_ui::design::locateDesignAssets(), *config_.designPreferences);
-    else
-      shell_.activate();
-  }
+  if (config_.designPreferences)
+    shell_.activate(native_ui::design::locateDesignAssets(), *config_.designPreferences);
+  else if (config_.persistDesignPreferences)
+    shell_.activate();
+  else
+    shell_.activate(native_ui::design::locateDesignAssets(), native_ui::design::DesignPreferences{});
   shell_.setRepaintCallback([this] {
     requestWindowRepaint();
   });
@@ -1766,8 +1766,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   authoring_->controller().rebuildAccessibilityTree();
   shellPresentedFrame_ = shellFrame && shell_.paint(canvas, authoring_->controller(), state, tick);
-  if (!shellPresentedFrame_)
-    painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
+  // The shell is the only editor surface; without the vector backend the window says so.
+  if (!shellPresentedFrame_) native_ui::paintEditorUnavailable(canvas);
   else
     shell_.rebuildSemantics(authoring_->controller(), state);
 }
@@ -1824,6 +1824,9 @@ void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
       return;
     }
   }
+  // Without the vector backend the window shows a notice, not an editor: no key edits a score
+  // nobody can see. Application commands above still run.
+  if (!shell_.available()) return;
   record(authoring_->controller().keyDown(event));
 }
 void NativeEditorApp::textComposition(

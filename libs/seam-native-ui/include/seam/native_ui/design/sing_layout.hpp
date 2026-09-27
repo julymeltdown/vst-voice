@@ -43,7 +43,7 @@ struct SingLayout final {
   bool knobsInOneRow{false};
 
   // Tool strip controls inside tools.
-  ui::Rect classicToggle, trackLabel, gridLabel;
+  ui::Rect trackLabel, gridLabel;
   // The protagonist's header avatar (section 8.4): a 28-point circle with a state ring, placed in
   // the header only where the approved header regions leave room for it, so it never overlaps the
   // wordmark, the workspace tabs or the mode switch. Zero when they do not, which is the 1440-wide
@@ -84,5 +84,14 @@ inline constexpr double kSingHeaderAvatar = 28.0;
 // inspectorOpen only matters for the compact presentations; the full rack has no inspector.
 [[nodiscard]] SingLayout solveSingLayout(double width, double height,
                                          bool inspectorOpen = false) noexcept;
+
+// The eight lane tabs (seven expression channels and Phonemes) share the tab row with the Review
+// button: a tab is at most 104 points, and never so wide that the last one reaches the button.
+[[nodiscard]] inline double singLaneTabWidth(const SingLayout& l) noexcept {
+  const auto right = l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x - 8.0 : l.laneTabs.right();
+  const auto fit = (right - l.laneTabs.x) / 8.0 - 4.0;
+  const auto width = l.laneTabs.width / 9.0 < fit ? l.laneTabs.width / 9.0 : fit;
+  return width < 0.0 ? 0.0 : width > 104.0 ? 104.0 : width;
+}
 
 }  // namespace seam::native_ui::design

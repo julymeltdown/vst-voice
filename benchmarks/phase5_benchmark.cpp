@@ -76,6 +76,15 @@ std::shared_ptr<const seam::rendering::PlaybackTimeline> makeTimeline() {
   });
   return added ? timeline : nullptr;
 }
+// The editor surface, as a host draws it: the SING shell, or the notice where it cannot present.
+void paintEditor(seam::native_ui::design::SingShell& shell,
+                 seam::native_ui::NativeEditorController& controller,
+                 seam::native_ui::RasterCanvas& canvas) {
+  if (!shell.prepareFrame(controller, canvas.logicalWidth(), canvas.logicalHeight()) ||
+      !shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick()))
+    seam::native_ui::paintEditorUnavailable(canvas);
+}
+
 
 // ---- Design shell frame pipeline (redesign plan section 10) ------------------------------------
 //
@@ -324,7 +333,9 @@ int main() {
   seam::application::EditorSession session{makeProject(factory, regionId)};
   seam::native_ui::NativeEditorController controller{session, factory, regionId};
   controller.resize(1280.0, 720.0);
-  seam::native_ui::EditorScenePainter painter;
+  seam::native_ui::design::SingShell shell;
+  shell.activate(seam::native_ui::design::locateDesignAssets(),
+                 seam::native_ui::design::DesignPreferences{});
   seam::native_ui::PixelSurface surface{1280U, 720U};
   auto textEngineResult = seam::text::TextEngine::createSystem();
   auto* textEngine = textEngineResult ? textEngineResult.value().get() : nullptr;
@@ -335,7 +346,7 @@ int main() {
   paintSamples.reserve(paintIterations);
   for (std::size_t iteration = 0U; iteration < paintIterations; ++iteration) {
     const auto paintStart = std::chrono::steady_clock::now();
-    painter.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    paintEditor(shell, controller, canvas);
     paintSamples.push_back(std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - paintStart).count());
   }

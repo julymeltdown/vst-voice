@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
@@ -72,7 +73,7 @@ TEST_CASE("native measured dynamics follows rendered frame windows channels and 
   if (const auto* path = std::getenv("SEAM_MEASURED_DYNAMICS_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(path));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(path));
   }
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Plus}));
   CHECK(controller.sceneState().replacementReview.dynamicsPlot->measured.empty()); CHECK(wait());

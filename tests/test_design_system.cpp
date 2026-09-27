@@ -378,7 +378,7 @@ TEST_CASE("the in-app contrast override wins over the system and can be returned
   CHECK(shell.contrast() == Contrast::Standard);
 }
 
-TEST_CASE("the design shell is inactive until a production host activates it") {
+TEST_CASE("the design shell is inactive until a host activates it") {
   SingShell shell;
   CHECK(!shell.active());
   CHECK(!shell.enabled());

@@ -176,8 +176,9 @@ public:
       std::string_view id, std::string_view value);
 
   void setRepaintCallback(std::function<void()> callback);
-  // Presents the EMO/SCENE SING workspace in this editor. The shipping plug-in enables it;
-  // library tests keep the classic editor and never read the user's saved design preferences.
+  // The EMO/SCENE SING shell is this editor's only surface and presents from construction with the
+  // default look. The shipping plug-in calls this to read and write the user's saved look instead;
+  // tests never do, so they never observe the user's preferences.
   void activateDesignShell();
   // Test and capture entry point: an explicit preference set, never the saved one.
   void activateDesignShell(native_ui::design::DesignPreferences preferences);
@@ -399,19 +400,9 @@ private:
   void refreshAllVoicebankResolutionsLocked();
   void rebuildVoicebankCardsLocked();
   void refreshLiveResourceLocked();
-  void rebuildTechnicalModelsLocked();
   [[nodiscard]] phonemizer::Result phonemesLocked() const;
   [[nodiscard]] core::Result<native_ui::SampleMicroscopeData> loadSampleMicroscope(
       domain::PhonemeKey key);
-  [[nodiscard]] const ui::PhonemeVisual* phonemeVisualAt(
-      ui::Point point) const noexcept;
-  [[nodiscard]] const ui::UnitLaneVisual* unitVisualAt(
-      ui::Point point) const noexcept;
-  [[nodiscard]] std::optional<time::Tick> pitchPointAt(
-      ui::Point point, double tolerance = 8.0) const noexcept;
-  [[nodiscard]] time::Microseconds microsecondOffsetAt(
-      domain::NoteId noteId, double x) const noexcept;
-  void paintPhase12BOverlay(native_ui::RasterCanvas& canvas) noexcept;
   [[nodiscard]] core::Result<void> bindVoicebankLocked(
       const voicebank::VoicebankCandidate& candidate);
   void publishPreviewFromAuthoring();
@@ -429,7 +420,6 @@ private:
   authoring::VoicebankSession& voicebankSession_;
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
-  native_ui::EditorScenePainter painter_;
   native_ui::design::SingShell shell_;
   // Whether the last paint was the design shell's frame (its damage is then meaningful).
   bool shellPresentedFrame_{false};
@@ -467,12 +457,6 @@ private:
   std::function<core::Result<bool>(const authoring::InterchangeExportDraft&)>
       interchangeExportReviewHandoff_;
   InterchangeErrorHandoff interchangeErrorHandoff_;
-  ui::PhonemeLaneModel phonemeLane_;
-  ui::UnitLaneModel unitLane_;
-  std::optional<domain::PhonemeKey> selectedUnitKey_;
-  std::optional<domain::PhonemeKey> draggingPhonemeKey_;
-  bool draggingPhonemeStart_{false};
-  std::optional<time::Tick> draggingPitchTick_;
   HostTimelineState hostTimelineState_{};
   // Everything this host has actually reported: tempo history, meter segments, loop state
   // and sample rate. Follow Host rendering is authorized against this capture's coverage

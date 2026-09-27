@@ -1,6 +1,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/audio_device.hpp"
@@ -138,6 +139,15 @@ bool writeSummary(const std::filesystem::path& path,
   return static_cast<bool>(stream);
 }
 
+// The editor surface, as a host draws it: the SING shell, or the notice where it cannot present.
+void paintEditor(seam::native_ui::design::SingShell& shell,
+                 seam::native_ui::NativeEditorController& controller,
+                 seam::native_ui::RasterCanvas& canvas) {
+  if (!shell.prepareFrame(controller, canvas.logicalWidth(), canvas.logicalHeight()) ||
+      !shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick()))
+    seam::native_ui::paintEditorUnavailable(canvas);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -205,15 +215,17 @@ int main(int argc, char** argv) {
   result = controller.commitTextComposition(U"継ぎ目");
   if (!result) return 5;
 
-  seam::native_ui::EditorScenePainter painter;
+  seam::native_ui::design::SingShell shell;
+  shell.activate(seam::native_ui::design::locateDesignAssets(),
+                 seam::native_ui::design::DesignPreferences{});
   seam::native_ui::PixelSurface oneX{1440U, 900U};
   seam::native_ui::RasterCanvas oneXCanvas{oneX, 1.0};
-  painter.paint(oneXCanvas, controller.pianoRoll(), controller.sceneState());
+  paintEditor(shell, controller, oneXCanvas);
   if (!oneX.writePpm(output / "phase5-editor-1x.ppm")) return 6;
 
   seam::native_ui::PixelSurface twoX{2880U, 1800U};
   seam::native_ui::RasterCanvas twoXCanvas{twoX, 2.0};
-  painter.paint(twoXCanvas, controller.pianoRoll(), controller.sceneState());
+  paintEditor(shell, controller, twoXCanvas);
   if (!twoX.writePpm(output / "phase5-editor-2x.ppm")) return 6;
 
   auto timeline = makeTimeline();
