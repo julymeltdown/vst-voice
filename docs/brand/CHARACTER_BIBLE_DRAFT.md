@@ -1,14 +1,15 @@
 # Character 01 Bible
 
 Status: living document. It describes the protagonist as she ships in the EMO/SCENE design shell
-at master `74a59b32` (2026-09-27), and her lasting product rules. The file keeps its `_DRAFT`
+at master `1e424fd1` (2026-09-28), and her lasting product rules. The file keeps its `_DRAFT`
 name because other documents link to it by that name (`docs/design/SEAM_VISUAL_SYSTEM_OVERHAUL_PLAN_2026-09-25.md`
 and the phase `FILE_TREE.txt` listings). The draft label also still describes her legal status:
 "Character 01" is an internal name, and every runtime asset is development art that is not cleared
 for release (§9).
 
-Since `74a59b32` (branch `codex/review-round5-fixes`): a new project's display mode defaults to
-Full, and the SINGER menu has a Full/Minimal/Off switch.
+At this snapshot a new project's display mode defaults to Full and the SINGER menu has a
+Full/Minimal/Off switch. Character Package v4 supplies the layered Stage, dedicated poses and
+per-mode ring art; plan §9 motion work is in progress on a separate branch.
 
 ## 1. Product role
 
@@ -68,8 +69,9 @@ EMO and SCENE are styling of the same person; the design mode chooses which set 
   with hot-pink and cyan streaks through her hair beside the pale one, stacked neon bead bracelets
   (pink, cyan, lime) on her wrists, and a pink and cyan rim light.
 
-A package without an outfit for the current mode draws its shared set. The look's own portrait,
-Stage figure, wordmark and splash key art live in `assets/ui-design/<mode>/`. The EMO and SCENE
+A package without an outfit for the current mode draws its shared set. The look's wordmark and
+splash key art live in `assets/ui-design/<mode>/`; its portrait and Stage image are fallbacks when
+the package lacks their v4 surfaces. The EMO and SCENE
 splashes show her seated with her knees drawn up, with a clear area on the left for text.
 
 ## 4. States
@@ -106,12 +108,12 @@ Every surface is described with its geometry in
   measured energy while she sings, by render progress while rendering, and fully when audio is
   ready; amber for Warning and red for Error.
 - **VOICE hero ring:** she listens to the audition, and the ring follows its measured level.
-- **Stage:** the look's full-body figure faintly behind the notes (16% at rest, 6% when notes or
+- **Stage:** the package's layered full-body figure (or the look-art fallback) faintly behind the notes (16% at rest, 6% when notes or
   the pointer reach her), only with the full rack, never over editing and never clickable.
 - **Header avatar:** a 28-point circle with a state ring where the header has room.
 - **Empty project:** the mode's splash with "Double-click the grid to write the first note." in its
   clear area; on a small grid, her portrait with the same line.
-- **Error toast:** a crop of her head from the error portrait, with the reason, for a failed render
+- **Error toast:** her error portrait crop, with the reason, for a failed render
   or a missing voicebank.
 - **About sheet:** the mode's splash behind the product name, version and build.
 
@@ -135,14 +137,15 @@ The `C` key cycles Full → Minimal → Off while the score has focus, and the S
 is a Full / Minimal / Off switch with the current mode selected. A new project defaults to Full
 (it defaulted to Minimal at `74a59b32`).
 
-Reduce Motion stops the blink, the breathing and the spinner and makes the Stage fade immediate;
-her state still changes. High Contrast turns the Stage off and removes glows. A static mouth under
-Reduce Motion is **Not shipped**: the singing mouth still follows the performance.
+Reduce Motion stops the blink, the breathing and the spinner, makes the Stage fade immediate, and
+holds a static singing mouth; her state still changes. High Contrast turns the Stage off and
+removes glows (`libs/seam-native-ui/src/design/character_surface.cpp`,
+`tests/test_design_character_surface.cpp`).
 
 ## 7. Art assets and their pipeline
 
-The character package is `assets/character-01/`. Its `manifest.json` is schema 2 (the
-performance schema), version 0.3.0, `developmentOnly: true`:
+The character package is `assets/character-01/`. Its `manifest.json` is schema 4 and remains
+`developmentOnly: true`. It retains the schema-two PPM entries for compatibility and adds:
 
 | Entry | Format |
 |---|---|
@@ -151,9 +154,14 @@ performance schema), version 0.3.0, `developmentOnly: true`:
 | `mouthPlacement` | The sprite's box, normalized to the portrait |
 | `eyes` | Per-state eye boxes, normalized to the portrait (the error pose declares one) |
 | `outfits.scene` | The SCENE set's own states, mouths and placement in `runtime/scene/`; it inherits the shared eye boxes because the poses match |
+| `portraits.<mode>.states` | Six dedicated 512×512 QOI ring portraits per mode; separate 64×64 QOI avatars, mouths and eye boxes |
+| `stage.<mode>` | Separate QOI body, head, hair-front and open/half/closed eye layers, composed into the Stage |
+| `poses.<mode>` | Separate QOI empty, error, complete and listening poses; the complete pose appears on committed EXPORT completion |
 
 The loader (`libs/seam-character/src/character.cpp`) accepts status-only schema 1, performance
-schema 2 and resource-bound schema 3, which binds the package to an exact singer resource identity.
+schema 2, resource-bound schema 3 (exact singer resource identity), and schema 4. Older schema-two
+packages still load and paint their PPM states. QOI decoding is covered by
+`tests/test_character_state_art.cpp`.
 A refused package is treated as absent with its reason kept, and the shell then draws the look's own
 portrait; it never mixes package art with look art in one surface. Decoding is lazy and per state,
 and changing the outfit drops the decoded art. The shell finds the package through
@@ -183,10 +191,10 @@ Masters live in `source/states/` and `source/states/scene/`, with their hashes i
 (in `seam_design_character_surface_tests`) and the asset gate `scripts/verify_ui_design_assets.py`
 (`seam_ui_design_assets`) check the result.
 
-**Not shipped** from the redesign plan §8: Character Package v4 with layered stage art, separate
-eye open/half/closed sprites and separate seated, head-in-hand, soft-smile and listening pose
-files; QOI assets; 512×512 ring portraits; and a dedicated 64×64 avatar asset. The shipped surfaces
-crop the six state portraits and the look art instead.
+The v4 derivatives are built by `scripts/build_character_state_art.py`; source masters and
+provenance are recorded in `assets/character-01/PROVENANCE.md`. The manifest and
+`tests/test_design_character_surface.cpp` are the source and surface contracts. These assets are
+development art, not commercial release clearance.
 
 ## 8. Brand and provenance rules
 
