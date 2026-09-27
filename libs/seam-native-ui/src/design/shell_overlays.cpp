@@ -646,6 +646,17 @@ bool TimeMapOverlay::key(NativeEditorController& controller, std::string_view fo
                          const KeyEvent& event) const {
   switch (event.key) {
     case NativeKey::Enter:
+      // As the classic panel bound Enter: a focused row is selected and then edited, a focused
+      // action runs, and with neither the selected event is edited.
+      if (focusedId.starts_with("time-map-row.")) {
+        if (perform(controller, focusedId, SemanticAction::Activate))
+          static_cast<void>(controller.timeMapPanelAction(2U));
+      } else if (focusedId.starts_with("time-map-action.")) {
+        static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+      } else {
+        static_cast<void>(controller.timeMapPanelAction(2U));
+      }
+      return true;
     case NativeKey::Space:
       static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
       return true;

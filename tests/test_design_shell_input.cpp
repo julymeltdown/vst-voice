@@ -2444,6 +2444,14 @@ struct OverlayFixture final {
     return out;
   }
 
+  // The id the shell reports as focused now, or an empty string.
+  std::string focusedId() {
+    controller.rebuildAccessibilityTree();
+    shell.rebuildSemantics(controller, controller.sceneState());
+    const auto* focused = shell.accessibilityTree().focusedNode();
+    return focused == nullptr ? std::string{} : focused->id;
+  }
+
   // The centre of the shell's own overlap badge for the first overlapping note, which is what the
   // creator clicks and what the detail popover anchors to.
   ui::Point badgeCenter(double width = 1600.0, double height = 900.0) {
@@ -2637,6 +2645,44 @@ TEST_CASE("the time map is a shell popover whose rows and eight actions run the 
   if (!added) throw test::Failure{"add tempo refused: " + added.error().message};
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
   CHECK(native_ui::design::SingShell::legacySurfaceRequired(f.controller.sceneState()));
+}
+
+TEST_CASE("an open overlay holds the keyboard: its first control is focused and Tab walks it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  const auto isControl = [](const std::string& id) {
+    return id.starts_with("time-map-row.") || id.starts_with("time-map-action.");
+  };
+  // Opening the popover gives its first control (the first event row) the keyboard.
+  const auto first = f.focusedId();
+  if (first != "time-map-row.0") throw test::Failure{"opened time map focuses " + first};
+  // Tab moves through the card's own controls, never out of it and never onto the card itself.
+  std::set<std::string> visited{first};
+  for (int i = 0; i < 3; ++i) {
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+    const auto id = f.focusedId();
+    if (!isControl(id)) throw test::Failure{"Tab moved focus to " + id};
+    visited.insert(id);
+  }
+  CHECK(visited.size() == 4U);
+  // Enter on a focused action runs that action only: Refresh keeps the list and opens no field.
+  for (int i = 0; i < 32 && f.focusedId() != "time-map-action.4"; ++i)
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+  CHECK(f.focusedId() == "time-map-action.4");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.sceneState().timeMapVisible);
+  CHECK(!f.controller.sceneState().timeMapInputActive);
+  // Shift-Tab walks back; Enter on a focused row selects it and edits the selected event, as the
+  // classic panel bound Enter.
+  for (int i = 0; i < 32 && f.focusedId() != "time-map-row.0"; ++i)
+    CHECK(f.shell.handleShellKey(f.controller,
+                                 KeyEvent{.key = NativeKey::Tab, .modifiers = {.shift = true}}));
+  CHECK(f.focusedId() == "time-map-row.0");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.sceneState().timeMapInputActive);
 }
 
 TEST_CASE("the recovery support sheet lists the host's reports and selects one through the panel") {

@@ -3028,6 +3028,24 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         repaint();
         return true;
       }
+      // Tab walks the overlay's own controls, as the classic panels walked theirs; nothing under
+      // the card is reachable, and the card itself is skipped.
+      if (event.key == NativeKey::Tab && !event.modifiers.primaryShortcut() &&
+          !event.modifiers.alt) {
+        refreshSemantics(controller);
+        const auto panelId = std::string{overlay->idPrefix()} + "panel";
+        for (std::size_t step = 0U; step < 256U; ++step) {
+          if (!semantics_.focusNext(event.modifiers.shift)) break;
+          const auto* node = semantics_.focusedNode();
+          if (node == nullptr) break;
+          if (node->id == panelId || !overlayPublishes(controller, node->id)) continue;
+          takeSemanticFocus(controller, node->id);
+          break;
+        }
+        refreshSemantics(controller);
+        repaint();
+        return true;
+      }
       refreshSemantics(controller);
       const auto* focused = semantics_.focusedNode();
       const std::string id = focused == nullptr ? std::string{} : focused->id;
@@ -3215,7 +3233,11 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // Shell focus lasts only until the controller's own focus moves (a click on a note, a controller
   // keyboard command); then the controller's focus is the one reported.
   const std::string legacyFocusId = legacyFocus == nullptr ? std::string{} : legacyFocus->id;
-  if (!semanticFocus_.empty() && legacyFocusId != semanticFocusBaseline_) semanticFocus_.clear();
+  // While an overlay presents, the controller's own focus moves inside a tree the card replaces
+  // (the time map's rows, a review's buttons), so it never takes the keyboard from the card.
+  const auto overlayUp = activeOverlay(controller) != nullptr;
+  if (!semanticFocus_.empty() && legacyFocusId != semanticFocusBaseline_ && !overlayUp)
+    semanticFocus_.clear();
   std::string focusedId = semanticFocus_;
   SemanticNode root{.id = "shell",
                     .role = SemanticRole::Window,
@@ -3689,7 +3711,32 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       return std::find(published.begin(), published.end(), node.id) == published.end() &&
              node.id != "shell.status" && node.id != "shell.render-progress";
     });
+    // The card always holds the keyboard: when it opens, or when the control that had focus left
+    // it, its first control takes focus, so Enter and Space act on something the creator can see.
+    const auto panelId = std::string{overlay->idPrefix()} + "panel";
+    const auto holdsFocus =
+        !semanticFocus_.empty() && semanticFocus_ != panelId &&
+        std::find(published.begin(), published.end(), semanticFocus_) != published.end();
+    if (overlay->kind() != presentedOverlay_ || !holdsFocus) {
+      std::string first;
+      for (const auto& node : nodes) {
+        if (node.id == panelId) continue;
+        const auto activatable = node.enabled && std::find(node.actions.begin(), node.actions.end(),
+                                                           SemanticAction::Activate) !=
+                                                     node.actions.end();
+        if (first.empty() || activatable) first = node.id;
+        if (activatable) break;
+      }
+      if (!first.empty() && (overlay->kind() != presentedOverlay_ || !holdsFocus)) {
+        semanticFocus_ = first;
+        semanticFocusBaseline_ = legacyFocusId;
+        focusedId = first;
+      }
+    }
+    presentedOverlay_ = overlay->kind();
     for (auto& node : nodes) children.push_back(std::move(node));
+  } else {
+    presentedOverlay_ = OverlayKind::None;
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.

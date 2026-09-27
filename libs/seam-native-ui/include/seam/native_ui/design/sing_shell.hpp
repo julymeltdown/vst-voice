@@ -409,6 +409,9 @@ private:
   std::unique_ptr<ShellOverlay> overlapOverlay_{makeOverlapDetailOverlay()};
   std::unique_ptr<ShellOverlay> diagnosticsOverlay_{makeDiagnosticsOverlay()};
   bool diagnosticsOpen_{false};
+  // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
+  // gives its first control the keyboard.
+  OverlayKind presentedOverlay_{OverlayKind::None};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
   // The character artwork and its animation, both driven by the read models above.
