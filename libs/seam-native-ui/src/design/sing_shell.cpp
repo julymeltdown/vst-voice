@@ -962,6 +962,11 @@ void SingShell::invalidateLayers() noexcept {
   lastDamage_ = FrameDamage::everything();
 }
 
+void SingShell::invalidateBackgroundLayers() noexcept {
+  layers_.invalidateBackground();
+  lastDamage_ = FrameDamage::everything();
+}
+
 std::uint64_t SingShell::backgroundKey(const DesignTokens& tokens, const PixelSurface& surface,
                                        double scale) const noexcept {
   // The plan's invalidation rule for the background (window size, scale, look, contrast), spelled

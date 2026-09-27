@@ -139,6 +139,7 @@ struct DesignCase final {
   std::string name;
   std::string mode;
   double budgetMs{0.0};
+  std::string invalidation;
   std::vector<double> samples;
   std::vector<double> stateSamples;
   std::string layers;  // which layers the last sampled frame rasterized, when known
@@ -260,9 +261,15 @@ DesignReport runDesignShellBenchmark() {
       model.rebuildIndex();
     };
 
-    // Cold: every layer from nothing, as after a resize or a mode switch.
+    // Cold: every layer including L0's background painter, as on the first paint.
     resetView(100.0);
-    run(DesignCase{.name = "cold-full-frame", .mode = modeName, .budgetMs = 14.0}, false,
+    run(DesignCase{.name = "cold-full-frame", .mode = modeName, .budgetMs = 14.0,
+                   .invalidation = "L0 background painter plus all upper layers"}, false,
+        [&](std::size_t) { rig.shell.invalidateBackgroundLayers(); });
+    // A full upper-layer composition can reuse L0's retained background pixels.
+    run(DesignCase{.name = "retained-background-invalidation", .mode = modeName,
+                   .budgetMs = 14.0,
+                   .invalidation = "L0 snapshot retained; upper layers recomposed"}, false,
         [&](std::size_t) { rig.shell.invalidateLayers(); });
     // Scroll and zoom: the grid and the notes move, the background stays.
     run(DesignCase{.name = "scroll-zoom", .mode = modeName, .budgetMs = 8.0}, false,
@@ -306,7 +313,8 @@ DesignReport runDesignShellBenchmark() {
     report.pass = report.pass && c.pass();
     out << "      {\"case\": \"" << c.name << "\", \"mode\": \"" << c.mode << "\", \"p50Ms\": "
         << q.p50 << ", \"p95Ms\": " << q.p95 << ", \"maxMs\": " << q.max
-        << ", \"budgetP95Ms\": " << c.budgetMs << ", \"pass\": " << (c.pass() ? "true" : "false")
+        << ", \"budgetP95Ms\": " << c.budgetMs << ", \"invalidation\": \"" << c.invalidation
+        << "\", \"pass\": " << (c.pass() ? "true" : "false")
         << ", \"lastFrameLayers\": \"" << c.layers << "\", \"visibleNotes\": " << c.visibleNotes
         << ", \"hostStateP95Ms\": " << state.p95 << "}" << (i + 1U < cases.size() ? "," : "")
         << "\n";

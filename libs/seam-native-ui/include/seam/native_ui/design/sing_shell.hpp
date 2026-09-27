@@ -356,6 +356,7 @@ public:
   }
   // Forgets every cached layer, so the next frame is composed from nothing.
   void invalidateLayers() noexcept;
+  void invalidateBackgroundLayers() noexcept;
   // A host whose presenter keeps the painted surface between frames (the AppKit window and the
   // CLAP view do) says so here. A frame that changes only dynamic items then restores and redraws
   // just the damaged rectangles of that surface instead of writing all of it. The shell still

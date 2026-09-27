@@ -282,6 +282,11 @@ void LayerCache::invalidate() noexcept {
   lastTarget_ = nullptr;
 }
 
+void LayerCache::invalidateBackground() noexcept {
+  invalidate();
+  backgroundSnapshotValid_ = false;
+}
+
 void LayerCache::release() noexcept {
   invalidate();
   backgroundSnapshotValid_ = false;

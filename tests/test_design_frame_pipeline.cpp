@@ -463,6 +463,29 @@ TEST_CASE("the layer cache stays within the plan's 80 MB at 1440x900 on a 2x dis
   CHECK(p.cached.layerCacheBytes() <= 80U * 1024U * 1024U);
 }
 
+TEST_CASE("background invalidation repaints L0 while upper-layer invalidation reuses it") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  using native_ui::paint::BackgroundLayer;
+  using native_ui::paint::LayerCache;
+  using native_ui::paint::RecordingCanvas;
+  LayerCache cache;
+  PixelSurface surface{64U, 48U};
+  RasterCanvas raster{surface, 1.0};
+  RecordingCanvas frame{64.0, 48.0, 1.0,
+                        [](std::string_view, const native_ui::paint::TextStyle&) { return 0.0; }};
+  int paints = 0;
+  BackgroundLayer background{.key = 17U, .clear = native_ui::Color{12, 10, 14, 255},
+                             .paint = [&](native_ui::paint::Canvas2D&) { ++paints; }};
+  static_cast<void>(cache.compose(raster, background, frame));
+  CHECK(paints == 1);
+  cache.invalidate();
+  static_cast<void>(cache.compose(raster, background, frame));
+  CHECK(paints == 1);
+  cache.invalidateBackground();
+  static_cast<void>(cache.compose(raster, background, frame));
+  CHECK(paints == 2);
+}
+
 TEST_CASE("a glowless recording keeps a raster drawing's glow off when it replays") {
   using native_ui::paint::Path;
   using native_ui::paint::RecordingCanvas;
