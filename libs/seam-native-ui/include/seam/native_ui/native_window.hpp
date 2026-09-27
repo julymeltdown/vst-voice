@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/frame_damage.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 
 #include <chrono>
@@ -75,6 +76,13 @@ class INativeWindowClient {
 public:
   virtual ~INativeWindowClient() = default;
   virtual void paint(RasterCanvas& canvas) noexcept = 0;
+  // Paints a frame into a surface the window keeps between frames and reports what changed since
+  // the previous frame, in logical points, so the window invalidates only that. The default paints
+  // everything; a presenter without damage support calls paint() and presents the whole surface.
+  [[nodiscard]] virtual FrameDamage paintFrame(RasterCanvas& canvas) noexcept {
+    paint(canvas);
+    return FrameDamage::everything();
+  }
   virtual void resized(double logicalWidth, double logicalHeight,
                        double scale) noexcept = 0;
   virtual void pointerDown(const PointerEvent& event) noexcept = 0;

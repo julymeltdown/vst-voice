@@ -120,9 +120,17 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   const auto shellFrame =
       shell_.prepareFrame(*controller_, canvas.logicalWidth(), canvas.logicalHeight());
   const auto state = sceneState();
-  if (shellFrame && shell_.paint(canvas, *controller_, state, controller_->playheadTick())) return;
+  shellPresentedFrame_ =
+      shellFrame && shell_.paint(canvas, *controller_, state, controller_->playheadTick());
+  if (shellPresentedFrame_) return;
   // The shell is the only editor surface; without the vector backend the view says so.
   native_ui::paintEditorUnavailable(canvas);
+}
+
+native_ui::FrameDamage EditorRuntime::paintFrame(native_ui::RasterCanvas& canvas) noexcept {
+  paint(canvas);
+  std::lock_guard lock(mutex_);
+  return shellPresentedFrame_ ? shell_.lastFrameDamage() : native_ui::FrameDamage::everything();
 }
 
 }  // namespace seam::clap_editor
