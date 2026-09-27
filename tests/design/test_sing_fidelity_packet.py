@@ -68,6 +68,24 @@ def semantic_result(semantic, geometry, notes=6, state="ready"):
     return PACKET.check_semantics(semantic, geometry, expected_notes=notes, render_state=state)
 
 
+class FontIdentityTests(unittest.TestCase):
+    def test_effective_runtime_faces_and_selected_directory_override_inventory(self):
+        with tempfile.TemporaryDirectory() as root:
+            selected = Path(root)
+            face = selected / "Actual.ttf"
+            face.write_bytes(b"selected font bytes")
+            runtime = {"selectedDirectory": root, "roles": {
+                "Ui": {"postScriptName": "ActualFace", "file": str(face), "source": "bundled"},
+                "Mono": {"postScriptName": "SystemMono", "file": "", "source": "system"}},
+                "refused": ["Other.ttf: SHA-256 differs from the manifest"]}
+            result = PACKET.font_identity(selected / "app", runtime)
+            self.assertEqual(result["selectedDirectory"], root)
+            self.assertEqual(result["effectiveRoles"]["Ui"]["postScriptName"], "ActualFace")
+            self.assertEqual(result["effectiveRoles"]["Ui"]["sha256"], PACKET.sha256_file(face))
+            self.assertEqual(result["effectiveRoles"]["Mono"]["sha256"], "unavailable")
+            self.assertEqual(result["refused"], runtime["refused"])
+
+
 class GeometryCheckTests(unittest.TestCase):
     def test_the_canonical_snapshot_passes(self):
         result = geometry_result(canonical_geometry())

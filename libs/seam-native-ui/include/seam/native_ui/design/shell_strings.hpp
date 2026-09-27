@@ -128,6 +128,22 @@ public:
 
 private:
   const ShellStringTable* previous_;
+  const ShellStringTable* previousOverride_;
+  bool previousOverrideActive_;
+};
+
+// Overrides the process-wide table for one shell operation, including an explicit English
+// override when table is null. Nested scopes restore the previous shell's table.
+class ScopedActiveShellStrings final {
+public:
+  explicit ScopedActiveShellStrings(const ShellStringTable* table) noexcept;
+  ~ScopedActiveShellStrings();
+  ScopedActiveShellStrings(const ScopedActiveShellStrings&) = delete;
+  ScopedActiveShellStrings& operator=(const ScopedActiveShellStrings&) = delete;
+
+private:
+  const ShellStringTable* previous_;
+  bool previousActive_;
 };
 
 }  // namespace seam::native_ui::design

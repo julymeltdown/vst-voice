@@ -847,6 +847,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
 
 bool SingShell::prepareFrame(NativeEditorController& controller, double logicalWidth,
                              double logicalHeight) {
+  const ScopedActiveShellStrings activeStrings{strings_.get()};
   if (controllerSerial_ != controller.instanceSerial()) {
     // Opening or recovering a project replaces the controller and its pitch transform. A region
     // can keep the same id, so region identity alone cannot tell us that framing was lost.
@@ -1016,6 +1017,11 @@ void SingShell::setDiagnosticsOpen(bool open) {
 
 void SingShell::invalidateLayers() noexcept {
   layers_.invalidate();
+  lastDamage_ = FrameDamage::everything();
+}
+
+void SingShell::invalidateBackgroundLayers() noexcept {
+  layers_.invalidateBackground();
   lastDamage_ = FrameDamage::everything();
 }
 
@@ -1257,6 +1263,7 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
 
 bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
                       const EditorSceneState& state, time::Tick playhead) {
+  const ScopedActiveShellStrings activeStrings{strings_.get()};
   if (!presented_ ||
       layout_.width != std::max(canvas.logicalWidth(), 480.0) ||
       layout_.height != std::max(canvas.logicalHeight(), 320.0)) {
@@ -1267,8 +1274,6 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       return false;
     }
   }
-  // Another shell (a second plug-in instance) may have installed its table since the last frame.
-  if (strings_ != nullptr) installShellStrings(strings_.get());
   auto& model = controller.pianoRoll();
   laneEditable_ = state.expressionLabelVisible() && state.expression.refusal.empty();
   const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
@@ -4665,7 +4670,7 @@ bool SingShell::rehomedControl(std::string_view id) noexcept {
 }
 
 void SingShell::refreshSemantics(NativeEditorController& controller) {
-  if (strings_ != nullptr) installShellStrings(strings_.get());
+  const ScopedActiveShellStrings activeStrings{strings_.get()};
   controller.rebuildAccessibilityTree();
   rebuildSemantics(controller, controller.sceneState());
 }
@@ -4696,6 +4701,7 @@ void SingShell::takeSemanticFocus(NativeEditorController& controller, std::strin
 
 void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                  const EditorSceneState& state) {
+  const ScopedActiveShellStrings activeStrings{strings_.get()};
   const auto& l = layout_;
   const auto& legacy = controller.accessibilityTree().root();
   const auto* legacyFocus = controller.accessibilityTree().focusedNode();

@@ -800,12 +800,14 @@ void compositeGlowSprite(RasterCanvas& raster, const GlowSprite& sprite) {
   auto target = frame.pixels();
   const auto firstColumn = std::max(0, -sprite.x);
   const auto endColumn = std::min(width, frameWidth - sprite.x);
+  if (firstColumn >= endColumn) return;
   for (auto row = std::max(0, -sprite.y); row < height && sprite.y + row < frameHeight; ++row) {
-    const auto* from = source.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
+    const auto* from = source.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width) +
+                       static_cast<std::size_t>(firstColumn);
     auto* to = target.data() +
                static_cast<std::size_t>(sprite.y + row) * static_cast<std::size_t>(frameWidth) +
-               static_cast<std::size_t>(sprite.x);
-    for (auto column = firstColumn; column < endColumn; ++column) {
+               static_cast<std::size_t>(sprite.x + firstColumn);
+    for (auto column = 0; column < endColumn - firstColumn; ++column) {
       const auto s = from[column];
       const auto alpha = s >> 24U;
       if (alpha == 0U) continue;

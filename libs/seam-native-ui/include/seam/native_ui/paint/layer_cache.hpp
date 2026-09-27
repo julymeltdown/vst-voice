@@ -50,6 +50,8 @@ public:
   // Drops composition validity. L0's pixels remain reusable while its complete background key
   // matches, so an explicit full-frame invalidation need not repaint unchanged artwork.
   void invalidate() noexcept;
+  // Drops L0's retained pixels as well; the next composition runs its painter.
+  void invalidateBackground() noexcept;
   // Frees the snapshots as well.
   void release() noexcept;
   [[nodiscard]] std::size_t bytes() const noexcept;

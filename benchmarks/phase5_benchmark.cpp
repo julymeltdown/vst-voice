@@ -139,6 +139,8 @@ struct DesignCase final {
   std::string name;
   std::string mode;
   double budgetMs{0.0};
+  std::string invalidation;
+  std::string caseMeaning;
   std::vector<double> samples;
   std::vector<double> stateSamples;
   std::string layers;  // which layers the last sampled frame rasterized, when known
@@ -167,15 +169,13 @@ struct DesignRig final {
     shell.setRetainedSurface(true);
   }
 
-  // One frame: the host's state derivation (timed apart), then the shell's frame work.
+  // One frame: derive host state separately, then time the shell's only preparation and paint.
   double frame(DesignCase& record, bool playing) {
     const auto stateStart = std::chrono::steady_clock::now();
-    if (!shell.prepareFrame(controller, 1440.0, 900.0)) return -1.0;
     controller.setPlaying(playing);
+    controller.setPlayheadTick(playhead);
     auto state = controller.sceneState();
     const auto stateEnd = std::chrono::steady_clock::now();
-    state.playheadPixel = controller.pianoRoll().timeline().tickToPixel(playhead);
-    controller.setPlayheadTick(playhead);
     if (playing) {
       // A measured stereo level that moves every frame, as the audio thread reports it.
       const auto phase = static_cast<double>(frameIndex) * 0.37;
@@ -186,7 +186,8 @@ struct DesignRig final {
     }
     ++frameIndex;
     const auto paintStart = std::chrono::steady_clock::now();
-    static_cast<void>(shell.prepareFrame(controller, 1440.0, 900.0));
+    if (!shell.prepareFrame(controller, 1440.0, 900.0)) return -1.0;
+    state.playheadPixel = controller.pianoRoll().timeline().tickToPixel(playhead);
     const auto painted = shell.paint(canvas, controller, state, playhead);
     const auto paintEnd = std::chrono::steady_clock::now();
     if (!painted) return -1.0;
@@ -260,9 +261,17 @@ DesignReport runDesignShellBenchmark() {
       model.rebuildIndex();
     };
 
-    // Cold: every layer from nothing, as after a resize or a mode switch.
+    // Cold: every layer including L0's background painter, as on the first paint.
     resetView(100.0);
-    run(DesignCase{.name = "cold-full-frame", .mode = modeName, .budgetMs = 14.0}, false,
+    run(DesignCase{.name = "cold-full-frame", .mode = modeName, .budgetMs = 14.0,
+                   .invalidation = "L0 background painter plus all upper layers",
+                   .caseMeaning = "true first-paint-equivalent frame"}, false,
+        [&](std::size_t) { rig.shell.invalidateBackgroundLayers(); });
+    // A full upper-layer composition can reuse L0's retained background pixels.
+    run(DesignCase{.name = "retained-background-invalidation", .mode = modeName,
+                   .budgetMs = 14.0,
+                   .invalidation = "L0 snapshot retained; upper layers recomposed",
+                   .caseMeaning = "retained-background upper-layers-only invalidation"}, false,
         [&](std::size_t) { rig.shell.invalidateLayers(); });
     // Scroll and zoom: the grid and the notes move, the background stays.
     run(DesignCase{.name = "scroll-zoom", .mode = modeName, .budgetMs = 8.0}, false,
@@ -306,7 +315,9 @@ DesignReport runDesignShellBenchmark() {
     report.pass = report.pass && c.pass();
     out << "      {\"case\": \"" << c.name << "\", \"mode\": \"" << c.mode << "\", \"p50Ms\": "
         << q.p50 << ", \"p95Ms\": " << q.p95 << ", \"maxMs\": " << q.max
-        << ", \"budgetP95Ms\": " << c.budgetMs << ", \"pass\": " << (c.pass() ? "true" : "false")
+        << ", \"budgetP95Ms\": " << c.budgetMs << ", \"invalidation\": \"" << c.invalidation
+        << "\", \"caseMeaning\": \"" << c.caseMeaning
+        << "\", \"pass\": " << (c.pass() ? "true" : "false")
         << ", \"lastFrameLayers\": \"" << c.layers << "\", \"visibleNotes\": " << c.visibleNotes
         << ", \"hostStateP95Ms\": " << state.p95 << "}" << (i + 1U < cases.size() ? "," : "")
         << "\n";

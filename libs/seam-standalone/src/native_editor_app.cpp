@@ -10,12 +10,14 @@
 #include "seam/standalone/native_project_dialog.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/native_ui/design/shell_evidence.hpp"
+#include "seam/native_ui/paint/canvas2d.hpp"
 
 #if defined(__APPLE__)
 #include <mach/mach.h>
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -1512,6 +1514,23 @@ core::Result<void> NativeEditorApp::writeUiEvidence(const std::filesystem::path&
     return written;
   if (auto written = write("semantic-bounds.json", native_ui::design::semanticEvidence(shell_.accessibilityTree()));
       !written)
+    return written;
+  const auto& registered = native_ui::paint::bundledFonts();
+  formats::JsonValue::Object roles;
+  constexpr std::array<std::string_view, 7U> roleNames{
+      "Ui", "UiMedium", "UiSemibold", "UiBold", "Mono", "Display", "DisplayRounded"};
+  for (std::size_t index = 0; index < roleNames.size(); ++index) {
+    const auto role = static_cast<native_ui::paint::FontRole>(index);
+    roles.emplace(std::string{roleNames[index]}, formats::JsonValue::Object{
+        {"postScriptName", native_ui::paint::fontFaceName(role)},
+        {"file", native_ui::paint::fontFaceFile(role).string()},
+        {"source", registered.face[index].empty() ? "system" : "bundled"}});
+  }
+  formats::JsonValue::Array refused;
+  for (const auto& reason : registered.refused) refused.emplace_back(reason);
+  if (auto written = write("font-identity.json", formats::JsonValue::Object{
+          {"selectedDirectory", registered.directory.string()},
+          {"roles", std::move(roles)}, {"refused", std::move(refused)}}); !written)
     return written;
   return write("performance.json", performance);
 }

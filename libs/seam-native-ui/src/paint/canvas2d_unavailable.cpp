@@ -18,5 +18,6 @@ const BundledFonts& bundledFonts() {
   return none;
 }
 std::string fontFaceName(FontRole) { return {}; }
+std::filesystem::path fontFaceFile(FontRole) { return {}; }
 
 }  // namespace seam::native_ui::paint

@@ -993,6 +993,10 @@ TEST_CASE("translation: the shell follows its language setting and the header co
     CHECK(std::any_of(frame.text.begin(), frame.text.end(), [](const TextRecord& line) {
       return line.text == "\uBCF4\uC774\uC2A4 \uBCC0\uACBD";
     }));
+    const auto koreanLanguage = std::find_if(frame.nodes.begin(), frame.nodes.end(),
+                                             [](const SemanticNode& n) { return n.id == "shell.language"; });
+    CHECK(koreanLanguage != frame.nodes.end());
+    if (koreanLanguage != frame.nodes.end()) CHECK(koreanLanguage->name == "\uC5B8\uC5B4");
     CHECK(f.shell.dispatchSemantic(f.controller, "shell.language", SemanticAction::Increment).hasValue());
     CHECK(f.shell.languageFollowsSystem());
     CHECK(f.shell.language() == shellLanguageFor(systemPreferredLanguage()));
@@ -1030,6 +1034,29 @@ TEST_CASE("translation: the shell follows its language setting and the header co
   // The saved preference: an explicit language, or following the system.
   CHECK(DesignPreferences{}.language == "en");
   CHECK(!DesignPreferences{}.languageFollowsSystem);
+}
+
+TEST_CASE("two shell instances keep painted and semantic language when frames interleave") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  using namespace native_ui::design;
+  LayoutFixture korean;
+  LayoutFixture english;
+  korean.shell.setLanguage("ko", false);
+  Frame frame;
+  for (int pass = 0; pass < 2; ++pass) {
+    CHECK(paintFrame(korean, 1440.0, 900.0, 1.0, frame));
+    CHECK(std::any_of(frame.text.begin(), frame.text.end(), [](const TextRecord& line) {
+      return line.text == "\uBCF4\uC774\uC2A4 \uBCC0\uACBD";
+    }));
+    CHECK(paintFrame(english, 1440.0, 900.0, 1.0, frame));
+    CHECK(std::any_of(frame.text.begin(), frame.text.end(), [](const TextRecord& line) {
+      return line.text == "Change voice";
+    }));
+    const auto found = std::find_if(frame.nodes.begin(), frame.nodes.end(),
+                                    [](const SemanticNode& n) { return n.id == "shell.language"; });
+    CHECK(found != frame.nodes.end());
+    if (found != frame.nodes.end()) CHECK(found->name == "Language");
+  }
 }
 
 TEST_CASE("the Korean shell keeps widgets apart and its text whole or elided") {

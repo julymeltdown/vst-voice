@@ -155,10 +155,8 @@ def hash_tree(root: Path) -> dict[str, str]:
     }
 
 
-def font_identity(app: Path) -> dict[str, Any]:
-    """The faces the capture drew with: every bundled face (the copy in the app bundle when there is
-    one, else the source tree) with its manifest hash and whether the file matches it, and the system
-    fallback faces. A bundled face that does not match is refused by the app, so its roles fell back."""
+def font_identity(app: Path, runtime: dict[str, Any]) -> dict[str, Any]:
+    """Hash the files selected by the running renderer, alongside the existing manifest inventory."""
     resources = next((parent / "Resources" for parent in app.parents if parent.name == "Contents"), None)
     fonts_dir = resources / "fonts" if resources is not None and (resources / "fonts").is_dir() \
         else BUNDLED_FONTS
@@ -175,7 +173,16 @@ def font_identity(app: Path) -> dict[str, Any]:
                 "sha256": actual,
                 "matchesManifest": actual == face.get("sha256"),
             }
+    selected = Path(runtime["selectedDirectory"]) if runtime.get("selectedDirectory") else None
+    effective: dict[str, Any] = {}
+    for role, choice in runtime["roles"].items():
+        path = Path(choice["file"]) if choice.get("file") else None
+        effective[role] = {**choice, "sha256": sha256_file(path) if path and path.is_file()
+                           else "unavailable"}
     return {
+        "selectedDirectory": str(selected) if selected else None,
+        "effectiveRoles": effective,
+        "refused": runtime.get("refused", []),
         "bundledDirectory": os.path.relpath(fonts_dir, ROOT) if fonts_dir.is_relative_to(ROOT)
         else str(fonts_dir),
         "bundled": bundled,
@@ -780,7 +787,7 @@ def capture(args: argparse.Namespace, work: Path, mode: str, state: str,
         record["error"] = f"exit {process.returncode}; stderr: {stderr.strip()[-400:]}"
         return record
     record["observedRenderState"] = log.get("render_state", "unknown")
-    for part in ("geometry", "semantic-bounds", "performance"):
+    for part in ("geometry", "semantic-bounds", "performance", "font-identity"):
         record[part] = json.loads((evidence / f"{part}.json").read_text())
     # A capture shows its state when the presented frame shows it, whatever the render did after.
     record["frameRenderState"] = frame_render_state(record["semantic-bounds"])
@@ -1086,7 +1093,8 @@ def main() -> int:
         "backend": next((r["log"].get("window_backend") for r in records if r.get("log")), "unknown"),
         "deviceScale": next((r["geometry"]["deviceScale"] for r in records if "geometry" in r), None),
         "uiZoom": 1.0,
-        "fonts": font_identity(args.app),
+        "fonts": font_identity(args.app, next(r["font-identity"] for r in records
+                                              if "font-identity" in r)),
         "assets": hash_tree(DESIGN_ASSETS),
         "fixture": {"path": os.path.relpath(args.fixture, ROOT), "sha256": fixture_hashes},
         "voicebank": {
