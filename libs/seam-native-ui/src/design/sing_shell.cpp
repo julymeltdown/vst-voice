@@ -2205,9 +2205,14 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   // The error toast above the bar: the head-in-hand crop and the reason the line to the left already
   // carries, for a failed render or a missing voicebank and nothing else. The SINGER card keeps the
   // recovery action, which stays reachable in the rack to the right of this rectangle.
+  // It stacks above the diagnostics toast when one shows, and is left out where it cannot.
   const auto input = characterSurfaceInput(state, auditionLevel_);
-  if (const auto toast = characterErrorToast(l, input, left.text); toast.has_value()) {
-    paintCharacterToast(characterCanvas(c), t, *toast,
+  errorToast_ = characterErrorToast(l, input, left.text,
+                                    state.diagnostics.empty()
+                                        ? std::nullopt
+                                        : std::optional<ui::Rect>{diagnosticsToastBounds()});
+  if (errorToast_.has_value()) {
+    paintCharacterToast(characterCanvas(c), t, *errorToast_,
                         characterPortrait(CharacterState::Error), assets().portrait.get());
   }
 }

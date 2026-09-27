@@ -894,6 +894,58 @@ TEST_CASE("an animating frame asks for the next one, and a still frame asks for 
   }
 }
 
+TEST_CASE("a missing voicebank's error toast never covers the diagnostics toast or the controls") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  // BANK_MISSING brings both toasts: the diagnostics toast with its DIAGNOSTICS opener, and the
+  // character's error toast. The error toast stacks above the diagnostics row where the lane has
+  // room for it and is left out where it has none, so the diagnostic title and its recovery stay
+  // visible and reachable at every contract size.
+  struct Case final {
+    double width;
+    double height;
+    bool stacked;
+  };
+  for (const auto& size : {Case{480.0, 320.0, false}, Case{720.0, 480.0, false},
+                           Case{1100.0, 720.0, true}, Case{1600.0, 900.0, true}}) {
+    ShellFixture f;
+    f.controller.setDiagnostics({authoring::Diagnostic{
+        .code = "BANK_MISSING",
+        .severity = authoring::DiagnosticSeverity::Critical,
+        .messageKey = "bank.missing",
+        .actions = {authoring::DiagnosticAction::RelinkVoicebank,
+                    authoring::DiagnosticAction::ChooseVoicebank}}});
+    f.controller.resize(size.width, size.height);
+    CHECK(f.frame(size.width, size.height));
+    CHECK(f.shell.characterState() == CharacterState::Error);
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    std::optional<native_ui::SemanticNode> diagnostics;
+    std::optional<native_ui::SemanticNode> opener;
+    const auto walk = [&](const native_ui::SemanticNode& node, const auto& self) -> void {
+      if (node.id == "shell.diagnostics.toast") diagnostics = node;
+      if (node.id == "shell.diagnostics.open") opener = node;
+      for (const auto& child : node.children) self(child, self);
+    };
+    walk(f.shell.accessibilityTree().root(), walk);
+    CHECK(diagnostics.has_value());
+    if (!diagnostics) continue;
+    const auto& layout = f.shell.layout();
+    const auto error = f.shell.lastFrameErrorToast();
+    CHECK(error.has_value() == size.stacked);
+    if (!error) continue;
+    CHECK(!error->intersects(diagnostics->bounds));
+    if (opener) CHECK(!error->intersects(opener->bounds));
+    CHECK(error->bottom() <= diagnostics->bounds.y);
+    CHECK(!error->intersects(layout.status));
+    CHECK(!error->intersects(layout.laneTabs));
+    CHECK(!error->intersects(layout.laneReviewButton));
+    CHECK(!error->intersects(layout.tools));
+    CHECK(!error->intersects(layout.rackArea));
+    CHECK(error->y >= layout.lane.y && error->bottom() <= layout.lane.bottom());
+  }
+}
+
 TEST_CASE("an idle frame asks for the next one only when a painted surface actually moves") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   if (!std::filesystem::is_directory(designAssetRoot())) return;

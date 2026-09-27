@@ -182,6 +182,12 @@ inline constexpr std::string_view kEmptyProjectPrompt =
 // The error toast above the status bar: a 40-point head-in-hand crop and the reason the status line
 // already carries. It appears for a failed render and for a missing voicebank, and for nothing else.
 // The recovery action stays reachable in the SINGER card, which this rectangle never covers.
+//
+// When the diagnostics toast shows (a missing voicebank always brings one), the error toast stacks
+// above it, so the diagnostic's title and its DIAGNOSTICS opener stay visible and reachable. It
+// never covers the status bar or the lane's tab strip (the lane tabs and the review opener) either,
+// and where no such place exists, as in the compact windows, there is no error toast: the
+// diagnostics toast and the status line already carry the same problem, and its recovery.
 struct CharacterToast final {
   ui::Rect bounds;
   ui::Rect pose;
@@ -190,7 +196,8 @@ struct CharacterToast final {
 };
 
 [[nodiscard]] std::optional<CharacterToast> characterErrorToast(
-    const SingLayout& layout, const CharacterSurfaceInput& input, std::string_view diagnostic);
+    const SingLayout& layout, const CharacterSurfaceInput& input, std::string_view diagnostic,
+    std::optional<ui::Rect> diagnosticsToast = std::nullopt);
 
 // ---- the animator (section 8.3) -----------------------------------------------------------------
 

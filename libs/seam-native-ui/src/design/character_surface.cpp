@@ -380,7 +380,8 @@ std::optional<std::string_view> emptyProjectPrompt(std::size_t noteCount) noexce
 
 std::optional<CharacterToast> characterErrorToast(const SingLayout& layout,
                                                 const CharacterSurfaceInput& input,
-                                                std::string_view diagnostic) {
+                                                std::string_view diagnostic,
+                                                std::optional<ui::Rect> diagnosticsToast) {
   const auto missing = input.bankMissing;
   const auto failed = input.render == RenderStatusState::Failed;
   if (!missing && !failed) return std::nullopt;
@@ -390,8 +391,15 @@ std::optional<CharacterToast> characterErrorToast(const SingLayout& layout,
   constexpr double kHeight = 56.0;
   const auto width = std::min(440.0, region.width - 32.0);
   if (width < kPose + 120.0 || region.height <= 0.0) return std::nullopt;
+  // The floor is the status bar, or the diagnostics toast's row when one shows, which the toast
+  // stacks above. The ceiling is the lane's tab strip, whose tabs and review opener stay reachable.
+  const auto stacked = diagnosticsToast.has_value() && diagnosticsToast->height > 0.0;
+  const auto bottom = stacked ? diagnosticsToast->y - 8.0 : layout.status.y - 12.0;
+  const auto ceiling =
+      (layout.laneTabs.height > 0.0 ? layout.laneTabs.bottom() : region.y) + 4.0;
+  if (bottom - kHeight < ceiling) return std::nullopt;
   CharacterToast toast;
-  toast.bounds = {region.x + 16.0, layout.status.y - 12.0 - kHeight, width, kHeight};
+  toast.bounds = {region.x + 16.0, bottom - kHeight, width, kHeight};
   toast.pose = {toast.bounds.x + kPadding, toast.bounds.y + (kHeight - kPose) * 0.5, kPose, kPose};
   toast.title = missing ? std::string{"Voicebank needs attention"}
                         : std::string{"Render did not complete"};
