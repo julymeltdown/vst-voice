@@ -1338,7 +1338,10 @@ public:
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
                                                      const EditorSceneState& state,
                                                      const SingLayout&, ui::Rect panel) const override;
-  void presented() const override { firstRow_ = 0U; }
+  void presented() const override {
+    firstRow_ = 0U;
+    rowsKey_.clear();
+  }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -1364,6 +1367,7 @@ public:
               ui::Rect panel, ui::Point anchor, double deltaX, double deltaY,
               InputModifiers modifiers) const override {
     const auto& view = state.replacementReview;
+    followRows(controller, view);
     const auto g = geometry(view, panel);
     if (view.dynamicsPlot && contains(g.plot, anchor)) {
       // The plot pans and zooms through the controller's own wheel handling, at the pointer.
@@ -1380,9 +1384,25 @@ private:
            p.y < r.bottom();
   }
   [[nodiscard]] ReviewGeometry geometry(const ReplacementReviewView& view, ui::Rect panel) const;
+  // The card's row pager starts again at the top of each page of rows the controller shows (its
+  // page, its list or a detail). The review prefix without its counters names that page: the
+  // interaction id the controller renews on every action and on a draft field, and the selected
+  // field, change without changing the rows.
+  void followRows(const NativeEditorController& controller, const ReplacementReviewView& view) const {
+    std::string key;
+    for (const auto ch : controller.replacementReviewSemanticPrefix())
+      if (ch < '0' || ch > '9') key.push_back(ch);
+    key += "#" + std::to_string(view.page);
+    if (key == rowsKey_) return;
+    firstRow_ = 0U;
+    rowsKey_ = std::move(key);
+  }
   // The rows a short card shows start here; the controller pages its rows by six, and this pages
   // within the controller's page when fewer fit.
   mutable std::size_t firstRow_{0U};
+  mutable std::string rowsKey_;
+  // The last first row the layout can show, as last laid out; the pager never counts past it.
+  mutable std::size_t lastFirstRow_{0U};
 };
 
 ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& view,
@@ -1425,6 +1445,9 @@ ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& v
     g.rowsDown = {g.rowsUp.right() + 4.0, g.status.y, 26.0, g.status.height};
     g.firstRow = std::min(firstRow_, view.rows.size() - capacity);
   }
+  // The counter is what the card shows, so a pager press always moves the visible rows.
+  firstRow_ = g.firstRow;
+  lastFirstRow_ = g.rowPager ? view.rows.size() - capacity : 0U;
   for (std::size_t i = g.firstRow; i < view.rows.size() && i < g.firstRow + capacity; ++i)
     g.rows.push_back({panel.x + kPanelInset, top + static_cast<double>(i - g.firstRow) * rowStride,
                       inner, rowHeight});
@@ -1438,6 +1461,7 @@ std::vector<OverlayControl> ReplacementReviewOverlay::controls(
   const auto& view = state.replacementReview;
   if (panel.width <= 0.0 || !view.visible) return out;
   const auto prefix = controller.replacementReviewSemanticPrefix();
+  followRows(controller, view);
   const auto g = geometry(view, panel);
   OverlayControl status{prefix + "status", g.status, "Review status and counts",
                         SemanticRole::Status, true, false, false};
@@ -1604,6 +1628,7 @@ OverlayPress ReplacementReviewOverlay::press(NativeEditorController& controller,
                                              ui::Rect panel, const PointerEvent& event) const {
   const auto& view = state.replacementReview;
   if (!view.dynamicsPlot || !view.dynamicsPlot->editable) return {};
+  followRows(controller, view);
   const auto g = geometry(view, panel);
   if (g.plot.width <= 0.0) return {};
   const auto& plot = *view.dynamicsPlot;
@@ -1637,7 +1662,7 @@ core::Result<void> ReplacementReviewOverlay::perform(NativeEditorController& con
     return core::failure(core::ErrorCode::Unsupported, "This control only activates");
   if (id == "shell.overlay.review.rows-up" || id == "shell.overlay.review.rows-down") {
     if (id.ends_with("up")) firstRow_ = firstRow_ > 0U ? firstRow_ - 1U : 0U;
-    else ++firstRow_;  // the layout clamps it to the last row that still fills the card
+    else if (firstRow_ < lastFirstRow_) ++firstRow_;
     return core::success();
   }
   // Rows, actions, navigation and points: the controller's own accessibility command, which checks
@@ -1709,15 +1734,20 @@ public:
     controller.closeAudioSettings();
     return core::success();
   }
-  bool scroll(NativeEditorController&, const EditorSceneState& state, const SingLayout&,
-              ui::Rect, ui::Point, double, double deltaY, InputModifiers) const override {
-    if (deltaY < 0.0 && firstDevice_ + 1U < state.audioSettings.devices.size()) ++firstDevice_;
+  bool scroll(NativeEditorController& controller, const EditorSceneState& state,
+              const SingLayout& layout, ui::Rect panel, ui::Point, double, double deltaY,
+              InputModifiers) const override {
+    // The list's current layout bounds the scroll: it stops at the last device row that fills it.
+    static_cast<void>(controls(controller, state, layout, panel));
+    if (deltaY < 0.0 && firstDevice_ < lastFirstDevice_) ++firstDevice_;
     else if (deltaY > 0.0 && firstDevice_ > 0U) --firstDevice_;
     return true;
   }
 
 private:
   mutable std::size_t firstDevice_{0U};
+  // The last first device the list can show, as last laid out; paging never counts past it.
+  mutable std::size_t lastFirstDevice_{0U};
 };
 
 std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorController&,
@@ -1746,6 +1776,9 @@ std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorCon
       std::max(0.0, fieldsTop - 8.0 - listTop + (stride - rowHeight)) / stride);
   const auto paged = audio.devices.size() > capacity && capacity > 0U;
   const auto first = paged ? std::min(firstDevice_, audio.devices.size() - capacity) : 0U;
+  // The counter is what the list shows, so a pager press or a scroll always moves the rows.
+  firstDevice_ = first;
+  lastFirstDevice_ = paged ? audio.devices.size() - capacity : 0U;
   if (paged) {
     // Beside the caption, or in the header left of Close when the caption is dropped.
     const auto pagerRight = compact ? close.x - 8.0 : panel.right() - kPanelInset;
@@ -1864,7 +1897,7 @@ core::Result<void> AudioSettingsOverlay::perform(NativeEditorController& control
     return core::success();
   }
   if (id == "shell.overlay.audio.devices-down") {
-    ++firstDevice_;  // the layout clamps it
+    if (firstDevice_ < lastFirstDevice_) ++firstDevice_;
     return core::success();
   }
   constexpr std::string_view kDevice{"audio.device."};

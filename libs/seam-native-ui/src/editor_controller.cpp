@@ -524,6 +524,7 @@ EditorSceneState NativeEditorController::sceneState() const {
   }
   applyLayoutTransition(state);
   state.replacementReview = replacementReviewView();
+  state.replacementReview.page = replacementDetail_ ? replacementDetail_->page : replacementPage_;
   return state;
 }
 

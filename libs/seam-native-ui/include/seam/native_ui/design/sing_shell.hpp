@@ -377,6 +377,10 @@ private:
   // Closes the presented overlay through its own command. The DIAGNOSTICS popover is the shell's
   // own presentation, so this also drops the flag that shows it.
   core::Result<void> closeOverlay(NativeEditorController& controller, const ShellOverlay& overlay);
+  // A note-grid lyric field belongs to the score. When a surface is presented over the score (the
+  // voice browser, audio settings, diagnostics, any re-homed overlay), the lyric is cancelled, never
+  // committed, as opening a classic surface cancelled it; its input client leaves with it.
+  void cancelCoveredLyric(NativeEditorController& controller);
   // Runs one of the presented overlay's controls. A singer menu item whose command ran closes the
   // menu and returns focus to its button (a surface the command opened takes it from there).
   core::Result<void> performOverlay(NativeEditorController& controller, const ShellOverlay& overlay,
@@ -453,6 +457,9 @@ private:
   // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
   // gives its first control the keyboard.
   OverlayKind presentedOverlay_{OverlayKind::None};
+  // The surface an open inline field was opened over (a review, for its draft field), so the
+  // surface it returns to is resumed where it was rather than presented anew.
+  OverlayKind fieldOpenedOver_{OverlayKind::None};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
   // The character artwork and its animation, both driven by the read models above.
