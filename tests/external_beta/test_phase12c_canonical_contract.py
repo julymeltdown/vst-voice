@@ -8,13 +8,29 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.verify_phase12c_canonical_contract import validate_matrix, validate_soak, verify
+from scripts.verify_phase12c_canonical_contract import _tree_sha256, validate_matrix, validate_soak, verify
 
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class Phase12CCanonicalContractTests(unittest.TestCase):
+    def test_tree_digest_uses_cpp_relative_string_order_for_prefix_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entries = {"barlow/regular.ttf": b"regular", "barlow-condensed/display.ttf": b"display"}
+            for relative, data in entries.items():
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+            expected = hashlib.sha256()
+            for relative in sorted(entries):
+                name = relative.encode("utf-8")
+                expected.update(len(name).to_bytes(4, "little"))
+                expected.update(name)
+                expected.update(hashlib.sha256(entries[relative]).digest())
+            self.assertEqual(expected.hexdigest(), _tree_sha256(root))
+
     def matrix_report(self) -> dict:
         return {
             "result": "PASS", "cases": 336, "expected": 336,

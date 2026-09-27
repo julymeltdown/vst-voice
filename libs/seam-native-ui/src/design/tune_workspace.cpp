@@ -109,7 +109,7 @@ void cardTitle(Canvas2D& c, const DesignTokens& t, ui::Rect title, std::string_v
   c.restore();
   const ui::Rect label{title.x + 14.0, title.y, std::max(0.0, title.width - 14.0), title.height};
   c.text(label, text,
-         fitted(c, text, style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking,
+         fitted(c, text, style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking,
                                TextAlign::Left, true), label.width),
          t.color.textPrimary);
 }

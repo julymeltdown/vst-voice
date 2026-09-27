@@ -1905,6 +1905,12 @@ bool NativeEditorApp::wantsClose() const noexcept {
   return closeRequested_.load(std::memory_order_acquire);
 }
 
+std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameDue()
+    const noexcept {
+  // The shell reads the steady clock (the app injects no UI clock), so its time is the window's.
+  return shell_.nextFrameDue();
+}
+
 platform::AudioDeviceInfo NativeEditorApp::audioInfo() const {
   return audioDevice_ == nullptr ? platform::AudioDeviceInfo{}
                                  : audioDevice_->info();

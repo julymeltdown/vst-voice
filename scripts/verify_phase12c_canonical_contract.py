@@ -69,7 +69,9 @@ def _tree_sha256(path: Path) -> str:
         raise ContractError(f"artifact tree is missing: {path}")
     digest = hashlib.sha256()
     total = 0
-    for item in sorted(path.rglob("*")):
+    # Match the C++ evidence writer's lexicographic generic-string order. pathlib's default
+    # component order differs when one folder name prefixes another (barlow/barlow-condensed).
+    for item in sorted(path.rglob("*"), key=lambda entry: entry.relative_to(path).as_posix()):
         if item.is_symlink():
             raise ContractError(f"symbolic-link tree member is forbidden: {item}")
         if not item.is_file():

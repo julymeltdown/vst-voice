@@ -3,6 +3,8 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/geometry.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -70,7 +72,12 @@ struct StrokeStyle final {
 
 enum class Blend : std::uint8_t { Normal, Add, Screen };
 
-enum class FontRole : std::uint8_t { Ui, UiMedium, UiSemibold, UiBold, Mono, Display };
+// The faces a painter may ask for. Each maps to a bundled face (assets/fonts) and falls back to a
+// system face when that face is absent or refused: Ui* to the system font at the weight, Mono to the
+// system monospaced font, Display (EMO's condensed display) to a condensed system face and
+// DisplayRounded (SCENE's rounded display) to the system's rounded design.
+enum class FontRole : std::uint8_t { Ui, UiMedium, UiSemibold, UiBold, Mono, Display, DisplayRounded };
+inline constexpr std::size_t kFontRoleCount = 7U;
 enum class TextAlign : std::uint8_t { Left, Center, Right };
 
 struct TextStyle final {
@@ -263,5 +270,29 @@ private:
 // Contents/Resources of the bundle whose binary contains this code (the app, or the plug-in inside
 // a host), or empty when it cannot be determined.
 [[nodiscard]] std::filesystem::path codeBundleResources();
+
+// The bundled UI faces (assets/fonts, SIL OFL). Registration is process-local
+// (kCTFontManagerScopeProcess), so neither the app nor a plug-in inside a host changes the fonts
+// any other process sees. A face is registered only when its size and SHA-256 match manifest.json;
+// a missing, altered or unlisted face is refused and its roles draw with the system fallback.
+struct BundledFonts final {
+  // Where the faces were read from; empty when none was found or SEAM_UI_FONTS=system.
+  std::filesystem::path directory;
+  // PostScript names of the faces in use, per role; empty for a role on its system fallback.
+  std::array<std::string, kFontRoleCount> face{};
+  // One line per face that was not used, with the reason.
+  std::vector<std::string> refused;
+};
+// Finds the faces: SEAM_UI_FONTS (a directory, or "system" for none), fonts/ in this code's bundle
+// Resources, then the source tree in development builds. Empty when none has a manifest.
+[[nodiscard]] std::filesystem::path locateBundledFonts();
+// Verifies and registers the faces in a directory for this process and returns what it used. Safe
+// to call again: a face this process already registered is reused.
+[[nodiscard]] BundledFonts registerBundledFonts(const std::filesystem::path& directory);
+// The process's faces: located and registered on first use (the shell's activation, or the first
+// text drawn), then fixed for the life of the process.
+const BundledFonts& bundledFonts();
+// The PostScript name of the face a role draws with at the moment (bundled or fallback).
+[[nodiscard]] std::string fontFaceName(FontRole role);
 
 }  // namespace seam::native_ui::paint

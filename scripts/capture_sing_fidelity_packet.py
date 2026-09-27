@@ -47,9 +47,13 @@ DEFAULT_APP = ROOT / "build/release/Project SEAM.app/Contents/MacOS/Project SEAM
 DEFAULT_BANK = ROOT / "assets/demo-human-voicebank-public-domain/production-bank"
 DEFAULT_FIXTURE = ROOT / "tests/fixtures/ui-fidelity/sing-phrase.seam"
 DESIGN_ASSETS = ROOT / "assets/ui-design"
+BUNDLED_FONTS = ROOT / "assets/fonts"
+# The system faces a role falls back to when its bundled face is absent or refused
+# (canvas2d_coregraphics.mm), and CJK text's cascade source.
 SYSTEM_FONTS = (
     Path("/System/Library/Fonts/SFNS.ttf"),
     Path("/System/Library/Fonts/SFNSMono.ttf"),
+    Path("/System/Library/Fonts/SFNSRounded.ttf"),
     Path("/System/Library/Fonts/Avenir Next Condensed.ttc"),
 )
 MODES = ("emo", "scene")
@@ -148,6 +152,36 @@ def hash_tree(root: Path) -> dict[str, str]:
         str(path.relative_to(ROOT)): sha256_file(path)
         for path in sorted(root.rglob("*"))
         if path.is_file() and path.name != ".DS_Store"
+    }
+
+
+def font_identity(app: Path) -> dict[str, Any]:
+    """The faces the capture drew with: every bundled face (the copy in the app bundle when there is
+    one, else the source tree) with its manifest hash and whether the file matches it, and the system
+    fallback faces. A bundled face that does not match is refused by the app, so its roles fell back."""
+    resources = next((parent / "Resources" for parent in app.parents if parent.name == "Contents"), None)
+    fonts_dir = resources / "fonts" if resources is not None and (resources / "fonts").is_dir() \
+        else BUNDLED_FONTS
+    bundled: dict[str, Any] = {}
+    manifest_path = fonts_dir / "manifest.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        for face in manifest.get("faces", []):
+            path = fonts_dir / face["file"]
+            actual = sha256_file(path) if path.is_file() else "unavailable"
+            bundled[face["file"]] = {
+                "postScriptName": face.get("postScriptName"),
+                "roles": face.get("roles", []),
+                "sha256": actual,
+                "matchesManifest": actual == face.get("sha256"),
+            }
+    return {
+        "bundledDirectory": os.path.relpath(fonts_dir, ROOT) if fonts_dir.is_relative_to(ROOT)
+        else str(fonts_dir),
+        "bundled": bundled,
+        "manifestSha256": sha256_file(manifest_path) if manifest_path.is_file() else "unavailable",
+        "systemFallbacks": {str(path): sha256_file(path) if path.is_file() else "unavailable"
+                            for path in SYSTEM_FONTS},
     }
 
 
@@ -1052,8 +1086,7 @@ def main() -> int:
         "backend": next((r["log"].get("window_backend") for r in records if r.get("log")), "unknown"),
         "deviceScale": next((r["geometry"]["deviceScale"] for r in records if "geometry" in r), None),
         "uiZoom": 1.0,
-        "fonts": {str(path): sha256_file(path) if path.is_file() else "unavailable"
-                  for path in SYSTEM_FONTS},
+        "fonts": font_identity(args.app),
         "assets": hash_tree(DESIGN_ASSETS),
         "fixture": {"path": os.path.relpath(args.fixture, ROOT), "sha256": fixture_hashes},
         "voicebank": {

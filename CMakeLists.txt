@@ -747,6 +747,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/design/character_surface.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp
     libs/seam-native-ui/src/design/sing_shell.cpp
+    libs/seam-native-ui/src/design/tooltip.cpp
     libs/seam-native-ui/src/design/tune_workspace.cpp
     libs/seam-native-ui/src/design/mix_workspace.cpp
     libs/seam-native-ui/src/design/voice_workspace.cpp
@@ -772,7 +773,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
   # Development builds can find the design assets in the source tree; bundles carry a copy.
   target_compile_definitions(seam_native_ui PRIVATE
-    SEAM_UI_DESIGN_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design")
+    SEAM_UI_DESIGN_SOURCE_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
+    SEAM_UI_FONTS_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts")
   seam_apply_compiler_options(seam_native_ui)
 endif()
 
@@ -918,6 +920,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/ui-design"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
+        "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/fonts"
       VERBATIM)
     install(TARGETS seam_editor_native BUNDLE DESTINATION ".")
   elseif(WIN32)
@@ -1148,6 +1153,9 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/ui-design"
       "${SEAM_EDITOR_RESOURCE_ROOT}/ui-design"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
+      "${SEAM_EDITOR_RESOURCE_ROOT}/fonts"
     VERBATIM)
 
   install(TARGETS seam_clap_editor_plugin
@@ -1905,11 +1913,18 @@ if(SEAM_BUILD_TESTS)
     target_link_libraries(seam_style_coverage_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_style_coverage_tests)
     add_test(NAME seam_style_coverage_tests COMMAND seam_style_coverage_tests)
-    add_executable(seam_design_system_tests tests/test_main.cpp tests/test_design_system.cpp)
+    add_executable(seam_design_system_tests tests/test_main.cpp tests/test_design_system.cpp
+      tests/test_design_fonts_tooltip.cpp)
     target_include_directories(seam_design_system_tests PRIVATE tests)
     target_link_libraries(seam_design_system_tests PRIVATE seam_native_ui)
     seam_apply_compiler_options(seam_design_system_tests)
     add_test(NAME seam_design_system_tests COMMAND seam_design_system_tests)
+    # The same font checks with the bundled faces switched off: every role falls back to a system
+    # face. A separate process, because registration is fixed for the life of one.
+    add_test(NAME seam_design_fonts_system_fallback
+      COMMAND seam_design_system_tests "bundled fonts: every role")
+    set_tests_properties(seam_design_fonts_system_fallback PROPERTIES
+      ENVIRONMENT "SEAM_UI_FONTS=system")
     add_executable(seam_design_character_surface_tests
       tests/test_main.cpp tests/test_design_character_surface.cpp
       tests/test_character_state_art.cpp)
@@ -1938,7 +1953,8 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_design_tune_workspace_tests)
     add_test(NAME seam_design_tune_workspace_tests COMMAND seam_design_tune_workspace_tests)
     add_executable(seam_design_shell_input_tests
-      tests/test_main.cpp tests/test_design_shell_input.cpp tests/test_region_envelope.cpp)
+      tests/test_main.cpp tests/test_design_shell_input.cpp tests/test_region_envelope.cpp
+      tests/test_design_tooltip_shell.cpp)
     target_include_directories(seam_design_shell_input_tests PRIVATE tests)
     target_link_libraries(seam_design_shell_input_tests PRIVATE
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
@@ -2429,6 +2445,20 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_ui_design_assets PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    # Plan section 14.6: no brand, band, label, retailer, network or product name in anything that
+    # ships (strings, asset metadata, manifests, installer metadata, shipped documents).
+    add_test(NAME seam_brand_terms_source_contract
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests.design.test_check_brand_terms)
+    set_tests_properties(seam_brand_terms_source_contract PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+    # The bundled OFL faces match their pinned manifest and licenses.
+    add_test(NAME seam_bundled_fonts_contract
+      COMMAND ${Python3_EXECUTABLE}
+              ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify_bundled_fonts.py
+              --root ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(seam_bundled_fonts_contract PROPERTIES TIMEOUT 30)
     add_test(NAME seam_ui_performance_analysis
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests.design.test_analyze_sing_ui_performance)

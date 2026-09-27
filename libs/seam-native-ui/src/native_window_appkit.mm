@@ -284,6 +284,11 @@ public:
                            inMode:NSDefaultRunLoopMode
                           dequeue:YES];
         if (event != nil) [application_ sendEvent:event];
+        // A frame the client scheduled (a tooltip's hover delay ending) is painted when it is due,
+        // even though no event asked for one.
+        if (const auto due = client_->nextFrameDue();
+            due.has_value() && std::chrono::steady_clock::now() >= *due)
+          repaintRequested_.store(true, std::memory_order_release);
         if (repaintRequested_.exchange(false, std::memory_order_acq_rel)) {
           presentFrame();
         }

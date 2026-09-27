@@ -79,6 +79,17 @@ public:
 
   void drawRaster(ui::Rect bounds, std::uint64_t contentHash, RasterDrawing drawing);
 
+  // A line whose measured text is wider than its box, so the backend draws it elided: the box as it
+  // shows in the frame (translation and clip applied), the whole text, and the layer and item it
+  // was recorded in. The kit tooltip shows the whole text over such a label.
+  struct ElidedText final {
+    ui::Rect bounds{};
+    std::string text;
+    Layer layer{Layer::Content};
+    std::string item;
+  };
+  [[nodiscard]] const std::vector<ElidedText>& elidedText() const noexcept { return elided_; }
+
   [[nodiscard]] std::uint64_t layerHash(Layer layer) const noexcept;
   [[nodiscard]] std::size_t layerSize(Layer layer) const noexcept;
   // One recorded drawing call as a frame compares it with the previous frame's: the hash of the call
@@ -188,6 +199,7 @@ private:
   std::vector<State> saved_;
   std::vector<Clip> clips_;
   std::array<LayerRecord, kLayerCount> layers_{};
+  std::vector<ElidedText> elided_;
 };
 
 // Sets a RecordingCanvas's layer for a scope and restores the previous one; does nothing on a canvas

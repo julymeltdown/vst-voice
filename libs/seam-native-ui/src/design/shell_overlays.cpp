@@ -80,7 +80,7 @@ void cardHeader(Canvas2D& c, const DesignTokens& t, ui::Rect panel, std::string_
   c.fill(Path::circle({panel.x + 20.0, panel.y + 20.0}, 3.5), t.color.accent);
   c.restore();
   c.text({panel.x + 32.0, panel.y + 10.0, std::max(1.0, panel.width - 56.0), 20.0}, title,
-         style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left,
+         style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left,
                true),
          t.color.textPrimary);
   Path rule;
@@ -2807,7 +2807,7 @@ public:
       const auto build = std::string{tr(Str::Build)} + std::string{seam::build::kBuildId};
       static_cast<void>(paintSplashText(
           c, area,
-          {SplashLine{tr(Str::ProjectSEAM), style(FontRole::Display, 28.0), t.color.textPrimary},
+          {SplashLine{tr(Str::ProjectSEAM), style(t.type.display, 28.0), t.color.textPrimary},
            SplashLine{version, style(FontRole::UiSemibold, t.type.body), t.color.textPrimary},
            SplashLine{build, style(FontRole::Mono, t.type.smallLabel), t.color.textSecondary}}));
     }

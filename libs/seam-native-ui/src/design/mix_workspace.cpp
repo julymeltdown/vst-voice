@@ -147,7 +147,7 @@ void header(Canvas2D& c, const DesignTokens& t, ui::Rect area, ui::Rect title, s
          lit ? t.color.accent : t.color.textDisabled);
   c.restore();
   c.text(title, text,
-         style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left,
+         style(t.type.heading, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left,
                true),
          t.color.textPrimary);
   Path rule;

@@ -14,6 +14,9 @@ display mode is Full, the SINGER menu has a Full/Minimal/Off switch, and MIX and
 have an Add Region action. The sections below describe the code at `74a59b32` with these
 included.
 
+**On branch `codex/brand-fonts-tooltips`**: bundled OFL fonts (§3), the kit tooltip (§4) and
+`scripts/check_brand_terms.py` (§12) ship; the sections below include them.
+
 ## 1. What the shell is
 
 The SING shell is the only editor surface in the standalone app and the CLAP plug-in. The classic
@@ -123,9 +126,27 @@ both knob tracks are below 3:1 as non-text. High Contrast is the accessible sett
 
 ## 3. Typography
 
-Font roles are `Ui`, `UiMedium`, `UiSemibold` and `UiBold` (the macOS system font at those
-weights), `Mono` (the system monospaced font) and `Display` (Avenir Next Condensed DemiBold,
-falling back to a heavy system weight), mapped in `canvas2d_coregraphics.mm`. The type scale in
+Font roles map to bundled faces in `canvas2d_coregraphics.mm`, each licensed under the SIL Open Font
+License 1.1 and pinned by SHA-256 in `assets/fonts/manifest.json`:
+
+| Role | Bundled face | System fallback |
+|---|---|---|
+| `Ui`, `UiMedium`, `UiSemibold`, `UiBold` | Barlow Regular, Medium, SemiBold, Bold | the system font at that weight |
+| `Mono` (readouts) | DM Mono Medium | the system monospaced font |
+| `Display` (EMO headings and display text) | Barlow Condensed SemiBold | Avenir Next Condensed DemiBold, then a heavy system weight |
+| `DisplayRounded` (SCENE headings and display text) | Fredoka at weight 600 | the system rounded design, semibold |
+
+The tokens choose a look's faces: `TypeScale::heading` (card and panel titles) and `display` (the
+text wordmark, the About title) are `Display` in EMO and `DisplayRounded` in SCENE. The standalone app
+and the plug-in register the faces for their own process only (`CTFontManagerRegisterFontsForURL` with
+`kCTFontManagerScopeProcess`) when the shell is activated, after checking each file against the
+manifest; a missing or altered face is refused and its roles use the fallback. Fonts are made from
+the pinned file's own descriptors, so a same-named face installed on the system cannot stand in.
+Characters a face lacks (Hangul, kana) cascade to system faces. The bundles carry the faces in
+`Resources/fonts`; development builds read `assets/fonts`; `SEAM_UI_FONTS` overrides the directory and
+`SEAM_UI_FONTS=system` turns the bundled faces off. `scripts/verify_bundled_fonts.py` (ctest
+`seam_bundled_fonts_contract`) checks sizes, hashes, PostScript names, roles and licenses. The UI never
+names a face. The type scale in
 `TypeScale` is, in logical points: body 13, label 12, lyric 13, small label 11, panel title 12
 with 2.2 tracking, knob value 16, transport 22, and ruler micro 10. Nothing essential is smaller
 than 11 points; 10 is reserved for ruler ticks and captions.
@@ -134,9 +155,9 @@ A label that does not fit is first tightened to 0.4 tracking, then stepped down 
 10-point floor (`fitted()` in `sing_shell.cpp`), then ellipsized by the canvas at its box, never
 drawn past it. The elided text stays whole on the accessibility node at that place (§8).
 
-Bundled, pinned font files are **Not shipped**. The shell uses system faces, and the capture script
-records their hashes (`/System/Library/Fonts/SFNS.ttf`, `SFNSMono.ttf`, `Avenir Next
-Condensed.ttc`).
+The capture script records each bundled face's hash and whether it matches the manifest (the copy in
+the app bundle when there is one), and the system fallback faces' hashes. The plan's `Pixel` role for
+SCENE's transport digits is **Not shipped**; SCENE readouts use `Mono`.
 
 ## 4. Component kit
 
@@ -154,9 +175,12 @@ painted rectangle is its hit rectangle and its accessibility bounds.
 | Transport display | Play button, bars:beats:ticks position, tempo and meter readouts; the tempo readout opens the time map | `paintHeader` |
 | Overlay control skin | Buttons, rows and fields shared by every re-homed surface | `paintOverlayControl` in `shell_overlays.cpp` |
 | Signal rail | A decorative line with node dots in the gap left of the rack; no hit targets | `paintBackground` |
+| Tooltip | A radius-8 card on `surfaceRaised` with a 12-point accent glow at 0.18 (High Contrast: opaque, a 2-point text-colored border, no glow), wrapped to six lines of at most 320 points. It appears after the pointer rests on a control for 600 ms (the plan said 400) or after keyboard focus holds one as long; moving straight from one shown tip to another target shows the next at once. Escape, a press, a scroll or typing hides it until the target changes. It is placed inside the window below its target, else above, right or left, and never covers the target. Its text is what the node already publishes: its description, after the whole text of a label the frame drew elided inside it; over an elided label outside any control, that label's whole text. It is never a node. Icon-only controls (workspace tabs, the workspace menu, settings, play, the SINGER and VOICE ⋯ buttons) carry descriptions for it. It is the dynamic layer's topmost `tooltip` item, so showing or hiding it damages only its card | `tooltip.hpp`, `tooltip.cpp`; wired in `SingShell::paint`, `pointerMove`, `handleShellKey` |
 
-Tooltips are **Not shipped**. Popovers, scrolling row lists and text fields exist only as the
-overlay implementations in §7, not as reusable kit components.
+Popovers, scrolling row lists and text fields exist only as the overlay implementations in §7, not
+as reusable kit components. The standalone window paints only on request, so the shell reports
+when a waiting tooltip is due (`SingShell::nextFrameDue`, read by the AppKit run loop through
+`INativeWindowClient::nextFrameDue`); the plug-in's timer already requests a frame every tick.
 
 ## 5. Layout
 
@@ -342,7 +366,9 @@ Accessibility tree conventions (`SingShell::rebuildSemantics`):
   visible grid; scroll to show it", and a note hidden in a dense group says the group lists it.
   Notes stay virtualized in the controller's tree.
 - **Elision.** Wherever a painted label is ellipsized, its full text is the node's value or
-  description at that place. The layout property tests enforce this (§14).
+  description at that place. The layout property tests enforce this (§14). The tooltip over such a
+  label shows the same whole text (§4). `shell.status` describes the status bar's left message, and
+  the ruler's time-map button describes its painted caption, so both say what they show when elided.
 - **Decoration.** The Stage figure, textures, the signal rail and the header avatar are not in the
   tree. The singer's state is published through the SINGER card and the status nodes.
 - **Host boundary.** A host may send an action or a value to an editor element only while the shell
@@ -477,7 +503,14 @@ Visible text is real state, real labels or real instructions: no invented slogan
 or style names from the concepts. Style chips come only from the selected voice's published styles.
 The asset gate (`scripts/verify_ui_design_assets.py`) rejects undeclared metadata fields,
 unmanifested files, path escapes and `developmentOnly: false`, but it cannot see logos. The
-plan's `scripts/check_brand_terms.py` is **Not shipped**; brand review is manual.
+plan's `scripts/check_brand_terms.py` (ctest `seam_brand_terms_source_contract`) scans what ships (the
+string tables, design and character asset metadata and file names, bundle and installer manifests,
+and the documents copied into a release) for a curated deny-list of brand, band, label, retailer,
+social-network, messenger, DAW and vocal-synth names, case-insensitively on word boundaries.
+Nominative uses are allowed per file in `scripts/brand_terms_allowlist.json` with a reason: plug-in
+format and host names in the manual, the acceptance host matrix and the installers, and licensor
+attributions in the notices; none is allowed in the string table or in art. Words that are also
+plain English are not on the list, and logos in art still need the manual review.
 
 ## 13. Non-Apple platforms
 
@@ -495,14 +528,15 @@ Test targets (`CMakeLists.txt`):
 
 | Target | Covers |
 |---|---|
-| `seam_design_system_tests` | Token sets, WCAG pairs, the layout snapshot at each breakpoint, the compact inspector |
+| `seam_design_system_tests` | Token sets, WCAG pairs, the layout snapshot at each breakpoint, the compact inspector; bundled font roles and refusal; the tooltip's timer, placement at 480×320 to 3840×2160 and paint (`seam_design_fonts_system_fallback` reruns the font case with `SEAM_UI_FONTS=system`) |
 | `seam_design_layout_property_tests_{workspaces,overlay,sheets,contrast,string,pseudo}` | Every workspace, overlay and sheet at 12 sizes from 720×480 to 3840×2160 and at 1×, 1.5× and 2×: no overlapping interactive widgets, 24-point minimum targets, text whole or elided with its full text on a node; the string table and 40% pseudo-localization. Run serially |
-| `seam_design_shell_input_tests` | Pointer, keyboard, overlays, focus, Escape, refusals, 480×320 frames |
+| `seam_design_shell_input_tests` | Pointer, keyboard, overlays, focus, Escape, refusals, 480×320 frames; tooltips on every described control at eight sizes, keyboard focus, elided labels, damage and accessibility |
 | `seam_design_frame_pipeline_tests` | Recorder, layer cache and damage; cached and partial frames equal a full composition, including High Contrast |
 | `seam_design_character_surface_tests` | Character states, ring, Stage, splash, toast, animator, blink lids, per-state art |
 | `seam_design_tune_workspace_tests`, `seam_design_mix_workspace_tests`, `seam_design_voice_workspace_tests` | The workspaces |
 | `seam_clap_design_shell_tests` | The shell inside the CLAP editor runtime |
 | `seam_ui_design_assets`, `seam_ui_performance_analysis` | The asset gate; packet timing analysis |
+| `seam_brand_terms_source_contract`, `seam_bundled_fonts_contract` | The brand-term gate (§12); the bundled fonts against their manifest (§3) |
 | `seam_phase5_benchmark` (an executable, not a ctest) | The §11 budgets; `SEAM_BENCHMARK_DESIGN_ONLY=1`, `SEAM_BENCHMARK_CASE=<name>`, `SEAM_BENCHMARK_SAMPLES=<n>` |
 
 Specification and capture scripts:
@@ -530,9 +564,8 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
   ring portraits. The package is schema 2 with PPM state art (see the bible).
 - Plan §9 motion tweens, a static singing mouth under Reduce Motion, and the export "complete" pose.
 - In-app controls for contrast and Reduce Motion, and the Stage as a separate preference.
-- Tooltips and reusable popover, scroll-view and text-field components.
-- Bundled fonts; non-English string tables and a language choice.
-- `scripts/check_brand_terms.py`.
+- Reusable popover, scroll-view and text-field components.
+- The plan's `Pixel` font role; non-English string tables and a language choice.
 - The §10 timing budgets (the cache memory budget is met).
 - Windows and Linux editor surfaces.
 - Native visual acceptance, FL Studio F02–F05, VoiceOver and the owner rubric (NOT_RUN).
