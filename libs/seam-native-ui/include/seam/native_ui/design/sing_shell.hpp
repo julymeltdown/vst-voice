@@ -445,6 +445,9 @@ private:
   // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
   // gives its first control the keyboard.
   OverlayKind presentedOverlay_{OverlayKind::None};
+  // The surface an open inline field was opened over (a review, for its draft field), so the
+  // surface it returns to is resumed where it was rather than presented anew.
+  OverlayKind fieldOpenedOver_{OverlayKind::None};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
   // The character artwork and its animation, both driven by the read models above.

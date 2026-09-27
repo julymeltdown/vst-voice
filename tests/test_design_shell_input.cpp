@@ -4045,3 +4045,84 @@ TEST_CASE("a cleared inline field publishes its empty text, not the committed va
   CHECK(typed.has_value() && typed->value == "9");
   f.controller.cancelTextComposition();
 }
+
+TEST_CASE("a review's row pager keeps its place across a draft field and restarts on a new page") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // Enough notes with vibrato for the Clear vibrato review to have three pages of six rows.
+  auto* region = f.session.project().findRegion(f.regionId);
+  for (std::uint32_t i = 0U; i < 14U; ++i) {
+    auto [lyric, note] = f.factory.makeNote(time::Tick{2160 + 360 * i}, time::Tick{240},
+                                            static_cast<std::uint8_t>(60U + i % 12U), U"a",
+                                            domain::Language::Japanese);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  }
+  std::vector<domain::NoteId> ids;
+  for (auto& note : region->notes) {
+    note.vibrato.enabled = true;
+    ids.push_back(note.id);
+  }
+  f.session.selection().selectOnly(ids.front());
+  for (const auto& id : ids) f.session.selection().add(id);
+  constexpr double kWidth = 480.0;
+  constexpr double kHeight = 320.0;
+  const auto shown = [&f](std::size_t row) {
+    return nodeNow(f, f.controller.replacementReviewSemanticPrefix() + "row." + std::to_string(row))
+        .has_value();
+  };
+  const auto pageDown = [&f] {
+    const auto down = nodeNow(f, "shell.overlay.review.rows-down");
+    if (!down.has_value() || !down->enabled)
+      throw test::Failure{"the card shows every row; no row pager to test"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(down->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(down->bounds))).hasValue());
+  };
+
+  // The controller's next page starts from its first row, wherever the card had paged to.
+  CHECK(f.frame(kWidth, kHeight));
+  succeeds(f.controller.openClearVibratoReview(), "opening the review");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  CHECK(shown(0U));
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "action.1",
+                                      SemanticAction::Activate),
+           "moving to the next page");
+  CHECK(f.frame(kWidth, kHeight));
+  if (!shown(0U)) throw test::Failure{"the next page opened on a later row"};
+  CHECK(f.shell.dispatchController(f.controller,
+                                   f.controller.replacementReviewSemanticPrefix() + "action.4",
+                                   SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame(kWidth, kHeight));
+
+  // A draft field opened from a paged inspector returns to the same rows.
+  succeeds(f.controller.openVibratoInspector(), "opening the vibrato inspector");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  std::size_t visible = 99U;
+  for (std::size_t i = 1U; i < 6U && visible == 99U; ++i)
+    if (shown(i)) visible = i;
+  CHECK(visible < 6U);
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row." +
+                                          std::to_string(visible),
+                                      SemanticAction::Activate),
+           "opening the field");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  if (shown(0U)) throw test::Failure{"the review returned from its field at its first row"};
+  CHECK(shown(visible));
+}

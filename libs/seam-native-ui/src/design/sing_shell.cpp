@@ -641,6 +641,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   semanticFocus_.clear();
   overlayOpener_.clear();
   presentedOverlay_ = OverlayKind::None;
+  fieldOpenedOver_ = OverlayKind::None;
   workspaceMenuOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
@@ -662,6 +663,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     fieldAnchor_.reset();
   }
   // Every modal surface the controller opens is presented by the shell itself, so only a disabled
@@ -3945,7 +3947,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // action reaches the score or the lane it covers.
   if (overlay != nullptr) {
     if (overlay->kind() != presentedOverlay_) {
-      overlay->presented();
+      if (presentedOverlay_ == OverlayKind::TextField && overlay->kind() == fieldOpenedOver_)
+        overlay->resumed();
+      else
+        overlay->presented();
+      fieldOpenedOver_ =
+          overlay->kind() == OverlayKind::TextField ? presentedOverlay_ : OverlayKind::None;
       // The control that opened the surface from the shell (MIX's Settings, VOICE's browser
       // button) is where Escape returns focus; a surface that follows another keeps the first one.
       if (presentedOverlay_ == OverlayKind::None)
@@ -4005,6 +4012,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     for (auto& node : nodes) children.push_back(std::move(node));
   } else {
     presentedOverlay_ = OverlayKind::None;
+    fieldOpenedOver_ = OverlayKind::None;
     overlayField_.clear();
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
