@@ -2886,6 +2886,12 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       }
       for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
         if (!contains(control.bounds, p)) continue;
+        // A disabled control (a time-map row while the event field is open, a pager at its end)
+        // absorbs the press and runs nothing, as the classic panel ignored it.
+        if (!control.enabled) {
+          repaint();
+          return core::success();
+        }
         // A field keeps the keyboard where it is (its input client); any other control takes it.
         if (control.role != SemanticRole::TextField)
           takeSemanticFocus(controller, std::string{overlay->idPrefix()} + "panel");

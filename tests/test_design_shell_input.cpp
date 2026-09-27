@@ -3893,3 +3893,94 @@ TEST_CASE("a surface presented over the score cancels an open lyric, whose keys 
   CHECK(f.controller.textInputActive());
   f.controller.cancelTextComposition();
 }
+
+TEST_CASE("a disabled overlay control absorbs a press and pagers never count past their end") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A second tempo event, so the time map has a row that a press could select.
+  CHECK(f.frame());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "1920")
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "90")
+            .hasValue());
+  // The map lists the new event after its own Refresh, as the classic panel required.
+  CHECK(f.controller.timeMapPanelAction(4U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.sceneState().timeMapRows.size() >= 2U);
+  CHECK(f.controller.selectTimeMapRow(0U).hasValue());
+  // Add tempo opens the event field: the rows are disabled, and a press on one selects nothing and
+  // leaves the field open.
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  const auto selected = f.controller.sceneState().timeMapSelectedRow;
+  const auto row = nodeNow(f, "time-map-row.1");
+  CHECK(row.has_value() && !row->enabled);
+  if (row.has_value()) {
+    CHECK(f.shell.pointerDown(f.controller, press(centre(row->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(row->bounds))).hasValue());
+  }
+  CHECK(f.controller.sceneState().timeMapSelectedRow == selected);
+  CHECK(f.controller.textFieldView().kind ==
+        native_ui::NativeEditorController::TextFieldView::Kind::TimeMap);
+  f.controller.cancelTextComposition();
+  CHECK(f.controller.timeMapPanelAction(5U).hasValue());
+
+  // The audio sheet pages its devices when they outnumber its rows. Pressing a disabled "Later
+  // devices" or scrolling past the end never runs the counter on, so one step back moves the list.
+  std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
+  for (std::size_t i = 0U; i < 14U; ++i)
+    devices.push_back({.id = "device-" + std::to_string(i),
+                       .name = "Device " + std::to_string(i),
+                       .physical = true,
+                       .selected = i == 0U});
+  f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "device-0",
+                                                         .sampleRate = 48000U,
+                                                         .blockFrames = 256U,
+                                                         .outputChannels = 2U},
+                                devices, 0U, 0U);
+  f.controller.showAudioSettings();
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
+  const auto firstShown = [&f] {
+    std::size_t first = 99U;
+    for (std::size_t i = 0U; i < 14U; ++i)
+      if (nodeNow(f, "audio.device." + std::to_string(i)).has_value()) {
+        first = i;
+        break;
+      }
+    return first;
+  };
+  const auto pressNode = [&f](std::string_view id) {
+    const auto node = nodeNow(f, id);
+    if (!node.has_value()) throw test::Failure{std::string{id} + " is not published"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.frame(720.0, 480.0));
+  };
+  CHECK(firstShown() == 0U);
+  // More than one row is shown, so a counter past the last full page would be hidden by the layout.
+  CHECK(nodeNow(f, "audio.device.1").has_value());
+  for (int i = 0; i < 30; ++i) pressNode("shell.overlay.audio.devices-down");
+  const auto last = firstShown();
+  CHECK(last > 0U && last < 14U);
+  const auto down = nodeNow(f, "shell.overlay.audio.devices-down");
+  CHECK(down.has_value() && !down->enabled);
+  pressNode("shell.overlay.audio.devices-up");
+  CHECK(firstShown() + 1U == last);
+  // The wheel over the sheet stops at the same end.
+  const auto panel = nodeNow(f, "shell.overlay.audio.panel");
+  CHECK(panel.has_value());
+  if (!panel.has_value()) return;
+  for (int i = 0; i < 30; ++i)
+    CHECK(f.shell.scroll(f.controller, 0.0, -1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() == last);
+  CHECK(f.shell.scroll(f.controller, 0.0, 1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() + 1U == last);
+}
