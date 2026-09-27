@@ -81,6 +81,8 @@ enum class ApplicationCommand {
   CloseExpressionLane,
   EditTrackStyle,
   EditJapaneseReading,
+  // The About sheet: the mode's key art with the product name and version.
+  ShowAbout,
 };
 
 struct RecentProjectMenuItem final {

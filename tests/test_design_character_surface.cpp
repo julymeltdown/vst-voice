@@ -395,6 +395,10 @@ TEST_CASE("the Stage is off in High Contrast, with an expanded lane and outside 
   auto compact = input;
   compact.fullRack = false;  // the rail and the drawer
   CHECK(!resolveStage(compact, aspect).shown);
+  // The empty project's splash already shows her seated, so the standing figure stays off.
+  auto splash = input;
+  splash.splashShown = true;
+  CHECK(!resolveStage(splash, aspect).shown);
   // A roll too short to hold a figure behind the notes keeps it off rather than drawing a smear.
   auto shortRoll = input;
   shortRoll.grid = ui::Rect{80.0, 172.0, 1040.0, 120.0};
@@ -1059,8 +1063,9 @@ TEST_CASE("a frozen clock freezes the character, so a capture is reproducible") 
 // The project's character display mode in the shell (the parity checklist's "character
 // Full/Minimal/Off", with the modes as the fidelity review's section 9 defines them): Full draws the
 // Stage and every portrait; Minimal keeps the compact identity (ring, avatar, the empty project's
-// pose) and drops the Stage; Off draws no character artwork, while the ring's ticks, the avatar's
-// state ring and the empty project's line still carry the singer's status. C cycles the modes.
+// key art or pose) and drops the Stage; Off draws no character artwork, while the ring's ticks, the
+// avatar's state ring and the empty project's line still carry the singer's status. C cycles the
+// modes.
 TEST_CASE("the character display mode shows, trims or removes each character surface") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   if (!std::filesystem::is_directory(designAssetRoot())) return;
@@ -1121,7 +1126,8 @@ TEST_CASE("the character display mode shows, trims or removes each character sur
     ShellFixture empty{true};
     empty.session.project().settings().characterDisplay = mode;
     CHECK(empty.frame(kWidth, kHeight));
-    // The seated pose's box, centred on the roll above the line (paintEmptyProject).
+    // The seated pose's box, centred on the roll above the line (paintEmptyProject); the mode's
+    // key art, where the roll holds it, covers the same place.
     const auto& grid = empty.shell.layout().grid;
     const auto pose = std::min(grid.height * 0.42, 208.0);
     out.emptyPose = checksum(empty, {grid.x + grid.width * 0.5 - pose * 0.5,

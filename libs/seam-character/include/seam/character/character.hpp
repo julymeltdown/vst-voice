@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace seam::character {
 
@@ -50,6 +51,23 @@ struct MouthPlacement final {
   friend bool operator==(const MouthPlacement&, const MouthPlacement&) = default;
 };
 
+// One eye of a state portrait, as a normalized rectangle in the same unit square as the mouth
+// placement. The idle blink closes a lid inside it, so a lid never lands anywhere but on an eye.
+using EyeBox = MouthPlacement;
+inline constexpr std::size_t kMaximumEyesPerState{2U};
+
+// A design mode's own state set (the plan's per-mode outfit). It names all six state portraits;
+// what it does not declare falls back to the package's shared set, except its mouths: a mouth
+// sprite carries pixels of one exact singing face, so an outfit without its own mouths shows its
+// singing portrait without a sprite rather than borrow one cut from another picture.
+struct Outfit final {
+  std::map<State, std::filesystem::path> stateAssets;
+  std::map<MouthShape, std::filesystem::path> mouthAssets;
+  std::optional<MouthPlacement> mouthPlacement;
+  // Per-state eyes; a state it omits uses the shared set's eyes (an outfit keeps the framing).
+  std::map<State, std::vector<EyeBox>> eyes;
+};
+
 struct Manifest final {
   std::int32_t schemaVersion{1};
   std::string characterId;
@@ -68,6 +86,10 @@ struct Manifest final {
   // refused rather than mixed with the presentation's own fallback drawing.
   std::map<MouthShape, std::filesystem::path> mouthAssets;
   std::optional<MouthPlacement> mouthPlacement;
+  // Where each state portrait's eyes are, one or two boxes; a state it omits has no known eyes.
+  std::map<State, std::vector<EyeBox>> eyes;
+  // Per-mode state sets keyed by a lowercase name ("scene"); a mode without one uses the shared set.
+  std::map<std::string, Outfit> outfits;
   // Whether this artwork is a development turnaround. It travels in the package's own bytes, so moving
   // or renaming the directory cannot promote it to production.
   bool developmentOnly{false};
@@ -80,6 +102,14 @@ struct Manifest final {
     return mouthPlacement;
   }
   [[nodiscard]] bool declaresPerformance() const noexcept { return !mouthAssets.empty(); }
+  [[nodiscard]] const Outfit* outfit(std::string_view name) const;
+  // The state asset, mouth asset, mouth placement and eyes as seen by one outfit (empty name or an
+  // undeclared outfit reads the shared set).
+  [[nodiscard]] std::filesystem::path assetFor(State state, std::string_view outfitName) const;
+  [[nodiscard]] std::filesystem::path mouthAssetFor(MouthShape shape,
+                                                    std::string_view outfitName) const;
+  [[nodiscard]] std::optional<MouthPlacement> mouthPlacementFor(std::string_view outfitName) const;
+  [[nodiscard]] std::vector<EyeBox> eyesFor(State state, std::string_view outfitName = {}) const;
 };
 
 struct Package final {
@@ -88,6 +118,9 @@ struct Package final {
 
   [[nodiscard]] std::filesystem::path assetPath(State state) const;
   [[nodiscard]] std::filesystem::path mouthAssetPath(MouthShape shape) const;
+  [[nodiscard]] std::filesystem::path assetPath(State state, std::string_view outfitName) const;
+  [[nodiscard]] std::filesystem::path mouthAssetPath(MouthShape shape,
+                                                     std::string_view outfitName) const;
 };
 
 [[nodiscard]] core::Result<Package> loadPackage(

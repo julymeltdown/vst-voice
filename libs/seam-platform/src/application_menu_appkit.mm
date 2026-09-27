@@ -45,6 +45,7 @@
 - (void)exportScore:(id)sender;
 - (void)exportSet:(id)sender;
 - (void)quitApplication:(id)sender;
+- (void)showAbout:(id)sender;
 - (void)undoAction:(id)sender;
 - (void)redoAction:(id)sender;
 - (void)editPronunciationHint:(id)sender;
@@ -359,6 +360,7 @@
 }
 - (void)exportSet:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ExportSet]; }
 - (void)quitApplication:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Quit]; }
+- (void)showAbout:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ShowAbout]; }
 - (void)undoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Undo]; }
 - (void)redoAction:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::Redo]; }
 - (void)editPronunciationHint:(id)sender {
@@ -583,6 +585,8 @@ public:
     root_ = [[NSMenu alloc] initWithTitle:@"Project SEAM"];
 
     auto* app = [[NSMenu alloc] initWithTitle:@"Project SEAM"];
+    [app addItem:item(@"About Project SEAM", @selector(showAbout:), @"", 0, target_)];
+    [app addItem:[NSMenuItem separatorItem]];
     [app addItem:item(@"Quit Project SEAM", @selector(quitApplication:), @"q",
                       NSEventModifierFlagCommand, target_)];
     addSubmenu(root_, @"Project SEAM", app);

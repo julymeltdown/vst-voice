@@ -24,3 +24,16 @@ singing face with each mouth shape in `closed, narrow, nasal, open, wide, round`
 | `complete` | Complete | Soft smile, small wave with the sleeve over the palm |
 | `warning` | Warning | Uneasy side glance, arms crossed, lip bitten |
 | `error` | Error | Head in hand, eyes shut |
+
+## Eyes and per-mode outfits (0.3.0)
+
+`eyes` maps each state to one or two boxes (normalized to the portrait, like `mouthPlacement`) around
+that state's visible eyes. The idle blink closes a skin-toned lid from the top of each box, so it
+lands on the eyes in every pose; a state without eyes gets no lid, and Reduce Motion keeps the blink
+at zero. `previews/eye-boxes.png` draws the boxes over the shared (top) and SCENE (bottom) faces.
+
+`outfits.<name>` lets a design mode supply its own `states` (all six), `mouths` and
+`mouthPlacement`. The shell selects the outfit named after its design mode (`scene`), and uses the
+shared set for any mode without one (EMO). An outfit's mouths are used only over its own states.
+`outfits.scene` is the SCENE look: the same six poses with pink/cyan hair streaks and neon bead
+bracelets, previewed in `previews/scene-state-contact-sheet.png`.

@@ -94,12 +94,14 @@ struct CharacterSurfaceInput final {
 // package's own default state for a state it does not name. An empty path means there is no package
 // art to draw, and the caller draws the look's own portrait instead of claiming a package state.
 [[nodiscard]] std::filesystem::path characterStateAssetPath(const character::Package& package,
-                                                            CharacterState state);
+                                                            CharacterState state,
+                                                            std::string_view outfit = {});
 
 // Empty for a status-only package, which is the whole point of the schema: a presentation that asks a
 // status-only package for a mouth gets nothing rather than a guess.
 [[nodiscard]] std::filesystem::path characterMouthAssetPath(const character::Package& package,
-                                                            character::MouthShape shape);
+                                                            character::MouthShape shape,
+                                                            std::string_view outfit = {});
 
 // Which side the artwork comes from. Exactly one is used, never a mixture of a package state and the
 // look's portrait, so a screen never shows half a turnaround beside half a fallback.
@@ -141,6 +143,9 @@ struct StageInput final {
   ui::Rect grid;
   bool pointerInside{false};
   bool noteIntersects{false};
+  // The empty project's splash already shows her, seated; a second, standing figure behind it would
+  // be a duplicate, so the Stage stays off while the splash is up.
+  bool splashShown{false};
 };
 
 struct StagePlacement final {
@@ -181,6 +186,38 @@ inline constexpr std::string_view kEmptyProjectPrompt =
     "Double-click the grid to write the first note.";
 
 [[nodiscard]] std::optional<std::string_view> emptyProjectPrompt(std::size_t noteCount) noexcept;
+
+// The mode's splash key art replaces the seated pose on an empty roll that can show it whole at a
+// readable size: the art is contained in the roll (inset by kEmptySplashInset) and must be at least
+// kEmptySplashMinimum wide and tall, or the roll keeps the pose. The prompt sits in the art's left
+// clear area (kSplashClearShare of its width), over a scrim in Standard contrast and on an opaque
+// plate in High Contrast.
+inline constexpr double kEmptySplashInset = 16.0;
+inline constexpr ui::Point kEmptySplashMinimum{560.0, 350.0};
+inline constexpr double kSplashClearShare = 0.44;
+[[nodiscard]] std::optional<ui::Rect> emptyProjectSplashBounds(ui::Rect grid,
+                                                              double splashAspect) noexcept;
+// The same for a loaded splash image; empty when there is no usable image.
+[[nodiscard]] std::optional<ui::Rect> emptyProjectSplashBounds(ui::Rect grid,
+                                                              const paint::Image* splash) noexcept;
+// The prompt's rectangle inside the splash's left clear area.
+[[nodiscard]] ui::Rect splashTitleArea(ui::Rect splash) noexcept;
+
+// Legible text over key art: a horizontal scrim from the art's left edge across its clear area in
+// Standard contrast, an opaque plate under the text in High Contrast.
+void paintSplashScrim(paint::Canvas2D& canvas, const DesignTokens& tokens, ui::Rect splash,
+                      ui::Rect textArea);
+
+// Text stacked in a splash's clear area, each line wrapped at word boundaries to the area's width
+// and the block centred vertically. Returns the rectangle the text occupies.
+struct SplashLine final {
+  std::string text;
+  paint::TextStyle style;
+  Color color;
+};
+inline constexpr double kSplashPromptSize = 18.0;
+ui::Rect paintSplashText(paint::Canvas2D& canvas, ui::Rect area,
+                         const std::vector<SplashLine>& lines);
 
 // The error toast above the status bar: a 40-point head-in-hand crop and the reason the status line
 // already carries. It appears for a failed render and for a missing voicebank, and for nothing else.
@@ -292,7 +329,26 @@ struct SingerRingSpec final {
   // The idle blink, 0 open and 1 closed. Zero under Reduce Motion, and zero in every state that does
   // not blink; the lid is drawn over the portrait, inside the ring.
   double blink{0.0};
+  // Where the drawn portrait's eyes are, and the skin tone the lid closes with. Without declared
+  // eyes no lid is drawn: a lid somewhere else on the face would claim an eye that is not there.
+  std::vector<character::EyeBox> eyes{};
+  std::optional<Color> lidTone{};
 };
+
+// The idle blink's lids: for each declared eye, the top part of its box closed by the blink amount,
+// in the portrait rectangle the artwork filled. Empty when nothing blinks (Reduce Motion, a state
+// that does not blink, or no declared eyes), so every lid lies within an eye's box.
+struct BlinkLid final {
+  ui::Rect lid;
+  ui::Rect eye;
+};
+[[nodiscard]] std::vector<BlinkLid> blinkLids(ui::Rect portrait,
+                                              const std::vector<character::EyeBox>& eyes,
+                                              double blink);
+// The eyelid skin of a portrait: the light pixels just under its declared eyes. Nothing when the
+// portrait declares no eyes or none of that skin is inside the image.
+[[nodiscard]] std::optional<Color> eyelidTone(const PixelSurface& portrait,
+                                              const std::vector<character::EyeBox>& eyes);
 
 // Returns whether the ring showed motion (characterMotionShown), so the caller can tell whether the
 // next frame would differ from this one.
@@ -340,16 +396,19 @@ inline constexpr double kHeaderAvatarSize = 28.0;
                                         ui::Rect bounds, CharacterState state,
                                         const PixelSurface* packagePortrait,
                                         const paint::Image* lookPortrait, double opacity,
-                                        double blink = 0.0, double breath = 0.0);
+                                        double blink = 0.0, double breath = 0.0,
+                                        const std::vector<character::EyeBox>& eyes = {},
+                                        std::optional<Color> lidTone = std::nullopt);
 
 // The Stage figure into the roll: drawn before the notes and curves so it sits below them.
 void paintStageFigure(CharacterCanvas canvas, ui::Rect clip, const StagePlacement& placement,
                       double opacity, const paint::Image& stage);
 
-// The seated pose and the prompt, centred in the roll, for a region that genuinely has no notes.
+// The mode's splash (when the roll can show it, see emptyProjectSplashBounds) or else the seated pose,
+// with the prompt, for a region that genuinely has no notes.
 void paintEmptyProject(CharacterCanvas canvas, const DesignTokens& tokens,
                        const SingLayout& layout, const PixelSurface* packagePortrait,
-                       const paint::Image* lookPortrait);
+                       const paint::Image* lookPortrait, const paint::Image* splash = nullptr);
 
 // The error toast above the status bar: the 40-point head-in-hand crop, its title and the reason.
 void paintCharacterToast(CharacterCanvas canvas, const DesignTokens& tokens,
@@ -391,6 +450,11 @@ public:
     return lookStage_;
   }
 
+  // The design mode's own state set ("emo", "scene"). A package without that outfit draws its shared
+  // set. Changing it drops the decoded art, which the next frame decodes for the new set.
+  void setOutfit(std::string outfit);
+  [[nodiscard]] const std::string& outfit() const noexcept { return outfit_; }
+
   // The decoded package portrait for a state, or nothing when there is no package art for it. The
   // decode is cached per state; a state the artwork cannot decode stays absent rather than re-read
   // on every frame.
@@ -399,14 +463,21 @@ public:
   // performance assets.
   [[nodiscard]] const PixelSurface* mouth(character::MouthShape shape) const;
   [[nodiscard]] std::optional<character::MouthPlacement> mouthPlacement() const noexcept;
+  // The drawn state portrait's eyes, and the skin tone its blink lid closes with.
+  [[nodiscard]] std::vector<character::EyeBox> eyes(CharacterState state) const;
+  [[nodiscard]] std::optional<Color> lidTone(CharacterState state) const;
 
 private:
+  void dropDecoded() noexcept;
+
   std::optional<character::Package> package_;
   std::string packageError_;
+  std::string outfit_;
   std::shared_ptr<const paint::Image> lookPortrait_;
   std::shared_ptr<const paint::Image> lookStage_;
   mutable std::map<CharacterState, std::optional<PixelSurface>> portraits_;
   mutable std::map<character::MouthShape, std::optional<PixelSurface>> mouths_;
+  mutable std::map<CharacterState, std::optional<Color>> lidTones_;
   mutable std::optional<character::MouthPlacement> placement_;
 };
 

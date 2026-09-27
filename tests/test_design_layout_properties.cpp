@@ -475,6 +475,8 @@ std::vector<Surface> overlaySurfaces() {
                 f.shell.setSingerMenuOpen(f.controller, true).hasValue();
        },
        openInspectorWhenCompact},
+      {"about", OverlayKind::About,
+       [](LayoutFixture& f) { return f.shell.setAboutOpen(f.controller, true).hasValue(); }},
   };
 }
 

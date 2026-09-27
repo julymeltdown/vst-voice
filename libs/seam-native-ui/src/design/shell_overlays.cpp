@@ -1,6 +1,8 @@
 #include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 
+#include "seam/build/version.hpp"
+#include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/tempo_meter_model.hpp"
 
@@ -2679,6 +2681,114 @@ ui::Rect paintShellOverlay(const ShellOverlay& overlay, paint::Canvas2D& c, cons
 
 std::unique_ptr<ShellOverlay> makeSampleMicroscopeOverlay() {
   return std::make_unique<SampleMicroscopeOverlay>();
+}
+
+// ---- About ---------------------------------------------------------------------------------------
+
+namespace {
+
+constexpr double kAboutArtTop = 46.0;
+constexpr double kAboutFooter = 52.0;
+constexpr double kAboutNaturalWidth = 680.0;
+constexpr double kAboutCloseWidth = 88.0;
+constexpr double kAboutCloseHeight = 28.0;
+constexpr double kSplashAspect = 1.6;
+
+class AboutOverlay final : public ShellOverlay {
+public:
+  explicit AboutOverlay(std::function<const paint::Image*()> art) : art_{std::move(art)} {}
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::About; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override {
+    return "shell.overlay.about.";
+  }
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState&) const
+      noexcept override {
+    return true;  // The shell's own flag decides whether it is open.
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+                               const SingLayout&, ui::Rect slot) const override {
+    if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+    const auto width = std::min(slot.width, kAboutNaturalWidth);
+    const auto natural = kAboutArtTop + (width - 2.0 * kPanelInset) / kSplashAspect + kAboutFooter;
+    return fitPanel(slot, width, std::min(slot.height, natural));
+  }
+  [[nodiscard]] std::string title(const NativeEditorController&,
+                                  const EditorSceneState&) const override {
+    return tr(Str::AboutProjectSEAM);
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
+                                                     const EditorSceneState&, const SingLayout&,
+                                                     ui::Rect panel) const override {
+    if (panel.width <= 0.0) return {};
+    return {OverlayControl{std::string{kAboutCloseId},
+                           {panel.right() - kPanelInset - kAboutCloseWidth,
+                            panel.bottom() - (kAboutFooter + kAboutCloseHeight) * 0.5,
+                            kAboutCloseWidth, kAboutCloseHeight},
+                           tr(Str::Close)}};
+  }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
+             const EditorSceneState&, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override {
+    const auto art = aboutArtBounds(panel);
+    const auto* image = art_ ? art_() : nullptr;
+    if (art.width > 0.0 && art.height > 0.0) {
+      c.save();
+      c.clipPath(Path::roundedRect(art, t.shape.card));
+      if (image != nullptr && image->width() > 0U && image->height() > 0U) {
+        // Width-filling and vertically centred, so a shorter card crops sky and floor, never her.
+        const auto aspect =
+            static_cast<double>(image->width()) / static_cast<double>(image->height());
+        const auto height = art.width / aspect;
+        c.drawImage(*image, {art.x, art.y + (art.height - height) * 0.5, art.width, height});
+      } else {
+        c.fill(Path::rect(art), t.color.surfaceSunken);
+      }
+      const auto area = splashTitleArea(art);
+      paintSplashScrim(c, t, art, area);
+      c.restore();
+      const auto version = std::string{tr(Str::Version)} + std::string{seam::build::kApplicationVersion};
+      const auto build = std::string{tr(Str::Build)} + std::string{seam::build::kBuildId};
+      static_cast<void>(paintSplashText(
+          c, area,
+          {SplashLine{tr(Str::ProjectSEAM), style(FontRole::Display, 28.0), t.color.textPrimary},
+           SplashLine{version, style(FontRole::UiSemibold, t.type.body), t.color.textPrimary},
+           SplashLine{build, style(FontRole::Mono, t.type.smallLabel), t.color.textSecondary}}));
+    }
+    c.text({panel.x + kPanelInset, panel.bottom() - kAboutFooter + 8.0,
+            std::max(1.0, panel.width - 3.0 * kPanelInset - kAboutCloseWidth), 36.0},
+           tr(Str::CharacterArtIsAIGeneratedDevelopment),
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+    if (const auto* close = findControl(controls, kAboutCloseId))
+      paintOverlayControl(c, t, *close, tr(Str::Close), SemanticRole::Button, true, false, false);
+  }
+  core::Result<void> perform(NativeEditorController&, std::string_view id,
+                             SemanticAction action) const override {
+    // Close is the sheet's one control; the shell closes the sheet after it runs.
+    if (id != kAboutCloseId || action != SemanticAction::Activate)
+      return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
+    return core::success();
+  }
+  bool key(NativeEditorController&, std::string_view, const KeyEvent&) const override {
+    return false;
+  }
+  core::Result<void> close(NativeEditorController&) const override { return core::success(); }
+
+private:
+  std::function<const paint::Image*()> art_;
+};
+
+}  // namespace
+
+ui::Rect aboutArtBounds(ui::Rect panel) noexcept {
+  if (panel.width <= 0.0 || panel.height <= 0.0) return {};
+  const auto width = panel.width - 2.0 * kPanelInset;
+  const auto height = std::min(width / kSplashAspect, panel.height - kAboutArtTop - kAboutFooter);
+  if (width <= 0.0 || height <= 0.0) return {};
+  return {panel.x + kPanelInset, panel.y + kAboutArtTop, width, height};
+}
+
+std::unique_ptr<ShellOverlay> makeAboutOverlay(std::function<const paint::Image*()> art) {
+  return std::make_unique<AboutOverlay>(std::move(art));
 }
 std::unique_ptr<ShellOverlay> makePhonemeReviewOverlay() {
   return std::make_unique<PhonemeReviewOverlay>();
