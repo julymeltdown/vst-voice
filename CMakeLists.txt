@@ -924,6 +924,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/fonts"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/l10n"
       VERBATIM)
@@ -1159,6 +1160,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
       "${SEAM_EDITOR_RESOURCE_ROOT}/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
       "${SEAM_EDITOR_RESOURCE_ROOT}/l10n"
     VERBATIM)
