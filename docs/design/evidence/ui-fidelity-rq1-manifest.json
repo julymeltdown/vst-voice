@@ -1,0 +1,915 @@
+{
+  "assets": {
+    "assets/ui-design/PROVENANCE.md": "1861ca54c453ef97e3223aa85397dcbe9bf9e3c3e7bf57359e0efdc05b4c2ce8",
+    "assets/ui-design/emo/portrait.png": "1469593c48a0b5d4f8c4790df3399f79511ff5d8ca296f430185800df64f4754",
+    "assets/ui-design/emo/splash.png": "483314645c8d4bf2d09eca07eb23c7a1bb02f6478a0b5335319d1e6875457f6c",
+    "assets/ui-design/emo/stage.png": "da9a56a047b0327aa28b18004ac7be74c96bcf351b1e1cae57305ab2903d8409",
+    "assets/ui-design/emo/wordmark.png": "a2b8a3d828503ef3680b4a5f650e58b91fafe46f4e273d5f8b0a224587bceec7",
+    "assets/ui-design/manifest.json": "6255544e21e5871ab31e6d4816cfdfe93dc5da88b0f21021f45145532df5b8a8",
+    "assets/ui-design/scene/portrait.png": "8774f44a9bd729921be96dff9b5e223957388af600046504eb74610da91d1576",
+    "assets/ui-design/scene/splash.png": "99e13b831ef40cec1a858025f9126afbaf9d9a767577f84a8293c37d8bc011a2",
+    "assets/ui-design/scene/stage.png": "db0e843046a81c85a08d1b37bde2cfcae4ef6f6aef369958af244fd36f22c3c3",
+    "assets/ui-design/scene/wordmark.png": "532ad7d0784f2b90bff46b07a760c439ac6f1c18febce4e02312622821dff544"
+  },
+  "backend": "AppKit software raster + NSTextInputClient",
+  "binary": {
+    "path": "build/release/Project SEAM.app/Contents/MacOS/Project SEAM",
+    "sha256": "599893ea7e0365fbccb92bcdc945f07a86f8cf7e321877d118e99b7211ab5712"
+  },
+  "build": {
+    "buildDir": "build/release",
+    "builtBeforeCapture": true,
+    "sourceBinding": "built from the recorded source tree immediately before capture",
+    "stepsPerformed": 0
+  },
+  "candidate": "4e47209c-dirty-9f1d4904",
+  "captures": [
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-empty-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-empty-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-empty-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-empty-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-empty-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-empty-1600x900",
+      "mode": "emo",
+      "observedRenderState": "cancelled",
+      "softwarePixelSha256": "e74e3b3a47aeab3f7384241e1be55515e16cb136933399653a505c19fe4c7a86",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-empty-1600x900-software.png",
+      "state": "empty",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-empty-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-empty-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-empty-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-empty-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-empty-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-empty-1600x900",
+      "mode": "scene",
+      "observedRenderState": "cancelled",
+      "softwarePixelSha256": "26c5210bbc71d0c9f999de61288a3563169e24e78ac5db6d93636998f8f2bc5d",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-empty-1600x900-software.png",
+      "state": "empty",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1600x900",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "2c986d1cc792e99e3ba7ca19d6e9e67ac0f451b2728c6329fcf8c34093a716a1",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/emo-ready-1600x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1600x900/software.ppm",
+        "--window-width",
+        "1600",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1600x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1600x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1600x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1600x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1600x900",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "fd249ba15cadb7ba7d31b23b97a6e1d9602c894bdb2ea26400c0b8d7e2c2776c",
+      "softwarePixels": [
+        3200,
+        1800
+      ],
+      "softwarePng": "captures/scene-ready-1600x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1600,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-720x480",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "f883e647d988a572975529c7d7798b85d9587ccfe49eb317b8d47472a92a7d05",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/emo-ready-720x480-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-720x480",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "a65a277f807ab672da67ae7376ad7b333d724c47781cce1bfb1b334727cb2574",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/scene-ready-720x480-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-860x640",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "241eed9b5e8ecf49d132cb06ce830a03773e227a14f0724bca3b8d68e8dc3c5b",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/emo-ready-860x640-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-860x640",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "cb3af3f3791a07df063eced8b3707f4d5a7ac5fcaed929b3e28539e871afcdb1",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/scene-ready-860x640-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1100x720/software.ppm",
+        "--window-width",
+        "1100",
+        "--window-height",
+        "720",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1100x720/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1100x720/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1100x720/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1100x720.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1100x720",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "19c148a7fb0b19c94c67464061e03ca692b37d091c8e22929187d74c26af9c59",
+      "softwarePixels": [
+        2200,
+        1440
+      ],
+      "softwarePng": "captures/emo-ready-1100x720-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1100,
+        720
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1100x720/software.ppm",
+        "--window-width",
+        "1100",
+        "--window-height",
+        "720",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1100x720/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1100x720/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1100x720/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1100x720.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1100x720",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "1d0ab24ffebb765b4313ad2bdd28e759bb8d423c54ca5c9616c205d33984c495",
+      "softwarePixels": [
+        2200,
+        1440
+      ],
+      "softwarePng": "captures/scene-ready-1100x720-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1100,
+        720
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1280x800/software.ppm",
+        "--window-width",
+        "1280",
+        "--window-height",
+        "800",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1280x800/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1280x800/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1280x800/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1280x800.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1280x800",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "d3624f4ae28a1184c5ea64a6fe827fdc564f574883a4a0200d9252b7369a03b6",
+      "softwarePixels": [
+        2560,
+        1600
+      ],
+      "softwarePng": "captures/emo-ready-1280x800-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1280x800/software.ppm",
+        "--window-width",
+        "1280",
+        "--window-height",
+        "800",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1280x800/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1280x800/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1280x800/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1280x800.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1280x800",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "b8498a06b207cca97d0df5d4ea7402b451a54b7f4d6bcb0fcd28715b35af8f03",
+      "softwarePixels": [
+        2560,
+        1600
+      ],
+      "softwarePng": "captures/scene-ready-1280x800-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1440x900/software.ppm",
+        "--window-width",
+        "1440",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1440x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1440x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1440x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-ready-1440x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-ready-1440x900",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "d8a9b1a54a16ccb776476b82d45d48eab72a8ec208f513a56983ed5069eccbec",
+      "softwarePixels": [
+        2880,
+        1800
+      ],
+      "softwarePng": "captures/emo-ready-1440x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1440x900/software.ppm",
+        "--window-width",
+        "1440",
+        "--window-height",
+        "900",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1440x900/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1440x900/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1440x900/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-ready-1440x900.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-ready-1440x900",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "1500b09d0b4c7200803415b2060f09882c4a3c9595bfef304612aa407aacecbb",
+      "softwarePixels": [
+        2880,
+        1800
+      ],
+      "softwarePng": "captures/scene-ready-1440x900-software.png",
+      "state": "ready",
+      "stateReached": true,
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-inspector-720x480",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "4f716d1cb2bdd6df5a66023e422205bd83f303b1e9c7e3c7f657be88578025c9",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/emo-inspector-720x480-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-720x480/software.ppm",
+        "--window-width",
+        "720",
+        "--window-height",
+        "480",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-720x480/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-720x480/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-720x480/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-720x480.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-inspector-720x480",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "09db25bcd0dadb1da4753c74dc076fa2d128de94849235ef63f59226757d6c92",
+      "softwarePixels": [
+        1440,
+        960
+      ],
+      "softwarePng": "captures/scene-inspector-720x480-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        720,
+        480
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/emo-inspector-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "emo-inspector-860x640",
+      "mode": "emo",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "b7455b48a47d82ed455f33c9a8911b3d8134a070dc78fea49263804eb88b27c2",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/emo-inspector-860x640-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    },
+    {
+      "appkit": "not captured",
+      "command": [
+        "--development",
+        "--voicebank-root",
+        "assets/demo-human-voicebank-public-domain/production-bank",
+        "--auto-close-ms",
+        "10000",
+        "--screenshot",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-860x640/software.ppm",
+        "--window-width",
+        "860",
+        "--window-height",
+        "640",
+        "--application-support-root",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-860x640/support",
+        "--force-threaded-audio",
+        "--evidence-dir",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-860x640/evidence",
+        "--window-id-file",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-860x640/window-id",
+        "/var/folders/j4/41h_5mjj7j9d8f2j2bzcsngw0000gn/T/seam-ui-fidelity-mpavsmrz/scene-inspector-860x640.seam"
+      ],
+      "exitCode": 0,
+      "id": "scene-inspector-860x640",
+      "mode": "scene",
+      "observedRenderState": "ready",
+      "softwarePixelSha256": "ee15059c5634e82000f86dfeec4a781e64dece89c8cd2774296a9d425db0429c",
+      "softwarePixels": [
+        1720,
+        1280
+      ],
+      "softwarePng": "captures/scene-inspector-860x640-software.png",
+      "state": "inspector",
+      "stateReached": true,
+      "viewport": [
+        860,
+        640
+      ]
+    }
+  ],
+  "contract": {
+    "path": "docs/design/ui-fidelity-contract-v1.json",
+    "sha256": "edb8df98dd9eb54c9a336ce93c2dd35196c74667f2aa7c0e4ad5b75fd62057d7"
+  },
+  "deviceScale": 2,
+  "environment": {
+    "macOS": "26.2",
+    "macOSBuild": "25C56",
+    "machine": "arm64",
+    "model": "Mac15,9"
+  },
+  "fixture": {
+    "path": "tests/fixtures/ui-fidelity/sing-phrase.seam",
+    "sha256": {
+      "base": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19",
+      "empty": "5244afd8bf30b0c1645891eea96f8714fa7de323b4c07014dd640d299abdb640",
+      "inspector": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19",
+      "ready": "28c78585aa9dcf6ff47eb7c87abf8995d7e9f8f74dabbe906025fae49d4bfa19"
+    }
+  },
+  "fonts": {
+    "bundled": {
+      "barlow-condensed/BarlowCondensed-SemiBold.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "BarlowCondensed-SemiBold",
+        "roles": [
+          "Display"
+        ],
+        "sha256": "7b619d14bc2327509a9ef32b0890f709626f7ecc9ff61191c2a4314c5499d2d9"
+      },
+      "barlow/Barlow-Bold.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "Barlow-Bold",
+        "roles": [
+          "UiBold"
+        ],
+        "sha256": "84e6a4d61e7c3e21f3c50ea6a4f7e5303a3467864c038be6ea3759bab8d547f9"
+      },
+      "barlow/Barlow-Medium.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "Barlow-Medium",
+        "roles": [
+          "UiMedium"
+        ],
+        "sha256": "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4"
+      },
+      "barlow/Barlow-Regular.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "Barlow-Regular",
+        "roles": [
+          "Ui"
+        ],
+        "sha256": "95aa02c7c43096e0dd44d787ba6216864a67157e402adab59b35572e0c1577ea"
+      },
+      "barlow/Barlow-SemiBold.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "Barlow-SemiBold",
+        "roles": [
+          "UiSemibold"
+        ],
+        "sha256": "86577cb32f8abe3673db53ca0f4221e6856751a4f6730c867e00f720f8bb1fc5"
+      },
+      "dm-mono/DMMono-Medium.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "DMMono-Medium",
+        "roles": [
+          "Mono"
+        ],
+        "sha256": "fd327daf461db87b44a87def475d251bf03b997f7c07d9680592d75dbbfaad0b"
+      },
+      "fredoka/Fredoka-Variable.ttf": {
+        "matchesManifest": true,
+        "postScriptName": "Fredoka-Light",
+        "roles": [
+          "DisplayRounded"
+        ],
+        "sha256": "2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8"
+      }
+    },
+    "bundledDirectory": "build/release/Project SEAM.app/Contents/Resources/fonts",
+    "effectiveRoles": {
+      "Display": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/barlow-condensed/BarlowCondensed-SemiBold.ttf",
+        "postScriptName": "BarlowCondensed-SemiBold",
+        "sha256": "7b619d14bc2327509a9ef32b0890f709626f7ecc9ff61191c2a4314c5499d2d9",
+        "source": "bundled"
+      },
+      "DisplayRounded": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/fredoka/Fredoka-Variable.ttf",
+        "postScriptName": "Fredoka-SemiBold",
+        "sha256": "2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8",
+        "source": "bundled"
+      },
+      "Mono": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/dm-mono/DMMono-Medium.ttf",
+        "postScriptName": "DMMono-Medium",
+        "sha256": "fd327daf461db87b44a87def475d251bf03b997f7c07d9680592d75dbbfaad0b",
+        "source": "bundled"
+      },
+      "Ui": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Regular.ttf",
+        "postScriptName": "Barlow-Regular",
+        "sha256": "95aa02c7c43096e0dd44d787ba6216864a67157e402adab59b35572e0c1577ea",
+        "source": "bundled"
+      },
+      "UiBold": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Bold.ttf",
+        "postScriptName": "Barlow-Bold",
+        "sha256": "84e6a4d61e7c3e21f3c50ea6a4f7e5303a3467864c038be6ea3759bab8d547f9",
+        "source": "bundled"
+      },
+      "UiMedium": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-Medium.ttf",
+        "postScriptName": "Barlow-Medium",
+        "sha256": "f8906f762cb73dca441da034bc363b2d8e2e68bc10d5c05e58717646c20cc4b4",
+        "source": "bundled"
+      },
+      "UiSemibold": {
+        "file": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts/barlow/Barlow-SemiBold.ttf",
+        "postScriptName": "Barlow-SemiBold",
+        "sha256": "86577cb32f8abe3673db53ca0f4221e6856751a4f6730c867e00f720f8bb1fc5",
+        "source": "bundled"
+      }
+    },
+    "manifestSha256": "b21c4239b7832021b08244d082d34e91354d060e2b2535b6f661a222a4565929",
+    "refused": [],
+    "selectedDirectory": "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/build/release/Project SEAM.app/Contents/Resources/fonts",
+    "systemFallbacks": {
+      "/System/Library/Fonts/Avenir Next Condensed.ttc": "2648d9b6344edc3706a4ba14e8c08a03f4640b404090dfca9d991cadbaedeff8",
+      "/System/Library/Fonts/SFNS.ttf": "1b35abd1543cd1810cbf00482de14da43efbd5a9a9c13658c4f547dce552762a",
+      "/System/Library/Fonts/SFNSMono.ttf": "55caaed55254a28ac793847e8976be16c5ba7cbad1ec2ee2d5d86d4e6b3fa0c1",
+      "/System/Library/Fonts/SFNSRounded.ttf": "18084bc4d05b4e8177e78281d339d63c2511706d6c1e2fafeb60f63b7fea1123"
+    }
+  },
+  "notRun": {
+    "flstudio": "owner session in FL Studio",
+    "stale": "stale audio exists only after an edit follows a published render; the standalone command line cannot script an edit, so this state is covered by the shell tests, not by a capture",
+    "voiceover": "owner session"
+  },
+  "schema": "seam-ui-fidelity-packet-v1",
+  "source": {
+    "candidate": "4e47209c-dirty-9f1d4904",
+    "dirty": true,
+    "dirtyContentSha256": "9f1d49040bf9894abc937bc8ef3a37576cfc2d60a1d9529a5586d28a4208fb24",
+    "dirtyPaths": [
+      "libs/seam-native-ui/src/design/sing_shell.cpp",
+      "scripts/capture_sing_fidelity_packet.py",
+      "scripts/compare_fidelity_packets.py"
+    ],
+    "head": "4e47209c2c7da60d6c4abea106e89ddd5dd362ed"
+  },
+  "uiZoom": 1.0,
+  "verdicts": {
+    "nativeVisualMatch": "NOT_RUN",
+    "owner": "NOT_RUN",
+    "reviewer": "PENDING"
+  },
+  "voicebank": {
+    "files": {
+      "assets/demo-human-voicebank-public-domain/production-bank/PUBLIC_DOMAIN_NOTICE.md": "2420260ba4330eaacbfae5d341765e9ee62784401a315f12587b215db0ec0362",
+      "assets/demo-human-voicebank-public-domain/production-bank/README.md": "1a05d28df0117e4969002172c4d09a611e8310850dadca1dd2df26b31aeec488",
+      "assets/demo-human-voicebank-public-domain/production-bank/audio/human-vowel-demo.wav": "caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9",
+      "assets/demo-human-voicebank-public-domain/production-bank/manifest.json": "ea199788012edc818459a00504a6043829560b22abe46efd4572fe886df973a5",
+      "assets/demo-human-voicebank-public-domain/production-bank/provenance.json": "cd45f404f8fe4957d027baf525cb2e80596c0e8815b7b07c1378599d61d13788"
+    },
+    "root": "assets/demo-human-voicebank-public-domain/production-bank"
+  }
+}

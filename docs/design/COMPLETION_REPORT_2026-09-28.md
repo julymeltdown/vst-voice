@@ -1,10 +1,12 @@
 # Native editor redesign completion report — 2026-09-28
 
-Source baseline: master `44bf8386`. This is a
+Source baseline: master `caabbaf5`. This is a
 source-and-existing-evidence audit of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md)
 §16, not a new build, run or visual acceptance. The test names below identify runnable contracts;
-the merged-tree run reported 206/206 ctest entries passing at `44bf8386`. The benchmark figures
-below are recorded measurements on an M3 Max, not a new run in this documentation worktree. The ignored
+the earlier merged-tree run reported 206/206 ctest entries passing at `44bf8386`; a full ctest
+result for `caabbaf5` is not tracked or verified here. The benchmark figures below are an
+[operator-recorded snapshot](evidence/BENCHMARK_2026-09-28.md) on an M3 Max from a pre-merge
+candidate, not a new run in this documentation worktree. The ignored
 `build/evidence/ui-fidelity/r6-full/` packet was inspected in the original checkout. It is not
 tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, not this baseline.
 
@@ -15,10 +17,11 @@ tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, 
 | Both looks pass the owner and independent reviewer rubric | `libs/seam-native-ui/src/design/design_tokens.cpp`; the r6 packet checks EMO/SCENE geometry parity for 18 paired views, but its `acceptance.md` says reviewer PENDING, owner NOT_RUN | **Open:** rubric scores and concept-to-native judgement |
 | SING, VOICE, TUNE, MIX and EXPORT complete with parity | `sing_shell.cpp`, `voice_workspace.cpp`, `tune_workspace.cpp`, `mix_workspace.cpp`, `shell_overlays.cpp` under `libs/seam-native-ui/src/design/`; relevant contract tests below. r6 contains SING, VOICE, TUNE and MIX captures, no EXPORT capture | **Implemented with automated coverage; full parity acceptance open** |
 | Protagonist in ring, Stage, avatar, poses and splash with real state | `assets/character-01/manifest.json` schema 4; `libs/seam-native-ui/src/design/character_surface.cpp`; `tests/test_design_character_surface.cpp`, `tests/test_character_state_art.cpp` | **Source and tests present**; final art review and commercial clearance open |
-| All tests and §10 budgets pass | The merged-tree ctest run passed **206/206** at `44bf8386`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. At 1440×900 logical ×2, 40 samples on an M3 Max (load average ~6.8–10.5), true `cold-full-frame` p50/p95 is 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. `retained-background-invalidation` p95 is 10.6 / 10.9 ms against 14 ms: PASS. Scroll/zoom, playback and dense 10k notes pass their respective gates. The benchmark exits 1 while any case misses. Raw output and the full ctest log for this baseline are not tracked here | **Open: true cold §10 budget misses; tests pass** |
+| All tests and §10 budgets pass | The earlier merged-tree ctest run passed **206/206** at `44bf8386`; no tracked full ctest result establishes that count for `caabbaf5`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. The recorded 40-sample M3 Max run has true `cold-full-frame` p50/p95 of 15.59/16.50 ms EMO and 14.65/15.26 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. Retained-background p95 is 9.03 / 9.74 ms; scroll/zoom, playback and dense 10k notes all pass. See the [snapshot](evidence/BENCHMARK_2026-09-28.md) for every case and its provenance. | **Open: true cold §10 budget misses; current-master ctest not verified** |
+| §14.4 visual reproducibility | Frozen-clock `rq1`/`rq2` packets from the same recorded source candidate and binary compare **18/18 identical** ready/empty frames (including the ready-state inspector variant) by RGBA pixel hash with `--require-identical`; the tracked `rq1` manifest records `softwarePixelSha256` per frame | **Partial pass:** full contrast/scale/state matrix has not been captured twice |
 | FL Studio shows upright, readable, themed editor | `docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md` §11 calls for F02–F05; r6 `acceptance.md` has no FL Studio captures | **Open:** F02–F05 in both looks in the actual host |
 | Legacy painter removed | `libs/seam-native-ui/src/editor_scene.cpp` is the unavailable-platform presenter; the standalone and CLAP use `SingShell`. `docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md` records step 21 retirement | **Source complete** |
-| Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `44bf8386`; final art review open** |
+| Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `caabbaf5`; final art review open** |
 
 The r6 packet has 36 software captures; each reports geometry, semantics and image checks PASS.
 Its paint p50 range is 0.7–3.5 ms. The packet did not capture AppKit windows, and software-paint
@@ -26,6 +29,21 @@ timing is not a host presentation measurement. It does not replace the FL Studio
 rows. The capture script is `scripts/capture_sing_fidelity_packet.py`; the packet checker is
 `scripts/verify_ui_fidelity_contract.py`, and timing analysis is
 `scripts/analyze_sing_ui_performance.py`.
+
+Plan §14.4's reproducibility check now has a narrower passing result: `rq1` and `rq2` each
+contain 18 ready/empty software frames, including the ready-state inspector variant, and
+`python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rq1 build/evidence/ui-fidelity/rq2 --require-identical`
+reported **18 compared, 18 identical**. The capture script sets `SEAM_UI_FREEZE_CLOCK=1` so
+`SingShell` uses a fixed animation time across runs (blink, breathing, ring and tweens); each
+manifest capture records `softwarePixelSha256` over RGBA pixels, avoiding PNG creation-time
+metadata differences. A copy of the `rq1` manifest is
+[tracked here](evidence/ui-fidelity-rq1-manifest.json); both full packets remain ignored build
+evidence. The two manifests identify the same dirty `4e47209c` source candidate and binary, not
+clean `caabbaf5`. The 36-frame `det1` packet identifies `52fc8ff5` and predates the clock freeze;
+it has no pixel hashes and is **not** reproducibility evidence. The complete twice-captured
+36-frame all-state packet and plan §14.4's twice-captured {EMO, SCENE} × {Standard, High} ×
+{1×, 2×} × all-states matrix are still open, as are
+AppKit window captures, FL Studio, VoiceOver and the owner/reviewer rubric.
 
 The shipped shell also has a consolidated Settings sheet with Audio, Appearance (EMO/SCENE,
 High Contrast, Reduce Motion, and character Full/Minimal/Off), Language, and About sections
@@ -41,17 +59,25 @@ The earlier 9.5 ms EMO / 11.2 ms SCENE figure called “cold” measured a retai
 snapshot with upper layers recomposed. It was **not** a true first paint. The corrected benchmark
 separates `cold-full-frame` (L0 painter and L1–L3 run) from
 `retained-background-invalidation` (L0 snapshot reused, upper layers recomposed). The measured
-p50/p95 values are 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE for true cold. Retained-background
-p95 is 10.6 ms EMO and 10.9 ms SCENE. The true cold 14 ms budget remains unmet in both looks.
+p50/p95 values in the recorded representative run are 15.59/16.50 ms EMO and 14.65/15.26 ms
+SCENE for true cold. Across the recent three-run set, cold p50 was about 15.2–15.6 ms EMO and
+14.2–14.6 ms SCENE; p95 remained over budget in each run. Retained-background p95 in the
+representative run is 9.03 ms EMO and 9.74 ms SCENE. The true cold 14 ms budget remains unmet
+in both looks. The earlier 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE measurements belong to
+the historical `44bf8386` baseline.
 
 The merged path composes fully damaged cold frames in place, avoiding redundant full-window
 snapshot copies. A software rasterizer writes the procedural wash (EMO ink strands, SCENE sparkles
 and radial gradients) directly into parallel band surfaces; immutable seeded strand geometry is
-built once and shared across the bands (`sing_shell.cpp`, `layer_cache.cpp`). Against the previous
+built once and shared across the bands (`sing_shell.cpp`, `layer_cache.cpp`). Subsequent cached
+CoreGraphics colors, gradients and paths, cached CoreText lines, and indexed layer items reduced
+the observed EMO cold p95 from an earlier ~36.0 ms to ~16.5 ms by the `52fc8ff5` candidate.
+The later keyboard-fill and grid-stroke batching is present in `caabbaf5`, but this snapshot does
+not quantify its effect. Against the previous
 CoreGraphics wash, maximum channel difference is 14 across 9.23% of EMO pixels and 8 across 6.03%
 of SCENE pixels. This is a recorded reference comparison, not plan §14 visual acceptance.
 
-Diagnostic stage timing was approximately 7.2–7.8 ms for EMO L0 and 5.6–6.9 ms for SCENE L0,
+Historical diagnostic stage timing was approximately 7.2–7.8 ms for EMO L0 and 5.6–6.9 ms for SCENE L0,
 7.1–8.1 ms for grid plus content replay, and 0.24–0.36 ms for snapshot copying. Frame preparation
 and dynamic replay account for the rest. These are approximate stage timings, not a sum of p95s.
 The next measured lever is repeated CoreGraphics chrome replay within L0 bands. A single
@@ -106,7 +132,7 @@ packet are narrower than the plan's proposed repeated, cross-platform, all-state
 5. Implement and verify a Windows editor; the current non-Apple vector backend is unavailable
    (`libs/seam-native-ui/src/paint/canvas2d_unavailable.cpp`, README Windows TODO item 5).
 
-Settings, plan §9 motion and the software wash are shipped at `44bf8386`. FL Studio F02–F05,
+Settings, plan §9 motion and the software wash are present at `caabbaf5`. FL Studio F02–F05,
 VoiceOver/Accessibility Inspector, owner and independent reviewer scoring, and a Windows editor
 remain open; this repository cannot supply the external host, assistive-technology, human-judgement
 or platform evidence by itself.

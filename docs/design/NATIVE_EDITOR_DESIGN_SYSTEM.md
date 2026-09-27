@@ -1,6 +1,6 @@
 # Native Editor Design System
 
-Status: describes the EMO/SCENE design shell at master `44bf8386` (2026-09-28). It is
+Status: describes the EMO/SCENE design shell at master `caabbaf5` (2026-09-28). It is
 the document §16 of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) asks for. Where
 this text and a plan disagree, this text says what the code does and the plan says what was
 intended. Anything the plans describe that the code does not do is marked **Not shipped**.
@@ -498,14 +498,17 @@ acceptance remains open.
 Budgets and measurements: `benchmarks/phase5_benchmark.cpp` times
 `SingShell::prepareFrame` plus `SingShell::paint` over a 10,000-note project at 1440×900 on a 2×
 surface in both looks with glow on. Its default is five warmups and 120 samples per case; the
-recorded run below used 40 samples per case on an M3 Max at load average ~6.8–10.5. It exits 1 while
+operator-recorded snapshot below used 40 samples per case on an Apple M3 Max / Mac15,9 at load
+average 6.57 before and 6.37 after. It exits 1 while
 any case exceeds the plan §10 p95 budget or the 80 MiB layer-cache budget. No raw benchmark report
-is tracked with this document, so rerun the command in §14 for a fresh machine-specific result.
+is tracked with this document; [the snapshot](evidence/BENCHMARK_2026-09-28.md) records its
+provenance and exact case values. It predates the final `caabbaf5` merge; rerun the command in §14
+for a source-exact, machine-specific result.
 
 | Case | §10 p95 budget | Recorded timing | Layers drawn | Result |
 |---|---|---|---|---|
-| `cold-full-frame`, true first paint | 14 ms | EMO 17.0 / 18.96 ms; SCENE 17.3 / 30.43 ms | L0 painter and L1–L3, in-place full composition | **MISS in both looks** |
-| `retained-background-invalidation` | 14 ms | EMO p95 10.6 ms; SCENE p95 10.9 ms | L0 snapshot reused; upper layers recomposed | PASS |
+| `cold-full-frame`, true first paint | 14 ms | EMO p50/p95 15.59 / 16.50 ms; SCENE 14.65 / 15.26 ms | L0 painter and L1–L3, in-place full composition | **MISS in both looks** |
+| `retained-background-invalidation` | 14 ms | EMO p95 9.03 ms; SCENE p95 9.74 ms | L0 snapshot reused; upper layers recomposed | PASS |
 | Scroll or zoom | 8 ms | Passed measured gate | L1–L3 | PASS |
 | Playback | 3 ms | Passed measured gate | L3 only | PASS |
 | 10,000 notes, glow on | 8 ms | Passed measured gate | L2–L3 | PASS |
@@ -515,8 +518,13 @@ The previous 9.5 ms EMO / 11.2 ms SCENE “cold” figures described reuse of a 
 background, not a first paint. The corrected benchmark separately invalidates L0 for
 `cold-full-frame` and reuses its snapshot for `retained-background-invalidation`. This changes
 the meaning of the result: the true cold budget is unmet, even though retained-background work
-passes. A bounds-safe glow sprite fix and this split are part of round 6. The merged-tree ctest
-run at `44bf8386` passed 206/206; this documentation update did not rerun it.
+passes. An earlier `44bf8386` baseline recorded 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE
+for true cold; those values are historical. The measured improvement path from an earlier
+~36.0 ms EMO p95 to ~16.5 ms used in-place cold composition, parallel software wash bands,
+cached CoreGraphics colors/gradients/paths and CoreText lines, and indexed layer items.
+Keyboard-fill and grid-stroke batching landed later, without a source-exact benchmark in this
+record. A bounds-safe glow sprite fix and this split are part of round 6. The merged-tree ctest
+run at `44bf8386` passed 206/206; a current-master ctest result is not tracked here.
 
 The software wash differs from the preceding CoreGraphics wash by at most 14 channels over 9.23%
 of EMO pixels and 8 channels over 6.03% of SCENE pixels. This reference difference is not a
@@ -533,7 +541,19 @@ reports host scene-state derivation separately as `hostStateP95Ms`; it does not 
 budgeted shell time. Process memory is separate from the layer cache. The
 ignored `build/evidence/ui-fidelity/r6-full/` packet contains 36 software captures with geometry,
 semantic and image checks passing and paint p50 of 0.7–3.5 ms; its manifest records source
-`74ba8a6c`, not `44bf8386`, and AppKit windows were not captured. FL Studio remains unverified.
+`74ba8a6c`, not `caabbaf5`, and AppKit windows were not captured. FL Studio remains unverified.
+
+The later `rq1`/`rq2` packets each contain 18 ready/empty software captures (including the
+ready-state inspector variant) and identify the same
+dirty `4e47209c` candidate and binary. The frozen animation clock and per-frame
+`softwarePixelSha256` make pixel comparison independent of PNG creation-time metadata.
+`scripts/compare_fidelity_packets.py` reports **18/18 identical** with `--require-identical`;
+the [tracked `rq1` manifest](evidence/ui-fidelity-rq1-manifest.json) preserves one packet's
+identity and hashes. The 36-frame `det1` packet (`52fc8ff5`) predates clock freezing and has
+no pixel hashes, so it cannot support this determinism claim. The 36-frame all-state packet and
+plan §14.4's full {EMO, SCENE} × {Standard, High} × {1×, 2×} × all-states matrix have not both
+been captured twice. AppKit window
+captures, FL Studio, VoiceOver and the owner/reviewer rubric remain NOT_RUN.
 
 ## 12. Brand rules
 
@@ -591,6 +611,7 @@ Specification and capture scripts:
 SEAM_BENCHMARK_DESIGN_ONLY=1 build/release/seam_phase5_benchmark
 python3 scripts/verify_ui_fidelity_contract.py      # contract checks; prints native_visual_match: NOT_RUN
 python3 scripts/capture_sing_fidelity_packet.py     # writes build/evidence/ui-fidelity/<candidate>/
+python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rq1 build/evidence/ui-fidelity/rq2 --require-identical
 python3 scripts/analyze_sing_ui_performance.py build/evidence/ui-fidelity/<candidate>
 python3 scripts/check_brand_terms.py
 python3 scripts/l10n/externalize_shell_strings.py --check
@@ -609,6 +630,13 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
 `--no-build`. For manual captures, `SEAM_UI_DESIGN=emo|scene`, `SEAM_UI_WORKSPACE` and
 `SEAM_UI_INSPECTOR` select the look, the workspace and the open inspector, and `SEAM_UI_ASSETS` and
 `SEAM_CHARACTER_ASSETS` override the asset roots.
+
+The packet script sets `SEAM_UI_FREEZE_CLOCK=1`; `SingShell::activate` injects a fixed clock so
+blink, breathing, ring phase and tweens render at the same animation time on repeated runs. Each
+capture record's `softwarePixelSha256` hashes decoded RGBA pixels. The comparison command above
+checks all matching frame IDs and exits 1 if a frame differs or is missing; `--require-identical`
+also requires the same recorded source candidate and binary SHA-256. Reproduce the complete
+plan §14.4 matrix twice before treating the 18-frame result as full visual acceptance.
 
 ## 15. Not shipped, in one place
 
