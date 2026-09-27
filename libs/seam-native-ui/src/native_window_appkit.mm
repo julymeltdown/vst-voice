@@ -285,7 +285,7 @@ public:
                           dequeue:YES];
         if (event != nil) [application_ sendEvent:event];
         if (repaintRequested_.exchange(false, std::memory_order_acq_rel)) {
-          [view_ setNeedsDisplay:YES];
+          presentFrame();
         }
         [application_ updateWindows];
       }
@@ -471,16 +471,35 @@ public:
         [parentView convertRect:logical toView:nil]];
   }
 
-  void drawInView(NSView* view) noexcept {
-    if (client_ == nullptr || view == nil) return;
+  // Paints a requested frame into the retained surface and invalidates only what the client says
+  // changed, so AppKit presents the playhead strip or the meter instead of the whole window. An
+  // unchanged frame invalidates nothing.
+  void presentFrame() noexcept {
+    if (view_ == nil) return;
+    const auto damage = paintSurface();
+    if (damage.full) {
+      [view_ setNeedsDisplay:YES];
+      return;
+    }
+    // The view is flipped, so the damage's top-left logical rectangles are view coordinates.
+    for (const auto& rect : damage.rects)
+      [view_ setNeedsDisplayInRect:NSMakeRect(rect.x, rect.y, rect.width, rect.height)];
+  }
+
+  // Paints the next frame into the surface and returns what changed since the previous one.
+  FrameDamage paintSurface() noexcept {
+    if (client_ == nullptr) return FrameDamage::everything();
     updateScaleAndSurface();
-    if (surface_.pixels().empty()) return;
+    if (surface_.pixels().empty()) return FrameDamage::everything();
     RasterCanvas canvas{surface_, scale_, textEngine_.get()};
     // Consume this frame's announcement before painting. A repaint requested
     // while polling a worker belongs to the next frame, including completion.
     const bool announceAccessibility = accessibilityAnnouncementPending_.exchange(
         false, std::memory_order_acq_rel);
-    client_->paint(canvas);
+    auto damage = client_->paintFrame(canvas);
+    // A new or resized surface was never presented, whatever the frame reports.
+    if (surfaceStale_) damage = FrameDamage::everything();
+    surfaceStale_ = false;
     // Painting may rebuild semantics after an AX reader already consumed the
     // request-time invalidation. Never retain that pre-paint snapshot.
     accessibilitySnapshotDirty_.store(true, std::memory_order_release);
@@ -488,6 +507,17 @@ public:
       NSAccessibilityPostNotification(
           view_, NSAccessibilityValueChangedNotification);
     }
+    return damage;
+  }
+
+  void drawInView(NSView* view) noexcept {
+    if (client_ == nullptr || view == nil) return;
+    updateScaleAndSurface();
+    if (surface_.pixels().empty()) return;
+    // AppKit asks for pixels it has not been shown yet (first display, a live resize, an expose):
+    // paint them then. Otherwise the retained surface already holds the latest frame, and AppKit
+    // clips this presentation to the rectangles presentFrame invalidated.
+    if (surfaceStale_) static_cast<void>(paintSurface());
 
     // sRGB, not device RGB: the frame is authored in sRGB and must be colour-matched.
     CGColorSpaceRef colorSpace = paint::presentationColorSpace();
@@ -870,6 +900,7 @@ private:
         1.0, std::ceil(static_cast<double>(view_.bounds.size.height) * scale_)));
     if (width != surface_.width() || height != surface_.height()) {
       static_cast<void>(surface_.resize(width, height));
+      surfaceStale_ = true;
     }
   }
 
@@ -884,11 +915,7 @@ private:
 
   void drawNow() noexcept {
     if (view_ == nil) return;
-    updateScaleAndSurface();
-    if (client_ != nullptr && !surface_.pixels().empty()) {
-      RasterCanvas canvas{surface_, scale_, textEngine_.get()};
-      client_->paint(canvas);
-    }
+    static_cast<void>(paintSurface());
   }
 
   void close() noexcept {
@@ -918,6 +945,8 @@ private:
   NSArray* __strong accessibilitySnapshot_{nil};
   double scale_{1.0};
   std::atomic<bool> repaintRequested_{false};
+  // True until the surface holds a painted frame at its current size.
+  bool surfaceStale_{true};
   std::atomic<bool> accessibilitySnapshotDirty_{true};
   std::atomic<bool> accessibilityAnnouncementPending_{true};
   std::chrono::steady_clock::time_point openedAt_{};

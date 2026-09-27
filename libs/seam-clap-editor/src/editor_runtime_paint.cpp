@@ -302,7 +302,9 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   const auto shellFrame =
       shell_.prepareFrame(*controller_, canvas.logicalWidth(), canvas.logicalHeight());
   const auto state = sceneState();
-  if (shellFrame && shell_.paint(canvas, *controller_, state, controller_->playheadTick())) return;
+  shellPresentedFrame_ =
+      shellFrame && shell_.paint(canvas, *controller_, state, controller_->playheadTick());
+  if (shellPresentedFrame_) return;
   painter_.paint(canvas, controller_->pianoRoll(), state);
   if (state.sampleMicroscope.has_value() || state.replacementReview.visible) return;
   const auto seam = primarySeamAmount();
@@ -338,6 +340,12 @@ void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
                       : theme.runtimeOverlayError,
                   layout.runtimeOverlayDetailFontSize);
   paintPhase12BOverlay(canvas);
+}
+
+native_ui::FrameDamage EditorRuntime::paintFrame(native_ui::RasterCanvas& canvas) noexcept {
+  paint(canvas);
+  std::lock_guard lock(mutex_);
+  return shellPresentedFrame_ ? shell_.lastFrameDamage() : native_ui::FrameDamage::everything();
 }
 
 }  // namespace seam::clap_editor

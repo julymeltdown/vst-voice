@@ -123,6 +123,8 @@ public:
   }
 
   void paint(native_ui::RasterCanvas& canvas) noexcept override;
+  // The design shell's damage when it presented the frame, else everything.
+  [[nodiscard]] native_ui::FrameDamage paintFrame(native_ui::RasterCanvas& canvas) noexcept override;
   void resized(double logicalWidth, double logicalHeight,
                double scale) noexcept override;
   void pointerDown(const native_ui::PointerEvent& event) noexcept override;
@@ -179,6 +181,8 @@ private:
   native_ui::EditorScenePainter painter_;
   // The EMO/SCENE SING shell. It paints around the same controller and falls back to painter_.
   native_ui::design::SingShell shell_;
+  // Whether the last paint was the design shell's frame (its damage is then meaningful).
+  bool shellPresentedFrame_{false};
   // Measures the blocks the device receives (see MultichannelRingBufferAudioProcessor). Declared
   // before the processor and device so it outlives the audio thread that writes it.
   platform::OutputLevelMeter outputMeter_;

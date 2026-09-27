@@ -52,6 +52,23 @@ bool intersects(ui::Rect a, ui::Rect b) noexcept {
   return a.x < b.right() && b.x < a.right() && a.y < b.bottom() && b.y < a.bottom();
 }
 
+// How far past its bounds character artwork may draw: the ring's and the avatar's glows (at most
+// 10 points of blur, which reaches about twice that) and their outlines.
+constexpr double kGlowReach = 24.0;
+
+ui::Rect grown(ui::Rect r, double by) noexcept {
+  return {r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by};
+}
+
+// Whether paintCharacterPortrait draws a figure into this destination: the package's decoded state
+// art when it has pixels, else the look's portrait. The recorded frame needs the answer before the
+// portrait is drawn, because drawing happens at composition.
+bool portraitDraws(ui::Rect destination, const PixelSurface* package, const paint::Image* look) {
+  if (destination.width <= 0.0 || destination.height <= 0.0) return false;
+  if (package != nullptr && package->width() > 0U && package->height() > 0U) return true;
+  return look != nullptr && look->width() > 0U && look->height() > 0U;
+}
+
 TextStyle style(FontRole role, double size, double tracking = 0.0,
                 TextAlign align = TextAlign::Left, bool upper = false) {
   return TextStyle{role, size, tracking, align, upper};
@@ -272,7 +289,8 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   preferences_ = preferences;
   active_ = true;
   persist_ = false;
-  backgroundValid_ = false;
+  ++artGeneration_;
+  layers_.invalidate();
   if (assetRoot.empty() || !available()) return;
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto folder = assetRoot / std::string{designModeName(mode)};
@@ -288,6 +306,9 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
 
 void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
   static_cast<void>(character_.loadPackage(packageRoot));
+  // Recorded portraits are hashed by identity: a reload may reuse an address, so every layer that
+  // drew the previous package is dropped with it.
+  ++artGeneration_;
   stagePlacement_.reset();
   stageFade_.reset();
   repaint();
@@ -316,6 +337,7 @@ std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
   }
   if (listeningPortrait_ != nullptr && listeningPortraitPath_ == path) return listeningPortrait_;
   listeningPortraitPath_ = path;
+  ++artGeneration_;
   // The backend decodes the package's PPM through its own image loader, so the hero's ring draws the
   // declared pose with the same masking and filtering as the look's artwork.
   listeningPortrait_ = paint::loadImage(path);
@@ -397,7 +419,12 @@ bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
 
 const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& controller) const {
   if (!presented_) return nullptr;
-  const auto state = controller.sceneState();
+  return activeOverlay(controller, controller.sceneState());
+}
+
+const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& controller,
+                                             const EditorSceneState& state) const {
+  if (!presented_) return nullptr;
   // The microscope is modal above everything, as the classic painter drew it last; an open text
   // field is next (it belongs to whatever opened it, which it replaces while it is open); then the
   // surfaces the shell opens over the score. Only one is ever shown.
@@ -428,7 +455,6 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   preferences_.mode = mode;
-  backgroundValid_ = false;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -436,7 +462,6 @@ void SingShell::setMode(DesignMode mode, bool persist) {
 void SingShell::setContrast(Contrast contrast, bool persist) {
   preferences_.contrast = contrast;
   preferences_.contrastFollowsSystem = false;
-  backgroundValid_ = false;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -444,7 +469,6 @@ void SingShell::setContrast(Contrast contrast, bool persist) {
 void SingShell::followSystemContrast(bool persist) {
   preferences_.contrastFollowsSystem = true;
   preferences_.contrast = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
-  backgroundValid_ = false;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -666,6 +690,9 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   singerMenuOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
+  // Whatever paints next is not a shell frame, so the next shell frame starts from nothing.
+  layers_.invalidate();
+  lastDamage_ = FrameDamage::everything();
 }
 
 bool SingShell::prepareFrame(NativeEditorController& controller, double logicalWidth,
@@ -698,10 +725,8 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   // Settings changes the open editor on its next frame without any notification plumbing.
   if (preferences_.contrastFollowsSystem) {
     const auto system = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
-    if (system != preferences_.contrast) {
-      preferences_.contrast = system;
-      backgroundValid_ = false;
-    }
+    // The contrast picks the token table, which keys the cached background.
+    if (system != preferences_.contrast) preferences_.contrast = system;
   }
   // The inspector exists only in the compact presentations; a window that grows back to the full
   // rack forgets it, so shrinking again starts closed.
@@ -810,6 +835,62 @@ void SingShell::setDiagnosticsOpen(bool open) {
   repaint();
 }
 
+void SingShell::invalidateLayers() noexcept {
+  layers_.invalidate();
+  lastDamage_ = FrameDamage::everything();
+}
+
+std::uint64_t SingShell::backgroundKey(const DesignTokens& tokens, const PixelSurface& surface,
+                                       double scale) const noexcept {
+  // The plan's invalidation rule for the background (window size, scale, look, contrast), spelled
+  // out as what paintBackground reads: the tokens, the panel rectangles and the wordmark.
+  const auto& l = layout_;
+  paint::ContentHash h{artGeneration_};
+  h.add(static_cast<const void*>(&tokens))
+      .add(static_cast<std::uint64_t>(surface.width()))
+      .add(static_cast<std::uint64_t>(surface.height()))
+      .add(scale)
+      .add(static_cast<std::uint64_t>(l.rack))
+      .add(l.header).add(l.editor).add(l.lane).add(l.singer).add(l.expression).add(l.style)
+      .add(l.rackArea).add(l.status).add(l.transport).add(l.ruler).add(l.wordmark)
+      .add(l.grid)
+      .add(static_cast<std::uint64_t>(workspace_))
+      .add(static_cast<const void*>(assets().wordmark.get()));
+  return h.value();
+}
+
+double SingShell::measureText(std::string_view utf8, const paint::TextStyle& style) const {
+  if (metrics_ == nullptr) return 0.0;
+  std::string key;
+  key.reserve(utf8.size() + 24U);
+  const auto append = [&key](const auto& value) {
+    key.append(reinterpret_cast<const char*>(&value), sizeof value);
+  };
+  append(style.role);
+  append(style.size);
+  append(style.tracking);
+  append(style.uppercase);
+  key.append(utf8);
+  if (const auto found = measureCache_.find(key); found != measureCache_.end()) return found->second;
+  // Bounded: a long session of edited lyrics must not grow this without limit.
+  if (measureCache_.size() >= 8192U) measureCache_.clear();
+  const auto width = metrics_->measure(utf8, style);
+  measureCache_.emplace(std::move(key), width);
+  return width;
+}
+
+void SingShell::characterArt(paint::Canvas2D& c, ui::Rect bounds, std::uint64_t hash,
+                             std::function<void(CharacterCanvas)> draw) const {
+  if (auto* recorder = dynamic_cast<paint::RecordingCanvas*>(&c); recorder != nullptr) {
+    recorder->drawRaster(bounds, paint::ContentHash{hash}.add(artGeneration_).value(),
+                         [draw = std::move(draw)](paint::Canvas2D& vector, RasterCanvas& raster) {
+                           draw(CharacterCanvas{vector, raster});
+                         });
+    return;
+  }
+  draw(characterCanvas(c));
+}
+
 core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controller, bool open) {
   if (!open) {
     if (!singerMenuOpen_) return core::success();
@@ -843,25 +924,6 @@ core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controll
   refreshSemantics(controller);
   repaint();
   return core::success();
-}
-
-void SingShell::ensureBackground(const RasterCanvas& canvas, const DesignTokens& tokens) {
-  const auto& surface = const_cast<RasterCanvas&>(canvas).surface();
-  if (backgroundValid_ && background_.width() == surface.width() &&
-      background_.height() == surface.height() && backgroundScale_ == canvas.scale() &&
-      backgroundMode_ == preferences_.mode && backgroundContrast_ == preferences_.contrast)
-    return;
-  backgroundValid_ = false;
-  if (!background_.resize(surface.width(), surface.height())) return;
-  background_.clear(tokens.color.canvas);
-  auto c = paint::makeCanvas(background_, canvas.scale());
-  if (!c) return;
-  paintBackground(*c, tokens);
-  c->flush();
-  backgroundScale_ = canvas.scale();
-  backgroundMode_ = preferences_.mode;
-  backgroundContrast_ = preferences_.contrast;
-  backgroundValid_ = true;
 }
 
 void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
@@ -955,6 +1017,11 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
   }
   glassPanel(c, t, l.status, 10.0, 0.80);
   sunken(c, t, l.transport, 10.0);
+  // The SING grid's translucent backdrop depends on the layout alone, so it is panel chrome: drawn
+  // once here, under the grid layer's key rows and lines, rather than on every scroll. The other
+  // workspaces cover the score with their own body and never showed it.
+  if (workspace_ == Workspace::Sing && l.grid.width > 0.0 && l.grid.height > 0.0)
+    c.fill(Path::rect(l.grid), withAlpha(t.color.canvas, 0.55));
 
   if (t.mode == DesignMode::Emo) {
     // A torn paper seam under the header.
@@ -998,22 +1065,28 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   laneEditable_ = state.expressionLabelVisible() && state.expression.refusal.empty();
   const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
   ppq_ = time::Tick{model.timeline().ppq()}.value();
-  ensureBackground(canvas, t);
   auto& surface = canvas.surface();
-  if (backgroundValid_) {
-    std::copy(background_.pixels().begin(), background_.pixels().end(), surface.pixels().begin());
-  } else {
-    surface.clear(t.color.canvas);
+  const auto scale = canvas.scale();
+  if (metrics_ == nullptr) {
+    metricsSurface_ = PixelSurface{1U, 1U};
+    metrics_ = paint::makeCanvas(metricsSurface_, 1.0);
   }
-  auto vectorCanvas = paint::makeCanvas(surface, canvas.scale());
-  if (!vectorCanvas) {
+  if (metrics_ == nullptr || surface.width() == 0U || surface.height() == 0U) {
     releaseSurface(controller);
     return false;
   }
-  // High Contrast paints without glow: every painter below draws through this one canvas.
-  std::optional<paint::GlowlessCanvas> glowless;
-  if (t.contrast == Contrast::High) glowless.emplace(*vectorCanvas);
-  Canvas2D* const c = glowless ? static_cast<Canvas2D*>(&*glowless) : vectorCanvas.get();
+  // The frame is recorded, layer by layer, and composed at the end: the painters below draw into
+  // the recording, and only layers whose drawing changed are rasterized again.
+  paint::RecordingCanvas frame{
+      static_cast<double>(surface.width()) / scale, static_cast<double>(surface.height()) / scale,
+      scale, [this](std::string_view utf8, const paint::TextStyle& style) {
+        return measureText(utf8, style);
+      },
+      artGeneration_};
+  // High Contrast paints without glow (the recorder drops it as GlowlessCanvas would), and every
+  // painter below draws through this one canvas.
+  frame.setGlowless(t.contrast == Contrast::High);
+  auto* c = &frame;
   // The raster front carries the character package's PPM artwork into the same frame the vector
   // canvas paints; both fronts live only for this call.
   raster_ = &canvas;
@@ -1060,6 +1133,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     body->paint(*c, t, controller, state, workspaceArea());
     // The keyboard focus ring for the body's focused control, at the bounds it publishes now.
     if (semanticFocus_.starts_with(body->idPrefix())) {
+      const paint::LayerScope focusLayer{*c, paint::Layer::Dynamic, "focus"};
       std::vector<SemanticNode> nodes;
       body->semantics(controller, state, workspaceArea(), nodes);
       for (const auto& node : nodes) {
@@ -1087,6 +1161,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     // The note focus ring never draws over the open inspector.
     if (intersects(focus, layout_.grid) &&
         !(layout_.inspectorOpen && intersects(focus, layout_.inspector))) {
+      const paint::LayerScope focusLayer{*c, paint::Layer::Dynamic, "focus"};
       c->save();
       c->setGlow(t.color.focusRing, 6.0);
       c->stroke(Path::roundedRect({focus.x - 2, focus.y - 2, focus.width + 4, focus.height + 4}, 5),
@@ -1094,14 +1169,27 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       c->restore();
     }
   }
-  if (workspaceMenuOpen_) paintWorkspaceMenu(*c, t);
+  // Everything below is drawn over the score and so over the playhead: it belongs to the dynamic
+  // layer, which keeps it above the playhead however often that moves.
+  if (workspaceMenuOpen_) {
+    const paint::LayerScope menuLayer{*c, paint::Layer::Dynamic, "menu"};
+    paintWorkspaceMenu(*c, t);
+  }
   // A re-homed overlay is the topmost surface: it covers the score, the lane and the rack with its
   // own card, so nothing it hides is reachable or published while it is up.
-  if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
+  if (const auto* overlay = activeOverlay(controller, state); overlay != nullptr) {
     stageShown_ = false;
+    const paint::LayerScope overlayLayer{*c, paint::Layer::Dynamic, "overlay"};
     paintOverlay(*c, t, controller, state, *overlay);
   }
-  c->flush();
+  const auto composed = layers_.compose(
+      canvas,
+      paint::BackgroundLayer{.key = backgroundKey(t, surface, scale),
+                             .clear = t.color.canvas,
+                             .paint = [this, &t](Canvas2D& background) { paintBackground(background, t); }},
+      frame, retainedSurface_);
+  lastDamage_ = composed.damage;
+  lastLayers_ = composed.rasterized;
   scheduleAnimationRepaint();
   return true;
 }
@@ -1112,11 +1200,9 @@ void SingShell::scheduleAnimationRepaint() {
   // for nothing at all, and a state that only breathes or spins asks only for as long as it does. The
   // Stage's own fade is the other source, and it asks until it settles.
   //
-  // The request is a whole-frame repaint, because the host's repaint callback carries no damage
-  // rectangle: the plan's dirty-rectangle goal (only the avatar and the ring while blinking) needs a
-  // presenter API that does not exist yet, and the fidelity review requires that path be measured
-  // before it is claimed. Until then this bounds the cost by stopping the loop, not by shrinking the
-  // frame.
+  // The request asks for a frame; what that frame costs is decided when it is composed. A blink or a
+  // breath changes only the avatar and ring items of the dynamic layer, so the frame rasterizes that
+  // layer alone and lastFrameDamage() names just those rectangles for the presenter to invalidate.
   if (stageFade_.fading()) {
     repaint();
     return;
@@ -1221,10 +1307,14 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   if (const auto needed = c.measure("888:8:888", readout); needed > positionWidth)
     readout = style(FontRole::Mono, std::max(12.0, t.type.transport * positionWidth / needed), 0.5);
   c.text(l.positionReadout, "888:8:888", readout, withAlpha(t.color.accentTime, 0.07));
-  c.save();
-  c.setGlow(withAlpha(t.color.accentTime, 0.75), 7.0);
-  c.text(l.positionReadout, position, readout, t.color.accentTime);
-  c.restore();
+  {
+    // The running position changes on every playback frame: a dynamic item of its own.
+    const paint::LayerScope transport{c, paint::Layer::Dynamic, "transport"};
+    c.save();
+    c.setGlow(withAlpha(t.color.accentTime, 0.75), 7.0);
+    c.text(l.positionReadout, position, readout, t.color.accentTime);
+    c.restore();
+  }
   const auto divider = [&](double x) {
     Path p;
     p.moveTo({x, l.transport.y + 9.0}).lineTo({x, l.transport.bottom() - 9.0});
@@ -1250,6 +1340,8 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.text({m.x, m.y, 36.0, m.height}, tr(Str::Out),
            style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Left, true),
            t.color.textSecondary);
+    // The measured level moves on every playback frame; the label above does not.
+    const paint::LayerScope meterLayer{c, paint::Layer::Dynamic, "meter"};
     constexpr int kSegments = 18;             // 3.33 dB each
     constexpr double kFloorDb = -60.0;
     constexpr double kSegmentDb = -kFloorDb / kSegments;
@@ -1298,10 +1390,26 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   // control, so it carries no actions and is excluded from the accessibility tree with the rest of
   // the decorative character artwork.
   if (l.headerAvatar.width > 0.0) {
-    motionShown_ |= paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
-                                         characterPortrait(characterState_),
-                                         assets().portrait.get(), 1.0, motion_.blink,
-                                         motion_.breath);
+    // The avatar blinks and breathes: a dynamic item, drawn through both fronts at composition.
+    const paint::LayerScope avatarLayer{c, paint::Layer::Dynamic, "avatar"};
+    const auto* package = characterPortrait(characterState_);
+    const auto* look = assets().portrait.get();
+    const auto bounds = l.headerAvatar;
+    const auto pose = characterState_;
+    const auto blink = motion_.blink;
+    const auto breath = motion_.breath;
+    const auto hash = paint::ContentHash{}
+                          .add(std::string_view{"avatar"}).add(static_cast<const void*>(&t))
+                          .add(bounds).add(static_cast<std::uint64_t>(pose))
+                          .add(static_cast<const void*>(package)).add(static_cast<const void*>(look))
+                          .add(blink).add(breath).value();
+    characterArt(c, grown(bounds, kGlowReach), hash,
+                 [&t, bounds, pose, package, look, blink, breath](CharacterCanvas art) {
+                   static_cast<void>(paintCharacterAvatar(art, t, bounds, pose, package, look, 1.0,
+                                                          blink, breath));
+                 });
+    // What the avatar returns, known before it is drawn: motion shows where a figure is drawn.
+    motionShown_ |= characterMotionShown(pose, portraitDraws(bounds, package, look), false);
   }
 }
 
@@ -1428,6 +1536,13 @@ void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, double radius, ui::Re
 void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollModel& model,
                             const EditorSceneState& state) const {
   const auto& l = layout_;
+  // Layers (plan section 10): the ruler, keys, grid lines and the Stage figure are the grid layer;
+  // notes, curves and labels the content layer; hover, the box selection, the playhead and the
+  // lyric field the dynamic layer. Each part below says which it draws into.
+  auto* recorder = dynamic_cast<paint::RecordingCanvas*>(&c);
+  const auto layerTo = [recorder](paint::Layer layer, std::string_view item = {}) {
+    if (recorder != nullptr) recorder->setLayer(layer, item);
+  };
   // Tool strip: the real track and project, and the way back to the classic editor.
   const auto chip = l.trackLabel;
   c.fill(Path::roundedRect(chip, 6.0), withAlpha(t.color.surfaceSunken, 0.85));
@@ -1456,6 +1571,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   }
 
   // Ruler and grid lines share one tick-to-x transform with the lane below.
+  layerTo(paint::Layer::Grid);
   const auto& timeline = model.timeline();
   const auto quarter = time::Tick{timeline.ppq()};
   const auto visibleStart = timeline.pixelToTick(0.0);
@@ -1465,7 +1581,6 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
              std::max<std::int64_t>(1, state.meter.denominator));
   c.save();
   c.clipRect(l.grid);
-  c.fill(Path::rect(l.grid), withAlpha(t.color.canvas, 0.55));
   const auto& pitch = model.pitch();
   for (auto midi = pitch.topMidiKey(); midi >= 0; --midi) {
     const auto y = l.grid.y + pitch.midiToPixel(midi);
@@ -1583,6 +1698,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     static_cast<void>(stageFade_.advance(placement, frameNow_, preferences_.reduceMotion));
   }
   stagePointerAt_ = pointerPosition_;
+  layerTo(paint::Layer::Content);
 
   const auto* region = model.project().findRegion(model.regionId());
   c.save();
@@ -1634,7 +1750,6 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     capsules.push_back(b);
     const auto radius = std::min(t.shape.note, b.height * 0.5);
     const auto p = Path::roundedRect(b, radius);
-    const auto hovered = state.hoveredNote == note.noteId || state.focusedNote == note.noteId;
     // The note's own rendered audio sits inside the capsule, under its outline.
     const auto wave = [&] {
       if (!waveform_.shown() || region == nullptr) return;
@@ -1659,10 +1774,25 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       wave();
       c.save();
       c.setGlow(withAlpha(t.color.noteStroke, 0.55), 5.0);
-      c.stroke(p, withAlpha(t.color.noteStroke, hovered ? 1.0 : 0.8), StrokeStyle{hovered ? 1.6 : 1.1});
+      c.stroke(p, withAlpha(t.color.noteStroke, 0.8), StrokeStyle{1.1});
       c.restore();
     }
   }
+  // Hover and keyboard focus brighten an unselected note's outline. They change under the pointer
+  // on any frame, so the brighter outline is a dynamic item drawn over the note: moving the pointer
+  // repaints that note's rectangle, never the content layer.
+  layerTo(paint::Layer::Dynamic, "hover");
+  for (const auto& note : notes) {
+    if (note.hiddenByOverlapDensity || note.selected) continue;
+    if (state.hoveredNote != note.noteId && state.focusedNote != note.noteId) continue;
+    auto b = note.bounds;
+    b.y += l.grid.y + 1.5;
+    b.height = std::max(3.0, b.height - 3.0);
+    b.width = std::max(2.0, b.width);
+    c.stroke(Path::roundedRect(b, std::min(t.shape.note, b.height * 0.5)), t.color.noteStroke,
+             StrokeStyle{1.6});
+  }
+  layerTo(paint::Layer::Content);
 
   // Vibrato handles on a single selected note keep their existing hit geometry.
   if (state.selectedNoteCount == 1U && region != nullptr) {
@@ -1705,7 +1835,9 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       if (note.hiddenByOverlapDensity || note.lyric.empty()) continue;
       auto b = note.bounds;
       b.y += l.grid.y;
-      const auto priority = note.selected ? 0 : (state.hoveredNote == note.noteId ? 1 : 2);
+      // Selected lyrics are placed first. Hover does not reorder labels: a label never jumps under
+      // the pointer, and hovering repaints only the hovered note.
+      const auto priority = note.selected ? 0 : 1;
       candidates.push_back({&note, b, priority});
     }
     std::stable_sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
@@ -1790,16 +1922,25 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // The region genuinely has no notes: the seated pose and the instruction to write the first one.
     // No pose asset is declared by this package, so the state portrait stands in for it and the line
     // is the shell's own, shown only here.
-    paintEmptyProject(characterCanvas(c), t, l, characterPortrait(CharacterState::Idle),
-                      assets().portrait.get());
+    const auto* package = characterPortrait(CharacterState::Idle);
+    const auto* look = assets().portrait.get();
+    const auto hash = paint::ContentHash{}
+                          .add(std::string_view{"empty-project"}).add(static_cast<const void*>(&t))
+                          .add(l.grid).add(static_cast<const void*>(package))
+                          .add(static_cast<const void*>(look)).value();
+    characterArt(c, l.grid, hash, [&t, &l, package, look](CharacterCanvas art) {
+      paintEmptyProject(art, t, l, package, look);
+    });
   }
 
   if (state.boxSelection.has_value()) {
+    layerTo(paint::Layer::Dynamic, "selection-box");
     const auto box = fromLegacy(*state.boxSelection);
     c.fill(Path::rect(box), t.color.selectionFill);
     c.stroke(Path::rect(box), t.color.accent, StrokeStyle{1.0});
   }
   if (state.playheadPixel >= 0.0) {
+    layerTo(paint::Layer::Dynamic, "playhead");
     const auto x = l.grid.x + state.playheadPixel;
     if (x >= l.grid.x && x <= l.grid.right()) {
       c.save();
@@ -1815,6 +1956,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     }
   }
   if (state.lyricEditor.has_value() && !state.timeMapInputActive) {
+    layerTo(paint::Layer::Dynamic, "lyric-editor");
     const auto editor = fromLegacy(*state.lyricEditor);
     c.fill(Path::roundedRect(editor, 6.0), t.color.surfaceSunken);
     c.save();
@@ -1825,6 +1967,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       c.text({editor.x + 8.0, editor.y, editor.width - 16.0, editor.height},
              state.compositionPreview, style(FontRole::Ui, t.type.lyric), t.color.textPrimary);
   }
+  layerTo(paint::Layer::Content);
 }
 
 void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
@@ -1947,6 +2090,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     }
   }
   if (state.playheadPixel >= 0.0) {
+    const paint::LayerScope playheadLayer{c, paint::Layer::Dynamic, "lane-playhead"};
     Path head;
     head.moveTo({plot.x + state.playheadPixel, plot.y}).lineTo({plot.x + state.playheadPixel, plot.bottom()});
     c.stroke(head, withAlpha(t.color.accentTime, 0.7), StrokeStyle{1.0});
@@ -1998,17 +2142,29 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
                                ? t.color.error
                                : identity.state == VoiceIdentityState::Warning ? t.color.warning
                                                                               : t.color.accent;
-    static_cast<void>(
-        paintCharacterPortrait(characterCanvas(c),
-                               {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0},
-                               true, characterPortrait(characterState_),
-                               assets().portrait.get(), voiceReady ? 1.0 : 0.55));
+    {
+      const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
+      const auto* package = characterPortrait(characterState_);
+      const auto* look = assets().portrait.get();
+      const auto opacity = voiceReady ? 1.0 : 0.55;
+      const auto hash = paint::ContentHash{}
+                            .add(std::string_view{"rail-portrait"}).add(box)
+                            .add(static_cast<const void*>(package))
+                            .add(static_cast<const void*>(look)).add(opacity).value();
+      characterArt(c, box, hash, [box, package, look, opacity](CharacterCanvas art) {
+        static_cast<void>(paintCharacterPortrait(art, box, true, package, look, opacity));
+      });
+    }
     c.save();
     c.setGlow(withAlpha(railColor, 0.9), 6.0);
     c.stroke(Path::circle(center, inner + 1.0), railColor, StrokeStyle{1.6});
     c.restore();
     c.fill(Path::circle({ring.right() - 4.0, ring.bottom() - 4.0}, 4.5), railColor);
-    if (l.inspectorOpen) paintInspector(c, t, state);
+    if (l.inspectorOpen) {
+      // The drawer covers the score, so it stays above the playhead: a dynamic item while open.
+      const paint::LayerScope inspectorLayer{c, paint::Layer::Dynamic, "inspector"};
+      paintInspector(c, t, state);
+    }
     return;
   }
   cardHeader(c, t, l.singer, tr(Str::Singer), voiceReady);
@@ -2048,21 +2204,44 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       singingPlacement = character_.mouthPlacement();
     }
   }
-  motionShown_ |= paintSingerRing(characterCanvas(c), t,
-                                  SingerRingSpec{
-                                      .bounds = ring,
-                                      .state = performanceState,
-                                      .lit = lit,
-                                      .rotation = motion_.spinner,
-                                      .packagePortrait = characterPortrait(performanceState),
-                                      .lookPortrait = assets().portrait.get(),
-                                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
-                                      .mouthSprite = singingMouth,
-                                      .mouthPlacement = singingPlacement,
-                                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
-                                      .breath = motion_.breath,
-                                      .blink = motion_.blink,
-                                  });
+  const SingerRingSpec spec{
+      .bounds = ring,
+      .state = performanceState,
+      .lit = lit,
+      .rotation = motion_.spinner,
+      .packagePortrait = characterPortrait(performanceState),
+      .lookPortrait = assets().portrait.get(),
+      .portraitOpacity = voiceReady ? 1.0 : 0.55,
+      .mouthSprite = singingMouth,
+      .mouthPlacement = singingPlacement,
+      .mouthOpacity = voiceReady ? 1.0 : 0.55,
+      .breath = motion_.breath,
+      .blink = motion_.blink,
+  };
+  {
+    // The ring lights with the singer's energy and the render, and the portrait breathes and
+    // blinks inside it: a dynamic item.
+    const paint::LayerScope ringLayer{c, paint::Layer::Dynamic, "ring"};
+    paint::ContentHash h;
+    h.add(std::string_view{"ring"}).add(static_cast<const void*>(&t)).add(spec.bounds)
+        .add(static_cast<std::uint64_t>(spec.state)).add(spec.lit).add(spec.rotation)
+        .add(static_cast<const void*>(spec.packagePortrait))
+        .add(static_cast<const void*>(spec.lookPortrait)).add(spec.portraitOpacity)
+        .add(static_cast<const void*>(spec.mouthSprite)).add(spec.mouthPlacement.has_value())
+        .add(spec.mouthOpacity).add(spec.breath).add(spec.blink);
+    if (spec.mouthPlacement.has_value())
+      h.add(spec.mouthPlacement->x).add(spec.mouthPlacement->y).add(spec.mouthPlacement->width)
+          .add(spec.mouthPlacement->height);
+    characterArt(c, grown(ring, kGlowReach), h.value(), [&t, spec](CharacterCanvas art) {
+      static_cast<void>(paintSingerRing(art, t, spec));
+    });
+    // What paintSingerRing returns, known before it is drawn.
+    if (ring.width > 0.0 && ring.height > 0.0)
+      motionShown_ |= characterMotionShown(spec.state,
+                                           portraitDraws(ring, spec.packagePortrait,
+                                                         spec.lookPortrait),
+                                           true);
+  }
 
   // Footer: the real voice identity and the way to change it.
   const auto footerY = l.singerChange.y;
@@ -2136,11 +2315,19 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   const ui::Point center{ring.x + ring.width * 0.5, ring.y + ring.height * 0.5};
   const auto inner = ring.width * 0.5 - 2.0;
   c.fill(Path::circle(center, inner), t.color.surfaceSunken);
-  static_cast<void>(
-      paintCharacterPortrait(characterCanvas(c),
-                             {center.x - inner, center.y - inner, inner * 2.0, inner * 2.0}, true,
-                             characterPortrait(characterState_), assets().portrait.get(),
-                             voiceReady ? 1.0 : 0.55));
+  {
+    const ui::Rect box{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
+    const auto* package = characterPortrait(characterState_);
+    const auto* look = assets().portrait.get();
+    const auto opacity = voiceReady ? 1.0 : 0.55;
+    const auto hash = paint::ContentHash{}
+                          .add(std::string_view{"inspector-portrait"}).add(box)
+                          .add(static_cast<const void*>(package))
+                          .add(static_cast<const void*>(look)).add(opacity).value();
+    characterArt(c, box, hash, [box, package, look, opacity](CharacterCanvas art) {
+      static_cast<void>(paintCharacterPortrait(art, box, true, package, look, opacity));
+    });
+  }
   c.stroke(Path::circle(center, inner + 1.0), withAlpha(t.color.accent, 0.85), StrokeStyle{1.4});
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
@@ -2364,8 +2551,17 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                                         ? std::nullopt
                                         : std::optional<ui::Rect>{diagnosticsToastBounds()});
   if (errorToast_.has_value()) {
-    paintCharacterToast(characterCanvas(c), t, *errorToast_,
-                        characterPortrait(CharacterState::Error), assets().portrait.get());
+    const auto toast = *errorToast_;
+    const auto* package = characterPortrait(CharacterState::Error);
+    const auto* look = assets().portrait.get();
+    const auto hash = paint::ContentHash{}
+                          .add(std::string_view{"toast"}).add(static_cast<const void*>(&t))
+                          .add(toast.bounds).add(toast.pose).add(toast.title).add(toast.reason)
+                          .add(static_cast<const void*>(package))
+                          .add(static_cast<const void*>(look)).value();
+    characterArt(c, grown(toast.bounds, 32.0), hash, [&t, toast, package, look](CharacterCanvas art) {
+      paintCharacterToast(art, t, toast, package, look);
+    });
   }
 }
 
@@ -2580,12 +2776,16 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
 }
 
 void SingShell::cancelCoveredLyric(NativeEditorController& controller) {
-  if (!presented_ || activeOverlay(controller) == nullptr) return;
+  if (!presented_) return;
   // The lyric composition is the only one without a field kind; every other field is the surface's
   // own (an inline field card, the time map's event field) and stays open.
   const auto lyricOpen =
       controller.textInputActive() &&
       controller.textFieldView().kind == NativeEditorController::TextFieldView::Kind::None;
+  // Nothing to cancel: skip the overlay lookup, whose scene state costs a pronunciation pass over
+  // the whole region, since prepareFrame runs this every frame.
+  if (!lyricOpen && !lyricInputActive_) return;
+  if (activeOverlay(controller) == nullptr) return;
   if (lyricOpen) controller.cancelTextComposition();
   lyricInputActive_ = false;
 }
@@ -2628,7 +2828,7 @@ void SingShell::paintOverlay(Canvas2D& c, const DesignTokens& t,
 std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorController& controller,
                                                       const EditorSceneState& state) const {
   std::vector<SemanticNode> out;
-  const auto* overlay = activeOverlay(controller);
+  const auto* overlay = activeOverlay(controller, state);
   if (overlay == nullptr) return out;
   const auto slot = overlaySlot(controller, state);
   const auto panel = overlay->panel(controller, state, layout_, slot);
@@ -3628,7 +3828,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   const std::string legacyFocusId = legacyFocus == nullptr ? std::string{} : legacyFocus->id;
   // While an overlay presents, the controller's own focus moves inside a tree the card replaces
   // (the time map's rows, a review's buttons), so it never takes the keyboard from the card.
-  const auto overlayUp = activeOverlay(controller) != nullptr;
+  const auto overlayUp = activeOverlay(controller, state) != nullptr;
   if (!semanticFocus_.empty() && legacyFocusId != semanticFocusBaseline_ && !overlayUp)
     semanticFocus_.clear();
   std::string focusedId = semanticFocus_;
@@ -4030,7 +4230,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                node.id == "shell.render-progress");
     });
   }
-  const auto* overlay = activeOverlay(controller);
+  const auto* overlay = activeOverlay(controller, state);
   // A surface the controller opened while the singer menu was up (a host command) replaces the
   // menu; it does not come back when that surface closes.
   if (singerMenuOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::SingerMenu)

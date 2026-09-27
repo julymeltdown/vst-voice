@@ -204,6 +204,9 @@ public:
 
   void resize(double logicalWidth, double logicalHeight) noexcept;
   void paint(native_ui::RasterCanvas& canvas) noexcept;
+  // Paints like paint() and reports what the frame changed, in logical points, so the view can
+  // invalidate only that: the design shell's damage when it presented the frame, else everything.
+  [[nodiscard]] native_ui::FrameDamage paintFrame(native_ui::RasterCanvas& canvas) noexcept;
   void pointerDown(const native_ui::PointerEvent& event) noexcept;
   void pointerMove(const native_ui::PointerEvent& event) noexcept;
   void pointerUp(const native_ui::PointerEvent& event) noexcept;
@@ -428,6 +431,8 @@ private:
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::EditorScenePainter painter_;
   native_ui::design::SingShell shell_;
+  // Whether the last paint was the design shell's frame (its damage is then meaningful).
+  bool shellPresentedFrame_{false};
   native_ui::CharacterPresentation character_;
   // Only the bounded performance model survives a repaint, never the published PCM.
   std::optional<std::uint64_t> characterPerformanceRequest_;
