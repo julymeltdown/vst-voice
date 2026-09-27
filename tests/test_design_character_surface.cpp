@@ -218,6 +218,39 @@ TEST_CASE("each character state maps from a concrete scene state, in one precede
   }
 }
 
+TEST_CASE("cached singer-ring glow clips to every surface edge like an unclipped ring") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto& tokens = native_ui::design::tokensFor(DesignMode::Emo);
+  for (const ui::Rect bounds : {ui::Rect{-12.0, 28.0, 72.0, 72.0},
+                               ui::Rect{88.0, 28.0, 72.0, 72.0},
+                               ui::Rect{28.0, -12.0, 72.0, 72.0},
+                               ui::Rect{28.0, 88.0, 72.0, 72.0}}) {
+    native_ui::PixelSurface clipped{128U, 128U};
+    native_ui::PixelSurface padded{256U, 256U};
+    clipped.clear(native_ui::Color{12U, 10U, 14U, 255U});
+    padded.clear(native_ui::Color{12U, 10U, 14U, 255U});
+    native_ui::design::RingGlowCache smallGlow, largeGlow;
+    auto draw = [&](native_ui::PixelSurface& surface, ui::Rect ring,
+                    native_ui::design::RingGlowCache& glow) {
+      auto vector = native_ui::paint::makeCanvas(surface, 1.0);
+      CHECK(vector != nullptr);
+      if (vector == nullptr) return;
+      native_ui::RasterCanvas raster{surface, 1.0};
+      native_ui::design::SingerRingSpec spec{.bounds = ring,
+                                             .state = CharacterState::Singing,
+                                             .lit = 0.8,
+                                             .glows = &glow};
+      static_cast<void>(native_ui::design::paintSingerRingLive({*vector, raster}, tokens, spec));
+      vector->flush();
+    };
+    draw(clipped, bounds, smallGlow);
+    draw(padded, {bounds.x + 64.0, bounds.y + 64.0, bounds.width, bounds.height}, largeGlow);
+    for (std::size_t y = 0; y < 128U; ++y)
+      for (std::size_t x = 0; x < 128U; ++x)
+        CHECK(clipped.pixels()[y * 128U + x] == padded.pixels()[(y + 64U) * 256U + x + 64U]);
+  }
+}
+
 TEST_CASE("a package state selects its own asset, and a status-only or absent package invents none") {
   using native_ui::design::characterArtworkChoice;
   using native_ui::design::characterMouthChoice;
