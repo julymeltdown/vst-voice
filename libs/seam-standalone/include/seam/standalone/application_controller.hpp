@@ -95,6 +95,7 @@ struct StandaloneApplicationControllerConfig final {
   std::function<core::Result<void>()> closeExpressionLane;
   std::function<core::Result<void>()> editTrackStyle;
   std::function<core::Result<void>()> editJapaneseReading;
+  std::function<core::Result<void>()> showAbout;
   // The callback owns the bounded conversion-review surface. Returning false
   // cancels without replacing the current document.
   std::function<core::Result<bool>(const authoring::InterchangeImportDraft&)>

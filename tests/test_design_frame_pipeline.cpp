@@ -30,9 +30,12 @@ using namespace seam;
 using native_ui::FrameDamage;
 using native_ui::PixelSurface;
 using native_ui::RasterCanvas;
+using native_ui::design::CharacterAnimator;
+using native_ui::design::CharacterState;
 using native_ui::design::Contrast;
 using native_ui::design::DesignMode;
 using native_ui::design::DesignPreferences;
+using native_ui::design::OverlayKind;
 using native_ui::design::SingShell;
 using native_ui::paint::Layer;
 
@@ -64,8 +67,9 @@ struct Pipeline final {
   PixelSurface previous;
   std::chrono::steady_clock::time_point now{at(10.0)};
 
-  Pipeline(DesignMode mode, double backingScale, Contrast contrast = Contrast::Standard)
-      : session{makeProject()}, controller{session, factory, regionId}, scale{backingScale},
+  Pipeline(DesignMode mode, double backingScale, Contrast contrast = Contrast::Standard,
+           bool empty = false)
+      : session{makeProject(empty)}, controller{session, factory, regionId}, scale{backingScale},
         retained{static_cast<std::uint32_t>(kWidth * backingScale),
                  static_cast<std::uint32_t>(kHeight * backingScale)} {
     controller.resize(kWidth, kHeight);
@@ -76,11 +80,13 @@ struct Pipeline final {
     cached.setRetainedSurface(true);
   }
 
-  domain::Project makeProject() {
+  // An empty project has one region and no notes: the roll shows the empty-project splash.
+  domain::Project makeProject(bool empty) {
     auto project = factory.createProject("Frame pipeline");
     project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
     const auto track = factory.addVocalTrack(project, "Singer");
     regionId = factory.addRegion(project, track, "Phrase", time::Tick{0}, time::Tick{96000});
+    if (empty) return project;
     auto* region = project.findRegion(regionId);
     for (int i = 0; i < 48; ++i) {
       auto [lyric, note] = factory.makeNote(time::Tick{480 + i * 480}, time::Tick{400},
@@ -277,6 +283,69 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   CHECK(onlyDynamic(r.layers));
 }
 
+// The empty project's splash is a recorded character item in place of the Stage figure, and the
+// About sheet draws the same key art as an overlay. Both compose from cached layers exactly as they
+// do from nothing, through a blink (the lid is part of the ring's and the avatar's items), a mode
+// switch that swaps the outfit, and the sheet opening and closing.
+void runSplashAndAbout(DesignMode mode, double scale, Contrast contrast) {
+  Pipeline p{mode, scale, contrast, true};
+  Pipeline::Inputs in;
+  auto r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.full);
+  CHECK(!p.cached.lastFrameShowedStage());
+
+  // The shells' animators share the default seed, so a probe advanced at the same first frame
+  // knows when the first blink falls.
+  CHECK(p.cached.characterState() == CharacterState::Idle);
+  CharacterAnimator probe;
+  static_cast<void>(probe.advance(CharacterState::Idle, at(10.0), false));
+  const auto blinkAt = 10.0 + probe.secondsUntilBlink(at(10.0));
+  for (const auto into : {0.25, 0.5, 0.75, 1.5}) {
+    p.now = at(blinkAt + CharacterAnimator::kBlinkSeconds * into);
+    r = p.frame(in);
+    CHECK(r.identical);
+    CHECK(r.covered);
+    CHECK(onlyDynamic(r.layers));
+  }
+  // An unchanged frame over the splash damages nothing.
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.empty());
+
+  // The About sheet opens over the roll as an overlay.
+  CHECK(p.cached.setAboutOpen(p.controller, true).hasValue());
+  CHECK(p.reference.setAboutOpen(p.controller, true).hasValue());
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
+  CHECK(p.cached.overlayKind(p.controller) == OverlayKind::About);
+  // The breath under it moves only the dynamic layer.
+  p.now = at(blinkAt + 0.6);
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
+  CHECK(onlyDynamic(r.layers));
+
+  // A mode switch swaps the outfit, the splash and the sheet's art, and recomposes everything.
+  const auto other = mode == DesignMode::Emo ? DesignMode::Scene : DesignMode::Emo;
+  p.cached.setMode(other, false);
+  p.reference.setMode(other, false);
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.full);
+  CHECK(p.cached.overlayKind(p.controller) == OverlayKind::About);
+
+  // Closing it leaves the splash as it was.
+  CHECK(p.cached.setAboutOpen(p.controller, false).hasValue());
+  CHECK(p.reference.setAboutOpen(p.controller, false).hasValue());
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.covered);
+  CHECK(p.cached.overlayKind(p.controller) == OverlayKind::None);
+  CHECK(!p.cached.lastFrameShowedStage());
+}
+
 }  // namespace
 
 TEST_CASE("cached and partial SING frames equal a full composition in both looks at 1x") {
@@ -300,6 +369,16 @@ TEST_CASE("cached and partial High Contrast frames equal a full composition in b
   // standard contrast.
   runPipeline(DesignMode::Emo, 1.0, Contrast::High);
   runPipeline(DesignMode::Scene, 1.0, Contrast::High);
+}
+
+TEST_CASE("the empty-project splash and the About sheet compose from cached layers exactly") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    runSplashAndAbout(mode, 1.0, Contrast::Standard);
+    runSplashAndAbout(mode, 2.0, Contrast::Standard);
+    runSplashAndAbout(mode, 1.0, Contrast::High);
+  }
 }
 
 TEST_CASE("a mode switch or a resize recomposes every layer and damages everything") {

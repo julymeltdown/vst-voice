@@ -8,6 +8,7 @@
 #include <limits>
 #include <numbers>
 #include <system_error>
+#include <vector>
 
 namespace seam::native_ui::design {
 namespace {
@@ -162,18 +163,79 @@ Color stateTint(const DesignTokens& tokens, CharacterState state) noexcept {
   return tokens.color.accent;
 }
 
-// The eyelid of the idle blink. The development turnaround declares no eye anchor, so the lid is a
-// band across the portrait's upper third rather than a per-eye cut-out: an approximation that is
-// visible as motion and claims nothing about the face it cannot know.
-void paintBlinkLid(Canvas2D& canvas, ui::Rect portrait, double blink, Color ink) {
-  if (blink <= 0.0 || portrait.height <= 0.0) return;
-  const auto lidHeight = std::max(1.0, portrait.height * 0.016 * std::clamp(blink, 0.0, 1.0));
-  const auto y = portrait.y + portrait.height * 0.40 - lidHeight * 0.5;
-  canvas.fill(Path::rect({portrait.x + portrait.width * 0.16, y, portrait.width * 0.68, lidHeight}),
-              withAlpha(ink, 0.75 * std::clamp(blink, 0.0, 1.0)));
+// The eyelids of the idle blink, over the eyes the package declares for the drawn state: each lid is
+// the skin tone closing from the top of its eye's box, with a lash line along its lower edge once it
+// is more than half closed. A portrait without declared eyes gets no lid.
+void paintBlinkLid(Canvas2D& canvas, ui::Rect portrait, const std::vector<character::EyeBox>& eyes,
+                   double blink, std::optional<Color> tone, Color ink) {
+  const auto lids = blinkLids(portrait, eyes, blink);
+  if (lids.empty() || !tone.has_value()) return;
+  const auto closed = std::clamp(blink, 0.0, 1.0);
+  for (const auto& lid : lids) {
+    canvas.fill(Path::rect(lid.lid), *tone);
+    if (closed <= 0.5) continue;
+    const auto lash = std::max(0.6, lid.eye.height * 0.14);
+    canvas.fill(Path::rect({lid.lid.x, std::max(lid.lid.y, lid.lid.bottom() - lash), lid.lid.width,
+                            std::min(lash, lid.lid.height)}),
+                withAlpha(ink, (closed - 0.5) * 2.0));
+  }
 }
 
 }  // namespace
+
+std::vector<BlinkLid> blinkLids(ui::Rect portrait, const std::vector<character::EyeBox>& eyes,
+                                double blink) {
+  std::vector<BlinkLid> lids;
+  const auto closed = std::clamp(blink, 0.0, 1.0);
+  if (!(closed > 0.0) || portrait.width <= 0.0 || portrait.height <= 0.0) return lids;
+  for (const auto& box : eyes) {
+    const ui::Rect eye{portrait.x + box.x * portrait.width, portrait.y + box.y * portrait.height,
+                       box.width * portrait.width, box.height * portrait.height};
+    if (eye.width <= 0.0 || eye.height <= 0.0) continue;
+    lids.push_back({{eye.x, eye.y, eye.width, eye.height * closed}, eye});
+  }
+  return lids;
+}
+
+std::optional<Color> eyelidTone(const PixelSurface& portrait,
+                                const std::vector<character::EyeBox>& eyes) {
+  if (portrait.width() == 0U || portrait.height() == 0U || eyes.empty()) return std::nullopt;
+  // The skin under each eye (a strip half the eye's height tall), keeping its lightest quarter: hair
+  // falls across these faces, and the lid is skin, never hair.
+  std::vector<std::uint32_t> samples;
+  const auto width = static_cast<double>(portrait.width());
+  const auto height = static_cast<double>(portrait.height());
+  for (const auto& box : eyes) {
+    const auto x0 = static_cast<std::uint32_t>(std::clamp(box.x * width, 0.0, width - 1.0));
+    const auto x1 = static_cast<std::uint32_t>(std::clamp((box.x + box.width) * width, 0.0, width));
+    const auto y0 = static_cast<std::uint32_t>(
+        std::clamp((box.y + box.height) * height, 0.0, height - 1.0));
+    const auto y1 = static_cast<std::uint32_t>(
+        std::clamp((box.y + box.height * 1.5) * height, 0.0, height));
+    for (auto y = y0; y < y1; ++y)
+      for (auto x = x0; x < x1; ++x) samples.push_back(portrait.pixels()[y * portrait.width() + x]);
+  }
+  if (samples.empty()) return std::nullopt;
+  const auto luminance = [](std::uint32_t p) {
+    return 0.2126 * static_cast<double>((p >> 16U) & 0xFFU) +
+           0.7152 * static_cast<double>((p >> 8U) & 0xFFU) + 0.0722 * static_cast<double>(p & 0xFFU);
+  };
+  std::sort(samples.begin(), samples.end(),
+            [&](std::uint32_t a, std::uint32_t b) { return luminance(a) > luminance(b); });
+  const auto count = std::max<std::size_t>(1U, samples.size() / 4U);
+  double red = 0.0;
+  double green = 0.0;
+  double blue = 0.0;
+  for (std::size_t i = 0U; i < count; ++i) {
+    red += static_cast<double>((samples[i] >> 16U) & 0xFFU);
+    green += static_cast<double>((samples[i] >> 8U) & 0xFFU);
+    blue += static_cast<double>(samples[i] & 0xFFU);
+  }
+  const auto n = static_cast<double>(count);
+  return Color{static_cast<std::uint8_t>(std::lround(red / n)),
+               static_cast<std::uint8_t>(std::lround(green / n)),
+               static_cast<std::uint8_t>(std::lround(blue / n)), 255U};
+}
 
 std::string_view characterStateName(CharacterState state) noexcept {
   switch (state) {
@@ -264,13 +326,14 @@ bool characterMotionShown(CharacterState state, bool figureDrawn, bool ringDrawn
 }
 
 std::filesystem::path characterStateAssetPath(const character::Package& package,
-                                              CharacterState state) {
-  return package.assetPath(characterPackageState(state));
+                                              CharacterState state, std::string_view outfit) {
+  return package.assetPath(characterPackageState(state), outfit);
 }
 
 std::filesystem::path characterMouthAssetPath(const character::Package& package,
-                                              character::MouthShape shape) {
-  return package.mouthAssetPath(shape);
+                                              character::MouthShape shape,
+                                              std::string_view outfit) {
+  return package.mouthAssetPath(shape, outfit);
 }
 
 CharacterArtworkChoice characterArtworkChoice(const character::Package* package,
@@ -311,7 +374,8 @@ std::optional<Color> keyCornerColor(PixelSurface& surface) noexcept {
 
 StagePlacement resolveStage(const StageInput& input, double stageAspect) noexcept {
   StagePlacement placement;
-  if (!input.fullRack || input.highContrast || input.laneExpanded) return placement;
+  if (!input.fullRack || input.highContrast || input.laneExpanded || input.splashShown)
+    return placement;
   if (!(stageAspect > 0.0) || !std::isfinite(stageAspect)) return placement;
   const auto height = input.grid.height * kStageHeightFraction;
   const auto width = height * stageAspect;
@@ -377,6 +441,89 @@ double StageFade::advance(const StagePlacement& placement,
 std::optional<std::string_view> emptyProjectPrompt(std::size_t noteCount) noexcept {
   if (noteCount > 0U) return std::nullopt;
   return kEmptyProjectPrompt;
+}
+
+std::optional<ui::Rect> emptyProjectSplashBounds(ui::Rect grid, double splashAspect) noexcept {
+  if (!(splashAspect > 0.0) || !std::isfinite(splashAspect)) return std::nullopt;
+  const ui::Rect room{grid.x + kEmptySplashInset, grid.y + kEmptySplashInset,
+                      grid.width - 2.0 * kEmptySplashInset, grid.height - 2.0 * kEmptySplashInset};
+  const auto art = fitInside(room, splashAspect);
+  if (art.width < kEmptySplashMinimum.x || art.height < kEmptySplashMinimum.y) return std::nullopt;
+  return art;
+}
+
+std::optional<ui::Rect> emptyProjectSplashBounds(ui::Rect grid, const paint::Image* splash) noexcept {
+  if (splash == nullptr || splash->width() == 0U || splash->height() == 0U) return std::nullopt;
+  return emptyProjectSplashBounds(
+      grid, static_cast<double>(splash->width()) / static_cast<double>(splash->height()));
+}
+
+ui::Rect splashTitleArea(ui::Rect splash) noexcept {
+  const auto inset = std::max(16.0, splash.width * 0.04);
+  const auto width = splash.width * kSplashClearShare - inset * 1.5;
+  const auto height = std::min(splash.height - 2.0 * inset, 140.0);
+  return {splash.x + inset, splash.y + (splash.height - height) * 0.5, std::max(0.0, width),
+          std::max(0.0, height)};
+}
+
+void paintSplashScrim(Canvas2D& canvas, const DesignTokens& tokens, ui::Rect splash,
+                      ui::Rect textArea) {
+  if (splash.width <= 0.0 || splash.height <= 0.0) return;
+  if (tokens.contrast == Contrast::High) {
+    // High Contrast reads text on a solid plate, never on art.
+    const ui::Rect plate{textArea.x - 12.0, textArea.y - 12.0, textArea.width + 24.0,
+                         textArea.height + 24.0};
+    canvas.fill(Path::roundedRect(plate, tokens.shape.card), tokens.color.surface);
+    canvas.stroke(Path::roundedRect(plate, tokens.shape.card), tokens.color.borderStrong,
+                  StrokeStyle{1.5});
+    return;
+  }
+  const auto edge = splash.x + splash.width * (kSplashClearShare + 0.12);
+  canvas.fill(Path::rect({splash.x, splash.y, edge - splash.x, splash.height}),
+              paint::LinearGradient{{splash.x, splash.y},
+                                    {edge, splash.y},
+                                    {{0.0, withAlpha(tokens.color.canvas, 0.88)},
+                                     {0.7, withAlpha(tokens.color.canvas, 0.6)},
+                                     {1.0, withAlpha(tokens.color.canvas, 0.0)}}});
+}
+
+ui::Rect paintSplashText(Canvas2D& canvas, ui::Rect area, const std::vector<SplashLine>& lines) {
+  if (area.width <= 0.0 || area.height <= 0.0) return {};
+  struct Row final {
+    std::string text;
+    const SplashLine* line;
+    double height;
+  };
+  std::vector<Row> rows;
+  for (const auto& line : lines) {
+    const auto height = line.style.size * 1.3;
+    std::string current;
+    std::size_t start = 0U;
+    while (start <= line.text.size()) {
+      auto end = line.text.find(' ', start);
+      if (end == std::string::npos) end = line.text.size();
+      const auto word = line.text.substr(start, end - start);
+      const auto candidate = current.empty() ? word : current + " " + word;
+      if (!current.empty() && canvas.measure(candidate, line.style) > area.width) {
+        rows.push_back({current, &line, height});
+        current = word;
+      } else {
+        current = candidate;
+      }
+      start = end + 1U;
+    }
+    if (!current.empty()) rows.push_back({current, &line, height});
+  }
+  double total = 0.0;
+  for (const auto& row : rows) total += row.height;
+  auto y = area.y + std::max(0.0, (area.height - total) * 0.5);
+  for (const auto& row : rows) {
+    if (y + row.height > area.bottom() + 0.5) break;
+    canvas.text({area.x, y, area.width, row.height}, row.text, row.line->style, row.line->color);
+    y += row.height;
+  }
+  return {area.x, area.y + std::max(0.0, (area.height - total) * 0.5), area.width,
+          std::min(total, area.height)};
 }
 
 std::optional<CharacterToast> characterErrorToast(const SingLayout& layout,
@@ -603,7 +750,8 @@ bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
   // The blink is drawn after the artwork and inside the ring, on the figure's own rectangle rather
   // than on the ring's circle.
   if (spec.blink > 0.0 && fittedPortrait.width > 0.0)
-    paintBlinkLid(canvas.vector, fittedPortrait, spec.blink, tokens.color.textPrimary);
+    paintBlinkLid(canvas.vector, fittedPortrait, spec.eyes, spec.blink, spec.lidTone,
+                  tokens.color.canvas);
   vector.save();
   vector.setGlow(withAlpha(tint, 0.9), 10.0);
   vector.stroke(Path::circle(center, portraitRadius + 1.0), withAlpha(tint, 0.85),
@@ -615,7 +763,8 @@ bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
 bool paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui::Rect bounds,
                           CharacterState state, const PixelSurface* packagePortrait,
                           const paint::Image* lookPortrait, double opacity, double blink,
-                          double breath) {
+                          double breath, const std::vector<character::EyeBox>& eyes,
+                          std::optional<Color> lidTone) {
   if (bounds.width <= 0.0 || bounds.height <= 0.0) return false;
   auto& vector = canvas.vector;
   const auto tint = stateTint(tokens, state);
@@ -627,9 +776,10 @@ bool paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui
   const ui::Rect portraitBox{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
   const auto figure = paintCharacterPortrait(canvas, portraitBox, true, packagePortrait,
                                              lookPortrait, opacity, PortraitFit::CoverTop, breath);
-  // As in the ring, the lid closes over a figure: an empty circle has no eyes to blink.
+  // As in the ring, the lid closes over the figure the portrait filled: an empty circle has no eyes.
   const auto figureDrawn = figure.width > 0.0;
-  if (blink > 0.0 && figureDrawn) paintBlinkLid(vector, portraitBox, blink, tokens.color.textPrimary);
+  if (blink > 0.0 && figureDrawn)
+    paintBlinkLid(vector, figure, eyes, blink, lidTone, tokens.color.canvas);
   vector.save();
   vector.setGlow(withAlpha(tint, 0.8), 5.0);
   vector.stroke(Path::circle(center, inner + 1.0), withAlpha(tint, 0.9),
@@ -652,9 +802,28 @@ void paintStageFigure(CharacterCanvas canvas, ui::Rect clip, const StagePlacemen
 
 void paintEmptyProject(CharacterCanvas canvas, const DesignTokens& tokens,
                        const SingLayout& layout, const PixelSurface* packagePortrait,
-                       const paint::Image* lookPortrait) {
+                       const paint::Image* lookPortrait, const paint::Image* splash) {
   const auto& grid = layout.grid;
   if (grid.width <= 0.0 || grid.height <= 0.0) return;
+  if (const auto art = emptyProjectSplashBounds(grid, splash); art.has_value()) {
+    // The mode's key art stands in for the seated pose: she is seated in it. It is never a hit
+    // target, so a double-click on it still writes the first note in the grid underneath. The Stage
+    // figure is off meanwhile (StageInput::splashShown), so she is not drawn twice.
+    auto& vector = canvas.vector;
+    vector.save();
+    vector.clipPath(Path::roundedRect(*art, tokens.shape.card));
+    vector.drawImage(*splash, *art);
+    const auto title = splashTitleArea(*art);
+    paintSplashScrim(vector, tokens, *art, title);
+    vector.restore();
+    static_cast<void>(paintSplashText(
+        vector, title,
+        {SplashLine{std::string{kEmptyProjectPrompt},
+                    paint::TextStyle{paint::FontRole::UiSemibold, kSplashPromptSize, 0.0,
+                                     paint::TextAlign::Left, false},
+                    tokens.color.textPrimary}}));
+    return;
+  }
   // The seated pose sits above the line, both centred on the roll: the grid still owns the double
   // click that writes the first note, so the pose is never a hit target and carries no actions.
   const auto poseHeight = std::min(grid.height * 0.42, 208.0);
@@ -719,9 +888,20 @@ core::Result<void> CharacterSurface::loadPackage(const std::filesystem::path& pa
 void CharacterSurface::clearPackage() noexcept {
   package_.reset();
   packageError_.clear();
+  dropDecoded();
+}
+
+void CharacterSurface::dropDecoded() noexcept {
   portraits_.clear();
   mouths_.clear();
+  lidTones_.clear();
   placement_.reset();
+}
+
+void CharacterSurface::setOutfit(std::string outfit) {
+  if (outfit == outfit_) return;
+  outfit_ = std::move(outfit);
+  dropDecoded();
 }
 
 const PixelSurface* CharacterSurface::portrait(CharacterState state) const {
@@ -730,7 +910,7 @@ const PixelSurface* CharacterSurface::portrait(CharacterState state) const {
   if (iterator != portraits_.end())
     return iterator->second.has_value() ? &*iterator->second : nullptr;
   std::optional<PixelSurface> decoded;
-  const auto path = characterStateAssetPath(*package_, state);
+  const auto path = characterStateAssetPath(*package_, state, outfit_);
   if (!path.empty()) {
     auto loaded = PixelSurface::loadPpm(path);
     if (loaded) decoded = std::move(loaded.value());
@@ -748,12 +928,12 @@ const PixelSurface* CharacterSurface::mouth(character::MouthShape shape) const {
   if (iterator != mouths_.end())
     return iterator->second.has_value() ? &*iterator->second : nullptr;
   std::optional<PixelSurface> decoded;
-  const auto path = characterMouthAssetPath(*package_, shape);
+  const auto path = characterMouthAssetPath(*package_, shape, outfit_);
   if (!path.empty()) {
     auto loaded = PixelSurface::loadPpm(path);
     if (loaded) {
       auto surface = std::move(loaded.value());
-      if (package_->manifest.mouthOverlayPlacement().has_value())
+      if (package_->manifest.mouthPlacementFor(outfit_).has_value())
         static_cast<void>(keyCornerColor(surface));
       decoded = std::move(surface);
     }
@@ -765,7 +945,21 @@ const PixelSurface* CharacterSurface::mouth(character::MouthShape shape) const {
 
 std::optional<character::MouthPlacement> CharacterSurface::mouthPlacement() const noexcept {
   if (!package_.has_value()) return std::nullopt;
-  return package_->manifest.mouthOverlayPlacement();
+  return package_->manifest.mouthPlacementFor(outfit_);
+}
+
+std::vector<character::EyeBox> CharacterSurface::eyes(CharacterState state) const {
+  if (!package_.has_value()) return {};
+  return package_->manifest.eyesFor(characterPackageState(state), outfit_);
+}
+
+std::optional<Color> CharacterSurface::lidTone(CharacterState state) const {
+  if (!package_.has_value()) return std::nullopt;
+  if (const auto cached = lidTones_.find(state); cached != lidTones_.end()) return cached->second;
+  std::optional<Color> tone;
+  if (const auto* drawn = portrait(state); drawn != nullptr) tone = eyelidTone(*drawn, eyes(state));
+  lidTones_.emplace(state, tone);
+  return tone;
 }
 
 }  // namespace seam::native_ui::design

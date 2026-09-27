@@ -61,6 +61,18 @@ ui::Rect grown(ui::Rect r, double by) noexcept {
   return {r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by};
 }
 
+// The blink lid's inputs, for a character item's hash: the drawn state's eye boxes and the skin
+// tone the lid closes with. Both come from the package and its outfit, so a mode switch or a new
+// package that moves or recolours the lid changes the item.
+paint::ContentHash& addLid(paint::ContentHash& h, const std::vector<character::EyeBox>& eyes,
+                           std::optional<Color> tone) noexcept {
+  h.add(static_cast<std::uint64_t>(eyes.size()));
+  for (const auto& eye : eyes) h.add(eye.x).add(eye.y).add(eye.width).add(eye.height);
+  h.add(tone.has_value());
+  if (tone.has_value()) h.add(*tone);
+  return h;
+}
+
 // Whether paintCharacterPortrait draws a figure into this destination: the package's decoded state
 // art when it has pixels, else the look's portrait. The recorded frame needs the answer before the
 // portrait is drawn, because drawing happens at composition.
@@ -295,6 +307,7 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
     slot.portrait = paint::loadImage(folder / "portrait.png");
     slot.stage = paint::loadImage(folder / "stage.png");
     slot.wordmark = paint::loadImage(folder / "wordmark.png");
+    slot.splash = paint::loadImage(folder / "splash.png");
   }
   // The character package is optional artwork over the look: when none is present the shell draws
   // this look's own portrait and invents no state, so a missing package changes nothing it claims.
@@ -303,6 +316,8 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
 
 void SingShell::setCharacterPackage(const std::filesystem::path& packageRoot) {
   static_cast<void>(character_.loadPackage(packageRoot));
+  // A mode with its own state set in the package draws it; any other mode draws the shared set.
+  character_.setOutfit(std::string{designModeName(preferences_.mode)});
   // Recorded portraits are hashed by identity: a reload may reuse an address, so every layer that
   // drew the previous package is dropped with it.
   ++artGeneration_;
@@ -326,7 +341,7 @@ std::shared_ptr<const paint::Image> SingShell::lookListeningPortrait() const {
     listeningPortraitPath_.clear();
     return {};
   }
-  const auto path = characterStateAssetPath(*package, CharacterState::Listening);
+  const auto path = characterStateAssetPath(*package, CharacterState::Listening, character_.outfit());
   if (path.empty()) {
     listeningPortrait_.reset();
     listeningPortraitPath_.clear();
@@ -398,6 +413,7 @@ bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
     case OverlayKind::AudioSettings:
     case OverlayKind::VoicebankBrowser:
     case OverlayKind::SingerMenu:
+    case OverlayKind::About:
     case OverlayKind::TextField: return true;
     case OverlayKind::None: return false;
   }
@@ -417,13 +433,16 @@ const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& contr
   // surfaces the shell opens over the score. Only one is ever shown.
   for (const auto* overlay :
        {microscopeOverlay_.get(), fieldOverlay_.get(), overlapOverlay_.get(), reviewOverlay_.get(),
-        voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
-        supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get()}) {
+       voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
+        supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get(),
+        aboutOverlay_.get()}) {
     if (overlay == nullptr || !overlay->wanted(controller, state)) continue;
     // The DIAGNOSTICS popover is the shell's own presentation, so it needs its flag.
     if (overlay->kind() == OverlayKind::Diagnostics && !diagnosticsOpen_) continue;
     // So is the singer menu, which is last: any surface the controller opens is above it.
     if (overlay->kind() == OverlayKind::SingerMenu && !singerMenuOpen_) continue;
+    // And the About sheet, which only opens when nothing else is up.
+    if (overlay->kind() == OverlayKind::About && !aboutOpen_) continue;
     if (overlay->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
       continue;
     return overlay;
@@ -442,6 +461,11 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   preferences_.mode = mode;
+  // The mode's outfit draws its own state set. Switching it drops the decoded portraits, and a new
+  // decode may reuse a freed address, so the art the recorded layers hashed by identity goes too.
+  const auto outfit = character_.outfit();
+  character_.setOutfit(std::string{designModeName(mode)});
+  if (character_.outfit() != outfit) ++artGeneration_;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -675,6 +699,7 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   fieldOpenedOver_ = OverlayKind::None;
   workspaceMenuOpen_ = false;
   singerMenuOpen_ = false;
+  aboutOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
   // Whatever paints next is not a shell frame, so the next shell frame starts from nothing.
@@ -696,6 +721,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     // popover the shell holds open would otherwise point at stale state.
     diagnosticsOpen_ = false;
     singerMenuOpen_ = false;
+    aboutOpen_ = false;
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
@@ -912,6 +938,34 @@ core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controll
   takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   singerMenuOpen_ = true;
   refreshSemantics(controller);
+  repaint();
+  return core::success();
+}
+
+core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, bool open) {
+  if (!open) {
+    if (!aboutOpen_) return core::success();
+    aboutOpen_ = false;
+    semanticFocus_.clear();
+    refreshSemantics(controller);
+    repaint();
+    return core::success();
+  }
+  if (aboutOpen_) return core::success();
+  if (!presented_) return core::failure(core::ErrorCode::InvalidState, tr(Str::TheAboutSheetNeedsTheDesign));
+  if (activeOverlay(controller) != nullptr)
+    return core::failure(core::ErrorCode::Conflict, tr(Str::CloseTheOpenSurfaceFirst));
+  const auto state = controller.sceneState();
+  if (aboutOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallFor));
+  if (lyricInputActive_) {
+    controller.cancelTextComposition();
+    lyricInputActive_ = false;
+  }
+  if (knobDrag_ || forwarding_ != ForwardArea::None) cancelGestures(controller);
+  aboutOpen_ = true;
+  refreshSemantics(controller);
+  takeSemanticFocus(controller, std::string{kAboutCloseId});
   repaint();
   return core::success();
 }
@@ -1388,15 +1442,20 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     const auto pose = characterState_;
     const auto blink = motion_.blink;
     const auto breath = motion_.breath;
-    const auto hash = paint::ContentHash{}
-                          .add(std::string_view{"avatar"}).add(static_cast<const void*>(&t))
-                          .add(bounds).add(static_cast<std::uint64_t>(pose))
-                          .add(static_cast<const void*>(package)).add(static_cast<const void*>(look))
-                          .add(blink).add(breath).value();
+    // The lid closes over this state's eyes, in the outfit the mode draws.
+    auto eyes = character_.eyes(pose);
+    const auto lidTone = character_.lidTone(pose);
+    paint::ContentHash h;
+    h.add(std::string_view{"avatar"}).add(static_cast<const void*>(&t)).add(bounds)
+        .add(static_cast<std::uint64_t>(pose)).add(std::string_view{character_.outfit()})
+        .add(static_cast<const void*>(package)).add(static_cast<const void*>(look)).add(blink)
+        .add(breath);
+    const auto hash = addLid(h, eyes, lidTone).value();
     characterArt(c, grown(bounds, kGlowReach), hash,
-                 [&t, bounds, pose, package, look, blink, breath](CharacterCanvas art) {
+                 [&t, bounds, pose, package, look, blink, breath, eyes = std::move(eyes),
+                  lidTone](CharacterCanvas art) {
                    static_cast<void>(paintCharacterAvatar(art, t, bounds, pose, package, look, 1.0,
-                                                          blink, breath));
+                                                          blink, breath, eyes, lidTone));
                  });
     // What the avatar returns, known before it is drawn: motion shows where a figure is drawn.
     motionShown_ |= characterMotionShown(pose, portraitDraws(bounds, package, look), false);
@@ -1652,6 +1711,8 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   stageInput.highContrast = preferences_.contrast == Contrast::High;
   stageInput.laneExpanded = laneExpanded(state);
   stageInput.grid = l.grid;
+  stageInput.splashShown = notes.empty() && model.noteCount() == 0U &&
+                           emptyProjectSplashBounds(l.grid, assets().splash.get()).has_value();
   const auto stageAspect = assets().stage
                                ? static_cast<double>(assets().stage->width()) /
                                      static_cast<double>(assets().stage->height())
@@ -1912,12 +1973,15 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // is the shell's own, shown only here.
     const auto* package = characterPortrait(CharacterState::Idle);
     const auto* look = assets().portrait.get();
+    // The mode's key art stands in for the seated pose when the roll can hold it.
+    const auto* splash = assets().splash.get();
     const auto hash = paint::ContentHash{}
                           .add(std::string_view{"empty-project"}).add(static_cast<const void*>(&t))
                           .add(l.grid).add(static_cast<const void*>(package))
-                          .add(static_cast<const void*>(look)).value();
-    characterArt(c, l.grid, hash, [&t, &l, package, look](CharacterCanvas art) {
-      paintEmptyProject(art, t, l, package, look);
+                          .add(static_cast<const void*>(look)).add(static_cast<const void*>(splash))
+                          .add(std::string_view{character_.outfit()}).value();
+    characterArt(c, l.grid, hash, [&t, &l, package, look, splash](CharacterCanvas art) {
+      paintEmptyProject(art, t, l, package, look, splash);
     });
   }
 
@@ -2434,6 +2498,8 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       .mouthOpacity = voiceReady ? 1.0 : 0.55,
       .breath = motion_.breath,
       .blink = motion_.blink,
+      .eyes = character_.eyes(performanceState),
+      .lidTone = character_.lidTone(performanceState),
   };
   {
     // The ring lights with the singer's energy and the render, and the portrait breathes and
@@ -2445,7 +2511,9 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
         .add(static_cast<const void*>(spec.packagePortrait))
         .add(static_cast<const void*>(spec.lookPortrait)).add(spec.portraitOpacity)
         .add(static_cast<const void*>(spec.mouthSprite)).add(spec.mouthPlacement.has_value())
-        .add(spec.mouthOpacity).add(spec.breath).add(spec.blink);
+        .add(spec.mouthOpacity).add(spec.breath).add(spec.blink)
+        .add(std::string_view{character_.outfit()});
+    addLid(h, spec.eyes, spec.lidTone);
     if (spec.mouthPlacement.has_value())
       h.add(spec.mouthPlacement->x).add(spec.mouthPlacement->y).add(spec.mouthPlacement->width)
           .add(spec.mouthPlacement->height);
@@ -2985,6 +3053,7 @@ core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
   const auto result = overlay.close(controller);
   if (overlay.kind() == OverlayKind::Diagnostics) diagnosticsOpen_ = false;
   if (overlay.kind() == OverlayKind::SingerMenu) singerMenuOpen_ = false;
+  if (overlay.kind() == OverlayKind::About) aboutOpen_ = false;
   return result;
 }
 
@@ -2999,6 +3068,8 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
     singerMenuOpen_ = false;
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   }
+  // The About sheet's one control is Close.
+  if (overlay.kind() == OverlayKind::About && result) aboutOpen_ = false;
   return result;
 }
 
@@ -3894,7 +3965,8 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
       const auto* focused = semantics_.focusedNode();
       const std::string id = focused == nullptr ? std::string{} : focused->id;
       // Enter and Space run the focused menu item; a command that ran closes the menu.
-      if (menu && (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
+      if ((menu || overlay->kind() == OverlayKind::About) &&
+          (event.key == NativeKey::Enter || event.key == NativeKey::Space)) {
         if (overlayPublishes(controller, id))
           static_cast<void>(performOverlay(controller, *overlay, id, SemanticAction::Activate));
         refreshSemantics(controller);
@@ -4513,6 +4585,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // menu; it does not come back when that surface closes.
   if (singerMenuOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::SingerMenu)
     singerMenuOpen_ = false;
+  if (aboutOpen_ && overlay != nullptr && overlay->kind() != OverlayKind::About) aboutOpen_ = false;
   const auto scoreCovered =
       !singShown || l.inspectorOpen || workspaceMenuOpen_ || overlay != nullptr;
   if (!singShown) {

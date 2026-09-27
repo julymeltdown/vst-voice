@@ -51,6 +51,8 @@ struct ModeAssets final {
   std::shared_ptr<const paint::Image> portrait;
   std::shared_ptr<const paint::Image> stage;
   std::shared_ptr<const paint::Image> wordmark;
+  // The 1600x1000 key art: the empty project's splash and the About sheet's art.
+  std::shared_ptr<const paint::Image> splash;
 };
 
 // The shell's workspaces. VOICE, TUNE, MIX and EXPORT cover the score with their own body; the
@@ -164,6 +166,9 @@ public:
   // replaced controller, and focus returns to the button.
   [[nodiscard]] bool singerMenuOpen() const noexcept { return singerMenuOpen_; }
   core::Result<void> setSingerMenuOpen(NativeEditorController& controller, bool open);
+  // The About sheet (the application menu's About command): the mode's key art, name and version.
+  [[nodiscard]] bool aboutOpen() const noexcept { return aboutOpen_; }
+  core::Result<void> setAboutOpen(NativeEditorController& controller, bool open);
   // Whether the last SING frame painted the Stage figure; §3.4 keeps it off without the full rack.
   [[nodiscard]] bool lastFrameShowedStage() const noexcept { return stageShown_; }
   // Where the last SING frame drew the Stage figure, or nothing when it drew none. The figure is
@@ -514,6 +519,8 @@ private:
   std::unique_ptr<ShellOverlay> voicebankOverlay_{makeVoicebankBrowserOverlay()};
   std::unique_ptr<ShellOverlay> fieldOverlay_{makeTextFieldOverlay()};
   std::unique_ptr<ShellOverlay> singerMenuOverlay_{makeSingerMenuOverlay()};
+  std::unique_ptr<ShellOverlay> aboutOverlay_{
+      makeAboutOverlay([this] { return assets().splash.get(); })};
   // A plot gesture an overlay started (the dynamics inspector's points).
   std::optional<OverlayGesture> overlayGesture_;
   // The shell control that had focus when the presented overlay opened (MIX's Settings, VOICE's
@@ -524,6 +531,7 @@ private:
   std::string overlayField_;
   bool diagnosticsOpen_{false};
   bool singerMenuOpen_{false};
+  bool aboutOpen_{false};
   // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
   // gives its first control the keyboard.
   OverlayKind presentedOverlay_{OverlayKind::None};

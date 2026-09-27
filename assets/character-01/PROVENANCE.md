@@ -16,6 +16,15 @@ The six state portraits (`runtime/neutral.ppm`, `focused.ppm`, `rendering.ppm`, 
 
 The EMO/SCENE splash key art made in the same session lives in `assets/ui-design/` and is recorded in that directory's `PROVENANCE.md`.
 
+## SCENE outfit set and eye boxes (manifest version 0.3.0)
+
+The six SCENE-mode portraits (`runtime/scene/*.ppm`), their mouth sprites (`runtime/scene/mouth-*.ppm`) and their 640×960 masters (`source/states/scene/*.png`) are also **AI-generated development art**:
+
+- Generated on 2026-09-27 with Codex's built-in image generator as edits of the committed EMO masters (`source/states/<state>.png`), one edit per state, so pose, framing, face, outfit and background are the EMO state's own. The edit adds hot-pink and cyan streaks through the hair beside the existing pale streak, stacked neon bead bracelets (pink, cyan, lime) on the wrists, and a pink/cyan rim light in place of the crimson one.
+- Every edit prompt forbade text, logos, brand marks, stars, band names, watermarks and any change to pose, expression or composition. Each output was compared by eye with its EMO state for identity, pose and framing, and checked for lettering or brand-like marks. None was found. This review does not replace a legal clearance.
+- `scripts/build_character_state_art.py import --outfit scene` stores the masters and records their SHA-256 in `source/states/sources.json`; `build` derives the runtime PPMs and the SCENE mouth sprites exactly as for the shared set. The generator outputs are not committed.
+- The per-state `eyes` boxes in `manifest.json` were placed by hand on the shared portraits (runtime pixels in the script's `EYES` table) and checked on `previews/eye-boxes.png`, which draws them over both sets. The SCENE set keeps the same poses, so it uses the same boxes.
+
 ## Restrictions
 
 - Internal concept and technical evaluation only.

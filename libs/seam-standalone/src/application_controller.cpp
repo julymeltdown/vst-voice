@@ -1328,6 +1328,9 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::EditJapaneseReading:
       if (!config_.editJapaneseReading) return core::failure(core::ErrorCode::Unsupported, "Japanese reading review is not connected");
       return config_.editJapaneseReading();
+    case platform::ApplicationCommand::ShowAbout:
+      if (!config_.showAbout) return core::failure(core::ErrorCode::Unsupported, "About sheet is not connected");
+      return config_.showAbout();
     case platform::ApplicationCommand::FindActiveDiagnostics:
       if (!config_.findActiveDiagnostics) return core::failure(core::ErrorCode::Unsupported, "Diagnostic Find is not connected");
       return config_.findActiveDiagnostics();
