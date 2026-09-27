@@ -1,6 +1,6 @@
 # Native Editor Design System
 
-Status: describes the shipped EMO/SCENE design shell at master `74a59b32` (2026-09-27). It is
+Status: describes the EMO/SCENE design shell at master `1e424fd1` (2026-09-28). It is
 the document §16 of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) asks for. Where
 this text and a plan disagree, this text says what the code does and the plan says what was
 intended. Anything the plans describe that the code does not do is marked **Not shipped**.
@@ -9,13 +9,10 @@ This is a description of source, not an acceptance claim. Native visual acceptan
 host rows, VoiceOver, the owner rubric and release readiness remain as recorded in
 [the fidelity review](SEAM_UI_FIDELITY_REVIEW_2026-09-25.md) and its evidence packets.
 
-**Since `74a59b32`** (branch `codex/review-round5-fixes`): the project's default character
-display mode is Full, the SINGER menu has a Full/Minimal/Off switch, and MIX and the Edit menu
-have an Add Region action. The sections below describe the code at `74a59b32` with these
-included.
-
-**On branch `codex/brand-fonts-tooltips`**: bundled OFL fonts (§3), the kit tooltip (§4) and
-`scripts/check_brand_terms.py` (§12) ship; the sections below include them.
+This snapshot includes the Full new-project default, the SINGER Full/Minimal/Off switch, Add Region
+in MIX and Edit, bundled OFL fonts, tooltips, Korean localization, Character Package v4 and the
+measured frame pipeline. A separate Settings sheet and plan §9 motion work are in progress outside
+this pinned source; neither is counted here.
 
 ## 1. What the shell is
 
@@ -109,7 +106,7 @@ meet 4.5:1 for text and 3:1 for non-text on every pair. Standard must meet 4.5:1
 four named exceptions, and always 3:1 for the focus ring.
 
 The ratios below are those pairs evaluated with the test's own formula and pair list against the
-token values at `74a59b32`. The weakest-text column is the line the test prints; the test binary
+token values documented at `74a59b32`. The weakest-text column is the line the test prints; the test binary
 was not rebuilt for this document.
 
 | Set | Weakest text pair | Weakest non-text pair | Selected pairs |
@@ -229,8 +226,9 @@ not.
 ### 6.1 Header
 
 Left to right: the mode's wordmark image, five workspace tabs (SING, VOICE, TUNE, MIX, EXPORT), the
-optional avatar, the EMO/SCENE switch, the transport display, the output meter, and a settings
-button that opens the audio settings sheet.
+optional avatar, the EMO/SCENE switch, the transport display, the output meter, a language control
+where space permits, and a settings button that opens the audio settings sheet. The separate
+appearance Settings sheet is in progress outside this snapshot.
 
 ### 6.2 SING
 
@@ -402,8 +400,13 @@ The script reuses keys for existing text, creates stable keys for new text, and 
 `constexpr` or `static const` declarations into bare `Str::Key` so the compiler points at the uses
 that need `tr()`.
 
-**Not shipped:** any non-English table, a translation file format or loader, and a language choice
-in the app. The table is English by default and translatable by key only from code.
+`assets/l10n/ko.json` supplies Korean. The UTF-8 JSON loader in
+`libs/seam-native-ui/src/design/shell_strings.cpp` validates keys and numbered placeholders and
+falls back to compiled English for rejected or missing entries. On macOS the initial selection
+follows the first preferred system language; the header control beside Settings cycles System,
+English and 한국어, with an explicit choice stored in the shared design preference suite
+(`libs/seam-native-ui/src/design/design_preferences_appkit.mm`, `sing_shell.cpp`). Unsupported
+system languages use English. See [L10N.md](L10N.md).
 
 ## 10. Character surfaces
 
@@ -447,7 +450,7 @@ and keeps its art. The `C` key cycles the mode while the score has focus, and th
 last row is a Full / Minimal / Off switch. A new project defaults to Full.
 
 Motion from plan §9 beyond the above (tab cross-fade, note-add scale, render-complete sweep, mode
-cross-fade, toast in and out) is **Not shipped**.
+cross-fade, toast in and out) is **In progress** on a separate feature branch, not in this source.
 
 ## 11. Frame pipeline and damage
 
@@ -461,8 +464,9 @@ cross-fade, toast in and out) is **Not shipped**.
 | L2 content | Notes, waveforms, curves, lanes, card contents | Its recorded drawing hashes differently (edits, selection, publication) |
 | L3 dynamic | Playhead, transport position, output meter, ring, avatar, hover, focus, gestures, menus, drawer, overlays | Every frame |
 
-The cache keeps three cumulative snapshots (background; plus grid; plus content). A changed layer
-rebuilds its snapshot and every one above it, and the dynamic layer is drawn over the content
+The cache keeps three cumulative snapshots (background; plus grid; plus content). The background
+raster is reused when its complete key is unchanged, including after composition invalidation.
+A changed layer rebuilds its snapshot and every one above it, and the dynamic layer is drawn over the content
 snapshot into the target, so the target's bytes always equal a composition from nothing (tested).
 Character art that needs the raster front is recorded as a deferred drawing with a content hash.
 
@@ -473,30 +477,27 @@ a first frame damages everything. The AppKit window and the CLAP view keep the p
 repaint only the damaged rectangles when nothing below L3 changed, and invalidate the view per
 damaged rectangle (`7982609d`). Win32 and X11 presenters are unchanged.
 
-Budgets and measurements: `benchmarks/phase5_benchmark.cpp` paints the shell over a 10,000-note
-project at 1440×900 on a 2× surface in both looks with glow on, 120 samples per case, and exits
-non-zero above any §10 budget. The latest measurement of the pipeline as merged was reported on
-`codex/unit-e-frame-performance` at its merge (`9ddd3538`): Apple M3 Max, load average 12–19, the
-shell's prepare plus paint time.
+Budgets and measurements: `benchmarks/phase5_benchmark.cpp` times
+`SingShell::prepareFrame` plus `SingShell::paint` over a 10,000-note project at 1440×900 on a 2×
+surface in both looks with glow on, five warmups and 120 samples per case. It exits non-zero when a
+case exceeds the plan §10 p95 budget or the 80 MiB layer-cache budget. The figures below are the
+reported Apple Silicon measurements for this implementation; no raw benchmark report is tracked
+with this document, so rerun the command in §14 for a fresh machine-specific result.
 
 | Case | §10 budget | EMO p95 | SCENE p95 | Layers drawn | §10 result |
 |---|---|---|---|---|---|
-| Cold full frame | 14 ms | 155 ms | 91 ms | L0–L3 | Not met |
-| Scroll or zoom | 8 ms | 17.6–18.7 ms | 16.9 ms | L1–L3 | Not met |
-| Playback | 3 ms | 4.3–4.4 ms | 4.2 ms | L3 only | Not met (p50 3.9–4.0 ms) |
-| 10,000 notes, glow on | 8 ms | 24 ms | 23–27 ms | L2–L3 | Not met |
-| Layer cache memory | 80 MB | 62.2 MB | 62.2 MB | — | Met |
+| Cold full frame | 14 ms | 9.5 ms | 11.2 ms | L0–L3; keyed background raster reused | Met |
+| Scroll or zoom | 8 ms | ~6 ms | ~6 ms | L1–L3 | Met |
+| Playback | 3 ms | ~1.8 ms | ~1.8 ms | L3 only | Met |
+| 10,000 notes, glow on | 8 ms | ~3.2 ms | ~3.2 ms | L2–L3 | Met |
+| Layer cache memory | 80 MiB | ~65 MiB | ~65 MiB | — | Met |
 
-Against the fidelity review's revised targets (p95 ≤ 16.7 ms for interactive frames and ≤ 8 ms for
-steady playback), playback is met and the other timed cases are not; scroll and zoom miss by about
-0.2–2 ms. Outside the shell, the host's scene-state derivation costs about 78 ms p95 per frame at
-10,000 notes and is reported separately (`hostStateP95Ms`). One run during a load spike gave an EMO
-cold p95 of 370 ms. Performance work after that merge (glow and ring sprite caching, a per-revision
-pronunciation cache) exists on another branch and is not part of `74a59b32`.
-
-These are shell paint numbers. End-to-end presentation, host display timing, FL Studio and process
-memory are separate and **Not run** for the layered pipeline; the capture packets in
-`docs/design/evidence/` predate it.
+These are shell frame numbers, not end-to-end presentation or host display timing. The benchmark
+reports host scene-state derivation separately as `hostStateP95Ms`; it does not include it in the
+budgeted shell time. Process memory is separate from the approximately 65 MiB layer cache. The
+ignored `build/evidence/ui-fidelity/r6-full/` packet contains 36 software captures with geometry,
+semantic and image checks passing and paint p50 of 0.7–3.5 ms; its manifest records source
+`74ba8a6c`, not `1e424fd1`, and AppKit windows were not captured. FL Studio remains unverified.
 
 ## 12. Brand rules
 
@@ -545,18 +546,25 @@ Test targets (`CMakeLists.txt`):
 | `seam_clap_design_shell_tests` | The shell inside the CLAP editor runtime |
 | `seam_ui_design_assets`, `seam_ui_performance_analysis` | The asset gate; packet timing analysis |
 | `seam_brand_terms_source_contract`, `seam_bundled_fonts_contract` | The brand-term gate (§12); the bundled fonts against their manifest (§3) |
+| `seam_design_layout_property_tests_l10n`, `seam_design_layout_property_tests_korean` | Translation loading, language choice and Korean layout/semantics |
 | `seam_phase5_benchmark` (an executable, not a ctest) | The §11 budgets; `SEAM_BENCHMARK_DESIGN_ONLY=1`, `SEAM_BENCHMARK_CASE=<name>`, `SEAM_BENCHMARK_SAMPLES=<n>` |
 
 Specification and capture scripts:
 
 ```sh
+SEAM_BENCHMARK_DESIGN_ONLY=1 build/release/seam_phase5_benchmark
 python3 scripts/verify_ui_fidelity_contract.py      # contract checks; prints native_visual_match: NOT_RUN
 python3 scripts/capture_sing_fidelity_packet.py     # writes build/evidence/ui-fidelity/<candidate>/
 python3 scripts/analyze_sing_ui_performance.py build/evidence/ui-fidelity/<candidate>
+python3 scripts/check_brand_terms.py
+python3 scripts/l10n/externalize_shell_strings.py --check
 python3 -B -m unittest discover -s tests/design -p 'test_*.py'
 ```
 
-The capture script launches the release app with `--evidence-dir` for the empty, ready, rendering,
+The benchmark command uses an already-built release binary; build it from the pinned source before
+using the result as evidence. `scripts/check_brand_terms.py` is also covered by ctest
+`seam_brand_terms_source_contract`; the l10n check validates extracted source strings and the JSON
+tables. The capture script launches the release app with `--evidence-dir` for the empty, ready, rendering,
 failed and dense-overlap states in both looks, every contract viewport, the open inspector and the
 VOICE, TUNE and MIX workspaces. It keeps the software frame and the OS-composited window, checks the
 geometry and semantics exported from the painting snapshot (`shell_evidence.hpp`) against the
@@ -568,10 +576,10 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
 
 ## 15. Not shipped, in one place
 
-- Plan §9 motion tweens beyond the character's established blink, breath and Stage fade.
-- In-app controls for contrast and Reduce Motion, and the Stage as a separate preference.
+- **In progress:** plan §9 motion tweens beyond the character's established blink, breath and Stage fade;
+  a consolidated Settings sheet. Neither is in `1e424fd1`.
+- In-app controls for contrast and Reduce Motion, and the Stage as a separate preference at this snapshot.
 - Reusable popover, scroll-view and text-field components.
-- The plan's `Pixel` font role; non-English string tables and a language choice.
-- The §10 timing budgets (the cache memory budget is met).
+- The plan's `Pixel` font role.
 - Windows and Linux editor surfaces.
 - Native visual acceptance, FL Studio F02–F05, VoiceOver and the owner rubric (NOT_RUN).
