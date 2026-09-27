@@ -2751,12 +2751,16 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
 }
 
 void SingShell::cancelCoveredLyric(NativeEditorController& controller) {
-  if (!presented_ || activeOverlay(controller) == nullptr) return;
+  if (!presented_) return;
   // The lyric composition is the only one without a field kind; every other field is the surface's
   // own (an inline field card, the time map's event field) and stays open.
   const auto lyricOpen =
       controller.textInputActive() &&
       controller.textFieldView().kind == NativeEditorController::TextFieldView::Kind::None;
+  // Nothing to cancel: skip the overlay lookup, whose scene state costs a pronunciation pass over
+  // the whole region, since prepareFrame runs this every frame.
+  if (!lyricOpen && !lyricInputActive_) return;
+  if (activeOverlay(controller) == nullptr) return;
   if (lyricOpen) controller.cancelTextComposition();
   lyricInputActive_ = false;
 }
