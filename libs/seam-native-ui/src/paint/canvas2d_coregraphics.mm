@@ -65,8 +65,21 @@ CGColorSpaceRef srgb() {
 }
 
 CfRef<CGColorRef> cgColor(Color c) {
+  // Band workers replay the same immutable chrome colors. Retaining a thread-local CG object
+  // avoids rebuilding the color-space components on every panel stroke.
+  struct Entry final {
+    std::uint32_t key;
+    CfRef<CGColorRef> color;
+  };
+  thread_local std::vector<Entry> cache;
+  const auto key = c.bgra();
+  for (const auto& entry : cache)
+    if (entry.key == key) return CfRef<CGColorRef>{CGColorRetain(entry.color.get())};
   const CGFloat components[4] = {c.red / 255.0, c.green / 255.0, c.blue / 255.0, c.alpha / 255.0};
-  return CfRef<CGColorRef>{CGColorCreate(srgb(), components)};
+  CfRef<CGColorRef> result{CGColorCreate(srgb(), components)};
+  if (result && cache.size() < 64U)
+    cache.push_back(Entry{key, CfRef<CGColorRef>{CGColorRetain(result.get())}});
+  return result;
 }
 
 class CoreGraphicsImage final : public Image {
@@ -139,6 +152,20 @@ CfRef<CGPathRef> toCgPath(const Path& path) {
 
 CfRef<CGGradientRef> toCgGradient(const std::vector<GradientStop>& stops) {
   if (stops.empty()) return {};
+  // A recorded panel gradient is identical in every band; CoreGraphics gradients are immutable.
+  struct Entry final {
+    std::vector<GradientStop> stops;
+    CfRef<CGGradientRef> gradient;
+  };
+  thread_local std::vector<Entry> cache;
+  for (const auto& entry : cache) {
+    if (entry.stops.size() != stops.size()) continue;
+    const auto same = std::equal(stops.begin(), stops.end(), entry.stops.begin(),
+                                 [](const GradientStop& a, const GradientStop& b) {
+                                   return a.offset == b.offset && a.color == b.color;
+                                 });
+    if (same) return CfRef<CGGradientRef>{CGGradientRetain(entry.gradient.get())};
+  }
   std::vector<CGFloat> components;
   std::vector<CGFloat> locations;
   components.reserve(stops.size() * 4U);
@@ -149,8 +176,11 @@ CfRef<CGGradientRef> toCgGradient(const std::vector<GradientStop>& stops) {
     components.push_back(stop.color.alpha / 255.0);
     locations.push_back(std::clamp(stop.offset, 0.0, 1.0));
   }
-  return CfRef<CGGradientRef>{CGGradientCreateWithColorComponents(
+  CfRef<CGGradientRef> result{CGGradientCreateWithColorComponents(
       srgb(), components.data(), locations.data(), stops.size())};
+  if (result && cache.size() < 64U)
+    cache.push_back(Entry{stops, CfRef<CGGradientRef>{CGGradientRetain(result.get())}});
+  return result;
 }
 
 std::size_t roleIndex(FontRole role) noexcept { return static_cast<std::size_t>(role); }
