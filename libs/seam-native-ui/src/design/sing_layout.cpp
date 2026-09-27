@@ -187,15 +187,9 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   if (tabsWidth < 5.0 * 36.0) tabsWidth = 0.0;
   if (tabsWidth == 0.0) {
     const auto right = l.modeSwitch.width > 0.0 ? l.modeSwitch.x - 12.0 : l.transport.x - 12.0;
-    // The menu button keeps room for its label: the wordmark gives way first, as it does for the
-    // mode switch (the About sheet still carries the identity).
-    constexpr double kMenuButtonRoom = 88.0;
-    if (l.wordmark.width > 0.0 && right - tabsLeft < kMenuButtonRoom) {
-      l.wordmark.width = std::max(0.0, right - kMenuButtonRoom - 24.0 - l.wordmark.x);
-      // A narrower slot would elide the fallback SEAM wordmark. The menu carries the identity.
-      if (l.wordmark.width < 100.0) l.wordmark.width = 0.0;
-      tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
-    }
+    // The wordmark is the identity the responsive rule keeps from 720 points up, so the menu button
+    // gives way instead: below its label's room it draws the menu glyph, which still meets the
+    // target size.
     const auto buttonWidth = std::clamp(right - tabsLeft, 0.0, W < 720.0 ? 92.0 : 120.0);
     l.workspaceMenuButton = {tabsLeft, l.header.y + (headerHeight - 32.0) * 0.5,
                              buttonWidth, 32.0};
