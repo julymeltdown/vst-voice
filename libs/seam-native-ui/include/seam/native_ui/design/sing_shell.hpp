@@ -423,6 +423,9 @@ private:
   mutable RasterCanvas* raster_{nullptr};
   mutable CharacterAnimator animator_;
   mutable CharacterAnimator::Motion motion_{};
+  // Whether a surface painted this frame showed that motion (the header avatar, the full rack's
+  // ring). Only then does the frame ask for the next one; the Stage's fade asks on its own.
+  mutable bool motionShown_{false};
   std::optional<float> auditionLevel_{};
   CharacterState characterState_{CharacterState::Idle};
   // The frame's own clock reading, taken once so every part of one frame animates against the same

@@ -907,6 +907,7 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
   animator_.advance(characterState_, frameNow_, reduceMotion);
   motion_ = animator_.motion();
+  motionShown_ = false;
   const auto knobs = knobModels(state);
   for (std::size_t i = 0U; i < knobs.size(); ++i) knobRefused_[i] = !knobs[i].refusal.empty();
   paintHeader(*c, t, state, playhead);
@@ -991,7 +992,9 @@ void SingShell::scheduleAnimationRepaint() {
     repaint();
     return;
   }
-  if (preferences_.reduceMotion || !characterStateAnimates(characterState_)) return;
+  // The state animating is not enough: at a width whose rack is a rail or a drawer and whose header
+  // has no avatar, no painted surface carries the motion and the next frame would be identical.
+  if (preferences_.reduceMotion || !characterStateAnimates(characterState_) || !motionShown_) return;
   repaint();
 }
 
@@ -1166,9 +1169,10 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   // control, so it carries no actions and is excluded from the accessibility tree with the rest of
   // the decorative character artwork.
   if (l.headerAvatar.width > 0.0) {
-    paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
-                         characterPortrait(characterState_), assets().portrait.get(), 1.0,
-                         motion_.blink, motion_.breath);
+    motionShown_ |= paintCharacterAvatar(characterCanvas(c), t, l.headerAvatar, characterState_,
+                                         characterPortrait(characterState_),
+                                         assets().portrait.get(), 1.0, motion_.blink,
+                                         motion_.breath);
   }
 }
 
@@ -1894,21 +1898,21 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
       singingPlacement = character_.mouthPlacement();
     }
   }
-  paintSingerRing(characterCanvas(c), t,
-                  SingerRingSpec{
-                      .bounds = ring,
-                      .state = performanceState,
-                      .lit = lit,
-                      .rotation = motion_.spinner,
-                      .packagePortrait = characterPortrait(performanceState),
-                      .lookPortrait = assets().portrait.get(),
-                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
-                      .mouthSprite = singingMouth,
-                      .mouthPlacement = singingPlacement,
-                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
-                      .breath = motion_.breath,
-                      .blink = motion_.blink,
-                  });
+  motionShown_ |= paintSingerRing(characterCanvas(c), t,
+                                  SingerRingSpec{
+                                      .bounds = ring,
+                                      .state = performanceState,
+                                      .lit = lit,
+                                      .rotation = motion_.spinner,
+                                      .packagePortrait = characterPortrait(performanceState),
+                                      .lookPortrait = assets().portrait.get(),
+                                      .portraitOpacity = voiceReady ? 1.0 : 0.55,
+                                      .mouthSprite = singingMouth,
+                                      .mouthPlacement = singingPlacement,
+                                      .mouthOpacity = voiceReady ? 1.0 : 0.55,
+                                      .breath = motion_.breath,
+                                      .blink = motion_.blink,
+                                  });
 
   // Footer: the real voice identity and the way to change it.
   const auto footerY = l.singerChange.y;

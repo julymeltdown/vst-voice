@@ -249,6 +249,19 @@ bool characterStateAnimates(CharacterState state) noexcept {
          state == CharacterState::Rendering;
 }
 
+bool characterMotionShown(CharacterState state, bool figureDrawn, bool ringDrawn) noexcept {
+  switch (state) {
+    case CharacterState::Idle:
+    case CharacterState::Singing: return figureDrawn;
+    case CharacterState::Rendering: return ringDrawn;
+    case CharacterState::Listening:
+    case CharacterState::Complete:
+    case CharacterState::Warning:
+    case CharacterState::Error: return false;
+  }
+  return false;
+}
+
 std::filesystem::path characterStateAssetPath(const character::Package& package,
                                               CharacterState state) {
   return package.assetPath(characterPackageState(state));
@@ -517,10 +530,10 @@ void paintCharacterMouth(CharacterCanvas canvas, ui::Rect portraitBounds,
        opacity);
 }
 
-void paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
+bool paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
                      const SingerRingSpec& spec) {
   const auto& r = spec.bounds;
-  if (r.width <= 0.0 || r.height <= 0.0) return;
+  if (r.width <= 0.0 || r.height <= 0.0) return false;
   auto& vector = canvas.vector;
   const auto scene = tokens.mode == DesignMode::Scene;
   const ui::Point center{r.x + r.width * 0.5, r.y + r.height * 0.5};
@@ -587,13 +600,14 @@ void paintSingerRing(CharacterCanvas canvas, const DesignTokens& tokens,
   vector.stroke(Path::circle(center, portraitRadius + 1.0), withAlpha(tint, 0.85),
                 StrokeStyle{1.6});
   vector.restore();
+  return characterMotionShown(spec.state, fittedPortrait.width > 0.0, true);
 }
 
-void paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui::Rect bounds,
+bool paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui::Rect bounds,
                           CharacterState state, const PixelSurface* packagePortrait,
                           const paint::Image* lookPortrait, double opacity, double blink,
                           double breath) {
-  if (bounds.width <= 0.0 || bounds.height <= 0.0) return;
+  if (bounds.width <= 0.0 || bounds.height <= 0.0) return false;
   auto& vector = canvas.vector;
   const auto tint = stateTint(tokens, state);
   const ui::Point center{bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.5};
@@ -602,14 +616,17 @@ void paintCharacterAvatar(CharacterCanvas canvas, const DesignTokens& tokens, ui
   vector.fill(Path::circle(center, inner), tokens.color.surfaceSunken);
   vector.flush();
   const ui::Rect portraitBox{center.x - inner, center.y - inner, inner * 2.0, inner * 2.0};
-  static_cast<void>(paintCharacterPortrait(canvas, portraitBox, true, packagePortrait, lookPortrait,
-                                          opacity, PortraitFit::CoverTop, breath));
-  if (blink > 0.0) paintBlinkLid(vector, portraitBox, blink, tokens.color.textPrimary);
+  const auto figure = paintCharacterPortrait(canvas, portraitBox, true, packagePortrait,
+                                             lookPortrait, opacity, PortraitFit::CoverTop, breath);
+  // As in the ring, the lid closes over a figure: an empty circle has no eyes to blink.
+  const auto figureDrawn = figure.width > 0.0;
+  if (blink > 0.0 && figureDrawn) paintBlinkLid(vector, portraitBox, blink, tokens.color.textPrimary);
   vector.save();
   vector.setGlow(withAlpha(tint, 0.8), 5.0);
   vector.stroke(Path::circle(center, inner + 1.0), withAlpha(tint, 0.9),
                 StrokeStyle{kSingerRingThickness});
   vector.restore();
+  return characterMotionShown(state, figureDrawn, false);
 }
 
 void paintStageFigure(CharacterCanvas canvas, ui::Rect clip, const StagePlacement& placement,

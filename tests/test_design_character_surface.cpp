@@ -894,6 +894,65 @@ TEST_CASE("an animating frame asks for the next one, and a still frame asks for 
   }
 }
 
+TEST_CASE("an idle frame asks for the next one only when a painted surface actually moves") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  // Two idle frames one second apart under a frozen clock, with the look's artwork and
+  // assets/character-01 loaded. No blink falls between them: the first is drawn at least 4 s after
+  // the first frame. Only where a surface that carries the motion is on screen do they differ, and
+  // only there may a frame ask for the next.
+  struct Case final {
+    double width;
+    double height;
+    bool moves;
+  };
+  for (const auto& size : {Case{1100.0, 700.0, false}, Case{720.0, 480.0, false},
+                           Case{1600.0, 900.0, true}}) {
+    ShellFixture f;
+    CHECK(f.shell.characterPackageLoaded());
+    f.controller.resize(size.width, size.height);
+    f.now = at(3.0);
+    CHECK(f.frame(size.width, size.height));
+    CHECK(f.shell.characterState() == CharacterState::Idle);
+    const auto first = f.surface.checksum();
+    f.repaints = 0;
+    f.now = at(4.0);
+    CHECK(f.frame(size.width, size.height));
+    const auto moved = f.surface.checksum() != first;
+    CHECK(moved == size.moves);
+    // The rail and the drawer show a still portrait and no header avatar: nothing moved, so the
+    // window idles. The full rack's ring breathes, so the loop continues there.
+    CHECK((f.repaints > 0) == size.moves);
+  }
+  // A render in flight turns only the full rack's ring. The rail's portrait has no spinner, so a
+  // compact window asks for nothing while it renders.
+  {
+    ShellFixture f;
+    native_ui::RenderStatusView status;
+    status.state = RenderStatusState::Rendering;
+    status.fraction = 0.4;
+    f.controller.setRenderStatus(status);
+    f.controller.resize(1100.0, 700.0);
+    CHECK(f.frame(1100.0, 700.0));
+    CHECK(f.shell.characterState() == CharacterState::Rendering);
+    f.repaints = 0;
+    f.now = at(10.5);
+    CHECK(f.frame(1100.0, 700.0));
+    CHECK(f.repaints == 0);
+  }
+  // Reduce Motion asks for nothing even where the ring would breathe.
+  {
+    ShellFixture f;
+    f.shell.setReduceMotion(true);
+    CHECK(f.frame());
+    f.repaints = 0;
+    f.now = at(11.0);
+    CHECK(f.frame());
+    CHECK(f.shell.characterState() == CharacterState::Idle);
+    CHECK(f.repaints == 0);
+  }
+}
+
 TEST_CASE("the header avatar is reserved only where the header has room, never in the menu layouts") {
   using native_ui::design::solveSingLayout;
   using native_ui::design::kSingHeaderAvatar;
