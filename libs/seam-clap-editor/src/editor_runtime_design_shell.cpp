@@ -40,6 +40,9 @@ void EditorRuntime::activateDesignShellWith(
     std::optional<native_ui::design::DesignPreferences> preferences) {
   std::lock_guard lock(mutex_);
   shell_.setRepaintCallback([this] { requestRepaint(); });
+  // Every embedded view keeps its surface between frames, so a frame that changes only the
+  // dynamic layer updates just its damaged rectangles.
+  shell_.setRetainedSurface(true);
   // A plug-in does not write files from the editor: the DAW renders and exports the track.
   shell_.setHostActions(native_ui::design::ShellHostActions{
       .exportSet = {},

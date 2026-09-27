@@ -334,6 +334,9 @@ core::Result<void> NativeEditorApp::initialize() {
   shell_.setRepaintCallback([this] {
     requestWindowRepaint();
   });
+  // The native window keeps its surface between frames, so a frame that changes only the dynamic
+  // layer updates just its damaged rectangles.
+  shell_.setRetainedSurface(true);
 
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] {
@@ -1762,10 +1765,17 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   authoring_->controller().rebuildAccessibilityTree();
-  if (!shellFrame || !shell_.paint(canvas, authoring_->controller(), state, tick))
+  shellPresentedFrame_ = shellFrame && shell_.paint(canvas, authoring_->controller(), state, tick);
+  if (!shellPresentedFrame_)
     painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
   else
     shell_.rebuildSemantics(authoring_->controller(), state);
+}
+
+native_ui::FrameDamage NativeEditorApp::paintFrame(native_ui::RasterCanvas& canvas) noexcept {
+  shellPresentedFrame_ = false;
+  paint(canvas);
+  return shellPresentedFrame_ ? shell_.lastFrameDamage() : native_ui::FrameDamage::everything();
 }
 
 void NativeEditorApp::resized(double logicalWidth, double logicalHeight,

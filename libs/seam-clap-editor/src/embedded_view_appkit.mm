@@ -194,10 +194,7 @@ public:
 
   void onTimer() noexcept override {
     runtime_.tick();
-    if (visible_ && repaint_.exchange(false, std::memory_order_acq_rel) &&
-        view_ != nil) {
-      [view_ setNeedsDisplay:YES];
-    }
+    presentPending();
   }
 
   void requestRepaint() noexcept override {
@@ -206,7 +203,7 @@ public:
     accessibilitySnapshotDirty_.store(true, std::memory_order_release);
     if (view_ != nil) {
       dispatch_async(dispatch_get_main_queue(), ^{
-        if (view_ != nil) [view_ setNeedsDisplay:YES];
+        presentPending();
       });
     }
   }
@@ -215,18 +212,47 @@ public:
     return "cocoa";
   }
 
-  void draw(NSView* view) noexcept {
-    if (view == nil) return;
+  // Main thread. Paints a requested frame into the retained surface and invalidates only what it
+  // changed, so AppKit redraws the playhead strip or the meter instead of the whole editor. An
+  // unchanged frame invalidates nothing.
+  void presentPending() noexcept {
+    if (!visible_ || view_ == nil || !repaint_.exchange(false, std::memory_order_acq_rel)) return;
+    const auto damage = paintSurface();
+    if (damage.full) {
+      [view_ setNeedsDisplay:YES];
+      return;
+    }
+    // The view is flipped, so the damage's top-left logical rectangles are view coordinates.
+    for (const auto& rect : damage.rects)
+      [view_ setNeedsDisplayInRect:NSMakeRect(rect.x, rect.y, rect.width, rect.height)];
+  }
+
+  // Paints the next frame into the surface and returns what changed since the previous one.
+  native_ui::FrameDamage paintSurface() noexcept {
     updateSurface();
-    if (surface_.pixels().empty()) return;
+    if (surface_.pixels().empty()) return native_ui::FrameDamage::everything();
     // Logical layout is the view's bounds; the surface holds backing pixels.
     native_ui::RasterCanvas canvas{surface_, backingScale_, textEngine_.get()};
-    runtime_.paint(canvas);
+    auto damage = runtime_.paintFrame(canvas);
+    // A new or resized surface was never presented, whatever the frame reports.
+    if (surfaceStale_) damage = native_ui::FrameDamage::everything();
+    surfaceStale_ = false;
     if (accessibilityAnnouncementPending_.exchange(
             false, std::memory_order_acq_rel)) {
       NSAccessibilityPostNotification(
           view_, NSAccessibilityValueChangedNotification);
     }
+    return damage;
+  }
+
+  void draw(NSView* view) noexcept {
+    if (view == nil) return;
+    updateSurface();
+    if (surface_.pixels().empty()) return;
+    // AppKit asks for pixels it has not been shown yet (first display, a resize, an expose): paint
+    // them then. Otherwise the retained surface already holds the latest frame, and AppKit clips
+    // this presentation to the rectangles presentPending invalidated.
+    if (surfaceStale_) static_cast<void>(paintSurface());
     // sRGB, not device RGB: the frame is authored in sRGB and must be colour-matched.
     CGColorSpaceRef colorSpace = native_ui::paint::presentationColorSpace();
     if (colorSpace == nullptr) return;
@@ -469,6 +495,7 @@ private:
         1.0, std::ceil(static_cast<double>(view_.bounds.size.height) * effective)));
     if (width != surface_.width() || height != surface_.height()) {
       static_cast<void>(surface_.resize(width, height));
+      surfaceStale_ = true;
     }
     // Resize only on a real size change: resizing resets the editor geometry and requests another
     // repaint, which would otherwise run on every frame.
@@ -524,6 +551,8 @@ private:
   bool created_{false};
   bool visible_{false};
   std::atomic<bool> repaint_{true};
+  // True until the surface holds a painted frame at its current size.
+  bool surfaceStale_{true};
   std::atomic<bool> accessibilityAnnouncementPending_{true};
   std::atomic<bool> accessibilitySnapshotDirty_{true};
   NSArray* __strong accessibilitySnapshot_{nil};
