@@ -1,10 +1,10 @@
 # Native editor redesign completion report — 2026-09-28
 
-Source baseline: master `85b0a1dd30086dc9b5aa2eac23dac96fa7fda24a`. This is a
+Source baseline: master `44bf8386`. This is a
 source-and-existing-evidence audit of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md)
 §16, not a new build, run or visual acceptance. The test names below identify runnable contracts;
-this report does not claim that they were rerun at this commit. The benchmark figures below are
-recorded measurements on an M3 Max, not a new run in this documentation worktree. The ignored
+the merged-tree run reported 206/206 ctest entries passing at `44bf8386`. The benchmark figures
+below are recorded measurements on an M3 Max, not a new run in this documentation worktree. The ignored
 `build/evidence/ui-fidelity/r6-full/` packet was inspected in the original checkout. It is not
 tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, not this baseline.
 
@@ -15,10 +15,10 @@ tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, 
 | Both looks pass the owner and independent reviewer rubric | `libs/seam-native-ui/src/design/design_tokens.cpp`; the r6 packet checks EMO/SCENE geometry parity for 18 paired views, but its `acceptance.md` says reviewer PENDING, owner NOT_RUN | **Open:** rubric scores and concept-to-native judgement |
 | SING, VOICE, TUNE, MIX and EXPORT complete with parity | `sing_shell.cpp`, `voice_workspace.cpp`, `tune_workspace.cpp`, `mix_workspace.cpp`, `shell_overlays.cpp` under `libs/seam-native-ui/src/design/`; relevant contract tests below. r6 contains SING, VOICE, TUNE and MIX captures, no EXPORT capture | **Implemented with automated coverage; full parity acceptance open** |
 | Protagonist in ring, Stage, avatar, poses and splash with real state | `assets/character-01/manifest.json` schema 4; `libs/seam-native-ui/src/design/character_surface.cpp`; `tests/test_design_character_surface.cpp`, `tests/test_character_state_art.cpp` | **Source and tests present**; final art review and commercial clearance open |
-| All tests and §10 budgets pass | `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. At 1440×900 logical ×2, 40 samples on an M3 Max (load average ~11), true `cold-full-frame` p95 is 36.0 ms EMO / 24.5 ms SCENE against 14 ms: **MISS in both looks**. `retained-background-invalidation` p95 is 10.5 / 10.0 ms against 14 ms: PASS. Scroll/zoom p95 ~7.1 ms against 8 ms: PASS; playback p95 ~2.9 ms EMO / ~2.1 ms SCENE against 3 ms: PASS, EMO with ~0.1 ms margin; dense 10k notes p95 ~3.7 ms against 8 ms: PASS; layer cache stays within 80 MiB: PASS. The benchmark exits 1 while any case misses. Raw output and full ctest log for this baseline are not tracked here | **Open: true cold §10 budget misses; no all-tests claim for this commit** |
+| All tests and §10 budgets pass | The merged-tree ctest run passed **206/206** at `44bf8386`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. At 1440×900 logical ×2, 40 samples on an M3 Max (load average ~6.8–10.5), true `cold-full-frame` p50/p95 is 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. `retained-background-invalidation` p95 is 10.6 / 10.9 ms against 14 ms: PASS. Scroll/zoom, playback and dense 10k notes pass their respective gates. The benchmark exits 1 while any case misses. Raw output and the full ctest log for this baseline are not tracked here | **Open: true cold §10 budget misses; tests pass** |
 | FL Studio shows upright, readable, themed editor | `docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md` §11 calls for F02–F05; r6 `acceptance.md` has no FL Studio captures | **Open:** F02–F05 in both looks in the actual host |
 | Legacy painter removed | `libs/seam-native-ui/src/editor_scene.cpp` is the unavailable-platform presenter; the standalone and CLAP use `SingShell`. `docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md` records step 21 retirement | **Source complete** |
-| Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `85b0a1dd`; final art review open** |
+| Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `44bf8386`; final art review open** |
 
 The r6 packet has 36 software captures; each reports geometry, semantics and image checks PASS.
 Its paint p50 range is 0.7–3.5 ms. The packet did not capture AppKit windows, and software-paint
@@ -41,27 +41,32 @@ The earlier 9.5 ms EMO / 11.2 ms SCENE figure called “cold” measured a retai
 snapshot with upper layers recomposed. It was **not** a true first paint. The corrected benchmark
 separates `cold-full-frame` (L0 painter and L1–L3 run) from
 `retained-background-invalidation` (L0 snapshot reused, upper layers recomposed). The measured
-p50/p95 values are 26.6/36.0 ms EMO and 19.1/24.5 ms SCENE for true cold, versus 9.9/10.5 ms
-EMO and 9.5/10.0 ms SCENE for retained background. The true cold 14 ms budget remains unmet.
+p50/p95 values are 17.0/18.96 ms EMO and 17.3/30.43 ms SCENE for true cold. Retained-background
+p95 is 10.6 ms EMO and 10.9 ms SCENE. The true cold 14 ms budget remains unmet in both looks.
 
-Attribution is from timing the stages of that first-paint path, not a subtraction of the table's
-p95 values: recording the L0 painter calls takes ~0.4 ms; banded parallel rasterization of the
-recording takes ~8 ms; and roughly ~10 ms remains in L1 grid and L2 content replay plus full-window
-snapshot copies. EMO ink strands and SCENE sparkles dominate background rasterization; disabling
-them moved EMO true-cold p50 from ~24 ms to ~16.8 ms in the recorded diagnostic. These stage
-figures are approximate and do not form a new budget pass.
+The merged path composes fully damaged cold frames in place, avoiding redundant full-window
+snapshot copies. A software rasterizer writes the procedural wash (EMO ink strands, SCENE sparkles
+and radial gradients) directly into parallel band surfaces; immutable seeded strand geometry is
+built once and shared across the bands (`sing_shell.cpp`, `layer_cache.cpp`). Against the previous
+CoreGraphics wash, maximum channel difference is 14 across 9.23% of EMO pixels and 8 across 6.03%
+of SCENE pixels. This is a recorded reference comparison, not plan §14 visual acceptance.
 
-Three unmerged branches tested alternatives and were rejected:
+Diagnostic stage timing was approximately 7.2–7.8 ms for EMO L0 and 5.6–6.9 ms for SCENE L0,
+7.1–8.1 ms for grid plus content replay, and 0.24–0.36 ms for snapshot copying. Frame preparation
+and dynamic replay account for the rest. These are approximate stage timings, not a sum of p95s.
+The next measured lever is repeated CoreGraphics chrome replay within L0 bands. A single
+full-surface replay measured 45–50 ms and was rejected.
+
+Earlier alternatives rejected during this work:
 
 | Branch / commits | Recorded result | Reason |
 |---|---|---|
-| `codex/background-paint` (`6e28c022`) | Opaque underlay cache | No first-paint improvement |
+| `codex/background-paint` (`6e28c022`) | Opaque 3-bytes-per-pixel underlay cache | No first-paint improvement |
 | `codex/background-half-res` (`53a18095`, `51095f78`) | Half-resolution wash ~21 ms; 16% of pixels differ, maximum channel delta 24 | Still over 14 ms and beyond the plan's visual-packet tolerance (max delta 2, ≤0.1% pixels) |
-| `codex/background-software-wash` (`de4a3f7c`, `87d84f69`) | Direct software base wash ~21.8 ms EMO / ~20.3 ms SCENE; maximum deltas 14/8, with 9.2%/6.0% of pixels differing | Still over 14 ms and beyond visual tolerance |
 
-Closing true cold needs a genuinely faster wash rasterizer that writes directly into parallel band
-surfaces, or a plan-level decision to relax the 14 ms budget or accept measured visual tolerance
-for a half-resolution wash. None of those decisions or implementations is in this baseline.
+The software-wash branch was subsequently improved and merged into this baseline; its earlier
+prototype timing is superseded by the cold-frame figures above. Further L0 chrome replay work or an
+explicit budget decision is needed to close the true cold miss.
 
 ## Parity checklist from plan §13
 
@@ -101,7 +106,7 @@ packet are narrower than the plan's proposed repeated, cross-platform, all-state
 5. Implement and verify a Windows editor; the current non-Apple vector backend is unavailable
    (`libs/seam-native-ui/src/paint/canvas2d_unavailable.cpp`, README Windows TODO item 5).
 
-Settings and plan §9 motion are shipped at `85b0a1dd`. FL Studio F02–F05,
+Settings, plan §9 motion and the software wash are shipped at `44bf8386`. FL Studio F02–F05,
 VoiceOver/Accessibility Inspector, owner and independent reviewer scoring, and a Windows editor
 remain open; this repository cannot supply the external host, assistive-technology, human-judgement
 or platform evidence by itself.
