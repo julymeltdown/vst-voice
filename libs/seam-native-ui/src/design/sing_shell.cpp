@@ -510,7 +510,14 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 }
 
 void SingShell::setMode(DesignMode mode, bool persist) {
-  if (preferences_.mode != mode) modeTween_.start(uiNow(), std::chrono::milliseconds{200}, preferences_.reduceMotion);
+  if (preferences_.mode != mode) {
+    modePrevious_ = !preferences_.reduceMotion && layers_.contentSnapshot() != nullptr
+                        ? paint::imageFromPixels(*layers_.contentSnapshot()) : nullptr;
+    modeTween_.start(uiNow(), std::chrono::milliseconds{200},
+                     preferences_.reduceMotion || modePrevious_ == nullptr);
+    tabPrevious_.reset();
+    tabTween_.reset();
+  }
   preferences_.mode = mode;
   // The mode's outfit draws its own state set. Switching it drops the decoded portraits, and a new
   // decode may reuse a freed address, so the art the recorded layers hashed by identity goes too.
@@ -545,6 +552,8 @@ void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   stageFade_.reset();
   tabTween_.reset();
   modeTween_.reset();
+  tabPrevious_.reset();
+  modePrevious_.reset();
   renderSweep_.reset();
   toastTween_.reset();
   addedNotes_.clear();
@@ -821,6 +830,10 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   overlayOpener_.clear();
   presentedOverlay_ = OverlayKind::None;
   fieldOpenedOver_ = OverlayKind::None;
+  tabTween_.reset();
+  modeTween_.reset();
+  tabPrevious_.reset();
+  modePrevious_.reset();
   workspaceMenuOpen_ = false;
   singerMenuOpen_ = false;
   aboutOpen_ = false;
@@ -847,6 +860,8 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     addedNotes_.clear();
     tabTween_.reset();
     modeTween_.reset();
+    tabPrevious_.reset();
+    modePrevious_.reset();
     renderSweep_.reset();
     toastTween_.reset();
     previousDiagnosticVisible_ = false;
@@ -889,6 +904,12 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
       (next.width != layout_.width || next.height != layout_.height)) {
     singerMenuOpen_ = false;
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+  }
+  if (next.width != layout_.width || next.height != layout_.height) {
+    tabTween_.reset();
+    modeTween_.reset();
+    tabPrevious_.reset();
+    modePrevious_.reset();
   }
   if (settingsOpen_ && presented_ &&
       (next.width != layout_.width || next.height != layout_.height)) {
@@ -1366,23 +1387,21 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   }
   paintRack(*c, t, state);
   paintStatus(*c, t, state);
-  // Finite transition marks are recorded after the workspace into the dynamic layer. They never
-  // change static layer identities and therefore do not invalidate an idle frame.
+  // The prior composed image fades over the new workspace or look in the dynamic layer. Capturing
+  // it only when a transition starts leaves the static cache and idle frames untouched.
   {
     const paint::LayerScope transition{*c, paint::Layer::Dynamic, "transitions"};
-    if (tabTween_.running(frameNow_, reduceMotion)) {
-      const auto remaining = 1.0 - tabTween_.eased(frameNow_, reduceMotion);
-      c->fill(Path::rect(workspaceArea()), withAlpha(t.color.canvas, remaining * 0.42));
-      const auto slide = 8.0 * remaining;
-      c->fill(Path::rect({workspaceArea().x, workspaceArea().y + slide,
-                          workspaceArea().width, 2.0}), withAlpha(t.color.accent, remaining * 0.4));
+    if (tabPrevious_ && tabTween_.running(frameNow_, reduceMotion)) {
+      const auto p = tabTween_.eased(frameNow_, reduceMotion);
+      c->save();
+      c->clipRect(workspaceArea());
+      c->translate(0.0, -8.0 * p);
+      c->drawImage(*tabPrevious_, {0.0, 0.0, layout_.width, layout_.height}, 1.0 - p);
+      c->restore();
     }
-    if (modeTween_.running(frameNow_, reduceMotion)) {
-      const auto p = modeTween_.progress(frameNow_, reduceMotion);
-      const auto veil = 1.0 - std::abs(2.0 * p - 1.0);
-      c->fill(Path::rect({0.0, 0.0, layout_.width, layout_.height}),
-              withAlpha(t.color.canvas, veil * 0.7));
-    }
+    if (modePrevious_ && modeTween_.running(frameNow_, reduceMotion))
+      c->drawImage(*modePrevious_, {0.0, 0.0, layout_.width, layout_.height},
+                   1.0 - modeTween_.eased(frameNow_, reduceMotion));
     if (workspace_ == Workspace::Sing && renderSweep_.running(frameNow_, reduceMotion)) {
       const auto p = renderSweep_.progress(frameNow_, reduceMotion);
       const auto x = layout_.grid.x + (layout_.grid.width + 36.0) * p - 18.0;
@@ -1457,6 +1476,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
 }
 
 void SingShell::scheduleAnimationRepaint() {
+  if (!tabTween_.running(frameNow_, preferences_.reduceMotion)) tabPrevious_.reset();
+  if (!modeTween_.running(frameNow_, preferences_.reduceMotion)) modePrevious_.reset();
   // A frame is requested only while something is actually animating, so a still protagonist stops the
   // loop: a held pose (listening, complete, warning, error) and every state under Reduce Motion ask
   // for nothing at all, and a state that only breathes or spins asks only for as long as it does. The
@@ -3693,7 +3714,12 @@ bool SingShell::exportBusy(const NativeEditorController& controller) const {
 void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
   workspaceMenuOpen_ = false;
   if (workspace == workspace_) return;
-  tabTween_.start(uiNow(), std::chrono::milliseconds{150}, preferences_.reduceMotion);
+  tabPrevious_ = !preferences_.reduceMotion && layers_.contentSnapshot() != nullptr
+                     ? paint::imageFromPixels(*layers_.contentSnapshot()) : nullptr;
+  tabTween_.start(uiNow(), std::chrono::milliseconds{150},
+                  preferences_.reduceMotion || tabPrevious_ == nullptr);
+  modePrevious_.reset();
+  modeTween_.reset();
   // The singer menu belongs to the workspace it was opened over, like any sheet.
   singerMenuOpen_ = false;
   settingsOpen_ = false;

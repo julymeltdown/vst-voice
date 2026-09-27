@@ -53,6 +53,11 @@ public:
   // Frees the snapshots as well.
   void release() noexcept;
   [[nodiscard]] std::size_t bytes() const noexcept;
+  // The previous composed background, grid and content. A short shell transition may snapshot it
+  // before changing workspace or look; the caller never mutates this cache-owned surface.
+  [[nodiscard]] const PixelSurface* contentSnapshot() const noexcept {
+    return valid_[2U] ? &snapshots_[2U] : nullptr;
+  }
 
 private:
   static constexpr std::size_t kSnapshots = 3U;

@@ -651,6 +651,8 @@ private:
   std::chrono::steady_clock::time_point exportCompleteUntil_{};
   Tween tabTween_;
   Tween modeTween_;
+  std::shared_ptr<const paint::Image> tabPrevious_;
+  std::shared_ptr<const paint::Image> modePrevious_;
   Tween renderSweep_;
   Tween toastTween_;
   bool toastAppearing_{false};
