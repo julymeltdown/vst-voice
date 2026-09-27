@@ -30,6 +30,7 @@ using namespace seam;
 using native_ui::FrameDamage;
 using native_ui::PixelSurface;
 using native_ui::RasterCanvas;
+using native_ui::design::Contrast;
 using native_ui::design::DesignMode;
 using native_ui::design::DesignPreferences;
 using native_ui::design::SingShell;
@@ -63,13 +64,13 @@ struct Pipeline final {
   PixelSurface previous;
   std::chrono::steady_clock::time_point now{at(10.0)};
 
-  Pipeline(DesignMode mode, double backingScale)
+  Pipeline(DesignMode mode, double backingScale, Contrast contrast = Contrast::Standard)
       : session{makeProject()}, controller{session, factory, regionId}, scale{backingScale},
         retained{static_cast<std::uint32_t>(kWidth * backingScale),
                  static_cast<std::uint32_t>(kHeight * backingScale)} {
     controller.resize(kWidth, kHeight);
     for (auto* shell : {&cached, &reference}) {
-      shell->activate(designAssetRoot(), DesignPreferences{.mode = mode});
+      shell->activate(designAssetRoot(), DesignPreferences{.mode = mode, .contrast = contrast});
       shell->setUiClock([this] { return now; });
     }
     cached.setRetainedSurface(true);
@@ -181,8 +182,8 @@ double damagedArea(const FrameDamage& damage) {
   return area;
 }
 
-void runPipeline(DesignMode mode, double scale) {
-  Pipeline p{mode, scale};
+void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::Standard) {
+  Pipeline p{mode, scale, contrast};
   Pipeline::Inputs in;
   // A first frame is composed from nothing and damages everything.
   auto r = p.frame(in);
@@ -290,6 +291,15 @@ TEST_CASE("cached and partial SING frames equal a full composition in both looks
   if (!std::filesystem::is_directory(designAssetRoot())) return;
   runPipeline(DesignMode::Emo, 2.0);
   runPipeline(DesignMode::Scene, 2.0);
+}
+
+TEST_CASE("cached and partial High Contrast frames equal a full composition in both looks") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  // High Contrast records without glow; the layers and the damage behave exactly as they do in the
+  // standard contrast.
+  runPipeline(DesignMode::Emo, 1.0, Contrast::High);
+  runPipeline(DesignMode::Scene, 1.0, Contrast::High);
 }
 
 TEST_CASE("a mode switch or a resize recomposes every layer and damages everything") {
