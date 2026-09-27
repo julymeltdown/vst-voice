@@ -963,6 +963,16 @@ bool OverlapDetailOverlay::key(NativeEditorController& controller, std::string_v
 
 // ---- Diagnostics popover -----------------------------------------------------------------------
 
+// Every active diagnostic is a block: its title and impact on one row (a status node), and below
+// it the recovery actions the controller registered for that diagnostic, so an action of the second
+// or tenth issue is as reachable as the first one's. A popover too short for every block pages
+// through them; the page is the popover's own presentation and restarts whenever it opens.
+constexpr double kDiagnosticRow = 30.0;
+constexpr double kDiagnosticActions = 26.0;
+constexpr double kDiagnosticBlock = kDiagnosticRow + 4.0 + kDiagnosticActions + 8.0;
+constexpr double kDiagnosticsTop = 48.0;
+constexpr double kDiagnosticsPager = 34.0;
+
 class DiagnosticsOverlay final : public ShellOverlay {
 public:
   [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::Diagnostics; }
@@ -973,20 +983,25 @@ public:
       noexcept override {
     return !state.diagnostics.empty();
   }
-  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState& state,
                                const SingLayout& layout, ui::Rect slot) const override {
     if (slot.width <= 0.0 || slot.height <= 0.0) return {};
-    // A popover above the status bar, its right edge under the header's settings control.
-    const auto width = std::min(slot.width, std::min(460.0, slot.width));
-    const auto height = std::min(slot.height, std::min(180.0, slot.height));
+    // A popover above the status bar, its right edge under the header's settings control, as tall
+    // as its blocks (up to the body).
+    const auto natural = kDiagnosticsTop +
+                         static_cast<double>(state.diagnostics.size()) * kDiagnosticBlock + 4.0;
+    const auto width = std::min(slot.width, 460.0);
+    const auto height = std::min(slot.height, std::min(natural, 560.0));
     if (width < kMinimumPanelWidth || height < kMinimumPanelHeight) return {};
     const auto right = std::max(slot.x, std::min(layout.settings.right(), slot.right()));
     return {std::max(slot.x, right - width), std::max(slot.y, slot.bottom() - height - 2.0), width,
             height};
   }
   [[nodiscard]] std::string title(const NativeEditorController&,
-                                  const EditorSceneState&) const override {
-    return "Diagnostics";
+                                  const EditorSceneState& state) const override {
+    return state.diagnostics.size() == 1U
+               ? std::string{"Diagnostics"}
+               : "Diagnostics / " + std::to_string(state.diagnostics.size()) + " issues";
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
                                                      const EditorSceneState& state,
@@ -997,6 +1012,7 @@ public:
     // the popover rather than to the read-only status bar.
     return "shell.diagnostics.open";
   }
+  void presented() const override { first_ = 0U; }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -1010,6 +1026,29 @@ public:
     static_cast<void>(controller);
     return core::success();
   }
+
+private:
+  // How many blocks one page holds, and whether the popover needs its pager at all.
+  [[nodiscard]] static bool paged(const EditorSceneState& state, ui::Rect panel) {
+    return kDiagnosticsTop + static_cast<double>(state.diagnostics.size()) * kDiagnosticBlock +
+               4.0 >
+           panel.height + 0.5;
+  }
+  [[nodiscard]] static std::size_t perPage(const EditorSceneState& state, ui::Rect panel) {
+    const auto pager = paged(state, panel) ? kDiagnosticsPager : 0.0;
+    const auto room = panel.height - kDiagnosticsTop - pager - 4.0;
+    return std::max<std::size_t>(1U, static_cast<std::size_t>(std::max(0.0, room) / kDiagnosticBlock));
+  }
+  [[nodiscard]] std::size_t first(const EditorSceneState& state, ui::Rect panel) const {
+    const auto page = perPage(state, panel);
+    const auto count = state.diagnostics.size();
+    const auto last = count == 0U ? 0U : ((count - 1U) / page) * page;
+    return std::min((first_ / page) * page, last);
+  }
+  // The page a pager button moved to. The popover holds no document state, only where it is.
+  mutable std::size_t first_{0U};
+  // How many blocks the last layout put on a page, so a pager press moves by one page.
+  mutable std::size_t pageHint_{1U};
 };
 
 std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorController&,
@@ -1017,31 +1056,36 @@ std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorContr
                                                          const SingLayout&, ui::Rect panel) const {
   std::vector<OverlayControl> out;
   if (panel.width <= 0.0 || state.diagnostics.empty()) return out;
-  // Every active diagnostic gets its own row and the recovery actions the controller registered for
-  // it, so no issue the classic strip listed becomes unreachable here. Rows fill the card's body;
-  // the first diagnostic's actions sit along the bottom, in the order the strip showed them.
-  constexpr double kRowHeight = 26.0;
-  constexpr double kActionHeight = 28.0;
-  const auto actionsTop = panel.bottom() - kActionHeight - 10.0;
-  const auto rowsTop = panel.y + 56.0;
-  for (std::size_t i = 0U; i < state.diagnostics.size(); ++i) {
-    const auto y = rowsTop + static_cast<double>(i) * kRowHeight;
-    if (y + kRowHeight - 4.0 > actionsTop - 4.0) break;
+  const auto page = perPage(state, panel);
+  pageHint_ = page;
+  const auto start = first(state, panel);
+  const auto width = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  for (std::size_t i = start; i < state.diagnostics.size() && i < start + page; ++i) {
+    const auto top = panel.y + kDiagnosticsTop + static_cast<double>(i - start) * kDiagnosticBlock;
     const auto& diagnostic = state.diagnostics[i];
     const auto presentation = presentDiagnostic(diagnostic);
+    // The row keeps the controller's own diagnostic id, so its impact and technical detail are
+    // published with it.
     out.push_back({"diagnostic." + std::to_string(i) + "." + diagnostic.code,
-                   {panel.x + kPanelInset, y, std::max(1.0, panel.width - 2.0 * kPanelInset),
-                    kRowHeight - 4.0},
+                   {panel.x + kPanelInset, top, width, kDiagnosticRow},
                    presentation.title, SemanticRole::Status, true, false, false});
+    const auto count = presentation.primaryActionKinds.size();
+    if (count == 0U) continue;
+    const auto cells = grid(panel, top + kDiagnosticRow + 4.0, kDiagnosticActions, count, count, 8.0);
+    for (std::size_t a = 0U; a < cells.size(); ++a)
+      out.push_back({"diagnostic-action." + std::to_string(i) + "." +
+                         std::string{authoring::toString(presentation.primaryActionKinds[a])},
+                     cells[a], diagnosticActionLabel(presentation.primaryActionKinds[a])});
   }
-  const auto presentation = presentDiagnostic(state.diagnostics.front());
-  const auto count = std::min<std::size_t>(2U, presentation.primaryActionKinds.size());
-  if (count == 0U) return out;
-  const auto cells = grid(panel, actionsTop, kActionHeight, count, count, 8.0);
-  for (std::size_t i = 0U; i < cells.size(); ++i)
-    out.push_back({std::string{"diagnostic-action.0."} +
-                       std::string{authoring::toString(presentation.primaryActionKinds[i])},
-                   cells[i], diagnosticActionLabel(presentation.primaryActionKinds[i])});
+  if (paged(state, panel)) {
+    const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
+    out.push_back({"shell.overlay.diagnostics.previous",
+                   {panel.x + kPanelInset, top, 88.0, 26.0}, "Previous issues",
+                   SemanticRole::Button, start > 0U});
+    out.push_back({"shell.overlay.diagnostics.next",
+                   {panel.x + kPanelInset + 96.0, top, 88.0, 26.0}, "Next issues",
+                   SemanticRole::Button, start + page < state.diagnostics.size()});
+  }
   return out;
 }
 
@@ -1051,30 +1095,43 @@ void DiagnosticsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeE
   if (state.diagnostics.empty()) return;
   c.save();
   c.clipRect(panel);
-  const auto& diagnostic = state.diagnostics.front();
-  const auto presentation = presentDiagnostic(diagnostic);
-  const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical
-                         ? t.color.error
-                         : diagnostic.severity == authoring::DiagnosticSeverity::Warning
-                               ? t.color.warning
-                               : t.color.info;
-  auto title = presentation.title;
-  if (state.diagnostics.size() > 1U)
-    title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
-  c.fill(Path::capsule({panel.x + 24.0, panel.y + 16.0, 5.0, 18.0}), color);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 14.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 20.0}, title,
-         style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 36.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 16.0},
-         presentation.impact, style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 54.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 30.0},
-         presentation.technicalDetail, style(FontRole::Mono, t.type.rulerMicro),
-         t.color.textDisabled);
   for (const auto& control : controls) {
-    std::string label;
-    for (const auto action : presentation.primaryActionKinds)
-      if (control.id.ends_with(std::string{authoring::toString(action)}))
-        label = diagnosticActionLabel(action);
-    paintOverlayControl(c, t, control.bounds, label, SemanticRole::Button, true, false, false);
+    if (control.role == SemanticRole::Status) {
+      // A block's row: the severity bar, the title and what it affects.
+      const auto dot = control.id.find('.', std::string_view{"diagnostic."}.size());
+      std::size_t index = 0U;
+      if (dot == std::string::npos ||
+          !parseIndex(std::string_view{control.id}.substr(11U, dot - 11U), index) ||
+          index >= state.diagnostics.size())
+        continue;
+      const auto& diagnostic = state.diagnostics[index];
+      const auto presentation = presentDiagnostic(diagnostic);
+      const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical
+                             ? t.color.error
+                             : diagnostic.severity == authoring::DiagnosticSeverity::Warning
+                                   ? t.color.warning
+                                   : t.color.info;
+      const auto& r = control.bounds;
+      c.fill(Path::capsule({r.x, r.y + 3.0, 4.0, r.height - 6.0}), color);
+      c.text({r.x + 12.0, r.y, std::max(1.0, r.width - 12.0), 16.0}, presentation.title,
+             style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
+      c.text({r.x + 12.0, r.y + 16.0, std::max(1.0, r.width - 12.0), 14.0}, presentation.impact,
+             style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+      continue;
+    }
+    paintOverlayControl(c, t, control.bounds, control.name, SemanticRole::Button, control.enabled,
+                        false, false);
+  }
+  if (paged(state, panel)) {
+    const auto page = perPage(state, panel);
+    const auto start = first(state, panel);
+    const auto end = std::min(start + page, state.diagnostics.size());
+    const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
+    c.text({panel.x + kPanelInset + 196.0, top, std::max(1.0, panel.width - 2.0 * kPanelInset - 196.0),
+            26.0},
+           std::to_string(start + 1U) + "\u2013" + std::to_string(end) + " of " +
+               std::to_string(state.diagnostics.size()),
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   }
   c.restore();
 }
@@ -1083,6 +1140,14 @@ core::Result<void> DiagnosticsOverlay::perform(NativeEditorController& controlle
                                                std::string_view id, SemanticAction action) const {
   if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
     return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+  if (id == "shell.overlay.diagnostics.previous" || id == "shell.overlay.diagnostics.next") {
+    // The pager moves by what the popover showed last; clamping happens when it lays out again.
+    const auto state = controller.sceneState();
+    const auto step = std::max<std::size_t>(1U, pageHint_);
+    if (id.ends_with("previous")) first_ = first_ >= step ? first_ - step : 0U;
+    else if (first_ + step < state.diagnostics.size()) first_ += step;
+    return core::success();
+  }
   return activateControllerNode(controller, id);
 }
 

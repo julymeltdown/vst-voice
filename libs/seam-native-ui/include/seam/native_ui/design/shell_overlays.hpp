@@ -112,6 +112,9 @@ public:
   // Closes the surface through the controller's own command, so the state the classic painter read
   // changes exactly as it did when its close control ran.
   [[nodiscard]] virtual core::Result<void> close(NativeEditorController& controller) const = 0;
+  // Called once when the shell starts presenting the overlay, so a presentation-only position (a
+  // popover's page) starts from the top each time it opens.
+  virtual void presented() const {}
 };
 
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeSampleMicroscopeOverlay();

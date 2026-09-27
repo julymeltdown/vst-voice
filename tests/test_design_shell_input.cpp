@@ -2972,6 +2972,78 @@ TEST_CASE("the diagnostics toast and popover present the status diagnostics as a
   }
 }
 
+TEST_CASE("every diagnostic's recovery actions are reachable from the popover, not only the first") {
+  const auto issue = [](std::string code, authoring::DiagnosticSeverity severity,
+                        std::vector<authoring::DiagnosticAction> actions) {
+    return authoring::Diagnostic{.code = std::move(code), .severity = severity,
+                                 .messageKey = "test", .actions = std::move(actions)};
+  };
+  const std::vector<authoring::Diagnostic> issues{
+      issue("MEDIA_MISSING", authoring::DiagnosticSeverity::Warning,
+            {authoring::DiagnosticAction::RelinkMedia, authoring::DiagnosticAction::CopyDiagnostic}),
+      issue("BANK_MISSING", authoring::DiagnosticSeverity::Critical,
+            {authoring::DiagnosticAction::RelinkVoicebank,
+             authoring::DiagnosticAction::ChooseVoicebank}),
+      issue("RENDER_FAILED", authoring::DiagnosticSeverity::Warning,
+            {authoring::DiagnosticAction::Retry, authoring::DiagnosticAction::CopyDiagnostic})};
+  const auto actionIds = [&issues](std::size_t i) {
+    std::vector<std::string> out;
+    for (const auto kind : native_ui::presentDiagnostic(issues[i]).primaryActionKinds)
+      out.push_back("diagnostic-action." + std::to_string(i) + "." +
+                    std::string{authoring::toString(kind)});
+    return out;
+  };
+  // The popover's own contract, with the first block's row and actions, at every size.
+  {
+    OverlayFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    f.controller.setDiagnostics(issues);
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    auto required = actionIds(0U);
+    required.push_back("diagnostic.0.MEDIA_MISSING");
+    checkOverlayContract(f, "shell.overlay.diagnostics.", required,
+                         {"diagnostic.1.BANK_MISSING", "shell.overlay.diagnostics.previous",
+                          "shell.overlay.diagnostics.next"},
+                         "shell.diagnostics.open");
+  }
+  // At the minimum window only one block fits: the pager reaches every other one, by pointer and
+  // through accessibility, and every action of every diagnostic runs through the host path.
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{1600.0, 900.0}}) {
+    OverlayFixture f;
+    CHECK(f.frame(width, height));
+    f.controller.setDiagnostics(issues);
+    f.shell.setDiagnosticsOpen(true);
+    unsigned expected = 0U;
+    for (std::size_t i = 0U; i < issues.size(); ++i) {
+      for (int step = 0; step < 4 && f.node(actionIds(i).front()) == nullptr; ++step) {
+        CHECK(f.frame(width, height));
+        const auto* next = f.node("shell.overlay.diagnostics.next");
+        if (next == nullptr) throw test::Failure{"diagnostic " + std::to_string(i) + " unreachable"};
+        const ui::Point p{next->bounds.x + 4.0, next->bounds.y + 4.0};
+        CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
+        CHECK(f.shell.pointerUp(f.controller, press(p)).hasValue());
+      }
+      CHECK(f.frame(width, height));
+      for (const auto& id : actionIds(i)) {
+        if (f.node(id) == nullptr) throw test::Failure{id + " is not published"};
+        const auto performed = f.shell.dispatchController(f.controller, id, SemanticAction::Activate);
+        if (!performed) throw test::Failure{id + " refused: " + performed.error().message};
+        CHECK(f.diagnosticActions == ++expected);
+      }
+    }
+    if (width < 500.0) {
+      // The pager goes back too, through its accessibility node.
+      CHECK(f.shell.dispatchSemantic(f.controller, "shell.overlay.diagnostics.previous",
+                                     SemanticAction::Activate)
+                .hasValue());
+      CHECK(f.frame(width, height));
+      CHECK(f.node(actionIds(1U).front()) != nullptr);
+    }
+  }
+}
+
 TEST_CASE("the export progress strip is a status-bar segment with the controller's own cancel") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;

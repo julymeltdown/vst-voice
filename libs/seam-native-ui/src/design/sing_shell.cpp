@@ -718,6 +718,7 @@ void SingShell::setDiagnosticsOpen(bool open) {
   // closing it changes no project state. It is closed by a controller replacement like any overlay.
   if (diagnosticsOpen_ == open) return;
   diagnosticsOpen_ = open;
+  if (open) diagnosticsOverlay_->presented();
   repaint();
 }
 
@@ -3747,6 +3748,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   // the read-only status remain, so Tab stays inside it, no note node is published under it and no
   // action reaches the score or the lane it covers.
   if (overlay != nullptr) {
+    if (overlay->kind() != presentedOverlay_) overlay->presented();
     auto nodes = overlaySemantics(controller, state);
     std::vector<std::string> published;
     published.reserve(nodes.size());
