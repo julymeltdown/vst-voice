@@ -2936,6 +2936,12 @@ if(SEAM_BUILD_BENCHMARKS)
       seam_native_ui seam_playback_platform seam_platform seam_rendering
       seam_editor_ui seam_application seam_domain seam_core)
     seam_apply_compiler_options(seam_phase5_benchmark)
+    if(SEAM_BUILD_TESTS)
+      add_test(NAME seam_phase5_benchmark_contract
+        COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/tests/design/test_phase5_benchmark_contract.py
+          $<TARGET_FILE:seam_phase5_benchmark>)
+    endif()
 
     add_executable(seam_phase9_benchmark benchmarks/phase9_benchmark.cpp)
     target_link_libraries(seam_phase9_benchmark PRIVATE seam_text seam_core)

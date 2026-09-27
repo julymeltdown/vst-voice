@@ -168,15 +168,13 @@ struct DesignRig final {
     shell.setRetainedSurface(true);
   }
 
-  // One frame: the host's state derivation (timed apart), then the shell's frame work.
+  // One frame: derive host state separately, then time the shell's only preparation and paint.
   double frame(DesignCase& record, bool playing) {
     const auto stateStart = std::chrono::steady_clock::now();
-    if (!shell.prepareFrame(controller, 1440.0, 900.0)) return -1.0;
     controller.setPlaying(playing);
+    controller.setPlayheadTick(playhead);
     auto state = controller.sceneState();
     const auto stateEnd = std::chrono::steady_clock::now();
-    state.playheadPixel = controller.pianoRoll().timeline().tickToPixel(playhead);
-    controller.setPlayheadTick(playhead);
     if (playing) {
       // A measured stereo level that moves every frame, as the audio thread reports it.
       const auto phase = static_cast<double>(frameIndex) * 0.37;
@@ -187,7 +185,8 @@ struct DesignRig final {
     }
     ++frameIndex;
     const auto paintStart = std::chrono::steady_clock::now();
-    static_cast<void>(shell.prepareFrame(controller, 1440.0, 900.0));
+    if (!shell.prepareFrame(controller, 1440.0, 900.0)) return -1.0;
+    state.playheadPixel = controller.pianoRoll().timeline().tickToPixel(playhead);
     const auto painted = shell.paint(canvas, controller, state, playhead);
     const auto paintEnd = std::chrono::steady_clock::now();
     if (!painted) return -1.0;
