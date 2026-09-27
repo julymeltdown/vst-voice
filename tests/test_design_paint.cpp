@@ -124,10 +124,10 @@ TEST_CASE("paint: first and last linear-gradient pixels exactly match sRGB endpo
   surface.clear(kBlack);
   auto canvas = paint::makeCanvas(surface, 1.0);
   CHECK(canvas != nullptr);
-  // sRGB primaries and zero have exact 8-bit representations through the
-  // backend's colour conversion. Sampling beyond the stop positions uses
-  // CoreGraphics' endpoint extension, avoiding fractional interpolation.
-  constexpr Color first{255, 0, 0, 255}, last{0, 0, 255, 255};
+  // Sample mixed, non-primary colours beyond the stop positions: endpoint extension
+  // must reproduce them exactly. A sample at a stop boundary can include a fractional
+  // contribution from the adjacent gradient pixel, so it is not a pure endpoint sample.
+  constexpr Color first{240, 48, 12, 255}, last{16, 96, 224, 255};
   paint::LinearGradient gradient{{11.5, 16.0}, {109.5, 16.0}, {{0.0, first}, {1.0, last}}};
   canvas->fill(Path::rect({10.0, 8.0, 101.0, 16.0}), gradient);
   canvas->flush();
