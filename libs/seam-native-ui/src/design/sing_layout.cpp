@@ -227,8 +227,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.meterReadout = {l.tempoReadout.right(), readoutTop, inner * 0.20, 36.0};
 
   l.trackLabel = {l.tools.x + 4.0, l.tools.y + 2.0, 132.0, 24.0};
-  l.classicToggle = {l.tools.right() - 96.0, l.tools.y + 2.0, 92.0, 24.0};
-  l.gridLabel = {l.classicToggle.x - 104.0, l.tools.y + 2.0, 96.0, 24.0};
+  l.gridLabel = {l.tools.right() - 100.0, l.tools.y + 2.0, 96.0, 24.0};
 
   // The overlays' openers sit at the right end of strips the shell already paints, so they cover
   // no note label or lane tab. Each stays zero when its strip cannot hold one.

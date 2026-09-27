@@ -83,16 +83,15 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
 
 - Code: `libs/seam-native-ui/{include,src}/…/design` (tokens, layout, shell) and `…/paint`
   (CoreGraphics/CoreText vector canvas). Hosts opt in; library tests keep the classic editor.
-- Switch looks with the EMO | SCENE control in the header. **Classic** (tool strip) or
-  Command-Shift-Space returns to the previous editor. The choice is stored in the
-  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene|classic`
+- Switch looks with the EMO | SCENE control in the header. The choice is stored in the
+  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene`
   overrides it.
 - Note editing, lyrics, vibrato and the ruler still run through the existing controller, so undo
   history is unchanged. Voice browser, audio settings, reviews and the microscope still open in
   the classic surfaces until they are re-homed.
 - One geometry per frame: `SingShell::prepareFrame` picks the surface and sets the viewport and
-  the controller's hosted input geometry before scene state is derived. Escape, switching to
-  Classic, resizing and hiding the plug-in cancel gestures without committing. Expression curves
+  the controller's hosted input geometry before scene state is derived. Escape, resizing and
+  hiding the plug-in cancel gestures without committing. Expression curves
   are drawn and edited in the shell lane with the same value mapping.
 - Accessibility: while the shell is on screen, the standalone window and the CLAP view publish
   the shell's own tree (`SingShell::accessibilityTree`) in shell geometry. Workspace tabs, the

@@ -72,7 +72,7 @@ formats::JsonValue singLayoutEvidence(const SingShell& shell, double deviceScale
       {"style", rect(l.style)},           {"status", rect(l.status)},
   };
   formats::JsonValue::Object controls{
-      {"classicToggle", rect(l.classicToggle)},     {"trackLabel", rect(l.trackLabel)},
+      {"trackLabel", rect(l.trackLabel)},
       {"gridLabel", rect(l.gridLabel)},             {"playButton", rect(l.playButton)},
       {"positionReadout", rect(l.positionReadout)}, {"tempoReadout", rect(l.tempoReadout)},
       {"meterReadout", rect(l.meterReadout)},       {"singerChange", rect(l.singerChange)},

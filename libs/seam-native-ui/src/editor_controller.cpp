@@ -2222,14 +2222,7 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
         if (element == "toolbar.bounce" &&
             (requested == SemanticAction::Activate ||
              requested == SemanticAction::Toggle)) {
-          if (!callbacks_.setBounceTiming) {
-            return core::failure(core::ErrorCode::Unsupported,
-                                 "Bounce timing is not connected");
-          }
-          const auto result = callbacks_.setBounceTiming(!bounceFollowHost_);
-          if (result) bounceFollowHost_ = !bounceFollowHost_;
-          repaint();
-          return result;
+          return toggleBounceTiming();
         }
         if (element == "toolbar.batch-lyrics" &&
             requested == SemanticAction::Activate) {
@@ -4638,11 +4631,12 @@ core::Result<void> NativeEditorController::pointerDown(
                            layout_.exportHeight(state.exportProgress.totalFiles != 0U);
   const auto technical = resolveEditorTechnicalLaneHeights(
       state, layout_, logicalHeight_ - layout_.statusHeight - overlayInset);
-  // A hosted grid has no technical lanes below it: every lane band starts past its bottom edge.
+  // A hosted grid has only the lanes its host put in its lane band: an expression curve, or the
+  // phoneme, unit and seam lanes stacked in that order.
   const auto pianoBottom = hosted_ ? hosted_->pianoBottom : technical.pianoBottom;
-  const auto phonemeHeight = hosted_ ? 0.0 : technical.values[0U];
-  const auto unitHeight = hosted_ ? 0.0 : technical.values[1U];
-  const auto seamHeight = hosted_ ? 0.0 : technical.values[2U];
+  const auto phonemeHeight = hosted_ ? hosted_->phonemeHeight : technical.values[0U];
+  const auto unitHeight = hosted_ ? hosted_->unitHeight : technical.values[1U];
+  const auto seamHeight = hosted_ ? hosted_->seamHeight : technical.values[2U];
   const auto automationHeight = hosted_ ? hosted_->laneHeight : technical.values[3U];
   const auto phonemeTop = pianoBottom;
   const auto unitTop = phonemeTop + phonemeHeight;
@@ -7065,6 +7059,35 @@ core::Result<void> NativeEditorController::closeExpressionLane() {
   expressionLaneVisible_ = false;
   repaint();
   return core::success();
+}
+
+core::Result<void> NativeEditorController::toggleBounceTiming() {
+  if (!callbacks_.setBounceTiming)
+    return core::failure(core::ErrorCode::Unsupported, "Bounce timing is not connected");
+  const auto result = callbacks_.setBounceTiming(!bounceFollowHost_);
+  if (result) bounceFollowHost_ = !bounceFollowHost_;
+  repaint();
+  return result;
+}
+
+core::Result<void> NativeEditorController::setTechnicalLaneCollapsed(domain::TechnicalLane lane,
+                                                                     bool collapsed) {
+  const auto index = static_cast<std::size_t>(lane);
+  if (index >= domain::kTechnicalLaneCount)
+    return core::failure(core::ErrorCode::InvalidArgument, "Unknown technical lane");
+  auto presentation = session_.project().settings().technicalLanes[index];
+  const auto mode = collapsed ? domain::TechnicalLaneMode::Collapsed : domain::TechnicalLaneMode::Auto;
+  if (presentation.mode == mode) return core::success();
+  presentation.mode = mode;
+  const auto fromState = sceneState();
+  const auto changed = session_.execute(
+      std::make_unique<application::SetTechnicalLanePresentationCommand>(lane, presentation));
+  if (changed) {
+    beginLayoutTransition(fromState);
+    if (callbacks_.viewChanged) callbacks_.viewChanged();
+    repaint();
+  }
+  return changed;
 }
 
 core::Result<ui::ExpressionLaneModel*> NativeEditorController::ensureExpressionDraft() {

@@ -43,7 +43,7 @@ struct SingLayout final {
   bool knobsInOneRow{false};
 
   // Tool strip controls inside tools.
-  ui::Rect classicToggle, trackLabel, gridLabel;
+  ui::Rect trackLabel, gridLabel;
   // The protagonist's header avatar (section 8.4): a 28-point circle with a state ring, placed in
   // the header only where the approved header regions leave room for it, so it never overlaps the
   // wordmark, the workspace tabs or the mode switch. Zero when they do not, which is the 1440-wide

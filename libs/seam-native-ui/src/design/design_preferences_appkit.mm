@@ -23,8 +23,6 @@ DesignPreferences loadDesignPreferences() {
     if (defaults == nil) return preferences;
     if (NSString* mode = [defaults stringForKey:@"mode"]; mode != nil)
       preferences.mode = parseDesignMode(mode.UTF8String, preferences.mode);
-    if ([defaults objectForKey:@"shellEnabled"] != nil)
-      preferences.shellEnabled = [defaults boolForKey:@"shellEnabled"];
     if ([defaults boolForKey:@"highContrast"]) preferences.contrast = Contrast::High;
     // Two sources, one setting: an explicit preference when the user has set one, and otherwise the
     // system's own Reduce Motion, which is what the editor already honors. The stored value wins so a
@@ -47,7 +45,6 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
                                                  length:mode.size()
                                                encoding:NSUTF8StringEncoding]
                  forKey:@"mode"];
-    [defaults setBool:preferences.shellEnabled forKey:@"shellEnabled"];
     [defaults setBool:preferences.contrast == Contrast::High forKey:@"highContrast"];
     [defaults setBool:preferences.reduceMotion forKey:@"reduceMotion"];
   }

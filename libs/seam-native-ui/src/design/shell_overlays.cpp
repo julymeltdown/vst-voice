@@ -206,7 +206,13 @@ public:
             origin_.y + (legacy.y - source_.y) * scale_, legacy.width * scale_,
             legacy.height * scale_};
   }
+  // The controller's own point under a point of the card.
+  [[nodiscard]] ui::Point unmap(ui::Point card) const {
+    return {source_.x + (card.x - origin_.x) / scale_, source_.y + (card.y - origin_.y) / scale_};
+  }
   [[nodiscard]] double scale() const noexcept { return scale_; }
+  [[nodiscard]] ui::Rect source() const noexcept { return source_; }
+  [[nodiscard]] ui::Rect destination() const noexcept { return destination_; }
 
 private:
   ui::Rect source_;
@@ -263,6 +269,18 @@ public:
   core::Result<void> close(NativeEditorController& controller) const override {
     controller.closeSampleMicroscope();
     return core::success();
+  }
+  // A press on either plot reaches the controller at the point it measured there: a marker or a
+  // pitch mark starts the same drag the classic microscope started, and a double-click auditions
+  // the unit (or closes the microscope when the host cannot play one), as it always did.
+  OverlayPress press(NativeEditorController& controller, const EditorSceneState& state,
+                     const SingLayout& layout, ui::Rect panel,
+                     const PointerEvent& event) const override;
+  core::Result<void> drag(NativeEditorController& controller, const OverlayGesture& gesture,
+                          const PointerEvent& event, bool release) const override {
+    auto legacy = event;
+    legacy.position = FitMap{gesture.source, gesture.destination}.unmap(event.position);
+    return release ? controller.pointerUp(legacy) : controller.pointerMove(legacy);
   }
   bool back(NativeEditorController& controller) const override {
     // As the classic microscope bound Escape: the details page returns to the waveform first.
@@ -432,6 +450,25 @@ void SampleMicroscopeOverlay::paint(Canvas2D& c, const DesignTokens& t,
     c.restore();
   }
   c.restore();
+}
+
+OverlayPress SampleMicroscopeOverlay::press(NativeEditorController& controller,
+                                            const EditorSceneState& state, const SingLayout&,
+                                            ui::Rect panel, const PointerEvent& event) const {
+  if (!state.sampleMicroscope.has_value() || state.sampleMicroscope->model == nullptr ||
+      state.sampleMicroscope->detailsVisible)
+    return {};
+  const auto& model = *state.sampleMicroscope->model;
+  const auto fit = microscopeMap(model, panel);
+  const auto wave = fit.map(model.waveformBounds());
+  const auto spectrogram = fit.map(model.spectrogramBounds());
+  if (!wave.contains(event.position) && !spectrogram.contains(event.position)) return {};
+  auto legacy = event;
+  legacy.position = fit.unmap(event.position);
+  OverlayPress out{.handled = true, .result = controller.pointerDown(legacy)};
+  if (out.result && controller.pointerGestureActive())
+    out.gesture = OverlayGesture{fit.source(), fit.destination()};
+  return out;
 }
 
 core::Result<void> SampleMicroscopeOverlay::perform(NativeEditorController& controller,

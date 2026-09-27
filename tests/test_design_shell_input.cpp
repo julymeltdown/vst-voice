@@ -14,6 +14,7 @@
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/expression_lane.hpp"
+#include "seam/ui/phoneme_lane_model.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <algorithm>
@@ -131,13 +132,9 @@ struct ShellFixture final {
 
 PointerEvent press(ui::Point p) { return {.position = p, .button = PointerButton::Left}; }
 
-KeyEvent toggleKey() {
-  return {.key = NativeKey::Space, .modifiers = {.shift = true, .command = true}};
-}
-
 }  // namespace
 
-TEST_CASE("the active shell keeps the input geometry when a sheet opens, and returns it when disabled") {
+TEST_CASE("the active shell keeps the input geometry when a sheet opens") {
   ShellFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
   CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
@@ -153,11 +150,12 @@ TEST_CASE("the active shell keeps the input geometry when a sheet opens, and ret
   CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   CHECK(f.controller.hostedGrid().has_value());
   CHECK(f.shell.overlayKind(f.controller) == native_ui::design::OverlayKind::VoicebankBrowser);
-  // Disabling the shell (Command-Shift-Space) hands the classic painter its own geometry again.
-  CHECK(f.shell.handleShellKey(f.controller, toggleKey()));
-  CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
-  CHECK(!f.controller.hostedGrid().has_value());
-  CHECK(!f.shell.presentedLastFrame());
+  // Closing the sheet leaves the shell presenting with the same geometry: there is no other
+  // editor surface for it to hand the frame to.
+  f.controller.closeVoicebankBrowser();
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.controller.hostedGrid() == hosted);
+  CHECK(f.shell.presentedLastFrame());
 
   // The shell's own "Change voice" presents the browser as the shell's sheet.
   ShellFixture g;
@@ -170,7 +168,7 @@ TEST_CASE("the active shell keeps the input geometry when a sheet opens, and ret
   CHECK(g.shell.overlayKind(g.controller) == native_ui::design::OverlayKind::VoicebankBrowser);
 }
 
-TEST_CASE("a forwarded note drag moves the note, and Escape or a shell toggle abandons it") {
+TEST_CASE("a forwarded note drag moves the note, and Escape or a capture loss abandons it") {
   {
     ShellFixture f;
     if (!native_ui::paint::vectorBackendAvailable()) return;
@@ -202,10 +200,9 @@ TEST_CASE("a forwarded note drag moves the note, and Escape or a shell toggle ab
     const auto p = f.noteCenter();
     CHECK(f.shell.pointerDown(f.controller, press(p)).hasValue());
     CHECK(f.shell.pointerMove(f.controller, press({p.x + 120.0, p.y})).hasValue());
-    // Switching to the classic editor mid-drag cancels the drag; the raw mouse-up then finds none.
-    CHECK(f.shell.handleShellKey(f.controller, toggleKey()));
-    CHECK(!f.shell.enabled());
-    CHECK(!f.controller.hostedGrid().has_value());
+    // A capture loss mid-drag cancels the drag; the late mouse-up then finds none.
+    f.shell.cancelGestures(f.controller);
+    CHECK(f.controller.hostedGrid().has_value());
     CHECK(f.shell.pointerUp(f.controller, press({p.x + 120.0, p.y})).hasValue());
     CHECK(!f.controller.pointerGestureActive());
     CHECK(f.controller.documentRevision() == revision);
@@ -280,12 +277,6 @@ TEST_CASE("text fields move into shell space: lyrics with the grid, other fields
       native_ui::design::timeMapPanelBounds(f.shell.layout().overlay));
   CHECK_NEAR(timeMap.logicalBounds.y, inMap.input.y, 1e-9);
   CHECK_NEAR(timeMap.logicalBounds.x, inMap.input.x, 1e-9);
-  // A disabled shell leaves every request in classic coordinates.
-  CHECK(f.shell.handleShellKey(f.controller, toggleKey()));
-  CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
-  const auto classic = f.shell.translateTextInput(
-      {domain::LyricTokenId{7U}, bounds, U"", TextInputAnchor::BoundedField});
-  CHECK_NEAR(classic.logicalBounds.y, bounds.y, 1e-9);
 }
 
 TEST_CASE("batch lyric input anchors on the selected note in the shell grid") {
@@ -1965,7 +1956,6 @@ TEST_CASE("an inspector opened by pointer owns the keys, and nothing reaches the
   const auto noteId = "note." + region.notes.front().id.toString();
   CHECK(!f.shell.dispatchController(f.controller, noteId, SemanticAction::SetFocus).hasValue());
   CHECK(!f.shell.dispatchController(f.controller, "timeline", SemanticAction::SetFocus).hasValue());
-  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.classic", SemanticAction::Activate).hasValue());
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.knob.gender", SemanticAction::SetFocus).hasValue());
 
   // Only shortcuts the host declares as its own commands pass on.
@@ -3796,4 +3786,253 @@ TEST_CASE("the hint and transport fields are inline shell fields on the lyric fi
   const auto refused = f.controller.documentRevision();
   CHECK(!f.shell.setControllerValue(f.controller, "toolbar.tempo", "fast").hasValue());
   CHECK(f.controller.documentRevision() == refused);
+}
+
+namespace {
+
+// The classic editor's technical lanes, microscope plots and bounce timing now live only in the
+// shell. This fixture records which host commands the shell's gestures reached.
+struct ParityFixture final {
+  application::ProjectFactory factory{9700U};
+  domain::TrackId trackId{};
+  domain::RegionId regionId{};
+  domain::NoteId noteId{};
+  application::EditorSession session;
+  std::vector<std::string> calls;
+  bool followHost{false};
+  voicebank::AudioBuffer audio{.sampleRate = 48000U, .channels = 1U,
+                               .interleaved = test::support::sineWave(48000U, 220.0, 0.05)};
+  voicebank::Unit unit{test::support::makeUnit("parity-a", {"a"}, "audio/a.wav", 60U,
+                                               voicebank::UnitKind::Cv, audio.frameCount())};
+  native_ui::NativeEditorController controller;
+  SingShell shell;
+
+  ParityFixture()
+      : session(makeProject()),
+        controller{session, factory, regionId,
+                   native_ui::EditorHostCallbacks{
+                       .setBounceTiming =
+                           [this](bool follow) {
+                             calls.push_back(follow ? "bounce:host" : "bounce:fixed");
+                             followHost = follow;
+                             return core::success();
+                           },
+                       .cycleUnitVariant =
+                           [this](domain::PhonemeKey) {
+                             calls.emplace_back("variant");
+                             return core::success();
+                           },
+                       .cycleUnitRenderer =
+                           [this](domain::PhonemeKey) {
+                             calls.emplace_back("renderer");
+                             return core::success();
+                           },
+                       .movePhonemeBoundary =
+                           [this](domain::PhonemeKey, bool, time::Microseconds) {
+                             calls.emplace_back("boundary");
+                             return core::success();
+                           },
+                       .loadSampleMicroscope =
+                           [this](domain::PhonemeKey) -> core::Result<native_ui::SampleMicroscopeData> {
+                             calls.emplace_back("microscope");
+                             return native_ui::SampleMicroscopeData{unit, audio, "parity"};
+                           },
+                       .microscopeUnitChanged =
+                           [this](domain::PhonemeKey, const voicebank::Unit&) {
+                             calls.emplace_back("marker");
+                             return core::success();
+                           },
+                       .playMicroscopeSample =
+                           [this](const voicebank::Unit&, const voicebank::AudioBuffer&) {
+                             calls.emplace_back("play");
+                             return core::success();
+                           },
+                   }} {
+    controller.resize(1600.0, 900.0);
+    shell.activate({}, DesignPreferences{.mode = DesignMode::Emo});
+  }
+
+  domain::Project makeProject() {
+    auto project = factory.createProject("Shell parity");
+    project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
+    trackId = factory.addVocalTrack(project, "Singer");
+    regionId = factory.addRegion(project, trackId, "Phrase", time::Tick{0}, time::Tick{7680});
+    auto [lyric, note] = factory.makeNote(time::Tick{960}, time::Tick{1920}, 72U, U"\u3042",
+                                          domain::Language::Japanese);
+    noteId = note.id;
+    auto* region = project.findRegion(regionId);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+    return project;
+  }
+
+  bool frame() {
+    if (!shell.prepareFrame(controller, 1600.0, 900.0)) return false;
+    native_ui::PixelSurface surface{1600U, 900U};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    return shell.paint(canvas, controller, controller.sceneState(), controller.playheadTick());
+  }
+
+  std::size_t count(std::string_view call) const {
+    return static_cast<std::size_t>(std::count(calls.begin(), calls.end(), call));
+  }
+};
+
+const native_ui::SemanticNode* findNode(const native_ui::AccessibilityTree& tree, std::string_view id) {
+  const auto search = [id](const native_ui::SemanticNode& node, const auto& self) -> const native_ui::SemanticNode* {
+    for (const auto& child : node.children) {
+      if (child.id == id) return &child;
+      if (const auto* found = self(child, self); found != nullptr) return found;
+    }
+    return nullptr;
+  };
+  return search(tree.root(), search);
+}
+
+}  // namespace
+
+TEST_CASE("the Phonemes lane hosts the phoneme, unit and seam lanes with the controller's gestures") {
+  ParityFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  const auto& l = f.shell.layout();
+  const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
+  const ui::Rect tab{l.laneTabs.x + 7.0 * (tabWidth + 4.0), l.laneTabs.y, tabWidth, l.laneTabs.height};
+  CHECK(f.shell.pointerDown(f.controller, press(centre(tab))).hasValue());
+  CHECK(f.shell.technicalLanesShown());
+  CHECK(f.frame());
+  const auto hosted = f.controller.hostedGrid();
+  CHECK(hosted.has_value());
+  CHECK(hosted->laneHeight == 0.0);
+  const auto bands = f.shell.technicalBands();
+  CHECK_NEAR(hosted->phonemeHeight + hosted->unitHeight + hosted->seamHeight,
+             l.laneTimePlot.height, 1e-9);
+  CHECK_NEAR(bands.band[2U].bottom(), l.laneTimePlot.bottom(), 1e-9);
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* tabNode = findNode(f.shell.accessibilityTree(), "shell.lane-tab.phonemes");
+  CHECK(tabNode != nullptr && tabNode->selected);
+  CHECK(findNode(f.shell.accessibilityTree(), "shell.lane.band.unit") != nullptr);
+
+  // The phonemes the shell draws are the ones the controller hit-tests.
+  const native_ui::EditorSceneLayout metrics{};
+  ui::PhonemeLaneModel lane;
+  lane.rebuild(f.controller.pianoRoll(), f.controller.sceneState().phonemes,
+               metrics.phonemeContentTop(bands.band[0U].y),
+               metrics.phonemeContentHeight(bands.band[0U].height));
+  CHECK(!lane.visuals().empty());
+  if (lane.visuals().empty()) return;
+  const auto phoneme = lane.visuals().front().bounds;
+
+  // A phoneme edge drag moves that boundary through the host.
+  const ui::Point edge{phoneme.x + 2.0, phoneme.y + phoneme.height * 0.5};
+  CHECK(f.shell.pointerDown(f.controller, press(edge)).hasValue());
+  CHECK(f.shell.pointerMove(f.controller, press({edge.x + 24.0, edge.y})).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press({edge.x + 24.0, edge.y})).hasValue());
+  CHECK(f.count("boundary") == 1U);
+
+  // A unit click cycles its variant and targets it for S (variant) and R (renderer); a
+  // double-click opens the microscope.
+  const ui::Point unitPoint{phoneme.x + phoneme.width * 0.5, centre(bands.band[1U]).y};
+  CHECK(f.shell.pointerDown(f.controller, press(unitPoint)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(unitPoint)).hasValue());
+  CHECK(f.count("variant") == 1U);
+  for (const auto key : {NativeKey::S, NativeKey::R}) {
+    CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = key}));
+    CHECK(f.controller.keyDown(KeyEvent{.key = key}).hasValue());
+  }
+  CHECK(f.count("variant") == 2U);
+  CHECK(f.count("renderer") == 1U);
+  auto twice = press(unitPoint);
+  twice.clickCount = 2;
+  CHECK(f.shell.pointerDown(f.controller, twice).hasValue());
+  CHECK(f.count("microscope") == 1U);
+  CHECK(f.controller.sampleMicroscopeOpen());
+  f.controller.closeSampleMicroscope();
+
+  // A seam click sets the boundary's amount and selects it for the seam keys.
+  const auto seamRevision = f.controller.documentRevision();
+  const ui::Point seamPoint{phoneme.x + 1.0, centre(bands.band[2U]).y};
+  CHECK(f.shell.pointerDown(f.controller, press(seamPoint)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(seamPoint)).hasValue());
+  CHECK(f.controller.sceneState().selectedSeam.has_value());
+  CHECK(f.controller.documentRevision() != seamRevision);
+
+  // Collapsing a band is the project's lane presentation; its strip then only expands it.
+  CHECK(f.shell.pointerDown(f.controller, press(centre(bands.toggle[1U]))).hasValue());
+  const auto unitMode = [&] {
+    return f.session.project().settings().technicalLanes[static_cast<std::size_t>(domain::TechnicalLane::Unit)].mode;
+  };
+  CHECK(unitMode() == domain::TechnicalLaneMode::Collapsed);
+  CHECK(f.frame());
+  const auto collapsed = f.shell.technicalBands();
+  CHECK(collapsed.collapsed[1U]);
+  CHECK(collapsed.band[1U].height < bands.band[1U].height);
+  const auto variants = f.count("variant");
+  CHECK(f.shell.pointerDown(f.controller, press({unitPoint.x, centre(collapsed.band[1U]).y})).hasValue());
+  CHECK(unitMode() == domain::TechnicalLaneMode::Auto);
+  CHECK(f.count("variant") == variants);
+
+  // An expression tab takes the band back for its curve.
+  const ui::Rect formant{l.laneTabs.x + (tabWidth + 4.0), l.laneTabs.y, tabWidth, l.laneTabs.height};
+  CHECK(f.shell.pointerDown(f.controller, press(centre(formant))).hasValue());
+  CHECK(f.frame());
+  CHECK(!f.shell.technicalLanesShown());
+  CHECK(f.controller.hostedGrid()->laneHeight > 0.0);
+  CHECK(f.controller.hostedGrid()->phonemeHeight == 0.0);
+}
+
+TEST_CASE("the shell microscope sheet drags markers and auditions the unit like the classic plots") {
+  ParityFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.openSampleMicroscope({f.noteId, 0U}).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == native_ui::design::OverlayKind::SampleMicroscope);
+  CHECK(!f.controller.sampleMicroscope()->markers().empty());
+  // Find a marker by pressing across the sheet's middle; a press that hits nothing starts nothing.
+  const auto slot = f.shell.overlaySlot(f.controller, f.controller.sceneState());
+  bool dragged = false;
+  for (const auto fraction : {0.35, 0.5, 0.65}) {
+    const auto y = slot.y + slot.height * fraction;
+    for (auto x = slot.x + slot.width * 0.06; x < slot.right() - slot.width * 0.06 && !dragged; x += 1.0) {
+      CHECK(f.shell.pointerDown(f.controller, press({x, y})).hasValue());
+      if (!f.controller.pointerGestureActive()) {
+        CHECK(f.shell.pointerUp(f.controller, press({x, y})).hasValue());
+        continue;
+      }
+      CHECK(f.shell.pointerMove(f.controller, press({x + 30.0, y})).hasValue());
+      CHECK(f.shell.pointerUp(f.controller, press({x + 30.0, y})).hasValue());
+      dragged = true;
+    }
+    if (dragged) break;
+  }
+  CHECK(dragged);
+  CHECK(f.count("marker") == 1U);
+  CHECK(f.controller.sampleMicroscopeOpen());
+  // A double-click on the plots auditions the unit.
+  auto twice = press({slot.x + slot.width * 0.5, slot.y + slot.height * 0.35});
+  twice.clickCount = 2;
+  CHECK(f.shell.pointerDown(f.controller, twice).hasValue());
+  CHECK(f.count("play") == 1U);
+}
+
+TEST_CASE("the EXPORT workspace offers the final bounce's timing choice when the host has one") {
+  ParityFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  f.shell.setWorkspace(f.controller, native_ui::design::Workspace::Export);
+  CHECK(f.frame());
+  const auto bounce = f.shell.exportBounceButton();
+  CHECK(bounce.width > 0.0);
+  CHECK(f.shell.pointerDown(f.controller, press(centre(bounce))).hasValue());
+  CHECK(f.count("bounce:host") == 1U);
+  CHECK(f.controller.sceneState().bounceFollowHost);
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* node = findNode(f.shell.accessibilityTree(), "shell.export.bounce");
+  CHECK(node != nullptr && node->value == "Follow Host");
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.export.bounce", native_ui::SemanticAction::Activate).hasValue());
+  CHECK(f.count("bounce:fixed") == 1U);
+  CHECK(!f.controller.sceneState().bounceFollowHost);
 }

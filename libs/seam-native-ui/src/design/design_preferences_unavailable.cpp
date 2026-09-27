@@ -2,8 +2,8 @@
 
 namespace seam::native_ui::design {
 
-// Platforms without the vector backend keep the classic editor; nothing is persisted.
-DesignPreferences loadDesignPreferences() { return DesignPreferences{.shellEnabled = false}; }
+// Platforms without the vector backend cannot present the shell; nothing is persisted.
+DesignPreferences loadDesignPreferences() { return DesignPreferences{}; }
 void saveDesignPreferences(const DesignPreferences&) {}
 
 }  // namespace seam::native_ui::design

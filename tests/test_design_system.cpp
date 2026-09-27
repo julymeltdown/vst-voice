@@ -237,7 +237,7 @@ TEST_CASE("EMO and SCENE text roles meet contrast floors in both contrast settin
   }
 }
 
-TEST_CASE("the design shell is inactive until a production host activates it") {
+TEST_CASE("the design shell is inactive until a host activates it") {
   SingShell shell;
   CHECK(!shell.active());
   CHECK(!shell.enabled());

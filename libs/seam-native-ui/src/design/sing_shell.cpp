@@ -4,6 +4,7 @@
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/ui/expression_lane.hpp"
+#include "seam/ui/phoneme_lane_model.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -244,12 +245,8 @@ std::string barsBeatsTicks(time::Tick tick, std::int64_t ppq, const time::MeterE
 void SingShell::activate(const std::filesystem::path& assetRoot) {
   auto preferences = loadDesignPreferences();
   if (const char* forced = std::getenv("SEAM_UI_DESIGN"); forced != nullptr) {
-    const std::string value{forced};
-    if (value == "classic") preferences.shellEnabled = false;
-    else {
-      preferences.shellEnabled = true;
-      preferences.mode = parseDesignMode(value, preferences.mode);
-    }
+    // Captures only: force a look (emo or scene) without touching the saved preference.
+    preferences.mode = parseDesignMode(forced, preferences.mode);
   }
   // Captures only: open a workspace other than SING. The workspace is never a saved preference.
   if (const char* workspace = std::getenv("SEAM_UI_WORKSPACE"); workspace != nullptr) {
@@ -440,20 +437,6 @@ void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   repaint();
 }
 
-void SingShell::setEnabled(bool enabled, bool persist) {
-  preferences_.shellEnabled = enabled;
-  forwarding_ = ForwardArea::None;
-  knobDrag_.reset();
-  if (persist && persist_) saveDesignPreferences(preferences_);
-  repaint();
-}
-
-void SingShell::setEnabled(NativeEditorController& controller, bool enabled) {
-  cancelGestures(controller);
-  if (!enabled) releaseSurface(controller);
-  setEnabled(enabled);
-}
-
 bool SingShell::assetsLoaded(DesignMode mode) const noexcept {
   const auto& a = assets_[mode == DesignMode::Scene ? 1U : 0U];
   return a.portrait && a.stage && a.wordmark;
@@ -515,10 +498,24 @@ bool SingShell::inMusicalArea(ui::Point point) const noexcept {
 }
 
 bool SingShell::inEditableLane(ui::Point point) const noexcept {
-  return workspace_ == Workspace::Sing && laneEditable_ && contains(layout_.laneTimePlot, point);
+  if (workspace_ != Workspace::Sing || !contains(layout_.laneTimePlot, point)) return false;
+  if (!technicalLane_) return laneEditable_;
+  // Only an open band takes a gesture; a collapsed band's strip is its own expand control.
+  const auto bands = technicalBands();
+  for (std::size_t i = 0U; i < bands.band.size(); ++i)
+    if (!bands.collapsed[i] && contains(bands.band[i], point)) return true;
+  return false;
 }
 
 NativeEditorController::HostedGeometry SingShell::hostedGeometry() const noexcept {
+  if (technicalLane_) {
+    const auto bands = technicalBands();
+    return {.pianoBottom = legacyContentTop_ + layout_.grid.height,
+            .laneHeight = 0.0,
+            .phonemeHeight = bands.band[0U].height,
+            .unitHeight = bands.band[1U].height,
+            .seamHeight = bands.band[2U].height};
+  }
   return {.pianoBottom = legacyContentTop_ + layout_.grid.height,
           .laneHeight = layout_.laneTimePlot.height};
 }
@@ -664,9 +661,9 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     presentedOverlay_ = OverlayKind::None;
     fieldAnchor_.reset();
   }
-  // Every modal surface the controller opens is presented by the shell itself, so only a disabled
-  // or unavailable shell hands the frame to the classic painter.
-  if (!enabled() || !available()) {
+  // Every modal surface the controller opens is presented by the shell itself. Only a shell that
+  // was never activated, or a platform without the vector backend, does not present.
+  if (!enabled()) {
     releaseSurface(controller);
     return false;
   }
@@ -707,6 +704,9 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   if (bodyGesture_ && (bodyMoved || !presented_)) cancelGestures(controller);
   const auto previousGridHeight = layout_.grid.height;
   layout_ = next;
+  // An expression lane opened elsewhere (the menu, a knob) takes the lane band back.
+  if (controller.expressionLaneOpen()) technicalLane_ = false;
+  syncTechnicalBands(controller);
   applyGeometry(controller);
   frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
@@ -1341,7 +1341,7 @@ void paintNoteWaveform(Canvas2D& c, const DesignTokens& t, double radius, ui::Re
 void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollModel& model,
                             const EditorSceneState& state) const {
   const auto& l = layout_;
-  // Tool strip: the real track and project, and the way back to the classic editor.
+  // Tool strip: the real track and project.
   const auto chip = l.trackLabel;
   c.fill(Path::roundedRect(chip, 6.0), withAlpha(t.color.surfaceSunken, 0.85));
   c.stroke(Path::roundedRect(chip, 6.0), t.color.border, StrokeStyle{1.0});
@@ -1354,11 +1354,6 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
                        (state.dirty ? "  \u2022 edited" : "");
   c.text({chip.right() + 14.0, chip.y, l.gridLabel.x - chip.right() - 24.0, chip.height}, project,
          style(FontRole::Ui, t.type.label), t.color.textSecondary);
-  c.fill(Path::roundedRect(l.classicToggle, 6.0), withAlpha(t.color.surfaceSunken, 0.85));
-  c.stroke(Path::roundedRect(l.classicToggle, 6.0), t.color.border, StrokeStyle{1.0});
-  c.text(l.classicToggle, "Classic", style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
-                                           TextAlign::Center, true),
-         t.color.textSecondary);
   // Whether the notes carry the current render's waveform, and if not, the short reason (the full
   // reason is published to accessibility).
   if (l.gridLabel.width > 0.0 && l.gridLabel.x > chip.right() + 24.0 && !waveform_.caption.empty()) {
@@ -1743,10 +1738,12 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
 void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
                           const EditorSceneState& state) const {
   const auto& l = layout_;
-  static constexpr std::array<const char*, 7U> kTabs{"Dynamics", "Formant", "Breath", "Tension",
-                                                     "Air", "Gender", "Growl"};
+  static constexpr std::array<const char*, 8U> kTabs{"Dynamics", "Formant", "Breath", "Tension",
+                                                     "Air", "Gender", "Growl", "Phonemes"};
   const auto open = state.expressionLabelVisible();
-  const auto selected = open ? ui::expressionChannelIndex(state.expression.channel) + 1U : 99U;
+  const auto selected = technicalLane_ ? 7U
+                        : open         ? ui::expressionChannelIndex(state.expression.channel) + 1U
+                                       : 99U;
   const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
   for (std::size_t i = 0U; i < kTabs.size(); ++i) {
     const ui::Rect tab{l.laneTabs.x + i * (tabWidth + 4.0), l.laneTabs.y, tabWidth, l.laneTabs.height};
@@ -1767,9 +1764,9 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            active ? t.color.accent : t.color.textSecondary);
   }
   const ui::Rect info{l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0, l.laneTabs.y,
-                      (l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x - 8.0
-                                                      : l.laneTabs.right()) -
-                          (l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0),
+                      std::max(0.0, (l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x - 8.0
+                                                                     : l.laneTabs.right()) -
+                                        (l.laneTabs.x + kTabs.size() * (tabWidth + 4.0) + 8.0)),
                       l.laneTabs.height};
   const auto plot = l.laneTimePlot;
   sunken(c, t, l.lanePlot, 6.0);
@@ -1784,6 +1781,19 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   b.width - 10.0),
            t.color.textSecondary);
+  }
+  if (technicalLane_) {
+    const auto hint = state.selectedSeam.has_value()
+                          ? std::string{"Seam: arrows edit, C curve, B "} +
+                                (state.seamPreviewAlternate ? "alternate" : "base") + " preview"
+                          : std::string{"Drag phoneme edges; click a unit for its variant (R: renderer)"};
+    if (info.width > 24.0)
+      c.text(info, hint,
+             fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
+                    info.width),
+             t.color.textSecondary);
+    paintTechnicalLanes(c, t, model, state);
+    return;
   }
   if (!open) {
     c.text(info, "Select a channel to draw its curve",
@@ -1857,6 +1867,220 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     for (const auto& point : e.points) {
       const ui::Point p{plot.x + timeline.tickToPixel(state.automationOriginTick + point.tick), yFor(point.amount)};
       c.fill(Path::circle(p, 3.2), t.color.textPrimary);
+    }
+  }
+  if (state.playheadPixel >= 0.0) {
+    Path head;
+    head.moveTo({plot.x + state.playheadPixel, plot.y}).lineTo({plot.x + state.playheadPixel, plot.bottom()});
+    c.stroke(head, withAlpha(t.color.accentTime, 0.7), StrokeStyle{1.0});
+  }
+  c.restore();
+}
+
+
+// ---- Phonemes lane -----------------------------------------------------------------------------
+
+namespace {
+
+constexpr std::array<domain::TechnicalLane, 3U> kTechnicalBandLanes{
+    domain::TechnicalLane::Phoneme, domain::TechnicalLane::Unit, domain::TechnicalLane::Seam};
+constexpr std::array<const char*, 3U> kTechnicalBandNames{"Phoneme", "Unit", "Seam"};
+constexpr std::array<const char*, 3U> kTechnicalBandIds{"phoneme", "unit", "seam"};
+// A collapsed band keeps a strip this tall for its label; the open bands share the rest.
+constexpr double kCollapsedBandHeight = 12.0;
+
+std::string unitRendererLabel(domain::UnitRendererKind kind) {
+  switch (kind) {
+    case domain::UnitRendererKind::Raw: return "RAW";
+    case domain::UnitRendererKind::ClassicPsola: return "PSOLA";
+    case domain::UnitRendererKind::SpectralClassic: return "SPEC";
+    case domain::UnitRendererKind::Stretch: return "STR";
+    case domain::UnitRendererKind::Inherit: return "AUTO";
+  }
+  return "AUTO";
+}
+
+}  // namespace
+
+SingShell::TechnicalBands SingShell::technicalBands() const noexcept {
+  TechnicalBands out;
+  out.collapsed = technicalCollapsed_;
+  const auto& l = layout_;
+  const auto plot = l.laneTimePlot;
+  constexpr std::array<double, 3U> kWeight{0.38, 0.34, 0.28};
+  double openWeight = 0.0;
+  double collapsedHeight = 0.0;
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    if (out.collapsed[i]) collapsedHeight += kCollapsedBandHeight;
+    else openWeight += kWeight[i];
+  }
+  const auto free = std::max(0.0, plot.height - collapsedHeight);
+  auto y = plot.y;
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    const auto wanted = out.collapsed[i] ? kCollapsedBandHeight
+                        : openWeight > 0.0 ? std::floor(free * kWeight[i] / openWeight)
+                                           : 0.0;
+    const auto height = std::clamp(wanted, 0.0, std::max(0.0, plot.bottom() - y));
+    out.band[i] = {plot.x, y, plot.width, height};
+    // The label sits in the lane's value gutter, left of the shared musical axis.
+    out.toggle[i] = {l.lanePlot.x, y, std::max(0.0, plot.x - l.lanePlot.x - 2.0), height};
+    y += height;
+  }
+  // Rounding leaves the last open band the remainder, so the bands fill the plot exactly.
+  for (std::size_t i = 3U; i-- > 0U;) {
+    if (out.collapsed[i]) continue;
+    const auto extra = plot.bottom() - y;
+    out.band[i].height += extra;
+    out.toggle[i].height += extra;
+    for (std::size_t j = i + 1U; j < 3U; ++j) {
+      out.band[j].y += extra;
+      out.toggle[j].y += extra;
+    }
+    break;
+  }
+  return out;
+}
+
+void SingShell::syncTechnicalBands(const NativeEditorController& controller) {
+  const auto& lanes = controller.project().settings().technicalLanes;
+  for (std::size_t i = 0U; i < 3U; ++i)
+    technicalCollapsed_[i] =
+        lanes[static_cast<std::size_t>(kTechnicalBandLanes[i])].mode ==
+        domain::TechnicalLaneMode::Collapsed;
+}
+
+core::Result<void> SingShell::showTechnicalLanes(NativeEditorController& controller) {
+  if (forwarding_ != ForwardArea::None) cancelGestures(controller);
+  // One curve at a time owns the band: an open expression lane is closed first, so its channel
+  // keys cannot edit a curve that is no longer drawn.
+  if (controller.expressionLaneOpen()) {
+    auto closed = controller.closeExpressionLane();
+    if (!closed) return closed;
+  }
+  technicalLane_ = true;
+  syncTechnicalBands(controller);
+  if (presented_) applyGeometry(controller);
+  repaint();
+  return core::success();
+}
+
+core::Result<void> SingShell::toggleTechnicalBand(NativeEditorController& controller,
+                                                  std::size_t band) {
+  if (band >= kTechnicalBandLanes.size())
+    return core::failure(core::ErrorCode::InvalidArgument, "Unknown technical lane");
+  if (forwarding_ != ForwardArea::None) cancelGestures(controller);
+  auto result = controller.setTechnicalLaneCollapsed(kTechnicalBandLanes[band],
+                                                     !technicalCollapsed_[band]);
+  syncTechnicalBands(controller);
+  if (presented_) applyGeometry(controller);
+  repaint();
+  return result;
+}
+
+void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
+                                    const ui::PianoRollModel& model,
+                                    const EditorSceneState& state) const {
+  const auto plot = layout_.laneTimePlot;
+  if (plot.width <= 0.0 || plot.height <= 0.0) return;
+  const auto bands = technicalBands();
+  // The controller hit-tests these bands with the classic lane metrics, so the shell paints with
+  // the same ones: a drawn phoneme edge is exactly where a drag grabs it.
+  const EditorSceneLayout metrics{};
+  const auto labelStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.4, TextAlign::Right);
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    const auto& toggle = bands.toggle[i];
+    if (toggle.width > 12.0 && toggle.height >= 10.0) {
+      const std::string label = std::string{kTechnicalBandNames[i]} + (bands.collapsed[i] ? " +" : "");
+      c.text({toggle.x, toggle.y, toggle.width, std::min(toggle.height, 16.0)}, label,
+             fitted(c, label, labelStyle, toggle.width), t.color.textSecondary);
+    }
+    if (i > 0U) {
+      Path divider;
+      divider.moveTo({plot.x, bands.band[i].y}).lineTo({plot.right(), bands.band[i].y});
+      c.stroke(divider, withAlpha(t.color.gridStrong, 0.8), StrokeStyle{1.0});
+    }
+  }
+  c.save();
+  c.clipRect(plot);
+  // Phonemes, and the x ranges units and seams are addressed by.
+  const auto& phonemeBand = bands.band[0U];
+  ui::PhonemeLaneModel lane;
+  lane.rebuild(model, state.phonemes, metrics.phonemeContentTop(phonemeBand.y),
+               metrics.phonemeContentHeight(phonemeBand.height));
+  const auto& visuals = lane.visuals();
+  if (!bands.collapsed[0U]) {
+    for (const auto& visual : visuals) {
+      auto r = visual.bounds;
+      if (r.right() < plot.x || r.x > plot.right() || r.width <= 0.0) continue;
+      const auto fill = visual.locked ? t.color.accentAlt1 : t.color.noteFill;
+      c.fill(Path::roundedRect(r, 3.0), withAlpha(fill, 0.85));
+      c.stroke(Path::roundedRect(r, 3.0),
+               visual.timingOverridden ? t.color.accent : withAlpha(t.color.border, 0.95),
+               StrokeStyle{1.0});
+      const auto marker = visual.timingConflict ? "!" : visual.timingInferred ? "^"
+                          : visual.timingEstimated                            ? "~"
+                                                                              : "";
+      const auto text = std::string{marker} + visual.symbol;
+      const ui::Rect textBox{r.x + 3.0, r.y, std::max(0.0, r.width - 6.0), r.height};
+      if (textBox.width >= 8.0)
+        c.text(textBox, text, fitted(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+               t.color.phonemeText);
+    }
+    if (visuals.empty())
+      c.text({plot.x + 8.0, phonemeBand.y, plot.width - 16.0, phonemeBand.height},
+             "No phonemes in this region", style(FontRole::Ui, t.type.smallLabel),
+             t.color.textSecondary);
+  }
+  // Units: each phoneme's span is a unit target; a stored override is drawn as a card.
+  const auto& unitBand = bands.band[1U];
+  if (!bands.collapsed[1U]) {
+    for (const auto& visual : visuals) {
+      if (visual.bounds.x < plot.x || visual.bounds.x > plot.right()) continue;
+      Path tick;
+      tick.moveTo({visual.bounds.x, unitBand.y + 3.0}).lineTo({visual.bounds.x, unitBand.bottom() - 3.0});
+      c.stroke(tick, withAlpha(t.color.gridWeak, 0.9), StrokeStyle{1.0});
+    }
+    for (const auto& unit : state.unitOverrides) {
+      const auto start = std::find_if(visuals.begin(), visuals.end(),
+                                      [&unit](const ui::PhonemeVisual& v) { return v.key == unit.startKey; });
+      if (start == visuals.end()) continue;
+      auto end = start;
+      for (std::uint16_t n = 1U; n < unit.tokenCount && end + 1 != visuals.end(); ++n) ++end;
+      const auto left = std::max(plot.x, start->bounds.x);
+      const auto right = std::min(plot.right(), end->bounds.right());
+      if (right <= left) continue;
+      const ui::Rect card{left, metrics.unitContentTop(unitBand.y), std::max(3.0, right - left),
+                          metrics.unitContentHeight(unitBand.height)};
+      c.fill(Path::roundedRect(card, 3.0), withAlpha(t.color.noteFillAlt, 0.9));
+      c.stroke(Path::roundedRect(card, 3.0), unit.locked ? t.color.accent : withAlpha(t.color.border, 0.95),
+               StrokeStyle{1.0});
+      const auto text = unit.unitId + "  " + unitRendererLabel(unit.renderer);
+      const ui::Rect textBox{card.x + 4.0, card.y, std::max(0.0, card.width - 8.0), card.height};
+      if (textBox.width >= 12.0)
+        c.text(textBox, text, fitted(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+               t.color.textPrimary);
+    }
+  }
+  // Seams: a rail at each overridden boundary, filled to its amount.
+  const auto& seamBand = bands.band[2U];
+  if (!bands.collapsed[2U]) {
+    for (const auto& seam : state.seamOverrides) {
+      const auto visual = std::find_if(visuals.begin(), visuals.end(), [&seam](const ui::PhonemeVisual& v) {
+        return v.key == seam.incomingStartKey;
+      });
+      if (visual == visuals.end()) continue;
+      const auto x = visual->bounds.x;
+      if (x < plot.x || x > plot.right()) continue;
+      const auto amount = std::clamp(static_cast<double>(seam.seamAmount.value_or(0.5F)), 0.0, 1.0);
+      const ui::Rect rail{x - metrics.seamRailWidth * 0.5, seamBand.y + 3.0, metrics.seamRailWidth,
+                          std::max(1.0, seamBand.height - 6.0)};
+      const auto selected = state.selectedSeam.has_value() && *state.selectedSeam == seam.incomingStartKey;
+      c.fill(Path::roundedRect(rail, 2.0), withAlpha(t.color.surfaceSunken, 0.95));
+      const auto bar = std::max(1.0, rail.height * amount);
+      c.fill(Path::roundedRect({rail.x, rail.bottom() - bar, rail.width, bar}, 2.0), t.color.accentCurve);
+      c.stroke(Path::roundedRect(rail, 2.0),
+               selected ? t.color.accentTime : seam.locked ? t.color.accent : withAlpha(t.color.border, 0.95),
+               StrokeStyle{selected ? 2.0 : 1.0});
     }
   }
   if (state.playheadPixel >= 0.0) {
@@ -2341,9 +2565,17 @@ struct ExportPanelLayout final {
   double columnWidth{0.0};
   ui::Rect summary;
   ui::Rect button;
+  // Beside the run button: the final bounce's timing choice, for a host that offers one.
+  ui::Rect bounce;
   ui::Rect note;
   ui::Rect status;
 };
+
+ui::Rect exportBounceBeside(ui::Rect area, ui::Rect button) {
+  const auto left = button.right() + 12.0;
+  const auto width = std::min(240.0, area.right() - 32.0 - left);
+  return width >= 120.0 ? ui::Rect{left, button.y, width, button.height} : ui::Rect{};
+}
 
 ExportPanelLayout exportPanelLayout(ui::Rect area) {
   ExportPanelLayout p;
@@ -2364,12 +2596,14 @@ ExportPanelLayout exportPanelLayout(ui::Rect area) {
     p.summary = {left, area.y + 46.0, area.width - 64.0, 18.0};
     const auto buttonY = std::max(area.y + 44.0, std::min(area.y + 70.0, area.bottom() - 52.0));
     p.button = {left, buttonY, buttonWidth, std::min(44.0, std::max(28.0, area.bottom() - buttonY - 8.0))};
+    p.bounce = exportBounceBeside(area, p.button);
     p.note = {};
     p.status = {left, p.button.bottom() + 8.0, area.width - 64.0,
                 std::max(0.0, area.bottom() - p.button.bottom() - 16.0)};
     return p;
   }
   p.button = {left, area.y + 64.0 + 4.0 * 46.0 + 12.0, buttonWidth, 44.0};
+  p.bounce = exportBounceBeside(area, p.button);
   p.note = {left, p.button.bottom() + 10.0, p.columnWidth, 32.0};
   p.status = p.sideColumn
                  ? ui::Rect{area.x + area.width * 0.5 + 16.0, area.y + 64.0, p.columnWidth,
@@ -2538,6 +2772,11 @@ ui::Rect SingShell::exportArea() const noexcept {
 ui::Rect SingShell::exportRunButton() const noexcept {
   if (workspace_ != Workspace::Export || !presented_) return {};
   return exportPanelLayout(exportArea()).button;
+}
+
+ui::Rect SingShell::exportBounceButton() const noexcept {
+  if (workspace_ != Workspace::Export || !presented_) return {};
+  return exportPanelLayout(exportArea()).bounce;
 }
 
 bool SingShell::exportBusy(const NativeEditorController& controller) const {
@@ -2759,6 +2998,18 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.text(button, exportRunning_ ? "Exporting\u2026" : "Export set\u2026",
          style(FontRole::UiBold, t.type.label, 1.4, TextAlign::Center, true),
          available ? t.color.textOnAccent : t.color.textDisabled);
+  // A plug-in's final bounce is rendered by the DAW; the choice here is which timing it follows.
+  if (state.bounceTimingAvailable && p.bounce.width > 0.0) {
+    const auto label = state.bounceFollowHost ? std::string{"Bounce: follow host"}
+                                              : std::string{"Bounce: fixed audio"};
+    c.fill(Path::capsule(p.bounce), withAlpha(t.color.surfaceSunken, 0.9));
+    c.stroke(Path::capsule(p.bounce), state.bounceFollowHost ? t.color.accentTime : t.color.border,
+             StrokeStyle{1.0});
+    c.text(p.bounce, label,
+           fitted(c, label, style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Center),
+                  p.bounce.width - 16.0),
+           t.color.textPrimary);
+  }
   if (p.note.width > 0.0)
     c.text(p.note,
            hostActions_.exportSet ? std::string{"Choose a new folder; an existing export set is never overwritten."}
@@ -2962,6 +3213,9 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     }
     if (workspace_ == Workspace::Export && contains(exportRunButton(), p))
       return runExportSet(controller);
+    if (workspace_ == Workspace::Export && contains(exportBounceButton(), p) &&
+        controller.sceneState().bounceTimingAvailable)
+      return controller.toggleBounceTiming();
   }
   // TUNE and MIX own every press in their body; a gesture started there stays theirs.
   if (auto* body = bodyWorkspace(); body != nullptr && contains(workspaceArea(), p)) {
@@ -2991,10 +3245,6 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     if (contains(l.settings, p)) {
       controller.showAudioSettings();
       repaint();
-      return core::success();
-    }
-    if (contains(l.classicToggle, p)) {
-      setEnabled(controller, false);
       return core::success();
     }
     if (const auto open = diagnosticsOpenButton();
@@ -3031,12 +3281,23 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
       return opened;
     }
     const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
-    for (std::size_t i = 0U; i < 7U; ++i) {
+    for (std::size_t i = 0U; i < 8U; ++i) {
       const ui::Rect tab{l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0), l.laneTabs.y,
                          tabWidth, l.laneTabs.height};
       if (!contains(tab, p)) continue;
       if (i == 0U) return controller.openDynamicsInspector();
+      if (i == 7U) return showTechnicalLanes(controller);
+      technicalLane_ = false;
+      applyGeometry(controller);
       return controller.openExpressionLane(ui::expressionChannelAt(i - 1U));
+    }
+    // A band label, or a collapsed band's strip, collapses or expands that band.
+    if (workspace_ == Workspace::Sing && technicalLane_) {
+      const auto bands = technicalBands();
+      for (std::size_t i = 0U; i < bands.band.size(); ++i) {
+        if (contains(bands.toggle[i], p) || (bands.collapsed[i] && contains(bands.band[i], p)))
+          return toggleTechnicalBand(controller, i);
+      }
     }
   }
   if (inMusicalArea(p)) {
@@ -3186,10 +3447,6 @@ bool SingShell::scroll(NativeEditorController& controller, double deltaX, double
 }
 
 bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEvent& event) {
-  if (event.key == NativeKey::Space && event.modifiers.shift && event.modifiers.primaryShortcut()) {
-    setEnabled(controller, !enabled());
-    return true;
-  }
   // A re-homed overlay owns the keyboard while it is up. Escape closes it and returns focus to the
   // control that opened it; the overlay's own keys run its real commands; every other plain key
   // stops here, so nothing reaches the covered score.
@@ -3552,10 +3809,6 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = "Audio settings",
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
-  add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
-                   .name = "Switch to the classic editor", .bounds = l.classicToggle,
-                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                   .description = "Command-Shift-Space returns to this design"});
 
   // Timeline and the notes visible in the grid, in shell coordinates.
   if (const auto* timeline = findLegacy("timeline"); timeline != nullptr) {
@@ -3637,10 +3890,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
 
   // Lane selector and the hosted lane.
-  static constexpr std::array<const char*, 7U> kLanes{"Dynamics", "Formant", "Breath", "Tension",
-                                                       "Air", "Gender", "Growl"};
+  static constexpr std::array<const char*, 8U> kLanes{"Dynamics", "Formant", "Breath", "Tension",
+                                                       "Air", "Gender", "Growl", "Phonemes"};
   const auto open = state.expressionLabelVisible();
-  const auto selectedLane = open ? ui::expressionChannelIndex(state.expression.channel) + 1U : 99U;
+  const auto selectedLane = technicalLane_ ? 7U
+                            : open ? ui::expressionChannelIndex(state.expression.channel) + 1U
+                                   : 99U;
   const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
   for (std::size_t i = 0U; i < kLanes.size(); ++i) {
     add(SemanticNode{.id = "shell.lane-tab." + lowercase(kLanes[i]),
@@ -3650,22 +3905,54 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                 l.laneTabs.y, tabWidth, l.laneTabs.height},
                      .selected = i == selectedLane,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                     .description = i == 0U ? "Opens the Dynamics editor" : ""});
+                     .description = i == 0U   ? "Opens the Dynamics editor"
+                                    : i == 7U ? "Shows the phoneme, unit and seam lanes"
+                                              : ""});
   }
-  add(SemanticNode{
-      .id = "shell.lane",
-      .role = SemanticRole::Lane,
-      .name = open ? state.expression.label + " curve" : "Expression lane",
-      .value = !open ? "No channel selected"
-               : !state.expression.refusal.empty() ? state.expression.refusal
-                   : state.expression.points.empty()
-                       ? "No curve stored"
-                       : std::to_string(state.expression.points.size()) + " points",
-      .bounds = l.laneTimePlot,
-      .enabled = laneEditable_,
-      .actions = {SemanticAction::SetFocus},
-      .description = laneEditable_ ? "Click to add a point, drag to move, Escape cancels a drag"
-                                   : "Select a channel tab to edit its curve"});
+  if (technicalLane_) {
+    add(SemanticNode{
+        .id = "shell.lane",
+        .role = SemanticRole::Lane,
+        .name = "Phonemes lane",
+        .value = std::to_string(state.phonemes.tokens.size()) + " phonemes, " +
+                 std::to_string(state.unitOverrides.size()) + " unit overrides, " +
+                 std::to_string(state.seamOverrides.size()) + " seam overrides" +
+                 (state.selectedSeam.has_value() ? ", boundary selected" : ""),
+        .bounds = l.laneTimePlot,
+        .enabled = true,
+        .actions = {SemanticAction::SetFocus},
+        .description = "Drag a phoneme edge to move it; click a unit to cycle its variant, then S "
+                       "for the next variant or R for its renderer, and double-click it for the "
+                       "sample microscope; click a seam to set its amount, then arrows, C, N, A, "
+                       "P and B edit it"});
+    const auto bands = technicalBands();
+    for (std::size_t i = 0U; i < bands.band.size(); ++i) {
+      add(SemanticNode{.id = std::string{"shell.lane.band."} + kTechnicalBandIds[i],
+                       .role = SemanticRole::Button,
+                       .name = std::string{kTechnicalBandNames[i]} + " lane",
+                       .value = bands.collapsed[i] ? "Collapsed" : "Expanded",
+                       .bounds = bands.toggle[i].width > 0.0 ? bands.toggle[i] : bands.band[i],
+                       .actions = {SemanticAction::Activate, SemanticAction::Toggle,
+                                   SemanticAction::SetFocus},
+                       .description = bands.collapsed[i] ? "Activate to expand this lane"
+                                                         : "Activate to collapse this lane"});
+    }
+  } else {
+    add(SemanticNode{
+        .id = "shell.lane",
+        .role = SemanticRole::Lane,
+        .name = open ? state.expression.label + " curve" : "Expression lane",
+        .value = !open ? "No channel selected"
+                 : !state.expression.refusal.empty() ? state.expression.refusal
+                     : state.expression.points.empty()
+                         ? "No curve stored"
+                         : std::to_string(state.expression.points.size()) + " points",
+        .bounds = l.laneTimePlot,
+        .enabled = laneEditable_,
+        .actions = {SemanticAction::SetFocus},
+        .description = laneEditable_ ? "Click to add a point, drag to move, Escape cancels a drag"
+                                     : "Select a channel tab to edit its curve"});
+  }
 
   // Singer rack.
   // Compact presentations publish the inspector button; its contents follow it in the tree (so Tab
@@ -3863,6 +4150,17 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
         .description = !hostActions_.exportSet ? hostActions_.exportUnavailable
                        : busy                 ? std::string{"An export is already running"}
                                               : std::string{"Choose a new folder for the set"}});
+    if (state.bounceTimingAvailable && panel.bounce.width > 0.0)
+      add(SemanticNode{
+          .id = "shell.export.bounce", .role = SemanticRole::Button,
+          .name = state.bounceFollowHost ? "Bounce timing: follow the host"
+                                         : "Bounce timing: score tempo map",
+          .value = state.bounceFollowHost ? "Follow Host" : "Fixed Audio",
+          .bounds = panel.bounce, .selected = state.bounceFollowHost,
+          .actions = {SemanticAction::Activate, SemanticAction::Toggle, SemanticAction::SetFocus},
+          .description = "Choose whether a final bounce follows the host's own timing or the "
+                         "score's tempo map; a Follow Host bounce refuses rather than guess when "
+                         "the host has not reported enough of the score"});
     const auto& progress = controller.exportProgress();
     const auto statusBounds = panel.status.height > 0.0 ? panel.status : panel.button;
     if (busy) {
@@ -4090,16 +4388,24 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     // returns focus from inside to it.
     setInspectorOpen(controller, !layout_.inspectorOpen);
     result = core::success();
-  } else if (id == "shell.classic" && activate) {
-    setEnabled(controller, false);
-    result = core::success();
   } else if (id.starts_with("shell.lane-tab.") && activate) {
     static constexpr std::array<std::string_view, 6U> kChannels{"formant", "breath", "tension",
                                                                 "air", "gender", "growl"};
     const auto name = id.substr(std::string_view{"shell.lane-tab."}.size());
     if (name == "dynamics") result = controller.openDynamicsInspector();
-    for (std::size_t i = 0U; i < kChannels.size(); ++i)
-      if (name == kChannels[i]) result = controller.openExpressionLane(ui::expressionChannelAt(i));
+    if (name == "phonemes") result = showTechnicalLanes(controller);
+    for (std::size_t i = 0U; i < kChannels.size(); ++i) {
+      if (name != kChannels[i]) continue;
+      technicalLane_ = false;
+      if (presented_) applyGeometry(controller);
+      result = controller.openExpressionLane(ui::expressionChannelAt(i));
+    }
+  } else if (id == "shell.export.bounce" && activate) {
+    result = controller.toggleBounceTiming();
+  } else if (id.starts_with("shell.lane.band.") && activate) {
+    const auto name = id.substr(std::string_view{"shell.lane.band."}.size());
+    for (std::size_t i = 0U; i < kTechnicalBandIds.size(); ++i)
+      if (name == kTechnicalBandIds[i]) result = toggleTechnicalBand(controller, i);
   } else if (id.starts_with("shell.knob.")) {
     static constexpr std::array<std::string_view, 6U> kKnobs{"formant", "breath", "tension",
                                                              "air", "gender", "growl"};

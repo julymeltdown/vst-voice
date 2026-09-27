@@ -464,6 +464,10 @@ void EditorRuntime::configureControllerCallbacks() {
         requestRepaint();
         return core::success();
       },
+      // The shell's Phonemes lane edits through the controller, which calls back in (recursive lock).
+      .cycleUnitVariant = [this](domain::PhonemeKey key) { return cycleUnitVariant(key); },
+      .cycleUnitRenderer = [this](domain::PhonemeKey key) { return cycleUnitRenderer(key); },
+      .movePhonemeBoundary = [this](domain::PhonemeKey key, bool start, time::Microseconds offset) { return movePhonemeBoundary(key, start, offset); },
       .loadSampleMicroscope = [this](domain::PhonemeKey key) {
         return loadSampleMicroscope(key);
       },
