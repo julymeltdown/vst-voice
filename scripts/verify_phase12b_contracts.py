@@ -102,24 +102,24 @@ def main() -> int:
         root / "libs/seam-clap-editor/src/editor_runtime_paint.cpp",
         [
             # The microscope view is built by the shared controller, so the CLAP
-            # surface must paint that shared state and suppress its own overlay
-            # whenever either modal is open in it.
+            # surface paints that shared state through the SING shell (the one
+            # editor surface), which presents the microscope as its own sheet.
             "controller_->sceneState()",
-            "state.sampleMicroscope.has_value()",
-            "painter_.paint(canvas, controller_->pianoRoll(), state)",
+            "shell_.paint(canvas, *controller_, state, controller_->playheadTick())",
+            "native_ui::paintEditorUnavailable(canvas)",
         ],
         errors,
     )
     require_text(
         root / "libs/seam-clap-editor/src/editor_runtime_input.cpp",
         [
-            # Input is delegated to the shared controller while the microscope is
-            # open, so hit-testing and the details keyboard controls cannot drift
-            # between the standalone and embedded surfaces.
+            # Input reaches the shared controller through the same SING shell the
+            # standalone app uses, so hit-testing and the details keyboard
+            # controls cannot drift between the standalone and embedded surfaces.
             "controller_->sampleMicroscopeOpen()",
-            "controller_->pointerDown(event)",
-            "controller_->pointerMove(event)",
-            "controller_->pointerUp(event)",
+            "routeShellPointerLocked(ShellPointerPhase::Down, event)",
+            "routeShellPointerLocked(ShellPointerPhase::Move, event)",
+            "routeShellPointerLocked(ShellPointerPhase::Up, event)",
         ],
         errors,
     )

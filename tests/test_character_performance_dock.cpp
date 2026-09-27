@@ -2,9 +2,10 @@
 //
 // The character layer and the renderer now describe a performance, but a description that never
 // reaches a window is not a product: these cases check that the dock's read model survives the trip
-// into the scene, that painting a phrase really changes what is drawn, that reduced motion removes the
-// movement without removing the state, and that a render completing in the standalone session binds
-// the dock to the phrase it published -- including the playhead mapping a seek depends on.
+// into the scene and its accessible description, that reduced motion is carried with the state, and
+// that a render completing in the standalone session binds the dock to the phrase it published --
+// including the playhead mapping a seek depends on. What the SING shell paints from that read model
+// (the singer ring's mouth, Reduce Motion, High Contrast) is covered by test_design_character_surface.
 //
 // The musical material here is one procedural note. Nothing is listened to, the mouths are the dock's
 // own drawing vocabulary rather than a phonetic claim, and no roadmap unit is accepted.
@@ -80,82 +81,6 @@ native_ui::EditorSceneState::CharacterPerformanceView view(character::MouthShape
   };
 }
 
-// Paints the given state and returns what the dock's own pixels say about it.
-std::uint64_t paintDock(native_ui::EditorScenePainter& painter, ui::PianoRollModel& model,
-                        const native_ui::EditorSceneState& state, text::TextEngine* engine) {
-  native_ui::PixelSurface surface{900U, 640U};
-  native_ui::RasterCanvas canvas{surface, 1.0, engine};
-  painter.paint(canvas, model, state);
-  return surface.checksum();
-}
-
-TEST_CASE("A declared mouth placement composites only the mouth over the portrait") {
-  DockFixture fixture;
-  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
-                                               fixture.regionId, {}};
-  auto state = controller.sceneState();
-  state.logicalWidth = 900.0;
-  state.logicalHeight = 640.0;
-  state.characterMode = domain::CharacterDisplayMode::Full;
-  state.voiceIdentity.characterActive = true;
-  state.characterDockReserved = true;
-  state.characterName = "Overlay verification";
-  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
-
-  constexpr native_ui::Color portraitColor{30U, 10U, 40U, 255U};
-  constexpr native_ui::Color mouthColor{220U, 35U, 105U, 255U};
-  native_ui::PixelSurface portrait{220U, 200U};
-  portrait.clear(portraitColor);
-  native_ui::PixelSurface mouth{4U, 4U};
-  mouth.clear(native_ui::Color{0U, 0U, 0U, 0U});
-  mouth.pixels()[2U * mouth.width() + 2U] = mouthColor.bgra();
-  const character::MouthPlacement placement{0.4, 0.4, 0.2, 0.2};
-  state.characterPortrait = &portrait;
-  state.characterMouth = &mouth;
-  state.characterMouthPlacement = placement;
-
-  native_ui::EditorScenePainter painter;
-  native_ui::PixelSurface rendered{900U, 640U};
-  native_ui::RasterCanvas canvas{rendered};
-  painter.paint(canvas, controller.pianoRoll(), state);
-
-  const auto layout = painter.layout();
-  const auto dockWidth = layout.characterDockWidth;
-  const auto editorRight = state.logicalWidth - dockWidth;
-  const auto contentBottom = state.logicalHeight - layout.statusHeight;
-  const auto bounds = layout.characterDockPortraitBounds(
-      editorRight, contentBottom, state.logicalWidth);
-  const auto scale = std::min(bounds.width / static_cast<double>(portrait.width()),
-                              bounds.height / static_cast<double>(portrait.height()));
-  const auto fittedWidth = static_cast<double>(portrait.width()) * scale;
-  const auto fittedHeight = static_cast<double>(portrait.height()) * scale;
-  const auto fittedX = bounds.x + (bounds.width - fittedWidth) * 0.5;
-  const auto fittedY = bounds.y + (bounds.height - fittedHeight) * 0.5;
-  const auto mouthLeft = static_cast<std::int32_t>(std::floor(
-      fittedX + placement.x * fittedWidth));
-  const auto mouthTop = static_cast<std::int32_t>(std::floor(
-      fittedY + placement.y * fittedHeight));
-  const auto mouthRight = static_cast<std::int32_t>(std::ceil(
-      fittedX + (placement.x + placement.width) * fittedWidth));
-  const auto mouthBottom = static_cast<std::int32_t>(std::ceil(
-      fittedY + (placement.y + placement.height) * fittedHeight));
-  const auto destinationWidth = mouthRight - mouthLeft;
-  const auto destinationHeight = mouthBottom - mouthTop;
-  CHECK(destinationWidth >= 4);
-  CHECK(destinationHeight >= 4);
-
-  const auto pixelAt = [&rendered](std::int32_t x, std::int32_t y) {
-    return rendered.pixels()[static_cast<std::size_t>(y) * rendered.width() +
-                              static_cast<std::size_t>(x)];
-  };
-  // The keyed transparent corner reveals the face underneath, while the mouth's authored center
-  // pixel appears at the declared normalized face position.
-  CHECK(pixelAt(mouthLeft, mouthTop) == portraitColor.bgra());
-  const auto opaqueX = mouthLeft + (5 * destinationWidth) / 8;
-  const auto opaqueY = mouthTop + (5 * destinationHeight) / 8;
-  CHECK(pixelAt(opaqueX, opaqueY) == mouthColor.bgra());
-}
-
 TEST_CASE("The dock carries a performance into the scene and honours reduced motion") {
   DockFixture fixture;
   native_ui::NativeEditorController controller{fixture.session, fixture.factory,
@@ -179,43 +104,6 @@ TEST_CASE("The dock carries a performance into the scene and honours reduced mot
   CHECK(reduced.sceneState().characterPerformance->reducedMotion);
 }
 
-TEST_CASE("Painting a phrase changes the dock, and reduced motion removes only the movement") {
-  DockFixture fixture;
-  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
-                                               fixture.regionId, {}};
-  auto state = controller.sceneState();
-  state.logicalWidth = 900.0;
-  state.logicalHeight = 640.0;
-  // The dock only draws in Full mode with a verified character and a portrait, which is what the
-  // product requires before it shows a singer's face at all.
-  state.characterMode = domain::CharacterDisplayMode::Full;
-  state.voiceIdentity.characterActive = true;
-  native_ui::PixelSurface portrait{220U, 200U};
-  portrait.clear(native_ui::Color{40U, 20U, 60U, 255U});
-  state.characterPortrait = &portrait;
-  // The package reserves the dock. Dock presence is a package question rather than a
-  // frame question, so a caller building scene state by hand has to answer it too.
-  state.characterDockReserved = true;
-  state.characterName = "Pilot";
-
-  native_ui::EditorScenePainter painter;
-  std::unique_ptr<text::TextEngine> engine;
-  if (auto created = text::TextEngine::createSystem(); created) engine = std::move(created).value();
-  auto* textEngine = engine.get();
-  const auto withoutPerformance = paintDock(painter, controller.pianoRoll(), state, textEngine);
-  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
-  const auto withPerformance = paintDock(painter, controller.pianoRoll(), state, textEngine);
-  CHECK(withPerformance != withoutPerformance);
-  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true, true);
-  const auto withoutMovement = paintDock(painter, controller.pianoRoll(), state, textEngine);
-  // Reduced motion is a different drawing, not no drawing: the label and the measured level stay.
-  CHECK(withoutMovement != withPerformance);
-  CHECK(withoutMovement != withoutPerformance);
-  state.characterPerformance.reset();
-  const auto cleared = paintDock(painter, controller.pianoRoll(), state, textEngine);
-  CHECK(cleared == withoutPerformance);
-}
-
 // A render is submitted asynchronously; a published phrase is what this suite waits for.
 authoring::RenderState waitForRender(standalone::AuthoringSession& session,
                                      std::uint64_t revision) {
@@ -230,47 +118,6 @@ authoring::RenderState waitForRender(standalone::AuthoringSession& session,
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
   }
   return authoring::RenderState::Idle;
-}
-
-TEST_CASE("A declared mouth asset replaces the dock's own drawing") {
-  DockFixture fixture;
-  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
-                                               fixture.regionId, {}};
-  auto state = controller.sceneState();
-  state.logicalWidth = 900.0;
-  state.logicalHeight = 640.0;
-  state.characterMode = domain::CharacterDisplayMode::Full;
-  state.voiceIdentity.characterActive = true;
-  state.characterName = "Pilot";
-  native_ui::PixelSurface portrait{220U, 200U};
-  portrait.clear(native_ui::Color{30U, 10U, 40U, 255U});
-  state.characterPortrait = &portrait;
-  // The package reserves the dock. Dock presence is a package question rather than a
-  // frame question, so a caller building scene state by hand has to answer it too.
-  state.characterDockReserved = true;
-  state.characterPerformance = view(character::MouthShape::Open, 0.8F, true);
-
-  native_ui::EditorScenePainter painter;
-  std::unique_ptr<text::TextEngine> engine;
-  if (auto created = text::TextEngine::createSystem(); created) engine = std::move(created).value();
-  const auto fallback = paintDock(painter, controller.pianoRoll(), state, engine.get());
-
-  // A package that declares performance artwork gets to draw it instead of the dock's own glyph.
-  native_ui::PixelSurface mouth{24U, 24U};
-  mouth.clear(native_ui::Color{200U, 40U, 90U, 255U});
-  state.characterMouth = &mouth;
-  const auto declared = paintDock(painter, controller.pianoRoll(), state, engine.get());
-  CHECK(declared != fallback);
-
-  // Reduced motion drops the artwork, and neither the artwork nor the fallback glyph is drawn in its
-  // place: the dock keeps the label and the level.
-  state.characterPerformance->reducedMotion = true;
-  const auto reducedWithAsset = paintDock(painter, controller.pianoRoll(), state, engine.get());
-  CHECK(reducedWithAsset != declared);
-  CHECK(reducedWithAsset != fallback);
-  state.characterMouth = nullptr;
-  const auto reducedWithoutAsset = paintDock(painter, controller.pianoRoll(), state, engine.get());
-  CHECK(reducedWithAsset == reducedWithoutAsset);
 }
 
 TEST_CASE("The dock says what is singing and whether that phrase has fallen behind") {
@@ -305,17 +152,9 @@ TEST_CASE("The dock says what is singing and whether that phrase has fallen behi
   CHECK(fresh.find("level 80 percent") != std::string::npos);
   CHECK(fresh.find("changed after this render") == std::string::npos);
 
-  native_ui::EditorScenePainter painter;
-  std::unique_ptr<text::TextEngine> engine;
-  if (auto created = text::TextEngine::createSystem(); created) engine = std::move(created).value();
-  const auto freshPixels = paintDock(painter, controller.pianoRoll(), state, engine.get());
-
   state.characterPerformance->audibleStale = true;
   const auto stale = dockValue(state);
   CHECK(stale.find("changed after this render") != std::string::npos);
-  const auto stalePixels = paintDock(painter, controller.pianoRoll(), state, engine.get());
-  // The phrase keeps playing and the dock says that the project has moved on since it was rendered.
-  CHECK(stalePixels != freshPixels);
 
   // A dock with no phrase at all says that too, instead of describing an empty performance.
   state.characterPerformance.reset();

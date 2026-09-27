@@ -325,15 +325,18 @@ core::Result<void> NativeEditorApp::initialize() {
     lastError_ = persistedSettings.error().message;
   }
 
-  if (config_.designShell) {
-    if (config_.designPreferences)
-      shell_.activate(native_ui::design::locateDesignAssets(), *config_.designPreferences);
-    else
-      shell_.activate();
-  }
+  if (config_.designPreferences)
+    shell_.activate(native_ui::design::locateDesignAssets(), *config_.designPreferences);
+  else if (config_.persistDesignPreferences)
+    shell_.activate();
+  else
+    shell_.activate(native_ui::design::locateDesignAssets(), native_ui::design::DesignPreferences{});
   shell_.setRepaintCallback([this] {
     requestWindowRepaint();
   });
+  // The native window keeps its surface between frames, so a frame that changes only the dynamic
+  // layer updates just its damaged rectangles.
+  shell_.setRetainedSurface(true);
 
   native_ui::EditorHostCallbacks callbacks{
       .requestRepaint = [this] {
@@ -1768,10 +1771,17 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (state.characterName.empty()) state.characterName = character_.displayName();
   if (state.characterStyle.empty()) state.characterStyle = character_.styleName();
   authoring_->controller().rebuildAccessibilityTree();
-  if (!shellFrame || !shell_.paint(canvas, authoring_->controller(), state, tick))
-    painter_.paint(canvas, authoring_->controller().pianoRoll(), state);
+  shellPresentedFrame_ = shellFrame && shell_.paint(canvas, authoring_->controller(), state, tick);
+  // The shell is the only editor surface; without the vector backend the window says so.
+  if (!shellPresentedFrame_) native_ui::paintEditorUnavailable(canvas);
   else
     shell_.rebuildSemantics(authoring_->controller(), state);
+}
+
+native_ui::FrameDamage NativeEditorApp::paintFrame(native_ui::RasterCanvas& canvas) noexcept {
+  shellPresentedFrame_ = false;
+  paint(canvas);
+  return shellPresentedFrame_ ? shell_.lastFrameDamage() : native_ui::FrameDamage::everything();
 }
 
 void NativeEditorApp::resized(double logicalWidth, double logicalHeight,
@@ -1820,6 +1830,9 @@ void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
       return;
     }
   }
+  // Without the vector backend the window shows a notice, not an editor: no key edits a score
+  // nobody can see. Application commands above still run.
+  if (!shell_.available()) return;
   record(authoring_->controller().keyDown(event));
 }
 void NativeEditorApp::textComposition(

@@ -9,7 +9,10 @@
 #include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
+#include "seam/native_ui/frame_damage.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
+#include "seam/native_ui/paint/display_list.hpp"
+#include "seam/native_ui/paint/layer_cache.hpp"
 #include "seam/native_ui/region_envelope.hpp"
 
 #include <array>
@@ -17,6 +20,8 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <unordered_map>
 
 namespace seam::native_ui::design {
 
@@ -35,7 +40,6 @@ struct DesignPreferences final {
   // it is the same setting the host already publishes to the editor through
   // platform::AccessibilityPreferences, so both surfaces agree.
   bool reduceMotion{false};
-  bool shellEnabled{true};
 };
 
 [[nodiscard]] DesignPreferences loadDesignPreferences();
@@ -115,20 +119,19 @@ struct StatusMessage final {
 };
 [[nodiscard]] StatusMessage singStatusMessage(const EditorSceneState& state);
 
-// The SING workspace shell for the EMO and SCENE designs. It paints around the existing editing
-// engine: pointer events inside the musical grid are translated into the legacy controller's
-// coordinates, so note creation, selection, lyric entry and vibrato editing keep their existing
-// behavior and undo history. Every surface the classic painter drew over the editor is re-homed
-// here as a panel, popover or sheet by shell_overlays.hpp (section 7.6 of the redesign plan): the
-// sample microscope, phoneme review, time map, recovery/support, overlap detail, diagnostics, the
-// replacement review, the audio settings, the voice browser and the classic-only text fields
-// (tempo/meter, phone hint, find/replace, review draft fields, renames). The classic painter draws
-// the editor only while the shell is disabled (Command-Shift-Space) or unavailable.
+// The SING workspace shell for the EMO and SCENE designs, and the one editor surface on platforms
+// with the vector backend. It paints around the existing editing engine: pointer events inside the
+// musical grid are translated into the controller's own coordinates, so note creation, selection,
+// lyric entry and vibrato editing keep their behavior and undo history. Every modal surface the
+// controller opens is presented here as a panel, popover or sheet by shell_overlays.hpp (section 7.6
+// of the redesign plan): the sample microscope, phoneme review, time map, recovery/support, overlap
+// detail, diagnostics, the replacement review, the audio settings, the voice browser and the text
+// fields (tempo/meter, phone hint, find/replace, review draft fields, renames).
 class SingShell final {
 public:
-  // A shell starts inactive: it paints nothing and forwards all input, and it reads neither the
-  // saved preferences nor the design assets. Production hosts call activate(); library tests keep
-  // the classic editor and never observe the user's saved design mode.
+  // A shell starts inactive: it paints nothing, and it reads neither the saved preferences nor the
+  // design assets. Every host activates it; the no-argument form reads the saved preferences, and
+  // tests pass an explicit preference set so they never observe the user's saved design mode.
   SingShell() = default;
   void activate(const std::filesystem::path& assetRoot = locateDesignAssets());
   // Test and screenshot entry point: an explicit preference set, no persistence.
@@ -136,7 +139,9 @@ public:
 
   [[nodiscard]] bool available() const noexcept { return paint::vectorBackendAvailable(); }
   [[nodiscard]] bool active() const noexcept { return active_; }
-  [[nodiscard]] bool enabled() const noexcept { return active_ && preferences_.shellEnabled; }
+  // True when an activated shell can present: it is the editor surface whenever the platform has
+  // the vector backend. There is no other editor surface to switch to.
+  [[nodiscard]] bool enabled() const noexcept { return active_ && available(); }
   [[nodiscard]] DesignMode mode() const noexcept { return preferences_.mode; }
   [[nodiscard]] bool presentedLastFrame() const noexcept { return presented_; }
   [[nodiscard]] const SingLayout& layout() const noexcept { return layout_; }
@@ -178,11 +183,7 @@ public:
     return errorToast_.has_value() ? std::optional<ui::Rect>{errorToast_->bounds} : std::nullopt;
   }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
-  // False for every state: kept so a host or test can still ask whether a state needs the classic
-  // painter while the shell is enabled.
-  [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
-  // The overlays this shell re-homes. A surface listed here is painted inside the shell, so it is
-  // not one of the states that still hands the frame to the classic painter.
+  // The overlays this shell re-homes: each is painted inside the shell as a sheet or inline field.
   [[nodiscard]] static bool rehomedSurface(OverlayKind kind) noexcept;
 
   void setMode(DesignMode mode, bool persist = true);
@@ -197,10 +198,6 @@ public:
   // Turns motion down. Like the look and the contrast it is an application preference, so the shell
   // keeps painting the same state with the animation dropped.
   void setReduceMotion(bool reduceMotion, bool persist = true);
-  void setEnabled(bool enabled, bool persist = true);
-  // Enables or disables the shell while a controller is attached: gestures are cancelled and the
-  // controller's input geometry is returned to the classic editor before the switch.
-  void setEnabled(NativeEditorController& controller, bool enabled);
   void setRepaintCallback(std::function<void()> callback) { repaint_ = std::move(callback); }
   void setHostActions(ShellHostActions actions) {
     hostActions_ = std::move(actions);
@@ -227,6 +224,20 @@ public:
     uiClock_ = std::move(clock);
   }
   [[nodiscard]] Workspace workspace() const noexcept { return workspace_; }
+  // The Phonemes lane tab: the lane band hosts the phoneme, unit and seam lanes, top to bottom, in
+  // place of an expression curve. Their gestures are the controller's own (boundary drag, unit
+  // click with S/R and double-click for the microscope, seam click and the seam keys), forwarded
+  // with the band geometry the shell paints. A collapsed band keeps a label strip and takes no
+  // gesture; its collapsed state is the project's own lane presentation.
+  struct TechnicalBands final {
+    std::array<ui::Rect, 3U> band{};
+    std::array<ui::Rect, 3U> toggle{};
+    std::array<bool, 3U> collapsed{};
+  };
+  [[nodiscard]] bool technicalLanesShown() const noexcept { return technicalLane_; }
+  [[nodiscard]] TechnicalBands technicalBands() const noexcept;
+  core::Result<void> showTechnicalLanes(NativeEditorController& controller);
+  core::Result<void> toggleTechnicalBand(NativeEditorController& controller, std::size_t band);
   // The VOICE, TUNE or MIX body while it is shown, else null.
   [[nodiscard]] ShellWorkspace* bodyWorkspace() const noexcept;
   // Undo and redo belong to the Voice Designer while VOICE is shown: the editor's history is not
@@ -241,6 +252,9 @@ public:
   void setWorkspace(NativeEditorController& controller, Workspace workspace);
   // The Export workspace's run button, in shell coordinates (empty unless that workspace shows).
   [[nodiscard]] ui::Rect exportRunButton() const noexcept;
+  // The final bounce's timing choice beside the run button (empty unless EXPORT shows). It is
+  // painted, hit and published only for a host that offers the choice (a plug-in).
+  [[nodiscard]] ui::Rect exportBounceButton() const noexcept;
   // The export-progress segment in the status bar: the strip the classic painter drew full width,
   // now a segment that names the attempt and carries the cancel action. Empty when no export has
   // ever reported files.
@@ -259,6 +273,28 @@ public:
   // the caller paints the legacy editor.
   bool paint(RasterCanvas& canvas, NativeEditorController& controller,
              const EditorSceneState& state, time::Tick playhead);
+
+  // The frame pipeline of redesign plan section 10. A frame is recorded into four layers
+  // (background, grid, content, dynamic); the first three are cached and rasterized again only when
+  // what they draw changed, and the dynamic one (playhead, meters, the singer's ring and avatar,
+  // hover, focus, gestures, menus and overlays) is drawn over them on every frame. The canvas always
+  // receives the complete frame.
+  //
+  // What the last painted frame changed, in logical points, so a presenter can invalidate only
+  // that. Everything, for a frame composed from nothing or one where a cached layer changed.
+  [[nodiscard]] const FrameDamage& lastFrameDamage() const noexcept { return lastDamage_; }
+  // Which layers the last frame rasterized, background to dynamic.
+  [[nodiscard]] const std::array<bool, paint::kLayerCount>& lastFrameLayers() const noexcept {
+    return lastLayers_;
+  }
+  [[nodiscard]] std::size_t layerCacheBytes() const noexcept { return layers_.bytes(); }
+  // Forgets every cached layer, so the next frame is composed from nothing.
+  void invalidateLayers() noexcept;
+  // A host whose presenter keeps the painted surface between frames (the AppKit window and the
+  // CLAP view do) says so here. A frame that changes only dynamic items then restores and redraws
+  // just the damaged rectangles of that surface instead of writing all of it. The shell still
+  // recognises a different surface and writes it whole.
+  void setRetainedSurface(bool retained) noexcept { retainedSurface_ = retained; }
   // Abandons shell and controller gestures without committing them (capture loss, hide).
   void cancelGestures(NativeEditorController& controller);
 
@@ -268,8 +304,8 @@ public:
   // Returns true when the shell consumed the scroll.
   bool scroll(NativeEditorController& controller, double deltaX, double deltaY, ui::Point anchor,
               InputModifiers modifiers);
-  // Returns true when the shell consumed the key: Command-Shift-Space toggles the shell, and Escape
-  // cancels a knob drag or a forwarded pointer gesture without committing it.
+  // Returns true when the shell consumed the key: Escape cancels a knob drag or a forwarded pointer
+  // gesture without committing it, and an open overlay owns the keyboard.
   bool handleShellKey(NativeEditorController& controller, const KeyEvent& event);
   // Lyric requests come from note bounds in the shell's viewport and are moved into shell space.
   // Every other request (tempo/meter, hint, find/replace and draft fields, renames) is placed on
@@ -328,6 +364,20 @@ private:
     if (repaint_) repaint_();
   }
   const ModeAssets& assets() const noexcept;
+  // The overlay presented for a state the caller already derived: the frame's own state while
+  // painting and building semantics, so a frame never derives the controller's state twice.
+  [[nodiscard]] const ShellOverlay* activeOverlay(const NativeEditorController& controller,
+                                                  const EditorSceneState& state) const;
+  // Character artwork that reaches the frame through the raster front (the package's PPM portraits
+  // and mouth sprites). While a frame is recorded it is deferred into the recording with a hash of
+  // everything it draws and the bounds it may touch; on a canvas that draws directly it runs now.
+  void characterArt(paint::Canvas2D& c, ui::Rect bounds, std::uint64_t hash,
+                    std::function<void(CharacterCanvas)> draw) const;
+  // Text widths for the recording canvas, from the vector backend, remembered across frames.
+  [[nodiscard]] double measureText(std::string_view utf8, const paint::TextStyle& style) const;
+  // Everything the background layer depends on.
+  [[nodiscard]] std::uint64_t backgroundKey(const DesignTokens& tokens, const PixelSurface& surface,
+                                            double scale) const noexcept;
   // The protagonist's artwork for a state: the package's decoded portrait when the package has one,
   // else nothing (the caller then draws the look's portrait). Never a mixture of the two.
   [[nodiscard]] const PixelSurface* characterPortrait(CharacterState state) const;
@@ -349,7 +399,6 @@ private:
   void notePointer(ui::Point point);
   // Requests the next frame only while the character is still moving or the Stage is still fading.
   void scheduleAnimationRepaint();
-  void ensureBackground(const RasterCanvas& canvas, const DesignTokens& tokens);
   void paintBackground(paint::Canvas2D& c, const DesignTokens& t) const;
   void paintHeader(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state,
                    time::Tick playhead) const;
@@ -358,6 +407,10 @@ private:
                    const EditorSceneState& state) const;
   void paintLane(paint::Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
                  const EditorSceneState& state) const;
+  void paintTechnicalLanes(paint::Canvas2D& c, const DesignTokens& t,
+                           const ui::PianoRollModel& model, const EditorSceneState& state) const;
+  // Reads the project's lane presentation, which decides which technical bands are collapsed.
+  void syncTechnicalBands(const NativeEditorController& controller);
   void paintRack(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintKnobs(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   void paintInspector(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
@@ -441,6 +494,8 @@ private:
   bool presented_{false};
   ForwardArea forwarding_{ForwardArea::None};
   bool laneEditable_{false};
+  bool technicalLane_{false};
+  std::array<bool, 3U> technicalCollapsed_{};
   bool lyricInputActive_{false};
   // The anchor of an open non-lyric field the shell moved into shell space, and the rectangle it
   // was placed at; a layout that moves that rectangle cancels the composition (as for lyrics).
@@ -543,11 +598,17 @@ private:
   // What this frame drew inside the notes (or why it drew nothing); accessibility reports it.
   RegionWaveform waveform_;
 
-  PixelSurface background_;
-  double backgroundScale_{0.0};
-  DesignMode backgroundMode_{DesignMode::Emo};
-  Contrast backgroundContrast_{Contrast::Standard};
-  bool backgroundValid_{false};
+  // The frame pipeline: the cached layers, what the last frame changed and rasterized, and the
+  // generation of the artwork every recorded image and portrait belongs to (a reload changes it, so
+  // no cached layer outlives the artwork it drew).
+  paint::LayerCache layers_;
+  FrameDamage lastDamage_{FrameDamage::everything()};
+  std::array<bool, paint::kLayerCount> lastLayers_{};
+  mutable std::uint64_t artGeneration_{0U};
+  bool retainedSurface_{false};
+  PixelSurface metricsSurface_;
+  std::unique_ptr<paint::Canvas2D> metrics_;
+  mutable std::unordered_map<std::string, double> measureCache_;
 };
 
 }  // namespace seam::native_ui::design

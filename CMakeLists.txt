@@ -751,7 +751,9 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/design/voice_workspace.cpp
     libs/seam-native-ui/src/design/shell_evidence.cpp
     libs/seam-native-ui/src/design/shell_overlays.cpp
-    libs/seam-native-ui/src/paint/path.cpp)
+    libs/seam-native-ui/src/paint/path.cpp
+    libs/seam-native-ui/src/paint/display_list.cpp
+    libs/seam-native-ui/src/paint/layer_cache.cpp)
   if(APPLE)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm
@@ -1918,6 +1920,15 @@ if(SEAM_BUILD_TESTS)
       COMMAND seam_design_character_surface_tests)
     set_tests_properties(seam_design_character_surface_tests PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(seam_design_frame_pipeline_tests
+      tests/test_main.cpp tests/test_design_frame_pipeline.cpp)
+    target_include_directories(seam_design_frame_pipeline_tests PRIVATE tests)
+    target_link_libraries(seam_design_frame_pipeline_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_frame_pipeline_tests)
+    add_test(NAME seam_design_frame_pipeline_tests COMMAND seam_design_frame_pipeline_tests)
+    set_tests_properties(seam_design_frame_pipeline_tests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(seam_design_tune_workspace_tests
       tests/test_main.cpp tests/test_design_tune_workspace.cpp)
     target_include_directories(seam_design_tune_workspace_tests PRIVATE tests)
@@ -2182,16 +2193,6 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_character_performance_dock_tests)
   add_test(NAME seam_character_performance_dock_tests
     COMMAND seam_character_performance_dock_tests)
-
-  add_executable(seam_character_dock_layout_tests
-    tests/test_main.cpp
-    tests/test_character_dock_layout.cpp)
-  target_include_directories(seam_character_dock_layout_tests PRIVATE tests)
-  target_link_libraries(seam_character_dock_layout_tests PRIVATE
-    seam_native_ui seam_application seam_domain seam_core)
-  seam_apply_compiler_options(seam_character_dock_layout_tests)
-  add_test(NAME seam_character_dock_layout_tests
-    COMMAND seam_character_dock_layout_tests)
 
   add_executable(seam_character_package_performance_tests
     tests/test_main.cpp

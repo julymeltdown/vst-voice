@@ -60,6 +60,7 @@ What this means in practice:
 | 2 | Windows clean-install / same-version reinstall / uninstall lifecycle | Never executed. Blocked by item 1. |
 | 3 | Windows REAPER and Bitwig host tuples (CLAP and VST3) | Never executed. Needs a Windows host, not just CI. |
 | 4 | Windows x64 native pitch and acoustic acceptance | Not measured. All current measurements are macOS. |
+| 5 | Windows (and Linux) editor surface | Not implemented. The only editor is the SING shell, which draws with the macOS CoreGraphics/CoreText vector backend. The classic raster editor painter was removed, so a build without that backend keeps compiling (source contracts, Win32/X11 windows and accessibility bridges) but its standalone window and CLAP view show only a notice (`paintEditorUnavailable`) that the editor needs the macOS renderer; pointer input does nothing and keys do not edit the score. Resuming needs a vector backend for the platform. |
 
 Previously repaired and verified, so not open work: `windows-2025 VST3 build` compiles the static
 OpenSSL from source with native Perl, links with `NOMINMAX`, and passes both the dependency closure and
@@ -82,17 +83,20 @@ and as a faded stage figure behind the grid. The spec is
 and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/design/ui-fidelity-contract-v1.json).
 
 - Code: `libs/seam-native-ui/{include,src}/…/design` (tokens, layout, shell) and `…/paint`
-  (CoreGraphics/CoreText vector canvas). Hosts opt in; library tests keep the classic editor.
-- Switch looks with the EMO | SCENE control in the header. **Classic** (tool strip) or
-  Command-Shift-Space returns to the previous editor. The choice is stored in the
-  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene|classic`
+  (CoreGraphics/CoreText vector canvas). The shell is the only editor surface in the standalone
+  app and the CLAP plug-in; there is no classic editor to switch to. Tests paint through the shell
+  too (`tests/shell_frame_test_support.hpp`).
+- Switch looks with the EMO | SCENE control in the header. The choice is stored in the
+  `com.project-seam.design` preferences domain. For captures, `SEAM_UI_DESIGN=emo|scene`
   overrides it.
 - Note editing, lyrics, vibrato and the ruler still run through the existing controller, so undo
-  history is unchanged. Voice browser, audio settings, reviews and the microscope still open in
-  the classic surfaces until they are re-homed.
+  history is unchanged. Voice browser, audio settings, reviews, the time map, text fields, the
+  microscope, phoneme review, recovery, diagnostics and export progress are presented by the shell
+  as sheets, inline fields and status segments; the phoneme, unit and seam lanes live under the
+  lane's Phonemes tab.
 - One geometry per frame: `SingShell::prepareFrame` picks the surface and sets the viewport and
-  the controller's hosted input geometry before scene state is derived. Escape, switching to
-  Classic, resizing and hiding the plug-in cancel gestures without committing. Expression curves
+  the controller's hosted input geometry before scene state is derived. Escape, resizing and
+  hiding the plug-in cancel gestures without committing. Expression curves
   are drawn and edited in the shell lane with the same value mapping.
 - Accessibility: while the shell is on screen, the standalone window and the CLAP view publish
   the shell's own tree (`SingShell::accessibilityTree`) in shell geometry. Workspace tabs, the

@@ -5,6 +5,7 @@
 // stale-draft rejection are checked because a surface that can draw an unsupported curve and then
 // silently drop it is worse than no surface at all.
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 
 #include "seam/application/editor_session.hpp"
@@ -15,8 +16,8 @@
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
-#include "seam/native_ui/pixel_surface.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
+#include "seam/native_ui/pixel_surface.hpp"
 #include "seam/text/text_engine.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/rendering/render_pipeline.hpp"
@@ -407,7 +408,7 @@ TEST_CASE("The drawn lane paints the curve, the unit hint and at most one refusa
   if (!engine) return;
   native_ui::PixelSurface surface{1440U, 900U};
   native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-  native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.writePpm(capture));
   std::cout << "captured " << capture << '\n';
 }
@@ -436,7 +437,7 @@ TEST_CASE("The expression lane holds at the minimum window and with long labels"
     native_ui::PixelSurface surface{1024U, 768U};
     native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
     // A real paint at the minimum size, so a layout that would overflow or throw is caught here.
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   }
 
   // The next supported size paints too, and the channel identity survives the transition.
@@ -447,7 +448,7 @@ TEST_CASE("The expression lane holds at the minimum window and with long labels"
   {
     native_ui::PixelSurface surface{1280U, 800U};
     native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   }
 
   // A long project and region name is where a compact band runs out of room first, so it is exercised
@@ -458,7 +459,7 @@ TEST_CASE("The expression lane holds at the minimum window and with long labels"
   {
     native_ui::PixelSurface surface{1024U, 768U};
     native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
     (void)longName;
   }
 
@@ -535,79 +536,53 @@ TEST_CASE("The expression lane reports its channel, unit, value and refusal to a
   CHECK(bankValue.find("refused") != std::string::npos);
 }
 
-// 8.2: Variable-length editor strings (such as expression refusal and unit hints) must be ellipsized
-// and bounded to the lane width, never painting past editorRight into adjacent panels or dock artwork.
+// 8.2: Variable-length editor strings (such as an expression refusal) are fitted to the lane's
+// info slot in the lane's tab row: the long text changes no pixel outside that slot, so it never
+// paints over the channel tabs, the lane plot, the rack or the rest of the shell.
+// The slot is the room between the tabs and the Review button, which only a wide window has: at
+// 1440 points and below it is under 10 points, so the shell shows no refusal text in the lane
+// there (reported as a shell layout gap; the refusal is still published to accessibility).
 TEST_CASE("Long refusal and unit strings are ellipsized and stay bounded to the lane") {
   LaneFixture fixture{false};
   native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
-  controller.resize(1024.0, 768.0);
+  controller.resize(1920.0, 1080.0);
   CHECK(controller.openExpressionLane(ExpressionChannel::Breathiness).hasValue());
-  auto state = controller.sceneState();
-  state.expression.unit = "extremely_long_measurement_unit_that_greatly_exceeds_the_allocated_horizontal_space_in_lane";
-  state.expression.refusal = "The selected singer carrier refuses this channel because the voice model requires an external source-filter excitation that was not bundled with the current release and therefore cannot be rendered";
+  native_ui::design::SingShell shell;
+  shell.activate({}, native_ui::design::DesignPreferences{});
+  if (!shell.prepareFrame(controller, 1920.0, 1080.0)) return;  // no vector backend: no shell
+  const auto baseline = controller.sceneState();
+  auto refused = baseline;
+  refused.expression.unit = "extremely_long_measurement_unit_that_greatly_exceeds_the_allocated_horizontal_space_in_lane";
+  refused.expression.refusal = "The selected singer carrier refuses this channel because the voice model requires an external source-filter excitation that was not bundled with the current release and therefore cannot be rendered";
 
-  auto engine = text::TextEngine::createSystem();
-  CHECK(engine.hasValue());
-  if (!engine) return;
-
-  native_ui::PixelSurface surface{1024U, 768U};
-  surface.clear(native_ui::Color{0, 0, 0, 255});
-  native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-  native_ui::EditorScenePainter painter;
-  painter.paint(canvas, controller.pianoRoll(), state);
-
-  const auto dockWidth = native_ui::resolveEditorDockWidth(state, painter.layout());
-  const auto technical = native_ui::resolveEditorTechnicalLaneHeights(
-      state, painter.layout(), surface.height() - painter.layout().statusHeight);
-  const auto automationTop = technical.pianoBottom + technical.values[0U] + technical.values[1U] + technical.values[2U];
-  const auto automationHeight = technical.values[3U];
-  const auto layout = native_ui::buildEditorFrameLayout({
-      .logicalWidth = 1024.0,
-      .logicalHeight = 768.0,
-      .toolbarHeight = painter.layout().toolbarHeight,
-      .rulerHeight = painter.layout().rulerHeight,
-      .statusHeight = painter.layout().statusHeight,
-      .keyboardWidth = painter.layout().keyboardWidth,
-      .minimumTimelineWidth = painter.layout().minimumTimelineWidth,
-      .dockWidth = dockWidth,
-      .pianoBottom = technical.pianoBottom,
-      .phonemeHeight = technical.values[0U],
-      .unitHeight = technical.values[1U],
-      .seamHeight = technical.values[2U],
-      .pitchHeight = technical.values[3U],
-      .dockVisible = dockWidth > 0.0,
-  });
-  const auto editorRight = static_cast<std::size_t>(layout.editorRight);
-  CHECK(editorRight < surface.width());
-
-  const auto isErrorTinted = [](std::uint32_t p) {
-    const auto r = (p >> 16U) & 0xFFU;
-    const auto g = (p >> 8U) & 0xFFU;
-    const auto b = p & 0xFFU;
-    // runtimeOverlayError is {205, 126, 126}, so red is dominant and green/blue are roughly equal.
-    return r > 60U && r > g + 25U && std::abs(static_cast<int>(g) - static_cast<int>(b)) <= 12;
+  const auto paint = [&](const native_ui::EditorSceneState& state) {
+    native_ui::PixelSurface surface{1920U, 1080U};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    CHECK(shell.paint(canvas, controller, state, controller.playheadTick()));
+    return surface;
   };
+  const auto plain = paint(baseline);
+  const auto withRefusal = paint(refused);
 
-  bool renderedInLane = false;
-  bool leakedPastEditorRight = false;
-  const auto laneYStart = static_cast<std::size_t>(std::max(0.0, automationTop));
-  const auto laneYEnd = static_cast<std::size_t>(std::min(static_cast<double>(surface.height()), automationTop + automationHeight));
-  for (std::size_t y = laneYStart; y < laneYEnd; ++y) {
-    for (std::size_t x = 0U; x < editorRight; ++x) {
-      if (isErrorTinted(surface.pixels()[y * surface.width() + x])) {
-        renderedInLane = true;
-      }
-    }
-    for (std::size_t x = editorRight; x < surface.width(); ++x) {
-      const auto p = surface.pixels()[y * surface.width() + x];
-      if (isErrorTinted(p)) {
-        leakedPastEditorRight = true;
-        break;
-      }
+  // The info slot sits after the eight channel tabs, as the shell lays its tab row out.
+  const auto& l = shell.layout();
+  const auto tabWidth = native_ui::design::singLaneTabWidth(l);
+  const auto slotLeft = l.laneTabs.x + 8.0 * (tabWidth + 4.0);
+  const auto slotRight = l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x : l.laneTabs.right();
+  bool changed = false;
+  bool leaked = false;
+  for (std::uint32_t y = 0U; y < plain.height(); ++y) {
+    for (std::uint32_t x = 0U; x < plain.width(); ++x) {
+      const auto index = static_cast<std::size_t>(y) * plain.width() + x;
+      if (plain.pixels()[index] == withRefusal.pixels()[index]) continue;
+      changed = true;
+      const auto inSlot = x + 1.0 >= slotLeft && x <= slotRight && y + 1.0 >= l.laneTabs.y &&
+                          y <= l.laneTabs.bottom();
+      if (!inSlot) leaked = true;
     }
   }
-  CHECK(renderedInLane);
-  CHECK(!leakedPastEditorRight);
+  CHECK(changed);
+  CHECK(!leaked);
 }
 
 

@@ -498,17 +498,7 @@ TEST_CASE("native export progress exposes an accessible cancellation action") {
   CHECK(controller.dispatchAccessibility(
       "export.cancel", seam::native_ui::SemanticAction::Activate));
   CHECK(cancelled);
-
-  cancelled = false;
-  const seam::native_ui::EditorSceneLayout layout;
-  const auto cancelBounds = layout.exportCancelBounds(1280.0, 720.0);
-  CHECK(cancelBounds.width > 0.0);
-  CHECK(controller.pointerDown(seam::native_ui::PointerEvent{
-      .position = seam::ui::Point{cancelBounds.x + cancelBounds.width * 0.5,
-                                  cancelBounds.y + cancelBounds.height * 0.5},
-      .button = seam::native_ui::PointerButton::Left,
-  }));
-  CHECK(cancelled);
+  // A pointer reaches the same action through the SING shell's export status segment.
 }
 
 TEST_CASE("native accessibility accepts focus on every semantic node") {

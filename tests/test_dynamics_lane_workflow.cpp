@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -68,7 +69,7 @@ TEST_CASE("native dynamics navigation clips curves and keeps score and main time
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_ZOOM_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Right}));
   CHECK(controller.sceneState().replacementReview.dynamicsPlot->startTick == 2880);
@@ -168,9 +169,10 @@ TEST_CASE("native dynamics inspector edits point drafts and publishes the region
   controller.resize(480.0, 320.0);
   CHECK(controller.sceneState().replacementReview.dockedInspector); CHECK(!controller.sceneState().replacementReview.enabled[3]);
   CHECK(controller.openReplacementRow(0U)); CHECK(controller.sceneState().replacementReview.rows.size() == 2U);
-  const native_ui::EditorSceneLayout layout;
-  const auto gain = layout.reviewRowBounds(480.0, 320.0, 1U, true);
-  CHECK(controller.pointerDown({.position = {gain.x + 5.0, gain.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  // The shell's review sheet activates a row through the row's own accessibility action.
+  controller.rebuildAccessibilityTree();
+  CHECK(controller.dispatchAccessibility(controller.replacementReviewSemanticPrefix() + "row.1",
+                                         native_ui::SemanticAction::Activate));
   CHECK(initial == U"0.5"); CHECK(controller.sceneState().boundedInputLabel.starts_with("DYNAMICS:"));
   CHECK(!controller.commitTextComposition(U"nan")); CHECK(!controller.sceneState().replacementReview.enabled[3]);
   CHECK(controller.openReplacementRow(1U)); CHECK(controller.commitTextComposition(U"0.25"));
@@ -197,7 +199,7 @@ TEST_CASE("native dynamics inspector edits point drafts and publishes the region
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_INSPECTOR_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   auto expected = source;
   CHECK(expected.findRegion(fixture.regionId)->dynamicsAutomation.replacePoints({{time::Tick{0}, 0.25F}, {time::Tick{960}, 1.0F}}));
@@ -215,8 +217,7 @@ TEST_CASE("native dynamics point fields reject replaced documents and refresh sa
   controller.resize(960.0, 640.0); controller.rebuildAccessibilityTree();
   CHECK(controller.dispatchAccessibility("inspector.dynamics", native_ui::SemanticAction::SetFocus));
   const auto* entry = controller.accessibilityTree().focusedNode(); CHECK(entry); CHECK(entry->id == "inspector.dynamics");
-  const auto entryBounds = entry->bounds;
-  CHECK(controller.pointerDown({.position = {entryBounds.x + 5.0, entryBounds.y + 5.0}, .button = native_ui::PointerButton::Left}));
+  CHECK(controller.dispatchAccessibility("inspector.dynamics", native_ui::SemanticAction::Activate));
   CHECK(controller.replacementReviewOpen());
   CHECK(controller.replacementReviewAction(2U)); CHECK(controller.openReplacementRow(0U));
   const auto source = fixture.session.project(); CHECK(fixture.session.replaceProject(source));
@@ -391,7 +392,7 @@ TEST_CASE("dynamics inspector explains generated overrides and preserves manual 
   if (const auto* capture = std::getenv("SEAM_DYNAMICS_INFLUENCE_CAPTURE")) {
     auto engine = text::TextEngine::createSystem(); CHECK(engine);
     native_ui::PixelSurface surface{480U,320U}; native_ui::RasterCanvas canvas{surface,1.0,engine.value().get()};
-    native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState()); CHECK(surface.writePpm(capture));
+    static_cast<void>(seam::test::paintEditorFrame(canvas, controller)); CHECK(surface.writePpm(capture));
   }
   CHECK(controller.openReplacementRow(0U)); CHECK(controller.openReplacementRow(1U));
   CHECK(controller.commitTextComposition(U"0.25")); CHECK(controller.replacementReviewAction(3U));

@@ -28,228 +28,21 @@ void EditorRuntime::requestRenderAfterEdit() {
   requestRepaint();
 }
 
+// Pointer input reaches the editor only through the SING shell, the one surface on screen; with
+// nothing presented (no vector backend) there is nothing to press.
 void EditorRuntime::pointerDown(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (routeShellPointerLocked(ShellPointerPhase::Down, event)) return;
-  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
-    static_cast<void>(controller_->pointerDown(event)); return;
-  }
-  rebuildTechnicalModelsLocked();
-
-  const auto layout = painter_.layout();
-  const auto* technicalRegion = session_.project().findRegion(regionId_);
-  if (technicalRegion == nullptr) return;
-  const auto geometry = adaptiveTechnicalLaneGeometry(
-      layout, session_.project(), *technicalRegion, phonemesLocked().tokens.size(), logicalHeight_);
-  const auto pianoBottom = geometry.phonemeTop;
-  const auto unitTop = geometry.unitTop;
-  const auto seamTop = geometry.seamTop;
-  const auto automationTop = geometry.pitchTop;
-
-  const auto phase12BOverlay =
-      layout.phase12BOverlayBoundsForWidth(logicalWidth_);
-  const auto phase12BScale =
-      layout.phase12BOverlayScaleForWidth(logicalWidth_);
-  const auto phase12BLeft = phase12BOverlay.x;
-  const auto phase12BTop = phase12BOverlay.y;
-  const auto phase12BRight = phase12BOverlay.right();
-  const auto phase12BBottom = phase12BOverlay.bottom();
-  if (event.button == native_ui::PointerButton::Left &&
-      event.position.y >= phase12BTop && event.position.y <= phase12BBottom &&
-      event.position.x >= phase12BLeft && event.position.x <= phase12BRight) {
-    const auto trackRight = phase12BLeft +
-                            layout.phase12BTrackControlWidth * phase12BScale;
-    const auto regionRight = trackRight +
-                             layout.phase12BRegionControlWidth * phase12BScale;
-    const auto muteRight = regionRight +
-                           layout.phase12BMuteControlWidth * phase12BScale;
-    const auto soloRight = muteRight +
-                           layout.phase12BSoloControlWidth * phase12BScale;
-    const auto tracks = vocalTrackIds();
-    if (event.position.x < trackRight && !tracks.empty()) {
-      const auto it = std::find(tracks.begin(), tracks.end(), trackId_);
-      const auto next = it == tracks.end() || std::next(it) == tracks.end()
-                            ? tracks.front()
-                            : *std::next(it);
-      static_cast<void>(selectTrack(next));
-    } else if (event.position.x < regionRight) {
-      const auto regions = regionIds(trackId_);
-      if (!regions.empty()) {
-        const auto it = std::find(regions.begin(), regions.end(), regionId_);
-        const auto next = it == regions.end() || std::next(it) == regions.end()
-                              ? regions.front()
-                              : *std::next(it);
-        static_cast<void>(selectRegion(next));
-      }
-    } else if (const auto* track = session_.project().findVocalTrack(trackId_)) {
-      if (event.position.x < muteRight) {
-        static_cast<void>(setTrackMix(trackId_, track->gainDb, track->pan,
-                                      !track->muted, track->solo));
-      } else if (event.position.x < soloRight) {
-        static_cast<void>(setTrackMix(trackId_, track->gainDb, track->pan,
-                                      track->muted, !track->solo));
-      } else {
-        const auto current = session_.project().routing().deviceOutputChannels;
-        const auto next = current == 1U ? 2U : current == 2U ? 4U
-                                        : current == 4U ? 6U
-                                        : current == 6U ? 8U : 1U;
-        static_cast<void>(configureOutputChannels(static_cast<std::uint8_t>(next)));
-      }
-    }
-    return;
-  }
-
-  if (event.position.y >= pianoBottom && event.position.y < unitTop) {
-    if (const auto* visual = phonemeVisualAt(event.position)) {
-      const auto leftDistance = std::abs(event.position.x - visual->bounds.x);
-      const auto rightDistance = std::abs(event.position.x - visual->bounds.right());
-      if (event.button == native_ui::PointerButton::Left &&
-          std::min(leftDistance, rightDistance) <= 7.0) {
-        draggingPhonemeKey_ = visual->key;
-        draggingPhonemeStart_ = leftDistance <= rightDistance;
-        selectedUnitKey_ = visual->key;
-        return;
-      }
-    }
-  }
-
-  if (event.position.y >= unitTop && event.position.y < seamTop) {
-    if (const auto* visual = unitVisualAt(event.position)) {
-      selectedUnitKey_ = visual->startKey;
-      if (event.clickCount >= 2) {
-        static_cast<void>(openSampleMicroscope(visual->startKey));
-      } else if (event.modifiers.shift) {
-        static_cast<void>(cycleUnitVariant(visual->startKey));
-      } else if (event.modifiers.alt) {
-        static_cast<void>(cycleUnitRenderer(visual->startKey));
-      }
-      requestRepaint();
-      return;
-    }
-  }
-
-  if (event.position.y >= automationTop &&
-      event.position.y < automationTop + geometry.pitchHeight) {
-    const auto existing = pitchPointAt(event.position);
-    if (event.button == native_ui::PointerButton::Right && existing.has_value()) {
-      static_cast<void>(removePitchPoint(*existing));
-      return;
-    }
-    if (event.modifiers.alt && existing.has_value()) {
-      static_cast<void>(cyclePitchInterpolation(*existing));
-      return;
-    }
-    if (event.button == native_ui::PointerButton::Left && existing.has_value()) {
-      draggingPitchTick_ = existing;
-      return;
-    }
-    if (event.button == native_ui::PointerButton::Left && event.clickCount >= 2) {
-      const auto* region = session_.project().findRegion(regionId_);
-      if (region == nullptr) return;
-      auto tick = controller_->pianoRoll().timeline().pixelToTick(
-          event.position.x - layout.keyboardWidth);
-      tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-      const auto centerY = automationTop +
-                           geometry.pitchHeight * layout.automationCenterFraction;
-      const auto cents = static_cast<float>(std::clamp(
-          (centerY - event.position.y) /
-              (geometry.pitchHeight * layout.pitchAutomationVerticalScale) *
-                  layout.pitchAutomationCentsRange,
-          -1200.0, 1200.0));
-      static_cast<void>(upsertPitchPoint(domain::PitchAutomationPoint{
-          .tick = tick,
-          .cents = cents,
-          .interpolation = domain::CurveInterpolation::Linear}));
-      return;
-    }
-  }
-
-  const auto seamMeter =
-      layout.runtimeOverlayMeterBoundsForWidth(logicalWidth_);
-  const auto seamLeft = seamMeter.x;
-  const auto seamMeterTop = seamMeter.y;
-  const auto seamRight = seamMeter.right();
-  const auto seamMeterBottom = seamMeter.bottom();
-  if (event.button == native_ui::PointerButton::Left &&
-      event.position.y >= seamMeterTop && event.position.y <= seamMeterBottom &&
-      event.position.x >= seamLeft && event.position.x <= seamRight) {
-    const auto value = static_cast<float>(
-        std::clamp((event.position.x - seamLeft) /
-                       std::max(1.0, seamMeter.width),
-                   0.0, 1.0));
-    static_cast<void>(setPrimarySeamAmount(value));
-    return;
-  }
-  static_cast<void>(controller_->pointerDown(event));
+  static_cast<void>(routeShellPointerLocked(ShellPointerPhase::Down, event));
 }
 
 void EditorRuntime::pointerMove(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (routeShellPointerLocked(ShellPointerPhase::Move, event)) return;
-  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
-    static_cast<void>(controller_->pointerMove(event)); return;
-  }
-  if (draggingPhonemeKey_.has_value() || draggingPitchTick_.has_value()) {
-    requestRepaint();
-    return;
-  }
-  static_cast<void>(controller_->pointerMove(event));
+  static_cast<void>(routeShellPointerLocked(ShellPointerPhase::Move, event));
 }
 
 void EditorRuntime::pointerUp(const native_ui::PointerEvent& event) noexcept {
   std::lock_guard lock(mutex_);
-  if (routeShellPointerLocked(ShellPointerPhase::Up, event)) return;
-  if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
-    draggingPhonemeKey_.reset(); draggingPitchTick_.reset();
-    static_cast<void>(controller_->pointerUp(event)); return;
-  }
-  if (draggingPhonemeKey_.has_value()) {
-    const auto key = *draggingPhonemeKey_;
-    draggingPhonemeKey_.reset();
-    static_cast<void>(movePhonemeBoundary(
-        key, draggingPhonemeStart_, microsecondOffsetAt(key.noteId,
-                                                        event.position.x)));
-    return;
-  }
-  if (draggingPitchTick_.has_value()) {
-    const auto from = *draggingPitchTick_;
-    draggingPitchTick_.reset();
-    const auto layout = painter_.layout();
-    const auto* technicalRegion = session_.project().findRegion(regionId_);
-    if (technicalRegion == nullptr) return;
-    const auto geometry = adaptiveTechnicalLaneGeometry(
-        layout, session_.project(), *technicalRegion,
-        phonemesLocked().tokens.size(), logicalHeight_);
-    const auto automationTop = geometry.pitchTop;
-    const auto centerY = automationTop +
-                         geometry.pitchHeight * layout.automationCenterFraction;
-    const auto* region = session_.project().findRegion(regionId_);
-    if (region != nullptr) {
-      auto tick = controller_->pianoRoll().timeline().pixelToTick(
-          event.position.x - layout.keyboardWidth);
-      tick = std::clamp(tick, time::Tick{0}, region->durationTick);
-      const auto cents = static_cast<float>(std::clamp(
-          (centerY - event.position.y) /
-              (geometry.pitchHeight * layout.pitchAutomationVerticalScale) *
-                  layout.pitchAutomationCentsRange,
-          -1200.0, 1200.0));
-      const auto old = std::find_if(
-          region->pitchAutomation.points().begin(),
-          region->pitchAutomation.points().end(),
-          [from](const auto& point) { return point.tick == from; });
-      const auto interpolation = old == region->pitchAutomation.points().end()
-                                     ? domain::CurveInterpolation::Linear
-                                     : old->interpolation;
-      static_cast<void>(movePitchPoint(
-          from, domain::PitchAutomationPoint{
-                    .tick = tick, .cents = cents,
-                    .interpolation = interpolation}));
-    }
-    return;
-  }
-  const auto before = session_.revision();
-  static_cast<void>(controller_->pointerUp(event));
-  if (session_.revision() != before) requestRenderAfterEdit();
+  static_cast<void>(routeShellPointerLocked(ShellPointerPhase::Up, event));
 }
 
 void EditorRuntime::scroll(double deltaX, double deltaY, ui::Point anchor,
@@ -289,14 +82,10 @@ void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
     static_cast<void>(controller_->keyDown(event)); return;
   }
-  if (selectedUnitKey_.has_value() && event.key == native_ui::NativeKey::S) {
-    static_cast<void>(cycleUnitVariant(*selectedUnitKey_));
-    return;
-  }
-  if (selectedUnitKey_.has_value() && event.key == native_ui::NativeKey::R) {
-    static_cast<void>(cycleUnitRenderer(*selectedUnitKey_));
-    return;
-  }
+  // Without the vector backend the view shows a notice, not an editor: no key edits a score nobody
+  // can see. A unit or seam the shell's Phonemes lane targeted takes S, R and the seam keys in the
+  // controller itself.
+  if (!shell_.available()) return;
   const auto before = session_.revision();
   static_cast<void>(controller_->keyDown(event));
   if (session_.revision() != before) requestRenderAfterEdit();
@@ -347,7 +136,6 @@ core::Result<void> EditorRuntime::selectUnitVariant(
   auto result = authoring_->technicalEdits().selectUnitVariant(
       key, std::move(unitId), renderer);
   if (result) {
-    selectedUnitKey_ = key;
     dirty_ = authoring_->document().dirty();
     controller_->setDirty(dirty_);
     requestRepaint();
@@ -360,7 +148,6 @@ core::Result<void> EditorRuntime::cycleUnitVariant(
   std::lock_guard lock(mutex_);
   auto result = authoring_->technicalEdits().cycleUnitVariant(key);
   if (result) {
-    selectedUnitKey_ = key;
     dirty_ = authoring_->document().dirty();
     controller_->setDirty(dirty_);
     requestRepaint();
@@ -373,7 +160,6 @@ core::Result<void> EditorRuntime::cycleUnitRenderer(
   std::lock_guard lock(mutex_);
   auto result = authoring_->technicalEdits().cycleUnitRenderer(key);
   if (result) {
-    selectedUnitKey_ = key;
     dirty_ = authoring_->document().dirty();
     controller_->setDirty(dirty_);
     requestRepaint();
@@ -462,10 +248,7 @@ core::Result<native_ui::SampleMicroscopeData> EditorRuntime::loadSampleMicroscop
 
 core::Result<void> EditorRuntime::openSampleMicroscope(domain::PhonemeKey key) {
   std::lock_guard lock(mutex_);
-  if (draggingPhonemeKey_ || draggingPitchTick_)
-    return core::failure(core::ErrorCode::Conflict, "Finish the active gesture before sample inspection");
   const auto opened = controller_->openSampleMicroscope(key);
-  if (opened) selectedUnitKey_ = key;
   return opened;
 }
 

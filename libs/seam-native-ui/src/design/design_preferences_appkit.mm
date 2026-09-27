@@ -23,8 +23,6 @@ DesignPreferences loadDesignPreferences() {
     if (defaults == nil) return preferences;
     if (NSString* mode = [defaults stringForKey:@"mode"]; mode != nil)
       preferences.mode = parseDesignMode(mode.UTF8String, preferences.mode);
-    if ([defaults objectForKey:@"shellEnabled"] != nil)
-      preferences.shellEnabled = [defaults boolForKey:@"shellEnabled"];
     // Contrast, like motion, has two sources: an explicit choice made in the app, and otherwise the
     // system's Increase Contrast. The older boolean key only ever recorded an explicit High.
     NSString* contrast = [defaults stringForKey:@"contrast"];
@@ -59,7 +57,6 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
                                                  length:mode.size()
                                                encoding:NSUTF8StringEncoding]
                  forKey:@"mode"];
-    [defaults setBool:preferences.shellEnabled forKey:@"shellEnabled"];
     // Following the system stores nothing, so a later change to Increase Contrast still applies.
     [defaults removeObjectForKey:@"highContrast"];
     if (preferences.contrastFollowsSystem)

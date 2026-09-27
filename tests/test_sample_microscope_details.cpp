@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "shell_frame_test_support.hpp"
 #include "test_support.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -79,7 +80,7 @@ void capture(native_ui::NativeEditorController& controller, std::uint32_t width,
   auto engine = text::TextEngine::createSystem(); CHECK(engine);
   native_ui::PixelSurface surface{width, height};
   native_ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
-  native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
+  static_cast<void>(seam::test::paintEditorFrame(canvas, controller));
   CHECK(surface.writePpm(directory / name));
 }
 }  // namespace
@@ -102,14 +103,8 @@ TEST_CASE("sample microscope plots and paged details fit compact and desktop win
     contained(panel, layout.microscopeCloseBounds(size.first, size.second));
     contained(panel, layout.microscopeDetailsToggleBounds(size.first, size.second));
     CHECK(layout.microscopeDetailsToggleBounds(size.first, size.second).right() < layout.microscopeCloseBounds(size.first, size.second).x);
-    if (size.first == 480U) {
-      capture(controller, size.first, size.second, "compact-waveform.ppm");
-      native_ui::PixelSurface surface{480U, 320U}; native_ui::RasterCanvas canvas{surface};
-      native_ui::EditorScenePainter{}.paint(canvas, controller.pianoRoll(), controller.sceneState());
-      // This point is in the background Time Map button and in the inspector
-      // header's empty gap. The modal must paint over that background control.
-      CHECK(surface.pixels()[74U * 480U + 70U] != native_ui::EditorSceneTheme{}.panel.bgra());
-    }
+    // The shell presents the microscope as a sheet over its own frame (test_design_shell_input).
+    if (size.first == 480U) capture(controller, size.first, size.second, "compact-waveform.ppm");
     CHECK(controller.dispatchAccessibility("microscope.details", native_ui::SemanticAction::Activate));
     const auto view = *controller.sceneState().sampleMicroscope;
     CHECK(view.detailsVisible);
@@ -166,10 +161,10 @@ TEST_CASE("sample details use modal keyboard pointer and accessibility controls 
   CHECK(controller.accessibilityTree().focusedNode()->id.starts_with("microscope."));
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Right}));
   CHECK(controller.sceneState().sampleMicroscope->detailsPage == 1U);
-  const native_ui::EditorSceneLayout layout;
+  // The shell's microscope sheet presses its Previous and Next controls through these actions.
   for (const auto next : {false, true}) {
-    const auto bounds = layout.microscopeDetailsPageBounds(480.0, 320.0, next);
-    CHECK(controller.pointerDown({{bounds.x + 1.0, bounds.y + 1.0}, native_ui::PointerButton::Left, {}, 1}));
+    CHECK(controller.dispatchAccessibility(next ? "microscope.next" : "microscope.previous",
+                                           native_ui::SemanticAction::Activate));
     CHECK(controller.sceneState().sampleMicroscope->detailsPage == (next ? 1U : 0U));
   }
   const auto old = controller.sceneState().sampleMicroscope->detailsText;
@@ -181,16 +176,14 @@ TEST_CASE("sample details use modal keyboard pointer and accessibility controls 
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
   CHECK(controller.sampleMicroscopeOpen()); CHECK(!controller.sceneState().sampleMicroscope->detailsVisible);
   CHECK(controller.accessibilityTree().virtualizedNoteCount() == 0U);
-  const auto details = layout.microscopeDetailsToggleBounds(480.0, 320.0);
-  CHECK(controller.pointerDown({{details.x + 1.0, details.y + 1.0}, native_ui::PointerButton::Left, {}, 1}));
+  CHECK(controller.dispatchAccessibility("microscope.details", native_ui::SemanticAction::Activate));
   CHECK(controller.sceneState().sampleMicroscope->detailsVisible);
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
   CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape})); CHECK(!controller.sampleMicroscopeOpen());
   CHECK(!controller.dispatchAccessibility("microscope.next", native_ui::SemanticAction::Activate));
   CHECK(controller.openSampleMicroscope({fixture.note, 0U}));
   CHECK(controller.sceneState().sampleMicroscope->detailsText.find(fixture.context) != std::string::npos);
-  const auto close = native_ui::EditorSceneLayout{}.microscopeCloseBounds(480.0, 320.0);
-  CHECK(controller.pointerDown({{close.x + 1.0, close.y + 1.0}, native_ui::PointerButton::Left, {}, 1}));
+  CHECK(controller.dispatchAccessibility("microscope.close", native_ui::SemanticAction::Activate));
   CHECK(!controller.sampleMicroscopeOpen()); CHECK(fixture.played == 0U);
   controller.rebuildAccessibilityTree();
   CHECK(controller.accessibilityTree().virtualizedNoteCount() == 1U);

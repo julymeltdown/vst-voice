@@ -1986,26 +1986,7 @@ TEST_CASE("standalone editor track selection synchronizes the authoring runtime"
   CHECK(session->controller().dispatchAccessibility(
       "support.track.next", native_ui::SemanticAction::Activate));
   CHECK(session->controller().selectedTrack() == added.value());
-  session->controller().resize(960.0, 600.0);
-  const native_ui::EditorSceneLayout layout;
-  const auto panelX = std::max(
-      layout.keyboardWidth + layout.minimumTimelineWidth,
-      960.0 - layout.characterDockWidth);
-  const auto previousButton =
-      layout.supportTrackPreviousBounds(panelX, 960.0);
-  CHECK(session->controller().pointerDown(native_ui::PointerEvent{
-      .position = ui::Point{previousButton.x + previousButton.width / 2.0,
-                            previousButton.y + previousButton.height / 2.0},
-      .button = native_ui::PointerButton::Left,
-  }));
-  CHECK(session->controller().selectedTrack() == lead);
-  const auto nextButton = layout.supportTrackNextBounds(panelX, 960.0);
-  CHECK(session->controller().pointerDown(native_ui::PointerEvent{
-      .position = ui::Point{nextButton.x + nextButton.width / 2.0,
-                            nextButton.y + nextButton.height / 2.0},
-      .button = native_ui::PointerButton::Left,
-  }));
-  CHECK(session->controller().selectedTrack() == added.value());
+  // The SING shell's recovery sheet presses these same two actions (support.track.previous/next).
   CHECK(session->controller().keyDown(native_ui::KeyEvent{
       .key = native_ui::NativeKey::Left,
       .modifiers = native_ui::InputModifiers{.alt = true},
