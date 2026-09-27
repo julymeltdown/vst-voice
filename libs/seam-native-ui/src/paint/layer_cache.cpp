@@ -176,18 +176,28 @@ void LayerCache::redraw(PixelSurface& dest, const PixelSurface& base, RasterCanv
   struct Band final {
     std::int64_t y0;
     std::int64_t y1;
-    std::vector<std::pair<std::int64_t, std::int64_t>> spans;
-    std::vector<std::pair<std::int64_t, std::int64_t>> holes;
+    std::vector<std::pair<std::int64_t, std::int64_t>> spans;    // where the calls may paint
+    std::vector<std::pair<std::int64_t, std::int64_t>> outside;  // those spans minus the damage
   };
   std::vector<Band> bands;
+  std::vector<std::pair<std::int64_t, std::int64_t>> inside;
   std::size_t saved = 0U;
   for (std::size_t k = 0U; k + 1U < edges.size(); ++k) {
     Band band{edges[k], edges[k + 1U], {}, {}};
     spansIn(cover, band.y0, band.y1, band.spans);
     if (band.spans.empty()) continue;
-    spansIn(holes, band.y0, band.y1, band.holes);
-    for (const auto& span : band.spans)
-      saved += static_cast<std::size_t>((span.second - span.first) * (band.y1 - band.y0));
+    spansIn(holes, band.y0, band.y1, inside);
+    for (const auto& [x0, x1] : band.spans) {
+      auto x = x0;
+      for (const auto& [h0, h1] : inside) {
+        if (h1 <= x || h0 >= x1) continue;
+        if (h0 > x) band.outside.emplace_back(x, h0);
+        x = std::max(x, h1);
+      }
+      if (x < x1) band.outside.emplace_back(x, x1);
+    }
+    for (const auto& [x0, x1] : band.outside)
+      saved += static_cast<std::size_t>((x1 - x0) * (band.y1 - band.y0));
     bands.push_back(std::move(band));
   }
   backup_.resize(saved);
@@ -196,15 +206,14 @@ void LayerCache::redraw(PixelSurface& dest, const PixelSurface& base, RasterCanv
   const auto at = [&](std::int64_t x, std::int64_t y) {
     return static_cast<std::ptrdiff_t>(y * width + x);
   };
-  // Keep what the spans hold, and lay the snapshot below under them.
+  // Keep what lies outside the damage, and lay the snapshot below under every span.
   auto next = backup_.begin();
   for (const auto& band : bands) {
     for (auto y = band.y0; y < band.y1; ++y) {
-      for (const auto& [x0, x1] : band.spans) {
-        const auto count = x1 - x0;
-        next = std::copy_n(destination.begin() + at(x0, y), count, next);
-        std::copy_n(source.begin() + at(x0, y), count, destination.begin() + at(x0, y));
-      }
+      for (const auto& [x0, x1] : band.outside)
+        next = std::copy_n(destination.begin() + at(x0, y), x1 - x0, next);
+      for (const auto& [x0, x1] : band.spans)
+        std::copy_n(source.begin() + at(x0, y), x1 - x0, destination.begin() + at(x0, y));
     }
   }
   // The calls that meet the damage, unclipped, as a whole frame draws them.
@@ -212,18 +221,12 @@ void LayerCache::redraw(PixelSurface& dest, const PixelSurface& base, RasterCanv
     frame.replay(layer, *canvas, raster, nullptr, &damage);
     canvas->flush();
   }
-  // Outside the damage, the spans go back to what they held.
+  // Outside the damage, everything goes back to what it held.
   auto held = backup_.cbegin();
   for (const auto& band : bands) {
     for (auto y = band.y0; y < band.y1; ++y) {
-      for (const auto& [x0, x1] : band.spans) {
-        auto x = x0;
-        for (const auto& [h0, h1] : band.holes) {
-          if (h1 <= x || h0 >= x1) continue;
-          if (h0 > x) std::copy(held + (x - x0), held + (h0 - x0), destination.begin() + at(x, y));
-          x = std::max(x, h1);
-        }
-        if (x < x1) std::copy(held + (x - x0), held + (x1 - x0), destination.begin() + at(x, y));
+      for (const auto& [x0, x1] : band.outside) {
+        std::copy(held, held + (x1 - x0), destination.begin() + at(x0, y));
         held += x1 - x0;
       }
     }
