@@ -10,8 +10,10 @@
 #include <dlfcn.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -68,8 +70,43 @@ public:
   }
   [[nodiscard]] CGImageRef get() const noexcept { return image_.get(); }
 
+  // The image resampled once to width x height device pixels (high quality), kept for the next frame
+  // that draws it at that size: artwork drawn smaller than its pixels is resampled once rather than
+  // on every frame.
+  [[nodiscard]] CGImageRef scaled(std::size_t width, std::size_t height) const {
+    const std::lock_guard lock{mutex_};
+    return scaledLocked(width, height);
+  }
+  // The same copy's premultiplied pixels (row 0 at the top), or null when it could not be made.
+  [[nodiscard]] const std::uint32_t* scaledPixels(std::size_t width, std::size_t height) const {
+    const std::lock_guard lock{mutex_};
+    return scaledLocked(width, height) != image_.get() ? scaledPixels_.data() : nullptr;
+  }
+
 private:
+  CGImageRef scaledLocked(std::size_t width, std::size_t height) const {
+    if (scaled_ && scaledWidth_ == width && scaledHeight_ == height) return scaled_.get();
+    scaledPixels_.assign(width * height, 0U);
+    CfRef<CGContextRef> bitmap{CGBitmapContextCreate(
+        scaledPixels_.data(), width, height, 8U, width * sizeof(std::uint32_t), srgb(),
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Little)};
+    if (!bitmap) return image_.get();
+    CGContextSetInterpolationQuality(bitmap.get(), kCGInterpolationHigh);
+    CGContextDrawImage(bitmap.get(),
+                       CGRectMake(0.0, 0.0, static_cast<CGFloat>(width), static_cast<CGFloat>(height)),
+                       image_.get());
+    scaled_ = CfRef<CGImageRef>{CGBitmapContextCreateImage(bitmap.get())};
+    scaledWidth_ = width;
+    scaledHeight_ = height;
+    return scaled_ ? scaled_.get() : image_.get();
+  }
+
   CfRef<CGImageRef> image_;
+  mutable std::mutex mutex_;
+  mutable CfRef<CGImageRef> scaled_;
+  mutable std::vector<std::uint32_t> scaledPixels_;
+  mutable std::size_t scaledWidth_{0U};
+  mutable std::size_t scaledHeight_{0U};
 };
 
 CfRef<CGPathRef> toCgPath(const Path& path) {
@@ -142,6 +179,8 @@ public:
     CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
     CGContextSetLineJoin(ctx, kCGLineJoinRound);
     baseInverse_ = CGAffineTransformInvert(CGContextGetCTM(ctx));
+    tracked_.clip = CGRectMake(0.0, 0.0, static_cast<CGFloat>(surface.width()),
+                               static_cast<CGFloat>(surface.height()));
   }
 
   [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(context_); }
@@ -153,6 +192,7 @@ public:
   void save() override {
     CGContextSaveGState(context_.get());
     glowStack_.push_back(glow_);
+    trackedStack_.push_back(tracked_);
   }
   void restore() override {
     CGContextRestoreGState(context_.get());
@@ -160,24 +200,44 @@ public:
       glow_ = glowStack_.back();
       glowStack_.pop_back();
     }
+    if (!trackedStack_.empty()) {
+      tracked_ = trackedStack_.back();
+      trackedStack_.pop_back();
+    }
   }
   void translate(double dx, double dy) override { CGContextTranslateCTM(context_.get(), dx, dy); }
   void clipRect(ui::Rect r) override {
-    CGContextClipToRect(context_.get(), CGRectMake(r.x, r.y, std::max(0.0, r.width),
-                                                   std::max(0.0, r.height)));
+    const auto rect = CGRectMake(r.x, r.y, std::max(0.0, r.width), std::max(0.0, r.height));
+    CGContextClipToRect(context_.get(), rect);
+    if (!tracked_.rectClip) return;
+    // Tracked as one device rectangle while it stays on whole pixels, for the software paths.
+    const auto device = CGRectApplyAffineTransform(rect, CGContextGetCTM(context_.get()));
+    const auto whole = [](CGFloat v) { return std::abs(v - std::round(v)) < 1e-6; };
+    if (!whole(CGRectGetMinX(device)) || !whole(CGRectGetMinY(device)) ||
+        !whole(CGRectGetMaxX(device)) || !whole(CGRectGetMaxY(device))) {
+      tracked_.rectClip = false;
+      return;
+    }
+    const auto clipped = CGRectIntersection(
+        tracked_.clip, CGRectMake(std::round(CGRectGetMinX(device)), std::round(CGRectGetMinY(device)),
+                                  std::round(device.size.width), std::round(device.size.height)));
+    tracked_.clip = CGRectIsNull(clipped) ? CGRectZero : clipped;
   }
   void clipPath(const Path& path) override {
     const auto p = toCgPath(path);
     CGContextAddPath(context_.get(), p.get());
     CGContextClip(context_.get());
+    tracked_.rectClip = false;
   }
   void setAlpha(double alpha) override {
     CGContextSetAlpha(context_.get(), std::clamp(alpha, 0.0, 1.0));
+    tracked_.alpha = std::clamp(alpha, 0.0, 1.0);
   }
   void setBlend(Blend blend) override {
     CGContextSetBlendMode(context_.get(), blend == Blend::Add      ? kCGBlendModePlusLighter
                                           : blend == Blend::Screen ? kCGBlendModeScreen
                                                                    : kCGBlendModeNormal);
+    tracked_.normalBlend = blend == Blend::Normal;
   }
   void setGlow(Color color, double radius) override {
     glow_ = Glow{.on = true, .color = color, .radius = std::max(0.0, radius)};
@@ -186,6 +246,7 @@ public:
 
   void fill(const Path& path, Color color) override {
     if (path.empty()) return;
+    if (fillRectInSoftware(path, color)) return;
     const auto p = toCgPath(path);
     const auto c = cgColor(color);
     glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
@@ -257,7 +318,42 @@ public:
   void drawImage(const Image& image, ui::Rect destination, double opacity) override {
     const auto* cg = dynamic_cast<const CoreGraphicsImage*>(&image);
     if (cg == nullptr || destination.width <= 0.0 || destination.height <= 0.0) return;
-    drawCgImage(cg->get(), destination, opacity);
+    // Artwork drawn well below its own size is drawn from a copy resampled to the device size.
+    const auto deviceWidth = static_cast<std::size_t>(std::lround(destination.width * scale_));
+    const auto deviceHeight = static_cast<std::size_t>(std::lround(destination.height * scale_));
+    const auto shrinks = deviceWidth > 0U && deviceHeight > 0U &&
+                         static_cast<double>(cg->width()) > 1.25 * static_cast<double>(deviceWidth) &&
+                         static_cast<double>(cg->height()) > 1.25 * static_cast<double>(deviceHeight);
+    if (!shrinks) {
+      drawCgImage(cg->get(), destination, opacity);
+      return;
+    }
+    // The resampled copy lands on whole device pixels (less than half a pixel from the destination),
+    // so it is copied rather than resampled again.
+    auto* ctx = context_.get();
+    const auto ctm = CGContextGetCTM(ctx);
+    const auto device = CGRectApplyAffineTransform(
+        CGRectMake(destination.x, destination.y, destination.width, destination.height), ctm);
+    if (!glow_.on && softwareState()) {
+      if (const auto* pixels = cg->scaledPixels(deviceWidth, deviceHeight); pixels != nullptr) {
+        compositeImage(pixels, static_cast<std::int64_t>(deviceWidth),
+                       static_cast<std::int64_t>(deviceHeight),
+                       static_cast<std::int64_t>(std::round(device.origin.x)),
+                       static_cast<std::int64_t>(std::round(device.origin.y)), opacity);
+        return;
+      }
+    }
+    CGContextSaveGState(ctx);
+    CGContextConcatCTM(ctx, CGAffineTransformInvert(ctm));
+    applyShadow(ctx);
+    CGContextSetAlpha(ctx, std::clamp(opacity, 0.0, 1.0));
+    CGContextSetInterpolationQuality(ctx, kCGInterpolationNone);
+    CGContextDrawImage(ctx,
+                       CGRectMake(std::round(device.origin.x), std::round(device.origin.y),
+                                  static_cast<CGFloat>(deviceWidth),
+                                  static_cast<CGFloat>(deviceHeight)),
+                       cg->scaled(deviceWidth, deviceHeight));
+    CGContextRestoreGState(ctx);
   }
   void drawImage(const Image& image, ui::Rect source, ui::Rect destination,
                  double opacity) override {
@@ -437,6 +533,13 @@ private:
         if (vImageScale_Planar8(&a, &up, nullptr, kvImageNoFlags) != kvImageNoError)
           std::fill(glowDevice_.begin(), glowDevice_.end(), std::uint8_t{0});
         // The glow colour painted through the blurred coverage.
+        if (softwareState()) {
+          compositeCoverage(glowDevice_.data(), static_cast<std::int64_t>(deviceWidth),
+                            static_cast<std::int64_t>(deviceHeight), static_cast<std::int64_t>(x0),
+                            static_cast<std::int64_t>(y0), glow_.color);
+          draw(ctx);
+          return;
+        }
         CfRef<CGDataProviderRef> provider{CGDataProviderCreateWithData(
             nullptr, up.data, deviceWidth * deviceHeight, nullptr)};
         // An image mask paints the fill colour where its samples say (decoded so 255 paints).
@@ -462,6 +565,138 @@ private:
   static constexpr double kHalfResolutionGlowArea = 256.0 * 256.0;
   static constexpr double kGlowGrid = 64.0;
   static bool halfResolutionGlowDisabled() noexcept { return ScopedFullResolutionGlow::active(); }
+
+  // ---- software paths ----------------------------------------------------------------------------
+  // Where the state is plain (the clip one whole-pixel rectangle, normal blending), a few costly
+  // CoreGraphics calls are done directly on the pixels: a translucent rectangle fill, a glow's
+  // coverage and a resampled image drawn 1:1. They are deterministic, so a frame drawn whole and one
+  // drawn in rectangles still agree, and they differ from CoreGraphics only in rounding.
+
+  [[nodiscard]] bool softwareState() const noexcept {
+    return tracked_.rectClip && tracked_.normalBlend;
+  }
+
+  // Premultiplied source over a premultiplied destination: destination * (255 - source alpha) / 255,
+  // rounded, two channels at a time, plus the source (which cannot overflow a channel).
+  static std::uint32_t over(std::uint32_t source, std::uint32_t destination) noexcept {
+    const auto inverse = 255U - (source >> 24U);
+    auto rb = (destination & 0x00FF00FFU) * inverse + 0x00800080U;
+    rb = ((rb + ((rb >> 8U) & 0x00FF00FFU)) >> 8U) & 0x00FF00FFU;
+    auto ag = ((destination >> 8U) & 0x00FF00FFU) * inverse + 0x00800080U;
+    ag = (ag + ((ag >> 8U) & 0x00FF00FFU)) & 0xFF00FF00U;
+    return source + (rb | ag);
+  }
+
+  // The colour premultiplied at an alpha of coverage (0..1) times its own and the canvas's.
+  [[nodiscard]] std::uint32_t premultiplied(Color color, double coverage) const noexcept {
+    const auto a = std::clamp(coverage * (color.alpha / 255.0) * tracked_.alpha, 0.0, 1.0);
+    const auto c = [&](std::uint8_t v) {
+      return static_cast<std::uint32_t>(std::lround(static_cast<double>(v) * a));
+    };
+    return c(color.blue) | (c(color.green) << 8U) | (c(color.red) << 16U) |
+           (static_cast<std::uint32_t>(std::lround(255.0 * a)) << 24U);
+  }
+
+  // The device pixel row (memory order) of a device y measured upward.
+  [[nodiscard]] std::uint32_t* row(std::int64_t upwardY) noexcept {
+    const auto height = static_cast<std::int64_t>(surface_.height());
+    return surface_.pixels().data() + (height - 1 - upwardY) * static_cast<std::int64_t>(surface_.width());
+  }
+
+  // An axis-aligned rectangle filled with a flat colour, its fractional edges covered by area.
+  bool fillRectInSoftware(const Path& path, Color color) {
+    if (glow_.on || !softwareState()) return false;
+    const auto& e = path.elements();
+    if (e.size() != 5U || e[0].verb != Path::Verb::Move || e[1].verb != Path::Verb::Line ||
+        e[2].verb != Path::Verb::Line || e[3].verb != Path::Verb::Line ||
+        e[4].verb != Path::Verb::Close)
+      return false;
+    const auto a = e[0].a, b = e[1].a, c = e[2].a, d = e[3].a;
+    const auto horizontalFirst = a.y == b.y && b.x == c.x && c.y == d.y && d.x == a.x;
+    const auto verticalFirst = a.x == b.x && b.y == c.y && c.x == d.x && d.y == a.y;
+    if (!horizontalFirst && !verticalFirst) return false;
+    const auto left = std::min(a.x, c.x), right = std::max(a.x, c.x);
+    const auto top = std::min(a.y, c.y), bottom = std::max(a.y, c.y);
+    const auto device = CGRectApplyAffineTransform(CGRectMake(left, top, right - left, bottom - top),
+                                                   CGContextGetCTM(context_.get()));
+    const auto& clip = tracked_.clip;
+    const auto fx0 = std::max(CGRectGetMinX(device), CGRectGetMinX(clip));
+    const auto fx1 = std::min(CGRectGetMaxX(device), CGRectGetMaxX(clip));
+    const auto fy0 = std::max(CGRectGetMinY(device), CGRectGetMinY(clip));
+    const auto fy1 = std::min(CGRectGetMaxY(device), CGRectGetMaxY(clip));
+    if (fx1 <= fx0 || fy1 <= fy0 || color.alpha == 0U || tracked_.alpha <= 0.0) return true;
+    const auto x0 = static_cast<std::int64_t>(std::floor(fx0));
+    const auto x1 = static_cast<std::int64_t>(std::ceil(fx1));
+    const auto y0 = static_cast<std::int64_t>(std::floor(fy0));
+    const auto y1 = static_cast<std::int64_t>(std::ceil(fy1));
+    // Whole columns between the fractional edge columns share one source per row.
+    const auto inner0 = std::min(x1, static_cast<std::int64_t>(std::ceil(fx0)));
+    const auto inner1 = std::max(inner0, static_cast<std::int64_t>(std::floor(fx1)));
+    for (auto y = y0; y < y1; ++y) {
+      const auto cy = std::min(static_cast<double>(y + 1), fy1) - std::max(static_cast<double>(y), fy0);
+      auto* pixels = row(y);
+      const auto edge = [&](std::int64_t x) {
+        const auto cx = std::min(static_cast<double>(x + 1), fx1) - std::max(static_cast<double>(x), fx0);
+        pixels[x] = over(premultiplied(color, cx * cy), pixels[x]);
+      };
+      for (auto x = x0; x < inner0; ++x) edge(x);
+      const auto source = premultiplied(color, std::min(1.0, cy));
+      for (auto x = inner0; x < inner1; ++x) pixels[x] = over(source, pixels[x]);
+      for (auto x = inner1; x < x1; ++x) edge(x);
+    }
+    return true;
+  }
+
+  // The colour painted through a coverage mask (row 0 at the top) whose lower-left device pixel is
+  // (left, bottom), inside the tracked clip.
+  void compositeCoverage(const std::uint8_t* coverage, std::int64_t width, std::int64_t height,
+                         std::int64_t left, std::int64_t bottom, Color color) {
+    std::array<std::uint32_t, 256U> source{};
+    for (std::size_t m = 1U; m < source.size(); ++m)
+      source[m] = premultiplied(color, static_cast<double>(m) / 255.0);
+    const auto& clip = tracked_.clip;
+    const auto cx0 = std::max(left, static_cast<std::int64_t>(CGRectGetMinX(clip)));
+    const auto cx1 = std::min(left + width, static_cast<std::int64_t>(CGRectGetMaxX(clip)));
+    const auto cy0 = std::max(bottom, static_cast<std::int64_t>(CGRectGetMinY(clip)));
+    const auto cy1 = std::min(bottom + height, static_cast<std::int64_t>(CGRectGetMaxY(clip)));
+    for (auto y = cy0; y < cy1; ++y) {
+      const auto* mask = coverage + (bottom + height - 1 - y) * width - left;
+      auto* pixels = row(y);
+      for (auto x = cx0; x < cx1; ++x) {
+        const auto m = mask[x];
+        if (m != 0U) pixels[x] = over(source[m], pixels[x]);
+      }
+    }
+  }
+
+  // A premultiplied image (row 0 at the top) drawn 1:1 with its lower-left device pixel at
+  // (left, bottom), at an opacity, inside the tracked clip.
+  void compositeImage(const std::uint32_t* image, std::int64_t width, std::int64_t height,
+                      std::int64_t left, std::int64_t bottom, double opacity) {
+    const auto alpha = static_cast<std::uint32_t>(std::lround(std::clamp(opacity, 0.0, 1.0) * 255.0));
+    if (alpha == 0U) return;
+    const auto& clip = tracked_.clip;
+    const auto cx0 = std::max(left, static_cast<std::int64_t>(CGRectGetMinX(clip)));
+    const auto cx1 = std::min(left + width, static_cast<std::int64_t>(CGRectGetMaxX(clip)));
+    const auto cy0 = std::max(bottom, static_cast<std::int64_t>(CGRectGetMinY(clip)));
+    const auto cy1 = std::min(bottom + height, static_cast<std::int64_t>(CGRectGetMaxY(clip)));
+    for (auto y = cy0; y < cy1; ++y) {
+      const auto* source = image + (bottom + height - 1 - y) * width - left;
+      auto* pixels = row(y);
+      for (auto x = cx0; x < cx1; ++x) {
+        auto s = source[x];
+        if (s == 0U) continue;
+        if (alpha != 255U) {
+          auto rb = (s & 0x00FF00FFU) * alpha + 0x00800080U;
+          rb = ((rb + ((rb >> 8U) & 0x00FF00FFU)) >> 8U) & 0x00FF00FFU;
+          auto ag = ((s >> 8U) & 0x00FF00FFU) * alpha + 0x00800080U;
+          ag = (ag + ((ag >> 8U) & 0x00FF00FFU)) & 0xFF00FF00U;
+          s = rb | ag;
+        }
+        pixels[x] = over(s, pixels[x]);
+      }
+    }
+  }
 
   static void applyStroke(CGContextRef ctx, const StrokeStyle& style) {
     CGContextSetLineWidth(ctx, std::max(0.0, style.width));
@@ -508,6 +743,15 @@ private:
   CfRef<CGContextRef> context_;
   Glow glow_{};
   std::vector<Glow> glowStack_;
+  // What the software paths need to know of the state, kept alongside CoreGraphics' own.
+  struct Tracked final {
+    bool rectClip{true};  // the clip is the one whole-pixel rectangle below
+    CGRect clip{};        // device pixels, measured upward
+    double alpha{1.0};
+    bool normalBlend{true};
+  };
+  Tracked tracked_{};
+  std::vector<Tracked> trackedStack_;
   std::vector<std::uint8_t> glowMask_;
   std::vector<std::uint8_t> glowScratch_;
   std::vector<std::uint8_t> glowDevice_;
