@@ -9,6 +9,7 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -181,6 +182,7 @@ private:
     std::vector<Op> ops;
     std::uint64_t hash{0U};
     std::vector<LayerItem> items;
+    std::unordered_map<std::string, std::uint32_t> itemIndex;
   };
 
   void record(Payload payload, std::uint64_t payloadHash, ui::Rect bounds);
