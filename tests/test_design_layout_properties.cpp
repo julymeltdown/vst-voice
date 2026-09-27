@@ -17,6 +17,7 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/shell_overlays.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
@@ -31,6 +32,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -360,7 +362,26 @@ struct Surface final {
   std::string_view name;
   OverlayKind kind;
   Opener open;
+  // What must already be on screen for the surface to open (the compact inspector that carries
+  // the SINGER card); applied to the covered-content baseline too.
+  Opener prepare{};
 };
+
+// The text the window paints under a surface before it opens: the content its card covers.
+std::vector<TextRecord> coveredText(const Surface& surface, LayoutFixture& base, double width,
+                                    double height, double scale) {
+  Frame frame;
+  if (!paintFrame(base, width, height, scale, frame)) return {};
+  if (surface.prepare && surface.prepare(base) && !paintFrame(base, width, height, scale, frame))
+    return {};
+  return frame.text;
+}
+
+bool openInspectorWhenCompact(LayoutFixture& f) {
+  if (f.shell.layout().rack == RackPresentation::Full || f.shell.inspectorOpen()) return true;
+  return f.shell.dispatchSemantic(f.controller, "shell.inspector", SemanticAction::Activate)
+      .hasValue();
+}
 
 std::vector<Surface> overlaySurfaces() {
   return {
@@ -445,6 +466,13 @@ std::vector<Surface> overlaySurfaces() {
          f.session.selection().selectOnly(f.firstNote());
          return f.controller.beginSelectedHintEdit().hasValue();
        }},
+      {"singer-menu", OverlayKind::SingerMenu,
+       [](LayoutFixture& f) {
+         // The menu's button is on the SINGER card: the full rack's, or the compact inspector's.
+         return openInspectorWhenCompact(f) &&
+                f.shell.setSingerMenuOpen(f.controller, true).hasValue();
+       },
+       openInspectorWhenCompact},
   };
 }
 
@@ -496,11 +524,14 @@ TEST_CASE("every re-homed overlay keeps its layout properties at every size and 
   }
   for (const auto& surface : overlaySurfaces()) {
     LayoutFixture f;
+    LayoutFixture base;
     Frame frame;
     std::size_t index = 0U;
     for (const auto& size : kSizes)
       for (const auto scale : kScales) {
-        const auto& covered = baseline[index++];
+        const auto covered = surface.prepare ? coveredText(surface, base, size[0], size[1], scale)
+                                             : baseline[index];
+        ++index;
         const auto where = frameName(surface.name, size[0], size[1], scale);
         // A resize may close a transient surface (a field whose anchor moved); reopen it on the
         // new geometry, as the user would.
@@ -582,4 +613,127 @@ TEST_CASE("switching contrast repaints the background it caches") {
   switched.shell.setContrast(Contrast::High, false);
   LayoutFixture fresh{DesignMode::Scene, Contrast::High};
   CHECK(pixels(switched) == pixels(fresh));
+}
+
+TEST_CASE("the shell string table is English by default and translatable by stable key") {
+  using native_ui::design::englishShellString;
+  using native_ui::design::ScopedShellStrings;
+  using native_ui::design::shellStringCount;
+  using native_ui::design::shellStringKey;
+  using native_ui::design::ShellStringTable;
+  using native_ui::design::Str;
+  using native_ui::design::tr;
+  CHECK(shellStringCount() > 400U);
+  CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+  CHECK(shellStringKey(Str::ChangeVoice) == "ChangeVoice");
+  std::set<std::string_view> keys;
+  for (std::size_t i = 0U; i < shellStringCount(); ++i) {
+    const auto id = static_cast<Str>(i);
+    CHECK(keys.insert(shellStringKey(id)).second);  // keys are unique
+    CHECK(std::string_view{tr(id)} == englishShellString(id));
+  }
+  ShellStringTable table;
+  CHECK(table.set("ChangeVoice", "Stimme wechseln"));
+  CHECK(!table.set("NoSuchKey", "x"));
+  {
+    ScopedShellStrings scope{table};
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "Stimme wechseln");
+    CHECK(std::string_view{tr(Str::Sing)} == englishShellString(Str::Sing));
+  }
+  CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+  // Pseudo-localization is at least 40% longer, in characters, for every entry.
+  const auto pseudo = ShellStringTable::pseudoLocalized(0.4);
+  const auto characters = [](std::string_view s) {
+    return static_cast<std::size_t>(std::count_if(s.begin(), s.end(), [](char c) {
+      return (static_cast<unsigned char>(c) & 0xC0U) != 0x80U;
+    }));
+  };
+  for (std::size_t i = 0U; i < shellStringCount(); ++i) {
+    const auto id = static_cast<Str>(i);
+    const auto english = characters(englishShellString(id));
+    CHECK(characters(pseudo.text(id)) >=
+          static_cast<std::size_t>(std::ceil(static_cast<double>(english) * 1.4)));
+  }
+}
+
+TEST_CASE("pseudo-localized text 40% longer elides with its full text on an accessibility node") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto pseudo = native_ui::design::ShellStringTable::pseudoLocalized(0.4);
+  native_ui::design::ScopedShellStrings scope{pseudo};
+  Checker checker;
+  checker.checkWidgets = false;  // geometry does not depend on text; the sweeps above cover it
+  std::size_t pseudoLines = 0U;
+  std::size_t elided = 0U;
+  const auto count = [&](const Frame& frame) {
+    for (const auto& line : frame.text) {
+      if (!line.text.starts_with("[")) continue;
+      ++pseudoLines;
+      if (line.elided) ++elided;
+    }
+  };
+  constexpr std::array<std::array<double, 2U>, 4U> kPseudoSizes{
+      {{720.0, 480.0}, {1100.0, 720.0}, {1600.0, 900.0}, {3840.0, 2160.0}}};
+  for (const auto workspace :
+       {Workspace::Sing, Workspace::Voice, Workspace::Tune, Workspace::Mix, Workspace::Export}) {
+    LayoutFixture f;
+    f.shell.setWorkspace(f.controller, workspace);
+    Frame frame;
+    for (const auto& size : kPseudoSizes)
+      for (const auto scale : {1.0, 2.0}) {
+        if (!paintFrame(f, size[0], size[1], scale, frame)) continue;
+        count(frame);
+        checker.check(frame, frameName("pseudo-workspace", size[0], size[1], scale), size[0],
+                      size[1]);
+      }
+  }
+  for (const auto& surface : overlaySurfaces()) {
+    LayoutFixture f;
+    LayoutFixture base;  // the same window with no overlay: the content the card covers
+    Frame frame;
+    for (const auto& size : kPseudoSizes) {
+      const auto covered = coveredText(surface, base, size[0], size[1], 1.0);
+      if (!paintFrame(f, size[0], size[1], 1.0, frame)) continue;
+      if (f.shell.overlayKind(f.controller) != surface.kind && !surface.open(f)) continue;
+      if (!paintFrame(f, size[0], size[1], 1.0, frame)) continue;
+      if (f.shell.overlayKind(f.controller) != surface.kind) continue;
+      count(frame);
+      checker.check(frame, frameName(std::string{"pseudo-"} + std::string{surface.name}, size[0],
+                                     size[1], 1.0),
+                    size[0], size[1], &covered);
+    }
+  }
+  std::printf("pseudo-localized lines painted: %zu, elided: %zu\n", pseudoLines, elided);
+  CHECK(pseudoLines > 0U);
+  CHECK(elided > 0U);  // the sweep really exercises elision
+  // Known follow-ups for translation: compact labels and readouts whose node publishes a fuller
+  // phrasing of the same fact rather than the painted words. English fits everywhere; +40% text
+  // elides them, and the node still says what they mean, but not verbatim. Each is named so a fix
+  // (or a new case) changes this list deliberately.
+  using native_ui::design::Str;
+  const std::array<std::pair<Str, std::string_view>, 12U> compactForms{{
+      {Str::Out, "header output meter label; node: Output level"},
+      {Str::Unavailable, "refused knob caption; node value: the refusal reason"},
+      {Str::PitchReadOnly, "TUNE pitch caption; node description words it differently"},
+      {Str::Text9, "TUNE pitch ruler tick sign; ticks are decorative"},
+      {Str::Stereo, "MIX master format line; node value: channel layout"},
+      {Str::CLIP, "MIX clip light; node: clip state"},
+      {Str::AudioOffline, "MIX compact device button; node: Audio settings"},
+      {Str::Source, "phoneme review field label; node names the field"},
+      {Str::MIDI2, "overlap row key readout; node: MIDI after a separator"},
+      {Str::Refresh, "voice browser toolbar; node: Refresh installed voices"},
+      {Str::Install, "voice browser toolbar; node: Install a voicebank"},
+      {Str::Styles, "voice card counts; node value words them separately"},
+  }};
+  for (auto it = checker.order.begin(); it != checker.order.end();) {
+    const auto known = std::any_of(compactForms.begin(), compactForms.end(), [&](const auto& form) {
+      return it->find(pseudo.text(form.first)) != std::string::npos;
+    });
+    if (known) {
+      checker.problems.erase(*it);
+      it = checker.order.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  checker.finish("pseudo-localized");
 }
