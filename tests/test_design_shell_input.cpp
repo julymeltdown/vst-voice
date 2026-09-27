@@ -3984,3 +3984,43 @@ TEST_CASE("a disabled overlay control absorbs a press and pagers never count pas
   CHECK(f.frame(720.0, 480.0));
   CHECK(firstShown() + 1U == last);
 }
+
+TEST_CASE("Escape returns focus to the opener after a review steps back from its field and detail") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.session.project().findRegion(f.regionId)->dynamicsAutomation.replacePoints(
+      {{time::Tick{0}, 0.25F}, {time::Tick{480}, 0.75F}}));
+  CHECK(f.frame());
+  // The lane's DYNAMICS tab opens the inspector from the keyboard, so it is the opener.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::SetFocus)
+            .hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  static_cast<void>(f.focusedId());
+  // A point's detail page, then its tick field, which replaces the review while it is open.
+  const auto prefix = f.controller.replacementReviewSemanticPrefix();
+  succeeds(f.shell.dispatchController(f.controller, prefix + "point.0", SemanticAction::Activate),
+           "opening the point");
+  CHECK(f.frame());
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row.0",
+                                      SemanticAction::Activate),
+           "opening the tick field");
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  // Each Escape steps back one level (field, then detail, then the review itself); only the last
+  // one closes the surface, and it returns focus to the tab that opened it.
+  for (int i = 0; i < 4 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i) {
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(f.frame());
+    static_cast<void>(f.focusedId());
+  }
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  const auto focused = f.focusedId();
+  if (focused != "shell.lane-tab.dynamics")
+    throw test::Failure{"Escape returned focus to " + (focused.empty() ? std::string{"nothing"} : focused)};
+}

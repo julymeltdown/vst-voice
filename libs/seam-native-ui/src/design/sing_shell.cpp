@@ -3246,7 +3246,6 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         }
         const auto fallback = overlay->openerId(controller, controller.sceneState());
         const auto opener = overlayOpener_.empty() ? fallback : overlayOpener_;
-        overlayOpener_.clear();
         const auto kind = overlay->kind();
         static_cast<void>(closeOverlay(controller, *overlay));
         // The controller's own tree follows the close first, so the focus snapshot the shell keeps
@@ -3256,6 +3255,9 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
         // field that returned to the surface under it (a review's draft field) leaves the keyboard
         // with that surface.
         const auto* next = activeOverlay(controller);
+        // A close that only stepped back (a review's detail to its list, a draft field to its
+        // review) leaves the surface up: its opener is kept for the Escape that closes it.
+        if (next == nullptr) overlayOpener_.clear();
         const auto uncovered = next != nullptr && next->kind() != kind;
         if (uncovered) {
           semanticFocus_.clear();  // the surface that is up now takes focus on the next rebuild
