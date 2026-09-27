@@ -716,7 +716,7 @@ TEST_CASE("a background drawn in parallel bands equals the same bands drawn one 
     Pipeline p{mode, 2.0};
     const auto compose = [&](bool serial) {
       CHECK(p.reference.prepareFrame(p.controller, kWidth, kHeight));
-      p.reference.invalidateLayers();
+      p.reference.invalidateBackgroundLayers();
       PixelSurface surface{p.retained.width(), p.retained.height()};
       RasterCanvas canvas{surface, p.scale};
       if (serial) {
@@ -730,6 +730,48 @@ TEST_CASE("a background drawn in parallel bands equals the same bands drawn one 
     };
     const auto serial = compose(true);
     for (int run = 0; run < 4; ++run) CHECK(compose(false) == serial);
+  }
+}
+
+TEST_CASE("software background wash pixel comparison with vector reference") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    Pipeline p{mode, 2.0};
+    const auto draw = [&]() {
+      CHECK(p.reference.prepareFrame(p.controller, kWidth, kHeight));
+      p.reference.invalidateBackgroundLayers();
+      PixelSurface surface{p.retained.width(), p.retained.height()};
+      RasterCanvas canvas{surface, p.scale};
+      CHECK(p.reference.paint(canvas, p.controller, p.scene({}), time::Tick{0}));
+      return surface;
+    };
+    setenv("SEAM_WASH_VECTOR_REFERENCE", "1", 1);
+    const auto vector = draw();
+    unsetenv("SEAM_WASH_VECTOR_REFERENCE");
+    const auto software = draw();
+    std::size_t differing = 0U;
+    std::size_t aboveFour = 0U;
+    unsigned maximum = 0U;
+    std::size_t maximumAt = 0U;
+    for (std::size_t i = 0; i < vector.pixels().size(); ++i) {
+      const auto a = vector.pixels()[i];
+      const auto b = software.pixels()[i];
+      if (a != b) ++differing;
+      unsigned pixelMax = 0U;
+      for (unsigned shift : {0U, 8U, 16U, 24U})
+        pixelMax = std::max(pixelMax, static_cast<unsigned>(std::abs(
+            static_cast<int>((a >> shift) & 255U) - static_cast<int>((b >> shift) & 255U))));
+      if (pixelMax > 4U) ++aboveFour;
+      if (pixelMax > maximum) { maximum = pixelMax; maximumAt = i; }
+    }
+    std::cout << "[wash-difference] " << (mode == DesignMode::Emo ? "emo" : "scene")
+              << " max=" << maximum << " pixels=" << static_cast<double>(differing) * 100.0 /
+                   static_cast<double>(vector.pixels().size())
+              << "% above4=" << static_cast<double>(aboveFour) * 100.0 /
+                               static_cast<double>(vector.pixels().size())
+              << "% maxAt=" << maximumAt % vector.width() << ',' << maximumAt / vector.width() << '\n';
+    CHECK(maximum <= 20U);
+    CHECK(static_cast<double>(aboveFour) / static_cast<double>(vector.pixels().size()) < 0.001);
   }
 }
 
