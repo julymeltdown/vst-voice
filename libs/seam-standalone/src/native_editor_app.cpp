@@ -648,6 +648,12 @@ core::Result<void> NativeEditorApp::initialize() {
           .editJapaneseReading = [this] {
             const auto result = authoring_->controller().openJapaneseReadingReview(); record(result); return result;
           },
+          .showAbout = [this] {
+            const auto result = shell_.setAboutOpen(authoring_->controller(), true);
+            record(result);
+            requestWindowRepaint();
+            return result;
+          },
           .reviewInterchangeImport = [this](
               const authoring::InterchangeImportDraft& draft) -> core::Result<bool> {
             if (config_.reviewInterchangeImport) {
