@@ -742,6 +742,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   # support is deferred; other platforms keep the classic painter through the stubs.
   target_sources(seam_native_ui PRIVATE
     libs/seam-native-ui/src/design/design_tokens.cpp
+    libs/seam-native-ui/src/design/shell_strings.cpp
     libs/seam-native-ui/src/design/character_surface.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp
     libs/seam-native-ui/src/design/sing_shell.cpp

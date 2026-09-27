@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/shell_workspace.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 #include <algorithm>
 #include <array>
@@ -178,7 +179,7 @@ struct StripModel final {
 
 std::string busName(const domain::ProjectRouting& routing, domain::BusId id) {
   const auto* bus = routing.findBus(id);
-  return bus != nullptr ? bus->name : std::string{"Missing bus"};
+  return bus != nullptr ? bus->name : std::string{tr(Str::MissingBus)};
 }
 
 // Every project track in arrangement order (vocal tracks, then audio tracks), read from the
@@ -237,13 +238,13 @@ std::string gainText(double gainDb) {
 std::string panShort(double pan) {
   const auto percent = static_cast<int>(std::lround(pan * 100.0));
   if (percent == 0) return "C";
-  return (percent < 0 ? "L" : "R") + std::to_string(std::abs(percent));
+  return (percent < 0 ? tr(Str::L2) : tr(Str::R2)) + std::to_string(std::abs(percent));
 }
 
 std::string panSpoken(double pan) {
   const auto percent = static_cast<int>(std::lround(pan * 100.0));
-  if (percent == 0) return "Center";
-  return std::string{percent < 0 ? "Left " : "Right "} + std::to_string(std::abs(percent)) + "%";
+  if (percent == 0) return tr(Str::Center);
+  return std::string{percent < 0 ? tr(Str::Left) : tr(Str::Right)} + std::to_string(std::abs(percent)) + "%";
 }
 
 // ---- Layout ---------------------------------------------------------------------------------
@@ -474,8 +475,8 @@ ArrangementModel arrangementModel(const NativeEditorController& controller) {
 std::string barRange(const time::MeterMap& meters, const ArrangementRegion& region) {
   const auto first = meters.barBeatAt(time::Tick{region.start}).bar;
   const auto last = meters.barBeatAt(time::Tick{std::max(region.start, region.end - 1)}).bar;
-  if (first == last) return "bar " + std::to_string(first);
-  return "bars " + std::to_string(first) + " to " + std::to_string(last);
+  if (first == last) return tr(Str::Bar) + std::to_string(first);
+  return tr(Str::Bars) + std::to_string(first) + tr(Str::To) + std::to_string(last);
 }
 
 struct ArrangementGeometry final {
@@ -541,9 +542,9 @@ double decibels(float linear) noexcept {
 }
 
 std::string dbfsText(double db) {
-  if (!std::isfinite(db)) return "-inf dBFS";
+  if (!std::isfinite(db)) return tr(Str::InfDBFS);
   const auto shown = roundTo(db, 0.1);
-  if (shown == 0.0) return "0.0 dBFS";
+  if (shown == 0.0) return tr(Str::N00DBFS);
   return format(shown > 0.0 ? "+%.1f dBFS" : "%.1f dBFS", shown);
 }
 
@@ -572,21 +573,21 @@ std::optional<MeterReading> meterReading(const EditorSceneState& state) {
   if (!state.outputLevel || state.outputLevel->peak.empty()) return std::nullopt;
   const auto& level = *state.outputLevel;
   MeterReading r;
-  r.bus = level.bus.empty() ? std::string{"Output"} : level.bus;
+  r.bus = level.bus.empty() ? std::string{tr(Str::Output)} : level.bus;
   r.clipped = level.clipped;
   r.loudestDb = -std::numeric_limits<double>::infinity();
   const auto count = level.peak.size();
   for (std::size_t i = 0U; i < count; ++i) {
     MeterChannel ch;
     if (count == 1U) {
-      ch.label = "M";
+      ch.label = tr(Str::M);
       ch.spoken = "mono";
     } else if (count == 2U) {
-      ch.label = i == 0U ? "L" : "R";
+      ch.label = i == 0U ? tr(Str::L2) : tr(Str::R2);
       ch.spoken = i == 0U ? "left" : "right";
     } else {
       ch.label = std::to_string(i + 1U);
-      ch.spoken = "channel " + ch.label;
+      ch.spoken = tr(Str::Channel2) + ch.label;
     }
     ch.peakDb = decibels(level.peak[i]);
     ch.holdDb = i < level.hold.size() ? std::max(decibels(level.hold[i]), ch.peakDb) : ch.peakDb;
@@ -597,10 +598,10 @@ std::optional<MeterReading> meterReading(const EditorSceneState& state) {
 }
 
 std::string meterDetail(const MeterReading& r) {
-  std::string text = r.bus + " bus";
+  std::string text = r.bus + tr(Str::Bus);
   for (std::size_t i = 0U; i < r.channels.size(); ++i)
     text += (i == 0U ? ": " : ", ") + r.channels[i].spoken + " " + dbfsText(r.channels[i].peakDb);
-  text += r.clipped ? ". Clipped." : ".";
+  text += r.clipped ? tr(Str::Clipped2) : ".";
   return text;
 }
 
@@ -717,7 +718,7 @@ core::Result<void> commitMix(NativeEditorController& controller, const StripMode
 core::Result<void> cycleRoute(NativeEditorController& controller, const StripModel& strip) {
   const auto& buses = controller.project().routing().buses;
   if (buses.size() < 2U)
-    return core::failure(core::ErrorCode::Unsupported, "The project has only one output bus");
+    return core::failure(core::ErrorCode::Unsupported, tr(Str::TheProjectHasOnlyOneOutput));
   const auto current = std::find_if(buses.begin(), buses.end(),
                                     [&strip](const auto& bus) { return bus.id == strip.route.bus; });
   const auto index = current == buses.end()
@@ -755,21 +756,21 @@ DeviceSummary deviceSummary(const EditorSceneState& state) {
   d.online = state.audioDeviceOnline;
   for (const auto& device : state.audioSettings.devices)
     if (device.selected) d.name = device.name;
-  if (d.name.empty()) d.name = d.online ? state.audioBackend : std::string{"Audio offline"};
+  if (d.name.empty()) d.name = d.online ? state.audioBackend : std::string{tr(Str::AudioOffline)};
   // The format is the host's report for a running device. Without one, the settings view holds
   // defaults, which describe no device at all.
   if (!state.audioSettings.reported) {
-    d.format = "No device reported";
+    d.format = tr(Str::NoDeviceReported);
     return d;
   }
   if (!d.online) {
-    d.format = "Device not running";
+    d.format = tr(Str::DeviceNotRunning);
     return d;
   }
   const auto& current = state.audioSettings.current;
   const auto khz = static_cast<double>(current.sampleRate) / 1000.0;
-  d.format = (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + " kHz \u00b7 " +
-             std::to_string(current.blockFrames) + " frames";
+  d.format = (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + tr(Str::KHz2) +
+             std::to_string(current.blockFrames) + tr(Str::Frames);
   return d;
 }
 
@@ -786,7 +787,7 @@ public:
     const auto l = mixLayout(area, strips.size(), offset_);
     card(c, t, area, t.shape.card, 0.97);
     const auto anySolo = std::any_of(strips.begin(), strips.end(), [](const auto& s) { return s.solo; });
-    header(c, t, area, l.title, "Mix", !strips.empty());
+    header(c, t, area, l.title, tr(Str::Mix), !strips.empty());
     c.save();
     c.clipRect(area);
     paintArrangement(c, t, controller, l, strips, anySolo);
@@ -800,7 +801,7 @@ public:
     }
     c.restore();
     if (strips.empty())
-      c.text({l.viewport.x, l.viewport.y + 8.0, l.viewport.width, 20.0}, "This project has no tracks",
+      c.text({l.viewport.x, l.viewport.y + 8.0, l.viewport.width, 20.0}, tr(Str::ThisProjectHasNoTracks),
              style(FontRole::Ui, t.type.body), t.color.textSecondary);
     if (l.scrolls()) {
       c.fill(Path::capsule({l.scrollBand.x, l.scrollBand.y + 3.0, l.scrollBand.width, 4.0}),
@@ -987,18 +988,18 @@ public:
     const auto strips = stripModels(controller);
     const auto l = mixLayout(area, strips.size(), offset_);
     const auto multipleBuses = controller.project().routing().buses.size() > 1U;
-    out.push_back(SemanticNode{.id = "shell.mix.panel", .role = SemanticRole::Panel, .name = "Mix",
+    out.push_back(SemanticNode{.id = "shell.mix.panel", .role = SemanticRole::Panel, .name = tr(Str::Mix),
                                .value = std::to_string(strips.size()) +
-                                        (strips.size() == 1U ? " track" : " tracks"),
+                                        (strips.size() == 1U ? tr(Str::Track2) : tr(Str::Tracks)),
                                .bounds = area, .actions = {SemanticAction::SetFocus}});
     if (l.arrangement.height > 0.0) {
       const auto g = arrangementGeometry(l.arrangement, strips.size());
       const auto m = arrangementModel(controller);
       const auto& meters = controller.project().meterMap();
       out.push_back(SemanticNode{
-          .id = "shell.mix.arrangement", .role = SemanticRole::Timeline, .name = "Arrangement",
-          .value = std::to_string(m.regions.size()) + (m.regions.size() == 1U ? " region" : " regions") +
-                   ", playhead at bar " + std::to_string(meters.barBeatAt(time::Tick{m.playhead}).bar),
+          .id = "shell.mix.arrangement", .role = SemanticRole::Timeline, .name = tr(Str::Arrangement),
+          .value = std::to_string(m.regions.size()) + (m.regions.size() == 1U ? tr(Str::Region) : tr(Str::Regions)) +
+                   tr(Str::PlayheadAtBar) + std::to_string(meters.barBeatAt(time::Tick{m.playhead}).bar),
           .bounds = l.arrangement, .actions = {SemanticAction::SetFocus}});
       for (const auto& region : m.regions) {
         const auto bounds = blockRect(g, m, region.lane, region.start, region.end);
@@ -1007,9 +1008,9 @@ public:
             .id = regionNodeId(region.id), .role = SemanticRole::Button,
             .name = region.trackName + ", " + (region.name.empty() ? std::string{} : region.name + ", ") +
                     barRange(meters, region),
-            .value = region.selected ? "Selected" : "", .bounds = bounds, .selected = region.selected,
+            .value = region.selected ? tr(Str::Selected3) : "", .bounds = bounds, .selected = region.selected,
             .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-            .description = "Selects the region; double-click opens it in Sing"});
+            .description = tr(Str::SelectsTheRegionDoubleClickOpens)});
       }
     }
     std::size_t firstShown = strips.size();
@@ -1022,8 +1023,8 @@ public:
       firstShown = std::min(firstShown, i);
       lastShown = std::max(lastShown, i);
       const auto& name = s.name;
-      std::string summary = s.vocal ? "Vocal track" : "Audio track";
-      if (s.selected) summary += ", selected";
+      std::string summary = s.vocal ? tr(Str::VocalTrack) : tr(Str::AudioTrack);
+      if (s.selected) summary += tr(Str::Selected4);
       out.push_back(SemanticNode{.id = trackNodeId(s.id, Control::Strip), .role = SemanticRole::Panel,
                                  .name = name, .value = summary, .bounds = stripBounds,
                                  .selected = s.selected, .actions = {SemanticAction::SetFocus}});
@@ -1032,57 +1033,57 @@ public:
         if (node.bounds.width > 0.0 && node.bounds.height > 0.0) out.push_back(std::move(node));
       };
       publish(SemanticNode{.id = trackNodeId(s.id, Control::Gain), .role = SemanticRole::Slider,
-                           .name = name + " gain", .value = gainText(s.gainDb),
+                           .name = name + tr(Str::Gain), .value = gainText(s.gainDb),
                            .actions = {SemanticAction::Increment, SemanticAction::Decrement,
                                        SemanticAction::SetFocus},
-                           .description = "Fader; double-click for 0 dB",
+                           .description = tr(Str::FaderDoubleClickFor0DB),
                            .numericValue = roundTo(s.gainDb, 0.1),
                            .numericMinimum = kGainMinimum, .numericMaximum = kGainMaximum,
                            .numericStep = kGainStep},
               g.fader);
       publish(SemanticNode{.id = trackNodeId(s.id, Control::Pan), .role = SemanticRole::Slider,
-                           .name = name + " pan", .value = panSpoken(s.pan),
+                           .name = name + tr(Str::Pan), .value = panSpoken(s.pan),
                            .actions = {SemanticAction::Increment, SemanticAction::Decrement,
                                        SemanticAction::SetFocus},
-                           .description = "Double-click to center",
+                           .description = tr(Str::DoubleClickToCenter),
                            .numericValue = std::round(s.pan * 100.0), .numericMinimum = -100.0,
                            .numericMaximum = 100.0, .numericStep = kPanStep * 100.0},
               g.pan);
       for (const auto control : {Control::Mute, Control::Solo}) {
         const auto on = control == Control::Mute ? s.muted : s.solo;
         publish(SemanticNode{.id = trackNodeId(s.id, control), .role = SemanticRole::CheckBox,
-                             .name = name + (control == Control::Mute ? " mute" : " solo"),
-                             .value = on ? "On" : "Off", .selected = on,
+                             .name = name + (control == Control::Mute ? tr(Str::Mute) : tr(Str::Solo)),
+                             .value = on ? tr(Str::On) : tr(Str::Off), .selected = on,
                              .actions = {SemanticAction::Toggle, SemanticAction::Activate,
                                          SemanticAction::SetFocus}},
                 control == Control::Mute ? g.mute : g.solo);
       }
       publish(SemanticNode{.id = trackNodeId(s.id, Control::Route), .role = SemanticRole::Button,
-                           .name = name + " output", .value = s.routeName, .enabled = multipleBuses,
+                           .name = name + tr(Str::Output2), .value = s.routeName, .enabled = multipleBuses,
                            .actions = multipleBuses
                                           ? std::vector<SemanticAction>{SemanticAction::Activate,
                                                                         SemanticAction::SetFocus}
                                           : std::vector<SemanticAction>{SemanticAction::SetFocus},
-                           .description = multipleBuses ? "Sends the track to the next output bus"
-                                                        : "The project has only one output bus"},
+                           .description = multipleBuses ? tr(Str::SendsTheTrackToTheNext)
+                                                        : tr(Str::TheProjectHasOnlyOneOutput)},
               g.route);
     }
     if (l.scrolls())
       out.push_back(SemanticNode{
-          .id = "shell.mix.scroll", .role = SemanticRole::Slider, .name = "Track strips",
-          .value = "Tracks " + std::to_string(firstShown + 1U) + " to " + std::to_string(lastShown + 1U) +
-                   " of " + std::to_string(strips.size()),
+          .id = "shell.mix.scroll", .role = SemanticRole::Slider, .name = tr(Str::TrackStrips),
+          .value = tr(Str::Tracks2) + std::to_string(firstShown + 1U) + tr(Str::To) + std::to_string(lastShown + 1U) +
+                   tr(Str::Of) + std::to_string(strips.size()),
           .bounds = l.scrollBand,
           .actions = {SemanticAction::Increment, SemanticAction::Decrement, SemanticAction::SetFocus},
           .numericValue = l.offset, .numericMinimum = 0.0, .numericMaximum = l.maxOffset,
           .numericStep = l.stripWidth + kGap});
     out.push_back(SemanticNode{.id = "shell.mix.master", .role = SemanticRole::Status,
-                               .name = "Master", .value = masterSummary(controller, state),
+                               .name = tr(Str::Master2), .value = masterSummary(controller, state),
                                .bounds = l.master, .actions = {SemanticAction::SetFocus}});
     if (l.meter.width > 0.0) {
       if (const auto reading = meterReading(state)) {
         out.push_back(SemanticNode{.id = "shell.mix.master-meter", .role = SemanticRole::ProgressIndicator,
-                                   .name = "Output level", .value = dbfsText(reading->loudestDb),
+                                   .name = tr(Str::OutputLevel), .value = dbfsText(reading->loudestDb),
                                    .bounds = l.meter, .actions = {SemanticAction::SetFocus},
                                    .description = meterDetail(*reading),
                                    .numericValue = std::isfinite(reading->loudestDb)
@@ -1092,29 +1093,29 @@ public:
                                    .numericMinimum = kMeterFloorDb, .numericMaximum = 0.0});
       } else {
         out.push_back(SemanticNode{.id = "shell.mix.master-meter", .role = SemanticRole::Status,
-                                   .name = "Output level", .value = "Not measured",
+                                   .name = tr(Str::OutputLevel), .value = tr(Str::NotMeasured),
                                    .bounds = l.meter, .actions = {SemanticAction::SetFocus},
-                                   .description = "The host reports no measured output level"});
+                                   .description = tr(Str::TheHostReportsNoMeasuredOutput)});
       }
     }
     const auto device = deviceSummary(state);
     if (!l.compact)
       out.push_back(SemanticNode{.id = "shell.mix.device", .role = SemanticRole::Status,
-                                 .name = "Audio device",
+                                 .name = tr(Str::AudioDevice),
                                  .value = device.name + ", " + device.format,
                                  .bounds = l.device, .actions = {SemanticAction::SetFocus}});
     out.push_back(SemanticNode{.id = "shell.mix.audio-settings", .role = SemanticRole::Button,
-                               .name = "Audio settings", .value = device.name,
+                               .name = tr(Str::AudioSettings), .value = device.name,
                                .bounds = l.settings,
                                .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                               .description = "Opens the audio device settings"});
+                               .description = tr(Str::OpensTheAudioDeviceSettings)});
   }
 
   core::Result<void> perform(NativeEditorController& controller, std::string_view id,
                              SemanticAction action) override {
     const auto parsed = parseId(id);
     const auto unsupported = [] {
-      return core::failure(core::ErrorCode::Unsupported, "This element does not support that action");
+      return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisElementDoesNotSupportThat));
     };
     if (!parsed) return unsupported();
     const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
@@ -1140,12 +1141,12 @@ public:
         if (action != SemanticAction::Activate) return unsupported();
         for (const auto& region : arrangementModel(controller).regions)
           if (region.id.toString() == parsed->track) return selectArrangementRegion(controller, region);
-        return core::failure(core::ErrorCode::NotFound, "The region is no longer in the project");
+        return core::failure(core::ErrorCode::NotFound, tr(Str::TheRegionIsNoLongerIn));
       }
       default: break;
     }
     const auto strip = findStrip(controller, parsed->track);
-    if (!strip) return core::failure(core::ErrorCode::NotFound, "The track is no longer in the project");
+    if (!strip) return core::failure(core::ErrorCode::NotFound, tr(Str::TheTrackIsNoLongerIn));
     const auto& s = *strip;
     const auto direction = action == SemanticAction::Increment   ? 1.0
                            : action == SemanticAction::Decrement ? -1.0
@@ -1244,16 +1245,16 @@ private:
                                    const EditorSceneState& state) {
     const auto& routing = controller.project().routing();
     const auto* bus = routing.findBus(routing.masterBus);
-    std::string text = bus != nullptr ? bus->name + " bus, " +
+    std::string text = bus != nullptr ? bus->name + tr(Str::Bus2) +
                                             (bus->channelCount == 2U ? std::string{"stereo"}
                                              : bus->channelCount == 1U
                                                  ? std::string{"mono"}
-                                                 : std::to_string(bus->channelCount) + " channels") +
+                                                 : std::to_string(bus->channelCount) + tr(Str::Channels)) +
                                             ", " + gainText(bus->gainDb)
-                                      : std::string{"No master bus"};
+                                      : std::string{tr(Str::NoMasterBus)};
     if (const auto reading = meterReading(state))
-      return text + ". Output peak " + dbfsText(reading->loudestDb) + (reading->clipped ? ", clipped." : ".");
-    return text + ". Output level not measured.";
+      return text + tr(Str::OutputPeak) + dbfsText(reading->loudestDb) + (reading->clipped ? tr(Str::Clipped3) : ".");
+    return text + tr(Str::OutputLevelNotMeasured);
   }
 
   void paintStrip(Canvas2D& c, const DesignTokens& t, const StripGeometry& g, const StripModel& s,
@@ -1278,18 +1279,18 @@ private:
     c.text(g.name, s.name, fitted(c, s.name, nameStyle, g.name.width),
            audible ? t.color.textPrimary : t.color.textSecondary);
     if (!compact)
-      c.text(g.kind, s.vocal ? "Vocal" : "Audio",
+      c.text(g.kind, s.vocal ? tr(Str::Vocal) : tr(Str::Audio2),
              style(FontRole::UiMedium, t.type.smallLabel, t.type.labelTracking, TextAlign::Left, true),
              t.color.textSecondary);
 
     paintPan(c, t, g, s, compact);
-    paintToggle(c, t, g.mute, "M", s.muted, t.color.warning);
-    paintToggle(c, t, g.solo, "S", s.solo, t.color.accent);
+    paintToggle(c, t, g.mute, tr(Str::M), s.muted, t.color.warning);
+    paintToggle(c, t, g.solo, tr(Str::S), s.solo, t.color.accent);
     paintFader(c, t, g, s, audible);
 
     // Output route.
     sunken(c, t, g.route, 6.0);
-    const auto routeText = "\u2192 " + s.routeName;
+    const auto routeText = tr(Str::Text10) + s.routeName;
     const ui::Rect routeLabel{g.route.x + 6.0, g.route.y, g.route.width - 12.0, g.route.height};
     c.text(routeLabel, routeText,
            fitted(c, routeText, style(FontRole::UiMedium, t.type.smallLabel), routeLabel.width),
@@ -1428,15 +1429,15 @@ private:
     const auto* bus = routing.findBus(routing.masterBus);
     const auto x = m.x + 10.0;
     const auto w = m.width - 20.0;
-    c.text({x, m.y + 8.0, w, 14.0}, "Master",
+    c.text({x, m.y + 8.0, w, 14.0}, tr(Str::Master2),
            style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Left, true),
            t.color.accent);
-    const auto name = bus != nullptr ? bus->name : std::string{"No master bus"};
+    const auto name = bus != nullptr ? bus->name : std::string{tr(Str::NoMasterBus)};
     c.text({x, m.y + 24.0, w, 16.0}, name, fitted(c, name, style(FontRole::UiSemibold, t.type.label), w),
            t.color.textPrimary);
     if (bus != nullptr) {
-      const auto info = (bus->channelCount == 2U ? std::string{"Stereo"} : std::to_string(bus->channelCount) + " ch") +
-                        " \u00b7 " + gainText(bus->gainDb);
+      const auto info = (bus->channelCount == 2U ? std::string{tr(Str::Stereo)} : std::to_string(bus->channelCount) + tr(Str::Ch2)) +
+                        tr(Str::Text4) + gainText(bus->gainDb);
       c.text({x, m.y + 42.0, w, 16.0}, info, fitted(c, info, style(FontRole::Ui, t.type.smallLabel), w),
              t.color.textSecondary);
     }
@@ -1477,7 +1478,7 @@ private:
     } else {
       const auto where = g.vertical ? g.readout : g.caption;
       const auto s = style(FontRole::UiMedium, t.type.smallLabel, 0.0, g.vertical ? TextAlign::Center : TextAlign::Left);
-      c.text(where, "Not measured", fitted(c, "Not measured", s, where.width), t.color.textSecondary);
+      c.text(where, tr(Str::NotMeasured), fitted(c, tr(Str::NotMeasured), s, where.width), t.color.textSecondary);
     }
 
     // Clip light.
@@ -1492,7 +1493,7 @@ private:
       c.stroke(light, withAlpha(t.color.error, 0.35), StrokeStyle{1.0});
     }
     if (g.vertical)
-      c.text(g.clip, "CLIP", fitted(c, "CLIP", style(FontRole::UiBold, t.type.smallLabel, 0.0, TextAlign::Center), g.clip.width),
+      c.text(g.clip, tr(Str::CLIP), fitted(c, tr(Str::CLIP), style(FontRole::UiBold, t.type.smallLabel, 0.0, TextAlign::Center), g.clip.width),
              clipped ? kWhite : t.color.textDisabled);
 
     // Bars: the zones show faintly as the empty scale; the measured peak lights them.
@@ -1534,8 +1535,8 @@ private:
       const auto labels = reading ? reading->channels.size() : g.bars.size();
       for (std::size_t i = 0U; i < g.bars.size() && i < labels; ++i) {
         const auto label = reading ? reading->channels[i].label
-                           : g.bars.size() == 2U ? std::string{i == 0U ? "L" : "R"}
-                           : g.bars.size() == 1U ? std::string{"M"}
+                           : g.bars.size() == 2U ? std::string{i == 0U ? tr(Str::L2) : tr(Str::R2)}
+                           : g.bars.size() == 1U ? std::string{tr(Str::M)}
                                                  : std::to_string(i + 1U);
         c.text(g.channelLabels[i], label, style(FontRole::UiMedium, t.type.smallLabel, 0.0, TextAlign::Center),
                t.color.textSecondary);
@@ -1673,7 +1674,7 @@ private:
       if (b.width <= 0.0) return;
       sunken(c, t, b, t.shape.control);
       c.fill(Path::circle({b.x + 11.0, b.y + b.height * 0.5}, 3.0), dotColor);
-      const auto text = d.name + " \u00b7 Settings\u2026";
+      const auto text = d.name + tr(Str::Settings);
       const ui::Rect label{b.x + 20.0, b.y, b.width - 26.0, b.height};
       c.text(label, text, fitted(c, text, style(FontRole::UiMedium, t.type.smallLabel), label.width),
              t.color.textPrimary);
@@ -1683,7 +1684,7 @@ private:
     card(c, t, r, 10.0, 0.94);
     const auto x = r.x + 10.0;
     const auto w = r.width - 20.0;
-    c.text({x, r.y + 8.0, w, 14.0}, "Audio device",
+    c.text({x, r.y + 8.0, w, 14.0}, tr(Str::AudioDevice),
            style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Left, true),
            t.color.textSecondary);
     c.fill(Path::circle({x + 3.0, r.y + 34.0}, 3.0), dotColor);
@@ -1694,7 +1695,7 @@ private:
     const auto b = l.settings;
     c.fill(Path::capsule(b), withAlpha(t.color.accent, 0.18));
     c.stroke(Path::capsule(b), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
-    c.text(b, "Settings\u2026", style(FontRole::UiBold, t.type.smallLabel, 1.0, TextAlign::Center, true),
+    c.text(b, tr(Str::Settings2), style(FontRole::UiBold, t.type.smallLabel, 1.0, TextAlign::Center, true),
            t.color.textPrimary);
   }
 
