@@ -1698,12 +1698,13 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     static_cast<void>(stageFade_.advance(placement, frameNow_, preferences_.reduceMotion));
   }
   stagePointerAt_ = pointerPosition_;
-  layerTo(paint::Layer::Content);
 
   const auto* region = model.project().findRegion(model.regionId());
   c.save();
   c.clipRect(l.grid);
-  // Score pitch line: note targets with short glides between adjacent notes, broken at rests.
+  // Score pitch line: note targets with short glides between adjacent notes, broken at rests. It is
+  // the last thing the grid layer draws: it lies directly on the grid and under every note, and it
+  // follows the notes' places but not their selection, so selecting notes never redraws its glow.
   {
     std::vector<ui::Rect> ordered;
     for (const auto& note : notes) {
@@ -1738,6 +1739,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     c.stroke(line, withAlpha(t.color.pitchCurve, 0.85), StrokeStyle{1.8});
     c.restore();
   }
+  layerTo(paint::Layer::Content);
 
   // Notes as capsules.
   std::vector<ui::Rect> capsules;
