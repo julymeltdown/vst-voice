@@ -259,7 +259,8 @@ any transient menu the workspace has open. TUNE and MIX implement `ShellWorkspac
 - **EXPORT** is a card with what the host says an Export Set will write (rate, channels, format,
   master and stems), a run button, live progress and the last committed receipt. A host that cannot
   export from the editor (the plug-in) states why and instead offers the final bounce's timing
-  choice. The plan's "complete" protagonist pose after a successful export is **Not shipped**.
+  choice. A committed export receipt shows the package's complete pose in the EXPORT card and
+  briefly switches the ring to Complete; a cancelled or failed attempt does neither.
 
 ## 7. Overlays and sheets
 
@@ -403,7 +404,14 @@ package's sprite for the shape the published performance reports.
 
 Reduce Motion (the stored `reduceMotion` key, otherwise the system setting) stops the blink, the
 breathing and the spinner and makes the Stage fade immediate; states still change. The singing
-mouth is not gated by Reduce Motion, and the plan's static-mouth rule is **Not shipped**.
+mouth holds one open shape while Reduce Motion is enabled.
+
+The bundled Character 01 manifest is schema 4 and still declares its schema-two PPM states and
+mouths. A schema-two or schema-three package continues to load and paint its PPM portraits; a
+schema-four package adds per-mode 512×512 QOI ring portraits, 64×64 avatars, separate QOI stage
+layers and eyes, and separate 800×800 poses. The Stage uses the layered package when present;
+an older package uses the look's existing stage image. The v4 art is development-only with its
+generator sources and derivative process recorded in `assets/character-01/PROVENANCE.md`.
 
 The character display mode is the project's `CharacterDisplayMode`
 (`libs/seam-domain/include/seam/domain/project.hpp`). Full draws everything; Minimal drops the
@@ -526,9 +534,7 @@ owner verdicts as NOT_RUN. Useful options are `--canonical-only`, `--states`, `-
 
 ## 15. Not shipped, in one place
 
-- Character Package v4 (layered stage, separate eye and pose assets, QOI) and the plan's 512×512
-  ring portraits. The package is schema 2 with PPM state art (see the bible).
-- Plan §9 motion tweens, a static singing mouth under Reduce Motion, and the export "complete" pose.
+- Plan §9 motion tweens beyond the character's established blink, breath and Stage fade.
 - In-app controls for contrast and Reduce Motion, and the Stage as a separate preference.
 - Tooltips and reusable popover, scroll-view and text-field components.
 - Bundled fonts; non-English string tables and a language choice.

@@ -573,6 +573,8 @@ private:
   mutable std::optional<CharacterToast> errorToast_{};
   std::optional<float> auditionLevel_{};
   CharacterState characterState_{CharacterState::Idle};
+  std::string lastCompletedExportKey_;
+  std::chrono::steady_clock::time_point exportCompleteUntil_{};
   // The project's character display mode for this frame (Full, Minimal, Off). Minimal keeps the
   // compact identity and drops the Stage; Off draws no character artwork anywhere, while the ring,
   // the avatar's state ring, the toast and the empty-project line still carry the singer's status.

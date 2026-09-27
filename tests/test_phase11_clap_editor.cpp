@@ -259,6 +259,11 @@ int main() {
   // Eyes and per-mode outfits are performance-schema fields too; a status-only package has none.
   statusManifest.value().asObject().erase("eyes");
   statusManifest.value().asObject().erase("outfits");
+  // The checked-in package is schema four; a status-only derivative cannot retain its layered art.
+  statusManifest.value().asObject().erase("defaultOutfit");
+  statusManifest.value().asObject().erase("portraits");
+  statusManifest.value().asObject().erase("stage");
+  statusManifest.value().asObject().erase("poses");
   statusManifest.value().asObject()["schemaVersion"] = seam::formats::JsonValue{std::int64_t{1}};
   if (!seam::core::durableAtomicWriteText(statusRoot / "manifest.json",
           seam::formats::stringifyJson(statusManifest.value()))) return 48;

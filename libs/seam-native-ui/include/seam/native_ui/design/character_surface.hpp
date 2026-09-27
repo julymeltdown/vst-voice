@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace seam::native_ui::design {
 
@@ -498,6 +499,17 @@ public:
   // decode is cached per state; a state the artwork cannot decode stays absent rather than re-read
   // on every frame.
   [[nodiscard]] const PixelSurface* portrait(CharacterState state) const;
+  [[nodiscard]] const PixelSurface* ringPortrait(CharacterState state) const;
+  [[nodiscard]] const PixelSurface* avatar(CharacterState state) const;
+  [[nodiscard]] const PixelSurface* ringMouth(character::MouthShape shape) const;
+  [[nodiscard]] std::optional<character::MouthPlacement> ringMouthPlacement() const noexcept;
+  [[nodiscard]] std::vector<character::EyeBox> ringEyes(CharacterState state) const;
+  [[nodiscard]] std::optional<Color> ringLidTone(CharacterState state) const;
+  [[nodiscard]] const PixelSurface* pose(character::Pose pose) const;
+  [[nodiscard]] const paint::Image* poseImage(character::Pose pose) const;
+  [[nodiscard]] const std::vector<std::shared_ptr<const paint::Image>>& stageLayers() const;
+  [[nodiscard]] const paint::Image* stageEyes(character::StageEyes eyes) const;
+  [[nodiscard]] const character::StageFigure* stageManifest() const noexcept;
   // The decoded, keyed mouth sprite for a shape, or nothing for a package that declares no
   // performance assets.
   [[nodiscard]] const PixelSurface* mouth(character::MouthShape shape) const;
@@ -515,6 +527,15 @@ private:
   std::shared_ptr<const paint::Image> lookPortrait_;
   std::shared_ptr<const paint::Image> lookStage_;
   mutable std::map<CharacterState, std::optional<PixelSurface>> portraits_;
+  mutable std::map<CharacterState, std::optional<PixelSurface>> ringPortraits_;
+  mutable std::map<CharacterState, std::optional<PixelSurface>> avatars_;
+  mutable std::map<character::MouthShape, std::optional<PixelSurface>> ringMouths_;
+  mutable std::map<CharacterState, std::optional<Color>> ringLidTones_;
+  mutable std::map<character::Pose, std::optional<PixelSurface>> poses_;
+  mutable std::map<character::Pose, std::shared_ptr<const paint::Image>> poseImages_;
+  mutable std::vector<std::shared_ptr<const paint::Image>> stageLayers_;
+  mutable std::map<character::StageEyes, std::shared_ptr<const paint::Image>> stageEyes_;
+  mutable bool stageDecoded_{false};
   mutable std::map<character::MouthShape, std::optional<PixelSurface>> mouths_;
   mutable std::map<CharacterState, std::optional<Color>> lidTones_;
   mutable std::optional<character::MouthPlacement> placement_;
