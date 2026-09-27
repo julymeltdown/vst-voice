@@ -110,4 +110,28 @@ void ScopedTextCapture::record(TextRecord record) {
 
 bool ScopedTextCapture::active() noexcept { return activeTextCapture != nullptr; }
 
+namespace {
+thread_local bool fullResolutionGlow = false;
+}  // namespace
+
+ScopedFullResolutionGlow::ScopedFullResolutionGlow() noexcept : previous_{fullResolutionGlow} {
+  fullResolutionGlow = true;
+}
+
+ScopedFullResolutionGlow::~ScopedFullResolutionGlow() { fullResolutionGlow = previous_; }
+
+bool ScopedFullResolutionGlow::active() noexcept { return fullResolutionGlow; }
+
+namespace {
+thread_local bool concurrentCanvas = false;
+}  // namespace
+
+ScopedConcurrentCanvas::ScopedConcurrentCanvas() noexcept : previous_{concurrentCanvas} {
+  concurrentCanvas = true;
+}
+
+ScopedConcurrentCanvas::~ScopedConcurrentCanvas() { concurrentCanvas = previous_; }
+
+bool ScopedConcurrentCanvas::active() noexcept { return concurrentCanvas; }
+
 }  // namespace seam::native_ui::paint

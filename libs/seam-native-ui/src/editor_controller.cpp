@@ -214,6 +214,25 @@ void NativeEditorController::syncInteractionToAccessibilityFocus() {
   }
 }
 
+const phonemizer::Result& NativeEditorController::regionPronunciation(
+    const domain::VocalRegion& region) const {
+  auto& cache = pronunciation_;
+  const auto revision = session_.revision();
+  if (!cache.valid || cache.revision != revision || cache.region != region.id ||
+      cache.address != &region || cache.notes != region.notes.size() ||
+      cache.lyrics != region.lyrics.size() || cache.overrides != region.phonemeOverrides.size()) {
+    cache.result = phonemizer::inspectPronunciation(region);
+    cache.revision = revision;
+    cache.region = region.id;
+    cache.address = &region;
+    cache.notes = region.notes.size();
+    cache.lyrics = region.lyrics.size();
+    cache.overrides = region.phonemeOverrides.size();
+    cache.valid = true;
+  }
+  return cache.result;
+}
+
 EditorSceneState NativeEditorController::sceneState() const {
   EditorSceneState state{
       .projectName = session_.project().name(),
@@ -432,7 +451,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     }
   }
   if (const auto* region = session_.project().findRegion(regionId_); region != nullptr) {
-    state.phonemes = phonemizer::inspectPronunciation(*region);
+    state.phonemes = regionPronunciation(*region);
     state.unitOverrides = region->unitSelectionOverrides;
     state.seamOverrides = region->seamOverrides;
     state.pitchAutomation = region->pitchAutomation.points();
@@ -4328,7 +4347,7 @@ core::Result<void> NativeEditorController::pointerDown(
       ui::PhonemeLaneModel lane;
       const auto current = session_.project().findRegion(regionId_);
       if (current != nullptr) {
-        lane.rebuild(pianoRoll_, phonemizer::inspectPronunciation(*current),
+        lane.rebuild(pianoRoll_, regionPronunciation(*current),
                      layout_.phonemeContentTop(phonemeTop),
                      layout_.phonemeContentHeight(phonemeHeight));
         auto boundary = lane.hitTestBoundary(event.position);
@@ -4355,7 +4374,7 @@ core::Result<void> NativeEditorController::pointerDown(
       ui::PhonemeLaneModel lane;
       const auto current = session_.project().findRegion(regionId_);
       if (current != nullptr) {
-        lane.rebuild(pianoRoll_, phonemizer::inspectPronunciation(*current),
+        lane.rebuild(pianoRoll_, regionPronunciation(*current),
                      layout_.phonemeContentTop(unitTop),
                      layout_.phonemeContentHeight(unitHeight));
         std::optional<domain::PhonemeKey> key;
