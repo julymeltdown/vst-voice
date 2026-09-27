@@ -44,6 +44,14 @@ DesignPreferences loadDesignPreferences() {
     else
       preferences.reduceMotion =
           NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    // Language, like contrast: an explicit choice made in the app, or else the system's own
+    // preferred language, which the shell reads in when it offers it.
+    if (NSString* language = [defaults stringForKey:@"language"]; language != nil && language.length > 0) {
+      preferences.language = std::string{shellLanguageFor(language.UTF8String)};
+    } else {
+      preferences.languageFollowsSystem = true;
+      preferences.language = std::string{shellLanguageFor(systemPreferredLanguage())};
+    }
   }
   return preferences;
 }
@@ -65,12 +73,27 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
       [defaults setObject:(preferences.contrast == Contrast::High ? @"high" : @"standard")
                    forKey:@"contrast"];
     [defaults setBool:preferences.reduceMotion forKey:@"reduceMotion"];
+    // Following the system stores nothing, so the system's language keeps applying.
+    if (preferences.languageFollowsSystem)
+      [defaults removeObjectForKey:@"language"];
+    else
+      [defaults setObject:[[NSString alloc] initWithBytes:preferences.language.data()
+                                                   length:preferences.language.size()
+                                                 encoding:NSUTF8StringEncoding]
+                   forKey:@"language"];
   }
 }
 
 bool systemIncreaseContrast() {
   @autoreleasepool {
     return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast;
+  }
+}
+
+std::string systemPreferredLanguage() {
+  @autoreleasepool {
+    NSString* first = NSLocale.preferredLanguages.firstObject;
+    return first != nil ? std::string{first.UTF8String} : std::string{};
   }
 }
 

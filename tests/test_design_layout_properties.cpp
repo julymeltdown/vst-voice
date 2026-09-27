@@ -29,6 +29,8 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <optional>
@@ -717,20 +719,41 @@ TEST_CASE("pseudo-localized text 40% longer elides with its full text on an acce
   const std::array<std::pair<Str, std::string_view>, 12U> compactForms{{
       {Str::Out, "header output meter label; node: Output level"},
       {Str::Unavailable, "refused knob caption; node value: the refusal reason"},
-      {Str::PitchReadOnly, "TUNE pitch caption; node description words it differently"},
+      {Str::PitchCaptionReadOnly, "TUNE pitch caption; node description words it differently"},
       {Str::Text9, "TUNE pitch ruler tick sign; ticks are decorative"},
       {Str::Stereo, "MIX master format line; node value: channel layout"},
       {Str::CLIP, "MIX clip light; node: clip state"},
       {Str::AudioOffline, "MIX compact device button; node: Audio settings"},
       {Str::Source, "phoneme review field label; node names the field"},
-      {Str::MIDI2, "overlap row key readout; node: MIDI after a separator"},
+      {Str::MidiKey, "overlap row key readout; node: MIDI after a separator"},
       {Str::Refresh, "voice browser toolbar; node: Refresh installed voices"},
       {Str::Install, "voice browser toolbar; node: Install a voicebank"},
-      {Str::Styles, "voice card counts; node value words them separately"},
+      {Str::VoiceCardCounts, "voice card counts; node value words them separately"},
   }};
+  // A form with values in it is recognised by its longest run of fixed words: the painted text has
+  // the values filled in where the entry has {0}, {1}.
+  const auto fixedWords = [&](Str id) {
+    const std::string_view text{pseudo.text(id)};
+    std::string_view longest;
+    std::size_t start = 0U;
+    while (start <= text.size()) {
+      auto open = text.find('{', start);
+      if (open == std::string_view::npos) open = text.size();
+      auto words = text.substr(start, open - start);  // without the pseudo brackets and padding
+      while (!words.empty() && std::string_view{"[]~"}.find(words.front()) != std::string_view::npos)
+        words.remove_prefix(1U);
+      while (!words.empty() && std::string_view{"[]~"}.find(words.back()) != std::string_view::npos)
+        words.remove_suffix(1U);
+      if (words.size() > longest.size()) longest = words;
+      const auto close = text.find('}', open);
+      if (close == std::string_view::npos) break;
+      start = close + 1U;
+    }
+    return std::string{longest};
+  };
   for (auto it = checker.order.begin(); it != checker.order.end();) {
     const auto known = std::any_of(compactForms.begin(), compactForms.end(), [&](const auto& form) {
-      return it->find(pseudo.text(form.first)) != std::string::npos;
+      return it->find(fixedWords(form.first)) != std::string::npos;
     });
     if (known) {
       checker.problems.erase(*it);
@@ -740,4 +763,311 @@ TEST_CASE("pseudo-localized text 40% longer elides with its full text on an acce
     }
   }
   checker.finish("pseudo-localized");
+}
+
+// Localization: translation files, the Korean table, Hangul text and the language setting.
+
+TEST_CASE("translation files load by stable key and reject what they cannot trust") {
+  using namespace native_ui::design;
+  // Formatting: numbered values in any order, literal braces, and a value with no argument left
+  // as written so a test sees it.
+  CHECK(formatShellText("{1} of {0}", {"a", "b"}) == "b of a");
+  CHECK(formatShellText("{{0}} is {0}", {"x"}) == "{0} is x");
+  CHECK(formatShellText("{2}", {"a"}) == "{2}");
+  CHECK((shellPlaceholders("{1} {0} {1}").indices == std::vector<std::size_t>{0U, 1U}));
+  CHECK(!shellPlaceholders("{0").valid);
+  CHECK(!shellPlaceholders("{a}").valid);
+  CHECK(!shellPlaceholders("0}").valid);
+
+  const auto loaded = parseShellStrings(R"({
+    "language": "xx", "name": "Test",
+    "strings": {
+      "ChangeVoice": "Stimme wechseln",
+      "PageOfPages": "Seite {1} von {0}",
+      "NoSuchKey": "ignored",
+      "OwnedReportCount": "Berichte",
+      "RangeOfTotal": "{0}-{1} von {2} {3}",
+      "TitleAndMore": "{0} +{1 mehr",
+      "Save": 5
+    }})");
+  CHECK(loaded.hasValue());
+  if (!loaded) return;
+  const auto& report = loaded.value().report;
+  CHECK(report.language == "xx");
+  CHECK(report.name == "Test");
+  CHECK(report.translated == 2U);
+  CHECK(report.unknownKeys == std::vector<std::string>{"NoSuchKey"});
+  auto rejected = report.rejectedKeys;
+  std::sort(rejected.begin(), rejected.end());
+  CHECK((rejected == std::vector<std::string>{"OwnedReportCount", "RangeOfTotal", "Save",
+                                              "TitleAndMore"}));
+  // A key that was present, even when rejected, is not missing; every other key is.
+  CHECK(report.missingKeys.size() == shellStringCount() - 6U);
+  CHECK(!report.clean());
+  {
+    ScopedShellStrings scope{loaded.value().table};
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "Stimme wechseln");
+    CHECK(trf(Str::PageOfPages, {"2", "5"}) == "Seite 5 von 2");
+    // Rejected and missing entries read as English, with every value in place.
+    CHECK(trf(Str::OwnedReportCount, {"3"}) == "3 owned reports");
+    CHECK(trf(Str::RangeOfTotal, {"1", "4", "9"}) == "1\u20134 of 9");
+    CHECK(std::string_view{tr(Str::Save)} == "Save");
+    CHECK(std::string_view{tr(Str::Untitled)} == "Untitled");
+  }
+  CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+  // What is not a translation file at all fails as a whole, and the shell stays in English.
+  CHECK(!parseShellStrings("not json"));
+  CHECK(!parseShellStrings(R"([])"));
+  CHECK(!parseShellStrings(R"({"strings": {}})"));
+  CHECK(!parseShellStrings(R"({"language": "xx"})"));
+  CHECK(!parseShellStrings(R"({"language": "xx", "strings": []})"));
+  CHECK(!loadShellStrings(std::filesystem::path{"/nonexistent/seam-l10n/xx.json"}));
+  // Platform language tags choose an offered language, else English.
+  CHECK(shellLanguageFor("ko-KR") == "ko");
+  CHECK(shellLanguageFor("ko_KR") == "ko");
+  CHECK(shellLanguageFor("KO") == "ko");
+  CHECK(shellLanguageFor("en-KR") == "en");
+  CHECK(shellLanguageFor("fr-FR") == "en");
+  CHECK(shellLanguageFor("") == "en");
+}
+
+TEST_CASE("translation: the Korean file covers every entry with the English placeholders") {
+  using namespace native_ui::design;
+  const auto directory = native_ui::design::locateShellTranslations();
+  CHECK(!directory.empty());
+  if (directory.empty()) return;
+  const auto loaded = loadShellStrings(directory / "ko.json");
+  CHECK(loaded.hasValue());
+  if (!loaded) return;
+  const auto& report = loaded.value().report;
+  CHECK(report.language == "ko");
+  CHECK(report.name == "\uD55C\uAD6D\uC5B4");
+  CHECK(report.clean());
+  CHECK(report.translated == shellStringCount());
+  for (const auto& key : report.unknownKeys) std::printf("ko.json unknown key %s\n", key.c_str());
+  for (const auto& key : report.missingKeys) std::printf("ko.json missing key %s\n", key.c_str());
+  for (const auto& key : report.rejectedKeys) std::printf("ko.json rejected key %s\n", key.c_str());
+  // The workspace names and the looks are brand labels and stay English (docs/design/L10N.md).
+  const auto& table = loaded.value().table;
+  for (const auto id : {Str::Sing, Str::Voice, Str::Tune, Str::Mix, Str::Export, Str::Emo,
+                        Str::Scene})
+    CHECK(std::string_view{table.text(id)} == englishShellString(id));
+  // Every other entry with words in it is Korean: an entry may read as its English only when its
+  // words are acronyms, units or the product's own names.
+  const std::set<std::string, std::less<>> kept{"Project", "Sing",  "Voice", "Tune", "Mix",
+                                                "Export",  "Emo",   "Scene", "Seam", "Open",
+                                                "sha",     "inf",   "dBFS",  "ct",   "kHz",
+                                                "Hz"};
+  std::size_t hangul = 0U;
+  for (std::size_t i = 0U; i < shellStringCount(); ++i) {
+    const auto id = static_cast<Str>(i);
+    const std::string_view text{table.text(id)};
+    if (text.find("\xEA") != std::string_view::npos || text.find("\xEB") != std::string_view::npos ||
+        text.find("\xEC") != std::string_view::npos || text.find("\xED") != std::string_view::npos)
+      ++hangul;  // lead bytes of U+A000..U+DFFF, which hold every Hangul syllable
+    if (text != englishShellString(id)) continue;
+    std::size_t start = 0U;
+    while (start < text.size()) {
+      while (start < text.size() && !std::isalpha(static_cast<unsigned char>(text[start]))) ++start;
+      auto end = start;
+      while (end < text.size() && std::isalpha(static_cast<unsigned char>(text[end]))) ++end;
+      const auto word = text.substr(start, end - start);
+      const auto acronym = std::all_of(word.begin(), word.end(), [](char c) {
+        return std::isupper(static_cast<unsigned char>(c)) != 0;
+      });
+      if (!word.empty() && !acronym && !kept.contains(word)) {
+        std::printf("ko.json leaves %s in English\n", std::string{shellStringKey(id)}.c_str());
+        CHECK(false);
+      }
+      start = end;
+    }
+  }
+  CHECK(hangul * 10U >= shellStringCount() * 8U);
+}
+
+TEST_CASE("translation: Hangul measures with real glyphs in every font role") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  using native_ui::paint::FontRole;
+  using native_ui::paint::TextStyle;
+  native_ui::PixelSurface surface{64U, 64U};
+  auto canvas = native_ui::paint::makeCanvas(surface, 1.0);
+  CHECK(canvas != nullptr);
+  if (canvas == nullptr) return;
+  const std::string two{"\uAC00\uB098"};                    // 가나
+  const std::string four{"\uAC00\uB098\uB2E4\uB77C"};     // 가나다라
+  const std::string phrase{"\uBCF4\uC774\uC2A4 \uBCC0\uACBD"};  // 보이스 변경
+  for (const auto role : {FontRole::Ui, FontRole::UiMedium, FontRole::UiSemibold, FontRole::UiBold,
+                          FontRole::Mono, FontRole::Display}) {
+    const TextStyle style{.role = role, .size = 13.0};
+    // Real glyphs from a face that has them, never the last-resort placeholder.
+    CHECK(native_ui::paint::textRenderable(phrase, style));
+    CHECK(native_ui::paint::textRenderable(four, style));
+    // Full-width syllables: about one em each, and a longer run measures proportionally longer.
+    const auto w2 = canvas->measure(two, style);
+    const auto w4 = canvas->measure(four, style);
+    CHECK(w2 > 13.0 * 1.4);
+    CHECK(w2 < 13.0 * 2.6);
+    CHECK(std::abs(w4 - 2.0 * w2) < 0.1 * w4);
+  }
+  // The check can fail: an unassigned code point has no face at all.
+  CHECK(!native_ui::paint::textRenderable("\u0378", TextStyle{}));
+}
+
+TEST_CASE("translation: the shell follows its language setting and the header control steps it") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  using namespace native_ui::design;
+  const auto node = [](const Frame& frame, std::string_view id) -> const SemanticNode* {
+    for (const auto& n : frame.nodes)
+      if (n.id == id) return &n;
+    return nullptr;
+  };
+  {
+    LayoutFixture f;
+    Frame frame;
+    CHECK(paintFrame(f, 1440.0, 900.0, 1.0, frame));
+    CHECK(f.shell.language() == "en");
+    CHECK(!f.shell.languageFollowsSystem());
+    const auto* control = node(frame, "shell.language");
+    CHECK(control != nullptr);
+    if (control == nullptr) return;
+    CHECK(control->name == "Language");
+    CHECK(control->value == "English");
+    CHECK(control->bounds.width >= 24.0);
+    CHECK(control->bounds.height >= 24.0);
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+
+    // Explicit English, then the control: Korean, the system's language, and back.
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.language", SemanticAction::Activate).hasValue());
+    CHECK(f.shell.language() == "ko");
+    CHECK(!f.shell.languageFollowsSystem());
+    CHECK(f.shell.languageReport().clean());
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "\uBCF4\uC774\uC2A4 \uBCC0\uACBD");
+    CHECK(paintFrame(f, 1440.0, 900.0, 1.0, frame));
+    control = node(frame, "shell.language");
+    CHECK(control != nullptr);
+    if (control == nullptr) return;
+    CHECK(control->name == "\uC5B8\uC5B4");  // 언어
+    CHECK(control->value == "\uD55C\uAD6D\uC5B4");
+    // Painted text is Korean too: the SINGER card's button reads the Korean entry.
+    CHECK(std::any_of(frame.text.begin(), frame.text.end(), [](const TextRecord& line) {
+      return line.text == "\uBCF4\uC774\uC2A4 \uBCC0\uACBD";
+    }));
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.language", SemanticAction::Increment).hasValue());
+    CHECK(f.shell.languageFollowsSystem());
+    CHECK(f.shell.language() == shellLanguageFor(systemPreferredLanguage()));
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.language", SemanticAction::Decrement).hasValue());
+    CHECK(f.shell.language() == "ko");
+    // The pointer steps it the same way, from the rectangle the node publishes.
+    const auto at = f.shell.layout().language;
+    CHECK(f.shell
+              .pointerDown(f.controller,
+                           native_ui::PointerEvent{
+                               .position = {at.x + at.width * 0.5, at.y + at.height * 0.5},
+                               .button = native_ui::PointerButton::Left})
+              .hasValue());
+    CHECK(f.shell.languageFollowsSystem());
+    // A language the shell does not offer reads as English.
+    f.shell.setLanguage("fr", false);
+    CHECK(f.shell.language() == "en");
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+    f.shell.setLanguage("ko", false);
+    CHECK(std::string_view{tr(Str::ChangeVoice)} != "Change voice");
+  }
+  // Dropping the shell drops its table.
+  CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+  // A shell whose translation directory has no file for the language stays in English.
+  const auto empty = std::filesystem::temp_directory_path() / "seam-l10n-empty-test";
+  std::filesystem::create_directories(empty);
+  ::setenv("SEAM_L10N_ASSETS", empty.c_str(), 1);
+  {
+    LayoutFixture f;
+    f.shell.setLanguage("ko", false);
+    CHECK(f.shell.language() == "ko");
+    CHECK(std::string_view{tr(Str::ChangeVoice)} == "Change voice");
+  }
+  ::unsetenv("SEAM_L10N_ASSETS");
+  // The saved preference: an explicit language, or following the system.
+  CHECK(DesignPreferences{}.language == "en");
+  CHECK(!DesignPreferences{}.languageFollowsSystem);
+}
+
+TEST_CASE("the Korean shell keeps widgets apart and its text whole or elided") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto korean = [](LayoutFixture& f) {
+    f.shell.setLanguage("ko", false);
+    CHECK(f.shell.language() == "ko");
+    CHECK(f.shell.languageReport().clean());
+    return true;
+  };
+  Checker checker;
+  std::size_t hangulLines = 0U;
+  std::size_t elided = 0U;
+  const auto count = [&](const Frame& frame) {
+    for (const auto& line : frame.text) {
+      if (line.text.find("\xEA") == std::string::npos && line.text.find("\xEB") == std::string::npos &&
+          line.text.find("\xEC") == std::string::npos && line.text.find("\xED") == std::string::npos)
+        continue;
+      ++hangulLines;
+      if (line.elided) ++elided;
+    }
+  };
+  constexpr std::array<std::array<double, 2U>, 5U> kKoreanSizes{
+      {{720.0, 480.0}, {1100.0, 720.0}, {1440.0, 900.0}, {1920.0, 1080.0}, {3840.0, 2160.0}}};
+  for (const auto workspace :
+       {Workspace::Sing, Workspace::Voice, Workspace::Tune, Workspace::Mix, Workspace::Export}) {
+    LayoutFixture f;
+    korean(f);
+    f.shell.setWorkspace(f.controller, workspace);
+    Frame frame;
+    for (const auto& size : kKoreanSizes)
+      for (const auto scale : {1.0, 2.0}) {
+        if (scale == 2.0 && size[0] > 1440.0) continue;  // the 1x sweep covers the large windows
+        if (!paintFrame(f, size[0], size[1], scale, frame)) continue;
+        count(frame);
+        checker.check(frame, frameName("ko-workspace", size[0], size[1], scale), size[0], size[1]);
+      }
+  }
+  for (const auto& surface : overlaySurfaces()) {
+    LayoutFixture f;
+    LayoutFixture base;
+    korean(f);
+    korean(base);
+    Frame frame;
+    for (const auto& size : kKoreanSizes) {
+      const auto covered = coveredText(surface, base, size[0], size[1], 1.0);
+      if (!paintFrame(f, size[0], size[1], 1.0, frame)) continue;
+      if (f.shell.overlayKind(f.controller) != surface.kind && !surface.open(f)) {
+        checker.report(frameName(surface.name, size[0], size[1], 1.0),
+                       std::string{surface.name} + " could-not-open", "");
+        continue;
+      }
+      if (!paintFrame(f, size[0], size[1], 1.0, frame)) continue;
+      if (f.shell.overlayKind(f.controller) != surface.kind) continue;
+      count(frame);
+      checker.check(frame, frameName(std::string{"ko-"} + std::string{surface.name}, size[0],
+                                     size[1], 1.0),
+                    size[0], size[1], &covered);
+    }
+  }
+  for (const auto& size : kKoreanSizes) {
+    for (const auto* sheet : {"shell.inspector", "shell.workspace-menu"}) {
+      LayoutFixture f;
+      korean(f);
+      Frame frame;
+      if (!paintFrame(f, size[0], size[1], 1.0, frame)) continue;
+      const auto compact = std::string_view{sheet} == "shell.inspector"
+                               ? f.shell.layout().rack != RackPresentation::Full
+                               : f.shell.layout().workspaceMenuButton.width > 0.0;
+      if (!compact) continue;
+      const auto covered = frame.text;
+      CHECK(f.shell.dispatchSemantic(f.controller, sheet, SemanticAction::Activate).hasValue());
+      CHECK(paintFrame(f, size[0], size[1], 1.0, frame));
+      count(frame);
+      checker.check(frame, frameName(std::string{"ko-"} + sheet, size[0], size[1], 1.0), size[0],
+                    size[1], &covered);
+    }
+  }
+  std::printf("Korean lines painted: %zu, elided: %zu\n", hangulLines, elided);
+  CHECK(hangulLines > 200U);
+  checker.finish("korean");
 }

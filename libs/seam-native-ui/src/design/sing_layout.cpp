@@ -159,6 +159,14 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.wordmark = {l.header.x + 16.0, l.header.y + (headerHeight - 48.0) * 0.5, wordmarkWidth, 48.0};
   l.settings = {l.header.right() - 56.0, l.header.y + (headerHeight - 32.0) * 0.5, 32.0, 32.0};
   l.outputMeterVisible = W >= 1180.0;
+  // With a meter, the 24-point language target fits the canonical gap before Settings. Without a
+  // meter, stack the two settings controls so the compact transport and wordmark keep their width.
+  if (l.outputMeterVisible) {
+    l.language = {l.settings.x - 28.0, l.settings.y + 4.0, 24.0, 24.0};
+  } else {
+    l.settings.y = l.header.y + (headerHeight - 60.0) * 0.5;
+    l.language = {l.settings.x + 4.0, l.settings.bottom() + 4.0, 24.0, 24.0};
+  }
   const auto meterWidth = l.outputMeterVisible ? 160.0 : 0.0;
   l.outputMeter = {l.settings.x - 32.0 - meterWidth, l.header.y + (headerHeight - 44.0) * 0.5,
                    meterWidth, 44.0};
@@ -174,12 +182,20 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     l.wordmark.width = 0.0;  // The menu carries the identity and appearance at minimum width.
   if (l.modeSwitch.x < l.wordmark.right() + 12.0)
     l.wordmark.width = std::max(0.0, l.modeSwitch.x - 12.0 - l.wordmark.x);
-  const auto tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
+  auto tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
   auto tabsWidth = std::clamp(l.modeSwitch.x - 24.0 - tabsLeft, 0.0, 400.0);
   if (tabsWidth < 5.0 * 36.0) tabsWidth = 0.0;
-  l.workspaceTabs = {tabsLeft, l.header.y + 8.0, tabsWidth, headerHeight - 16.0};
   if (tabsWidth == 0.0) {
     const auto right = l.modeSwitch.width > 0.0 ? l.modeSwitch.x - 12.0 : l.transport.x - 12.0;
+    // The menu button keeps room for its label: the wordmark gives way first, as it does for the
+    // mode switch (the About sheet still carries the identity).
+    constexpr double kMenuButtonRoom = 88.0;
+    if (l.wordmark.width > 0.0 && right - tabsLeft < kMenuButtonRoom) {
+      l.wordmark.width = std::max(0.0, right - kMenuButtonRoom - 24.0 - l.wordmark.x);
+      // A narrower slot would elide the fallback SEAM wordmark. The menu carries the identity.
+      if (l.wordmark.width < 100.0) l.wordmark.width = 0.0;
+      tabsLeft = l.wordmark.width > 0.0 ? l.wordmark.right() + 24.0 : l.header.x + 16.0;
+    }
     const auto buttonWidth = std::clamp(right - tabsLeft, 0.0, W < 720.0 ? 92.0 : 120.0);
     l.workspaceMenuButton = {tabsLeft, l.header.y + (headerHeight - 32.0) * 0.5,
                              buttonWidth, 32.0};
@@ -200,6 +216,7 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
                              l.workspaceMenu.y + 8.0 + kRow * workspaceRows, half, kRow};
     }
   }
+  l.workspaceTabs = {tabsLeft, l.header.y + 8.0, tabsWidth, headerHeight - 16.0};
   l.workspaceLabelsVisible = tabsWidth >= 320.0;
   const auto tabWidth = tabsWidth / 5.0;
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i)

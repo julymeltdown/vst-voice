@@ -258,7 +258,7 @@ public:
   [[nodiscard]] std::string title(const NativeEditorController& controller,
                                   const EditorSceneState&) const override {
     const auto& unit = controller.sampleMicroscopeUnitId();
-    return unit.empty() ? std::string{tr(Str::Sample)} : tr(Str::Sample2) + unit;
+    return unit.empty() ? std::string{tr(Str::Sample)} : trf(Str::SampleUnit, {unit});
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
                                                      const EditorSceneState&,
@@ -367,8 +367,8 @@ void SampleMicroscopeOverlay::paint(Canvas2D& c, const DesignTokens& t,
                           view.detailsPage + 1U < view.detailsPageCount, false, false);
       c.text({next->right() + 12.0, next->y, std::max(1.0, panel.right() - next->right() - 28.0),
               next->height},
-             tr(Str::Page) + std::to_string(view.detailsPage + 1U) + " / " +
-                 std::to_string(view.detailsPageCount),
+             trf(Str::PageOfPages, {std::to_string(view.detailsPage + 1U),
+                                        std::to_string(view.detailsPageCount)}),
              style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
     }
   } else {
@@ -719,7 +719,7 @@ std::vector<OverlayControl> TimeMapOverlay::controls(const NativeEditorControlle
     OverlayControl row{"time-map-row." + std::to_string(i),
                        {panel.x + kPanelInset, rowsTop + static_cast<double>(i) * kRowHeight,
                         std::max(1.0, panel.width - 2.0 * kPanelInset), kRowHeight - 2.0},
-                       tr(Str::EventRow) + std::to_string(i + 1U), SemanticRole::Button, !editing,
+                       trf(Str::EventRowNumber, {std::to_string(i + 1U)}), SemanticRole::Button, !editing,
                        selected};
     row.value = state.timeMapRows[i];
     out.push_back(std::move(row));
@@ -928,16 +928,16 @@ void RecoverySupportOverlay::paint(Canvas2D& c, const DesignTokens& t,
   c.save();
   c.clipRect(panel);
   const auto preview = support.mode == RecoverySupportMode::Preview;
-  const auto summary = preview ? tr(Str::Candidate) + support.candidateId
-                               : std::to_string(support.reportCount) + tr(Str::OwnedReport) +
-                                     (support.reportCount == 1U ? "" : "s");
+  const auto summary = preview ? trf(Str::CandidateId, {support.candidateId})
+                               : trf(support.reportCount == 1U ? Str::OwnedReportCountOne : Str::OwnedReportCount,
+                                     {std::to_string(support.reportCount)});
   c.text({panel.x + kPanelInset, panel.y + 44.0, std::max(1.0, panel.width - 2.0 * kPanelInset), 16.0}, summary,
          style(FontRole::Ui, t.type.smallLabel), t.color.textPrimary);
   if (preview) {
     const auto sha = support.archiveSha256.substr(
         0U, std::min<std::size_t>(12U, support.archiveSha256.size()));
     c.text({panel.x + kPanelInset, panel.y + 60.0, std::max(1.0, panel.width - 2.0 * kPanelInset), 14.0},
-           tr(Str::ZIP) + std::to_string(support.archiveBytes) + tr(Str::BSHA256) + sha,
+           trf(Str::ZipBytesSha256, {std::to_string(support.archiveBytes), sha}),
            style(FontRole::Mono, t.type.rulerMicro), t.color.textSecondary);
   }
   if (const auto* previous = findControl(controls, "support.track.previous"))
@@ -959,8 +959,10 @@ void RecoverySupportOverlay::paint(Canvas2D& c, const DesignTokens& t,
     c.text({bounds->x + 10.0, bounds->y + 21.0, std::max(1.0, bounds->width - 20.0), 14.0},
            item.detail, style(FontRole::Ui, t.type.rulerMicro), t.color.textSecondary);
     c.text({bounds->x + 10.0, bounds->y + 36.0, std::max(1.0, bounds->width - 20.0), 12.0},
-           std::to_string(item.bytes) + tr(Str::B) +
-               (selectable ? std::string{} : item.included ? tr(Str::Included) : tr(Str::Excluded)),
+           trf(selectable       ? Str::ByteCount
+               : item.included ? Str::ByteCountIncluded
+                               : Str::ByteCountExcluded,
+               {std::to_string(item.bytes)}),
            style(FontRole::Mono, t.type.rulerMicro), t.color.textDisabled);
   }
   c.restore();
@@ -1043,7 +1045,7 @@ public:
   [[nodiscard]] std::string title(const NativeEditorController&,
                                   const EditorSceneState& state) const override {
     const auto count = state.overlapDetail.has_value() ? state.overlapDetail->members.size() : 0U;
-    return std::to_string(count) + tr(Str::OverlappingNotes2);
+    return trf(Str::OverlappingNoteCount, {std::to_string(count)});
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
                                                      const EditorSceneState& state,
@@ -1060,8 +1062,8 @@ public:
       if (row.bottom() > panel.bottom() - 4.0) break;
       out.push_back({"overlap-note-row." + std::to_string(i),
                      row,
-                     tr(Str::OverlapNote) + std::to_string(i + 1U) + ": " + lyric + tr(Str::MIDI) +
-                         std::to_string(member.midiKey),
+                     trf(Str::OverlapNoteRow,
+                         {std::to_string(i + 1U), lyric, std::to_string(member.midiKey)}),
                      SemanticRole::Button, true, member.selected});
     }
     return out;
@@ -1103,7 +1105,7 @@ void OverlapDetailOverlay::paint(Canvas2D& c, const DesignTokens& t, const Nativ
            style(FontRole::Ui, t.type.smallLabel),
            member.selected ? t.color.accent : t.color.textPrimary);
     c.text({bounds->right() - 60.0, bounds->y, 54.0, bounds->height},
-           tr(Str::MIDI2) + std::to_string(member.midiKey),
+           trf(Str::MidiKey, {std::to_string(member.midiKey)}),
            style(FontRole::Mono, t.type.rulerMicro, 0.0, TextAlign::Right),
            t.color.textSecondary);
   }
@@ -1171,7 +1173,7 @@ public:
                                   const EditorSceneState& state) const override {
     return state.diagnostics.size() == 1U
                ? std::string{tr(Str::Diagnostics)}
-               : tr(Str::Diagnostics2) + std::to_string(state.diagnostics.size()) + tr(Str::Issues);
+               : trf(Str::DiagnosticsIssueCount, {std::to_string(state.diagnostics.size())});
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
                                                      const EditorSceneState& state,
@@ -1299,8 +1301,8 @@ void DiagnosticsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeE
     const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
     c.text({panel.x + kPanelInset + 196.0, top, std::max(1.0, panel.width - 2.0 * kPanelInset - 196.0),
             26.0},
-           std::to_string(start + 1U) + tr(Str::Text6) + std::to_string(end) + tr(Str::Of) +
-               std::to_string(state.diagnostics.size()),
+           trf(Str::RangeOfTotal, {std::to_string(start + 1U), std::to_string(end),
+                                   std::to_string(state.diagnostics.size())}),
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   }
   c.restore();
@@ -1520,7 +1522,7 @@ std::vector<OverlayControl> ReplacementReviewOverlay::controls(
   for (std::size_t k = 0U; k < g.rows.size(); ++k) {
     const auto i = g.firstRow + k;
     OverlayControl row{prefix + "row." + std::to_string(i), g.rows[k],
-                       tr(Str::ReviewRow) + std::to_string(i + 1U),
+                       trf(Str::ReviewRowNumber, {std::to_string(i + 1U)}),
                        view.rowsInspectable ? SemanticRole::Button : SemanticRole::Status, true,
                        false, view.rowsInspectable};
     row.value = view.rows[i];
@@ -1545,7 +1547,7 @@ std::vector<OverlayControl> ReplacementReviewOverlay::controls(
         const ui::Rect r{std::clamp(at.x - 6.0, g.plot.x, g.plot.right() - 12.0),
                          std::clamp(at.y - 6.0, g.plot.y, g.plot.bottom() - 12.0), 12.0, 12.0};
         OverlayControl point{prefix + "point." + std::to_string(handle.pageRow), r,
-                             tr(Str::DynamicsPoint) + std::to_string(handle.pageRow + 1U),
+                             trf(Str::DynamicsPointNumber, {std::to_string(handle.pageRow + 1U)}),
                              SemanticRole::Button, plot.editable};
         point.value = view.rows[handle.pageRow];
         out.push_back(std::move(point));
@@ -1602,7 +1604,7 @@ void ReplacementReviewOverlay::paint(Canvas2D& c, const DesignTokens& t,
       const auto index = static_cast<std::size_t>(control.id.back() - '0');
       label = index < 4U ? tr(kShort[index]) : label;
       if (index == 3U && view.dynamicsPlot && view.dynamicsPlot->measuredMode)
-        label = tr(Str::Ch) + std::to_string(view.dynamicsPlot->measuredChannel);
+        label = trf(Str::ChannelShort, {std::to_string(view.dynamicsPlot->measuredChannel)});
     }
     paintOverlayControl(c, t, r, label, SemanticRole::Button, control.enabled, false, false);
   }
@@ -1615,10 +1617,10 @@ void ReplacementReviewOverlay::paint(Canvas2D& c, const DesignTokens& t,
                              : std::string{tr(Str::ScoreGrayDraftPinkTargetCyan)},
            caption, t.color.textSecondary);
     c.text({g.plot.x, g.plot.y - 12.0, g.plot.width, 11.0},
-           tr(Str::Ticks) + std::to_string(plot.startTick) + ".." + std::to_string(plot.endTick) +
-               (plot.measuredMode ? tr(Str::DBFS96) +
-                                        std::to_string(static_cast<int>(plot.measuredCeilingDb))
-                                  : std::string{tr(Str::Gain03981)}),
+           plot.measuredMode
+               ? trf(Str::TicksDbfsRange, {std::to_string(plot.startTick), std::to_string(plot.endTick),
+                                           std::to_string(static_cast<int>(plot.measuredCeilingDb))})
+               : trf(Str::TicksGainRange, {std::to_string(plot.startTick), std::to_string(plot.endTick)}),
            caption, t.color.textSecondary);
     sunken(c, t, g.plot, 6.0);
     c.save();
@@ -1839,16 +1841,16 @@ std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorCon
                        device.name.empty() ? device.id : device.name, SemanticRole::Button, true,
                        device.selected};
     row.value = device.physical ? tr(Str::PhysicalDevice) : tr(Str::FallbackDevice);
-    row.description = tr(Str::DeviceId) + device.id;
+    row.description = trf(Str::DeviceIdValue, {device.id});
     out.push_back(std::move(row));
   }
   static constexpr std::array<const char*, 3U> kIds{"audio.sample-rate", "audio.block-frames",
                                                     "audio.channels"};
   static constexpr std::array<Str, 3U> kNames{Str::SampleRate, Str::BlockSize, Str::OutputChannels};
   const std::array<std::string, 3U> values{
-      std::to_string(audio.current.sampleRate) + tr(Str::Hz),
-      std::to_string(audio.current.blockFrames) + tr(Str::Frames),
-      std::to_string(audio.current.outputChannels) + tr(Str::Channels)};
+      trf(Str::HertzValue, {std::to_string(audio.current.sampleRate)}),
+      trf(Str::FrameCount, {std::to_string(audio.current.blockFrames)}),
+      trf(Str::ChannelCount, {std::to_string(audio.current.outputChannels)})};
   for (std::size_t i = 0U; i < 3U; ++i) {
     OverlayControl field{kIds[i], cells[i], tr(kNames[i])};
     field.value = values[i];
@@ -1858,8 +1860,7 @@ std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorCon
   }
   OverlayControl counts{"audio.diagnostics", stats, tr(Str::AudioDiagnostics), SemanticRole::Status, true,
                         false, false};
-  counts.value = tr(Str::Underflow) + std::to_string(audio.underflowFrames) + tr(Str::XRun) +
-                 std::to_string(audio.xruns) + (audio.diagnostic.empty() ? "" : " / " + audio.diagnostic);
+  counts.value = trf(Str::UnderflowXrunCounts, {std::to_string(audio.underflowFrames), std::to_string(audio.xruns)}) + (audio.diagnostic.empty() ? "" : " / " + audio.diagnostic);
   out.push_back(std::move(counts));
   return out;
 }
@@ -1890,8 +1891,8 @@ void AudioSettingsOverlay::paint(Canvas2D& c, const DesignTokens& t, const Nativ
       c.text({r.right() - 118.0, r.y, 110.0, r.height}, control.value,
              style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), t.color.textSecondary);
     } else if (control.id == "audio.diagnostics") {
-      const auto counts = tr(Str::UnderflowFrames) + std::to_string(audio.underflowFrames) + tr(Str::XRuns) +
-                          std::to_string(audio.xruns);
+      const auto counts = trf(Str::UnderflowFramesXrunCounts,
+                              {std::to_string(audio.underflowFrames), std::to_string(audio.xruns)});
       if (r.height >= 30.0) {
         c.text({r.x, r.y, r.width, 16.0}, counts, style(FontRole::Mono, t.type.smallLabel),
                t.color.textSecondary);
@@ -1899,7 +1900,7 @@ void AudioSettingsOverlay::paint(Canvas2D& c, const DesignTokens& t, const Nativ
           c.text({r.x, r.y + 18.0, r.width, 16.0}, audio.diagnostic, style(FontRole::Ui, t.type.smallLabel),
                  t.color.warning);
       } else {
-        c.text(r, audio.diagnostic.empty() ? counts : counts + tr(Str::Text4) + audio.diagnostic,
+        c.text(r, audio.diagnostic.empty() ? counts : trf(Str::CountsWithDiagnostic, {counts, audio.diagnostic}),
                style(FontRole::Ui, t.type.smallLabel),
                audio.diagnostic.empty() ? t.color.textSecondary : t.color.warning);
       }
@@ -2051,17 +2052,21 @@ bool cardSelected(const EditorSceneState& state, const authoring::VoicebankCard&
 std::string cardRange(const authoring::VoicebankCard& card) {
   if (card.rootPitchLayers.empty()) return tr(Str::RangeUnknown);
   const auto [low, high] = std::minmax_element(card.rootPitchLayers.begin(), card.rootPitchLayers.end());
-  return *low == *high ? noteName(*low) : noteName(*low) + tr(Str::Text6) + noteName(*high);
+  return *low == *high ? noteName(*low) : trf(Str::NoteRange, {noteName(*low), noteName(*high)});
 }
 
 std::string cardFeatures(const authoring::VoicebankCard& card) {
+  // Each feature is a whole word of its own, so a translation never sees a fragment; they read as
+  // a space-separated list.
   std::string features;
-  if (card.hasSustain) features += tr(Str::Sustain);
-  if (card.hasRelease) features += tr(Str::Release);
-  if (card.hasBreath) features += tr(Str::Breath2);
-  if (features.empty()) return tr(Str::NoReleaseSustainData);
-  features.pop_back();
-  return features;
+  const auto add = [&features](Str word) {
+    if (!features.empty()) features += ' ';
+    features += tr(word);
+  };
+  if (card.hasSustain) add(Str::FeatureSustain);
+  if (card.hasRelease) add(Str::FeatureRelease);
+  if (card.hasBreath) add(Str::FeatureBreath);
+  return features.empty() ? std::string{tr(Str::NoReleaseSustainData)} : features;
 }
 
 class VoicebankBrowserOverlay final : public ShellOverlay {
@@ -2084,7 +2089,7 @@ public:
                                   const EditorSceneState& state) const override {
     return state.voicebankCards.size() == 1U
                ? std::string{tr(Str::Voices1Installed)}
-               : tr(Str::Voices) + std::to_string(state.voicebankCards.size()) + tr(Str::Installed);
+               : trf(Str::VoicesInstalledCount, {std::to_string(state.voicebankCards.size())});
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
                                                      const EditorSceneState& state,
@@ -2135,14 +2140,17 @@ std::vector<OverlayControl> VoicebankBrowserOverlay::controls(const NativeEditor
     const auto selected = cardSelected(state, card);
     OverlayControl control{"voicebank.card." + std::to_string(i), g.cards[k], card.displayName,
                            SemanticRole::Button, card.selectable, selected};
-    control.value = card.version + " / " + card.trustLabel + (selected ? tr(Str::Selected) : "");
-    control.description = (card.language.empty() ? std::string{tr(Str::LanguageUnknown)} : card.language) +
-                          " / " + cardRange(card) + " / " + std::to_string(card.styles.size()) +
-                          tr(Str::StylesUnits) + std::to_string(card.enabledUnitCount) + tr(Str::Enabled) +
-                          std::to_string(card.disabledUnitCount) + tr(Str::Disabled) + cardFeatures(card) +
-                          tr(Str::Hash) + card.contentHashAbbreviation;
+    control.value = trf(selected ? Str::VoiceCardValueSelected : Str::VoiceCardValue,
+                        {card.version, card.trustLabel});
+    control.description = trf(
+        Str::VoiceCardDescription,
+        {card.language.empty() ? std::string{tr(Str::LanguageUnknown)} : card.language, cardRange(card),
+         std::to_string(card.styles.size()), std::to_string(card.enabledUnitCount),
+         std::to_string(card.disabledUnitCount), cardFeatures(card), card.contentHashAbbreviation,
+         trf(Str::VoiceCardCounts, {std::to_string(card.styles.size()),
+                                   std::to_string(card.enabledUnitCount), cardFeatures(card)})});
     for (const auto& diagnostic : card.diagnostics) control.description += " / " + diagnostic;
-    if (!card.selectable) control.description += tr(Str::NotSelectableNotTrusted);
+    if (!card.selectable) control.description = trf(Str::NotSelectableNotTrusted, {control.description});
     out.push_back(std::move(control));
   }
   if (g.paged) {
@@ -2202,16 +2210,16 @@ void VoicebankBrowserOverlay::paint(Canvas2D& c, const DesignTokens& t,
            style(FontRole::UiSemibold, t.type.label),
            control.selected ? t.color.accent : card.selectable ? t.color.textPrimary : t.color.textDisabled);
     c.text({x, r.y + 25.0, w, 14.0},
-           (card.language.empty() ? std::string{tr(Str::Text2)} : card.language) + tr(Str::Text4) + cardRange(card) +
-               tr(Str::Text4) + card.trustLabel,
+           trf(Str::VoiceCardSummary, {card.language.empty() ? std::string{tr(Str::Text2)} : card.language,
+                                        cardRange(card), card.trustLabel}),
            style(FontRole::Ui, t.type.smallLabel), card.selectable ? t.color.textSecondary : t.color.warning);
     c.text({x, r.y + 40.0, w, 14.0},
-           std::to_string(card.styles.size()) + tr(Str::Styles) + std::to_string(card.enabledUnitCount) +
-               tr(Str::Units) + cardFeatures(card),
+           trf(Str::VoiceCardCounts, {std::to_string(card.styles.size()), std::to_string(card.enabledUnitCount),
+                                       cardFeatures(card)}),
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
     const auto last = !card.diagnostics.empty() ? card.diagnostics.front()
                       : control.selected       ? std::string{tr(Str::SelectedForThisTrack)}
-                                               : tr(Str::Hash2) + card.contentHashAbbreviation;
+                                               : trf(Str::HashValue, {card.contentHashAbbreviation});
     c.text({x, r.y + 55.0, w, 14.0}, last, style(FontRole::Ui, t.type.rulerMicro + 1.0),
            !card.diagnostics.empty() ? t.color.warning : control.selected ? t.color.accent : t.color.textDisabled);
   }
@@ -2220,9 +2228,9 @@ void VoicebankBrowserOverlay::paint(Canvas2D& c, const DesignTokens& t,
     paintOverlayControl(c, t, g.next, tr(Str::Next), SemanticRole::Button, g.first + g.perPage < cards.size(),
                         false, false);
     c.text(g.pageLabel,
-           std::to_string(g.first + 1U) + tr(Str::Text6) +
-               std::to_string(std::min(g.first + g.perPage, cards.size())) + tr(Str::Of) +
-               std::to_string(cards.size()),
+           trf(Str::RangeOfTotal, {std::to_string(g.first + 1U),
+                                   std::to_string(std::min(g.first + g.perPage, cards.size())),
+                                   std::to_string(cards.size())}),
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   }
   c.restore();
@@ -2557,7 +2565,7 @@ public:
           .id = std::string{kSingerMenuPrefix} + std::string{choice.key},
           .bounds = {panel.x + kSingerMenuInset + static_cast<double>(i) * (segment + 4.0),
                      switchTop, segment, kSingerMenuSwitchRow},
-          .name = std::string{tr(Str::CharacterDisplay)} + tr(choice.label),
+          .name = trf(Str::CharacterDisplayChoice, {tr(choice.label)}),
           .role = SemanticRole::Button,
           .selected = choice.mode == mode,
           .description = tr(Str::ShowsTheSingerFullMinimalOrOff),
@@ -2803,8 +2811,8 @@ public:
       const auto area = splashTitleArea(art);
       paintSplashScrim(c, t, art, area);
       c.restore();
-      const auto version = std::string{tr(Str::Version)} + std::string{seam::build::kApplicationVersion};
-      const auto build = std::string{tr(Str::Build)} + std::string{seam::build::kBuildId};
+      const auto version = trf(Str::VersionValue, {seam::build::kApplicationVersion});
+      const auto build = trf(Str::BuildValue, {seam::build::kBuildId});
       static_cast<void>(paintSplashText(
           c, area,
           {SplashLine{tr(Str::ProjectSEAM), style(t.type.display, 28.0), t.color.textPrimary},

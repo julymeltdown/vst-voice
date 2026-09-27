@@ -300,6 +300,13 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   persist_ = false;
   ++artGeneration_;
   layers_.invalidate();
+  // The translation files sit beside the design assets; the preferences name the language.
+  translations_ = locateShellTranslations(assetRoot);
+  uninstallShellStrings(strings_.get());
+  strings_.reset();
+  stringsLanguage_ = shellLanguages().front().code;
+  languageReport_ = {};
+  applyLanguage();
   // An Increase Contrast change in System Settings repaints an idle editor: a frame reads the
   // system setting itself, but nothing else would ask for one.
   if (available()) displayOptionsObservation_ = observeSystemDisplayOptions([this] { repaint(); });
@@ -414,6 +421,24 @@ std::filesystem::path locateCharacterAssets(const std::filesystem::path& designA
   return {};
 }
 
+std::filesystem::path locateShellTranslations(const std::filesystem::path& designAssets) {
+  std::vector<std::filesystem::path> candidates;
+  if (const char* root = std::getenv("SEAM_L10N_ASSETS"); root != nullptr && *root != '\0')
+    candidates.emplace_back(root);
+  // Beside the design assets, as the character package is: assets/l10n in the source tree and
+  // Resources/l10n in a bundle.
+  if (!designAssets.empty()) candidates.push_back(designAssets.parent_path() / "l10n");
+  if (const auto own = paint::codeBundleResources(); !own.empty()) candidates.push_back(own / "l10n");
+#if defined(SEAM_UI_DESIGN_SOURCE_ASSETS)
+  candidates.emplace_back(std::filesystem::path{SEAM_UI_DESIGN_SOURCE_ASSETS}.parent_path() / "l10n");
+#endif
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (std::filesystem::is_directory(candidate, error)) return candidate;
+  }
+  return {};
+}
+
 bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
   switch (kind) {
     case OverlayKind::SampleMicroscope:
@@ -506,6 +531,62 @@ void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   stageFade_.reset();
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
+}
+
+SingShell::~SingShell() { uninstallShellStrings(strings_.get()); }
+
+void SingShell::applyLanguage() {
+  preferences_.language = std::string{shellLanguageFor(
+      preferences_.languageFollowsSystem ? systemPreferredLanguage() : preferences_.language)};
+  if (stringsLanguage_ != preferences_.language) {
+    uninstallShellStrings(strings_.get());
+    strings_.reset();
+    languageReport_ = {};
+    stringsLanguage_ = preferences_.language;
+    // English is compiled in. Any other language reads its file; a missing or unreadable file
+    // leaves the shell in English rather than half-translated.
+    if (preferences_.language != shellLanguages().front().code && !translations_.empty()) {
+      if (auto loaded = loadShellStrings(translations_ / (preferences_.language + ".json"))) {
+        languageReport_ = std::move(loaded.value().report);
+        strings_ = std::make_unique<ShellStringTable>(std::move(loaded.value().table));
+      }
+    }
+    // Every cached layer drew the previous language's words.
+    layers_.invalidate();
+    ++artGeneration_;
+    repaint();
+  }
+  // An English shell installs nothing, so it never replaces a table someone else installed.
+  if (strings_ != nullptr) installShellStrings(strings_.get());
+}
+
+void SingShell::setLanguage(std::string_view language, bool persist) {
+  preferences_.language = std::string{shellLanguageFor(language)};
+  preferences_.languageFollowsSystem = false;
+  applyLanguage();
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::followSystemLanguage(bool persist) {
+  preferences_.languageFollowsSystem = true;
+  applyLanguage();
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::cycleLanguage(int direction, bool persist) {
+  // Choices: the system's language, then each offered language in order.
+  const auto& languages = shellLanguages();
+  const auto choices = static_cast<int>(languages.size()) + 1;
+  auto current = 0;
+  if (!preferences_.languageFollowsSystem) {
+    for (std::size_t i = 0U; i < languages.size(); ++i)
+      if (languages[i].code == preferences_.language) current = static_cast<int>(i) + 1;
+  }
+  const auto next = ((current + (direction < 0 ? -1 : 1)) % choices + choices) % choices;
+  if (next == 0) followSystemLanguage(persist);
+  else setLanguage(languages[static_cast<std::size_t>(next - 1)].code, persist);
 }
 
 bool SingShell::assetsLoaded(DesignMode mode) const noexcept {
@@ -1118,6 +1199,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
       return false;
     }
   }
+  // Another shell (a second plug-in instance) may have installed its table since the last frame.
+  if (strings_ != nullptr) installShellStrings(strings_.get());
   auto& model = controller.pianoRoll();
   laneEditable_ = state.expressionLabelVisible() && state.expression.refusal.empty();
   const auto& t = tokensFor(preferences_.mode, preferences_.contrast);
@@ -1460,6 +1543,17 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.restore();
   }
   icon(c, Icon::Gear, {l.settings.x + 16.0, l.settings.y + 16.0}, 22.0, t.color.textSecondary);
+  // The language control: the current language's code in a keyline, the gear's neighbour.
+  if (l.language.width > 0.0) {
+    std::string code{preferences_.language};
+    std::transform(code.begin(), code.end(), code.begin(),
+                   [](char ch) { return ch >= 'a' && ch <= 'z' ? static_cast<char>(ch - 'a' + 'A') : ch; });
+    const auto box = ui::Rect{l.language.x + 3.0, l.language.y + 6.0, l.language.width - 6.0,
+                              l.language.height - 12.0};
+    c.stroke(Path::roundedRect(box, 5.0), t.color.textSecondary, StrokeStyle{1.25});
+    c.text(box, code, style(FontRole::UiSemibold, t.type.rulerMicro + 1.0, 0.4, TextAlign::Center),
+           t.color.textSecondary);
+  }
 
   // The protagonist's avatar, where the header has room for it: the same state the SINGER card
   // spells out, so the header never disagrees with the rack. It is the singer's status, not a
@@ -1633,8 +1727,8 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
                              : std::string{tr(Str::NoTrack)};
   c.text({chip.x + 10, chip.y, chip.width - 20, chip.height}, trackName,
          style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Left, true), t.color.textPrimary);
-  const auto project = (state.projectName.empty() ? std::string{tr(Str::Untitled)} : state.projectName) +
-                       (state.dirty ? tr(Str::Edited) : "");
+  const auto name = state.projectName.empty() ? std::string{tr(Str::Untitled)} : state.projectName;
+  const auto project = state.dirty ? trf(Str::Edited, {name}) : name;
   c.text({chip.right() + 14.0, chip.y, l.gridLabel.x - chip.right() - 24.0, chip.height}, project,
          style(FontRole::Ui, t.type.label), t.color.textSecondary);
   // Whether the notes carry the current render's waveform, and if not, the short reason (the full
@@ -1987,11 +2081,10 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     }
     const auto direction = static_cast<std::size_t>(
         std::max_element(away.begin(), away.end()) - away.begin());
-    static constexpr std::array<const char*, 4U> kArrow{"↑ ", "↓ ", "← ", "→ "};
     static constexpr std::array<Str, 4U> kWhere{Str::NotesAbove, Str::NotesBelow, Str::NotesEarlier,
-                                                        Str::NotesLater};
+                                                Str::NotesLater};
     const auto count = away[direction] > 0U ? away[direction] : total;
-    const auto hint = std::string{kArrow[direction]} + std::to_string(count) + tr(kWhere[direction]);
+    const auto hint = trf(kWhere[direction], {std::to_string(count)});
     const auto hintStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true);
     const auto chipWidth = c.measure(hint, hintStyle) + 28.0;
     const auto centerY = l.grid.y + (l.grid.height - 22.0) * 0.5;
@@ -2131,9 +2224,11 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   const auto& e = state.expression;
   const auto descriptor = ui::describeExpressionChannel(e.channel);
   const auto scale = descriptor.unit == "semitones" ? 1.0 : 100.0;
-  const auto unit = descriptor.unit == "semitones" ? tr(Str::St) : " %";
-  std::string infoText = format("%.1f", e.valueAtPlayhead * scale) + unit + tr(Str::AtPlayhead);
-  if (e.draftChanged) infoText += tr(Str::UnsavedDraft);
+  const auto value = format("%.1f", e.valueAtPlayhead * scale);
+  std::string infoText = descriptor.unit == "semitones"
+                             ? trf(Str::SemitonesAtPlayhead, {value})
+                             : trf(Str::PercentAtPlayhead, {value});
+  if (e.draftChanged) infoText = trf(Str::WithUnsavedDraft, {infoText});
   c.text(info, infoText, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          t.color.textSecondary);
   // The same value-to-y mapping the controller uses to hit-test and edit this lane, applied to the
@@ -2677,8 +2772,9 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
     if (card.id == state.inspector.voicebank.id && !card.id.empty())
       for (const auto& preset : card.styles) styles += (styles.empty() ? "" : ", ") + preset;
   c.text(l.style,
-         std::string{voiceIdentityStateName(identity.state)} + tr(Str::Text) +
-             (styles.empty() ? std::string{tr(Str::NoStylePresets)} : tr(Str::Style2) + styles),
+         styles.empty() ? trf(Str::IdentityNoStylePresets, {voiceIdentityStateName(identity.state)})
+                        : trf(Str::IdentityWithStyles,
+                              {voiceIdentityStateName(identity.state), styles}),
          style(FontRole::UiMedium, t.type.smallLabel, 0.6), stateColor);
   c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
@@ -2784,7 +2880,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                                 : t.color.info;
     auto title = presentation.title;
     if (state.diagnostics.size() > 1U)
-      title += " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More);
+      title = trf(Str::TitleAndMore, {title, std::to_string(state.diagnostics.size() - 1U)});
     const auto toast = diagnosticsToastBounds();
     // The toast stands over the lane, whose playhead is dynamic: it is dynamic too, recorded after
     // that playhead, so a moving playhead never draws across it.
@@ -2814,7 +2910,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   std::string label{renderStatusStateName(s.state)};
   if (s.state == RenderStatusState::Rendering && s.totalPhrases > 0U)
     label += " " + std::to_string(s.completedPhrases) + "/" + std::to_string(s.totalPhrases);
-  if (s.audibleAudioStale) label += tr(Str::AudioStale);
+  if (s.audibleAudioStale) label = trf(Str::WithAudioStale, {label});
   c.text({meter.right() + 12.0, l.status.y, l.status.right() - meter.right() - 24.0, l.status.height},
          label + format("  %.0f%%", fraction * 100.0),
          style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Right, true),
@@ -2863,9 +2959,9 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                {segment.x, segment.y, segment.width * exportFraction, segment.height}, 5.0),
            withAlpha(t.color.accent, 0.30));
     c.stroke(Path::roundedRect(segment, 5.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
-    auto text = tr(Str::Export2) + std::string{authoring::exportStateName(progress.state)} + " " +
-                std::to_string(progress.completedFiles) + "/" +
-                std::to_string(progress.totalFiles);
+    auto text = trf(Str::ExportStateProgress,
+                    {authoring::exportStateName(progress.state),
+                     std::to_string(progress.completedFiles), std::to_string(progress.totalFiles)});
     if (progress.state != authoring::ExportState::Committed &&
         progress.state != authoring::ExportState::Recovered && !progress.currentOutput.empty())
       text += " / " + progress.currentOutput;
@@ -3033,7 +3129,7 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
   const auto failed = s.state == RenderStatusState::Failed;
   if (!state.diagnostics.empty()) {
     auto text = presentDiagnostic(state.diagnostics.front()).title;
-    if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += tr(Str::Text3) + s.diagnostic;
+    if (failed && !s.diagnostic.empty() && s.diagnostic != text) text = trf(Str::WithDetail, {text, s.diagnostic});
     return {std::move(text), StatusTone::Warning};
   }
   // A selected seam in a host that cannot audition its B render says so in the status line, the
@@ -3043,7 +3139,8 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
             StatusTone::Normal};
   // A render note is status, not a warning, unless the render itself failed.
   if (!s.diagnostic.empty()) return {s.diagnostic, failed ? StatusTone::Warning : StatusTone::Normal};
-  return {state.audioDeviceOnline ? tr(Str::Audio) + state.audioBackend : std::string{tr(Str::AudioOffline)},
+  return {state.audioDeviceOnline ? trf(Str::AudioBackend, {state.audioBackend})
+                                  : std::string{tr(Str::AudioOffline)},
           StatusTone::Normal};
 }
 
@@ -3069,12 +3166,13 @@ std::string exportStateLabel(authoring::ExportState state) {
 std::string channelLayout(std::uint8_t channels) {
   if (channels == 1U) return tr(Str::Mono);
   if (channels == 2U) return tr(Str::Stereo);
-  return std::to_string(channels) + tr(Str::Channels);
+  return trf(Str::ChannelCount, {std::to_string(channels)});
 }
 
 std::string sampleRateLabel(std::uint32_t rate) {
   const auto khz = static_cast<double>(rate) / 1000.0;
-  return (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + tr(Str::KHz);
+  return trf(Str::KilohertzValue,
+             {std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)});
 }
 
 }  // namespace
@@ -3141,12 +3239,12 @@ ExportPanelLayout exportPanelLayout(ui::Rect area) {
 std::string exportPlanSummary(const std::optional<ShellExportPlan>& plan,
                               const std::string& unavailable) {
   if (!plan) return unavailable;
-  std::string summary = plan->master ? tr(Str::Master) + channelLayout(plan->channels) + ", " +
-                                           sampleRateLabel(plan->sampleRate) + ", " + plan->format
-                                     : std::string{tr(Str::NoMaster)};
-  summary += plan->stems ? tr(Str::OneStemPerTrack) : tr(Str::NoStems);
-  summary += tr(Str::SHA256Receipt);
-  return summary;
+  const auto master = plan->master ? trf(Str::MasterLayoutRateFormat,
+                                         {channelLayout(plan->channels),
+                                          sampleRateLabel(plan->sampleRate), plan->format})
+                                   : std::string{tr(Str::NoMaster)};
+  return trf(Str::ExportPlanSummary,
+             {master, plan->stems ? tr(Str::OneStemPerTrack) : tr(Str::NoStems)});
 }
 
 bool attemptEnded(authoring::ExportState state) noexcept {
@@ -3557,8 +3655,8 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   } else if (plan) {
     const auto y = area.y + 64.0;
     row(left, y, p.columnWidth, tr(Str::MasterMix),
-        plan->master ? channelLayout(plan->channels) + tr(Str::Text4) + sampleRateLabel(plan->sampleRate) +
-                           tr(Str::Text4) + plan->format
+        plan->master ? trf(Str::LayoutRateFormat, {channelLayout(plan->channels),
+                                                     sampleRateLabel(plan->sampleRate), plan->format})
                      : std::string{tr(Str::NotWritten)},
         t.color.textPrimary);
     row(left, y + 46.0, p.columnWidth, tr(Str::Stems),
@@ -3612,10 +3710,11 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   };
   std::vector<StatusLine> lines;
   if (exportRunning_) {
-    lines.push_back({tr(Str::Progress), exportStateLabel(progress.state) + "  " +
-                                     std::to_string(progress.completedFiles) + " / " +
-                                     std::to_string(progress.totalFiles) + tr(Str::Files) +
-                                     (progress.currentOutput.empty() ? "" : "  " + progress.currentOutput),
+    lines.push_back({tr(Str::Progress),
+                     trf(Str::ExportStateFilesDone, {exportStateLabel(progress.state),
+                                                     std::to_string(progress.completedFiles),
+                                                     std::to_string(progress.totalFiles)}) +
+                         (progress.currentOutput.empty() ? "" : "  " + progress.currentOutput),
                      t.color.textPrimary});
   } else if (attemptEnded(progress.state)) {
     lines.push_back({tr(Str::LastAttempt),
@@ -3628,15 +3727,16 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   if (last) {
     const auto folder = last->setPath.empty() ? last->masterPath.parent_path() : last->setPath;
     lines.push_back({tr(Str::LastExport),
-                     exportStateLabel(last->state) + tr(Str::Text4) + std::to_string(last->files.size()) +
-                         tr(Str::Files2) + folder.filename().string(),
+                     trf(Str::ExportStateFilesFolder, {exportStateLabel(last->state),
+                                                       std::to_string(last->files.size()),
+                                                       folder.filename().string()}),
                      last->state == authoring::ExportState::Committed ? t.color.success : t.color.warning});
     if (!p.compact)
       lines.push_back({tr(Str::Master2),
-                       last->masterPath.filename().string() +
-                           (last->masterSha256.size() >= 12U
-                                ? tr(Str::Sha256) + last->masterSha256.substr(0U, 12U) + tr(Str::Text5)
-                                : std::string{}),
+                       last->masterSha256.size() >= 12U
+                           ? trf(Str::FileWithSha256, {last->masterPath.filename().string(),
+                                                       last->masterSha256.substr(0U, 12U)})
+                           : last->masterPath.filename().string(),
                        t.color.textPrimary});
   } else {
     lines.push_back({tr(Str::LastExport), tr(Str::NothingExportedInThisSession), t.color.textSecondary});
@@ -3848,6 +3948,10 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     if (contains(l.settings, p)) {
       controller.showAudioSettings();
       repaint();
+      return core::success();
+    }
+    if (contains(l.language, p)) {
+      cycleLanguage(1);
       return core::success();
     }
     if (const auto open = diagnosticsOpenButton();
@@ -4311,6 +4415,7 @@ bool SingShell::rehomedControl(std::string_view id) noexcept {
 }
 
 void SingShell::refreshSemantics(NativeEditorController& controller) {
+  if (strings_ != nullptr) installShellStrings(strings_.get());
   controller.rebuildAccessibilityTree();
   rebuildSemantics(controller, controller.sceneState());
 }
@@ -4391,7 +4496,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     if (l.workspaceTab[i].width <= 0.0 || l.workspaceTabs.width <= 0.0) break;
     add(SemanticNode{.id = "shell.workspace." + lowercase(englishShellString(kWorkspaces[i])),
                      .role = SemanticRole::Tab,
-                     .name = std::string{tr(kWorkspaces[i])} + tr(Str::Workspace),
+                     .name = trf(Str::NamedWorkspace, {tr(kWorkspaces[i])}),
                      .bounds = l.workspaceTab[i],
                      .selected = tabSelected(i),
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
@@ -4447,14 +4552,15 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       const auto channels = level->peak.size();
       for (std::size_t i = 0U; i < channels; ++i) {
         if (i > 0U) meter.value += ", ";
-        if (channels == 2U) meter.value += i == 0U ? tr(Str::L) : tr(Str::R);
-        else if (channels > 2U) meter.value += std::to_string(i + 1U) + " ";
-        meter.value += level->peak[i] > 0.0F
-                           ? format("%.1f dBFS", 20.0 * std::log10(static_cast<double>(level->peak[i])))
-                           : std::string{tr(Str::InfDBFS)};
+        const auto peak = level->peak[i] > 0.0F
+                              ? format("%.1f dBFS", 20.0 * std::log10(static_cast<double>(level->peak[i])))
+                              : std::string{tr(Str::InfDBFS)};
+        if (channels == 2U) meter.value += trf(i == 0U ? Str::L : Str::R, {peak});
+        else if (channels > 2U) meter.value += trf(Str::ChannelLevel, {std::to_string(i + 1U), peak});
+        else meter.value += peak;
       }
       if (level->clipped) {
-        meter.value += tr(Str::Clipped);
+        meter.value = trf(Str::WithClipped, {meter.value});
         meter.actions.push_back(SemanticAction::Activate);
         meter.description = tr(Str::ActivateToResetTheClipLight);
       }
@@ -4468,6 +4574,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
                    .description = tr(Str::TipAudioSettings)});
+  {
+    const auto& languages = shellLanguages();
+    const auto current = std::find_if(languages.begin(), languages.end(), [this](const ShellLanguage& language) {
+      return language.code == preferences_.language;
+    });
+    const std::string name{current != languages.end() ? current->name : languages.front().name};
+    add(SemanticNode{.id = "shell.language", .role = SemanticRole::Button, .name = tr(Str::Language),
+                     .value = preferences_.languageFollowsSystem ? trf(Str::LanguageFollowsSystem, {name})
+                                                                 : name,
+                     .bounds = l.language,
+                     .actions = {SemanticAction::Activate, SemanticAction::Increment,
+                                 SemanticAction::Decrement, SemanticAction::SetFocus},
+                     .description = tr(Str::LanguageControlDescription)});
+  }
   // The track chip is painted only above the SING score; a covering workspace paints its own body
   // there, so it does not publish it.
   if (workspace_ == Workspace::Sing) {
@@ -4521,9 +4641,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   const auto presentNote = [presentInGrid, painted](SemanticNode& node) {
     if (const auto found = painted->find(node.id); found != painted->end()) {
       node.bounds = found->second.bounds;
-      const std::string_view kDense{tr(Str::DrawnInsideADenseOverlapGroup)};
-      if (found->second.hidden && node.description.find(kDense) == std::string::npos)
-        node.description += tr(Str::DrawnInsideADenseOverlapGroup2);
+      const std::string_view dense{tr(Str::DenseOverlapNote)};
+      if (found->second.hidden && node.description.find(dense) == std::string::npos)
+        node.description = node.description.empty() ? std::string{dense}
+                                                    : trf(Str::WithNote, {node.description, dense});
     }
     presentInGrid(node);
   };
@@ -4568,7 +4689,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   for (std::size_t i = 0U; i < kLanes.size(); ++i) {
     add(SemanticNode{.id = "shell.lane-tab." + lowercase(englishShellString(kLanes[i])),
                      .role = SemanticRole::Tab,
-                     .name = std::string{tr(kLanes[i])} + tr(Str::Lane),
+                     .name = trf(Str::NamedLane, {tr(kLanes[i])}),
                      .bounds = {l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0),
                                 l.laneTabs.y, tabWidth, l.laneTabs.height},
                      .selected = i == selectedLane,
@@ -4582,10 +4703,11 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
         .id = "shell.lane",
         .role = SemanticRole::Lane,
         .name = tr(Str::PhonemesLane),
-        .value = std::to_string(state.phonemes.tokens.size()) + tr(Str::Phonemes2) +
-                 std::to_string(state.unitOverrides.size()) + tr(Str::UnitOverrides) +
-                 std::to_string(state.seamOverrides.size()) + tr(Str::SeamOverrides) +
-                 (state.selectedSeam.has_value() ? tr(Str::BoundarySelected) : ""),
+        .value = trf(state.selectedSeam.has_value() ? Str::PhonemeLaneSummarySelected
+                                                     : Str::PhonemeLaneSummary,
+                     {std::to_string(state.phonemes.tokens.size()),
+                      std::to_string(state.unitOverrides.size()),
+                      std::to_string(state.seamOverrides.size())}),
         .bounds = l.laneTimePlot,
         .enabled = true,
         .actions = {SemanticAction::SetFocus},
@@ -4594,7 +4716,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     for (std::size_t i = 0U; i < bands.band.size(); ++i) {
       add(SemanticNode{.id = std::string{"shell.lane.band."} + kTechnicalBandIds[i],
                        .role = SemanticRole::Button,
-                       .name = std::string{tr(kTechnicalBandNames[i])} + tr(Str::Lane),
+                       .name = trf(Str::NamedLane, {tr(kTechnicalBandNames[i])}),
                        .value = bands.collapsed[i] ? tr(Str::Collapsed) : tr(Str::Expanded),
                        .bounds = bands.toggle[i].width > 0.0 ? bands.toggle[i] : bands.band[i],
                        .actions = {SemanticAction::Activate, SemanticAction::Toggle,
@@ -4606,12 +4728,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     add(SemanticNode{
         .id = "shell.lane",
         .role = SemanticRole::Lane,
-        .name = open ? state.expression.label + tr(Str::Curve) : tr(Str::ExpressionLane),
+        .name = open ? trf(Str::NamedCurve, {state.expression.label}) : tr(Str::ExpressionLane),
         .value = !open ? tr(Str::NoChannelSelected)
                  : !state.expression.refusal.empty() ? state.expression.refusal
                      : state.expression.points.empty()
                          ? tr(Str::NoCurveStored)
-                         : std::to_string(state.expression.points.size()) + tr(Str::Points),
+                         : trf(Str::PointCount, {std::to_string(state.expression.points.size())}),
         .bounds = l.laneTimePlot,
         .enabled = laneEditable_,
         .actions = {SemanticAction::SetFocus},
@@ -4655,7 +4777,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
           .id = "shell.knob." + lowercase(k.label),
           .role = SemanticRole::Slider,
           .name = k.label,
-          .value = refused ? k.refusal : number + (percent ? "%" : tr(Str::Semitones)),
+          .value = refused ? k.refusal : (percent ? number + "%" : trf(Str::Semitones, {number})),
           .bounds = l.knob[i],
           .enabled = !refused,
           .actions = refused ? std::vector<SemanticAction>{SemanticAction::SetFocus}
@@ -4736,10 +4858,11 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     // diagnostic, and the popover opener beside it.
     add(SemanticNode{.id = "shell.diagnostics.toast", .role = SemanticRole::Status,
                      .name = tr(Str::Diagnostic),
-                     .value = presentDiagnostic(state.diagnostics.front()).title +
-                              (state.diagnostics.size() > 1U
-                                   ? " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More)
-                                   : std::string{}),
+                     .value = state.diagnostics.size() > 1U
+                                  ? trf(Str::TitleAndMore,
+                                        {presentDiagnostic(state.diagnostics.front()).title,
+                                         std::to_string(state.diagnostics.size() - 1U)})
+                                  : presentDiagnostic(state.diagnostics.front()).title,
                      .bounds = diagnosticsToastBounds(),
                      .actions = {SemanticAction::SetFocus}});
     if (const auto openButton = diagnosticsOpenButton(); openButton.width > 0.0)
@@ -4850,9 +4973,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                             static_cast<double>(std::max<std::uint64_t>(1U, progress.totalFiles));
       add(SemanticNode{.id = "shell.export.progress", .role = SemanticRole::ProgressIndicator,
                        .name = tr(Str::ExportProgress),
-                       .value = exportStateLabel(progress.state) + ", " +
-                                std::to_string(progress.completedFiles) + tr(Str::Of) +
-                                std::to_string(progress.totalFiles) + tr(Str::Files),
+                       .value = trf(Str::ExportStateFilesOf,
+                                    {exportStateLabel(progress.state),
+                                     std::to_string(progress.completedFiles),
+                                     std::to_string(progress.totalFiles)}),
                        .bounds = statusBounds,
                        .numericValue = fraction * 100.0,
                        .numericMinimum = 0.0,
@@ -4870,11 +4994,11 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     const auto& last = state.lastExport;
     add(SemanticNode{
         .id = "shell.export.last", .role = SemanticRole::Status, .name = tr(Str::LastExport),
-        .value = last ? exportStateLabel(last->state) + ", " + std::to_string(last->files.size()) +
-                            tr(Str::FilesIn) +
-                            (last->setPath.empty() ? last->masterPath.parent_path() : last->setPath)
-                                .filename()
-                                .string()
+        .value = last ? trf(Str::ExportStateFilesIn,
+                            {exportStateLabel(last->state), std::to_string(last->files.size()),
+                             (last->setPath.empty() ? last->masterPath.parent_path() : last->setPath)
+                                 .filename()
+                                 .string()})
                       : std::string{tr(Str::NothingExportedInThisSession)},
         .bounds = statusBounds,
                         .actions = {SemanticAction::SetFocus}});
@@ -5037,6 +5161,10 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     result = core::success();
   } else if (id == "shell.settings" && activate) {
     controller.showAudioSettings();
+    result = core::success();
+  } else if (id == "shell.language" && (activate || action == SemanticAction::Increment ||
+                                         action == SemanticAction::Decrement)) {
+    cycleLanguage(action == SemanticAction::Decrement ? -1 : 1);
     result = core::success();
   } else if (id == "shell.ruler.time-map" && activate) {
     // The transport display's tempo readout opens the time map; the ruler's own button opens the

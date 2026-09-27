@@ -17,12 +17,14 @@
 #include <cstring>
 #include <initializer_list>
 #include <limits>
+#include <map>
 #include <memory>
 #include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -387,6 +389,42 @@ NSFont* fontFor(const TextStyle& style) {
   CTFontRef font = CTFontCreateWithFontDescriptor(descriptor.get(), size, nullptr);
   if (font == nullptr) return systemFontFor(role, size);
   return (__bridge_transfer NSFont*)font;
+}
+
+// Hangul behind every face the shell draws with. The system UI faces already fall back to Apple SD
+// Gothic Neo; naming it as the cascade makes that hold for any face a role uses (a bundled Latin
+// face has no Hangul), at the weight the role asks for.
+NSString* hangulFace(FontRole role) {
+  switch (role) {
+    case FontRole::UiMedium:
+    case FontRole::Mono: return @"AppleSDGothicNeo-Medium";
+    case FontRole::UiSemibold: return @"AppleSDGothicNeo-SemiBold";
+    case FontRole::UiBold:
+    case FontRole::Display: return @"AppleSDGothicNeo-Bold";
+    case FontRole::Ui: break;
+  }
+  return @"AppleSDGothicNeo-Regular";
+}
+
+// The face a line is set in: the role's face with the Hangul cascade, made once per face and size.
+NSFont* textFont(const TextStyle& style) {
+  NSFont* base = fontFor(style);
+  static std::mutex mutex;
+  static std::map<std::tuple<std::string, double, int>, NSFont*> cache;
+  const char* faceName = base.fontName.UTF8String;
+  const auto key = std::make_tuple(std::string{faceName != nullptr ? faceName : ""},
+                                   static_cast<double>(base.pointSize), static_cast<int>(style.role));
+  const std::lock_guard lock{mutex};
+  if (const auto found = cache.find(key); found != cache.end()) return found->second;
+  NSFontDescriptor* hangul = [NSFontDescriptor fontDescriptorWithName:hangulFace(style.role)
+                                                                 size:base.pointSize];
+  NSFontDescriptor* descriptor =
+      [base.fontDescriptor fontDescriptorByAddingAttributes:@{NSFontCascadeListAttribute : @[ hangul ]}];
+  NSFont* font = [NSFont fontWithDescriptor:descriptor size:base.pointSize];
+  if (font == nil) font = base;
+  if (cache.size() >= 512U) cache.clear();
+  cache.emplace(key, font);
+  return font;
 }
 
 class CoreGraphicsCanvas final : public Canvas2D {
@@ -1414,7 +1452,7 @@ private:
     if (style.uppercase) string = [string uppercaseString];
     const auto c = cgColor(color);
     NSDictionary* attributes = @{
-      (__bridge id)kCTFontAttributeName : fontFor(style),
+      (__bridge id)kCTFontAttributeName : textFont(style),
       (__bridge id)kCTForegroundColorAttributeName : (__bridge id)c.get(),
       (__bridge id)kCTKernAttributeName : @(style.tracking),
     };
@@ -1492,6 +1530,35 @@ std::unique_ptr<Canvas2D> makeCanvas(PixelSurface& surface, double scale) {
 bool vectorBackendAvailable() noexcept { return true; }
 
 std::size_t glowSpriteCacheBytes() noexcept { return GlowSprites::shared().bytes(); }
+bool textRenderable(std::string_view utf8, const TextStyle& style) {
+  @autoreleasepool {
+    NSString* string = [[NSString alloc] initWithBytes:utf8.data()
+                                                length:utf8.size()
+                                              encoding:NSUTF8StringEncoding];
+    if (string == nil || string.length == 0) return false;
+    NSAttributedString* attributed = [[NSAttributedString alloc]
+        initWithString:string
+            attributes:@{(__bridge id)kCTFontAttributeName : textFont(style)}];
+    CfRef<CTLineRef> line{CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)attributed)};
+    if (!line) return false;
+    const CFArrayRef runs = CTLineGetGlyphRuns(line.get());
+    CFIndex glyphs = 0;
+    for (CFIndex i = 0; i < CFArrayGetCount(runs); ++i) {
+      const auto run = static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, i));
+      const auto font = static_cast<CTFontRef>(
+          CFDictionaryGetValue(CTRunGetAttributes(run), kCTFontAttributeName));
+      if (font == nullptr) return false;
+      CfRef<CFStringRef> name{CTFontCopyPostScriptName(font)};
+      if (name && CFStringCompare(name.get(), CFSTR("LastResort"), 0) == kCFCompareEqualTo) return false;
+      const auto count = CTRunGetGlyphCount(run);
+      std::vector<CGGlyph> ids(static_cast<std::size_t>(count));
+      CTRunGetGlyphs(run, CFRangeMake(0, count), ids.data());
+      if (std::find(ids.begin(), ids.end(), CGGlyph{0}) != ids.end()) return false;
+      glyphs += count;
+    }
+    return glyphs > 0;
+  }
+}
 
 CGColorSpaceRef presentationColorSpace() noexcept { return srgb(); }
 
