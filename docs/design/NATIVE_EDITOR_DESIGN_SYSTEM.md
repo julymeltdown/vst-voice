@@ -543,17 +543,25 @@ ignored `build/evidence/ui-fidelity/r6-full/` packet contains 36 software captur
 semantic and image checks passing and paint p50 of 0.7–3.5 ms; its manifest records source
 `74ba8a6c`, not `caabbaf5`, and AppKit windows were not captured. FL Studio remains unverified.
 
-The later `rq1`/`rq2` packets each contain 18 ready/empty software captures (including the
-ready-state inspector variant) and identify the same
-dirty `4e47209c` candidate and binary. The frozen animation clock and per-frame
-`softwarePixelSha256` make pixel comparison independent of PNG creation-time metadata.
-`scripts/compare_fidelity_packets.py` reports **18/18 identical** with `--require-identical`;
-the [tracked `rq1` manifest](evidence/ui-fidelity-rq1-manifest.json) preserves one packet's
-identity and hashes. The 36-frame `det1` packet (`52fc8ff5`) predates clock freezing and has
-no pixel hashes, so it cannot support this determinism claim. The 36-frame all-state packet and
-plan §14.4's full {EMO, SCENE} × {Standard, High} × {1×, 2×} × all-states matrix have not both
-been captured twice. AppKit window
-captures, FL Studio, VoiceOver and the owner/reviewer rubric remain NOT_RUN.
+At clean master `2acd8ce4`, `rep1` and `rep2` each captured 36 software frames on this machine:
+EMO and SCENE; empty, ready, rendering, failed, dense-overlap, inspector, VOICE, TUNE and MIX
+states; and 720×480, 860×640, 1100×720, 1280×800, 1440×900 and 1600×900 viewports. The
+comparison with `--require-identical` printed `frames compared: 36, identical: 36` and
+`PASS every frame's pixels match`. The capture script sets `SEAM_UI_FREEZE_CLOCK=1`, fixing
+blink, breathing, ring phase and tweens across runs. Each capture's `softwarePixelSha256` hashes
+decoded RGBA pixels, so PNG creation-time metadata does not affect comparison. The
+[tracked `rep1` manifest](evidence/ui-fidelity-rep1-manifest.json) preserves one packet's identity
+and hashes; both full packets remain ignored build evidence. The earlier
+[tracked `rq1` manifest](evidence/ui-fidelity-rq1-manifest.json) documents 18 ready/empty frames
+compared with `rq2` at dirty `4e47209c`. The older 36-frame `det1` packet (`52fc8ff5`)
+predates clock freezing and has no pixel hashes.
+
+This is a one-machine, AppKit software raster, Standard contrast, 2× result. Plan §14.4's wider
+matrix is {EMO, SCENE} × {Standard, High} × {Wide, Standard, Compact, Minimum} × {1×, 2×} ×
+{empty, dense song, selection, rendering, error}; High Contrast, 1× and other uncovered cells
+remain open. There is no Win32/X11 packet or cross-platform tolerance diff. AppKit window
+captures were skipped with `--no-appkit`; FL Studio, VoiceOver and the owner and independent
+reviewer rubric remain NOT_RUN.
 
 ## 12. Brand rules
 
@@ -611,7 +619,9 @@ Specification and capture scripts:
 SEAM_BENCHMARK_DESIGN_ONLY=1 build/release/seam_phase5_benchmark
 python3 scripts/verify_ui_fidelity_contract.py      # contract checks; prints native_visual_match: NOT_RUN
 python3 scripts/capture_sing_fidelity_packet.py     # writes build/evidence/ui-fidelity/<candidate>/
-python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rq1 build/evidence/ui-fidelity/rq2 --require-identical
+python3 scripts/capture_sing_fidelity_packet.py --output build/evidence/ui-fidelity/rep1 --no-appkit
+python3 scripts/capture_sing_fidelity_packet.py --output build/evidence/ui-fidelity/rep2 --no-appkit
+python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rep1 build/evidence/ui-fidelity/rep2 --require-identical
 python3 scripts/analyze_sing_ui_performance.py build/evidence/ui-fidelity/<candidate>
 python3 scripts/check_brand_terms.py
 python3 scripts/l10n/externalize_shell_strings.py --check
@@ -636,7 +646,7 @@ blink, breathing, ring phase and tweens render at the same animation time on rep
 capture record's `softwarePixelSha256` hashes decoded RGBA pixels. The comparison command above
 checks all matching frame IDs and exits 1 if a frame differs or is missing; `--require-identical`
 also requires the same recorded source candidate and binary SHA-256. Reproduce the complete
-plan §14.4 matrix twice before treating the 18-frame result as full visual acceptance.
+plan §14.4 matrix twice before treating the 36-frame result as full visual acceptance.
 
 ## 15. Not shipped, in one place
 

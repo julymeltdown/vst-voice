@@ -1,8 +1,9 @@
 # Native editor redesign completion report — 2026-09-28
 
-Source baseline: master `caabbaf5`. This is a
-source-and-existing-evidence audit of [the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md)
-§16, not a new build, run or visual acceptance. The test names below identify runnable contracts;
+Source baseline for the source-and-existing-evidence audit: master `caabbaf5`. The reproducibility
+result below was subsequently verified at clean master `2acd8ce4`. This audit of
+[the redesign plan](SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md) §16 does not establish full visual
+acceptance. The test names below identify runnable contracts;
 the earlier merged-tree run reported 206/206 ctest entries passing at `44bf8386`; a full ctest
 result for `caabbaf5` is not tracked or verified here. The benchmark figures below are an
 [operator-recorded snapshot](evidence/BENCHMARK_2026-09-28.md) on an M3 Max from a pre-merge
@@ -18,7 +19,7 @@ tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, 
 | SING, VOICE, TUNE, MIX and EXPORT complete with parity | `sing_shell.cpp`, `voice_workspace.cpp`, `tune_workspace.cpp`, `mix_workspace.cpp`, `shell_overlays.cpp` under `libs/seam-native-ui/src/design/`; relevant contract tests below. r6 contains SING, VOICE, TUNE and MIX captures, no EXPORT capture | **Implemented with automated coverage; full parity acceptance open** |
 | Protagonist in ring, Stage, avatar, poses and splash with real state | `assets/character-01/manifest.json` schema 4; `libs/seam-native-ui/src/design/character_surface.cpp`; `tests/test_design_character_surface.cpp`, `tests/test_character_state_art.cpp` | **Source and tests present**; final art review and commercial clearance open |
 | All tests and §10 budgets pass | The earlier merged-tree ctest run passed **206/206** at `44bf8386`; no tracked full ctest result establishes that count for `caabbaf5`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. The recorded 40-sample M3 Max run has true `cold-full-frame` p50/p95 of 15.59/16.50 ms EMO and 14.65/15.26 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. Retained-background p95 is 9.03 / 9.74 ms; scroll/zoom, playback and dense 10k notes all pass. See the [snapshot](evidence/BENCHMARK_2026-09-28.md) for every case and its provenance. | **Open: true cold §10 budget misses; current-master ctest not verified** |
-| §14.4 visual reproducibility | Frozen-clock `rq1`/`rq2` packets from the same recorded source candidate and binary compare **18/18 identical** ready/empty frames (including the ready-state inspector variant) by RGBA pixel hash with `--require-identical`; the tracked `rq1` manifest records `softwarePixelSha256` per frame | **Partial pass:** full contrast/scale/state matrix has not been captured twice |
+| §14.4 visual reproducibility | Frozen-clock `rep1`/`rep2` packets at clean master `2acd8ce4` compare **36/36 identical** software frames by RGBA pixel hash with `--require-identical`; the tracked [`rep1` manifest](evidence/ui-fidelity-rep1-manifest.json) records `softwarePixelSha256` per frame | **Partial pass:** the plan's full contrast, scale and platform matrix remains open |
 | FL Studio shows upright, readable, themed editor | `docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md` §11 calls for F02–F05; r6 `acceptance.md` has no FL Studio captures | **Open:** F02–F05 in both looks in the actual host |
 | Legacy painter removed | `libs/seam-native-ui/src/editor_scene.cpp` is the unavailable-platform presenter; the standalone and CLAP use `SingShell`. `docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md` records step 21 retirement | **Source complete** |
 | Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `caabbaf5`; final art review open** |
@@ -30,20 +31,32 @@ rows. The capture script is `scripts/capture_sing_fidelity_packet.py`; the packe
 `scripts/verify_ui_fidelity_contract.py`, and timing analysis is
 `scripts/analyze_sing_ui_performance.py`.
 
-Plan §14.4's reproducibility check now has a narrower passing result: `rq1` and `rq2` each
-contain 18 ready/empty software frames, including the ready-state inspector variant, and
-`python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rq1 build/evidence/ui-fidelity/rq2 --require-identical`
-reported **18 compared, 18 identical**. The capture script sets `SEAM_UI_FREEZE_CLOCK=1` so
-`SingShell` uses a fixed animation time across runs (blink, breathing, ring and tweens); each
-manifest capture records `softwarePixelSha256` over RGBA pixels, avoiding PNG creation-time
-metadata differences. A copy of the `rq1` manifest is
-[tracked here](evidence/ui-fidelity-rq1-manifest.json); both full packets remain ignored build
-evidence. The two manifests identify the same dirty `4e47209c` source candidate and binary, not
-clean `caabbaf5`. The 36-frame `det1` packet identifies `52fc8ff5` and predates the clock freeze;
-it has no pixel hashes and is **not** reproducibility evidence. The complete twice-captured
-36-frame all-state packet and plan §14.4's twice-captured {EMO, SCENE} × {Standard, High} ×
-{1×, 2×} × all-states matrix are still open, as are
-AppKit window captures, FL Studio, VoiceOver and the owner/reviewer rubric.
+At clean master `2acd8ce4`, the full software packet was captured twice on this machine:
+
+```sh
+python3 scripts/capture_sing_fidelity_packet.py --output build/evidence/ui-fidelity/rep1 --no-appkit
+python3 scripts/capture_sing_fidelity_packet.py --output build/evidence/ui-fidelity/rep2 --no-appkit
+python3 scripts/compare_fidelity_packets.py build/evidence/ui-fidelity/rep1 build/evidence/ui-fidelity/rep2 --require-identical
+```
+
+The comparison printed `frames compared: 36, identical: 36` and
+`PASS every frame's pixels match`. The 36 captures cover EMO and SCENE; empty, ready, rendering,
+failed, dense-overlap, inspector, VOICE, TUNE and MIX states; and 720×480, 860×640, 1100×720,
+1280×800, 1440×900 and 1600×900 viewports. The script sets `SEAM_UI_FREEZE_CLOCK=1` so blink,
+breathing, ring phase and tweens use a fixed animation time. Each capture records
+`softwarePixelSha256` over decoded RGBA pixels, excluding PNG creation-time metadata from the
+comparison. The [`rep1` manifest](evidence/ui-fidelity-rep1-manifest.json) is tracked; both full
+packets are ignored build evidence. The earlier [`rq1` manifest](evidence/ui-fidelity-rq1-manifest.json)
+documents an 18-frame ready/empty comparison against `rq2` at dirty `4e47209c`. The older
+36-frame `det1` packet (`52fc8ff5`) predates clock freezing and has no pixel hashes.
+
+This passing result covers one machine and the AppKit software raster backend, at Standard
+contrast and 2× device scale only; the manifest records `deviceScale: 2`. Plan §14.4 asks for
+{EMO, SCENE} × {Standard, High} × {Wide, Standard, Compact, Minimum} × {1×, 2×} ×
+{empty, dense song, selection, rendering, error}. Its High Contrast and 1× captures, among other
+matrix cells, remain open. No Win32/X11 packet or cross-platform tolerance diff was recorded.
+AppKit window captures were skipped with `--no-appkit`; FL Studio, VoiceOver and the owner and
+independent reviewer rubric remain NOT_RUN.
 
 The shipped shell also has a consolidated Settings sheet with Audio, Appearance (EMO/SCENE,
 High Contrast, Reduce Motion, and character Full/Minimal/Off), Language, and About sections
