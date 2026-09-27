@@ -411,13 +411,7 @@ EditorSceneState NativeEditorController::sceneState() const {
     if (hintEdit_ || replacementInput_) {
       state.hintInputActive = true;
       state.timeMapInputActive = true; // Shared bounded non-lyric input painter.
-      state.boundedInputLabel = hintEditError_.empty() ?
-          "PHONE HINT (EMPTY = CLEAR)" : "INVALID PHONE HINT";
-      if (replacementInput_) state.boundedInputLabel = replacementInputError_.empty() ?
-          (replacementInput_->diagnostics ? "FIND ACTIVE DIAGNOSTICS (LITERAL)" : replacementInput_->findOnly ? "FIND NOTES (LITERAL; CHOOSE FIELD IN RESULTS)" :
-           replacementInput_->query ? "REPLACE WITH (EMPTY ALLOWED)" : "FIND LYRIC (LITERAL)") : replacementInputError_;
-      if (replacementInput_ && replacementInput_->vibratoField) state.boundedInputLabel = "VIBRATO: " + std::string{VibratoInspectorDraft::label(*replacementInput_->vibratoField)};
-      if (replacementInput_ && replacementInput_->dynamicsTickField) state.boundedInputLabel = *replacementInput_->dynamicsTickField ? "DYNAMICS: REGION TICK" : "DYNAMICS: LINEAR GAIN (UNITY = 1)";
+      state.boundedInputLabel = boundedInputLabel();
       state.lyricEditor = layout_.hintTextBounds(logicalWidth_, logicalHeight_);
     }
   }
@@ -586,7 +580,7 @@ core::Result<void> NativeEditorController::beginVibratoFieldInput(VibratoField f
   replacementInput_.emplace(ReplacementInput{std::move(context.value()), regionId_, session_.revision(), std::nullopt, false, false, field});
   selectedVibratoField_ = field; replacementOpen_ = false; ++replacementInputSerial_; ++replacementInteraction_;
   replacementInputError_.clear();
-  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), textValue.value()});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), textValue.value(), TextInputAnchor::BoundedField});
   repaint(); return core::success();
 }
 bool NativeEditorController::styleSourceCurrent() const {
@@ -703,7 +697,7 @@ core::Result<void> NativeEditorController::beginDynamicsFieldInput(bool tick) {
   replacementInput_.emplace(ReplacementInput{std::move(context.value()), regionId_, session_.revision(), std::nullopt, false, false, {}, tick});
   replacementOpen_ = false; ++replacementInputSerial_; ++replacementInteraction_; replacementInputError_.clear();
   dynamicsGainDragging_ = false;
-  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), value.value()});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), value.value(), TextInputAnchor::BoundedField});
   repaint(); return core::success();
 }
 
@@ -719,7 +713,7 @@ core::Result<void> NativeEditorController::beginSearchInput(bool findOnly, bool 
   const auto begun = composition_.begin(externalTextTarget(), U""); if (!begun) return begun;
   replacementInput_.emplace(ReplacementInput{std::move(context.value()), regionId_, session_.revision(), std::nullopt, findOnly, diagnostics});
   ++replacementInputSerial_; replacementInputError_.clear();
-  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), U""});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), U"", TextInputAnchor::BoundedField});
   repaint(); return core::success();
 }
 
@@ -1772,6 +1766,101 @@ std::string NativeEditorController::hintSemanticPrefix() const {
       std::to_string(hintEdit_->revision) + "." + std::to_string(session_.revision()) + ".";
 }
 
+std::string NativeEditorController::boundedInputLabel() const {
+  std::string label = hintEditError_.empty() ? "PHONE HINT (EMPTY = CLEAR)" : "INVALID PHONE HINT";
+  if (replacementInput_) label = replacementInputError_.empty() ?
+      (replacementInput_->diagnostics ? "FIND ACTIVE DIAGNOSTICS (LITERAL)" : replacementInput_->findOnly ? "FIND NOTES (LITERAL; CHOOSE FIELD IN RESULTS)" :
+       replacementInput_->query ? "REPLACE WITH (EMPTY ALLOWED)" : "FIND LYRIC (LITERAL)") : replacementInputError_;
+  if (replacementInput_ && replacementInput_->vibratoField) label = "VIBRATO: " + std::string{VibratoInspectorDraft::label(*replacementInput_->vibratoField)};
+  if (replacementInput_ && replacementInput_->dynamicsTickField) label = *replacementInput_->dynamicsTickField ? "DYNAMICS: REGION TICK" : "DYNAMICS: LINEAR GAIN (UNITY = 1)";
+  return label;
+}
+
+NativeEditorController::TextFieldView NativeEditorController::textFieldView() const {
+  TextFieldView view;
+  if (!composition_.active()) return view;
+  view.text = domain::toUtf8(composition_.compositionText());
+  if (hintEdit_ || replacementInput_) {
+    // The names the classic bounded field published; its tree carries the same ids.
+    const auto prefix = hintSemanticPrefix();
+    view.kind = TextFieldView::Kind::Bounded;
+    view.label = boundedInputLabel();
+    view.inputId = prefix + "input";
+    view.cancelId = prefix + "cancel";
+    view.inputName = "Space-separated phone symbols; empty clears hint";
+    view.cancelName = "Cancel pronunciation hint";
+    if (replacementInput_) {
+      view.inputName = replacementInput_->diagnostics ? "Nonempty literal diagnostic search query" : replacementInput_->findOnly ? "Nonempty literal note search query" :
+          replacementInput_->query ? "Replacement text; empty is allowed" : "Nonempty literal lyric query";
+      view.cancelName = replacementInput_->findOnly ? "Cancel Find" : "Cancel find and replace";
+      if (replacementInput_->vibratoField) {
+        view.inputName = std::string{VibratoInspectorDraft::label(*replacementInput_->vibratoField)};
+        view.cancelName = "Cancel vibrato field edit";
+      }
+      if (replacementInput_->dynamicsTickField) {
+        view.inputName = *replacementInput_->dynamicsTickField ? "Nonnegative region tick" : "Linear gain: zero to 3.9810717, unity is one";
+        view.cancelName = "Cancel dynamics field edit";
+      }
+    }
+    view.error = replacementInput_ ? replacementInputError_ : hintEditError_;
+    return view;
+  }
+  if (tempoEdit_) {
+    view.kind = timeMapPanel_ ? TextFieldView::Kind::TimeMap : TextFieldView::Kind::Transport;
+    view.inputName = tempoEdit_->chooseTick ? "New event tick" : (tempoEdit_->meter ? "Time signature numerator slash denominator" : "Tempo in BPM");
+    view.label = tempoEdit_->chooseTick ? "NEW EVENT TICK" : (tempoEdit_->meter ? "TIME SIGNATURE (N/D)" : "TEMPO (BPM)");
+    view.cancelName = "Cancel event input";
+    if (timeMapPanel_) {
+      const auto prefix = timeMapSemanticPrefix();
+      view.inputId = prefix + "input";
+      view.cancelId = prefix + "cancel";
+    } else {
+      // The transport's field keeps the toolbar readout's value path (setAccessibilityValue commits
+      // it); there is no classic cancel node for it.
+      view.inputId = tempoEdit_->meter ? "toolbar.meter" : "toolbar.tempo";
+    }
+    return view;
+  }
+  if (renameTrackTarget_ || renameRegionTarget_) {
+    view.kind = TextFieldView::Kind::Rename;
+    view.label = renameTrackTarget_ ? "TRACK NAME" : "REGION NAME";
+    view.inputName = renameTrackTarget_ ? "Track name" : "Region name";
+    view.cancelName = "Cancel rename";
+  }
+  return view;
+}
+
+core::Result<void> NativeEditorController::refreshVoicebanks() {
+  if (!callbacks_.refreshVoicebanks)
+    return core::failure(core::ErrorCode::Unsupported, "Voicebank refresh is not connected");
+  const auto refreshed = callbacks_.refreshVoicebanks();
+  repaint();
+  return refreshed;
+}
+
+core::Result<void> NativeEditorController::openVoicebankInstaller() {
+  if (!callbacks_.openVoicebankInstaller)
+    return core::failure(core::ErrorCode::Unsupported,
+                         "Standalone voicebank installation is not connected");
+  const auto opened = callbacks_.openVoicebankInstaller();
+  repaint();
+  return opened;
+}
+
+core::Result<void> NativeEditorController::selectVoicebankCard(std::size_t index) {
+  if (index >= voicebankCards_.size())
+    return core::failure(core::ErrorCode::InvalidArgument, "Voicebank accessibility index is invalid");
+  const auto& card = voicebankCards_[index];
+  if (!card.selectable)
+    return core::failure(core::ErrorCode::Conflict, "Selected voicebank is not trusted");
+  if (!callbacks_.selectVoicebank)
+    return core::failure(core::ErrorCode::Unsupported, "Voicebank selection is not connected");
+  const auto selected = callbacks_.selectVoicebank(card.id, card.version, card.contentHash);
+  if (selected) voicebankBrowserVisible_ = false;
+  repaint();
+  return selected;
+}
+
 void NativeEditorController::rebuildAccessibilityTree() {
   if (replacementOpen_) {
     const auto prefix = replacementSemanticPrefix(); const auto view = replacementReviewView();
@@ -2301,20 +2390,7 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
             return core::failure(core::ErrorCode::InvalidArgument,
                                  "Voicebank accessibility index is invalid");
           }
-          const auto& card = voicebankCards_[index];
-          if (!card.selectable) {
-            return core::failure(core::ErrorCode::Conflict,
-                                 "Selected voicebank is not trusted");
-          }
-          if (!callbacks_.selectVoicebank) {
-            return core::failure(core::ErrorCode::Unsupported,
-                                 "Voicebank selection is not connected");
-          }
-          const auto selected = callbacks_.selectVoicebank(
-              card.id, card.version, card.contentHash);
-          if (selected) voicebankBrowserVisible_ = false;
-          repaint();
-          return selected;
+          return selectVoicebankCard(index);
         }
         if (element.rfind("arrangement.track.", 0U) == 0U) {
           if (requested == SemanticAction::SetFocus) return core::success();
@@ -3089,6 +3165,7 @@ core::Result<void> NativeEditorController::beginSelectedTrackRename() {
                                   layout_.toolbarHeight + layout_.trackListTop,
                                   260.0, layout_.trackRowHeight},
         .currentText = text.value(),
+        .anchor = TextInputAnchor::ArrangementField,
     });
   }
   repaint();
@@ -3207,6 +3284,7 @@ core::Result<void> NativeEditorController::beginSelectedRegionRename() {
                                       layout_.trackRowAdvance,
                                   260.0, layout_.regionAdvance},
         .currentText = text.value(),
+        .anchor = TextInputAnchor::ArrangementField,
     });
   }
   repaint();
@@ -3726,11 +3804,8 @@ ui::Point NativeEditorController::modelPoint(ui::Point windowPoint) const noexce
 }
 
 bool NativeEditorController::legacyModalSurfaceActive() const {
-  // The overlays the SING shell re-homes (sample microscope, phoneme review, time map, recovery
-  // support and the overlap detail) are painted inside the shell now, so they no longer hand the
-  // frame to the classic painter. What still does: the voice browser, the audio settings, the
-  // replacement review, a track/region rename field and the classic-only text inputs (which the
-  // shell's own predicate does not list, because it never presents while a modal is open).
+  // The modal surfaces the classic painter draws over its own layout. The SING shell presents all
+  // of them itself and no longer consults this; it describes the controller for the classic path.
   return voicebankBrowserVisible_ || audioSettings_.visible || replacementOpen_ ||
          tempoEdit_.has_value() || hintEdit_.has_value() || replacementInput_.has_value() ||
          renameTrackTarget_.has_value() || renameRegionTarget_.has_value();
@@ -3952,7 +4027,7 @@ core::Result<void> NativeEditorController::timeMapPanelAction(std::size_t action
     const auto begun = composition_.begin(externalTextTarget(), U"0"); if (!begun) return begun;
     renameTrackTarget_.reset(); renameRegionTarget_.reset(); batchLyricTarget_.reset();
     ++timeMapInteraction_; tempoEdit_ = TempoEditContext{session_.revision(), time::Tick{0}, action == 7U, true, true};
-    callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, true), U"0"});
+    callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, true), U"0", TextInputAnchor::TimeMapPanel});
     repaint(); return core::success();
   }
   if (action <= 1U) {
@@ -3999,7 +4074,8 @@ core::Result<void> NativeEditorController::beginTempoEdit(time::Tick tick) {
   const auto begun = composition_.begin(externalTextTarget(), text.value()); if (!begun) return begun;
   renameTrackTarget_.reset(); renameRegionTarget_.reset(); batchLyricTarget_.reset();
   ++timeMapInteraction_; tempoEdit_ = TempoEditContext{session_.revision(), tick};
-  callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, timeMapPanel_.has_value()), text.value()});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, timeMapPanel_.has_value()), text.value(),
+      timeMapPanel_ ? TextInputAnchor::TimeMapPanel : TextInputAnchor::Transport});
   repaint(); return core::success();
 }
 
@@ -4024,7 +4100,8 @@ core::Result<void> NativeEditorController::beginMeterEdit(time::Tick tick) {
   const auto begun = composition_.begin(externalTextTarget(), text.value()); if (!begun) return begun;
   renameTrackTarget_.reset(); renameRegionTarget_.reset(); batchLyricTarget_.reset();
   ++timeMapInteraction_; tempoEdit_ = TempoEditContext{session_.revision(), tick, true};
-  callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, timeMapPanel_.has_value()), text.value()});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.timeMapTextBounds(logicalWidth_, logicalHeight_, timeMapPanel_.has_value()), text.value(),
+      timeMapPanel_ ? TextInputAnchor::TimeMapPanel : TextInputAnchor::Transport});
   repaint(); return core::success();
 }
 
@@ -4447,20 +4524,7 @@ core::Result<void> NativeEditorController::pointerDown(
             layout_.voicebankCardHeight,
         };
         if (!cardBounds.contains(event.position)) continue;
-        const auto& card = voicebankCards_[index];
-        if (!card.selectable) {
-          return core::failure(core::ErrorCode::Conflict,
-                               "Selected voicebank is not trusted");
-        }
-        if (!callbacks_.selectVoicebank) {
-          return core::failure(core::ErrorCode::Unsupported,
-                               "Voicebank selection is not connected");
-        }
-        const auto selected = callbacks_.selectVoicebank(
-            card.id, card.version, card.contentHash);
-        if (selected) voicebankBrowserVisible_ = false;
-        repaint();
-        return selected;
+        return selectVoicebankCard(index);
       }
     }
   }
@@ -5703,28 +5767,11 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
 
   if (voicebankBrowserVisible_) {
     if (event.key == NativeKey::Escape || event.key == NativeKey::V) {
-      voicebankBrowserVisible_ = false;
-      repaint();
+      closeVoicebankBrowser();
       return core::success();
     }
-    if (event.key == NativeKey::R) {
-      if (!callbacks_.refreshVoicebanks) {
-        return core::failure(core::ErrorCode::Unsupported,
-                             "Voicebank refresh is not connected");
-      }
-      const auto refreshed = callbacks_.refreshVoicebanks();
-      repaint();
-      return refreshed;
-    }
-    if (event.key == NativeKey::O) {
-      if (!callbacks_.openVoicebankInstaller) {
-        return core::failure(core::ErrorCode::Unsupported,
-                             "Standalone voicebank installation is not connected");
-      }
-      const auto opened = callbacks_.openVoicebankInstaller();
-      repaint();
-      return opened;
-    }
+    if (event.key == NativeKey::R) return refreshVoicebanks();
+    if (event.key == NativeKey::O) return openVoicebankInstaller();
   }
 
   if (unitTarget_.has_value() && !seamTarget_.has_value() &&
@@ -5746,8 +5793,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
 
   if (audioSettings_.visible) {
     if (event.key == NativeKey::Escape || event.key == NativeKey::I) {
-      audioSettings_.visible = false;
-      repaint();
+      closeAudioSettings();
       return core::success();
     }
     if (event.key == NativeKey::Left || event.key == NativeKey::Right) {
@@ -5988,6 +6034,7 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
     if (recoverySupportPanel_.view().visible) return core::success();
     voicebankBrowserVisible_ = !voicebankBrowserVisible_;
     if (voicebankBrowserVisible_) {
+      voicebankBrowserFirstCard_ = 0U;
       audioSettings_.visible = false;
     }
     if (callbacks_.viewChanged) {
@@ -6147,7 +6194,7 @@ core::Result<void> NativeEditorController::beginHintEdit(domain::NoteId noteId) 
                               session_.revision(), lyric->language,
                               note->phoneticHint};
   ++hintInteraction_;
-  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), text.value()});
+  callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), text.value(), TextInputAnchor::BoundedField});
   repaint(); return core::success();
 }
 
@@ -6255,7 +6302,7 @@ core::Result<void> NativeEditorController::commitTextComposition(
       replacementInput_.emplace(std::move(input));
       const auto begun = composition_.begin(externalTextTarget(), commit.value().text);
       if (!begun) { replacementInput_.reset(); return begun; }
-      callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), commit.value().text});
+      callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), commit.value().text, TextInputAnchor::BoundedField});
       repaint(); return core::failure(core::ErrorCode::InvalidArgument, replacementInputError_);
     }
     replacementInputError_.clear();
@@ -6265,7 +6312,7 @@ core::Result<void> NativeEditorController::commitTextComposition(
       input.query = textValue; replacementInput_.emplace(std::move(input));
       const auto begun = composition_.begin(externalTextTarget(), U"");
       if (!begun) { replacementInput_.reset(); return begun; }
-      callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), U""});
+      callbacks_.beginTextInput({externalTextTarget(), layout_.hintTextBounds(logicalWidth_, logicalHeight_), U"", TextInputAnchor::BoundedField});
       repaint(); return core::success();
     }
     return openReplacementReview(*input.query, textValue);

@@ -293,7 +293,7 @@ TEST_CASE("a track rename field hands the frame to the classic arrangement surfa
   CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
   CHECK(!f.controller.hostedGrid().has_value());
   CHECK(f.lastTextInput.has_value());
-  if (f.lastTextInput) CHECK(f.lastTextInput->anchor == native_ui::TextInputAnchor::ClassicSurface);
+  if (f.lastTextInput) CHECK(f.lastTextInput->anchor == native_ui::TextInputAnchor::ArrangementField);
 }
 
 TEST_CASE("the hosted expression lane edits the curve it draws, and Escape abandons a drag") {
@@ -781,7 +781,7 @@ TEST_CASE("a rename started over an open lyric field keeps the rename and edits 
     CHECK(f.controller.beginLyricEdit(f.note().id).hasValue());
     CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
     CHECK(f.controller.beginSelectedTrackRename().hasValue());
-    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::ClassicSurface);
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::ArrangementField);
     CHECK(!f.shell.prepareFrame(f.controller, 1600.0, 900.0));
     CHECK(f.controller.textInputActive());
     CHECK(f.controller.commitTextComposition(U"Lead").hasValue());
