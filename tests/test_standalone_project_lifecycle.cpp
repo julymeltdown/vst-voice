@@ -240,6 +240,7 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
   bool quit = false;
   bool openedAudioSettings = false;
   std::size_t aboutRequests = 0U;
+  std::size_t addRegionRequests = 0U;
   unsigned hintRequests = 0U;
   unsigned findRequests = 0U;
   unsigned vibratoRequests = 0U;
@@ -276,6 +277,7 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
           .editRegionDynamics = [&vibratoRequests] { vibratoRequests += 100U; return seam::core::success(); },
           .editTrackStyle = [&vibratoRequests] { vibratoRequests += 1000U; return seam::core::success(); },
           .editJapaneseReading = [&vibratoRequests] { vibratoRequests += 10000U; return seam::core::success(); },
+          .addRegion = [&addRegionRequests] { ++addRegionRequests; return seam::core::success(); },
           .showAbout = [&aboutRequests] { ++aboutRequests; return seam::core::success(); },
           .removeSelectedOverlaps = [&cleanupRequests] { ++cleanupRequests; return seam::core::success(); },
           .closeSelectedGaps = [&cleanupRequests] { cleanupRequests += 10U; return seam::core::success(); },
@@ -328,6 +330,7 @@ TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditTrackStyle)); CHECK(vibratoRequests == 1111U);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::EditJapaneseReading)); CHECK(vibratoRequests == 11111U);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::ShowAbout)); CHECK(aboutRequests == 1U);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::AddRegion)); CHECK(addRegionRequests == 1U);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::RemoveSelectedOverlaps));
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::CloseSelectedGaps)); CHECK(cleanupRequests == 11U);
   CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::AutoLegatoSelectedNotes)); CHECK(cleanupRequests == 111U);

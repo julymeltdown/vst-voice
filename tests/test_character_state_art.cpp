@@ -553,3 +553,175 @@ TEST_CASE("the About sheet shows the key art, name and version, legibly, and clo
       CHECK(!f.shell.aboutOpen());
     }
 }
+
+namespace {
+
+// Pixels that differ between two frames of the same size inside `outer` but outside `inner`.
+std::size_t changedBetween(const PixelSurface& a, const PixelSurface& b, seam::ui::Rect outer,
+                           seam::ui::Rect inner) {
+  std::size_t changed = 0U;
+  const auto width = a.width();
+  for (std::uint32_t y = 0U; y < a.height(); ++y)
+    for (std::uint32_t x = 0U; x < width; ++x) {
+      const auto px = static_cast<double>(x) + 0.5;
+      const auto py = static_cast<double>(y) + 0.5;
+      const auto in = [px, py](seam::ui::Rect r) {
+        return px >= r.x && py >= r.y && px < r.right() && py < r.bottom();
+      };
+      if (!in(outer) || in(inner)) continue;
+      if (a.pixels()[y * width + x] != b.pixels()[y * width + x]) ++changed;
+    }
+  return changed;
+}
+
+seam::ui::Rect grown(seam::ui::Rect r, double by) {
+  return {r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by};
+}
+
+// The largest per-channel change between two frames inside a rectangle.
+int largestChange(const PixelSurface& a, const PixelSurface& b, seam::ui::Rect r) {
+  int worst = 0;
+  for (auto y = std::max(0.0, std::floor(r.y)); y < std::min<double>(a.height(), r.bottom()); y += 1.0)
+    for (auto x = std::max(0.0, std::floor(r.x)); x < std::min<double>(a.width(), r.right()); x += 1.0) {
+      const auto i = static_cast<std::size_t>(y) * a.width() + static_cast<std::size_t>(x);
+      for (const auto shift : {0U, 8U, 16U})
+        worst = std::max(worst, std::abs(static_cast<int>((a.pixels()[i] >> shift) & 255U) -
+                                         static_cast<int>((b.pixels()[i] >> shift) & 255U)));
+    }
+  return worst;
+}
+
+PixelSurface paintScene(SplashFixture& f, const seam::native_ui::EditorSceneState& state,
+                        double width = 1600.0, double height = 900.0) {
+  f.controller.resize(width, height);
+  CHECK(f.shell.prepareFrame(f.controller, width, height));
+  PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  CHECK(f.shell.paint(canvas, f.controller, state, f.controller.playheadTick()));
+  return surface;
+}
+
+std::string focusedId(SplashFixture& f) {
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* node = f.shell.accessibilityTree().focusedNode();
+  return node != nullptr ? node->id : std::string{};
+}
+
+}  // namespace
+
+TEST_CASE("High Contrast keeps the singer ring's glow off the card around it") {
+  using seam::native_ui::RenderStatusState;
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  // The ring's ticks light with a finished, audible render; their glow is character art replayed
+  // through drawRaster. Only the ring's own square may change between the two frames.
+  const auto spill = [](Contrast contrast) {
+    SplashFixture f{false, DesignMode::Emo, contrast};
+    auto dark = f.controller.sceneState();
+    dark.renderStatus.state = RenderStatusState::Idle;
+    auto lit = dark;
+    lit.renderStatus.state = RenderStatusState::Ready;
+    lit.renderStatus.hasAudibleAudio = true;
+    const auto before = paintScene(f, dark);
+    const auto after = paintScene(f, lit);
+    const auto ring = f.shell.layout().portraitRing;
+    CHECK(ring.width > 0.0);
+    return changedBetween(before, after, grown(ring, 10.0), grown(ring, 1.0));
+  };
+  // The standard look glows past the ring, so this band can see a glow...
+  CHECK(spill(Contrast::Standard) > 0U);
+  // ...and High Contrast draws none there.
+  CHECK(spill(Contrast::High) == 0U);
+}
+
+TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, never over them") {
+  using seam::native_ui::RenderStatusState;
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  // The drawn expression lane carries the lane's playhead, in the dynamic layer.
+  CHECK(f.controller.openExpressionLane(seam::ui::ExpressionChannel::Breathiness).hasValue());
+  auto state = f.controller.sceneState();
+  state.renderStatus.state = RenderStatusState::Failed;
+  state.renderStatus.diagnostic = "Voicebank cannot cover the phoneme sequence";
+  state.diagnostics.push_back(seam::authoring::Diagnostic{.code = "RENDER_FAILED"});
+  state.playheadPixel = -1.0;
+  const auto without = paintScene(f, state);
+  const auto error = f.shell.lastFrameErrorToast();
+  // The toast's node, published from the same scene the frame painted.
+  f.shell.rebuildSemantics(f.controller, state);
+  std::optional<seam::ui::Rect> diagnostics;
+  for (const auto& node : f.shell.accessibilityTree().root().children)
+    if (node.id == "shell.diagnostics.toast") diagnostics = node.bounds;
+  CHECK(error.has_value());
+  CHECK(diagnostics.has_value());
+  if (!error || !diagnostics) return;
+  // A playhead through both toasts, in the same (cached) shell: the partial frame recomposes the
+  // dynamic layer, where the playhead is.
+  const auto x = std::floor(error->x + 60.0) + 0.5;
+  CHECK(x < diagnostics->right());
+  state.playheadPixel = x - f.shell.layout().grid.x;
+  const auto with = paintScene(f, state);
+  // The playhead is drawn: the lane's plot column above the toasts changed...
+  const auto plot = f.shell.layout().laneTimePlot;
+  CHECK(plot.y < error->y - 4.0);
+  const seam::ui::Rect above{x - 3.0, plot.y, 6.0, error->y - 4.0 - plot.y};
+  CHECK(largestChange(without, with, above) > 40);
+  // ...and neither toast is drawn over: at most the few levels its 97% card lets through from
+  // underneath, never the line itself.
+  CHECK(largestChange(without, with, *diagnostics) <= 8);
+  CHECK(largestChange(without, with, *error) <= 8);
+}
+
+TEST_CASE("About's Close returns the keyboard to the control that opened it, as Escape does") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  CHECK(f.frame(1280.0, 800.0));
+  const std::string opener{"shell.workspace.sing"};
+  for (const auto way : {"close button", "pointer", "host", "escape"}) {
+    CHECK(f.shell.dispatchSemantic(f.controller, opener, seam::native_ui::SemanticAction::SetFocus)
+              .hasValue());
+    CHECK(focusedId(f) == opener);
+    CHECK(f.shell.setAboutOpen(f.controller, true).hasValue());
+    CHECK(f.frame(1280.0, 800.0));
+    CHECK(focusedId(f) != opener);
+    const std::string_view how{way};
+    if (how == "close button") {
+      CHECK(f.shell.dispatchSemantic(f.controller, seam::native_ui::design::kAboutCloseId,
+                                     seam::native_ui::SemanticAction::Activate)
+                .hasValue());
+    } else if (how == "pointer") {
+      const auto close = f.nodeBounds(seam::native_ui::design::kAboutCloseId);
+      CHECK(close.has_value());
+      if (!close) continue;
+      const seam::native_ui::PointerEvent press{
+          .position = {close->x + close->width * 0.5, close->y + close->height * 0.5},
+          .button = seam::native_ui::PointerButton::Left};
+      CHECK(f.shell.pointerDown(f.controller, press).hasValue());
+      CHECK(f.shell.pointerUp(f.controller, press).hasValue());
+    } else if (how == "host") {
+      CHECK(f.shell.setAboutOpen(f.controller, false).hasValue());
+    } else {
+      CHECK(f.shell.handleShellKey(f.controller,
+                                   seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::Escape}));
+    }
+    CHECK(!f.shell.aboutOpen());
+    if (focusedId(f) != opener) throw seam::test::Failure{std::string{"focus lost after "} + way};
+  }
+}
+
+TEST_CASE("the About sheet fits the minimum window, and a refusal would name the About sheet") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  SplashFixture f{false, DesignMode::Emo, Contrast::Standard};
+  // The layout never goes below 480x320, where the sheet still has room: it opens.
+  CHECK(f.frame(480.0, 320.0));
+  CHECK(f.shell.setAboutOpen(f.controller, true).hasValue());
+  CHECK(f.shell.aboutOpen());
+  CHECK(f.shell.setAboutOpen(f.controller, false).hasValue());
+  // Its refusal is its own sentence, not the singer menu's.
+  using seam::native_ui::design::englishShellString;
+  using seam::native_ui::design::Str;
+  CHECK(englishShellString(Str::TheWindowIsTooSmallForTheAbout) ==
+        "The window is too small for the About sheet");
+  CHECK(englishShellString(Str::TheWindowIsTooSmallForTheAbout) !=
+        englishShellString(Str::TheWindowIsTooSmallFor));
+}

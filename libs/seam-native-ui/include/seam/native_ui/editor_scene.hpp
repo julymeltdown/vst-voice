@@ -1301,6 +1301,10 @@ struct EditorSceneLayout final {
 
 // What a host draws where the SING shell cannot present (a platform without the vector backend):
 // a notice, never an editor. Windows and Linux editor surfaces are a TODO (README, Windows TODO).
+inline constexpr std::string_view kEditorUnavailableTitle =
+    "The SEAM editor is not available on this platform";
+inline constexpr std::string_view kEditorUnavailableDetail =
+    "It needs the macOS vector renderer; Windows and Linux editors are a TODO.";
 void paintEditorUnavailable(RasterCanvas& canvas, const EditorSceneTheme& theme = {}) noexcept;
 
 }  // namespace seam::native_ui

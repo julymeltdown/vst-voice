@@ -18,6 +18,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <functional>
@@ -1786,6 +1787,44 @@ TEST_CASE("a failed render's status line names its reason, not only that it fail
   state.diagnostics.front().code = "BANK_MISSING";
   CHECK(native_ui::design::singStatusMessage(state).text == "Voicebank needs attention");
 }
+
+TEST_CASE("the seam hint and the empty-project line are whole sentences from the string table") {
+  using native_ui::design::ScopedShellStrings;
+  using native_ui::design::ShellStringTable;
+  using native_ui::design::Str;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto pseudo = ShellStringTable::pseudoLocalized(0.4);
+  const ScopedShellStrings scope{pseudo};
+  const auto prompt = native_ui::design::emptyProjectPrompt(0U);
+  CHECK(prompt.has_value());
+  if (prompt) CHECK(*prompt == std::string_view{pseudo.text(Str::DoubleClickTheGridToWrite)});
+  ShellFixture f;
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.phonemes", native_ui::SemanticAction::Activate)
+            .hasValue());
+  const auto noteId = f.session.project().findRegion(f.regionId)->notes.front().id;
+  for (const auto alternate : {false, true}) {
+    auto state = f.controller.sceneState();
+    state.selectedSeam = domain::PhonemeKey{.noteId = noteId, .ordinal = 1U};
+    state.seamPreviewConnected = true;
+    state.seamPreviewAlternate = alternate;
+    CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    native_ui::PixelSurface surface{1600U, 900U};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    native_ui::paint::ScopedTextCapture capture;
+    CHECK(f.shell.paint(canvas, f.controller, state, f.controller.playheadTick()));
+    const std::string expected{
+        pseudo.text(alternate ? Str::SeamHintAlternatePreview : Str::SeamHintBasePreview)};
+    const auto& lines = capture.records();
+    const auto painted = std::any_of(lines.begin(), lines.end(),
+                                     [&expected](const auto& line) { return line.text == expected; });
+    if (!painted) throw test::Failure{"the seam hint is not the table's sentence: " + expected};
+    // No English fragment is glued onto the translated sentence.
+    for (const auto& line : lines)
+      CHECK(line.text.find("alternate") == std::string::npos && line.text.find(" base") == std::string::npos);
+  }
+}
+
 
 TEST_CASE("the compact inspector opens from its drawer button and keeps every rack control usable") {
   using native_ui::SemanticAction;
@@ -4528,10 +4567,13 @@ TEST_CASE("the singer menu owns the keyboard: Tab and arrows walk it, chords pas
   CHECK(f.focusedId() == ids[2]);
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Up}));
   CHECK(f.focusedId() == ids[1]);
-  // Tab never leaves the menu: a full lap lands only on its own items.
-  for (std::size_t i = 0U; i < ids.size() + 2U; ++i) {
+  // Tab never leaves the menu: a full lap lands only on its own items and the display switch.
+  auto menuIds = ids;
+  for (const auto* mode : {"character.full", "character.minimal", "character.off"})
+    menuIds.push_back(kMenuPrefix + mode);
+  for (std::size_t i = 0U; i < menuIds.size() + 2U; ++i) {
     const auto id = tab(false);
-    CHECK(std::find(ids.begin(), ids.end(), id) != ids.end());
+    CHECK(std::find(menuIds.begin(), menuIds.end(), id) != menuIds.end());
   }
   // Plain editing keys never reach the covered score.
   const auto revision = f.controller.documentRevision();
@@ -4654,6 +4696,76 @@ TEST_CASE("every singer menu item runs the controller's own command by pointer, 
   // Opening reviews and browsers edits nothing.
   CHECK(f.controller.documentRevision() == revision);
 }
+
+TEST_CASE("the singer menu's Full, Minimal and Off switch sets the character display, not the score") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const std::array<std::pair<const char*, domain::CharacterDisplayMode>, 3U> modes{{
+      {"character.full", domain::CharacterDisplayMode::Full},
+      {"character.minimal", domain::CharacterDisplayMode::Minimal},
+      {"character.off", domain::CharacterDisplayMode::Off},
+  }};
+  const auto revision = f.controller.documentRevision();
+  // Each size, including the minimum window, keeps the switch inside the menu under its commands.
+  for (const auto [width, height] : {std::pair{480.0, 320.0}, std::pair{1100.0, 720.0},
+                                     std::pair{1600.0, 900.0}}) {
+    const auto where = " at " + std::to_string(width) + "x" + std::to_string(height);
+    openSingerMenu(f, width, height);
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    const auto root = f.shell.accessibilityTree().root();
+    const auto* panel = findShellNode(root, kMenuPrefix + "panel");
+    if (panel == nullptr) throw test::Failure{"no singer menu panel" + where};
+    double lowestCommand = 0.0;
+    for (const auto& id : singerMenuItemIds())
+      if (const auto* item = findShellNode(root, id); item != nullptr)
+        lowestCommand = std::max(lowestCommand, item->bounds.bottom());
+    for (const auto& [key, mode] : modes) {
+      const auto* segment = findShellNode(root, kMenuPrefix + key);
+      if (segment == nullptr) throw test::Failure{std::string{key} + " is not published" + where};
+      CHECK(segment->role == SemanticRole::Button && offers(*segment, SemanticAction::Activate));
+      CHECK(segment->selected == (mode == f.controller.characterDisplay()));
+      CHECK(!segment->description.empty());
+      if (!inside(segment->bounds, panel->bounds))
+        throw test::Failure{std::string{key} + " leaves its card" + where};
+      CHECK(segment->bounds.y >= lowestCommand);
+    }
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  }
+
+  // Full by pointer: the menu closes, the keyboard is back on the button, the Stage is up.
+  openSingerMenu(f);
+  const auto full = nodeNow(f, kMenuPrefix + "character.full");
+  CHECK(full.has_value());
+  if (full.has_value()) click(f, centre(full->bounds));
+  CHECK(f.controller.characterDisplay() == domain::CharacterDisplayMode::Full);
+  CHECK(!f.shell.singerMenuOpen());
+  CHECK(f.focusedId() == kMenuButton);
+  CHECK(f.controller.sceneState().characterMode == domain::CharacterDisplayMode::Full);
+  openSingerMenu(f);
+  const auto lit = nodeNow(f, kMenuPrefix + "character.full");
+  CHECK(lit.has_value() && lit->selected);
+
+  // Minimal by Enter on the focused segment.
+  succeeds(f.shell.dispatchController(f.controller, kMenuPrefix + "character.minimal",
+                                      SemanticAction::SetFocus),
+           "focus minimal");
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.characterDisplay() == domain::CharacterDisplayMode::Minimal);
+  CHECK(!f.shell.singerMenuOpen());
+
+  // Off through the host's accessibility path.
+  openSingerMenu(f);
+  succeeds(f.shell.dispatchController(f.controller, kMenuPrefix + "character.off",
+                                      SemanticAction::Activate),
+           "character off");
+  CHECK(f.controller.characterDisplay() == domain::CharacterDisplayMode::Off);
+  CHECK(f.controller.sceneState().characterMode == domain::CharacterDisplayMode::Off);
+  // A view choice: the score is untouched and nothing reached the host's commands.
+  CHECK(f.controller.documentRevision() == revision);
+  CHECK(f.installerOpens == 0U && f.voicebankRefreshes == 0U);
+}
+
 
 TEST_CASE("a singer command the controller refuses is disabled with its reason until the menu reopens") {
   OverlayFixture f;

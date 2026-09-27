@@ -2440,6 +2440,8 @@ constexpr double kSingerMenuRow = 26.0;
 constexpr double kSingerMenuPitch = 28.0;
 constexpr double kSingerMenuBottom = 10.0;
 constexpr double kSingerMenuInset = 12.0;
+// The display switch row under the commands: the minimum control height, one row gap above it.
+constexpr double kSingerMenuSwitchRow = 24.0;
 constexpr double kSingerMenuColumn = 236.0;
 constexpr double kSingerMenuMinColumn = 132.0;
 
@@ -2449,6 +2451,28 @@ struct SingerMenuGeometry final {
   double columnWidth{0.0};
 };
 
+// The character display switch (Full, Minimal, Off) is the menu's last row, one segment per mode
+// across the whole card, under the commands (plan section 0: the singer card's real display mode
+// switch). The first command keeps the keyboard when the menu opens.
+struct CharacterDisplayChoice final {
+  std::string_view key;
+  domain::CharacterDisplayMode mode;
+  Str label;
+};
+constexpr std::array<CharacterDisplayChoice, 3U> kCharacterDisplayChoices{{
+    {"character.full", domain::CharacterDisplayMode::Full, Str::Full},
+    {"character.minimal", domain::CharacterDisplayMode::Minimal, Str::Minimal},
+    {"character.off", domain::CharacterDisplayMode::Off, Str::Off},
+}};
+
+const CharacterDisplayChoice* characterDisplayChoice(std::string_view id) noexcept {
+  if (!id.starts_with(kSingerMenuPrefix)) return nullptr;
+  const auto key = id.substr(kSingerMenuPrefix.size());
+  for (const auto& choice : kCharacterDisplayChoices)
+    if (choice.key == key) return &choice;
+  return nullptr;
+}
+
 // A popover under the ⋯ button (above it when the body has no room below), its right edge on the
 // button's, clamped into the overlay slot. A slot too short for one column takes two or three, so
 // every item stays on screen at the minimum window; a slot that holds none places no menu.
@@ -2457,8 +2481,9 @@ SingerMenuGeometry singerMenuGeometry(ui::Rect anchor, ui::Rect slot) {
   if (anchor.width <= 0.0 || slot.width <= 0.0 || slot.height <= 0.0) return {};
   for (std::size_t columns = 1U; columns <= 3U; ++columns) {
     const auto rows = (count + columns - 1U) / columns;
-    const auto height = kSingerMenuTop + static_cast<double>(rows) * kSingerMenuPitch -
-                        (kSingerMenuPitch - kSingerMenuRow) + kSingerMenuBottom;
+    // The commands, then the display switch under them.
+    const auto height = kSingerMenuTop + static_cast<double>(rows) * kSingerMenuPitch +
+                        kSingerMenuSwitchRow + kSingerMenuBottom;
     const auto gaps = 8.0 * static_cast<double>(columns - 1U);
     const auto width = std::min(
         slot.width, 2.0 * kSingerMenuInset + gaps + static_cast<double>(columns) * kSingerMenuColumn);
@@ -2497,12 +2522,13 @@ public:
     return tr(Str::Singer);
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
-                                                     const EditorSceneState&,
+                                                     const EditorSceneState& state,
                                                      const SingLayout& layout,
                                                      ui::Rect panel) const override {
     std::vector<OverlayControl> out;
     const auto g = singerMenuGeometry(layout.singerMenu, panel);
     if (panel.width <= 0.0 || g.rows == 0U) return out;
+    const auto mode = state.characterMode;
     const auto& items = singerMenuItems();
     for (std::size_t i = 0U; i < items.size(); ++i) {
       const auto& item = items[i];
@@ -2520,6 +2546,21 @@ public:
           .enabled = enabled,
           .activatable = enabled,
           .description = enabled ? std::string{tr(item.description)} : refused->second,
+      });
+    }
+    const auto switchWidth = panel.width - 2.0 * kSingerMenuInset;
+    const auto segment = (switchWidth - 2.0 * 4.0) / 3.0;
+    const auto switchTop = panel.y + kSingerMenuTop + static_cast<double>(g.rows) * kSingerMenuPitch;
+    for (std::size_t i = 0U; i < kCharacterDisplayChoices.size(); ++i) {
+      const auto& choice = kCharacterDisplayChoices[i];
+      out.push_back(OverlayControl{
+          .id = std::string{kSingerMenuPrefix} + std::string{choice.key},
+          .bounds = {panel.x + kSingerMenuInset + static_cast<double>(i) * (segment + 4.0),
+                     switchTop, segment, kSingerMenuSwitchRow},
+          .name = std::string{tr(Str::CharacterDisplay)} + tr(choice.label),
+          .role = SemanticRole::Button,
+          .selected = choice.mode == mode,
+          .description = tr(Str::ShowsTheSingerFullMinimalOrOff),
       });
     }
     return out;
@@ -2540,6 +2581,18 @@ public:
     for (const auto& control : controls) {
       const auto& r = control.bounds;
       const auto p = Path::roundedRect(r, t.shape.control);
+      // A display-switch segment: the mode's own word, the current mode lit like a selected tab.
+      if (const auto* choice = characterDisplayChoice(control.id); choice != nullptr) {
+        c.fill(p, control.selected ? withAlpha(t.color.accent, 0.22)
+                                   : withAlpha(t.color.surfaceSunken, 0.9));
+        c.stroke(p, control.selected ? t.color.accent : withAlpha(t.color.border, 0.95),
+                 StrokeStyle{1.0});
+        const std::string_view word{tr(choice->label)};
+        c.text({r.x + 4.0, r.y, std::max(1.0, r.width - 8.0), r.height}, word,
+               style(FontRole::UiSemibold, t.type.smallLabel, 0.2, TextAlign::Center),
+               control.selected ? t.color.accent : t.color.textPrimary);
+        continue;
+      }
       c.fill(p, control.enabled ? withAlpha(t.color.surfaceSunken, 0.9)
                                 : withAlpha(t.color.surface, 0.6));
       c.stroke(p, withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
@@ -2566,6 +2619,10 @@ public:
     if (!id.starts_with(kSingerMenuPrefix))
       return core::failure(core::ErrorCode::NotFound, tr(Str::UnknownSingerMenuItem));
     const auto key = id.substr(kSingerMenuPrefix.size());
+    if (const auto* choice = characterDisplayChoice(id); choice != nullptr) {
+      controller.setCharacterDisplay(choice->mode);
+      return core::success();
+    }
     for (const auto& item : singerMenuItems()) {
       if (item.key != key) continue;
       if (const auto refused = refusals_.find(key); refused != refusals_.end())

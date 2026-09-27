@@ -156,7 +156,7 @@ core::Result<void> ProjectLifecycleService::createNew(
   application::ProjectFactory factory{document.factory().nextIdValue()};
   auto project = factory.createProject(std::move(name));
   project.settings().sampleRate = static_cast<double>(request.sampleRate);
-  project.settings().characterDisplay = domain::CharacterDisplayMode::Minimal;
+  project.settings().characterDisplay = domain::CharacterDisplayMode::Full;
   auto tempo = project.tempoMap().addOrReplace(time::Tick{0}, request.tempoBpm);
   if (!tempo) return tempo;
   auto meter = project.meterMap().addOrReplace(

@@ -378,6 +378,33 @@ TEST_CASE("the in-app contrast override wins over the system and can be returned
   CHECK(shell.contrast() == Contrast::Standard);
 }
 
+TEST_CASE("a system display-options change repaints an idle shell, and only an active one") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  unsigned repaints = 0U;
+  {
+    SingShell shell;
+    shell.setRepaintCallback([&repaints] { ++repaints; });
+    // Inactive: nothing observes the system yet.
+    seam::native_ui::design::postSystemDisplayOptionsChanged();
+    CHECK(repaints == 0U);
+    shell.activate({}, DesignPreferences{.mode = DesignMode::Scene, .contrastFollowsSystem = true});
+    const auto before = repaints;
+    // The platform's own notification (what System Settings posts for Increase Contrast) asks the
+    // idle editor for the frame that reads the new setting.
+    seam::native_ui::design::postSystemDisplayOptionsChanged();
+    CHECK(repaints == before + 1U);
+    // Activating again keeps one observer, not two.
+    shell.activate({}, DesignPreferences{.mode = DesignMode::Emo, .contrastFollowsSystem = true});
+    const auto again = repaints;
+    seam::native_ui::design::postSystemDisplayOptionsChanged();
+    CHECK(repaints == again + 1U);
+  }
+  // A destroyed shell stops observing.
+  const auto after = repaints;
+  seam::native_ui::design::postSystemDisplayOptionsChanged();
+  CHECK(repaints == after);
+}
+
 TEST_CASE("the design shell is inactive until a host activates it") {
   SingShell shell;
   CHECK(!shell.active());

@@ -103,7 +103,7 @@ domain::Project AuthoringSession::makeUntitledProject(
     std::uint8_t outputChannels) {
   auto project = factory.createProject("Untitled");
   project.settings().sampleRate = sampleRate;
-  project.settings().characterDisplay = domain::CharacterDisplayMode::Minimal;
+  project.settings().characterDisplay = domain::CharacterDisplayMode::Full;
   static_cast<void>(project.tempoMap().addOrReplace(time::Tick{0}, 120.0));
   trackId = factory.addVocalTrack(project, "Voice 1");
   regionId = factory.addRegion(project, trackId, "Region 1",

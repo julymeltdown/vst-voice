@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/native_ui/design/shell_workspace.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/voice_designer_session.hpp"
 
 #include <filesystem>
@@ -19,7 +20,7 @@ namespace seam::native_ui::design {
 // uses; audition audio plays through the host's audition output, or VOICE says it cannot.
 struct ShellVoiceHost final {
   std::function<VoiceDesignerSession*()> designer;
-  std::string unavailable{"Voice design runs in the standalone Project SEAM app."};
+  std::string unavailable{tr(Str::VoiceDesignRunsInTheStandalone)};
   // Save As (save = true) or Open. An empty optional is a cancelled dialog.
   std::function<core::Result<std::optional<std::filesystem::path>>(bool save,
                                                                     const std::filesystem::path&)>
@@ -39,7 +40,7 @@ struct ShellVoiceHost final {
   // The measured peak (0..1) of the audition block the output device last played, or nothing when
   // no audition plays. The host polls its audition output here, so a finished audition ends.
   std::function<std::optional<float>()> level;
-  std::string playUnavailable{"This host has no audition output"};
+  std::string playUnavailable{tr(Str::ThisHostHasNoAuditionOutput)};
 };
 
 // The VOICE workspace (docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md §7.2): the host's Voice

@@ -193,11 +193,9 @@ void paintEditorUnavailable(RasterCanvas& canvas, const EditorSceneTheme& theme)
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
   const ui::Rect title{24.0, std::max(24.0, height * 0.5 - 30.0), std::max(1.0, width - 48.0), 20.0};
-  canvas.drawText(title, "The SEAM editor is not available on this platform",
-                  theme.primaryText, 14.0);
+  canvas.drawText(title, kEditorUnavailableTitle, theme.primaryText, 14.0);
   canvas.drawText(ui::Rect{title.x, title.bottom() + 8.0, title.width, 18.0},
-                  "It needs the macOS vector renderer; Windows and Linux editors are a TODO.",
-                  theme.secondaryText, 11.0);
+                  kEditorUnavailableDetail, theme.secondaryText, 11.0);
 }
 
 }  // namespace seam::native_ui

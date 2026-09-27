@@ -6,6 +6,7 @@
 
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 
@@ -295,4 +296,50 @@ TEST_CASE("CLAP shell: seam B preview is refused honestly in the plug-in") {
     CHECK(refused.error().code == core::ErrorCode::Unsupported);
     CHECK(refused.error().message.find("plug-in") != std::string::npos);
   }
+}
+
+TEST_CASE("CLAP shell: the shell is activated once, by the first frame, not at construction") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  // Constructing the runtime loads no design assets: a host may never open the editor.
+  CHECK(runtime.designShellActivations() == 0U);
+  runtime.resize(1600.0, 900.0);
+  CHECK(runtime.designShellActivations() == 1U);
+  paintFrame(runtime);
+  paintFrame(runtime);
+  runtime.resize(1100.0, 720.0);
+  paintFrame(runtime);
+  CHECK(runtime.designShellActivations() == 1U);
+  // The first frame presents the shell, with its default look.
+  CHECK(childById(runtime.accessibilitySnapshot().children, "shell.workspace.export") != nullptr);
+  // A paint without a resize activates it as well.
+  clap_editor::EditorRuntime painted{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  paintFrame(painted);
+  paintFrame(painted);
+  CHECK(painted.designShellActivations() == 1U);
+}
+
+TEST_CASE("CLAP shell: the plug-in's export refusal reads from the string table") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto pseudo = native_ui::design::ShellStringTable::pseudoLocalized(0.4);
+  const native_ui::design::ScopedShellStrings scope{pseudo};
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility("shell.workspace.export", SemanticAction::Activate));
+  paintFrame(runtime);
+  const auto snapshot = runtime.accessibilitySnapshot();
+  const auto* run = childById(snapshot.children, "shell.export.run");
+  CHECK(run != nullptr);
+  if (run != nullptr)
+    CHECK(run->description == pseudo.text(native_ui::design::Str::InAPlugInExportFromYour));
 }

@@ -77,6 +77,7 @@
 - (void)resetRegionGrowlCurve:(id)sender;
 - (void)editTrackStyle:(id)sender;
 - (void)editJapaneseReading:(id)sender;
+- (void)addRegion:(id)sender;
 - (void)removeSelectedOverlaps:(id)sender;
 - (void)closeSelectedGaps:(id)sender;
 - (void)autoLegatoSelectedNotes:(id)sender;
@@ -499,6 +500,10 @@
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditJapaneseReading title:@"Cannot resolve Japanese reading"];
 }
+- (void)addRegion:(id)sender {
+  (void)sender;
+  [self editCommand:seam::platform::ApplicationCommand::AddRegion title:@"Cannot add a region"];
+}
 - (void)editSelectedVibrato:(id)sender {
   (void)sender;
   [self editCommand:seam::platform::ApplicationCommand::EditSelectedVibrato title:@"Cannot edit selected vibrato"];
@@ -677,6 +682,7 @@ public:
                        NSEventModifierFlagCommand | NSEventModifierFlagShift,
                        target_)];
     [edit addItem:[NSMenuItem separatorItem]];
+    [edit addItem:item(@"Add Region", @selector(addRegion:), @"", 0, target_)];
     [edit addItem:item(@"Edit Pronunciation Hint…", @selector(editPronunciationHint:), @"",
                        0, target_)];
     [edit addItem:item(@"Find Notes…", @selector(findNotes:), @"f", NSEventModifierFlagCommand, target_)];

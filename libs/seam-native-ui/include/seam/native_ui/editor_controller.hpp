@@ -431,6 +431,9 @@ public:
       std::string name);
   [[nodiscard]] core::Result<domain::RegionId> addVocalRegion(
       std::string name, time::Tick start, time::Tick duration);
+  // A four-bar region on the selected vocal track, after its last region (Add Region in MIX, the
+  // Edit menu and the arrangement toolbar). Refused when no vocal track is selected.
+  [[nodiscard]] core::Result<domain::RegionId> addRegionToSelectedTrack();
   [[nodiscard]] core::Result<void> removeSelectedTrack();
   [[nodiscard]] core::Result<void> renameSelectedTrack(std::string name);
   [[nodiscard]] core::Result<void> beginSelectedTrackRename();
@@ -447,6 +450,11 @@ public:
   [[nodiscard]] core::Result<void> applySelectedSeamPreset(SeamPreset preset);
   [[nodiscard]] core::Result<void> resetSelectedSeam();
   [[nodiscard]] core::Result<void> toggleSelectedSeamPreview();
+  // Full, Minimal or Off for the project's character surfaces (view state, not an edit).
+  void setCharacterDisplay(domain::CharacterDisplayMode mode);
+  [[nodiscard]] domain::CharacterDisplayMode characterDisplay() const noexcept {
+    return session_.project().settings().characterDisplay;
+  }
   [[nodiscard]] core::Result<void> setSelectedUnitLoopPrint(float value);
   [[nodiscard]] core::Result<void> setSelectedUnitSourcePitchResidual(float value);
   [[nodiscard]] core::Result<void> splitSelectedRegion(time::Tick splitTick);

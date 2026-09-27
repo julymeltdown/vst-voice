@@ -300,6 +300,9 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   persist_ = false;
   ++artGeneration_;
   layers_.invalidate();
+  // An Increase Contrast change in System Settings repaints an idle editor: a frame reads the
+  // system setting itself, but nothing else would ask for one.
+  if (available()) displayOptionsObservation_ = observeSystemDisplayOptions([this] { repaint(); });
   if (assetRoot.empty() || !available()) return;
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto folder = assetRoot / std::string{designModeName(mode)};
@@ -742,7 +745,8 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     return false;
   }
   // Following the system, the frame reads Increase Contrast itself, so switching it in System
-  // Settings changes the open editor on its next frame without any notification plumbing.
+  // Settings changes the open editor on its next frame; the display-options observer asks for
+  // that frame when the editor is otherwise idle.
   if (preferences_.contrastFollowsSystem) {
     const auto system = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
     // The contrast picks the token table, which keys the cached background.
@@ -953,8 +957,7 @@ core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, b
   if (!open) {
     if (!aboutOpen_) return core::success();
     aboutOpen_ = false;
-    semanticFocus_.clear();
-    refreshSemantics(controller);
+    returnFocusToOverlayOpener(controller);
     repaint();
     return core::success();
   }
@@ -964,7 +967,7 @@ core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, b
     return core::failure(core::ErrorCode::Conflict, tr(Str::CloseTheOpenSurfaceFirst));
   const auto state = controller.sceneState();
   if (aboutOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
-    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallFor));
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallForTheAbout));
   if (lyricInputActive_) {
     controller.cancelTextComposition();
     lyricInputActive_ = false;
@@ -2087,8 +2090,9 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     const auto hint = !state.selectedSeam.has_value() ? std::string{tr(Str::DragPhonemeEdgesClickAUnit)}
                       : !state.seamPreviewConnected
                           ? std::string{tr(Str::SeamArrowsEditCCurveB2)}
-                          : std::string{tr(Str::SeamArrowsEditCCurveB)} +
-                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview);
+                      // Whole sentences, so a translation never assembles "B" + a loose word.
+                      : state.seamPreviewAlternate ? std::string{tr(Str::SeamHintAlternatePreview)}
+                                                   : std::string{tr(Str::SeamHintBasePreview)};
     if (info.width > 24.0)
       c.text(info, hint,
              fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
@@ -2754,6 +2758,9 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     if (state.diagnostics.size() > 1U)
       title += " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More);
     const auto toast = diagnosticsToastBounds();
+    // The toast stands over the lane, whose playhead is dynamic: it is dynamic too, recorded after
+    // that playhead, so a moving playhead never draws across it.
+    const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "diagnostics-toast"};
     c.save();
     c.setGlow(withAlpha(tone, 0.5), 10.0);
     c.fill(Path::roundedRect(toast, 8.0), withAlpha(t.color.surfaceRaised, 0.97));
@@ -2857,6 +2864,8 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                                         : std::optional<ui::Rect>{diagnosticsToastBounds()});
   if (errorToast_.has_value()) {
     const auto toast = *errorToast_;
+    // Over the lane like the diagnostics toast, and so above the lane's playhead for the same reason.
+    const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "error-toast"};
     const auto* package = characterPortrait(CharacterState::Error);
     const auto* look = lookPortrait();
     const auto hash = paint::ContentHash{}
@@ -3094,8 +3103,20 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
   }
   // The About sheet's one control is Close.
-  if (overlay.kind() == OverlayKind::About && result) aboutOpen_ = false;
+  if (overlay.kind() == OverlayKind::About && result && aboutOpen_) {
+    aboutOpen_ = false;
+    returnFocusToOverlayOpener(controller);
+  }
   return result;
+}
+
+void SingShell::returnFocusToOverlayOpener(NativeEditorController& controller) {
+  const auto opener = std::exchange(overlayOpener_, std::string{});
+  refreshSemantics(controller);
+  if (!opener.empty() && semantics_.publishes(opener))
+    takeSemanticFocus(controller, opener);
+  else
+    semanticFocus_.clear();
 }
 
 void SingShell::cancelCoveredLyric(NativeEditorController& controller) {

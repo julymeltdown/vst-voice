@@ -11,6 +11,7 @@
 // so its real command still reaches the same controller code the classic painter called.
 
 #include "seam/native_ui/accessibility_tree.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/editor_controller.hpp"
@@ -197,7 +198,7 @@ public:
     static_cast<void>(controller);
     static_cast<void>(id);
     static_cast<void>(value);
-    return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
+    return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlHasNoEditableValue));
   }
 };
 

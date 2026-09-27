@@ -68,7 +68,7 @@ TEST_CASE("authoring_characterization_default_clap_project_is_stable") {
   CHECK(project.vocalTracks().front().regions.size() == 1U);
   CHECK(project.vocalTracks().front().regions.front().name == "DAW PHRASE");
   CHECK_NEAR(project.tempoMap().bpmAt(seam::time::Tick{0}), 154.0, 0.0001);
-  CHECK(project.settings().characterDisplay == seam::domain::CharacterDisplayMode::Minimal);
+  CHECK(project.settings().characterDisplay == seam::domain::CharacterDisplayMode::Full);
 
   const auto resolution = runtime.voicebankResolution();
   CHECK(resolution.resolved());

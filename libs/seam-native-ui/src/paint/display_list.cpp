@@ -450,7 +450,14 @@ void RecordingCanvas::replay(Layer layer, Canvas2D& target, RasterCanvas& raster
             // The raster front writes pixels directly: the vector work before it must be on the
             // surface first, which is the documented contract between the two fronts.
             target.flush();
-            p.drawing(target, raster);
+            // The drawing runs against the canvas it is replayed on, not through this recorder,
+            // so a glowless recording (High Contrast) keeps its glow off here too.
+            if (glowless_) {
+              GlowlessCanvas glowless{target};
+              p.drawing(glowless, raster);
+            } else {
+              p.drawing(target, raster);
+            }
           }
         },
         op.payload);

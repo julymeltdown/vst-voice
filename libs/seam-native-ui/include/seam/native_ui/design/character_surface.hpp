@@ -2,6 +2,7 @@
 
 #include "seam/character/character.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -181,9 +182,8 @@ private:
 // ---- the empty project and the error toast ------------------------------------------------------
 
 // The seated pose's line, drawn only for a region that genuinely has no notes: a scrolled-away note
-// is a different situation and the grid says so instead.
-inline constexpr std::string_view kEmptyProjectPrompt =
-    "Double-click the grid to write the first note.";
+// is a different situation and the grid says so instead. A table key, read through tr() when drawn.
+inline constexpr Str kEmptyProjectPrompt = Str::DoubleClickTheGridToWrite;
 
 [[nodiscard]] std::optional<std::string_view> emptyProjectPrompt(std::size_t noteCount) noexcept;
 

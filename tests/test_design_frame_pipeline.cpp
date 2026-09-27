@@ -400,6 +400,13 @@ TEST_CASE("a mode switch or a resize recomposes every layer and damages everythi
   CHECK(p.cached.prepareFrame(p.controller, kWidth, kHeight));
   CHECK(p.cached.paint(canvas, p.controller, p.scene(in), time::Tick{0}));
   CHECK(std::equal(other.pixels().begin(), other.pixels().end(), p.retained.pixels().begin()));
+  // ...and reports it whole: a presenter blits only the damage, and none of that surface held the
+  // previous frame, even though nothing in the scene changed.
+  CHECK(p.cached.lastFrameDamage().full);
+  // Back on the retained surface, which the other frame did not write, the damage is whole again.
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.full);
 }
 
 TEST_CASE("the layer cache stays within the plan's 80 MB at 1440x900 on a 2x display") {
@@ -410,6 +417,53 @@ TEST_CASE("the layer cache stays within the plan's 80 MB at 1440x900 on a 2x dis
   CHECK(p.cached.layerCacheBytes() > 0U);
   CHECK(p.cached.layerCacheBytes() <= 80U * 1024U * 1024U);
 }
+
+TEST_CASE("a glowless recording keeps a raster drawing's glow off when it replays") {
+  using native_ui::paint::Path;
+  using native_ui::paint::RecordingCanvas;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto measure = [](std::string_view, const native_ui::paint::TextStyle&) { return 10.0; };
+  const ui::Rect box{40.0, 30.0, 40.0, 20.0};
+  const native_ui::Color background{12, 10, 14, 255};
+  // Character art records through drawRaster: its drawing runs at replay against the target
+  // canvas, and sets its own glow there (the singer ring's lit ticks, the avatar, the toast).
+  const auto glowOutside = [&](bool glowless) {
+    RecordingCanvas recorder{120.0, 80.0, 1.0, measure};
+    recorder.setGlowless(glowless);
+    recorder.setLayer(Layer::Content);
+    recorder.drawRaster(box, 7U, [box](native_ui::paint::Canvas2D& vector, RasterCanvas&) {
+      vector.save();
+      vector.setGlow(native_ui::Color{255, 0, 80, 255}, 8.0);
+      vector.fill(Path::rect(box), native_ui::Color{200, 60, 90, 255});
+      vector.restore();
+    });
+    PixelSurface surface{120U, 80U};
+    surface.clear(background);
+    const auto untouched = surface.pixels()[0];
+    {
+      auto canvas = native_ui::paint::makeCanvas(surface, 1.0);
+      RasterCanvas raster{surface, 1.0};
+      recorder.replay(Layer::Content, *canvas, raster);
+      canvas->flush();
+    }
+    std::size_t lit = 0U;
+    for (std::uint32_t y = 0U; y < 80U; ++y)
+      for (std::uint32_t x = 0U; x < 120U; ++x) {
+        const auto px = static_cast<double>(x) + 0.5;
+        const auto py = static_cast<double>(y) + 0.5;
+        // One point of antialiasing around the box is the fill's own edge, not glow.
+        if (px > box.x - 1.0 && px < box.right() + 1.0 && py > box.y - 1.0 && py < box.bottom() + 1.0)
+          continue;
+        if (surface.pixels()[y * 120U + x] != untouched) ++lit;
+      }
+    return lit;
+  };
+  // The glow is real in the standard contrast, so the check below can see it...
+  CHECK(glowOutside(false) > 0U);
+  // ...and a High Contrast (glowless) recording keeps it off the surface.
+  CHECK(glowOutside(true) == 0U);
+}
+
 
 TEST_CASE("a recorded layer hashes only its own drawing and replays like direct drawing") {
   using native_ui::paint::LayerScope;

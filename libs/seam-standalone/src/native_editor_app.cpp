@@ -651,6 +651,12 @@ core::Result<void> NativeEditorApp::initialize() {
           .editJapaneseReading = [this] {
             const auto result = authoring_->controller().openJapaneseReadingReview(); record(result); return result;
           },
+          .addRegion = [this]() -> core::Result<void> {
+            auto added = authoring_->controller().addRegionToSelectedTrack();
+            const auto result = added ? core::success() : core::Result<void>{added.error()};
+            record(result);
+            return result;
+          },
           .showAbout = [this] {
             const auto result = shell_.setAboutOpen(authoring_->controller(), true);
             record(result);

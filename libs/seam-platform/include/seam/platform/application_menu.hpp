@@ -81,6 +81,8 @@ enum class ApplicationCommand {
   CloseExpressionLane,
   EditTrackStyle,
   EditJapaneseReading,
+  // A new region on the selected vocal track, after its last region.
+  AddRegion,
   // The About sheet: the mode's key art with the product name and version.
   ShowAbout,
 };

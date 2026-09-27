@@ -26,7 +26,7 @@ domain::Project EditorRuntime::makeDefaultProject(
     application::ProjectFactory& factory, domain::RegionId& regionId) {
   auto project = factory.createProject("SEAM / CLAP EDITOR");
   static_cast<void>(project.tempoMap().addOrReplace(time::Tick{0}, 154.0));
-  project.settings().characterDisplay = domain::CharacterDisplayMode::Minimal;
+  project.settings().characterDisplay = domain::CharacterDisplayMode::Full;
   const auto trackId = factory.addVocalTrack(project, "VOICE 01");
   regionId = factory.addRegion(project, trackId, "DAW PHRASE",
                                time::Tick{0}, time::Tick{15360});
@@ -195,7 +195,7 @@ EditorRuntime::EditorRuntime(
   refreshAllVoicebankResolutionsLocked();
   rebuildVoicebankCardsLocked();
   rebuildController();
-  activateDesignShellWith(native_ui::design::DesignPreferences{});  // the only editor surface
+  // The shell, the only editor surface, is activated by the first frame (ensureDesignShellLocked).
   const auto loaded = character_.load(characterPackage);
   if (loaded && controller_) {
     controller_->setCharacterMetadata(character_.displayName(),

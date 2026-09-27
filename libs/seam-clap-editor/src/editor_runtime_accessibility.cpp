@@ -1,10 +1,28 @@
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/native_ui/paint/canvas2d.hpp"
 
 namespace seam::clap_editor {
+
+namespace {
+
+// Without the vector backend (Windows and Linux, a TODO) the view shows only the "editor
+// unavailable" notice, so accessibility publishes only that notice: nothing of the controller's
+// tree, which is not on screen, and no action reaches it.
+bool editorSurfaceAvailable() noexcept { return native_ui::paint::vectorBackendAvailable(); }
+
+core::Result<void> editorSurfaceUnavailable() {
+  return core::failure(core::ErrorCode::Unsupported,
+                       std::string{native_ui::kEditorUnavailableTitle});
+}
+
+}  // namespace
 
 EditorRuntime::AccessibilitySnapshot EditorRuntime::accessibilitySnapshot() {
   std::lock_guard lock(mutex_);
   if (controller_ == nullptr) return {};
+  if (!editorSurfaceAvailable())
+    return AccessibilitySnapshot{
+        .children = {native_ui::editorUnavailableSemantics(logicalWidth_, logicalHeight_)}};
   controller_->rebuildAccessibilityTree();
   if (shell_.presentedLastFrame()) {
     // The presented SING shell publishes its own tree in its own geometry; its notes stay
@@ -23,7 +41,7 @@ EditorRuntime::AccessibilitySnapshot EditorRuntime::accessibilitySnapshot() {
 
 std::optional<native_ui::SemanticNode> EditorRuntime::accessibilityFocusedNode() {
   std::lock_guard lock(mutex_);
-  if (controller_ == nullptr) return std::nullopt;
+  if (controller_ == nullptr || !editorSurfaceAvailable()) return std::nullopt;
   controller_->rebuildAccessibilityTree();
   if (shell_.presentedLastFrame()) shell_.rebuildSemantics(*controller_, sceneState());
   const auto* focused = shell_.presentedLastFrame() ? shell_.accessibilityTree().focusedNode()
@@ -35,7 +53,7 @@ std::optional<native_ui::SemanticNode> EditorRuntime::accessibilityFocusedNode()
 std::vector<native_ui::SemanticNode> EditorRuntime::accessibilityNotes(
     std::size_t offset, std::size_t limit) const {
   std::lock_guard lock(mutex_);
-  if (controller_ == nullptr) return {};
+  if (controller_ == nullptr || !editorSurfaceAvailable()) return {};
   if (shell_.presentedLastFrame()) return shell_.accessibilityTree().materializeNotes(offset, limit);
   return controller_->accessibilityTree().materializeNotes(offset, limit);
 }
@@ -47,6 +65,7 @@ core::Result<void> EditorRuntime::dispatchAccessibility(
     return core::failure(core::ErrorCode::InvalidState,
                          "CLAP editor accessibility is unavailable");
   }
+  if (!editorSurfaceAvailable()) return editorSurfaceUnavailable();
   controller_->rebuildAccessibilityTree();
   if (shell_.presentedLastFrame() && native_ui::design::SingShell::ownsSemantic(id)) {
     const auto before = session_.revision();
@@ -72,6 +91,7 @@ core::Result<void> EditorRuntime::setAccessibilityValue(
     return core::failure(core::ErrorCode::InvalidState,
                          "CLAP editor accessibility is unavailable");
   }
+  if (!editorSurfaceAvailable()) return editorSurfaceUnavailable();
   controller_->rebuildAccessibilityTree();
   const auto before = session_.revision();
   auto result = shell_.presentedLastFrame() ? shell_.setControllerValue(*controller_, id, value)

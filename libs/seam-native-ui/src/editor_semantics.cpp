@@ -1471,4 +1471,14 @@ bool EditorSemanticTree::containsId(const SemanticNode& root,
                      });
 }
 
+SemanticNode editorUnavailableSemantics(double width, double height) {
+  return SemanticNode{
+      .id = "editor.unavailable",
+      .role = SemanticRole::Status,
+      .name = std::string{kEditorUnavailableTitle},
+      .value = std::string{kEditorUnavailableDetail},
+      .bounds = {0.0, 0.0, width, height},
+  };
+}
+
 }
