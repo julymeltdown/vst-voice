@@ -25,6 +25,43 @@ namespace {
 // were scheduled.
 constexpr std::uint32_t kBackgroundBandRows = 64U;
 
+// Forwards the state and the text of what is replayed onto it and drops every other drawing: a live
+// text capture sees the background's lines as one whole pass draws them.
+class TextOnlyCanvas final : public Canvas2D {
+public:
+  explicit TextOnlyCanvas(Canvas2D& inner) noexcept : inner_(inner) {}
+  [[nodiscard]] double width() const noexcept override { return inner_.width(); }
+  [[nodiscard]] double height() const noexcept override { return inner_.height(); }
+  [[nodiscard]] double scale() const noexcept override { return inner_.scale(); }
+  void save() override { inner_.save(); }
+  void restore() override { inner_.restore(); }
+  void translate(double dx, double dy) override { inner_.translate(dx, dy); }
+  void clipRect(ui::Rect r) override { inner_.clipRect(r); }
+  void clipPath(const Path& path) override { inner_.clipPath(path); }
+  void setAlpha(double alpha) override { inner_.setAlpha(alpha); }
+  void setBlend(Blend blend) override { inner_.setBlend(blend); }
+  void setGlow(Color color, double radius) override { inner_.setGlow(color, radius); }
+  void clearGlow() override { inner_.clearGlow(); }
+  void fill(const Path&, Color) override {}
+  void fill(const Path&, const LinearGradient&) override {}
+  void fill(const Path&, const RadialGradient&) override {}
+  void stroke(const Path&, Color, const StrokeStyle&) override {}
+  void stroke(const Path&, const LinearGradient&, const StrokeStyle&) override {}
+  void drawImage(const Image&, ui::Rect, double) override {}
+  void drawImage(const Image&, ui::Rect, ui::Rect, double) override {}
+  double text(ui::Rect bounds, std::string_view utf8, const TextStyle& style,
+              Color color) override {
+    return inner_.text(bounds, utf8, style, color);
+  }
+  [[nodiscard]] double measure(std::string_view utf8, const TextStyle& style) override {
+    return inner_.measure(utf8, style);
+  }
+  void flush() override { inner_.flush(); }
+
+private:
+  Canvas2D& inner_;
+};
+
 // A whole-surface copy (20 MB at 1440x900 on a 2x display) in slices on as many cores as are
 // free: one core cannot use the memory bandwidth there is.
 void copyPixels(std::span<const std::uint32_t> from, std::span<std::uint32_t> to) {
@@ -113,14 +150,30 @@ void paintBackground(PixelSurface& snapshot, double scale, const BackgroundLayer
               target.pixels().begin() + static_cast<std::ptrdiff_t>(y0) * target.width());
   };
   // A text capture and the full-resolution glow hook observe the calling thread only.
-  const auto serial = ScopedTextCapture::active() || ScopedFullResolutionGlow::active();
+  const auto capturing = ScopedTextCapture::active();
+  const auto serial = capturing || ScopedFullResolutionGlow::active();
 #if defined(__APPLE__)
   if (!serial && bands > 1U) {
     dispatch_apply_f(bands, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), &job, band);
     return;
   }
 #endif
-  for (std::size_t k = 0U; k < bands; ++k) band(&job, k);
+  if (!capturing || !banded) {
+    for (std::size_t k = 0U; k < bands; ++k) band(&job, k);
+    return;
+  }
+  {
+    // A band's lines are clipped to it and moved with it; the capture is told none of them...
+    const ScopedTextCapture ignored;
+    for (std::size_t k = 0U; k < bands; ++k) band(&job, k);
+  }
+  // ...and each line once, as a whole pass over the surface draws it.
+  PixelSurface scratch{snapshot.width(), snapshot.height()};
+  if (auto canvas = makeCanvas(scratch, scale); canvas != nullptr) {
+    TextOnlyCanvas lines{*canvas};
+    RasterCanvas raster{scratch, scale, nullptr};
+    recorded.replay(Layer::Background, lines, raster);
+  }
 }
 
 // Outward to whole device pixels, inside the surface.
