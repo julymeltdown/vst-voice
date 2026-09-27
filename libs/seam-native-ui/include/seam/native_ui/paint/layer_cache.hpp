@@ -17,6 +17,10 @@ struct BackgroundLayer final {
   std::uint64_t key{0U};
   Color clear{};
   std::function<void(Canvas2D&)> paint;
+  // Paint the base into one device-pixel band before replaying vector chrome. top is the
+  // band's first device row in the full surface; fullHeight is the full device height.
+  std::function<void(PixelSurface&, double scale, std::uint32_t top,
+                     std::uint32_t fullHeight)> paintBase;
 };
 
 struct Composition final {
@@ -26,10 +30,11 @@ struct Composition final {
   std::array<bool, kLayerCount> rasterized{};
 };
 
-// The frame compositor of redesign plan section 10. It keeps cumulative snapshots: the background,
-// the background with the grid, and those with the content. A layer is rasterized again only when
-// its key changed (the background) or its recorded drawing hashes differently (grid, content). The
-// dynamic layer is drawn over the content snapshot into the target, so the target's bytes always
+// The frame compositor of redesign plan section 10. A cold frame keeps its content snapshot and
+// builds intermediate cumulative snapshots on the first later grid/content edit. Once built, a
+// layer is rasterized again only when its key changes (the background) or its recorded drawing
+// hashes differently (grid, content). The dynamic layer is drawn over the content snapshot into
+// the target, so the target's bytes always
 // equal a composition from nothing.
 //
 // A changed grid or content layer is compared with the previous frame's call by call: a call that
@@ -73,6 +78,7 @@ private:
   // L0 pixels remain reusable after an explicit full-frame invalidation when its key is unchanged.
   std::uint64_t backgroundSnapshotKey_{0U};
   bool backgroundSnapshotValid_{false};
+  bool materializeIntermediate_{false};
   std::array<std::uint64_t, kSnapshots> keys_{};
   std::array<bool, kSnapshots> valid_{};
   // The previous frame's calls of the grid and content layers, when their snapshot holds them.
