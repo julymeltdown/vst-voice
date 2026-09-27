@@ -46,6 +46,13 @@ struct DesignPreferences final {
 void saveDesignPreferences(const DesignPreferences& preferences);
 // The platform's Increase Contrast accessibility setting (false where the platform has none).
 [[nodiscard]] bool systemIncreaseContrast();
+// Runs onChange whenever the system's accessibility display options change (Increase Contrast,
+// Reduce Motion, Reduce Transparency), on the thread that posts the change. The observation ends
+// when the returned token is released. Empty where the platform has no such notification.
+[[nodiscard]] std::shared_ptr<void> observeSystemDisplayOptions(std::function<void()> onChange);
+// Posts the platform's own display-options notification, as System Settings does (tests, and a
+// host that changed an option itself). Does nothing where the platform has none.
+void postSystemDisplayOptionsChanged();
 
 struct ModeAssets final {
   std::shared_ptr<const paint::Image> portrait;
@@ -133,6 +140,9 @@ public:
   // design assets. Every host activates it; the no-argument form reads the saved preferences, and
   // tests pass an explicit preference set so they never observe the user's saved design mode.
   SingShell() = default;
+  // The system display-options observer calls back into this shell, so it never moves.
+  SingShell(SingShell&&) = delete;
+  SingShell& operator=(SingShell&&) = delete;
   void activate(const std::filesystem::path& assetRoot = locateDesignAssets());
   // Test and screenshot entry point: an explicit preference set, no persistence.
   void activate(const std::filesystem::path& assetRoot, DesignPreferences preferences);
@@ -591,6 +601,9 @@ private:
   std::string semanticFocus_;
   std::string semanticFocusBaseline_;
   std::function<void()> repaint_;
+  // Keeps the system display-options observer alive while the shell is active: an Increase
+  // Contrast change repaints an idle editor, whose next frame reads the new setting.
+  std::shared_ptr<void> displayOptionsObservation_;
   // The character animation's clock. Empty means the steady clock, so a host that injects nothing
   // still animates and a test that freezes the clock freezes the character with it.
   std::function<std::chrono::steady_clock::time_point()> uiClock_;

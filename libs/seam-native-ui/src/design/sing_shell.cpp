@@ -300,6 +300,9 @@ void SingShell::activate(const std::filesystem::path& assetRoot, DesignPreferenc
   persist_ = false;
   ++artGeneration_;
   layers_.invalidate();
+  // An Increase Contrast change in System Settings repaints an idle editor: a frame reads the
+  // system setting itself, but nothing else would ask for one.
+  if (available()) displayOptionsObservation_ = observeSystemDisplayOptions([this] { repaint(); });
   if (assetRoot.empty() || !available()) return;
   for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
     const auto folder = assetRoot / std::string{designModeName(mode)};
@@ -742,7 +745,8 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     return false;
   }
   // Following the system, the frame reads Increase Contrast itself, so switching it in System
-  // Settings changes the open editor on its next frame without any notification plumbing.
+  // Settings changes the open editor on its next frame; the display-options observer asks for
+  // that frame when the editor is otherwise idle.
   if (preferences_.contrastFollowsSystem) {
     const auto system = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
     // The contrast picks the token table, which keys the cached background.

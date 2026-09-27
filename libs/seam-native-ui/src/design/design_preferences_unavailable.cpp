@@ -6,5 +6,7 @@ namespace seam::native_ui::design {
 DesignPreferences loadDesignPreferences() { return DesignPreferences{}; }
 void saveDesignPreferences(const DesignPreferences&) {}
 bool systemIncreaseContrast() { return false; }
+std::shared_ptr<void> observeSystemDisplayOptions(std::function<void()>) { return {}; }
+void postSystemDisplayOptionsChanged() {}
 
 }  // namespace seam::native_ui::design

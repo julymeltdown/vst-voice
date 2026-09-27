@@ -74,4 +74,27 @@ bool systemIncreaseContrast() {
   }
 }
 
+std::shared_ptr<void> observeSystemDisplayOptions(std::function<void()> onChange) {
+  if (!onChange) return {};
+  @autoreleasepool {
+    NSNotificationCenter* center = NSWorkspace.sharedWorkspace.notificationCenter;
+    // No queue: the block runs on the posting thread, which for System Settings is the main thread.
+    id observer = [center addObserverForName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification
+                                      object:nil
+                                       queue:nil
+                                  usingBlock:^(NSNotification*) { onChange(); }];
+    return std::shared_ptr<void>{nullptr, [center, observer](void*) {
+                                   [center removeObserver:observer];
+                                 }};
+  }
+}
+
+void postSystemDisplayOptionsChanged() {
+  @autoreleasepool {
+    [NSWorkspace.sharedWorkspace.notificationCenter
+        postNotificationName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification
+                      object:nil];
+  }
+}
+
 }  // namespace seam::native_ui::design
