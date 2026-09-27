@@ -18,7 +18,7 @@ NativeEditorController
 EditorSession + PianoRollModel
         │ retained view state
         ▼
-EditorScenePainter
+EditorScenePainter (removed 2026-09-27; the SING shell paints the editor now)
         │ logical drawing operations
         ▼
 RasterCanvas → PixelSurface → XPutImage

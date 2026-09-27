@@ -606,6 +606,8 @@ Each step keeps the app working. `SEAM_UI_V2` (hidden preference plus environmen
 
 The estimates in this historical inventory are withdrawn as a schedule. Use units A–E in the fidelity specification: correct presentation, then prove the native SING design in both modes before expanding to the other workspaces. Windows remains TODO and is not a prerequisite for the macOS proof.
 
+Status of step 21 (2026-09-27, branch `codex/retire-legacy-painter`): the legacy painter is removed. `EditorScenePainter` and its panel painters, the Command-Shift-Space / `SEAM_UI_DESIGN=classic` / `shellEnabled` toggle (the switch this plan called `SEAM_UI_V2`), the Classic header button, `legacySurfaceRequired`, `legacyModalSurfaceActive` and the controller's classic panel hit tests are gone; the SING shell is the only editor surface in the standalone app and the CLAP plug-in. A build without the vector backend shows `paintEditorUnavailable` (README, Windows TODO item 5). CLAP compact layout, Win32/X11 parity and the FL rerun are not part of that change.
+
 Parity checklist (none may be lost): note create/move/resize/delete, box selection, overlap badge and detail, lyric editing and batch lyrics, vibrato handles, phoneme boundary edit, unit variant and renderer selection, seam edit and alternate preview, pitch points, expression lanes with refusal, technical lane collapse/expand, time map, tempo and meter edit, loop, bounce timing choice, sample microscope, phoneme review, replacement review, voicebank browser, relink and replace, audio settings, recovery/support, diagnostics with actions, export with receipt, character Full/Minimal/Off, accessibility tree and keyboard paths.
 
 ## 14. Verification
