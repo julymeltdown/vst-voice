@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/voice_workspace.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/phonemizer/phonemizer.hpp"
 
@@ -138,7 +139,7 @@ void overflowButton(Canvas2D& c, const DesignTokens& t, ui::Rect r, bool open) {
 
 struct KnobSpec final {
   const char* id;
-  const char* label;
+  Str label;
   double minimum;
   double maximum;
   double step;
@@ -146,14 +147,14 @@ struct KnobSpec final {
 
 // The bounds VoiceRecipe::validate accepts for each source field.
 constexpr std::array<KnobSpec, 6U> kSourceKnobs{{
-    {"open-quotient", "Open Q", 0.05, 0.95, 0.01},
-    {"tilt", "Tilt", -48.0, 0.0, 0.5},
-    {"aspiration", "Aspir", 0.0, 1.0, 0.01},
-    {"pitch-depth", "Pitch depth \u00A2", 0.0, 100.0, 1.0},
-    {"amp-depth", "Amp depth", 0.0, 1.0, 0.01},
-    {"rate", "Rate", 0.0, 20.0, 0.1},
+    {"open-quotient", Str::OpenQ, 0.05, 0.95, 0.01},
+    {"tilt", Str::Tilt, -48.0, 0.0, 0.5},
+    {"aspiration", Str::Aspir, 0.0, 1.0, 0.01},
+    {"pitch-depth", Str::PitchDepth, 0.0, 100.0, 1.0},
+    {"amp-depth", Str::AmpDepth, 0.0, 1.0, 0.01},
+    {"rate", Str::Rate, 0.0, 20.0, 0.1},
 }};
-constexpr KnobSpec kNasalKnob{"nasal", "Nasal", 0.0, 1.0, 0.01};
+constexpr KnobSpec kNasalKnob{"nasal", Str::Nasal, 0.0, 1.0, 0.01};
 
 double sourceValue(const VoiceRecipe& r, std::size_t i) {
   switch (i) {
@@ -193,7 +194,7 @@ double snapped(double value, const KnobSpec& spec) {
 
 // Frication fields: 0 centre, 1 bandwidth, 2 gain.
 constexpr std::array<const char*, 3U> kNoiseFieldIds{"center", "bandwidth", "gain"};
-constexpr std::array<const char*, 3U> kNoiseFieldLabels{"Center", "BW", "Gain"};
+constexpr std::array<Str, 3U> kNoiseFieldLabels{Str::Center, Str::BW, Str::Gain2};
 
 double noiseValue(const voice_design::FricationConfig& s, std::size_t field) {
   return field == 0U ? s.centerHz : field == 1U ? s.bandwidthHz : s.gain;
@@ -305,7 +306,7 @@ double yToDb(ui::Rect plot, double y) {
 
 enum class Card : std::size_t { Source = 0U, Resonance = 1U, Noise = 2U, Output = 3U };
 constexpr std::array<const char*, 4U> kCardIds{"source", "resonance", "noise", "output"};
-constexpr std::array<const char*, 4U> kCardTitles{"Source", "Resonance", "Noise", "Output"};
+constexpr std::array<Str, 4U> kCardTitles{Str::Source, Str::Resonance, Str::Noise, Str::Output};
 
 // Wide: the singer column and the three modules in a row, the rail and OUTPUT below. Stacked:
 // RESONANCE beside the singer, SOURCE and NOISE under it. Tabbed (short or narrow bodies): one
@@ -506,7 +507,7 @@ struct Chips final {
 };
 
 std::string poseLabel(const voice_design::VoicePose& pose) {
-  return pose.style == "neutral" || pose.style.empty() ? pose.phone : pose.phone + " \u00B7 " + pose.style;
+  return pose.style == "neutral" || pose.style.empty() ? pose.phone : pose.phone + tr(Str::Text11) + pose.style;
 }
 
 double chipWidth(const voice_design::VoicePose& pose) {
@@ -638,20 +639,20 @@ struct MenuItem final {
 std::vector<MenuItem> menuFor(Card card) {
   switch (card) {
     case Card::Source:
-      return {{Action::New, "new", "New starter voice"}, {Action::Open, "open", "Open recipe\u2026"},
-              {Action::Save, "save", "Save"}, {Action::SaveAs, "save-as", "Save As\u2026"},
-              {Action::Seed, "seed", "Voice seed\u2026"}};
+      return {{Action::New, "new", tr(Str::NewStarterVoice)}, {Action::Open, "open", tr(Str::OpenRecipe)},
+              {Action::Save, "save", tr(Str::Save)}, {Action::SaveAs, "save-as", tr(Str::SaveAs)},
+              {Action::Seed, "seed", tr(Str::VoiceSeed)}};
     case Card::Resonance:
-      return {{Action::DuplicatePose, "duplicate-pose", "Duplicate pose\u2026"},
-              {Action::RemovePose, "remove-pose", "Remove pose"}};
+      return {{Action::DuplicatePose, "duplicate-pose", tr(Str::DuplicatePose)},
+              {Action::RemovePose, "remove-pose", tr(Str::RemovePose)}};
     case Card::Noise:
-      return {{Action::AddFrication, "add-frication", "Add frication\u2026"},
-              {Action::RemoveFrication, "remove-frication", "Remove frication"},
-              {Action::FricationSeed, "frication-seed", "Frication seed\u2026"}};
+      return {{Action::AddFrication, "add-frication", tr(Str::AddFrication)},
+              {Action::RemoveFrication, "remove-frication", tr(Str::RemoveFrication)},
+              {Action::FricationSeed, "frication-seed", tr(Str::FricationSeed)}};
     case Card::Output:
-      return {{Action::PinReference, "pin-reference", "Keep B as reference A"},
-              {Action::ClearReference, "clear-reference", "Clear reference A"},
-              {Action::Stop, "stop", "Stop audition"}};
+      return {{Action::PinReference, "pin-reference", tr(Str::KeepBAsReferenceA)},
+              {Action::ClearReference, "clear-reference", tr(Str::ClearReferenceA)},
+              {Action::Stop, "stop", tr(Str::StopAudition)}};
   }
   return {};
 }
@@ -720,8 +721,8 @@ public:
   core::Result<void> undo(bool redo) override {
     auto* s = session();
     if (s == nullptr || s->model() == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "No voice recipe is open");
-    if (drag_) return core::failure(core::ErrorCode::Conflict, "Finish the drag before undo or redo");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::NoVoiceRecipeIsOpen));
+    if (drag_) return core::failure(core::ErrorCode::Conflict, tr(Str::FinishTheDragBeforeUndoOr));
     const auto revision = s->model()->revision();
     return note(redo ? s->redo(s->epoch(), revision) : s->undo(s->epoch(), revision));
   }
@@ -844,7 +845,7 @@ private:
                                bool fine) {
     auto* s = session();
     if (s == nullptr || s->model() == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "No voice recipe is open");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::NoVoiceRecipeIsOpen));
     const auto begun = s->beginGesture(s->epoch(), s->model()->revision());
     if (!begun) return note(begun);
     drag_ = Drag{.target = target, .index = index, .field = field, .epoch = s->epoch(),
@@ -921,7 +922,7 @@ private:
   core::Result<void> step(Target target, std::size_t index, std::size_t field, int steps) {
     auto* s = session();
     if (s == nullptr || s->model() == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "No voice recipe is open");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::NoVoiceRecipeIsOpen));
     auto desired = s->model()->recipe();
     const auto p = s->auditionPose();
     const auto k = static_cast<double>(steps);
@@ -959,7 +960,7 @@ private:
   core::Result<void> selectPose(std::size_t index) {
     auto* s = session();
     if (s == nullptr || s->model() == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "No voice recipe is open");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::NoVoiceRecipeIsOpen));
     noiseScroll_ = 0U;
     return note(s->selectAudition(s->epoch(), s->model()->revision(), index, s->auditionPitch()));
   }
@@ -969,7 +970,7 @@ private:
     if (!host_.play) return core::failure(core::ErrorCode::Unsupported, host_.playUnavailable);
     auto played = host_.play(audio);
     if (played) {
-      message_ = std::string{"Playing "} + std::string{which} + " (not approved)";
+      message_ = std::string{tr(Str::Playing)} + std::string{which} + tr(Str::NotApproved);
       level_ = 0.0F;
     }
     return played;
@@ -978,24 +979,24 @@ private:
   core::Result<void> play() {
     auto* s = session();
     if (s == nullptr || s->model() == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "No voice recipe is open");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::NoVoiceRecipeIsOpen));
     if (!host_.play) return note(core::failure(core::ErrorCode::Unsupported, host_.playUnavailable));
     if (playing()) {
       if (host_.stop) host_.stop();
       level_.reset();
-      message_ = "Stopped";
+      message_ = tr(Str::Stopped);
       return core::success();
     }
     if (useReference_) {
       if (!s->auditionReference())
-        return note(core::failure(core::ErrorCode::InvalidState, "Keep a rendered B as reference A first"));
+        return note(core::failure(core::ErrorCode::InvalidState, tr(Str::KeepARenderedBAsReference)));
       return note(startPlayback(s->auditionReference()->audio, "A"));
     }
     if (s->auditionAudio()) return note(startPlayback(s->auditionAudio(), "B"));
     const auto begun = s->beginAudition();
     if (begun) {
       pendingPlay_ = true;
-      message_ = "Rendering the audition\u2026";
+      message_ = tr(Str::RenderingTheAudition);
     }
     return note(begun);
   }
@@ -1048,22 +1049,22 @@ private:
 
   std::string recipeIdentity() const {
     auto* s = session();
-    if (s == nullptr || s->model() == nullptr) return "No voice recipe is open";
-    const auto name = s->path().empty() ? std::string{"Unsaved draft"} : s->path().filename().string();
-    return s->model()->recipe().id + "  \u2022  " + name + (s->model()->dirty() ? "  \u2022  Edited" : "");
+    if (s == nullptr || s->model() == nullptr) return tr(Str::NoVoiceRecipeIsOpen);
+    const auto name = s->path().empty() ? std::string{tr(Str::UnsavedDraft2)} : s->path().filename().string();
+    return s->model()->recipe().id + tr(Str::Text) + name + (s->model()->dirty() ? tr(Str::Edited2) : "");
   }
   std::string auditionStatus() const {
     auto* s = session();
-    if (s == nullptr || s->model() == nullptr) return "No voice to audition";
-    if (s->auditionBusy()) return "Rendering B\u2026";
+    if (s == nullptr || s->model() == nullptr) return tr(Str::NoVoiceToAudition);
+    if (s->auditionBusy()) return tr(Str::RenderingB);
     if (!message_.empty()) return message_;
-    return s->auditionAudio() ? "B rendered for this edit" : "B not rendered";
+    return s->auditionAudio() ? tr(Str::BRenderedForThisEdit) : tr(Str::BNotRendered);
   }
   std::string singerState() const {
     auto* s = session();
-    if (playing()) return "Listening";
-    if (s != nullptr && s->auditionBusy()) return "Rendering";
-    return "Idle";
+    if (playing()) return tr(Str::Listening);
+    if (s != nullptr && s->auditionBusy()) return tr(Str::Rendering);
+    return tr(Str::Idle);
   }
   // Level as a ring fraction: -60 dBFS (and silence) is empty, 0 dBFS is full.
   double levelFraction() const {
@@ -1071,8 +1072,8 @@ private:
     return std::clamp((20.0 * std::log10(static_cast<double>(*level_)) + 60.0) / 60.0, 0.0, 1.0);
   }
   std::string levelText() const {
-    if (!level_) return "Nothing playing";
-    if (*level_ <= 1e-6F) return "Playing, silent block";
+    if (!level_) return tr(Str::NothingPlaying);
+    if (*level_ <= 1e-6F) return tr(Str::PlayingSilentBlock);
     return format("%.1f dBFS", 20.0 * std::log10(static_cast<double>(*level_)));
   }
 
@@ -1142,14 +1143,14 @@ void VoiceWorkspaceImpl::paintKnob(Canvas2D& c, const DesignTokens& t, ui::Rect 
 
 void VoiceWorkspaceImpl::paintHonest(Canvas2D& c, const DesignTokens& t, ui::Rect area) const {
   const auto panel = inset(area, 12.0, 12.0);
-  c.text({panel.x + 16.0, panel.y + 16.0, panel.width - 32.0, 24.0}, "Voice",
+  c.text({panel.x + 16.0, panel.y + 16.0, panel.width - 32.0, 24.0}, tr(Str::Voice),
          style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
          t.color.textPrimary);
   c.text({panel.x + 16.0, panel.y + 48.0, panel.width - 32.0, 22.0}, host_.unavailable,
          fitted(c, host_.unavailable, style(FontRole::Ui, t.type.body), panel.width - 32.0),
          t.color.textSecondary);
   const auto b = honestButton(area);
-  button(c, t, b, "Open voice browser", true);
+  button(c, t, b, tr(Str::OpenVoiceBrowser), true);
 }
 
 void VoiceWorkspaceImpl::paintHero(Canvas2D& c, const DesignTokens& t, const VoiceLayout& l) const {
@@ -1203,15 +1204,15 @@ void VoiceWorkspaceImpl::paintHero(Canvas2D& c, const DesignTokens& t, const Voi
 void VoiceWorkspaceImpl::paintSource(Canvas2D& c, const DesignTokens& t, const VoiceLayout& l,
                                      const VoiceRecipe* r) const {
   if (usable(l.knobCaption[0]))
-    c.text(l.knobCaption[0], "Phonation", style(FontRole::UiSemibold, t.type.smallLabel, 1.4, TextAlign::Left, true),
+    c.text(l.knobCaption[0], tr(Str::Phonation), style(FontRole::UiSemibold, t.type.smallLabel, 1.4, TextAlign::Left, true),
            t.color.textSecondary);
   if (usable(l.knobCaption[1]))
-    c.text(l.knobCaption[1], "Modulation", style(FontRole::UiSemibold, t.type.smallLabel, 1.4, TextAlign::Left, true),
+    c.text(l.knobCaption[1], tr(Str::Modulation), style(FontRole::UiSemibold, t.type.smallLabel, 1.4, TextAlign::Left, true),
            t.color.textSecondary);
   for (std::size_t i = 0U; i < kSourceKnobs.size(); ++i) {
     const auto& spec = kSourceKnobs[i];
     const auto value = r != nullptr ? sourceValue(*r, i) : spec.minimum;
-    paintKnob(c, t, l.knob[i], spec.label, r != nullptr ? sourceText(i, value) : "\u2014",
+    paintKnob(c, t, l.knob[i], tr(spec.label), r != nullptr ? sourceText(i, value) : tr(Str::Text2),
               (value - spec.minimum) / (spec.maximum - spec.minimum), r != nullptr,
               drag_ && drag_->target == Target::Source && drag_->index == i);
   }
@@ -1235,11 +1236,11 @@ void VoiceWorkspaceImpl::paintResonance(Canvas2D& c, const DesignTokens& t, cons
       c.text(rect, label, fitted(c, label, style(FontRole::UiSemibold, t.type.label, 0.4, TextAlign::Center), rect.width - 6.0),
              selected ? t.color.accent : t.color.textPrimary);
     }
-    if (usable(chips.previous)) button(c, t, chips.previous, "\u2039", p > 0U);
-    if (usable(chips.next)) button(c, t, chips.next, "\u203A", p + 1U < r->poses.size());
+    if (usable(chips.previous)) button(c, t, chips.previous, tr(Str::Text12), p > 0U);
+    if (usable(chips.next)) button(c, t, chips.next, tr(Str::Text13), p + 1U < r->poses.size());
     button(c, t, chips.add, "+", true);
   } else {
-    c.text(l.chipStrip, "No poses", style(FontRole::Ui, t.type.label), t.color.textDisabled);
+    c.text(l.chipStrip, tr(Str::NoPoses), style(FontRole::Ui, t.type.label), t.color.textDisabled);
   }
   // The spectral envelope editor.
   sunken(c, t, l.envelope, 6.0);
@@ -1306,11 +1307,11 @@ void VoiceWorkspaceImpl::paintResonance(Canvas2D& c, const DesignTokens& t, cons
              style(FontRole::UiSemibold, t.type.rulerMicro, 0.4, TextAlign::Center), t.color.textPrimary);
     }
   } else {
-    c.text(plot, "No voice recipe is open", style(FontRole::Ui, t.type.label, 0.0, TextAlign::Center), t.color.textDisabled);
+    c.text(plot, tr(Str::NoVoiceRecipeIsOpen), style(FontRole::Ui, t.type.label, 0.0, TextAlign::Center), t.color.textDisabled);
   }
   c.restore();
   const auto nasal = r != nullptr && p < r->poses.size() ? r->poses[p].nasalCoupling : 0.0;
-  paintKnob(c, t, l.nasal, kNasalKnob.label, r != nullptr ? format("%.2f", nasal) : "\u2014", nasal,
+  paintKnob(c, t, l.nasal, tr(kNasalKnob.label), r != nullptr ? format("%.2f", nasal) : tr(Str::Text2), nasal,
             r != nullptr, drag_ && drag_->target == Target::Nasal);
 }
 
@@ -1322,17 +1323,17 @@ void VoiceWorkspaceImpl::paintNoise(Canvas2D& c, const DesignTokens& t, const Vo
     const auto sliderWidth = std::max(0.0, (l.list.width - labelWidth - 12.0) / 3.0);
     for (std::size_t f = 0U; f < 3U; ++f)
       c.text({head.x + labelWidth + 4.0 + (sliderWidth + 4.0) * static_cast<double>(f), head.y, sliderWidth, head.height},
-             kNoiseFieldLabels[f], style(FontRole::UiSemibold, t.type.rulerMicro, 1.0, TextAlign::Left, true),
+             tr(kNoiseFieldLabels[f]), style(FontRole::UiSemibold, t.type.rulerMicro, 1.0, TextAlign::Left, true),
              t.color.textSecondary);
   }
   const auto selected = selectedFrication();
   if (r == nullptr) {
-    c.text({l.list.x, l.list.y + 18.0, l.list.width, 20.0}, "No voice recipe is open", style(FontRole::Ui, t.type.label),
+    c.text({l.list.x, l.list.y + 18.0, l.list.width, 20.0}, tr(Str::NoVoiceRecipeIsOpen), style(FontRole::Ui, t.type.label),
            t.color.textDisabled);
   } else {
     const auto indices = fricationsFor(*r, pose());
     if (indices.empty())
-      c.text({l.list.x, l.list.y + 18.0, l.list.width, 20.0}, "No frication for this style", style(FontRole::Ui, t.type.label),
+      c.text({l.list.x, l.list.y + 18.0, l.list.width, 20.0}, tr(Str::NoFricationForThisStyle), style(FontRole::Ui, t.type.label),
              t.color.textDisabled);
     for (const auto& row : layoutNoiseRows(l.list, indices, noiseScroll_)) {
       const auto& source = r->frications[row.index];
@@ -1354,9 +1355,9 @@ void VoiceWorkspaceImpl::paintNoise(Canvas2D& c, const DesignTokens& t, const Vo
       }
     }
   }
-  c.text(l.seedCaption, "Seed", style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Left, true), t.color.textSecondary);
+  c.text(l.seedCaption, tr(Str::Seed), style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Left, true), t.color.textSecondary);
   sunken(c, t, l.seed, 5.0);
-  const auto seedText = r != nullptr && selected ? std::to_string(r->frications[*selected].source.seed) : std::string{"\u2014"};
+  const auto seedText = r != nullptr && selected ? std::to_string(r->frications[*selected].source.seed) : std::string{tr(Str::Text2)};
   c.text(inset(l.seed, 8.0, 0.0), seedText, fitted(c, seedText, style(FontRole::Mono, t.type.label), l.seed.width - 16.0),
          selected ? t.color.textPrimary : t.color.textDisabled);
 }
@@ -1365,13 +1366,13 @@ void VoiceWorkspaceImpl::paintOutput(Canvas2D& c, const DesignTokens& t, const V
   auto* s = session();
   const auto ready = s != nullptr && s->model() != nullptr;
   if (!ready && l.mode == Mode::Tabbed) {
-    button(c, t, l.newButton, "New voice", s != nullptr);
-    button(c, t, l.openButton, "Open\u2026", s != nullptr);
-    c.text(l.caption, message_.empty() ? std::string{"No voice recipe is open"} : message_,
+    button(c, t, l.newButton, tr(Str::NewVoice), s != nullptr);
+    button(c, t, l.openButton, tr(Str::Open2), s != nullptr);
+    c.text(l.caption, message_.empty() ? std::string{tr(Str::NoVoiceRecipeIsOpen)} : message_,
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
     return;
   }
-  const auto label = playing() ? "Stop" : (s != nullptr && s->auditionBusy()) ? "Rendering" : "Play";
+  const auto label = playing() ? tr(Str::Stop) : (s != nullptr && s->auditionBusy()) ? tr(Str::Rendering) : tr(Str::Play);
   button(c, t, l.play, label, ready && static_cast<bool>(host_.play), playing());
   button(c, t, l.abA, "A", ready && s->auditionReference().has_value(), useReference_);
   button(c, t, l.abB, "B", ready, !useReference_);
@@ -1405,8 +1406,8 @@ void VoiceWorkspaceImpl::paint(Canvas2D& c, const DesignTokens& t, const NativeE
            fitted(c, recipeIdentity(), style(FontRole::UiSemibold, t.type.body), l.identity.width),
            t.color.textPrimary);
     if (r == nullptr) {
-      button(c, t, l.newButton, "New starter voice", !s->busy());
-      button(c, t, l.openButton, "Open\u2026", !s->busy());
+      button(c, t, l.newButton, tr(Str::NewStarterVoice), !s->busy());
+      button(c, t, l.openButton, tr(Str::Open2), !s->busy());
     } else if (!message_.empty()) {
       const ui::Rect line{l.newButton.x, l.header.y, l.header.right() - l.newButton.x, l.header.height};
       c.text(line, message_, fitted(c, message_, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), line.width),
@@ -1442,7 +1443,7 @@ void VoiceWorkspaceImpl::paint(Canvas2D& c, const DesignTokens& t, const NativeE
       const auto r0 = l.view[i];
       if (active) c.fill(Path::roundedRect(r0, 6.0), withAlpha(t.color.accent, 0.2));
       c.stroke(Path::roundedRect(r0, 6.0), active ? t.color.accent : withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
-      c.text(r0, kCardTitles[i], fitted(c, kCardTitles[i], style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true), r0.width - 8.0),
+      c.text(r0, tr(kCardTitles[i]), fitted(c, tr(kCardTitles[i]), style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true), r0.width - 8.0),
              active ? t.color.accent : t.color.textSecondary);
     }
     if (l.identity.width >= 40.0)
@@ -1459,7 +1460,7 @@ void VoiceWorkspaceImpl::paint(Canvas2D& c, const DesignTokens& t, const NativeE
       if (lit) c.setGlow(t.color.accent, 7.0);
       c.fill(Path::circle({l.card[i].x + 16.0, l.card[i].y + 16.0}, 3.5), lit ? t.color.accent : t.color.textDisabled);
       c.restore();
-      c.text({l.card[i].x + 26.0, l.card[i].y + 6.0, l.card[i].width - 70.0, 20.0}, kCardTitles[i],
+      c.text({l.card[i].x + 26.0, l.card[i].y + 6.0, l.card[i].width - 70.0, 20.0}, tr(kCardTitles[i]),
              style(FontRole::UiSemibold, t.type.panelTitle, t.type.panelTitleTracking, TextAlign::Left, true),
              t.color.textPrimary);
     } else if (i == 3U) {
@@ -1658,14 +1659,14 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
   auto* s = session();
   if (s == nullptr) return unavailable();
   if (!actionEnabled(action))
-    return note(core::failure(core::ErrorCode::InvalidState, "That action is not available for this voice now"));
+    return note(core::failure(core::ErrorCode::InvalidState, tr(Str::ThatActionIsNotAvailableFor)));
   const auto dialogMissing = [] {
-    return core::failure(core::ErrorCode::Unsupported, "This host has no dialog for that choice");
+    return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisHostHasNoDialogFor));
   };
   const auto replaceAllowed = [&]() -> core::Result<bool> {
     if (s->model() == nullptr || !s->model()->dirty()) return true;
     if (!host_.confirmDiscard)
-      return core::failure<bool>(core::ErrorCode::Conflict, "Save or discard the current voice first");
+      return core::failure<bool>(core::ErrorCode::Conflict, tr(Str::SaveOrDiscardTheCurrentVoice));
     return host_.confirmDiscard();
   };
   const auto epoch = s->epoch();
@@ -1676,7 +1677,7 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
       if (!allowed) return note(core::Result<void>{allowed.error()});
       if (!allowed.value()) return core::success();
       auto created = s->createJapaneseStarter(true);
-      if (created) message_ = "New voice from the Japanese starter (screening defaults, unqualified)";
+      if (created) message_ = tr(Str::NewVoiceFromTheJapaneseStarter);
       return note(std::move(created));
     }
     case Action::Open: {
@@ -1689,8 +1690,8 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
       if (!allowed.value()) return core::success();
       auto opened = s->beginOpen(*chosen.value(), true);
       if (opened) {
-        message_ = "Opening " + chosen.value()->filename().string() + "\u2026";
-        fileDone_ = "Opened " + chosen.value()->filename().string();
+        message_ = tr(Str::Opening) + chosen.value()->filename().string() + tr(Str::Text5);
+        fileDone_ = tr(Str::Opened) + chosen.value()->filename().string();
       }
       return note(std::move(opened));
     }
@@ -1698,8 +1699,8 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
       if (!s->path().empty()) {
         auto saved = s->beginSave(s->path());
         if (saved) {
-          message_ = "Saving\u2026";
-          fileDone_ = "Saved " + s->path().filename().string();
+          message_ = tr(Str::Saving);
+          fileDone_ = tr(Str::Saved) + s->path().filename().string();
         }
         return note(std::move(saved));
       }
@@ -1710,11 +1711,11 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
       if (!chosen) return note(core::Result<void>{chosen.error()});
       if (!chosen.value()) return core::success();
       if (s->epoch() != epoch || s->model() == nullptr || s->model()->revision() != revision)
-        return note(core::failure(core::ErrorCode::Conflict, "The voice changed while choosing a file"));
+        return note(core::failure(core::ErrorCode::Conflict, tr(Str::TheVoiceChangedWhileChoosingA)));
       auto saved = s->beginSave(*chosen.value());
       if (saved) {
-        message_ = "Saving " + chosen.value()->filename().string() + "\u2026";
-        fileDone_ = "Saved " + chosen.value()->filename().string();
+        message_ = tr(Str::Saving2) + chosen.value()->filename().string() + tr(Str::Text5);
+        fileDone_ = tr(Str::Saved) + chosen.value()->filename().string();
       }
       return note(std::move(saved));
     }
@@ -1755,18 +1756,18 @@ core::Result<void> VoiceWorkspaceImpl::run(NativeEditorController& controller, A
     }
     case Action::PinReference: {
       auto pinned = s->pinAuditionReference(epoch, revision);
-      if (pinned) message_ = "B kept as reference A";
+      if (pinned) message_ = tr(Str::BKeptAsReferenceA);
       return note(std::move(pinned));
     }
     case Action::ClearReference:
       s->clearAuditionReference();
       useReference_ = false;
-      message_ = "Reference A cleared";
+      message_ = tr(Str::ReferenceACleared);
       return core::success();
     case Action::Stop:
       if (host_.stop) host_.stop();
       level_.reset();
-      message_ = "Stopped";
+      message_ = tr(Str::Stopped);
       return core::success();
   }
   return core::success();
@@ -1778,7 +1779,7 @@ SemanticNode knobNode(std::string id, std::string name, ui::Rect bounds, bool en
                       const KnobSpec& spec, std::string text, std::string description) {
   return SemanticNode{
       .id = std::move(id), .role = SemanticRole::Slider, .name = std::move(name),
-      .value = enabled ? std::move(text) : std::string{"No voice recipe is open"}, .bounds = bounds,
+      .value = enabled ? std::move(text) : std::string{tr(Str::NoVoiceRecipeIsOpen)}, .bounds = bounds,
       .enabled = enabled,
       .actions = enabled ? std::vector<SemanticAction>{SemanticAction::Increment, SemanticAction::Decrement,
                                                        SemanticAction::SetFocus}
@@ -1796,11 +1797,11 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
   const auto pressable = std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus};
   auto* s = session();
   if (s == nullptr) {
-    out.push_back(SemanticNode{.id = "shell.voice.unavailable", .role = SemanticRole::Status, .name = "Voice design",
+    out.push_back(SemanticNode{.id = "shell.voice.unavailable", .role = SemanticRole::Status, .name = tr(Str::VoiceDesign),
                    .value = host_.unavailable, .bounds = inset(area, 12.0, 12.0), .actions = focusable});
-    out.push_back(SemanticNode{.id = "shell.voice.browser", .role = SemanticRole::Button, .name = "Open voice browser",
+    out.push_back(SemanticNode{.id = "shell.voice.browser", .role = SemanticRole::Button, .name = tr(Str::OpenVoiceBrowser),
                    .bounds = honestButton(area), .actions = pressable,
-                   .description = "Chooses an installed voice for the selected track"});
+                   .description = tr(Str::ChoosesAnInstalledVoiceForThe)});
     return;
   }
   const auto l = layoutFor(area);
@@ -1808,7 +1809,7 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
     // The open menu is modal: its button and its items are all that is published.
     const auto i = static_cast<std::size_t>(*menu_);
     out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
-                   .name = std::string{kCardTitles[i]} + " actions", .value = "Open", .bounds = l.more[i],
+                   .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Open), .bounds = l.more[i],
                    .actions = pressable});
     const auto items = menuFor(*menu_);
     const auto rows = menuRows(area, l.more[i], items.size());
@@ -1824,67 +1825,66 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
   const auto p = pose();
   const auto hasPose = r != nullptr && p < r->poses.size();
   if (l.identity.width >= 40.0)
-    out.push_back(SemanticNode{.id = "shell.voice.recipe", .role = SemanticRole::Status, .name = "Voice recipe",
+    out.push_back(SemanticNode{.id = "shell.voice.recipe", .role = SemanticRole::Status, .name = tr(Str::VoiceRecipe),
                    .value = recipeIdentity(), .bounds = l.identity, .actions = focusable,
                    .description = message_});
   if (r == nullptr) {
-    out.push_back(SemanticNode{.id = "shell.voice.new", .role = SemanticRole::Button, .name = "New starter voice",
+    out.push_back(SemanticNode{.id = "shell.voice.new", .role = SemanticRole::Button, .name = tr(Str::NewStarterVoice),
                    .bounds = l.newButton, .enabled = !s->busy(), .actions = pressable,
-                   .description = "Japanese starter recipe: screening defaults, not a qualified singer"});
-    out.push_back(SemanticNode{.id = "shell.voice.open", .role = SemanticRole::Button, .name = "Open voice recipe",
+                   .description = tr(Str::JapaneseStarterRecipeScreeningDefaultsNot)});
+    out.push_back(SemanticNode{.id = "shell.voice.open", .role = SemanticRole::Button, .name = tr(Str::OpenVoiceRecipe),
                    .bounds = l.openButton, .enabled = !s->busy(), .actions = pressable});
   }
   if (l.mode == Mode::Tabbed) {
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       out.push_back(SemanticNode{.id = std::string{"shell.voice.view."} + kCardIds[i], .role = SemanticRole::Tab,
-                     .name = std::string{kCardTitles[i]} + " module", .bounds = l.view[i],
+                     .name = std::string{tr(kCardTitles[i])} + tr(Str::Module), .bounds = l.view[i],
                      .selected = static_cast<std::size_t>(view_) == i, .actions = pressable});
   }
-  out.push_back(SemanticNode{.id = "shell.voice.singer", .role = SemanticRole::Status, .name = "Singer",
+  out.push_back(SemanticNode{.id = "shell.voice.singer", .role = SemanticRole::Status, .name = tr(Str::Singer),
                  .value = singerState() + ", " + levelText(), .bounds = l.ring, .actions = focusable,
-                 .description = "The ring shows the measured audition output level"});
+                 .description = tr(Str::TheRingShowsTheMeasuredAudition)});
   for (std::size_t i = 0U; i < 4U; ++i) {
     if (!usable(l.card[i])) continue;
-    std::string value = r == nullptr ? std::string{"No voice recipe is open"} : std::string{};
-    if (r != nullptr && i == 1U && hasPose) value = "Pose " + poseLabel(r->poses[p]);
+    std::string value = r == nullptr ? std::string{tr(Str::NoVoiceRecipeIsOpen)} : std::string{};
+    if (r != nullptr && i == 1U && hasPose) value = tr(Str::Pose) + poseLabel(r->poses[p]);
     if (i == 3U) value = auditionStatus();
-    out.push_back(SemanticNode{.id = cardId(i), .role = SemanticRole::Panel, .name = std::string{kCardTitles[i]} + " module",
+    out.push_back(SemanticNode{.id = cardId(i), .role = SemanticRole::Panel, .name = std::string{tr(kCardTitles[i])} + tr(Str::Module),
                    .value = value, .bounds = l.card[i]});
     if (usable(l.more[i]))
       out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
-                     .name = std::string{kCardTitles[i]} + " actions", .value = "Closed", .bounds = l.more[i],
+                     .name = std::string{tr(kCardTitles[i])} + tr(Str::Actions), .value = tr(Str::Closed), .bounds = l.more[i],
                      .actions = pressable});
   }
   if (cardShown(l, Card::Source))
     for (std::size_t i = 0U; i < kSourceKnobs.size(); ++i) {
       const auto& spec = kSourceKnobs[i];
       const auto value = r != nullptr ? sourceValue(*r, i) : spec.minimum;
-      out.push_back(knobNode(std::string{"shell.voice.knob."} + spec.id, spec.label, l.knob[i], r != nullptr, value, spec,
-                             sourceText(i, value), "Drag vertically; Shift for fine steps; Escape cancels"));
+      out.push_back(knobNode(std::string{"shell.voice.knob."} + spec.id, tr(spec.label), l.knob[i], r != nullptr, value, spec,
+                             sourceText(i, value), tr(Str::DragVerticallyShiftForFineSteps)));
     }
   if (cardShown(l, Card::Resonance)) {
     if (hasPose) {
       const auto chips = layoutChips(l.chipStrip, *r, p);
       for (const auto& [index, rect] : chips.chips)
         out.push_back(SemanticNode{.id = "shell.voice.pose." + std::to_string(index), .role = SemanticRole::RadioButton,
-                       .name = "Pose " + poseLabel(r->poses[index]), .bounds = rect, .selected = index == p,
+                       .name = tr(Str::Pose) + poseLabel(r->poses[index]), .bounds = rect, .selected = index == p,
                        .actions = pressable});
       if (usable(chips.previous))
-        out.push_back(SemanticNode{.id = "shell.voice.pose.previous", .role = SemanticRole::Button, .name = "Previous pose",
+        out.push_back(SemanticNode{.id = "shell.voice.pose.previous", .role = SemanticRole::Button, .name = tr(Str::PreviousPose),
                        .bounds = chips.previous, .enabled = p > 0U, .actions = pressable});
       if (usable(chips.next))
-        out.push_back(SemanticNode{.id = "shell.voice.pose.next", .role = SemanticRole::Button, .name = "Next pose",
+        out.push_back(SemanticNode{.id = "shell.voice.pose.next", .role = SemanticRole::Button, .name = tr(Str::NextPose),
                        .bounds = chips.next, .enabled = p + 1U < r->poses.size(), .actions = pressable});
-      out.push_back(SemanticNode{.id = "shell.voice.pose.add", .role = SemanticRole::Button, .name = "Duplicate pose",
+      out.push_back(SemanticNode{.id = "shell.voice.pose.add", .role = SemanticRole::Button, .name = tr(Str::DuplicatePose2),
                      .bounds = chips.add, .actions = pressable,
-                     .description = "Copies the selected pose under a new phone and style"});
+                     .description = tr(Str::CopiesTheSelectedPoseUnderA)});
     }
-    SemanticNode envelope{.id = "shell.voice.envelope", .role = SemanticRole::Lane, .name = "Spectral envelope",
-                          .value = hasPose ? std::to_string(r->poses[p].formants.size()) + " resonances, 80 Hz to 8 kHz"
-                                           : std::string{"No voice recipe is open"},
+    SemanticNode envelope{.id = "shell.voice.envelope", .role = SemanticRole::Lane, .name = tr(Str::SpectralEnvelope),
+                          .value = hasPose ? std::to_string(r->poses[p].formants.size()) + tr(Str::Resonances80HzTo8KHz)
+                                           : std::string{tr(Str::NoVoiceRecipeIsOpen)},
                           .bounds = l.plot, .enabled = hasPose, .actions = focusable,
-                          .description = "Drag a formant to move its frequency and gain; Shift-drag sets its "
-                                         "bandwidth; Escape cancels"};
+                          .description = tr(Str::DragAFormantToMoveIts)};
     if (hasPose) {
       const auto& shown = r->poses[p];
       for (const auto& h : layoutHandles(l.plot, shown)) {
@@ -1894,19 +1894,19 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
         envelope.children.push_back(SemanticNode{
             .id = "shell.voice.formant." + std::to_string(h.band + 1U), .role = SemanticRole::Slider,
             .name = "F" + std::to_string(h.band + 1U),
-            .value = format("%.0f Hz", band.frequencyHz) + ", " + format("%+.1f dB", band.gainDb) + ", bandwidth " +
+            .value = format("%.0f Hz", band.frequencyHz) + ", " + format("%+.1f dB", band.gainDb) + tr(Str::Bandwidth) +
                      format("%.0f Hz", band.bandwidthHz),
             .bounds = h.hit,
             .actions = {SemanticAction::Increment, SemanticAction::Decrement, SemanticAction::SetFocus},
-            .description = "Increment and Decrement move its frequency by 10 Hz",
+            .description = tr(Str::IncrementAndDecrementMoveItsFrequency),
             .numericValue = band.frequencyHz, .numericMinimum = lower, .numericMaximum = upper,
             .numericStep = 10.0});
       }
     }
     out.push_back(std::move(envelope));
     const auto nasal = hasPose ? r->poses[p].nasalCoupling : 0.0;
-    out.push_back(knobNode("shell.voice.nasal", "Nasal coupling", l.nasal, hasPose, nasal, kNasalKnob,
-                           format("%.2f", nasal), "Coupling of the selected pose's nasal branch"));
+    out.push_back(knobNode("shell.voice.nasal", tr(Str::NasalCoupling), l.nasal, hasPose, nasal, kNasalKnob,
+                           format("%.2f", nasal), tr(Str::CouplingOfTheSelectedPoseS)));
   }
   if (cardShown(l, Card::Noise)) {
     const auto selected = selectedFrication();
@@ -1914,43 +1914,43 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
       for (const auto& row : layoutNoiseRows(l.list, fricationsFor(*r, p), noiseScroll_)) {
         const auto& source = r->frications[row.index];
         const auto base = "shell.voice.frication." + std::to_string(row.index);
-        out.push_back(SemanticNode{.id = base, .role = SemanticRole::RadioButton, .name = "Frication " + source.phone,
+        out.push_back(SemanticNode{.id = base, .role = SemanticRole::RadioButton, .name = tr(Str::Frication) + source.phone,
                        .bounds = row.label, .selected = selected == row.index, .actions = pressable});
         for (std::size_t f = 0U; f < 3U; ++f) {
           const auto value = noiseValue(source.source, f);
           const auto [lo, hi] = noiseRange(source.source, f);
           out.push_back(SemanticNode{.id = base + "." + kNoiseFieldIds[f], .role = SemanticRole::Slider,
-                         .name = source.phone + " " + kNoiseFieldLabels[f],
+                         .name = source.phone + " " + tr(kNoiseFieldLabels[f]),
                          .value = f == 2U ? format("%.3f", value) : format("%.0f Hz", value), .bounds = row.slider[f],
                          .actions = {SemanticAction::Increment, SemanticAction::Decrement, SemanticAction::SetFocus},
                          .numericValue = value, .numericMinimum = lo, .numericMaximum = hi,
                          .numericStep = f == 2U ? 0.005 : value * (std::pow(2.0, 1.0 / 12.0) - 1.0)});
         }
       }
-    out.push_back(SemanticNode{.id = "shell.voice.frication.seed", .role = SemanticRole::TextField, .name = "Frication seed",
+    out.push_back(SemanticNode{.id = "shell.voice.frication.seed", .role = SemanticRole::TextField, .name = tr(Str::FricationSeed2),
                    .value = r != nullptr && selected ? std::to_string(r->frications[*selected].source.seed) : std::string{},
                    .bounds = l.seed, .enabled = selected.has_value(),
                    .actions = selected ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::EditText,
                                                                      SemanticAction::SetFocus}
                                        : focusable,
                    .editableValue = r != nullptr && selected ? std::to_string(r->frications[*selected].source.seed) : std::string{},
-                   .description = "The exact unsigned 64-bit seed of the selected frication"});
+                   .description = tr(Str::TheExactUnsigned64BitSeed)});
   }
   if (r != nullptr) {
     const auto canPlay = static_cast<bool>(host_.play);
     out.push_back(SemanticNode{.id = "shell.voice.play", .role = SemanticRole::Button,
-                   .name = playing() ? "Stop audition" : useReference_ ? "Play reference A" : "Play B",
+                   .name = playing() ? tr(Str::StopAudition) : useReference_ ? tr(Str::PlayReferenceA) : tr(Str::PlayB),
                    .value = auditionStatus(), .bounds = l.play, .enabled = canPlay,
                    .actions = canPlay ? pressable : focusable,
-                   .description = canPlay ? "A one-second sustained audition of the selected pose; not an approval"
+                   .description = canPlay ? tr(Str::AOneSecondSustainedAuditionOf)
                                           : host_.playUnavailable});
-    out.push_back(SemanticNode{.id = "shell.voice.ab.a", .role = SemanticRole::RadioButton, .name = "Reference A",
+    out.push_back(SemanticNode{.id = "shell.voice.ab.a", .role = SemanticRole::RadioButton, .name = tr(Str::ReferenceA),
                    .bounds = l.abA, .enabled = s->auditionReference().has_value(), .selected = useReference_,
                    .actions = s->auditionReference().has_value() ? pressable : focusable,
-                   .description = s->auditionReference() ? "The kept reference" : "Keep a rendered B as A first"});
-    out.push_back(SemanticNode{.id = "shell.voice.ab.b", .role = SemanticRole::RadioButton, .name = "Current B",
+                   .description = s->auditionReference() ? tr(Str::TheKeptReference) : tr(Str::KeepARenderedBAsA)});
+    out.push_back(SemanticNode{.id = "shell.voice.ab.b", .role = SemanticRole::RadioButton, .name = tr(Str::CurrentB),
                    .bounds = l.abB, .selected = !useReference_, .actions = pressable});
-    out.push_back(SemanticNode{.id = "shell.voice.level", .role = SemanticRole::Status, .name = "Audition level",
+    out.push_back(SemanticNode{.id = "shell.voice.level", .role = SemanticRole::Status, .name = tr(Str::AuditionLevel),
                    .value = levelText(), .bounds = l.level, .actions = focusable});
   }
 }
@@ -1959,7 +1959,7 @@ core::Result<void> VoiceWorkspaceImpl::perform(NativeEditorController& controlle
                                                SemanticAction action) {
   controller_ = &controller;
   const auto unsupported = [] {
-    return core::failure(core::ErrorCode::Unsupported, "This element does not support that action");
+    return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisElementDoesNotSupportThat));
   };
   const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
   const auto steps = action == SemanticAction::Increment ? 1 : action == SemanticAction::Decrement ? -1 : 0;

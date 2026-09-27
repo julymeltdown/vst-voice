@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "characterId": "official.character.01",
   "displayName": "Character 01",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "voicebankId": "official.voice.01",
-  "style": "early-2000s-emo-low-poly",
+  "style": "early-2000s-emo-ink",
   "defaultState": "neutral",
   "developmentOnly": true,
   "accent": {
@@ -28,9 +28,9 @@
     "round": "runtime/mouth-round.ppm"
   },
   "mouthPlacement": {
-    "x": 0.455,
-    "y": 0.172,
-    "width": 0.09,
-    "height": 0.06
+    "x": 0.4625,
+    "y": 0.1875,
+    "width": 0.075,
+    "height": 0.05
   }
 }

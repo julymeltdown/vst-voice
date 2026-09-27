@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <set>
@@ -3160,6 +3161,33 @@ TEST_CASE("the diagnostics toast and popover present the status diagnostics as a
   }
 }
 
+TEST_CASE("the diagnostics popover closes with the last diagnostic and does not reopen by itself") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+  // The last diagnostic is resolved: the popover is gone, and so is the flag that presented it.
+  f.controller.setDiagnostics({});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(!f.shell.diagnosticsOpen());
+  // The next failure shows its toast; the popover stays closed until the creator opens it.
+  f.controller.setDiagnostics({issue});
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.node("shell.diagnostics.toast") != nullptr);
+  CHECK(f.node("timeline") != nullptr);
+}
+
 TEST_CASE("every diagnostic's recovery actions are reachable from the popover, not only the first") {
   const auto issue = [](std::string code, authoring::DiagnosticSeverity severity,
                         std::vector<authoring::DiagnosticAction> actions) {
@@ -3890,6 +3918,306 @@ const native_ui::SemanticNode* findNode(const native_ui::AccessibilityTree& tree
 }
 
 }  // namespace
+TEST_CASE("a surface presented over the score cancels an open lyric, whose keys never commit it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto lyricSurface = [&f] {
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) return std::u32string{U"<no note>"};
+    const auto* lyric = region->findLyric(region->notes.front().lyricTokenId);
+    return lyric == nullptr ? std::u32string{} : lyric->surface;
+  };
+  const auto before = lyricSurface();
+  // The host's key path: the shell first, then the controller for a key the shell did not take.
+  const auto key = [&f](NativeKey k) {
+    const KeyEvent event{.key = k};
+    if (!f.shell.handleShellKey(f.controller, event))
+      static_cast<void>(f.controller.keyDown(event));
+  };
+  const auto openLyric = [&] {
+    CHECK(f.frame());
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) throw test::Failure{"the note is gone"};
+    CHECK(f.controller.beginLyricEdit(region->notes.front().id).hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+    CHECK(f.controller.updateTextComposition(U"zz", {}).hasValue());
+  };
+  // Each surface the shell does not open itself: the host's menu (voice browser, Audio
+  // Settings...), and the shell's own DIAGNOSTICS popover.
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const std::vector<std::pair<std::string, std::function<void()>>> openers{
+      {"voice browser", [&f] { f.controller.showVoicebankBrowser(); }},
+      {"audio settings", [&f] { f.controller.showAudioSettings(); }},
+      {"diagnostics", [&f, &issue] {
+         f.controller.setDiagnostics({issue});
+         f.shell.setDiagnosticsOpen(true);
+       }}};
+  for (const auto& [name, open] : openers) {
+    for (const auto framed : {false, true}) {
+      openLyric();
+      open();
+      // With or without a frame in between, Enter, Tab and Backspace are the surface's keys: the
+      // hidden lyric is cancelled, never committed, and its input client is gone.
+      if (framed) CHECK(f.frame());
+      if (f.shell.overlayKind(f.controller) == OverlayKind::None)
+        throw test::Failure{name + " is not presented"};
+      for (const auto k : {NativeKey::Backspace, NativeKey::Tab, NativeKey::Enter}) key(k);
+      if (f.controller.textInputActive())
+        throw test::Failure{"the lyric stays open under the " + name};
+      if (lyricSurface() != before) throw test::Failure{"the " + name + " committed the lyric"};
+      CHECK(f.shell.overlayKind(f.controller) != OverlayKind::None);
+      // Close it for the next opener.
+      for (int i = 0; i < 3 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i)
+        CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+      CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+      f.controller.setDiagnostics({});
+    }
+  }
+  // An inline field the surface owns keeps its keys: the transport's tempo field still commits.
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.textInputActive());
+  f.controller.cancelTextComposition();
+}
+
+TEST_CASE("a disabled overlay control absorbs a press and pagers never count past their end") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // A second tempo event, so the time map has a row that a press could select.
+  CHECK(f.frame());
+  CHECK(f.controller.openTimeMapPanel().hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "1920")
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.setControllerValue(f.controller, f.controller.textFieldView().inputId, "90")
+            .hasValue());
+  // The map lists the new event after its own Refresh, as the classic panel required.
+  CHECK(f.controller.timeMapPanelAction(4U).hasValue());
+  CHECK(f.frame());
+  CHECK(f.controller.sceneState().timeMapRows.size() >= 2U);
+  CHECK(f.controller.selectTimeMapRow(0U).hasValue());
+  // Add tempo opens the event field: the rows are disabled, and a press on one selects nothing and
+  // leaves the field open.
+  CHECK(f.controller.timeMapPanelAction(6U).hasValue());
+  CHECK(f.frame());
+  const auto selected = f.controller.sceneState().timeMapSelectedRow;
+  const auto row = nodeNow(f, "time-map-row.1");
+  CHECK(row.has_value() && !row->enabled);
+  if (row.has_value()) {
+    CHECK(f.shell.pointerDown(f.controller, press(centre(row->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(row->bounds))).hasValue());
+  }
+  CHECK(f.controller.sceneState().timeMapSelectedRow == selected);
+  CHECK(f.controller.textFieldView().kind ==
+        native_ui::NativeEditorController::TextFieldView::Kind::TimeMap);
+  f.controller.cancelTextComposition();
+  CHECK(f.controller.timeMapPanelAction(5U).hasValue());
+
+  // The audio sheet pages its devices when they outnumber its rows. Pressing a disabled "Later
+  // devices" or scrolling past the end never runs the counter on, so one step back moves the list.
+  std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
+  for (std::size_t i = 0U; i < 14U; ++i)
+    devices.push_back({.id = "device-" + std::to_string(i),
+                       .name = "Device " + std::to_string(i),
+                       .physical = true,
+                       .selected = i == 0U});
+  f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "device-0",
+                                                         .sampleRate = 48000U,
+                                                         .blockFrames = 256U,
+                                                         .outputChannels = 2U},
+                                devices, 0U, 0U);
+  f.controller.showAudioSettings();
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
+  const auto firstShown = [&f] {
+    std::size_t first = 99U;
+    for (std::size_t i = 0U; i < 14U; ++i)
+      if (nodeNow(f, "audio.device." + std::to_string(i)).has_value()) {
+        first = i;
+        break;
+      }
+    return first;
+  };
+  const auto pressNode = [&f](std::string_view id) {
+    const auto node = nodeNow(f, id);
+    if (!node.has_value()) throw test::Failure{std::string{id} + " is not published"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(node->bounds))).hasValue());
+    CHECK(f.frame(720.0, 480.0));
+  };
+  CHECK(firstShown() == 0U);
+  // More than one row is shown, so a counter past the last full page would be hidden by the layout.
+  CHECK(nodeNow(f, "audio.device.1").has_value());
+  for (int i = 0; i < 30; ++i) pressNode("shell.overlay.audio.devices-down");
+  const auto last = firstShown();
+  CHECK(last > 0U && last < 14U);
+  const auto down = nodeNow(f, "shell.overlay.audio.devices-down");
+  CHECK(down.has_value() && !down->enabled);
+  pressNode("shell.overlay.audio.devices-up");
+  CHECK(firstShown() + 1U == last);
+  // The wheel over the sheet stops at the same end.
+  const auto panel = nodeNow(f, "shell.overlay.audio.panel");
+  CHECK(panel.has_value());
+  if (!panel.has_value()) return;
+  for (int i = 0; i < 30; ++i)
+    CHECK(f.shell.scroll(f.controller, 0.0, -1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() == last);
+  CHECK(f.shell.scroll(f.controller, 0.0, 1.0, centre(panel->bounds), {}));
+  CHECK(f.frame(720.0, 480.0));
+  CHECK(firstShown() + 1U == last);
+}
+
+TEST_CASE("Escape returns focus to the opener after a review steps back from its field and detail") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.session.project().findRegion(f.regionId)->dynamicsAutomation.replacePoints(
+      {{time::Tick{0}, 0.25F}, {time::Tick{480}, 0.75F}}));
+  CHECK(f.frame());
+  // The lane's DYNAMICS tab opens the inspector from the keyboard, so it is the opener.
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::SetFocus)
+            .hasValue());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.dynamics", SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  static_cast<void>(f.focusedId());
+  // A point's detail page, then its tick field, which replaces the review while it is open.
+  const auto prefix = f.controller.replacementReviewSemanticPrefix();
+  succeeds(f.shell.dispatchController(f.controller, prefix + "point.0", SemanticAction::Activate),
+           "opening the point");
+  CHECK(f.frame());
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row.0",
+                                      SemanticAction::Activate),
+           "opening the tick field");
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  // Each Escape steps back one level (field, then detail, then the review itself); only the last
+  // one closes the surface, and it returns focus to the tab that opened it.
+  for (int i = 0; i < 4 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i) {
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+    CHECK(f.frame());
+    static_cast<void>(f.focusedId());
+  }
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  const auto focused = f.focusedId();
+  if (focused != "shell.lane-tab.dynamics")
+    throw test::Failure{"Escape returned focus to " + (focused.empty() ? std::string{"nothing"} : focused)};
+}
+
+TEST_CASE("a cleared inline field publishes its empty text, not the committed value under it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  // The creator clears the field: the node reads what is typed, never the toolbar's "120".
+  CHECK(f.controller.updateTextComposition(U"", {}).hasValue());
+  const auto cleared = nodeNow(f, "toolbar.tempo");
+  CHECK(cleared.has_value());
+  if (!cleared.has_value()) return;
+  CHECK(cleared->role == native_ui::SemanticRole::TextField);
+  if (!cleared->value.empty()) throw test::Failure{"the cleared field reads " + cleared->value};
+  CHECK(cleared->editableValue.empty());
+  CHECK(f.controller.updateTextComposition(U"9", {}).hasValue());
+  const auto typed = nodeNow(f, "toolbar.tempo");
+  CHECK(typed.has_value() && typed->value == "9");
+  f.controller.cancelTextComposition();
+}
+
+TEST_CASE("a review's row pager keeps its place across a draft field and restarts on a new page") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // Enough notes with vibrato for the Clear vibrato review to have three pages of six rows.
+  auto* region = f.session.project().findRegion(f.regionId);
+  for (std::uint32_t i = 0U; i < 14U; ++i) {
+    auto [lyric, note] = f.factory.makeNote(time::Tick{2160 + 360 * i}, time::Tick{240},
+                                            static_cast<std::uint8_t>(60U + i % 12U), U"a",
+                                            domain::Language::Japanese);
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+  }
+  std::vector<domain::NoteId> ids;
+  for (auto& note : region->notes) {
+    note.vibrato.enabled = true;
+    ids.push_back(note.id);
+  }
+  f.session.selection().selectOnly(ids.front());
+  for (const auto& id : ids) f.session.selection().add(id);
+  constexpr double kWidth = 480.0;
+  constexpr double kHeight = 320.0;
+  const auto shown = [&f](std::size_t row) {
+    return nodeNow(f, f.controller.replacementReviewSemanticPrefix() + "row." + std::to_string(row))
+        .has_value();
+  };
+  const auto pageDown = [&f] {
+    const auto down = nodeNow(f, "shell.overlay.review.rows-down");
+    if (!down.has_value() || !down->enabled)
+      throw test::Failure{"the card shows every row; no row pager to test"};
+    CHECK(f.shell.pointerDown(f.controller, press(centre(down->bounds))).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(centre(down->bounds))).hasValue());
+  };
+
+  // The controller's next page starts from its first row, wherever the card had paged to.
+  CHECK(f.frame(kWidth, kHeight));
+  succeeds(f.controller.openClearVibratoReview(), "opening the review");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  CHECK(shown(0U));
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "action.1",
+                                      SemanticAction::Activate),
+           "moving to the next page");
+  CHECK(f.frame(kWidth, kHeight));
+  if (!shown(0U)) throw test::Failure{"the next page opened on a later row"};
+  CHECK(f.shell.dispatchController(f.controller,
+                                   f.controller.replacementReviewSemanticPrefix() + "action.4",
+                                   SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.frame(kWidth, kHeight));
+
+  // A draft field opened from a paged inspector returns to the same rows.
+  succeeds(f.controller.openVibratoInspector(), "opening the vibrato inspector");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  pageDown();
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(!shown(0U));
+  std::size_t visible = 99U;
+  for (std::size_t i = 1U; i < 6U && visible == 99U; ++i)
+    if (shown(i)) visible = i;
+  CHECK(visible < 6U);
+  succeeds(f.shell.dispatchController(f.controller,
+                                      f.controller.replacementReviewSemanticPrefix() + "row." +
+                                          std::to_string(visible),
+                                      SemanticAction::Activate),
+           "opening the field");
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  static_cast<void>(f.focusedId());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.frame(kWidth, kHeight));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::ReplacementReview);
+  if (shown(0U)) throw test::Failure{"the review returned from its field at its first row"};
+  CHECK(shown(visible));
+}
 
 // ---- The SINGER card's overflow menu ------------------------------------------------------------
 
@@ -3951,7 +4279,7 @@ TEST_CASE("the Phonemes lane hosts the phoneme, unit and seam lanes with the con
   if (!native_ui::paint::vectorBackendAvailable()) return;
   CHECK(f.frame());
   const auto& l = f.shell.layout();
-  const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
+  const auto tabWidth = native_ui::design::singLaneTabWidth(l);
   const ui::Rect tab{l.laneTabs.x + 7.0 * (tabWidth + 4.0), l.laneTabs.y, tabWidth, l.laneTabs.height};
   CHECK(f.shell.pointerDown(f.controller, press(centre(tab))).hasValue());
   CHECK(f.shell.technicalLanesShown());

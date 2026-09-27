@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/character_surface.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/native_ui/diagnostic_presentation.hpp"
 
@@ -176,15 +177,15 @@ void paintBlinkLid(Canvas2D& canvas, ui::Rect portrait, double blink, Color ink)
 
 std::string_view characterStateName(CharacterState state) noexcept {
   switch (state) {
-    case CharacterState::Idle: return "Idle";
-    case CharacterState::Listening: return "Listening";
-    case CharacterState::Singing: return "Singing";
-    case CharacterState::Rendering: return "Rendering";
-    case CharacterState::Complete: return "Complete";
-    case CharacterState::Warning: return "Warning";
-    case CharacterState::Error: return "Error";
+    case CharacterState::Idle: return tr(Str::Idle);
+    case CharacterState::Listening: return tr(Str::Listening);
+    case CharacterState::Singing: return tr(Str::Singing);
+    case CharacterState::Rendering: return tr(Str::Rendering);
+    case CharacterState::Complete: return tr(Str::Complete);
+    case CharacterState::Warning: return tr(Str::Warning);
+    case CharacterState::Error: return tr(Str::Error);
   }
-  return "Idle";
+  return tr(Str::Idle);
 }
 
 character::State characterPackageState(CharacterState state) noexcept {
@@ -401,8 +402,8 @@ std::optional<CharacterToast> characterErrorToast(const SingLayout& layout,
   CharacterToast toast;
   toast.bounds = {region.x + 16.0, bottom - kHeight, width, kHeight};
   toast.pose = {toast.bounds.x + kPadding, toast.bounds.y + (kHeight - kPose) * 0.5, kPose, kPose};
-  toast.title = missing ? std::string{"Voicebank needs attention"}
-                        : std::string{"Render did not complete"};
+  toast.title = missing ? std::string{tr(Str::VoicebankNeedsAttention)}
+                        : std::string{tr(Str::RenderDidNotComplete)};
   toast.reason = std::string{diagnostic};
   return toast;
 }

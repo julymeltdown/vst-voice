@@ -566,7 +566,7 @@ TEST_CASE("Long refusal and unit strings are ellipsized and stay bounded to the 
 
   // The info slot sits after the eight channel tabs, as the shell lays its tab row out.
   const auto& l = shell.layout();
-  const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
+  const auto tabWidth = native_ui::design::singLaneTabWidth(l);
   const auto slotLeft = l.laneTabs.x + 8.0 * (tabWidth + 4.0);
   const auto slotRight = l.laneReviewButton.width > 0.0 ? l.laneReviewButton.x : l.laneTabs.right();
   bool changed = false;
