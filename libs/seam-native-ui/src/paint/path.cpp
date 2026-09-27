@@ -94,4 +94,20 @@ Path Path::circle(ui::Point center, double radius) {
 
 Path Path::capsule(ui::Rect r) { return roundedRect(r, std::min(r.width, r.height) * 0.5); }
 
+namespace {
+thread_local ScopedTextCapture* activeTextCapture = nullptr;
+}  // namespace
+
+ScopedTextCapture::ScopedTextCapture() noexcept : previous_{activeTextCapture} {
+  activeTextCapture = this;
+}
+
+ScopedTextCapture::~ScopedTextCapture() { activeTextCapture = previous_; }
+
+void ScopedTextCapture::record(TextRecord record) {
+  if (activeTextCapture != nullptr) activeTextCapture->records_.push_back(std::move(record));
+}
+
+bool ScopedTextCapture::active() noexcept { return activeTextCapture != nullptr; }
+
 }  // namespace seam::native_ui::paint
