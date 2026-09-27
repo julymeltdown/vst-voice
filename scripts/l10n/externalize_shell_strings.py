@@ -133,7 +133,8 @@ def statement_start(text: str, at: int) -> int:
 def read_table() -> dict[str, str]:
     table: dict[str, str] = {}
     if TABLE.exists():
-        for m in re.finditer(r'SEAM_SHELL_STRING\((\w+),\s*"((?:[^"\\]|\\.)*)"\)', TABLE.read_text()):
+        entry = re.compile(r'^SEAM_SHELL_STRING\((\w+),\s*"((?:[^"\\]|\\.)*)"\)$', re.M)
+        for m in entry.finditer(TABLE.read_text()):
             table[m.group(1)] = m.group(2)
     return table
 
