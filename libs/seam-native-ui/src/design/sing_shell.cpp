@@ -43,6 +43,20 @@ constexpr double kPi = std::numbers::pi;
 constexpr Color kWhite{255, 255, 255, 255};
 constexpr Color kBlack{0, 0, 0, 255};
 
+// Append independent subpaths without joining their edges. Used only for adjacent draw calls
+// whose shapes cannot overlap; their individual coverage and paint order are then unchanged.
+void appendSubpaths(Path& destination, const Path& source) {
+  for (const auto& element : source.elements()) {
+    switch (element.verb) {
+      case Path::Verb::Move: destination.moveTo(element.a); break;
+      case Path::Verb::Line: destination.lineTo(element.a); break;
+      case Path::Verb::Quad: destination.quadTo(element.a, element.b); break;
+      case Path::Verb::Cubic: destination.cubicTo(element.a, element.b, element.c); break;
+      case Path::Verb::Close: destination.close(); break;
+    }
+  }
+}
+
 // Reference painter for pixel-fidelity diagnostics. It follows the original random stream and
 // path construction exactly; the production path below writes these same shapes in software.
 void paintVectorWash(Canvas2D& c, const DesignTokens& t) {
@@ -2168,18 +2182,32 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.save();
   c.clipRect(l.grid);
   const auto& pitch = model.pitch();
+  Path weakRows;
+  const auto flushWeakRows = [&] {
+    if (weakRows.empty()) return;
+    c.stroke(weakRows, t.color.gridWeak, StrokeStyle{0.6});
+    weakRows = Path{};
+  };
   for (auto midi = pitch.topMidiKey(); midi >= 0; --midi) {
     const auto y = l.grid.y + pitch.midiToPixel(midi);
     if (y > l.grid.bottom()) break;
     const auto black = midi % 12 == 1 || midi % 12 == 3 || midi % 12 == 6 || midi % 12 == 8 ||
                        midi % 12 == 10;
+    // A row fill or stronger octave stroke ends a run. The remaining weak lines are separated
+    // by a whole pitch row, so their coverage cannot overlap when replayed in one path.
+    if (black || midi % 12 == 0) flushWeakRows();
     if (black) c.fill(Path::rect({l.grid.x, y, l.grid.width, pitch.rowHeight()}),
                       withAlpha(kBlack, 0.22));
-    Path row;
-    row.moveTo({l.grid.x, y}).lineTo({l.grid.right(), y});
-    c.stroke(row, midi % 12 == 0 ? t.color.gridStrong : t.color.gridWeak,
-             StrokeStyle{midi % 12 == 0 ? 1.0 : 0.6});
+    if (midi % 12 == 0) {
+      Path row;
+      row.moveTo({l.grid.x, y}).lineTo({l.grid.right(), y});
+      c.stroke(row, t.color.gridStrong, StrokeStyle{1.0});
+    } else {
+      weakRows.moveTo({l.grid.x, y}).lineTo({l.grid.right(), y});
+      if (black) flushWeakRows();
+    }
   }
+  flushWeakRows();
   c.restore();
   if (quarter.value() > 0) {
     auto tick = time::Tick{(visibleStart.value() / quarter.value()) * quarter.value()};
@@ -2212,6 +2240,18 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   // Keyboard.
   c.save();
   c.clipPath(Path::roundedRect(l.keyboard, 4.0));
+  std::optional<ui::Rect> whiteKeys;
+  const auto flushWhiteKeys = [&] {
+    if (!whiteKeys) return;
+    c.fill(Path::rect(*whiteKeys), t.color.keyWhite);
+    whiteKeys.reset();
+  };
+  Path blackKeys;
+  const auto flushBlackKeys = [&] {
+    if (blackKeys.empty()) return;
+    c.fill(blackKeys, t.color.keyBlack);
+    blackKeys = Path{};
+  };
   for (auto midi = pitch.topMidiKey(); midi >= 0; --midi) {
     const auto y = l.keyboard.y + pitch.midiToPixel(midi);
     if (y > l.keyboard.bottom()) break;
@@ -2220,28 +2260,47 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     // Every row is white underneath: black keys are short keys laid over the white ones, and only
     // the B|C and E|F boundaries draw a full-width seam, as on a real keyboard.
     const auto key = ui::Rect{l.keyboard.x, y, l.keyboard.width, pitch.rowHeight()};
-    c.fill(Path::rect(key), t.color.keyWhite);
+    // Device-aligned opaque rows have the same coverage as their union. Fractional rows keep
+    // their individual fills because merging them would remove the antialiased internal edge.
+    const auto aligned = [&](double value) {
+      return std::abs(value * c.scale() - std::round(value * c.scale())) < 1e-6;
+    };
+    if (aligned(key.x) && aligned(key.right()) && aligned(key.y) && aligned(key.bottom())) {
+      if (whiteKeys && whiteKeys->bottom() == key.y)
+        whiteKeys->height += key.height;
+      else {
+        flushWhiteKeys();
+        whiteKeys = key;
+      }
+    } else {
+      flushWhiteKeys();
+      c.fill(Path::rect(key), t.color.keyWhite);
+    }
     const auto degree = midi % 12;
     if (!black && (degree == 11 || degree == 4)) {
+      flushWhiteKeys();
       Path edge;
       edge.moveTo({key.x, y}).lineTo({key.right(), y});
       c.stroke(edge, withAlpha(kBlack, 0.28), StrokeStyle{0.8});
     }
   }
+  flushWhiteKeys();
   for (auto midi = pitch.topMidiKey(); midi >= 0; --midi) {
     const auto y = l.keyboard.y + pitch.midiToPixel(midi);
     if (y > l.keyboard.bottom()) break;
     const auto black = midi % 12 == 1 || midi % 12 == 3 || midi % 12 == 6 || midi % 12 == 8 ||
                        midi % 12 == 10;
     if (black)
-      c.fill(Path::roundedRect({l.keyboard.x, y + 1.0, l.keyboard.width * 0.6, pitch.rowHeight() - 2.0},
-                               2.0),
-             t.color.keyBlack);
-    if (midi % 12 == 0)
+      appendSubpaths(blackKeys, Path::roundedRect(
+          {l.keyboard.x, y + 1.0, l.keyboard.width * 0.6, pitch.rowHeight() - 2.0}, 2.0));
+    if (midi % 12 == 0) {
+      flushBlackKeys();
       c.text({l.keyboard.x, y, l.keyboard.width - 4.0, pitch.rowHeight()},
              "C" + std::to_string(midi / 12 - 1), style(FontRole::UiSemibold, 10.0, 0.0, TextAlign::Right),
              t.color.keyLabel);
+    }
   }
+  flushBlackKeys();
   c.restore();
 
   const auto notes = model.visibleNotes();
