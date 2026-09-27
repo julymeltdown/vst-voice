@@ -599,6 +599,16 @@
     "BusLevels": "{0} 버스: {1}.",
     "BusLevelsClipped": "{0} 버스: {1}. 클리핑됨.",
     "NamedBusSentence": "{0} 버스.",
-    "NamedBusClipped": "{0} 버스. 클리핑됨."
+    "NamedBusClipped": "{0} 버스. 클리핑됨.",
+    "TipSingWorkspace": "노트, 가사와 익스프레션 레인",
+    "TipVoiceWorkspace": "보이스를 디자인하고 들어보기",
+    "TipTuneWorkspace": "익스프레션 커브, 피치 포인트와 비브라토",
+    "TipMixWorkspace": "트랙, 레벨, 라우팅과 리전",
+    "TipExportWorkspace": "내보낼 내용, 진행 상황과 결과 기록",
+    "TipWorkspaceMenu": "워크스페이스나 룩 전환",
+    "TipAudioSettings": "출력 장치와 재생 설정",
+    "TipPlayStop": "렌더된 곡을 재생하거나 멈춥니다",
+    "TipNothingToPlay": "아직 재생할 렌더 결과가 없습니다",
+    "TipModuleActions": "이 모듈의 추가 동작"
   }
 }

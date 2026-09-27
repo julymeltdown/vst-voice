@@ -1811,8 +1811,6 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
     out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
                    .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Open), .bounds = l.more[i],
                    .actions = pressable, .description = tr(Str::TipModuleActions)});
-                   .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Open), .bounds = l.more[i],
-                   .actions = pressable});
     const auto items = menuFor(*menu_);
     const auto rows = menuRows(area, l.more[i], items.size());
     for (std::size_t k = 0U; k < items.size(); ++k) {
@@ -1857,8 +1855,6 @@ void VoiceWorkspaceImpl::semantics(const NativeEditorController& controller, con
       out.push_back(SemanticNode{.id = cardId(i) + ".more", .role = SemanticRole::Button,
                      .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Closed), .bounds = l.more[i],
                      .actions = pressable, .description = tr(Str::TipModuleActions)});
-                     .name = trf(Str::NamedActions, {tr(kCardTitles[i])}), .value = tr(Str::Closed), .bounds = l.more[i],
-                     .actions = pressable});
   }
   if (cardShown(l, Card::Source))
     for (std::size_t i = 0U; i < kSourceKnobs.size(); ++i) {

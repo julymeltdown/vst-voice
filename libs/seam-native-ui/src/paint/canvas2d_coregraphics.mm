@@ -401,6 +401,7 @@ NSString* hangulFace(FontRole role) {
     case FontRole::UiSemibold: return @"AppleSDGothicNeo-SemiBold";
     case FontRole::UiBold:
     case FontRole::Display: return @"AppleSDGothicNeo-Bold";
+    case FontRole::DisplayRounded: return @"AppleSDGothicNeo-Bold";
     case FontRole::Ui: break;
   }
   return @"AppleSDGothicNeo-Regular";
