@@ -553,7 +553,7 @@ TEST_CASE("the empty-project line appears only for a region that genuinely has n
   CHECK(!emptyProjectPrompt(4096U).has_value());
   const auto prompt = emptyProjectPrompt(0U);
   CHECK(prompt.has_value());
-  if (prompt) CHECK(*prompt == kEmptyProjectPrompt);
+  if (prompt) CHECK(*prompt == std::string_view{native_ui::design::tr(kEmptyProjectPrompt)});
 }
 
 TEST_CASE("the error toast appears for a failed render and a missing voicebank, naming the reason") {

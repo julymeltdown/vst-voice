@@ -441,7 +441,7 @@ double StageFade::advance(const StagePlacement& placement,
 
 std::optional<std::string_view> emptyProjectPrompt(std::size_t noteCount) noexcept {
   if (noteCount > 0U) return std::nullopt;
-  return kEmptyProjectPrompt;
+  return std::string_view{tr(kEmptyProjectPrompt)};
 }
 
 std::optional<ui::Rect> emptyProjectSplashBounds(ui::Rect grid, double splashAspect) noexcept {
@@ -819,7 +819,7 @@ void paintEmptyProject(CharacterCanvas canvas, const DesignTokens& tokens,
     vector.restore();
     static_cast<void>(paintSplashText(
         vector, title,
-        {SplashLine{std::string{kEmptyProjectPrompt},
+        {SplashLine{std::string{tr(kEmptyProjectPrompt)},
                     paint::TextStyle{paint::FontRole::UiSemibold, kSplashPromptSize, 0.0,
                                      paint::TextAlign::Left, false},
                     tokens.color.textPrimary}}));
@@ -836,7 +836,7 @@ void paintEmptyProject(CharacterCanvas canvas, const DesignTokens& tokens,
       paintCharacterPortrait(canvas, poseBox, false, packagePortrait, lookPortrait, 0.42));
   const auto cx = centerX;
   const auto cy = grid.y + grid.height * 0.42;
-  canvas.vector.text({cx - 200.0, cy + 6.0, 400.0, 22.0}, kEmptyProjectPrompt,
+  canvas.vector.text({cx - 200.0, cy + 6.0, 400.0, 22.0}, tr(kEmptyProjectPrompt),
                      paint::TextStyle{paint::FontRole::Ui, tokens.type.body, 0.0,
                                       paint::TextAlign::Center, false},
                      tokens.color.textSecondary);

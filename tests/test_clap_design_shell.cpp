@@ -324,3 +324,22 @@ TEST_CASE("CLAP shell: the shell is activated once, by the first frame, not at c
   paintFrame(painted);
   CHECK(painted.designShellActivations() == 1U);
 }
+
+TEST_CASE("CLAP shell: the plug-in's export refusal reads from the string table") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto pseudo = native_ui::design::ShellStringTable::pseudoLocalized(0.4);
+  const native_ui::design::ScopedShellStrings scope{pseudo};
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  CHECK(runtime.dispatchAccessibility("shell.workspace.export", SemanticAction::Activate));
+  paintFrame(runtime);
+  const auto snapshot = runtime.accessibilitySnapshot();
+  const auto* run = childById(snapshot.children, "shell.export.run");
+  CHECK(run != nullptr);
+  if (run != nullptr)
+    CHECK(run->description == pseudo.text(native_ui::design::Str::InAPlugInExportFromYour));
+}

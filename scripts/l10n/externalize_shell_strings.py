@@ -24,6 +24,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DESIGN = ROOT / "libs/seam-native-ui/src/design"
+DESIGN_HEADERS = ROOT / "libs/seam-native-ui/include/seam/native_ui/design"
 SOURCES = [
     "sing_shell.cpp",
     "shell_overlays.cpp",
@@ -31,6 +32,15 @@ SOURCES = [
     "mix_workspace.cpp",
     "voice_workspace.cpp",
     "character_surface.cpp",
+]
+# Headers carry display text too (a constant a painter draws); they are scanned the same way.
+HEADERS = [
+    "character_surface.hpp",
+    "shell_overlays.hpp",
+    "shell_workspace.hpp",
+    "sing_layout.hpp",
+    "sing_shell.hpp",
+    "voice_workspace.hpp",
 ]
 TABLE = ROOT / "libs/seam-native-ui/include/seam/native_ui/design/shell_strings.def"
 INCLUDE = '#include "seam/native_ui/design/shell_strings.hpp"'
@@ -144,8 +154,7 @@ def main() -> int:
     table = read_table()
     used = dict(table)
     pending = 0
-    for name in SOURCES:
-        path = DESIGN / name
+    for path in [DESIGN / name for name in SOURCES] + [DESIGN_HEADERS / name for name in HEADERS]:
         text = path.read_text()
         edits = []
         for group in grouped(text):

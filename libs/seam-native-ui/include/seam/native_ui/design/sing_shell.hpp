@@ -1,6 +1,7 @@
 #pragma once
 
 #include "seam/native_ui/accessibility_tree.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/design/design_tokens.hpp"
 #include "seam/native_ui/design/shell_workspace.hpp"
@@ -81,7 +82,7 @@ struct ShellExportPlan final {
 struct ShellHostActions final {
   std::function<core::Result<void>()> exportSet;
   std::function<std::optional<ShellExportPlan>()> exportPlan;
-  std::string exportUnavailable{"This host does not export from the editor"};
+  std::string exportUnavailable{tr(Str::ThisHostDoesNotExportFrom)};
   // The host's live export worker state; the shell also reads the editor's current progress.
   std::function<bool()> exportBusy;
   // The selected region's own rendered audio for the notes, or why there is none. A host without

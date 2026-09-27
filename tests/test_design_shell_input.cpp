@@ -1788,6 +1788,44 @@ TEST_CASE("a failed render's status line names its reason, not only that it fail
   CHECK(native_ui::design::singStatusMessage(state).text == "Voicebank needs attention");
 }
 
+TEST_CASE("the seam hint and the empty-project line are whole sentences from the string table") {
+  using native_ui::design::ScopedShellStrings;
+  using native_ui::design::ShellStringTable;
+  using native_ui::design::Str;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto pseudo = ShellStringTable::pseudoLocalized(0.4);
+  const ScopedShellStrings scope{pseudo};
+  const auto prompt = native_ui::design::emptyProjectPrompt(0U);
+  CHECK(prompt.has_value());
+  if (prompt) CHECK(*prompt == std::string_view{pseudo.text(Str::DoubleClickTheGridToWrite)});
+  ShellFixture f;
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.lane-tab.phonemes", native_ui::SemanticAction::Activate)
+            .hasValue());
+  const auto noteId = f.session.project().findRegion(f.regionId)->notes.front().id;
+  for (const auto alternate : {false, true}) {
+    auto state = f.controller.sceneState();
+    state.selectedSeam = domain::PhonemeKey{.noteId = noteId, .ordinal = 1U};
+    state.seamPreviewConnected = true;
+    state.seamPreviewAlternate = alternate;
+    CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+    native_ui::PixelSurface surface{1600U, 900U};
+    native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+    native_ui::paint::ScopedTextCapture capture;
+    CHECK(f.shell.paint(canvas, f.controller, state, f.controller.playheadTick()));
+    const std::string expected{
+        pseudo.text(alternate ? Str::SeamHintAlternatePreview : Str::SeamHintBasePreview)};
+    const auto& lines = capture.records();
+    const auto painted = std::any_of(lines.begin(), lines.end(),
+                                     [&expected](const auto& line) { return line.text == expected; });
+    if (!painted) throw test::Failure{"the seam hint is not the table's sentence: " + expected};
+    // No English fragment is glued onto the translated sentence.
+    for (const auto& line : lines)
+      CHECK(line.text.find("alternate") == std::string::npos && line.text.find(" base") == std::string::npos);
+  }
+}
+
+
 TEST_CASE("the compact inspector opens from its drawer button and keeps every rack control usable") {
   using native_ui::SemanticAction;
   using native_ui::design::RackPresentation;

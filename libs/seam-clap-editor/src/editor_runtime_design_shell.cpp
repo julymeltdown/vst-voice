@@ -1,4 +1,5 @@
 #include "seam/clap_editor/editor_runtime.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 namespace seam::clap_editor {
 
@@ -53,7 +54,7 @@ void EditorRuntime::activateDesignShellWith(
       .exportSet = {},
       .exportPlan = {},
       .exportUnavailable =
-          "In a plug-in, export from your DAW: render or bounce this track there.",
+          native_ui::design::tr(native_ui::design::Str::InAPlugInExportFromYour),
       .exportBusy = {},
       // Paint runs under this runtime's lock; the cache never waits on a worker.
       .regionWaveform =

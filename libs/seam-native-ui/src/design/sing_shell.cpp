@@ -2090,8 +2090,9 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     const auto hint = !state.selectedSeam.has_value() ? std::string{tr(Str::DragPhonemeEdgesClickAUnit)}
                       : !state.seamPreviewConnected
                           ? std::string{tr(Str::SeamArrowsEditCCurveB2)}
-                          : std::string{tr(Str::SeamArrowsEditCCurveB)} +
-                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview);
+                      // Whole sentences, so a translation never assembles "B" + a loose word.
+                      : state.seamPreviewAlternate ? std::string{tr(Str::SeamHintAlternatePreview)}
+                                                   : std::string{tr(Str::SeamHintBasePreview)};
     if (info.width > 24.0)
       c.text(info, hint,
              fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
