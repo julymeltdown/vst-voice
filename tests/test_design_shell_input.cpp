@@ -3544,6 +3544,69 @@ TEST_CASE("the dynamics inspector is a docked review sheet whose plot keeps the 
   CHECK(!f.controller.sceneState().replacementReview.visible);
 }
 
+TEST_CASE("Settings exposes audio, appearance, language and About through one modal sheet") {
+  using native_ui::SemanticAction;
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  f.controller.setAudioSettings(
+      authoring::AudioSettings{.deviceId = "built-in", .sampleRate = 48000U,
+                               .blockFrames = 256U, .outputChannels = 2U},
+      {{.id = "built-in", .name = "Built-in Output", .physical = true, .selected = true}},
+      12U, 3U);
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Settings);
+  CHECK(nodeNow(f, "audio.sample-rate").has_value());
+  CHECK(nodeNow(f, "audio.diagnostics").has_value());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Tab}));
+  CHECK(f.focusedId() == "shell.overlay.settings.section.audio");
+  CHECK(f.shell.handleShellKey(f.controller,
+      KeyEvent{.key = NativeKey::Tab, .modifiers = {.shift = true}}));
+  CHECK(f.focusedId() == "shell.overlay.settings.close");
+  CHECK(!f.shell.dispatchSemantic(f.controller, "shell.mode.scene", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.section.appearance",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.look.scene",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.shell.mode() == DesignMode::Scene);
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.contrast.high",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.shell.contrast() == native_ui::design::Contrast::High);
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.motion.on",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.shell.motionReduced());
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.character.off",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.controller.characterDisplay() == domain::CharacterDisplayMode::Off);
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.section.language",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.language.ko",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.shell.language() == "ko");
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.section.about",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.about",
+                                   SemanticAction::Activate).hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::About);
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+  CHECK(!f.shell.settingsOpen());
+  CHECK(f.focusedId() == "shell.settings");
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+  CHECK(f.frame(1280.0, 800.0));
+  CHECK(!f.shell.settingsOpen());
+  CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+  f.shell.setWorkspace(f.controller, Workspace::Mix);
+  CHECK(!f.shell.settingsOpen());
+}
+
 TEST_CASE("the audio settings sheet lists the devices and applies every change through the host") {
   using native_ui::SemanticAction;
   OverlayFixture f;
@@ -3558,7 +3621,7 @@ TEST_CASE("the audio settings sheet lists the devices and applies every change t
        {.id = "null", .name = "Silent fallback", .physical = false, .selected = false}},
       12U, 3U);
   CHECK(f.frame());
-  CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+  f.controller.showAudioSettings();
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
   checkOverlayContract(f, "shell.overlay.audio.",

@@ -108,6 +108,8 @@ struct Pipeline final {
     bool hover{false};
     bool box{false};
     bool performing{false};
+    bool renderReady{false};
+    bool diagnostic{false};
     character::MouthShape mouth{character::MouthShape::Closed};
   };
 
@@ -117,6 +119,8 @@ struct Pipeline final {
     // Playing from the first frame: starting playback also swaps the play button for stop, which
     // is content, and the steps below isolate what moves while it plays.
     state.playing = true;
+    if (in.renderReady) state.renderStatus.state = native_ui::RenderStatusState::Ready;
+    if (in.diagnostic) state.diagnostics.push_back(authoring::Diagnostic{.code = "RENDER_FAILED"});
     if (in.performing) {
       native_ui::EditorSceneState::CharacterPerformanceView performance;
       performance.performing = true;
@@ -304,6 +308,66 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   CHECK(r.identical);
   CHECK(r.covered);
   CHECK(onlyDynamic(r.layers));
+}
+
+TEST_CASE("finite shell transitions preserve retained and fresh frame identity") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  Pipeline p{DesignMode::Emo, 1.0};
+  auto result = p.frame({});
+  CHECK(result.identical);
+  for (auto* shell : {&p.cached, &p.reference})
+    shell->setMode(DesignMode::Scene, false);
+  p.now += std::chrono::milliseconds{80};
+  result = p.frame({});
+  CHECK(result.identical && result.covered);
+  p.now += std::chrono::milliseconds{200};
+  result = p.frame({});
+  CHECK(result.identical && result.covered);
+  for (auto* shell : {&p.cached, &p.reference})
+    shell->setWorkspace(p.controller, native_ui::design::Workspace::Mix);
+  p.now += std::chrono::milliseconds{70};
+  result = p.frame({});
+  CHECK(result.identical && result.covered);
+  p.now += std::chrono::milliseconds{200};
+  result = p.frame({});
+  CHECK(result.identical && result.covered);
+  for (auto* shell : {&p.cached, &p.reference})
+    shell->setWorkspace(p.controller, native_ui::design::Workspace::Sing);
+  p.now += std::chrono::milliseconds{200};
+  CHECK(p.frame({}).identical);
+  auto [lyric, note] = p.factory.makeNote(time::Tick{720}, time::Tick{200}, 64U,
+                                          U"new", domain::Language::English);
+  auto* region = p.session.project().findRegion(p.regionId);
+  CHECK(region != nullptr);
+  if (region != nullptr) {
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(std::move(note));
+    region->sortNotes();
+    p.controller.pianoRoll().rebuildIndex();
+    result = p.frame({});
+    CHECK(result.identical && result.covered);
+    p.now += std::chrono::milliseconds{60};
+    result = p.frame({});
+    CHECK(result.identical && result.covered);
+    p.now += std::chrono::milliseconds{120};
+    result = p.frame({});
+    CHECK(result.identical && result.covered);
+  }
+  Pipeline::Inputs animated;
+  animated.renderReady = true;
+  animated.diagnostic = true;
+  result = p.frame(animated);
+  CHECK(result.identical && result.covered);
+  p.now += std::chrono::milliseconds{70};
+  result = p.frame(animated);
+  CHECK(result.identical && result.covered);
+  p.now += std::chrono::milliseconds{260};
+  result = p.frame(animated);
+  CHECK(result.identical && result.covered);
+  native_ui::design::Tween tween;
+  tween.start(p.now, std::chrono::milliseconds{150}, true);
+  CHECK(!tween.running(p.now, true));
+  CHECK(tween.progress(p.now, true) == 1.0);
 }
 
 // The empty project's splash is a recorded character item in place of the Stage figure, and the

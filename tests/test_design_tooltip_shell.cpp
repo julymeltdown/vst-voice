@@ -275,7 +275,7 @@ TEST_CASE("tooltips: showing and hiding one damages only its card, and a press o
   CHECK(f.frame());
   const auto tip = f.shell.lastFrameTooltip();
   CHECK(tip.has_value());
-  CHECK(tip->text == native_ui::design::tr(native_ui::design::Str::TipAudioSettings));
+  CHECK(tip->text == native_ui::design::tr(native_ui::design::Str::TipSettingsSheet));
   CHECK(!f.shell.lastFrameDamage().full);
   CHECK(covers(f.shell.lastFrameDamage(), tip->box));
   // Escape hides it and does nothing else.
@@ -324,7 +324,7 @@ TEST_CASE("tooltips: keyboard focus shows the focused control's description, and
   const auto tip = f.shell.lastFrameTooltip();
   CHECK(tip.has_value());
   CHECK(tip->subject == "shell.settings");
-  CHECK(tip->text == native_ui::design::tr(native_ui::design::Str::TipAudioSettings));
+  CHECK(tip->text == native_ui::design::tr(native_ui::design::Str::TipSettingsSheet));
   CHECK(!overlaps(tip->box, f.shell.layout().settings));
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
   CHECK(f.frame());

@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/shell_overlays.hpp"
+#include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/build/version.hpp"
@@ -1980,6 +1981,201 @@ bool AudioSettingsOverlay::key(NativeEditorController& controller, std::string_v
   }
 }
 
+// The same audio commands used by the classic audio sheet live alongside application preferences.
+// A single list of visible controls supplies painting, pointer hit testing and accessibility. The
+// list pages in small editor windows, where even a two-column preferences form cannot fit.
+class SettingsSheetOverlay final : public ShellOverlay {
+public:
+  explicit SettingsSheetOverlay(SingShell& shell) : shell_(shell) {}
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::Settings; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override { return "shell.overlay.settings."; }
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState&) const noexcept override {
+    return shell_.settingsOpen();
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+                               const SingLayout&, ui::Rect slot) const override {
+    return fitPanel(slot, std::min(540.0, slot.width), std::min(420.0, slot.height));
+  }
+  [[nodiscard]] std::string title(const NativeEditorController&,
+                                  const EditorSceneState&) const override { return tr(Str::SettingsSheet); }
+  [[nodiscard]] std::string openerId(const NativeEditorController&,
+                                     const EditorSceneState&) const override { return "shell.settings"; }
+  void presented() const override { section_ = 0U; first_ = 0U; }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
+                                                     const EditorSceneState& state,
+                                                     const SingLayout& layout,
+                                                     ui::Rect panel) const override {
+    std::vector<OverlayControl> out;
+    if (panel.width <= 0.0) return out;
+    out.push_back({"shell.overlay.settings.close",
+                   {panel.right() - 92.0, panel.y + 8.0, 72.0, 26.0}, tr(Str::Close)});
+    const auto inner = panel.width - 32.0;
+    constexpr std::array<std::string_view, 4U> ids{"audio", "appearance", "language", "about"};
+    const std::array<Str, 4U> names{Str::AudioSection, Str::Appearance, Str::Language, Str::AboutSection};
+    for (std::size_t i = 0U; i < ids.size(); ++i) {
+      const auto x = panel.x + 16.0 + inner * static_cast<double>(i) / 4.0;
+      out.push_back({"shell.overlay.settings.section." + std::string{ids[i]},
+                     {x, panel.y + 42.0, inner / 4.0, 26.0}, tr(names[i]),
+                     SemanticRole::Button, true, i == section_});
+    }
+    auto rows = sectionRows(controller, state, layout);
+    const auto top = panel.y + 76.0;
+    const auto available = std::max(0.0, panel.bottom() - 8.0 - top);
+    const auto capacity = static_cast<std::size_t>(available / 28.0);
+    if (capacity == 0U) return out;
+    first_ = std::min(first_, rows.size() > capacity ? rows.size() - capacity : 0U);
+    lastFirst_ = rows.size() > capacity ? rows.size() - capacity : 0U;
+    for (std::size_t i = first_; i < rows.size() && i < first_ + capacity; ++i) {
+      auto row = std::move(rows[i]);
+      row.bounds = {panel.x + 16.0, top + static_cast<double>(i - first_) * 28.0,
+                    inner, 26.0};
+      out.push_back(std::move(row));
+    }
+    return out;
+  }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
+             const EditorSceneState&, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override {
+    c.save();
+    c.clipRect(panel);
+    for (const auto& control : controls) {
+      const auto& r = control.bounds;
+      paintOverlayControl(c, t, r, {}, control.role, control.enabled, control.selected, false);
+      if (control.id == "shell.overlay.settings.close" ||
+          control.id.starts_with("shell.overlay.settings.section.")) {
+        c.text(r, control.name,
+               style(FontRole::UiSemibold, t.type.smallLabel, 0.0, TextAlign::Center),
+               control.selected ? t.color.accent : t.color.textPrimary);
+      } else {
+        c.text({r.x + 8.0, r.y, std::max(1.0, r.width * 0.48 - 8.0), r.height}, control.name,
+               style(FontRole::Ui, t.type.smallLabel), t.color.textPrimary);
+        c.text({r.x + r.width * 0.5, r.y, std::max(1.0, r.width * 0.5 - 8.0), r.height},
+               control.value,
+               style(FontRole::UiSemibold, t.type.smallLabel, 0.0, TextAlign::Right),
+               control.selected ? t.color.accent : t.color.textSecondary);
+      }
+    }
+    c.restore();
+  }
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override {
+    const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
+    if (id == "shell.overlay.settings.close" && activate) return close(controller);
+    constexpr std::string_view prefix{"shell.overlay.settings.section."};
+    if (id.starts_with(prefix) && activate) {
+      const auto name = id.substr(prefix.size());
+      section_ = name == "audio" ? 0U : name == "appearance" ? 1U : name == "language" ? 2U : 3U;
+      first_ = 0U;
+      return core::success();
+    }
+    if (!activate && action != SemanticAction::Increment && action != SemanticAction::Decrement)
+      return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
+    if (section_ == 0U) return audio_.perform(controller, id, action);
+    if (!activate) return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
+    if (id == "shell.overlay.settings.look.emo") shell_.setMode(DesignMode::Emo);
+    else if (id == "shell.overlay.settings.look.scene") shell_.setMode(DesignMode::Scene);
+    else if (id == "shell.overlay.settings.contrast.system") shell_.followSystemContrast();
+    else if (id == "shell.overlay.settings.contrast.standard") shell_.setContrast(Contrast::Standard);
+    else if (id == "shell.overlay.settings.contrast.high") shell_.setContrast(Contrast::High);
+    else if (id == "shell.overlay.settings.motion.system") shell_.followSystemReduceMotion();
+    else if (id == "shell.overlay.settings.motion.on") shell_.setReduceMotion(true);
+    else if (id == "shell.overlay.settings.motion.off") shell_.setReduceMotion(false);
+    else if (id == "shell.overlay.settings.character.full") controller.setCharacterDisplay(domain::CharacterDisplayMode::Full);
+    else if (id == "shell.overlay.settings.character.minimal") controller.setCharacterDisplay(domain::CharacterDisplayMode::Minimal);
+    else if (id == "shell.overlay.settings.character.off") controller.setCharacterDisplay(domain::CharacterDisplayMode::Off);
+    else if (id == "shell.overlay.settings.language.system") shell_.followSystemLanguage();
+    else if (id.starts_with("shell.overlay.settings.language."))
+      shell_.setLanguage(id.substr(std::string_view{"shell.overlay.settings.language."}.size()));
+    else if (id == "shell.overlay.settings.about") {
+      shell_.setSettingsOpen(false);
+      return shell_.setAboutOpen(controller, true);
+    } else return core::failure(core::ErrorCode::NotFound, tr(Str::UnknownSettingsControl));
+    return core::success();
+  }
+  bool key(NativeEditorController& controller, std::string_view focusedId,
+           const KeyEvent& event) const override {
+    if (event.key == NativeKey::Enter || event.key == NativeKey::Space) {
+      static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+      return true;
+    }
+    if (event.key == NativeKey::Down || event.key == NativeKey::Up) {
+      if (event.key == NativeKey::Down && first_ < lastFirst_) ++first_;
+      if (event.key == NativeKey::Up && first_ > 0U) --first_;
+      return true;
+    }
+    return false;
+  }
+  bool scroll(NativeEditorController&, const EditorSceneState&, const SingLayout&,
+              ui::Rect, ui::Point, double, double deltaY, InputModifiers) const override {
+    if (deltaY < 0.0 && first_ < lastFirst_) ++first_;
+    else if (deltaY > 0.0 && first_ > 0U) --first_;
+    return true;
+  }
+  core::Result<void> close(NativeEditorController&) const override {
+    shell_.setSettingsOpen(false);
+    return core::success();
+  }
+
+private:
+  [[nodiscard]] std::vector<OverlayControl> sectionRows(const NativeEditorController& controller,
+                                                         const EditorSceneState& state,
+                                                         const SingLayout& layout) const {
+    std::vector<OverlayControl> rows;
+    const auto add = [&rows](std::string id, Str name, std::string value = {}, bool selected = false) {
+      OverlayControl row{std::move(id), {}, tr(name)};
+      row.value = std::move(value);
+      row.selected = selected;
+      rows.push_back(std::move(row));
+    };
+    if (section_ == 0U) {
+      const auto height = 220.0 + static_cast<double>(state.audioSettings.devices.size()) * 32.0;
+      for (auto row : audio_.controls(controller, state, layout, {0.0, 0.0, 520.0, height})) {
+        if (row.id == "shell.overlay.audio.close" || row.id.starts_with("shell.overlay.audio.devices-")) continue;
+        rows.push_back(std::move(row));
+      }
+    } else if (section_ == 1U) {
+      add("shell.overlay.settings.look.emo", Str::EMOLook, {}, shell_.mode() == DesignMode::Emo);
+      add("shell.overlay.settings.look.scene", Str::SCENELook, {}, shell_.mode() == DesignMode::Scene);
+      add("shell.overlay.settings.contrast.system", Str::ContrastSystem, {}, shell_.contrastFollowsSystem());
+      add("shell.overlay.settings.contrast.standard", Str::ContrastStandard, {},
+          !shell_.contrastFollowsSystem() && shell_.contrast() == Contrast::Standard);
+      add("shell.overlay.settings.contrast.high", Str::ContrastHigh, {},
+          !shell_.contrastFollowsSystem() && shell_.contrast() == Contrast::High);
+      add("shell.overlay.settings.motion.system", Str::MotionSystem, {}, shell_.reduceMotionFollowsSystem());
+      add("shell.overlay.settings.motion.on", Str::MotionOn, {},
+          !shell_.reduceMotionFollowsSystem() && shell_.motionReduced());
+      add("shell.overlay.settings.motion.off", Str::MotionOff, {},
+          !shell_.reduceMotionFollowsSystem() && !shell_.motionReduced());
+      add("shell.overlay.settings.character.full", Str::CharacterFull, {},
+          controller.characterDisplay() == domain::CharacterDisplayMode::Full);
+      add("shell.overlay.settings.character.minimal", Str::CharacterMinimal, {},
+          controller.characterDisplay() == domain::CharacterDisplayMode::Minimal);
+      add("shell.overlay.settings.character.off", Str::CharacterOff, {},
+          controller.characterDisplay() == domain::CharacterDisplayMode::Off);
+    } else if (section_ == 2U) {
+      const auto systemCode = shellLanguageFor(systemPreferredLanguage());
+      const auto& languages = shellLanguages();
+      const auto system = std::find_if(languages.begin(), languages.end(), [systemCode](const auto& language) {
+        return language.code == systemCode;
+      });
+      add("shell.overlay.settings.language.system", Str::SystemLanguage,
+          std::string{system != languages.end() ? system->name : languages.front().name},
+          shell_.languageFollowsSystem());
+      for (const auto& language : shellLanguages())
+        add(std::string{"shell.overlay.settings.language."} + std::string{language.code}, Str::Language,
+            std::string{language.name}, !shell_.languageFollowsSystem() && shell_.language() == language.code);
+    } else {
+      add("shell.overlay.settings.about", Str::AboutProjectSEAM);
+    }
+    return rows;
+  }
+  SingShell& shell_;
+  mutable AudioSettingsOverlay audio_;
+  mutable std::size_t section_{0U};
+  mutable std::size_t first_{0U};
+  mutable std::size_t lastFirst_{0U};
+};
+
 // ---- Voice browser -----------------------------------------------------------------------------
 
 // The installed singers and voicebanks as a large sheet ("Change voice" on the SINGER card and
@@ -2910,6 +3106,9 @@ std::unique_ptr<ShellOverlay> makeReplacementReviewOverlay() {
 }
 std::unique_ptr<ShellOverlay> makeAudioSettingsOverlay() {
   return std::make_unique<AudioSettingsOverlay>();
+}
+std::unique_ptr<ShellOverlay> makeSettingsOverlay(SingShell& shell) {
+  return std::make_unique<SettingsSheetOverlay>(shell);
 }
 std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay() {
   return std::make_unique<VoicebankBrowserOverlay>();

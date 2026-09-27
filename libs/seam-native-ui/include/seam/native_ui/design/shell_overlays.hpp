@@ -37,6 +37,7 @@ enum class OverlayKind : std::uint8_t {
   Diagnostics,
   ReplacementReview,
   AudioSettings,
+  Settings,
   VoicebankBrowser,
   TextField,
   SingerMenu,
@@ -214,6 +215,8 @@ public:
 // (tempo or meter from the transport, phone hint, find/replace, review draft fields, renames).
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeReplacementReviewOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeAudioSettingsOverlay();
+class SingShell;
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeSettingsOverlay(SingShell& shell);
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeTextFieldOverlay();
 // The SINGER card's overflow menu: a popover anchored to the card's ⋯ button listing the
