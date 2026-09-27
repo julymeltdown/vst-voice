@@ -2006,10 +2006,12 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            t.color.textSecondary);
   }
   if (technicalLane_) {
-    const auto hint = state.selectedSeam.has_value()
-                          ? std::string{tr(Str::SeamArrowsEditCCurveB)} +
-                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview)
-                          : std::string{tr(Str::DragPhonemeEdgesClickAUnit)};
+    // B auditions the seam's alternate render only where the host can play it; a plug-in cannot.
+    const auto hint = !state.selectedSeam.has_value() ? std::string{tr(Str::DragPhonemeEdgesClickAUnit)}
+                      : !state.seamPreviewConnected
+                          ? std::string{tr(Str::SeamArrowsEditCCurveB2)}
+                          : std::string{tr(Str::SeamArrowsEditCCurveB)} +
+                                (state.seamPreviewAlternate ? "alternate" : "base") + tr(Str::Preview);
     if (info.width > 24.0)
       c.text(info, hint,
              fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
@@ -2815,6 +2817,11 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
     if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += tr(Str::Text3) + s.diagnostic;
     return {std::move(text), StatusTone::Warning};
   }
+  // A selected seam in a host that cannot audition its B render says so in the status line, the
+  // one place visible at every window size; a failed render's reason still comes first.
+  if (state.selectedSeam.has_value() && !state.seamPreviewConnected && !failed)
+    return {tr(Str::SeamBPreviewIsNotAvailable),
+            StatusTone::Normal};
   // A render note is status, not a warning, unless the render itself failed.
   if (!s.diagnostic.empty()) return {s.diagnostic, failed ? StatusTone::Warning : StatusTone::Normal};
   return {state.audioDeviceOnline ? tr(Str::Audio) + state.audioBackend : std::string{tr(Str::AudioOffline)},

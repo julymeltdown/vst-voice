@@ -248,3 +248,51 @@ TEST_CASE("CLAP shell: MIX reaches track and region selection, mute, solo and ou
   CHECK(master != nullptr);
   if (master != nullptr) CHECK(master->channelCount == 1U);
 }
+
+// A plug-in cannot audition a seam's alternate render: the DAW plays the song's own render. The
+// shell says so instead of offering B: the Phonemes lane's hint and the status line name the
+// refusal, and B changes nothing.
+TEST_CASE("CLAP shell: seam B preview is refused honestly in the plug-in") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  runtime.activateDesignShell(
+      native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Emo});
+  runtime.resize(1600.0, 900.0);
+  paintFrame(runtime);
+  CHECK(!runtime.controller().sceneState().seamPreviewConnected);
+  // Open the Phonemes lane and press the seam band at the first note's start.
+  const auto tab = findNode(runtime.accessibilitySnapshot().children, "shell.lane-tab.phonemes");
+  CHECK(tab != nullptr);
+  if (tab == nullptr) return;
+  const ui::Point tabCenter{tab->bounds.x + tab->bounds.width * 0.5, tab->bounds.y + tab->bounds.height * 0.5};
+  runtime.pointerDown({tabCenter, native_ui::PointerButton::Left, {}, 1});
+  runtime.pointerUp({tabCenter, native_ui::PointerButton::Left, {}, 1});
+  paintFrame(runtime);
+  const auto snapshot = runtime.accessibilitySnapshot();
+  const auto* seamBand = findNode(snapshot.children, "shell.lane.band.seam");
+  const auto notes = runtime.accessibilityNotes(0U, 1U);
+  CHECK(seamBand != nullptr);
+  CHECK(!notes.empty());
+  if (seamBand == nullptr || notes.empty()) return;
+  const ui::Point seam{notes.front().bounds.x + 1.0, seamBand->bounds.y + seamBand->bounds.height * 0.5};
+  runtime.pointerDown({seam, native_ui::PointerButton::Left, {}, 1});
+  runtime.pointerUp({seam, native_ui::PointerButton::Left, {}, 1});
+  const auto selected = runtime.controller().sceneState();
+  CHECK(selected.selectedSeam.has_value());
+  if (!selected.selectedSeam.has_value()) return;
+  const auto status = native_ui::design::singStatusMessage(selected);
+  CHECK(status.text.find("Seam B preview is not available in the plug-in") != std::string::npos);
+  const auto revision = runtime.revision();
+  runtime.keyDown(KeyEvent{.key = NativeKey::B});
+  CHECK(!runtime.controller().sceneState().seamPreviewAlternate);
+  CHECK(runtime.revision() == revision);
+  const auto refused = runtime.controller().toggleSelectedSeamPreview();
+  CHECK(!refused);
+  if (!refused) {
+    CHECK(refused.error().code == core::ErrorCode::Unsupported);
+    CHECK(refused.error().message.find("plug-in") != std::string::npos);
+  }
+}

@@ -225,6 +225,7 @@ EditorSceneState NativeEditorController::sceneState() const {
       .seamOverrides = {},
       .selectedSeam = seamTarget_,
       .seamPreviewAlternate = seamPreviewAlternate_,
+      .seamPreviewConnected = static_cast<bool>(callbacks_.previewSeam),
       .pitchAutomation = {},
       .technicalLanes = session_.project().settings().technicalLanes,
       .technicalLaneAvailable = {
@@ -3438,7 +3439,8 @@ core::Result<void> NativeEditorController::toggleSelectedSeamPreview() {
   }
   if (!callbacks_.previewSeam) {
     return core::failure(core::ErrorCode::Unsupported,
-                         "Seam A/B preview is not connected");
+                         "Seam B preview is not available in the plug-in: "
+                         "the DAW plays the song's own render");
   }
   const auto next = !seamPreviewAlternate_;
   const auto result = callbacks_.previewSeam(*seamTarget_, next);
