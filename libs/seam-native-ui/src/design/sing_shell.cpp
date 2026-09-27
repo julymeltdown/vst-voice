@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numbers>
 #include <optional>
 #include <random>
@@ -100,8 +101,16 @@ void paintVectorWash(Canvas2D& c, const DesignTokens& t) {
 // The procedural wash has no text or layout-dependent chrome. Device rows are independent, so
 // each compositor band can rasterize it without creating a CoreGraphics path or sharing pixels.
 struct WashShapes final {
+  struct Segment final {
+    ui::Point before;
+    ui::Point after;
+    double vx;
+    double vy;
+    double length2;
+  };
   struct Strand final {
     std::array<ui::Point, 65U> points;
+    std::array<Segment, 64U> segments;
     Color color;
     double width;
   };
@@ -113,20 +122,26 @@ struct WashShapes final {
   };
   double width{-1.0};
   double height{-1.0};
+  double scale{-1.0};
   const DesignTokens* tokens{nullptr};
   std::vector<Strand> strands;
   std::vector<Sparkle> sparkles;
 };
 
-const WashShapes& washShapes(double W, double H, const DesignTokens& t) {
-  // A worker draws several bands. Its immutable geometry is reused until size or token set changes.
-  thread_local WashShapes shapes;
-  if (shapes.width == W && shapes.height == H && shapes.tokens == &t) return shapes;
+std::shared_ptr<const WashShapes> washShapes(double W, double H, double scale, const DesignTokens& t) {
+  // Bands replay concurrently. Build the immutable seeded geometry once for the entire surface,
+  // rather than repeating 170 cubic subdivisions on every worker or every band.
+  static std::mutex mutex;
+  static std::shared_ptr<const WashShapes> cached;
+  const std::lock_guard lock{mutex};
+  if (cached && cached->width == W && cached->height == H &&
+      cached->scale == scale && cached->tokens == &t) return cached;
+  auto result = std::make_shared<WashShapes>();
+  auto& shapes = *result;
   shapes.width = W;
   shapes.height = H;
+  shapes.scale = scale;
   shapes.tokens = &t;
-  shapes.strands.clear();
-  shapes.sparkles.clear();
   std::mt19937 rng{t.mode == DesignMode::Emo ? 0x5EA1u : 0x5CE7u};
   const auto uniform = [&](double lo, double hi) {
     return std::uniform_real_distribution<double>{lo, hi}(rng);
@@ -149,6 +164,13 @@ const WashShapes& washShapes(double W, double H, const DesignTokens& t) {
         strand.points[s] = {v*v*v*a.x + 3*v*v*u*b.x + 3*v*u*u*c.x + u*u*u*d.x,
                             v*v*v*a.y + 3*v*v*u*b.y + 3*v*u*u*c.y + u*u*u*d.y};
       }
+      for (std::size_t s = 0; s < strand.segments.size(); ++s) {
+        const ui::Point before{strand.points[s].x * scale, strand.points[s].y * scale};
+        const ui::Point after{strand.points[s + 1U].x * scale, strand.points[s + 1U].y * scale};
+        const auto vx = after.x - before.x;
+        const auto vy = after.y - before.y;
+        strand.segments[s] = {before, after, vx, vy, vx * vx + vy * vy};
+      }
       shapes.strands.push_back(std::move(strand));
     }
   } else {
@@ -164,7 +186,8 @@ const WashShapes& washShapes(double W, double H, const DesignTokens& t) {
                                  circle ? uniform(0.35, 1.1) : uniform(2.0, 4.5), circle});
     }
   }
-  return shapes;
+  cached = result;
+  return result;
 }
 
 void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
@@ -216,7 +239,15 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
       const auto py = (static_cast<double>(top + y) + 0.5) / scale;
       const auto dy = py - center.y;
       const auto dy2 = dy * dy;
-      for (std::uint32_t x = 0; x < width; ++x) {
+      const auto radius2 = radius * radius;
+      if (dy2 >= radius2) continue;
+      const auto halfRow = std::sqrt(radius2 - dy2) * scale;
+      const auto centerX = center.x * scale - 0.5;
+      const auto x0 = static_cast<std::uint32_t>(std::clamp(
+          std::ceil(centerX - halfRow), 0.0, static_cast<double>(width)));
+      const auto x1 = static_cast<std::uint32_t>(std::clamp(
+          std::floor(centerX + halfRow) + 1.0, 0.0, static_cast<double>(width)));
+      for (std::uint32_t x = x0; x < x1; ++x) {
         const auto ramp = 1.0 - std::sqrt(xDistance2[x] + dy2) / radius;
         if (ramp > 0.0) {
           const auto index = std::min(4096U, static_cast<unsigned>(ramp * 4096.0 + 0.5));
@@ -241,27 +272,26 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
   }
   if (t.light.textureAlpha <= 0.0) return;
 
-  const auto& shapes = washShapes(W, H, t);
+  const auto shapes = washShapes(W, H, scale, t);
   const auto localY = [&](double logical) { return logical * scale - static_cast<double>(top); };
   if (t.mode == DesignMode::Emo) {
     // A strand is one translucent shape. Keep the largest coverage at joins and composite once.
     std::vector<float> coverage(pixels.size(), 0.0F);
     std::vector<std::size_t> touched;
-    for (const auto& strand : shapes.strands) {
+    for (const auto& strand : shapes->strands) {
       const auto strokeWidth = strand.width * scale;
       touched.clear();
-      auto before = ui::Point{strand.points[0].x * scale, localY(strand.points[0].y)};
-      for (std::size_t s = 1; s < strand.points.size(); ++s) {
-        const auto after = ui::Point{strand.points[s].x * scale, localY(strand.points[s].y)};
+      for (const auto& segment : strand.segments) {
+        const auto before = ui::Point{segment.before.x, segment.before.y - static_cast<double>(top)};
+        const auto after = ui::Point{segment.after.x, segment.after.y - static_cast<double>(top)};
         const auto radius = strokeWidth * 0.5;
         if (std::max(before.y, after.y) + radius + 1.0 < 0.0 ||
             std::min(before.y, after.y) - radius - 1.0 >= height) {
-          before = after;
           continue;
         }
-        const auto vx = after.x - before.x;
-        const auto vy = after.y - before.y;
-        const auto length2 = vx * vx + vy * vy;
+        const auto vx = segment.vx;
+        const auto vy = segment.vy;
+        const auto length2 = segment.length2;
         const auto x0 = std::max(0, static_cast<int>(std::floor(std::min(before.x, after.x) - radius - 1)));
         const auto x1 = std::min(static_cast<int>(width), static_cast<int>(std::ceil(std::max(before.x, after.x) + radius + 1)));
         const auto y0 = std::max(0, static_cast<int>(std::floor(std::min(before.y, after.y) - radius - 1)));
@@ -279,7 +309,6 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
           if (coverage[index] == 0.0F) { coverage[index] = value; touched.push_back(index); }
           else coverage[index] = std::max(coverage[index], value);
         }
-        before = after;
       }
       for (const auto index : touched) {
         blend(index, strand.color, coverage[index]);
@@ -287,7 +316,7 @@ void paintBaseWash(PixelSurface& surface, double scale, std::uint32_t top,
       }
     }
   } else {
-    for (const auto& sparkle : shapes.sparkles) {
+    for (const auto& sparkle : shapes->sparkles) {
       const auto r = sparkle.radius;
       const auto cx = sparkle.point.x * scale;
       const auto cy = localY(sparkle.point.y);
