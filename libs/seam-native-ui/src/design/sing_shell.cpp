@@ -710,6 +710,9 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
   applyGeometry(controller);
   frameNotesIfNeeded(controller, previousGridHeight);
   presented_ = true;
+  // A surface opened since the last frame (by the host's menu, a recovery action or a shell
+  // control) covers the score: a lyric field open under it goes.
+  cancelCoveredLyric(controller);
   return true;
 }
 
@@ -2454,6 +2457,17 @@ core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
   return result;
 }
 
+void SingShell::cancelCoveredLyric(NativeEditorController& controller) {
+  if (!presented_ || activeOverlay(controller) == nullptr) return;
+  // The lyric composition is the only one without a field kind; every other field is the surface's
+  // own (an inline field card, the time map's event field) and stays open.
+  const auto lyricOpen =
+      controller.textInputActive() &&
+      controller.textFieldView().kind == NativeEditorController::TextFieldView::Kind::None;
+  if (lyricOpen) controller.cancelTextComposition();
+  lyricInputActive_ = false;
+}
+
 bool SingShell::overlayPublishes(const NativeEditorController& controller,
                                  std::string_view id) const {
   const auto* overlay = activeOverlay(controller);
@@ -2852,6 +2866,7 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   // A re-homed overlay is modal over the score and the rack. A press on one of its controls runs
   // that control's own command; a press on the card itself is absorbed; a press outside closes it,
   // as the classic surfaces closed on Escape or their close button alone.
+  cancelCoveredLyric(controller);
   if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
@@ -3194,11 +3209,17 @@ bool SingShell::handleShellKey(NativeEditorController& controller, const KeyEven
   // control that opened it; the overlay's own keys run its real commands; every other plain key
   // stops here, so nothing reaches the covered score.
   if (presented_) {
+    // A surface that opened without a frame in between still takes the keyboard from a lyric.
+    cancelCoveredLyric(controller);
     if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
       // A field open in the overlay (the time map's event field, an inline field card) has the
       // host's text input client: every key but Escape is the controller's own text handling
-      // (Enter and Tab commit, as they did on the classic surface).
-      if (controller.textInputActive() && event.key != NativeKey::Escape) return false;
+      // (Enter and Tab commit, as they did on the classic surface). Only a field the overlay owns
+      // passes keys through; a composition without a field kind is never the overlay's.
+      if (controller.textInputActive() &&
+          controller.textFieldView().kind != NativeEditorController::TextFieldView::Kind::None &&
+          event.key != NativeKey::Escape)
+        return false;
       // A drag inside the card owns the input; Escape cancels it without committing.
       if (overlayGesture_) {
         if (event.key == NativeKey::Escape) cancelGestures(controller);

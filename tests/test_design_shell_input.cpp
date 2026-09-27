@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <set>
@@ -3796,4 +3797,72 @@ TEST_CASE("the hint and transport fields are inline shell fields on the lyric fi
   const auto refused = f.controller.documentRevision();
   CHECK(!f.shell.setControllerValue(f.controller, "toolbar.tempo", "fast").hasValue());
   CHECK(f.controller.documentRevision() == refused);
+}
+
+TEST_CASE("a surface presented over the score cancels an open lyric, whose keys never commit it") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto lyricSurface = [&f] {
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) return std::u32string{U"<no note>"};
+    const auto* lyric = region->findLyric(region->notes.front().lyricTokenId);
+    return lyric == nullptr ? std::u32string{} : lyric->surface;
+  };
+  const auto before = lyricSurface();
+  // The host's key path: the shell first, then the controller for a key the shell did not take.
+  const auto key = [&f](NativeKey k) {
+    const KeyEvent event{.key = k};
+    if (!f.shell.handleShellKey(f.controller, event))
+      static_cast<void>(f.controller.keyDown(event));
+  };
+  const auto openLyric = [&] {
+    CHECK(f.frame());
+    const auto* region = f.session.project().findRegion(f.regionId);
+    if (region == nullptr || region->notes.empty()) throw test::Failure{"the note is gone"};
+    CHECK(f.controller.beginLyricEdit(region->notes.front().id).hasValue());
+    CHECK(f.lastTextInput && f.lastTextInput->anchor == native_ui::TextInputAnchor::NoteGrid);
+    CHECK(f.controller.updateTextComposition(U"zz", {}).hasValue());
+  };
+  // Each surface the shell does not open itself: the host's menu (voice browser, Audio
+  // Settings...), and the shell's own DIAGNOSTICS popover.
+  authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                              .severity = authoring::DiagnosticSeverity::Warning,
+                              .messageKey = "media.missing",
+                              .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const std::vector<std::pair<std::string, std::function<void()>>> openers{
+      {"voice browser", [&f] { f.controller.showVoicebankBrowser(); }},
+      {"audio settings", [&f] { f.controller.showAudioSettings(); }},
+      {"diagnostics", [&f, &issue] {
+         f.controller.setDiagnostics({issue});
+         f.shell.setDiagnosticsOpen(true);
+       }}};
+  for (const auto& [name, open] : openers) {
+    for (const auto framed : {false, true}) {
+      openLyric();
+      open();
+      // With or without a frame in between, Enter, Tab and Backspace are the surface's keys: the
+      // hidden lyric is cancelled, never committed, and its input client is gone.
+      if (framed) CHECK(f.frame());
+      if (f.shell.overlayKind(f.controller) == OverlayKind::None)
+        throw test::Failure{name + " is not presented"};
+      for (const auto k : {NativeKey::Backspace, NativeKey::Tab, NativeKey::Enter}) key(k);
+      if (f.controller.textInputActive())
+        throw test::Failure{"the lyric stays open under the " + name};
+      if (lyricSurface() != before) throw test::Failure{"the " + name + " committed the lyric"};
+      CHECK(f.shell.overlayKind(f.controller) != OverlayKind::None);
+      // Close it for the next opener.
+      for (int i = 0; i < 3 && f.shell.overlayKind(f.controller) != OverlayKind::None; ++i)
+        CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Escape}));
+      CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+      f.controller.setDiagnostics({});
+    }
+  }
+  // An inline field the surface owns keeps its keys: the transport's tempo field still commits.
+  CHECK(f.frame());
+  CHECK(f.controller.beginTempoEdit().hasValue());
+  CHECK(f.frame());
+  CHECK(f.shell.overlayKind(f.controller) == OverlayKind::TextField);
+  CHECK(!f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Enter}));
+  CHECK(f.controller.textInputActive());
+  f.controller.cancelTextComposition();
 }

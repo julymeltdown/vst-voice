@@ -371,6 +371,10 @@ private:
   // Closes the presented overlay through its own command. The DIAGNOSTICS popover is the shell's
   // own presentation, so this also drops the flag that shows it.
   core::Result<void> closeOverlay(NativeEditorController& controller, const ShellOverlay& overlay);
+  // A note-grid lyric field belongs to the score. When a surface is presented over the score (the
+  // voice browser, audio settings, diagnostics, any re-homed overlay), the lyric is cancelled, never
+  // committed, as opening a classic surface cancelled it; its input client leaves with it.
+  void cancelCoveredLyric(NativeEditorController& controller);
   void paintExport(paint::Canvas2D& c, const DesignTokens& t, const EditorSceneState& state) const;
   [[nodiscard]] ui::Rect exportArea() const noexcept;
   [[nodiscard]] core::Result<void> runExportSet(NativeEditorController& controller);
