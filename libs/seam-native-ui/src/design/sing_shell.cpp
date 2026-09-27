@@ -1634,17 +1634,20 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       const auto handles = vibratoHandlePositions(display, region->startTick,
                                                   model.project().tempoMap(), bounds);
       if (!handles) continue;
-      const auto dot = [&](std::optional<ui::Point> p, double r) {
+      // The handle holding keyboard focus (Alt+V, then arrows) wears a focus ring.
+      const auto dot = [&](std::optional<ui::Point> p, double r, VibratoHandleKind kind) {
         if (!p) return;
         c.fill(Path::circle(*p, r), t.color.focusRing);
         c.stroke(Path::circle(*p, r), t.color.canvas, StrokeStyle{1.0});
+        if (state.vibratoKeyboardFocus == kind)
+          c.stroke(Path::circle(*p, r + 3.0), t.color.focusRing, StrokeStyle{2.0});
       };
-      dot(handles->onset, 4.0);
-      dot(handles->depth, 4.0);
-      dot(handles->fadeIn, 3.0);
-      dot(handles->fadeOut, 3.0);
-      dot(handles->period, 3.5);
-      dot(handles->phase, 3.0);
+      dot(handles->onset, 4.0, VibratoHandleKind::Onset);
+      dot(handles->depth, 4.0, VibratoHandleKind::Depth);
+      dot(handles->fadeIn, 3.0, VibratoHandleKind::FadeIn);
+      dot(handles->fadeOut, 3.0, VibratoHandleKind::FadeOut);
+      dot(handles->period, 3.5, VibratoHandleKind::Period);
+      dot(handles->phase, 3.0, VibratoHandleKind::Phase);
     }
   }
 
