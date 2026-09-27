@@ -1918,6 +1918,15 @@ if(SEAM_BUILD_TESTS)
       COMMAND seam_design_character_surface_tests)
     set_tests_properties(seam_design_character_surface_tests PROPERTIES
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(seam_design_frame_pipeline_tests
+      tests/test_main.cpp tests/test_design_frame_pipeline.cpp)
+    target_include_directories(seam_design_frame_pipeline_tests PRIVATE tests)
+    target_link_libraries(seam_design_frame_pipeline_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_frame_pipeline_tests)
+    add_test(NAME seam_design_frame_pipeline_tests COMMAND seam_design_frame_pipeline_tests)
+    set_tests_properties(seam_design_frame_pipeline_tests PROPERTIES
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(seam_design_tune_workspace_tests
       tests/test_main.cpp tests/test_design_tune_workspace.cpp)
     target_include_directories(seam_design_tune_workspace_tests PRIVATE tests)
