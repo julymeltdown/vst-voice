@@ -140,6 +140,9 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
     }
     for (const auto& entry : previous) damage(entry.second->bounds);
   }
+  // A surface this cache did not compose last holds none of the previous frame: every pixel of it
+  // is written below, so every pixel is damage, whatever the dynamic items did.
+  if (lastTarget_ != surface.pixels().data()) out.damage = FrameDamage::everything();
 
   // A partial composition needs a target that still holds the previous frame, nothing changed below
   // the dynamic layer, and a whole-number scale, so a snapped rectangle is an exact pixel clip.

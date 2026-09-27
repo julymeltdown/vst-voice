@@ -400,6 +400,13 @@ TEST_CASE("a mode switch or a resize recomposes every layer and damages everythi
   CHECK(p.cached.prepareFrame(p.controller, kWidth, kHeight));
   CHECK(p.cached.paint(canvas, p.controller, p.scene(in), time::Tick{0}));
   CHECK(std::equal(other.pixels().begin(), other.pixels().end(), p.retained.pixels().begin()));
+  // ...and reports it whole: a presenter blits only the damage, and none of that surface held the
+  // previous frame, even though nothing in the scene changed.
+  CHECK(p.cached.lastFrameDamage().full);
+  // Back on the retained surface, which the other frame did not write, the damage is whole again.
+  r = p.frame(in);
+  CHECK(r.identical);
+  CHECK(r.damage.full);
 }
 
 TEST_CASE("the layer cache stays within the plan's 80 MB at 1440x900 on a 2x display") {
