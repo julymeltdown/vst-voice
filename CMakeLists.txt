@@ -742,6 +742,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   # support is deferred; other platforms keep the classic painter through the stubs.
   target_sources(seam_native_ui PRIVATE
     libs/seam-native-ui/src/design/design_tokens.cpp
+    libs/seam-native-ui/src/design/shell_strings.cpp
     libs/seam-native-ui/src/design/character_surface.cpp
     libs/seam-native-ui/src/design/sing_layout.cpp
     libs/seam-native-ui/src/design/sing_shell.cpp
@@ -1945,6 +1946,33 @@ if(SEAM_BUILD_TESTS)
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
     seam_apply_compiler_options(seam_design_voice_workspace_tests)
     add_test(NAME seam_design_voice_workspace_tests COMMAND seam_design_voice_workspace_tests)
+    add_executable(seam_design_layout_property_tests
+      tests/test_main.cpp tests/test_design_layout_properties.cpp)
+    target_include_directories(seam_design_layout_property_tests PRIVATE tests)
+    target_link_libraries(seam_design_layout_property_tests PRIVATE
+      seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
+    seam_apply_compiler_options(seam_design_layout_property_tests)
+    # One ctest entry per sweep so they run in parallel; each argument selects test cases by name.
+    foreach(sweep IN ITEMS workspaces overlay sheets contrast string pseudo)
+      if(sweep STREQUAL "workspaces")
+        set(filter "every workspace")
+      elseif(sweep STREQUAL "overlay")
+        set(filter "every re-homed overlay")
+      elseif(sweep STREQUAL "sheets")
+        set(filter "compact inspector and the workspace menu")
+      elseif(sweep STREQUAL "contrast")
+        set(filter "switching contrast")
+      elseif(sweep STREQUAL "string")
+        set(filter "shell string table")
+      else()
+        set(filter "pseudo-localized")
+      endif()
+      add_test(NAME seam_design_layout_property_tests_${sweep}
+        COMMAND seam_design_layout_property_tests "${filter}")
+      # The sweeps paint up to 7680x4320-pixel frames; run alone so they do not starve the
+      # suite's timed tests.
+      set_tests_properties(seam_design_layout_property_tests_${sweep} PROPERTIES RUN_SERIAL TRUE)
+    endforeach()
     add_executable(seam_japanese_reading_native_tests
       tests/test_main.cpp tests/test_japanese_reading_native.cpp)
     target_include_directories(seam_japanese_reading_native_tests PRIVATE tests)
