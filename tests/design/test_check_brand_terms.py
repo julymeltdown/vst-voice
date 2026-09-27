@@ -83,7 +83,7 @@ class Scanning(unittest.TestCase):
 
     def test_allowlist_rejects_unknown_terms_and_missing_reasons(self) -> None:
         with self.assertRaises(ValueError):
-            self.allowlist([{"term": "AppKit", "paths": ["**"], "reason": "not on the deny-list"}])
+            self.allowlist([{"term": "UnknownBrand", "paths": ["**"], "reason": "not on the deny-list"}])
         with self.assertRaises(ValueError):
             self.allowlist([{"term": "VST3", "paths": ["docs/*"], "reason": ""}])
         with self.assertRaises(ValueError):
@@ -118,4 +118,3 @@ class ShippedTree(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

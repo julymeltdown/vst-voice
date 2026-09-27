@@ -3,6 +3,27 @@
   "$comment": "Each entry allows one deny-listed term in the listed files only, with the reason. Host and format names are nominative: they say which host or plug-in format SEAM works with, and never appear in the UI string table or in art. Licensor names appear where a license requires attribution.",
   "allow": [
     {
+      "term": "CLAP",
+      "paths": [
+        "docs/manual/*.md",
+        "THIRD_PARTY_NOTICES.md",
+        "packaging/macos/*",
+        "packaging/windows/*",
+        "packaging/release-resource-inventory.json"
+      ],
+      "reason": "The name of the open plug-in ABI and its .clap file extension in format documentation, attribution and installer paths."
+    },
+    {
+      "term": "AppKit",
+      "paths": ["THIRD_PARTY_NOTICES.md"],
+      "reason": "Operating-system framework attribution in the third-party notices."
+    },
+    {
+      "term": "VST",
+      "paths": ["docs/manual/*.md", "THIRD_PARTY_NOTICES.md"],
+      "reason": "Nominative plug-in format name in format documentation and SDK attribution."
+    },
+    {
       "term": "VST3",
       "paths": [
         "docs/manual/*.md",

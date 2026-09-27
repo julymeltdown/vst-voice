@@ -70,7 +70,8 @@ DENY_TERMS: dict[str, tuple[str, ...]] = {
         "iZotope", "Native Instruments", "Kontakt", "Xfer Serum", "Spitfire Audio", "Waves Audio",
         "Roland", "Korg",
     ),
-    "plugin-format-trademark": ("VST", "VST2", "VST3", "Audio Units", "AAX"),
+    "plugin-format-trademark": ("CLAP", "VST", "VST2", "VST3", "Audio Units", "AAX"),
+    "system-framework": ("AppKit",),
     "social-network-messenger-streaming": (
         "Myspace", "Facebook", "Instagram", "TikTok", "Twitter", "Tumblr", "Snapchat", "YouTube",
         "Discord", "WhatsApp", "Telegram", "KakaoTalk", "WeChat", "Skype", "Reddit", "Twitch",
