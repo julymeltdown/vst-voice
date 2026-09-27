@@ -9,6 +9,7 @@
 #include "seam/native_ui/design/tooltip.hpp"
 #include "seam/native_ui/design/voice_workspace.hpp"
 #include "seam/native_ui/design/shell_overlays.hpp"
+#include "seam/native_ui/design/motion.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_scene.hpp"
 #include "seam/native_ui/frame_damage.hpp"
@@ -24,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace seam::native_ui::design {
 
@@ -42,6 +44,8 @@ struct DesignPreferences final {
   // it is the same setting the host already publishes to the editor through
   // platform::AccessibilityPreferences, so both surfaces agree.
   bool reduceMotion{false};
+  // No stored override follows the platform's Reduce Motion setting.
+  bool reduceMotionFollowsSystem{false};
   // The language the shell reads in: a code from shellLanguages() ("en", "ko"). When
   // languageFollowsSystem is set it is the platform's preferred language, when the shell offers it,
   // and English otherwise; an explicit choice made in the app clears the flag and wins, for this app
@@ -55,6 +59,7 @@ struct DesignPreferences final {
 void saveDesignPreferences(const DesignPreferences& preferences);
 // The platform's Increase Contrast accessibility setting (false where the platform has none).
 [[nodiscard]] bool systemIncreaseContrast();
+[[nodiscard]] bool systemReduceMotion();
 // The platform's first preferred language tag ("ko-KR"), or empty where the platform has none.
 [[nodiscard]] std::string systemPreferredLanguage();
 // Runs onChange whenever the system's accessibility display options change (Increase Contrast,
@@ -247,6 +252,13 @@ public:
   // Turns motion down. Like the look and the contrast it is an application preference, so the shell
   // keeps painting the same state with the animation dropped.
   void setReduceMotion(bool reduceMotion, bool persist = true);
+  [[nodiscard]] bool motionReduced() const noexcept { return preferences_.reduceMotion; }
+  void followSystemReduceMotion(bool persist = true);
+  [[nodiscard]] bool reduceMotionFollowsSystem() const noexcept {
+    return preferences_.reduceMotionFollowsSystem;
+  }
+  [[nodiscard]] bool settingsOpen() const noexcept { return settingsOpen_; }
+  void setSettingsOpen(bool open);
   // The language the shell reads in (a code from shellLanguages()), and the in-app override: an
   // explicit language that wins over the system's, or following the system again. An offered
   // language whose translation file is missing or unreadable reads as English.
@@ -592,6 +604,7 @@ private:
   std::unique_ptr<ShellOverlay> diagnosticsOverlay_{makeDiagnosticsOverlay()};
   std::unique_ptr<ShellOverlay> reviewOverlay_{makeReplacementReviewOverlay()};
   std::unique_ptr<ShellOverlay> audioOverlay_{makeAudioSettingsOverlay()};
+  std::unique_ptr<ShellOverlay> settingsOverlay_{makeSettingsOverlay(*this)};
   std::unique_ptr<ShellOverlay> voicebankOverlay_{makeVoicebankBrowserOverlay()};
   std::unique_ptr<ShellOverlay> fieldOverlay_{makeTextFieldOverlay()};
   std::unique_ptr<ShellOverlay> singerMenuOverlay_{makeSingerMenuOverlay()};
@@ -608,6 +621,7 @@ private:
   bool diagnosticsOpen_{false};
   bool singerMenuOpen_{false};
   bool aboutOpen_{false};
+  bool settingsOpen_{false};
   // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
   // gives its first control the keyboard.
   OverlayKind presentedOverlay_{OverlayKind::None};
@@ -635,6 +649,20 @@ private:
   CharacterState characterState_{CharacterState::Idle};
   std::string lastCompletedExportKey_;
   std::chrono::steady_clock::time_point exportCompleteUntil_{};
+  Tween tabTween_;
+  Tween modeTween_;
+  std::shared_ptr<const paint::Image> tabPrevious_;
+  std::shared_ptr<const paint::Image> modePrevious_;
+  Tween renderSweep_;
+  Tween toastTween_;
+  bool toastAppearing_{false};
+  bool previousDiagnosticVisible_{false};
+  mutable std::string lastDiagnosticTitle_;
+  mutable Color lastDiagnosticTone_{};
+  RenderStatusState previousRenderState_{RenderStatusState::Idle};
+  mutable std::unordered_set<domain::NoteId> seenNotes_;
+  mutable std::unordered_map<domain::NoteId, Tween> addedNotes_;
+  mutable domain::RegionId animatedRegion_{};
   // The project's character display mode for this frame (Full, Minimal, Off). Minimal keeps the
   // compact identity and drops the Stage; Off draws no character artwork anywhere, while the ring,
   // the avatar's state ring, the toast and the empty-project line still carry the singer's status.

@@ -459,6 +459,7 @@ bool SingShell::rehomedSurface(OverlayKind kind) noexcept {
     case OverlayKind::Diagnostics:
     case OverlayKind::ReplacementReview:
     case OverlayKind::AudioSettings:
+    case OverlayKind::Settings:
     case OverlayKind::VoicebankBrowser:
     case OverlayKind::SingerMenu:
     case OverlayKind::About:
@@ -481,7 +482,7 @@ const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& contr
   // surfaces the shell opens over the score. Only one is ever shown.
   for (const auto* overlay :
        {microscopeOverlay_.get(), fieldOverlay_.get(), overlapOverlay_.get(), reviewOverlay_.get(),
-       voicebankOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
+       voicebankOverlay_.get(), settingsOverlay_.get(), audioOverlay_.get(), timeMapOverlay_.get(), phonemeOverlay_.get(),
         supportOverlay_.get(), diagnosticsOverlay_.get(), singerMenuOverlay_.get(),
         aboutOverlay_.get()}) {
     if (overlay == nullptr || !overlay->wanted(controller, state)) continue;
@@ -491,6 +492,7 @@ const ShellOverlay* SingShell::activeOverlay(const NativeEditorController& contr
     if (overlay->kind() == OverlayKind::SingerMenu && !singerMenuOpen_) continue;
     // And the About sheet, which only opens when nothing else is up.
     if (overlay->kind() == OverlayKind::About && !aboutOpen_) continue;
+    if (overlay->kind() == OverlayKind::Settings && !settingsOpen_) continue;
     if (overlay->panel(controller, state, layout_, overlaySlot(controller, state)).width <= 0.0)
       continue;
     return overlay;
@@ -508,6 +510,14 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 }
 
 void SingShell::setMode(DesignMode mode, bool persist) {
+  if (preferences_.mode != mode) {
+    modePrevious_ = !preferences_.reduceMotion && layers_.contentSnapshot() != nullptr
+                        ? paint::imageFromPixels(*layers_.contentSnapshot()) : nullptr;
+    modeTween_.start(uiNow(), std::chrono::milliseconds{200},
+                     preferences_.reduceMotion || modePrevious_ == nullptr);
+    tabPrevious_.reset();
+    tabTween_.reset();
+  }
   preferences_.mode = mode;
   // The mode's outfit draws its own state set. Switching it drops the decoded portraits, and a new
   // decode may reuse a freed address, so the art the recorded layers hashed by identity goes too.
@@ -534,12 +544,31 @@ void SingShell::followSystemContrast(bool persist) {
 
 void SingShell::setReduceMotion(bool reduceMotion, bool persist) {
   preferences_.reduceMotion = reduceMotion;
+  preferences_.reduceMotionFollowsSystem = false;
   // The motion the animator was in the middle of is dropped rather than resumed, so a later frame
   // starts from rest instead of jumping to where the clock had reached.
   animator_ = CharacterAnimator{};
   motion_ = {};
   stageFade_.reset();
+  tabTween_.reset();
+  modeTween_.reset();
+  tabPrevious_.reset();
+  modePrevious_.reset();
+  renderSweep_.reset();
+  toastTween_.reset();
+  addedNotes_.clear();
   if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::followSystemReduceMotion(bool persist) {
+  setReduceMotion(systemReduceMotion(), false);
+  preferences_.reduceMotionFollowsSystem = true;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+}
+
+void SingShell::setSettingsOpen(bool open) {
+  settingsOpen_ = open;
   repaint();
 }
 
@@ -801,9 +830,14 @@ void SingShell::releaseSurface(NativeEditorController& controller) {
   overlayOpener_.clear();
   presentedOverlay_ = OverlayKind::None;
   fieldOpenedOver_ = OverlayKind::None;
+  tabTween_.reset();
+  modeTween_.reset();
+  tabPrevious_.reset();
+  modePrevious_.reset();
   workspaceMenuOpen_ = false;
   singerMenuOpen_ = false;
   aboutOpen_ = false;
+  settingsOpen_ = false;
   presented_ = false;
   controller.setHostedGrid(std::nullopt);
   // Whatever paints next is not a shell frame, so the next shell frame starts from nothing.
@@ -821,11 +855,23 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     framedRegion_.reset();
     framedTopMidi_.reset();
     lastFramingNoteCount_ = 0U;
+    animatedRegion_ = {};
+    seenNotes_.clear();
+    addedNotes_.clear();
+    tabTween_.reset();
+    modeTween_.reset();
+    tabPrevious_.reset();
+    modePrevious_.reset();
+    renderSweep_.reset();
+    toastTween_.reset();
+    previousDiagnosticVisible_ = false;
+    previousRenderState_ = RenderStatusState::Idle;
     // A replaced controller is a different document: an open overlay's model went with it, and a
     // popover the shell holds open would otherwise point at stale state.
     diagnosticsOpen_ = false;
     singerMenuOpen_ = false;
     aboutOpen_ = false;
+    settingsOpen_ = false;
     overlayGesture_.reset();
     overlayOpener_.clear();
     presentedOverlay_ = OverlayKind::None;
@@ -846,6 +892,7 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     // The contrast picks the token table, which keys the cached background.
     if (system != preferences_.contrast) preferences_.contrast = system;
   }
+  if (preferences_.reduceMotionFollowsSystem) preferences_.reduceMotion = systemReduceMotion();
   // The inspector exists only in the compact presentations; a window that grows back to the full
   // rack forgets it, so shrinking again starts closed.
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
@@ -857,6 +904,17 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
       (next.width != layout_.width || next.height != layout_.height)) {
     singerMenuOpen_ = false;
     takeSemanticFocus(controller, std::string{kSingerMenuButtonId});
+  }
+  if (next.width != layout_.width || next.height != layout_.height) {
+    tabTween_.reset();
+    modeTween_.reset();
+    tabPrevious_.reset();
+    modePrevious_.reset();
+  }
+  if (settingsOpen_ && presented_ &&
+      (next.width != layout_.width || next.height != layout_.height)) {
+    settingsOpen_ = false;
+    takeSemanticFocus(controller, "shell.settings");
   }
   const auto moved = next.grid.x != layout_.grid.x || next.grid.y != layout_.grid.y ||
                      next.grid.width != layout_.grid.width ||
@@ -1258,6 +1316,16 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   characterDisplay_ = state.characterMode;
   const auto reduceMotion = preferences_.reduceMotion;
   frameNow_ = uiClock_ ? uiClock_() : std::chrono::steady_clock::now();
+  if (previousRenderState_ != RenderStatusState::Ready &&
+      state.renderStatus.state == RenderStatusState::Ready)
+    renderSweep_.start(frameNow_, std::chrono::milliseconds{250}, reduceMotion);
+  previousRenderState_ = state.renderStatus.state;
+  const auto hasDiagnostic = !state.diagnostics.empty();
+  if (hasDiagnostic != previousDiagnosticVisible_) {
+    toastAppearing_ = hasDiagnostic;
+    toastTween_.start(frameNow_, std::chrono::milliseconds{hasDiagnostic ? 150 : 120}, reduceMotion);
+    previousDiagnosticVisible_ = hasDiagnostic;
+  }
   // A committed receipt is the only export signal that can briefly show the complete pose.
   // Keep the dwell tied to the receipt identity, not to a paint count or export progress.
   if (state.lastExport && state.lastExport->state == authoring::ExportState::Committed) {
@@ -1319,6 +1387,39 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   }
   paintRack(*c, t, state);
   paintStatus(*c, t, state);
+  // The prior composed image fades over the new workspace or look in the dynamic layer. Capturing
+  // it only when a transition starts leaves the static cache and idle frames untouched.
+  {
+    const paint::LayerScope transition{*c, paint::Layer::Dynamic, "transitions"};
+    if (tabPrevious_ && tabTween_.running(frameNow_, reduceMotion)) {
+      const auto p = tabTween_.eased(frameNow_, reduceMotion);
+      c->save();
+      c->clipRect(workspaceArea());
+      c->translate(0.0, -8.0 * p);
+      c->drawImage(*tabPrevious_, {0.0, 0.0, layout_.width, layout_.height}, 1.0 - p);
+      c->restore();
+    }
+    if (modePrevious_ && modeTween_.running(frameNow_, reduceMotion))
+      c->drawImage(*modePrevious_, {0.0, 0.0, layout_.width, layout_.height},
+                   1.0 - modeTween_.eased(frameNow_, reduceMotion));
+    if (workspace_ == Workspace::Sing && renderSweep_.running(frameNow_, reduceMotion)) {
+      const auto p = renderSweep_.progress(frameNow_, reduceMotion);
+      const auto x = layout_.grid.x + (layout_.grid.width + 36.0) * p - 18.0;
+      c->save();
+      c->clipRect(layout_.grid);
+      for (const auto& note : model.visibleNotes()) {
+        if (note.hiddenByOverlapDensity) continue;
+        const ui::Rect b{note.bounds.x, note.bounds.y + layout_.grid.y,
+                         note.bounds.width, note.bounds.height};
+        const auto left = std::max(x - 18.0, b.x);
+        const auto right = std::min(x + 18.0, b.right());
+        if (right > left)
+          c->fill(Path::rect({left, b.y, right - left, b.height}),
+                  withAlpha(t.color.accent, 0.22 * (1.0 - p)));
+      }
+      c->restore();
+    }
+  }
   if (workspace_ == Workspace::Sing && state.focusedElementBounds.has_value()) {
     const auto focus = fromLegacy(*state.focusedElementBounds);
     // The note focus ring never draws over the open inspector.
@@ -1375,6 +1476,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
 }
 
 void SingShell::scheduleAnimationRepaint() {
+  if (!tabTween_.running(frameNow_, preferences_.reduceMotion)) tabPrevious_.reset();
+  if (!modeTween_.running(frameNow_, preferences_.reduceMotion)) modePrevious_.reset();
   // A frame is requested only while something is actually animating, so a still protagonist stops the
   // loop: a held pose (listening, complete, warning, error) and every state under Reduce Motion ask
   // for nothing at all, and a state that only breathes or spins asks only for as long as it does. The
@@ -1383,6 +1486,16 @@ void SingShell::scheduleAnimationRepaint() {
   // The request asks for a frame; what that frame costs is decided when it is composed. A blink or a
   // breath changes only the avatar and ring items of the dynamic layer, so the frame rasterizes that
   // layer alone and lastFrameDamage() names just those rectangles for the presenter to invalidate.
+  if (tabTween_.running(frameNow_, preferences_.reduceMotion) ||
+      modeTween_.running(frameNow_, preferences_.reduceMotion) ||
+      renderSweep_.running(frameNow_, preferences_.reduceMotion) ||
+      toastTween_.running(frameNow_, preferences_.reduceMotion) ||
+      std::any_of(addedNotes_.begin(), addedNotes_.end(), [this](const auto& entry) {
+        return entry.second.running(frameNow_, preferences_.reduceMotion);
+      })) {
+    repaint();
+    return;
+  }
   if (characterState_ == CharacterState::Complete && frameNow_ < exportCompleteUntil_) {
     repaint();
     return;
@@ -1855,6 +1968,26 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.restore();
 
   const auto notes = model.visibleNotes();
+  const auto* region = model.project().findRegion(model.regionId());
+  if (animatedRegion_ != model.regionId()) {
+    animatedRegion_ = model.regionId();
+    seenNotes_.clear();
+    addedNotes_.clear();
+    if (region != nullptr)
+      for (const auto& note : region->notes) seenNotes_.insert(note.id);
+  } else if (region != nullptr) {
+    std::unordered_set<domain::NoteId> current;
+    for (const auto& note : region->notes) {
+      current.insert(note.id);
+      if (!seenNotes_.contains(note.id))
+        addedNotes_[note.id].start(frameNow_, std::chrono::milliseconds{120}, preferences_.reduceMotion);
+    }
+    seenNotes_ = std::move(current);
+    std::erase_if(addedNotes_, [this](const auto& entry) {
+      return !seenNotes_.contains(entry.first) ||
+             !entry.second.running(frameNow_, preferences_.reduceMotion);
+    });
+  }
   // The singer stands behind the notes and fades back whenever a note or the pointer shares her
   // space. She is off in High Contrast, off with an expanded lane, off without the full rack
   // (§3.4 compact widths) and off unless the project's character display is Full, and she is never
@@ -1920,7 +2053,6 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   }
   stagePointerAt_ = pointerPosition_;
 
-  const auto* region = model.project().findRegion(model.regionId());
   c.save();
   c.clipRect(l.grid);
   // Score pitch line: note targets with short glides between adjacent notes, broken at rests. It is
@@ -1971,6 +2103,9 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     b.height = std::max(3.0, b.height - 3.0);
     b.width = std::max(2.0, b.width);
     capsules.push_back(b);
+    if (const auto added = addedNotes_.find(note.noteId);
+        added != addedNotes_.end() && added->second.running(frameNow_, preferences_.reduceMotion))
+      continue;
     const auto radius = std::min(t.shape.note, b.height * 0.5);
     const auto p = Path::roundedRect(b, radius);
     // The note's own rendered audio sits inside the capsule, under its outline.
@@ -2000,6 +2135,26 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
       c.stroke(p, withAlpha(t.color.noteStroke, 0.8), StrokeStyle{1.1});
       c.restore();
     }
+  }
+  layerTo(paint::Layer::Dynamic, "note-add");
+  for (const auto& note : notes) {
+    const auto added = addedNotes_.find(note.noteId);
+    if (added == addedNotes_.end() || note.hiddenByOverlapDensity) continue;
+    const auto progress = added->second.eased(frameNow_, preferences_.reduceMotion);
+    const auto scale = 0.92 + 0.08 * progress;
+    auto bounds = note.bounds;
+    bounds.y += l.grid.y + 1.5;
+    bounds.height = std::max(3.0, bounds.height - 3.0);
+    bounds.width = std::max(2.0, bounds.width);
+    const auto dx = bounds.width * (1.0 - scale) * 0.5;
+    const auto dy = bounds.height * (1.0 - scale) * 0.5;
+    bounds = {bounds.x + dx, bounds.y + dy, bounds.width * scale, bounds.height * scale};
+    const auto capsule = Path::roundedRect(bounds, std::min(t.shape.note, bounds.height * 0.5));
+    c.save();
+    c.setGlow(withAlpha(t.color.noteSelectedA, (1.0 - progress) * 0.7), 10.0);
+    c.fill(capsule, note.selected ? t.color.noteSelectedA : t.color.noteFill);
+    c.stroke(capsule, t.color.noteStroke, StrokeStyle{1.1});
+    c.restore();
   }
   // Hover and keyboard focus brighten an unselected note's outline. They change under the pointer
   // on any frame, so the brighter outline is a dynamic item drawn over the note: moving the pointer
@@ -2935,14 +3090,21 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
     auto title = presentation.title;
     if (state.diagnostics.size() > 1U)
       title = trf(Str::TitleAndMore, {title, std::to_string(state.diagnostics.size() - 1U)});
+    lastDiagnosticTitle_ = title;
+    lastDiagnosticTone_ = tone;
     const auto toast = diagnosticsToastBounds();
     // The toast stands over the lane, whose playhead is dynamic: it is dynamic too, recorded after
     // that playhead, so a moving playhead never draws across it.
     const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "diagnostics-toast"};
     c.save();
+    if (toastAppearing_ && toastTween_.running(frameNow_, preferences_.reduceMotion))
+      c.setAlpha(toastTween_.eased(frameNow_, preferences_.reduceMotion));
     c.setGlow(withAlpha(tone, 0.5), 10.0);
     c.fill(Path::roundedRect(toast, 8.0), withAlpha(t.color.surfaceRaised, 0.97));
     c.restore();
+    c.save();
+    if (toastAppearing_ && toastTween_.running(frameNow_, preferences_.reduceMotion))
+      c.setAlpha(toastTween_.eased(frameNow_, preferences_.reduceMotion));
     c.stroke(Path::roundedRect(toast, 8.0), withAlpha(tone, 0.9), StrokeStyle{1.0});
     c.fill(Path::capsule({toast.x + 12.0, toast.y + 9.0, 4.0, toast.height - 18.0}), tone);
     c.text({toast.x + 24.0, toast.y, std::max(1.0, toast.width - 36.0), toast.height}, title,
@@ -2958,6 +3120,18 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                     open.width - 10.0),
              diagnosticsOpen_ ? t.color.accent : t.color.textSecondary);
     }
+    c.restore();
+  } else if (!lastDiagnosticTitle_.empty() &&
+             toastTween_.running(frameNow_, preferences_.reduceMotion)) {
+    const paint::LayerScope toastLayer{c, paint::Layer::Dynamic, "diagnostics-toast"};
+    const auto toast = diagnosticsToastBounds();
+    c.save();
+    c.setAlpha(1.0 - toastTween_.eased(frameNow_, preferences_.reduceMotion));
+    c.fill(Path::roundedRect(toast, 8.0), t.color.surfaceRaised);
+    c.stroke(Path::roundedRect(toast, 8.0), lastDiagnosticTone_, StrokeStyle{1.0});
+    c.text({toast.x + 24.0, toast.y, std::max(1.0, toast.width - 36.0), toast.height},
+           lastDiagnosticTitle_, style(FontRole::UiSemibold, t.type.smallLabel), t.color.textPrimary);
+    c.restore();
   }
   const auto meter = ui::Rect{l.status.right() - 360.0, l.status.y + 6.0, 200.0, 16.0};
   const auto fraction = s.state == RenderStatusState::Ready ? 1.0 : std::clamp(s.fraction, 0.0, 1.0);
@@ -3367,6 +3541,7 @@ core::Result<void> SingShell::closeOverlay(NativeEditorController& controller,
   if (overlay.kind() == OverlayKind::Diagnostics) diagnosticsOpen_ = false;
   if (overlay.kind() == OverlayKind::SingerMenu) singerMenuOpen_ = false;
   if (overlay.kind() == OverlayKind::About) aboutOpen_ = false;
+  if (overlay.kind() == OverlayKind::Settings) settingsOpen_ = false;
   return result;
 }
 
@@ -3386,6 +3561,8 @@ core::Result<void> SingShell::performOverlay(NativeEditorController& controller,
     aboutOpen_ = false;
     returnFocusToOverlayOpener(controller);
   }
+  if (overlay.kind() == OverlayKind::Settings && result && !settingsOpen_ && !aboutOpen_)
+    returnFocusToOverlayOpener(controller);
   return result;
 }
 
@@ -3537,8 +3714,15 @@ bool SingShell::exportBusy(const NativeEditorController& controller) const {
 void SingShell::setWorkspace(NativeEditorController& controller, Workspace workspace) {
   workspaceMenuOpen_ = false;
   if (workspace == workspace_) return;
+  tabPrevious_ = !preferences_.reduceMotion && layers_.contentSnapshot() != nullptr
+                     ? paint::imageFromPixels(*layers_.contentSnapshot()) : nullptr;
+  tabTween_.start(uiNow(), std::chrono::milliseconds{150},
+                  preferences_.reduceMotion || tabPrevious_ == nullptr);
+  modePrevious_.reset();
+  modeTween_.reset();
   // The singer menu belongs to the workspace it was opened over, like any sheet.
   singerMenuOpen_ = false;
+  settingsOpen_ = false;
   // A sheet or field opened over one workspace does not follow the creator to the next one.
   dismissOverlay(controller);
   // The grid the gestures and any text field belong to leaves the screen with its workspace.
@@ -4011,7 +4195,8 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     if (contains(l.tempoReadout, p)) return controller.beginTempoEdit();
     if (contains(l.meterReadout, p)) return controller.beginMeterEdit();
     if (contains(l.settings, p)) {
-      controller.showAudioSettings();
+      takeSemanticFocus(controller, "shell.settings");
+      setSettingsOpen(true);
       repaint();
       return core::success();
     }
@@ -4635,10 +4820,10 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     }
     add(std::move(meter));
   }
-  add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = tr(Str::AudioSettings),
+  add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = tr(Str::SettingsSheet),
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                   .description = tr(Str::TipAudioSettings)});
+                   .description = tr(Str::TipSettingsSheet)});
   {
     const auto& languages = shellLanguages();
     const auto current = std::find_if(languages.begin(), languages.end(), [this](const ShellLanguage& language) {
@@ -5225,7 +5410,8 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     setMode(DesignMode::Scene);
     result = core::success();
   } else if (id == "shell.settings" && activate) {
-    controller.showAudioSettings();
+    takeSemanticFocus(controller, "shell.settings");
+    setSettingsOpen(true);
     result = core::success();
   } else if (id == "shell.language" && (activate || action == SemanticAction::Increment ||
                                          action == SemanticAction::Decrement)) {

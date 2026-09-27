@@ -1,6 +1,7 @@
 // MIX workspace: channel strips, master and audio device card, driven through a real
 // NativeEditorController and EditorSession inside the presented SING shell.
 #include "test_framework.hpp"
+#include <chrono>
 
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
@@ -608,7 +609,11 @@ TEST_CASE("MIX strips never overlap or leave the body, and scroll sideways when 
 TEST_CASE("the master meter lights from a measured output level and stays an empty scale without one") {
   MixFixture f{3U};
   if (!native_ui::paint::vectorBackendAvailable()) return;
+  auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+  f.shell.setUiClock([&now] { return now; });
   f.openMix();
+  now += std::chrono::milliseconds{200};
+  CHECK(f.frame());
   const auto revision = f.controller.documentRevision();
   const auto master = f.node("shell.mix.master").bounds;
   auto meter = f.node("shell.mix.master-meter");

@@ -924,6 +924,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
       COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/fonts"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
         "$<TARGET_BUNDLE_DIR:seam_editor_native>/Contents/Resources/l10n"
       VERBATIM)
@@ -1159,6 +1160,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
       "${SEAM_EDITOR_RESOURCE_ROOT}/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${CMAKE_CURRENT_SOURCE_DIR}/assets/l10n"
       "${SEAM_EDITOR_RESOURCE_ROOT}/l10n"
     VERBATIM)
@@ -1986,11 +1988,13 @@ if(SEAM_BUILD_TESTS)
       seam_native_ui seam_editor_ui seam_formats seam_rendering seam_voice_design)
     seam_apply_compiler_options(seam_design_layout_property_tests)
     # One ctest entry per sweep so they run in parallel; each argument selects test cases by name.
-    foreach(sweep IN ITEMS workspaces overlay sheets contrast string pseudo l10n korean)
+    foreach(sweep IN ITEMS workspaces overlay settings sheets contrast string pseudo l10n korean)
       if(sweep STREQUAL "workspaces")
         set(filter "every workspace")
       elseif(sweep STREQUAL "overlay")
         set(filter "every re-homed overlay")
+      elseif(sweep STREQUAL "settings")
+        set(filter "Settings sections retain")
       elseif(sweep STREQUAL "sheets")
         set(filter "compact inspector and the workspace menu")
       elseif(sweep STREQUAL "contrast")

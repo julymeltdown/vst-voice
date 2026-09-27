@@ -443,6 +443,16 @@ std::vector<Surface> overlaySurfaces() {
          f.controller.showAudioSettings();
          return true;
        }},
+      {"settings", OverlayKind::Settings,
+       [](LayoutFixture& f) {
+         f.controller.setAudioSettings(
+             authoring::AudioSettings{.deviceId = "built-in", .sampleRate = 48000U,
+                                      .blockFrames = 256U, .outputChannels = 2U},
+             {{.id = "built-in", .name = "Built-in Output", .physical = true, .selected = true}},
+             12U, 3U);
+         f.shell.setSettingsOpen(true);
+         return true;
+       }},
       {"voicebank-browser", OverlayKind::VoicebankBrowser,
        [](LayoutFixture& f) {
          std::vector<authoring::VoicebankCard> cards;
@@ -559,6 +569,37 @@ TEST_CASE("every re-homed overlay keeps its layout properties at every size and 
       }
   }
   checker.finish("overlays");
+}
+
+TEST_CASE("Settings sections retain accessible targets through compact and Korean layouts") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  Checker checker;
+  constexpr std::array<std::array<double, 2U>, 7U> sizes{{{480.0, 320.0},
+      {720.0, 480.0}, {1024.0, 640.0}, {1440.0, 900.0}, {1920.0, 1080.0},
+      {2560.0, 1440.0}, {3840.0, 2160.0}}};
+  constexpr std::array<std::string_view, 4U> sections{"audio", "appearance", "language", "about"};
+  for (const auto korean : {false, true}) {
+    LayoutFixture f;
+    if (korean) f.shell.setLanguage("ko", false);
+    Frame frame;
+    for (const auto& size : sizes)
+      for (const auto scale : kScales) {
+        if (!paintFrame(f, size[0], size[1], scale, frame)) continue;
+        const auto covered = frame.text;
+        for (const auto section : sections) {
+          f.shell.setSettingsOpen(true);
+          CHECK(paintFrame(f, size[0], size[1], scale, frame));
+          CHECK(f.shell.dispatchController(f.controller,
+              std::string{"shell.overlay.settings.section."} + std::string{section},
+              SemanticAction::Activate).hasValue());
+          CHECK(paintFrame(f, size[0], size[1], scale, frame));
+          checker.check(frame, std::string{korean ? "ko-" : "en-"} + std::string{section},
+                        size[0], size[1], &covered);
+          f.shell.setSettingsOpen(false);
+        }
+      }
+  }
+  checker.finish("settings");
 }
 
 TEST_CASE("the compact inspector and the workspace menu keep their layout properties") {

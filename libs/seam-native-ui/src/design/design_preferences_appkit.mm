@@ -41,9 +41,11 @@ DesignPreferences loadDesignPreferences() {
     // user can turn motion back on for this app alone without changing the system setting.
     if ([defaults objectForKey:@"reduceMotion"] != nil)
       preferences.reduceMotion = [defaults boolForKey:@"reduceMotion"];
-    else
+    else {
+      preferences.reduceMotionFollowsSystem = true;
       preferences.reduceMotion =
           NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    }
     // Language, like contrast: an explicit choice made in the app, or else the system's own
     // preferred language, which the shell reads in when it offers it.
     if (NSString* language = [defaults stringForKey:@"language"]; language != nil && language.length > 0) {
@@ -72,7 +74,10 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
     else
       [defaults setObject:(preferences.contrast == Contrast::High ? @"high" : @"standard")
                    forKey:@"contrast"];
-    [defaults setBool:preferences.reduceMotion forKey:@"reduceMotion"];
+    if (preferences.reduceMotionFollowsSystem)
+      [defaults removeObjectForKey:@"reduceMotion"];
+    else
+      [defaults setBool:preferences.reduceMotion forKey:@"reduceMotion"];
     // Following the system stores nothing, so the system's language keeps applying.
     if (preferences.languageFollowsSystem)
       [defaults removeObjectForKey:@"language"];
@@ -87,6 +92,12 @@ void saveDesignPreferences(const DesignPreferences& preferences) {
 bool systemIncreaseContrast() {
   @autoreleasepool {
     return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldIncreaseContrast;
+  }
+}
+
+bool systemReduceMotion() {
+  @autoreleasepool {
+    return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
   }
 }
 

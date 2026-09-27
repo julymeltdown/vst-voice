@@ -697,6 +697,11 @@ TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, ne
   state.renderStatus.diagnostic = "Voicebank cannot cover the phoneme sequence";
   state.diagnostics.push_back(seam::authoring::Diagnostic{.code = "RENDER_FAILED"});
   state.playheadPixel = -1.0;
+  auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
+  f.shell.setUiClock([&now] { return now; });
+  // Start the toast's entrance, then compare playhead positions with the entrance settled.
+  static_cast<void>(paintScene(f, state));
+  now += std::chrono::milliseconds{200};
   const auto without = paintScene(f, state);
   const auto error = f.shell.lastFrameErrorToast();
   // The toast's node, published from the same scene the frame painted.
