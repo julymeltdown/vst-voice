@@ -553,3 +553,63 @@ TEST_CASE("the About sheet shows the key art, name and version, legibly, and clo
       CHECK(!f.shell.aboutOpen());
     }
 }
+
+namespace {
+
+// Pixels that differ between two frames of the same size inside `outer` but outside `inner`.
+std::size_t changedBetween(const PixelSurface& a, const PixelSurface& b, seam::ui::Rect outer,
+                           seam::ui::Rect inner) {
+  std::size_t changed = 0U;
+  const auto width = a.width();
+  for (std::uint32_t y = 0U; y < a.height(); ++y)
+    for (std::uint32_t x = 0U; x < width; ++x) {
+      const auto px = static_cast<double>(x) + 0.5;
+      const auto py = static_cast<double>(y) + 0.5;
+      const auto in = [px, py](seam::ui::Rect r) {
+        return px >= r.x && py >= r.y && px < r.right() && py < r.bottom();
+      };
+      if (!in(outer) || in(inner)) continue;
+      if (a.pixels()[y * width + x] != b.pixels()[y * width + x]) ++changed;
+    }
+  return changed;
+}
+
+seam::ui::Rect grown(seam::ui::Rect r, double by) {
+  return {r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by};
+}
+
+PixelSurface paintScene(SplashFixture& f, const seam::native_ui::EditorSceneState& state,
+                        double width = 1600.0, double height = 900.0) {
+  f.controller.resize(width, height);
+  CHECK(f.shell.prepareFrame(f.controller, width, height));
+  PixelSurface surface{static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height)};
+  seam::native_ui::RasterCanvas canvas{surface, 1.0};
+  CHECK(f.shell.paint(canvas, f.controller, state, f.controller.playheadTick()));
+  return surface;
+}
+
+}  // namespace
+
+TEST_CASE("High Contrast keeps the singer ring's glow off the card around it") {
+  using seam::native_ui::RenderStatusState;
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  // The ring's ticks light with a finished, audible render; their glow is character art replayed
+  // through drawRaster. Only the ring's own square may change between the two frames.
+  const auto spill = [](Contrast contrast) {
+    SplashFixture f{false, DesignMode::Emo, contrast};
+    auto dark = f.controller.sceneState();
+    dark.renderStatus.state = RenderStatusState::Idle;
+    auto lit = dark;
+    lit.renderStatus.state = RenderStatusState::Ready;
+    lit.renderStatus.hasAudibleAudio = true;
+    const auto before = paintScene(f, dark);
+    const auto after = paintScene(f, lit);
+    const auto ring = f.shell.layout().portraitRing;
+    CHECK(ring.width > 0.0);
+    return changedBetween(before, after, grown(ring, 10.0), grown(ring, 1.0));
+  };
+  // The standard look glows past the ring, so this band can see a glow...
+  CHECK(spill(Contrast::Standard) > 0U);
+  // ...and High Contrast draws none there.
+  CHECK(spill(Contrast::High) == 0U);
+}
