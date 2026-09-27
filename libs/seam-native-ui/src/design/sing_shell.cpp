@@ -2564,6 +2564,27 @@ core::Result<void> SingShell::dispatchController(NativeEditorController& control
     return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
   if (bodyGesture_ && action != SemanticAction::SetFocus)
     return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
+  // A control of the presented overlay belongs to the overlay even when it is not a shell id (the
+  // time map's rows and actions, the overlap rows): the controller does not publish those ids, so
+  // its own dispatch would refuse them. The overlay runs the same command its pointer and keys run.
+  if (const auto* overlay = activeOverlay(controller);
+      overlay != nullptr && overlayPublishes(controller, id)) {
+    const auto panelId = std::string{overlay->idPrefix()} + "panel";
+    auto result = semantics_.dispatch(
+        id, action,
+        [this, &controller, overlay, &panelId](std::string_view target,
+                                               SemanticAction requested) -> core::Result<void> {
+          if (requested == SemanticAction::SetFocus) {
+            takeSemanticFocus(controller, std::string{target});
+            return core::success();
+          }
+          if (target == panelId) return core::success();
+          return overlay->perform(controller, target, requested);
+        });
+    yieldIfModal(controller);
+    repaint();
+    return result;
+  }
   auto result = semantics_.dispatch(
       id, action, [&controller](std::string_view target, SemanticAction requested) {
         return controller.dispatchAccessibility(target, requested);
@@ -2580,6 +2601,10 @@ core::Result<void> SingShell::setControllerValue(NativeEditorController& control
   if (!semantics_.publishes(id))
     return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
   if (bodyGesture_) return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
+  // No control of the presented overlays carries an editable value; the covered score's do not
+  // count, since they are not published while the card is up.
+  if (overlayPublishes(controller, id))
+    return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
   return controller.setAccessibilityValue(id, value);
 }
 

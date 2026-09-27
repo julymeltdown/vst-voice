@@ -2685,6 +2685,106 @@ TEST_CASE("an open overlay holds the keyboard: its first control is focused and 
   CHECK(f.controller.sceneState().timeMapInputActive);
 }
 
+TEST_CASE("every overlay control acts through the host's accessibility path") {
+  // A host sends an action for a non-shell id to dispatchController. Each overlay control must
+  // take focus there and run its own command, whether or not the controller publishes the id.
+  const auto focusEach = [](OverlayFixture& f, const std::vector<std::string>& ids) {
+    for (const auto& id : ids) {
+      const auto focused = f.shell.dispatchController(f.controller, id, SemanticAction::SetFocus);
+      if (!focused) throw test::Failure{"focus " + id + ": " + focused.error().message};
+      if (f.focusedId() != id) throw test::Failure{"focus " + id + " reports " + f.focusedId()};
+    }
+  };
+  const auto activate = [](OverlayFixture& f, const std::string& id) {
+    const auto result = f.shell.dispatchController(f.controller, id, SemanticAction::Activate);
+    if (!result) throw test::Failure{"activate " + id + ": " + result.error().message};
+  };
+  {
+    OverlayFixture f;
+    if (!native_ui::paint::vectorBackendAvailable()) return;
+    CHECK(f.frame());
+    CHECK(f.controller.editTempo(f.controller.documentRevision(), time::Tick{1920}, 90.0).hasValue());
+    CHECK(f.controller.openTimeMapPanel().hasValue());
+    CHECK(f.frame());
+    std::vector<std::string> ids;
+    for (std::size_t i = 0U; i < f.controller.sceneState().timeMapRows.size(); ++i)
+      ids.push_back("time-map-row." + std::to_string(i));
+    for (std::size_t i = 0U; i < 8U; ++i) ids.push_back("time-map-action." + std::to_string(i));
+    focusEach(f, ids);
+    activate(f, "time-map-row.1");
+    CHECK(f.controller.sceneState().timeMapSelectedRow == std::optional<std::size_t>{1U});
+    activate(f, "time-map-action.4");
+    CHECK(f.controller.sceneState().timeMapVisible);
+    // A row has no editable value, and a value sent to it changes nothing.
+    CHECK(!f.shell.setControllerValue(f.controller, "time-map-row.0", "120").hasValue());
+    activate(f, "time-map-action.6");
+    CHECK(f.controller.sceneState().timeMapInputActive);
+    f.controller.cancelTextComposition();
+    CHECK(f.frame());
+    // VoiceOver closes the time map through its own Close.
+    activate(f, "time-map-action.5");
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    CHECK(!f.controller.sceneState().timeMapVisible);
+  }
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    const auto key =
+        domain::PhonemeKey{f.session.project().findRegion(f.regionId)->notes.front().id, 0U};
+    CHECK(f.controller.openSampleMicroscope(key).hasValue());
+    CHECK(f.frame());
+    focusEach(f, {"microscope.close", "microscope.details"});
+    activate(f, "microscope.details");
+    CHECK(f.controller.sceneState().sampleMicroscope->detailsVisible);
+    CHECK(f.frame());
+    focusEach(f, {"microscope.previous", "microscope.next"});
+    activate(f, "microscope.close");
+    CHECK(!f.controller.sampleMicroscopeOpen());
+  }
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    CHECK(f.controller.openPhonemeReview().hasValue());
+    CHECK(f.frame());
+    std::vector<std::string> ids;
+    for (std::size_t i = 0U; i < 6U; ++i) ids.push_back("phoneme.review.action." + std::to_string(i));
+    focusEach(f, ids);
+    activate(f, "phoneme.review.action.2");
+    CHECK(!f.controller.sceneState().phonemeReview.visible);
+  }
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    f.controller.setRecoverySupportView(native_ui::RecoverySupportView{
+        .visible = true,
+        .mode = native_ui::RecoverySupportMode::Reports,
+        .items = {{.name = "report-a", .detail = "crash marker", .bytes = 4096U},
+                  {.name = "report-b", .detail = "first run", .bytes = 8192U}},
+        .reportCount = 2U,
+        .status = "Two owned reports",
+    });
+    CHECK(f.frame());
+    focusEach(f, {"support.track.previous", "support.track.next", "support.item.0",
+                  "support.item.1"});
+    activate(f, "support.item.1");
+    CHECK(f.selectedReports == 1U);
+  }
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    CHECK(f.controller.openOverlapDetail(0U).hasValue());
+    CHECK(f.frame());
+    const auto members = f.controller.sceneState().overlapDetail->members.size();
+    std::vector<std::string> ids;
+    for (std::size_t i = 0U; i < members; ++i) ids.push_back("overlap-note-row." + std::to_string(i));
+    focusEach(f, ids);
+    activate(f, "overlap-note-row.1");
+    const auto& detail = f.controller.sceneState().overlapDetail;
+    CHECK(detail.has_value() && detail->members[1].selected);
+    if (detail.has_value()) CHECK(f.session.selection().contains(detail->members[1].noteId));
+  }
+}
+
 TEST_CASE("modified keys over an overlay are application commands, never the overlay's keys") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;
