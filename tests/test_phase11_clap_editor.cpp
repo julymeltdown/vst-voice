@@ -104,7 +104,8 @@ bool verifyCharacterDock(seam::clap_editor::EditorRuntime& runtime,
         dockLeft + layout.characterDockTextInsetX + layout.characterDockPerformanceBarWidth,
         top - layout.characterDockMouthAssetHeight,
         layout.characterDockMouthAssetWidth, layout.characterDockMouthAssetHeight};
-    const auto* portraitImage = artwork.portrait(character::State::Neutral);
+    // The dock draws the portrait of the state it is in; the package's states are distinct art.
+    const auto* portraitImage = artwork.portrait(state.characterState);
     std::optional<ui::Rect> fittedPortrait;
     if (portraitImage != nullptr && portraitImage->width() > 0U &&
         portraitImage->height() > 0U) {

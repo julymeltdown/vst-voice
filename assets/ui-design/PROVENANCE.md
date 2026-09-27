@@ -9,9 +9,10 @@ cleared for a public release.
 | `emo/portrait.png`, `scene/portrait.png` | Singer card portrait (768×768) | Generated with the built-in image generator on 2026-09-25 from the protagonist reference sheet (`docs/design/references/protagonist-reference-sheet-2026-09-25.png`), then cropped. |
 | `emo/stage.png`, `scene/stage.png` | Stage figure behind the grid (RGBA, trimmed) | Generated with the same tool from the same reference, background haze removed and trimmed to the figure. |
 | `emo/wordmark.png`, `scene/wordmark.png` | Header wordmark | Generated with the same tool; lettering reads only "SEAM". |
+| `emo/splash.png`, `scene/splash.png` | Splash key art (1600×1000, opaque), redesign plan §8.2 | Generated with the built-in image generator on 2026-09-27 from the same reference sheet, the approved idle state portrait and each mode's portrait; the sneakers were then re-generated as plain original high-tops with only a stitched-seam ankle mark. Imported by `scripts/build_character_state_art.py import`. No lettering. |
 
 `manifest.json` records each file's SHA-256 and the SHA-256 of the generator output it was cut from.
-The six final PNG hashes can be checked against the files in this directory. The generator originals
+The eight final PNG hashes can be checked against the files in this directory. The generator originals
 are not bundled here, so `sourceSha256` is a provenance declaration and cannot be independently
 verified by the asset gate. The gate also cannot establish art rights or visually clear logos.
 
