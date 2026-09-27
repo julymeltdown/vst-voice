@@ -277,6 +277,7 @@ double area(const FrameDamage& damage) noexcept {
 }  // namespace
 
 void LayerCache::invalidate() noexcept {
+  materializeIntermediate_ = valid_[2U] && !valid_[0U];
   valid_.fill(false);
   hasOps_.fill(false);
   hasPrevious_ = false;
@@ -287,6 +288,7 @@ void LayerCache::invalidate() noexcept {
 void LayerCache::invalidateBackground() noexcept {
   invalidate();
   backgroundSnapshotValid_ = false;
+  materializeIntermediate_ = false;
 }
 
 void LayerCache::release() noexcept {
@@ -416,8 +418,15 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
   const auto height = surface.height();
   // A text capture observes every line the frame draws, and a cached layer draws none: while one is
   // alive, every layer is rasterized again (to the same pixels) so the capture sees the whole frame.
-  if (width != width_ || height != height_ || scale != scale_ || ScopedTextCapture::active()) {
+  const auto resized = width != width_ || height != height_ || scale != scale_;
+  if (resized || ScopedTextCapture::active()) {
     invalidate();
+    // Old intermediate snapshots cannot serve a new surface size. Treat a resize like a cold
+    // surface so the drag does not pay to build snapshots it cannot use yet.
+    if (resized) {
+      materializeIntermediate_ = false;
+      backgroundSnapshotValid_ = false;
+    }
     width_ = width;
     height_ = height;
     scale_ = scale;
@@ -428,9 +437,48 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
   const auto snapped = [&](ui::Rect r) { return snapToPixels(r, scale, logicalWidth, logicalHeight); };
   const std::array<std::uint64_t, kSnapshots> wanted{
       background.key, frame.layerHash(Layer::Grid), frame.layerHash(Layer::Content)};
+  // With no retained L0, a first paint can build the cumulative layers directly in the
+  // destination. Save only the content base needed by the next dynamic redraw. Intermediate
+  // snapshots are deliberately invalid: a later grid/content change takes the full path.
+  const auto reuseContent = valid_[2U] && keys_ == wanted && !ScopedTextCapture::active() &&
+                            !ScopedFullResolutionGlow::active();
+  if (valid_[2U] && !valid_[0U] && !reuseContent) materializeIntermediate_ = true;
+  if (!reuseContent && !materializeIntermediate_ && !backgroundSnapshotValid_ && !valid_[0U]) {
+    paintBackground(surface, scale, background);
+    if (auto canvas = makeCanvas(surface, scale); canvas != nullptr) {
+      for (const auto layer : {Layer::Grid, Layer::Content}) {
+        frame.replay(layer, *canvas, target);
+        out.rasterized[static_cast<std::size_t>(layer)] = true;
+      }
+      canvas->flush();
+    } else {
+      for (const auto layer : {Layer::Grid, Layer::Content})
+        out.rasterized[static_cast<std::size_t>(layer)] = true;
+    }
+    auto& content = snapshots_[2U];
+    if ((content.width() != width || content.height() != height) && !content.resize(width, height)) {
+      release();
+      surface.clear(background.clear);
+      out.damage = FrameDamage::everything();
+      out.rasterized.fill(true);
+      return out;
+    }
+    copyPixels(std::as_const(surface).pixels(), content.pixels());
+    keys_ = wanted;
+    valid_[0U] = false;
+    valid_[1U] = false;
+    valid_[2U] = true;
+    for (std::size_t i = 1U; i < kSnapshots; ++i) {
+      previousOps_[i - 1U] = frame.opKeys(static_cast<Layer>(i));
+      hasOps_[i - 1U] = true;
+    }
+    out.rasterized[0U] = true;
+  }
   // What the snapshots composed so far changed: nothing, some rectangles, or everything.
-  FrameDamage below;
-  for (std::size_t i = 0U; i < kSnapshots; ++i) {
+  const auto composedInPlace = out.rasterized[0U];
+  FrameDamage below = composedInPlace ? FrameDamage::everything() : FrameDamage{};
+  const auto composeSnapshots = !reuseContent && !composedInPlace;
+  for (std::size_t i = 0U; i < (composeSnapshots ? kSnapshots : 0U); ++i) {
     const auto unchanged = valid_[i] && keys_[i] == wanted[i];
     if (!below.full && below.rects.empty() && unchanged) continue;
     OpKeys ops;
@@ -490,6 +538,7 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
       hasOps_[i - 1U] = true;
     }
   }
+  if (composeSnapshots) materializeIntermediate_ = false;
 
   auto items = frame.items(Layer::Dynamic);
   auto damage = hasPrevious_ ? below : FrameDamage::everything();
@@ -525,7 +574,7 @@ Composition LayerCache::compose(RasterCanvas& target, const BackgroundLayer& bac
       out.rasterized[static_cast<std::size_t>(Layer::Dynamic)] = true;
     }
   } else {
-    copyPixels(content.pixels(), surface.pixels());
+    if (!composedInPlace) copyPixels(content.pixels(), surface.pixels());
     if (frame.layerSize(Layer::Dynamic) > 0U) {
       if (auto canvas = makeCanvas(surface, scale); canvas != nullptr) {
         frame.replay(Layer::Dynamic, *canvas, target);

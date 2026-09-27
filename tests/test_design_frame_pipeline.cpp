@@ -266,16 +266,15 @@ void runPipeline(DesignMode mode, double scale, Contrast contrast = Contrast::St
   CHECK(onlyDynamic(r.layers));
   in.box = false;
 
-  // A selection changes the content layer; the grid stays cached. Only the notes whose look changed
-  // (and what they overlap) are redrawn, so the damage is theirs, not the surface.
+  // The cold frame retained only L2. Its first content change rebuilds L0/L1 and covers the
+  // surface; subsequent content changes can again use rectangular damage.
   p.controller.pianoRoll().selectInBox({0.0, 0.0, 400.0, 2000.0});
   r = p.frame(in);
   CHECK(r.identical);
   CHECK(r.covered);
-  CHECK(!r.damage.full);
-  CHECK(damagedArea(r.damage) < kWidth * kHeight * 0.5);
-  CHECK(!r.layers[0]);
-  CHECK(!r.layers[1]);
+  CHECK(r.damage.full);
+  CHECK(r.layers[0]);
+  CHECK(r.layers[1]);
   CHECK(r.layers[2]);
   // Selecting other notes damages the notes that changed on both sides.
   p.controller.pianoRoll().selectInBox({500.0, 0.0, 200.0, 2000.0});
@@ -527,7 +526,7 @@ TEST_CASE("the layer cache stays within the plan's 80 MB at 1440x900 on a 2x dis
   CHECK(p.cached.layerCacheBytes() <= 80U * 1024U * 1024U);
 }
 
-TEST_CASE("background invalidation repaints L0 while upper-layer invalidation reuses it") {
+TEST_CASE("cold content-only snapshot materializes L0 on demand, then reuses it") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   using native_ui::paint::BackgroundLayer;
   using native_ui::paint::LayerCache;
@@ -544,10 +543,13 @@ TEST_CASE("background invalidation repaints L0 while upper-layer invalidation re
   CHECK(paints == 1);
   cache.invalidate();
   static_cast<void>(cache.compose(raster, background, frame));
-  CHECK(paints == 1);
-  cache.invalidateBackground();
+  CHECK(paints == 2);  // L0 was intentionally not saved by the first cold paint.
+  cache.invalidate();
   static_cast<void>(cache.compose(raster, background, frame));
   CHECK(paints == 2);
+  cache.invalidateBackground();
+  static_cast<void>(cache.compose(raster, background, frame));
+  CHECK(paints == 3);
 }
 
 TEST_CASE("a glowless recording keeps a raster drawing's glow off when it replays") {
