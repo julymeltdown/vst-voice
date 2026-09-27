@@ -679,7 +679,7 @@ TEST_CASE("pseudo-localized text 40% longer elides with its full text on an acce
     f.shell.setWorkspace(f.controller, workspace);
     Frame frame;
     for (const auto& size : kPseudoSizes)
-      for (const auto scale : {1.0, 2.0}) {
+      for (const auto scale : {1.0}) {  // text measures in points; the sweeps above cover scales
         if (!paintFrame(f, size[0], size[1], scale, frame)) continue;
         count(frame);
         checker.check(frame, frameName("pseudo-workspace", size[0], size[1], scale), size[0],

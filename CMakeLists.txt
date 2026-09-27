@@ -1968,6 +1968,9 @@ if(SEAM_BUILD_TESTS)
       endif()
       add_test(NAME seam_design_layout_property_tests_${sweep}
         COMMAND seam_design_layout_property_tests "${filter}")
+      # The sweeps paint up to 7680x4320-pixel frames; run alone so they do not starve the
+      # suite's timed tests.
+      set_tests_properties(seam_design_layout_property_tests_${sweep} PROPERTIES RUN_SERIAL TRUE)
     endforeach()
     add_executable(seam_japanese_reading_native_tests
       tests/test_main.cpp tests/test_japanese_reading_native.cpp)
