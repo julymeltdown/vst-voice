@@ -176,12 +176,18 @@ public:
       std::string_view id, std::string_view value);
 
   void setRepaintCallback(std::function<void()> callback);
-  // The EMO/SCENE SING shell is this editor's only surface and presents from construction with the
-  // default look. The shipping plug-in calls this to read and write the user's saved look instead;
-  // tests never do, so they never observe the user's preferences.
+  // The EMO/SCENE SING shell is this editor's only surface. It is activated once, lazily, by the
+  // first frame or resize, with the default look. The shipping plug-in calls this first to use the
+  // user's saved look instead (still activated lazily, once); tests never do, so they never observe
+  // the user's preferences.
   void activateDesignShell();
   // Test and capture entry point: an explicit preference set, never the saved one.
   void activateDesignShell(native_ui::design::DesignPreferences preferences);
+  // How many times the shell was activated (asset loading); one for the runtime's lifetime.
+  [[nodiscard]] std::size_t designShellActivations() const noexcept {
+    std::lock_guard lock(mutex_);
+    return shellActivations_;
+  }
   // Abandons shell and editor pointer gestures without committing them (hide, capture loss).
   void cancelPointerGestures();
   // Invoked for a persistent project change, from the originating thread. Most
@@ -399,6 +405,8 @@ private:
   bool routeShellPointerLocked(ShellPointerPhase phase, const native_ui::PointerEvent& event);
   bool shellKeyLocked(const native_ui::KeyEvent& event);
   void activateDesignShellWith(std::optional<native_ui::design::DesignPreferences> preferences);
+  // Activates the shell with the pending preference source unless something already did.
+  void ensureDesignShellLocked();
   [[nodiscard]] native_ui::EditorSceneState sceneState();
   void refreshVoicebankResolutionLocked();
   void refreshAllVoicebankResolutionsLocked();
@@ -425,6 +433,12 @@ private:
   authoring::VoicebankBrowserModel voicebankBrowser_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;
   native_ui::design::SingShell shell_;
+  // Lazy activation: whether the shell was activated, with what it will be (the default look, or
+  // nothing for the user's saved look), and how often it was.
+  bool shellActivated_{false};
+  std::optional<native_ui::design::DesignPreferences> pendingShellPreferences_{
+      native_ui::design::DesignPreferences{}};
+  std::size_t shellActivations_{0U};
   // Whether the last paint was the design shell's frame (its damage is then meaningful).
   bool shellPresentedFrame_{false};
   native_ui::CharacterPresentation character_;

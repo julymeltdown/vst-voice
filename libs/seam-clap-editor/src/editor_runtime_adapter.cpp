@@ -195,7 +195,7 @@ EditorRuntime::EditorRuntime(
   refreshAllVoicebankResolutionsLocked();
   rebuildVoicebankCardsLocked();
   rebuildController();
-  activateDesignShellWith(native_ui::design::DesignPreferences{});  // the only editor surface
+  // The shell, the only editor surface, is activated by the first frame (ensureDesignShellLocked).
   const auto loaded = character_.load(characterPackage);
   if (loaded && controller_) {
     controller_->setCharacterMetadata(character_.displayName(),

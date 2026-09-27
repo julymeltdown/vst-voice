@@ -7,7 +7,10 @@ namespace seam::clap_editor {
 // editor, and an edit made through the shell invalidates the prepared bounce like any other edit.
 
 void EditorRuntime::activateDesignShell() {
-  activateDesignShellWith(std::nullopt);
+  std::lock_guard lock(mutex_);
+  // The saved look, applied when the shell is first needed; a shell already presenting switches now.
+  pendingShellPreferences_.reset();
+  if (shellActivated_) activateDesignShellWith(std::nullopt);
 }
 
 // The header output meter: the plug-in's audio thread measures what it returns to the host, and
@@ -39,6 +42,8 @@ void EditorRuntime::activateDesignShell(native_ui::design::DesignPreferences pre
 void EditorRuntime::activateDesignShellWith(
     std::optional<native_ui::design::DesignPreferences> preferences) {
   std::lock_guard lock(mutex_);
+  shellActivated_ = true;
+  ++shellActivations_;
   shell_.setRepaintCallback([this] { requestRepaint(); });
   // Every embedded view keeps its surface between frames, so a frame that changes only the
   // dynamic layer updates just its damaged rectangles.
@@ -82,6 +87,10 @@ void EditorRuntime::activateDesignShellWith(
   requestRepaint();
 }
 
+void EditorRuntime::ensureDesignShellLocked() {
+  if (!shellActivated_) activateDesignShellWith(pendingShellPreferences_);
+}
+
 void EditorRuntime::cancelPointerGestures() {
   std::lock_guard lock(mutex_);
   shell_.cancelGestures(*controller_);
@@ -92,6 +101,7 @@ void EditorRuntime::resize(double logicalWidth, double logicalHeight) noexcept {
   logicalWidth_ = std::max(480.0, logicalWidth);
   logicalHeight_ = std::max(320.0, logicalHeight);
   controller_->resize(logicalWidth_, logicalHeight_);
+  ensureDesignShellLocked();
   // The shell's layout follows the size at once, so accessibility and input validate against the
   // controls that are on screen now rather than the previous frame's.
   static_cast<void>(shell_.prepareFrame(*controller_, logicalWidth_, logicalHeight_));

@@ -116,6 +116,7 @@ native_ui::EditorSceneState EditorRuntime::sceneState() {
 void EditorRuntime::paint(native_ui::RasterCanvas& canvas) noexcept {
   std::lock_guard lock(mutex_);
   controller_->pollReplacementReview();
+  ensureDesignShellLocked();
   // The surface and its geometry are chosen before the scene state is derived from them.
   const auto shellFrame =
       shell_.prepareFrame(*controller_, canvas.logicalWidth(), canvas.logicalHeight());
