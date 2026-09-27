@@ -73,6 +73,30 @@
       "sourceSha256": "540b7c90bfdcb4e443c6ff60ffce30d962c158f8b63d8fdface965b5ac683382",
       "alpha": "premultiplied-on-load",
       "colorSpace": "sRGB"
+    },
+    {
+      "path": "emo/splash.png",
+      "role": "splash",
+      "size": [
+        1600,
+        1000
+      ],
+      "sha256": "483314645c8d4bf2d09eca07eb23c7a1bb02f6478a0b5335319d1e6875457f6c",
+      "sourceSha256": "2516ead1995669b4574677608577fc848ae44dfd39b8548cfdf7c4689698a5ae",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "scene/splash.png",
+      "role": "splash",
+      "size": [
+        1600,
+        1000
+      ],
+      "sha256": "99e13b831ef40cec1a858025f9126afbaf9d9a767577f84a8293c37d8bc011a2",
+      "sourceSha256": "a651fb6f6fd109efdef7904c7b28c14b431554e75a670172d68367c27f07faea",
+      "alpha": "premultiplied-on-load",
+      "colorSpace": "sRGB"
     }
   ]
 }
