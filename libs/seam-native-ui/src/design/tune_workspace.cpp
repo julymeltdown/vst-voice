@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/shell_workspace.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/ui/expression_lane.hpp"
 #include "seam/ui/vibrato_model.hpp"
@@ -34,8 +35,8 @@ using paint::TextStyle;
 constexpr double kPi = std::numbers::pi;
 constexpr Color kWhite{255, 255, 255, 255};
 constexpr std::size_t kChannels = ui::kExpressionChannelCount;
-constexpr std::array<const char*, kChannels> kLabels{"Formant", "Breath", "Tension",
-                                                     "Air",     "Gender", "Growl"};
+constexpr std::array<Str, kChannels> kLabels{Str::Formant, Str::Breath, Str::Tension,
+                                                     Str::Air,     Str::Gender, Str::Growl};
 constexpr std::array<const char*, kChannels> kIds{"formant", "breath", "tension",
                                                   "air",     "gender", "growl"};
 // Pixels of vertical travel per knob step, and wheel distance per step, as on the SING rack.
@@ -138,7 +139,7 @@ std::array<KnobModel, kChannels> knobModels(const EditorSceneState& state) {
     const auto channel = ui::expressionChannelAt(i);
     knobs[i].descriptor = ui::describeExpressionChannel(channel);
     knobs[i].value = knobs[i].descriptor.neutral;
-    knobs[i].refusal = state.inspector.valid ? "" : "No vocal track is selected";
+    knobs[i].refusal = state.inspector.valid ? "" : tr(Str::NoVocalTrackIsSelected);
     for (const auto& row : state.inspector.expressionCapabilities) {
       if (row.channel != channel) continue;
       knobs[i].value = row.valueAtPlayhead;
@@ -146,7 +147,7 @@ std::array<KnobModel, kChannels> knobModels(const EditorSceneState& state) {
       knobs[i].storedPoints = row.storedPoints;
     }
     if (knobs[i].refusal.empty() && !state.playheadInsideRegion)
-      knobs[i].refusal = "The playhead is outside the selected region";
+      knobs[i].refusal = tr(Str::ThePlayheadIsOutsideTheSelected);
   }
   return knobs;
 }
@@ -185,8 +186,8 @@ std::optional<std::size_t> activeChannel(const NativeEditorController& controlle
 
 constexpr std::size_t kFields = 6U;
 enum Field : std::size_t { Start, FadeIn, FadeOut, Depth, Period, Phase };
-constexpr std::array<const char*, kFields> kFieldLabels{"Start", "Fade in", "Fade out",
-                                                        "Depth", "Period",  "Phase"};
+constexpr std::array<Str, kFields> kFieldLabels{Str::Start, Str::FadeIn, Str::FadeOut,
+                                                        Str::Depth, Str::Period,  Str::Phase};
 constexpr std::array<const char*, kFields> kFieldIds{"start", "fade-in", "fade-out",
                                                      "depth", "period",  "phase"};
 
@@ -319,7 +320,7 @@ double vibratoCents(const domain::NoteVibrato& v, double durationMs, double elap
 // The compact views, in tab order.
 enum class View : std::size_t { Curves, Pitch, Vibrato };
 constexpr std::size_t kViews = 3U;
-constexpr std::array<const char*, kViews> kViewLabels{"Curves", "Pitch", "Vibrato"};
+constexpr std::array<Str, kViews> kViewLabels{Str::Curves, Str::Pitch, Str::Vibrato};
 constexpr std::array<const char*, kViews> kViewIds{"shell.tune.view.curves", "shell.tune.view.pitch",
                                                    "shell.tune.view.vibrato"};
 
@@ -528,12 +529,12 @@ std::string pitchPointId(time::Tick tick) {
 }
 
 std::string centsText(double cents) {
-  return std::abs(cents) < 0.5 ? std::string{"0 ct"} : format("%+.0f ct", cents);
+  return std::abs(cents) < 0.5 ? std::string{tr(Str::N0Ct)} : format("%+.0f ct", cents);
 }
 
 std::string semitoneLabel(double cents) {
   if (std::abs(cents) < 0.5) return "0";
-  return (cents > 0.0 ? std::string{"+"} : std::string{"\u2212"}) +
+  return (cents > 0.0 ? std::string{"+"} : std::string{tr(Str::Text9)}) +
          format("%.0f st", std::abs(cents) / 100.0);
 }
 
@@ -838,7 +839,7 @@ private:
   // Why the pitch strip is read-only, or empty when it edits.
   static std::string pitchRefusal(const NativeEditorController& controller) {
     if (controller.pianoRoll().project().findRegion(controller.selectedRegion()) == nullptr)
-      return "Select a region to shape its pitch";
+      return tr(Str::SelectARegionToShapeIts);
     return controller.pitchEditRefusal();
   }
 
@@ -943,14 +944,14 @@ void TuneWorkspace::paintHeader(Canvas2D& c, const DesignTokens& t, const Editor
   const auto active = activeChannel(state);
   if (l.compact) {
     for (std::size_t i = 0U; i < kViews; ++i)
-      tab(c, t, l.view[i], kViewLabels[i], view_ == static_cast<View>(i), std::nullopt);
+      tab(c, t, l.view[i], tr(kViewLabels[i]), view_ == static_cast<View>(i), std::nullopt);
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
-      tab(c, t, l.chip[i], kLabels[i], active == i, channelColor(t, i));
+      tab(c, t, l.chip[i], tr(kLabels[i]), active == i, channelColor(t, i));
   }
-  std::string caption = active ? "Drag to draw \u2022 Shift-click removes a point"
-                               : "Choose a channel to edit its curve";
-  if (l.compact) caption = active ? std::string{kLabels[*active]} + " selected" : "Pick a knob";
+  std::string caption = active ? tr(Str::DragToDrawShiftClickRemoves)
+                               : tr(Str::ChooseAChannelToEditIts);
+  if (l.compact) caption = active ? std::string{tr(kLabels[*active])} + tr(Str::Selected2) : tr(Str::PickAKnob);
   c.text(l.caption, caption, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          t.color.textSecondary);
 }
@@ -965,22 +966,22 @@ void TuneWorkspace::paintGraph(Canvas2D& c, const DesignTokens& t,
   sunken(c, t, plot, 6.0);
   const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
   // Caption: the channel being edited, its value at the playhead and whether it can be rendered.
-  std::string caption = "Expression";
+  std::string caption = tr(Str::Expression);
   auto captionColor = t.color.textSecondary;
   if (region == nullptr) {
-    caption = "Select a region to shape its expression";
+    caption = tr(Str::SelectARegionToShapeIts2);
   } else if (active) {
     const auto& k = knobs[*active];
-    caption = std::string{kLabels[*active]} + "  " +
-              valueText(k.descriptor, state.expression.valueAtPlayhead) + " at playhead  \u2022  " +
-              std::to_string(state.expression.points.size()) + " points";
-    if (state.expression.draftChanged) caption += "  \u2022  editing";
+    caption = std::string{tr(kLabels[*active])} + "  " +
+              valueText(k.descriptor, state.expression.valueAtPlayhead) + tr(Str::AtPlayhead2) +
+              std::to_string(state.expression.points.size()) + tr(Str::Points);
+    if (state.expression.draftChanged) caption += tr(Str::Editing);
     if (!state.expression.refusal.empty()) {
-      caption = std::string{kLabels[*active]} + ": " + state.expression.refusal;
+      caption = std::string{tr(kLabels[*active])} + ": " + state.expression.refusal;
       captionColor = t.color.warning;
     }
   } else {
-    caption = "All channels  \u2022  choose one to edit";
+    caption = tr(Str::AllChannelsChooseOneToEdit);
   }
   c.text(l.graphCaption, caption, style(FontRole::UiMedium, t.type.smallLabel, 0.4), captionColor);
   if (region == nullptr || !usable(plot)) return;
@@ -1095,16 +1096,16 @@ void TuneWorkspace::paintPitch(Canvas2D& c, const DesignTokens& t,
   const auto& gesture = controller.pitchPointGesture();
   const auto count = region == nullptr ? 0U : region->pitchAutomation.points().size();
   // Caption: what is stored, the value a drag would commit, or why the strip cannot edit.
-  std::string caption = "Pitch  \u2022  " + std::to_string(count) +
-                        (count == 1U ? " point" : " points");
+  std::string caption = tr(Str::Pitch2) + std::to_string(count) +
+                        (count == 1U ? tr(Str::Point) : tr(Str::Points));
   auto captionColor = t.color.textSecondary;
   if (!refusal.empty()) {
-    caption = "Pitch  \u2022  read-only: " + refusal;
+    caption = tr(Str::PitchReadOnly) + refusal;
     if (region != nullptr) captionColor = t.color.warning;
   } else if (gesture) {
-    caption += "  \u2022  " + centsText(gesture->point.cents) + "  \u2022  release to commit";
+    caption += tr(Str::Text) + centsText(gesture->point.cents) + tr(Str::ReleaseToCommit);
   } else {
-    caption += "  \u2022  click adds, drag moves, Shift removes, Alt changes the curve";
+    caption += tr(Str::ClickAddsDragMovesShiftRemoves);
   }
   c.text(l.pitchCaption, caption, style(FontRole::UiMedium, t.type.smallLabel, 0.4), captionColor);
   const auto plot = l.pitchPlot;
@@ -1191,7 +1192,7 @@ void TuneWorkspace::paintPitch(Canvas2D& c, const DesignTokens& t,
     }
   } else if (plot.height >= 30.0) {
     c.text({plot.x + 10.0, plot.y + 2.0, std::max(0.0, plot.width - 20.0), 14.0},
-           refusal.empty() ? "Click to add a pitch point" : "No pitch points stored",
+           refusal.empty() ? tr(Str::ClickToAddAPitchPoint) : tr(Str::NoPitchPointsStored),
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   }
   if (state.playheadInsideRegion) {
@@ -1208,13 +1209,13 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
                                  const TuneLayout& l) const {
   glassPanel(c, t, l.vibrato, t.shape.card);
   const auto target = noteTarget(controller);
-  cardTitle(c, t, l.vibratoTitle, "Note \u2022 vibrato",
+  cardTitle(c, t, l.vibratoTitle, tr(Str::NoteVibrato),
             target.note != nullptr && target.note->vibrato.enabled);
   if (target.note == nullptr) {
     const auto message = target.selected == 0U
-                             ? std::string{"Select one note in SING to shape its vibrato"}
+                             ? std::string{tr(Str::SelectOneNoteInSINGTo)}
                              : std::to_string(target.selected) +
-                                   " notes are selected; select one to shape its vibrato";
+                                   tr(Str::NotesAreSelectedSelectOneTo);
     c.text({l.vibratoMessage.x, l.vibratoMessage.y, l.vibratoMessage.width,
             std::min(20.0, l.vibratoMessage.height)},
            message, style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
@@ -1227,7 +1228,7 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
     const auto on = v.enabled;
     c.fill(Path::capsule(l.vibratoToggle), withAlpha(on ? t.color.accent : t.color.surfaceSunken, on ? 0.22 : 1.0));
     c.stroke(Path::capsule(l.vibratoToggle), on ? t.color.accent : t.color.border, StrokeStyle{1.0});
-    c.text(l.vibratoToggle, on ? "On" : "Off",
+    c.text(l.vibratoToggle, on ? tr(Str::On) : tr(Str::Off),
            style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
            on ? t.color.accent : t.color.textSecondary);
   }
@@ -1282,7 +1283,7 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
     }
     if (plot.height >= 34.0 && plot.width >= 140.0)
       c.text({plot.x + 2.0, plot.y, plot.width - 4.0, 13.0},
-             v.enabled ? format("%.0f ms note", durationMs) : "Off \u2022 preview of the stored shape",
+             v.enabled ? format("%.0f ms note", durationMs) : tr(Str::OffPreviewOfTheStoredShape),
              style(FontRole::Ui, t.type.rulerMicro), t.color.textSecondary);
     c.restore();
   }
@@ -1302,8 +1303,8 @@ void TuneWorkspace::paintVibrato(Canvas2D& c, const DesignTokens& t,
     const auto valueWidth = std::min(cell.width * 0.6, c.measure(valueString, valueStyle) + 2.0);
     const ui::Rect labelRect{cell.x, cell.y, std::max(0.0, cell.width - valueWidth - 4.0), 13.0};
     const ui::Rect valueRect{cell.right() - valueWidth, cell.y, valueWidth, 13.0};
-    c.text(labelRect, kFieldLabels[i],
-           fitted(c, kFieldLabels[i], style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Left, true),
+    c.text(labelRect, tr(kFieldLabels[i]),
+           fitted(c, tr(kFieldLabels[i]), style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Left, true),
                   labelRect.width),
            dragging ? t.color.accent : t.color.textSecondary);
     c.text(valueRect, valueString, valueStyle, t.color.textPrimary);
@@ -1356,8 +1357,8 @@ void TuneWorkspace::paintMacro(Canvas2D& c, const DesignTokens& t, const EditorS
       const auto x = center.x + radius + 5.0;
       valueRect = {x, center.y - 7.0, std::max(0.0, cell.right() - 3.0 - x), 14.0};
     }
-    c.text(labelRect, kLabels[i],
-           fitted(c, kLabels[i],
+    c.text(labelRect, tr(kLabels[i]),
+           fitted(c, tr(kLabels[i]),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
                         wide ? TextAlign::Left : TextAlign::Center, true),
                   labelRect.width),
@@ -1391,7 +1392,7 @@ void TuneWorkspace::paintMacro(Canvas2D& c, const DesignTokens& t, const EditorS
         .lineTo({center.x + std::cos(angle) * (radius - 3.0), center.y + std::sin(angle) * (radius - 3.0)});
     c.stroke(pointer, t.color.knobPointer, StrokeStyle{1.6});
     c.restore();
-    auto text = refused ? std::string{"\u2014"} : valueText(k.descriptor, value);
+    auto text = refused ? std::string{tr(Str::Text2)} : valueText(k.descriptor, value);
     const auto valueStyle = style(FontRole::UiMedium, t.type.label, 0.0, TextAlign::Left);
     // A narrow cell drops the semitone unit before it would elide the number.
     if (!refused && semitones(k.descriptor) && c.measure(text, valueStyle) > valueRect.width)
@@ -1410,48 +1411,46 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
   const auto active = activeChannel(state);
   const auto* region = controller.pianoRoll().project().findRegion(controller.selectedRegion());
   if (l.compact) {
-    static constexpr std::array<const char*, kViews> kViewDescriptions{
-        "Shows the expression graph", "Shows the region's pitch curve",
-        "Shows the selected note's vibrato"};
+    static constexpr std::array<Str, kViews> kViewDescriptions{
+        Str::ShowsTheExpressionGraph, Str::ShowsTheRegionSPitchCurve,
+        Str::ShowsTheSelectedNoteSVibrato};
     for (std::size_t i = 0U; i < l.view.size(); ++i)
       out.push_back(SemanticNode{
-          .id = viewId(i), .role = SemanticRole::Tab, .name = std::string{kViewLabels[i]} + " view",
+          .id = viewId(i), .role = SemanticRole::Tab, .name = std::string{tr(kViewLabels[i])} + tr(Str::View),
           .bounds = l.view[i],
           .selected = view_ == static_cast<View>(i),
           .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-          .description = kViewDescriptions[i]});
+          .description = tr(kViewDescriptions[i])});
   } else {
     for (std::size_t i = 0U; i < kChannels; ++i)
       out.push_back(SemanticNode{.id = std::string{"shell.tune.channel."} + kIds[i],
                                  .role = SemanticRole::Tab,
-                                 .name = std::string{kLabels[i]} + " channel",
+                                 .name = std::string{tr(kLabels[i])} + tr(Str::Channel),
                                  .bounds = l.chip[i],
                                  .selected = active == i,
                                  .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                                 .description = "Selects the curve the graph edits"});
+                                 .description = tr(Str::SelectsTheCurveTheGraphEdits)});
   }
   if (usable(l.graphPlot)) {
     const auto editable = active && knobs[*active].refusal.empty() && region != nullptr;
     SemanticNode graph{
         .id = "shell.tune.graph",
         .role = SemanticRole::Lane,
-        .name = active ? std::string{kLabels[*active]} + " curve" : std::string{"Expression curves"},
-        .value = !active ? "No channel selected"
+        .name = active ? std::string{tr(kLabels[*active])} + tr(Str::Curve) : std::string{tr(Str::ExpressionCurves)},
+        .value = !active ? tr(Str::NoChannelSelected)
                  : !state.expression.refusal.empty()
                      ? state.expression.refusal
                      : valueText(knobs[*active].descriptor, state.expression.valueAtPlayhead) +
-                           " at the playhead, " + std::to_string(state.expression.points.size()) +
-                           " points",
+                           tr(Str::AtThePlayhead) + std::to_string(state.expression.points.size()) +
+                           tr(Str::Points),
         .bounds = l.graphPlot,
         .enabled = region != nullptr,
         .actions = editable ? std::vector<SemanticAction>{SemanticAction::Increment,
                                                           SemanticAction::Decrement,
                                                           SemanticAction::SetFocus}
                             : std::vector<SemanticAction>{SemanticAction::SetFocus},
-        .description = active ? "Click to add a point, drag to move, Shift-click removes; "
-                                "Escape cancels a drag. Increment and Decrement nudge the value at "
-                                "the playhead"
-                              : "Choose a channel to edit its curve"};
+        .description = active ? tr(Str::ClickToAddAPointDrag2)
+                              : tr(Str::ChooseAChannelToEditIts)};
     // Every channel's stored curve is drawn here; each is listed so none is visual-only.
     for (std::size_t i = 0U; i < kChannels; ++i) {
       const auto channel = ui::expressionChannelAt(i);
@@ -1461,9 +1460,9 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
       graph.children.push_back(SemanticNode{
           .id = std::string{"shell.tune.curve."} + kIds[i],
           .role = SemanticRole::Lane,
-          .name = std::string{kLabels[i]} + " curve",
-          .value = count == 0U ? std::string{"No curve stored"}
-                               : std::to_string(count) + (count == 1U ? " point" : " points"),
+          .name = std::string{tr(kLabels[i])} + tr(Str::Curve),
+          .value = count == 0U ? std::string{tr(Str::NoCurveStored)}
+                               : std::to_string(count) + (count == 1U ? tr(Str::Point) : tr(Str::Points)),
           .bounds = l.graphPlot,
           .selected = active == i,
           .description = knobs[i].refusal});
@@ -1477,16 +1476,14 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     SemanticNode pitch{
         .id = "shell.tune.pitch",
         .role = SemanticRole::Lane,
-        .name = "Pitch curve",
-        .value = std::to_string(count) + (count == 1U ? " point" : " points"),
+        .name = tr(Str::PitchCurve),
+        .value = std::to_string(count) + (count == 1U ? tr(Str::Point) : tr(Str::Points)),
         .bounds = l.pitchPlot,
         .enabled = editable,
         .actions = {SemanticAction::SetFocus},
         .description = editable
-                           ? "Click to add a point, drag to move it, Shift-click removes, "
-                             "Alt-click changes its curve; Escape cancels a drag. Each point's "
-                             "Increment and Decrement move it by 5 cents"
-                           : "Read-only: " + refusal};
+                           ? tr(Str::ClickToAddAPointDrag3)
+                           : tr(Str::ReadOnly) + refusal};
     const auto axis = axisFor(controller, l.pitchPlot);
     if (region != nullptr && axis.valid()) {
       const PitchScale scale{l.pitchPlot, region->pitchAutomation.points()};
@@ -1501,13 +1498,13 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         const auto bar = song / (quarter * quartersPerBar) + 1;
         const auto beat = static_cast<double>(song % (quarter * quartersPerBar)) /
                               static_cast<double>(quarter) + 1.0;
-        const auto where = "bar " + std::to_string(bar) + " beat " +
+        const auto where = tr(Str::Bar) + std::to_string(bar) + tr(Str::Beat) +
                            (std::abs(beat - std::round(beat)) < 1e-6 ? format("%.0f", beat)
                                                                      : format("%.2f", beat));
         pitch.children.push_back(SemanticNode{
             .id = pitchPointId(point.tick),
             .role = SemanticRole::Slider,
-            .name = "Pitch point " + std::to_string(i + 1U) + " of " + std::to_string(points.size()),
+            .name = tr(Str::PitchPoint) + std::to_string(i + 1U) + tr(Str::Of) + std::to_string(points.size()),
             .value = centsText(point.cents) + ", " +
                      std::string{domain::curveInterpolationName(point.interpolation)} + ", " + where,
             .bounds = pitchPointRect(l, {axis.x(point.tick), scale.y(point.cents)}),
@@ -1517,9 +1514,8 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                                                               SemanticAction::Activate,
                                                               SemanticAction::SetFocus}
                                 : std::vector<SemanticAction>{SemanticAction::SetFocus},
-            .description = editable ? "Increment and Decrement move it by 5 cents; Activate "
-                                      "changes its curve"
-                                    : "Read-only: " + refusal,
+            .description = editable ? tr(Str::IncrementAndDecrementMoveItBy)
+                                    : tr(Str::ReadOnly) + refusal,
             .numericValue = static_cast<double>(point.cents),
             .numericMinimum = -kPitchMaximumRange,
             .numericMaximum = kPitchMaximumRange,
@@ -1530,24 +1526,24 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
   }
   if (usable(l.vibrato)) {
     const auto target = noteTarget(controller);
-    std::string summary = target.selected == 0U ? "Select one note in SING to shape its vibrato"
+    std::string summary = target.selected == 0U ? tr(Str::SelectOneNoteInSINGTo)
                           : target.note == nullptr
-                              ? std::to_string(target.selected) + " notes are selected; select one"
+                              ? std::to_string(target.selected) + tr(Str::NotesAreSelectedSelectOne)
                               : "";
     if (target.note != nullptr) {
       const auto v = shownVibrato(*target.note);
-      summary = std::string{v.enabled ? "On" : "Off"} + ", depth " + fieldText(Depth, v.depthCents) +
-                ", period " + fieldText(Period, v.periodMilliseconds);
+      summary = std::string{v.enabled ? tr(Str::On) : tr(Str::Off)} + tr(Str::Depth2) + fieldText(Depth, v.depthCents) +
+                tr(Str::Period2) + fieldText(Period, v.periodMilliseconds);
     }
     out.push_back(SemanticNode{.id = "shell.tune.vibrato", .role = SemanticRole::Panel,
-                               .name = "Note vibrato", .value = summary, .bounds = l.vibrato,
-                               .description = "The preview is computed from the stored values"});
+                               .name = tr(Str::NoteVibrato2), .value = summary, .bounds = l.vibrato,
+                               .description = tr(Str::ThePreviewIsComputedFromThe)});
     if (target.note != nullptr) {
       const auto v = shownVibrato(*target.note);
       // A two-state switch: assistive tools read it as a check box with its selected state.
       out.push_back(SemanticNode{
-          .id = "shell.tune.vibrato.enabled", .role = SemanticRole::CheckBox, .name = "Vibrato",
-          .value = v.enabled ? "On" : "Off", .bounds = l.vibratoToggle, .selected = v.enabled,
+          .id = "shell.tune.vibrato.enabled", .role = SemanticRole::CheckBox, .name = tr(Str::Vibrato),
+          .value = v.enabled ? tr(Str::On) : tr(Str::Off), .bounds = l.vibratoToggle, .selected = v.enabled,
           .actions = {SemanticAction::Toggle, SemanticAction::Activate, SemanticAction::SetFocus}});
       for (std::size_t i = 0U; i < kFields; ++i) {
         if (!usable(l.field[i])) continue;
@@ -1556,7 +1552,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
         out.push_back(SemanticNode{
             .id = std::string{"shell.tune.vibrato."} + kFieldIds[i],
             .role = SemanticRole::Slider,
-            .name = std::string{"Vibrato "} + kFieldLabels[i],
+            .name = std::string{tr(Str::Vibrato2)} + tr(kFieldLabels[i]),
             .value = fieldText(i, fieldValue(v, i)),
             .bounds = l.field[i],
             .actions = {SemanticAction::Increment, SemanticAction::Decrement,
@@ -1575,7 +1571,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
     out.push_back(SemanticNode{
         .id = std::string{"shell.tune.knob."} + kIds[i],
         .role = SemanticRole::Slider,
-        .name = kLabels[i],
+        .name = tr(kLabels[i]),
         .value = refused ? k.refusal : valueText(k.descriptor, k.value),
         .bounds = l.knob[i],
         .enabled = !refused,
@@ -1586,7 +1582,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
                                                          SemanticAction::Activate,
                                                          SemanticAction::SetFocus},
         .description = refused ? k.refusal
-                               : "Value at the playhead; Activate edits its curve in the graph",
+                               : tr(Str::ValueAtThePlayheadActivateEdits),
         .numericValue = k.value * scale,
         .numericMinimum = static_cast<double>(k.descriptor.minimum) * scale,
         .numericMaximum = static_cast<double>(k.descriptor.maximum) * scale,
@@ -1597,7 +1593,7 @@ void TuneWorkspace::semantics(const NativeEditorController& controller,
 core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, std::string_view id,
                                           SemanticAction action) {
   const auto unsupported = [] {
-    return core::failure(core::ErrorCode::Unsupported, "This element does not support that action");
+    return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisElementDoesNotSupportThat));
   };
   const auto step = action == SemanticAction::Increment   ? 1
                     : action == SemanticAction::Decrement ? -1
@@ -1624,7 +1620,7 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
     if (!index) return unsupported();
     if (!knobModels(controller.sceneState())[*index].refusal.empty())
       return core::failure(core::ErrorCode::Unsupported,
-                           "The selected singer cannot apply this control");
+                           tr(Str::TheSelectedSingerCannotApplyThis));
     if (step != 0) return nudge(controller, *index, step);
     if (action == SemanticAction::Activate)
       return controller.openExpressionLane(ui::expressionChannelAt(*index));
@@ -1652,7 +1648,7 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
     const auto target = noteTarget(controller);
     if (!activate) return unsupported();
     if (target.note == nullptr)
-      return core::failure(core::ErrorCode::InvalidState, "Select one note to shape its vibrato");
+      return core::failure(core::ErrorCode::InvalidState, tr(Str::SelectOneNoteToShapeIts));
     ui::VibratoFields patch;
     patch.enabled = !target.note->vibrato.enabled;
     return controller.applyVibratoToSelection(patch);
@@ -1664,7 +1660,7 @@ core::Result<void> TuneWorkspace::perform(NativeEditorController& controller, st
       if (step == 0) return unsupported();
       const auto target = noteTarget(controller);
       if (target.note == nullptr)
-        return core::failure(core::ErrorCode::InvalidState, "Select one note to shape its vibrato");
+        return core::failure(core::ErrorCode::InvalidState, tr(Str::SelectOneNoteToShapeIts));
       const auto spec = fieldSpec(target.note->vibrato, i);
       const auto current = fieldValue(target.note->vibrato, i);
       const auto next = snapped(current + step * spec.step, spec);

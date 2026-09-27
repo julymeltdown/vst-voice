@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/sing_shell.hpp"
+#include "seam/native_ui/design/shell_strings.hpp"
 
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
@@ -210,14 +211,14 @@ struct KnobModel final {
 
 std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
   std::array<KnobModel, 6U> knobs;
-  static constexpr std::array<const char*, 6U> kLabels{"Formant", "Breath", "Tension",
-                                                       "Air", "Gender", "Growl"};
+  static constexpr std::array<Str, 6U> kLabels{Str::Formant, Str::Breath, Str::Tension,
+                                                       Str::Air, Str::Gender, Str::Growl};
   for (std::size_t i = 0U; i < knobs.size(); ++i) {
     const auto channel = ui::expressionChannelAt(i);
     knobs[i].descriptor = ui::describeExpressionChannel(channel);
-    knobs[i].label = kLabels[i];
+    knobs[i].label = tr(kLabels[i]);
     knobs[i].value = knobs[i].descriptor.neutral;
-    knobs[i].refusal = state.inspector.valid ? "" : "No vocal track is selected";
+    knobs[i].refusal = state.inspector.valid ? "" : tr(Str::NoVocalTrackIsSelected);
     for (const auto& row : state.inspector.expressionCapabilities) {
       if (row.channel != channel) continue;
       knobs[i].value = row.valueAtPlayhead;
@@ -226,14 +227,14 @@ std::array<KnobModel, 6U> knobModels(const EditorSceneState& state) {
     }
     // The knob still reads the region's edge value, but an edit "at the playhead" is refused.
     if (knobs[i].refusal.empty() && !state.playheadInsideRegion)
-      knobs[i].refusal = "The playhead is outside the selected region";
+      knobs[i].refusal = tr(Str::ThePlayheadIsOutsideTheSelected);
   }
   return knobs;
 }
 
 // A persisted value in the unit a musician reads: semitones stay semitones, shares become percent.
 std::pair<std::string, std::string> displayValue(const KnobModel& knob) {
-  if (knob.descriptor.unit == "semitones") return {format("%.1f", knob.value), "ST"};
+  if (knob.descriptor.unit == "semitones") return {format("%.1f", knob.value), tr(Str::ST)};
   return {format("%.1f", knob.value * 100.0), "%"};
 }
 
@@ -454,6 +455,20 @@ bool SingShell::overlayPresented(const NativeEditorController& controller) const
 
 void SingShell::setMode(DesignMode mode, bool persist) {
   preferences_.mode = mode;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::setContrast(Contrast contrast, bool persist) {
+  preferences_.contrast = contrast;
+  preferences_.contrastFollowsSystem = false;
+  if (persist && persist_) saveDesignPreferences(preferences_);
+  repaint();
+}
+
+void SingShell::followSystemContrast(bool persist) {
+  preferences_.contrastFollowsSystem = true;
+  preferences_.contrast = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
   if (persist && persist_) saveDesignPreferences(preferences_);
   repaint();
 }
@@ -706,6 +721,13 @@ bool SingShell::prepareFrame(NativeEditorController& controller, double logicalW
     releaseSurface(controller);
     return false;
   }
+  // Following the system, the frame reads Increase Contrast itself, so switching it in System
+  // Settings changes the open editor on its next frame without any notification plumbing.
+  if (preferences_.contrastFollowsSystem) {
+    const auto system = systemIncreaseContrast() ? Contrast::High : Contrast::Standard;
+    // The contrast picks the token table, which keys the cached background.
+    if (system != preferences_.contrast) preferences_.contrast = system;
+  }
   // The inspector exists only in the compact presentations; a window that grows back to the full
   // rack forgets it, so shrinking again starts closed.
   auto next = solveSingLayout(logicalWidth, logicalHeight, inspectorWanted_);
@@ -881,13 +903,13 @@ core::Result<void> SingShell::setSingerMenuOpen(NativeEditorController& controll
   }
   if (singerMenuOpen_) return core::success();
   if (!presented_ || !knobsShown() || layout_.singerMenu.width <= 0.0)
-    return core::failure(core::ErrorCode::InvalidState, "The singer card is not on screen");
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheSingerCardIsNotOn));
   if (activeOverlay(controller) != nullptr)
-    return core::failure(core::ErrorCode::Conflict, "Close the open surface first");
+    return core::failure(core::ErrorCode::Conflict, tr(Str::CloseTheOpenSurfaceFirst));
   const auto state = controller.sceneState();
   if (singerMenuOverlay_->panel(controller, state, layout_, overlaySlot(controller, state)).width <=
       0.0)
-    return core::failure(core::ErrorCode::InvalidState, "The window is too small for the singer menu");
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::TheWindowIsTooSmallFor));
   // The menu is modal like the workspace menu: a lyric field or gesture over the score it covers
   // is abandoned first.
   if (lyricInputActive_) {
@@ -1023,7 +1045,7 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
     c.drawImage(*wordmark, {l.wordmark.x, l.wordmark.y + (l.wordmark.height - height) * 0.5,
                             height * aspect, height});
   } else if (l.wordmark.width > 0.0) {
-    c.text(l.wordmark, "SEAM", style(FontRole::Display, 34.0, 6.0), t.color.textPrimary);
+    c.text(l.wordmark, tr(Str::SEAM), style(FontRole::Display, 34.0, 6.0), t.color.textPrimary);
   }
 }
 
@@ -1061,6 +1083,9 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
         return measureText(utf8, style);
       },
       artGeneration_};
+  // High Contrast paints without glow (the recorder drops it as GlowlessCanvas would), and every
+  // painter below draws through this one canvas.
+  frame.setGlowless(t.contrast == Contrast::High);
   auto* c = &frame;
   // The raster front carries the character package's PPM artwork into the same frame the vector
   // canvas paints; both fronts live only for this call.
@@ -1091,11 +1116,11 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
   exportRunning_ = exportBusy(controller);
   waveform_ = hostActions_.regionWaveform
                   ? hostActions_.regionWaveform()
-                 : RegionWaveform{nullptr, "No waveform",
-                                  "This host does not give the editor its region's audio."};
+                 : RegionWaveform{nullptr, tr(Str::NoWaveform),
+                                  tr(Str::ThisHostDoesNotGiveThe)};
   if (waveform_.shown() && waveform_.view->key.region != model.regionId())
-    waveform_ = RegionWaveform{nullptr, "Other region",
-                               "The rendered audio belongs to a different region than the one shown."};
+    waveform_ = RegionWaveform{nullptr, tr(Str::OtherRegion),
+                               tr(Str::TheRenderedAudioBelongsToA)};
   if (workspace_ == Workspace::Voice) {
     // The listening singer uses this look's portrait; finished designer work and a requested
     // audition are collected before the body paints, and frames continue while either runs.
@@ -1207,7 +1232,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   // Workspace tabs: SING, VOICE, TUNE, MIX and EXPORT.
   static constexpr std::array<Icon, 5U> kIcons{Icon::Sing, Icon::Voice, Icon::Tune, Icon::Mix,
                                                Icon::Export};
-  static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix", "Export"};
+  static constexpr std::array<Str, 5U> kNames{Str::Sing, Str::Voice, Str::Tune, Str::Mix, Str::Export};
   for (std::size_t i = 0U; i < l.workspaceTab.size(); ++i) {
     const auto tab = l.workspaceTab[i];
     if (tab.width < 24.0) continue;
@@ -1221,7 +1246,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     icon(c, kIcons[i], iconCenter, 22.0, color);
     c.restore();
     if (l.workspaceLabelsVisible)
-      c.text({tab.x, tab.y + tab.height * 0.62, tab.width, 16.0}, kNames[i],
+      c.text({tab.x, tab.y + tab.height * 0.62, tab.width, 16.0}, tr(kNames[i]),
              style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Center,
                    true),
              active ? t.color.accent : withAlpha(t.color.textSecondary, 0.9));
@@ -1239,7 +1264,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.fill(Path::roundedRect(b, 7.0), withAlpha(t.color.surfaceRaised, 0.96));
     c.stroke(Path::roundedRect(b, 7.0), workspaceMenuOpen_ ? t.color.accent : t.color.border,
              StrokeStyle{1.0});
-    const auto label = b.width >= 76.0 ? "SEAM  ▾" : "≡";
+    const auto label = b.width >= 76.0 ? tr(Str::SEAM2) : "≡";
     c.text(b, label, style(FontRole::UiSemibold, 13.0, 0.4, TextAlign::Center),
            workspaceMenuOpen_ ? t.color.accent : t.color.textPrimary);
   }
@@ -1258,9 +1283,9 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.fill(Path::capsule(activeRect), t.color.accent);
   c.restore();
   const auto labelStyle = style(FontRole::UiBold, t.type.smallLabel, 1.6, TextAlign::Center, true);
-  c.text({sw.x, sw.y, half, sw.height}, "Emo", labelStyle,
+  c.text({sw.x, sw.y, half, sw.height}, tr(Str::Emo), labelStyle,
          preferences_.mode == DesignMode::Emo ? t.color.textOnAccent : t.color.textSecondary);
-  c.text({sw.x + half, sw.y, half, sw.height}, "Scene", labelStyle,
+  c.text({sw.x + half, sw.y, half, sw.height}, tr(Str::Scene), labelStyle,
          preferences_.mode == DesignMode::Scene ? t.color.textOnAccent : t.color.textSecondary);
   }
 
@@ -1312,7 +1337,7 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   // only the empty scale: nothing here is ever estimated.
   if (l.outputMeterVisible) {
     const auto m = l.outputMeter;
-    c.text({m.x, m.y, 36.0, m.height}, "Out",
+    c.text({m.x, m.y, 36.0, m.height}, tr(Str::Out),
            style(FontRole::UiSemibold, t.type.smallLabel, 1.2, TextAlign::Left, true),
            t.color.textSecondary);
     // The measured level moves on every playback frame; the label above does not.
@@ -1396,13 +1421,13 @@ void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
   c.fill(Path::roundedRect(l.workspaceMenu, 9.0), t.color.surfaceRaised);
   c.stroke(Path::roundedRect(l.workspaceMenu, 9.0), t.color.borderStrong, StrokeStyle{1.0});
   c.restore();
-  static constexpr std::array<const char*, 5U> kLabels{"Sing", "Voice", "Tune", "Mix",
-                                                       "Export"};
+  static constexpr std::array<Str, 5U> kLabels{Str::Sing, Str::Voice, Str::Tune, Str::Mix,
+                                                       Str::Export};
   for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i) {
     const auto r = l.workspaceMenuRow[i];
     const auto selected = tabSelected(i);
     if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
-    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, kLabels[i],
+    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, tr(kLabels[i]),
            style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
   }
   for (std::size_t i = 0U; i < l.modeMenuRow.size(); ++i) {
@@ -1410,7 +1435,7 @@ void SingShell::paintWorkspaceMenu(Canvas2D& c, const DesignTokens& t) const {
     if (r.width <= 0.0) continue;
     const auto selected = (i == 0U) == (preferences_.mode == DesignMode::Emo);
     if (selected) c.fill(Path::roundedRect(r, 5.0), withAlpha(t.color.accent, 0.18));
-    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, i == 0U ? "Emo" : "Scene",
+    c.text({r.x + 12.0, r.y, r.width - 24.0, r.height}, i == 0U ? tr(Str::Emo) : tr(Str::Scene),
            style(FontRole::UiSemibold, 13.0), selected ? t.color.accent : t.color.textPrimary);
   }
 }
@@ -1524,16 +1549,16 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   c.stroke(Path::roundedRect(chip, 6.0), t.color.border, StrokeStyle{1.0});
   const auto trackName = state.inspector.valid && !state.inspector.name.empty()
                              ? state.inspector.name
-                             : std::string{"No track"};
+                             : std::string{tr(Str::NoTrack)};
   c.text({chip.x + 10, chip.y, chip.width - 20, chip.height}, trackName,
          style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Left, true), t.color.textPrimary);
-  const auto project = (state.projectName.empty() ? std::string{"Untitled"} : state.projectName) +
-                       (state.dirty ? "  \u2022 edited" : "");
+  const auto project = (state.projectName.empty() ? std::string{tr(Str::Untitled)} : state.projectName) +
+                       (state.dirty ? tr(Str::Edited) : "");
   c.text({chip.right() + 14.0, chip.y, l.gridLabel.x - chip.right() - 24.0, chip.height}, project,
          style(FontRole::Ui, t.type.label), t.color.textSecondary);
   c.fill(Path::roundedRect(l.classicToggle, 6.0), withAlpha(t.color.surfaceSunken, 0.85));
   c.stroke(Path::roundedRect(l.classicToggle, 6.0), t.color.border, StrokeStyle{1.0});
-  c.text(l.classicToggle, "Classic", style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
+  c.text(l.classicToggle, tr(Str::Classic), style(FontRole::UiSemibold, t.type.smallLabel, 1.0,
                                            TextAlign::Center, true),
          t.color.textSecondary);
   // Whether the notes carry the current render's waveform, and if not, the short reason (the full
@@ -1591,8 +1616,8 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     const auto& b = l.rulerTimeMapButton;
     c.fill(Path::roundedRect(b, 6.0), withAlpha(t.color.surfaceSunken, 0.9));
     c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
-    c.text(b, "Time map",
-           fitted(c, "Time map",
+    c.text(b, tr(Str::TimeMap),
+           fitted(c, tr(Str::TimeMap),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   b.width - 10.0),
            t.color.textSecondary);
@@ -1878,10 +1903,10 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     const auto direction = static_cast<std::size_t>(
         std::max_element(away.begin(), away.end()) - away.begin());
     static constexpr std::array<const char*, 4U> kArrow{"↑ ", "↓ ", "← ", "→ "};
-    static constexpr std::array<const char*, 4U> kWhere{" notes above", " notes below", " notes earlier",
-                                                        " notes later"};
+    static constexpr std::array<Str, 4U> kWhere{Str::NotesAbove, Str::NotesBelow, Str::NotesEarlier,
+                                                        Str::NotesLater};
     const auto count = away[direction] > 0U ? away[direction] : total;
-    const auto hint = std::string{kArrow[direction]} + std::to_string(count) + kWhere[direction];
+    const auto hint = std::string{kArrow[direction]} + std::to_string(count) + tr(kWhere[direction]);
     const auto hintStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true);
     const auto chipWidth = c.measure(hint, hintStyle) + 28.0;
     const auto centerY = l.grid.y + (l.grid.height - 22.0) * 0.5;
@@ -1948,8 +1973,8 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
 void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRollModel& model,
                           const EditorSceneState& state) const {
   const auto& l = layout_;
-  static constexpr std::array<const char*, 7U> kTabs{"Dynamics", "Formant", "Breath", "Tension",
-                                                     "Air", "Gender", "Growl"};
+  static constexpr std::array<Str, 7U> kTabs{Str::Dynamics, Str::Formant, Str::Breath, Str::Tension,
+                                                     Str::Air, Str::Gender, Str::Growl};
   const auto open = state.expressionLabelVisible();
   const auto selected = open ? ui::expressionChannelIndex(state.expression.channel) + 1U : 99U;
   const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
@@ -1965,8 +1990,8 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     } else {
       c.stroke(Path::roundedRect(tab, 6.0), withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
     }
-    c.text(tab, kTabs[i],
-           fitted(c, kTabs[i],
+    c.text(tab, tr(kTabs[i]),
+           fitted(c, tr(kTabs[i]),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   tab.width - 8.0),
            active ? t.color.accent : t.color.textSecondary);
@@ -1983,7 +2008,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     const auto& b = l.laneReviewButton;
     c.fill(Path::roundedRect(b, 6.0), withAlpha(t.color.surfaceSunken, 0.9));
     c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
-    const std::string_view label{"Review"};
+    const std::string_view label{tr(Str::Review)};
     c.text(b, label,
            fitted(c, label,
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
@@ -1991,16 +2016,16 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
            t.color.textSecondary);
   }
   if (!open) {
-    c.text(info, "Select a channel to draw its curve",
+    c.text(info, tr(Str::SelectAChannelToDrawIts),
            style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), t.color.textSecondary);
     return;
   }
   const auto& e = state.expression;
   const auto descriptor = ui::describeExpressionChannel(e.channel);
   const auto scale = descriptor.unit == "semitones" ? 1.0 : 100.0;
-  const auto unit = descriptor.unit == "semitones" ? " st" : " %";
-  std::string infoText = format("%.1f", e.valueAtPlayhead * scale) + unit + " at playhead";
-  if (e.draftChanged) infoText += "  \u2022 unsaved draft";
+  const auto unit = descriptor.unit == "semitones" ? tr(Str::St) : " %";
+  std::string infoText = format("%.1f", e.valueAtPlayhead * scale) + unit + tr(Str::AtPlayhead);
+  if (e.draftChanged) infoText += tr(Str::UnsavedDraft);
   c.text(info, e.refusal.empty() ? infoText : e.refusal,
          style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
          e.refusal.empty() ? t.color.textSecondary : t.color.warning);
@@ -2028,7 +2053,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
   c.clipRect(plot);
   if (e.points.empty()) {
     c.text({plot.x + 12.0, plot.y + 4.0, plot.width - 24.0, 18.0},
-           "No curve stored for this channel", style(FontRole::Ui, t.type.smallLabel),
+           tr(Str::NoCurveStoredForThisChannel), style(FontRole::Ui, t.type.smallLabel),
            t.color.textSecondary);
   } else {
     const auto& timeline = model.timeline();
@@ -2142,7 +2167,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
     }
     return;
   }
-  cardHeader(c, t, l.singer, "Singer", voiceReady);
+  cardHeader(c, t, l.singer, tr(Str::Singer), voiceReady);
   // Voice state chip.
   const std::string stateName{voiceIdentityStateName(identity.state)};
   const auto stateColor = identity.state == VoiceIdentityState::Missing ||
@@ -2222,7 +2247,7 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   const auto footerY = l.singerChange.y;
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
-                                                   : std::string{"No voice selected"};
+                                                   : std::string{tr(Str::NoVoiceSelected)};
   c.text({l.singer.x + 18.0, footerY - 2.0, l.singerMenu.x - l.singer.x - 28.0, 16.0}, name,
          style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
   const auto detail = identity.state == VoiceIdentityState::Missing && !identity.recovery.empty()
@@ -2232,22 +2257,22 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
          style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
-  c.text(l.singerChange, "Change voice",
+  c.text(l.singerChange, tr(Str::ChangeVoice),
          style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true), t.color.accent);
   paintSingerMenuButton(c, t, l.singerMenu, singerMenuOpen_, semanticFocus_ == kSingerMenuButtonId);
 
   // Expression knobs.
-  cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
+  cardHeader(c, t, l.expression, tr(Str::Expression), state.inspector.valid);
   paintKnobs(c, t, state);
 
   // Style presets published by the selected voice.
-  cardHeader(c, t, l.style, "Style", false);
+  cardHeader(c, t, l.style, tr(Str::Style), false);
   std::vector<std::string> styles;
   for (const auto& card : state.voicebankCards)
     if (card.id == state.inspector.voicebank.id && !card.id.empty()) styles = card.styles;
   if (styles.empty()) {
     c.text({l.style.x + 18.0, l.style.y + 52.0, l.style.width - 36.0, 18.0},
-           "The selected voice publishes no style presets",
+           tr(Str::TheSelectedVoicePublishesNoStyle),
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
     return;
   }
@@ -2306,7 +2331,7 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
   c.stroke(Path::circle(center, inner + 1.0), withAlpha(t.color.accent, 0.85), StrokeStyle{1.4});
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
-                                                   : std::string{"No voice selected"};
+                                                   : std::string{tr(Str::NoVoiceSelected)};
   const auto textX = ring.right() + 12.0;
   c.text({textX, l.singer.y + 4.0, l.singerMenu.x - 8.0 - textX, 18.0}, name,
          style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
@@ -2315,16 +2340,16 @@ void SingShell::paintInspector(Canvas2D& c, const DesignTokens& t, const EditorS
     if (card.id == state.inspector.voicebank.id && !card.id.empty())
       for (const auto& preset : card.styles) styles += (styles.empty() ? "" : ", ") + preset;
   c.text(l.style,
-         std::string{voiceIdentityStateName(identity.state)} + "  \u2022  " +
-             (styles.empty() ? std::string{"No style presets"} : "Style: " + styles),
+         std::string{voiceIdentityStateName(identity.state)} + tr(Str::Text) +
+             (styles.empty() ? std::string{tr(Str::NoStylePresets)} : tr(Str::Style2) + styles),
          style(FontRole::UiMedium, t.type.smallLabel, 0.6), stateColor);
   c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
-  c.text(l.singerChange, "Change voice",
+  c.text(l.singerChange, tr(Str::ChangeVoice),
          style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Center, true), t.color.accent);
   paintSingerMenuButton(c, t, l.singerMenu, singerMenuOpen_, semanticFocus_ == kSingerMenuButtonId);
 
-  cardHeader(c, t, l.expression, "Expression", state.inspector.valid);
+  cardHeader(c, t, l.expression, tr(Str::Expression), state.inspector.valid);
   paintKnobs(c, t, state);
 }
 
@@ -2393,12 +2418,12 @@ void SingShell::paintKnobs(Canvas2D& c, const DesignTokens& t, const EditorScene
     KnobModel shown = k;
     shown.value = value;
     const auto [number, unitText] = displayValue(shown);
-    c.text({kc.x - r + 6.0, kc.y - 11.0, (r - 6.0) * 2.0, 22.0}, refused ? "\u2014" : number,
+    c.text({kc.x - r + 6.0, kc.y - 11.0, (r - 6.0) * 2.0, 22.0}, refused ? tr(Str::Text2) : number,
            style(FontRole::UiSemibold, number.size() > 5 ? 13.0 : t.type.knobValue, 0.0,
                  TextAlign::Center),
            refused ? t.color.textDisabled : t.color.textPrimary);
     c.text({cell.x, kc.y + r + 1.0, cell.width, 13.0},
-           refused ? std::string{"Unavailable"} : std::string{unitText},
+           refused ? std::string{tr(Str::Unavailable)} : std::string{unitText},
            style(FontRole::UiMedium, 10.0, 1.0, TextAlign::Center, true),
            refused ? withAlpha(t.color.warning, 0.85) : t.color.textDisabled);
     if (k.storedPoints > 0U && !refused)
@@ -2422,7 +2447,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                                 : t.color.info;
     auto title = presentation.title;
     if (state.diagnostics.size() > 1U)
-      title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
+      title += " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More);
     const auto toast = diagnosticsToastBounds();
     c.save();
     c.setGlow(withAlpha(tone, 0.5), 10.0);
@@ -2437,8 +2462,8 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
              diagnosticsOpen_ ? withAlpha(t.color.accent, 0.22) : withAlpha(t.color.surfaceSunken, 0.9));
       c.stroke(Path::roundedRect(open, 8.0),
                diagnosticsOpen_ ? t.color.accent : withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
-      c.text(open, "Diagnostics",
-             fitted(c, "Diagnostics",
+      c.text(open, tr(Str::Diagnostics),
+             fitted(c, tr(Str::Diagnostics),
                     style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                     open.width - 10.0),
              diagnosticsOpen_ ? t.color.accent : t.color.textSecondary);
@@ -2449,7 +2474,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
   std::string label{renderStatusStateName(s.state)};
   if (s.state == RenderStatusState::Rendering && s.totalPhrases > 0U)
     label += " " + std::to_string(s.completedPhrases) + "/" + std::to_string(s.totalPhrases);
-  if (s.audibleAudioStale) label += " \u2022 audio stale";
+  if (s.audibleAudioStale) label += tr(Str::AudioStale);
   c.text({meter.right() + 12.0, l.status.y, l.status.right() - meter.right() - 24.0, l.status.height},
          label + format("  %.0f%%", fraction * 100.0),
          style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Right, true),
@@ -2498,7 +2523,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
                {segment.x, segment.y, segment.width * exportFraction, segment.height}, 5.0),
            withAlpha(t.color.accent, 0.30));
     c.stroke(Path::roundedRect(segment, 5.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
-    auto text = "Export " + std::string{authoring::exportStateName(progress.state)} + " " +
+    auto text = tr(Str::Export2) + std::string{authoring::exportStateName(progress.state)} + " " +
                 std::to_string(progress.completedFiles) + "/" +
                 std::to_string(progress.totalFiles);
     if (progress.state != authoring::ExportState::Committed &&
@@ -2570,12 +2595,12 @@ StatusMessage singStatusMessage(const EditorSceneState& state) {
   const auto failed = s.state == RenderStatusState::Failed;
   if (!state.diagnostics.empty()) {
     auto text = presentDiagnostic(state.diagnostics.front()).title;
-    if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += " \u2014 " + s.diagnostic;
+    if (failed && !s.diagnostic.empty() && s.diagnostic != text) text += tr(Str::Text3) + s.diagnostic;
     return {std::move(text), StatusTone::Warning};
   }
   // A render note is status, not a warning, unless the render itself failed.
   if (!s.diagnostic.empty()) return {s.diagnostic, failed ? StatusTone::Warning : StatusTone::Normal};
-  return {state.audioDeviceOnline ? "Audio " + state.audioBackend : std::string{"Audio offline"},
+  return {state.audioDeviceOnline ? tr(Str::Audio) + state.audioBackend : std::string{tr(Str::AudioOffline)},
           StatusTone::Normal};
 }
 
@@ -2585,28 +2610,28 @@ namespace {
 
 std::string exportStateLabel(authoring::ExportState state) {
   switch (state) {
-    case authoring::ExportState::Preflight: return "Checking";
-    case authoring::ExportState::Staging: return "Rendering files";
-    case authoring::ExportState::Prepared: return "Prepared";
-    case authoring::ExportState::Publishing: return "Publishing";
-    case authoring::ExportState::Committed: return "Written";
-    case authoring::ExportState::Cancelled: return "Cancelled";
-    case authoring::ExportState::Failed: return "Failed";
-    case authoring::ExportState::Recovered: return "Recovered";
-    case authoring::ExportState::RollbackRequired: return "Needs rollback";
+    case authoring::ExportState::Preflight: return tr(Str::Checking);
+    case authoring::ExportState::Staging: return tr(Str::RenderingFiles);
+    case authoring::ExportState::Prepared: return tr(Str::Prepared);
+    case authoring::ExportState::Publishing: return tr(Str::Publishing);
+    case authoring::ExportState::Committed: return tr(Str::Written);
+    case authoring::ExportState::Cancelled: return tr(Str::Cancelled);
+    case authoring::ExportState::Failed: return tr(Str::Failed);
+    case authoring::ExportState::Recovered: return tr(Str::Recovered);
+    case authoring::ExportState::RollbackRequired: return tr(Str::NeedsRollback);
   }
-  return "Unknown";
+  return tr(Str::Unknown);
 }
 
 std::string channelLayout(std::uint8_t channels) {
-  if (channels == 1U) return "Mono";
-  if (channels == 2U) return "Stereo";
-  return std::to_string(channels) + " channels";
+  if (channels == 1U) return tr(Str::Mono);
+  if (channels == 2U) return tr(Str::Stereo);
+  return std::to_string(channels) + tr(Str::Channels);
 }
 
 std::string sampleRateLabel(std::uint32_t rate) {
   const auto khz = static_cast<double>(rate) / 1000.0;
-  return (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + " kHz";
+  return (std::fmod(khz, 1.0) == 0.0 ? format("%.0f", khz) : format("%.1f", khz)) + tr(Str::KHz);
 }
 
 }  // namespace
@@ -2663,11 +2688,11 @@ ExportPanelLayout exportPanelLayout(ui::Rect area) {
 std::string exportPlanSummary(const std::optional<ShellExportPlan>& plan,
                               const std::string& unavailable) {
   if (!plan) return unavailable;
-  std::string summary = plan->master ? "Master " + channelLayout(plan->channels) + ", " +
+  std::string summary = plan->master ? tr(Str::Master) + channelLayout(plan->channels) + ", " +
                                            sampleRateLabel(plan->sampleRate) + ", " + plan->format
-                                     : std::string{"No master"};
-  summary += plan->stems ? "; one stem per track" : "; no stems";
-  summary += "; SHA-256 receipt";
+                                     : std::string{tr(Str::NoMaster)};
+  summary += plan->stems ? tr(Str::OneStemPerTrack) : tr(Str::NoStems);
+  summary += tr(Str::SHA256Receipt);
   return summary;
 }
 
@@ -2815,7 +2840,7 @@ std::vector<SemanticNode> SingShell::overlaySemantics(const NativeEditorControll
                              .name = overlay->title(controller, state),
                              .bounds = panel,
                              .actions = {SemanticAction::SetFocus},
-                             .description = "Escape closes this surface"});
+                             .description = tr(Str::EscapeClosesThisSurface)});
   for (const auto& control : overlay->controls(controller, state, layout_, panel)) {
     // The overlay states the role and name it publishes; where the controller also publishes the
     // id, its value, description and additional actions merge in, so the surface keeps the
@@ -2932,7 +2957,7 @@ std::optional<core::Result<void>> SingShell::routeUndo(bool redo) {
   // designer's or the song's, is refused, and refused here: returning nothing would let the menu's
   // Undo fall through to the hidden song mid-drag.
   if (const auto* body = bodyWorkspace(); bodyGesture_ || (body != nullptr && body->gestureActive()))
-    return core::failure(core::ErrorCode::Conflict, "Finish the drag before undo or redo");
+    return core::failure(core::ErrorCode::Conflict, tr(Str::FinishTheDragBeforeUndoOr));
   if (workspace_ != Workspace::Voice) return std::nullopt;
   // The designer owns the command only when it can actually step through its own history;
   // otherwise the application's Undo and Redo keep working.
@@ -2969,7 +2994,7 @@ core::Result<void> SingShell::runExportSet(NativeEditorController& controller) {
   if (!hostActions_.exportSet)
     return core::failure(core::ErrorCode::Unsupported, hostActions_.exportUnavailable);
   if (exportBusy(controller))
-    return core::failure(core::ErrorCode::Conflict, "An export is already running");
+    return core::failure(core::ErrorCode::Conflict, tr(Str::AnExportIsAlreadyRunning));
   auto result = hostActions_.exportSet();
   repaint();
   return result;
@@ -2981,9 +3006,9 @@ core::Result<void> SingShell::dispatchController(NativeEditorController& control
   // score under EXPORT, a control the layout removed); only what is on screen now may act.
   refreshSemantics(controller);
   if (!semantics_.publishes(id))
-    return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
+    return core::failure(core::ErrorCode::Conflict, tr(Str::ThisElementIsNotOnScreen));
   if (bodyGesture_ && action != SemanticAction::SetFocus)
-    return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::ADragIsInProgress));
   // A control of the presented overlay belongs to the overlay even when it is not a shell id (the
   // time map's rows and actions, the overlap rows): the controller does not publish those ids, so
   // its own dispatch would refuse them. The overlay runs the same command its pointer and keys run.
@@ -3017,8 +3042,8 @@ core::Result<void> SingShell::setControllerValue(NativeEditorController& control
                                                  std::string_view id, std::string_view value) {
   refreshSemantics(controller);
   if (!semantics_.publishes(id))
-    return core::failure(core::ErrorCode::Conflict, "This element is not on screen");
-  if (bodyGesture_) return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
+    return core::failure(core::ErrorCode::Conflict, tr(Str::ThisElementIsNotOnScreen));
+  if (bodyGesture_) return core::failure(core::ErrorCode::InvalidState, tr(Str::ADragIsInProgress));
   // A control of the presented overlay takes a value only where the overlay says so (a field's
   // text), through the controller's own value path for that field; the covered score's controls
   // are not published while the card is up.
@@ -3037,7 +3062,7 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   const auto p = exportPanelLayout(area);
   glassPanel(c, t, area, t.shape.card, 0.97);
   const auto& last = state.lastExport;
-  cardHeader(c, t, area, "Export set", exportRunning_ || last.has_value());
+  cardHeader(c, t, area, tr(Str::ExportSet), exportRunning_ || last.has_value());
   c.save();
   c.clipRect(area);
   const auto left = area.x + 32.0;
@@ -3058,22 +3083,22 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
            plan ? t.color.textPrimary : t.color.warning);
   } else if (plan) {
     const auto y = area.y + 64.0;
-    row(left, y, p.columnWidth, "Master mix",
-        plan->master ? channelLayout(plan->channels) + " \u00b7 " + sampleRateLabel(plan->sampleRate) +
-                           " \u00b7 " + plan->format
-                     : std::string{"Not written"},
+    row(left, y, p.columnWidth, tr(Str::MasterMix),
+        plan->master ? channelLayout(plan->channels) + tr(Str::Text4) + sampleRateLabel(plan->sampleRate) +
+                           tr(Str::Text4) + plan->format
+                     : std::string{tr(Str::NotWritten)},
         t.color.textPrimary);
-    row(left, y + 46.0, p.columnWidth, "Stems",
-        plan->stems ? std::string{"One file per track, same format"} : std::string{"Not written"},
+    row(left, y + 46.0, p.columnWidth, tr(Str::Stems),
+        plan->stems ? std::string{tr(Str::OneFilePerTrackSameFormat)} : std::string{tr(Str::NotWritten)},
         t.color.textPrimary);
-    row(left, y + 92.0, p.columnWidth, "Project and recipes",
-        plan->asksAboutPackaging ? std::string{"You choose when the export starts"}
-                                 : std::string{"Nothing to package for this project"},
+    row(left, y + 92.0, p.columnWidth, tr(Str::ProjectAndRecipes),
+        plan->asksAboutPackaging ? std::string{tr(Str::YouChooseWhenTheExportStarts)}
+                                 : std::string{tr(Str::NothingToPackageForThisProject)},
         t.color.textPrimary);
-    row(left, y + 138.0, p.columnWidth, "Receipt", "SHA-256 of every file, written last",
+    row(left, y + 138.0, p.columnWidth, tr(Str::Receipt), tr(Str::SHA256OfEveryFileWritten),
         t.color.textPrimary);
   } else {
-    row(left, area.y + 64.0, p.columnWidth, "Export", hostActions_.exportUnavailable, t.color.warning);
+    row(left, area.y + 64.0, p.columnWidth, tr(Str::Export), hostActions_.exportUnavailable, t.color.warning);
   }
 
   // The run button: the host's real command, refused while an export runs or when it cannot export.
@@ -3084,12 +3109,12 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   c.fill(Path::capsule(button), available ? t.color.accent : withAlpha(t.color.surfaceSunken, 0.9));
   c.restore();
   c.stroke(Path::capsule(button), available ? t.color.accentDeep : t.color.border, StrokeStyle{1.0});
-  c.text(button, exportRunning_ ? "Exporting\u2026" : "Export set\u2026",
+  c.text(button, exportRunning_ ? tr(Str::Exporting) : tr(Str::ExportSet2),
          style(FontRole::UiBold, t.type.label, 1.4, TextAlign::Center, true),
          available ? t.color.textOnAccent : t.color.textDisabled);
   if (p.note.width > 0.0)
     c.text(p.note,
-           hostActions_.exportSet ? std::string{"Choose a new folder; an existing export set is never overwritten."}
+           hostActions_.exportSet ? std::string{tr(Str::ChooseANewFolderAnExisting)}
                                   : hostActions_.exportUnavailable,
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
 
@@ -3102,34 +3127,34 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   };
   std::vector<StatusLine> lines;
   if (exportRunning_) {
-    lines.push_back({"Progress", exportStateLabel(progress.state) + "  " +
+    lines.push_back({tr(Str::Progress), exportStateLabel(progress.state) + "  " +
                                      std::to_string(progress.completedFiles) + " / " +
-                                     std::to_string(progress.totalFiles) + " files" +
+                                     std::to_string(progress.totalFiles) + tr(Str::Files) +
                                      (progress.currentOutput.empty() ? "" : "  " + progress.currentOutput),
                      t.color.textPrimary});
   } else if (attemptEnded(progress.state)) {
-    lines.push_back({"Last attempt",
+    lines.push_back({tr(Str::LastAttempt),
                      exportStateLabel(progress.state) +
                          (progress.currentOutput.empty() ? "" : ": " + progress.currentOutput),
                      progress.state == authoring::ExportState::Cancelled ? t.color.warning : t.color.error});
   } else {
-    lines.push_back({"Progress", "Idle", t.color.textSecondary});
+    lines.push_back({tr(Str::Progress), tr(Str::Idle), t.color.textSecondary});
   }
   if (last) {
     const auto folder = last->setPath.empty() ? last->masterPath.parent_path() : last->setPath;
-    lines.push_back({"Last export",
-                     exportStateLabel(last->state) + " \u00b7 " + std::to_string(last->files.size()) +
-                         " files \u00b7 " + folder.filename().string(),
+    lines.push_back({tr(Str::LastExport),
+                     exportStateLabel(last->state) + tr(Str::Text4) + std::to_string(last->files.size()) +
+                         tr(Str::Files2) + folder.filename().string(),
                      last->state == authoring::ExportState::Committed ? t.color.success : t.color.warning});
     if (!p.compact)
-      lines.push_back({"Master",
+      lines.push_back({tr(Str::Master2),
                        last->masterPath.filename().string() +
                            (last->masterSha256.size() >= 12U
-                                ? "  sha256 " + last->masterSha256.substr(0U, 12U) + "\u2026"
+                                ? tr(Str::Sha256) + last->masterSha256.substr(0U, 12U) + tr(Str::Text5)
                                 : std::string{}),
                        t.color.textPrimary});
   } else {
-    lines.push_back({"Last export", "Nothing exported in this session", t.color.textSecondary});
+    lines.push_back({tr(Str::LastExport), tr(Str::NothingExportedInThisSession), t.color.textSecondary});
   }
   auto y = p.status.y;
   for (const auto& line : lines) {
@@ -3809,7 +3834,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   std::string focusedId = semanticFocus_;
   SemanticNode root{.id = "shell",
                     .role = SemanticRole::Window,
-                    .name = "Project SEAM - Sing",
+                    .name = tr(Str::ProjectSEAMSing),
                     .bounds = ui::Rect{0.0, 0.0, l.width, l.height}};
   auto& children = root.children;
   const auto add = [&](SemanticNode node) { children.push_back(std::move(node)); };
@@ -3836,12 +3861,12 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   };
 
   // Header: workspaces, look, transport, settings.
-  static constexpr std::array<const char*, 5U> kWorkspaces{"Sing", "Voice", "Tune", "Mix", "Export"};
+  static constexpr std::array<Str, 5U> kWorkspaces{Str::Sing, Str::Voice, Str::Tune, Str::Mix, Str::Export};
   for (std::size_t i = 0U; i < kWorkspaces.size(); ++i) {
     if (l.workspaceTab[i].width <= 0.0 || l.workspaceTabs.width <= 0.0) break;
-    add(SemanticNode{.id = "shell.workspace." + lowercase(kWorkspaces[i]),
+    add(SemanticNode{.id = "shell.workspace." + lowercase(englishShellString(kWorkspaces[i])),
                      .role = SemanticRole::Tab,
-                     .name = std::string{kWorkspaces[i]} + " workspace",
+                     .name = std::string{tr(kWorkspaces[i])} + tr(Str::Workspace),
                      .bounds = l.workspaceTab[i],
                      .selected = tabSelected(i),
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
@@ -3849,17 +3874,17 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
   if (l.workspaceMenuButton.width >= 24.0) {
     add(SemanticNode{.id = "shell.workspace-menu", .role = SemanticRole::Button,
-                     .name = "Workspaces and appearance",
-                     .value = workspaceMenuOpen_ ? "Open" : "Closed",
+                     .name = tr(Str::WorkspacesAndAppearance),
+                     .value = workspaceMenuOpen_ ? tr(Str::Open) : tr(Str::Closed),
                      .bounds = l.workspaceMenuButton,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     if (workspaceMenuOpen_) {
       static constexpr std::array<const char*, 5U> kIds{"sing", "voice", "tune", "mix", "export"};
-      static constexpr std::array<const char*, 5U> kNames{"Sing", "Voice", "Tune", "Mix",
-                                                          "Export"};
+      static constexpr std::array<Str, 5U> kNames{Str::Sing, Str::Voice, Str::Tune, Str::Mix,
+                                                          Str::Export};
       for (std::size_t i = 0U; i < l.workspaceMenuRow.size(); ++i)
         add(SemanticNode{.id = std::string{"shell.workspace."} + kIds[i],
-                         .role = SemanticRole::Button, .name = kNames[i],
+                         .role = SemanticRole::Button, .name = tr(kNames[i]),
                          .bounds = l.workspaceMenuRow[i],
                          .selected = tabSelected(i),
                          .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
@@ -3874,7 +3899,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     if (half.width <= 0.0) half = l.modeMenuRow[emo ? 0U : 1U];
     add(SemanticNode{.id = emo ? "shell.mode.emo" : "shell.mode.scene",
                      .role = SemanticRole::RadioButton,
-                     .name = emo ? "EMO look" : "SCENE look",
+                     .name = emo ? tr(Str::EMOLook) : tr(Str::SCENELook),
                      .bounds = half,
                      .selected = preferences_.mode == mode,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
@@ -3886,36 +3911,46 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     // The header output meter reads the measured level per channel; without one it says so
     // rather than reporting a level. Activate clears a latched clip light.
     SemanticNode meter{.id = "shell.output-meter", .role = SemanticRole::Status,
-                       .name = "Output level", .bounds = l.outputMeter};
+                       .name = tr(Str::OutputLevel), .bounds = l.outputMeter};
     if (const auto& level = state.outputLevel; level.has_value()) {
       if (!level->bus.empty()) meter.name += ", " + level->bus;
       const auto channels = level->peak.size();
       for (std::size_t i = 0U; i < channels; ++i) {
         if (i > 0U) meter.value += ", ";
-        if (channels == 2U) meter.value += i == 0U ? "L " : "R ";
+        if (channels == 2U) meter.value += i == 0U ? tr(Str::L) : tr(Str::R);
         else if (channels > 2U) meter.value += std::to_string(i + 1U) + " ";
         meter.value += level->peak[i] > 0.0F
                            ? format("%.1f dBFS", 20.0 * std::log10(static_cast<double>(level->peak[i])))
-                           : std::string{"-inf dBFS"};
+                           : std::string{tr(Str::InfDBFS)};
       }
       if (level->clipped) {
-        meter.value += "; clipped";
+        meter.value += tr(Str::Clipped);
         meter.actions.push_back(SemanticAction::Activate);
-        meter.description = "Activate to reset the clip light";
+        meter.description = tr(Str::ActivateToResetTheClipLight);
       }
     } else {
-      meter.value = "Not measured";
-      meter.description = "No output device is playing";
+      meter.value = tr(Str::NotMeasured);
+      meter.description = tr(Str::NoOutputDeviceIsPlaying);
     }
     add(std::move(meter));
   }
-  add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = "Audio settings",
+  add(SemanticNode{.id = "shell.settings", .role = SemanticRole::Button, .name = tr(Str::AudioSettings),
                    .bounds = l.settings,
                    .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
-  add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
-                   .name = "Switch to the classic editor", .bounds = l.classicToggle,
-                   .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                   .description = "Command-Shift-Space returns to this design"});
+  // The tool strip (track chip and Classic toggle) is painted only above the SING score; a covering
+  // workspace paints its own body there, so it publishes neither. Command-Shift-Space still
+  // switches to the classic editor from every workspace.
+  if (workspace_ == Workspace::Sing) {
+    add(SemanticNode{.id = "shell.track", .role = SemanticRole::Status, .name = tr(Str::Track),
+                     .value = state.inspector.valid && !state.inspector.name.empty()
+                                  ? state.inspector.name
+                                  : std::string{tr(Str::NoTrack)},
+                     .bounds = l.trackLabel});
+    add(SemanticNode{.id = "shell.classic", .role = SemanticRole::Button,
+                     .name = tr(Str::SwitchToTheClassicEditor), .bounds = l.classicToggle,
+                     .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
+                     .description = tr(Str::CommandShiftSpaceReturnsToThis)});
+  }
 
   // Timeline and the notes visible in the grid, in shell coordinates.
   if (const auto* timeline = findLegacy("timeline"); timeline != nullptr) {
@@ -3955,14 +3990,14 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     node.bounds = ui::Rect{std::clamp(node.bounds.x, grid.x, grid.x + grid.width),
                            std::clamp(node.bounds.y, grid.y, grid.y + grid.height), 0.0, 0.0};
     node.description += node.description.empty() ? "" : " / ";
-    node.description += "Outside the visible grid; scroll to show it";
+    node.description += tr(Str::OutsideTheVisibleGridScrollTo);
   };
   const auto presentNote = [presentInGrid, painted](SemanticNode& node) {
     if (const auto found = painted->find(node.id); found != painted->end()) {
       node.bounds = found->second.bounds;
-      constexpr std::string_view kDense{"drawn inside a dense overlap group"};
+      const std::string_view kDense{tr(Str::DrawnInsideADenseOverlapGroup)};
       if (found->second.hidden && node.description.find(kDense) == std::string::npos)
-        node.description += "; drawn inside a dense overlap group, whose detail lists it";
+        node.description += tr(Str::DrawnInsideADenseOverlapGroup2);
     }
     presentInGrid(node);
   };
@@ -3997,35 +4032,35 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   }
 
   // Lane selector and the hosted lane.
-  static constexpr std::array<const char*, 7U> kLanes{"Dynamics", "Formant", "Breath", "Tension",
-                                                       "Air", "Gender", "Growl"};
+  static constexpr std::array<Str, 7U> kLanes{Str::Dynamics, Str::Formant, Str::Breath, Str::Tension,
+                                                       Str::Air, Str::Gender, Str::Growl};
   const auto open = state.expressionLabelVisible();
   const auto selectedLane = open ? ui::expressionChannelIndex(state.expression.channel) + 1U : 99U;
   const auto tabWidth = std::min(104.0, l.laneTabs.width / 9.0);
   for (std::size_t i = 0U; i < kLanes.size(); ++i) {
-    add(SemanticNode{.id = "shell.lane-tab." + lowercase(kLanes[i]),
+    add(SemanticNode{.id = "shell.lane-tab." + lowercase(englishShellString(kLanes[i])),
                      .role = SemanticRole::Tab,
-                     .name = std::string{kLanes[i]} + " lane",
+                     .name = std::string{tr(kLanes[i])} + tr(Str::Lane),
                      .bounds = {l.laneTabs.x + static_cast<double>(i) * (tabWidth + 4.0),
                                 l.laneTabs.y, tabWidth, l.laneTabs.height},
                      .selected = i == selectedLane,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                     .description = i == 0U ? "Opens the Dynamics editor" : ""});
+                     .description = i == 0U ? tr(Str::OpensTheDynamicsEditor) : ""});
   }
   add(SemanticNode{
       .id = "shell.lane",
       .role = SemanticRole::Lane,
-      .name = open ? state.expression.label + " curve" : "Expression lane",
-      .value = !open ? "No channel selected"
+      .name = open ? state.expression.label + tr(Str::Curve) : tr(Str::ExpressionLane),
+      .value = !open ? tr(Str::NoChannelSelected)
                : !state.expression.refusal.empty() ? state.expression.refusal
                    : state.expression.points.empty()
-                       ? "No curve stored"
-                       : std::to_string(state.expression.points.size()) + " points",
+                       ? tr(Str::NoCurveStored)
+                       : std::to_string(state.expression.points.size()) + tr(Str::Points),
       .bounds = l.laneTimePlot,
       .enabled = laneEditable_,
       .actions = {SemanticAction::SetFocus},
-      .description = laneEditable_ ? "Click to add a point, drag to move, Escape cancels a drag"
-                                   : "Select a channel tab to edit its curve"});
+      .description = laneEditable_ ? tr(Str::ClickToAddAPointDrag)
+                                   : tr(Str::SelectAChannelToDrawIts)});
 
   // Singer rack.
   // Compact presentations publish the inspector button; its contents follow it in the tree (so Tab
@@ -4033,27 +4068,25 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
   if (l.rack != RackPresentation::Full) {
     add(SemanticNode{.id = "shell.inspector",
                      .role = SemanticRole::Button,
-                     .name = "Singer inspector",
-                     .value = l.inspectorOpen ? "Open" : "Closed",
+                     .name = tr(Str::SingerInspector),
+                     .value = l.inspectorOpen ? tr(Str::Open) : tr(Str::Closed),
                      .bounds = l.inspectorButton,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                     .description = "Shows the singer, the expression knobs and the style; "
-                                    "Escape closes it"});
+                     .description = tr(Str::ShowsTheSingerTheExpressionKnobs)});
   }
   if (knobsShown()) {
     rehome("voice.identity", l.singer);
-    add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = "Change voice",
+    add(SemanticNode{.id = "shell.change-voice", .role = SemanticRole::Button, .name = tr(Str::ChangeVoice),
                      .bounds = l.singerChange,
                      .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     if (l.singerMenu.width > 0.0)
       add(SemanticNode{.id = std::string{kSingerMenuButtonId},
                        .role = SemanticRole::Button,
-                       .name = "Singer actions",
-                       .value = singerMenuOpen_ ? "Open" : "Closed",
+                       .name = tr(Str::SingerActions),
+                       .value = singerMenuOpen_ ? tr(Str::Open) : tr(Str::Closed),
                        .bounds = l.singerMenu,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                       .description = "Opens the singer's reviews, inspectors and voicebank "
-                                      "commands; Escape closes the menu"});
+                       .description = tr(Str::OpensTheSingerSReviewsInspectors)});
     const auto knobs = knobModels(state);
     for (std::size_t i = 0U; i < knobs.size(); ++i) {
       const auto& k = knobs[i];
@@ -4065,7 +4098,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
           .id = "shell.knob." + lowercase(k.label),
           .role = SemanticRole::Slider,
           .name = k.label,
-          .value = refused ? k.refusal : number + (percent ? "%" : " semitones"),
+          .value = refused ? k.refusal : number + (percent ? "%" : tr(Str::Semitones)),
           .bounds = l.knob[i],
           .enabled = !refused,
           .actions = refused ? std::vector<SemanticAction>{SemanticAction::SetFocus}
@@ -4074,7 +4107,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
                                                            SemanticAction::Activate,
                                                            SemanticAction::SetFocus},
           .description = refused ? k.refusal
-                                 : "Value at the playhead; Activate opens its curve in the lane",
+                                 : tr(Str::ValueAtThePlayheadActivateOpens),
           .numericValue = k.value * scale,
           .numericMinimum = static_cast<double>(k.descriptor.minimum) * scale,
           .numericMaximum = static_cast<double>(k.descriptor.maximum) * scale,
@@ -4084,20 +4117,20 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     for (const auto& card : state.voicebankCards)
       if (card.id == state.inspector.voicebank.id && !card.id.empty())
         for (const auto& style : card.styles) styles += (styles.empty() ? "" : ", ") + style;
-    add(SemanticNode{.id = "shell.style", .role = SemanticRole::Panel, .name = "Style presets",
-                     .value = styles.empty() ? "The selected voice publishes no style presets" : styles,
+    add(SemanticNode{.id = "shell.style", .role = SemanticRole::Panel, .name = tr(Str::StylePresets),
+                     .value = styles.empty() ? tr(Str::TheSelectedVoicePublishesNoStyle) : styles,
                      .bounds = l.style});
   }
 
   // Status bar: render state, diagnostics and export actions stay reachable.
   const auto& s = state.renderStatus;
-  add(SemanticNode{.id = "shell.status", .role = SemanticRole::Status, .name = "Render status",
+  add(SemanticNode{.id = "shell.status", .role = SemanticRole::Status, .name = tr(Str::RenderStatus),
                    .value = std::string{renderStatusStateName(s.state)} +
                             (s.diagnostic.empty() ? "" : ": " + s.diagnostic),
                    .bounds = l.status});
   if (s.state == RenderStatusState::Rendering || s.state == RenderStatusState::Queued) {
     add(SemanticNode{.id = "shell.render-progress", .role = SemanticRole::ProgressIndicator,
-                     .name = "Render progress",
+                     .name = tr(Str::RenderProgress),
                      .value = format("%.0f%%", std::clamp(s.fraction, 0.0, 1.0) * 100.0),
                      .bounds = l.status,
                      .numericValue = std::clamp(s.fraction, 0.0, 1.0) * 100.0,
@@ -4142,16 +4175,16 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     // The toast stack above the status bar: the shell's own presentation of the topmost
     // diagnostic, and the popover opener beside it.
     add(SemanticNode{.id = "shell.diagnostics.toast", .role = SemanticRole::Status,
-                     .name = "Diagnostic",
+                     .name = tr(Str::Diagnostic),
                      .value = presentDiagnostic(state.diagnostics.front()).title +
                               (state.diagnostics.size() > 1U
-                                   ? " +" + std::to_string(state.diagnostics.size() - 1U) + " more"
+                                   ? " +" + std::to_string(state.diagnostics.size() - 1U) + tr(Str::More)
                                    : std::string{}),
                      .bounds = diagnosticsToastBounds(),
                      .actions = {SemanticAction::SetFocus}});
     if (const auto openButton = diagnosticsOpenButton(); openButton.width > 0.0)
       add(SemanticNode{.id = "shell.diagnostics.open", .role = SemanticRole::Button,
-                       .name = "Diagnostics", .bounds = openButton,
+                       .name = tr(Str::Diagnostics), .bounds = openButton,
                        .selected = diagnosticsOpen_,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
   }
@@ -4160,25 +4193,25 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     // surface through the controller's own command.
     if (l.rulerTimeMapButton.width > 0.0)
       add(SemanticNode{.id = "shell.ruler.time-map", .role = SemanticRole::Button,
-                       .name = "Tempo and meter events",
+                       .name = tr(Str::TempoAndMeterEvents),
                        .bounds = l.rulerTimeMapButton,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     if (l.laneReviewButton.width > 0.0)
       add(SemanticNode{.id = "shell.lane.review", .role = SemanticRole::Button,
-                       .name = "Review retained edits", .bounds = l.laneReviewButton,
+                       .name = tr(Str::ReviewRetainedEdits), .bounds = l.laneReviewButton,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus}});
     for (const auto& [group, badge] : overlapBadges(controller))
       add(SemanticNode{.id = "shell.note.overlap." + std::to_string(group),
                        .role = SemanticRole::Button,
-                       .name = "Overlapping notes",
-                       .value = "Activate to list this group",
+                       .name = tr(Str::OverlappingNotes),
+                       .value = tr(Str::ActivateToListThisGroup),
                        .bounds = badge,
                        .actions = {SemanticAction::Activate, SemanticAction::SetFocus},
-                       .description = "Opens the overlap detail beside the note"});
+                       .description = tr(Str::OpensTheOverlapDetailBesideThe)});
     // What the notes show of the rendered audio, as painted in this frame.
     add(SemanticNode{.id = "shell.waveform", .role = SemanticRole::Status,
-                     .name = "Note waveform",
-                     .value = waveform_.shown() ? std::string{"Showing the current render"}
+                     .name = tr(Str::NoteWaveform),
+                     .value = waveform_.shown() ? std::string{tr(Str::ShowingTheCurrentRender)}
                                                 : waveform_.caption,
                      .bounds = layout_.gridLabel,
                      .actions = {SemanticAction::SetFocus},
@@ -4226,27 +4259,27 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     const auto panel = exportPanelLayout(exportArea());
     const auto summary = exportPlanSummary(plan, hostActions_.exportUnavailable);
     add(SemanticNode{.id = "shell.export.panel", .role = SemanticRole::Panel,
-                     .name = "Export set", .value = summary, .bounds = exportArea(),
+                     .name = tr(Str::ExportSet), .value = summary, .bounds = exportArea(),
                      .actions = {SemanticAction::SetFocus}});
     add(SemanticNode{
-        .id = "shell.export.run", .role = SemanticRole::Button, .name = "Export set",
+        .id = "shell.export.run", .role = SemanticRole::Button, .name = tr(Str::ExportSet),
         .bounds = panel.button, .enabled = available,
         .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate,
                                                            SemanticAction::SetFocus}
                              : std::vector<SemanticAction>{SemanticAction::SetFocus},
         .description = !hostActions_.exportSet ? hostActions_.exportUnavailable
-                       : busy                 ? std::string{"An export is already running"}
-                                              : std::string{"Choose a new folder for the set"}});
+                       : busy                 ? std::string{tr(Str::AnExportIsAlreadyRunning)}
+                                              : std::string{tr(Str::ChooseANewFolderForThe)}});
     const auto& progress = controller.exportProgress();
     const auto statusBounds = panel.status.height > 0.0 ? panel.status : panel.button;
     if (busy) {
       const auto fraction = static_cast<double>(progress.completedFiles) /
                             static_cast<double>(std::max<std::uint64_t>(1U, progress.totalFiles));
       add(SemanticNode{.id = "shell.export.progress", .role = SemanticRole::ProgressIndicator,
-                       .name = "Export progress",
+                       .name = tr(Str::ExportProgress),
                        .value = exportStateLabel(progress.state) + ", " +
-                                std::to_string(progress.completedFiles) + " of " +
-                                std::to_string(progress.totalFiles) + " files",
+                                std::to_string(progress.completedFiles) + tr(Str::Of) +
+                                std::to_string(progress.totalFiles) + tr(Str::Files),
                        .bounds = statusBounds,
                        .numericValue = fraction * 100.0,
                        .numericMinimum = 0.0,
@@ -4255,7 +4288,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
       // A failed or cancelled attempt is reported with its reason, whether or not any file was
       // counted and whatever an earlier successful export wrote.
       add(SemanticNode{.id = "shell.export.attempt", .role = SemanticRole::Status,
-                       .name = "Last export attempt",
+                       .name = tr(Str::LastExportAttempt),
                        .value = exportStateLabel(progress.state) +
                                 (progress.currentOutput.empty() ? "" : ": " + progress.currentOutput),
                        .bounds = statusBounds,
@@ -4263,13 +4296,13 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     }
     const auto& last = state.lastExport;
     add(SemanticNode{
-        .id = "shell.export.last", .role = SemanticRole::Status, .name = "Last export",
+        .id = "shell.export.last", .role = SemanticRole::Status, .name = tr(Str::LastExport),
         .value = last ? exportStateLabel(last->state) + ", " + std::to_string(last->files.size()) +
-                            " files in " +
+                            tr(Str::FilesIn) +
                             (last->setPath.empty() ? last->masterPath.parent_path() : last->setPath)
                                 .filename()
                                 .string()
-                      : std::string{"Nothing exported in this session"},
+                      : std::string{tr(Str::NothingExportedInThisSession)},
         .bounds = statusBounds,
                         .actions = {SemanticAction::SetFocus}});
   }
@@ -4373,16 +4406,16 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
 core::Result<void> SingShell::dispatchSemantic(NativeEditorController& controller,
                                                std::string_view id, SemanticAction action) {
   if (!ownsSemantic(id))
-    return core::failure(core::ErrorCode::NotFound, "Not a shell accessibility element");
+    return core::failure(core::ErrorCode::NotFound, tr(Str::NotAShellAccessibilityElement));
   if (!presented_)
     return core::failure(core::ErrorCode::InvalidState,
-                         "The redesigned editor is not on screen; this control is unavailable");
+                         tr(Str::TheRedesignedEditorIsNotOn));
   // Validate against the current layout, capabilities and state, not the last painted tree: a
   // stale id (a knob removed by the rail layout), an unknown id, a disabled control or an
   // unsupported action is refused before anything reaches the document.
   refreshSemantics(controller);
   if (bodyGesture_ && action != SemanticAction::SetFocus)
-    return core::failure(core::ErrorCode::InvalidState, "A drag is in progress");
+    return core::failure(core::ErrorCode::InvalidState, tr(Str::ADragIsInProgress));
   return semantics_.dispatch(
       id, action, [this, &controller](std::string_view target, SemanticAction requested) {
         return performSemantic(controller, target, requested);
@@ -4398,7 +4431,7 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
   }
   const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
   core::Result<void> result = core::failure(core::ErrorCode::Unsupported,
-                                            "This element does not support that action");
+                                            tr(Str::ThisElementDoesNotSupportThat));
   if (id == "shell.workspace-menu" && activate) {
     setWorkspaceMenuOpen(controller, !workspaceMenuOpen_);
     result = core::success();
@@ -4447,13 +4480,13 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
     const auto parsed = std::from_chars(index.data(), index.data() + index.size(), group);
     result = parsed.ec == std::errc{} && parsed.ptr == index.data() + index.size()
                  ? controller.openOverlapDetail(group)
-                 : core::failure(core::ErrorCode::InvalidArgument, "Invalid overlap group");
+                 : core::failure(core::ErrorCode::InvalidArgument, tr(Str::InvalidOverlapGroup));
   } else if (auto* overlay = const_cast<ShellOverlay*>(activeOverlay(controller));
              overlay != nullptr && overlayPublishes(controller, id)) {
     // A control of a presented overlay: its own real command, validated against its current state.
     refreshSemantics(controller);
     if (!semantics_.publishes(id)) {
-      result = core::failure(core::ErrorCode::Conflict, "This control is not on screen");
+      result = core::failure(core::ErrorCode::Conflict, tr(Str::ThisControlIsNotOnScreen));
     } else if (id == std::string{overlay->idPrefix()} + "panel") {
       result = core::success();
     } else {
@@ -4490,7 +4523,7 @@ core::Result<void> SingShell::performSemantic(NativeEditorController& controller
       if (name != kKnobs[i]) continue;
       if (knobRefused_[i]) {
         result = core::failure(core::ErrorCode::Unsupported,
-                               "The selected singer cannot apply this control");
+                               tr(Str::TheSelectedSingerCannotApplyThis));
       } else if (action == SemanticAction::Increment) {
         result = nudge(controller, i, 1);
       } else if (action == SemanticAction::Decrement) {

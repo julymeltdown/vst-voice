@@ -70,10 +70,26 @@ DesignTokens makeEmo(Contrast contrast) noexcept {
   c.textureSecondary = hex(0xEDE8E3);
   t.trackColors = {hex(0xD1143A), hex(0xB8BCC6), hex(0xEDE8E3), hex(0xC8553D), hex(0x6F6A73)};
   if (contrast == Contrast::High) {
+    // WCAG AA on every surface (tests/test_design_system.cpp prints the table): text at least
+    // 4.5:1, borders, strokes and the focus ring at least 3:1. The red that carries text and
+    // selection is lifted so it reads as text on the dark surfaces, and whatever sits on it turns
+    // dark, because no single red is both a 4.5:1 text colour on ink black and a 4.5:1 background
+    // for bone-white text.
     c.border = hex(0x8A8A8A);
+    c.borderStrong = hex(0xA8A2AC);
     c.textSecondary = hex(0xD6D0CC);
+    c.textDisabled = hex(0x8A8288);
+    c.textOnAccent = hex(0x0B0A0C);
+    c.accent = hex(0xFF4D6A);
+    c.noteStroke = hex(0xFF5A73);
+    c.noteSelectedA = hex(0xFF4D6A);
+    c.noteSelectedB = hex(0xFF7A90);
+    c.knobTrack = hex(0x6F6A73);
     c.gridStrong = hex(0x4A444C);
+    c.focusRing = hex(0xFFE4B0);
     t.light.textureAlpha = 0.0;
+    t.light.glowAlphaRest = 0.0;
+    t.light.glowAlphaActive = 0.0;
   }
   return t;
 }
@@ -135,11 +151,22 @@ DesignTokens makeScene(Contrast contrast) noexcept {
   c.texturePrimary = hex(0xFF2E9A);
   c.textureSecondary = hex(0x1DE9FF);
   t.trackColors = {hex(0xFF2E9A), hex(0x1DE9FF), hex(0xB8FF3B), hex(0x9B5CFF), hex(0xFFE14D)};
+  // Plan section 15: SCENE's glitter must never become noise, so its texture layer stays at or
+  // below 8% opacity.
+  t.light.textureAlpha = 0.08;
   if (contrast == Contrast::High) {
+    // WCAG AA on every surface, as for EMO. Text on the pink-to-violet selection is dark, so the
+    // violet end is lifted until dark text reads on it.
     c.border = hex(0xB99AD6);
+    c.borderStrong = hex(0xD0B8E8);
     c.textSecondary = hex(0xE6D2F0);
+    c.textDisabled = hex(0x9580AA);
+    c.noteSelectedB = hex(0xB98AFF);
+    c.knobTrack = hex(0x7A5CA0);
     c.gridStrong = hex(0x4A3270);
     t.light.textureAlpha = 0.0;
+    t.light.glowAlphaRest = 0.0;
+    t.light.glowAlphaActive = 0.0;
   }
   return t;
 }

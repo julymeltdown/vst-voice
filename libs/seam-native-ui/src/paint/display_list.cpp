@@ -206,6 +206,7 @@ void RecordingCanvas::setAlpha(double alpha) { state_.alpha = std::clamp(alpha, 
 void RecordingCanvas::setBlend(Blend blend) { state_.blend = blend; }
 
 void RecordingCanvas::setGlow(Color color, double radius) {
+  if (glowless_) return;
   state_.glow = true;
   state_.glowColor = color;
   state_.glowRadius = std::max(0.0, radius);

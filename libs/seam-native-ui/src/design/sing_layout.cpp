@@ -35,8 +35,8 @@ void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
                               height - 2.0 * kPad};
   l.singer = {inner.x, inner.y, inner.width, kSingerRow};
   l.portraitRing = {l.singer.x, l.singer.y + 6.0, 44.0, 44.0};
-  l.singerChange = {l.singer.right() - 100.0, l.singer.y + 6.0, 100.0, 22.0};
-  l.singerMenu = {l.singerChange.x - 6.0 - 32.0, l.singerChange.y, 32.0, 22.0};
+  l.singerChange = {l.singer.right() - 100.0, l.singer.y + 6.0, 100.0, 24.0};
+  l.singerMenu = {l.singerChange.x - 6.0 - 32.0, l.singerChange.y, 32.0, 24.0};
   l.style = {l.portraitRing.right() + 12.0, l.singer.y + 34.0,
              l.singer.right() - l.portraitRing.right() - 12.0, 18.0};
   l.expression = {inner.x, l.singer.bottom() + kSingGap, inner.width,
@@ -127,8 +127,8 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
     const auto ring = std::clamp(std::min(l.singer.width - 152.0, l.singer.height - 72.0), 120.0,
                                  288.0);
     l.portraitRing = {l.singer.x + (l.singer.width - ring) * 0.5, l.singer.y + 40.0, ring, ring};
-    l.singerChange = {l.singer.right() - 116.0, l.singer.bottom() - 30.0, 100.0, 22.0};
-    l.singerMenu = {l.singerChange.x - 8.0 - 32.0, l.singerChange.y, 32.0, 22.0};
+    l.singerChange = {l.singer.right() - 116.0, l.singer.bottom() - 32.0, 100.0, 24.0};
+    l.singerMenu = {l.singerChange.x - 8.0 - 32.0, l.singerChange.y, 32.0, 24.0};
     const auto columns = 3.0;
     const auto cellWidth = (l.expression.width - 32.0) / columns;
     const auto top = l.expression.y + 44.0;
@@ -233,11 +233,13 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.gridLabel = {l.classicToggle.x - 104.0, l.tools.y + 2.0, 96.0, 24.0};
 
   // The overlays' openers sit at the right end of strips the shell already paints, so they cover
-  // no note label or lane tab. Each stays zero when its strip cannot hold one.
+  // no note label or lane tab. Each stays zero when its strip cannot hold one, and each is at least
+  // the 24-point minimum hit target tall (plan section 1): the time-map button takes the ruler's
+  // whole height rather than insetting inside it.
   const auto timeMapWidth = std::clamp(l.ruler.width * 0.16, 0.0, 96.0);
   if (timeMapWidth >= 48.0 && l.ruler.width >= 260.0)
-    l.rulerTimeMapButton = {l.ruler.right() - timeMapWidth, l.ruler.y + 2.0, timeMapWidth,
-                            std::max(0.0, l.ruler.height - 4.0)};
+    l.rulerTimeMapButton = {l.ruler.right() - timeMapWidth, l.ruler.y, timeMapWidth,
+                            std::max(0.0, l.ruler.height)};
   const auto reviewWidth = std::clamp(l.laneTabs.width * 0.15, 0.0, 108.0);
   if (reviewWidth >= 52.0 && l.laneTabs.width >= 320.0)
     l.laneReviewButton = {l.laneTabs.right() - reviewWidth, l.laneTabs.y + 2.0,

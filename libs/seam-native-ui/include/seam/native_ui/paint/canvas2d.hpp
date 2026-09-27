@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -139,6 +140,91 @@ public:
 
 // Null when the platform has no vector backend (Windows and X11 builds stay on the legacy painter).
 [[nodiscard]] std::unique_ptr<Canvas2D> makeCanvas(PixelSurface& surface, double scale);
+
+// Forwards every call to another canvas except glow, which it drops. High Contrast paints through
+// it (plan section 4.2: textures and glow off), so no halo softens an edge or a glyph.
+class GlowlessCanvas final : public Canvas2D {
+public:
+  explicit GlowlessCanvas(Canvas2D& inner) noexcept : inner_(inner) {}
+  [[nodiscard]] double width() const noexcept override { return inner_.width(); }
+  [[nodiscard]] double height() const noexcept override { return inner_.height(); }
+  [[nodiscard]] double scale() const noexcept override { return inner_.scale(); }
+  void save() override { inner_.save(); }
+  void restore() override { inner_.restore(); }
+  void translate(double dx, double dy) override { inner_.translate(dx, dy); }
+  void clipRect(ui::Rect r) override { inner_.clipRect(r); }
+  void clipPath(const Path& path) override { inner_.clipPath(path); }
+  void setAlpha(double alpha) override { inner_.setAlpha(alpha); }
+  void setBlend(Blend blend) override { inner_.setBlend(blend); }
+  void setGlow(Color, double) override {}
+  void clearGlow() override { inner_.clearGlow(); }
+  void fill(const Path& path, Color color) override { inner_.fill(path, color); }
+  void fill(const Path& path, const LinearGradient& gradient) override {
+    inner_.fill(path, gradient);
+  }
+  void fill(const Path& path, const RadialGradient& gradient) override {
+    inner_.fill(path, gradient);
+  }
+  void stroke(const Path& path, Color color, const StrokeStyle& style) override {
+    inner_.stroke(path, color, style);
+  }
+  void stroke(const Path& path, const LinearGradient& gradient, const StrokeStyle& style) override {
+    inner_.stroke(path, gradient, style);
+  }
+  void drawImage(const Image& image, ui::Rect destination, double opacity = 1.0) override {
+    inner_.drawImage(image, destination, opacity);
+  }
+  void drawImage(const Image& image, ui::Rect source, ui::Rect destination,
+                 double opacity) override {
+    inner_.drawImage(image, source, destination, opacity);
+  }
+  double text(ui::Rect bounds, std::string_view utf8, const TextStyle& style,
+              Color color) override {
+    return inner_.text(bounds, utf8, style, color);
+  }
+  [[nodiscard]] double measure(std::string_view utf8, const TextStyle& style) override {
+    return inner_.measure(utf8, style);
+  }
+  void flush() override { inner_.flush(); }
+
+private:
+  Canvas2D& inner_;
+};
+
+// One line of text a canvas was asked to draw, as the text engine measured it. Rectangles are in
+// the canvas's own logical coordinates with the translation in effect applied: bounds is the box
+// the painter gave, ink the line as drawn (after any elision, from ascent to descent), and clip the
+// clip in force around the call, which the ink must stay inside to be seen whole. naturalWidth is
+// the measured width of the whole string, and elided says the line was drawn truncated with an
+// ellipsis because naturalWidth exceeded the bounds.
+struct TextRecord final {
+  ui::Rect bounds;
+  ui::Rect ink;
+  ui::Rect clip;
+  std::string text;
+  double naturalWidth{0.0};
+  bool elided{false};
+};
+
+// Test and evidence hook: while one is alive, every Canvas2D::text call on this thread is also
+// recorded here. Scopes nest; the innermost one receives the records. Painting is unchanged.
+class ScopedTextCapture final {
+public:
+  ScopedTextCapture() noexcept;
+  ~ScopedTextCapture();
+  ScopedTextCapture(const ScopedTextCapture&) = delete;
+  ScopedTextCapture& operator=(const ScopedTextCapture&) = delete;
+  [[nodiscard]] const std::vector<TextRecord>& records() const noexcept { return records_; }
+  void clear() noexcept { records_.clear(); }
+  // Called by a canvas backend for each drawn line; a no-op when no capture is alive.
+  static void record(TextRecord record);
+  [[nodiscard]] static bool active() noexcept;
+
+private:
+  std::vector<TextRecord> records_;
+  ScopedTextCapture* previous_{nullptr};
+};
+
 [[nodiscard]] bool vectorBackendAvailable() noexcept;
 // Contents/Resources of the bundle whose binary contains this code (the app, or the plug-in inside
 // a host), or empty when it cannot be determined.

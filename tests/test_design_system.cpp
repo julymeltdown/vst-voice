@@ -7,7 +7,10 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #if defined(__APPLE__)
 #include "seam/native_ui/paint/presentation_color.hpp"
@@ -235,6 +238,144 @@ TEST_CASE("EMO and SCENE text roles meet contrast floors in both contrast settin
       CHECK(t.type.smallLabel >= 10.0);
     }
   }
+}
+
+namespace {
+
+enum class PairKind { Text, NonText };
+struct TokenPair final {
+  std::string name;
+  Color foreground;
+  Color background;
+  PairKind kind;
+  // Disabled text is exempt from WCAG 1.4.3; High Contrast holds it to the text floor anyway.
+  bool exemptInStandard{false};
+};
+
+// Every foreground/background pairing the painters use, by role. Text roles are drawn on the four
+// surfaces; the rest are drawn on the fill named with them.
+std::vector<TokenPair> tokenPairs(const DesignTokens& t) {
+  const auto& c = t.color;
+  const std::array<std::pair<const char*, Color>, 4U> surfaces{
+      {{"canvas", c.canvas}, {"surface", c.surface}, {"surfaceRaised", c.surfaceRaised},
+       {"surfaceSunken", c.surfaceSunken}}};
+  std::vector<TokenPair> pairs;
+  const auto onSurfaces = [&](const char* name, Color fg, PairKind kind, bool exempt = false) {
+    for (const auto& [bgName, bg] : surfaces)
+      pairs.push_back({std::string{name} + "/" + bgName, fg, bg, kind, exempt});
+  };
+  for (const auto& [name, fg] : std::array<std::pair<const char*, Color>, 9U>{
+           {{"textPrimary", c.textPrimary}, {"textSecondary", c.textSecondary},
+            {"accent", c.accent}, {"accentTime", c.accentTime}, {"warning", c.warning},
+            {"error", c.error}, {"success", c.success}, {"info", c.info},
+            {"noteText", c.noteText}}})
+    onSurfaces(name, fg, PairKind::Text);
+  onSurfaces("textDisabled", c.textDisabled, PairKind::Text, true);
+  pairs.push_back({"textOnAccent/accent", c.textOnAccent, c.accent, PairKind::Text});
+  pairs.push_back({"textOnAccent/noteSelectedA", c.textOnAccent, c.noteSelectedA, PairKind::Text});
+  pairs.push_back({"textOnAccent/noteSelectedB", c.textOnAccent, c.noteSelectedB, PairKind::Text});
+  for (const auto& [name, bg] : std::array<std::pair<const char*, Color>, 2U>{
+           {{"noteFill", c.noteFill}, {"noteFillAlt", c.noteFillAlt}}}) {
+    pairs.push_back({std::string{"noteText/"} + name, c.noteText, bg, PairKind::Text});
+    pairs.push_back({std::string{"phonemeText/"} + name, c.phonemeText, bg, PairKind::Text});
+  }
+  pairs.push_back({"keyLabel/keyWhite", c.keyLabel, c.keyWhite, PairKind::Text});
+  // Non-text (WCAG 1.4.11): boundaries, the focus ring, selection and the curves on the grid.
+  onSurfaces("focusRing", c.focusRing, PairKind::NonText);
+  onSurfaces("border", c.border, PairKind::NonText);
+  onSurfaces("borderStrong", c.borderStrong, PairKind::NonText);
+  onSurfaces("accent(indicator)", c.accent, PairKind::NonText);
+  pairs.push_back({"noteStroke/gridWeak", c.noteStroke, c.gridWeak, PairKind::NonText});
+  pairs.push_back({"noteStroke/canvas", c.noteStroke, c.canvas, PairKind::NonText});
+  pairs.push_back({"pitchCurve/gridWeak", c.pitchCurve, c.gridWeak, PairKind::NonText});
+  pairs.push_back({"accentCurve/gridWeak", c.accentCurve, c.gridWeak, PairKind::NonText});
+  pairs.push_back({"knobPointer/knobBodyInner", c.knobPointer, c.knobBodyInner, PairKind::NonText});
+  pairs.push_back({"knobTrack/surfaceRaised", c.knobTrack, c.surfaceRaised, PairKind::NonText});
+  // The focus ring is drawn 2 points outside the focused control (plan section 12), so it is
+  // measured against the surfaces around controls, never against the control's own fill.
+  return pairs;
+}
+
+}  // namespace
+
+TEST_CASE("High Contrast meets WCAG AA for every text and non-text token pair in both looks") {
+  // Standard is the owner-approved palette; the pairs it misses AA on are named here so a change
+  // either way is noticed. EMO's blood red reads 3.2-3.7:1 as small text on the dark surfaces.
+  const std::vector<std::string> standardExceptions{
+      "emo accent/canvas", "emo accent/surface", "emo accent/surfaceRaised",
+      "emo accent/surfaceSunken"};
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    for (const auto contrast : {Contrast::Standard, Contrast::High}) {
+      const auto& t = tokensFor(mode, contrast);
+      const auto high = contrast == Contrast::High;
+      double minimumText = 100.0;
+      double minimumNonText = 100.0;
+      std::string weakestText;
+      std::string weakestNonText;
+      for (const auto& pair : tokenPairs(t)) {
+        // Both are opaque token colours: a pair with alpha would need compositing first.
+        CHECK(pair.foreground.alpha == 255U && pair.background.alpha == 255U);
+        const auto ratio = contrastRatio(pair.foreground, pair.background);
+        const auto key = std::string{designModeName(mode)} + " " + pair.name;
+        const auto floor = pair.kind == PairKind::Text ? 4.5 : 3.0;
+        auto& minimum = pair.kind == PairKind::Text ? minimumText : minimumNonText;
+        auto& weakest = pair.kind == PairKind::Text ? weakestText : weakestNonText;
+        const auto counted = high || (pair.kind == PairKind::Text && !pair.exemptInStandard);
+        if (counted && ratio < minimum) {
+          minimum = ratio;
+          weakest = pair.name;
+        }
+        if (high) {
+          if (ratio < floor) std::printf("  High fails %s: %.2f:1\n", key.c_str(), ratio);
+          CHECK(ratio >= floor);
+          continue;
+        }
+        // Standard: text meets AA except the named exceptions; non-text is only held to AA for
+        // the focus ring, which must always be visible.
+        if (pair.kind == PairKind::Text && !pair.exemptInStandard) {
+          const auto excepted = std::find(standardExceptions.begin(), standardExceptions.end(),
+                                          key) != standardExceptions.end();
+          if ((ratio >= floor) == excepted)
+            std::printf("  Standard %s: %.2f:1 (%s)\n", key.c_str(), ratio,
+                        excepted ? "listed as an exception but passes" : "fails");
+          CHECK((ratio >= floor) != excepted);
+        }
+        if (pair.name.starts_with("focusRing/")) CHECK(ratio >= 3.0);
+      }
+      if (high)
+        std::printf("%s high: weakest text %.2f:1 (%s), weakest non-text %.2f:1 (%s)\n",
+                    std::string{designModeName(mode)}.c_str(), minimumText, weakestText.c_str(),
+                    minimumNonText, weakestNonText.c_str());
+      else
+        std::printf("%s standard: weakest text %.2f:1 (%s)\n",
+                    std::string{designModeName(mode)}.c_str(), minimumText, weakestText.c_str());
+      if (high) {
+        // Plan section 4.2: High Contrast turns textures and glow off.
+        CHECK(t.light.textureAlpha == 0.0);
+        CHECK(t.light.glowAlphaRest == 0.0 && t.light.glowAlphaActive == 0.0);
+      }
+    }
+  }
+  // Plan section 15: SCENE's texture layer never exceeds 8% opacity.
+  CHECK(tokensFor(DesignMode::Scene, Contrast::Standard).light.textureAlpha <= 0.08);
+  CHECK(tokensFor(DesignMode::Scene, Contrast::High).light.textureAlpha <= 0.08);
+}
+
+TEST_CASE("the in-app contrast override wins over the system and can be returned to it") {
+  SingShell shell;
+  shell.activate({}, DesignPreferences{.mode = DesignMode::Scene});
+  CHECK(shell.contrast() == Contrast::Standard);
+  CHECK(!shell.contrastFollowsSystem());
+  shell.setContrast(Contrast::High, false);
+  CHECK(shell.contrast() == Contrast::High);
+  CHECK(!shell.contrastFollowsSystem());
+  shell.followSystemContrast(false);
+  CHECK(shell.contrastFollowsSystem());
+  CHECK(shell.contrast() ==
+        (systemIncreaseContrast() ? Contrast::High : Contrast::Standard));
+  shell.setContrast(Contrast::Standard, false);
+  CHECK(!shell.contrastFollowsSystem());
+  CHECK(shell.contrast() == Contrast::Standard);
 }
 
 TEST_CASE("the design shell is inactive until a production host activates it") {

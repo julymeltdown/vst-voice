@@ -138,6 +138,7 @@ public:
     CGContextSetShouldSmoothFonts(ctx, false);
     CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
     CGContextSetLineJoin(ctx, kCGLineJoinRound);
+    baseInverse_ = CGAffineTransformInvert(CGContextGetCTM(ctx));
   }
 
   [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(context_); }
@@ -262,6 +263,8 @@ public:
     CGFloat ascent = 0.0;
     CGFloat descent = 0.0;
     auto width = CTLineGetTypographicBounds(line.get(), &ascent, &descent, nullptr);
+    const auto naturalWidth = width;
+    auto elided = false;
     if (width > bounds.width) {
       CfRef<CTLineRef> ellipsis = makeLine("\u2026", style, color);
       CfRef<CTLineRef> truncated{
@@ -270,6 +273,7 @@ public:
       if (truncated) {
         line = std::move(truncated);
         width = CTLineGetTypographicBounds(line.get(), &ascent, &descent, nullptr);
+        elided = true;
       }
     }
     auto x = bounds.x;
@@ -277,6 +281,7 @@ public:
     if (style.align == TextAlign::Right) x = bounds.right() - width;
     const auto baseline = bounds.y + (bounds.height + ascent - descent) * 0.5;
     auto* ctx = context_.get();
+    recordText(bounds, {x, baseline - ascent, width, ascent + descent}, utf8, naturalWidth, elided);
     CGContextSaveGState(ctx);
     CGContextClipToRect(ctx, CGRectMake(bounds.x - 2.0, bounds.y - 4.0, bounds.width + 4.0,
                                         bounds.height + 8.0));
@@ -294,6 +299,27 @@ public:
   void flush() override { CGContextFlush(context_.get()); }
 
 private:
+  // Hands a drawn line to a live ScopedTextCapture, in the canvas's logical coordinates.
+  void recordText(ui::Rect bounds, ui::Rect ink, std::string_view utf8, double naturalWidth,
+                  bool elided) {
+    if (!ScopedTextCapture::active()) return;
+    const auto logical = [&](CGRect user) {
+      // The current transform relative to the one the canvas started with is exactly the
+      // translation the painters applied, so this lands in the canvas's logical coordinates.
+      const auto r = CGRectApplyAffineTransform(
+          user, CGAffineTransformConcat(CGContextGetCTM(context_.get()), baseInverse_));
+      return ui::Rect{r.origin.x, r.origin.y, r.size.width, r.size.height};
+    };
+    const auto rect = [](ui::Rect r) { return CGRectMake(r.x, r.y, r.width, r.height); };
+    ScopedTextCapture::record(TextRecord{
+        .bounds = logical(rect(bounds)),
+        .ink = logical(rect(ink)),
+        .clip = logical(CGContextGetClipBoundingBox(context_.get())),
+        .text = std::string{utf8},
+        .naturalWidth = naturalWidth,
+        .elided = elided});
+  }
+
   void applyStroke(const StrokeStyle& style) {
     auto* ctx = context_.get();
     CGContextSetLineWidth(ctx, std::max(0.0, style.width));
@@ -334,6 +360,7 @@ private:
   }
 
   PixelSurface& surface_;
+  CGAffineTransform baseInverse_{CGAffineTransformIdentity};
   double scale_{1.0};
   CfRef<CGContextRef> context_;
 };

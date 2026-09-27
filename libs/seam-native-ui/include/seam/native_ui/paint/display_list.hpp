@@ -73,6 +73,9 @@ public:
   void setLayer(Layer layer, std::string_view item = {});
   [[nodiscard]] Layer layer() const noexcept { return layer_; }
   [[nodiscard]] const std::string& item() const noexcept { return item_; }
+  // Drops every setGlow() from now on, exactly as GlowlessCanvas does (High Contrast draws no glow);
+  // the recorder itself does it so layer scopes still find the recorder behind the canvas.
+  void setGlowless(bool glowless) noexcept { glowless_ = glowless; }
 
   void drawRaster(ui::Rect bounds, std::uint64_t contentHash, RasterDrawing drawing);
 
@@ -169,6 +172,7 @@ private:
   Measure measure_;
   Layer layer_{Layer::Content};
   std::string item_;
+  bool glowless_{false};
   State state_{};
   std::vector<State> saved_;
   std::vector<Clip> clips_;
