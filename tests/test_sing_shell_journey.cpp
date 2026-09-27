@@ -164,7 +164,8 @@ TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through re
     CHECK(first.app->dispatchAccessibility("shell.change-voice", SemanticAction::Activate));
     CHECK(first.app->authoring().controller().voicebankBrowserVisible());
     first.paint();
-    CHECK(!first.shellPresents());
+    // The browser is the shell's own sheet; its cards are the shell's nodes.
+    CHECK(first.shellPresents());
     CHECK(first.find("voicebank.card.0") != nullptr);
     CHECK(first.app->dispatchAccessibility("voicebank.card.0", SemanticAction::Activate));
     CHECK(!first.app->authoring().controller().voicebankBrowserVisible());

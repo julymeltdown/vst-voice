@@ -18,6 +18,7 @@
 #include "seam/native_ui/paint/canvas2d.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +33,10 @@ enum class OverlayKind : std::uint8_t {
   RecoverySupport,
   OverlapDetail,
   Diagnostics,
+  ReplacementReview,
+  AudioSettings,
+  VoicebankBrowser,
+  TextField,
 };
 
 // One control of a re-homed overlay: the controller node it re-homes and the rectangle the shell
@@ -53,6 +58,29 @@ struct OverlayControl final {
   bool enabled{true};
   bool selected{false};
   bool activatable{true};
+  // The full value the control stands for (a row's complete text, a device's kind, a field's text
+  // as typed), published even where the painted label elides it, and its longer description. Empty
+  // means the controller's node for the same id supplies them.
+  std::string value{};
+  std::string description{};
+  // A text field: published as editable (SetFocus and EditText), its value the text as typed.
+  bool editable{false};
+  // A stepped setting (sample rate, buffer size, channels): Increment and Decrement step it.
+  bool adjustable{false};
+};
+
+// A pointer gesture an overlay started inside its own plot. The plot is a controller model measured
+// in the classic layout; the gesture keeps the mapping it started with (the classic plot and the
+// card rectangle it was drawn in), so every move and the release reach the controller in the
+// geometry the press used, whatever happens to the card meanwhile.
+struct OverlayGesture final {
+  ui::Rect source;
+  ui::Rect destination;
+};
+struct OverlayPress final {
+  bool handled{false};
+  core::Result<void> result{core::success()};
+  std::optional<OverlayGesture> gesture;
 };
 
 class ShellOverlay {
@@ -112,6 +140,59 @@ public:
   // Closes the surface through the controller's own command, so the state the classic painter read
   // changes exactly as it did when its close control ran.
   [[nodiscard]] virtual core::Result<void> close(NativeEditorController& controller) const = 0;
+  // Escape's first step, for a surface with an inner page it returns from before closing (the
+  // microscope's details). Returns true when it stepped back and the surface stays open.
+  [[nodiscard]] virtual bool back(NativeEditorController& controller) const {
+    static_cast<void>(controller);
+    return false;
+  }
+  // Called once when the shell starts presenting the overlay, so a presentation-only position (a
+  // popover's page) starts from the top each time it opens.
+  virtual void presented() const {}
+  // A press the overlay handles itself before its controls are hit-tested (a plot it forwards to
+  // the controller). Unhandled by default.
+  [[nodiscard]] virtual OverlayPress press(NativeEditorController& controller,
+                                           const EditorSceneState& state,
+                                           const SingLayout& layout, ui::Rect panel,
+                                           const PointerEvent& event) const {
+    static_cast<void>(controller);
+    static_cast<void>(state);
+    static_cast<void>(layout);
+    static_cast<void>(panel);
+    static_cast<void>(event);
+    return {};
+  }
+  // A move (release false) or the release of a gesture press() started.
+  virtual core::Result<void> drag(NativeEditorController& controller, const OverlayGesture& gesture,
+                                  const PointerEvent& event, bool release) const {
+    static_cast<void>(controller);
+    static_cast<void>(gesture);
+    static_cast<void>(event);
+    static_cast<void>(release);
+    return core::success();
+  }
+  // A scroll over the card. Returns true when the overlay used it; the shell absorbs it either way.
+  virtual bool scroll(NativeEditorController& controller, const EditorSceneState& state,
+                      const SingLayout& layout, ui::Rect panel, ui::Point anchor, double deltaX,
+                      double deltaY, InputModifiers modifiers) const {
+    static_cast<void>(controller);
+    static_cast<void>(state);
+    static_cast<void>(layout);
+    static_cast<void>(panel);
+    static_cast<void>(anchor);
+    static_cast<void>(deltaX);
+    static_cast<void>(deltaY);
+    static_cast<void>(modifiers);
+    return false;
+  }
+  // A value an assistive client set on one of the overlay's editable controls (a text field).
+  virtual core::Result<void> setValue(NativeEditorController& controller, std::string_view id,
+                                      std::string_view value) const {
+    static_cast<void>(controller);
+    static_cast<void>(id);
+    static_cast<void>(value);
+    return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
+  }
 };
 
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeSampleMicroscopeOverlay();
@@ -120,6 +201,30 @@ public:
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeRecoverySupportOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeOverlapDetailOverlay();
 [[nodiscard]] std::unique_ptr<ShellOverlay> makeDiagnosticsOverlay();
+// The surfaces that were the last to hand the frame to the classic painter: the replacement review
+// (and every review the controller shows in that panel: find, cleanup, vibrato, dynamics, style,
+// Japanese reading), the audio settings, the voice browser, and the classic-only text fields
+// (tempo or meter from the transport, phone hint, find/replace, review draft fields, renames).
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeReplacementReviewOverlay();
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeAudioSettingsOverlay();
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay();
+[[nodiscard]] std::unique_ptr<ShellOverlay> makeTextFieldOverlay();
+
+// Where a classic-only text field sits in the shell, for a request anchored to it. The shell moves
+// the host's text input client there (translateTextInput), and the overlay that draws the field
+// lays it out from the same function, so the IME candidate window, the painted field, its hit
+// rectangle and its accessible bounds are one rectangle.
+struct TextFieldPlacement final {
+  ui::Rect panel;
+  ui::Rect input;
+  ui::Rect cancel;
+};
+// The time map's card in a slot, and the event field inside that card.
+[[nodiscard]] ui::Rect timeMapPanelBounds(ui::Rect slot);
+[[nodiscard]] TextFieldPlacement timeMapFieldPlacement(ui::Rect timeMapPanel);
+// Every other anchor: the transport's tempo or meter field under the transport display, and the
+// bounded field (hint, find/replace, draft fields, renames) as a field card at the top of the body.
+[[nodiscard]] TextFieldPlacement textFieldPlacement(TextInputAnchor anchor, const SingLayout& layout);
 
 // The node an overlay re-homes, searched through the whole tree (controller nodes nest), or null
 // when it is not published right now: the surface closed, or its state changed under it.

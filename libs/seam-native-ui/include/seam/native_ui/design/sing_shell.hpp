@@ -109,12 +109,12 @@ struct StatusMessage final {
 // The SING workspace shell for the EMO and SCENE designs. It paints around the existing editing
 // engine: pointer events inside the musical grid are translated into the legacy controller's
 // coordinates, so note creation, selection, lyric entry and vibrato editing keep their existing
-// behavior and undo history. Any legacy modal surface (voice browser, audio settings, reviews,
-// tempo/meter entry, microscope) is shown by the legacy painter until it is re-homed. The surfaces
-// section 7.6 of the redesign plan lists as re-homed (sample microscope, phoneme review, time map,
-// recovery/support, overlap detail, diagnostics and the export progress strip) are painted here as
-// panel and popover surfaces by shell_overlays.hpp; the voice browser, the audio settings, the
-// replacement review and the classic-only text inputs still hand the frame to the legacy painter.
+// behavior and undo history. Every surface the classic painter drew over the editor is re-homed
+// here as a panel, popover or sheet by shell_overlays.hpp (section 7.6 of the redesign plan): the
+// sample microscope, phoneme review, time map, recovery/support, overlap detail, diagnostics, the
+// replacement review, the audio settings, the voice browser and the classic-only text fields
+// (tempo/meter, phone hint, find/replace, review draft fields, renames). The classic painter draws
+// the editor only while the shell is disabled (Command-Shift-Space) or unavailable.
 class SingShell final {
 public:
   // A shell starts inactive: it paints nothing and forwards all input, and it reads neither the
@@ -160,6 +160,8 @@ public:
     return errorToast_.has_value() ? std::optional<ui::Rect>{errorToast_->bounds} : std::nullopt;
   }
   [[nodiscard]] std::optional<std::size_t> lastOffscreenHint() const noexcept { return offscreenHint_; }
+  // False for every state: kept so a host or test can still ask whether a state needs the classic
+  // painter while the shell is enabled.
   [[nodiscard]] static bool legacySurfaceRequired(const EditorSceneState& state) noexcept;
   // The overlays this shell re-homes. A surface listed here is painted inside the shell, so it is
   // not one of the states that still hands the frame to the classic painter.
@@ -244,10 +246,14 @@ public:
   // cancels a knob drag or a forwarded pointer gesture without committing it.
   bool handleShellKey(NativeEditorController& controller, const KeyEvent& event);
   // Lyric requests come from note bounds in the shell's viewport and are moved into shell space.
-  // Every other request (tempo/meter, hint, replacement fields) belongs to a classic surface that
-  // replaces the shell on the next frame and keeps its classic coordinates.
+  // Every other request (tempo/meter, hint, find/replace and draft fields, renames) is placed on
+  // the field the shell draws for it, so the input client, the painted field, its hit rectangle
+  // and its accessible bounds are one rectangle.
   [[nodiscard]] TextInputRequest translateTextInput(TextInputRequest request);
-  void textInputEnded() noexcept { lyricInputActive_ = false; }
+  void textInputEnded() noexcept {
+    lyricInputActive_ = false;
+    fieldAnchor_.reset();
+  }
 
   // Accessibility for the presented shell, built from the same layout snapshot that paint and
   // pointer routing use. Notes and the timeline keep their controller ids (actions still reach the
@@ -375,8 +381,9 @@ private:
   void applyGeometry(NativeEditorController& controller);
   void frameNotesIfNeeded(NativeEditorController& controller, double previousGridHeight);
   void releaseSurface(NativeEditorController& controller);
-  // Hands the frame to a classic surface as soon as a shell command opens one, before the repaint.
-  void yieldIfModal(NativeEditorController& controller);
+  // Closes whichever overlay is presented (workspace switch): its own close command, and an open
+  // field is cancelled.
+  void dismissOverlay(NativeEditorController& controller);
   core::Result<void> nudge(NativeEditorController& controller, std::size_t index, int steps);
   core::Result<void> shellPointerDown(NativeEditorController& controller, const PointerEvent& event);
   core::Result<void> performSemantic(NativeEditorController& controller, std::string_view id,
@@ -401,6 +408,10 @@ private:
   ForwardArea forwarding_{ForwardArea::None};
   bool laneEditable_{false};
   bool lyricInputActive_{false};
+  // The anchor of an open non-lyric field the shell moved into shell space, and the rectangle it
+  // was placed at; a layout that moves that rectangle cancels the composition (as for lyrics).
+  std::optional<TextInputAnchor> fieldAnchor_;
+  ui::Rect fieldBounds_{};
   // Direction of the last off-screen-notes hint (0 above, 1 below, 2 earlier, 3 later); exposed so
   // the hint's direction is testable without reading pixels.
   mutable std::optional<std::size_t> offscreenHint_;
@@ -414,7 +425,22 @@ private:
   std::unique_ptr<ShellOverlay> supportOverlay_{makeRecoverySupportOverlay()};
   std::unique_ptr<ShellOverlay> overlapOverlay_{makeOverlapDetailOverlay()};
   std::unique_ptr<ShellOverlay> diagnosticsOverlay_{makeDiagnosticsOverlay()};
+  std::unique_ptr<ShellOverlay> reviewOverlay_{makeReplacementReviewOverlay()};
+  std::unique_ptr<ShellOverlay> audioOverlay_{makeAudioSettingsOverlay()};
+  std::unique_ptr<ShellOverlay> voicebankOverlay_{makeVoicebankBrowserOverlay()};
+  std::unique_ptr<ShellOverlay> fieldOverlay_{makeTextFieldOverlay()};
+  // A plot gesture an overlay started (the dynamics inspector's points).
+  std::optional<OverlayGesture> overlayGesture_;
+  // The shell control that had focus when the presented overlay opened (MIX's Settings, VOICE's
+  // browser button); Escape returns focus there when it is still published.
+  std::string overlayOpener_;
+  // The field the presented overlay last published (its event or text field), so a field that
+  // appears inside an open card takes the keyboard once.
+  std::string overlayField_;
   bool diagnosticsOpen_{false};
+  // The overlay the last semantics rebuild presented, so the first frame of a newly opened overlay
+  // gives its first control the keyboard.
+  OverlayKind presentedOverlay_{OverlayKind::None};
   bool inspectorWanted_{false};
   bool workspaceMenuOpen_{false};
   // The character artwork and its animation, both driven by the read models above.

@@ -30,6 +30,7 @@
 #include "seam/text/unicode.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <chrono>
 #include <cstddef>
@@ -100,10 +101,21 @@ struct KeyEvent final {
   bool repeat{false};
 };
 
-// Which geometry a text field's bounds were computed in. A presenting shell moves only NoteGrid
-// anchors (note bounds from the shared piano-roll viewport); ClassicSurface anchors belong to a
-// classic panel, which takes over the frame while the field is open.
-enum class TextInputAnchor : std::uint8_t { ClassicSurface, NoteGrid };
+// Which surface a text field belongs to. The bounds in a request are always the classic painter's
+// (window coordinates of the classic layout). A presenting SING shell moves a NoteGrid anchor by the
+// grid's offset (note bounds from the shared piano-roll viewport) and places every other anchor at
+// the field it draws itself: the time map's event field inside its popover, the transport's tempo
+// or meter field under the transport display, and the bounded field (phone hint, find/replace,
+// review draft fields) or a track/region name field as an inline field card. ClassicSurface is the
+// anchor of a request that names none of these; a presenting shell treats it as a bounded field.
+enum class TextInputAnchor : std::uint8_t {
+  ClassicSurface,
+  NoteGrid,
+  TimeMapPanel,
+  Transport,
+  BoundedField,
+  ArrangementField,
+};
 
 struct TextInputRequest final {
   domain::LyricTokenId lyricId;
@@ -363,6 +375,36 @@ public:
   [[nodiscard]] bool replacementReviewOpen() const noexcept { return replacementOpen_ || replacementInput_.has_value(); }
   [[nodiscard]] core::Result<void> replacementReviewAction(std::size_t action);
   [[nodiscard]] core::Result<void> openReplacementRow(std::size_t pageRow);
+  // The review the classic painter drew as a panel and the SING shell presents as a sheet, and the
+  // prefix its accessibility ids carry. The prefix changes with every interaction, page and
+  // revision, so an id captured from an earlier review can never act on this one.
+  [[nodiscard]] ReplacementReviewView replacementReviewView() const;
+  [[nodiscard]] std::string replacementReviewSemanticPrefix() const {
+    return replacementSemanticPrefix();
+  }
+  // The text field a classic-only surface owns, described for a surface that draws it itself: a
+  // tempo or meter entry (inside the time map, or from the transport display), the bounded field
+  // (phone hint, find/replace query, a review's draft field) and a track or region name. A lyric
+  // field is not listed: it is anchored to its note. Typing, commit and cancel are unchanged: the
+  // host's text input client feeds updateTextComposition/commitTextComposition as before.
+  struct TextFieldView final {
+    enum class Kind : std::uint8_t { None, TimeMap, Transport, Bounded, Rename };
+    Kind kind{Kind::None};
+    // The caption the classic painter showed above the field, including a refusal it reported.
+    std::string label;
+    // The controller's own accessibility ids for the field and its cancel control, when it has
+    // them: the bounded and time-map fields publish both, the transport field is the toolbar
+    // readout's value (toolbar.tempo or toolbar.meter) without a cancel node, and a name field has
+    // neither.
+    std::string inputId;
+    std::string cancelId;
+    std::string inputName;
+    std::string cancelName;
+    // The composition as typed so far, and the last refusal of a commit, if any.
+    std::string text;
+    std::string error;
+  };
+  [[nodiscard]] TextFieldView textFieldView() const;
   [[nodiscard]] core::Result<void> beginMeterEdit(time::Tick tick = time::Tick{0});
   [[nodiscard]] core::Result<TempoMeterModel> timeMapEvents() const;
   [[nodiscard]] core::Result<void> openTimeMapPanel();
@@ -447,12 +489,11 @@ public:
   // draft is restored to its state before the gesture). Used on Escape, surface switches, resizes
   // and capture loss.
   void cancelPointerGesture();
-  // True while a surface the SING shell does not host is open: voice browser, audio settings,
-  // replacement review, a tempo/meter or hint/replacement text input, or a track/region rename
-  // field (anchored in the classic arrangement dock). The surfaces the shell re-homes (sample
-  // microscope, phoneme review, time map, recovery support, overlap detail) are not listed: the
-  // shell paints them itself. Mirrors SingShell::legacySurfaceRequired(sceneState()) without
-  // building the scene state.
+  // True while one of the modal surfaces the classic painter draws over its own layout is open:
+  // voice browser, audio settings, replacement review, a tempo/meter or hint/replacement text input,
+  // or a track/region rename field. It describes the controller, not who paints: the SING shell
+  // presents every one of these itself (sheets and inline fields), so it no longer hands the frame
+  // to the classic painter for them. The classic painter draws them when the shell is disabled.
   [[nodiscard]] bool legacyModalSurfaceActive() const;
   [[nodiscard]] std::uint64_t documentRevision() const noexcept;
   [[nodiscard]] bool pointerGestureActive() const noexcept;
@@ -543,13 +584,34 @@ public:
   }
   void setVoicebankCards(std::vector<authoring::VoicebankCard> cards) {
     voicebankCards_ = std::move(cards);
+    voicebankBrowserFirstCard_ = std::min(voicebankBrowserFirstCard_, voicebankCards_.size());
   }
   [[nodiscard]] bool voicebankBrowserVisible() const noexcept {
     return voicebankBrowserVisible_;
   }
   void showVoicebankBrowser() noexcept {
     voicebankBrowserVisible_ = true;
+    voicebankBrowserFirstCard_ = 0U;
     audioSettings_.visible = false;
+    repaint();
+  }
+  // The voice browser's own commands, shared by the classic panel's keys, its pointer and its
+  // accessibility nodes and by the SING shell's sheet: closing, the host's refresh and installer,
+  // and choosing a card, which asks the host to replace the selected track's voicebank.
+  void closeVoicebankBrowser() noexcept {
+    voicebankBrowserVisible_ = false;
+    repaint();
+  }
+  [[nodiscard]] core::Result<void> refreshVoicebanks();
+  [[nodiscard]] core::Result<void> openVoicebankInstaller();
+  [[nodiscard]] core::Result<void> selectVoicebankCard(std::size_t index);
+  // The first card a paged browser shows (the SING shell's sheet pages by what fits its window).
+  [[nodiscard]] std::size_t voicebankBrowserFirstCard() const noexcept {
+    return voicebankBrowserFirstCard_;
+  }
+  void setVoicebankBrowserFirstCard(std::size_t index) noexcept {
+    voicebankBrowserFirstCard_ =
+        voicebankCards_.empty() ? 0U : std::min(index, voicebankCards_.size() - 1U);
     repaint();
   }
   void setAudioSettings(
@@ -582,6 +644,17 @@ public:
   [[nodiscard]] bool audioSettingsVisible() const noexcept {
     return audioSettings_.visible;
   }
+  void closeAudioSettings() noexcept {
+    audioSettings_.visible = false;
+    repaint();
+  }
+  // The audio settings' own changes: each builds the requested settings from the current ones and
+  // applies them through the host's applyAudioSettings callback, recording its refusal as the
+  // panel's diagnostic. The classic panel's pointer, keys and accessibility nodes call these.
+  enum class AudioSettingsField { SampleRate, BlockFrames, Channels };
+  [[nodiscard]] core::Result<void> cycleAudioSettings(
+      AudioSettingsField field, int direction);
+  [[nodiscard]] core::Result<void> selectAudioDevice(std::size_t index);
 
 private:
   [[nodiscard]] core::Result<void> dispatchAccessibilityAction(
@@ -647,7 +720,7 @@ private:
   [[nodiscard]] std::string timeMapSemanticPrefix() const;
   [[nodiscard]] std::string hintSemanticPrefix() const;
   [[nodiscard]] std::string replacementSemanticPrefix() const;
-  [[nodiscard]] ReplacementReviewView replacementReviewView() const;
+  [[nodiscard]] std::string boundedInputLabel() const;
   [[nodiscard]] core::Result<void> openLyricReview(std::string query, std::string replacement, bool distribution);
   [[nodiscard]] core::Result<void> refreshClearVibratoReview();
   [[nodiscard]] core::Result<void> refreshClearDynamicsReview();
@@ -669,10 +742,6 @@ private:
   [[nodiscard]] core::Result<void> navigateLyricEdit(int direction);
   [[nodiscard]] core::Result<void> beginBatchLyricEdit();
   [[nodiscard]] core::Result<void> cycleSelectedTrackRoute();
-  enum class AudioSettingsField { SampleRate, BlockFrames, Channels };
-  [[nodiscard]] core::Result<void> cycleAudioSettings(
-      AudioSettingsField field, int direction);
-  [[nodiscard]] core::Result<void> selectAudioDevice(std::size_t index);
   [[nodiscard]] std::chrono::steady_clock::time_point uiNow() const noexcept;
   [[nodiscard]] bool reduceMotionEnabled() const noexcept;
   void beginLayoutTransition(const EditorSceneState& fromState);
@@ -875,6 +944,7 @@ private:
   std::optional<EditorSceneState::CharacterPerformanceView> characterPerformance_;
   std::optional<VoiceIdentityInput::CharacterBinding> characterBinding_;
   bool voicebankBrowserVisible_{false};
+  std::size_t voicebankBrowserFirstCard_{0U};
   std::vector<authoring::VoicebankCard> voicebankCards_;
   EditorSceneState::AudioSettingsView audioSettings_;
   std::optional<EditorSceneState::OutputLevel> outputLevel_;

@@ -98,6 +98,60 @@ const ui::Rect* findControl(const std::vector<OverlayControl>& controls, std::st
   return nullptr;
 }
 
+// A text field in the lyric field's skin: a sunken well with the accent ring, its caption at the
+// left in the secondary colour and the text as typed after it. Both elide inside the well; the
+// field's node carries the complete text.
+void paintOverlayTextField(Canvas2D& c, const DesignTokens& t, ui::Rect r, std::string_view caption,
+                           std::string_view text, bool active) {
+  if (r.width <= 0.0 || r.height <= 0.0) return;
+  const auto p = Path::roundedRect(r, 6.0);
+  c.fill(p, t.color.surfaceSunken);
+  c.save();
+  if (active) c.setGlow(t.color.accent, 8.0);
+  c.stroke(p, active ? t.color.accent : withAlpha(t.color.border, 0.95), StrokeStyle{1.5});
+  c.restore();
+  const auto captionStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Left, true);
+  const auto captionWidth =
+      caption.empty() ? 0.0 : std::min(c.measure(caption, captionStyle) + 4.0, r.width * 0.42);
+  if (captionWidth > 0.0)
+    c.text({r.x + 8.0, r.y, captionWidth, r.height}, caption, captionStyle, t.color.textSecondary);
+  const auto textX = r.x + 8.0 + (captionWidth > 0.0 ? captionWidth + 8.0 : 0.0);
+  c.text({textX, r.y, std::max(1.0, r.right() - 8.0 - textX), r.height}, text,
+         style(FontRole::Ui, t.type.lyric), t.color.textPrimary);
+}
+
+// Maps a plot the controller measured in the classic layout onto the rectangle the card draws it
+// in, one axis at a time: the controller's own plot geometry is linear in x and y, so a point the
+// shell maps back lands where the classic plot had it, and a drag reaches the same value.
+class AxisMap final {
+public:
+  AxisMap(ui::Rect source, ui::Rect destination) : source_(source), destination_(destination) {}
+  [[nodiscard]] ui::Point map(ui::Point legacy) const {
+    return {destination_.x + (legacy.x - source_.x) * sx(), destination_.y + (legacy.y - source_.y) * sy()};
+  }
+  [[nodiscard]] ui::Point unmap(ui::Point shell) const {
+    return {source_.x + (shell.x - destination_.x) / sx(), source_.y + (shell.y - destination_.y) / sy()};
+  }
+
+private:
+  [[nodiscard]] double sx() const {
+    return source_.width > 0.0 ? destination_.width / source_.width : 1.0;
+  }
+  [[nodiscard]] double sy() const {
+    return source_.height > 0.0 ? destination_.height / source_.height : 1.0;
+  }
+  ui::Rect source_;
+  ui::Rect destination_;
+};
+
+// "C4" for MIDI 60.
+std::string noteName(std::int32_t midi) {
+  static constexpr std::array<const char*, 12U> kNames{"C", "C#", "D", "D#", "E", "F",
+                                                       "F#", "G", "G#", "A", "A#", "B"};
+  const auto clamped = std::clamp(midi, 0, 127);
+  return std::string{kNames[static_cast<std::size_t>(clamped % 12)]} + std::to_string(clamped / 12 - 1);
+}
+
 // Equal cells in a grid, so no control stretches and none overlaps its neighbour.
 std::vector<ui::Rect> grid(ui::Rect panel, double top, double height, std::size_t count,
                            std::size_t perRow, double gap) {
@@ -210,6 +264,14 @@ public:
     controller.closeSampleMicroscope();
     return core::success();
   }
+  bool back(NativeEditorController& controller) const override {
+    // As the classic microscope bound Escape: the details page returns to the waveform first.
+    if (!controller.sceneState().sampleMicroscope.has_value() ||
+        !controller.sceneState().sampleMicroscope->detailsVisible)
+      return false;
+    static_cast<void>(controller.dispatchAccessibility("microscope.details", SemanticAction::Activate));
+    return true;
+  }
 };
 
 std::vector<OverlayControl> SampleMicroscopeOverlay::controls(
@@ -256,7 +318,8 @@ void SampleMicroscopeOverlay::paint(Canvas2D& c, const DesignTokens& t,
   if (const auto* close = findControl(controls, "microscope.close"))
     paintOverlayControl(c, t, *close, "Close", SemanticRole::Button, true, false, false);
   if (const auto* details = findControl(controls, "microscope.details"))
-    paintOverlayControl(c, t, *details, "Details", SemanticRole::Button, true, false, false);
+    paintOverlayControl(c, t, *details, detailsVisibleLabel(state), SemanticRole::Button, true,
+                        false, false);
 
   if (view.detailsVisible) {
     // The captured selection and destination, exactly the lines the controller publishes.
@@ -385,6 +448,11 @@ bool SampleMicroscopeOverlay::key(NativeEditorController& controller, std::strin
                                   const KeyEvent& event) const {
   if (event.key == NativeKey::Enter || event.key == NativeKey::Space) {
     static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+    return true;
+  }
+  if (event.key == NativeKey::D) {
+    // D toggles the details page, as it did on the classic microscope.
+    static_cast<void>(controller.dispatchAccessibility("microscope.details", SemanticAction::Activate));
     return true;
   }
   if (event.key == NativeKey::Left || event.key == NativeKey::Right) {
@@ -525,9 +593,8 @@ public:
   }
   [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
                                const SingLayout&, ui::Rect panel) const override {
-    if (panel.width <= 0.0 || panel.height <= 0.0) return {};
     // A popover from the transport display, centred over the body like a sheet.
-    return fitPanel(panel, std::min(panel.width, 520.0), std::max(panel.height * 0.9, 260.0));
+    return timeMapPanelBounds(panel);
   }
   [[nodiscard]] std::string title(const NativeEditorController&,
                                   const EditorSceneState&) const override {
@@ -551,13 +618,44 @@ public:
     // Action 5 is the panel's own Close, the command the classic surface ran for that button.
     return controller.timeMapPanelAction(5U);
   }
+  bool back(NativeEditorController& controller) const override {
+    // An open event field is cancelled first, as the classic panel's Escape cancelled it, and the
+    // map stays open.
+    if (controller.textFieldView().kind != NativeEditorController::TextFieldView::Kind::TimeMap)
+      return false;
+    controller.cancelTextComposition();
+    return true;
+  }
+  core::Result<void> setValue(NativeEditorController& controller, std::string_view id,
+                              std::string_view value) const override {
+    // The event field's value goes through the controller's own value path for that field, which
+    // validates and commits it exactly as typing and Enter would.
+    const auto field = controller.textFieldView();
+    if (field.kind != NativeEditorController::TextFieldView::Kind::TimeMap || id != field.inputId)
+      return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
+    return controller.setAccessibilityValue(id, value);
+  }
 };
 
-std::vector<OverlayControl> TimeMapOverlay::controls(const NativeEditorController&,
+std::vector<OverlayControl> TimeMapOverlay::controls(const NativeEditorController& controller,
                                                      const EditorSceneState& state,
                                                      const SingLayout&, ui::Rect panel) const {
   std::vector<OverlayControl> out;
   if (panel.width <= 0.0) return out;
+  const auto field = controller.textFieldView();
+  const auto editing = field.kind == NativeEditorController::TextFieldView::Kind::TimeMap;
+  if (editing) {
+    // The event field, where the classic panel drew it over its first row; the host's text input
+    // client is placed on the same rectangle (timeMapFieldPlacement).
+    const auto placement = timeMapFieldPlacement(panel);
+    OverlayControl input{field.inputId, placement.input, field.inputName, SemanticRole::TextField,
+                         true, false, false};
+    input.value = field.text;
+    input.description = field.error;
+    input.editable = true;
+    out.push_back(std::move(input));
+    out.push_back({field.cancelId, placement.cancel, field.cancelName});
+  }
   static constexpr std::array<const char*, 8U> kIds{
       "time-map-action.0", "time-map-action.1", "time-map-action.2", "time-map-action.3",
       "time-map-action.4", "time-map-action.5", "time-map-action.6", "time-map-action.7"};
@@ -567,23 +665,29 @@ std::vector<OverlayControl> TimeMapOverlay::controls(const NativeEditorControlle
   const auto actionsHeight = 2.0 * (kActionHeight + 8.0) - 8.0;
   const auto actionsTop = panel.bottom() - 12.0 - actionsHeight;
   constexpr double kRowHeight = 20.0;
-  const auto rowsTop = panel.y + 44.0;
+  // The prompt (or the event field) sits above the rows, never under them.
+  const auto rowsTop = panel.y + (editing ? 76.0 : 62.0);
   const auto capacity = actionsTop > rowsTop
                             ? static_cast<std::size_t>((actionsTop - rowsTop) / kRowHeight)
                             : 0U;
   for (std::size_t i = 0U; i < state.timeMapRows.size() && i < capacity; ++i) {
     const auto selected = state.timeMapSelectedRow == i;
-    out.push_back({"time-map-row." + std::to_string(i),
-                   {panel.x + kPanelInset, rowsTop + static_cast<double>(i) * kRowHeight,
-                    std::max(1.0, panel.width - 2.0 * kPanelInset), kRowHeight - 2.0},
-                   "Event row " + std::to_string(i + 1U), SemanticRole::Button, true, selected});
+    // While the event field is open the rows and actions are disabled, as the classic panel
+    // disabled them; the row's full text is its value.
+    OverlayControl row{"time-map-row." + std::to_string(i),
+                       {panel.x + kPanelInset, rowsTop + static_cast<double>(i) * kRowHeight,
+                        std::max(1.0, panel.width - 2.0 * kPanelInset), kRowHeight - 2.0},
+                       "Event row " + std::to_string(i + 1U), SemanticRole::Button, !editing,
+                       selected};
+    row.value = state.timeMapRows[i];
+    out.push_back(std::move(row));
   }
   static constexpr std::array<const char*, 8U> kNames{
       "Previous page", "Next page", "Edit selected event", "Remove selected event",
       "Refresh events", "Close time maps", "Add tempo", "Add meter"};
   const auto cells = grid(panel, actionsTop, kActionHeight, 8U, 4U, 6.0);
   for (std::size_t i = 0U; i < cells.size(); ++i)
-    out.push_back({kIds[i], cells[i], kNames[i]});
+    out.push_back({kIds[i], cells[i], kNames[i], SemanticRole::Button, !editing});
   return out;
 }
 
@@ -592,15 +696,25 @@ void TimeMapOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeEdito
                            const std::vector<OverlayControl>& controls) const {
   c.save();
   c.clipRect(panel);
-  const auto prompt =
-      !state.timeMapPrompt.empty()
-          ? state.timeMapPrompt
-          : state.timeMapStale
-                ? std::string{"Changed: refresh before editing"}
-                : std::string{"Arrows select / Enter edit / Delete remove / R refresh"};
-  c.text({panel.x + kPanelInset, panel.y + 42.0, std::max(1.0, panel.width - 2.0 * kPanelInset), 18.0}, prompt,
-         style(FontRole::Ui, t.type.smallLabel),
-         state.timeMapStale ? t.color.warning : t.color.textSecondary);
+  const auto editing = !controls.empty() && controls.front().role == SemanticRole::TextField;
+  if (editing) {
+    const auto& input = controls.front();
+    paintOverlayTextField(c, t, input.bounds, input.name, input.value, true);
+    if (controls.size() > 1U)
+      paintOverlayControl(c, t, controls[1].bounds, "Cancel", SemanticRole::Button, true, false,
+                          false);
+  } else {
+    const auto prompt =
+        !state.timeMapPrompt.empty()
+            ? state.timeMapPrompt
+            : state.timeMapStale
+                  ? std::string{"Changed: refresh before editing"}
+                  : std::string{"Arrows select / Enter edit / Delete remove / R refresh"};
+    c.text({panel.x + kPanelInset, panel.y + 42.0,
+            std::max(1.0, panel.width - 2.0 * kPanelInset), 18.0},
+           prompt, style(FontRole::Ui, t.type.smallLabel),
+           state.timeMapStale ? t.color.warning : t.color.textSecondary);
+  }
   for (std::size_t i = 0U; i < state.timeMapRows.size(); ++i) {
     const auto* bounds = findControl(controls, "time-map-row." + std::to_string(i));
     if (bounds == nullptr) continue;
@@ -615,13 +729,24 @@ void TimeMapOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeEdito
   for (std::size_t i = 0U; i < kLabels.size(); ++i) {
     const auto* bounds = findControl(controls, "time-map-action." + std::to_string(i));
     if (bounds == nullptr) continue;
-    paintOverlayControl(c, t, *bounds, kLabels[i], SemanticRole::Button, true, false, false);
+    paintOverlayControl(c, t, *bounds, kLabels[i], SemanticRole::Button, !editing, false, false);
   }
   c.restore();
 }
 
 core::Result<void> TimeMapOverlay::perform(NativeEditorController& controller, std::string_view id,
                                            SemanticAction action) const {
+  const auto field = controller.textFieldView();
+  if (field.kind == NativeEditorController::TextFieldView::Kind::TimeMap) {
+    // The event field takes its text from the host's input client; activating it does nothing
+    // more, and its Cancel is the classic panel's own cancel node.
+    if (id == field.inputId)
+      return action == SemanticAction::EditText || action == SemanticAction::Activate
+                 ? core::success()
+                 : core::failure(core::ErrorCode::Unsupported, "The field takes text");
+    if (id == field.cancelId && (action == SemanticAction::Activate || action == SemanticAction::Toggle))
+      return controller.dispatchAccessibility(id, SemanticAction::Activate);
+  }
   if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
     return core::failure(core::ErrorCode::Unsupported, "This control only activates");
   constexpr std::string_view kRow{"time-map-row."};
@@ -646,6 +771,17 @@ bool TimeMapOverlay::key(NativeEditorController& controller, std::string_view fo
                          const KeyEvent& event) const {
   switch (event.key) {
     case NativeKey::Enter:
+      // As the classic panel bound Enter: a focused row is selected and then edited, a focused
+      // action runs, and with neither the selected event is edited.
+      if (focusedId.starts_with("time-map-row.")) {
+        if (perform(controller, focusedId, SemanticAction::Activate))
+          static_cast<void>(controller.timeMapPanelAction(2U));
+      } else if (focusedId.starts_with("time-map-action.")) {
+        static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+      } else {
+        static_cast<void>(controller.timeMapPanelAction(2U));
+      }
+      return true;
     case NativeKey::Space:
       static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
       return true;
@@ -875,13 +1011,16 @@ public:
     for (std::size_t i = 0U; i < state.overlapDetail->members.size(); ++i) {
       const auto& member = state.overlapDetail->members[i];
       const auto lyric = member.lyric.empty() ? std::string{"(no lyric)"} : member.lyric;
+      const ui::Rect row{panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 20.0,
+                         std::max(1.0, panel.width - 24.0), 18.0};
+      // A row that would end below the card is not laid out at all: its node and hit rectangle
+      // would otherwise lie outside the popover the creator sees.
+      if (row.bottom() > panel.bottom() - 4.0) break;
       out.push_back({"overlap-note-row." + std::to_string(i),
-                     {panel.x + 12.0, panel.y + 26.0 + static_cast<double>(i) * 20.0,
-                      std::max(1.0, panel.width - 24.0), 18.0},
+                     row,
                      "Overlap note " + std::to_string(i + 1U) + ": " + lyric + " / MIDI " +
                          std::to_string(member.midiKey),
                      SemanticRole::Button, true, member.selected});
-      if (panel.y + 26.0 + static_cast<double>(i + 1U) * 20.0 > panel.bottom() - 4.0) break;
     }
     return out;
   }
@@ -952,6 +1091,16 @@ bool OverlapDetailOverlay::key(NativeEditorController& controller, std::string_v
 
 // ---- Diagnostics popover -----------------------------------------------------------------------
 
+// Every active diagnostic is a block: its title and impact on one row (a status node), and below
+// it the recovery actions the controller registered for that diagnostic, so an action of the second
+// or tenth issue is as reachable as the first one's. A popover too short for every block pages
+// through them; the page is the popover's own presentation and restarts whenever it opens.
+constexpr double kDiagnosticRow = 30.0;
+constexpr double kDiagnosticActions = 26.0;
+constexpr double kDiagnosticBlock = kDiagnosticRow + 4.0 + kDiagnosticActions + 8.0;
+constexpr double kDiagnosticsTop = 48.0;
+constexpr double kDiagnosticsPager = 34.0;
+
 class DiagnosticsOverlay final : public ShellOverlay {
 public:
   [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::Diagnostics; }
@@ -962,20 +1111,25 @@ public:
       noexcept override {
     return !state.diagnostics.empty();
   }
-  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState& state,
                                const SingLayout& layout, ui::Rect slot) const override {
     if (slot.width <= 0.0 || slot.height <= 0.0) return {};
-    // A popover above the status bar, its right edge under the header's settings control.
-    const auto width = std::min(slot.width, std::min(460.0, slot.width));
-    const auto height = std::min(slot.height, std::min(180.0, slot.height));
+    // A popover above the status bar, its right edge under the header's settings control, as tall
+    // as its blocks (up to the body).
+    const auto natural = kDiagnosticsTop +
+                         static_cast<double>(state.diagnostics.size()) * kDiagnosticBlock + 4.0;
+    const auto width = std::min(slot.width, 460.0);
+    const auto height = std::min(slot.height, std::min(natural, 560.0));
     if (width < kMinimumPanelWidth || height < kMinimumPanelHeight) return {};
     const auto right = std::max(slot.x, std::min(layout.settings.right(), slot.right()));
     return {std::max(slot.x, right - width), std::max(slot.y, slot.bottom() - height - 2.0), width,
             height};
   }
   [[nodiscard]] std::string title(const NativeEditorController&,
-                                  const EditorSceneState&) const override {
-    return "Diagnostics";
+                                  const EditorSceneState& state) const override {
+    return state.diagnostics.size() == 1U
+               ? std::string{"Diagnostics"}
+               : "Diagnostics / " + std::to_string(state.diagnostics.size()) + " issues";
   }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
                                                      const EditorSceneState& state,
@@ -986,6 +1140,7 @@ public:
     // the popover rather than to the read-only status bar.
     return "shell.diagnostics.open";
   }
+  void presented() const override { first_ = 0U; }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -999,6 +1154,29 @@ public:
     static_cast<void>(controller);
     return core::success();
   }
+
+private:
+  // How many blocks one page holds, and whether the popover needs its pager at all.
+  [[nodiscard]] static bool paged(const EditorSceneState& state, ui::Rect panel) {
+    return kDiagnosticsTop + static_cast<double>(state.diagnostics.size()) * kDiagnosticBlock +
+               4.0 >
+           panel.height + 0.5;
+  }
+  [[nodiscard]] static std::size_t perPage(const EditorSceneState& state, ui::Rect panel) {
+    const auto pager = paged(state, panel) ? kDiagnosticsPager : 0.0;
+    const auto room = panel.height - kDiagnosticsTop - pager - 4.0;
+    return std::max<std::size_t>(1U, static_cast<std::size_t>(std::max(0.0, room) / kDiagnosticBlock));
+  }
+  [[nodiscard]] std::size_t first(const EditorSceneState& state, ui::Rect panel) const {
+    const auto page = perPage(state, panel);
+    const auto count = state.diagnostics.size();
+    const auto last = count == 0U ? 0U : ((count - 1U) / page) * page;
+    return std::min((first_ / page) * page, last);
+  }
+  // The page a pager button moved to. The popover holds no document state, only where it is.
+  mutable std::size_t first_{0U};
+  // How many blocks the last layout put on a page, so a pager press moves by one page.
+  mutable std::size_t pageHint_{1U};
 };
 
 std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorController&,
@@ -1006,31 +1184,36 @@ std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorContr
                                                          const SingLayout&, ui::Rect panel) const {
   std::vector<OverlayControl> out;
   if (panel.width <= 0.0 || state.diagnostics.empty()) return out;
-  // Every active diagnostic gets its own row and the recovery actions the controller registered for
-  // it, so no issue the classic strip listed becomes unreachable here. Rows fill the card's body;
-  // the first diagnostic's actions sit along the bottom, in the order the strip showed them.
-  constexpr double kRowHeight = 26.0;
-  constexpr double kActionHeight = 28.0;
-  const auto actionsTop = panel.bottom() - kActionHeight - 10.0;
-  const auto rowsTop = panel.y + 56.0;
-  for (std::size_t i = 0U; i < state.diagnostics.size(); ++i) {
-    const auto y = rowsTop + static_cast<double>(i) * kRowHeight;
-    if (y + kRowHeight - 4.0 > actionsTop - 4.0) break;
+  const auto page = perPage(state, panel);
+  pageHint_ = page;
+  const auto start = first(state, panel);
+  const auto width = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  for (std::size_t i = start; i < state.diagnostics.size() && i < start + page; ++i) {
+    const auto top = panel.y + kDiagnosticsTop + static_cast<double>(i - start) * kDiagnosticBlock;
     const auto& diagnostic = state.diagnostics[i];
     const auto presentation = presentDiagnostic(diagnostic);
+    // The row keeps the controller's own diagnostic id, so its impact and technical detail are
+    // published with it.
     out.push_back({"diagnostic." + std::to_string(i) + "." + diagnostic.code,
-                   {panel.x + kPanelInset, y, std::max(1.0, panel.width - 2.0 * kPanelInset),
-                    kRowHeight - 4.0},
+                   {panel.x + kPanelInset, top, width, kDiagnosticRow},
                    presentation.title, SemanticRole::Status, true, false, false});
+    const auto count = presentation.primaryActionKinds.size();
+    if (count == 0U) continue;
+    const auto cells = grid(panel, top + kDiagnosticRow + 4.0, kDiagnosticActions, count, count, 8.0);
+    for (std::size_t a = 0U; a < cells.size(); ++a)
+      out.push_back({"diagnostic-action." + std::to_string(i) + "." +
+                         std::string{authoring::toString(presentation.primaryActionKinds[a])},
+                     cells[a], diagnosticActionLabel(presentation.primaryActionKinds[a])});
   }
-  const auto presentation = presentDiagnostic(state.diagnostics.front());
-  const auto count = std::min<std::size_t>(2U, presentation.primaryActionKinds.size());
-  if (count == 0U) return out;
-  const auto cells = grid(panel, actionsTop, kActionHeight, count, count, 8.0);
-  for (std::size_t i = 0U; i < cells.size(); ++i)
-    out.push_back({std::string{"diagnostic-action.0."} +
-                       std::string{authoring::toString(presentation.primaryActionKinds[i])},
-                   cells[i], diagnosticActionLabel(presentation.primaryActionKinds[i])});
+  if (paged(state, panel)) {
+    const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
+    out.push_back({"shell.overlay.diagnostics.previous",
+                   {panel.x + kPanelInset, top, 88.0, 26.0}, "Previous issues",
+                   SemanticRole::Button, start > 0U});
+    out.push_back({"shell.overlay.diagnostics.next",
+                   {panel.x + kPanelInset + 96.0, top, 88.0, 26.0}, "Next issues",
+                   SemanticRole::Button, start + page < state.diagnostics.size()});
+  }
   return out;
 }
 
@@ -1040,30 +1223,43 @@ void DiagnosticsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeE
   if (state.diagnostics.empty()) return;
   c.save();
   c.clipRect(panel);
-  const auto& diagnostic = state.diagnostics.front();
-  const auto presentation = presentDiagnostic(diagnostic);
-  const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical
-                         ? t.color.error
-                         : diagnostic.severity == authoring::DiagnosticSeverity::Warning
-                               ? t.color.warning
-                               : t.color.info;
-  auto title = presentation.title;
-  if (state.diagnostics.size() > 1U)
-    title += " +" + std::to_string(state.diagnostics.size() - 1U) + " more";
-  c.fill(Path::capsule({panel.x + 24.0, panel.y + 16.0, 5.0, 18.0}), color);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 14.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 20.0}, title,
-         style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 36.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 16.0},
-         presentation.impact, style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
-  c.text({panel.x + kPanelInset + 6.0, panel.y + 54.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 6.0), 30.0},
-         presentation.technicalDetail, style(FontRole::Mono, t.type.rulerMicro),
-         t.color.textDisabled);
   for (const auto& control : controls) {
-    std::string label;
-    for (const auto action : presentation.primaryActionKinds)
-      if (control.id.ends_with(std::string{authoring::toString(action)}))
-        label = diagnosticActionLabel(action);
-    paintOverlayControl(c, t, control.bounds, label, SemanticRole::Button, true, false, false);
+    if (control.role == SemanticRole::Status) {
+      // A block's row: the severity bar, the title and what it affects.
+      const auto dot = control.id.find('.', std::string_view{"diagnostic."}.size());
+      std::size_t index = 0U;
+      if (dot == std::string::npos ||
+          !parseIndex(std::string_view{control.id}.substr(11U, dot - 11U), index) ||
+          index >= state.diagnostics.size())
+        continue;
+      const auto& diagnostic = state.diagnostics[index];
+      const auto presentation = presentDiagnostic(diagnostic);
+      const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical
+                             ? t.color.error
+                             : diagnostic.severity == authoring::DiagnosticSeverity::Warning
+                                   ? t.color.warning
+                                   : t.color.info;
+      const auto& r = control.bounds;
+      c.fill(Path::capsule({r.x, r.y + 3.0, 4.0, r.height - 6.0}), color);
+      c.text({r.x + 12.0, r.y, std::max(1.0, r.width - 12.0), 16.0}, presentation.title,
+             style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
+      c.text({r.x + 12.0, r.y + 16.0, std::max(1.0, r.width - 12.0), 14.0}, presentation.impact,
+             style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+      continue;
+    }
+    paintOverlayControl(c, t, control.bounds, control.name, SemanticRole::Button, control.enabled,
+                        false, false);
+  }
+  if (paged(state, panel)) {
+    const auto page = perPage(state, panel);
+    const auto start = first(state, panel);
+    const auto end = std::min(start + page, state.diagnostics.size());
+    const auto top = panel.bottom() - kDiagnosticsPager + 2.0;
+    c.text({panel.x + kPanelInset + 196.0, top, std::max(1.0, panel.width - 2.0 * kPanelInset - 196.0),
+            26.0},
+           std::to_string(start + 1U) + "\u2013" + std::to_string(end) + " of " +
+               std::to_string(state.diagnostics.size()),
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
   }
   c.restore();
 }
@@ -1072,6 +1268,14 @@ core::Result<void> DiagnosticsOverlay::perform(NativeEditorController& controlle
                                                std::string_view id, SemanticAction action) const {
   if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
     return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+  if (id == "shell.overlay.diagnostics.previous" || id == "shell.overlay.diagnostics.next") {
+    // The pager moves by what the popover showed last; clamping happens when it lays out again.
+    const auto state = controller.sceneState();
+    const auto step = std::max<std::size_t>(1U, pageHint_);
+    if (id.ends_with("previous")) first_ = first_ >= step ? first_ - step : 0U;
+    else if (first_ + step < state.diagnostics.size()) first_ += step;
+    return core::success();
+  }
   return activateControllerNode(controller, id);
 }
 
@@ -1083,6 +1287,1030 @@ bool DiagnosticsOverlay::key(NativeEditorController& controller, std::string_vie
   }
   return false;
 }
+
+// ---- Replacement review ------------------------------------------------------------------------
+
+// The review panel the controller shows for every review it runs (lyric replacement and
+// distribution, find, note cleanup, clear vibrato/dynamics, the vibrato, dynamics and style
+// inspectors, Japanese reading), presented as a sheet dropping from the SINGER card's side of the
+// body. Its rows, actions, navigation and plot handles keep the controller's own ids (which carry
+// the review's interaction prefix), so every command is the controller's accessibility command and
+// a stale id from an earlier review is refused there as before.
+struct ReviewGeometry final {
+  ui::Rect status;
+  std::vector<ui::Rect> rows;       // the laid-out rows, from firstRow on
+  std::size_t firstRow{0U};
+  bool rowPager{false};
+  ui::Rect rowsUp, rowsDown;
+  std::array<ui::Rect, 4U> navigation{};
+  ui::Rect plot;                    // the dynamics plot, empty when the card cannot hold one
+  std::array<ui::Rect, 6U> actions{};
+};
+
+class ReplacementReviewOverlay final : public ShellOverlay {
+public:
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::ReplacementReview; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override { return "shell.overlay.review."; }
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState& state) const
+      noexcept override {
+    return state.replacementReview.visible;
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState& state,
+                               const SingLayout&, ui::Rect slot) const override {
+    if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+    // A sheet from the SINGER card: right-aligned in the body under the header, as tall as the body
+    // for the docked inspectors and sized to its content for the reviews.
+    const auto docked = state.replacementReview.dockedInspector;
+    const auto width = std::min(slot.width, docked ? 400.0 : 560.0);
+    const auto height = docked ? slot.height : std::min(slot.height, 440.0);
+    if (width < kMinimumPanelWidth || height < kMinimumPanelHeight) return {};
+    return {slot.right() - width, slot.y, width, height};
+  }
+  [[nodiscard]] std::string title(const NativeEditorController& controller,
+                                  const EditorSceneState&) const override {
+    // The controller names each review on its own panel node.
+    const auto& root = controller.accessibilityTree().root();
+    if (root.id == controller.replacementReviewSemanticPrefix() + "panel" && !root.name.empty())
+      return root.name;
+    return "Review";
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
+                                                     const EditorSceneState& state,
+                                                     const SingLayout&, ui::Rect panel) const override;
+  void presented() const override { firstRow_ = 0U; }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
+             const EditorSceneState& state, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override;
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override;
+  bool key(NativeEditorController& controller, std::string_view focusedId,
+           const KeyEvent& event) const override;
+  core::Result<void> close(NativeEditorController& controller) const override {
+    // The classic panel's own Escape: from a detail page it returns to the list, otherwise it
+    // cancels the review (replacementReviewAction 3 or 4, as the controller decides).
+    return controller.keyDown(KeyEvent{.key = NativeKey::Escape});
+  }
+  OverlayPress press(NativeEditorController& controller, const EditorSceneState& state,
+                     const SingLayout& layout, ui::Rect panel,
+                     const PointerEvent& event) const override;
+  core::Result<void> drag(NativeEditorController& controller, const OverlayGesture& gesture,
+                          const PointerEvent& event, bool release) const override {
+    auto legacy = event;
+    legacy.position = AxisMap{gesture.source, gesture.destination}.unmap(event.position);
+    return release ? controller.pointerUp(legacy) : controller.pointerMove(legacy);
+  }
+  bool scroll(NativeEditorController& controller, const EditorSceneState& state, const SingLayout&,
+              ui::Rect panel, ui::Point anchor, double deltaX, double deltaY,
+              InputModifiers modifiers) const override {
+    const auto& view = state.replacementReview;
+    const auto g = geometry(view, panel);
+    if (view.dynamicsPlot && contains(g.plot, anchor)) {
+      // The plot pans and zooms through the controller's own wheel handling, at the pointer.
+      controller.scroll(deltaX, deltaY,
+                        AxisMap{view.dynamicsPlot->bounds, g.plot}.unmap(anchor), modifiers);
+      return true;
+    }
+    return false;
+  }
+
+private:
+  [[nodiscard]] static bool contains(ui::Rect r, ui::Point p) noexcept {
+    return r.width > 0.0 && r.height > 0.0 && p.x >= r.x && p.x < r.right() && p.y >= r.y &&
+           p.y < r.bottom();
+  }
+  [[nodiscard]] ReviewGeometry geometry(const ReplacementReviewView& view, ui::Rect panel) const;
+  // The rows a short card shows start here; the controller pages its rows by six, and this pages
+  // within the controller's page when fewer fit.
+  mutable std::size_t firstRow_{0U};
+};
+
+ReviewGeometry ReplacementReviewOverlay::geometry(const ReplacementReviewView& view,
+                                                ui::Rect panel) const {
+  ReviewGeometry g;
+  if (panel.width <= 0.0) return g;
+  const auto inner = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  const auto compact = panel.height < 300.0;
+  // Actions along the bottom: two rows of three, or one row of six on a short card.
+  const auto actionHeight = compact ? 24.0 : 26.0;
+  const auto actionsTop = panel.bottom() - 10.0 - (compact ? actionHeight : 2.0 * actionHeight + 6.0);
+  const auto cells = grid(panel, actionsTop, actionHeight, 6U, compact ? 6U : 3U, 6.0);
+  for (std::size_t i = 0U; i < cells.size() && i < g.actions.size(); ++i) g.actions[i] = cells[i];
+  g.status = {panel.x + kPanelInset, panel.y + 42.0, inner, compact ? 16.0 : 34.0};
+  const auto top = g.status.bottom() + 6.0;
+  const auto bottom = actionsTop - 8.0;
+  const auto rowHeight = compact ? 18.0 : 24.0;
+  const auto rowStride = rowHeight + 2.0;
+  auto rowsBottom = bottom;
+  if (view.dynamicsPlot) {
+    // Two point rows, the navigation row and the plot below them.
+    const auto rowsSpace = static_cast<double>(view.rows.size()) * rowStride;
+    const auto navTop = top + rowsSpace + 2.0;
+    const auto navCells = grid(panel, navTop, 24.0, 4U, 4U, 6.0);
+    if (navTop + 24.0 <= bottom) {
+      for (std::size_t i = 0U; i < 4U; ++i) g.navigation[i] = navCells[i];
+      // Two caption lines above the curve (what is drawn, and the visible range).
+      const auto plotTop = navTop + 24.0 + 26.0;
+      if (bottom - plotTop >= 40.0)
+        g.plot = {panel.x + kPanelInset, plotTop, inner, bottom - plotTop};
+      rowsBottom = navTop - 2.0;
+    }
+  }
+  const auto capacity = static_cast<std::size_t>(std::max(0.0, rowsBottom - top + 2.0) / rowStride);
+  g.rowPager = view.rows.size() > capacity && capacity > 0U;
+  if (g.rowPager) {
+    // The status line gives room at its right end for the row pager.
+    g.status.width = std::max(1.0, inner - 64.0);
+    g.rowsUp = {g.status.right() + 8.0, g.status.y, 26.0, g.status.height};
+    g.rowsDown = {g.rowsUp.right() + 4.0, g.status.y, 26.0, g.status.height};
+    g.firstRow = std::min(firstRow_, view.rows.size() - capacity);
+  }
+  for (std::size_t i = g.firstRow; i < view.rows.size() && i < g.firstRow + capacity; ++i)
+    g.rows.push_back({panel.x + kPanelInset, top + static_cast<double>(i - g.firstRow) * rowStride,
+                      inner, rowHeight});
+  return g;
+}
+
+std::vector<OverlayControl> ReplacementReviewOverlay::controls(
+    const NativeEditorController& controller, const EditorSceneState& state, const SingLayout&,
+    ui::Rect panel) const {
+  std::vector<OverlayControl> out;
+  const auto& view = state.replacementReview;
+  if (panel.width <= 0.0 || !view.visible) return out;
+  const auto prefix = controller.replacementReviewSemanticPrefix();
+  const auto g = geometry(view, panel);
+  OverlayControl status{prefix + "status", g.status, "Review status and counts",
+                        SemanticRole::Status, true, false, false};
+  status.value = view.status + " / " + view.summary;
+  out.push_back(std::move(status));
+  if (g.rowPager) {
+    const auto capacity = g.rows.size();
+    out.push_back({"shell.overlay.review.rows-up", g.rowsUp, "Earlier rows", SemanticRole::Button,
+                   g.firstRow > 0U});
+    out.push_back({"shell.overlay.review.rows-down", g.rowsDown, "Later rows", SemanticRole::Button,
+                   g.firstRow + capacity < view.rows.size()});
+  }
+  for (std::size_t k = 0U; k < g.rows.size(); ++k) {
+    const auto i = g.firstRow + k;
+    OverlayControl row{prefix + "row." + std::to_string(i), g.rows[k],
+                       "Review row " + std::to_string(i + 1U),
+                       view.rowsInspectable ? SemanticRole::Button : SemanticRole::Status, true,
+                       false, view.rowsInspectable};
+    row.value = view.rows[i];
+    out.push_back(std::move(row));
+  }
+  if (view.dynamicsPlot) {
+    const auto& plot = *view.dynamicsPlot;
+    static constexpr std::array<const char*, 4U> kNames{
+        "Zoom in dynamics", "Zoom out dynamics", "Fit region dynamics",
+        "Measured output: next channel, then return to controls"};
+    for (std::size_t i = 0U; i < 4U; ++i) {
+      if (g.navigation[i].width <= 0.0) continue;
+      out.push_back({prefix + "zoom." + std::to_string(i), g.navigation[i], kNames[i],
+                     SemanticRole::Button, plot.editable && (i != 3U || plot.measurementAvailable)});
+    }
+    if (g.plot.width > 0.0) {
+      // The handles first, so a press on one reaches it rather than the curve under it.
+      const AxisMap map{plot.bounds, g.plot};
+      for (const auto& handle : plot.handles) {
+        if (handle.pageRow >= view.rows.size()) continue;
+        const auto at = map.map(handle.position);
+        const ui::Rect r{std::clamp(at.x - 6.0, g.plot.x, g.plot.right() - 12.0),
+                         std::clamp(at.y - 6.0, g.plot.y, g.plot.bottom() - 12.0), 12.0, 12.0};
+        OverlayControl point{prefix + "point." + std::to_string(handle.pageRow), r,
+                             "Dynamics point " + std::to_string(handle.pageRow + 1U),
+                             SemanticRole::Button, plot.editable};
+        point.value = view.rows[handle.pageRow];
+        out.push_back(std::move(point));
+      }
+      out.push_back({prefix + "curve", g.plot, "Region dynamics", SemanticRole::Status, true, false,
+                     false});
+    }
+  }
+  for (std::size_t i = 0U; i < view.enabled.size(); ++i)
+    out.push_back({prefix + "action." + std::to_string(i), g.actions[i],
+                   view.labels[i] == nullptr ? std::string{} : std::string{view.labels[i]},
+                   SemanticRole::Button, view.enabled[i]});
+  return out;
+}
+
+void ReplacementReviewOverlay::paint(Canvas2D& c, const DesignTokens& t,
+                                     const NativeEditorController&, const EditorSceneState& state,
+                                     const SingLayout&, ui::Rect panel,
+                                     const std::vector<OverlayControl>& controls) const {
+  const auto& view = state.replacementReview;
+  const auto g = geometry(view, panel);
+  c.save();
+  c.clipRect(panel);
+  // Status and summary (one line on a short card), elided; the status node carries both whole.
+  if (g.status.height >= 30.0) {
+    c.text({g.status.x, g.status.y, g.status.width, 16.0}, view.status,
+           style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
+    c.text({g.status.x, g.status.y + 18.0, g.status.width, 16.0}, view.summary,
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  } else {
+    c.text(g.status, view.status + " / " + view.summary, style(FontRole::Ui, t.type.smallLabel),
+           t.color.textPrimary);
+  }
+  for (const auto& control : controls) {
+    const auto& r = control.bounds;
+    if (control.id.ends_with(".status") || control.id.ends_with(".curve")) continue;
+    if (control.id.find(".row.") != std::string::npos) {
+      std::string_view text{control.value};
+      while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.remove_suffix(1U);
+      if (view.rowsInspectable) {
+        c.fill(Path::roundedRect(r, 4.0), withAlpha(t.color.surfaceSunken, 0.85));
+        c.stroke(Path::roundedRect(r, 4.0), withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
+      }
+      c.text({r.x + 6.0, r.y, std::max(1.0, r.width - 12.0), r.height}, text,
+             style(FontRole::Mono, t.type.smallLabel), t.color.textPrimary);
+      continue;
+    }
+    if (control.id.find(".point.") != std::string::npos) continue;
+    std::string label = control.name;
+    if (control.id.ends_with("rows-up")) label = "\u25B2";
+    if (control.id.ends_with("rows-down")) label = "\u25BC";
+    if (control.id.find(".zoom.") != std::string::npos) {
+      static constexpr std::array<const char*, 4U> kShort{"Zoom +", "Zoom -", "Fit", "Measure"};
+      const auto index = static_cast<std::size_t>(control.id.back() - '0');
+      label = index < 4U ? kShort[index] : label;
+      if (index == 3U && view.dynamicsPlot && view.dynamicsPlot->measuredMode)
+        label = "Ch " + std::to_string(view.dynamicsPlot->measuredChannel);
+    }
+    paintOverlayControl(c, t, r, label, SemanticRole::Button, control.enabled, false, false);
+  }
+  if (view.dynamicsPlot && g.plot.width > 0.0) {
+    const auto& plot = *view.dynamicsPlot;
+    const AxisMap map{plot.bounds, g.plot};
+    const auto caption = style(FontRole::Ui, t.type.rulerMicro);
+    c.text({g.plot.x, g.plot.y - 24.0, g.plot.width, 11.0},
+           plot.measuredMode ? plot.measurementLabel
+                             : std::string{"Score gray / Draft pink / Target cyan / Generated orange"},
+           caption, t.color.textSecondary);
+    c.text({g.plot.x, g.plot.y - 12.0, g.plot.width, 11.0},
+           "Ticks " + std::to_string(plot.startTick) + ".." + std::to_string(plot.endTick) +
+               (plot.measuredMode ? " | dBFS -96.." +
+                                        std::to_string(static_cast<int>(plot.measuredCeilingDb))
+                                  : std::string{" | gain 0..3.981"}),
+           caption, t.color.textSecondary);
+    sunken(c, t, g.plot, 6.0);
+    c.save();
+    c.clipRect(g.plot);
+    const auto polyline = [&](const std::vector<ui::Point>& points, Color color, double width) {
+      if (points.size() < 2U) return;
+      Path path;
+      path.moveTo(map.map(points.front()));
+      for (std::size_t i = 1U; i < points.size(); ++i) path.lineTo(map.map(points[i]));
+      c.stroke(path, color, StrokeStyle{width});
+    };
+    if (plot.measuredMode) {
+      for (const auto& point : plot.measured) {
+        const auto at = map.map(point);
+        c.fill(Path::rect({at.x, at.y, 1.5, 1.5}), t.color.success);
+      }
+    } else {
+      const auto unity = plot.bounds.y + plot.bounds.height * (1.0 - 1.0 / domain::kMaximumDynamicsGain);
+      Path line;
+      line.moveTo(map.map({plot.bounds.x, unity})).lineTo(map.map({plot.bounds.right(), unity}));
+      c.stroke(line, withAlpha(t.color.border, 0.9), StrokeStyle{1.0, true, {4.0, 3.0}});
+      polyline(plot.score, t.color.textSecondary, 3.0);
+      polyline(plot.draft, t.color.accent, 1.2);
+      for (const auto& point : plot.target) {
+        const auto at = map.map(point);
+        c.fill(Path::rect({at.x, at.y, 1.5, 1.5}), t.color.accentCurve);
+      }
+      for (const auto& point : plot.selectedGenerated) {
+        const auto at = map.map(point);
+        c.stroke(Path::rect({at.x - 1.5, at.y - 1.5, 3.5, 3.5}), t.color.warning, StrokeStyle{1.0});
+      }
+      for (const auto& control : controls) {
+        if (control.id.find(".point.") == std::string::npos) continue;
+        const auto& r = control.bounds;
+        c.fill(Path::roundedRect({r.x + 3.0, r.y + 3.0, 6.0, 6.0}, 1.5),
+               plot.editable ? t.color.accent : t.color.textSecondary);
+      }
+      if (plot.candidate) {
+        const auto at = map.map(*plot.candidate);
+        c.stroke(Path::rect({at.x - 4.0, at.y - 4.0, 8.0, 8.0}), t.color.accentTime, StrokeStyle{2.0});
+      }
+    }
+    c.restore();
+  }
+  c.restore();
+}
+
+OverlayPress ReplacementReviewOverlay::press(NativeEditorController& controller,
+                                             const EditorSceneState& state, const SingLayout&,
+                                             ui::Rect panel, const PointerEvent& event) const {
+  const auto& view = state.replacementReview;
+  if (!view.dynamicsPlot || !view.dynamicsPlot->editable) return {};
+  const auto g = geometry(view, panel);
+  if (g.plot.width <= 0.0) return {};
+  const auto& plot = *view.dynamicsPlot;
+  const AxisMap map{plot.bounds, g.plot};
+  // A handle's own rectangle presses the handle itself, wherever in it the press landed; the rest
+  // of the plot is mapped back to the classic plot, where the controller decides what it hit.
+  auto legacy = event;
+  auto inPlot = contains(g.plot, event.position);
+  for (const auto& handle : plot.handles) {
+    const auto at = map.map(handle.position);
+    const ui::Rect r{std::clamp(at.x - 6.0, g.plot.x, g.plot.right() - 12.0),
+                     std::clamp(at.y - 6.0, g.plot.y, g.plot.bottom() - 12.0), 12.0, 12.0};
+    if (!contains(r, event.position)) continue;
+    legacy.position = handle.position;
+    inPlot = true;
+    break;
+  }
+  if (!inPlot) return {};
+  if (legacy.position.x == event.position.x && legacy.position.y == event.position.y)
+    legacy.position = map.unmap(event.position);
+  OverlayPress out{.handled = true, .result = controller.pointerDown(legacy)};
+  if (out.result && controller.pointerGestureActive())
+    out.gesture = OverlayGesture{plot.bounds, g.plot};
+  return out;
+}
+
+core::Result<void> ReplacementReviewOverlay::perform(NativeEditorController& controller,
+                                                     std::string_view id,
+                                                     SemanticAction action) const {
+  if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
+    return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+  if (id == "shell.overlay.review.rows-up" || id == "shell.overlay.review.rows-down") {
+    if (id.ends_with("up")) firstRow_ = firstRow_ > 0U ? firstRow_ - 1U : 0U;
+    else ++firstRow_;  // the layout clamps it to the last row that still fills the card
+    return core::success();
+  }
+  // Rows, actions, navigation and points: the controller's own accessibility command, which checks
+  // the review's current prefix and whether that node can act now.
+  return activateControllerNode(controller, id);
+}
+
+bool ReplacementReviewOverlay::key(NativeEditorController& controller, std::string_view focusedId,
+                                   const KeyEvent& event) const {
+  if (event.key == NativeKey::Enter || event.key == NativeKey::Space) {
+    static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+    return true;
+  }
+  // The dynamics inspector's own keys (zoom, pan, fit), which the controller ignores for the
+  // other reviews, exactly as the classic panel forwarded them.
+  if (event.key == NativeKey::Plus || event.key == NativeKey::Minus || event.key == NativeKey::Left ||
+      event.key == NativeKey::Right || event.key == NativeKey::R) {
+    static_cast<void>(controller.keyDown(event));
+    return true;
+  }
+  return false;
+}
+
+// ---- Audio settings ----------------------------------------------------------------------------
+
+// The audio device settings (section 7.4 moves them into MIX as a card; the header's settings and
+// the MIX device card's Settings open the same sheet). Every change is the controller's own
+// command, which builds the request from the current settings and applies it through the host's
+// applyAudioSettings, recording its refusal as the diagnostic shown here.
+constexpr double kDeviceRow = 28.0;
+constexpr double kDeviceStride = 32.0;
+
+class AudioSettingsOverlay final : public ShellOverlay {
+public:
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::AudioSettings; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override { return "shell.overlay.audio."; }
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState& state) const
+      noexcept override {
+    return state.audioSettings.visible;
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState& state,
+                               const SingLayout&, ui::Rect slot) const override {
+    if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+    const auto natural = 44.0 + 20.0 +
+                         static_cast<double>(state.audioSettings.devices.size()) * kDeviceStride +
+                         8.0 + 48.0 + 10.0 + 38.0 + 12.0;
+    return fitPanel(slot, std::min(slot.width, 520.0), std::min(slot.height, natural));
+  }
+  [[nodiscard]] std::string title(const NativeEditorController&,
+                                  const EditorSceneState& state) const override {
+    return state.audioSettings.reported ? "Audio settings" : "Audio settings (not reported yet)";
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController&,
+                                                     const EditorSceneState& state,
+                                                     const SingLayout&, ui::Rect panel) const override;
+  [[nodiscard]] std::string openerId(const NativeEditorController&,
+                                     const EditorSceneState&) const override {
+    return "shell.settings";
+  }
+  void presented() const override { firstDevice_ = 0U; }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
+             const EditorSceneState& state, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override;
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override;
+  bool key(NativeEditorController& controller, std::string_view focusedId,
+           const KeyEvent& event) const override;
+  core::Result<void> close(NativeEditorController& controller) const override {
+    controller.closeAudioSettings();
+    return core::success();
+  }
+  bool scroll(NativeEditorController&, const EditorSceneState& state, const SingLayout&,
+              ui::Rect, ui::Point, double, double deltaY, InputModifiers) const override {
+    if (deltaY < 0.0 && firstDevice_ + 1U < state.audioSettings.devices.size()) ++firstDevice_;
+    else if (deltaY > 0.0 && firstDevice_ > 0U) --firstDevice_;
+    return true;
+  }
+
+private:
+  mutable std::size_t firstDevice_{0U};
+};
+
+std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorController&,
+                                                           const EditorSceneState& state,
+                                                           const SingLayout&, ui::Rect panel) const {
+  std::vector<OverlayControl> out;
+  if (panel.width <= 0.0) return out;
+  const auto& audio = state.audioSettings;
+  const auto inner = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  const ui::Rect close{panel.right() - kPanelInset - 72.0, panel.y + 8.0, 72.0, 26.0};
+  out.push_back({"shell.overlay.audio.close", close, "Close audio settings"});
+  // From the bottom up: the measured counts and the last refusal, then the three stepped settings.
+  // A short card (the minimum window) drops the list caption and tightens the rows, so at least
+  // one device row and its pager always fit.
+  const auto compact = panel.height < 200.0;
+  const auto statsHeight = compact ? 20.0 : 38.0;
+  const ui::Rect stats{panel.x + kPanelInset, panel.bottom() - 10.0 - statsHeight, inner, statsHeight};
+  const auto fieldHeight = compact ? 36.0 : 48.0;
+  const auto fieldsTop = stats.y - 8.0 - fieldHeight;
+  const auto cells = grid(panel, fieldsTop, fieldHeight, 3U, 3U, 8.0);
+  // The devices fill what is left under the header; a list longer than that pages.
+  const auto rowHeight = compact ? 24.0 : kDeviceRow;
+  const auto stride = compact ? 26.0 : kDeviceStride;
+  const auto listTop = panel.y + (compact ? 42.0 : 64.0);
+  const auto capacity = static_cast<std::size_t>(
+      std::max(0.0, fieldsTop - 8.0 - listTop + (stride - rowHeight)) / stride);
+  const auto paged = audio.devices.size() > capacity && capacity > 0U;
+  const auto first = paged ? std::min(firstDevice_, audio.devices.size() - capacity) : 0U;
+  if (paged) {
+    // Beside the caption, or in the header left of Close when the caption is dropped.
+    const auto pagerRight = compact ? close.x - 8.0 : panel.right() - kPanelInset;
+    const auto pagerY = compact ? panel.y + 12.0 : panel.y + 42.0;
+    out.push_back({"shell.overlay.audio.devices-up", {pagerRight - 58.0, pagerY, 26.0, 18.0},
+                   "Earlier devices", SemanticRole::Button, first > 0U});
+    out.push_back({"shell.overlay.audio.devices-down", {pagerRight - 26.0, pagerY, 26.0, 18.0},
+                   "Later devices", SemanticRole::Button, first + capacity < audio.devices.size()});
+  }
+  for (std::size_t i = first; i < audio.devices.size() && i < first + capacity; ++i) {
+    const auto& device = audio.devices[i];
+    OverlayControl row{"audio.device." + std::to_string(i),
+                       {panel.x + kPanelInset, listTop + static_cast<double>(i - first) * stride,
+                        inner, rowHeight},
+                       device.name.empty() ? device.id : device.name, SemanticRole::Button, true,
+                       device.selected};
+    row.value = device.physical ? "Physical device" : "Fallback device";
+    row.description = "Device id " + device.id;
+    out.push_back(std::move(row));
+  }
+  static constexpr std::array<const char*, 3U> kIds{"audio.sample-rate", "audio.block-frames",
+                                                    "audio.channels"};
+  static constexpr std::array<const char*, 3U> kNames{"Sample rate", "Block size", "Output channels"};
+  const std::array<std::string, 3U> values{
+      std::to_string(audio.current.sampleRate) + " Hz",
+      std::to_string(audio.current.blockFrames) + " frames",
+      std::to_string(audio.current.outputChannels) + " channels"};
+  for (std::size_t i = 0U; i < 3U; ++i) {
+    OverlayControl field{kIds[i], cells[i], kNames[i]};
+    field.value = values[i];
+    field.description = "Activate or Increment for the next value, Decrement for the previous one";
+    field.adjustable = true;
+    out.push_back(std::move(field));
+  }
+  OverlayControl counts{"audio.diagnostics", stats, "Audio diagnostics", SemanticRole::Status, true,
+                        false, false};
+  counts.value = "Underflow " + std::to_string(audio.underflowFrames) + " / XRun " +
+                 std::to_string(audio.xruns) + (audio.diagnostic.empty() ? "" : " / " + audio.diagnostic);
+  out.push_back(std::move(counts));
+  return out;
+}
+
+void AudioSettingsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
+                                 const EditorSceneState& state, const SingLayout&, ui::Rect panel,
+                                 const std::vector<OverlayControl>& controls) const {
+  const auto& audio = state.audioSettings;
+  c.save();
+  c.clipRect(panel);
+  const auto labelStyle =
+      style(FontRole::UiSemibold, t.type.smallLabel, t.type.labelTracking, TextAlign::Left, true);
+  if (panel.height >= 200.0)
+    c.text({panel.x + kPanelInset, panel.y + 42.0, std::max(1.0, panel.width - 2.0 * kPanelInset - 70.0), 18.0},
+           audio.reported ? std::string{"Output device"} : std::string{"Output device (not reported yet)"},
+           labelStyle, audio.reported ? t.color.textSecondary : t.color.warning);
+  for (const auto& control : controls) {
+    const auto& r = control.bounds;
+    if (control.id == "shell.overlay.audio.close") {
+      paintOverlayControl(c, t, r, "Close", SemanticRole::Button, true, false, false);
+    } else if (control.id.ends_with("devices-up") || control.id.ends_with("devices-down")) {
+      paintOverlayControl(c, t, r, control.id.ends_with("up") ? "\u25B2" : "\u25BC",
+                          SemanticRole::Button, control.enabled, false, false);
+    } else if (control.id.starts_with("audio.device.")) {
+      paintOverlayControl(c, t, r, {}, SemanticRole::Button, true, control.selected, false);
+      c.text({r.x + 10.0, r.y, std::max(1.0, r.width - 130.0), r.height}, control.name,
+             style(FontRole::Ui, t.type.label), control.selected ? t.color.accent : t.color.textPrimary);
+      c.text({r.right() - 118.0, r.y, 110.0, r.height}, control.value,
+             style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right), t.color.textSecondary);
+    } else if (control.id == "audio.diagnostics") {
+      const auto counts = "Underflow frames " + std::to_string(audio.underflowFrames) + " \u00b7 XRuns " +
+                          std::to_string(audio.xruns);
+      if (r.height >= 30.0) {
+        c.text({r.x, r.y, r.width, 16.0}, counts, style(FontRole::Mono, t.type.smallLabel),
+               t.color.textSecondary);
+        if (!audio.diagnostic.empty())
+          c.text({r.x, r.y + 18.0, r.width, 16.0}, audio.diagnostic, style(FontRole::Ui, t.type.smallLabel),
+                 t.color.warning);
+      } else {
+        c.text(r, audio.diagnostic.empty() ? counts : counts + " \u00b7 " + audio.diagnostic,
+               style(FontRole::Ui, t.type.smallLabel),
+               audio.diagnostic.empty() ? t.color.textSecondary : t.color.warning);
+      }
+    } else {
+      // A stepped setting: its name above, its value below, the whole cell one button.
+      paintOverlayControl(c, t, r, {}, SemanticRole::Button, true, false, false);
+      c.text({r.x + 8.0, r.y + 4.0, std::max(1.0, r.width - 16.0), 12.0}, control.name, labelStyle,
+             t.color.textSecondary);
+      c.text({r.x + 8.0, r.bottom() - 20.0, std::max(1.0, r.width - 16.0), 16.0}, control.value,
+             style(FontRole::Mono, t.type.label), t.color.textPrimary);
+    }
+  }
+  c.restore();
+}
+
+core::Result<void> AudioSettingsOverlay::perform(NativeEditorController& controller,
+                                                 std::string_view id, SemanticAction action) const {
+  const auto activate = action == SemanticAction::Activate || action == SemanticAction::Toggle;
+  using Field = NativeEditorController::AudioSettingsField;
+  const auto field = id == "audio.sample-rate"    ? std::optional<Field>{Field::SampleRate}
+                     : id == "audio.block-frames" ? std::optional<Field>{Field::BlockFrames}
+                     : id == "audio.channels"     ? std::optional<Field>{Field::Channels}
+                                                  : std::nullopt;
+  if (field.has_value()) {
+    // Activate steps forward, as the classic field did; Increment and Decrement step either way,
+    // as the classic arrows did.
+    if (activate || action == SemanticAction::Increment) return controller.cycleAudioSettings(*field, 1);
+    if (action == SemanticAction::Decrement) return controller.cycleAudioSettings(*field, -1);
+    return core::failure(core::ErrorCode::Unsupported, "This setting steps");
+  }
+  if (!activate) return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+  if (id == "shell.overlay.audio.close") {
+    controller.closeAudioSettings();
+    return core::success();
+  }
+  if (id == "shell.overlay.audio.devices-up") {
+    if (firstDevice_ > 0U) --firstDevice_;
+    return core::success();
+  }
+  if (id == "shell.overlay.audio.devices-down") {
+    ++firstDevice_;  // the layout clamps it
+    return core::success();
+  }
+  constexpr std::string_view kDevice{"audio.device."};
+  if (id.starts_with(kDevice)) {
+    std::size_t index = 0U;
+    if (!parseIndex(id.substr(kDevice.size()), index))
+      return core::failure(core::ErrorCode::InvalidArgument, "Audio device accessibility index is invalid");
+    return controller.selectAudioDevice(index);
+  }
+  return core::failure(core::ErrorCode::NotFound, "Unknown audio settings control");
+}
+
+bool AudioSettingsOverlay::key(NativeEditorController& controller, std::string_view focusedId,
+                               const KeyEvent& event) const {
+  using Field = NativeEditorController::AudioSettingsField;
+  switch (event.key) {
+    case NativeKey::Enter:
+    case NativeKey::Space:
+      static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+      return true;
+    // The classic panel's keys: Left and Right step the sample rate, Up and Down the block size,
+    // Shift with Up and Down the channels, and I closes it.
+    case NativeKey::Left:
+    case NativeKey::Right:
+      static_cast<void>(controller.cycleAudioSettings(Field::SampleRate, event.key == NativeKey::Right ? 1 : -1));
+      return true;
+    case NativeKey::Up:
+    case NativeKey::Down:
+      static_cast<void>(controller.cycleAudioSettings(
+          event.modifiers.shift ? Field::Channels : Field::BlockFrames, event.key == NativeKey::Up ? 1 : -1));
+      return true;
+    case NativeKey::I:
+      controller.closeAudioSettings();
+      return true;
+    default: return false;
+  }
+}
+
+// ---- Voice browser -----------------------------------------------------------------------------
+
+// The installed singers and voicebanks as a large sheet ("Change voice" on the SINGER card and
+// VOICE's "Open voice browser"). Choosing a card asks the host to replace the selected track's
+// voicebank; Refresh and Install are the host's own commands; each is the command the classic
+// browser's pointer, keys (R, O, V) and accessibility nodes ran.
+constexpr double kCardHeight = 76.0;
+constexpr double kCardGap = 8.0;
+constexpr double kCardMinimumWidth = 250.0;
+
+struct BrowserGeometry final {
+  bool toolbarInHeader{true};
+  std::array<ui::Rect, 3U> toolbar{};  // Refresh, Install, Close
+  std::size_t columns{1U};
+  std::size_t perPage{1U};
+  std::size_t first{0U};
+  std::vector<ui::Rect> cards;         // from first on
+  bool paged{false};
+  ui::Rect previous, next, pageLabel;
+  ui::Rect empty;
+};
+
+BrowserGeometry browserGeometry(std::size_t count, std::size_t requestedFirst, ui::Rect panel) {
+  BrowserGeometry g;
+  if (panel.width <= 0.0) return g;
+  const auto inner = std::max(1.0, panel.width - 2.0 * kPanelInset);
+  // The three commands sit in the header when there is room beside the title, else in a row under it.
+  constexpr double kButton = 76.0;
+  g.toolbarInHeader = panel.width >= 3.0 * kButton + 12.0 + 2.0 * kPanelInset + 110.0;
+  const auto toolbarY = g.toolbarInHeader ? panel.y + 8.0 : panel.y + 42.0;
+  for (std::size_t i = 0U; i < 3U; ++i)
+    g.toolbar[i] = {panel.right() - kPanelInset - static_cast<double>(3U - i) * kButton -
+                        static_cast<double>(2U - i) * 6.0,
+                    toolbarY, kButton, 26.0};
+  const auto top = g.toolbarInHeader ? panel.y + 46.0 : panel.y + 76.0;
+  g.columns = std::max<std::size_t>(1U, static_cast<std::size_t>((inner + kCardGap) / (kCardMinimumWidth + kCardGap)));
+  const auto cardWidth = (inner - kCardGap * static_cast<double>(g.columns - 1U)) / static_cast<double>(g.columns);
+  const auto rowsWithout = static_cast<std::size_t>(std::max(0.0, panel.bottom() - 10.0 - top + kCardGap) /
+                                                    (kCardHeight + kCardGap));
+  g.paged = count > rowsWithout * g.columns;
+  const auto bottom = panel.bottom() - 10.0 - (g.paged ? 34.0 : 0.0);
+  const auto rows = std::max<std::size_t>(
+      1U, static_cast<std::size_t>(std::max(0.0, bottom - top + kCardGap) / (kCardHeight + kCardGap)));
+  g.perPage = rows * g.columns;
+  g.first = count == 0U ? 0U : std::min((requestedFirst / g.perPage) * g.perPage, ((count - 1U) / g.perPage) * g.perPage);
+  for (std::size_t i = g.first; i < count && i < g.first + g.perPage; ++i) {
+    const auto k = i - g.first;
+    const ui::Rect r{panel.x + kPanelInset + static_cast<double>(k % g.columns) * (cardWidth + kCardGap),
+                     top + static_cast<double>(k / g.columns) * (kCardHeight + kCardGap), cardWidth,
+                     kCardHeight};
+    if (r.bottom() > bottom + 0.5) break;
+    g.cards.push_back(r);
+  }
+  if (g.paged) {
+    const auto y = panel.bottom() - 36.0;
+    g.previous = {panel.x + kPanelInset, y, 88.0, 26.0};
+    g.next = {panel.x + kPanelInset + 96.0, y, 88.0, 26.0};
+    g.pageLabel = {panel.x + kPanelInset + 196.0, y, std::max(1.0, inner - 196.0), 26.0};
+  }
+  g.empty = {panel.x + kPanelInset, top, inner, std::max(0.0, bottom - top)};
+  return g;
+}
+
+bool cardSelected(const EditorSceneState& state, const authoring::VoicebankCard& card) {
+  return state.inspector.valid && state.inspector.vocal && state.inspector.voicebank.id == card.id &&
+         state.inspector.voicebank.version == card.version &&
+         state.inspector.voicebank.contentHash == card.contentHash;
+}
+
+std::string cardRange(const authoring::VoicebankCard& card) {
+  if (card.rootPitchLayers.empty()) return "Range unknown";
+  const auto [low, high] = std::minmax_element(card.rootPitchLayers.begin(), card.rootPitchLayers.end());
+  return *low == *high ? noteName(*low) : noteName(*low) + "\u2013" + noteName(*high);
+}
+
+std::string cardFeatures(const authoring::VoicebankCard& card) {
+  std::string features;
+  if (card.hasSustain) features += "sustain ";
+  if (card.hasRelease) features += "release ";
+  if (card.hasBreath) features += "breath ";
+  if (features.empty()) return "no release/sustain data";
+  features.pop_back();
+  return features;
+}
+
+class VoicebankBrowserOverlay final : public ShellOverlay {
+public:
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::VoicebankBrowser; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override {
+    return "shell.overlay.voicebank.";
+  }
+  [[nodiscard]] bool wanted(const NativeEditorController&, const EditorSceneState& state) const
+      noexcept override {
+    return state.voicebankBrowserVisible;
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController&, const EditorSceneState&,
+                               const SingLayout&, ui::Rect slot) const override {
+    if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+    // A large sheet: most of the body, never the header.
+    return fitPanel(slot, std::max(slot.width * 0.94, 420.0), std::max(slot.height * 0.94, 260.0));
+  }
+  [[nodiscard]] std::string title(const NativeEditorController&,
+                                  const EditorSceneState& state) const override {
+    return state.voicebankCards.size() == 1U
+               ? std::string{"Voices / 1 installed"}
+               : "Voices / " + std::to_string(state.voicebankCards.size()) + " installed";
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
+                                                     const EditorSceneState& state,
+                                                     const SingLayout&, ui::Rect panel) const override;
+  [[nodiscard]] std::string openerId(const NativeEditorController&,
+                                     const EditorSceneState&) const override {
+    return "shell.change-voice";
+  }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
+             const EditorSceneState& state, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override;
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override;
+  bool key(NativeEditorController& controller, std::string_view focusedId,
+           const KeyEvent& event) const override;
+  core::Result<void> close(NativeEditorController& controller) const override {
+    controller.closeVoicebankBrowser();
+    return core::success();
+  }
+  bool scroll(NativeEditorController& controller, const EditorSceneState& state, const SingLayout&,
+              ui::Rect panel, ui::Point, double, double deltaY, InputModifiers) const override {
+    const auto g = browserGeometry(state.voicebankCards.size(), controller.voicebankBrowserFirstCard(), panel);
+    if (!g.paged || deltaY == 0.0) return true;
+    page(controller, g, deltaY < 0.0 ? 1 : -1);
+    return true;
+  }
+
+private:
+  static void page(NativeEditorController& controller, const BrowserGeometry& g, int direction) {
+    if (direction < 0) controller.setVoicebankBrowserFirstCard(g.first >= g.perPage ? g.first - g.perPage : 0U);
+    else controller.setVoicebankBrowserFirstCard(g.first + g.perPage);
+  }
+  // The page the last layout used, so a pager command moves by exactly one page.
+  mutable BrowserGeometry last_;
+};
+
+std::vector<OverlayControl> VoicebankBrowserOverlay::controls(const NativeEditorController& controller,
+                                                              const EditorSceneState& state,
+                                                              const SingLayout&, ui::Rect panel) const {
+  std::vector<OverlayControl> out;
+  if (panel.width <= 0.0) return out;
+  const auto& cards = state.voicebankCards;
+  const auto g = browserGeometry(cards.size(), controller.voicebankBrowserFirstCard(), panel);
+  last_ = g;
+  for (std::size_t k = 0U; k < g.cards.size(); ++k) {
+    const auto i = g.first + k;
+    const auto& card = cards[i];
+    const auto selected = cardSelected(state, card);
+    OverlayControl control{"voicebank.card." + std::to_string(i), g.cards[k], card.displayName,
+                           SemanticRole::Button, card.selectable, selected};
+    control.value = card.version + " / " + card.trustLabel + (selected ? " / Selected" : "");
+    control.description = (card.language.empty() ? std::string{"Language unknown"} : card.language) +
+                          " / " + cardRange(card) + " / " + std::to_string(card.styles.size()) +
+                          " styles / units " + std::to_string(card.enabledUnitCount) + " enabled, " +
+                          std::to_string(card.disabledUnitCount) + " disabled / " + cardFeatures(card) +
+                          " / hash " + card.contentHashAbbreviation;
+    for (const auto& diagnostic : card.diagnostics) control.description += " / " + diagnostic;
+    if (!card.selectable) control.description += " / Not selectable: not trusted";
+    out.push_back(std::move(control));
+  }
+  if (g.paged) {
+    out.push_back({"shell.overlay.voicebank.previous", g.previous, "Previous voices",
+                   SemanticRole::Button, g.first > 0U});
+    out.push_back({"shell.overlay.voicebank.next", g.next, "Next voices", SemanticRole::Button,
+                   g.first + g.perPage < cards.size()});
+  }
+  static constexpr std::array<const char*, 3U> kIds{"shell.overlay.voicebank.refresh",
+                                                    "shell.overlay.voicebank.install",
+                                                    "shell.overlay.voicebank.close"};
+  static constexpr std::array<const char*, 3U> kNames{"Refresh installed voices",
+                                                      "Install a voicebank", "Close voice browser"};
+  for (std::size_t i = 0U; i < 3U; ++i) out.push_back({kIds[i], g.toolbar[i], kNames[i]});
+  return out;
+}
+
+void VoicebankBrowserOverlay::paint(Canvas2D& c, const DesignTokens& t,
+                                    const NativeEditorController& controller,
+                                    const EditorSceneState& state, const SingLayout&, ui::Rect panel,
+                                    const std::vector<OverlayControl>& controls) const {
+  const auto& cards = state.voicebankCards;
+  const auto g = browserGeometry(cards.size(), controller.voicebankBrowserFirstCard(), panel);
+  c.save();
+  c.clipRect(panel);
+  static constexpr std::array<const char*, 3U> kLabels{"Refresh", "Install\u2026", "Close"};
+  for (std::size_t i = 0U; i < 3U; ++i)
+    paintOverlayControl(c, t, g.toolbar[i], kLabels[i], SemanticRole::Button, true, false, false);
+  if (cards.empty()) {
+    c.text({g.empty.x, g.empty.y, g.empty.width, 20.0}, "No installed voicebanks",
+           style(FontRole::UiSemibold, t.type.label), t.color.textPrimary);
+    c.text({g.empty.x, g.empty.y + 22.0, g.empty.width, 18.0},
+           "Install a bank, then Refresh.", style(FontRole::Ui, t.type.smallLabel),
+           t.color.textSecondary);
+  }
+  for (const auto& control : controls) {
+    if (!control.id.starts_with("voicebank.card.")) continue;
+    std::size_t index = 0U;
+    if (!parseIndex(std::string_view{control.id}.substr(15U), index) || index >= cards.size()) continue;
+    const auto& card = cards[index];
+    const auto& r = control.bounds;
+    const auto p = Path::roundedRect(r, t.shape.control + 2.0);
+    if (control.selected) {
+      c.save();
+      c.setGlow(withAlpha(t.color.accent, 0.5), 10.0);
+      c.fill(p, withAlpha(t.color.accent, 0.16));
+      c.restore();
+      c.stroke(p, t.color.accent, StrokeStyle{1.2});
+    } else {
+      c.fill(p, withAlpha(t.color.surfaceSunken, 0.9));
+      c.stroke(p, card.selectable ? withAlpha(t.color.border, 0.95) : withAlpha(t.color.warning, 0.8),
+               StrokeStyle{1.0});
+    }
+    const auto x = r.x + 12.0;
+    const auto w = std::max(1.0, r.width - 24.0);
+    c.text({x, r.y + 6.0, w, 18.0}, card.displayName + "  " + card.version,
+           style(FontRole::UiSemibold, t.type.label),
+           control.selected ? t.color.accent : card.selectable ? t.color.textPrimary : t.color.textDisabled);
+    c.text({x, r.y + 25.0, w, 14.0},
+           (card.language.empty() ? std::string{"\u2014"} : card.language) + " \u00b7 " + cardRange(card) +
+               " \u00b7 " + card.trustLabel,
+           style(FontRole::Ui, t.type.smallLabel), card.selectable ? t.color.textSecondary : t.color.warning);
+    c.text({x, r.y + 40.0, w, 14.0},
+           std::to_string(card.styles.size()) + " styles \u00b7 " + std::to_string(card.enabledUnitCount) +
+               " units \u00b7 " + cardFeatures(card),
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+    const auto last = !card.diagnostics.empty() ? card.diagnostics.front()
+                      : control.selected       ? std::string{"Selected for this track"}
+                                               : "Hash " + card.contentHashAbbreviation;
+    c.text({x, r.y + 55.0, w, 14.0}, last, style(FontRole::Ui, t.type.rulerMicro + 1.0),
+           !card.diagnostics.empty() ? t.color.warning : control.selected ? t.color.accent : t.color.textDisabled);
+  }
+  if (g.paged) {
+    paintOverlayControl(c, t, g.previous, "Previous", SemanticRole::Button, g.first > 0U, false, false);
+    paintOverlayControl(c, t, g.next, "Next", SemanticRole::Button, g.first + g.perPage < cards.size(),
+                        false, false);
+    c.text(g.pageLabel,
+           std::to_string(g.first + 1U) + "\u2013" +
+               std::to_string(std::min(g.first + g.perPage, cards.size())) + " of " +
+               std::to_string(cards.size()),
+           style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  }
+  c.restore();
+}
+
+core::Result<void> VoicebankBrowserOverlay::perform(NativeEditorController& controller,
+                                                    std::string_view id, SemanticAction action) const {
+  if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
+    return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+  if (id == "shell.overlay.voicebank.refresh") return controller.refreshVoicebanks();
+  if (id == "shell.overlay.voicebank.install") return controller.openVoicebankInstaller();
+  if (id == "shell.overlay.voicebank.close") {
+    controller.closeVoicebankBrowser();
+    return core::success();
+  }
+  if (id == "shell.overlay.voicebank.previous" || id == "shell.overlay.voicebank.next") {
+    page(controller, last_, id.ends_with("next") ? 1 : -1);
+    return core::success();
+  }
+  constexpr std::string_view kCard{"voicebank.card."};
+  if (id.starts_with(kCard)) {
+    std::size_t index = 0U;
+    if (!parseIndex(id.substr(kCard.size()), index))
+      return core::failure(core::ErrorCode::InvalidArgument, "Voicebank accessibility index is invalid");
+    return controller.selectVoicebankCard(index);
+  }
+  return core::failure(core::ErrorCode::NotFound, "Unknown voice browser control");
+}
+
+bool VoicebankBrowserOverlay::key(NativeEditorController& controller, std::string_view focusedId,
+                                  const KeyEvent& event) const {
+  switch (event.key) {
+    case NativeKey::Enter:
+    case NativeKey::Space:
+      static_cast<void>(perform(controller, focusedId, SemanticAction::Activate));
+      return true;
+    // The classic browser's keys: R refreshes, O opens the installer, V closes.
+    case NativeKey::R: static_cast<void>(controller.refreshVoicebanks()); return true;
+    case NativeKey::O: static_cast<void>(controller.openVoicebankInstaller()); return true;
+    case NativeKey::V: controller.closeVoicebankBrowser(); return true;
+    case NativeKey::Left:
+    case NativeKey::Right:
+      if (last_.paged) page(controller, last_, event.key == NativeKey::Right ? 1 : -1);
+      return true;
+    default: return false;
+  }
+}
+
+// ---- Classic-only text fields ------------------------------------------------------------------
+
+// The fields a classic surface owned, as an inline field card in the shell: the tempo or meter
+// entry opened from the transport display, the bounded field (phone hint, find/replace query, a
+// review's draft field) and a track or region name. The text arrives through the host's text input
+// client exactly as before (the shell only moves the client to this card), and Enter, Tab and
+// Escape are the controller's own commit and cancel.
+TextInputAnchor fieldAnchor(NativeEditorController::TextFieldView::Kind kind) {
+  using Kind = NativeEditorController::TextFieldView::Kind;
+  switch (kind) {
+    case Kind::Transport: return TextInputAnchor::Transport;
+    case Kind::Rename: return TextInputAnchor::ArrangementField;
+    case Kind::TimeMap: return TextInputAnchor::TimeMapPanel;
+    case Kind::Bounded:
+    case Kind::None: return TextInputAnchor::BoundedField;
+  }
+  return TextInputAnchor::BoundedField;
+}
+
+class TextFieldOverlay final : public ShellOverlay {
+public:
+  [[nodiscard]] OverlayKind kind() const noexcept override { return OverlayKind::TextField; }
+  [[nodiscard]] std::string_view idPrefix() const noexcept override { return "shell.overlay.field."; }
+  [[nodiscard]] bool wanted(const NativeEditorController& controller, const EditorSceneState&) const
+      noexcept override {
+    using Kind = NativeEditorController::TextFieldView::Kind;
+    const auto field = controller.textFieldView().kind;
+    return field == Kind::Transport || field == Kind::Bounded || field == Kind::Rename;
+  }
+  [[nodiscard]] ui::Rect panel(const NativeEditorController& controller, const EditorSceneState&,
+                               const SingLayout& layout, ui::Rect) const override {
+    return textFieldPlacement(fieldAnchor(controller.textFieldView().kind), layout).panel;
+  }
+  [[nodiscard]] std::string title(const NativeEditorController& controller,
+                                  const EditorSceneState&) const override {
+    return controller.textFieldView().label;
+  }
+  [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
+                                                     const EditorSceneState&, const SingLayout& layout,
+                                                     ui::Rect) const override {
+    std::vector<OverlayControl> out;
+    const auto field = controller.textFieldView();
+    const auto placement = textFieldPlacement(fieldAnchor(field.kind), layout);
+    if (placement.panel.width <= 0.0) return out;
+    OverlayControl input{field.inputId.empty() ? std::string{"shell.overlay.field.input"} : field.inputId,
+                         placement.input, field.inputName, SemanticRole::TextField, true, false, false};
+    input.value = field.text;
+    input.description = field.error;
+    input.editable = true;
+    out.push_back(std::move(input));
+    out.push_back({field.cancelId.empty() ? std::string{"shell.overlay.field.cancel"} : field.cancelId,
+                   placement.cancel, field.cancelName});
+    return out;
+  }
+  void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
+             const EditorSceneState&, const SingLayout&, ui::Rect panel,
+             const std::vector<OverlayControl>& controls) const override {
+    if (controls.size() < 2U) return;
+    const auto field = controller.textFieldView();
+    c.save();
+    c.clipRect(panel);
+    paintOverlayTextField(c, t, controls[0].bounds, {}, controls[0].value, true);
+    paintOverlayControl(c, t, controls[1].bounds, "Cancel", SemanticRole::Button, true, false, false);
+    const auto& input = controls[0].bounds;
+    c.text({input.x, input.bottom() + 6.0, std::max(1.0, panel.right() - kPanelInset - input.x), 16.0},
+           field.error.empty() ? field.inputName : field.error, style(FontRole::Ui, t.type.smallLabel),
+           field.error.empty() ? t.color.textSecondary : t.color.warning);
+    c.restore();
+  }
+  core::Result<void> perform(NativeEditorController& controller, std::string_view id,
+                             SemanticAction action) const override {
+    const auto field = controller.textFieldView();
+    const auto inputId = field.inputId.empty() ? std::string{"shell.overlay.field.input"} : field.inputId;
+    if (id == inputId)
+      return action == SemanticAction::EditText || action == SemanticAction::Activate
+                 ? core::success()
+                 : core::failure(core::ErrorCode::Unsupported, "The field takes text");
+    if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
+      return core::failure(core::ErrorCode::Unsupported, "This control only activates");
+    // The controller's own cancel node where it publishes one, else its cancel command (which is
+    // all that node runs).
+    if (!field.cancelId.empty() && id == field.cancelId)
+      return controller.dispatchAccessibility(id, SemanticAction::Activate);
+    if (id == "shell.overlay.field.cancel") {
+      controller.cancelTextComposition();
+      return core::success();
+    }
+    return core::failure(core::ErrorCode::NotFound, "Unknown field control");
+  }
+  bool key(NativeEditorController&, std::string_view, const KeyEvent&) const override {
+    // Typing reaches the host's text input client, never this handler; Enter, Tab and Escape are
+    // routed by the shell to the controller's own commit and cancel.
+    return false;
+  }
+  core::Result<void> close(NativeEditorController& controller) const override {
+    controller.cancelTextComposition();
+    return core::success();
+  }
+  core::Result<void> setValue(NativeEditorController& controller, std::string_view id,
+                              std::string_view value) const override {
+    const auto field = controller.textFieldView();
+    // The bounded field and the transport's tempo or meter keep the controller's own value path
+    // (the ids its classic tree published); a name field commits through the same commit its
+    // Enter runs.
+    if (!field.inputId.empty()) {
+      if (id != field.inputId)
+        return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
+      return controller.setAccessibilityValue(id, value);
+    }
+    if (id != "shell.overlay.field.input")
+      return core::failure(core::ErrorCode::Unsupported, "This control has no editable value");
+    if (value.size() > 4096U) return core::failure(core::ErrorCode::InvalidArgument, "The name is too long");
+    const auto decoded = domain::fromUtf8(std::string{value});
+    if (!decoded) return core::Result<void>{decoded.error()};
+    return controller.commitTextComposition(decoded.value());
+  }
+};
 
 }  // namespace
 
@@ -1184,5 +2412,52 @@ std::unique_ptr<ShellOverlay> makeOverlapDetailOverlay() {
 std::unique_ptr<ShellOverlay> makeDiagnosticsOverlay() {
   return std::make_unique<DiagnosticsOverlay>();
 }
+
+ui::Rect timeMapPanelBounds(ui::Rect slot) {
+  if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+  // A popover from the transport display, centred over the body like a sheet.
+  return fitPanel(slot, std::min(slot.width, 520.0), std::max(slot.height * 0.9, 260.0));
+}
+
+TextFieldPlacement timeMapFieldPlacement(ui::Rect timeMapPanel) {
+  if (timeMapPanel.width <= 0.0) return {};
+  // Where the prompt line was, above the event rows.
+  const auto inner = std::max(1.0, timeMapPanel.width - 2.0 * kPanelInset);
+  const auto cancel = std::min(88.0, inner * 0.3);
+  return {timeMapPanel,
+          {timeMapPanel.x + kPanelInset, timeMapPanel.y + 42.0, std::max(1.0, inner - cancel - 8.0), 28.0},
+          {timeMapPanel.right() - kPanelInset - cancel, timeMapPanel.y + 42.0, cancel, 28.0}};
+}
+
+TextFieldPlacement textFieldPlacement(TextInputAnchor anchor, const SingLayout& layout) {
+  const auto slot = layout.overlay;
+  if (slot.width <= 0.0 || slot.height <= 0.0) return {};
+  const auto width = std::min(slot.width, 420.0);
+  const auto height = std::min(slot.height, 112.0);
+  if (width < kMinimumPanelWidth || height < kMinimumPanelHeight) return {};
+  // The tempo or meter field drops from the transport display it edits; every other field is a
+  // field card at the top of the body, centred.
+  const auto x = anchor == TextInputAnchor::Transport && layout.tempoReadout.width > 0.0
+                     ? std::clamp(layout.tempoReadout.x + layout.tempoReadout.width * 0.5 - width * 0.5,
+                                  slot.x, slot.right() - width)
+                     : slot.x + (slot.width - width) * 0.5;
+  const ui::Rect panel{x, slot.y, width, height};
+  const auto inner = width - 2.0 * kPanelInset;
+  const auto cancel = std::min(88.0, inner * 0.3);
+  return {panel,
+          {panel.x + kPanelInset, panel.y + 46.0, std::max(1.0, inner - cancel - 8.0), 30.0},
+          {panel.right() - kPanelInset - cancel, panel.y + 46.0, cancel, 30.0}};
+}
+
+std::unique_ptr<ShellOverlay> makeReplacementReviewOverlay() {
+  return std::make_unique<ReplacementReviewOverlay>();
+}
+std::unique_ptr<ShellOverlay> makeAudioSettingsOverlay() {
+  return std::make_unique<AudioSettingsOverlay>();
+}
+std::unique_ptr<ShellOverlay> makeVoicebankBrowserOverlay() {
+  return std::make_unique<VoicebankBrowserOverlay>();
+}
+std::unique_ptr<ShellOverlay> makeTextFieldOverlay() { return std::make_unique<TextFieldOverlay>(); }
 
 }  // namespace seam::native_ui::design
