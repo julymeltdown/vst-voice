@@ -4,6 +4,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/voicebank/acoustic_analysis.hpp"
+#include "seam/voicebank/content_identity.hpp"
 #include "seam/synthesis/source_target_map.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -654,4 +655,293 @@ TEST_CASE("a required control either applies or fails rather than falling back s
       CHECK(!rendered.value().diagnostic.empty());
     }
   }
+}
+
+// U15 scenario 1: "Voiced-to-fricative material retains separate voicing states;
+// marks never bridge unvoiced spans."
+//
+// The analysis and the pitch marks are two readings of the same frames, and until
+// they shared one partition they disagreed: spans anchored each frame to its
+// window origin while mark generation accepted any sample a voiced window covered.
+// Measured on these engineering fixtures before the shared partition: the
+// noise-to-voice boundary 1408 samples early, 14 of 190 marks inside the noise of
+// the voiced/noise/voiced take, and 8 marks in spans the analysis of the same
+// audio called unvoiced. These are synthetic sines and noise, not singing; they
+// establish the mechanism, not a voice-quality result.
+TEST_CASE("voicing spans and generated pitch marks agree on voiced-to-fricative material") {
+  struct Fixture {
+    const char* name;
+    std::size_t firstVoicedEnd;  // voiced [0, firstVoicedEnd)
+    std::size_t unvoicedEnd;     // noise [firstVoicedEnd, unvoicedEnd), voiced after
+  };
+  // Voiced/noise/voiced, noise-then-vowel (CV) and vowel-then-noise (VC).
+  const std::array<Fixture, 3> fixtures{{
+      {"voiced-noise-voiced", kVoicedEnd, kUnvoicedEnd},
+      {"noise-then-vowel", 0U, 9600U},
+      {"vowel-then-noise", 28800U, kFrames},
+  }};
+  const auto frameSize = static_cast<std::int64_t>(seam::voicebank::kProducerFrameSize);
+  const auto hop = static_cast<std::int64_t>(seam::voicebank::kProducerHopSize);
+  // A 2048-sample window cannot place a boundary more precisely than the point at
+  // which the detector changes its mind, which on these fixtures is two hops from
+  // the true edge. Origin anchoring missed by 1408, which this rejects.
+  const auto boundaryTolerance = frameSize / 4 + hop / 2;
+  for (const auto& fixture : fixtures) {
+    const auto samples = voicedUnvoicedVoiced(kRate, kFrames, fixture.firstVoicedEnd,
+                                              fixture.unvoicedEnd);
+    auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 60,
+        seam::voicebank::UnitKind::Sustain, kFrames);
+    const auto digest = seam::core::sha256Hex(std::span<const std::byte>(
+        reinterpret_cast<const std::byte*>(samples.data()), samples.size() * sizeof(float)));
+    const auto frames = static_cast<seam::time::SampleFrame>(kFrames);
+    const auto analysis = seam::voicebank::analyzeUnitAcoustics(samples, kRate, unit,
+        digest, frames, seam::voicebank::AcousticAnalysisLimits{
+            .maximumSpans = 4096U, .pitch = seam::voicebank::producerPitchLimits(kFrames)});
+    CHECK(analysis);
+    const auto& spans = analysis.value().spans;
+
+    // Separate states: every true edge is matched by a span boundary of the right
+    // kind within the tolerance, and nothing else changes state.
+    std::vector<std::pair<std::int64_t, bool>> trueEdges;  // position, voiced after
+    if (fixture.firstVoicedEnd > 0U) trueEdges.emplace_back(fixture.firstVoicedEnd, false);
+    if (fixture.unvoicedEnd < kFrames) trueEdges.emplace_back(fixture.unvoicedEnd, true);
+    CHECK(spans.size() == trueEdges.size() + 1U);
+    for (std::size_t index = 1U; index < spans.size() && index - 1U < trueEdges.size(); ++index) {
+      const auto [edge, voicedAfter] = trueEdges[index - 1U];
+      CHECK(spans[index].voiced == voicedAfter);
+      CHECK(std::abs(spans[index].start - edge) <= boundaryTolerance);
+    }
+
+    const auto marks = seam::voicebank::generatePitchMarks(samples, kRate, 0, frames,
+        seam::voicebank::producerPitchMarkConfig(), {},
+        seam::voicebank::producerPitchLimits(kFrames));
+    CHECK(marks);
+    std::size_t marksInVoicedAudio = 0U;
+    for (const auto& mark : marks.value()) {
+      // Never inside a span the analysis of the same audio measured as unvoiced.
+      const auto voiced = seam::voicebank::acousticVoicedAt(analysis.value(), mark.frame);
+      CHECK(voiced.has_value());
+      CHECK(voiced.value_or(false));
+      // And never deeper into the noise than the analysis itself can resolve.
+      const auto inNoise = mark.frame >= static_cast<std::int64_t>(fixture.firstVoicedEnd) &&
+                           mark.frame < static_cast<std::int64_t>(fixture.unvoicedEnd);
+      if (inNoise) {
+        const auto depth = std::min(
+            mark.frame - static_cast<std::int64_t>(fixture.firstVoicedEnd),
+            static_cast<std::int64_t>(fixture.unvoicedEnd) - mark.frame);
+        const auto reachesEdge =
+            (fixture.firstVoicedEnd > 0U &&
+             mark.frame - static_cast<std::int64_t>(fixture.firstVoicedEnd) <= boundaryTolerance) ||
+            (fixture.unvoicedEnd < kFrames &&
+             static_cast<std::int64_t>(fixture.unvoicedEnd) - mark.frame <= boundaryTolerance);
+        CHECK(depth >= 0);
+        CHECK(reachesEdge);
+      } else {
+        ++marksInVoicedAudio;
+      }
+    }
+    // The voiced audio keeps its marks: at least 90 percent of the glottal periods
+    // the sines contain (200 Hz before the noise, 240 Hz after).
+    const auto voicedPeriods =
+        static_cast<double>(fixture.firstVoicedEnd) * 200.0 / kRate +
+        static_cast<double>(kFrames - fixture.unvoicedEnd) * 240.0 / kRate;
+    CHECK(static_cast<double>(marksInVoicedAudio) >= 0.9 * voicedPeriods);
+  }
+}
+
+// The QC half of scenario 1: a stored mark inside a measured unvoiced span is
+// reported against the stored analysis renderers read. Marks generated from the
+// same audio pass, because they share the analysis partition.
+TEST_CASE("bank QC reports stored pitch marks inside measured unvoiced spans") {
+  const auto root = seam::test::support::temporaryDirectory("analysis-unvoiced-marks");
+  std::filesystem::create_directories(root / "audio");
+  const auto audioPath = root / "audio" / "a.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate,
+      voicedUnvoicedVoiced(kRate, kFrames, kVoicedEnd, kUnvoicedEnd)));
+  const auto decoded = seam::voicebank::readWav(audioPath);
+  CHECK(decoded);
+  const auto mono = decoded.value().monoMix();
+  const auto digest = seam::core::sha256File(audioPath);
+  CHECK(digest);
+  const auto frames = static_cast<seam::time::SampleFrame>(mono.size());
+
+  auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(mono, kRate, unit,
+      digest.value(), frames);
+  CHECK(analysis);
+  const auto encoded = seam::voicebank::encodeAcousticAnalysis(analysis.value(), unit,
+      digest.value(), frames);
+  CHECK(encoded);
+  std::filesystem::create_directories(root / "analysis");
+  CHECK(seam::core::durableAtomicWriteText(
+      root / seam::voicebank::acousticAnalysisSidecarPath(unit.id), encoded.value()));
+
+  const auto generated = seam::voicebank::generatePitchMarks(mono, kRate, 0, frames,
+      seam::voicebank::producerPitchMarkConfig(), {},
+      seam::voicebank::producerPitchLimits(mono.size()));
+  CHECK(generated);
+  const auto findings = [&](const seam::voicebank::Unit& candidate,
+                            seam::voicebank::IssueSeverity severity) {
+    const auto report = seam::voicebank::BankValidator{}.validate(
+        seam::test::support::makeManifest({candidate}), root);
+    return std::count_if(report.issues.begin(), report.issues.end(), [&](const auto& issue) {
+      return issue.code == seam::voicebank::IssueCode::PitchMarksUnvoiced &&
+             issue.severity == severity;
+    });
+  };
+
+  // Marks generated from this audio agree with its analysis.
+  unit.pitchMarks = generated.value();
+  CHECK(findings(unit, seam::voicebank::IssueSeverity::Error) == 0);
+  CHECK(findings(unit, seam::voicebank::IssueSeverity::Warning) == 0);
+
+  // One unlocked mark in the middle of the noise is an error.
+  const auto middleOfNoise = static_cast<seam::time::SampleFrame>((kVoicedEnd + kUnvoicedEnd) / 2U);
+  CHECK(!seam::voicebank::acousticVoicedAt(analysis.value(), middleOfNoise).value_or(true));
+  auto bridged = unit;
+  bridged.pitchMarks.push_back(seam::voicebank::PitchMark{.frame = middleOfNoise, .confidence = 0.9F});
+  std::sort(bridged.pitchMarks.begin(), bridged.pitchMarks.end(),
+      [](const auto& left, const auto& right) { return left.frame < right.frame; });
+  CHECK(findings(bridged, seam::voicebank::IssueSeverity::Error) == 1);
+
+  // The same mark, locked by a reviewer, is surfaced but not overruled.
+  for (auto& mark : bridged.pitchMarks) {
+    if (mark.frame == middleOfNoise) mark.locked = true;
+  }
+  CHECK(findings(bridged, seam::voicebank::IssueSeverity::Error) == 0);
+  CHECK(findings(bridged, seam::voicebank::IssueSeverity::Warning) == 1);
+}
+
+// The bank content identity (catalogue, installer, candidate publication) covers
+// stored analyses the same way it covers alignments, and keeps legacy identities.
+TEST_CASE("bank content identity covers stored acoustic analyses and keeps legacy identities") {
+  const auto root = seam::test::support::temporaryDirectory("analysis-content-identity");
+  std::filesystem::create_directories(root / "audio");
+  const auto audioPath = root / "audio" / "a.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, kRate,
+      seam::test::support::sineWave(kRate, 200.0, 1.0, 0.5F)));
+  const auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto manifest = seam::test::support::makeManifest({unit});
+  const auto legacy = seam::voicebank::computeVoicebankContentHash(manifest, root);
+  CHECK(legacy);
+
+  // An empty analysis directory describes nothing and changes nothing.
+  std::filesystem::create_directories(root / "analysis");
+  CHECK(seam::voicebank::computeVoicebankContentHash(manifest, root).value() == legacy.value());
+
+  const auto decoded = seam::voicebank::readWav(audioPath);
+  CHECK(decoded);
+  const auto digest = seam::core::sha256File(audioPath);
+  CHECK(digest);
+  const auto frames = static_cast<seam::time::SampleFrame>(decoded.value().frameCount());
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(decoded.value().monoMix(),
+      kRate, unit, digest.value(), frames);
+  CHECK(analysis);
+  const auto sidecar = root / seam::voicebank::acousticAnalysisSidecarPath(unit.id);
+  const auto write = [&](const seam::voicebank::AcousticAnalysis& value) {
+    const auto encoded = seam::voicebank::encodeAcousticAnalysis(value, unit, digest.value(), frames);
+    CHECK(encoded);
+    CHECK(seam::core::durableAtomicWriteText(sidecar, encoded.value()));
+    const auto hashed = seam::voicebank::computeVoicebankContentHash(manifest, root);
+    CHECK(hashed);
+    return hashed.value();
+  };
+  const auto stored = write(analysis.value());
+  CHECK(stored != legacy.value());
+  auto regenerated = analysis.value();
+  regenerated.spans.front().confidence *= 0.5;
+  CHECK(write(regenerated) != stored);
+
+  // Removing the record restores the legacy identity exactly.
+  CHECK(std::filesystem::remove(sidecar));
+  CHECK(seam::voicebank::computeVoicebankContentHash(manifest, root).value() == legacy.value());
+
+  // A linked analysis directory is refused, as a linked alignment directory is.
+  std::filesystem::remove(root / "analysis");
+  std::filesystem::create_directory_symlink(root / "audio", root / "analysis");
+  CHECK(!seam::voicebank::computeVoicebankContentHash(manifest, root));
+}
+
+// U15 "store F0/confidence/voicing spans ... bound to exact audio": the producer
+// path that writes the records. Candidate publication runs it over the staged
+// bank before QC and before the content identity is computed.
+TEST_CASE("storing a bank's analyses binds each unit to the bytes present and regenerates them") {
+  const auto root = seam::test::support::temporaryDirectory("analysis-store");
+  std::filesystem::create_directories(root / "audio");
+  const auto shared = root / "audio" / "vuv.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(shared, kRate,
+      voicedUnvoicedVoiced(kRate, kFrames, kVoicedEnd, kUnvoicedEnd)));
+  // One frame more than a single producer pass admits (4096 analysis frames).
+  const std::size_t longFrames = seam::voicebank::kProducerFrameSize +
+                                 4096U * seam::voicebank::kProducerHopSize;
+  std::vector<float> longTake(longFrames, 0.0F);
+  for (std::size_t frame = 0U; frame < longFrames; ++frame) {
+    longTake[frame] = 0.4F * static_cast<float>(std::sin(
+        2.0 * std::numbers::pi * 220.0 * static_cast<double>(frame) / kRate));
+  }
+  CHECK(seam::voicebank::writeMonoPcm16Wav(root / "audio" / "long.wav", kRate, longTake));
+  const auto a = seam::test::support::makeUnit("a", {"a"}, "audio/vuv.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto b = seam::test::support::makeUnit("b", {"a"}, "audio/vuv.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  const auto longUnit = seam::test::support::makeUnit("long", {"a"}, "audio/long.wav", 57,
+      seam::voicebank::UnitKind::Sustain, longFrames);
+  const auto manifest = seam::test::support::makeManifest({a, b, longUnit});
+
+  const auto stored = seam::voicebank::storeBankAcousticAnalyses(manifest, root);
+  CHECK(stored);
+  CHECK(stored.value().written == 2U);
+  CHECK((stored.value().unmeasuredUnits == std::vector<std::string>{"long"}));
+  CHECK(!std::filesystem::exists(root / seam::voicebank::acousticAnalysisSidecarPath("long")));
+
+  // Each record decodes against the bytes present and equals a fresh measurement
+  // of the decoded file, under the current algorithm.
+  const auto decodedWav = seam::voicebank::readWav(shared);
+  CHECK(decodedWav);
+  const auto mono = decodedWav.value().monoMix();
+  const auto digest = seam::core::sha256File(shared);
+  CHECK(digest);
+  for (const auto& unit : {a, b}) {
+    const auto text = seam::core::readTextFileLimited(
+        root / seam::voicebank::acousticAnalysisSidecarPath(unit.id), 512U * 1024U);
+    CHECK(text);
+    const auto decoded = seam::voicebank::decodeAcousticAnalysis(text.value(), unit,
+        digest.value(), static_cast<seam::time::SampleFrame>(kFrames));
+    CHECK(decoded);
+    CHECK(decoded.value().currentAlgorithm());
+    const auto fresh = seam::voicebank::analyzeUnitAcoustics(mono, kRate, unit, digest.value(),
+        static_cast<seam::time::SampleFrame>(kFrames));
+    CHECK(fresh);
+    CHECK(decoded.value() == fresh.value());
+  }
+
+  const auto reportHas = [&](seam::voicebank::IssueCode code) {
+    const auto report = seam::voicebank::BankValidator{}.validate(manifest, root);
+    return std::any_of(report.issues.begin(), report.issues.end(),
+        [code](const auto& issue) { return issue.code == code; });
+  };
+  CHECK(!reportHas(seam::voicebank::IssueCode::AcousticAnalysisStale));
+  CHECK(!reportHas(seam::voicebank::IssueCode::AcousticAnalysisMismatch));
+
+  // Replacing the recording leaves records QC refuses; storing again regenerates
+  // them from the bytes now present.
+  CHECK(seam::voicebank::writeMonoPcm16Wav(shared, kRate,
+      seam::test::support::sineWave(kRate, 150.0, 1.0, 0.5F)));
+  CHECK(reportHas(seam::voicebank::IssueCode::AcousticAnalysisStale));
+  CHECK(seam::voicebank::storeBankAcousticAnalyses(manifest, root));
+  CHECK(!reportHas(seam::voicebank::IssueCode::AcousticAnalysisStale));
+
+  // A record left for a unit that cannot be measured is removed rather than kept
+  // describing audio it never measured.
+  CHECK(std::filesystem::copy_file(root / seam::voicebank::acousticAnalysisSidecarPath("a"),
+      root / seam::voicebank::acousticAnalysisSidecarPath("long")));
+  CHECK(seam::voicebank::storeBankAcousticAnalyses(manifest, root));
+  CHECK(!std::filesystem::exists(root / seam::voicebank::acousticAnalysisSidecarPath("long")));
+
+  // Cancellation is reported, never presented as a completed store.
+  std::stop_source cancelled;
+  cancelled.request_stop();
+  CHECK(!seam::voicebank::storeBankAcousticAnalyses(manifest, root, cancelled.get_token()));
 }

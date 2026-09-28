@@ -14,6 +14,7 @@
 #include "seam/rendering/render_scheduler.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank/pitch.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -1471,6 +1472,52 @@ TEST_CASE("snapshot freezes audio-bound source alignment and includes it in cach
   CHECK(std::filesystem::remove(path));
   std::filesystem::create_symlink(fixture.bankRoot / "audio/a.wav", path);
   CHECK(!create());
+}
+
+// U15: the stored acoustic analysis changes how a unit renders, so its exact
+// bytes are part of the snapshot identity. Before this, the identity tagged the
+// audio and alignment digests only, and a regenerated analysis re-used PCM that
+// had been rendered under the old voicing.
+TEST_CASE("snapshot freezes the stored acoustic analysis and includes it in cache identity") {
+  PerformanceSnapshotFixture fixture;
+  const auto baseline = fixture.snapshot();
+  CHECK(!baseline.sample().frozenAudio.front().acousticAnalysis.has_value());
+  CHECK(baseline.sample().selectedUnits.front().acousticAnalysisSha256.empty());
+  const auto audioPath = fixture.bankRoot / "audio/a.wav";
+  const auto digest = seam::core::sha256File(audioPath);
+  CHECK(digest);
+  const auto decoded = seam::voicebank::readWav(audioPath);
+  CHECK(decoded);
+  const auto frames = static_cast<seam::time::SampleFrame>(decoded.value().frameCount());
+  const auto& unit = fixture.bank.units.front();
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(decoded.value().monoMix(),
+      decoded.value().sampleRate, unit, digest.value(), frames);
+  CHECK(analysis);
+  const auto path = fixture.bankRoot / seam::voicebank::acousticAnalysisSidecarPath(unit.id);
+  std::filesystem::create_directories(path.parent_path());
+  const auto write = [&](const seam::voicebank::AcousticAnalysis& value) {
+    const auto json = seam::voicebank::encodeAcousticAnalysis(value, unit, digest.value(), frames);
+    CHECK(json);
+    CHECK(seam::core::durableAtomicWriteText(path, json.value()));
+  };
+  write(analysis.value());
+  const auto frozen = fixture.snapshot();
+  CHECK(frozen.sample().frozenAudio.front().acousticAnalysis.has_value());
+  CHECK(*frozen.sample().frozenAudio.front().acousticAnalysis == analysis.value());
+  CHECK(frozen.sample().selectedUnits.front().acousticAnalysisSha256.size() == 64U);
+  CHECK(frozen.contentHash != baseline.contentHash);
+
+  // A regenerated record is a different measurement, even over the same audio.
+  auto regenerated = analysis.value();
+  regenerated.spans.front().confidence *= 0.5;
+  write(regenerated);
+  const auto updated = fixture.snapshot();
+  CHECK(updated.contentHash != frozen.contentHash);
+
+  // Without a stored analysis the identity is exactly the one computed before
+  // analyses were part of it.
+  CHECK(std::filesystem::remove(path));
+  CHECK(fixture.snapshot().contentHash == baseline.contentHash);
 }
 
 TEST_CASE("frozen source alignment renders both nuclei and survives sidecar removal") {

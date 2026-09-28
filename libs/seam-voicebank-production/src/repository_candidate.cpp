@@ -7,6 +7,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/validator.hpp"
@@ -651,6 +652,10 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   }
   checkpoint = core::durableAtomicWriteTextNew(stage / "manifest.json", manifestJson.value());
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  // U15: bind a measured acoustic analysis to each staged unit's exact bytes, so
+  // the QC below, the content identity and the renderers read one record.
+  const auto analysed = voicebank::storeBankAcousticAnalyses(request.manifest, stage, stop);
+  if (!analysed) return core::Result<Output>{analysed.error()};
   const auto validation = voicebank::BankValidator{}.validate(request.manifest, stage);
   if (!validation.ok()) return core::failure<Output>(core::ErrorCode::Conflict, "Candidate manifest/audio validation failed");
   const auto contentHash = voicebank::computeVoicebankContentHash(request.manifest, stage);

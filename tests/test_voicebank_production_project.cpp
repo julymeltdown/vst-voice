@@ -8,6 +8,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -479,6 +480,18 @@ TEST_CASE("reviewed sample candidate publishes exact effective audio markers pit
   CHECK(seam::core::sha256File(published.value().root / unit.audioPath).value() == fixture.request.units.front().audioSha256);
   CHECK(unit.markers == fixture.request.manifest.units.front().markers);
   CHECK(unit.pitchMarks == fixture.request.manifest.units.front().pitchMarks);
+  // U15: the published unit carries its measured acoustic analysis, bound to the
+  // exact audio shipped, under the current algorithm; the identity below covers it.
+  const auto analysisText = seam::core::readTextFileLimited(
+      published.value().root / seam::voicebank::acousticAnalysisSidecarPath(unit.id), 512U * 1024U);
+  CHECK(analysisText);
+  const auto shipped = seam::voicebank::readWav(published.value().root / unit.audioPath);
+  CHECK(shipped);
+  const auto storedAnalysis = seam::voicebank::decodeAcousticAnalysis(analysisText.value(), unit,
+      fixture.request.units.front().audioSha256,
+      static_cast<seam::time::SampleFrame>(shipped.value().frameCount()));
+  CHECK(storedAnalysis);
+  CHECK(storedAnalysis.value().currentAlgorithm());
   CHECK(seam::voicebank::computeVoicebankContentHash(reopened.value(), published.value().root).value() == published.value().contentSha256);
   CHECK(seam::core::sha256File(published.value().root / "manifest.json").value() == published.value().manifestSha256);
   CHECK(seam::core::sha256File(published.value().root / "candidate.json").value() == published.value().candidateSha256);

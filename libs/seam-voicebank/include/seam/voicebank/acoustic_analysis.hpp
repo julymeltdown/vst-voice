@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <stop_token>
@@ -35,7 +36,11 @@ namespace seam::voicebank {
 // way that is detected rather than assumed away.
 inline constexpr std::string_view kAcousticAnalysisAlgorithmId =
     "seam.pitch.fft-autocorrelation";
-inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "1";
+// Version 2: spans come from partitionPitchFrames (nearest window centre), the
+// partition pitch mark generation also uses. Version 1 anchored each frame to its
+// window origin, which placed voicing boundaries up to 1408 samples early at
+// 48 kHz; its records are refused rather than reinterpreted.
+inline constexpr std::string_view kAcousticAnalysisAlgorithmVersion = "2";
 inline constexpr std::string_view kAcousticAnalysisFormatId =
     "com.project-seam.acoustic-analysis";
 
@@ -144,5 +149,27 @@ struct AcousticAnalysis final {
 // falls in no span. Callers must handle the unknown case rather than assuming.
 [[nodiscard]] std::optional<bool> acousticVoicedAt(
     const AcousticAnalysis& analysis, time::SampleFrame frame) noexcept;
+
+// What storing a bank's analyses did. A unit whose audio the analyser cannot
+// measure (no usable frames, more voicing changes than the span budget, a take
+// beyond the producer work budget) gets no record and is listed here instead:
+// absence already means "no measurement stored" to every consumer, while a
+// placeholder record would be a fabricated measurement.
+struct StoredAcousticAnalyses final {
+  std::size_t written{0};
+  std::vector<std::string> unmeasuredUnits;
+};
+
+// Measures every unit of a bank from the exact audio bytes present under
+// bankRoot and writes its sidecar at acousticAnalysisSidecarPath, replacing any
+// earlier record for that unit and removing the record of a unit that can no
+// longer be measured. This is how an analysis becomes bound to the bytes a bank
+// actually ships: candidate publication runs it over the staged bank before QC
+// and before the content identity is computed, so QC, the identity and the
+// renderers read one record. Cancellation or any read, decode or write failure
+// returns an error; records already written stay valid for their own audio.
+[[nodiscard]] core::Result<StoredAcousticAnalyses> storeBankAcousticAnalyses(
+    const Manifest& manifest, const std::filesystem::path& bankRoot,
+    std::stop_token stopToken = {});
 
 }  // namespace seam::voicebank

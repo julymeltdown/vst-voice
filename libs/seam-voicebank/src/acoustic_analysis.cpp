@@ -1,12 +1,16 @@
 #include "seam/voicebank/acoustic_analysis.hpp"
 
+#include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/voicebank/asset_path.hpp"
+#include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <vector>
 
 namespace seam::voicebank {
@@ -24,16 +28,17 @@ bool isDigest(std::string_view value) noexcept {
          });
 }
 
-// Median of the voiced frames inside one span. A span can contain unvoiced
-// frames when the merge joined adjacent spans of the same state, so this filters
-// rather than assuming the whole run is periodic.
-double medianVoicedHz(std::span<const PitchFrame> frames, time::SampleFrame start,
-                      time::SampleFrame end) {
+// Median over the voiced frames that describe one span, [first, last] by frame
+// index. Membership comes from the shared partition rather than from where a
+// frame's window starts: a frame's origin lies half a window before the samples
+// it describes, so selecting by origin would summarise a neighbour's frames.
+// Frames without a usable fundamental are skipped rather than counted as zero.
+double medianVoicedHz(std::span<const PitchFrame> frames, std::size_t first,
+                      std::size_t last) {
   std::vector<double> values;
-  for (const auto& frame : frames) {
-    if (!frame.voiced || frame.f0Hz <= 0.0) continue;
-    const auto origin = static_cast<time::SampleFrame>(frame.sourceFrame);
-    if (origin < start || origin >= end) continue;
+  for (std::size_t index = first; index <= last && index < frames.size(); ++index) {
+    const auto& frame = frames[index];
+    if (!frame.voiced || !std::isfinite(frame.f0Hz) || frame.f0Hz <= 0.0) continue;
     values.push_back(frame.f0Hz);
   }
   if (values.empty()) return 0.0;
@@ -42,14 +47,12 @@ double medianVoicedHz(std::span<const PitchFrame> frames, time::SampleFrame star
   return *middle;
 }
 
-double meanConfidence(std::span<const PitchFrame> frames, time::SampleFrame start,
-                      time::SampleFrame end) {
+double meanConfidence(std::span<const PitchFrame> frames, std::size_t first,
+                      std::size_t last) {
   double total = 0.0;
   std::size_t count = 0U;
-  for (const auto& frame : frames) {
-    const auto origin = static_cast<time::SampleFrame>(frame.sourceFrame);
-    if (origin < start || origin >= end) continue;
-    total += frame.confidence;
+  for (std::size_t index = first; index <= last && index < frames.size(); ++index) {
+    total += frames[index].confidence;
     ++count;
   }
   return count == 0U ? 0.0 : total / static_cast<double>(count);
@@ -146,12 +149,18 @@ core::Result<AcousticAnalysis> analyzeUnitAcoustics(
   // and emitting one span per frame would produce overlapping claims about the
   // same audio.
   //
-  // Each frame is instead given the region no later frame also covers:
-  // [origin_i, origin_{i+1}), with the final frame reaching the decoded end.
-  // Those regions tile [0, decodedFrames) exactly once, so the result is a
-  // partition of the audio rather than a set of overlapping windows. Consecutive
-  // frames that agree are then merged, so a span means "the analysis found one
-  // state throughout", not "one frame was analysed here".
+  // Each sample is instead described by the frame whose window centre is nearest
+  // (partitionPitchFrames). Pitch mark generation uses the same partition, so a
+  // generated mark can only sit where a span of this record says the audio is
+  // voiced. The regions tile [0, decodedFrames) exactly once; consecutive regions
+  // that agree are merged, so a span means "the analysis found one state
+  // throughout", not "one frame was analysed here".
+  //
+  // Algorithm version 1 gave each frame [origin_i, origin_{i+1}) instead, which
+  // attributes a window's conclusion to its first hop. On the voiced/noise/voiced
+  // engineering fixture in tests/test_audio_conditioning.cpp that put the
+  // noise-to-voice boundary 1408 samples early. The version identity is what makes
+  // a record written by that revision refuse to load rather than be reinterpreted.
   AcousticAnalysis analysis;
   analysis.unitId = unit.id;
   analysis.audioSha256 = std::string{verifiedAudioSha256};
@@ -161,26 +170,18 @@ core::Result<AcousticAnalysis> analyzeUnitAcoustics(
   analysis.algorithmVersion = std::string{kAcousticAnalysisAlgorithmVersion};
 
   const auto& analysed = frames.value();
-  for (std::size_t index = 0U; index < analysed.size(); ++index) {
-    const auto start = index == 0U
-        ? time::SampleFrame{0}
-        : static_cast<time::SampleFrame>(analysed[index].sourceFrame);
-    const auto end = index + 1U < analysed.size()
-        ? static_cast<time::SampleFrame>(analysed[index + 1U].sourceFrame)
-        : decodedFrames;
-    // Origins are ascending but need not be evenly spaced, and a zero-width
-    // region carries no audio to describe.
-    const auto clampedStart = std::clamp<time::SampleFrame>(start, 0, decodedFrames);
-    const auto clampedEnd = std::clamp<time::SampleFrame>(end, clampedStart, decodedFrames);
-    if (clampedEnd <= clampedStart) continue;
-    if (analysis.spans.empty()) {
-      analysis.spans.push_back(AcousticVoicingSpan{
-          clampedStart, clampedEnd, analysed[index].voiced, 0.0, 0.0});
-      continue;
-    }
-    auto& last = analysis.spans.back();
-    if (last.voiced == analysed[index].voiced) {
-      last.end = clampedEnd;
+  const auto regions = partitionPitchFrames(analysed, config.frameSize,
+                                            static_cast<std::size_t>(decodedFrames));
+  // Inclusive frame-index range behind each span, so its fundamental and
+  // confidence summarise exactly the frames that describe it.
+  std::vector<std::pair<std::size_t, std::size_t>> spanFrames;
+  for (const auto& region : regions) {
+    const bool voiced = analysed[region.frameIndex].voiced;
+    const auto start = static_cast<time::SampleFrame>(region.start);
+    const auto end = static_cast<time::SampleFrame>(region.end);
+    if (!analysis.spans.empty() && analysis.spans.back().voiced == voiced) {
+      analysis.spans.back().end = end;
+      spanFrames.back().second = region.frameIndex;
       continue;
     }
     if (analysis.spans.size() >= limits.maximumSpans) {
@@ -188,23 +189,23 @@ core::Result<AcousticAnalysis> analyzeUnitAcoustics(
           "Acoustic analysis exceeds the span budget: the source alternates too often to describe compactly",
           unit.id);
     }
-    analysis.spans.push_back(AcousticVoicingSpan{
-        clampedStart, clampedEnd, analysed[index].voiced, 0.0, 0.0});
+    analysis.spans.push_back(AcousticVoicingSpan{start, end, voiced, 0.0, 0.0});
+    spanFrames.emplace_back(region.frameIndex, region.frameIndex);
   }
   if (analysis.spans.empty()) {
     return core::failure<AcousticAnalysis>(core::ErrorCode::NotFound,
         "Acoustic analysis produced no spans to describe the audio", unit.id);
   }
-  // The partition must cover the decoded extent exactly, not merely most of it.
-  analysis.spans.front().start = 0;
-  analysis.spans.back().end = decodedFrames;
 
-  // A span can contain frames of both states where the merge joined runs, so the
-  // fundamental is the median over the frames that were actually voiced. An
-  // unvoiced span reports none rather than inheriting a neighbour's.
-  for (auto& span : analysis.spans) {
-    span.f0Hz = span.voiced ? medianVoicedHz(analysed, span.start, span.end) : 0.0;
-    span.confidence = meanConfidence(analysed, span.start, span.end);
+  // Every frame behind a span reached the span's voicing conclusion, but a voiced
+  // frame can still lack a usable fundamental, so the median skips those rather
+  // than counting them. An unvoiced span reports none rather than inheriting a
+  // neighbour's.
+  for (std::size_t index = 0U; index < analysis.spans.size(); ++index) {
+    auto& span = analysis.spans[index];
+    const auto [first, last] = spanFrames[index];
+    span.f0Hz = span.voiced ? medianVoicedHz(analysed, first, last) : 0.0;
+    span.confidence = meanConfidence(analysed, first, last);
     if (span.voiced && span.f0Hz <= 0.0) {
       // A merged voiced run whose frames reported no usable fundamental is not a
       // measurement. Reporting it as voiced with a placeholder pitch would be.
@@ -423,6 +424,110 @@ std::optional<bool> acousticVoicedAt(const AcousticAnalysis& analysis,
   const auto* span = analysis.spanAt(frame);
   if (span == nullptr) return std::nullopt;
   return span->voiced;
+}
+
+core::Result<StoredAcousticAnalyses> storeBankAcousticAnalyses(
+    const Manifest& manifest, const std::filesystem::path& bankRoot,
+    std::stop_token stopToken) {
+  using Output = StoredAcousticAnalyses;
+  const auto validManifest = manifest.validate();
+  if (!validManifest) return core::Result<Output>{validManifest.error()};
+  if (bankRoot.empty()) {
+    return core::failure<Output>(core::ErrorCode::InvalidArgument,
+        "Storing acoustic analyses requires a bank root");
+  }
+  const auto directory = bankRoot / "analysis";
+  std::error_code error;
+  const auto status = std::filesystem::symlink_status(directory, error);
+  if (error == std::errc::no_such_file_or_directory ||
+      (!error && !std::filesystem::exists(status))) {
+    error.clear();
+    std::filesystem::create_directory(directory, error);
+    if (error) {
+      return core::failure<Output>(core::ErrorCode::IoError,
+          "Cannot create the acoustic analysis directory", directory.string());
+    }
+  } else if (error || !std::filesystem::is_directory(status) ||
+             std::filesystem::is_symlink(status)) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Voicebank acoustic analysis directory must be a real directory",
+        directory.string());
+  }
+
+  // Units may share one recording; decode each file once.
+  struct DecodedAudio final {
+    std::string sha256;
+    std::vector<float> mono;
+    std::uint32_t sampleRate{0};
+  };
+  std::map<std::filesystem::path, DecodedAudio> decodedByPath;
+  Output result;
+  for (const auto& unit : manifest.units) {
+    if (stopToken.stop_requested()) {
+      return core::failure<Output>(core::ErrorCode::Conflict,
+          "Storing acoustic analyses was cancelled", unit.id);
+    }
+    const auto resolved = resolveBankAsset(bankRoot, unit.audioPath);
+    if (!resolved) return core::Result<Output>{resolved.error()};
+    auto audio = decodedByPath.find(resolved.value());
+    if (audio == decodedByPath.end()) {
+      const auto bytes = core::readFileBytesLimited(resolved.value(), kMaximumSupportedWavBytes);
+      if (!bytes) return core::Result<Output>{bytes.error()};
+      auto decoded = readWav(bytes.value(), resolved.value().string());
+      if (!decoded) return core::Result<Output>{decoded.error()};
+      audio = decodedByPath.emplace(resolved.value(), DecodedAudio{
+          core::sha256Hex(bytes.value()), decoded.value().monoMix(),
+          decoded.value().sampleRate}).first;
+    }
+    const auto& value = audio->second;
+    const auto frames = static_cast<time::SampleFrame>(value.mono.size());
+    const auto sidecar = bankRoot / acousticAnalysisSidecarPath(unit.id);
+    const auto leaveUnmeasured = [&]() -> core::Result<void> {
+      // A record left from earlier audio would outlive the measurement it claims.
+      error.clear();
+      std::filesystem::remove(sidecar, error);
+      if (error) {
+        return core::failure(core::ErrorCode::IoError,
+            "Cannot remove an acoustic analysis that no longer describes its audio",
+            sidecar.string());
+      }
+      result.unmeasuredUnits.push_back(unit.id);
+      return core::success();
+    };
+    // The producer analysis admits one bounded pass over a take. A longer take is
+    // left unmeasured rather than failing the whole bank, which is what the
+    // analyser's own budget refusal would otherwise do.
+    const auto limits = producerPitchLimits(value.mono.size());
+    const auto analysedFrames = value.mono.size() <= kProducerFrameSize
+        ? std::size_t{1}
+        : 1U + (value.mono.size() - kProducerFrameSize) / kProducerHopSize;
+    if (analysedFrames > limits.maximumFrames) {
+      const auto left = leaveUnmeasured();
+      if (!left) return core::Result<Output>{left.error()};
+      continue;
+    }
+    auto analysis = analyzeUnitAcoustics(value.mono, value.sampleRate, unit, value.sha256,
+        frames, AcousticAnalysisLimits{.maximumSpans = 4096U, .pitch = limits}, stopToken);
+    if (!analysis) {
+      if (stopToken.stop_requested()) {
+        return core::failure<Output>(core::ErrorCode::Conflict,
+            "Storing acoustic analyses was cancelled", unit.id);
+      }
+      if (analysis.error().code != core::ErrorCode::NotFound &&
+          analysis.error().code != core::ErrorCode::Unsupported) {
+        return core::Result<Output>{analysis.error()};
+      }
+      const auto left = leaveUnmeasured();
+      if (!left) return core::Result<Output>{left.error()};
+      continue;
+    }
+    const auto encoded = encodeAcousticAnalysis(analysis.value(), unit, value.sha256, frames);
+    if (!encoded) return core::Result<Output>{encoded.error()};
+    const auto written = core::durableAtomicWriteText(sidecar, encoded.value());
+    if (!written) return core::Result<Output>{written.error()};
+    ++result.written;
+  }
+  return core::success(std::move(result));
 }
 
 }  // namespace seam::voicebank
