@@ -205,6 +205,7 @@ add_library(seam_phonemizer
   libs/seam-phonemizer/src/japanese_reading.cpp
   libs/seam-phonemizer/src/phonemizer.cpp
   libs/seam-phonemizer/src/japanese_phonemizer.cpp
+  libs/seam-phonemizer/src/english_resource.cpp
   libs/seam-phonemizer/src/english_phonemizer.cpp
   libs/seam-phonemizer/src/korean_phonemizer.cpp
   libs/seam-phonemizer/src/language_resolver.cpp
@@ -232,8 +233,11 @@ string(SHA256 seam_japanese_resource_sha "${seam_japanese_resource_digest_input}
 target_compile_definitions(seam_phonemizer PRIVATE SEAM_JAPANESE_RESOURCE_HASH="${seam_japanese_resource_sha}")
 set(seam_english_resource_sources
   assets/pronunciation/en-us/cmudict.dict
+  assets/pronunciation/en-us/seam-en-exceptions.tsv
   libs/seam-phonemizer/src/phonemizer.cpp
   libs/seam-phonemizer/include/seam/phonemizer/phonemizer.hpp
+  libs/seam-phonemizer/src/english_resource.cpp
+  libs/seam-phonemizer/include/seam/phonemizer/english_resource.hpp
   libs/seam-phonemizer/src/english_phonemizer.cpp
   libs/seam-phonemizer/include/seam/phonemizer/english_phonemizer.hpp
   libs/seam-phonemizer/src/language_resolver.cpp
@@ -271,6 +275,14 @@ foreach(seam_cmudict_chunk RANGE 0 ${seam_cmudict_last_chunk})
 endforeach()
 configure_file(cmake/EnglishCmuDictionary.hpp.in
   "${seam_generated_include_dir}/EnglishCmuDictionary.hpp" @ONLY)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/assets/pronunciation/en-us/seam-en-exceptions.tsv" seam_en_exceptions_content)
+string(FIND "${seam_en_exceptions_content}" ")SEAM_EN_EXC\"" seam_en_exceptions_delimiter_position)
+string(FIND "${seam_en_exceptions_content}" "@" seam_en_exceptions_at_position)
+if(NOT seam_en_exceptions_delimiter_position EQUAL -1 OR NOT seam_en_exceptions_at_position EQUAL -1)
+  message(FATAL_ERROR "English exceptions contain the reserved embedding delimiter or '@'")
+endif()
+configure_file(cmake/EnglishPronunciationExceptions.hpp.in
+  "${seam_generated_include_dir}/EnglishPronunciationExceptions.hpp" @ONLY)
 target_include_directories(seam_phonemizer PRIVATE "${seam_generated_include_dir}")
 set(seam_korean_resource_sources
   libs/seam-phonemizer/src/phonemizer.cpp

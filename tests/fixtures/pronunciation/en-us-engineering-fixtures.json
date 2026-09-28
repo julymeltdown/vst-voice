@@ -1,0 +1,89 @@
+{
+  "schema": "seam-pronunciation-fixture-v1",
+  "language": "en",
+  "reviewStatus": "engineering fixtures pending native-speaker review",
+  "nativeSpeakerReview": "not-performed",
+  "resolverId": "seam-builtin-en",
+  "resolverVersion": "8",
+  "vocabulary": "seam-en-arpabet-v1",
+  "roleKey": "O onset, N nucleus, C coda, S silence",
+  "note": "Expected values record the current engineering rules (first CMUdict variant, legal-onset syllabification, seam-en-note-distribution-v1). They are regression evidence only; a native speaker has not reviewed them.",
+  "lexical": [
+    {"id": "three-stress-levels", "lyric": "understanding", "phones": "ah2 n d er0 s t ae1 n d ih0 ng", "roles": "N C O N O O N C O N C", "source": "dictionary"},
+    {"id": "reduced-unstressed-vowels", "lyric": "beautiful", "phones": "b y uw1 t ah0 f ah0 l", "roles": "O O N O N O N C", "source": "dictionary"},
+    {"id": "onset-str", "lyric": "street", "phones": "s t r iy1 t", "roles": "O O O N C", "source": "dictionary"},
+    {"id": "onset-spl", "lyric": "splash", "phones": "s p l ae1 sh", "roles": "O O O N C", "source": "dictionary"},
+    {"id": "coda-ngkth", "lyric": "strength", "phones": "s t r eh1 ng k th", "roles": "O O O N C C C", "source": "dictionary"},
+    {"id": "medial-kstr-split", "lyric": "extra", "phones": "eh1 k s t r ah0", "roles": "N C O O O N", "source": "dictionary"},
+    {"id": "medial-st-onset", "lyric": "yesterday", "phones": "y eh1 s t er0 d ey2", "roles": "O N O O N O N", "source": "dictionary"},
+    {"id": "secondary-stress-fl-onset", "lyric": "butterfly", "phones": "b ah1 t er0 f l ay2", "roles": "O N O N O O N", "source": "dictionary"},
+    {"id": "two-words-one-note", "lyric": "hello world", "phones": "hh ah0 l ow1 w er1 l d", "roles": "O N O N O N C C", "source": "dictionary"},
+    {"id": "attached-punctuation-and-case", "lyric": "Hello, World!", "phones": "hh ah0 l ow1 w er1 l d", "roles": "O N O N O N C C", "source": "dictionary"},
+    {"id": "hyphenated-compound", "lyric": "well-known", "phones": "w eh1 l n ow1 n", "roles": "O N C O N C", "source": "dictionary"},
+    {"id": "typographic-apostrophe", "lyric": "don\u2019t", "phones": "d ow1 n t", "roles": "O N C C", "source": "dictionary"},
+    {"id": "accented-latin-letter", "lyric": "Caf\u00e9", "phones": "k ah0 f ey1", "roles": "O N O N", "source": "dictionary"},
+    {"id": "annotated-dictionary-entry", "lyric": "hiv", "phones": "ey1 ch ay1 v iy1", "roles": "N O N O N", "source": "dictionary"},
+    {"id": "apostrophe-led-entry", "lyric": "'cause", "phones": "k ah0 z", "roles": "O N C", "source": "dictionary"},
+    {"id": "exception-vocable", "lyric": "ba", "phones": "b aa1", "roles": "O N", "source": "exception"},
+    {"id": "exception-dropped-g", "lyric": "lovin", "phones": "l ah1 v ih0 n", "roles": "O N O N C", "source": "exception"},
+    {"id": "derived-dropped-g-apostrophe", "lyric": "lovin'", "phones": "l ah1 v ih0 n", "roles": "O N O N C", "source": "derived", "basis": "loving"},
+    {"id": "derived-dropped-g-plain", "lyric": "dreamin", "phones": "d r iy1 m ih0 n", "roles": "O O N O N C", "source": "derived", "basis": "dreaming"},
+    {"id": "derived-possessive-sibilant", "lyric": "kiss's", "phones": "k ih1 s ih0 z", "roles": "O N O N C", "source": "derived", "basis": "kiss"},
+    {"id": "derived-plural-possessive", "lyric": "singers'", "phones": "s ih1 ng er0 z", "roles": "O N C N C", "source": "derived", "basis": "singers"},
+    {"id": "spelling-estimate", "lyric": "haxz", "phones": "hh ae0 k s z", "roles": "O N C C C", "source": "spelling-estimate"}
+  ],
+  "distributions": [
+    {"id": "beautiful-1", "lyric": "beautiful", "notes": [
+      {"phones": "b y uw1 t ah0 f ah0 l", "roles": "O O N O N O N C"}]},
+    {"id": "beautiful-2-compressed", "lyric": "beautiful", "notes": [
+      {"phones": "b y uw1", "roles": "O O N"},
+      {"phones": "t ah0 f ah0 l", "roles": "O N O N C"}]},
+    {"id": "beautiful-3-one-per-note", "lyric": "beautiful", "notes": [
+      {"phones": "b y uw1", "roles": "O O N"},
+      {"phones": "t ah0", "roles": "O N"},
+      {"phones": "f ah0 l", "roles": "O N C"}]},
+    {"id": "beautiful-4-final-melisma", "lyric": "beautiful", "notes": [
+      {"phones": "b y uw1", "roles": "O O N"},
+      {"phones": "t ah0", "roles": "O N"},
+      {"phones": "f ah0", "roles": "O N"},
+      {"phones": "ah0 l", "roles": "N C"}]},
+    {"id": "beautiful-5-final-melisma", "lyric": "beautiful", "notes": [
+      {"phones": "b y uw1", "roles": "O O N"},
+      {"phones": "t ah0", "roles": "O N"},
+      {"phones": "f ah0", "roles": "O N"},
+      {"phones": "ah0", "roles": "N"},
+      {"phones": "ah0 l", "roles": "N C"}]},
+    {"id": "strength-clusters-held", "lyric": "strength", "notes": [
+      {"phones": "s t r eh1", "roles": "O O O N"},
+      {"phones": "eh1", "roles": "N"},
+      {"phones": "eh1 ng k th", "roles": "N C C C"}]},
+    {"id": "understanding-4", "lyric": "understanding", "notes": [
+      {"phones": "ah2 n", "roles": "N C"},
+      {"phones": "d er0", "roles": "O N"},
+      {"phones": "s t ae1 n", "roles": "O O N C"},
+      {"phones": "d ih0 ng", "roles": "O N C"}]},
+    {"id": "understanding-2-compressed", "lyric": "understanding", "notes": [
+      {"phones": "ah2 n", "roles": "N C"},
+      {"phones": "d er0 s t ae1 n d ih0 ng", "roles": "O N O O N C O N C"}]},
+    {"id": "hello-3", "lyric": "hello", "notes": [
+      {"phones": "hh ah0", "roles": "O N"},
+      {"phones": "l ow1", "roles": "O N"},
+      {"phones": "ow1", "roles": "N"}]},
+    {"id": "sing-held-coda-moves-last", "lyric": "sing", "notes": [
+      {"phones": "s ih1", "roles": "O N"},
+      {"phones": "ih1 ng", "roles": "N C"}]},
+    {"id": "extra-cluster-split", "lyric": "extra", "notes": [
+      {"phones": "eh1 k", "roles": "N C"},
+      {"phones": "s t r ah0", "roles": "O O O N"}]},
+    {"id": "two-words-two-notes", "lyric": "of the", "notes": [
+      {"phones": "ah1 v", "roles": "N C"},
+      {"phones": "dh ah0", "roles": "O N"}]},
+    {"id": "two-words-three-notes", "lyric": "hello world", "notes": [
+      {"phones": "hh ah0", "roles": "O N"},
+      {"phones": "l ow1", "roles": "O N"},
+      {"phones": "w er1 l d", "roles": "O N C C"}]},
+    {"id": "estimate-held", "lyric": "haxz", "estimatedWarningsPerNote": 1, "notes": [
+      {"phones": "hh ae0", "roles": "O N"},
+      {"phones": "ae0 k s z", "roles": "N C C C"}]}
+  ]
+}

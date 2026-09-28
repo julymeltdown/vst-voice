@@ -1,0 +1,20 @@
+# SEAM English pronunciation exceptions for resource seam-en-us (table v1).
+# Format: lowercase word<TAB>phones in English hint syntax, vocabulary
+# seam-en-arpabet-v1. Entries take precedence over the pinned CMUdict revision.
+# Every entry is an engineering selection pending native-speaker review; none
+# records a review result.
+#
+# ba: CMUdict lists the letter-name reading B IY2 EY1 first; the sung vocable
+# uses CMUdict's own second variant ba(2).
+ba	b aa1
+# lovin, nothin: CMUdict's first readings of these apostrophe-less spellings are
+# name/regional forms (L OW1 V IH0 N, N AA1 TH IH0 N). Lyrics use them as
+# dropped-g forms of loving/nothing, matching CMUdict's own nothin' entry.
+lovin	l ah1 v ih0 n
+nothin	n ah1 th ih0 n
+# woah: spelling of the interjection CMUdict lists as whoa (W OW1).
+woah	w ow1
+# ooo: spelling of the vocable CMUdict lists as ooh and oooh (UW1).
+ooo	uw1
+# cuz: spelling of the clipped form CMUdict lists as 'cause (K AH0 Z).
+cuz	k ah0 z

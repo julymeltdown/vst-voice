@@ -1,11 +1,19 @@
 #include "test_framework.hpp"
 #include "seam/application/project_factory.hpp"
+#include "seam/core/sha256.hpp"
+#include "seam/formats/json_value.hpp"
 #include "seam/phonemizer/english_phonemizer.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include "seam/phonemizer/language_resolver.hpp"
+#include "seam/synthesis/automatic_performance.hpp"
 #include "seam/synthesis/phoneme_timing_plan.hpp"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <stop_token>
+#include <string>
 
 namespace {
 struct Fixture final {
@@ -15,15 +23,88 @@ struct Fixture final {
   seam::domain::RegionId region{factory.addRegion(project, track, "Phrase", seam::time::Tick{0}, seam::time::Tick{3840})};
   std::vector<seam::domain::NoteId> notes;
 
-  void add(std::int64_t tick, const char32_t* text) {
+  void add(std::int64_t tick, std::u32string text) {
     auto [lyric, note] = factory.makeNote(seam::time::Tick{tick}, seam::time::Tick{960}, 60U,
-                                          std::u32string{text}, seam::domain::Language::English);
+                                          std::move(text), seam::domain::Language::English);
     notes.push_back(note.id);
     auto* value = project.findRegion(region);
     value->lyrics.push_back(std::move(lyric));
     value->notes.push_back(std::move(note));
   }
+
+  // One lyric token owned by adjacent legato notes: the domain's explicit melisma.
+  std::vector<seam::domain::NoteId> addShared(std::int64_t tick, const std::u32string& text, std::size_t count) {
+    constexpr std::int64_t duration = 480;
+    auto* value = project.findRegion(region);
+    auto [lyric, first] = factory.makeNote(seam::time::Tick{tick}, seam::time::Tick{duration}, 60U,
+                                           text, seam::domain::Language::English);
+    first.articulation = seam::domain::NoteArticulation::Legato;
+    std::vector<seam::domain::NoteId> ids{first.id};
+    value->lyrics.push_back(lyric);
+    value->notes.push_back(first);
+    for (std::size_t index = 1U; index < count; ++index) {
+      auto [unused, note] = factory.makeNote(
+          seam::time::Tick{tick + duration * static_cast<std::int64_t>(index)}, seam::time::Tick{duration},
+          static_cast<std::uint8_t>(60U + index), text, seam::domain::Language::English);
+      note.lyricTokenId = lyric.id;
+      note.articulation = seam::domain::NoteArticulation::Legato;
+      ids.push_back(note.id);
+      value->notes.push_back(note);
+    }
+    notes.insert(notes.end(), ids.begin(), ids.end());
+    return ids;
+  }
 };
+
+std::string symbols(std::span<const seam::domain::PhonemeToken> tokens) {
+  std::string result;
+  for (const auto& token : tokens) {
+    if (!result.empty()) result += ' ';
+    result += token.symbol;
+  }
+  return result;
+}
+
+std::string roles(std::span<const seam::domain::PhonemeToken> tokens) {
+  std::string result;
+  for (const auto& token : tokens) {
+    if (!result.empty()) result += ' ';
+    switch (token.role) {
+      case seam::domain::PhonemeRole::Onset: result += 'O'; break;
+      case seam::domain::PhonemeRole::Nucleus: result += 'N'; break;
+      case seam::domain::PhonemeRole::Coda: result += 'C'; break;
+      case seam::domain::PhonemeRole::Silence: result += 'S'; break;
+      default: result += 'X'; break;
+    }
+  }
+  return result;
+}
+
+std::filesystem::path sourceRoot() { return std::filesystem::path{__FILE__}.parent_path().parent_path(); }
+
+seam::formats::JsonValue readJson(const std::filesystem::path& path) {
+  std::ifstream input{path, std::ios::binary};
+  const std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+  auto parsed = seam::formats::parseJson(text);
+  CHECK(parsed);
+  return parsed ? std::move(parsed).value() : seam::formats::JsonValue{};
+}
+
+std::string field(const seam::formats::JsonValue& object, std::string_view key) {
+  const auto* value = object.isObject() ? object.find(key) : nullptr;
+  return value != nullptr && value->isString() ? value->asString() : std::string{};
+}
+
+std::u32string utf32(const std::string& text) {
+  auto decoded = seam::domain::fromUtf8(text);
+  CHECK(decoded);
+  return decoded ? decoded.value() : std::u32string{};
+}
+
+std::size_t countWarnings(const seam::phonemizer::Result& result, seam::phonemizer::WarningCode code) {
+  return static_cast<std::size_t>(std::count_if(result.warnings.begin(), result.warnings.end(),
+      [code](const auto& warning) { return warning.code == code; }));
+}
 }
 
 TEST_CASE("English phonemizer keeps stressed dictionary output and explicit hints distinct") {
@@ -68,7 +149,7 @@ TEST_CASE("English CMUdict lookup remains complete across non-sorted source entr
     const auto resolved = phonemizer::resolveEnglishPronunciation(
         *fixture.project.findRegion(fixture.region));
     CHECK(resolved);
-    CHECK(resolved.value().identity.resolverVersion == "7");
+    CHECK(resolved.value().identity.resolverVersion == "8");
     CHECK(resolved.value().pronunciation.warnings.empty());
     std::vector<std::string> actual;
     for (const auto& token : resolved.value().pronunciation.tokens) actual.push_back(token.symbol);
@@ -370,7 +451,7 @@ TEST_CASE("English dictionary vowels consonant clusters and terminal codas have 
   for (const auto& [word, expected] : examples) {
     Fixture fixture; fixture.add(0, word);
     const auto resolved = phonemizer::resolveEnglishPronunciation(*fixture.project.findRegion(fixture.region));
-    CHECK(resolved); CHECK(resolved.value().identity.resolverVersion == "7");
+    CHECK(resolved); CHECK(resolved.value().identity.resolverVersion == "8");
     CHECK(resolved.value().pronunciation.warnings.empty());
     std::vector<Role> actual;
     for (const auto& token : resolved.value().pronunciation.tokens) actual.push_back(token.role);
@@ -549,4 +630,501 @@ TEST_CASE("English role-aware overrides preserve current locks and reject a chan
   CHECK(appendedCoda.value().pronunciation.tokens.back().key == appended);
   CHECK(appendedCoda.value().pronunciation.tokens.back().role == domain::PhonemeRole::Coda);
   CHECK(appendedCoda.value().pronunciation.tokens.back().locked);
+}
+
+TEST_CASE("English engineering fixtures keep stress clusters sources and lyric text") {
+  using namespace seam;
+  const auto fixture = readJson(sourceRoot() / "tests/fixtures/pronunciation/en-us-engineering-fixtures.json");
+  CHECK(field(fixture, "reviewStatus") == "engineering fixtures pending native-speaker review");
+  CHECK(field(fixture, "nativeSpeakerReview") == "not-performed");
+  const auto* cases = fixture.isObject() ? fixture.find("lexical") : nullptr;
+  CHECK(cases != nullptr && cases->isArray() && cases->asArray().size() >= 20U);
+  if (cases == nullptr || !cases->isArray()) return;
+  const auto& resource = phonemizer::EnglishPronunciationResource::builtin();
+  CHECK(resource.status());
+  for (const auto& item : cases->asArray()) {
+    const auto lyric = field(item, "lyric");
+    Fixture english; english.add(0, utf32(lyric));
+    const auto* region = english.project.findRegion(english.region);
+    const auto before = *region;
+    const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+    if (!resolved) continue;
+    CHECK(*english.project.findRegion(english.region) == before);  // Lyric text stays editable and unchanged.
+    CHECK(resolved.value().identity.resolverId == field(fixture, "resolverId"));
+    CHECK(resolved.value().identity.resolverVersion == field(fixture, "resolverVersion"));
+    const auto& tokens = resolved.value().pronunciation.tokens;
+    CHECK(symbols(tokens) == field(item, "phones"));
+    CHECK(roles(tokens) == field(item, "roles"));
+    CHECK(std::all_of(tokens.begin(), tokens.end(), [](const auto& token) {
+      return phonemizer::isEnglishVocabularySymbol(token.symbol);
+    }));
+    const auto source = field(item, "source");
+    const auto& warnings = resolved.value().pronunciation.warnings;
+    if (source == "dictionary" || source == "exception") {
+      CHECK(warnings.empty());
+    } else {
+      CHECK(warnings.size() == 1U);
+      if (warnings.size() == 1U) {
+        CHECK(warnings.front().code == phonemizer::WarningCode::EstimatedPronunciation);
+        CHECK(warnings.front().message.find("'" + lyric + "'") != std::string::npos);
+        const auto basis = field(item, "basis");
+        if (!basis.empty()) CHECK(warnings.front().message.find("'" + basis + "'") != std::string::npos);
+      }
+    }
+    if (source != "dictionary") {
+      const auto word = resource.resolveWord(lyric); CHECK(word);
+      if (word) {
+        const auto expected = source == "exception" ? phonemizer::EnglishReadingSource::Exception
+            : source == "derived" ? phonemizer::EnglishReadingSource::Derived
+                                  : phonemizer::EnglishReadingSource::SpellingEstimate;
+        CHECK(word->source == expected);
+        CHECK(word->basis == field(item, "basis"));
+      }
+    }
+  }
+}
+
+TEST_CASE("English shared-lyric syllables distribute consistently across note counts") {
+  using namespace seam;
+  const auto fixture = readJson(sourceRoot() / "tests/fixtures/pronunciation/en-us-engineering-fixtures.json");
+  const auto* cases = fixture.isObject() ? fixture.find("distributions") : nullptr;
+  CHECK(cases != nullptr && cases->isArray() && cases->asArray().size() >= 12U);
+  if (cases == nullptr || !cases->isArray()) return;
+  for (const auto& item : cases->asArray()) {
+    const auto lyric = utf32(field(item, "lyric"));
+    const auto& expected = item.find("notes")->asArray();
+    Fixture english;
+    const auto ids = english.addShared(0, lyric, expected.size());
+    auto* region = english.project.findRegion(english.region);
+    const auto before = *region;
+    const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+    if (!resolved) continue;
+    CHECK(*region == before);
+    const auto& pronunciation = resolved.value().pronunciation;
+    std::vector<domain::PhonemeToken> collapsed;
+    for (std::size_t note = 0U; note < ids.size(); ++note) {
+      const auto tokens = pronunciation.tokensForNote(ids[note]);
+      CHECK(symbols(tokens) == field(expected[note], "phones"));
+      CHECK(roles(tokens) == field(expected[note], "roles"));
+      for (std::size_t index = 0U; index < tokens.size(); ++index) {
+        CHECK(tokens[index].key.ordinal == index);
+        CHECK(tokens[index].lyricOwner == region->notes.front().lyricTokenId);
+        const bool sustained = index == 0U && !collapsed.empty() &&
+            tokens[index].role == domain::PhonemeRole::Nucleus &&
+            collapsed.back().role == domain::PhonemeRole::Nucleus && collapsed.back().symbol == tokens[index].symbol;
+        if (!sustained) collapsed.push_back(tokens[index]);
+      }
+    }
+    // The same lyric on one note: identical phones, stress marks and roles once
+    // the sustained vowels of extra notes are collapsed.
+    Fixture single; single.add(0, lyric);
+    const auto whole = phonemizer::resolveEnglishPronunciation(*single.project.findRegion(single.region)); CHECK(whole);
+    if (whole) {
+      CHECK(symbols(collapsed) == symbols(whole.value().pronunciation.tokens));
+      CHECK(roles(collapsed) == roles(whole.value().pronunciation.tokens));
+    }
+    const auto* perNote = item.find("estimatedWarningsPerNote");
+    const auto estimatedPerNote = perNote != nullptr ? static_cast<std::size_t>(perNote->asInt64()) : 0U;
+    CHECK(countWarnings(pronunciation, phonemizer::WarningCode::EstimatedPronunciation) == estimatedPerNote * ids.size());
+    CHECK(pronunciation.warnings.size() == estimatedPerNote * ids.size());
+    const auto timing = synthesis::compilePhonemeTimingPlan(english.project, *region, pronunciation.tokens, 48000U);
+    CHECK(timing);
+    if (timing) CHECK(timing.value().size() == pronunciation.tokens.size());
+  }
+}
+
+TEST_CASE("English shared-lyric groups keep note hints literal continuations and chain boundaries") {
+  using namespace seam;
+  Fixture english;
+  const auto ids = english.addShared(0, U"beautiful", 3U);
+  english.add(1440, U"-");
+  auto* region = english.project.findRegion(english.region);
+  region->findNote(ids[1])->phoneticHint = "t iy1";
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+  if (resolved) {
+    const auto& pronunciation = resolved.value().pronunciation;
+    CHECK(pronunciation.warnings.empty());
+    CHECK(symbols(pronunciation.tokensForNote(ids[0])) == "b y uw1");
+    CHECK(symbols(pronunciation.tokensForNote(ids[1])) == "t iy1");  // Explicit input replaces only its share.
+    CHECK(symbols(pronunciation.tokensForNote(ids[2])) == "f ah0 l");
+    CHECK(symbols(pronunciation.tokensForNote(english.notes.back())) == "ah0");
+  }
+
+  Fixture unsupported;
+  const auto bad = unsupported.addShared(0, U"x2", 2U);
+  const auto refused = phonemizer::resolveEnglishPronunciation(*unsupported.project.findRegion(unsupported.region));
+  CHECK(refused);
+  if (refused) {
+    for (const auto id : bad) CHECK(symbols(refused.value().pronunciation.tokensForNote(id)) == "pau");
+    CHECK(countWarnings(refused.value().pronunciation, phonemizer::WarningCode::UnsupportedCharacter) == 2U);
+  }
+
+  // Only an adjacent legato continuation shares ownership; a gap re-reads the word.
+  Fixture gap;
+  const auto separated = gap.addShared(0, U"hello", 2U);
+  gap.project.findRegion(gap.region)->findNote(separated[1])->startTick = time::Tick{960};
+  const auto independent = phonemizer::resolveEnglishPronunciation(*gap.project.findRegion(gap.region));
+  CHECK(independent);
+  if (independent) {
+    CHECK(symbols(independent.value().pronunciation.tokensForNote(separated[0])) == "hh ah0 l ow1");
+    CHECK(symbols(independent.value().pronunciation.tokensForNote(separated[1])) == "hh ah0 l ow1");
+  }
+}
+
+TEST_CASE("English lyric diagnostics name the word stay bounded and keep the lyric text") {
+  using namespace seam;
+  struct Example final {
+    std::u32string lyric;
+    std::size_t characterIndex;
+    std::string fragment;
+  };
+  const Example examples[]{
+      {U"hello \u4e16\u754c", 6U, "outside supported Latin letters"},
+      {U"x2 hello", 0U, "'x2'"},
+      {U"hello x2", 6U, "'x2'"},
+      {U"rock & roll", 5U, "unsupported symbol"}};
+  for (const auto& example : examples) {
+    Fixture english; english.add(0, example.lyric);
+    const auto before = *english.project.findRegion(english.region);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(before); CHECK(resolved);
+    if (!resolved) continue;
+    CHECK(*english.project.findRegion(english.region) == before);
+    CHECK(symbols(resolved.value().pronunciation.tokens) == "pau");
+    const auto& warnings = resolved.value().pronunciation.warnings;
+    CHECK(warnings.size() == 1U);
+    if (warnings.size() != 1U) continue;
+    CHECK(warnings.front().code == phonemizer::WarningCode::UnsupportedCharacter);
+    CHECK(warnings.front().characterIndex == example.characterIndex);
+    CHECK(warnings.front().message.find(example.fragment) != std::string::npos);
+  }
+
+  std::u32string words;
+  for (int index = 0; index < 32; ++index) words += U"la ";
+  Fixture bounded; bounded.add(0, words);
+  const auto thirtyTwo = phonemizer::resolveEnglishPronunciation(*bounded.project.findRegion(bounded.region));
+  CHECK(thirtyTwo);
+  if (thirtyTwo) {
+    CHECK(thirtyTwo.value().pronunciation.warnings.empty());
+    CHECK(thirtyTwo.value().pronunciation.tokens.size() == 64U);
+  }
+  Fixture excessive; excessive.add(0, words + U"la");
+  const auto thirtyThree = phonemizer::resolveEnglishPronunciation(*excessive.project.findRegion(excessive.region));
+  CHECK(thirtyThree);
+  if (thirtyThree) {
+    CHECK(symbols(thirtyThree.value().pronunciation.tokens) == "pau");
+    CHECK(countWarnings(thirtyThree.value().pronunciation, phonemizer::WarningCode::UnsupportedCharacter) == 1U);
+  }
+
+  Fixture estimates; estimates.add(0, U"zaiz gaim");
+  const auto two = phonemizer::resolveEnglishPronunciation(*estimates.project.findRegion(estimates.region));
+  CHECK(two);
+  if (two) {
+    CHECK(symbols(two.value().pronunciation.tokens) == "z ey0 z g ey0 m");
+    CHECK(two.value().pronunciation.warnings.size() == 1U);
+    const auto& message = two.value().pronunciation.warnings.front().message;
+    CHECK(message.find("'zaiz'") != std::string::npos);
+    CHECK(message.find("'gaim'") != std::string::npos);
+  }
+  Fixture several; several.add(0, U"zaiz gaim vaiz zoiv vuzz");
+  const auto five = phonemizer::resolveEnglishPronunciation(*several.project.findRegion(several.region));
+  CHECK(five);
+  if (five) {
+    CHECK(five.value().pronunciation.warnings.size() == 1U);
+    CHECK(five.value().pronunciation.warnings.front().message.find("and 2 more") != std::string::npos);
+    CHECK(five.value().pronunciation.warnings.front().message.size() < 512U);
+  }
+
+  // A phoneme edit outside the English vocabulary is retained but not applied.
+  Fixture edited; edited.add(0, U"hello");
+  auto* region = edited.project.findRegion(edited.region);
+  const auto base = phonemizer::resolveEnglishPronunciation(*region); CHECK(base);
+  if (!base) return;
+  const domain::PhonemeKey vowel{edited.notes.front(), 1U};
+  region->phonemeOverrides = {{.key = vowel, .symbol = "a", .locked = true,
+      .sourceContextId = phonemizer::phonemeEditContextId(base.value(), vowel)}};
+  const auto refused = phonemizer::resolveEnglishPronunciation(*region); CHECK(refused);
+  if (refused) {
+    CHECK(refused.value().pronunciation.tokens[1].symbol == "ah0");
+    CHECK(!refused.value().pronunciation.tokens[1].locked);
+    CHECK(countWarnings(refused.value().pronunciation, phonemizer::WarningCode::InvalidOverride) == 1U);
+    CHECK(region->phonemeOverrides.front().symbol == std::optional<std::string>{"a"});
+  }
+}
+
+TEST_CASE("CMUdict annotations never become English phones") {
+  using namespace seam;
+  const std::pair<std::u32string, std::string> examples[]{
+      {U"hiv", "ey1 ch ay1 v iy1"}, {U"gdp", "g iy1 d iy1 p iy1"},
+      {U"d'artagnan", "d ah0 r t ae1 ng y ah0 n"}, {U"aalborg", "ao1 l b ao0 r g"}};
+  for (const auto& [word, phones] : examples) {
+    Fixture english; english.add(0, word);
+    const auto resolved = phonemizer::resolveEnglishPronunciation(*english.project.findRegion(english.region));
+    CHECK(resolved);
+    if (!resolved) continue;
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(symbols(resolved.value().pronunciation.tokens) == phones);
+  }
+}
+
+TEST_CASE("English resource manifest binds dictionary exceptions vocabulary and resolver identity") {
+  using namespace seam;
+  const auto root = sourceRoot();
+  const auto manifest = readJson(root / "assets/pronunciation/en-us/seam-en-us.resource.json");
+  const auto intake = readJson(root / "third_party/manifest.yml");
+  const auto dictionary = core::sha256File(root / "assets/pronunciation/en-us/cmudict.dict");
+  const auto exceptions = core::sha256File(root / "assets/pronunciation/en-us/seam-en-exceptions.tsv");
+  CHECK(dictionary); CHECK(exceptions);
+  if (!dictionary || !exceptions || !manifest.isObject()) return;
+  const auto* lexicon = manifest.find("lexicon");
+  const auto* table = manifest.find("exceptions");
+  const auto* vocabulary = manifest.find("vocabulary");
+  const auto* rules = manifest.find("rules");
+  const auto* review = manifest.find("review");
+  CHECK(lexicon && table && vocabulary && rules && review);
+  if (!lexicon || !table || !vocabulary || !rules || !review) return;
+
+  CHECK(phonemizer::englishLexiconSha256() == dictionary.value());
+  CHECK(field(*lexicon, "sha256") == dictionary.value());
+  bool intakeFound = false;
+  if (const auto* dependencies = intake.isObject() ? intake.find("distributedDependencies") : nullptr) {
+    for (const auto& entry : dependencies->asArray()) {
+      if (field(entry, "name") != "CMU Pronouncing Dictionary") continue;
+      intakeFound = true;
+      CHECK(field(entry, "resourceSha256") == dictionary.value());
+      CHECK(field(entry, "revision") == field(*lexicon, "revision"));
+      CHECK(field(entry, "sourceSha256") == field(*lexicon, "archiveSha256"));
+      CHECK(field(entry, "license") == field(*lexicon, "license"));
+    }
+  }
+  CHECK(intakeFound);
+
+  CHECK(phonemizer::englishExceptionsSha256() == exceptions.value());
+  CHECK(field(*table, "sha256") == exceptions.value());
+  std::ifstream tableFile{root / "assets/pronunciation/en-us/seam-en-exceptions.tsv", std::ios::binary};
+  std::int64_t entries = 0;
+  for (std::string line; std::getline(tableFile, line);)
+    if (!line.empty() && line.front() != '#' && line.find('\t') != std::string::npos) ++entries;
+  CHECK(table->find("entries") != nullptr && table->find("entries")->asInt64() == entries);
+  CHECK(field(*table, "review") == "engineering entries pending native-speaker review");
+
+  CHECK(field(*vocabulary, "id") == phonemizer::kEnglishVocabularyId);
+  CHECK(field(*vocabulary, "sha256") == phonemizer::englishVocabularySha256());
+  const auto listed = vocabulary->find("symbols");
+  const auto frozen = phonemizer::englishVocabulary();
+  CHECK(frozen.size() == 93U);
+  CHECK(listed != nullptr && listed->asArray().size() == frozen.size());
+  if (listed != nullptr && listed->asArray().size() == frozen.size())
+    for (std::size_t index = 0U; index < frozen.size(); ++index)
+      CHECK(listed->asArray()[index].asString() == frozen[index]);
+
+  CHECK(field(*rules, "normalization") == phonemizer::kEnglishNormalizationRule);
+  CHECK(field(*rules, "syllabification") == phonemizer::kEnglishSyllabificationRule);
+  CHECK(field(*rules, "noteDistribution") == phonemizer::kEnglishNoteDistributionRule);
+  CHECK(field(*rules, "derivation") == phonemizer::kEnglishDerivationRule);
+  CHECK(field(*rules, "spelling") == phonemizer::kEnglishSpellingRule);
+  CHECK(field(*rules, "exceptionOverlay") == phonemizer::kEnglishExceptionOverlayRule);
+  CHECK(field(*review, "nativeSpeakerReview") == "not-performed");
+
+  Fixture english; english.add(0, U"hello");
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*english.project.findRegion(english.region));
+  CHECK(resolved);
+  if (resolved) {
+    CHECK(field(manifest, "resolverId") == resolved.value().identity.resolverId);
+    CHECK(field(manifest, "resolverVersion") == resolved.value().identity.resolverVersion);
+    CHECK(resolved.value().identity.resourceHash == phonemizer::EnglishPronunciationResource::builtin().resourceHash());
+    CHECK(resolved.value().identity.resourceHash.size() == 64U);
+  }
+}
+
+TEST_CASE("English exception overlays are validated bounded and take precedence") {
+  using namespace seam;
+  const auto& builtin = phonemizer::EnglishPronunciationResource::builtin();
+  CHECK(builtin.lexicalReading("ba")->source == phonemizer::EnglishReadingSource::Exception);
+  CHECK(builtin.lexicalReading("hello")->source == phonemizer::EnglishReadingSource::Dictionary);
+  for (const auto* table : {"hello hh ah0 l ow1", "Hello\thh ah0 l ow1", "hello\ta i u", "hello\thh l",
+           "hello\thh ah0 pau l ow1", "hello\thh ah0 l ow1\nhello\thh eh0 l ow1", "\thh ah0",
+           "hel lo\thh ah0", "hello\thh ah0 . . l ow1"})
+    CHECK(!builtin.withExceptions(table));
+  std::string many;
+  for (std::size_t index = 0U; index < 4097U; ++index) {
+    std::string word{"q"};
+    for (auto value = index; ; value /= 26U) {
+      word += static_cast<char>('a' + static_cast<char>(value % 26U));
+      if (value < 26U) break;
+    }
+    many += word + "\taa1\n";
+  }
+  CHECK(!builtin.withExceptions(many));
+
+  const auto overlay = builtin.withExceptions("# reviewed later\r\n\r\nhello\thh ah0 . l ow1\r\n");
+  CHECK(overlay);
+  if (!overlay) return;
+  const auto reading = overlay.value().lexicalReading("hello");
+  CHECK(reading && reading->source == phonemizer::EnglishReadingSource::Exception);
+  CHECK(reading && reading->reading.syllableBreaks == std::vector<std::size_t>{2U});
+  CHECK(overlay.value().lexicalReading("ba")->source == phonemizer::EnglishReadingSource::Exception);
+  Fixture english; english.add(0, U"hello");
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*english.project.findRegion(english.region), overlay.value());
+  CHECK(resolved);
+  if (resolved) {
+    CHECK(resolved.value().pronunciation.warnings.empty());
+    CHECK(roles(resolved.value().pronunciation.tokens) == "O N O N");
+    CHECK(resolved.value().identity.resourceHash == overlay.value().resourceHash());
+  }
+}
+
+TEST_CASE("English resource changes reconcile locks and invalidate dependent requests") {
+  using namespace seam;
+  const auto& builtin = phonemizer::EnglishPronunciationResource::builtin();
+  const std::string revision = "# revised entry\nhello\thh eh0 l ow1\n";
+  const auto revised = builtin.withExceptions(revision); CHECK(revised);
+  if (!revised) return;
+  CHECK(revised.value().resourceHash() != builtin.resourceHash());
+  CHECK(revised.value().resourceHash().size() == 64U);
+  CHECK(builtin.withExceptions(revision).value().resourceHash() == revised.value().resourceHash());
+
+  Fixture english; english.add(0, U"hello"); english.add(960, U"world");
+  auto* region = english.project.findRegion(english.region);
+  const auto base = phonemizer::resolveEnglishPronunciation(*region, builtin); CHECK(base);
+  const auto next = phonemizer::resolveEnglishPronunciation(*region, revised.value()); CHECK(next);
+  if (!base || !next) return;
+  CHECK(phonemizer::resolveEnglishPronunciation(*region).value().identity == base.value().identity);
+  CHECK(next.value().identity.resourceHash != base.value().identity.resourceHash);
+  CHECK(next.value().identity.sequenceHash != base.value().identity.sequenceHash);
+  CHECK(symbols(next.value().pronunciation.tokensForNote(english.notes[0])) == "hh eh0 l ow1");
+  const auto oldWorld = base.value().pronunciation.tokensForNote(english.notes[1]);
+  const auto newWorld = next.value().pronunciation.tokensForNote(english.notes[1]);
+  CHECK(symbols(oldWorld) == symbols(newWorld));
+  CHECK(oldWorld.front().contextId != newWorld.front().contextId);  // Contexts bind the resource.
+
+  const domain::PhonemeKey consonant{english.notes[0], 2U}, vowel{english.notes[0], 1U}, onset{english.notes[1], 0U};
+  region->phonemeOverrides = {
+      {.key = consonant, .timing = {.startOffset = 1000}, .locked = true,
+       .sourceContextId = phonemizer::phonemeEditContextId(base.value(), consonant)},
+      {.key = vowel, .symbol = "aa1", .locked = true,
+       .sourceContextId = phonemizer::phonemeEditContextId(base.value(), vowel)},
+      {.key = onset, .locked = true, .sourceContextId = phonemizer::phonemeEditContextId(base.value(), onset)}};
+  const auto saved = region->phonemeOverrides;
+  const auto applied = phonemizer::resolveEnglishPronunciation(*region, builtin); CHECK(applied);
+  if (!applied) return;
+  CHECK(applied.value().pronunciation.warnings.empty());
+  CHECK(applied.value().pronunciation.tokens[2].locked);
+  CHECK(applied.value().pronunciation.tokens[1].symbol == "aa1");
+
+  const auto stale = phonemizer::resolveEnglishPronunciation(*region, revised.value()); CHECK(stale);
+  if (!stale) return;
+  CHECK(std::none_of(stale.value().pronunciation.tokens.begin(), stale.value().pronunciation.tokens.end(),
+      [](const auto& token) { return token.locked; }));
+  CHECK(countWarnings(stale.value().pronunciation, phonemizer::WarningCode::OrphanOverride) == 3U);
+  CHECK(region->phonemeOverrides == saved);
+
+  const auto proposal = phonemizer::reconcileEnglishResourceChange(*region, builtin, revised.value());
+  CHECK(proposal);
+  if (!proposal) return;
+  CHECK(region->phonemeOverrides == saved);  // A proposal, not a mutation.
+  using Outcome = phonemizer::EnglishEditReconciliation;
+  CHECK(proposal.value().outcomes == (std::vector<Outcome>{Outcome::Rebound, Outcome::Unresolved, Outcome::Rebound}));
+  CHECK(proposal.value().overrides[0].key == consonant);
+  CHECK(proposal.value().overrides[0].sourceContextId != saved[0].sourceContextId);
+  CHECK(proposal.value().overrides[1].unresolved);
+  CHECK(proposal.value().overrides[1].sourceContextId == saved[1].sourceContextId);
+  region->phonemeOverrides = proposal.value().overrides;
+  const auto reconciled = phonemizer::resolveEnglishPronunciation(*region, revised.value()); CHECK(reconciled);
+  if (reconciled) {
+    const auto& tokens = reconciled.value().pronunciation.tokens;
+    CHECK(tokens[2].locked);
+    CHECK(tokens[2].timing.startOffset == std::optional<time::Microseconds>{1000});
+    CHECK(tokens[1].symbol == "eh0");
+    CHECK(!tokens[1].locked);
+    CHECK(tokens[4].locked);
+    CHECK(countWarnings(reconciled.value().pronunciation, phonemizer::WarningCode::OrphanOverride) == 1U);
+  }
+  region->phonemeOverrides = saved;  // Undo restores the prior intent exactly.
+  CHECK(phonemizer::resolveEnglishPronunciation(*region, builtin).value().identity == applied.value().identity);
+
+  // A performance request captured under the previous resource is refused.
+  Fixture performance; performance.add(0, U"hello"); performance.add(960, U"world");
+  const auto* performanceRegion = performance.project.findRegion(performance.region);
+  const auto previous = phonemizer::resolveEnglishPronunciation(*performanceRegion, builtin);
+  const auto current = phonemizer::resolveEnglishPronunciation(*performanceRegion, revised.value());
+  CHECK(previous); CHECK(current);
+  if (!previous || !current) return;
+  const synthesis::AutomaticPerformanceRequest request{
+      .takeId = "take-english-resource",
+      .regionId = performance.region,
+      .capturedRevision = performanceRegion->performance.revision,
+      .resource = {domain::SingerResourceKind::Neural, "fixture-neural", "1.0.0", std::string(64U, 'a')},
+      .pronunciation = previous.value().identity,
+      .generatorId = "fixture-generator",
+      .generatorVersion = "1.0.0",
+      .seed = 7U,
+      .range = {time::Tick{0}, time::Tick{1920}}};
+  CHECK(synthesis::generateAutomaticPerformance(performance.project, *performanceRegion, previous.value(), request));
+  const auto refused = synthesis::generateAutomaticPerformance(performance.project, *performanceRegion, current.value(), request);
+  CHECK(!refused);
+  if (!refused) CHECK(refused.error().code == core::ErrorCode::Conflict);
+}
+
+TEST_CASE("English vocabulary coverage lists missing bank phones without substitution") {
+  using namespace seam;
+  Fixture english; english.add(0, U"hello"); english.add(960, U"world"); english.add(1920, U",");
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*english.project.findRegion(english.region));
+  CHECK(resolved);
+  if (!resolved) return;
+  const auto& tokens = resolved.value().pronunciation.tokens;
+  std::vector<std::string> all;
+  for (const auto symbol : phonemizer::englishVocabulary()) all.emplace_back(symbol);
+  const auto complete = phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-complete", all});
+  CHECK(complete && complete.value().complete());
+  CHECK(complete && complete.value().requiredSymbols == 7U);  // hh ah0 l ow1 w er1 d; pause excluded.
+
+  auto withoutOw = all;
+  std::erase(withoutOw, "ow1");
+  const auto missing = phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-missing", withoutOw});
+  CHECK(missing && missing.value().missing.size() == 1U);
+  if (missing && missing.value().missing.size() == 1U) {
+    const auto& phone = missing.value().missing.front();
+    CHECK(phone.symbol == "ow1"); CHECK(phone.requiredSymbol == "ow1"); CHECK(phone.occurrences == 1U);
+    CHECK(phone.keys == (std::vector<domain::PhonemeKey>{{english.notes[0], 3U}}));
+  }
+
+  std::vector<std::string> bare;
+  for (const auto symbol : phonemizer::englishVocabulary())
+    if (symbol.back() != '0' && symbol.back() != '1' && symbol.back() != '2') bare.emplace_back(symbol);
+  const auto exact = phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-bare", bare});
+  CHECK(exact && exact.value().missing.size() == 3U);
+  if (exact && exact.value().missing.size() == 3U) {
+    CHECK(exact.value().missing[0].symbol == "ah0");
+    CHECK(exact.value().missing[1].symbol == "ow1");
+    CHECK(exact.value().missing[2].symbol == "er1");
+  }
+  const auto folded = phonemizer::checkEnglishVocabularyCoverage(tokens,
+      {"fixture-bare", bare, phonemizer::EnglishStressCoverage::FoldLexicalStress});
+  CHECK(folded && folded.value().complete());
+
+  // A Japanese-style inventory is reported missing, never used as a stand-in.
+  const std::vector<std::string> japanese{"a", "i", "u", "e", "o", "k", "s", "t", "n", "h", "m", "y", "r", "w", "g", "z", "d", "b", "p", "N"};
+  const auto foreign = phonemizer::checkEnglishVocabularyCoverage(tokens,
+      {"fixture-japanese", japanese, phonemizer::EnglishStressCoverage::FoldLexicalStress});
+  CHECK(foreign && !foreign.value().complete());
+  if (foreign) {
+    const auto& list = foreign.value().missing;
+    CHECK(std::any_of(list.begin(), list.end(), [](const auto& phone) { return phone.symbol == "l" && phone.requiredSymbol == "l"; }));
+    CHECK(std::any_of(list.begin(), list.end(), [](const auto& phone) { return phone.symbol == "ah0" && phone.requiredSymbol == "ah"; }));
+    CHECK(std::none_of(list.begin(), list.end(), [](const auto& phone) { return phone.symbol == "w" || phone.symbol == "d"; }));
+  }
+
+  std::vector<domain::PhonemeToken> repeated;
+  for (std::uint16_t index = 0U; index < 40U; ++index)
+    repeated.push_back({.key = {english.notes[0], index}, .symbol = "aa1"});
+  const auto capped = phonemizer::checkEnglishVocabularyCoverage(repeated, {"fixture-empty", {}});
+  CHECK(capped && capped.value().missing.size() == 1U);
+  if (capped && capped.value().missing.size() == 1U) {
+    CHECK(capped.value().missing.front().occurrences == 40U);
+    CHECK(capped.value().missing.front().keys.size() == phonemizer::kMaximumEnglishCoverageKeysPerPhone);
+  }
+  const std::vector<domain::PhonemeToken> japaneseToken{{.key = {english.notes[0], 0U}, .symbol = "a"}};
+  const auto invalid = phonemizer::checkEnglishVocabularyCoverage(japaneseToken, {"fixture-complete", all});
+  CHECK(!invalid && invalid.error().code == core::ErrorCode::InvalidArgument);
+  CHECK(!phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-duplicate", {"hh", "hh"}}));
 }

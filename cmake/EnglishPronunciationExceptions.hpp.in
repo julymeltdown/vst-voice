@@ -1,0 +1,10 @@
+#pragma once
+
+#include <string_view>
+
+namespace seam::phonemizer::resources {
+
+inline constexpr std::string_view englishPronunciationExceptions{
+R"SEAM_EN_EXC(@seam_en_exceptions_content@)SEAM_EN_EXC"};
+
+}  // namespace seam::phonemizer::resources

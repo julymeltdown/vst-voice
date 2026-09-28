@@ -1,12 +1,9 @@
 #include "seam/phonemizer/english_phonemizer.hpp"
 
-#include "EnglishCmuDictionary.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -18,110 +15,12 @@ namespace seam::phonemizer {
 namespace {
 
 using PhoneList = std::vector<std::string>;
-struct EnglishReading final {
-  PhoneList phones;
-  // An index names the first phone of the following syllable. Boundaries are
-  // structure, not acoustic tokens, so ordinals and literal stress stay intact.
-  std::vector<std::size_t> syllableBreaks;
-};
 
-const std::string& cmuDictionarySource() {
-  static const std::string source = [] {
-    std::string source;
-    for (const auto chunk : resources::cmuEnglishDictionary) source.append(chunk);
-    return source;
-  }();
-  return source;
-}
+constexpr std::size_t kMaximumNotePhones = 256U;
+constexpr std::size_t kMaximumNoteWords = 32U;
+constexpr std::size_t kMaximumNamedWords = 3U;
 
-std::string_view cmuEntryKey(std::string_view line) {
-  const auto separator = line.find(' ');
-  auto key = line.substr(0U, separator);
-  const auto variant = key.find('(');
-  if (variant != std::string_view::npos) key = key.substr(0U, variant);
-  return key;
-}
-
-int compareAsciiCaseInsensitive(std::string_view lhs, std::string_view rhs) {
-  const auto common = std::min(lhs.size(), rhs.size());
-  for (std::size_t index = 0U; index < common; ++index) {
-    const auto left = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(lhs[index])));
-    const auto right = static_cast<unsigned char>(std::tolower(static_cast<unsigned char>(rhs[index])));
-    if (left < right) return -1;
-    if (left > right) return 1;
-  }
-  if (lhs.size() < rhs.size()) return -1;
-  if (lhs.size() > rhs.size()) return 1;
-  return 0;
-}
-
-struct CmuDictionaryIndex final {
-  std::vector<std::string_view> lines;
-  std::vector<std::pair<std::size_t, std::size_t>> sortedRuns;
-};
-
-const CmuDictionaryIndex& cmuDictionaryIndex() {
-  // The pinned CMUdict resource contains a small number of out-of-order
-  // entries, so binary-searching the raw bytes silently misses real words.
-  // Build line views and partition the source into sorted runs in one pass;
-  // equal pronunciation variants stay in source order without a full sort.
-  static const CmuDictionaryIndex index = [] {
-    const auto& source = cmuDictionarySource();
-    CmuDictionaryIndex result;
-    for (std::size_t start = 0U; start < source.size();) {
-      const auto newline = source.find('\n', start);
-      const auto end = newline == std::string::npos ? source.size() : newline;
-      if (end > start) result.lines.emplace_back(source.data() + start, end - start);
-      if (newline == std::string::npos) break;
-      start = newline + 1U;
-    }
-    if (result.lines.empty()) return result;
-    std::size_t runStart = 0U;
-    for (std::size_t line = 1U; line < result.lines.size(); ++line) {
-      if (compareAsciiCaseInsensitive(cmuEntryKey(result.lines[line - 1U]),
-              cmuEntryKey(result.lines[line])) > 0) {
-        result.sortedRuns.emplace_back(runStart, line);
-        runStart = line;
-      }
-    }
-    result.sortedRuns.emplace_back(runStart, result.lines.size());
-    return result;
-  }();
-  return index;
-}
-
-std::string_view findCmuReading(std::string_view word) {
-  const auto& index = cmuDictionaryIndex();
-  std::size_t earliestMatch = index.lines.size();
-  for (const auto& [first, last] : index.sortedRuns) {
-    auto found = std::lower_bound(index.lines.begin() + static_cast<std::ptrdiff_t>(first),
-        index.lines.begin() + static_cast<std::ptrdiff_t>(last), word,
-        [](std::string_view line, std::string_view key) {
-          return compareAsciiCaseInsensitive(cmuEntryKey(line), key) < 0;
-        });
-    if (found == index.lines.begin() + static_cast<std::ptrdiff_t>(last) ||
-        compareAsciiCaseInsensitive(cmuEntryKey(*found), word) != 0) continue;
-    const auto position = static_cast<std::size_t>(found - index.lines.begin());
-    if (position < earliestMatch) earliestMatch = position;
-  }
-  return earliestMatch == index.lines.size() ? std::string_view{} : index.lines[earliestMatch];
-}
-
-PhoneList cmuPhones(std::string_view line) {
-  std::istringstream fields{std::string{line}};
-  std::string ignoredWord;
-  static_cast<void>(fields >> ignoredWord);
-  PhoneList phones;
-  std::string phone;
-  while (fields >> phone) {
-    if (phone == "JH") phone = "J";
-    std::transform(phone.begin(), phone.end(), phone.begin(), [](unsigned char value) {
-      return static_cast<char>(std::tolower(value));
-    });
-    phones.push_back(phone);
-  }
-  return phones;
-}
+// ---- Syllable structure (seam-en-legal-onset-v1) --------------------------------
 
 bool legalEnglishOnset(std::span<const std::string_view> cluster) {
   if (cluster.empty() || cluster.size() > 3U) return false;
@@ -150,24 +49,37 @@ bool legalEnglishOnset(std::span<const std::string> cluster) {
   return legalEnglishOnset(std::span<const std::string_view>{symbols}.first(cluster.size()));
 }
 
-std::vector<std::size_t> dictionarySyllableBreaks(std::span<const std::string> phones) {
-  std::vector<std::size_t> nuclei;
-  for (std::size_t index = 0U; index < phones.size(); ++index)
-    if (isVowelSymbol(phones[index])) nuclei.push_back(index);
-
-  std::vector<std::size_t> breaks;
-  for (std::size_t index = 1U; index < nuclei.size(); ++index) {
-    const auto nextNucleus = nuclei[index];
-    const auto clusterStart = nuclei[index - 1U] + 1U;
-    const auto clusterSize = nextNucleus - clusterStart;
-    auto onsetStart = nextNucleus;
-    for (std::size_t count = 1U; count <= std::min<std::size_t>(3U, clusterSize); ++count) {
-      const auto candidate = std::span<const std::string>{phones}.subspan(nextNucleus - count, count);
-      if (legalEnglishOnset(candidate)) onsetStart = nextNucleus - count;
+// Boundaries between adjacent nuclei inside [first, last): the longest legal
+// onset (at most three consonants) joins the following syllable.
+void appendInferredBreaks(std::span<const std::string> phones, std::size_t first, std::size_t last,
+    std::vector<std::size_t>& breaks) {
+  std::optional<std::size_t> previous;
+  for (auto index = first; index < last; ++index) {
+    if (!isVowelSymbol(phones[index])) continue;
+    if (previous) {
+      const auto clusterSize = index - *previous - 1U;
+      auto onsetStart = index;
+      for (std::size_t count = 1U; count <= std::min<std::size_t>(3U, clusterSize); ++count)
+        if (legalEnglishOnset(phones.subspan(index - count, count))) onsetStart = index - count;
+      breaks.push_back(onsetStart);
     }
-    breaks.push_back(onsetStart);
+    previous = index;
   }
-  return breaks;
+}
+
+// Complete boundaries: explicit ones plus legal-onset inference inside each
+// explicit segment. Sorted, each boundary strictly inside the reading.
+std::vector<std::size_t> completeSyllableBreaks(std::span<const std::string> phones,
+    std::span<const std::size_t> explicitBreaks) {
+  std::vector<std::size_t> result;
+  std::size_t first = 0U;
+  for (std::size_t group = 0U; group <= explicitBreaks.size(); ++group) {
+    const auto last = group < explicitBreaks.size() ? explicitBreaks[group] : phones.size();
+    if (group > 0U) result.push_back(first);
+    appendInferredBreaks(phones, first, last, result);
+    first = last;
+  }
+  return result;
 }
 
 void assignSyllableRoles(std::span<domain::PhonemeToken> tokens) {
@@ -186,8 +98,8 @@ void assignSyllableRoles(std::span<domain::PhonemeToken> tokens) {
   }
   if (previousNucleus) for (auto i = *previousNucleus + 1U; i < tokens.size(); ++i)
     if (tokens[i].role == domain::PhonemeRole::Onset) tokens[i].role = domain::PhonemeRole::Coda;
-  // Initial consonants and explicit nucleus-free fragments stay on this note;
-  // do not invent a previous vowel or silently transfer them to another note.
+  // Initial consonants and nucleus-free fragments stay on this note; do not
+  // invent a previous vowel or silently transfer them to another note.
 }
 
 void assignEnglishRoles(std::vector<domain::PhonemeToken>& tokens, std::span<const std::size_t> breaks) {
@@ -202,54 +114,253 @@ void assignEnglishRoles(std::vector<domain::PhonemeToken>& tokens, std::span<con
   }
 }
 
-const std::unordered_map<std::string, std::string>& digraphs() {
-  static const std::unordered_map<std::string, std::string> values{
-      {"ch", "ch"}, {"sh", "sh"}, {"th", "th"}, {"ph", "f"},
-      {"ng", "ng"}, {"wh", "w"}, {"qu", "k"}, {"ck", "k"},
-      {"zh", "zh"},
-      // Common vowel spellings are spelling estimates, not a pronunciation
-      // dictionary. Ambiguous patterns deliberately choose one reading and
-      // remain visible as EstimatedPronunciation at the call site.
-      {"ai", "ey0"}, {"ay", "ey0"}, {"ee", "iy0"}, {"ea", "iy0"},
-      {"oa", "ow0"}, {"oo", "uw0"}, {"oi", "oy0"}, {"oy", "oy0"},
-      {"ow", "aw0"}, {"ou", "aw0"},
-  };
-  return values;
+// ---- Lyric text (seam-en-normalization-v1) ---------------------------------------
+
+std::optional<char> foldLatinLetter(char32_t value) noexcept {
+  const auto in = [value](char32_t first, char32_t last) { return value >= first && value <= last; };
+  if (in(0xC0U, 0xC5U) || in(0xE0U, 0xE5U)) return 'a';
+  if (value == 0xC7U || value == 0xE7U) return 'c';
+  if (in(0xC8U, 0xCBU) || in(0xE8U, 0xEBU)) return 'e';
+  if (in(0xCCU, 0xCFU) || in(0xECU, 0xEFU)) return 'i';
+  if (value == 0xD1U || value == 0xF1U) return 'n';
+  if (in(0xD2U, 0xD6U) || value == 0xD8U || in(0xF2U, 0xF6U) || value == 0xF8U) return 'o';
+  if (in(0xD9U, 0xDCU) || in(0xF9U, 0xFCU)) return 'u';
+  if (value == 0xDDU || value == 0xFDU || value == 0xFFU) return 'y';
+  return std::nullopt;
 }
 
-std::string lowerAscii(const std::u32string& text) {
-  std::string result;
-  result.reserve(text.size());
-  for (const auto value : text) {
-    if (value > 0x7fU) return {};
-    result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(value))));
+std::optional<char> foldPunctuation(char32_t value) noexcept {
+  switch (value) {
+    case 0x2018U: case 0x2019U: case 0x02BCU: case 0x2032U: return '\'';
+    case 0x201CU: case 0x201DU: case 0x00ABU: case 0x00BBU: return '"';
+    case 0x2010U: case 0x2011U: case 0x2012U: case 0x2013U: case 0x2014U: case 0x2212U: return '-';
+    case 0x2026U: return '.';
+    case 0x00A0U: case 0x2009U: case 0x202FU: case 0x3000U: return ' ';
+    case 0x00A1U: return '!';
+    case 0x00BFU: return '?';
+    default: return std::nullopt;
+  }
+}
+
+struct NormalizedLyric final {
+  std::string text;  // one lowercase ASCII byte per surface code point
+  std::optional<std::size_t> unsupportedIndex;
+};
+
+NormalizedLyric normalizeEnglishLyric(const std::u32string& surface) {
+  NormalizedLyric result;
+  result.text.reserve(surface.size());
+  for (std::size_t index = 0U; index < surface.size(); ++index) {
+    const auto value = surface[index];
+    std::optional<char> mapped;
+    if (value < 0x80U) mapped = static_cast<char>(std::tolower(static_cast<unsigned char>(value)));
+    else if (const auto letter = foldLatinLetter(value)) mapped = letter;
+    else mapped = foldPunctuation(value);
+    if (!mapped) {
+      result.unsupportedIndex = index;
+      return result;
+    }
+    result.text.push_back(*mapped);
   }
   return result;
 }
 
-bool punctuation(std::string_view text) {
-  if (text.empty()) return false;
-  return std::all_of(text.begin(), text.end(), [](char value) {
-    return value == ' ' || value == '\t' || value == '\r' || value == '\n' ||
-        value == ',' || value == '.' || value == '!' || value == '?' ||
-        value == ';' || value == ':' || value == '-' || value == '"' ||
-        value == '\'' || value == '(' || value == ')' || value == '[' ||
-        value == ']' || value == '{' || value == '}';
-  });
+bool englishSeparator(char value) noexcept {
+  switch (value) {
+    case ' ': case '\t': case '\r': case '\n': case '\v': case '\f':
+    case '-': case ',': case '.': case '!': case '?': case ';': case ':': case '"':
+    case '(': case ')': case '[': case ']': case '{': case '}':
+      return true;
+    default:
+      return false;
+  }
 }
 
-bool englishBoundaryPunctuation(char value) {
-  return value == ' ' || value == '\t' || value == '\r' || value == '\n' ||
-      value == ',' || value == '.' || value == '!' || value == '?' ||
-      value == ';' || value == ':' || value == '"' || value == '(' ||
-      value == ')' || value == '[' || value == ']' || value == '{' || value == '}';
+bool englishWordCharacter(char value) noexcept {
+  return (value >= 'a' && value <= 'z') || (value >= '0' && value <= '9') || value == '\'';
 }
 
-std::string_view trimEnglishBoundaryPunctuation(std::string_view text) {
-  while (!text.empty() && englishBoundaryPunctuation(text.front())) text.remove_prefix(1U);
-  while (!text.empty() && englishBoundaryPunctuation(text.back())) text.remove_suffix(1U);
-  return text;
+std::string singleQuoted(std::string_view word) { return "'" + std::string{word} + "'"; }
+
+enum class LyricKind { Words, Continuation, Punctuation, Unsupported };
+
+struct WordOrigin final {
+  std::string text;
+  std::size_t characterIndex{0U};
+  EnglishReadingSource source{EnglishReadingSource::Dictionary};
+  std::string basis;
+};
+
+struct LyricAnalysis final {
+  LyricKind kind{LyricKind::Unsupported};
+  PhoneList phones;
+  std::vector<std::size_t> breaks;  // complete syllable boundaries
+  std::vector<std::size_t> origin;  // word index of each phone
+  std::vector<WordOrigin> words;
+  std::size_t characterIndex{0U};
+  std::string message;
+};
+
+LyricAnalysis unsupported(std::size_t index, std::string message) {
+  LyricAnalysis result;
+  result.characterIndex = index;
+  result.message = std::move(message);
+  return result;
 }
+
+LyricAnalysis analyzeEnglishLyric(const EnglishPronunciationResource& resource,
+    const domain::LyricToken& lyric) {
+  const auto normalized = normalizeEnglishLyric(lyric.surface);
+  if (normalized.unsupportedIndex)
+    return unsupported(*normalized.unsupportedIndex,
+        "English lyric contains a character outside supported Latin letters and punctuation");
+  const auto& text = normalized.text;
+  if (text == "-" || text == "~") {
+    LyricAnalysis result;
+    result.kind = LyricKind::Continuation;
+    return result;
+  }
+  struct Span final { std::size_t start; std::size_t end; };
+  std::vector<Span> spans;
+  std::optional<std::size_t> start;
+  for (std::size_t index = 0U; index <= text.size(); ++index) {
+    const bool end = index == text.size();
+    if (!end && englishWordCharacter(text[index])) {
+      if (!start) start = index;
+      continue;
+    }
+    if (!end && !englishSeparator(text[index]))
+      return unsupported(index, "English lyric contains an unsupported symbol");
+    if (start) {
+      const auto word = std::string_view{text}.substr(*start, index - *start);
+      // Apostrophe-only runs are quotation marks, not words.
+      if (word.find_first_not_of('\'') != std::string_view::npos) {
+        if (spans.size() == kMaximumNoteWords)
+          return unsupported(0U, "English lyric exceeds 32 words on one note");
+        spans.push_back({*start, index});
+      }
+      start.reset();
+    }
+  }
+  LyricAnalysis result;
+  if (spans.empty()) {
+    result.kind = LyricKind::Punctuation;
+    return result;
+  }
+  for (const auto& span : spans) {
+    const auto word = std::string_view{text}.substr(span.start, span.end - span.start);
+    auto reading = resource.resolveWord(word);
+    if (!reading)
+      return unsupported(span.start, "English word " + singleQuoted(word) +
+          " has no dictionary reading or supported spelling estimate; provide an explicit phone hint");
+    const auto& phones = reading->reading.phones;
+    if (phones.size() > kMaximumNotePhones - result.phones.size())
+      return unsupported(span.start, "English lyric exceeds 256 phones on one note");
+    const auto offset = result.phones.size();
+    if (offset > 0U) result.breaks.push_back(offset);
+    for (const auto boundary : completeSyllableBreaks(phones, reading->reading.syllableBreaks))
+      result.breaks.push_back(offset + boundary);
+    result.phones.insert(result.phones.end(), phones.begin(), phones.end());
+    result.origin.insert(result.origin.end(), phones.size(), result.words.size());
+    result.words.push_back({std::string{word}, span.start, reading->source, std::move(reading->basis)});
+  }
+  result.kind = LyricKind::Words;
+  return result;
+}
+
+bool estimatedSource(EnglishReadingSource source) noexcept {
+  return source == EnglishReadingSource::Derived || source == EnglishReadingSource::SpellingEstimate;
+}
+
+std::optional<Warning> estimationWarning(const LyricAnalysis& analysis,
+    std::span<const std::size_t> phones, domain::NoteId noteId) {
+  std::vector<std::size_t> words;
+  for (const auto phone : phones) {
+    const auto word = analysis.origin[phone];
+    if (estimatedSource(analysis.words[word].source) &&
+        std::find(words.begin(), words.end(), word) == words.end()) words.push_back(word);
+  }
+  if (words.empty()) return std::nullopt;
+  std::string message = "Estimated English pronunciation, not a dictionary reading:";
+  for (std::size_t index = 0U; index < std::min(words.size(), kMaximumNamedWords); ++index) {
+    const auto& word = analysis.words[words[index]];
+    message += index == 0U ? " " : "; ";
+    message += singleQuoted(word.text);
+    message += word.source == EnglishReadingSource::Derived
+        ? " derived from " + singleQuoted(word.basis) + " by " + std::string{kEnglishDerivationRule}
+        : " spelled by " + std::string{kEnglishSpellingRule};
+  }
+  if (words.size() > kMaximumNamedWords)
+    message += "; and " + std::to_string(words.size() - kMaximumNamedWords) + " more";
+  message += "; verify or provide an explicit phone hint";
+  return Warning{WarningCode::EstimatedPronunciation, noteId,
+      analysis.words[words.front()].characterIndex, std::move(message)};
+}
+
+// ---- Note distribution (seam-en-note-distribution-v1) -----------------------------
+
+struct NoteSlice final {
+  std::vector<std::size_t> phones;  // indices into the analysis phones
+  std::vector<std::size_t> breaks;  // local syllable boundaries
+};
+
+NoteSlice wholeReading(const LyricAnalysis& analysis) {
+  NoteSlice slice;
+  for (std::size_t index = 0U; index < analysis.phones.size(); ++index) slice.phones.push_back(index);
+  slice.breaks = analysis.breaks;
+  return slice;
+}
+
+std::vector<NoteSlice> distributeReading(const LyricAnalysis& analysis, std::size_t noteCount) {
+  std::vector<NoteSlice> slices(noteCount);
+  if (noteCount == 1U) {
+    slices.front() = wholeReading(analysis);
+    return slices;
+  }
+  struct Unit final { std::size_t start; std::size_t nucleus; std::size_t end; };
+  std::vector<Unit> units;
+  std::optional<std::size_t> pendingStart;
+  const auto size = analysis.phones.size();
+  for (std::size_t segment = 0U; segment <= analysis.breaks.size(); ++segment) {
+    const auto first = segment == 0U ? 0U : analysis.breaks[segment - 1U];
+    const auto last = segment < analysis.breaks.size() ? analysis.breaks[segment] : size;
+    std::optional<std::size_t> nucleus;
+    for (auto index = first; index < last && !nucleus; ++index)
+      if (isVowelSymbol(analysis.phones[index])) nucleus = index;
+    if (!nucleus) {
+      // Vowel-less material joins the following syllable, or the last one.
+      if (!pendingStart) pendingStart = first;
+      continue;
+    }
+    units.push_back({pendingStart.value_or(first), *nucleus, last});
+    pendingStart.reset();
+  }
+  if (units.empty()) {
+    slices.front() = wholeReading(analysis);
+    return slices;  // later notes have no vowel to sustain; the caller diagnoses them
+  }
+  if (pendingStart) units.back().end = size;
+  const auto range = [](NoteSlice& slice, std::size_t first, std::size_t last) {
+    for (auto index = first; index < last; ++index) slice.phones.push_back(index);
+  };
+  if (noteCount <= units.size()) {
+    for (std::size_t note = 0U; note + 1U < noteCount; ++note) range(slices[note], units[note].start, units[note].end);
+    auto& last = slices.back();
+    const auto first = units[noteCount - 1U].start;
+    range(last, first, units.back().end);
+    for (auto unit = noteCount; unit < units.size(); ++unit) last.breaks.push_back(units[unit].start - first);
+    return slices;
+  }
+  for (std::size_t note = 0U; note + 1U < units.size(); ++note) range(slices[note], units[note].start, units[note].end);
+  // The last syllable's vowel carries the melisma; its coda closes the word.
+  const auto& closing = units.back();
+  range(slices[units.size() - 1U], closing.start, closing.nucleus + 1U);
+  for (auto note = units.size(); note < noteCount; ++note) slices[note].phones.push_back(closing.nucleus);
+  range(slices.back(), closing.nucleus + 1U, closing.end);
+  return slices;
+}
+
+// ---- Tokens ------------------------------------------------------------------------
 
 void appendPhone(std::vector<domain::PhonemeToken>& target, domain::NoteId note,
     std::uint16_t& ordinal, std::string symbol) {
@@ -259,11 +370,6 @@ void appendPhone(std::vector<domain::PhonemeToken>& target, domain::NoteId note,
       .key = domain::PhonemeKey{note, ordinal}, .symbol = std::move(symbol),
       .role = role, .voiced = voiced, .timing = {}, .locked = false});
   ++ordinal;
-}
-
-void appendPhones(std::vector<domain::PhonemeToken>& target, domain::NoteId note,
-    std::uint16_t& ordinal, const PhoneList& phones) {
-  for (const auto& phone : phones) appendPhone(target, note, ordinal, phone);
 }
 
 void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
@@ -278,8 +384,14 @@ void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
     }
     const auto valid = value.validate();
     if (!valid) {
-      warnings.push_back({WarningCode::InvalidOverride, noteId, 0U,
-          valid.error().message});
+      warnings.push_back({WarningCode::InvalidOverride, noteId, 0U, valid.error().message});
+      continue;
+    }
+    if (value.symbol && !isEnglishVocabularySymbol(*value.symbol)) {
+      // Retained for correction; applying it would emit a phone no English
+      // resource can declare, which is substitution by another name.
+      warnings.push_back({WarningCode::InvalidOverride, noteId, value.key.ordinal,
+          "English phoneme edit uses a symbol outside " + std::string{kEnglishVocabularyId}});
       continue;
     }
     const auto index = static_cast<std::size_t>(value.key.ordinal);
@@ -314,122 +426,10 @@ void applyOverrides(std::span<const domain::PhonemeOverride* const> overrides,
   }
 }
 
-PhoneList fallbackWord(std::string_view word) {
-  PhoneList result;
-  for (std::size_t index = 0U; index < word.size();) {
-    if (word[index] == '\'') { ++index; continue; }
-    // A final silent e commonly marks a preceding single-letter vowel as
-    // "long" across one consonant. Apply this narrow pattern only; exceptions
-    // stay estimates and can be corrected with a hint.
-    if (word[index] == 'e' && index + 1U == word.size() && !result.empty()) {
-      const auto vowel = !result.empty() && isVowelSymbol(result.back())
-          ? result.size() - 1U
-          : result.size() >= 2U && isVowelSymbol(result[result.size() - 2U])
-              ? result.size() - 2U : result.size();
-      if (vowel < result.size()) {
-        auto& preceding = result[vowel];
-        if (preceding == "ae0") preceding = "ey0";
-        else if (preceding == "eh0") preceding = "iy0";
-        else if (preceding == "ih0") preceding = "ay0";
-        else if (preceding == "aa0") preceding = "ow0";
-        else if (preceding == "uh0") preceding = "uw0";
-        ++index;
-        continue;
-      }
-    }
-    if (index + 1U < word.size()) {
-      const auto found = digraphs().find(std::string{word.substr(index, 2U)});
-      if (found != digraphs().end()) {
-        result.push_back(found->second); index += 2U; continue;
-      }
-    }
-    const char value = word[index++];
-    switch (value) {
-      case 'a': result.push_back("ae0"); break;
-      case 'e': result.push_back("eh0"); break;
-      case 'i': result.push_back("ih0"); break;
-      case 'o': result.push_back("aa0"); break;
-      case 'u': result.push_back("uh0"); break;
-      case 'y': result.push_back("iy0"); break;
-      case 'h': result.push_back("hh"); break;
-      case 'x': result.push_back("k"); result.push_back("s"); break;
-      case 'c':
-        result.emplace_back(index < word.size() &&
-            (word[index] == 'e' || word[index] == 'i' || word[index] == 'y') ? "s" : "k");
-        break;
-      case 'g':
-        result.emplace_back(index < word.size() &&
-            (word[index] == 'e' || word[index] == 'i' || word[index] == 'y') ? "j" : "g");
-        break;
-      case 'b': case 'd': case 'f': case 'j':
-      case 'k': case 'l': case 'm': case 'n': case 'p': case 'r':
-      case 's': case 't': case 'v': case 'w': case 'z':
-        result.emplace_back(1U, value); break;
-      default: return {};
-    }
-  }
-  const auto vowel = std::any_of(result.begin(), result.end(), [](const auto& phone) {
-    return isVowelSymbol(phone);
-  });
-  return vowel ? result : PhoneList{};
-}
-
-core::Result<EnglishReading> parseEnglishReading(std::string_view text) {
-  using Output = EnglishReading;
-  if (text.empty() || text.size() > 4096U)
-    return core::failure<Output>(core::ErrorCode::InvalidArgument,
-        "English phone hint is empty or exceeds 4096 bytes");
-  static const auto inventory = [] {
-    std::unordered_set<std::string> values{
-        "aa", "ae", "ah", "ao", "ax", "axr", "aw", "ay", "eh", "er",
-        "ey", "ih", "iy", "ow", "oy", "uh", "uw", "p", "b", "t",
-        "d", "k", "g", "m", "n", "ng", "f", "v", "th", "dh", "s",
-        "z", "sh", "zh", "hh", "ch", "j", "l", "r", "w", "y", "pau",
-    };
-    std::unordered_set<std::string> expanded = values;
-    for (const auto& value : values) if (isVowelSymbol(value)) {
-      expanded.insert(value + "0"); expanded.insert(value + "1"); expanded.insert(value + "2");
-    }
-    return expanded;
-  }();
-  Output result;
-  for (std::size_t offset = 0U; offset < text.size();) {
-    while (offset < text.size() && std::isspace(static_cast<unsigned char>(text[offset]))) ++offset;
-    if (offset == text.size()) break;
-    const auto start = offset;
-    while (offset < text.size() && !std::isspace(static_cast<unsigned char>(text[offset]))) ++offset;
-    std::string phone{text.substr(start, offset - start)};
-    if (phone == ".") {
-      if (result.phones.empty() || (!result.syllableBreaks.empty() && result.syllableBreaks.back() == result.phones.size()))
-        return core::failure<Output>(core::ErrorCode::InvalidArgument, "English syllable separator requires phones on both sides");
-      result.syllableBreaks.push_back(result.phones.size());
-      continue;
-    }
-    if (!inventory.contains(phone) || result.phones.size() >= 256U)
-      return core::failure<Output>(core::ErrorCode::Unsupported,
-          "English hint requires at most 256 supported space-separated phones and optional spaced dot syllable boundaries");
-    result.phones.push_back(std::move(phone));
-  }
-  if (result.phones.empty()) return core::failure<Output>(core::ErrorCode::InvalidArgument,
-      "English phone hint has no phones");
-  if (!result.syllableBreaks.empty()) {
-    std::size_t first = 0U;
-    for (std::size_t group = 0U; group <= result.syllableBreaks.size(); ++group) {
-      const auto end = group < result.syllableBreaks.size() ? result.syllableBreaks[group] : result.phones.size();
-      const auto segment = std::span<const std::string>{result.phones}.subspan(first, end - first);
-      if (std::count_if(segment.begin(), segment.end(), [](const auto& phone) { return isVowelSymbol(phone); }) != 1 ||
-          std::find(segment.begin(), segment.end(), "pau") != segment.end())
-        return core::failure<Output>(core::ErrorCode::InvalidArgument, "Each explicit English syllable must contain exactly one vowel and no pause");
-      first = end;
-    }
-  }
-  return core::success(std::move(result));
-}
-
 }  // namespace
 
 core::Result<std::vector<std::string>> parseEnglishPhoneHint(std::string_view text) {
-  auto reading = parseEnglishReading(text);
+  auto reading = parseEnglishPhoneReading(text);
   if (!reading) return core::Result<std::vector<std::string>>{reading.error()};
   return std::move(reading.value().phones);
 }
@@ -444,6 +444,7 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
     return core::failure<Result>(core::ErrorCode::Conflict, "English phonemization cancelled");
   };
   if (stop.stop_requested()) return cancelled();
+  if (const auto status = resource_.status(); !status) return core::Result<Result>{status.error()};
   std::unordered_map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
   for (const auto& lyric : region.lyrics) lyrics.emplace(lyric.id, &lyric);
   std::unordered_map<domain::NoteId, std::vector<const domain::PhonemeOverride*>> overrides;
@@ -453,12 +454,28 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
   std::stable_sort(notes.begin(), notes.end(), [](const auto* lhs, const auto* rhs) {
     return lhs->startTick == rhs->startTick ? lhs->id < rhs->id : lhs->startTick < rhs->startTick;
   });
+  // Shared-lyric melisma groups in processing order.
+  std::vector<std::size_t> heads(notes.size()), positions(notes.size()), sizes(notes.size(), 0U);
+  for (std::size_t index = 0U; index < notes.size(); ++index) {
+    const bool continues = index > 0U && domain::continuesSharedLyric(*notes[index - 1U], *notes[index]);
+    heads[index] = continues ? heads[index - 1U] : index;
+    positions[index] = continues ? positions[index - 1U] + 1U : 0U;
+    ++sizes[heads[index]];
+  }
+  struct GroupReading final {
+    std::size_t head{0U};
+    LyricAnalysis analysis;
+    std::vector<NoteSlice> slices;
+  };
+  std::optional<GroupReading> group;
+
   Result result;
   std::optional<std::string> previousVowel;
   bool previousVowelEstimated = false;
   std::optional<time::Tick> previousEnd, occupiedEnd;
   bool previousIsolated = true;
-  for (const auto* note : notes) {
+  for (std::size_t noteIndex = 0U; noteIndex < notes.size(); ++noteIndex) {
+    const auto* note = notes[noteIndex];
     if (stop.stop_requested()) return cancelled();
     const bool overlap = occupiedEnd && note->startTick < *occupiedEnd;
     if (!previousEnd || *previousEnd != note->startTick || overlap || !previousIsolated) {
@@ -469,17 +486,18 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
     previousIsolated = !overlap;
     std::vector<domain::PhonemeToken> noteTokens;
     std::vector<std::size_t> syllableBreaks;
-    bool estimated = false;
+    std::vector<bool> tokenEstimated;
+    bool continuationEstimated = false;
     std::uint16_t ordinal = 0U;
     const auto lyricEntry = lyrics.find(note->lyricTokenId);
     const auto* lyric = lyricEntry == lyrics.end() ? nullptr : lyricEntry->second;
     if (note->phoneticHint) {
-      const auto parsed = parseEnglishReading(*note->phoneticHint);
+      const auto parsed = parseEnglishPhoneReading(*note->phoneticHint);
       if (!parsed) {
         result.warnings.push_back({WarningCode::UnsupportedCharacter, note->id, 0U, parsed.error().message});
         appendPhone(noteTokens, note->id, ordinal, "pau");
       } else {
-        appendPhones(noteTokens, note->id, ordinal, parsed.value().phones);
+        for (const auto& phone : parsed.value().phones) appendPhone(noteTokens, note->id, ordinal, phone);
         syllableBreaks = parsed.value().syllableBreaks;
       }
     } else if (lyric == nullptr || lyric->surface.empty()) {
@@ -491,39 +509,66 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
           "English phonemizer received a lyric in another language"});
       appendPhone(noteTokens, note->id, ordinal, "pau");
     } else {
-      const auto word = lowerAscii(lyric->surface);
-      if (word.empty()) {
-        result.warnings.push_back({WarningCode::UnsupportedCharacter, note->id, 0U,
-            "English lyric contains non-ASCII or unsupported text"});
-        appendPhone(noteTokens, note->id, ordinal, "pau");
-      } else if (word == "-" || word == "~") {
-        if (previousVowel) {
-          appendPhone(noteTokens, note->id, ordinal, *previousVowel);
-          estimated = previousVowelEstimated;
+      const auto groupSize = sizes[heads[noteIndex]];
+      LyricAnalysis single;
+      NoteSlice whole;
+      const LyricAnalysis* analysis = nullptr;
+      const NoteSlice* slice = nullptr;
+      if (groupSize > 1U) {
+        if (!group || group->head != heads[noteIndex]) {
+          group = GroupReading{heads[noteIndex], analyzeEnglishLyric(resource_, *lyric), {}};
+          if (group->analysis.kind == LyricKind::Words)
+            group->slices = distributeReading(group->analysis, groupSize);
         }
-        else {
-          result.warnings.push_back({WarningCode::LeadingLongVowel, note->id, 0U,
-              "English continuation has no preceding vowel"});
-          appendPhone(noteTokens, note->id, ordinal, "pau");
-        }
-      } else if (punctuation(word)) {
-        appendPhone(noteTokens, note->id, ordinal, "pau");
+        analysis = &group->analysis;
+        if (analysis->kind == LyricKind::Words) slice = &group->slices[positions[noteIndex]];
       } else {
-        const auto pronunciationWord = trimEnglishBoundaryPunctuation(word);
-        const auto reading = findCmuReading(pronunciationWord);
-        const auto phones = reading.empty() ? fallbackWord(pronunciationWord) : cmuPhones(reading);
-        if (!reading.empty()) syllableBreaks = dictionarySyllableBreaks(phones);
-        estimated = reading.empty() && !phones.empty();
-        if (phones.empty()) {
-          result.warnings.push_back({WarningCode::UnsupportedCharacter, note->id, 0U,
-              "English word is outside the bundled bootstrap pronunciation lexicon"});
+        single = analyzeEnglishLyric(resource_, *lyric);
+        analysis = &single;
+        if (single.kind == LyricKind::Words) {
+          whole = wholeReading(single);
+          slice = &whole;
+        }
+      }
+      switch (analysis->kind) {
+        case LyricKind::Unsupported:
+          result.warnings.push_back({WarningCode::UnsupportedCharacter, note->id,
+              analysis->characterIndex, analysis->message});
           appendPhone(noteTokens, note->id, ordinal, "pau");
-        } else appendPhones(noteTokens, note->id, ordinal, phones);
+          break;
+        case LyricKind::Punctuation:
+          appendPhone(noteTokens, note->id, ordinal, "pau");
+          break;
+        case LyricKind::Continuation:
+          if (previousVowel) {
+            appendPhone(noteTokens, note->id, ordinal, *previousVowel);
+            continuationEstimated = previousVowelEstimated;
+          } else {
+            result.warnings.push_back({WarningCode::LeadingLongVowel, note->id, 0U,
+                "English continuation has no preceding vowel"});
+            appendPhone(noteTokens, note->id, ordinal, "pau");
+          }
+          break;
+        case LyricKind::Words:
+          if (slice->phones.empty()) {
+            result.warnings.push_back({WarningCode::LeadingLongVowel, note->id, 0U,
+                "Shared English lyric has no vowel to sustain on this note"});
+            appendPhone(noteTokens, note->id, ordinal, "pau");
+            break;
+          }
+          for (const auto phone : slice->phones) {
+            appendPhone(noteTokens, note->id, ordinal, analysis->phones[phone]);
+            tokenEstimated.push_back(estimatedSource(analysis->words[analysis->origin[phone]].source));
+          }
+          syllableBreaks = slice->breaks;
+          if (auto warning = estimationWarning(*analysis, slice->phones, note->id))
+            result.warnings.push_back(std::move(*warning));
+          break;
       }
     }
-    if (estimated) {
+    if (continuationEstimated) {
       result.warnings.push_back({WarningCode::EstimatedPronunciation, note->id, 0U,
-          "Estimated English pronunciation from seam-en-spelling-v1, not a dictionary reading; verify or provide an explicit phone hint"});
+          "Estimated English pronunciation continues from an estimate, not a dictionary reading; verify or provide an explicit phone hint"});
     }
     // Establish the source's syllables before addressed manual edits. Stress
     // remains literal; onset inference is not a full dialect/morphology model.
@@ -532,10 +577,13 @@ core::Result<Result> EnglishPhonemizer::phonemize(const domain::VocalRegion& reg
       applyOverrides(found->second, note->id, noteTokens, result.warnings);
     previousVowel.reset();
     previousVowelEstimated = false;
-    for (auto iterator = noteTokens.rbegin(); iterator != noteTokens.rend(); ++iterator) {
-      if (iterator->role == domain::PhonemeRole::Silence) break;
-      if (isVowelSymbol(iterator->symbol)) {
-        previousVowel = iterator->symbol; previousVowelEstimated = estimated; break;
+    for (auto index = noteTokens.size(); index-- > 0U;) {
+      if (noteTokens[index].role == domain::PhonemeRole::Silence) break;
+      if (isVowelSymbol(noteTokens[index].symbol)) {
+        previousVowel = noteTokens[index].symbol;
+        previousVowelEstimated = continuationEstimated ||
+            (index < tokenEstimated.size() && tokenEstimated[index]);
+        break;
       }
     }
     if (result.tokens.size() > maximumTokens || noteTokens.size() > maximumTokens - result.tokens.size())

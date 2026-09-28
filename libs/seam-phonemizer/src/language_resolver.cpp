@@ -1,6 +1,7 @@
 #include "seam/phonemizer/language_resolver.hpp"
 
 #include "seam/phonemizer/english_phonemizer.hpp"
+#include "seam/phonemizer/english_resource.hpp"
 #include "seam/phonemizer/korean_phonemizer.hpp"
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/core/sha256.hpp"
@@ -247,7 +248,7 @@ core::Result<ResolvedPronunciation> resolveLanguage(
   }
   const auto input = inputHash(region, lyrics, hashTag, resource, stop);
   if (!input) return core::Result<Output>{input.error()};
-  domain::PronunciationIdentity identity{language, std::string{resolverId}, language == domain::Language::English ? "7" : "3",
+  domain::PronunciationIdentity identity{language, std::string{resolverId}, language == domain::Language::English ? "8" : "3",
       std::string{resource}, input.value(), pronunciationSequenceHash(pronunciation.tokens)};
   const auto valid = identity.validate();
   if (!valid) return core::Result<Output>{valid.error()};
@@ -255,13 +256,23 @@ core::Result<ResolvedPronunciation> resolveLanguage(
   return core::success(Output{std::move(identity), std::move(pronunciation)});
 }
 
+// The English resource is selectable so a dictionary or exception change is a
+// new resource identity; the builtin resource hash stays source-derived.
+core::Result<ResolvedPronunciation> resolveEnglishLanguage(
+    const domain::VocalRegion& region, const LyricIndex& lyrics,
+    const EnglishPronunciationResource& resource, std::stop_token stop) {
+  const auto status = resource.status();
+  if (!status) return core::Result<ResolvedPronunciation>{status.error()};
+  return resolveLanguage(region, lyrics, stop, EnglishPhonemizer{resource}, domain::Language::English,
+      "seam-builtin-en", resource.resourceHash(), "seam-en-input-v8");
+}
+
 core::Result<ResolvedPronunciation> resolveRegisteredLanguage(
     const domain::VocalRegion& region, const LyricIndex& lyrics,
     domain::Language language, std::stop_token stop) {
   switch (language) {
     case domain::Language::English:
-      return resolveLanguage(region, lyrics, stop, EnglishPhonemizer{}, language,
-          "seam-builtin-en", SEAM_ENGLISH_RESOURCE_HASH, "seam-en-input-v7");
+      return resolveEnglishLanguage(region, lyrics, EnglishPronunciationResource::builtin(), stop);
     case domain::Language::Korean:
       return resolveLanguage(region, lyrics, stop, KoreanHangulPhonemizer{}, language,
           "seam-builtin-ko", SEAM_KOREAN_RESOURCE_HASH, "seam-ko-input-v3");
@@ -308,6 +319,14 @@ core::Result<ResolvedPronunciation> resolveEnglishPronunciation(
   const auto lyrics = admitPronunciation(region, stop);
   if (!lyrics) return core::Result<ResolvedPronunciation>{lyrics.error()};
   return resolveRegisteredLanguage(region, lyrics.value(), domain::Language::English, stop);
+}
+
+core::Result<ResolvedPronunciation> resolveEnglishPronunciation(
+    const domain::VocalRegion& region, const EnglishPronunciationResource& resource,
+    std::stop_token stop) {
+  const auto lyrics = admitPronunciation(region, stop);
+  if (!lyrics) return core::Result<ResolvedPronunciation>{lyrics.error()};
+  return resolveEnglishLanguage(region, lyrics.value(), resource, stop);
 }
 
 core::Result<ResolvedPronunciation> resolveKoreanPronunciation(
