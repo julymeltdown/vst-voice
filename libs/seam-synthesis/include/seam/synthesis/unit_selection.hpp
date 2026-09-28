@@ -65,10 +65,23 @@ struct UnitSelectionContext final {
   std::stop_token stop{};
 };
 
+// Heuristic score points (lower is preferred), not physical or perceptual units.
+struct UnitLocalScoreComponents final {
+  double pitchPenalty{0.0};
+  double multiPhoneBonus{0.0};
+  double priorityBonus{0.0};
+  double takePenalty{0.0};
+  [[nodiscard]] double total() const noexcept {
+    return pitchPenalty + multiPhoneBonus + priorityBonus + takePenalty;
+  }
+  friend bool operator==(const UnitLocalScoreComponents&, const UnitLocalScoreComponents&) = default;
+};
+
 struct UnitSelectionRationale final {
   bool acoustic{false};
   bool joined{false};
   std::string predecessor{};
+  UnitLocalScoreComponents localScore{};
   double incomingCost{0.0};
   // When joined, incomingCost is the sum of these independently inspectable
   // source-domain terms; they are zero when no acoustic edge was scored.
@@ -104,6 +117,7 @@ struct UnitCandidate final {
   std::int32_t targetMidi{60};
   bool forced{false};
   domain::UnitRendererKind renderer{domain::UnitRendererKind::Inherit};
+  UnitLocalScoreComponents localScore{};
 
   friend bool operator==(const UnitCandidate&, const UnitCandidate&) = default;
 };

@@ -142,8 +142,43 @@ TEST_CASE("contextual selection optimizes outgoing joins rather than the cheapes
   CHECK(explanation.find("level ") != std::string::npos);
   CHECK(explanation.find("short-lag correlation ") != std::string::npos);
   CHECK(explanation.find("spectral envelope ") != std::string::npos);
+  CHECK(explanation.find("score points (lower is better)") != std::string::npos);
+  CHECK(explanation.find("correlation=sum of 4 abs(delta rho)") != std::string::npos);
+  CHECK(explanation.find("incoming=level+correlation+spectral") != std::string::npos);
+  CHECK(explanation.find("level=0.5*min(24 dB,abs(delta level dB))") != std::string::npos);
+  CHECK(explanation.find("spectral=0.25*min(24 dB,mean of 8 abs(delta band dB))") != std::string::npos);
   CHECK(selected.value().totalScore < 3.02);
   CHECK_NEAR(selected.value().entries.back().rationale.cumulativeCost, selected.value().totalScore, 1e-12);
+}
+
+TEST_CASE("selection rationale explains local score components and their formulas") {
+  Fixture f;
+  f.add("full", {"a", "i", "u"}, 0.5F, 0.5F);
+  auto& unit = f.bank.units.back();
+  unit.rootMidi = 72;
+  unit.priority = 4;
+  unit.take = 3;
+
+  const auto selected = f.select(); CHECK(selected);
+  CHECK(selected.value().entries.size() == 1U);
+  const auto& entry = selected.value().entries.front();
+  CHECK_NEAR(entry.rationale.localScore.pitchPenalty, 30.0, 1e-12);
+  CHECK_NEAR(entry.rationale.localScore.multiPhoneBonus, -4.0, 1e-12);
+  CHECK_NEAR(entry.rationale.localScore.priorityBonus, -1.0, 1e-12);
+  CHECK_NEAR(entry.rationale.localScore.takePenalty, 0.002, 1e-12);
+  CHECK_NEAR(entry.rationale.localScore.total(), entry.score, 1e-12);
+  CHECK_NEAR(entry.score, 25.002, 1e-12);
+
+  const auto explanation = synthesis::describeUnitSelection(entry);
+  CHECK(explanation.find("pitch 30.000") != std::string::npos);
+  CHECK(explanation.find("multi-phone -4.000") != std::string::npos);
+  CHECK(explanation.find("priority -1.000") != std::string::npos);
+  CHECK(explanation.find("take 0.002") != std::string::npos);
+  CHECK(explanation.find("pitch=10*abs(root MIDI-target MIDI)") != std::string::npos);
+  CHECK(explanation.find("multi-phone=-2*extra phones") != std::string::npos);
+  CHECK(explanation.find("priority=-0.25*priority") != std::string::npos);
+  CHECK(explanation.find("take=0.001*max(0,take-1)") != std::string::npos);
+  CHECK(explanation.find("route=previous route+local+incoming") != std::string::npos);
 }
 
 TEST_CASE("contextual selection scores gain-normalized spectral envelopes deterministically") {

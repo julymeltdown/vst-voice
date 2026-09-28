@@ -53,15 +53,20 @@ bool phonesMatch(const voicebank::Unit& unit,
   return true;
 }
 
-double candidateScore(const voicebank::Unit& unit, std::int32_t targetMidi) noexcept {
+UnitLocalScoreComponents candidateScore(const voicebank::Unit& unit,
+                                       std::int32_t targetMidi) noexcept {
   const auto pitchDistance = std::abs(static_cast<double>(unit.rootMidi) - targetMidi);
-  const auto kindBonus = unit.phones.size() > 1
+  const auto multiPhoneBonus = unit.phones.size() > 1
       ? -2.0 * static_cast<double>(unit.phones.size() - 1U)
       : 0.0;
   const auto priorityBonus = -0.25 * static_cast<double>(unit.priority);
   const auto takePenalty = 0.001 * std::max(0.0, static_cast<double>(unit.take) - 1.0);
-  return static_cast<double>(pitchDistance) * 10.0 + kindBonus +
-         priorityBonus + takePenalty;
+  return UnitLocalScoreComponents{
+      .pitchPenalty = pitchDistance * 10.0,
+      .multiPhoneBonus = multiPhoneBonus,
+      .priorityBonus = priorityBonus,
+      .takePenalty = takePenalty,
+  };
 }
 
 const domain::UnitSelectionOverride* overrideFor(
@@ -150,16 +155,18 @@ core::Result<std::vector<UnitCandidate>> UnitCandidateGenerator::generate(
       if (!spent) return core::Result<std::vector<UnitCandidate>>{spent.error()};
       spent = budget.spend(SelectionWork::MetadataBytes, unit.id.size(), context.stop);
       if (!spent) return core::Result<std::vector<UnitCandidate>>{spent.error()};
+      const auto localScore = candidateScore(unit, note->midiKey);
       candidates.push_back(UnitCandidate{
           .unitId = unit.id,
           .tokenStart = start,
           .tokenCount = unit.phones.size(),
-          .score = candidateScore(unit, note->midiKey),
+          .score = localScore.total(),
           .targetMidi = note->midiKey,
           .forced = explicitOverride != nullptr,
           .renderer = explicitOverride != nullptr
               ? explicitOverride->renderer
               : domain::UnitRendererKind::Inherit,
+          .localScore = localScore,
       });
     }
   }
@@ -373,6 +380,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
         .alternatives = std::move(alternatives),
         .rationale = {.acoustic = context.requireAcoustic, .joined = state.joined,
             .predecessor = state.previous == none ? std::string{} : candidates[state.previous].unitId,
+            .localScore = candidate.localScore,
             .incomingCost = state.edge, .levelCost = state.levelCost,
             .correlationCost = state.correlationCost,
             .spectralEnvelopeCost = state.spectralEnvelopeCost,

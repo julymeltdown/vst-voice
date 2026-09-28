@@ -180,12 +180,25 @@ std::string describeUnitSelection(const UnitPlanEntry& entry) {
   std::ostringstream out; out.imbue(std::locale::classic()); out << std::fixed << std::setprecision(3);
   out << (entry.rationale.acoustic ? "Source-boundary proxy" : "Metadata-only")
       << " v" << entry.rationale.revision << "; tokens " << entry.tokenStart << "+" << entry.tokenCount
-      << (entry.forced ? "; forced" : "; automatic") << "; local " << entry.score
-      << "; incoming " << entry.rationale.incomingCost
+      << (entry.forced ? "; forced" : "; automatic")
+      << "; score points (lower is better); local " << entry.score
+      << " [pitch " << entry.rationale.localScore.pitchPenalty
+      << ", multi-phone " << entry.rationale.localScore.multiPhoneBonus
+      << ", priority " << entry.rationale.localScore.priorityBonus
+      << ", take " << entry.rationale.localScore.takePenalty << "]"
+      << "; incoming " << entry.rationale.incomingCost << " points"
       << " [level " << entry.rationale.levelCost
       << ", short-lag correlation " << entry.rationale.correlationCost
       << ", spectral envelope " << entry.rationale.spectralEnvelopeCost << "]"
-      << "; cumulative " << entry.rationale.cumulativeCost;
+      << "; route-so-far " << entry.rationale.cumulativeCost
+      << "; local model: pitch=10*abs(root MIDI-target MIDI), multi-phone=-2*extra phones, "
+         "priority=-0.25*priority, take=0.001*max(0,take-1); route=previous route+local+incoming";
+  if (entry.rationale.joined) {
+    out << "; join model: incoming=level+correlation+spectral; "
+           "level=0.5*min(24 dB,abs(delta level dB)), "
+           "correlation=sum of 4 abs(delta rho) at 1/2/4/8 nominal 48 kHz sample lags, "
+           "spectral=0.25*min(24 dB,mean of 8 abs(delta band dB))";
+  }
   if (!entry.rationale.predecessor.empty()) out << "; after " << entry.rationale.predecessor;
   if (!entry.rationale.joined) out << "; no acoustic edge";
   if (!entry.rationale.evidenceHash.empty()) out << "; evidence " << entry.rationale.evidenceHash;
