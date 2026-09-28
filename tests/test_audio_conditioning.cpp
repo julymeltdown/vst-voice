@@ -3,10 +3,12 @@
 
 #include "seam/core/sha256.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/application/project_factory.hpp"
 #include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/synthesis/source_target_map.hpp"
+#include "seam/synthesis/performance_compiler.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/synthesis/classic_psola.hpp"
@@ -1140,6 +1142,169 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
   const auto renderedStart = voicedStart(jumped.value().samples);
   CHECK(sourceStart > 0);
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
+}
+
+TEST_CASE("measured voiced islands retarget around mapped fricatives in every classical renderer") {
+  constexpr std::uint32_t rate = kRate;
+  constexpr auto frames = kFrames;
+  constexpr std::size_t firstVoicedEnd = kVoicedEnd;
+  constexpr std::size_t unvoicedEnd = kUnvoicedEnd;
+  constexpr std::size_t releaseStart = 36000U;
+  std::vector<float> samples(frames, 0.0F);
+  unsigned seed = 987654321U;
+  for (std::size_t frame = 0U; frame < frames; ++frame) {
+    const auto time = static_cast<double>(frame) / static_cast<double>(rate);
+    if (frame >= firstVoicedEnd && frame < unvoicedEnd) {
+      seed = seed * 1103515245U + 12345U;
+      samples[frame] = 0.35F *
+          ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
+    } else {
+      // Both voiced islands share the voicebank's 220 Hz root, so a score
+      // target of MIDI 69 has the same measured transposition contract in both.
+      samples[frame] = 0.5F * static_cast<float>(
+          std::sin(2.0 * std::numbers::pi * 220.0 * time));
+    }
+  }
+  const seam::voicebank::AudioBuffer source{
+      .sampleRate = rate, .channels = 1, .interleaved = samples};
+  auto unit = seam::test::support::makeUnit("vcv-mapped", {"a", "s", "a"},
+      "audio/vcv.wav", 57, seam::voicebank::UnitKind::Vcv, frames);
+  unit.markers = seam::voicebank::UnitMarkers{
+      .audioOffset = 0, .consonantEnd = 2400, .vowelOnset = 2400,
+      .stableStart = 4800, .loopStart = 7200, .loopEnd = 14400,
+      .releaseStart = static_cast<seam::time::SampleFrame>(releaseStart),
+      .audioEnd = static_cast<seam::time::SampleFrame>(frames)};
+  unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
+  const auto marks = seam::voicebank::generatePitchMarks(samples, rate, 0,
+      static_cast<seam::time::SampleFrame>(frames),
+      seam::voicebank::producerPitchMarkConfig());
+  CHECK(marks);
+  unit.pitchMarks = marks.value();
+  CHECK(unit.validate());
+
+  constexpr std::int32_t targetMidi = 69;
+  constexpr double targetHz = 440.0;
+  seam::application::ProjectFactory factory{99173U};
+  auto project = factory.createProject("Mapped voicing regression");
+  const auto trackId = factory.addVocalTrack(project, "Singer");
+  const auto regionId = factory.addRegion(project, trackId, "Voiced islands",
+      seam::time::Tick{0}, seam::time::Tick{1920});
+  auto [lyric, note] = factory.makeNote(seam::time::Tick{0},
+      seam::time::Tick{1920}, static_cast<std::uint8_t>(targetMidi), U"あ",
+      seam::domain::Language::Japanese);
+  auto* region = project.findRegion(regionId);
+  CHECK(region != nullptr);
+  region->lyrics.push_back(std::move(lyric));
+  region->notes.push_back(std::move(note));
+  const auto compiled = seam::synthesis::compileScorePerformance(
+      project, *region, rate);
+  CHECK(compiled);
+  CHECK(compiled.value().notes().size() == 1U);
+  const auto performanceStart = compiled.value().notes().front().startFrame;
+  CHECK(compiled.value().notes().front().endFrame - performanceStart ==
+        static_cast<seam::time::SampleFrame>(frames));
+  const auto performance = std::make_shared<const
+      seam::synthesis::CompiledScorePerformance>(compiled.value());
+
+  seam::synthesis::SourceTargetMap measuredMap{
+      .knots = {{0, performanceStart},
+                {static_cast<seam::time::SampleFrame>(frames),
+                 performanceStart + static_cast<seam::time::SampleFrame>(frames)}},
+      .voicing = {
+          {0, static_cast<seam::time::SampleFrame>(firstVoicedEnd), true},
+          {static_cast<seam::time::SampleFrame>(firstVoicedEnd),
+           static_cast<seam::time::SampleFrame>(unvoicedEnd), false},
+          {static_cast<seam::time::SampleFrame>(unvoicedEnd),
+           static_cast<seam::time::SampleFrame>(frames), true},
+      }};
+  CHECK(measuredMap.validate(static_cast<seam::time::SampleFrame>(frames)));
+
+  const auto measuredPitch = [&](const std::vector<float>& audio,
+                                 std::size_t begin, std::size_t end) {
+    const auto analysis = seam::voicebank::analyzePitch(
+        std::span<const float>(audio).subspan(begin, end - begin), rate);
+    return analysis ? seam::voicebank::medianVoicedPitch(analysis.value()) : 0.0;
+  };
+  const auto correlation = [&](const std::vector<float>& audio,
+                               std::size_t begin, std::size_t end) {
+    double dot = 0.0;
+    double outputEnergy = 0.0;
+    double sourceEnergy = 0.0;
+    for (std::size_t frame = begin; frame < end; ++frame) {
+      dot += static_cast<double>(audio[frame]) * samples[frame];
+      outputEnergy += static_cast<double>(audio[frame]) * audio[frame];
+      sourceEnergy += static_cast<double>(samples[frame]) * samples[frame];
+    }
+    return dot / std::sqrt(outputEnergy * sourceEnergy);
+  };
+  const auto assertVoicedIslandsAndFricative = [&](const std::vector<float>& audio,
+                                                    std::string_view backend) {
+    CHECK(audio.size() == frames);
+    const auto attackPitch = measuredPitch(audio, 512U, 4200U);
+    const auto secondIslandPitch = measuredPitch(audio, unvoicedEnd + 1024U,
+                                                  releaseStart - 1024U);
+    CHECK(attackPitch > 0.0);
+    CHECK(secondIslandPitch > 0.0);
+    const auto attackErrorCents = 1200.0 * std::log2(attackPitch / targetHz);
+    const auto secondIslandErrorCents =
+        1200.0 * std::log2(secondIslandPitch / targetHz);
+    if (std::abs(attackErrorCents) > 35.0 ||
+        std::abs(secondIslandErrorCents) > 35.0) {
+      throw seam::test::Failure(std::string{backend} +
+          " source-map pitch errors in cents (attack=" +
+          std::to_string(attackErrorCents) + ", second island=" +
+          std::to_string(secondIslandErrorCents) + ")");
+    }
+    // The source map's measured unvoiced island must remain source-faithful;
+    // pitch marks on either side must not let an OLA grain cross the fricative.
+    CHECK(correlation(audio, firstVoicedEnd + 1024U, unvoicedEnd - 1024U) > 0.99);
+  };
+
+  seam::synthesis::PsolaRenderParameters psola{};
+  psola.sourcePitchResidual = 0.0F;
+  psola.performance = performance;
+  psola.performanceStartFrame = performanceStart;
+  psola.sourceMap = measuredMap;
+  const auto classic = seam::synthesis::ClassicPsolaRenderer{}.render(
+      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      targetMidi, psola);
+  if (!classic) {
+    throw seam::test::Failure("measured-map PSOLA failed: " + classic.error().message);
+  }
+  CHECK(classic);
+  assertVoicedIslandsAndFricative(classic.value().samples, "PSOLA");
+
+  seam::synthesis::SpectralRenderParameters spectralParameters{
+      .fftSize = 1024U, .hopSize = 256U, .formantFollow = 0.45F,
+      .phaseReset = 0.70F, .additionalGainDb = 0.0F, .pitchCurve = {},
+      .performance = performance,
+      .performanceStartFrame = performanceStart,
+      .sourceMap = measuredMap};
+  const auto spectral = seam::synthesis::SpectralClassicRenderer{}.render(
+      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      targetMidi, spectralParameters);
+  if (!spectral) {
+    throw seam::test::Failure("measured-map Spectral Classic failed: " +
+                              spectral.error().message);
+  }
+  CHECK(spectral);
+  assertVoicedIslandsAndFricative(spectral.value().samples, "Spectral Classic");
+
+  seam::synthesis::StretchRenderParameters stretchParameters{
+      .grainSize = 1024U, .hopSize = 256U, .transientPreservation = 0.75F,
+      .sourceDrift = 0.25F, .additionalGainDb = 0.0F, .pitchCurve = {},
+      .performance = performance,
+      .performanceStartFrame = performanceStart,
+      .sourceMap = measuredMap};
+  const auto stretched = seam::synthesis::StretchUnitRenderer{}.render(
+      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      targetMidi, stretchParameters);
+  if (!stretched) {
+    throw seam::test::Failure("measured-map Stretch failed: " +
+                              stretched.error().message);
+  }
+  CHECK(stretched);
+  assertVoicedIslandsAndFricative(stretched.value().samples, "Stretch");
 }
 
 TEST_CASE("spectral and stretch dispatch disclose unusable voiced-edge pitch marks") {
