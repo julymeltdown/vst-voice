@@ -32,6 +32,30 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-28 — U13 review, retake and take selection bound to the material decided, local only; GitHub CI remains deferred and `.github` was not touched. Review status now comes only from an independent decision recorded together with the material it was made on. The single durable append path enforces the rules (`writeGeneration` calls `review_internal::applyReviewTransition`), so no command, Studio action or generic save can bypass them:
+
+- History is append-only. Review decisions, review material, annotations, receipts, processing revisions, stored assets, and each take's identity, lineage and processing chain are never removed or rewritten; an edit only extends a chain.
+- Marker review or approval is granted only by a `review` event. For each decided take it appends one decision and one `sample-candidate-review-v2` record bound to the take's current audio (raw asset through its processing chain) and review basis. The reviewer must be a registered REVIEWER and not the take's importer, processor, annotator or inspector. An approval also needs the take's current `take-inspection.v2` receipt for its stored bytes, the requirement U12 deferred here; a rejection needs none.
+- Imports, generation, edits, retakes, selection and saves never grant review. `RawTakeInput::review` is removed: an import starts in MarkerReview, or Rejected when Studio QC fails. `recordMetadataRevision` refuses review-material kinds.
+- An approval is lowered to MarkerReview when a generation's change reaches its take and its latest PASS and v2 record no longer describe the current audio and basis. A change reaches a take through its own row, its assignment, a new annotation or receipt, or a producer-wide field such as inventory, source policy or language. An approval without recorded material (legacy history) stands until its own take changes.
+
+New `select-take` fills an assignment with a retained alternative: repository `selectTake`, CLI `select-take WORKSPACE PROJECT_SHA256 TAKE PRODUCER UTC` and a new journal action. Both takes keep their history. The selected take returns to marker review, because a decision is bound to the assignment it filled.
+
+`seam_production_review_tests` (10 cases) covers the grant, history, independence, receipt and lowering rules, including the durable path's own backstop for every kind of per-take change and legacy grandfathering. It also covers AE1: an approved, normalized and annotated take is published and then retaken. The installed bank's file hashes and the old take's audio, chain, annotation, decisions and material are unchanged, and the retake waits for review. The stale candidate cannot be published, and the reviewed retake publishes to a new directory without overwriting the installed one. A duration-changing Trim lowers the approval: markers placed for the longer audio can no longer be put in front of a reviewer, and the new decision binds the remapped markers. Updated `seam_voicebank_production_tests`, `seam_production_ownership_tests` and `seam_export_tests` now approve only through the review API and expect a forged approval save to be refused.
+
+The external validator gets a new `tools/external_beta/_production_review_transition.py`, which applies the same rules to every pair of generations in `validate_draft_workspace`. `review_basis` reproduces the C++ basis byte for byte, using the pretty project encoding and the same filtering. `tests/production/test_review_transition_mirror.py` (10 tests) drives the real CLI:
+
+- Every generation file re-encodes byte for byte, and the basis `review-sample` recorded equals the mirrored basis.
+- A retake followed by `select-take` validates.
+- Five forged next generations are each refused for their own cause: a hand approval, a decision on another basis, the producer as reviewer, a rewritten decision, and a stale approval kept. Two controls that model the C++ output pass.
+
+The legacy style-migration fixture now imports its takes for the inventory's prompts, carries genuine v2 receipts and records its approval through a review; the C++ `migrate-style` still applies it.
+
+Mutation checks: 7 single-rule C++ mutations (grant refusal, stale lowering, append-only reviews, reviewer independence, inspection receipt, and affected takes forced to none or to all) and 9 Python mutations (the same rules plus the basis filter and the encoder's trailing newline) were each caught by a named test. The previously reported one-off `seam_export_tests` failure did not recur in 23 runs, 18 of them with six concurrent copies. Release ctest passed 212/212.
+
+Limits: every decision here is a fixture operator's; no human reviewer, listening packet, rubric or singer qualification exists. Marker and acoustic review remain one Accept decision. A separate marker-only step (MarkerReview to PitchReview) is not implemented, and `ReviewRecord.result` stays PASS/REJECTED. Studio has no alternative-take picker yet; selection is repository and CLI only. The receipt an approval requires describes the raw stored bytes, not derived audio, which the reviewer judges by listening. No Beta gate changed state.
+
+
 2026-09-28 — U12 take QC bound to the imported bytes under per-unit policies, local only; GitHub CI remains deferred and `.github` was not touched. `4aab93b2` replaces the voiced-only dry-take check with `seam.take-inspector` v2 and QC policy version 1, where the canonical coverage key selects the policy:
 
 - Voiced: audible, root within ±80 cents.
