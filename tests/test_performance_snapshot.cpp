@@ -23,6 +23,8 @@
 #include "seam/voice_design/procedural_renderer.hpp"
 
 #include <array>
+#include <cmath>
+#include <numbers>
 
 namespace {
 
@@ -1518,6 +1520,81 @@ TEST_CASE("snapshot freezes the stored acoustic analysis and includes it in cach
   // analyses were part of it.
   CHECK(std::filesystem::remove(path));
   CHECK(fixture.snapshot().contentHash == baseline.contentHash);
+}
+
+TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into classical DSP") {
+  PerformanceSnapshotFixture fixture;
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->notes.front().midiKey = 60U;
+  fixture.bank.units.front().renderer = seam::voicebank::RendererHint::SpectralClassic;
+
+  constexpr std::size_t frames = 24000U;
+  constexpr std::size_t noiseStart = 6000U;
+  constexpr std::size_t noiseEnd = 16800U;
+  std::vector<float> samples(frames, 0.0F);
+  unsigned seed = 991827U;
+  for (std::size_t frame = 0U; frame < samples.size(); ++frame) {
+    if (frame >= noiseStart && frame < noiseEnd) {
+      seed = seed * 1103515245U + 12345U;
+      samples[frame] = 0.25F * ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
+    } else {
+      samples[frame] = 0.25F * static_cast<float>(std::sin(
+          2.0 * std::numbers::pi * 440.0 * static_cast<double>(frame) / 48000.0));
+    }
+  }
+  const auto audioPath = fixture.bankRoot / "audio/a.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(audioPath, 48000U, samples));
+  const auto decoded = seam::voicebank::readWav(audioPath);
+  CHECK(decoded);
+  const auto digest = seam::core::sha256File(audioPath);
+  CHECK(digest);
+  auto& unit = fixture.bank.units.front();
+  const auto generatedMarks = seam::voicebank::generatePitchMarks(
+      decoded.value().monoMix(), 48000U, unit.markers.audioOffset,
+      unit.markers.audioEnd, seam::voicebank::producerPitchMarkConfig());
+  CHECK(generatedMarks);
+  unit.pitchMarks = generatedMarks.value();
+  const auto analysis = seam::voicebank::analyzeUnitAcoustics(
+      decoded.value().monoMix(), 48000U, unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(decoded.value().frameCount()));
+  CHECK(analysis);
+  const auto* measuredNoise = analysis.value().spanAt(
+      static_cast<seam::time::SampleFrame>((noiseStart + noiseEnd) / 2U));
+  CHECK(measuredNoise != nullptr);
+  CHECK(!measuredNoise->voiced);
+  const seam::synthesis::SourcePhonemeAlignment alignment{
+      unit.id, digest.value(), {{"a", 3600}}};
+
+  const auto alignmentPath = fixture.bankRoot / "alignments" /
+      (seam::core::sha256Hex(unit.id) + ".json");
+  std::filesystem::create_directories(alignmentPath.parent_path());
+  const auto alignmentJson = seam::synthesis::encodeSourcePhonemeAlignment(
+      alignment, unit, digest.value(), static_cast<seam::time::SampleFrame>(frames));
+  CHECK(alignmentJson);
+  CHECK(seam::core::durableAtomicWriteText(alignmentPath, alignmentJson.value()));
+
+  const auto analysisPath = fixture.bankRoot /
+      seam::voicebank::acousticAnalysisSidecarPath(unit.id);
+  std::filesystem::create_directories(analysisPath.parent_path());
+  const auto analysisJson = seam::voicebank::encodeAcousticAnalysis(
+      analysis.value(), unit, digest.value(), static_cast<seam::time::SampleFrame>(frames));
+  CHECK(analysisJson);
+  CHECK(seam::core::durableAtomicWriteText(analysisPath, analysisJson.value()));
+  const auto measuredSnapshot = fixture.snapshot();
+  CHECK(measuredSnapshot.sample().frozenAudio.front().acousticAnalysis.has_value());
+  CHECK(measuredSnapshot.sample().frozenAudio.front().sourceAlignment.has_value());
+  const auto measuredRender = seam::rendering::PhraseRenderPipeline{}.render(measuredSnapshot);
+  CHECK(measuredRender);
+
+  // Same alignment and audio, but no acoustic sidecar: the map has unknown
+  // voicing and must not be mistaken for measured voiced input.
+  CHECK(std::filesystem::remove(analysisPath));
+  const auto unknownSnapshot = fixture.snapshot();
+  CHECK(!unknownSnapshot.sample().frozenAudio.front().acousticAnalysis.has_value());
+  const auto unknownRender = seam::rendering::PhraseRenderPipeline{}.render(unknownSnapshot);
+  CHECK(unknownRender);
+  CHECK(measuredRender.value().rendered.audio.samples !=
+        unknownRender.value().rendered.audio.samples);
 }
 
 TEST_CASE("frozen source alignment renders both nuclei and survives sidecar removal") {

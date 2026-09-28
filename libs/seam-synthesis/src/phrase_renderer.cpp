@@ -344,9 +344,21 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         const auto map = compileSourceTargetMap(*frozen->sourceAlignment, *unit, placement,
             frozen->verifiedAudioSha256, static_cast<time::SampleFrame>(frozen->audio->frameCount()));
         if (!map) return core::Result<DispatchedRenderedUnit>{map.error()};
-        if (requested == voicebank::RendererHint::ClassicPsola) dispatchParameters.psola.sourceMap = map.value();
-        else if (requested == voicebank::RendererHint::SpectralClassic) dispatchParameters.spectral.sourceMap = map.value();
-        else dispatchParameters.stretch.sourceMap = map.value();
+        // Alignment answers where authored phones occur; the stored acoustic
+        // record independently answers whether those exact source frames are
+        // voiced. Carry both contracts into the classical renderer so an
+        // unvoiced consonant/breath cannot become periodic merely because its
+        // position was aligned.
+        auto voicedMap = map.value();
+        if (frozen->acousticAnalysis) {
+          const bool applied = applyMeasuredVoicing(
+              voicedMap, *frozen->acousticAnalysis,
+              unit->markers.audioOffset, unit->markers.audioEnd);
+          if (!applied) voicedMap.voicing.clear();
+        }
+        if (requested == voicebank::RendererHint::ClassicPsola) dispatchParameters.psola.sourceMap = voicedMap;
+        else if (requested == voicebank::RendererHint::SpectralClassic) dispatchParameters.spectral.sourceMap = voicedMap;
+        else dispatchParameters.stretch.sourceMap = voicedMap;
         auto output = dispatcher.render(*unit, *frozen->audio, outputSampleRate,
             requestedFrames, placement.targetMidi, dispatchParameters, stopToken);
         if (output) {
