@@ -15,6 +15,7 @@
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/source_assessment.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <barrier>
@@ -457,7 +458,8 @@ TEST_CASE("concurrent sample review decisions cannot both advance one captured p
   CHECK(recovered);
   CHECK(recovered.value().lastDurableGeneration == fixture.project.lastDurableGeneration + 1U);
   CHECK(recovered.value().reviews.size() == 1U);
-  CHECK(recovered.value().metadataRevisions.size() == 1U);
+  CHECK(std::count_if(recovered.value().metadataRevisions.begin(), recovered.value().metadataRevisions.end(),
+      [](const auto& revision) { return revision.kind != production::kTakeInspectionRevisionKind; }) == 1);
 }
 
 TEST_CASE("reviewed sample candidate publishes exact effective audio markers pitch and source identity") {

@@ -283,7 +283,7 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
   const auto retakeInspection = std::find_if(controller.productionProject()->metadataRevisions.begin(),
       controller.productionProject()->metadataRevisions.end(),
       [&](const production::MetadataRevision& revision) {
-        return revision.takeId == retakeTakeId && revision.kind == "dry-take-inspection.v1";
+        return revision.takeId == retakeTakeId && revision.kind == "take-inspection.v2";
       });
   CHECK(retakeInspection != controller.productionProject()->metadataRevisions.end());
   if (retakeInspection != controller.productionProject()->metadataRevisions.end()) {

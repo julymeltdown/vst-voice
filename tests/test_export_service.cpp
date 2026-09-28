@@ -2201,17 +2201,20 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   CHECK(producer.lastDurableGeneration == generation + 1U);
   CHECK(producer.takes.front().state == production::UnitQueueState::MarkerReview); CHECK(producer.reviews.empty());
   CHECK(!producer.unitAssignments.front().markerReviewed); CHECK(!producer.unitAssignments.front().pitchReviewed);
-  CHECK(producer.metadataRevisions.size() == 1U);
-  const auto& lineage = producer.metadataRevisions.front();
+  // The candidate is admitted with a QC receipt for its stored bytes, then its lineage.
+  CHECK(producer.metadataRevisions.size() == 2U);
+  CHECK(producer.metadataRevisions.front().kind == "take-inspection.v2");
+  CHECK(producer.metadataRevisions.front().rawAssetSha256 == imported.value().sha256);
+  const auto lineage = producer.metadataRevisions.back();
   CHECK(lineage.kind == "procedural-lineage"); CHECK(lineage.rawAssetSha256 == imported.value().sha256);
   CHECK(lineage.values.at("recipeHash") == resource.value().identity.contentHash);
   CHECK(core::sha256Hex(lineage.values.at("recipeJson")) == resource.value().identity.contentHash);
   CHECK(lineage.values.at("candidateMetadata") == bakeText.value());
   CHECK(repository.verify(producer));
   const auto recoveredProducer = repository.recover(); CHECK(recoveredProducer);
-  CHECK(recoveredProducer.value().metadataRevisions.front().values == lineage.values);
+  CHECK(recoveredProducer.value().metadataRevisions.back().values == lineage.values);
   auto forgedProducer = producer;
-  forgedProducer.metadataRevisions.front().values["recipeJson"] += " ";
+  forgedProducer.metadataRevisions.back().values["recipeJson"] += " ";
   CHECK(!repository.save(forgedProducer, {.action = "save", .subjectId = producer.projectId,
       .operatorId = "producer", .occurredAtUtc = "2026-09-06T00:00:02Z"}));
   CHECK(repository.recover().value().lastDurableGeneration == producer.lastDurableGeneration);
@@ -2224,13 +2227,13 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   CHECK(producer.takes.front().state == production::UnitQueueState::Retake);
   CHECK(producer.takes.back().state == production::UnitQueueState::MarkerReview);
   CHECK(!producer.unitAssignments.front().markerReviewed); CHECK(!producer.unitAssignments.front().pitchReviewed);
-  CHECK(producer.metadataRevisions.size() == 2U);
+  CHECK(producer.metadataRevisions.size() == 4U);
   const auto savedGeneration = producer.lastDurableGeneration;
   retake.takeId = "take-c"; retake.supersedesTakeId = "take-b";
   CHECK(!repository.importProceduralCandidate(producer, prefix.string() + ".json", prefix.string() + ".wav",
       resource.value(), retake, {.action = "retake", .subjectId = "take-c", .operatorId = "unknown", .occurredAtUtc = "2026-09-06T00:00:04Z"}));
   CHECK(producer.lastDurableGeneration == savedGeneration); CHECK(producer.takes.size() == 2U);
-  CHECK(producer.metadataRevisions.size() == 2U); CHECK(producer.unitAssignments.front().takeId == "take-b");
+  CHECK(producer.metadataRevisions.size() == 4U); CHECK(producer.unitAssignments.front().takeId == "take-b");
   CHECK(repository.recover().value().lastDurableGeneration == savedGeneration);
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
   std::vector<std::string> cliArguments{"import-procedural", (root / "producer").string(), prefix.string() + ".json",

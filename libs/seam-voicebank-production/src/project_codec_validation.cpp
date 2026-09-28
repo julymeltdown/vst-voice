@@ -2,6 +2,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <array>
@@ -316,6 +317,9 @@ core::Result<void> validateProductionProject(
           ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW";
       if (status->asString() != expectedStatus)
         return invalid("Dry-take technical status does not match its measured checks");
+    } else if (revision.kind == kTakeInspectionRevisionKind) {
+      const auto receipt = validateTakeInspectionRevision(project, revision);
+      if (!receipt) return invalid(receipt.error().message);
     }
   }
   for (const auto& takeId : editedCandidates) {

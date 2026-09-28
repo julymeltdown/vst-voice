@@ -180,15 +180,16 @@ TEST_CASE("metadata edits bind actor and preserve their actual postcommit state"
       .kind="MARKERS_AND_PITCH",.values={{"loopStart","1000"}},.operatorId="producer",.performedAtUtc="2026-09-09T10:00:00Z"};
   auto event=EditFixture::event("marker",revision.revisionId);
   event.operatorId="reviewer";
+  const auto admittedRevisions=fixture.project.metadataRevisions.size();
   CHECK(!fixture.repository.recordMetadataRevision(fixture.project,revision,event));
-  CHECK(fixture.project.metadataRevisions.empty());
+  CHECK(fixture.project.metadataRevisions.size()==admittedRevisions);
   event.operatorId="producer";
   const auto pointer=fixture.root / "workspace/project.json";
   std::filesystem::rename(pointer,fixture.root / "saved-pointer.json");
   CHECK(std::filesystem::create_directory(pointer));
   const auto committed=fixture.repository.recordMetadataRevision(fixture.project,revision,event);
   CHECK(committed); CHECK(!committed.value().durabilityConfirmed);
-  CHECK(fixture.project.metadataRevisions.size()==1U);
-  CHECK(fixture.project.metadataRevisions.front().revisionId=="markers-b");
+  CHECK(fixture.project.metadataRevisions.size()==admittedRevisions+1U);
+  CHECK(fixture.project.metadataRevisions.back().revisionId=="markers-b");
   CHECK(production::encodeProductionProject(fixture.repository.recover().value())==production::encodeProductionProject(fixture.project));
 }

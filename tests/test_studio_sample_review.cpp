@@ -35,8 +35,7 @@ struct Fixture final {
   production::VoicebankProductionProject project;
   voicebank::Manifest manifest;
   Controller controller;
-  explicit Fixture(bool secondMissing = false, bool openManifest = true,
-      bool includeDryTakeInspection = false) {
+  explicit Fixture(bool secondMissing = false, bool openManifest = true) {
     const auto license = root / "fixture-license.txt";
     CHECK(core::durableAtomicWriteTextNew(license, "Synthetic native workflow test only; no singer or Beta qualification."));
     const auto licenseHash = core::sha256File(license); CHECK(licenseHash);
@@ -52,30 +51,8 @@ struct Fixture final {
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId, .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));
     const auto samples = test::support::sineWave(48000U, 440.0, 0.12, 0.25F);
     CHECK(voicebank::writeWav(root / "raw.wav", {.sampleRate = 48000U, .channels = 1U, .sampleFormat = voicebank::WavSampleFormat::Pcm24}, samples));
-    std::optional<production::MetadataRevision> technicalInspection;
-    if (includeDryTakeInspection) {
-      const auto audioHash = core::sha256File(root / "raw.wav"); CHECK(audioHash);
-      formats::JsonValue::Object quality{
-          {"formatValid", true}, {"finite", true}, {"clippingFree", true},
-          {"silenceFree", true}, {"dcOffsetFree", true}, {"rootPitchValid", true}};
-      formats::JsonValue::Object evidence{
-          {"schemaVersion", std::int64_t{1}},
-          {"inspectorId", "seam.dry-take-inspector"}, {"inspectorVersion", "1"},
-          {"takeSha256", audioHash.value()}, {"sampleRate", std::int64_t{48000}},
-          {"channels", std::int64_t{1}}, {"bitsPerSample", std::int64_t{24}},
-          {"expectedRootMidi", std::int64_t{69}}, {"analyzedRootMidi", std::int64_t{69}},
-          {"peak", 0.25}, {"rms", 0.176}, {"dcOffset", 0.0},
-          {"status", "SIGNAL_CHECKS_PASSED"}, {"quality", formats::JsonValue{std::move(quality)}}};
-      const auto evidenceJson = formats::stringifyJson(formats::JsonValue{std::move(evidence)}, false);
-      technicalInspection = production::MetadataRevision{
-          .revisionId = "dry-take-inspection-fixture", .takeId = "take-a",
-          .rawAssetSha256 = audioHash.value(), .kind = "dry-take-inspection.v1",
-          .values = {{"evidenceJson", evidenceJson},
-                     {"evidenceSha256", core::sha256Hex(evidenceJson)}},
-          .operatorId = "producer", .performedAtUtc = "2026-09-09T10:01:00Z"};
-    }
-    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69,
-        .technicalInspection = std::move(technicalInspection)},
+    // The repository admits the take with its own QC receipt for the stored bytes.
+    CHECK(repository.importRaw(project, root / "raw.wav", {.takeId = "take-a", .promptId = "a", .coverageKey = "sustain:a", .pitchLayer = 69},
         {.action = "import", .subjectId = "take-a", .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:01:00Z"}));
     auto unit = test::support::makeUnit("a-69", {"a"}, "raw.wav", 69, voicebank::UnitKind::Sustain, samples.size());
     unit.renderer = voicebank::RendererHint::ClassicPsola;
@@ -116,15 +93,16 @@ struct Dialog final : platform::IFileDialog {
 } // namespace
 
 TEST_CASE("Studio human sample review exposes matching automated signal checks without treating them as approval") {
-  Fixture fixture(false, true, true);
+  Fixture fixture(false, true);
   fixture.capture();
   const auto& details = fixture.controller.sampleReviewInspection()->details;
   CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
     return value.find("AUTOMATED SIGNAL CHECKS SIGNAL_CHECKS_PASSED") != std::string::npos &&
+        value.find("VOICED QC POLICY v1") != std::string::npos &&
         value.find("HUMAN REVIEW STILL REQUIRED") != std::string::npos;
   }));
   CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
-    return value.starts_with("DRY-TAKE METRICS PEAK ");
+    return value.starts_with("TAKE METRICS PEAK ");
   }));
   CHECK(std::any_of(details.begin(), details.end(), [](const auto& value) {
     return value == "INSPECTED WAV FORMAT 48000 HZ / 1 CH / 24 BIT";
@@ -135,6 +113,13 @@ TEST_CASE("Studio human sample review exposes matching automated signal checks w
   CHECK(std::count_if(details.begin(), details.end(), [](const auto& value) {
     return value.starts_with("AUTOMATED CHECK ") && value.ends_with(" / PASS");
   }) == 6U);
+  // Breath and pause checks are shown as not applicable, never as passed.
+  CHECK(std::count_if(details.begin(), details.end(), [](const auto& value) {
+    return value.starts_with("AUTOMATED CHECK ") && value.ends_with(" / NOT APPLICABLE TO VOICED");
+  }) == 2U);
+  CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) {
+    return value.starts_with("LEGACY VOICED-ONLY");
+  }));
   CHECK(std::none_of(details.begin(), details.end(), [](const auto& value) {
     return value.find("HUMAN REVIEW PASS") != std::string::npos;
   }));

@@ -6,6 +6,7 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#include "seam/voicebank/take_inspection.hpp"
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -292,6 +293,11 @@ public:
   [[nodiscard]] core::Result<void> inspectTake(
       const std::filesystem::path& path, std::int32_t expectedRootMidi,
       std::stop_token stopToken = {});
+  // Inspects under an explicit QC policy. The production path derives the
+  // request from the selected assignment; the root-note overload is voiced.
+  [[nodiscard]] core::Result<void> inspectTake(
+      const std::filesystem::path& path, const voicebank::TakeInspectionRequest& request,
+      std::stop_token stopToken = {});
   [[nodiscard]] core::Result<void> inspectSelectedProductionTake(
       const std::filesystem::path& path, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<std::filesystem::path> persistTakeInspection(
@@ -336,7 +342,7 @@ public:
   }
   [[nodiscard]] std::filesystem::path recordingDirectory() const;
   [[nodiscard]] const std::string& status() const noexcept { return status_; }
-  [[nodiscard]] const std::optional<voicebank::DryTakeInspection>&
+  [[nodiscard]] const std::optional<voicebank::TakeInspection>&
   takeInspection() const noexcept {
     return takeInspection_;
   }
@@ -449,7 +455,7 @@ private:
   std::size_t selectedIndex_{0U};
   bool dirty_{false};
   std::string status_{"NO BANK"};
-  std::optional<voicebank::DryTakeInspection> takeInspection_;
+  std::optional<voicebank::TakeInspection> takeInspection_;
   std::uint64_t productionSessionEpoch_{0U};
   std::future<core::Result<std::unique_ptr<VoicebankStudioController>>> workspaceOpen_;
   std::uint64_t workspaceOpenEpoch_{0U};

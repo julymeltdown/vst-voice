@@ -4,10 +4,12 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include "seam/platform/file_dialog.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <exception>
 #include <string_view>
@@ -20,6 +22,55 @@ constexpr std::uint64_t kMaximumPreviewBytes = 256ULL * 1024ULL * 1024ULL;
 
 core::Result<void> cancelled(std::stop_token stop) {
   return stop.stop_requested() ? core::failure(core::ErrorCode::Conflict, "Sample review work cancelled") : core::success();
+}
+
+std::string upperCase(std::string_view value) {
+  std::string result;
+  result.reserve(value.size());
+  for (const auto item : value)
+    result.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(item))));
+  return result;
+}
+
+// The reviewer sees which QC policy judged the take and every outcome,
+// including the checks that do not apply to it. None of it is an approval.
+void appendTakeInspectionDetails(std::vector<std::string>& result,
+                                 const voicebank::TakeInspection& inspection) {
+  using voicebank::TakeCheck;
+  using voicebank::TakeCheckOutcome;
+  const auto& measured = inspection.measurements;
+  const auto policy = upperCase(voicebank::takeQcPolicyName(inspection.policy));
+  result.push_back("AUTOMATED SIGNAL CHECKS " +
+      std::string{inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"} + " / " +
+      std::string{voicebank::kTakeInspectorId} + " v" + std::string{voicebank::kTakeInspectorVersion} + " / " +
+      policy + " QC POLICY v" + std::to_string(voicebank::kTakeQcPolicyVersion) +
+      " / HUMAN REVIEW STILL REQUIRED");
+  result.push_back("INSPECTED WAV FORMAT " + std::to_string(measured.sampleRate) + " HZ / " +
+      std::to_string(measured.channels) + " CH / " + std::to_string(measured.bitsPerSample) + " BIT");
+  if (measured.expectedRootMidi) {
+    result.push_back("ROOT-PITCH CHECK EXPECTED MIDI " + std::to_string(*measured.expectedRootMidi) +
+        " / ANALYZED " + (measured.analyzedRootMidi ? std::to_string(*measured.analyzedRootMidi)
+                                                    : std::string{"UNAVAILABLE"}));
+  }
+  if (inspection.policy == voicebank::TakeQcPolicy::Breath) {
+    result.push_back("VOICED SHARE " + (measured.voicedShare ? std::to_string(*measured.voicedShare)
+                                                              : std::string{"UNAVAILABLE"}) +
+        " / LIMIT " + std::to_string(voicebank::kTakeMaximumVoicedShare));
+  }
+  result.push_back("TAKE METRICS PEAK " + std::to_string(measured.peak) + " / RMS " +
+      std::to_string(measured.rms) + " / DC " + std::to_string(measured.dcOffset));
+  static constexpr std::array<std::pair<TakeCheck, std::string_view>, voicebank::kTakeCheckCount> labels{{
+      {TakeCheck::Format, "WAV FORMAT"}, {TakeCheck::Finite, "FINITE SAMPLES"},
+      {TakeCheck::Clipping, "CLIPPING"}, {TakeCheck::DcOffset, "DC OFFSET"},
+      {TakeCheck::SignalPresent, "SIGNAL PRESENT"}, {TakeCheck::Quiet, "QUIET"},
+      {TakeCheck::Unvoiced, "MOSTLY UNVOICED"}, {TakeCheck::RootPitch, "ROOT PITCH"}}};
+  for (const auto& [check, label] : labels) {
+    const auto outcome = inspection.outcome(check);
+    result.push_back("AUTOMATED CHECK " + std::string{label} + " / " +
+        (outcome == TakeCheckOutcome::Pass ? std::string{"PASS"}
+         : outcome == TakeCheckOutcome::Fail ? std::string{"NEEDS REVIEW"}
+                                             : "NOT APPLICABLE TO " + policy));
+  }
 }
 
 std::vector<std::string> inspectionDetails(const VoicebankStudioController::SampleReviewInspection& inspection,
@@ -39,6 +90,12 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
       "REVIEW PACKET SHA256 " + packet.packetSha256,
       "ROOT MIDI " + std::to_string(unit.rootMidi) + " / RENDERER " + std::string(voicebank::rendererHintName(unit.renderer)),
       "GAIN DB " + std::to_string(unit.gainDb) + " / PRIORITY " + std::to_string(unit.priority)};
+  const auto currentInspection = production::currentTakeInspection(project, binding.takeId);
+  if (currentInspection && currentInspection->inspection.sourceSha256 == binding.audioSha256) {
+    appendTakeInspectionDetails(result, currentInspection->inspection);
+  } else if (currentInspection) {
+    result.push_back("AUTOMATED SIGNAL CHECKS COVER THE RAW TAKE, NOT THIS PROCESSED AUDIO / HUMAN REVIEW STILL REQUIRED");
+  }
   const auto dryTakeInspection = std::find_if(
       project.metadataRevisions.rbegin(), project.metadataRevisions.rend(),
       [&](const auto& revision) {
@@ -47,7 +104,8 @@ std::vector<std::string> inspectionDetails(const VoicebankStudioController::Samp
             revision.rawAssetSha256 == binding.audioSha256 &&
             revision.values.contains("evidenceJson");
       });
-  if (dryTakeInspection != project.metadataRevisions.rend()) {
+  if (!currentInspection && dryTakeInspection != project.metadataRevisions.rend()) {
+    result.push_back("LEGACY VOICED-ONLY SIGNAL CHECKS / NOT THE CURRENT QC POLICY");
     const auto evidence = formats::parseJson(dryTakeInspection->values.at("evidenceJson"),
         {.maximumInputBytes = 65536U, .maximumDepth = 6U, .maximumNodes = 128U,
          .maximumStringBytes = 4096U, .maximumCollectionEntries = 32U});

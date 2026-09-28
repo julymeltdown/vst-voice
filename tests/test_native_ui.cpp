@@ -5181,7 +5181,7 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
   CHECK(controller.productionProject()->takes.size() == 1U);
   CHECK(controller.productionProject()->reviews.empty());
   CHECK(controller.productionProject()->metadataRevisions.size() == 1U);
-  CHECK(controller.productionProject()->metadataRevisions.front().kind == "dry-take-inspection.v1");
+  CHECK(controller.productionProject()->metadataRevisions.front().kind == "take-inspection.v2");
   const auto& technicalInspection = controller.productionProject()->metadataRevisions.front();
   CHECK(technicalInspection.rawAssetSha256 ==
         controller.productionProject()->takes.front().rawAssetSha256);
@@ -5210,6 +5210,9 @@ TEST_CASE("graphical voicebank studio loads audio and commits validated marker e
     auto& forgedValues = forgedInspection.metadataRevisions.front().values;
     forgedValues["evidenceJson"] = seam::formats::stringifyJson(forgedEvidence.value(), false);
     forgedValues["evidenceSha256"] = seam::core::sha256Hex(forgedValues.at("evidenceJson"));
+    // Recompute the content identity too, so only the forged status is wrong.
+    forgedInspection.metadataRevisions.front().revisionId =
+        "take-inspection-" + forgedValues.at("evidenceSha256").substr(0U, 32U);
     CHECK(!seam::voicebank_production::validateProductionProject(forgedInspection));
   }
   CHECK(controller.productionQueues().markerReview == 1U);

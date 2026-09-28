@@ -445,6 +445,7 @@ add_library(seam_voicebank
   libs/seam-voicebank/src/acoustic_analysis.cpp
   libs/seam-voicebank/src/style_resolution.cpp
   libs/seam-voicebank/src/coverage.cpp
+  libs/seam-voicebank/src/take_inspection.cpp
 )
 target_include_directories(seam_voicebank PUBLIC libs/seam-voicebank/include)
 target_link_libraries(seam_voicebank PUBLIC seam_formats seam_domain seam_core)
@@ -472,6 +473,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/source_assessment.cpp
   libs/seam-voicebank-production/src/source_registration.cpp
   libs/seam-voicebank-production/src/style_migration.cpp
+  libs/seam-voicebank-production/src/take_inspection_receipt.cpp
 )
 target_include_directories(seam_voicebank_production PUBLIC
   libs/seam-voicebank-production/include)
@@ -2750,6 +2752,12 @@ if(SEAM_BUILD_TESTS)
   target_link_libraries(seam_pitch_analysis_tests PRIVATE seam_voicebank seam_core)
   seam_apply_compiler_options(seam_pitch_analysis_tests)
   add_test(NAME seam_pitch_analysis_tests COMMAND seam_pitch_analysis_tests)
+  add_executable(seam_take_inspection_tests tests/test_main.cpp tests/test_take_inspection.cpp)
+  target_include_directories(seam_take_inspection_tests PRIVATE tests)
+  target_link_libraries(seam_take_inspection_tests PRIVATE
+    seam_voicebank_production seam_voicebank seam_formats seam_core)
+  seam_apply_compiler_options(seam_take_inspection_tests)
+  add_test(NAME seam_take_inspection_tests COMMAND seam_take_inspection_tests)
   target_include_directories(seam_voicebank_production_tests PRIVATE tests)
   target_link_libraries(seam_voicebank_production_tests PRIVATE
     seam_voicebank_production seam_rendering seam_application seam_voicebank seam_formats seam_core)

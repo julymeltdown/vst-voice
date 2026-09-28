@@ -10,6 +10,7 @@
 #include "seam/formats/project_json.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include <limits>
 #include <chrono>
 #include <exception>
@@ -25,50 +26,6 @@ std::string productionCommitStatus(std::string successStatus, const voicebank_pr
   if (receipt.durabilityConfirmed) return successStatus;
   return "COMMIT DURABILITY UNCONFIRMED / RECOVER / DO NOT REPEAT / GENERATION " +
       std::to_string(receipt.committedGeneration) + " / " + receipt.committedProjectSha256 + " / " + receipt.diagnostic;
-}
-
-voicebank_production::MetadataRevision dryTakeInspectionRevision(
-    const voicebank::DryTakeInspection& inspection, std::string_view takeId,
-    std::string_view operatorId, std::string_view occurredAtUtc) {
-  using Json = formats::JsonValue;
-  Json::Object quality{
-      {"formatValid", Json{inspection.formatValid}},
-      {"finite", Json{inspection.finite}},
-      {"clippingFree", Json{inspection.clippingFree}},
-      {"silenceFree", Json{inspection.silenceFree}},
-      {"dcOffsetFree", Json{inspection.dcOffsetFree}},
-      {"rootPitchValid", Json{inspection.rootPitchValid}},
-  };
-  Json::Object evidence{
-      {"schemaVersion", Json{std::int64_t{1}}},
-      {"inspectorId", Json{"seam.dry-take-inspector"}},
-      {"inspectorVersion", Json{"1"}},
-      {"takeSha256", Json{inspection.sourceSha256}},
-      {"sampleRate", Json{static_cast<std::int64_t>(inspection.sampleRate)}},
-      {"channels", Json{static_cast<std::int64_t>(inspection.channels)}},
-      {"bitsPerSample", Json{static_cast<std::int64_t>(inspection.bitsPerSample)}},
-      {"expectedRootMidi", Json{static_cast<std::int64_t>(inspection.expectedRootMidi)}},
-      {"analyzedRootMidi", inspection.analyzedRootMidi
-          ? Json{static_cast<std::int64_t>(*inspection.analyzedRootMidi)} : Json{}},
-      {"peak", Json{inspection.peak}},
-      {"rms", Json{inspection.rms}},
-      {"dcOffset", Json{inspection.dcOffset}},
-      {"status", Json{inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"}},
-      {"quality", Json{std::move(quality)}},
-  };
-  auto evidenceJson = formats::stringifyJson(Json{std::move(evidence)}, false);
-  const auto evidenceSha256 = core::sha256Hex(evidenceJson);
-  const auto binding = core::sha256Hex(std::string{takeId} + inspection.sourceSha256);
-  return voicebank_production::MetadataRevision{
-      .revisionId = "dry-take-inspection-" + binding.substr(0U, 24U),
-      .takeId = std::string{takeId},
-      .rawAssetSha256 = inspection.sourceSha256,
-      .kind = "dry-take-inspection.v1",
-      .values = {{"evidenceJson", std::move(evidenceJson)},
-                 {"evidenceSha256", evidenceSha256}},
-      .operatorId = std::string{operatorId},
-      .performedAtUtc = std::string{occurredAtUtc},
-  };
 }
 }
 
@@ -1047,7 +1004,12 @@ core::Result<void> VoicebankStudioController::inspectSelectedProductionTake(
     return core::failure(core::ErrorCode::InvalidState,
                          "No production inventory unit is selected");
   }
-  return inspectTake(path, assignment->pitchLayer, stopToken);
+  // The selected unit decides the QC policy: a breath, pause or closure slot is
+  // not held to a voiced root-pitch check, and a voiced slot is.
+  const auto request = voicebank_production::takeInspectionRequestFor(
+      assignment->coverageKey, assignment->pitchLayer);
+  if (!request) return core::Result<void>{request.error()};
+  return inspectTake(path, request.value(), stopToken);
 }
 
 core::Result<void> VoicebankStudioController::validateProductionImportContext(
@@ -1109,13 +1071,23 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
     occurredAtUtc = voicebank_studio_internal::currentUtcTimestamp();
   }
   const auto assignment = *selectedAssignment;
+  const auto request = voicebank_production::takeInspectionRequestFor(
+      assignment.coverageKey, assignment.pitchLayer);
+  if (!request) return core::Result<void>{request.error()};
+  if (takeInspection_->policy != request.value().policy ||
+      takeInspection_->measurements.expectedRootMidi != request.value().expectedRootMidi) {
+    return core::failure(core::ErrorCode::InvalidState,
+        "The take was inspected for a different unit. Inspect it for the selected unit before import.");
+  }
   const auto retake = !assignment.takeId.empty();
   const auto takeId = retake
       ? assignment.plannedTakeId + "-retake-" +
             std::to_string(productionProject_->takes.size() + 1U)
       : assignment.plannedTakeId;
-  const auto inspectionEvidence = dryTakeInspectionRevision(
-      *takeInspection_, takeId, productionOperatorId_, occurredAtUtc);
+  const auto inspectionEvidence = voicebank_production::makeTakeInspectionRevision(
+      {{takeId, assignment.promptId, assignment.coverageKey, assignment.pitchLayer},
+       *takeInspection_},
+      productionOperatorId_, occurredAtUtc);
   auto imported = productionRepository_->importRaw(
       *productionProject_, takePath,
       {.takeId = takeId,

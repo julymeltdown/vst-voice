@@ -6,6 +6,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <iomanip>
 #include <sstream>
@@ -164,9 +165,14 @@ TEST_CASE("recoverably committed procedural import retains exact lineage and ori
   const auto result = fixture.repository.importProceduralCandidate(fixture.project, metadata, fixture.audio, fixture.recipe,
       fixture.take(), fixture.event("import-procedural"), {}, &expectation);
   CHECK(result); fixture.assertCommitted(result.value(), 1U, false);
-  CHECK(fixture.project.metadataRevisions.size() == 1U);
-  CHECK(fixture.project.metadataRevisions.front().kind == "procedural-lineage");
-  CHECK(fixture.project.metadataRevisions.front().values.at("approval") == "unapproved");
+  // A generated take is admitted like a recorded one: with a receipt for the
+  // stored bytes under its unit's QC policy, then its procedural lineage.
+  CHECK(fixture.project.metadataRevisions.size() == 2U);
+  CHECK(fixture.project.metadataRevisions.front().kind == production::kTakeInspectionRevisionKind);
+  CHECK(fixture.project.metadataRevisions.front().rawAssetSha256 == result.value().sha256);
+  CHECK(production::validateTakeInspectionRevision(fixture.project, fixture.project.metadataRevisions.front()));
+  CHECK(fixture.project.metadataRevisions.back().kind == "procedural-lineage");
+  CHECK(fixture.project.metadataRevisions.back().values.at("approval") == "unapproved");
   const auto recognized = fixture.repository.findCollectedGeneration(expectation); CHECK(recognized); CHECK(recognized.value());
   CHECK(recognized.value()->audioSha256 == result.value().sha256);
   CHECK(recognized.value()->generation == result.value().committedGeneration);

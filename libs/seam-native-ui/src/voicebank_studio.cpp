@@ -6,6 +6,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/text/unicode.hpp"
 #include "seam/voicebank/asset_path.hpp"
@@ -333,8 +334,15 @@ voicebank::Unit* VoicebankStudioController::selectedUnit() noexcept {
 
 core::Result<void> VoicebankStudioController::inspectTake(
     const std::filesystem::path& path, std::int32_t expectedRootMidi, std::stop_token stopToken) {
+  return inspectTake(path, voicebank::TakeInspectionRequest{
+      .policy = voicebank::TakeQcPolicy::Voiced, .expectedRootMidi = expectedRootMidi}, stopToken);
+}
+
+core::Result<void> VoicebankStudioController::inspectTake(
+    const std::filesystem::path& path, const voicebank::TakeInspectionRequest& request,
+    std::stop_token stopToken) {
   if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Candidate import is busy");
-  auto inspected = voicebank::inspectDryTake(path, expectedRootMidi, stopToken);
+  auto inspected = voicebank::inspectTake(path, request, stopToken);
   if (!inspected) {
     takeInspection_.reset();
     status_ = "TAKE ERROR";
@@ -380,42 +388,13 @@ VoicebankStudioController::persistTakeInspection(
         core::ErrorCode::Conflict,
         "Take inspection destination already exists", sidecar.string());
   }
-  formats::JsonValue::Object quality{
-      {"formatValid", formats::JsonValue{inspection.formatValid}},
-      {"finite", formats::JsonValue{inspection.finite}},
-      {"clippingFree", formats::JsonValue{inspection.clippingFree}},
-      {"silenceFree", formats::JsonValue{inspection.silenceFree}},
-      {"dcOffsetFree", formats::JsonValue{inspection.dcOffsetFree}},
-      {"rootPitchValid", formats::JsonValue{inspection.rootPitchValid}},
-      {"peak", formats::JsonValue{static_cast<double>(inspection.peak)}},
-      {"rms", formats::JsonValue{inspection.rms}},
-      {"dcOffset", formats::JsonValue{inspection.dcOffset}},
-  };
-  if (inspection.analyzedRootMidi.has_value()) {
-    quality.emplace("analyzedRootMidi", formats::JsonValue{
-        static_cast<std::int64_t>(*inspection.analyzedRootMidi)});
-  }
-  formats::JsonValue::Object record{
-      {"schemaVersion", formats::JsonValue{std::int64_t{1}}},
-      {"inspectorId", formats::JsonValue{"seam.dry-take-inspector"}},
-      {"inspectorVersion", formats::JsonValue{"1"}},
-      {"takeFile", formats::JsonValue{takePath.filename().generic_string()}},
-      {"takeSha256", formats::JsonValue{inspection.sourceSha256}},
-      {"status", formats::JsonValue{
-          inspection.accepted() ? "SIGNAL_CHECKS_PASSED" : "SIGNAL_CHECKS_NEED_REVIEW"}},
-      {"sampleRate", formats::JsonValue{
-          static_cast<std::int64_t>(inspection.sampleRate)}},
-      {"channels", formats::JsonValue{
-          static_cast<std::int64_t>(inspection.channels)}},
-      {"bitsPerSample", formats::JsonValue{
-          static_cast<std::int64_t>(inspection.bitsPerSample)}},
-      {"expectedRootMidi", formats::JsonValue{
-          static_cast<std::int64_t>(inspection.expectedRootMidi)}},
-      {"quality", formats::JsonValue{std::move(quality)}},
-  };
+  // Same inspector, policy, measurements and outcomes a production receipt
+  // records, named by file instead of by assignment. Evidence, not approval.
+  auto record = voicebank_production::takeInspectionJson(inspection);
+  record.asObject().emplace("schemaVersion", formats::JsonValue{std::int64_t{2}});
+  record.asObject().emplace("takeFile", formats::JsonValue{takePath.filename().generic_string()});
   const auto written = core::durableAtomicWriteText(
-      sidecar, formats::stringifyJson(
-                   formats::JsonValue{std::move(record)}, true));
+      sidecar, formats::stringifyJson(record, true));
   if (!written) return core::Result<std::filesystem::path>{written.error()};
   return sidecar;
 }

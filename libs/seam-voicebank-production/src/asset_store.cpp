@@ -4,7 +4,14 @@
 
 #include <array>
 #include <algorithm>
+#include <atomic>
+#include <random>
 #include <system_error>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace seam::voicebank_production {
 namespace {
@@ -46,6 +53,53 @@ core::Result<void> validateAssetLocation(
   return core::success();
 }
 
+// Flush a file or directory so a later commit never names bytes that are
+// still only in the page cache. Best effort outside POSIX.
+core::Result<void> syncPath(const std::filesystem::path& path) {
+#ifndef _WIN32
+  const auto descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (descriptor < 0) {
+    return core::failure(core::ErrorCode::IoError, "Unable to open imported asset for sync",
+                         path.string());
+  }
+  const auto synced = ::fsync(descriptor);
+  ::close(descriptor);
+  if (synced != 0) {
+    return core::failure(core::ErrorCode::IoError, "Unable to sync imported asset",
+                         path.string());
+  }
+#else
+  (void)path;
+#endif
+  return core::success();
+}
+
+std::filesystem::path privateCopyPath(const std::filesystem::path& target) {
+  static std::atomic<std::uint64_t> counter{0U};
+  std::random_device entropy;
+  const auto nonce = (static_cast<std::uint64_t>(entropy()) << 32U) ^ entropy();
+  return target.parent_path() /
+         ("." + target.filename().string() + "." + std::to_string(counter.fetch_add(1U)) +
+          "-" + std::to_string(nonce) + ".partial");
+}
+
+// Checks the bytes on disk, not the bytes the copy meant to write.
+core::Result<void> verifyCopy(const std::filesystem::path& path, const AssetRecord& asset) {
+  std::error_code error;
+  const auto size = std::filesystem::file_size(path, error);
+  if (error || size != asset.byteSize) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Imported asset copy differs from its source size", path.string());
+  }
+  auto digest = core::sha256File(path);
+  if (!digest) return core::Result<void>{digest.error()};
+  if (digest.value() != asset.sha256) {
+    return core::failure(core::ErrorCode::Conflict,
+                         "Imported asset changed while it was being copied", path.string());
+  }
+  return core::success();
+}
+
 }
 
 core::Result<AssetRecord> ImmutableAssetStore::importFile(
@@ -81,19 +135,44 @@ core::Result<AssetRecord> ImmutableAssetStore::importFile(
   };
   auto location = validateAssetLocation(root_, record);
   if (!location) return core::Result<AssetRecord>{location.error()};
-  if (!std::filesystem::exists(target, error)) {
-    if (error) {
-      return core::failure<AssetRecord>(
-          core::ErrorCode::IoError, "Unable to inspect immutable asset target",
-          error.message());
-    }
+  const bool present = std::filesystem::exists(target, error);
+  if (error) {
+    return core::failure<AssetRecord>(
+        core::ErrorCode::IoError, "Unable to inspect immutable asset target",
+        error.message());
+  }
+  // An existing file at this address is reused only when it verifies. A copy
+  // interrupted by an earlier crash, or bytes that no longer hash to their
+  // name, are replaced by a verified copy instead of blocking the digest.
+  if (!present || !verify(record)) {
+    const auto partial = privateCopyPath(target);
+    const auto discard = [&partial] {
+      std::error_code ignored;
+      std::filesystem::remove(partial, ignored);
+    };
     std::filesystem::copy_file(
-        source, target, std::filesystem::copy_options::none, error);
+        source, partial, std::filesystem::copy_options::none, error);
     if (error) {
+      discard();
       return core::failure<AssetRecord>(
           core::ErrorCode::IoError, "Unable to import immutable asset",
           error.message());
     }
+    auto copied = verifyCopy(partial, record);
+    if (copied) copied = syncPath(partial);
+    if (!copied) {
+      discard();
+      return core::Result<AssetRecord>{copied.error()};
+    }
+    std::filesystem::rename(partial, target, error);
+    if (error) {
+      discard();
+      return core::failure<AssetRecord>(
+          core::ErrorCode::IoError, "Unable to publish immutable asset",
+          error.message());
+    }
+    const auto directory = syncPath(target.parent_path());
+    if (!directory) return core::Result<AssetRecord>{directory.error()};
   }
   auto verified = verify(record);
   if (!verified) return core::Result<AssetRecord>{verified.error()};

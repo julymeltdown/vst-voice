@@ -5,6 +5,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
+#include "seam/voicebank_production/take_inspection_receipt.hpp"
 
 #include <algorithm>
 #include <set>
@@ -353,33 +354,47 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
         core::ErrorCode::InvalidArgument,
         "Raw take review is invalid or duplicated");
   }
-  if (technicalInspection) {
-    if (lineage || technicalInspection->kind != "dry-take-inspection.v1" ||
-        technicalInspection->revisionId.empty() || technicalInspection->takeId != take.takeId ||
-        technicalInspection->operatorId != event.operatorId ||
-        technicalInspection->performedAtUtc != event.occurredAtUtc ||
-        technicalInspection->values.size() != 2U ||
-        !technicalInspection->values.contains("evidenceJson") ||
-        !technicalInspection->values.contains("evidenceSha256") ||
-        technicalInspection->rawAssetSha256.size() != 64U ||
-        core::sha256Hex(technicalInspection->values.at("evidenceJson")) !=
-            technicalInspection->values.at("evidenceSha256")) {
-      return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument,
-          "Technical take inspection must be a hash-bound raw-take evidence record");
-    }
-  }
   if (lineage && std::any_of(project.metadataRevisions.begin(), project.metadataRevisions.end(),
       [&](const auto& value) { return value.revisionId == lineage->revisionId; })) return core::failure<AssetRecord>(
           core::ErrorCode::Conflict, "Procedural lineage revision already exists");
+  // Every admitted take carries a receipt for the bytes actually stored, made
+  // under the QC policy of the assignment it fills. The source is inspected
+  // before it is copied, and the content-addressed copy must have the same
+  // digest and size, so the receipt describes the stored material.
+  const auto inspectionRequest = takeInspectionRequestFor(take.coverageKey, take.pitchLayer);
+  if (!inspectionRequest) return core::Result<AssetRecord>{inspectionRequest.error()};
+  auto inspected = voicebank::inspectTake(source, inspectionRequest.value(), stopToken);
+  if (!inspected) return core::Result<AssetRecord>{inspected.error()};
+  const auto inspectedSha256 = inspected.value().sourceSha256;
+  const auto inspectedBytes = inspected.value().byteSize;
+  const auto receipt = makeTakeInspectionRevision(
+      TakeInspectionEvidence{{take.takeId, take.promptId, take.coverageKey, take.pitchLayer},
+                             std::move(inspected.value())},
+      event.operatorId, event.occurredAtUtc);
+  if (technicalInspection) {
+    // A receipt shown before import is an expectation. It must be the receipt
+    // for these bytes, this assignment and the current policy, or the take has
+    // to be inspected again. Voiced-only v1 receipts never admit a take.
+    if (technicalInspection->kind != kTakeInspectionRevisionKind)
+      return core::failure<AssetRecord>(core::ErrorCode::Conflict,
+          "This take was inspected by an older, voiced-only check. Inspect it again before import.");
+    if (!sameMetadataRevision(*technicalInspection, receipt))
+      return core::failure<AssetRecord>(core::ErrorCode::Conflict,
+          "The take audio, its assignment or its QC policy changed after inspection. Inspect it again before import.");
+  }
+  if (!expectedDigest.empty() && inspectedSha256 != expectedDigest) return core::failure<AssetRecord>(
+      core::ErrorCode::Conflict, "Imported candidate audio changed after verification");
+  if (stopToken.stop_requested()) return core::failure<AssetRecord>(
+      core::ErrorCode::Conflict, "Candidate import cancelled before commit");
   const auto evidence = snapshotSourceEvidence(root_, sourceStrategy);
   if (!evidence) return core::Result<AssetRecord>{evidence.error()};
   auto imported = assetStore_.importFile(source, AssetKind::Raw);
   if (!imported) return imported;
   if (!expectedDigest.empty() && imported.value().sha256 != expectedDigest) return core::failure<AssetRecord>(
       core::ErrorCode::Conflict, "Imported candidate audio changed after verification");
-  if (technicalInspection &&
-      technicalInspection->rawAssetSha256 != imported.value().sha256) return core::failure<AssetRecord>(
-          core::ErrorCode::Conflict, "Raw take bytes changed after technical inspection");
+  if (imported.value().sha256 != inspectedSha256 || imported.value().byteSize != inspectedBytes)
+    return core::failure<AssetRecord>(core::ErrorCode::Conflict,
+        "Raw take bytes changed between inspection and storage");
   if (stopToken.stop_requested()) return core::failure<AssetRecord>(
       core::ErrorCode::Conflict, "Candidate import cancelled before commit");
   if (project.schemaVersion == 1) project.schemaVersion = kProductionProjectSchemaVersion;
@@ -411,7 +426,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
   if (take.review.has_value()) {
     project.reviews.push_back(*take.review);
   }
-  if (technicalInspection) project.metadataRevisions.push_back(*technicalInspection);
+  project.metadataRevisions.push_back(receipt);
   assignment = std::find_if(
       project.unitAssignments.begin(), project.unitAssignments.end(),
       [&take](const UnitAssignment& value) {
