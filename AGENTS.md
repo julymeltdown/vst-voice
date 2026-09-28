@@ -10,6 +10,13 @@
 - Before committing, inspect `git status` and the staged diff. Stage only files belonging to the unit; preserve unrelated user changes, worktree edits, and generated artifacts.
 - Use a concise commit subject and include the verification scope in the commit body. For repository commits in this project, end the body with: `Local only; .github untouched.`
 
+## Mandatory implementation handoff checkpoint
+
+- Do not move on to another substantial unit, end a “continue” turn, or report a completed milestone while a verified unit is still only in the working tree. Commit it and verify the push first.
+- A parallel agent's “done” message is not an integration checkpoint. The lead agent must inspect the resulting diff, run the agreed focused checks in the integrating checkout, commit the coherent unit, push it, and verify the remote hash before describing it as landed.
+- If a push cannot be completed, state the exact blocker and keep the unit explicitly marked unpushed; never imply that a local commit is on `origin/master`.
+- At each handoff, report the latest pushed commit hash, focused checks run, and any remaining uncommitted or unpushed work.
+
 ## Project constraints
 
 - Do not modify `.github`; the user deferred GitHub CI work.
