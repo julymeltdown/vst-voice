@@ -198,20 +198,32 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignAdvance(
         if (stop.stop_requested()) return cancelled();
         const auto stamp = fixedTimestamp ? occurredAtUtc
                                           : voicebank_studio_internal::currentUtcTimestamp();
-        const auto advanced = authoring::advanceGenerationCampaign(repository, campaignPath,
+        // The same producer operation the CLI runs: a fresh campaign is submitted to the
+        // workspace and stale or exhausted requests keep their durable terminal outcome.
+        const auto advanced = authoring::advanceGenerationRequest(root, campaignPath,
             campaignSha256, operatorId, stamp, stop);
         if (!advanced) {
           progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed),
               std::memory_order_relaxed);
           return core::Result<Outcome>{advanced.error()};
         }
-        completed = advanced.value().completedBatches;
-        total = advanced.value().totalBatches;
-        progress->store(packCampaignProgress(advanced.value().complete
+        using Advance = authoring::CampaignAdvanceOutcome;
+        const auto& report = advanced.value();
+        completed = report.completedBatches;
+        total = report.totalBatches;
+        if (report.outcome == Advance::Cancelled) return cancelled();
+        if (report.outcome == Advance::Stale || report.outcome == Advance::BudgetExhausted) {
+          progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed),
+              std::memory_order_relaxed);
+          return core::failure<Outcome>(core::ErrorCode::Conflict,
+              "Campaign " + authoring::toString(report.outcome) + ": " + report.detail);
+        }
+        const bool complete = report.outcome == Advance::Completed;
+        progress->store(packCampaignProgress(complete
                 ? GenerationCampaignProgress::Phase::Complete
                 : GenerationCampaignProgress::Phase::Advancing, total, completed),
             std::memory_order_relaxed);
-        if (advanced.value().complete) break;
+        if (complete) break;
       }
       const auto durable = repository.recover();
       if (!durable) {

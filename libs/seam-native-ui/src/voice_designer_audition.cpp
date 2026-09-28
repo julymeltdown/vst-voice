@@ -1,4 +1,5 @@
 #include "seam/native_ui/voice_designer_audition.hpp"
+#include "seam/voice_design/audition_fingerprint.hpp"
 #include "seam/voice_design/phonation_source.hpp"
 #include "seam/voice_design/vocal_tract.hpp"
 #include "seam/voice_design/frication_source.hpp"
@@ -11,20 +12,13 @@
 
 namespace seam::native_ui {
 namespace {
+// The limiter and edge ramps are the shared audition definition, so a listening packet or a
+// committed fingerprint describes exactly what the Designer plays.
 core::Result<voicebank::AudioBuffer> finishAudition(std::vector<float> samples, std::stop_token stopToken) {
   using Output = voicebank::AudioBuffer;
-  float peak = 0.0F;
-  for (const auto sample : samples) {
-    if (!std::isfinite(sample)) return core::failure<Output>(core::ErrorCode::InvalidState, "Designer preview produced non-finite audio");
-    peak = std::max(peak, std::abs(sample));
-  }
-  const auto gain = peak > 0.9F ? 0.9F / peak : 1.0F;
-  for (std::size_t index = 0U; index < samples.size(); ++index) {
-    const auto edge = std::min(index, samples.size()-1U-index);
-    samples[index] *= gain * std::min(1.0F,static_cast<float>(edge)/240.0F);
-  }
-  if (stopToken.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Designer audition cancelled");
-  return Output{48000U,1U,32U,std::move(samples)};
+  auto finished = voice_design::finalizeAuditionPcm(std::move(samples), stopToken);
+  if (!finished) return core::Result<Output>{finished.error()};
+  return Output{48000U,1U,32U,std::move(finished).value()};
 }
 core::Result<voicebank::AudioBuffer> renderNoisePhraseAudition(const synthesis::ProceduralSingerResource& resource,
     std::size_t index,std::size_t vowelPoseIndex,std::uint8_t midiKey,std::stop_token stopToken, bool plosive, bool coda) {
@@ -191,22 +185,11 @@ core::Result<voicebank::AudioBuffer> renderDesignerAudition(const synthesis::Pro
   if (!recipe) return core::Result<Output>{recipe.error()};
   if (poseIndex >= recipe.value().poses.size() || midiKey < 36U || midiKey > 96U)
     return core::failure<Output>(core::ErrorCode::InvalidArgument, "Select a recipe pose and an audition pitch from MIDI 36 to 96");
-  domain::Project project{domain::ProjectId{1U}, "Designer audition"};
-  domain::VocalRegion region{.id = domain::RegionId{3U}, .name = "Sustained pose", .durationTick = time::Tick{1920},
-      .lyrics = {{domain::LyricTokenId{4U}, U"あ", domain::Language::Japanese}},
-      .notes = {{.id = domain::NoteId{5U}, .durationTick = time::Tick{1920}, .midiKey = midiKey, .lyricTokenId = domain::LyricTokenId{4U}}}};
-  project.vocalTracks().push_back({.id = domain::TrackId{2U}, .name = "Draft voice", .regions = {region}});
-  const auto performance = synthesis::compileScorePerformance(project, region, 48000U);
-  if (!performance) return core::Result<Output>{performance.error()};
-  auto source = voice_design::PhonationSource::create(recipe.value(), performance.value(), 0);
-  if (!source) return core::Result<Output>{source.error()};
   const auto& pose = recipe.value().poses[poseIndex];
-  auto tract = voice_design::VocalTract::create(recipe.value(), pose.phone, pose.style, 48000U);
-  if (!tract) return core::Result<Output>{tract.error()};
-  auto excitation = source.value().render(48000U, stopToken);
-  if (!excitation) return core::Result<Output>{excitation.error()};
-  auto filtered = tract.value().process(excitation.value().samples, stopToken);
-  if (!filtered) return core::Result<Output>{filtered.error()};
-  return finishAudition(std::move(filtered.value()), stopToken);
+  // One definition of the sustained-pose audition serves the Designer, listening packets and the
+  // committed reproducibility fingerprints.
+  auto audition = voice_design::renderPoseAudition(recipe.value(), pose.phone, pose.style, midiKey, stopToken);
+  if (!audition) return core::Result<Output>{audition.error()};
+  return Output{voice_design::kPoseAuditionSampleRate, 1U, 32U, std::move(audition).value()};
 }
 }

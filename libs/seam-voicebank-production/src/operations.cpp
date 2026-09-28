@@ -8,6 +8,12 @@
 namespace seam::voicebank_production {
 namespace {
 
+// Method identities, single-sourced so what is recorded and what is required
+// cannot drift apart. Change one whenever that operation's output could change.
+constexpr std::string_view kDownmixMethod = "equal-weight-mono";
+constexpr std::string_view kResampleMethod = "bandlimited-sinc-blackman-v2";
+constexpr std::string_view kRemoveDcMethod = "per-channel-mean-v1";
+
 core::Result<voicebank::AudioBuffer> selectChannel(
     const voicebank::AudioBuffer& input, std::uint16_t channel) {
   if (input.channels == 0U || channel >= input.channels) {
@@ -176,12 +182,12 @@ std::map<std::string, std::string, std::less<>> operationParameters(
     case OperationKind::ChannelSelect:
       return {{"channelIndex", std::to_string(request.channelIndex)}};
     case OperationKind::Downmix:
-      return {{"method", "equal-weight-mono"}};
+      return {{"method", std::string{kDownmixMethod}}};
     case OperationKind::Resample:
       return {{"targetSampleRate", std::to_string(request.targetSampleRate)},
-              {"method", "bandlimited-sinc-blackman-v2"}};
+              {"method", std::string{kResampleMethod}}};
     case OperationKind::RemoveDc:
-      return {{"method", "per-channel-mean-v1"}};
+      return {{"method", std::string{kRemoveDcMethod}}};
     case OperationKind::NormalizeGain:
       return {{"targetPeak", std::to_string(request.targetPeak)}};
     case OperationKind::Trim:
@@ -190,6 +196,37 @@ std::map<std::string, std::string, std::less<>> operationParameters(
               {"endFrame", std::to_string(request.endFrame)}};
   }
   return {};
+}
+
+std::string_view currentOperationMethod(OperationKind kind) noexcept {
+  switch (kind) {
+    case OperationKind::Downmix: return kDownmixMethod;
+    case OperationKind::Resample: return kResampleMethod;
+    case OperationKind::RemoveDc: return kRemoveDcMethod;
+    case OperationKind::ChannelSelect:
+    case OperationKind::NormalizeGain:
+    case OperationKind::Trim:
+    case OperationKind::Segment: return {};
+  }
+  return {};
+}
+
+core::Result<void> requireCurrentOperation(const DerivedRevision& revision) {
+  const auto current = currentOperationMethod(revision.operation);
+  if (current.empty()) return core::success();
+  const auto recorded = revision.parameters.find("method");
+  if (recorded != revision.parameters.end() && recorded->second == current) {
+    return core::success();
+  }
+  const std::string was = recorded == revision.parameters.end()
+      ? std::string{"an unrecorded method"}
+      : "'" + recorded->second + "'";
+  return core::failure(core::ErrorCode::Conflict,
+      "Derived audio " + revision.revisionId + " was produced by " +
+          toString(revision.operation) + " " + was +
+          ", which this build no longer runs (current: '" + std::string{current} +
+          "'); regenerate it from the preserved raw take",
+      revision.revisionId);
 }
 
 }

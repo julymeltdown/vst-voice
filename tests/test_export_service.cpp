@@ -1020,7 +1020,11 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == finishedAdvance);
   auto externalAfterAdvance = advancedRepository.recover().value();
   CHECK(advancedRepository.save(externalAfterAdvance, {"save", "external", "producer", "2026-09-13T00:00:03Z"}));
-  CHECK(runVoicebankCli(advanceArgs) != 0);
+  // A completed campaign stays completed: later producer work (review, edits) is the normal next
+  // step, so re-advancing reports completion from the verified receipts and changes nothing.
+  const auto externallySaved = production::encodeProductionProject(advancedRepository.recover().value());
+  CHECK(runVoicebankCli(advanceArgs) == 0);
+  CHECK(production::encodeProductionProject(advancedRepository.recover().value()) == externallySaved);
 #endif
   CHECK(!authoring::prepareGenerationCampaignBatch(executablePlan.value(), executableHash, 0U,
       secondCampaignProducer.value(), root / "stale-campaign-preparation"));

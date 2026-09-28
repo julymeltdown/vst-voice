@@ -4,33 +4,95 @@
 #include "seam/authoring/inventory_preflight.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
+#include "seam/voicebank_production/generation_request.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include <iostream>
 
 namespace seam::voicebank_cli {
+namespace {
+namespace production = voicebank_production;
+// One registry record, verified against producer history; the Python mirror prints the same shape.
+formats::JsonValue requestRecordJson(const production::GenerationRequestRecord& record) {
+  using formats::JsonValue;
+  JsonValue terminal = nullptr;
+  if (record.terminal) {
+    const auto& value = *record.terminal;
+    terminal = JsonValue::Object{{"outcome", production::toString(value.outcome)},
+        {"observedGeneration", value.observedGeneration}, {"observedProjectSha256", value.observedProjectSha256},
+        {"completedBatches", value.completedBatches}, {"retainedBytes", value.retainedBytes},
+        {"recordedBy", value.recordedBy}, {"recordedAtUtc", value.recordedAtUtc}, {"detail", value.detail}};
+  }
+  return JsonValue::Object{{"requestId", record.request.requestId}, {"requestSha256", record.requestSha256},
+      {"state", record.terminal ? production::toString(record.terminal->outcome) : std::string{"SUBMITTED"}},
+      {"expectedGeneration", record.request.expectedGeneration},
+      {"expectedProjectSha256", record.request.expectedProjectSha256},
+      {"jobs", static_cast<std::int64_t>(record.request.jobs.size())}, {"batchCount", record.batchCount()},
+      {"submittedBy", record.request.submittedBy}, {"submittedAtUtc", record.request.submittedAtUtc},
+      {"definitionLocator", record.request.definitionLocator}, {"terminal", std::move(terminal)}};
+}
+std::optional<int> runRequestCommand(std::string_view command, int argc, char** argv) {
+  const auto error = [](std::string_view message) -> std::optional<int> { std::cerr << "error: " << message << '\n'; return 1; };
+  const production::GenerationRequestRegistry registry{argv[2]};
+  if (command == "list-generation-requests") {
+    if (argc != 3) { printCampaignUsage(); return 1; }
+    const auto records = registry.list();
+    if (!records) return error(records.error().message);
+    formats::JsonValue::Array rows;
+    for (const auto& record : records.value()) rows.push_back(requestRecordJson(record));
+    std::cout << formats::stringifyJson(formats::JsonValue::Object{{"releaseEligible", false},
+        {"requests", std::move(rows)}}) << '\n';
+    return 0;
+  }
+  if (argc != 4) { printCampaignUsage(); return 1; }
+  const auto found = registry.find(argv[3]);
+  if (!found) return error(found.error().message);
+  if (!found.value()) return error("generation request is not submitted to this workspace");
+  auto output = requestRecordJson(*found.value());
+  output.asObject().emplace("releaseEligible", false);
+  std::cout << formats::stringifyJson(output) << '\n';
+  return 0;
+}
+}  // namespace
+
 void printCampaignUsage() {
   std::cout << "  seam_voicebank_cli draft-generation-campaign WORKSPACE RECIPE_JSON NEW_PLAN_JSON TAKE_ID [TAKE_ID ...]\n"
             << "  seam_voicebank_cli plan-generation-campaign WORKSPACE PLAN_JSON PLAN_SHA256 NEW_OUTPUT_DIRECTORY\n"
             << "  seam_voicebank_cli inspect-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256\n";
   std::cout << "  seam_voicebank_cli preflight-generation-campaign CAMPAIGN_JSON CAMPAIGN_SHA256\n";
+  std::cout << "  seam_voicebank_cli submit-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC\n";
   std::cout << "  seam_voicebank_cli advance-generation-campaign WORKSPACE CAMPAIGN_JSON CAMPAIGN_SHA256 OPERATOR UTC\n";
+  std::cout << "    exit 0 batch collected or complete; 3 stale; 4 output budget exhausted; 128+N on signal N\n";
+  std::cout << "  seam_voicebank_cli list-generation-requests WORKSPACE\n";
+  std::cout << "  seam_voicebank_cli inspect-generation-request WORKSPACE REQUEST_ID\n";
 }
 std::optional<int> runCampaignCommand(int argc, char** argv) {
   const std::string_view command{argv[1]};
+  if ((command == "list-generation-requests" || command == "inspect-generation-request") && argc >= 3)
+    return runRequestCommand(command, argc, argv);
+  if (command == "list-generation-requests" || command == "inspect-generation-request") { printCampaignUsage(); return 1; }
+  const bool submit = command == "submit-generation-campaign";
   if (command != "draft-generation-campaign" && command != "plan-generation-campaign" && command != "inspect-generation-campaign" &&
-      command != "preflight-generation-campaign" && command != "advance-generation-campaign") return std::nullopt;
+      command != "preflight-generation-campaign" && command != "advance-generation-campaign" && !submit) return std::nullopt;
   const auto error = [](std::string_view message) -> std::optional<int> { std::cerr << "error: " << message << '\n'; return 1; };
   const bool draft = command == "draft-generation-campaign", publish = command == "plan-generation-campaign";
   const bool advance = command == "advance-generation-campaign";
   const bool preflight = command == "preflight-generation-campaign";
-  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || (advance && argc != 7) ||
-      (preflight && argc != 4) || (!draft && !publish && !advance && !preflight && argc != 4)) {
+  if ((draft && (argc < 6 || argc > 16389)) || (publish && argc != 6) || ((advance || submit) && argc != 7) ||
+      (preflight && argc != 4) || (!draft && !publish && !advance && !preflight && !submit && argc != 4)) {
     printCampaignUsage(); return 1;
   }
   SignalCancellation cancellation;
   if (!cancellation.install()) return error("cannot install cancellation handlers");
+  if (submit) {
+    const auto record = authoring::submitGenerationCampaign(argv[2], argv[3], argv[4], argv[5], argv[6], cancellation.token());
+    if (!record) return error(record.error().message);
+    auto output = requestRecordJson(record.value());
+    output.asObject().emplace("releaseEligible", false);
+    std::cout << formats::stringifyJson(output) << '\n';
+    return 0;
+  }
   if (preflight) {
     // The held-out phrase set renders into the campaign's own directory, because a
     // campaign cannot be advanced until a passing report is retained beside it.
@@ -57,14 +119,30 @@ std::optional<int> runCampaignCommand(int argc, char** argv) {
     return 0;
   }
   if (advance) {
-    const auto result = authoring::advanceGenerationCampaign(voicebank_production::ProductionProjectRepository{argv[2]},
-        argv[3], argv[4], argv[5], argv[6], cancellation.token());
+    // The same producer operation Studio runs: a fresh campaign is submitted to the workspace, and
+    // every stopping point is reported as its actual outcome with the producer state it left.
+    const auto result = authoring::advanceGenerationRequest(argv[2], argv[3], argv[4], argv[5], argv[6], cancellation.token());
     if (!result) return error(result.error().message);
+    using Outcome = authoring::CampaignAdvanceOutcome;
+    const auto& report = result.value();
+    const auto status = report.outcome == Outcome::Completed ? std::string{"COLLECTED_UNREVIEWED"} : authoring::toString(report.outcome);
     std::cout << formats::stringifyJson(formats::JsonValue::Object{
-        {"status", result.value().complete ? "COLLECTED_UNREVIEWED" : "BATCH_COLLECTED"}, {"releaseEligible", false},
-        {"completedBatches", static_cast<std::int64_t>(result.value().completedBatches)},
-        {"totalBatches", static_cast<std::int64_t>(result.value().totalBatches)}, {"producerSha256", result.value().producerSha256}}) << '\n';
-    return 0;
+        {"status", status}, {"outcome", authoring::toString(report.outcome)}, {"releaseEligible", false},
+        {"completedBatches", static_cast<std::int64_t>(report.completedBatches)},
+        {"totalBatches", static_cast<std::int64_t>(report.totalBatches)},
+        {"producerGeneration", static_cast<std::int64_t>(report.producerGeneration)},
+        {"producerSha256", report.producerSha256}, {"requestId", report.requestId},
+        {"registered", report.registered}, {"terminalRecorded", report.terminalRecorded},
+        {"retainedBytes", static_cast<std::int64_t>(report.retainedBytes)}, {"detail", report.detail}}) << '\n';
+    switch (report.outcome) {
+      case Outcome::BatchCollected:
+      case Outcome::Completed: return 0;
+      case Outcome::Stale: std::cerr << "error: campaign is stale: " << report.detail << '\n'; return 3;
+      case Outcome::BudgetExhausted: std::cerr << "error: campaign output budget exhausted: " << report.detail << '\n'; return 4;
+      case Outcome::Cancelled: break;
+    }
+    std::cerr << "error: " << report.detail << '\n';
+    return cancellation.signal() != 0 ? 128 + cancellation.signal() : 1;
   }
   std::string definition;
   if (draft) {

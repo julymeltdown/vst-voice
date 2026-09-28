@@ -8,6 +8,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/rendering/region_renderer.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/content_identity.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -479,6 +480,18 @@ TEST_CASE("reviewed sample candidate publishes exact effective audio markers pit
   CHECK(seam::core::sha256File(published.value().root / unit.audioPath).value() == fixture.request.units.front().audioSha256);
   CHECK(unit.markers == fixture.request.manifest.units.front().markers);
   CHECK(unit.pitchMarks == fixture.request.manifest.units.front().pitchMarks);
+  // U15: the published unit carries its measured acoustic analysis, bound to the
+  // exact audio shipped, under the current algorithm; the identity below covers it.
+  const auto analysisText = seam::core::readTextFileLimited(
+      published.value().root / seam::voicebank::acousticAnalysisSidecarPath(unit.id), 512U * 1024U);
+  CHECK(analysisText);
+  const auto shipped = seam::voicebank::readWav(published.value().root / unit.audioPath);
+  CHECK(shipped);
+  const auto storedAnalysis = seam::voicebank::decodeAcousticAnalysis(analysisText.value(), unit,
+      fixture.request.units.front().audioSha256,
+      static_cast<seam::time::SampleFrame>(shipped.value().frameCount()));
+  CHECK(storedAnalysis);
+  CHECK(storedAnalysis.value().currentAlgorithm());
   CHECK(seam::voicebank::computeVoicebankContentHash(reopened.value(), published.value().root).value() == published.value().contentSha256);
   CHECK(seam::core::sha256File(published.value().root / "manifest.json").value() == published.value().manifestSha256);
   CHECK(seam::core::sha256File(published.value().root / "candidate.json").value() == published.value().candidateSha256);
@@ -1374,4 +1387,50 @@ TEST_CASE("resampling rejects aliasing on a fixed downsampling fixture") {
   CHECK(upsampled);
   CHECK(upsampled.value().frameCount() == kFrames * 2U);
   CHECK(rms(upsampled.value()) > rms(tone(kPassbandHz)) * 0.95);
+}
+
+// U15: "versioned provenance" and "regenerate derivatives after algorithm
+// changes". Earlier builds recorded Resample revisions as "linear-v1", the
+// aliasing kernel the test above rejects. That output must not pass as what the
+// current operation would produce: it is refused with the reason and the remedy,
+// and the raw take it came from is what gets reprocessed.
+TEST_CASE("a derivative from a superseded operation is refused rather than relabelled") {
+  namespace production = seam::voicebank_production;
+  // What this build records is exactly what it requires.
+  for (const auto kind : {production::OperationKind::Downmix, production::OperationKind::Resample,
+                          production::OperationKind::RemoveDc}) {
+    const auto parameters = production::operationParameters(
+        production::OperationRequest{.kind = kind, .targetSampleRate = 16000U});
+    CHECK(!production::currentOperationMethod(kind).empty());
+    CHECK(parameters.at("method") == production::currentOperationMethod(kind));
+    const production::DerivedRevision current{
+        .revisionId = "current", .operation = kind, .parameters = parameters};
+    CHECK(production::requireCurrentOperation(current));
+  }
+
+  const production::DerivedRevision linear{
+      .revisionId = "legacy-resample", .operation = production::OperationKind::Resample,
+      .parameters = {{"targetSampleRate", "16000"}, {"method", "linear-v1"}}};
+  const auto refused = production::requireCurrentOperation(linear);
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(refused.error().message.find("linear-v1") != std::string::npos);
+  CHECK(refused.error().message.find("regenerate") != std::string::npos);
+
+  // A revision that does not say how it was made cannot be shown to be current.
+  auto unrecorded = linear;
+  unrecorded.parameters.erase("method");
+  CHECK(!production::requireCurrentOperation(unrecorded));
+
+  // Exact arithmetic has no algorithm that could be superseded.
+  for (const auto kind : {production::OperationKind::ChannelSelect,
+                          production::OperationKind::NormalizeGain,
+                          production::OperationKind::Trim, production::OperationKind::Segment}) {
+    CHECK(production::currentOperationMethod(kind).empty());
+    const production::DerivedRevision exact{
+        .revisionId = "exact", .operation = kind,
+        .parameters = production::operationParameters(production::OperationRequest{
+            .kind = kind, .startFrame = 0U, .endFrame = 10U})};
+    CHECK(production::requireCurrentOperation(exact));
+  }
 }

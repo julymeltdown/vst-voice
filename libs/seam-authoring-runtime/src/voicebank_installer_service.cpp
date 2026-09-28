@@ -1,6 +1,7 @@
 #include "seam/authoring/voicebank_installer_service.hpp"
 
 #include "seam/core/sha256.hpp"
+#include "seam/voicebank/acoustic_analysis.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 
 #include <algorithm>
@@ -63,29 +64,40 @@ core::Result<std::string> packageContentHash(
     addField(hash, path);
     addField(hash, digestHex(entry->sha256));
   }
-  std::set<std::string> alignmentPaths;
-  for (const auto& unit : package.manifest.units) {
-    alignmentPaths.insert("alignments/" + core::sha256Hex(unit.id) + ".json");
-  }
-  bool started = false;
+  // Mirrors computeVoicebankContentHash exactly: present per-unit sidecars that
+  // change how a unit renders (source alignments, then stored acoustic analyses),
+  // each kind tagged once and hashed by exact bytes under one shared budget.
   std::uint64_t totalBytes = 0U;
-  for (const auto& path : alignmentPaths) {
-    const auto entry = std::find_if(package.entries.begin(), package.entries.end(),
-        [&path](const auto& value) { return value.path == path; });
-    if (entry == package.entries.end()) continue;
-    if (entry->payloadSize > 512ULL * 1024ULL ||
-        entry->payloadSize > 64ULL * 1024ULL * 1024ULL - totalBytes) {
-      return core::failure<std::string>(core::ErrorCode::Unsupported,
-          "Signed seambank source alignments exceed identity limits", path);
+  const auto addSidecars = [&](std::string_view tag, std::string_view noun,
+                               const auto& pathFor) -> core::Result<void> {
+    std::set<std::string> sidecarPaths;
+    for (const auto& unit : package.manifest.units) sidecarPaths.insert(pathFor(unit.id));
+    bool started = false;
+    for (const auto& path : sidecarPaths) {
+      const auto entry = std::find_if(package.entries.begin(), package.entries.end(),
+          [&path](const auto& value) { return value.path == path; });
+      if (entry == package.entries.end()) continue;
+      if (entry->payloadSize > 512ULL * 1024ULL ||
+          entry->payloadSize > 64ULL * 1024ULL * 1024ULL - totalBytes) {
+        return core::failure(core::ErrorCode::Unsupported,
+            "Signed seambank " + std::string{noun} + " exceed identity limits", path);
+      }
+      totalBytes += entry->payloadSize;
+      if (!started) {
+        addField(hash, tag);
+        started = true;
+      }
+      addField(hash, path);
+      addField(hash, digestHex(entry->sha256));
     }
-    totalBytes += entry->payloadSize;
-    if (!started) {
-      addField(hash, "source-phoneme-alignments-v1");
-      started = true;
-    }
-    addField(hash, path);
-    addField(hash, digestHex(entry->sha256));
-  }
+    return core::success();
+  };
+  const auto alignments = addSidecars("source-phoneme-alignments-v1", "source alignments",
+      [](std::string_view unitId) { return "alignments/" + core::sha256Hex(unitId) + ".json"; });
+  if (!alignments) return core::Result<std::string>{alignments.error()};
+  const auto analyses = addSidecars("acoustic-analyses-v1", "acoustic analyses",
+      [](std::string_view unitId) { return voicebank::acousticAnalysisSidecarPath(unitId); });
+  if (!analyses) return core::Result<std::string>{analyses.error()};
   return hash.hexDigest();
 }
 

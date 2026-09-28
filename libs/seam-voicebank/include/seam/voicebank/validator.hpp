@@ -36,6 +36,13 @@ enum class IssueCode {
   // the audio present now. One of the two is wrong, and QC cannot decide which,
   // so it reports rather than picking.
   AcousticAnalysisMismatch,
+  // A stored pitch mark sits in a span the unit's stored, audio-bound acoustic
+  // analysis measured as unvoiced. A mark claims a glottal pulse, which an
+  // unvoiced span cannot have; generated marks cannot do this because they are
+  // placed on the same partition as the analysis. An unlocked mark here is an
+  // error; a locked (reviewer-placed) mark is a warning, because the analysis is
+  // a proposal and does not overrule a recorded human decision.
+  PitchMarksUnvoiced,
 };
 
 struct ValidationIssue final {

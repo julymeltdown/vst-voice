@@ -328,6 +328,28 @@ ValidationReport BankValidator::validate(const Manifest& manifest,
                 "Stored acoustic analysis does not describe this audio: " +
                     decoded.error().message);
           } else {
+            // Marks never bridge unvoiced spans. Checked against the stored
+            // record, which is what renderers read, now that it is known to
+            // describe exactly these bytes.
+            std::size_t unlockedUnvoiced = 0U;
+            std::size_t lockedUnvoiced = 0U;
+            for (const auto& mark : unit.pitchMarks) {
+              const auto voiced = acousticVoicedAt(decoded.value(), mark.frame);
+              if (!voiced.has_value() || *voiced) continue;
+              ++(mark.locked ? lockedUnvoiced : unlockedUnvoiced);
+            }
+            if (unlockedUnvoiced > 0U) {
+              add(report, IssueSeverity::Error, IssueCode::PitchMarksUnvoiced, unit.id,
+                  std::to_string(unlockedUnvoiced) +
+                      " stored pitch mark(s) lie in spans the stored acoustic analysis"
+                      " measured as unvoiced; regenerate the marks from this audio");
+            }
+            if (lockedUnvoiced > 0U) {
+              add(report, IssueSeverity::Warning, IssueCode::PitchMarksUnvoiced, unit.id,
+                  std::to_string(lockedUnvoiced) +
+                      " locked pitch mark(s) lie in spans the stored acoustic analysis"
+                      " measured as unvoiced; confirm them against the audio");
+            }
             // Structure can be right while the conclusion is wrong. Re-measure and
             // compare, so a record left over from earlier audio is caught rather
             // than believed.
@@ -400,6 +422,7 @@ std::string_view issueCodeName(IssueCode code) noexcept {
     case IssueCode::PitchMarksStale: return "pitch-marks-stale";
     case IssueCode::AcousticAnalysisStale: return "acoustic-analysis-stale";
     case IssueCode::AcousticAnalysisMismatch: return "acoustic-analysis-mismatch";
+    case IssueCode::PitchMarksUnvoiced: return "pitch-marks-unvoiced";
   }
   return "unknown";
 }

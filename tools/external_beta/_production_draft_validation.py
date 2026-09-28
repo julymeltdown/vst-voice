@@ -779,6 +779,8 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
         _, pointer = read_bounded_object(workspace / "project.json")
         if pointer != latest_payload:
             errors.append("project pointer does not match the latest exact durable generation")
+        from ._production_generation import generation_request_errors
+        errors.extend(generation_request_errors(workspace))
         if inventory is not None:
             if latest.get("inventorySha256") != inventory.get("inventorySha256"):
                 errors.append("latest inventory identity differs from the requested inventory")

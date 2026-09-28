@@ -129,7 +129,9 @@ set(SEAM_RAW_RENDERER_REVISION 10)
 # 2.000, and +2400.0 cents at ratio 4.000. The window is sized from the target
 # period to match the new read step. Bumping this revision is what invalidates
 # cached PCM that the old renderer produced.
-set(SEAM_PSOLA_RENDERER_REVISION 11)
+# Revision 12 retargets the voiced attack and release to the compiled F0 as well
+# as the sustain; they were copied at the source pitch.
+set(SEAM_PSOLA_RENDERER_REVISION 12)
 set(SEAM_SPECTRAL_RENDERER_REVISION 8)
 set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)
@@ -473,6 +475,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/project_codec_validation.cpp
   libs/seam-voicebank-production/src/repository.cpp
   libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/repository_generation.cpp
   libs/seam-voicebank-production/src/generation_expectation.cpp
   libs/seam-voicebank-production/src/repository_operations.cpp
   libs/seam-voicebank-production/src/operation_staging.cpp
@@ -523,7 +526,8 @@ add_library(seam_voice_design
   libs/seam-voice-design/src/articulated_stream.cpp
   libs/seam-voice-design/src/procedural_renderer.cpp
   libs/seam-voice-design/src/recipe_resource.cpp
-  libs/seam-voice-design/src/procedural_candidate.cpp)
+  libs/seam-voice-design/src/procedural_candidate.cpp
+  libs/seam-voice-design/src/audition_fingerprint.cpp)
 target_include_directories(seam_voice_design PUBLIC libs/seam-voice-design/include)
 target_link_libraries(seam_voice_design PUBLIC seam_formats seam_core seam_text seam_phonemizer)
 seam_apply_compiler_options(seam_voice_design)
@@ -1505,6 +1509,11 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_automatic_performance_tests
     tests/test_main.cpp tests/test_automatic_performance.cpp)
   add_executable(seam_voice_design_tests tests/test_main.cpp tests/test_voice_design.cpp)
+  add_executable(seam_audition_fingerprint_tests tests/test_main.cpp tests/test_audition_fingerprint.cpp)
+  target_include_directories(seam_audition_fingerprint_tests PRIVATE tests)
+  target_link_libraries(seam_audition_fingerprint_tests PRIVATE seam_voice_design)
+  seam_apply_compiler_options(seam_audition_fingerprint_tests)
+  add_test(NAME seam_audition_fingerprint_tests COMMAND seam_audition_fingerprint_tests)
   add_executable(seam_recording_input_tests tests/test_main.cpp tests/test_recording_input_session.cpp)
   target_include_directories(seam_recording_input_tests PRIVATE tests)
   target_link_libraries(seam_recording_input_tests PRIVATE seam_platform)
@@ -2729,6 +2738,14 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_studio_campaign_tests COMMAND seam_studio_campaign_tests)
     set_tests_properties(seam_studio_campaign_tests PROPERTIES TIMEOUT 180)
   endif()
+  add_executable(seam_voice_generation_workflow_tests
+    tests/test_main.cpp tests/test_voice_generation_workflow.cpp)
+  target_include_directories(seam_voice_generation_workflow_tests PRIVATE tests)
+  target_link_libraries(seam_voice_generation_workflow_tests PRIVATE
+    seam_authoring_runtime seam_voicebank_production)
+  seam_apply_compiler_options(seam_voice_generation_workflow_tests)
+  add_test(NAME seam_voice_generation_workflow_tests COMMAND seam_voice_generation_workflow_tests)
+  set_tests_properties(seam_voice_generation_workflow_tests PROPERTIES TIMEOUT 300)
   add_executable(seam_production_ownership_tests
     tests/test_main.cpp tests/test_production_edit_ownership.cpp)
   target_include_directories(seam_production_ownership_tests PRIVATE tests)

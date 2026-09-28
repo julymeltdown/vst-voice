@@ -68,6 +68,9 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--strategies", type=Path)
     validate.add_argument("--workspace", type=Path, required=True)
     validate.add_argument("--draft", action="store_true", help="Verify source-aware schema-2/3/4 persistence/evidence, not release qualification")
+    requests = commands.add_parser("inspect-generation-requests",
+                                   help="Verify a workspace's generation requests and outcomes against its history; never an approval")
+    requests.add_argument("--workspace", type=Path, required=True)
     return parser
 
 
@@ -99,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
             result = validate_source_execution(strategies, args.repository_root)
             print(json.dumps(result.as_dict() | {"admissionScope": "source-use-and-transformation", "releaseEligible": False}, sort_keys=True))
             return 0 if result.passed else 1
+        if args.command == "inspect-generation-requests":
+            from ._production_generation import inspect_generation_requests
+            summaries, errors = inspect_generation_requests(args.workspace)
+            print(json.dumps({"status": "FAIL" if errors else "PASS", "requests": summaries, "errors": errors,
+                              "releaseEligible": False}, ensure_ascii=False, sort_keys=True))
+            return 1 if errors else 0
         if args.command == "init-project":
             project = initialize_production_workspace(
                 args.workspace,
