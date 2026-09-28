@@ -135,6 +135,7 @@ class CppGenerationRequestParityTest(unittest.TestCase):
         forge(workspace)
         self.assertNotEqual(0, _run("list-generation-requests", str(workspace)).returncode, f"C++ admitted {name}")
         self.assertTrue(inspect_generation_requests(workspace)[1], f"Python admitted {name}")
+        self.assertFalse(validate_production_draft_workspace(workspace).passed, f"draft validation admitted {name}")
 
     def test_each_outcome_is_reported_with_its_exit_status(self) -> None:
         code, report = self.outcomes["completed"]
