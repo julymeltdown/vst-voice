@@ -253,7 +253,11 @@ core::Result<CampaignAdvanceReport> advanceCampaign(const production::Production
       if (!current) return core::Result<Output>{current.error()};
       if (producerHash(current.value()) != beforeHash)
         return conclude(Outcome::Stale, index, "Producer changed before campaign rendering", 0U, std::nullopt);
-      const auto rendered = runGenerationBatch(prepared.value().jobs, limits, stop, options.renderProgress);
+      const auto rendered = runGenerationBatch(prepared.value().jobs, limits, stop,
+          [&](std::size_t done, std::size_t outputs) {
+            if (options.renderProgress) options.renderProgress(done, outputs);
+            if (options.jobProgress) options.jobProgress(index, done, outputs);
+          });
       if (!rendered) return cancelledOr(rendered.error(), index);
       const auto renderedOver = exhausted();
       if (!renderedOver) return cancelledOr(renderedOver.error(), index);

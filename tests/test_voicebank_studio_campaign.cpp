@@ -295,6 +295,29 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(!fixture.controller.generationRequests().front().terminal);
   CHECK(fixture.controller.generationRequestQueueStatus().find("1 REQUEST") != std::string_view::npos);
   CHECK(fixture.controller.productionProject()->lastDurableGeneration == before);
+  using JobState = seam::native_ui::StudioGenerationJobState;
+  const auto& queuedRequest = fixture.controller.generationRequests().front();
+  const auto activeRender = Controller::GenerationCampaignProgress{
+      .phase = Phase::Rendering, .completedBatches = 0U, .totalBatches = 2U,
+      .completedOutputs = 0U, .totalOutputs = 1U};
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, sha, activeRender) == JobState::Processing);
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 1U, sha, activeRender) == JobState::Queued);
+  const auto outputReady = Controller::GenerationCampaignProgress{
+      .phase = Phase::Collecting, .completedBatches = 0U, .totalBatches = 2U,
+      .completedOutputs = 1U, .totalOutputs = 1U};
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, sha, outputReady) == JobState::OutputReady);
+  const auto nextBatch = Controller::GenerationCampaignProgress{
+      .phase = Phase::Advancing, .completedBatches = 1U, .totalBatches = 2U};
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, sha, nextBatch) == JobState::Collected);
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 1U, sha, nextBatch) == JobState::PreparingBatch);
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, "another-request", activeRender) == JobState::Queued);
+  const auto completeProgress = Controller::GenerationCampaignProgress{
+      .phase = Phase::Complete, .completedBatches = 2U, .totalBatches = 2U};
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, sha, completeProgress) == JobState::Collected);
+  const auto inconsistentCompleteProgress = Controller::GenerationCampaignProgress{
+      .phase = Phase::Complete, .completedBatches = 0U, .totalBatches = 2U};
+  CHECK(seam::native_ui::studioGenerationJobState(queuedRequest, 0U, sha, inconsistentCompleteProgress) ==
+      JobState::NotCollected);
   const auto pendingControls = seam::native_ui::studioGenerationQueueControls(
       fixture.controller, 1040.0, 720.0, false, 0U);
   CHECK(std::any_of(pendingControls.begin(), pendingControls.end(), [&](const auto& control) {
@@ -400,6 +423,11 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(fixture.controller.generationRequests().front().terminal.has_value());
   CHECK(fixture.controller.generationRequests().front().terminal->outcome ==
       production::GenerationRequestOutcome::Completed);
+  const auto& completedRequest = fixture.controller.generationRequests().front();
+  for (std::size_t index = 0U; index < completedRequest.request.jobs.size(); ++index)
+    CHECK(seam::native_ui::studioGenerationJobState(completedRequest, index, sha, std::nullopt) == JobState::Collected);
+  CHECK(seam::native_ui::studioGenerationJobStateLabel(JobState::Collected).find("REVIEW SEPARATE") !=
+      std::string_view::npos);
   const auto terminalResume = fixture.controller.beginGenerationRequestResume(sha);
   CHECK(!terminalResume);
   CHECK(terminalResume.error().code == core::ErrorCode::InvalidState);

@@ -117,6 +117,7 @@ core::Result<std::vector<GenerationJobOutput>> runGenerationBatch(std::span<cons
   const auto cancelled = [] { return core::failure<Output>(core::ErrorCode::Conflict, "Generation batch cancelled; completed job output is retained"); };
   Output outputs;
   outputs.reserve(inputs.size());
+  if (progress) progress(0U, inputs.size());
   for (const auto& reference : inputs) {
     if (stopToken.stop_requested()) return cancelled();
     auto output = runGenerationJob(reference.directory, reference.manifestSha256, stopToken);

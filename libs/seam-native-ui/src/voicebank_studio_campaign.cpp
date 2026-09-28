@@ -27,15 +27,23 @@ namespace {
 
 using Phase = VoicebankStudioController::GenerationCampaignProgress::Phase;
 
-// One atomic carries the whole campaign progress: phase, total batches and
-// completed batches. Totals are bounded by the campaign admission limits
-// (16384 jobs), so 24 bits per count is far above what can be admitted.
-constexpr std::uint64_t kCampaignCountMask = (1ULL << 24U) - 1ULL;
+// One atomic carries a coherent snapshot: phase, completed/total batches and
+// completed/total outputs in the current batch. Each count is bounded by the
+// campaign admission limit (16384 jobs), so 15 bits is sufficient.
+constexpr std::uint64_t kCampaignCountMask = (1ULL << 15U) - 1ULL;
+constexpr unsigned kCampaignPhaseShift = 60U;
+constexpr unsigned kCampaignTotalBatchesShift = 45U;
+constexpr unsigned kCampaignCompletedBatchesShift = 30U;
+constexpr unsigned kCampaignTotalOutputsShift = 15U;
+static_assert(16384U <= kCampaignCountMask);
 
-std::uint64_t packCampaignProgress(Phase phase, std::size_t total, std::size_t completed) noexcept {
-  return (static_cast<std::uint64_t>(phase) << 48U) |
-      ((static_cast<std::uint64_t>(total) & kCampaignCountMask) << 24U) |
-      (static_cast<std::uint64_t>(completed) & kCampaignCountMask);
+std::uint64_t packCampaignProgress(Phase phase, std::size_t totalBatches, std::size_t completedBatches,
+    std::size_t completedOutputs = 0U, std::size_t totalOutputs = 0U) noexcept {
+  return (static_cast<std::uint64_t>(phase) << kCampaignPhaseShift) |
+      ((static_cast<std::uint64_t>(totalBatches) & kCampaignCountMask) << kCampaignTotalBatchesShift) |
+      ((static_cast<std::uint64_t>(completedBatches) & kCampaignCountMask) << kCampaignCompletedBatchesShift) |
+      ((static_cast<std::uint64_t>(totalOutputs) & kCampaignCountMask) << kCampaignTotalOutputsShift) |
+      (static_cast<std::uint64_t>(completedOutputs) & kCampaignCountMask);
 }
 
 std::string campaignCountStatus(std::string_view prefix, std::size_t completed,
@@ -51,9 +59,11 @@ VoicebankStudioController::generationCampaignProgress() const noexcept {
   if (!generationCampaignProgress_) return std::nullopt;
   const auto value = generationCampaignProgress_->load(std::memory_order_relaxed);
   return GenerationCampaignProgress{
-      static_cast<GenerationCampaignProgress::Phase>(value >> 48U),
+      static_cast<GenerationCampaignProgress::Phase>(value >> kCampaignPhaseShift),
+      static_cast<std::size_t>((value >> kCampaignCompletedBatchesShift) & kCampaignCountMask),
+      static_cast<std::size_t>((value >> kCampaignTotalBatchesShift) & kCampaignCountMask),
       static_cast<std::size_t>(value & kCampaignCountMask),
-      static_cast<std::size_t>((value >> 24U) & kCampaignCountMask)};
+      static_cast<std::size_t>((value >> kCampaignTotalOutputsShift) & kCampaignCountMask)};
 }
 
 core::Result<void> VoicebankStudioController::beginGenerationCampaignPlan(
@@ -184,8 +194,11 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignAdvance(
       std::size_t total = static_cast<std::size_t>(batchCount->asInt64());
       std::size_t completed = 0U;
       const auto cancelled = [&] {
-        progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Cancelled, total, completed),
-            std::memory_order_relaxed);
+        const auto previous = progress->load(std::memory_order_relaxed);
+        const auto completedOutputs = static_cast<std::size_t>(previous & kCampaignCountMask);
+        const auto totalOutputs = static_cast<std::size_t>((previous >> kCampaignTotalOutputsShift) & kCampaignCountMask);
+        progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Cancelled,
+            total, completed, completedOutputs, totalOutputs), std::memory_order_relaxed);
         return core::failure<Outcome>(core::ErrorCode::Conflict,
             "Campaign advancement cancelled; retained work may be resumed");
       };
@@ -201,10 +214,21 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignAdvance(
                                           : voicebank_studio_internal::currentUtcTimestamp();
         // The same producer operation the CLI runs: a fresh campaign is submitted to the
         // workspace and stale or exhausted requests keep their durable terminal outcome.
+        progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Advancing,
+            total, completed), std::memory_order_relaxed);
         const auto advanced = authoring::advanceGenerationRequest(root, campaignPath,
-            campaignSha256, operatorId, stamp, stop);
+            campaignSha256, operatorId, stamp, stop,
+            {.jobProgress = [progress, &total](std::size_t batchIndex, std::size_t done, std::size_t outputs) {
+              const auto phase = done >= outputs ? GenerationCampaignProgress::Phase::Collecting
+                                                  : GenerationCampaignProgress::Phase::Rendering;
+              progress->store(packCampaignProgress(phase, total, batchIndex, done, outputs),
+                  std::memory_order_relaxed);
+            }});
         if (!advanced) {
-          progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed),
+          const auto previous = progress->load(std::memory_order_relaxed);
+          progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed,
+              static_cast<std::size_t>(previous & kCampaignCountMask),
+              static_cast<std::size_t>((previous >> kCampaignTotalOutputsShift) & kCampaignCountMask)),
               std::memory_order_relaxed);
           return core::Result<Outcome>{advanced.error()};
         }
@@ -214,16 +238,18 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignAdvance(
         total = report.totalBatches;
         if (report.outcome == Advance::Cancelled) return cancelled();
         if (report.outcome == Advance::Stale || report.outcome == Advance::BudgetExhausted) {
-          progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed),
+          const auto previous = progress->load(std::memory_order_relaxed);
+          progress->store(packCampaignProgress(GenerationCampaignProgress::Phase::Failed, total, completed,
+              static_cast<std::size_t>(previous & kCampaignCountMask),
+              static_cast<std::size_t>((previous >> kCampaignTotalOutputsShift) & kCampaignCountMask)),
               std::memory_order_relaxed);
           return core::failure<Outcome>(core::ErrorCode::Conflict,
               "Campaign " + authoring::toString(report.outcome) + ": " + report.detail);
         }
         const bool complete = report.outcome == Advance::Completed;
-        progress->store(packCampaignProgress(complete
-                ? GenerationCampaignProgress::Phase::Complete
-                : GenerationCampaignProgress::Phase::Advancing, total, completed),
-            std::memory_order_relaxed);
+        progress->store(packCampaignProgress(complete ? GenerationCampaignProgress::Phase::Complete
+                                                     : GenerationCampaignProgress::Phase::Advancing,
+            total, completed), std::memory_order_relaxed);
         if (complete) break;
       }
       const auto durable = repository.recover();

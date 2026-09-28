@@ -99,6 +99,9 @@ struct CampaignAdvanceOptions final {
   // Fault-test seams; production callers leave them empty.
   std::function<bool()> interruptBeforeReceipt;
   std::function<void(std::size_t, std::size_t)> renderProgress;
+  // Studio's live progress includes the actual batch index because one advance
+  // may skip already-collected receipts before rendering the next batch.
+  std::function<void(std::size_t, std::size_t, std::size_t)> jobProgress;
 };
 // Submits the verified campaign to the producer workspace as an immutable generation request,
 // bound to the campaign's initial producer generation. Requires that exact current state.

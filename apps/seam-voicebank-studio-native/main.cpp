@@ -1809,12 +1809,16 @@ public:
                 .value="Definition bytes must still match the request ID before resume; queue is not evidence of completion or review",
                 .bounds={44.0,206.0,std::max(0.0,width-88.0),18.0}});
           const auto rows = studioGenerationRequestDetailVisibleRows(height);
+          const auto campaignProgress = controller_.generationCampaignProgress();
+          const auto activeRequestId = controller_.generationCampaignSha256();
           for (std::size_t index = generationRequestJobFirst_;
               index < std::min(item.request.jobs.size(), generationRequestJobFirst_ + rows); ++index) {
             const auto& job = item.request.jobs[index];
+            const auto jobState = studioGenerationJobState(item, index, activeRequestId, campaignProgress);
             root.children.push_back({.id=prefix+"generation-job."+job.jobId,.role=SemanticRole::Status,
                 .name="Generation job " + std::to_string(index + 1U) + ": " + job.jobId,
-                .value="take=" + job.takeId + "; coverage=" + job.coverageKey + "; style=" + job.style +
+                .value="state=" + std::string{studioGenerationJobStateLabel(jobState)} +
+                    "; take=" + job.takeId + "; coverage=" + job.coverageKey + "; style=" + job.style +
                     "; pitch_layer=" + std::to_string(job.pitchLayer) + "; frames=" +
                     std::to_string(job.frameCount) + "; batch=" + std::to_string(job.batchIndex + 1),
                 .bounds={52.0,242.0+static_cast<double>(index-generationRequestJobFirst_)*34.0,

@@ -41,6 +41,8 @@
 #include <iterator>
 #include <thread>
 #include <limits>
+#include <utility>
+#include <vector>
 #if defined(SEAM_TEST_VOICEBANK_CLI) && (defined(__APPLE__) || defined(__linux__))
 #include <spawn.h>
 #include <sys/wait.h>
@@ -579,9 +581,14 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(!authoring::runGenerationBatch(duplicatedBatch));
   CHECK(!std::filesystem::exists(root / "batch-a/output"));
   std::stop_source batchStop;
+  std::vector<std::pair<std::size_t, std::size_t>> batchProgress;
   CHECK(!authoring::runGenerationBatch(batch, {.maximumFrames = 48000U}, batchStop.get_token(), [&](std::size_t done, std::size_t total) {
-    CHECK(total == 2U); CHECK(done == 1U); batchStop.request_stop();
+    CHECK(total == 2U); CHECK(done <= total);
+    batchProgress.emplace_back(done, total);
+    if (done == 1U) batchStop.request_stop();
   }));
+  const std::vector<std::pair<std::size_t, std::size_t>> expectedBatchProgress{{0U, 2U}, {1U, 2U}};
+  CHECK(batchProgress == expectedBatchProgress);
   CHECK(std::filesystem::exists(root / "batch-a/output")); CHECK(!std::filesystem::exists(root / "batch-b/output"));
   const auto resumedBatch = authoring::runGenerationBatch(batch, {.maximumFrames = 48000U}); CHECK(resumedBatch);
   CHECK(resumedBatch.value().size() == 2U); CHECK(resumedBatch.value()[0].reused); CHECK(!resumedBatch.value()[1].reused);

@@ -32,7 +32,10 @@ struct GenerationBatchLimits final {
     std::span<const GenerationJobReference> jobs, GenerationBatchLimits limits = {}, std::stop_token stopToken = {});
 [[nodiscard]] core::Result<std::vector<GenerationJobOutput>> runGenerationBatch(
     std::span<const GenerationJobReference> jobs, GenerationBatchLimits limits = {},
-    std::stop_token stopToken = {}, std::function<void(std::size_t, std::size_t)> progress = {});
+    std::stop_token stopToken = {},
+    // Reports (completed outputs, total outputs), including an initial 0/total
+    // snapshot before the first job begins and after each verified job output.
+    std::function<void(std::size_t, std::size_t)> progress = {});
 [[nodiscard]] core::Result<GenerationJobOutput> runGenerationJob(
     const std::filesystem::path& directory, std::string_view expectedManifestSha256,
     std::stop_token stopToken = {},

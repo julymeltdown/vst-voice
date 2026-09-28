@@ -235,9 +235,14 @@ public:
   // completes or the user cancels. Cancelling retains committed batches and the
   // campaign can be resumed from its own receipts, never from a re-plan.
   struct GenerationCampaignProgress final {
-    enum class Phase : std::uint32_t { Idle, Planning, Planned, Advancing, Complete, Cancelled, Failed };
+    enum class Phase : std::uint32_t {
+      Idle, Planning, Planned, Advancing, Rendering, Collecting, Complete, Cancelled, Failed
+    };
     Phase phase{Phase::Idle};
     std::size_t completedBatches{0U}, totalBatches{0U};
+    // Output progress is for the current batch only. It is transient session
+    // status, not a durable job receipt or producer/review outcome.
+    std::size_t completedOutputs{0U}, totalOutputs{0U};
   };
   [[nodiscard]] core::Result<void> beginGenerationCampaignPlan(
       std::filesystem::path recipePath, std::vector<std::string> plannedTakeIds,
@@ -572,6 +577,14 @@ struct StudioSampleReviewControl final {
     const VoicebankStudioController& controller, double width, bool recordingActive);
 [[nodiscard]] std::size_t studioGenerationQueueVisibleRows(double height) noexcept;
 [[nodiscard]] std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept;
+enum class StudioGenerationJobState : std::uint8_t {
+  Queued, PreparingBatch, Processing, OutputReady, Collected, Interrupted, NotCollected
+};
+[[nodiscard]] StudioGenerationJobState studioGenerationJobState(
+    const voicebank_production::GenerationRequestRecord& request, std::size_t jobIndex,
+    std::string_view activeRequestId,
+    const std::optional<VoicebankStudioController::GenerationCampaignProgress>& progress) noexcept;
+[[nodiscard]] std::string_view studioGenerationJobStateLabel(StudioGenerationJobState state) noexcept;
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
     bool recordingActive, std::size_t firstRequest,

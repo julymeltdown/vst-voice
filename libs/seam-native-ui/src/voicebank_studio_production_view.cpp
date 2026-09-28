@@ -261,6 +261,69 @@ std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept {
   return std::min<std::size_t>(rows, 8U);
 }
 
+StudioGenerationJobState studioGenerationJobState(
+    const voicebank_production::GenerationRequestRecord& record, std::size_t jobIndex,
+    std::string_view activeRequestId,
+    const std::optional<VoicebankStudioController::GenerationCampaignProgress>& progress) noexcept {
+  if (jobIndex >= record.request.jobs.size()) return StudioGenerationJobState::NotCollected;
+  const auto& job = record.request.jobs[jobIndex];
+  if (record.terminal) {
+    return job.batchIndex < record.terminal->completedBatches
+        ? StudioGenerationJobState::Collected : StudioGenerationJobState::NotCollected;
+  }
+  if (activeRequestId != record.request.requestId || !progress)
+    return StudioGenerationJobState::Queued;
+
+  const auto batch = job.batchIndex;
+  if (batch < static_cast<std::int64_t>(progress->completedBatches))
+    return StudioGenerationJobState::Collected;
+  if (batch > static_cast<std::int64_t>(progress->completedBatches))
+    return StudioGenerationJobState::Queued;
+
+  std::size_t positionInBatch = 0U;
+  for (std::size_t index = 0U; index < jobIndex; ++index)
+    if (record.request.jobs[index].batchIndex == batch) ++positionInBatch;
+
+  using Phase = VoicebankStudioController::GenerationCampaignProgress::Phase;
+  switch (progress->phase) {
+    case Phase::Rendering:
+      if (positionInBatch < progress->completedOutputs) return StudioGenerationJobState::OutputReady;
+      if (positionInBatch == progress->completedOutputs) return StudioGenerationJobState::Processing;
+      return StudioGenerationJobState::Queued;
+    case Phase::Collecting:
+      return positionInBatch < progress->totalOutputs
+          ? StudioGenerationJobState::OutputReady : StudioGenerationJobState::Queued;
+    case Phase::Cancelled:
+    case Phase::Failed:
+      if (positionInBatch < progress->completedOutputs) return StudioGenerationJobState::OutputReady;
+      if (progress->totalOutputs != 0U && positionInBatch == progress->completedOutputs)
+        return StudioGenerationJobState::Interrupted;
+      return StudioGenerationJobState::Queued;
+    case Phase::Complete:
+      return StudioGenerationJobState::NotCollected;
+    case Phase::Advancing:
+      return StudioGenerationJobState::PreparingBatch;
+    case Phase::Idle:
+    case Phase::Planning:
+    case Phase::Planned:
+      return StudioGenerationJobState::Queued;
+  }
+  return StudioGenerationJobState::NotCollected;
+}
+
+std::string_view studioGenerationJobStateLabel(StudioGenerationJobState state) noexcept {
+  switch (state) {
+    case StudioGenerationJobState::Queued: return "WAITING / NOT INSPECTED";
+    case StudioGenerationJobState::PreparingBatch: return "PREPARING";
+    case StudioGenerationJobState::Processing: return "PROCESSING";
+    case StudioGenerationJobState::OutputReady: return "OUTPUT READY";
+    case StudioGenerationJobState::Collected: return "COLLECTED / REVIEW SEPARATE";
+    case StudioGenerationJobState::Interrupted: return "INTERRUPTED / RETRY";
+    case StudioGenerationJobState::NotCollected: return "NOT COLLECTED";
+  }
+  return "UNKNOWN";
+}
+
 std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
     bool recordingActive, std::size_t firstRequest, std::string_view detailRequestId, std::size_t firstJob) {
@@ -371,12 +434,15 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
     }
     const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
     const auto lastJob = std::min(request.jobs.size(), firstJob + visibleJobs);
+    const auto progress = controller.generationCampaignProgress();
+    const auto activeRequestId = controller.generationCampaignSha256();
     if (request.jobs.empty()) {
       canvas.drawText({44.0, 246.0, std::max(0.0, width - 88.0), 16.0},
           "NO JOBS IN VERIFIED REQUEST", Color{166, 154, 170, 255}, 8.0);
     }
     for (std::size_t index = firstJob; index < lastJob; ++index) {
       const auto& job = request.jobs[index];
+      const auto state = studioGenerationJobState(*detail, index, activeRequestId, progress);
       const auto y = 242.0 + static_cast<double>(index - firstJob) * 34.0;
       canvas.fillRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{35, 30, 40, 255});
       canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{73, 63, 81, 255}, 1.0);
@@ -384,9 +450,13 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
           std::to_string(index + 1U) + ". " + job.jobId + "  →  " + job.takeId + "  ·  " + job.coverageKey,
           Color{239, 233, 241, 255}, 8.0);
       canvas.drawText({52.0, y + 16.0, std::max(0.0, width - 104.0), 10.0},
-          "STYLE " + job.style + " · MIDI " + std::to_string(job.pitchLayer) + " · " +
+          std::string{studioGenerationJobStateLabel(state)} + " · STYLE " + job.style +
+              " · MIDI " + std::to_string(job.pitchLayer) + " · " +
               std::to_string(job.frameCount) + " FRAMES · BATCH " + std::to_string(job.batchIndex + 1),
-          Color{166, 154, 170, 255}, 7.0);
+          state == StudioGenerationJobState::Collected ? Color{101, 187, 184, 255}
+              : state == StudioGenerationJobState::Processing ? Color{224, 155, 114, 255}
+              : state == StudioGenerationJobState::Interrupted || state == StudioGenerationJobState::NotCollected
+                  ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255}, 7.0);
     }
     if (visibleJobs != 0U && !request.jobs.empty()) {
       canvas.drawText({44.0, height - 54.0, std::max(0.0, width - 88.0), 12.0},

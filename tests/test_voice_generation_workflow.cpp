@@ -185,9 +185,17 @@ TEST_CASE("an interrupted generation request resumes its valid work without dupl
   CHECK(fixture.producer().takes.size() == 2U);
 
   // A commit whose receipt was never published is recognized, not collected twice.
+  std::vector<std::size_t> reportedBatchIndexes;
   const auto lostReceipt = fixture.advance(campaign, "2026-09-28T01:02:00Z", {},
-      {.interruptBeforeReceipt = [] { return true; }, .renderProgress = {}});
+      {.interruptBeforeReceipt = [] { return true; }, .renderProgress = {},
+       .jobProgress = [&](std::size_t batchIndex, std::size_t, std::size_t) {
+         reportedBatchIndexes.push_back(batchIndex);
+       }});
   CHECK(!lostReceipt);
+  CHECK(!reportedBatchIndexes.empty());
+  CHECK(std::all_of(reportedBatchIndexes.begin(), reportedBatchIndexes.end(), [](std::size_t batchIndex) {
+    return batchIndex == 1U;
+  }));
   CHECK(fixture.producer().takes.size() == 4U);
   const auto finished = fixture.advance(campaign, "2026-09-28T01:03:00Z");
   CHECK(finished);
