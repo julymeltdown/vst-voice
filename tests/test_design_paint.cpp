@@ -168,3 +168,149 @@ TEST_CASE("paint: repeated identical drawing has identical pixel hashes") {
   CHECK(a.checksum() == b.checksum());
   CHECK(std::equal(a.pixels().begin(), a.pixels().end(), b.pixels().begin()));
 }
+
+namespace {
+
+// Note capsules at fractional positions, a translucent glass panel and knob bodies (one at 0.4
+// opacity, as a refused knob draws) over bars of varied colour: the fills the canvas draws in
+// software, over a background that makes every coverage and blend visible.
+void drawGradientShapes(paint::Canvas2D& c) {
+  for (int i = 0; i < 16; ++i) {
+    const auto step = static_cast<std::uint8_t>(i);
+    c.fill(Path::rect({i * 16.0, 0.0, 16.0, 120.0}),
+           Color{static_cast<std::uint8_t>(20U + step * 13U), static_cast<std::uint8_t>(200U - step * 9U),
+                 static_cast<std::uint8_t>(90U + step * 5U), 255});
+  }
+  for (int i = 0; i < 5; ++i) {
+    const ui::Rect r{7.3 + i * 47.1, 10.45 + i * 3.7, 38.6, 13.9};
+    c.fill(Path::roundedRect(r, 6.95),
+           paint::LinearGradient{{r.x, r.y}, {r.x, r.bottom()},
+                                 {{0.0, Color{205, 60, 90, 255}}, {1.0, Color{25, 20, 30, 255}}}});
+  }
+  c.save();
+  c.setAlpha(0.9);
+  c.fill(Path::roundedRect({4.0, 40.0, 200.0, 70.0}, 12.0),
+         paint::LinearGradient{{4.0, 40.0}, {4.0, 110.0},
+                               {{0.0, Color{27, 24, 29, 255}}, {1.0, Color{19, 17, 21, 255}}}});
+  c.restore();
+  for (int i = 0; i < 3; ++i) {
+    const ui::Point k{40.0 + i * 70.25, 80.5};
+    c.save();
+    c.setAlpha(i == 2 ? 0.4 : 1.0);
+    c.fill(Path::circle(k, 19.0),
+           paint::RadialGradient{{k.x - 6.0, k.y - 8.0}, 26.0,
+                                 {{0.0, Color{90, 80, 110, 255}}, {1.0, Color{30, 26, 38, 255}}}});
+    c.restore();
+  }
+}
+
+}  // namespace
+
+TEST_CASE("paint: software gradient fills of round shapes match the backend and any split of themselves") {
+  if (!backendOrSkip()) return;
+  constexpr double scale = 2.0;
+  constexpr std::uint32_t width = 512U, height = 240U;
+  // A surface whose first row lies `top` logical points down the drawing.
+  const auto draw = [&](PixelSurface& surface, double top) {
+    auto c = paint::makeCanvas(surface, scale);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    c->translate(0.0, -top);
+    drawGradientShapes(*c);
+    c->flush();
+  };
+  PixelSurface software{width, height};
+  draw(software, 0.0);
+  PixelSurface backend{width, height};
+  {
+    const paint::ScopedBackendGradients vector;
+    draw(backend, 0.0);
+  }
+  int maximum = 0;
+  std::size_t aboveTwo = 0U;
+  double total = 0.0;
+  for (std::size_t i = 0U; i < software.pixels().size(); ++i) {
+    int pixelMax = 0;
+    for (const unsigned shift : {0U, 8U, 16U, 24U}) {
+      const auto d = std::abs(channel(software.pixels()[i], shift) - channel(backend.pixels()[i], shift));
+      pixelMax = std::max(pixelMax, d);
+      total += d;
+    }
+    maximum = std::max(maximum, pixelMax);
+    if (pixelMax > 2) ++aboveTwo;
+  }
+  const auto pixels = static_cast<double>(software.pixels().size());
+  std::cout << "software gradient fills against the backend: max=" << maximum
+            << " mean=" << total / (4.0 * pixels)
+            << " above2=" << 100.0 * static_cast<double>(aboveTwo) / pixels << "%\n";
+  // A bound, not an identity: along a short steep ramp such as a note capsule's, the backend steps
+  // through a coarse colour table without dithering and strays up to about three levels from the
+  // exact gradient (the next test measures that), and arc coverage differs slightly as estimated.
+  CHECK(maximum <= 6);
+  CHECK(total / (4.0 * pixels) < 0.5);
+  // Two clip rectangles, and surfaces moved down by whole device rows (one not a multiple of the
+  // dither's eight), reassemble the whole drawing exactly.
+  PixelSurface clipped{width, height};
+  {
+    auto c = paint::makeCanvas(clipped, scale);
+    CHECK(c != nullptr);
+    if (c != nullptr) {
+      for (const auto& piece : {ui::Rect{0.0, 0.0, 256.0, 61.5}, ui::Rect{0.0, 61.5, 256.0, 58.5}}) {
+        c->save();
+        c->clipRect(piece);
+        drawGradientShapes(*c);
+        c->restore();
+      }
+      c->flush();
+    }
+  }
+  CHECK(clipped.checksum() == software.checksum());
+  for (const std::uint32_t split : {56U, 20U}) {
+    PixelSurface upper{width, split}, lower{width, height - split};
+    draw(upper, 0.0);
+    draw(lower, static_cast<double>(split) / scale);
+    CHECK(std::equal(upper.pixels().begin(), upper.pixels().end(), software.pixels().begin()));
+    CHECK(std::equal(lower.pixels().begin(), lower.pixels().end(),
+                     software.pixels().begin() + static_cast<std::ptrdiff_t>(split) * width));
+  }
+}
+
+TEST_CASE("paint: a software capsule gradient is the exact ramp at each row's pixel centres") {
+  if (!backendOrSkip()) return;
+  // A note capsule over black at 2x: a 180-level ramp over 27.8 device rows. Averaging 50 columns
+  // of a row cancels the ordered dither, leaving the row's colour.
+  const ui::Rect r{4.0, 4.0, 56.0, 13.9};
+  const auto draw = [&](PixelSurface& surface) {
+    surface.clear(kBlack);
+    auto c = paint::makeCanvas(surface, 2.0);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    c->fill(Path::roundedRect(r, 6.95),
+            paint::LinearGradient{{r.x, r.y}, {r.x, r.bottom()},
+                                  {{0.0, Color{205, 60, 90, 255}}, {1.0, Color{25, 20, 30, 255}}}});
+    c->flush();
+  };
+  PixelSurface software{128, 64}, backend{128, 64};
+  draw(software);
+  {
+    const paint::ScopedBackendGradients vector;
+    draw(backend);
+  }
+  double worstSoftware = 0.0, worstBackend = 0.0;
+  for (std::uint32_t y = 8U; y < 36U; ++y) {
+    double sumSoftware = 0.0, sumBackend = 0.0;
+    for (std::uint32_t x = 40U; x < 90U; ++x) {
+      sumSoftware += channel(software.pixels()[y * 128U + x], 16);
+      sumBackend += channel(backend.pixels()[y * 128U + x], 16);
+    }
+    // Rows 8 to 34 are whole; the shape covers 0.8 of row 35.
+    const auto coverage = std::min(1.0, 35.8 - static_cast<double>(y));
+    const auto t = std::clamp((static_cast<double>(y) + 0.5 - 8.0) / 27.8, 0.0, 1.0);
+    const auto exact = (205.0 - 180.0 * t) * coverage;
+    worstSoftware = std::max(worstSoftware, std::abs(sumSoftware / 50.0 - exact));
+    worstBackend = std::max(worstBackend, std::abs(sumBackend / 50.0 - exact));
+  }
+  std::cout << "capsule row-mean error against the exact ramp: software=" << worstSoftware
+            << " backend=" << worstBackend << '\n';
+  CHECK(worstSoftware <= 0.35);
+}

@@ -254,6 +254,21 @@ private:
   bool previous_{false};
 };
 
+// Test and evidence hook: while one is alive on this thread, gradient fills are drawn by the
+// backend itself rather than by the software fills of rounded rectangles and circles, so a test can
+// measure those fills against the backend.
+class ScopedBackendGradients final {
+public:
+  ScopedBackendGradients() noexcept;
+  ~ScopedBackendGradients();
+  ScopedBackendGradients(const ScopedBackendGradients&) = delete;
+  ScopedBackendGradients& operator=(const ScopedBackendGradients&) = delete;
+  [[nodiscard]] static bool active() noexcept;
+
+private:
+  bool previous_{false};
+};
+
 // While one is alive on this thread, canvases made on it may draw at the same time as canvases on
 // other threads (each on its own surface). CoreGraphics' own drawing of translucent solid colours
 // is not safe to run on several threads at once (its anti-aliased edges come out differently), so

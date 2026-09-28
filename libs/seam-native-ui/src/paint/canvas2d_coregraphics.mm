@@ -1,5 +1,6 @@
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/paint/presentation_color.hpp"
+#include "seam/native_ui/paint/round_rect_fill.hpp"
 
 #import <AppKit/AppKit.h>
 #import <Accelerate/Accelerate.h>
@@ -612,8 +613,9 @@ public:
     }, shape);
   }
   void fill(const Path& path, const LinearGradient& gradient) override {
+    if (path.empty() || fillGradientInSoftware(path, gradient)) return;
     const auto g = toCgGradient(gradient.stops);
-    if (path.empty() || !g) return;
+    if (!g) return;
     const auto p = toCgPath(path);
     glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
       CGContextSaveGState(ctx);
@@ -627,8 +629,9 @@ public:
     });
   }
   void fill(const Path& path, const RadialGradient& gradient) override {
+    if (path.empty() || fillGradientInSoftware(path, gradient)) return;
     const auto g = toCgGradient(gradient.stops);
-    if (path.empty() || !g) return;
+    if (!g) return;
     const auto p = toCgPath(path);
     glowed(CGPathGetBoundingBox(p.get()), [&](CGContextRef ctx) {
       CGContextSaveGState(ctx);
@@ -1400,6 +1403,125 @@ private:
   [[nodiscard]] std::uint32_t* row(std::int64_t upwardY) noexcept {
     const auto height = static_cast<std::int64_t>(surface_.height());
     return surface_.pixels().data() + (height - 1 - upwardY) * static_cast<std::int64_t>(surface_.width());
+  }
+
+  // A rounded rectangle or circle as Path::roundedRect or Path::circle builds it: its logical
+  // bounds and corner radius, recovered from a few elements and confirmed by rebuilding the whole
+  // path from them. Any other path, however round, is left to CoreGraphics.
+  struct RoundShape final {
+    ui::Rect rect;
+    double radius{0.0};
+  };
+  static std::optional<RoundShape> roundShapeOf(const Path& path) {
+    using Verb = Path::Verb;
+    const auto& e = path.elements();
+    const auto near = [](ui::Point a, ui::Point b) {
+      const auto close = [](double u, double v) {
+        return std::abs(u - v) <= 1e-9 * std::max({1.0, std::abs(u), std::abs(v)});
+      };
+      return close(a.x, b.x) && close(a.y, b.y);
+    };
+    const auto rebuilds = [&](const Path& candidate) {
+      const auto& c = candidate.elements();
+      if (c.size() != e.size()) return false;
+      for (std::size_t i = 0; i < c.size(); ++i) {
+        if (c[i].verb != e[i].verb) return false;
+        if (c[i].verb == Verb::Close) continue;
+        if (!near(c[i].a, e[i].a)) return false;
+        if ((c[i].verb == Verb::Quad || c[i].verb == Verb::Cubic) && !near(c[i].b, e[i].b)) return false;
+        if (c[i].verb == Verb::Cubic && !near(c[i].c, e[i].c)) return false;
+      }
+      return true;
+    };
+    // Path::circle: a move to angle 0, four quarter turns and a close.
+    if (e.size() == 6U && e[0].verb == Verb::Move && e[2].verb == Verb::Cubic) {
+      const auto cx = (e[0].a.x + e[2].c.x) * 0.5;
+      const auto r = (e[0].a.x - e[2].c.x) * 0.5;
+      if (!(r > 0.0) || !rebuilds(Path::circle({cx, e[0].a.y}, r))) return std::nullopt;
+      return RoundShape{{cx - r, e[0].a.y - r, 2.0 * r, 2.0 * r}, r};
+    }
+    // Path::roundedRect: four sides, each followed by a quarter turn, and a close.
+    if (e.size() == 14U && e[0].verb == Verb::Move && e[3].verb == Verb::Cubic &&
+        e[6].verb == Verb::Cubic) {
+      const auto top = e[0].a.y;
+      const auto radius = e[3].c.y - top;
+      const ui::Rect rect{e[0].a.x - radius, top, e[3].c.x - (e[0].a.x - radius), e[6].c.y - top};
+      if (!(radius > 0.0) || !(rect.width > 0.0) || !(rect.height > 0.0) ||
+          !rebuilds(Path::roundedRect(rect, radius)))
+        return std::nullopt;
+      return RoundShape{rect, radius};
+    }
+    return std::nullopt;
+  }
+
+  // The transform as a uniform scale that flips y, plus a translation: the form the software
+  // gradient fills take. Logical x lands at column tx + scale x, logical y at row oy + scale y
+  // counted downward in memory.
+  struct DeviceMapping final {
+    double scale{1.0};
+    double tx{0.0};
+    double oy{0.0};
+  };
+  [[nodiscard]] std::optional<DeviceMapping> deviceMapping() const noexcept {
+    const auto m = CGContextGetCTM(context_.get());
+    if (m.b != 0.0 || m.c != 0.0 || !(m.a > 0.0) || m.d != -m.a) return std::nullopt;
+    return DeviceMapping{m.a, m.tx, static_cast<double>(surface_.height()) - m.ty};
+  }
+  // The tracked clip in memory rows, and a dither that follows the logical origin, so a surface
+  // moved by whole device pixels (a background band) gets the same pattern as the whole surface.
+  [[nodiscard]] DeviceFillTarget fillTarget(const DeviceMapping& m) const noexcept {
+    const auto height = static_cast<double>(surface_.height());
+    const auto& clip = tracked_.clip;
+    return DeviceFillTarget{.clipLeft = std::lround(CGRectGetMinX(clip)),
+                            .clipTop = std::lround(height - CGRectGetMaxY(clip)),
+                            .clipRight = std::lround(CGRectGetMaxX(clip)),
+                            .clipBottom = std::lround(height - CGRectGetMinY(clip)),
+                            .ditherColumn = -std::lround(m.tx),
+                            .ditherRow = -std::lround(m.oy)};
+  }
+  [[nodiscard]] static DeviceRoundRect toDevice(const RoundShape& s, const DeviceMapping& m) noexcept {
+    return DeviceRoundRect{.left = m.tx + m.scale * s.rect.x,
+                           .top = m.oy + m.scale * s.rect.y,
+                           .right = m.tx + m.scale * s.rect.right(),
+                           .bottom = m.oy + m.scale * s.rect.bottom(),
+                           .radius = m.scale * s.radius};
+  }
+  // Two stops at the ends sharing one alpha, which CoreGraphics and the software fills interpolate
+  // alike.
+  static bool plainStops(const std::vector<GradientStop>& stops) noexcept {
+    return stops.size() == 2U && stops[0].offset == 0.0 && stops[1].offset == 1.0 &&
+           stops[0].color.alpha == stops[1].color.alpha;
+  }
+
+  // A rounded rectangle or circle under a vertical two-stop gradient (a note capsule, a panel):
+  // CoreGraphics builds a shading for every such fill, which dominates a frame of small shapes.
+  bool fillGradientInSoftware(const Path& path, const LinearGradient& g) {
+    if (ScopedBackendGradients::active() || glow_.on || !softwareState() || !plainStops(g.stops) ||
+        g.from.x != g.to.x || g.from.y == g.to.y)
+      return false;
+    const auto mapping = deviceMapping();
+    if (!mapping) return false;
+    const auto shape = roundShapeOf(path);
+    if (!shape) return false;
+    fillRoundRectVertical(surface_, toDevice(*shape, *mapping), fillTarget(*mapping), g.stops[0].color,
+                          g.stops[1].color, mapping->oy + mapping->scale * g.from.y,
+                          mapping->oy + mapping->scale * g.to.y, tracked_.alpha);
+    return true;
+  }
+  // The same shapes under a two-stop radial gradient from its centre (a knob body).
+  bool fillGradientInSoftware(const Path& path, const RadialGradient& g) {
+    if (ScopedBackendGradients::active() || glow_.on || !softwareState() || !plainStops(g.stops) ||
+        !(g.radius > 0.0))
+      return false;
+    const auto mapping = deviceMapping();
+    if (!mapping) return false;
+    const auto shape = roundShapeOf(path);
+    if (!shape) return false;
+    fillRoundRectRadial(surface_, toDevice(*shape, *mapping), fillTarget(*mapping), g.stops[0].color,
+                        g.stops[1].color, mapping->tx + mapping->scale * g.center.x,
+                        mapping->oy + mapping->scale * g.center.y, mapping->scale * g.radius,
+                        tracked_.alpha);
+    return true;
   }
 
   // An axis-aligned rectangle filled with a flat colour, its fractional edges covered by area.

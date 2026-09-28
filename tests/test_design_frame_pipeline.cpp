@@ -901,10 +901,11 @@ TEST_CASE("software glass-panel fills keep their pixels in any banding and stay 
     CHECK(banded.checksum() == whole.checksum());
   }
   if (!native_ui::paint::vectorBackendAvailable()) return;
-  // CoreGraphics draws the same fills over the same wash, as the shell's vector reference does.
+  // CoreGraphics draws the same fills over the same wash, bypassing the canvas's own software fills.
   PixelSurface vector{width, height};
   paintBackgroundWash(vector, scale, 0U, height, tokens);
   {
+    const native_ui::paint::ScopedBackendGradients backend;
     auto c = native_ui::paint::makeCanvas(vector, scale);
     CHECK(c != nullptr);
     if (c == nullptr) return;

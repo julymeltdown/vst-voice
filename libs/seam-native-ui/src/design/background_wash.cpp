@@ -1,5 +1,7 @@
 #include "seam/native_ui/design/background_wash.hpp"
 
+#include "seam/native_ui/paint/round_rect_fill.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -20,26 +22,6 @@ namespace seam::native_ui::design {
 namespace {
 
 constexpr Color kWhite{255, 255, 255, 255};
-
-// An 8 x 8 ordered-dither matrix as 16-bit thresholds, (index + 0.5) / 64 of one channel step.
-// CoreGraphics dithers the gradients it draws; the software glass-panel fill does the same, so a
-// low-contrast ramp over hundreds of rows does not step in visible bands.
-constexpr std::array<std::array<std::uint32_t, 8U>, 8U> kPanelDither = [] {
-  constexpr std::array<std::array<std::uint32_t, 8U>, 8U> index{{
-      {0U, 32U, 8U, 40U, 2U, 34U, 10U, 42U},
-      {48U, 16U, 56U, 24U, 50U, 18U, 58U, 26U},
-      {12U, 44U, 4U, 36U, 14U, 46U, 6U, 38U},
-      {60U, 28U, 52U, 20U, 62U, 30U, 54U, 22U},
-      {3U, 35U, 11U, 43U, 1U, 33U, 9U, 41U},
-      {51U, 19U, 59U, 27U, 49U, 17U, 57U, 25U},
-      {15U, 47U, 7U, 39U, 13U, 45U, 5U, 37U},
-      {63U, 31U, 55U, 23U, 61U, 29U, 53U, 21U},
-  }};
-  std::array<std::array<std::uint32_t, 8U>, 8U> thresholds{};
-  for (std::size_t y = 0; y < 8U; ++y)
-    for (std::size_t x = 0; x < 8U; ++x) thresholds[y][x] = index[y][x] * 1024U + 512U;
-  return thresholds;
-}();
 
 // The procedural wash has no text or layout-dependent chrome. Device rows are independent, so
 // each compositor band can rasterize it without creating a CoreGraphics path or sharing pixels.
@@ -397,107 +379,24 @@ void paintBackgroundWash(PixelSurface& surface, double scale, std::uint32_t top,
 
 void paintGlassPanelFills(PixelSurface& band, double scale, std::uint32_t top,
                           std::span<const GlassPanelFill> fills) {
-  const auto width = static_cast<std::int64_t>(band.width());
-  const auto height = static_cast<std::int64_t>(band.height());
-  auto pixels = band.pixels();
+  // The band's rows lie `top` device rows down the surface; the dither follows the whole surface.
+  const paint::DeviceFillTarget target{.clipLeft = 0,
+                                       .clipTop = 0,
+                                       .clipRight = band.width(),
+                                       .clipBottom = band.height(),
+                                       .ditherColumn = 0,
+                                       .ditherRow = top};
+  const auto offset = static_cast<double>(top);
   for (const auto& fill : fills) {
     const auto& r = fill.rect;
     if (r.width <= 0.0 || r.height <= 0.0 || fill.opacity <= 0.0) continue;
-    const auto left = r.x * scale;
-    const auto right = r.right() * scale;
-    const auto upper = r.y * scale;
-    const auto lower = r.bottom() * scale;
-    const auto radius = std::clamp(fill.radius, 0.0, std::min(r.width, r.height) * 0.5) * scale;
-    const auto arcTop = upper + radius;
-    const auto arcBottom = lower - radius;
-    // The left boundary at device height y; the right boundary mirrors it.
-    const auto edge = [&](double y) {
-      const auto dy = y < arcTop ? arcTop - y : y > arcBottom ? y - arcBottom : 0.0;
-      if (dy <= 0.0) return left;
-      return left + radius - std::sqrt(std::max(0.0, radius * radius - dy * dy));
-    };
-    const auto inside = [&](double x, double y) {
-      if (x < left || x >= right || y < upper || y >= lower) return false;
-      const auto dx = x - std::clamp(x, left + radius, right - radius);
-      const auto dy = y - std::clamp(y, arcTop, arcBottom);
-      return dx * dx + dy * dy <= radius * radius;
-    };
-    const auto first = std::max<std::int64_t>(
-        0, static_cast<std::int64_t>(std::floor(upper)) - static_cast<std::int64_t>(top));
-    const auto last = std::min<std::int64_t>(
-        height, static_cast<std::int64_t>(std::ceil(lower)) - static_cast<std::int64_t>(top));
-    for (auto row = first; row < last; ++row) {
-      const auto y0 = static_cast<double>(top) + static_cast<double>(row);
-      const auto ya = std::max(y0, upper);
-      const auto yb = std::min(y0 + 1.0, lower);
-      if (yb <= ya) continue;
-      // The vertical gradient's value at this row's pixel centres, and its opacity.
-      const auto t = std::clamp((y0 + 0.5 - upper) / (lower - upper), 0.0, 1.0);
-      const auto mix = [t](std::uint8_t a, std::uint8_t b) {
-        return static_cast<double>(a) + (static_cast<double>(b) - static_cast<double>(a)) * t;
-      };
-      const auto alpha = mix(fill.top.alpha, fill.bottom.alpha) / 255.0 * fill.opacity;
-      const std::array<double, 3U> color{mix(fill.top.blue, fill.bottom.blue),
-                                         mix(fill.top.green, fill.bottom.green),
-                                         mix(fill.top.red, fill.bottom.red)};
-      auto* line = pixels.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width);
-      const auto blend = [&](std::int64_t x, double coverage) {
-        const auto a = alpha * coverage;
-        if (a <= 0.0) return;
-        auto& pixel = line[x];
-        const auto channel = [&](unsigned shift, double source) {
-          const auto held = static_cast<double>((pixel >> shift) & 255U);
-          return static_cast<std::uint32_t>(std::lround(source * a + held * (1.0 - a)));
-        };
-        pixel = channel(0U, color[0]) | (channel(8U, color[1]) << 8U) |
-                (channel(16U, color[2]) << 16U) | 0xFF000000U;
-      };
-      // Columns wholly inside over the row's span, and the edge columns around them. The boundary
-      // moves outward toward the straight part, so its extremes lie at the span's ends.
-      const auto straight = ya <= arcBottom && yb >= arcTop;
-      const auto innerLeft = std::max(edge(ya), edge(yb));
-      const auto outerLeft = straight ? left : std::min(edge(ya), edge(yb));
-      const auto innerRight = left + right - innerLeft;
-      const auto outerRight = left + right - outerLeft;
-      const auto clampX = [width](double x) {
-        return static_cast<std::int64_t>(std::clamp(x, 0.0, static_cast<double>(width)));
-      };
-      const auto outerStart = clampX(std::floor(outerLeft));
-      const auto outerEnd = clampX(std::ceil(outerRight));
-      auto fullStart = clampX(std::ceil(innerLeft));
-      auto fullEnd = clampX(std::floor(innerRight));
-      if (fullEnd < fullStart) fullStart = fullEnd = outerEnd;
-      const auto sampled = [&](std::int64_t x) {
-        int count = 0;
-        for (int sy = 0; sy < 8; ++sy)
-          for (int sx = 0; sx < 8; ++sx)
-            count += inside(static_cast<double>(x) + (sx + 0.5) / 8.0, y0 + (sy + 0.5) / 8.0) ? 1 : 0;
-        return static_cast<double>(count) / 64.0;
-      };
-      for (auto x = outerStart; x < fullStart; ++x) blend(x, sampled(x));
-      for (auto x = std::max(fullEnd, fullStart); x < outerEnd; ++x) blend(x, sampled(x));
-      if (fullStart >= fullEnd) continue;
-      // The wholly covered run, in 16-bit fixed point: one weight and one source term per row,
-      // floored after adding the pixel's ordered-dither threshold. The threshold follows the
-      // device position, so every banding gives the same pixels.
-      const auto a = alpha * (yb - ya);
-      const auto weight = static_cast<std::uint32_t>(std::lround(std::clamp(a, 0.0, 1.0) * 65536.0));
-      const auto keep = 65536U - weight;
-      const auto source = [&](std::size_t channel) {
-        return static_cast<std::uint32_t>(std::lround(color[channel] * static_cast<double>(weight)));
-      };
-      const auto blue = source(0U);
-      const auto green = source(1U);
-      const auto red = source(2U);
-      const auto& dither = kPanelDither[static_cast<std::size_t>(y0) & 7U];
-      for (auto x = fullStart; x < fullEnd; ++x) {
-        const auto held = line[x];
-        const auto threshold = dither[static_cast<std::size_t>(x) & 7U];
-        line[x] = ((blue + (held & 255U) * keep + threshold) >> 16U) |
-                  (((green + ((held >> 8U) & 255U) * keep + threshold) >> 16U) << 8U) |
-                  (((red + ((held >> 16U) & 255U) * keep + threshold) >> 16U) << 16U) | 0xFF000000U;
-      }
-    }
+    const paint::DeviceRoundRect shape{.left = r.x * scale,
+                                       .top = r.y * scale - offset,
+                                       .right = r.right() * scale,
+                                       .bottom = r.bottom() * scale - offset,
+                                       .radius = fill.radius * scale};
+    paint::fillRoundRectVertical(band, shape, target, fill.top, fill.bottom, shape.top, shape.bottom,
+                                 fill.opacity);
   }
 }
 

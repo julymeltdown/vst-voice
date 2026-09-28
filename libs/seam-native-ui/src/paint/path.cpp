@@ -123,6 +123,18 @@ ScopedFullResolutionGlow::~ScopedFullResolutionGlow() { fullResolutionGlow = pre
 bool ScopedFullResolutionGlow::active() noexcept { return fullResolutionGlow; }
 
 namespace {
+thread_local bool backendGradients = false;
+}  // namespace
+
+ScopedBackendGradients::ScopedBackendGradients() noexcept : previous_{backendGradients} {
+  backendGradients = true;
+}
+
+ScopedBackendGradients::~ScopedBackendGradients() { backendGradients = previous_; }
+
+bool ScopedBackendGradients::active() noexcept { return backendGradients; }
+
+namespace {
 thread_local bool concurrentCanvas = false;
 }  // namespace
 

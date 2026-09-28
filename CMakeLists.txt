@@ -757,7 +757,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/paint/path.cpp
     libs/seam-native-ui/src/paint/display_list.cpp
     libs/seam-native-ui/src/paint/layer_cache.cpp
-    libs/seam-native-ui/src/paint/qoi_decoder.cpp)
+    libs/seam-native-ui/src/paint/qoi_decoder.cpp
+    libs/seam-native-ui/src/paint/round_rect_fill.cpp)
   if(APPLE)
     target_sources(seam_native_ui PRIVATE
       libs/seam-native-ui/src/paint/canvas2d_coregraphics.mm
