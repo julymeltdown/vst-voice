@@ -129,7 +129,9 @@ set(SEAM_RAW_RENDERER_REVISION 10)
 # 2.000, and +2400.0 cents at ratio 4.000. The window is sized from the target
 # period to match the new read step. Bumping this revision is what invalidates
 # cached PCM that the old renderer produced.
-set(SEAM_PSOLA_RENDERER_REVISION 11)
+# Revision 12 retargets the voiced attack and release to the compiled F0 as well
+# as the sustain; they were copied at the source pitch.
+set(SEAM_PSOLA_RENDERER_REVISION 12)
 set(SEAM_SPECTRAL_RENDERER_REVISION 8)
 set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)
