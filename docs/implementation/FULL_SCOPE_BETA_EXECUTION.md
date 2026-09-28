@@ -4406,3 +4406,15 @@ synthesis-quality, performance-compiler and formant-expression targets;
 not natural-voice perceptual acceptance: the multilingual fixed corpus,
 listening/reviewer evidence and the associated full milestone gates remain
 open. `.github` was not touched.
+
+2026-09-28 — U16 release-edge timing supplement, verified and pushed in
+`97423695`; GitHub CI remains deferred and `.github` was not touched. The
+frozen source now has a voiced segment immediately before the authored release
+marker and a deterministic unvoiced tail after it. At both compressed and
+expanded tempos, the end-to-end snapshot test confirms the measured voicing
+boundary and correlates the rendered release tail above 0.99 with the
+alignment-mapped source tail, while preserving the exact render extent and
+score-pitch assertions. The focused performance-snapshot CTest passes in
+Release and Debug. This closes only a numerical synthetic release-mapping gap;
+short/long natural vowels, intelligibility, fixed-corpus and listening/reviewer
+qualification, U16 acceptance and Beta GO remain open.
