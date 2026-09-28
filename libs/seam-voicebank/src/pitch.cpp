@@ -206,4 +206,38 @@ double medianVoicedPitch(std::span<const PitchFrame> frames) noexcept {
   return (lower + *middle) / 2.0;
 }
 
+std::vector<PitchFrameRegion> partitionPitchFrames(
+    std::span<const PitchFrame> frames, std::size_t frameSize, std::size_t extent) {
+  std::vector<PitchFrameRegion> regions;
+  if (frames.empty() || extent == 0U) return regions;
+  for (std::size_t index = 1U; index < frames.size(); ++index) {
+    if (frames[index].sourceFrame < frames[index - 1U].sourceFrame) return {};
+  }
+  regions.reserve(frames.size());
+  const auto halfWindow = frameSize / 2U;
+  std::size_t start = 0U;
+  for (std::size_t index = 0U; index < frames.size() && start < extent; ++index) {
+    auto end = extent;
+    if (index + 1U < frames.size()) {
+      // The boundary with the next frame is the midpoint of the two window
+      // centres: ((a + h) + (b + h)) / 2 = a + (b - a) / 2 + h, written so it
+      // cannot overflow for any in-range origin.
+      const auto left = frames[index].sourceFrame;
+      const auto right = frames[index + 1U].sourceFrame;
+      const auto midpoint = left + (right - left) / 2U;
+      end = midpoint >= extent || halfWindow >= extent - midpoint
+          ? extent
+          : midpoint + halfWindow;
+    }
+    // Coincident origins, or a centre past the end of the audio, describe no
+    // samples of their own. The next frame that does takes over from here.
+    if (end <= start) continue;
+    regions.push_back(PitchFrameRegion{start, end, index});
+    start = end;
+  }
+  if (regions.empty()) return regions;
+  regions.back().end = extent;
+  return regions;
+}
+
 }  // namespace seam::voicebank

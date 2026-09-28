@@ -593,6 +593,12 @@ core::Result<std::string> buildIdentity(
     addUnitMetadata(writer, *unit);
     writer.tag(selectedUnits[index].audioSha256);
     writer.tag(selectedUnits[index].sourceAlignmentSha256);
+    // Only present analyses are tagged, which keeps every identity computed for a
+    // bank without stored analyses exactly as it was.
+    if (!selectedUnits[index].acousticAnalysisSha256.empty()) {
+      writer.tag("acoustic-analysis");
+      writer.tag(selectedUnits[index].acousticAnalysisSha256);
+    }
   }
   return writer.finish();
 }
@@ -1175,6 +1181,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   // separate from the alignment map because an analysis and an alignment are
   // independent: a bank may have either, both or neither.
   std::map<std::string, voicebank::AcousticAnalysis> analyses;
+  // Exact bytes of each loaded analysis sidecar, for the render identity.
+  std::map<std::string, std::string> analysisDigests;
   std::uint64_t alignmentBytes = 0U;
   std::uint64_t frozenEncodedBytes = 0U;
   std::uint64_t frozenDecodedBytes = 0U;
@@ -1298,6 +1306,7 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
                                      decodedAnalysis.error().context);
         }
         analyses.emplace(unit->id, std::move(decodedAnalysis).value());
+        analysisDigests.emplace(unit->id, core::sha256Hex(bytes.value()));
       }
     }
     frozenByUnit.emplace(unit->id, synthesis::FrozenUnitAudio{
@@ -1312,6 +1321,11 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
         }(),
     });
     return {};
+  };
+
+  const auto analysisDigestFor = [&analysisDigests](const std::string& unitId) {
+    const auto found = analysisDigests.find(unitId);
+    return found == analysisDigests.end() ? std::string{} : found->second;
   };
 
   // Probe only phone-matching units whose edited span needs extra landmarks.
@@ -1431,7 +1445,8 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
     const auto frozen = freezeUnit(*unit);
     if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
     const auto& resource = frozenByUnit.at(entry.unitId);
-    selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256, alignments.at(entry.unitId).sha256});
+    selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256, alignments.at(entry.unitId).sha256,
+                             analysisDigestFor(entry.unitId)});
     frozenAudio.push_back(resource);
   }
 
@@ -1458,7 +1473,9 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
       const auto frozen = freezeUnit(*unit);
       if (!frozen) return core::Result<RenderSnapshot>{frozen.error()};
       const auto& resource = frozenByUnit.at(entry.unitId);
-      secondary->selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256, alignments.at(entry.unitId).sha256});
+      secondary->selectedUnits.push_back({entry.unitId, resource.verifiedAudioSha256,
+                                          alignments.at(entry.unitId).sha256,
+                                          analysisDigestFor(entry.unitId)});
       secondary->frozenAudio.push_back(resource);
     }
   }

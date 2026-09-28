@@ -10,6 +10,11 @@ struct SelectedUnitIdentity final {
   std::string unitId;
   std::string audioSha256;
   std::string sourceAlignmentSha256{};
+  // Digest of the stored acoustic-analysis sidecar the renderers consumed for
+  // this unit, or empty when the bank stores none. Measured voicing changes how a
+  // unit renders, so a regenerated or removed analysis must not reuse PCM that was
+  // rendered under the previous one.
+  std::string acousticAnalysisSha256{};
   friend bool operator==(const SelectedUnitIdentity&, const SelectedUnitIdentity&) = default;
 };
 

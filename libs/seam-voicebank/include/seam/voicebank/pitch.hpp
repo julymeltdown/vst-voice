@@ -43,4 +43,35 @@ struct PitchAnalysisLimits final {
     PitchConfig config = {}, std::stop_token stopToken = {}, PitchAnalysisLimits limits = {});
 [[nodiscard]] double medianVoicedPitch(std::span<const PitchFrame> frames) noexcept;
 
+// The samples one analysis frame speaks for.
+struct PitchFrameRegion final {
+  std::size_t start{0};
+  std::size_t end{0};  // exclusive
+  std::size_t frameIndex{0};
+
+  friend bool operator==(const PitchFrameRegion&, const PitchFrameRegion&) = default;
+};
+
+// Assigns every sample of [0, extent) to exactly one analysis frame: the frame
+// whose window centre is nearest. This is the one definition of "the frame that
+// describes this sample" shared by the stored acoustic analysis, pitch mark
+// generation and anything else that turns frames into sample positions.
+//
+// Why the centre: a frame at origin s measures [s, s + frameSize), so its
+// conclusion is best supported at s + frameSize / 2, where both halves of the
+// window agree. Anchoring a frame to its origin instead attributes that conclusion
+// to the first hop of the window, which is at the window's edge. Measured on a
+// 48 kHz engineering fixture (200 Hz sine, noise from 19200 to 28800, 240 Hz
+// sine) with the 2048/256 producer analysis, origin anchoring put the
+// noise-to-voice boundary 1408 samples before the real one: 29 ms of fricative
+// described as voiced.
+//
+// Regions are contiguous, ascending, non-empty and cover [0, extent) exactly;
+// the first reaches back to 0 and the last reaches forward to extent. Frames are
+// expected in ascending origin order, as analyzePitch emits them. An empty result
+// means there is nothing to partition (no frames, zero extent, or frames out of
+// order), never a partial description.
+[[nodiscard]] std::vector<PitchFrameRegion> partitionPitchFrames(
+    std::span<const PitchFrame> frames, std::size_t frameSize, std::size_t extent);
+
 }  // namespace seam::voicebank

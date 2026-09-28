@@ -12,8 +12,10 @@ namespace seam::voicebank {
 // Voicebank. Presentation assets, character data and license text are
 // deliberately excluded. The digest covers the canonical Manifest v3 JSON,
 // each unique Unit audio path and the SHA-256 of the corresponding file, plus
-// present per-unit source-alignment sidecars. Banks without sidecars retain
-// their legacy digest. Alignment hashing does not establish semantic validity.
+// present per-unit source-alignment and acoustic-analysis sidecars, both of which
+// change how a unit renders. Banks without sidecars retain their legacy digest,
+// and banks with alignments only retain the digest they had before analyses were
+// hashed. Sidecar hashing does not establish semantic validity.
 [[nodiscard]] core::Result<std::string> computeVoicebankContentHash(
     const Manifest& manifest,
     const std::filesystem::path& bankRoot);
