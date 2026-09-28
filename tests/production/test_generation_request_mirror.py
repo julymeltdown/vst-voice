@@ -83,8 +83,10 @@ class CppGenerationRequestParityTest(unittest.TestCase):
         campaign = cls._campaign("completed", units[60]["plannedTakeId"])
         cls.outcomes["completed"] = cls._advance(campaign, "2026-09-28T06:02:00Z")
         campaign = cls._campaign("exhausted", units[64]["plannedTakeId"])
-        with (campaign.parent / "retained-canary").open("wb") as stream:
-            stream.truncate(8 * 1024 * 1024 * 1024 + 1)  # sparse: exceeds the campaign's admitted retention budget
+        # Sparse bytes inside the request's own batch directory exceed its admitted retention budget.
+        (campaign.parent / "batch-0").mkdir()
+        with (campaign.parent / "batch-0" / "retained-canary").open("wb") as stream:
+            stream.truncate(8 * 1024 * 1024 * 1024 + 1)
         cls.outcomes["exhausted"] = cls._advance(campaign, "2026-09-28T06:03:00Z")
         campaign = cls._campaign("stale", units[69]["plannedTakeId"])
         _ok("submit-generation-campaign", str(cls.workspace), str(campaign), cls.requests["stale"], "producer",

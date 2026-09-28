@@ -965,13 +965,15 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
       root / "advanced-campaign" / "preflight");
   CHECK(advancePreflight);
   if (advancePreflight) CHECK(advancePreflight.value().passed);
-  const auto storageCanary = root / "advanced-campaign/storage-canary";
+  // Retained bytes count only inside the request's own output; a canary beside the campaign would not.
+  CHECK(std::filesystem::create_directory(root / "advanced-campaign/batch-0"));
+  const auto storageCanary = root / "advanced-campaign/batch-0/storage-canary";
   CHECK(core::durableAtomicWriteTextNew(storageCanary, "x"));
   std::filesystem::resize_file(storageCanary, 8ULL * 1024ULL * 1024ULL * 1024ULL + 1U);
   CHECK(!authoring::advanceGenerationCampaign(advancedRepository, advancePath, advanceHash, "producer", "2026-09-13T00:00:01Z"));
   CHECK(advancedRepository.recover().value().takes.empty());
-  CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0"));
-  std::filesystem::rename(storageCanary, root / "held-storage-canary");
+  CHECK(!std::filesystem::exists(root / "advanced-campaign/batch-0/batch-inputs.json"));
+  std::filesystem::rename(root / "advanced-campaign/batch-0", root / "held-storage-canary");
   CHECK(std::filesystem::create_directory(root / "storage-scan"));
   CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/a", "abc"));
   CHECK(core::durableAtomicWriteTextNew(root / "storage-scan/b", "de"));

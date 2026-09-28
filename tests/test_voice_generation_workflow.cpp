@@ -368,9 +368,10 @@ TEST_CASE("cancellation, an exhausted output budget and retry keep the previous 
   CHECK(collected.value().completedBatches == 1U);
   const auto afterFirst = fixture.producerBytes();
 
-  // Retained worker bytes above the admitted budget stop the request before any further work.
+  // Bytes retained inside the request's own output above the admitted budget stop the request
+  // before any further work.
   const auto budget = fixture.record(q).request.budget.maximumBytes;
-  const auto canary = q.directory / "retained-canary";
+  const auto canary = q.directory / "batch-0" / "retained-canary";
   CHECK(core::durableAtomicWriteTextNew(canary, "x"));
   std::filesystem::resize_file(canary, static_cast<std::uintmax_t>(budget) + 1U);
   const auto exhausted = fixture.advance(q, "2026-09-28T03:03:00Z");
@@ -400,6 +401,63 @@ TEST_CASE("cancellation, an exhausted output budget and retry keep the previous 
   CHECK(findTake(producer, Fixture::take(60))->state == UnitQueueState::MarkerReview);
   CHECK(findTake(producer, Fixture::take(64))->state == UnitQueueState::MarkerReview);
   CHECK(findTake(producer, Fixture::take(69)) == nullptr);
+}
+
+TEST_CASE("the byte budget counts only what the request itself retains") {
+  // The measurement: the definition and the request's own batch directories, nothing beside them.
+  const auto scratch = test::support::temporaryDirectory("campaign-request-storage");
+  CHECK(core::durableAtomicWriteTextNew(scratch / "campaign.json", "12345"));
+  for (const auto* name : {"batch-0", "batch-2", "preflight"}) CHECK(std::filesystem::create_directory(scratch / name));
+  CHECK(core::durableAtomicWriteTextNew(scratch / "batch-0/output", "abc"));
+  CHECK(core::durableAtomicWriteTextNew(scratch / "batch-2/beyond-the-request", "0123456789"));
+  CHECK(core::durableAtomicWriteTextNew(scratch / "preflight/report.json", "0123456789"));
+  CHECK(core::durableAtomicWriteTextNew(scratch / "unrelated", "0123456789"));
+  const auto measured = authoring::measureCampaignRequestStorage(scratch, 2U);
+  CHECK(measured);
+  CHECK(measured.value().logicalBytes == 8U);
+  CHECK(authoring::measureCampaignRequestStorage(scratch, 3U).value().logicalBytes == 18U);
+  std::stop_source stopped;
+  stopped.request_stop();
+  CHECK(!authoring::measureCampaignRequestStorage(scratch, 2U, 262144U, stopped.get_token()));
+#if defined(__APPLE__) || defined(__linux__)
+  // Links and special files are still refused inside what is counted, and a linked batch is unsafe.
+  std::filesystem::create_symlink(scratch / "unrelated", scratch / "batch-0/link");
+  CHECK(!authoring::measureCampaignRequestStorage(scratch, 2U));
+  std::filesystem::rename(scratch / "batch-0/link", scratch / "moved-link");
+  std::filesystem::create_directory_symlink(scratch / "preflight", scratch / "batch-1");
+  CHECK(!authoring::measureCampaignRequestStorage(scratch, 2U));
+  std::filesystem::rename(scratch / "batch-1", scratch / "moved-batch-link");
+  CHECK(authoring::measureCampaignRequestStorage(scratch, 2U).value().logicalBytes == 8U);
+#endif
+
+  // In a campaign: oversized files beside it or in its preflight do not exhaust the request; the
+  // same bytes inside one of its batch directories do.
+  Fixture fixture{60, 64};
+  const auto campaign = fixture.plan("campaign-owned", {Fixture::take(60), Fixture::take(64)}, recipe(), 1U);
+  const auto submitted = authoring::submitGenerationCampaign(fixture.workspace, campaign.path, campaign.sha, "producer",
+                                                             "2026-09-28T03:30:00Z");
+  CHECK(submitted);
+  const auto budget = static_cast<std::uintmax_t>(submitted.value().request.budget.maximumBytes);
+  for (const auto& path : {campaign.directory / "unrelated-canary", campaign.directory / "preflight" / "retained-canary"}) {
+    CHECK(core::durableAtomicWriteTextNew(path, "x"));
+    std::filesystem::resize_file(path, budget + 1U);
+  }
+  const auto first = fixture.advance(campaign, "2026-09-28T03:31:00Z");
+  CHECK(first);
+  CHECK(first.value().outcome == Outcome::BatchCollected);
+  CHECK(first.value().completedBatches == 1U);
+  CHECK(!fixture.record(campaign).terminal);
+  const auto afterFirst = fixture.producerBytes();
+  std::filesystem::rename(campaign.directory / "unrelated-canary", campaign.directory / "batch-0" / "retained-canary");
+  const auto exhausted = fixture.advance(campaign, "2026-09-28T03:32:00Z");
+  CHECK(exhausted);
+  CHECK(exhausted.value().outcome == Outcome::BudgetExhausted);
+  CHECK(exhausted.value().completedBatches == 1U);
+  CHECK(exhausted.value().retainedBytes > budget);
+  CHECK(exhausted.value().retainedBytes < 2U * budget);
+  CHECK(fixture.producerBytes() == afterFirst);
+  CHECK(!std::filesystem::exists(campaign.directory / "batch-1"));
+  CHECK(fixture.record(campaign).terminal->outcome == production::GenerationRequestOutcome::BudgetExhausted);
 }
 
 TEST_CASE("the request registry admits only requests and outcomes the producer history supports") {

@@ -59,6 +59,17 @@ STALE, 4 for BUDGET_EXHAUSTED and 128+N when signal N cancelled it. The Python p
 registry: `python3 -m tools.external_beta.voicebank_production inspect-generation-requests --workspace W`
 prints the same records as `list-generation-requests`, and `validate-workspace --draft` includes them.
 
+## The byte budget
+
+A campaign request's `maximumBytes` is the plan's admitted `maximumEstimatedBytes`: the allowance for what
+the request itself retains. `measureCampaignRequestStorage` counts exactly that: the logical bytes of
+`campaign.json` and of the request's own `batch-0` to `batch-(batchCount - 1)` directories, whatever they
+hold (job packages, staged audio, receipts or stray files). It does not count the `preflight` directory,
+which is bounded by its own phrase and frame admission, or any other file beside the campaign, which is not
+the request's output. Links and special files inside what is counted are refused, not skipped. The
+advancement measures before preparing a batch, after rendering it and after collecting it; above the
+allowance the request ends BUDGET_EXHAUSTED with the measured size and the producer unchanged.
+
 ## Evidence and limits
 
 `seam_voice_generation_workflow_tests` covers resume without duplicate takes or approval, staleness from a
@@ -70,4 +81,3 @@ real CLI to a completed, an exhausted and a stale request and refuses eight forg
 Not covered: the single-job and batch commands (`prepare-generation`, `run-generation-batch`,
 `import-generated-batch`) do not submit requests; they stay guarded only by their expectations. Studio uses
 the shared operation but has no request list yet. Terminal records are integrity records, not signatures.
-The budget counts the logical bytes of the campaign directory, including unrelated files placed there.
