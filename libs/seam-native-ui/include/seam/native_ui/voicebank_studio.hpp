@@ -14,6 +14,7 @@
 #include "seam/native_ui/pitch_contour.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/generation_request.hpp"
 #include "seam/voicebank_production/manifest_draft.hpp"
 #include "seam/voice_design/procedural_candidate.hpp"
 
@@ -247,6 +248,20 @@ public:
   // Advances the campaign identity this controller published or adopted last.
   [[nodiscard]] core::Result<void> beginGenerationCampaignResume(
       std::string occurredAtUtc = {});
+  // The registry is durable across Studio restarts. Listing is asynchronous and
+  // read-only; selecting a pending record advances only after the campaign bytes
+  // at its locator hash back to the immutable request identity.
+  [[nodiscard]] core::Result<void> refreshGenerationRequests();
+  [[nodiscard]] core::Result<void> beginGenerationRequestResume(std::string_view requestId,
+      std::string occurredAtUtc = {});
+  [[nodiscard]] const std::vector<voicebank_production::GenerationRequestRecord>&
+      generationRequests() const noexcept { return generationRequests_; }
+  [[nodiscard]] bool generationRequestQueueLoading() const noexcept {
+    return generationRequestsWork_.valid();
+  }
+  [[nodiscard]] std::string_view generationRequestQueueStatus() const noexcept {
+    return generationRequestQueueStatus_;
+  }
   void cancelGenerationCampaign() noexcept;
   [[nodiscard]] std::optional<GenerationCampaignProgress> generationCampaignProgress() const noexcept;
   [[nodiscard]] bool generationCampaignBusy() const noexcept { return campaignWork_.valid(); }
@@ -264,7 +279,7 @@ public:
   [[nodiscard]] bool proceduralImportResultReady() const {
     return proceduralImport_.valid() && proceduralImport_.wait_for(std::chrono::seconds{0})==std::future_status::ready;
   }
-  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || campaignWork_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
+  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || campaignWork_.valid() || generationRequestsWork_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
   [[nodiscard]] const std::optional<voice_design::ProceduralCandidate>& candidateMarkerPreview() const noexcept {
     return candidateMarkerPreview_;
   }
@@ -475,6 +490,11 @@ private:
     std::string status;
   };
   std::future<core::Result<GenerationCampaignOutcome>> campaignWork_;
+  std::future<core::Result<std::vector<voicebank_production::GenerationRequestRecord>>>
+      generationRequestsWork_;
+  std::vector<voicebank_production::GenerationRequestRecord> generationRequests_;
+  std::uint64_t generationRequestsEpoch_{0U};
+  std::string generationRequestQueueStatus_{"REQUEST QUEUE NOT LOADED"};
   std::shared_ptr<std::atomic<std::uint64_t>> generationCampaignProgress_;
   std::filesystem::path campaignPath_;
   std::string campaignSha256_;
@@ -545,6 +565,12 @@ struct StudioSampleReviewControl final {
     const VoicebankStudioController& controller, double width);
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationControls(
     const VoicebankStudioController& controller, double width, bool recordingActive);
+[[nodiscard]] std::size_t studioGenerationQueueVisibleRows(double height) noexcept;
+[[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
+    const VoicebankStudioController& controller, double width, double height,
+    bool recordingActive, std::size_t firstRequest);
+void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
+    const VoicebankStudioController& controller, std::size_t firstRequest) noexcept;
 [[nodiscard]] std::vector<std::string> studioSampleReviewDetailLines(
     const VoicebankStudioController& controller, double width);
 [[nodiscard]] std::size_t studioSampleReviewVisibleLines(double height) noexcept;

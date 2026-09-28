@@ -245,7 +245,112 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
           {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled},
           {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U},
           {"run-campaign",campaignReady?"Resume campaign":"Open / resume",
-              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free}};
+              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free},
+          {"request-queue","Requests",{294.0,322.0,areaWidth-2.0,18.0},free}};
+}
+
+std::size_t studioGenerationQueueVisibleRows(double height) noexcept {
+  if (!std::isfinite(height) || height <= 0.0) return 0U;
+  const auto rows = static_cast<std::size_t>(std::max(1.0, std::floor((height - 220.0) / 30.0)));
+  return std::min<std::size_t>(rows, 8U);
+}
+
+std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
+    const VoicebankStudioController& controller, double width, double height,
+    bool recordingActive, std::size_t firstRequest) {
+  if (!controller.productionProject() || !controller.manifest().units.empty() || width < 650.0 || height < 250.0)
+    return {};
+  const auto areaWidth = std::max(0.0, width - 574.0);
+  const auto half = areaWidth / 2.0;
+  const bool busy = controller.proceduralImportBusy() || recordingActive;
+  std::vector<StudioSampleReviewControl> controls{
+      {"queue-close", "Close", {294.0, 80.0, half - 2.0, 22.0}, true},
+      {"queue-refresh", controller.generationRequestQueueLoading() ? "Reading..." : "Refresh",
+          {294.0 + half, 80.0, half - 2.0, 22.0}, !busy}};
+  const auto& records = controller.generationRequests();
+  const auto visibleRows = studioGenerationQueueVisibleRows(height);
+  const auto buttonWidth = std::min(146.0, std::max(54.0, areaWidth * 0.38));
+  if (firstRequest > 0U)
+    controls.push_back({"queue-previous", "Previous", {294.0, 108.0, half - 2.0, 20.0}, !busy});
+  if (firstRequest + visibleRows < records.size())
+    controls.push_back({"queue-next", "Next", {294.0 + half, 108.0, half - 2.0, 20.0}, !busy});
+  const auto lastRequest = std::min(records.size(), firstRequest + visibleRows);
+  for (std::size_t index = firstRequest; index < lastRequest; ++index) {
+    const auto& record = records[index];
+    const auto shortId = record.request.requestId.substr(0U, 10U);
+    std::string label;
+    if (record.terminal) {
+      label = "Terminal";
+    } else {
+      label = areaWidth < 260.0 ? "Verify" : "Verify & resume";
+    }
+    controls.push_back({record.terminal ? "queue-terminal:" + record.request.requestId
+                                        : "resume-request:" + record.request.requestId,
+        std::move(label), {294.0 + areaWidth - buttonWidth, 150.0 + static_cast<double>(index - firstRequest) * 30.0,
+            buttonWidth - 2.0, 26.0}, !busy && !record.terminal.has_value()});
+  }
+  return controls;
+}
+
+void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
+    const VoicebankStudioController& controller, std::size_t firstRequest) noexcept {
+  const auto width = canvas.logicalWidth();
+  const auto height = canvas.logicalHeight();
+  const ui::Rect region{270.0, 72.0, std::max(0.0, width - 526.0), std::max(0.0, height - 104.0)};
+  canvas.fillRect(region, Color{15, 14, 18, 255});
+  canvas.strokeRect(region, Color{169, 79, 119, 255}, 1.0);
+  canvas.drawText(ui::Rect{294.0, 84.0, std::max(0.0, width - 574.0), 18.0},
+      "GENERATION REQUEST QUEUE", Color{239, 233, 241, 255}, 12.0);
+  const auto& records = controller.generationRequests();
+  if (records.empty()) {
+    canvas.drawText(ui::Rect{294.0, 126.0, std::max(0.0, width - 574.0), 14.0},
+        controller.generationRequestQueueStatus(), Color{166, 154, 170, 255}, 8.0);
+    const auto status = controller.generationRequestQueueStatus();
+    const std::string_view emptyMessage = controller.generationRequestQueueLoading()
+        ? "READING REQUESTS..."
+        : status.starts_with("0 REQUEST") ? "NO GENERATION REQUESTS IN THIS PRODUCER WORKSPACE"
+        : status.find("INVALID") != std::string_view::npos || status.find("FAILED") != std::string_view::npos
+            ? "QUEUE COULD NOT BE VERIFIED · REFRESH OR CHECK THE ERROR"
+            : "PRESS REFRESH TO LOAD RETAINED REQUESTS";
+    canvas.drawText(ui::Rect{294.0, 154.0, std::max(0.0, width - 574.0), 18.0},
+        emptyMessage, Color{166, 154, 170, 255}, 8.0);
+    return;
+  }
+  const auto visibleRows = studioGenerationQueueVisibleRows(height);
+  const auto lastRequest = std::min(records.size(), firstRequest + visibleRows);
+  const auto range = records.empty() ? std::string{"NO REQUESTS"}
+      : "SHOWING " + std::to_string(firstRequest + 1U) + "-" + std::to_string(lastRequest) +
+          " OF " + std::to_string(records.size());
+  canvas.drawText(ui::Rect{294.0, 126.0, std::max(0.0, width - 574.0), 14.0},
+      std::string{controller.generationRequestQueueStatus()} + " · " + range +
+          " · HASH VERIFIED BEFORE RESUME", Color{101, 187, 184, 255}, 6.0);
+  for (std::size_t index = firstRequest; index < lastRequest; ++index) {
+    const auto& record = records[index];
+    const auto y = 150.0 + static_cast<double>(index - firstRequest) * 30.0;
+    const auto pending = !record.terminal.has_value();
+    const auto buttonWidth = std::min(146.0, std::max(54.0, (width - 574.0) * 0.38));
+    const auto detailsWidth = std::max(0.0, width - 574.0 - buttonWidth - 18.0);
+    const Color background = pending ? Color{48, 34, 51, 255} : Color{24, 22, 28, 255};
+    canvas.fillRect({294.0, y, std::max(0.0, width - 576.0), 26.0}, background);
+    canvas.strokeRect({294.0, y, std::max(0.0, width - 576.0), 26.0},
+        pending ? Color{169, 79, 119, 255} : Color{58, 52, 64, 255}, 1.0);
+    const auto shortId = record.request.requestId.substr(0U, 12U);
+    std::set<std::string, std::less<>> coverageKeys;
+    for (const auto& job : record.request.jobs) coverageKeys.insert(job.coverageKey);
+    const auto state = record.terminal
+        ? voicebank_production::toString(record.terminal->outcome) + " · " +
+            std::to_string(record.terminal->completedBatches) + "/" +
+            std::to_string(record.batchCount()) + " BATCHES"
+        : "PENDING · " + std::to_string(record.request.jobs.size()) + " JOBS · " +
+            std::to_string(coverageKeys.size()) + " COVERAGE KEYS · GEN " +
+            std::to_string(record.request.expectedGeneration);
+    canvas.drawText(ui::Rect{302.0, y + 3.0, detailsWidth, 10.0},
+        shortId + " · " + record.request.language + " · " + state,
+        pending ? Color{239, 233, 241, 255} : Color{166, 154, 170, 255}, 7.0);
+    canvas.drawText(ui::Rect{302.0, y + 14.0, detailsWidth, 9.0},
+        pending ? "DEFINITION HASH IS RECHECKED BEFORE RESUME" : "TERMINAL · NOT RESUMABLE",
+        Color{166, 154, 170, 255}, 6.0);
+  }
 }
 
 void paintProductionEmptyCanvas(

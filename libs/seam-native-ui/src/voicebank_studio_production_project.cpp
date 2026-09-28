@@ -270,6 +270,7 @@ VoicebankStudioController::~VoicebankStudioController() {
   cancelProceduralCandidateImport();
   if (workspaceOpen_.valid()) workspaceOpen_.wait();
   if (proceduralImport_.valid()) proceduralImport_.wait();
+  if (generationRequestsWork_.valid()) generationRequestsWork_.wait();
   if (waveformLoad_.valid()) waveformLoad_.wait();
   if (pitchLoad_.valid()) pitchLoad_.wait();
   if (sampleReviewWork_.valid()) sampleReviewWork_.wait();
@@ -286,6 +287,7 @@ core::Result<void> VoicebankStudioController::finishProceduralCandidateImport() 
   if (workspaceOpen_.valid()) workspaceOpen_.wait();
   if (proceduralImport_.valid()) proceduralImport_.wait();
   if (campaignWork_.valid()) campaignWork_.wait();
+  if (generationRequestsWork_.valid()) generationRequestsWork_.wait();
   if (waveformLoad_.valid()) waveformLoad_.wait();
   if (pitchLoad_.valid()) pitchLoad_.wait();
   if (sampleReviewWork_.valid()) sampleReviewWork_.wait();
@@ -634,6 +636,9 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
       productionRepository_=std::move(worker.productionRepository_);
       productionWorkspaceRoot_=std::move(worker.productionWorkspaceRoot_);
       productionOperatorId_=std::move(worker.productionOperatorId_);
+      generationRequests_.clear();
+      generationRequestsEpoch_=0U;
+      generationRequestQueueStatus_="REQUEST QUEUE NOT LOADED";
       stagedRecoveryCandidateCount_=worker.stagedRecoveryCandidateCount_;
       ++productionSessionEpoch_; generationScoreSelection_.reset(); selectedIndex_=0U;
       // Marker lineage was already parsed by the recovery worker. Adopt it
@@ -654,6 +659,33 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
   }
   if (editableUnitLoad_.valid()) return pollEditableUnitLoad();
   if (sampleReviewWork_.valid()) return pollSampleReviewWork();
+  if (generationRequestsWork_.valid()) {
+    if (generationRequestsWork_.wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+      return core::success();
+    try {
+      auto result = generationRequestsWork_.get();
+      if (!result) {
+        generationRequests_.clear();
+        generationRequestsEpoch_ = 0U;
+        generationRequestQueueStatus_ = "REQUEST QUEUE INVALID";
+        return core::Result<void>{result.error()};
+      }
+      if (generationRequestsEpoch_ != productionSessionEpoch_ || !productionProject_) {
+        generationRequestQueueStatus_ = "REQUEST QUEUE DISCARDED · WORKSPACE CHANGED";
+        return core::failure(core::ErrorCode::Conflict,
+            "Producer workspace changed before the request queue could be adopted");
+      }
+      generationRequests_ = std::move(result).value();
+      generationRequestQueueStatus_ = std::to_string(generationRequests_.size()) + " REQUEST(S) · VERIFIED SNAPSHOT";
+      status_ = generationRequestQueueStatus_;
+      return core::success();
+    } catch (const std::exception& error) {
+      generationRequests_.clear();
+      generationRequestsEpoch_ = 0U;
+      generationRequestQueueStatus_ = "REQUEST QUEUE FAILED";
+      return core::failure(core::ErrorCode::Internal, "Generation request listing worker failed", error.what());
+    }
+  }
   if (campaignWork_.valid()) {
     if (campaignWork_.wait_for(std::chrono::seconds{0}) != std::future_status::ready) {
       const auto progress = generationCampaignProgress();
@@ -952,6 +984,9 @@ core::Result<void> VoicebankStudioController::openProductionProject(
   productionWorkspaceRoot_ =
       std::filesystem::absolute(workspaceRoot).lexically_normal();
   productionOperatorId_ = std::move(operatorId);
+  generationRequests_.clear();
+  generationRequestsEpoch_ = 0U;
+  generationRequestQueueStatus_ = "REQUEST QUEUE NOT LOADED";
   ++productionSessionEpoch_;
   generationScoreSelection_.reset();
   if (manifest_.units.empty()) selectedIndex_ = 0U;

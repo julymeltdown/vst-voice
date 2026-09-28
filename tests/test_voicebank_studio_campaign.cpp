@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -264,6 +265,103 @@ TEST_CASE("a fresh Studio controller can adopt and resume a persisted campaign")
   }));
 }
 
+TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable generation requests") {
+  Fixture fixture;
+  const auto destination = fixture.root / "campaign-queued";
+  CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
+      {"take-sa", "take-sa-soft"}, destination, 1U));
+  CHECK(drain(fixture.controller));
+  const auto path = fixture.controller.generationCampaignPath();
+  const auto sha = fixture.controller.generationCampaignSha256();
+  CHECK(!path.empty());
+  CHECK(sha.size() == 64U);
+  preflightCampaign(path, sha, destination);
+
+  const auto submitted = authoring::submitGenerationCampaign(fixture.workspace, path, sha,
+      "producer", "2026-09-28T00:00:07Z");
+  CHECK(submitted);
+  if (!submitted) return;
+  CHECK(submitted.value().request.requestId == sha);
+  CHECK(!submitted.value().terminal);
+
+  // A fresh queue load is asynchronous and read-only; it discovers the retained
+  // request without opening or changing the producer project.
+  const auto before = fixture.controller.productionProject()->lastDurableGeneration;
+  CHECK(fixture.controller.refreshGenerationRequests());
+  CHECK(fixture.controller.proceduralImportBusy());
+  CHECK(drain(fixture.controller));
+  CHECK(fixture.controller.generationRequests().size() == 1U);
+  CHECK(fixture.controller.generationRequests().front().request.requestId == sha);
+  CHECK(!fixture.controller.generationRequests().front().terminal);
+  CHECK(fixture.controller.generationRequestQueueStatus().find("1 REQUEST") != std::string_view::npos);
+  CHECK(fixture.controller.productionProject()->lastDurableGeneration == before);
+  const auto pendingControls = seam::native_ui::studioGenerationQueueControls(
+      fixture.controller, 1040.0, 720.0, false, 0U);
+  CHECK(std::any_of(pendingControls.begin(), pendingControls.end(), [&](const auto& control) {
+    return control.id == "resume-request:" + sha && control.enabled;
+  }));
+  for (const auto [width, height] : {std::pair{720.0, 480.0}, std::pair{1040.0, 720.0},
+                                    std::pair{1600.0, 900.0}}) {
+    const auto controls = seam::native_ui::studioGenerationQueueControls(
+        fixture.controller, width, height, false, 0U);
+    const auto close = std::find_if(controls.begin(), controls.end(),
+        [](const auto& control) { return control.id == "queue-close"; });
+    const auto refresh = std::find_if(controls.begin(), controls.end(),
+        [](const auto& control) { return control.id == "queue-refresh"; });
+    CHECK(close != controls.end());
+    CHECK(refresh != controls.end());
+    if (close != controls.end() && refresh != controls.end()) CHECK(close->bounds.right() <= refresh->bounds.x);
+    for (const auto& control : controls) {
+      CHECK(control.bounds.x >= 294.0);
+      CHECK(control.bounds.right() <= width - 280.0);
+      CHECK(control.bounds.bottom() <= height - 32.0);
+    }
+  }
+
+  const auto originalBytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
+  CHECK(originalBytes);
+  if (!originalBytes) return;
+  // The locator is only a hint: byte drift must be refused before the canonical
+  // request runner can mutate the producer. Restore the immutable definition and
+  // prove the same listed item then completes without duplicate takes.
+  CHECK(std::filesystem::remove(path));
+  CHECK(core::durableAtomicWriteTextNew(path, "not the admitted campaign definition"));
+  CHECK(fixture.controller.beginGenerationRequestResume(sha, "2026-09-28T00:00:08Z"));
+  const auto mismatch = drain(fixture.controller);
+  CHECK(!mismatch);
+  CHECK(mismatch.error().code == core::ErrorCode::Conflict);
+  production::ProductionProjectRepository repository{fixture.workspace};
+  auto unchanged = repository.recover(); CHECK(unchanged);
+  CHECK(unchanged.value().lastDurableGeneration == before);
+  CHECK(unchanged.value().takes.empty());
+
+  CHECK(std::filesystem::remove(path));
+  CHECK(core::durableAtomicWriteTextNew(path, originalBytes.value()));
+  CHECK(fixture.controller.beginGenerationRequestResume(sha, "2026-09-28T00:00:09Z"));
+  CHECK(drain(fixture.controller));
+  auto completed = repository.recover(); CHECK(completed);
+  CHECK(completed.value().takes.size() == 2U);
+  CHECK(completed.value().lastDurableGeneration == before + 2U);
+  CHECK(std::all_of(completed.value().takes.begin(), completed.value().takes.end(), [](const auto& take) {
+    return take.state == production::UnitQueueState::MarkerReview;
+  }));
+
+  CHECK(fixture.controller.refreshGenerationRequests());
+  CHECK(drain(fixture.controller));
+  CHECK(fixture.controller.generationRequests().size() == 1U);
+  CHECK(fixture.controller.generationRequests().front().terminal.has_value());
+  CHECK(fixture.controller.generationRequests().front().terminal->outcome ==
+      production::GenerationRequestOutcome::Completed);
+  const auto terminalResume = fixture.controller.beginGenerationRequestResume(sha);
+  CHECK(!terminalResume);
+  CHECK(terminalResume.error().code == core::ErrorCode::InvalidState);
+  const auto terminalControls = seam::native_ui::studioGenerationQueueControls(
+      fixture.controller, 1040.0, 720.0, false, 0U);
+  CHECK(std::any_of(terminalControls.begin(), terminalControls.end(), [&](const auto& control) {
+    return control.id == "queue-terminal:" + sha && !control.enabled;
+  }));
+}
+
 TEST_CASE("campaign controls appear only when the producer and identity allow them") {
   Fixture fixture;
   const auto byId = [](const auto& controls, std::string_view id) {
@@ -271,7 +369,7 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
         [&](const auto& control) { return control.id == id; });
   };
   const auto idle = seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, false);
-  CHECK(idle.size() == 6U);
+  CHECK(idle.size() == 7U);
   CHECK(byId(idle, "plan-campaign") != idle.end());
   CHECK(byId(idle, "plan-campaign")->enabled);
   // A persisted campaign can be selected after restart, even before this
@@ -298,7 +396,7 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
   for (const auto width : {720.0, 1040.0, 1600.0}) {
     for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, width, false)) {
       CHECK(control.bounds.x + control.bounds.width <= width - 280.0);
-      CHECK(control.bounds.y + control.bounds.height <= 322.0);
+      CHECK(control.bounds.y + control.bounds.height <= 340.0);
     }
   }
 }

@@ -1640,14 +1640,40 @@ public:
         std::to_string(project?project->lastDurableGeneration:0U)+"."+std::to_string(controller_.selectedIndex())+".";
   }
   seam::core::Result<void> generationControlAction(std::string_view id) {
-    const auto controls=seam::native_ui::studioGenerationControls(controller_,controller_.logicalWidth(),recording_.armed() || recording_.recordedFrames()>0U);
+    const auto controls = generationQueueView_
+        ? seam::native_ui::studioGenerationQueueControls(controller_, controller_.logicalWidth(),
+            controller_.logicalHeight(), recording_.armed() || recording_.recordedFrames() > 0U,
+            generationRequestFirst_)
+        : seam::native_ui::studioGenerationControls(controller_, controller_.logicalWidth(),
+            recording_.armed() || recording_.recordedFrames() > 0U);
     const auto found=std::find_if(controls.begin(),controls.end(),[&](const auto& control){return control.id==id;});
     if (generationModal_ || designerView_ || sampleReviewView_ || found==controls.end() || !found->enabled)
       return seam::core::failure(seam::core::ErrorCode::Conflict,"Generation action is unavailable or busy");
+    if (generationQueueView_) {
+      if (id == "queue-close") { generationQueueView_ = false; return seam::core::success(); }
+      if (id == "queue-refresh") {
+        generationRequestFirst_ = 0U;
+        return controller_.refreshGenerationRequests();
+      }
+      if (id == "queue-previous") {
+        const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+        generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
+        return seam::core::success();
+      }
+      if (id == "queue-next") {
+        generationRequestFirst_ += seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+        return seam::core::success();
+      }
+      constexpr std::string_view resumePrefix{"resume-request:"};
+      if (id.starts_with(resumePrefix))
+        return controller_.beginGenerationRequestResume(id.substr(resumePrefix.size()));
+      return seam::core::failure(seam::core::ErrorCode::Unsupported, "Unknown request queue action");
+    }
     if (id=="cancel") {
       controller_.cancelProceduralCandidateImport();
       return seam::core::success();
     }
+    if (id=="request-queue") { generationQueueView_ = true; generationRequestFirst_ = 0U; return seam::core::success(); }
     if (id=="plan-campaign") return planCampaignFromDialog();
     if (id=="run-campaign") return runCampaignFromDialog();
     struct ModalGuard {
@@ -1663,19 +1689,47 @@ public:
     const auto prefix=generationSemanticPrefix();
     SemanticNode root{.id=prefix+"root",.role=SemanticRole::Panel,.name="Producer generation actions",
         .bounds={0.0,0.0,width,height}};
-    for (const auto& control:studioGenerationControls(controller_,width,recording_.armed() || recording_.recordedFrames()>0U)) {
+    const auto controls = generationQueueView_
+        ? studioGenerationQueueControls(controller_, width, height,
+            recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_)
+        : studioGenerationControls(controller_, width,
+            recording_.armed() || recording_.recordedFrames() > 0U);
+    for (const auto& control : controls) {
       const bool enabled=control.enabled && !generationModal_;
       root.children.push_back({.id=prefix+control.id,.role=SemanticRole::Button,.name=control.label,
           .bounds=control.bounds,.enabled=enabled,
           .actions=enabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
     }
-    const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
-        !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() &&
-        !generationModal_ && !takeImportModal_;
-    root.children.push_back({.id=prefix+"import-wav",.role=SemanticRole::Button,
-        .name="Import existing WAV as an unapproved take",
-        .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
-        .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
+    if (generationQueueView_) {
+      root.children.push_back({.id=prefix+"request-queue-status",.role=SemanticRole::Status,
+          .name="Verified generation request queue",.value=std::string(controller_.generationRequestQueueStatus()),
+          .bounds={294.0,126.0,std::max(0.0,width-574.0),14.0}});
+      const auto& requests = controller_.generationRequests();
+      const auto rows = studioGenerationQueueVisibleRows(height);
+      const auto buttonWidth = std::min(146.0, std::max(54.0, std::max(0.0, width - 574.0) * 0.38));
+      const auto detailsWidth = std::max(0.0, width - 574.0 - buttonWidth - 18.0);
+      for (std::size_t index = generationRequestFirst_; index < std::min(requests.size(), generationRequestFirst_ + rows); ++index) {
+        const auto& request = requests[index];
+        std::string value = request.terminal
+            ? "Terminal " + seam::voicebank_production::toString(request.terminal->outcome) + ", " +
+                std::to_string(request.terminal->completedBatches) + " of " + std::to_string(request.batchCount()) + " batches"
+            : "Submitted, " + std::to_string(request.request.jobs.size()) + " jobs, expected producer generation " +
+                std::to_string(request.request.expectedGeneration) + "; campaign definition SHA-256 is checked before resume";
+        root.children.push_back({.id=prefix+"request-status."+request.request.requestId,
+            .role=SemanticRole::Status,.name="Generation request " + request.request.requestId,
+            .value=std::move(value),.bounds={302.0,150.0+static_cast<double>(index-generationRequestFirst_)*30.0,
+                detailsWidth,26.0}});
+      }
+    }
+    if (!generationQueueView_) {
+      const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
+          !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() &&
+          !generationModal_ && !takeImportModal_;
+      root.children.push_back({.id=prefix+"import-wav",.role=SemanticRole::Button,
+          .name="Import existing WAV as an unapproved take",
+          .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
+          .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
+    }
     root.children.push_back({.id=prefix+"status",.role=SemanticRole::Status,.name="Producer operation status",
         .value=!lastError_.empty()?lastError_:!recordingStatus_.empty()?recordingStatus_:controller_.status(),
         .bounds={width-360.0,24.0,340.0,44.0}});
@@ -1732,12 +1786,27 @@ public:
     rebuildStudioAccessibility(canvas.logicalWidth(),canvas.logicalHeight());
     const auto generationControls=seam::native_ui::studioGenerationControls(controller_,canvas.logicalWidth(),recording_.armed() || recording_.recordedFrames()>0U);
     if (!generationControls.empty()) {
-      canvas.fillRect({294.0,268.0,canvas.logicalWidth()-574.0,36.0},seam::native_ui::Color{15,14,18,255});
+      const auto bottom = std::max_element(generationControls.begin(), generationControls.end(),
+          [](const auto& left, const auto& right) { return left.bounds.bottom() < right.bounds.bottom(); })->bounds.bottom();
+      canvas.fillRect({294.0,268.0,canvas.logicalWidth()-574.0,bottom-268.0},seam::native_ui::Color{15,14,18,255});
       for (const auto& control:generationControls) {
         canvas.fillRect(control.bounds,control.enabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
         canvas.drawText({control.bounds.x+4.0,control.bounds.y+2.0,control.bounds.width-8.0,14.0},control.label,
             control.enabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{125,118,129,255},10.0);
       }
+    }
+    if (generationQueueView_) {
+      seam::native_ui::paintStudioGenerationRequestQueue(canvas, controller_, generationRequestFirst_);
+      const auto queueControls = seam::native_ui::studioGenerationQueueControls(controller_, canvas.logicalWidth(),
+          canvas.logicalHeight(), recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_);
+      for (const auto& control : queueControls) {
+        const auto fill = control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255};
+        canvas.fillRect(control.bounds, fill);
+        canvas.drawText({control.bounds.x+4.0,control.bounds.y+3.0,control.bounds.width-8.0,14.0},
+            control.label, control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{125,118,129,255}, 8.0);
+      }
+      if (controller_.proceduralImportBusy()) repaint();
+      return;
     }
     const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
         !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() && !takeImportModal_;
@@ -1767,6 +1836,18 @@ public:
       repaint(); return;
     }
     if (sampleReviewModal_) return;
+    if (generationQueueView_) {
+      if (event.button == seam::native_ui::PointerButton::Left)
+        for (const auto& control : seam::native_ui::studioGenerationQueueControls(controller_,
+                 controller_.logicalWidth(), controller_.logicalHeight(),
+                 recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_)) {
+          if (control.bounds.contains(event.position)) {
+            if (control.enabled) { lastError_.clear(); record(generationControlAction(control.id)); }
+            repaint(); return;
+          }
+        }
+      repaint(); return;
+    }
     if (sampleReviewView_) {
       if (event.button == seam::native_ui::PointerButton::Left)
         for (const auto& control : seam::native_ui::studioSampleReviewControls(controller_, controller_.logicalWidth()))
@@ -1864,6 +1945,7 @@ public:
   }
 
   void pointerMove(const seam::native_ui::PointerEvent& event) noexcept override {
+    if (generationQueueView_) return;
     if (sampleReviewView_ || sampleReviewModal_) return;
     if (designerView_) { updateDesignerDrag(event); return; }
     if (controller_.candidateMarkerDragging()) {
@@ -1880,6 +1962,7 @@ public:
     }
   }
   void pointerUp(const seam::native_ui::PointerEvent& event) noexcept override {
+    if (generationQueueView_) return;
     if (sampleReviewView_ || sampleReviewModal_) return;
     if (designerView_) {
       if (designerDrag_ && event.button == seam::native_ui::PointerButton::Left) {
@@ -1905,6 +1988,14 @@ public:
     if (sampleReviewView_) {
       if (deltaY != 0.0) { record(sampleReviewAction(deltaY > 0.0 ? "previous-page" : "next-page")); repaint(); }
       return;
+    }
+    if (generationQueueView_) {
+      const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+      if (deltaY > 0.0 && generationRequestFirst_ > 0U)
+        generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
+      else if (deltaY < 0.0 && generationRequestFirst_ + rows < controller_.generationRequests().size())
+        generationRequestFirst_ += rows;
+      repaint(); return;
     }
     if (designerView_) return;
     if (point.x < 270.0 || point.x >= controller_.logicalWidth() - 256.0 || point.y < 300.0 ||
@@ -1932,6 +2023,24 @@ public:
       else if (!event.repeat) lastError_ = pendingRecordingExportStarted_
           ? "Wait for the saved WAV to finish writing and verification"
           : "Press R to finish or retry publishing the current recording, or X to discard it";
+      repaint(); return;
+    }
+    if (generationQueueView_) {
+      using Key = seam::native_ui::NativeKey;
+      if (event.key == Key::Escape) {
+        if (controller_.proceduralImportBusy()) controller_.cancelProceduralCandidateImport();
+        else generationQueueView_ = false;
+      }
+      else if (event.key == Key::R && !event.repeat && !recording_.armed() &&
+          recording_.recordedFrames() == 0U && !controller_.proceduralImportBusy())
+        record(controller_.refreshGenerationRequests());
+      else if (event.key == Key::Left && generationRequestFirst_ > 0U) {
+        const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+        generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
+      } else if (event.key == Key::Right) {
+        const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+        if (generationRequestFirst_ + rows < controller_.generationRequests().size()) generationRequestFirst_ += rows;
+      }
       repaint(); return;
     }
     if (sampleReviewView_) {
@@ -2667,6 +2776,8 @@ private:
   seam::native_ui::AccessibilityTree sampleReviewAccessibility_;
   seam::native_ui::AccessibilityTree generationAccessibility_;
   std::string generationSemanticFocus_;
+  bool generationQueueView_{false};
+  std::size_t generationRequestFirst_{0U};
   seam::native_ui::AccessibilityTree studioAccessibility_;
   std::string studioSemanticFocus_;
   bool generationModal_{false}, takeImportModal_{false};

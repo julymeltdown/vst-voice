@@ -17,6 +17,7 @@
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <string>
 #include <utility>
@@ -248,6 +249,52 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignResume(std:
     return core::failure(core::ErrorCode::InvalidState,
         "No campaign identity is recorded; plan a campaign or advance one explicitly");
   return beginGenerationCampaignAdvance(campaignPath_, campaignSha256_, std::move(occurredAtUtc));
+}
+
+core::Result<void> VoicebankStudioController::refreshGenerationRequests() {
+  if (proceduralImportBusy())
+    return core::failure(core::ErrorCode::Conflict, "Production worker is busy");
+  if (!productionProject_ || !productionRepository_ || productionWorkspaceRoot_.empty())
+    return core::failure(core::ErrorCode::InvalidState, "Open a producer workspace before reading its generation queue");
+  const auto root = productionWorkspaceRoot_;
+  const auto epoch = productionSessionEpoch_;
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token();
+  generationRequestsEpoch_ = epoch;
+  generationRequestQueueStatus_ = "READING REQUEST QUEUE";
+  try {
+    generationRequestsWork_ = std::async(std::launch::async, [root, stop]()
+        -> core::Result<std::vector<voicebank_production::GenerationRequestRecord>> {
+      return voicebank_production::GenerationRequestRegistry{root}.list(stop);
+    });
+  } catch (const std::exception& error) {
+    generationRequestQueueStatus_ = "REQUEST QUEUE FAILED";
+    return core::failure(core::ErrorCode::Internal, "Unable to start generation request listing", error.what());
+  }
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginGenerationRequestResume(
+    std::string_view requestId, std::string occurredAtUtc) {
+  if (proceduralImportBusy())
+    return core::failure(core::ErrorCode::Conflict, "Production worker is busy");
+  if (!productionProject_ || generationRequestsEpoch_ != productionSessionEpoch_)
+    return core::failure(core::ErrorCode::InvalidState, "Refresh the generation queue for the current producer workspace first");
+  const auto found = std::find_if(generationRequests_.begin(), generationRequests_.end(),
+      [requestId](const auto& record) { return record.request.requestId == requestId; });
+  if (found == generationRequests_.end())
+    return core::failure(core::ErrorCode::NotFound, "Generation request is not in the current queue snapshot");
+  if (found->terminal)
+    return core::failure(core::ErrorCode::InvalidState,
+        "Generation request is terminal: " + voicebank_production::toString(found->terminal->outcome));
+  if (found->request.definitionLocator.empty())
+    return core::failure(core::ErrorCode::NotFound, "Generation request has no campaign definition locator; use Open / resume");
+
+  // The stored locator is only a hint. The campaign worker first reads and
+  // admits the bytes against this request ID; it does not call the producer
+  // writer until that immutable-content check succeeds.
+  return beginGenerationCampaignAdvance(std::filesystem::path{found->request.definitionLocator},
+      found->request.requestId, std::move(occurredAtUtc));
 }
 
 void VoicebankStudioController::cancelGenerationCampaign() noexcept {
