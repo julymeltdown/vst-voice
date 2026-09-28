@@ -5,7 +5,9 @@ import hashlib
 import json
 import math
 import os
+import re
 import stat
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,204 @@ JOURNAL_ACTIONS = {
     "source-quality-assessment", "source-register",
 }
 QUEUE_STATES = {"MISSING", "REJECTED", "RETAKE", "MARKER_REVIEW", "PITCH_REVIEW", "APPROVED"}
+HEX64_LOWER = re.compile(r"^[0-9a-f]{64}$")
+
+# Mirrors libs/seam-voicebank take_inspection (inspector "2", QC policy version 1) and the take-inspection.v2
+# receipt in libs/seam-voicebank-production: the same bounds, policy map, outcome rules and canonical bytes, so
+# this accepts exactly the receipts the C++ codec accepts. A receipt is technical evidence, never a review.
+TAKE_INSPECTION_KIND = "take-inspection.v2"
+TAKE_INSPECTOR = ("seam.take-inspector", "2")
+TAKE_CHECKS = ("format", "finite", "clipping", "dcOffset", "signalPresent", "quiet", "unvoiced", "rootPitch")
+TAKE_OUTCOMES = ("PASS", "FAIL", "INAPPLICABLE")
+TAKE_QC_APPLICABLE = {
+    "voiced": {"format", "finite", "clipping", "dcOffset", "signalPresent", "rootPitch"},
+    "breath": {"format", "finite", "clipping", "dcOffset", "signalPresent", "unvoiced"},
+    "closure": {"format", "finite", "clipping", "dcOffset", "quiet"},
+    "pause": {"format", "finite", "clipping", "dcOffset", "quiet"},
+}
+TAKE_BINDING = ("takeId", "promptId", "coverageKey", "pitchLayer")
+TAKE_COUNTS = {"sampleRate": (8000, 384000), "channels": (1, 8), "bitsPerSample": (8, 32),
+               "frameCount": (0, 1 << 53), "nonFiniteSamples": (0, 1 << 53), "clippedSamples": (0, 1 << 53)}
+TAKE_DOUBLES = ("peak", "rms", "dcOffset", "rootPitchDeviationCents", "voicedShare")
+TAKE_MEASUREMENTS = {*TAKE_COUNTS, *TAKE_DOUBLES, "expectedRootMidi", "analyzedRootMidi"}
+TAKE_EVIDENCE = {"schemaVersion", "inspectorId", "inspectorVersion", "policy", "policyVersion", "binding",
+                 "takeSha256", "byteSize", "measurements", "checks", "status"}
+FLOAT32_MAX = struct.unpack("<f", b"\xff\xff\x7f\x7f")[0]
+
+
+def _unique_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
+def _nonfinite(value: str) -> Any:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _utf8(value: Any) -> bytes | None:
+    """The bytes of a string the C++ reader could hold, or None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+
+
+def _json_text(value: Any, limit: int = 4096) -> bool:
+    encoded = _utf8(value)
+    return encoded is not None and len(encoded) <= limit
+
+
+def _number(value: Any) -> bool:
+    """A number the C++ reader keeps: an int64 token or a finite double."""
+    if type(value) is int:
+        return -(1 << 63) <= value < (1 << 63)
+    return type(value) is float and math.isfinite(value)
+
+
+def _float32_exact(value: int | float) -> bool:
+    return struct.unpack("<f", struct.pack("<f", value))[0] == value
+
+
+def take_qc_policy(coverage_key: Any) -> str | None:
+    """takeQcPolicyForCoverageKey: the policy a canonical coverage key selects, or None when refused."""
+    if not coverage_key or not _json_text(coverage_key):
+        return None
+    kind, separator, rest = coverage_key.partition(":")
+    phones = rest.split(":")
+    if not separator or not kind or len(phones) > 64 or any(
+            not phone or len(phone.encode("utf-8")) > 128 or any(ord(item) <= 32 or ord(item) == 127 for item in phone)
+            for phone in phones):
+        return None
+    if kind == "breath":
+        return "breath"
+    if kind != "special":
+        return "voiced"
+    classes = {"breath" if phone == "br" else "pause" if phone in ("pau", "sil")
+               else "closure" if phone in ("cl", "R", "glottal") else "voiced" for phone in phones}
+    return classes.pop() if len(classes) == 1 else None
+
+
+def take_check_outcomes(policy: str, measured: dict[str, Any]) -> dict[str, str]:
+    """evaluateTakeChecks: the policy-version-1 outcome of every check from recorded measurements."""
+    share, deviation = measured["voicedShare"], measured["rootPitchDeviationCents"]
+    passed = {
+        "format": measured["sampleRate"] == 48000 and measured["channels"] == 1 and measured["bitsPerSample"] in (24, 32),
+        "finite": measured["nonFiniteSamples"] == 0,
+        "clipping": measured["clippedSamples"] == 0,
+        "dcOffset": abs(measured["dcOffset"]) <= 0.01,
+        "signalPresent": measured["rms"] > 1.0e-4,
+        "quiet": measured["rms"] <= 3.0e-3 and measured["peak"] <= 3.0e-2,
+        "unvoiced": share is not None and share <= 0.5,
+        "rootPitch": deviation is not None and abs(deviation) <= 80.0,
+    }
+    return {check: "INAPPLICABLE" if check not in TAKE_QC_APPLICABLE[policy] else "PASS" if passed[check] else "FAIL"
+            for check in TAKE_CHECKS}
+
+
+def _cpp_json(value: Any) -> str:
+    """seam::formats::stringifyJson(value, false) for the shapes a receipt holds."""
+    if value is None:
+        return "null"
+    if type(value) is int:
+        return str(value)
+    if type(value) is float:
+        return format(value, ".17g")  # std::setprecision(17) in the default floating-point format
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)  # the escapes writeEscaped uses
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{_cpp_json(key)}:{_cpp_json(value[key])}" for key in sorted(value)) + "}"
+    raise ValueError("take inspection evidence holds a value its codec never writes")
+
+
+def canonical_take_evidence(evidence: dict[str, Any]) -> str:
+    """encodeTakeInspectionEvidence for decoded evidence: measured doubles are written as doubles."""
+    measured = {name: float(value) if name in TAKE_DOUBLES and value is not None else value
+                for name, value in evidence["measurements"].items()}
+    return _cpp_json({**evidence, "measurements": measured})
+
+
+def take_inspection_errors(revision: dict[str, Any], take: dict[str, Any], assets: dict[str, dict[str, Any]],
+                           label: str) -> list[str]:
+    """decodeTakeInspectionEvidence plus validateTakeInspectionRevision for one receipt bound to take."""
+    def invalid(message: str) -> list[str]:
+        return [f"{label} take inspection {message}"]
+
+    values = revision.get("values")
+    text = values.get("evidenceJson") if isinstance(values, dict) else None
+    digest = values.get("evidenceSha256") if isinstance(values, dict) else None
+    encoded = _utf8(text)
+    if (not isinstance(values, dict) or set(values) != {"evidenceJson", "evidenceSha256"} or encoded is None or
+            not isinstance(digest, str) or HEX64_LOWER.fullmatch(digest) is None or
+            hashlib.sha256(encoded).hexdigest() != digest or revision.get("revisionId") != "take-inspection-" + digest[:32]):
+        return invalid("receipt digest or identity is invalid")
+    if len(encoded) > 64 * 1024:
+        return invalid("evidence is too large")
+    try:
+        evidence = json.loads(text, object_pairs_hook=_unique_fields, parse_constant=_nonfinite)
+    except (ValueError, RecursionError):
+        return invalid("evidence is not bounded JSON")
+    if not isinstance(evidence, dict) or set(evidence) != TAKE_EVIDENCE:
+        return invalid("evidence fields are incomplete or unknown")
+    policy, binding, measured, checks = (evidence[name] for name in ("policy", "binding", "measurements", "checks"))
+    if (not _integer(evidence["schemaVersion"], 2, 2) or not _integer(evidence["policyVersion"], 1, 1) or
+            (evidence["inspectorId"], evidence["inspectorVersion"]) != TAKE_INSPECTOR or
+            not isinstance(policy, str) or not isinstance(evidence["status"], str) or
+            not isinstance(evidence["takeSha256"], str) or HEX64_LOWER.fullmatch(evidence["takeSha256"]) is None):
+        return invalid("evidence is not a current inspector and policy version")
+    if policy not in TAKE_QC_APPLICABLE or not _integer(evidence["byteSize"], 1):
+        return invalid("policy or byte size is invalid")
+    if (not isinstance(binding, dict) or set(binding) != set(TAKE_BINDING) or not binding["takeId"] or
+            not all(_json_text(binding[name]) for name in TAKE_BINDING[:3]) or
+            not _integer(binding["pitchLayer"], -(1 << 31), (1 << 31) - 1)):
+        return invalid("binding is incomplete or invalid")
+    if not isinstance(measured, dict) or set(measured) != TAKE_MEASUREMENTS:
+        return invalid("measurements are incomplete or unknown")
+    if (any(not _integer(measured[name], *bounds) for name, bounds in TAKE_COUNTS.items()) or
+            max(measured["nonFiniteSamples"], measured["clippedSamples"]) > measured["frameCount"] or
+            not all(_number(measured[name]) for name in ("peak", "rms", "dcOffset")) or
+            not 0 <= measured["peak"] <= FLOAT32_MAX or not 0 <= measured["rms"] <= FLOAT32_MAX or
+            abs(measured["dcOffset"]) > FLOAT32_MAX or not _float32_exact(measured["peak"])):
+        return invalid("measurements are out of range")
+    if (any(measured[name] is not None and not _integer(measured[name], 0, 127)
+            for name in ("expectedRootMidi", "analyzedRootMidi")) or
+            any(measured[name] is not None and not _number(measured[name])
+                for name in ("rootPitchDeviationCents", "voicedShare")) or
+            (measured["voicedShare"] is not None and not 0 <= measured["voicedShare"] <= 1)):
+        return invalid("pitch measurements are invalid")
+    if (not isinstance(checks, dict) or set(checks) != set(TAKE_CHECKS) or
+            any(checks[name] not in TAKE_OUTCOMES for name in TAKE_CHECKS)):
+        return invalid("check outcomes are incomplete or invalid")
+    if evidence["status"] != ("SIGNAL_CHECKS_NEED_REVIEW" if "FAIL" in checks.values() else "SIGNAL_CHECKS_PASSED"):
+        return invalid("status does not match its check outcomes")
+    if canonical_take_evidence(evidence) != text:
+        return invalid("evidence is not in canonical form")
+    identity = {name: take.get(name) for name in TAKE_BINDING}
+    if any(type(binding[name]) is not type(identity[name]) or binding[name] != identity[name] for name in TAKE_BINDING):
+        return invalid("receipt was made for a different assignment")
+    raw = take.get("rawAssetSha256")
+    if evidence["takeSha256"] != revision.get("rawAssetSha256") or revision.get("rawAssetSha256") != raw:
+        return invalid("receipt does not describe the stored take bytes")
+    asset = assets.get(raw) if isinstance(raw, str) else None
+    if not isinstance(asset, dict) or not _integer(asset.get("byteSize"), 1) or asset["byteSize"] != evidence["byteSize"]:
+        return invalid("receipt byte size differs from the stored asset")
+    pitch = identity["pitchLayer"]
+    if take_qc_policy(identity["coverageKey"]) != policy or (policy == "voiced" and not _integer(pitch, 0, 127)):
+        return invalid("receipt used a QC policy that does not apply to its unit")
+    if (measured["expectedRootMidi"] != (pitch if policy == "voiced" else None) or
+            (policy != "voiced" and (measured["analyzedRootMidi"] is not None or
+                                     measured["rootPitchDeviationCents"] is not None)) or
+            (policy != "breath" and measured["voicedShare"] is not None) or
+            (measured["analyzedRootMidi"] is None) != (measured["rootPitchDeviationCents"] is None)):
+        return invalid("receipt reports measurements its policy does not use")
+    if checks != take_check_outcomes(policy, measured):
+        return invalid("outcomes do not follow from their measurements")
+    return []
 
 
 def _integer(value: Any, minimum: int = 0, maximum: int = (1 << 63) - 1) -> bool:
@@ -52,19 +252,7 @@ def _read_bounded_bytes(path: Path, maximum_bytes: int) -> bytes:
 
 def read_bounded_object(path: Path, maximum_bytes: int = MAX_JSON_BYTES) -> tuple[dict[str, Any], bytes]:
     payload = _read_bounded_bytes(path, maximum_bytes)
-
-    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON field: {key}")
-            result[key] = value
-        return result
-
-    def nonfinite(value: str) -> Any:
-        raise ValueError(f"non-finite JSON number: {value}")
-
-    value = json.loads(payload, object_pairs_hook=unique, parse_constant=nonfinite)
+    value = json.loads(payload, object_pairs_hook=_unique_fields, parse_constant=_nonfinite)
     if not isinstance(value, dict):
         raise ValueError(f"{path} must contain a JSON object")
     pending: list[tuple[Any, int]] = [(value, 0)]
@@ -428,6 +616,8 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         values = revision.get("values")
         if not take or revision.get("rawAssetSha256") != take.get("rawAssetSha256") or revision.get("operatorId") not in operators or not _utc(revision.get("performedAtUtc")) or not isinstance(values, dict) or not values or any(not isinstance(value, str) for value in values.values()) or not isinstance(revision.get("kind"), str) or not revision["kind"]:
             errors.append(f"{label} metadata is not bound to its immutable take and operator")
+        elif revision["kind"] == TAKE_INSPECTION_KIND:
+            errors.extend(take_inspection_errors(revision, take, assets, label))
     for review in reviews.values():
         if review.get("takeId") not in takes or review.get("result") not in ("PASS", "REJECTED") or not isinstance(review.get("reviewerId"), str) or not review["reviewerId"] or not _utc(review.get("reviewedAtUtc")):
             errors.append(f"{label} review record is invalid")

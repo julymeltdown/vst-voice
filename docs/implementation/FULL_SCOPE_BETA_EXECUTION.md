@@ -32,6 +32,26 @@ This ledger records implementation evidence for [the approved plan](../plans/202
 
 ## Active implementation
 
+2026-09-28 — U12 take QC bound to the imported bytes under per-unit policies, local only; GitHub CI remains deferred and `.github` was not touched. `4aab93b2` replaces the voiced-only dry-take check with `seam.take-inspector` v2 and QC policy version 1, where the canonical coverage key selects the policy:
+
+- Voiced: audible, root within ±80 cents.
+- Breath: audible, voiced share of energetic windows ≤ 0.5.
+- Pause or Closure: quiet, RMS ≤ 3e-3 and peak ≤ 3e-2.
+- A special key that mixes these phone classes is refused rather than guessed.
+
+Every raw, procedural and batch import:
+
+- reinspects the source under its assignment's policy before copying;
+- refuses a caller-supplied receipt that differs;
+- requires the stored bytes' SHA-256 and size to equal the inspected ones;
+- appends a `take-inspection.v2` receipt bound to take, prompt, coverage key and pitch layer. Style is left out because the style migration relabels takes.
+
+The asset store now publishes only verified copies and repairs a corrupt or truncated content address. Project validation re-derives each v2 receipt's outcomes. `dry-take-inspection.v1` remains readable history but no longer admits a take. Release ctest passed 211/211, including the new `seam_take_inspection_tests`.
+
+The external validator `tools/external_beta/_production_draft_validation.py` now mirrors the receipt exactly: the C++ reader's integer and number bounds, the policy map, outcome rules, and the canonical `%.17g` bytes. `tests/production/test_take_inspection_receipt.py` imports the committed nasal-consonant "ma" bake through the real CLI into breath, pause and closure units and two voiced units (MIDI 69 passes root pitch, MIDI 60 fails). It then requires the C++ loader and the Python validator to refuse the same 20 forged receipts and a stale digest, and to accept an unchanged control. Seven single-rule mutations of the mirror were each caught by a named forgery. The Python production, external-beta and source-closure CTest entries passed 8/8.
+
+Limits: a receipt is automated signal evidence about exact bytes, not listening, marker or pitch review. Validation checks receipts that exist but does not yet require a current v2 receipt before Accept; that is U13 work. No reviewer, rubric, FL Studio, VoiceOver or Beta gate changed state.
+
 2026-09-28 — Native editor redesign §14.4 full-matrix reproducibility, local only; GitHub CI remains deferred and `.github` was not touched. Two frozen-clock `--full-matrix --no-appkit` packets were captured at clean master `347bd79d`, each `captures=224 errors=0 failed_or_unreached=0`. `compare_fidelity_packets.py --require-identical --require-plan-matrix` reported 160/160 plan score cells in both packets and 224/224 identical frames by RGBA pixel hash, with the same clean source and app binary SHA-256. The tracked summary `docs/design/evidence/ui-fidelity-matrix-347bd79d.json` keeps both run IDs and every frame hash; the completion report's §14.4 row now reads met for the macOS software raster on this machine. This is not AppKit-window, Win32/X11, FL Studio, VoiceOver or rubric evidence, and it closes no Beta gate.
 
 2026-09-28 — Native editor redesign §10 cold frame met in the recorded runs, local only; GitHub CI remains deferred and `.github` was not touched. `3fb39459` makes `CoreGraphicsCanvas` draw two-stop gradient fills of rounded rectangles and circles in software through the shared `paint::fillRoundRect*` rasterizer. This covers note capsules, knob bodies and glass panels; CoreGraphics had been building a shading for each. The canvas takes this route only under plain state and falls back to CoreGraphics for everything else. `ScopedBackendGradients` lets tests measure against CoreGraphics. New paint tests prove whole, clipped and banded drawing agree exactly, check the software ramp within 0.27 levels of the exact gradient, and bound the difference from CoreGraphics. Release ctest passed 210/210. The 40-sample full benchmark passed every case in both looks, true-cold p50/p95 of 10.89/12.47 ms EMO and 10.99/12.55 ms SCENE, and the design-shell gate reported a pass. All ten alternating A/B look-runs at load ~12 stayed under 14 ms. No unit, rubric, FL Studio, VoiceOver or release gate changed state.
