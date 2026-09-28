@@ -321,14 +321,48 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
       return core::failure<RenderedUnit>(core::ErrorCode::Conflict, "Spectral source map does not match output extent", unit.id);
     }
   }
-  const auto formantPlan = prepareFormants(parameters, outputFrames, stopToken);
+  const auto sourcePerOutput = static_cast<double>(source.sampleRate) /
+                               static_cast<double>(outputSampleRate);
+  bool retimedSourceMap = false;
+  bool voicedIslandReentry = false;
+  if (parameters.sourceMap) {
+    const auto& knots = parameters.sourceMap->knots;
+    for (std::size_t index = 1U; index < knots.size(); ++index) {
+      const auto sourceAdvance = static_cast<double>(
+          knots[index].sourceFrame - knots[index - 1U].sourceFrame) /
+          sourcePerOutput;
+      const auto targetAdvance = static_cast<double>(
+          knots[index].targetFrame - knots[index - 1U].targetFrame);
+      if (std::abs(sourceAdvance - targetAdvance) > 0.5) {
+        retimedSourceMap = true;
+        break;
+      }
+    }
+    bool sawVoiced = false;
+    bool sawUnvoicedAfterVoicing = false;
+    for (const auto& span : parameters.sourceMap->voicing) {
+      if (span.voiced.has_value() && *span.voiced) {
+        if (sawUnvoicedAfterVoicing) voicedIslandReentry = true;
+        sawVoiced = true;
+      } else if (span.voiced.has_value() && sawVoiced) {
+        sawUnvoicedAfterVoicing = true;
+      }
+    }
+  }
+  // A mapped voiced island after a retimed unvoiced gap can destabilize the
+  // phase history at the configured hop. Subdivide the analysis hop once for
+  // that case; keep the caller's settings unchanged for ordinary renders.
+  const auto analysisHopSize = retimedSourceMap && voicedIslandReentry
+      ? std::max<std::size_t>(1U, parameters.hopSize / 2U)
+      : parameters.hopSize;
+  auto renderParameters = parameters;
+  renderParameters.hopSize = analysisHopSize;
+  const auto formantPlan = prepareFormants(renderParameters, outputFrames, stopToken);
   if (!formantPlan) return core::Result<RenderedUnit>{formantPlan.error()};
   const auto mono = source.monoMix();
   if (parameters.performance && parameters.performance->requiresFormantControl() &&
       !std::all_of(mono.begin(), mono.end(), [](float value) { return std::isfinite(value); }))
     return core::failure<RenderedUnit>(core::ErrorCode::InvalidArgument, "Nonfinite formant source", unit.id);
-  const auto sourcePerOutput = static_cast<double>(source.sampleRate) /
-                               static_cast<double>(outputSampleRate);
   const auto& markers = unit.markers;
   const auto offset = markers.audioOffset;
   const auto audioEnd = markers.audioEnd;
@@ -395,7 +429,7 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
 
   const auto fftSize = parameters.fftSize;
   const auto half = fftSize / 2U;
-  const auto hop = static_cast<time::SampleFrame>(parameters.hopSize);
+  const auto hop = static_cast<time::SampleFrame>(analysisHopSize);
   const auto stableFrames = std::max<time::SampleFrame>(1, releaseOutputStart - preFrames);
   const auto loopLength = static_cast<double>(loopEnd - loopStart);
   std::vector<std::complex<double>> spectrum(fftSize);
@@ -537,10 +571,10 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
         // Track measured off-bin frequency. Repeatedly resetting to a source
         // phase would detune the authoritative score during time stretching.
         const auto frequency = sourceFrequency[left] * (1.0 - fraction) + sourceFrequency[right] * fraction;
-        outputPhase[bin] += frequency * ratio * static_cast<double>(parameters.hopSize);
+        outputPhase[bin] += frequency * ratio * static_cast<double>(analysisHopSize);
       } else {
         const auto expectedAdvance = 2.0 * std::numbers::pi *
-            static_cast<double>(bin) * static_cast<double>(parameters.hopSize) /
+            static_cast<double>(bin) * static_cast<double>(analysisHopSize) /
             static_cast<double>(fftSize);
         const auto continuous = outputPhase[bin] + expectedAdvance;
         outputPhase[bin] = blendPhase(
@@ -641,7 +675,7 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
   }
 
   finishUnit(result, unit.gainDb + parameters.additionalGainDb, outputSampleRate);
-  const auto formants = shiftFormants(result, parameters, formantPlan.value(), outputSampleRate, overlap, weights, stopToken);
+  const auto formants = shiftFormants(result, renderParameters, formantPlan.value(), outputSampleRate, overlap, weights, stopToken);
   if (!formants) return core::Result<RenderedUnit>{formants.error()};
   if (parameters.performance) {
     const auto gain = applyCompiledPerformanceGain(result.samples, *parameters.performance, parameters.performanceStartFrame, stopToken);

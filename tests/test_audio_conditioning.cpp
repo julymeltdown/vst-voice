@@ -22,6 +22,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -1144,15 +1145,16 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
 }
 
-TEST_CASE("measured voiced islands retarget around mapped fricatives and score pitch jumps") {
+TEST_CASE("measured voiced islands retain score pitch and mapped fricatives through duration retiming") {
   constexpr std::uint32_t rate = kRate;
-  constexpr auto frames = kFrames;
+  constexpr auto sourceFrames = kFrames;
+  constexpr std::size_t outputFrames = 40000U;
   constexpr std::size_t firstVoicedEnd = kVoicedEnd;
   constexpr std::size_t unvoicedEnd = kUnvoicedEnd;
   constexpr std::size_t releaseStart = 36000U;
-  std::vector<float> samples(frames, 0.0F);
+  std::vector<float> samples(sourceFrames, 0.0F);
   unsigned seed = 987654321U;
-  for (std::size_t frame = 0U; frame < frames; ++frame) {
+  for (std::size_t frame = 0U; frame < sourceFrames; ++frame) {
     const auto time = static_cast<double>(frame) / static_cast<double>(rate);
     if (frame >= firstVoicedEnd && frame < unvoicedEnd) {
       seed = seed * 1103515245U + 12345U;
@@ -1168,15 +1170,15 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
   const seam::voicebank::AudioBuffer source{
       .sampleRate = rate, .channels = 1, .interleaved = samples};
   auto unit = seam::test::support::makeUnit("vcv-mapped", {"a", "s", "a"},
-      "audio/vcv.wav", 57, seam::voicebank::UnitKind::Vcv, frames);
+      "audio/vcv.wav", 57, seam::voicebank::UnitKind::Vcv, sourceFrames);
   unit.markers = seam::voicebank::UnitMarkers{
       .audioOffset = 0, .consonantEnd = 2400, .vowelOnset = 2400,
       .stableStart = 4800, .loopStart = 7200, .loopEnd = 14400,
       .releaseStart = static_cast<seam::time::SampleFrame>(releaseStart),
-      .audioEnd = static_cast<seam::time::SampleFrame>(frames)};
+      .audioEnd = static_cast<seam::time::SampleFrame>(sourceFrames)};
   unit.renderer = seam::voicebank::RendererHint::ClassicPsola;
   const auto marks = seam::voicebank::generatePitchMarks(samples, rate, 0,
-      static_cast<seam::time::SampleFrame>(frames),
+      static_cast<seam::time::SampleFrame>(sourceFrames),
       seam::voicebank::producerPitchMarkConfig());
   CHECK(marks);
   unit.pitchMarks = marks.value();
@@ -1189,6 +1191,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
       static_cast<double>(secondTargetMidi - firstTargetMidi) / 12.0);
   seam::application::ProjectFactory factory{99173U};
   auto project = factory.createProject("Mapped voicing regression");
+  CHECK(project.tempoMap().addOrReplace(seam::time::Tick{0}, 144.0));
   const auto trackId = factory.addVocalTrack(project, "Singer");
   const auto regionId = factory.addRegion(project, trackId, "Voiced islands",
       seam::time::Tick{0}, seam::time::Tick{1920});
@@ -1210,24 +1213,31 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
   CHECK(compiled.value().notes().size() == 2U);
   const auto performanceStart = compiled.value().notes().front().startFrame;
   CHECK(compiled.value().notes().back().endFrame - performanceStart ==
-        static_cast<seam::time::SampleFrame>(frames));
+        static_cast<seam::time::SampleFrame>(outputFrames));
+  constexpr auto mappedUnvoicedEnd = static_cast<seam::time::SampleFrame>(24000U);
+  constexpr auto mappedReleaseStart = static_cast<seam::time::SampleFrame>(30000U);
   CHECK(compiled.value().notes()[1U].startFrame - performanceStart ==
-        static_cast<seam::time::SampleFrame>(unvoicedEnd));
+        mappedUnvoicedEnd);
+  const auto secondScorePitch = compiled.value().at(performanceStart + 27000);
+  CHECK(secondScorePitch.scoreFrequencyHz.has_value());
+  CHECK_NEAR(*secondScorePitch.scoreFrequencyHz, secondTargetHz, 1.0e-6);
   const auto performance = std::make_shared<const
       seam::synthesis::CompiledScorePerformance>(compiled.value());
 
   seam::synthesis::SourceTargetMap measuredMap{
       .knots = {{0, performanceStart},
-                {static_cast<seam::time::SampleFrame>(frames),
-                 performanceStart + static_cast<seam::time::SampleFrame>(frames)}},
+                {static_cast<seam::time::SampleFrame>(unvoicedEnd),
+                 performanceStart + mappedUnvoicedEnd},
+                {static_cast<seam::time::SampleFrame>(sourceFrames),
+                 performanceStart + static_cast<seam::time::SampleFrame>(outputFrames)}},
       .voicing = {
           {0, static_cast<seam::time::SampleFrame>(firstVoicedEnd), true},
           {static_cast<seam::time::SampleFrame>(firstVoicedEnd),
            static_cast<seam::time::SampleFrame>(unvoicedEnd), false},
           {static_cast<seam::time::SampleFrame>(unvoicedEnd),
-           static_cast<seam::time::SampleFrame>(frames), true},
+           static_cast<seam::time::SampleFrame>(sourceFrames), true},
       }};
-  CHECK(measuredMap.validate(static_cast<seam::time::SampleFrame>(frames)));
+  CHECK(measuredMap.validate(static_cast<seam::time::SampleFrame>(sourceFrames)));
 
   const auto measuredPitch = [&](const std::vector<float>& audio,
                                  std::size_t begin, std::size_t end) {
@@ -1235,40 +1245,90 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
         std::span<const float>(audio).subspan(begin, end - begin), rate);
     return analysis ? seam::voicebank::medianVoicedPitch(analysis.value()) : 0.0;
   };
+  const auto dominantToneHz = [&](const std::vector<float>& audio,
+                                  std::size_t begin, std::size_t end,
+                                  double expectedHz) {
+    auto bestHz = 0.0;
+    double bestMagnitude = 0.0;
+    const auto length = static_cast<double>(end - begin);
+    for (auto frequency = expectedHz * 0.7; frequency <= expectedHz * 1.3;
+         frequency += 2.0) {
+      double real = 0.0;
+      double imaginary = 0.0;
+      for (std::size_t frame = begin; frame < end; ++frame) {
+        const auto offset = frame - begin;
+        const auto window = 0.5 - 0.5 * std::cos(
+            2.0 * std::numbers::pi * static_cast<double>(offset) / (length - 1.0));
+        const auto phase = 2.0 * std::numbers::pi * frequency *
+            static_cast<double>(offset) / static_cast<double>(rate);
+        const auto sample = static_cast<double>(audio[frame]) * window;
+        real += sample * std::cos(phase);
+        imaginary -= sample * std::sin(phase);
+      }
+      const auto magnitude = std::hypot(real, imaginary);
+      if (magnitude > bestMagnitude) {
+        bestMagnitude = magnitude;
+        bestHz = frequency;
+      }
+    }
+    return bestHz;
+  };
   const auto correlation = [&](const std::vector<float>& audio,
                                std::size_t begin, std::size_t end) {
+    const auto sourceAt = [&](double outputFrame) {
+      const auto position = std::clamp(measuredMap.sourceAt(
+          static_cast<double>(performanceStart) + outputFrame), 0.0,
+          static_cast<double>(samples.size() - 1U));
+      const auto left = static_cast<std::size_t>(std::floor(position));
+      const auto right = std::min(left + 1U, samples.size() - 1U);
+      const auto fraction = static_cast<float>(position - static_cast<double>(left));
+      return samples[left] * (1.0F - fraction) + samples[right] * fraction;
+    };
     double dot = 0.0;
     double outputEnergy = 0.0;
     double sourceEnergy = 0.0;
     for (std::size_t frame = begin; frame < end; ++frame) {
-      dot += static_cast<double>(audio[frame]) * samples[frame];
+      const auto expected = static_cast<double>(sourceAt(static_cast<double>(frame)));
+      dot += static_cast<double>(audio[frame]) * expected;
       outputEnergy += static_cast<double>(audio[frame]) * audio[frame];
-      sourceEnergy += static_cast<double>(samples[frame]) * samples[frame];
+      sourceEnergy += expected * expected;
     }
     return dot / std::sqrt(outputEnergy * sourceEnergy);
   };
   const auto assertVoicedIslandsAndFricative = [&](const std::vector<float>& audio,
                                                     std::string_view backend) {
-    CHECK(audio.size() == frames);
-    const auto attackPitch = measuredPitch(audio, 512U, 4200U);
-    const auto secondIslandPitch = measuredPitch(audio, unvoicedEnd + 1024U,
-                                                  releaseStart - 1024U);
+    CHECK(audio.size() == outputFrames);
+    const auto attackPitch = measuredPitch(audio, 512U, 3500U);
+    const auto secondIslandPitch = measuredPitch(audio, 25000U,
+                                                  mappedReleaseStart - 1000U);
     CHECK(attackPitch > 0.0);
     CHECK(secondIslandPitch > 0.0);
     const auto attackErrorCents =
         1200.0 * std::log2(attackPitch / firstTargetHz);
     const auto secondIslandErrorCents =
         1200.0 * std::log2(secondIslandPitch / secondTargetHz);
+    const bool spectralBackend = backend == "Spectral Classic";
+    const auto secondIslandToneHz = spectralBackend
+        ? dominantToneHz(audio, 26000U, 27500U, secondTargetHz)
+        : 0.0;
+    const auto secondIslandToneErrorCents = !spectralBackend ? 0.0
+        : secondIslandToneHz > 0.0
+            ? 1200.0 * std::log2(secondIslandToneHz / secondTargetHz)
+            : std::numeric_limits<double>::infinity();
     if (std::abs(attackErrorCents) > 35.0 ||
-        std::abs(secondIslandErrorCents) > 35.0) {
+        std::abs(secondIslandErrorCents) > 35.0 ||
+        std::abs(secondIslandToneErrorCents) > 35.0) {
       throw seam::test::Failure(std::string{backend} +
           " source-map pitch errors in cents (attack=" +
           std::to_string(attackErrorCents) + ", second island=" +
-          std::to_string(secondIslandErrorCents) + ")");
+          std::to_string(secondIslandErrorCents) + "; measured Hz=" +
+          std::to_string(secondIslandPitch) + "; spectral peak=" +
+          std::to_string(secondIslandToneHz) + "; spectral error=" +
+          std::to_string(secondIslandToneErrorCents) + ")");
     }
     // The source map's measured unvoiced island must remain source-faithful;
     // pitch marks on either side must not let an OLA grain cross the fricative.
-    CHECK(correlation(audio, firstVoicedEnd + 1024U, unvoicedEnd - 1024U) > 0.99);
+    CHECK(correlation(audio, 17024U, 22976U) > 0.99);
   };
 
   seam::synthesis::PsolaRenderParameters psola{};
@@ -1277,7 +1337,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
   psola.performanceStartFrame = performanceStart;
   psola.sourceMap = measuredMap;
   const auto classic = seam::synthesis::ClassicPsolaRenderer{}.render(
-      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      unit, source, rate, static_cast<seam::time::SampleFrame>(outputFrames),
       firstTargetMidi, psola);
   if (!classic) {
     throw seam::test::Failure("measured-map PSOLA failed: " + classic.error().message);
@@ -1292,7 +1352,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
       .performanceStartFrame = performanceStart,
       .sourceMap = measuredMap};
   const auto spectral = seam::synthesis::SpectralClassicRenderer{}.render(
-      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      unit, source, rate, static_cast<seam::time::SampleFrame>(outputFrames),
       firstTargetMidi, spectralParameters);
   if (!spectral) {
     throw seam::test::Failure("measured-map Spectral Classic failed: " +
@@ -1308,7 +1368,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives and score p
       .performanceStartFrame = performanceStart,
       .sourceMap = measuredMap};
   const auto stretched = seam::synthesis::StretchUnitRenderer{}.render(
-      unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
+      unit, source, rate, static_cast<seam::time::SampleFrame>(outputFrames),
       firstTargetMidi, stretchParameters);
   if (!stretched) {
     throw seam::test::Failure("measured-map Stretch failed: " +
