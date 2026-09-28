@@ -99,4 +99,21 @@ reference, not an independent proof of the blur algorithm.
 The owner and independent reviewer must still score the design rubric. FL Studio
 F02–F05 and the VoiceOver walk-through remain separate real-host checks. Windows
 and GitHub CI remain deferred per the project scope. The true-cold 14 ms p95
-budget is independent of image reproducibility and must pass its own benchmark.
+budget is independent of image reproducibility; it passed its own benchmark on
+this machine at `3fb39459` (see `evidence/BENCHMARK_2026-09-28.md`).
+
+## Recorded result
+
+At clean master `347bd79d` the full matrix was captured twice with
+`--close-ms 5000` and compared with `--require-identical --require-plan-matrix`:
+
+- Each packet: `captures=224 errors=0 failed_or_unreached=0`.
+- Plan score matrix: 160/160 cells in both packets.
+- `frames compared: 224, identical: 224`, result `PASS`.
+- Same clean source (no dirty paths) and the same app binary SHA-256 in both packets.
+
+The tracked summary is `evidence/ui-fidelity-matrix-347bd79d.json`. It keeps
+both run IDs, the source and binary identity, the comparison result and every
+frame's RGBA pixel hash. The full packets stay in ignored `build/evidence`. The
+result is macOS software-raster evidence from one machine; it does not cover
+AppKit windows, Win32/X11, FL Studio, VoiceOver or the rubric.

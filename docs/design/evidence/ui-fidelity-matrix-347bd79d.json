@@ -1,0 +1,2539 @@
+{
+ "backend": "AppKit software raster + NSTextInputClient",
+ "binary": {
+  "path": "build/release/Project SEAM.app/Contents/MacOS/Project SEAM",
+  "sha256": "e864492d038cd11f8f7b63e9bdd14f1145f9f0954e032ee7fac775614026499e"
+ },
+ "candidate": "347bd79d",
+ "captureRunIds": [
+  "bade8dd9-038f-40fb-ad45-f8fde0acf890",
+  "a6db5dc0-6ee5-44a2-b0f7-17ebc8a10621"
+ ],
+ "comparison": {
+  "compared": 224,
+  "failures": [],
+  "identical": 224,
+  "pixelFilesVerified": true,
+  "planMatrixCoverage": {
+   "A": {
+    "complete": true,
+    "covered": 160,
+    "missing": [],
+    "required": 160
+   },
+   "B": {
+    "complete": true,
+    "covered": 160,
+    "missing": [],
+    "required": 160
+   }
+  },
+  "result": "PASS"
+ },
+ "environment": {
+  "macOS": "26.2",
+  "macOSBuild": "25C56",
+  "machine": "arm64",
+  "model": "Mac15,9"
+ },
+ "frames": [
+  {
+   "contrast": "standard",
+   "id": "emo-empty-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "bb1398ffb7b28ddfc36d34289cb45ba4966906f5468d81c0f312e2fd06506a58",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6a6cee5b0cab2b3926093ef97869ac5c02937df73d2cc826d471e3b04543c817",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "0ec269a4fdd32984d42f8104a6cbcdcf04b167362fcedfb5e1bd39a8e73f7ee7",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9b51764e68c47026c029babe75167a2ce91b4539fbcbed9ec87be3dd9399ef33",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "797bcedc05b4d05aaa09967fe6d45d1d545f6a730c46ce6eb4eb347da696c97c",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "c0f79b7fae428968f6ec981bbbfde31cd9930de7a3c87f0ce9f1f82ada7c649d",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "70fd8e8122e02bc25183bc0d0403c0d23a070a719a164a60a94e38363f68e9a9",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "2524c57ddfdee191bedf474b1c83d517663889f784b224b3c3790f115eb54ddf",
+   "state": "empty",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "73cafc1612159a3b139b684de4a8f0a126f076219a9f1132e9c106efd1dea6ab",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b20e75390688a0b6f51bd93658d6bc5bcdd8e161eaacbbff32dc91aadeb42090",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a9a7f844053152082e7b7b83ca338c68c36ef279c0073f8a35192382429185d6",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "cd952b588cfa67d97611831d5c3aaa7590159ce1639bba9191b237692a926687",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d80c6ecbac269e38e8490a374cd8464e0a29d7987fbfcf78aac8f7186c062290",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "eeb3392738fb9371295486fe9a644e42850a74dfbf8e910148d518f3135f0494",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3e41e3b89c740c912a1bf3de57d3b95da077060d7c7911b8c2ef6957274680e2",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "47d42ba912e155b0f64f3077f2b30e08c54c6aa8943c4fa1b496e738b5187861",
+   "state": "dense-overlap",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "7816836c85e7ba08213e440a9c0e44126f69149a748605c1de2a7fc716221a43",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9cf1926da828326fe671d7ed30034411741786d8793aa186f7b38bb554461d03",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "667141f03ff09862927fed4bfd5d1300bc5a33d8cdeb0fe577287b953f7702ce",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "3af22e685b8297b51920db0d10d208bd2672998c6f366ab47b5d6445e16e4c0d",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "6dd271f2fbbbcfd3a94cebacd228b5851ab8acab1f30d27462cefb1c24b2c3e4",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b93fa175e6ce34f411e7ccf7e57dc164973440b8be4c9c30e66b2367e960f906",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "34b6e794b004ab41d58a78a2ffd7050c06c80ee6f2492c8fb06d3c239957a778",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4453381e2affd7635a1e16104094cbc56a9afda8e6a5f9efb4e63d28722f9095",
+   "state": "selection",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "f4f6c30b3b222fb86da85a042d91fe28a4353b4d0719e7bf97e604639cf06c2f",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "98b491841ce0b255f490840cbb624ad705ec5a5bf912b2a25ba3c9536ef60fdd",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d617ee86a6dd2fc73e87a5fcc605a707216cc392b560238ca7745b16c1cf8240",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "46b73f9d31c358408039f92bc68d7874b06f666a9b1e485b2868f2dd044a40e2",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "68446831fce08835784923a0a18432a880de30638093099c1ccd37f5e3ba6ab1",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6291bc267126679df8c5340813691e7b94018385003ab67b021714d7f2e7f76c",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "bb7ca44963ed679e229aeabcd9b09392738964f5721388a6a2f0e509e2e8b893",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "af94e75f6f6d2096ebc567e532d042f94a4a21abf033841946cc5ad1242c7065",
+   "state": "rendering",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "297a8e72ebffce6767e7a463ef6bd688a26020909d94cd553f3146823f6265f7",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "c4bf0d85c59ce789a887c0e1acc37a72eee1d050ea413e59d34dcfc689cc6e21",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c81fb82128d4e4af1726cd8ae2cdfe00a49313c5cfc7b60034b76e3225949bcc",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "1b37ef68dbf977043d7fbbe9f40175328ebe48719e7cf7d955fe5d79c901240b",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "2bb723db7bbc8ab919ad64b85d140c5ce120b94c851331f20a90b9eb99f97995",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "8348ecc8e8c92c118d2359e47f5aad88d8444ce4f6e68a51a4838e01eff5874e",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "229967b6fd236fbd7cc0b2f14b130e19547e5e79a6f80f209d1c865f21b6c9cf",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "242ecd77a25a9e88688a410d28bfa5639e8481e208cd6fe4b0c2f42f48d73a78",
+   "state": "failed",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d43502229751274a0f3c67e8950598f514bf106346ef0d8511a1dd44035ed18a",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4904544159d2431a714d67e37e241b34dcf2772381ffd1b7ea50734c6c091df6",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "ecf5ba6c3399f2d212ba836782e0326734b1b78588a14106670ef8cc4889a1e5",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a8ac1a77ffe4ada7f4f86e5b4a063a5e6258075f05e26301045e8f65b1442b1a",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "ff289072644f89db16c40ca260f2c7c9ab9ede16c639e64d1370d98b9522cf25",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "2f749464c98c682f889804d9da5bc699c8ee1b3d1538a20905fd60fc7f454b58",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "e047be91d67ac4b27d631cda76006210c8ab8f3da8daccfc064e7f42d427b40c",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "38eef612fa3cb6770fadeb645cfa2e1a6164881e2e6770b6b6d844b0f598f1e6",
+   "state": "empty",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "24915de2f07502c9d02cffd94cbed403b29a4c4b71ac0c7e6e8a5f488e0890a1",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4558f255c155679bd8db83c8219481c7bd2662bf5622beb6c8fe4ad3fb66f3fb",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "04ea946fd1167920f8d691948d3b25cee1be83e0005f9b0d026ec25f06901964",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9eef9433cefe351dec6ad5e712c93eb02d6d1a703005b8c8a641a39cf8473048",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "056997335e08c5929374ad912098d93d960639c54eeceff977d9cbb6155354eb",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9190d67fbcf8d0744350902f9fabdf02fb5f85cf156a9e08751ab9c60347b049",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3a6097ac8267105f7232c3efabe6d033d36d4450fe356188b7ca193730d64e5e",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9db5ee07529c71e13911f6aec9ee89b0a4226aa454d2eb3acce1140cd917f06d",
+   "state": "dense-overlap",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "dce3c6b02d7dd2702a3c648812efa8bb751452f216c767d4ff885647ca23301a",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "34997fd81685bac8af9a78a5e9e2828f17c7d859a5fc6da8bc220a83baecdf43",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "0e8634d5f0428bf1ee3841e9cc8cc4859d13a67dd16a3855cd8ee5e513c565a3",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "cba0c5ce2adf8c4e26e7edaed7046bdf3e437b2925af951cc3bdf9fd1a599a8e",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a4006116d6c6301c0871f0aac4d0975e244053569f6608f71666a69e65db31d1",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "da5394b70e3286a24b954e73218296f8ae99efc1be2d0c0004bd2d55c78eecfa",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "4a605c12219b1dc319fb3dc1c5c9a8a19bf31eb7746dd5609badd69dca40093a",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "859fb04ff26592fb2c47a646ed31b708a546c48ccb0c73e47c976fd4b42960ff",
+   "state": "selection",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "6c2491640b6d77bc7af0eaf30ec5c5d0f26d3978047deea1ea914b0087030f57",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "67faaeb9e957453e6b57f82751e64164ebab36f9177e80b28332b76fd553db76",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "942f14d46a6a4c313f5050ac628b82fe29026f0d9428587d44b282ae3e73456a",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "dabf7112730ce3f6d8fda46665c6f2866d268a4c05842ea30470bb7568f87aaf",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "e44e8bc1f8f950fc5a6e7c5813ffd879bc56654d047dfb520b0b84baa318c886",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4fddb423fb61ba1c424604b237d6a8abd11765e520f3590f6dd7db283f97a36d",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d2c436a75652043e1564cceea6981019891e827c1b1153b2c8597a293ea37826",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4db4be5a76a905c32166c32609b3b1f5566b49bd8599cdf36dfc8db7f2a1d27d",
+   "state": "rendering",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "e6d67a5dffdaa76da7c3feb3b5256acf2924790443d021389b8c8a616259cad9",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9efbf336f87d2fad693a715a3dc5808b42dfaa7919d5805fc27fb66f562660ae",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "7dd4823e0b5a5c2d668e18e048cffaa2f75f73a881356941e99dcb04a4990ef5",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e3e170427ae17919f1f7ff0c9afc4ed4aea00ea5bc0aabec9362f7fabafeff90",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-1100x720-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "67e37d23073af410a72bb612492b5c1f774d5a79c3a17fe97745c58593b503b3",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-1100x720-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "ff9a61c60fbff6e779eeba26efeb119a416b96e54dfb3787c64860260e72a8d3",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-1100x720-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3d99575276d2e1ee3bdea684c76bd1e12e8385ed3fa03504124c3416fbddb2f2",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-1100x720-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b81772379b3a0e450cf4fa05a76e06e71c974311e70e2656bcc47785b40277d2",
+   "state": "failed",
+   "viewport": [
+    1100,
+    720
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "5013b790ff565e71c7fc2c5c53815295e8c0d8f0969d286c4b2a99310a9dc003",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "945228a943b40bf22924341a3164880c977644f2f9ba93b16b1502908ea08294",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "105810371d29424db172e6bbd3cf469347cee4918b01cede207473291e999335",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a91b5c539f84060f3677532beb9abe85452f46c85e9c353853ba2c7b9696fc8b",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "891295263075dcdd3921bb067b323223d31d6a7ca480a197f9bb47e9895c4571",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "af6f2fe0ece5c4adc53d78a597439b140db7f1de6f0e88928a3021c5ff03a3f8",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "7a7f8f76888cb0de8e36ef535554e9b9cb473ea8bba49fda5a23d44ab8ff2de5",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "f0d52ef2b43f4f7008c32f5681b72d24f58860854e97615dde8b813a2002e0bd",
+   "state": "empty",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8c28f20de77886684e78e216ecd60915072adb2cd87df4edd402488ba0bc6202",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a79a3b2f8c1899e1d75a720689b0760ab46cf1ecf0015ae9ae85516d918b158c",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "70c436561d468231381de143d435f123dd416a699d26dee54610865ffe7ee3ed",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "1803fd5e0665489259941f3bfa49304f82310efb16d622808827711d236f1d39",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "7d03e7f591be73a74eb8c0ff157b5bf91a4dae3b8a4447b0f6f9652b282b1847",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "5cb50145d17a06d4cb85b19ecc6f48b96427d931a7079f2b7b85edab89749a48",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "4edde76b5b506ef6c1283589ffd43fe1e706f3efc004b53a5d47d242a92bd953",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b2b98ca085dd7628c10434975d40aa10c67632e9256e9b0a7f0834f3bb4c7436",
+   "state": "dense-overlap",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "e3333671eb6ae4ddcc76759354c56ae2e2826562a5158263c6d581d6de367ff0",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6f1a1a2d24fda9824c484113b4728983b6949f882f8b98f889df3272a49b9244",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "df666cdf0f2182d7c66b62043e6e269c52b64f54d6b2bb13829e577315f9e8de",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "c204f80bc687527c3fcc9b1b475916461e9960c36c05ea852e12c5fb0353f5da",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "47eaafaecbe95f3b1005472b72e407e565a90d24991320006966adf4ca35f32a",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6f720e2a0d4f1f4b99fd05280fd4af33aabeda713e53624889316b2b521b81f1",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "0c1d7c95452602c4260e291a7b343fb6a69a3803a1af67190ee9473f2c4a4f03",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "293291b6a11edaf60ddb0d7777f4a2bd071792dc907ac0cea7eeb450d50277dc",
+   "state": "selection",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a282984d31bddd88cc111d42012b5ac8d0a56ed40f467aa8c711f6efb87a84d3",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "7455207c69e4b677743231a6a60a466de06d4692a0cad37552373f2bbc14962a",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "2dd5ebbdedb062add67003e9b4c2a4ad8bd352e5d0be118fcf6e719b7ee665cb",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "9beab1bf3a61115c54652aec2fb8269981b1f30d243ca2b490201a1476fcec83",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8448673b5c4b2a38e6046ac4140b59e477d0bf332e990a19fa2e12a0fd2800d4",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "79405fcda2e1a94ae7a81c98d1e6d2f62b70fde5df56d6238cde5d41c1a55766",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "741f878b5ee4b739760f6ec450f6f9974f2a2834985d00da7ffe501662dc7779",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e1d54cd476883c1cc8748d0b6f24295b21fe75574cc22f86f7047a157c29264a",
+   "state": "rendering",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "67bd141758603fe44d7bd4c08963792895b907c096dda31c00c6f54e88317068",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "3ac2a13c1fb2cc4839381c3b992a3fefffde094d4b61665d8af56d53cfc7cc9d",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "b6da416b13776b4077281bd06797bc1709eb4f4a07580df906afac8d4f564e90",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b9ac73c77872b86a18c0d92945658f4bb75384316162b10f609fb008e1820bb5",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-860x640-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "dfc0ce46f2706a1c5f255aab95966ad7954398c9de9af88ae91f02c69344d4b0",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-860x640-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "100d2f88bc279851610222d469a8de09f5e9cbdbd417714e766c0db350c4e1fd",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-860x640-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "64b7911e2d54be1d5fa5bb4d9895c456be378fee367e211ee53d9f693169e52a",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-860x640-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e1c65a3b3345e695612fc7420bfd54683b27ecf2c15659d193e53b75cc2a5048",
+   "state": "failed",
+   "viewport": [
+    860,
+    640
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c770ee0a910d6214b3cd48cadb004a293a7eb3b995520207454d3a013cfba269",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-empty-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "920186f7c767aff558bdfb00dac31ab9de91b5e2d6753ae93104d3747648c153",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "ec7719683be5e9b4a9b58c94b6f432b18948d75a57d98e0454853ec619a06860",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-empty-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e214c13eed83a8b8acafc595d2b50467859923c6ec059205b2ec68c69b541bee",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d4a676056e398e50492b38c15773bdaae52c1fdc29d9e9eacfb1e80372d1cbfe",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-empty-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4cc969427d7a9881ce00c217324f1a1fc82a241fa3b4ac2bcec868aec1a98904",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "51a2a1b447c1c17313d9af13cf0b2a2fade9b02b05b09e654a89f6e13096e79b",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-empty-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "77ce5f54bfbd014b0d4c25278ba56864d578e86663e987798562b32349a1abc1",
+   "state": "empty",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d6b3cb246ab1876c1e5fdce8c20932400713fcd870b66e918db7b71021c352bf",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-dense-overlap-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "4bb21cdc6b03930290338ab1a74309fd9238049b29bc19357183499f5be88036",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c537e4cec49c5be1451affea61a21e7d867ae618369f759c78692a21119d793a",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-dense-overlap-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "aa9702b7084880d75addb213141933cb9dd92739de10f48766c4cb91ce4934cc",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "577e13ff2d6135c13dcb77494e4c4342eae8dccab7fc64549b8f6420cb06bbb6",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-dense-overlap-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "acb2cc7951aafc99b3cb8d2df97706d8f8b764b301ec2dbdfc9635e2d411d62b",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "af7dde6d58b0e19a1a57cd6b81f985b2761986d403ecb49bc515ef9995d29a76",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-dense-overlap-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "0d86c72d7959b876b16c478d38a9ff2c008eb44d247fa2c8aac00ef4883499f1",
+   "state": "dense-overlap",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "b4a24b5e452c05a018b1d883236c09a5d0dee0219e010328da4113c9ba716da3",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-selection-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6490019dfb1716b8329b61261666396256d2d10f847d522a8429c9def1aba342",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "fceef19b8995cecd3d6f7834838aa1ee3648560ff4f9738dacb4a5128d17da3b",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-selection-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e438f00b7c32491a50d195dd2bd986cb0196ea611ea4a9044ec921bfe645e3ab",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c71329c99a4a67120bc76e8525323d1c8f49a4ff8f4621dd2709b63d4887d371",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-selection-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "d5f341efdf09e71f8bb6205f5577c08593327c3d69886d0bc3b470bbf734edd3",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "4f68145111195585b77203beddac4630cd3902977dd39f40dca877adeaec0c42",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-selection-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "08e9b5444bcea4cd6d74ce16fec032d1c4f5a4c68fa6e3e6506236f4631d2535",
+   "state": "selection",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a8e1e41ce0b9d6203d6355861a4fb5aedbf26d30aa811ed0f9685dd78bdcbc06",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-rendering-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "44f5a1bc35db9c2245a4ea97f8bfd096a45a78df8dca60e27c6c180d5a78a5eb",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "ec915ffd90fbc727fd2628ef7928bc9c6e6b876cb9d733b5c4a4365020fee859",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-rendering-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "2bb3789808dffcb85541a5159f6f1170af9950c12f1709515f5775e44da174f9",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "fb5d28efda5e6fadcc2da5186e41258c8b84a4ec65748f8141af321cbb669681",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-rendering-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e150c55eaaacea035f38e0637f31b5ed5d95f9680c4ac63b07f8d3f055b59a77",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "e92f2b7cabffc3b7a790057d7bf8a59d5cd755d4c8ef7d17d9f3910411325257",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-rendering-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "f936789157144d86323542d37e023a6e16937b33d0f0b5b71095f2c862455bdc",
+   "state": "rendering",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "914ca08079ab0f5ecf4af358578ae340b6d01c6cafb123efe6ca79a1ac0dd0ed",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-failed-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "31f85d4e6a3a165393c564c708872a052275a2268147619217976c6d2f083522",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "d399f412235b0210f6e7b34be727dc07733a8a13812a9a35c684c1a904f92f19",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-failed-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "0c6dfa56eb1adb4a623d5241b48ded4925a6039ee270e7a6ae0f9a05ae4c060d",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "9c041f4f6b52e478854323259f9f1fc75ebc08601be52e9f2ccc8affda12b4c2",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-failed-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "f3a3ee986e1f663c79c92963847b5ac9e900f742a3c2fd3d7ef4c5aa6576a9d7",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3f758c0c0a05b9137fcd1560c894f6309aa1f3b63c761e69dd81d24e2dd93653",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-failed-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "b22f475f6305db4630b8a7dae98d7695e660494bf60e44b0cdca2ac7f941adc0",
+   "state": "failed",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-voice-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "64cd8558b3b4960abc01ec4670f60d75612abbd6063dff09c91c1e91787afb25",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-voice-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "649f4ac23e2808bd02b4b29aeaafa101d3ce3cff0ea058c83aca39adc38c0aa6",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-voice-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a488f8f8ad8f6d9b987d0ed29b5a875edfdd8b6cb5751fb8c1830d67d1398974",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-voice-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "0a97070f7f4062d7ef62393c0826d55ae054fae3e6d7993346d43e2846524133",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-voice-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c2a3efb736ba1970ad338d55b2c693bd31359d7b1e00bd7f892b8e7c23da2289",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-voice-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "db2a861e16fb8f01ae9e834cdb5d6e06e0c1acf9caf665728ac7c60d2973192f",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-voice-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8eba946a17ba65b73698a6600b070607a25b0f99934a42d04a9cd5b38c4f873b",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-voice-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "d3a1bbbd16830f31a7cded8380c329c3c3de27763ad4ec5c12d0dff7ce95bab9",
+   "state": "voice",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-voice-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "1b48bc11acbc2695412641185b0c57925ebba3371f7901bb63b9fa256e9959e4",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-voice-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "d9c79356d8de35c121498955f4f0fd7f55775f85a063b116a0b5228eac6ecb78",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-voice-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "9caa9f48707b408236e86f452cae6510c4e099fe567cf337173d29522be02d89",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-voice-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a7647638db2d4b75b9579fcce592fccf7c1d500e018c1116870b45e48852cdd1",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-voice-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "74400a1263cb1dd4b763074054e529314edf7394528b7191f9428f4906af6a32",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-voice-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "51ae6c58c15ff851323ca754cf87fbc0dbf5e258015791b99a037a9189806a1a",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-voice-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "89b633317b26e27a41964701b202f3bfdd88aa234059c15b9e5a7403f39af61c",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-voice-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6d8855c1a6182ac0eff5cb33208bbb695c0aae2357d3fdf22c8321eb6e75ecc0",
+   "state": "voice",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-tune-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8008fc1f341b69c3e79af885a47808aa34230f2ff0d02d462cad4be772b87cde",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-tune-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "fe13ed6d0244c8a822ae267aaeab2ca3ec9971a512cb7f0a2fd2297d0b53abcd",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-tune-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c07f2e91a3cf31a6b5af9afd9367a4a84489657da2249967ef74866f038ecbea",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-tune-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "d0b7970b9ac36ddbb08b4a48a5f39ba625b5af05ee04c6cad2de089508622d46",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-tune-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "4ab27db570c3d9bd2eb5e4587ba31911d2ddc90d6a56627b79a819933ea7ffc8",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-tune-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a2e60606a147f32862bba3da64b43cbbfbb350247d4070a09860ebc92877aae7",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-tune-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "22493eb5f062d25d6cbb8fba9e2c410fb624971eac4cde47989d5a4dc05bbff4",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-tune-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "ee8e0ac6013e498553b7843cbbcac8e802141916d67029fcf0693db2151421bb",
+   "state": "tune",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-tune-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a60a325a2e03f80a963b23c69bbf8db27c0b4152fd95af1f067f87e561cb6449",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-tune-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "c032a45b48dab8c2ff0c96b0d90a6b3c4d482c64efc4090a22f1c68421e0cf6d",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-tune-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3771ee4121e653417d9a1aa14b2d671a9e50fc7a91029f3c2c2b8010aabd9682",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-tune-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "6e64ec55f547747d7b044cd8ccfe117a727adf133544fca6049ef155be5bf996",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-tune-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "3e2daa060aa280c4c993cd7c4a7d0f7dc4bcec6255275e5d96f6b13115d389b7",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-tune-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "edd2c133d60c9b58f6109072900bea18d67242045da2ef823e4bb41cf9dac0e5",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-tune-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "c2a1037cd1533288099b3775699e4c3a0e036a174b191f2b527f9b8b0bd1b1f5",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-tune-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "cb9694a365e15150fd0eef10f8f92409a6e0611f7782ce2406a7f59a68338017",
+   "state": "tune",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-mix-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "71c22acd248349bda62af93ff66c252f034ff60ee0e7d06396eab75de8fbb72d",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-mix-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "d3e2e6f6373b1a09588e1efd7178eb39377de935b14f1f8630e701e64a9656f5",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-mix-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "eea2c0ec6120ff629ba6862ca0caeeb0092f09e03d9858339b2cb443b3edce67",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-mix-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "1bbc0858cc481a3ce0b49c428d897b6a032d4536327b37327b8b9af7138cb962",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-mix-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "02ea1e9c562b2596f32fe6bb7c0ae13b8c6b6d496b48339a63e758b7ef7d9b47",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-mix-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "aa01a60ea30ec08d25e521682d859dddddcdd387938a047bc87556fa55ae5c9d",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-mix-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "da89e615871298a448492d10038125f8ffc7aad8b47053f73e8120c21f2eca77",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-mix-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "a1678095ad7978eae76b49e3651d13a18c3eea3a82a58564dd68e3eb61351b6d",
+   "state": "mix",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-mix-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "2f9b2cab526b6fa83c579c50d752b858150be10b8d09d68e4e7edd2b1a1293e8",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-mix-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "0781bf0bbed9f5e4677bf725547c0b1785ae8ca907c83209abf2a1884334b406",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-mix-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "a3ecf4e830c9df54e7cd8c24708ead73bd033ee8980e90774bcb7b956779908d",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-mix-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "e29053d4e1d5d4ca7be84874d7f56c308a61a094e0fdd70ef01b7852edd6fd85",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-mix-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "1269619ec45185f9e13b1fd84db57ac12148fd5dcce7c047d043ea88e140e795",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-mix-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "cb8e8888787ba4d6ea1bd33072c1eb05b4e402ddd486f242a8f1a53fe7cbd3e7",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-mix-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8f59c86085db459a0f3d76b5066b25b7e9f102ad5b437f7627123138e74016b0",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-mix-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "967f777a4ee7c3fc8e89717e044ccbca744eee01f586d126a589cf963daec652",
+   "state": "mix",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-export-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "4ed3e67fe08a6958dfef83ffe3bc8b03f1ede16502b13b44ab8308a195e4cf2b",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-export-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "bd71e2eb21c45b5ea28009cd84b72e226248643a10f8fa50639a8f3958d63e62",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-export-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "f0db797b4fa4fac9c681798140dce3253d91c8a3639ab197e181c3a65ccdb5d6",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-export-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "2ac9573836ad77b15548662d6bad1a6f54e303e49e70f1d255a2afcaa61076de",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-export-1600x900-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "693e0b5e0cbeafc4178742879a9904e4448e0895f96d91e2a1725558ed7003de",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-export-1600x900-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "c58358d0b7c41e1c71a651bbfc68532633fafd110bb259dafa2418029c58c607",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-export-1600x900-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "74489b5de02dcd0237c8dfbe2f53305778eb08d85036df12dc3dc5b6eeceae8d",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-export-1600x900-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "469e1b1d5a7cc03d55e90d9c48af878fd8cb8cc7c24e33e5bba6b95609ee5604",
+   "state": "export",
+   "viewport": [
+    1600,
+    900
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-export-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "8eaac240b29a122fc0f6632c99b834837edf933f731b4dffa4ef971afd3adb65",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "emo-export-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "0fd4530abe7d2d5e70b3086e8058a740f185971ed6a9ff9d4f040811322ecf5a",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-export-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "1fd9ca1f432ea18f7fdb04d70d5f4237eccb79c1ddd95c918bcdabab309a407e",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "emo-export-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "041bde0888b0581c16d57886950c03a1f96c41a782d50b04f3502caa57c87701",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-export-720x480-standard-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "888379973aa680182427b8da8d7b634181e25e45ab85770925a79186cb04e56f",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "standard",
+   "id": "scene-export-720x480-standard-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "79e1951026dd92f41ae30792426002eb7559aeb943e36859a443514dd10331e2",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-export-720x480-high-1x",
+   "requestedDeviceScale": 1,
+   "softwarePixelSha256": "2fd1378bcc73c7e3d9b659ebda5de569884004c2dc9bf82927861d188d439287",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  },
+  {
+   "contrast": "high",
+   "id": "scene-export-720x480-high-2x",
+   "requestedDeviceScale": 2,
+   "softwarePixelSha256": "72435f955cfa16506bc56e6a25a1ae12c749c9262c48c918bd74edc97304cb78",
+   "state": "export",
+   "viewport": [
+    720,
+    480
+   ]
+  }
+ ],
+ "notRun": {
+  "flstudio": "owner session in FL Studio",
+  "stale": "stale audio exists only after an edit follows a published render; the standalone command line cannot script an edit, so this state is covered by the shell tests, not by a capture",
+  "voiceover": "owner session"
+ },
+ "note": "Two frozen-clock full-matrix software-raster packets captured at the same clean source and binary. Pixel hashes are RGBA SHA-256 over decoded PNG pixels. Scope: macOS AppKit software raster only; no AppKit window, FL Studio, VoiceOver, reviewer rubric or cross-platform evidence.",
+ "packetResults": [
+  "PASS",
+  "PASS"
+ ],
+ "requestedMatrix": {
+  "captureCount": 224,
+  "contrasts": [
+   "high",
+   "standard"
+  ],
+  "scales": [
+   "1",
+   "2"
+  ]
+ },
+ "schema": "seam-ui-fidelity-matrix-reproduction-v1",
+ "source": {
+  "candidate": "347bd79d",
+  "dirty": false,
+  "dirtyContentSha256": null,
+  "dirtyPaths": [],
+  "head": "347bd79dc6cd00a86cff715fd3cd34937168bf0e"
+ },
+ "verdicts": {
+  "nativeVisualMatch": "NOT_RUN",
+  "owner": "NOT_RUN",
+  "reviewer": "PENDING"
+ }
+}

@@ -19,7 +19,7 @@ tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, 
 | SING, VOICE, TUNE, MIX and EXPORT complete with parity | `sing_shell.cpp`, `voice_workspace.cpp`, `tune_workspace.cpp`, `mix_workspace.cpp`, `shell_overlays.cpp` under `libs/seam-native-ui/src/design/`; relevant contract tests below. r6 contains SING, VOICE, TUNE and MIX captures, no EXPORT capture | **Implemented with automated coverage; full parity acceptance open** |
 | Protagonist in ring, Stage, avatar, poses and splash with real state | `assets/character-01/manifest.json` schema 4; `libs/seam-native-ui/src/design/character_surface.cpp`; `tests/test_design_character_surface.cpp`, `tests/test_character_state_art.cpp` | **Source and tests present**; final art review and commercial clearance open |
 | All tests and §10 budgets pass | The earlier merged-tree ctest run passed **206/206** at `44bf8386`; no tracked full ctest result establishes that count for `caabbaf5`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. The recorded 40-sample M3 Max run has true `cold-full-frame` p50/p95 of 15.59/16.50 ms EMO and 14.65/15.26 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. Retained-background p95 is 9.03 / 9.74 ms; scroll/zoom, playback and dense 10k notes all pass. **Update at `3fb39459`:** a local Release ctest passed 210/210. The 40-sample full run passed every case in both looks, with true-cold p50/p95 of 10.89/12.47 ms EMO and 10.99/12.55 ms SCENE, and the design-shell gate reported a pass. All ten alternating A/B look-runs at load average ~12 stayed under 14 ms. See the [snapshot](evidence/BENCHMARK_2026-09-28.md) for every case, the load and the one contention run. | **Met on this machine in the recorded runs**; p95 still responds to heavy unrelated load, and the final-commit JSON must still be archived |
-| §14.4 visual reproducibility | Frozen-clock `rep1`/`rep2` packets at clean master `2acd8ce4` compare **36/36 identical** software frames by RGBA pixel hash with `--require-identical`; the tracked [`rep1` manifest](evidence/ui-fidelity-rep1-manifest.json) records `softwarePixelSha256` per frame | **Partial pass:** the plan's full contrast, scale and platform matrix remains open |
+| §14.4 visual reproducibility | Two frozen-clock `--full-matrix` packets at clean master `347bd79d` compare **224/224 identical** software frames by RGBA pixel hash with `--require-identical --require-plan-matrix`. Both packets cover all **160/160** plan score cells (EMO/SCENE × Standard/High × four sizes × 1×/2× × empty, dense overlap, selection, rendering, failure) plus VOICE, TUNE, MIX and EXPORT. The tracked [matrix summary](evidence/ui-fidelity-matrix-347bd79d.json) records both run IDs, the source and binary identity, and every frame's `softwarePixelSha256` | **Met for the macOS software raster on this machine.** Cross-platform packets, AppKit window capture and host presentation remain open |
 | FL Studio shows upright, readable, themed editor | `docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md` §11 calls for F02–F05; r6 `acceptance.md` has no FL Studio captures | **Open:** F02–F05 in both looks in the actual host |
 | Legacy painter removed | `libs/seam-native-ui/src/editor_scene.cpp` is the unavailable-platform presenter; the standalone and CLAP use `SingShell`. `docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md` records step 21 retirement | **Source complete** |
 | Design system and character bible match shipped source | `docs/design/NATIVE_EDITOR_DESIGN_SYSTEM.md` refreshed for this baseline; `docs/brand/CHARACTER_BIBLE_DRAFT.md` remains the existing character reference | **Design system documented for `caabbaf5`; final art review open** |
@@ -50,12 +50,33 @@ packets are ignored build evidence. The earlier [`rq1` manifest](evidence/ui-fid
 documents an 18-frame ready/empty comparison against `rq2` at dirty `4e47209c`. The older
 36-frame `det1` packet (`52fc8ff5`) predates clock freezing and has no pixel hashes.
 
-This passing result covers one machine and the AppKit software raster backend, at Standard
-contrast and 2× device scale only; the manifest records `deviceScale: 2`. Plan §14.4 asks for
-{EMO, SCENE} × {Standard, High} × {Wide, Standard, Compact, Minimum} × {1×, 2×} ×
-{empty, dense song, selection, rendering, error}. Its High Contrast and 1× captures, among other
-matrix cells, remain open. No Win32/X11 packet or cross-platform tolerance diff was recorded.
-AppKit window captures were skipped with `--no-appkit`; FL Studio, VoiceOver and the owner and
+That 36-frame result covered Standard contrast at 2× only. The full matrix was then captured
+twice at clean master `347bd79d`; both run IDs are in the
+[matrix summary](evidence/ui-fidelity-matrix-347bd79d.json):
+
+```sh
+/usr/local/bin/python3 scripts/capture_sing_fidelity_packet.py --full-matrix --no-appkit \
+  --close-ms 5000 --output build/evidence/ui-fidelity/matrix-347bd79d-run-1
+/usr/local/bin/python3 scripts/capture_sing_fidelity_packet.py --full-matrix --no-appkit \
+  --close-ms 5000 --output build/evidence/ui-fidelity/matrix-347bd79d-run-2
+/usr/local/bin/python3 scripts/compare_fidelity_packets.py \
+  build/evidence/ui-fidelity/matrix-347bd79d-run-1 build/evidence/ui-fidelity/matrix-347bd79d-run-2 \
+  --require-identical --require-plan-matrix \
+  --output build/evidence/ui-fidelity/matrix-347bd79d-comparison.json
+```
+
+Each packet reported `captures=224 errors=0 failed_or_unreached=0`. The comparison printed
+`A plan score matrix: 160/160 cells`, `B plan score matrix: 160/160 cells`,
+`frames compared: 224, identical: 224` and `PASS`. Both packets name the same clean source
+(`347bd79d`, no dirty paths) and the same binary SHA-256. The machine was under heavy unrelated
+load during both runs (load average up to 34); pixels do not depend on timing because the capture
+clock is frozen.
+
+This covers plan §14.4's {EMO, SCENE} × {Standard, High} × {Wide, Standard, Compact, Minimum} ×
+{1×, 2×} × {empty, dense song, selection, rendering, error} on one machine and the AppKit software
+raster backend. The 1× frames are a software density override, not evidence from a 1× monitor or
+a DAW's backing scale. No Win32/X11 packet or cross-platform tolerance diff was recorded. AppKit
+window captures were skipped with `--no-appkit`; FL Studio, VoiceOver and the owner and
 independent reviewer rubric remain NOT_RUN.
 
 The shipped shell also has a consolidated Settings sheet with Audio, Appearance (EMO/SCENE,
