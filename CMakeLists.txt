@@ -461,6 +461,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/project_codec_validation.cpp
   libs/seam-voicebank-production/src/repository.cpp
   libs/seam-voicebank-production/src/repository_import.cpp
+  libs/seam-voicebank-production/src/repository_generation.cpp
   libs/seam-voicebank-production/src/generation_expectation.cpp
   libs/seam-voicebank-production/src/repository_operations.cpp
   libs/seam-voicebank-production/src/operation_staging.cpp
@@ -2717,6 +2718,14 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_studio_campaign_tests COMMAND seam_studio_campaign_tests)
     set_tests_properties(seam_studio_campaign_tests PROPERTIES TIMEOUT 180)
   endif()
+  add_executable(seam_voice_generation_workflow_tests
+    tests/test_main.cpp tests/test_voice_generation_workflow.cpp)
+  target_include_directories(seam_voice_generation_workflow_tests PRIVATE tests)
+  target_link_libraries(seam_voice_generation_workflow_tests PRIVATE
+    seam_authoring_runtime seam_voicebank_production)
+  seam_apply_compiler_options(seam_voice_generation_workflow_tests)
+  add_test(NAME seam_voice_generation_workflow_tests COMMAND seam_voice_generation_workflow_tests)
+  set_tests_properties(seam_voice_generation_workflow_tests PROPERTIES TIMEOUT 300)
   add_executable(seam_production_ownership_tests
     tests/test_main.cpp tests/test_production_edit_ownership.cpp)
   target_include_directories(seam_production_ownership_tests PRIVATE tests)
