@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ._production_common import ProductionResult, is_hex_digest, is_timestamp, sha256_file
+from ._production_review_transition import review_transition_errors
 from ._source_admission import FEASIBILITY, PERMISSIONS, STRATEGY_KINDS
 from ._production_inventory import inventory_errors, producer_assignments, style_owned
 
@@ -20,7 +21,7 @@ MAX_HISTORY_BYTES = 256 * 1024 * 1024
 MAX_JOURNAL_BYTES = 1024 * 1024
 MAX_ABORTED_JOURNAL_BYTES = 16 * 1024 * 1024
 JOURNAL_ACTIONS = {
-    "create", "import", "transform", "marker", "retake", "review", "save", "candidate-export",
+    "create", "import", "transform", "marker", "retake", "review", "select-take", "save", "candidate-export",
     "import-procedural", "import-generated-batch",
     "source-quality-assessment", "source-register",
 }
@@ -717,6 +718,8 @@ def validate_draft_workspace(workspace: Path, inventory: dict[str, Any] | None =
             if not isinstance(journal.get("action"), str) or journal["action"] not in JOURNAL_ACTIONS or not isinstance(journal.get("subjectId"), str) or not journal["subjectId"] or not _utc(journal.get("occurredAtUtc")):
                 errors.append(f"{label} journal fields are invalid")
             bindings, takes = _project(workspace, project, label, errors)
+            errors.extend(review_transition_errors(latest if previous_generation else None, project,
+                                                   journal.get("action"), label))
             old_assessments, assessments = latest.get("sourceQualityAssessments",[]), project.get("sourceQualityAssessments",[])
             if isinstance(old_assessments,list) and isinstance(assessments,list):
                 if assessments[:len(old_assessments)] != old_assessments:

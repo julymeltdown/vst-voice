@@ -21,6 +21,9 @@ from tools.external_beta.voicebank_production import (
 
 ROOT = Path(__file__).resolve().parents[2]
 from tools.external_beta._production_draft_validation import _quality_policy_identity, _quality_material_identity, _quality_current
+from tools.external_beta._production_draft_validation import (
+    TAKE_INSPECTION_KIND, TAKE_INSPECTOR, canonical_take_evidence, take_check_outcomes, take_qc_policy)
+from tools.external_beta._production_review_transition import REVIEW_MATERIAL_KIND, effective_audio, review_basis
 
 
 def _text(value: dict) -> bytes:
@@ -66,8 +69,37 @@ def _generation(workspace: Path, project: dict, number: int, action: str, subjec
     (workspace / "project.json").write_bytes(payload)
 
 
-def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
-    """Durable C++ schema fixture; production creation stays in init-production."""
+def _receipt(take: dict, byte_size: int, actor: str) -> dict:
+    """The take-inspection.v2 receipt a C++ import appends for this fixture's 32 frames of 16-bit value 1.
+
+    Too quiet and pitchless for the voiced policy, so the checks honestly ask for review.
+    """
+    policy = take_qc_policy(take["coverageKey"])
+    level = 1.0 / 32768.0
+    measured = {"sampleRate": 48000, "channels": 1, "bitsPerSample": 16, "frameCount": 32, "nonFiniteSamples": 0,
+                "clippedSamples": 0, "peak": level, "rms": level, "dcOffset": level,
+                "expectedRootMidi": take["pitchLayer"] if policy == "voiced" else None, "analyzedRootMidi": None,
+                "rootPitchDeviationCents": None, "voicedShare": None}
+    checks = take_check_outcomes(policy, measured)
+    evidence = {"schemaVersion": 2, "inspectorId": TAKE_INSPECTOR[0], "inspectorVersion": TAKE_INSPECTOR[1],
+                "policy": policy, "policyVersion": 1, "binding": {name: take[name] for name in
+                ("takeId", "promptId", "coverageKey", "pitchLayer")}, "takeSha256": take["rawAssetSha256"],
+                "byteSize": byte_size, "measurements": measured, "checks": checks,
+                "status": "SIGNAL_CHECKS_NEED_REVIEW" if "FAIL" in checks.values() else "SIGNAL_CHECKS_PASSED"}
+    text = canonical_take_evidence(evidence)
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    return {"revisionId": "take-inspection-" + digest[:32], "takeId": take["takeId"],
+            "rawAssetSha256": take["rawAssetSha256"], "kind": TAKE_INSPECTION_KIND,
+            "values": {"evidenceJson": text, "evidenceSha256": digest}, "operatorId": actor,
+            "performedAtUtc": "2026-09-09T10:00:00Z"}
+
+
+def _workspace(root: Path, recovered: bool = False, inventory: dict | None = None) -> tuple[Path, dict]:
+    """Durable C++ schema fixture; production creation stays in init-production.
+
+    With an inventory, its deterministic assignments are planned before any take is captured, so each take is
+    imported for the prompt its assignment names and never has to be renamed afterwards.
+    """
     workspace = root / "workspace"
     for name in ("assets", "staging", "generations", "journal", "source-evidence"):
         (workspace / name).mkdir(parents=True)
@@ -84,6 +116,10 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
          "plannedTakeId": f"take-{phone}", "takeId": "", "state": "MISSING", "markerReviewed": False, "pitchReviewed": False}
         for phone in ("a", "i")
     ]
+    if inventory is not None:
+        from tools.voicebank_script_generator import production_assignments
+        project.update(inventoryId=inventory["profileId"], inventorySha256=inventory["inventorySha256"])
+        project["unitAssignments"] = production_assignments(inventory)
     _generation(workspace, project, 2, "save", "draft-parity")
     stream = io.BytesIO()
     with wave.open(stream, "wb") as output:
@@ -100,15 +136,18 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
 
     def capture(phone: str, strategy: dict, actor: str) -> None:
         identity = f"source-take-{phone}"
-        project["takes"].append({"takeId": f"take-{phone}", "promptId": f"prompt-{phone}", "coverageKey": f"sustain:{phone}",
-                                 "pitchLayer": 69, "rawAssetSha256": digest, "derivedRevisionIds": [], "supersedesTakeId": "",
-                                 "state": "MARKER_REVIEW", "sourceBindingId": identity})
+        row = next(item for item in project["unitAssignments"]
+                   if item["coverageKey"] == f"sustain:{phone}" and item["pitchLayer"] == 69)
+        take = {"takeId": f"take-{phone}", "promptId": row["promptId"], "coverageKey": f"sustain:{phone}",
+                "pitchLayer": 69, "rawAssetSha256": digest, "derivedRevisionIds": [], "supersedesTakeId": "",
+                "state": "MARKER_REVIEW", "sourceBindingId": identity}
+        project["takes"].append(take)
+        project["metadataRevisions"].append(_receipt(take, len(wav), actor))
         snapshot = f"source-evidence/{strategy['licenseSha256']}.txt"
         (workspace / snapshot).write_bytes(Path(strategy["licenseLocator"]).read_bytes())
         project["sourceBindings"].append({"id": identity, "takeId": f"take-{phone}", "rawAssetSha256": digest,
                                           "strategy": copy.deepcopy(strategy), "importerId": actor,
                                           "importedAtUtc": "2026-09-09T10:00:00Z", "licenseSnapshotPath": snapshot})
-        row = next(item for item in project["unitAssignments"] if item["plannedTakeId"] == f"take-{phone}")
         row.update({"takeId": f"take-{phone}", "state": "MARKER_REVIEW"})
         project["lifecycle"] = "EXPERIMENTAL"
 
@@ -129,25 +168,38 @@ def _workspace(root: Path, recovered: bool = False) -> tuple[Path, dict]:
     return workspace, project
 
 
+def _approve(project: dict, take: dict, reviewer: str, at: str = "2026-09-09T10:00:00Z") -> None:
+    """What review-sample records for one PASS decision: the decision, the material it was made on, the approval."""
+    review_id = "review-" + take["takeId"]
+    take["state"] = "APPROVED"
+    row = next(row for row in project["unitAssignments"] if row["takeId"] == take["takeId"])
+    row.update(state="APPROVED", markerReviewed=True, pitchReviewed=True)
+    project["reviews"].append({"reviewId": review_id, "takeId": take["takeId"], "reviewerId": reviewer,
+                               "result": "PASS", "reviewedAtUtc": at})
+    project["metadataRevisions"].append({"revisionId": "material-" + review_id, "takeId": take["takeId"],
+        "rawAssetSha256": take["rawAssetSha256"], "kind": REVIEW_MATERIAL_KIND, "operatorId": reviewer,
+        "performedAtUtc": at, "values": {"unitId": "unit-" + take["takeId"], "reviewId": review_id,
+            "audioSha256": effective_audio(project, take), "unitManifestSha256": "d" * 64,
+            "reviewBasisSha256": review_basis(project, take["takeId"])}})
+
+
 class ProductionDraftParityTests(unittest.TestCase):
     def test_legacy_style_migration_plan_preserves_history_and_invalidates_approval(self) -> None:
-        from tools.voicebank_script_generator import generate_inventory, production_assignments
+        from tools.voicebank_script_generator import generate_inventory
         from tools.external_beta._production_style_migration import prepare_style_migration
         for styles in (["original"], ["original", "soft"]):
             with self.subTest(styles=styles), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                workspace, project = _workspace(root)
                 inventory = generate_inventory({"vowels": ["a", "i"], "consonants": ["m"],
                     "pitchLayers": [69, 72], "includeKinds": ["sustain"], "alternateTakes": 1, "supportedStyles": styles})
-                project.update(inventoryId=inventory["profileId"], inventorySha256=inventory["inventorySha256"])
-                project["unitAssignments"] = production_assignments(inventory)
-                for take in project["takes"]:
-                    row = next(row for row in project["unitAssignments"] if row["coverageKey"] == take["coverageKey"] and row["pitchLayer"] == take["pitchLayer"])
-                    take["promptId"] = row["promptId"]; take["state"] = "APPROVED"
-                    row.update(takeId=take["takeId"], state="APPROVED", markerReviewed=True, pitchReviewed=True)
-                    project["reviews"].append({"reviewId": "test-" + take["takeId"], "takeId": take["takeId"],
-                        "reviewerId": "other-producer", "result": "PASS", "reviewedAtUtc": "2026-09-09T10:00:00Z"})
+                workspace, project = _workspace(root, inventory=inventory)
+                project["operators"].append({"operatorId": "reviewer", "role": "REVIEWER"})
                 _generation(workspace, project, project["lastDurableGeneration"] + 1, "save", project["projectId"])
+                # One independent review decides both legacy takes on their current material.
+                for take in project["takes"]:
+                    _approve(project, take, "reviewer")
+                _generation(workspace, project, project["lastDurableGeneration"] + 1, "review",
+                            project["takes"][0]["takeId"], "reviewer")
                 before = {str(p.relative_to(workspace)): p.read_bytes() for p in workspace.rglob("*") if p.is_file()}
                 plan = prepare_style_migration(workspace, inventory)
                 inventory_file = root / "inventory.json"; inventory_file.write_bytes(_text(inventory))
