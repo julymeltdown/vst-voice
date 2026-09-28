@@ -14,6 +14,13 @@ namespace seam::phonemizer {
 // spaced '.' separators delimit single-nucleus hint syllables;
 // parseEnglishPhoneHint returns only their literal phones.
 //
+// A lyric's authored reading hint (domain::LyricToken::readingHint) is explicit
+// input for the whole lyric in the same phone syntax. It precedes exceptions,
+// the dictionary, derivations and estimates, is distributed across shared-lyric
+// notes like a dictionary reading and is never estimated. A non-ASCII, invalid
+// or pause-bearing reading hint yields a pause and an UnsupportedCharacter
+// warning; the surface is not used in its place.
+//
 // Lyric text is normalized (typographic apostrophes, quotes, dashes and
 // Latin-1 accented letters) without changing the stored surface, split into at
 // most 32 words, and each word resolves through the English resource. Derived

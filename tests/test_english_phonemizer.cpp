@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "test_support.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
@@ -7,6 +8,7 @@
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/synthesis/automatic_performance.hpp"
 #include "seam/synthesis/phoneme_timing_plan.hpp"
+#include "seam/voicebank/coverage.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -1127,4 +1129,37 @@ TEST_CASE("English vocabulary coverage lists missing bank phones without substit
   const auto invalid = phonemizer::checkEnglishVocabularyCoverage(japaneseToken, {"fixture-complete", all});
   CHECK(!invalid && invalid.error().code == core::ErrorCode::InvalidArgument);
   CHECK(!phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-duplicate", {"hh", "hh"}}));
+}
+
+TEST_CASE("English sample-bank coverage reports the missing English phone instead of a substitute") {
+  using namespace seam;
+  Fixture english; english.add(0, U"sing");
+  const auto* region = english.project.findRegion(english.region);
+  const auto resolved = phonemizer::resolveEnglishPronunciation(*region); CHECK(resolved);
+  if (!resolved) return;
+  const auto& tokens = resolved.value().pronunciation.tokens;
+  CHECK(symbols(tokens) == "s ih1 ng");
+  // The bank has English "s"/"ih1" plus units that sound near "ng" in other
+  // inventories; none of them may stand in for the English velar nasal.
+  auto manifest = test::support::makeManifest({
+      test::support::makeUnit("s", {"s"}, "audio/s.wav", 60),
+      test::support::makeUnit("ih1", {"ih1"}, "audio/ih1.wav", 60),
+      test::support::makeUnit("N", {"N"}, "audio/N.wav", 60),
+      test::support::makeUnit("n", {"n"}, "audio/n.wav", 60)});
+  manifest.language = domain::Language::English;
+  const auto report = voicebank::VoicebankCoverageAnalyzer::analyzeRegion(
+      manifest, english.track, *region, tokens, "original");
+  CHECK(!report.complete());
+  CHECK(report.issues.size() == 1U);
+  if (report.issues.size() == 1U) {
+    CHECK(report.issues.front().kind == voicebank::CoverageIssueKind::MissingUnit);
+    CHECK(report.issues.front().symbol == "ng");
+    CHECK(report.issues.front().phonemeKey == tokens[2].key);
+  }
+  const auto declared = phonemizer::checkEnglishVocabularyCoverage(tokens, {"fixture-bank", {"s", "ih1", "N", "n"}});
+  CHECK(declared && declared.value().missing.size() == 1U);
+  if (declared && declared.value().missing.size() == 1U) {
+    CHECK(declared.value().missing.front().symbol == "ng");
+    CHECK(declared.value().missing.front().keys == (std::vector<domain::PhonemeKey>{tokens[2].key}));
+  }
 }

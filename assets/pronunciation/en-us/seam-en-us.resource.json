@@ -25,7 +25,7 @@
     "file": "assets/pronunciation/en-us/seam-en-exceptions.tsv",
     "sha256": "e5233656accc354a1ec0618add5edbae912b8506903b6f6ad11a13a52f731788",
     "entries": 6,
-    "precedence": "explicit note hint > exception > dictionary > derivation > spelling estimate",
+    "precedence": "explicit note hint > lyric reading hint > exception > dictionary > derivation > spelling estimate",
     "review": "engineering entries pending native-speaker review"
   },
   "rules": {

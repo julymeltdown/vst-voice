@@ -187,7 +187,9 @@ enum class LyricKind { Words, Continuation, Punctuation, Unsupported };
 struct WordOrigin final {
   std::string text;
   std::size_t characterIndex{0U};
-  EnglishReadingSource source{EnglishReadingSource::Dictionary};
+  // std::nullopt marks an authored lyric reading hint: explicit input that is
+  // never labelled as a dictionary reading or an estimate.
+  std::optional<EnglishReadingSource> source;
   std::string basis;
 };
 
@@ -210,6 +212,28 @@ LyricAnalysis unsupported(std::size_t index, std::string message) {
 
 LyricAnalysis analyzeEnglishLyric(const EnglishPronunciationResource& resource,
     const domain::LyricToken& lyric) {
+  if (lyric.readingHint) {
+    // An authored lyric reading is explicit input for the whole lyric, so it is
+    // distributed like a dictionary reading but never estimated or replaced.
+    std::string text;
+    for (const auto value : *lyric.readingHint) {
+      if (value >= 0x80U)
+        return unsupported(0U, "English lyric reading hint must use " + std::string{kEnglishVocabularyId} + " phones");
+      text.push_back(static_cast<char>(value));
+    }
+    auto parsed = parseEnglishPhoneReading(text);
+    if (!parsed) return unsupported(0U, "English lyric reading hint is invalid: " + parsed.error().message);
+    auto& phones = parsed.value().phones;
+    if (std::find(phones.begin(), phones.end(), "pau") != phones.end())
+      return unsupported(0U, "English lyric reading hint cannot contain a pause; use a note hint or a rest");
+    LyricAnalysis result;
+    result.kind = LyricKind::Words;
+    result.breaks = completeSyllableBreaks(phones, parsed.value().syllableBreaks);
+    result.origin.assign(phones.size(), 0U);
+    result.words.push_back({"reading hint", 0U, std::nullopt, {}});
+    result.phones = std::move(phones);
+    return result;
+  }
   const auto normalized = normalizeEnglishLyric(lyric.surface);
   if (normalized.unsupportedIndex)
     return unsupported(*normalized.unsupportedIndex,
@@ -268,7 +292,7 @@ LyricAnalysis analyzeEnglishLyric(const EnglishPronunciationResource& resource,
   return result;
 }
 
-bool estimatedSource(EnglishReadingSource source) noexcept {
+bool estimatedSource(std::optional<EnglishReadingSource> source) noexcept {
   return source == EnglishReadingSource::Derived || source == EnglishReadingSource::SpellingEstimate;
 }
 
