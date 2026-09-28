@@ -171,19 +171,47 @@ TextStyle fitted(Canvas2D& c, std::string_view text, TextStyle s, double width) 
   return s;
 }
 
-void glassPanel(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius,
-                double alpha = 0.90) {
+// A glass panel's border and top highlight, drawn over its translucent fill.
+void glassPanelEdges(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius) {
   if (r.width <= 0.0 || r.height <= 0.0) return;
-  const auto p = Path::roundedRect(r, radius);
-  c.save();
-  c.setAlpha(alpha);
-  c.fill(p, LinearGradient{{r.x, r.y}, {r.x, r.bottom()},
-                           {{0.0, t.color.surfaceRaised}, {1.0, t.color.surface}}});
-  c.restore();
-  c.stroke(p, withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
+  c.stroke(Path::roundedRect(r, radius), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
   Path highlight;
   highlight.moveTo({r.x + radius, r.y + 1.0}).lineTo({r.right() - radius, r.y + 1.0});
   c.stroke(highlight, withAlpha(kWhite, t.light.highlightAlpha * 1.6), StrokeStyle{1.0});
+}
+
+void glassPanel(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius,
+                double alpha = 0.90) {
+  if (r.width <= 0.0 || r.height <= 0.0) return;
+  c.save();
+  c.setAlpha(alpha);
+  c.fill(Path::roundedRect(r, radius),
+         LinearGradient{{r.x, r.y}, {r.x, r.bottom()},
+                        {{0.0, t.color.surfaceRaised}, {1.0, t.color.surface}}});
+  c.restore();
+  glassPanelEdges(c, t, r, radius);
+}
+
+// The shell's background panels, in painting order. Their translucent fills are painted in
+// software with the wash (paintGlassPanelFills); paintBackground draws their edges over them.
+std::vector<GlassPanelFill> backgroundGlassPanels(const SingLayout& l, const DesignTokens& t) {
+  std::vector<GlassPanelFill> fills;
+  const auto add = [&](ui::Rect r, double radius, double opacity = 0.90) {
+    if (r.width > 0.0 && r.height > 0.0)
+      fills.push_back({r, radius, t.color.surfaceRaised, t.color.surface, opacity});
+  };
+  add(l.header, t.shape.hero);
+  add(l.editor, t.shape.card);
+  add(l.lane, t.shape.card);
+  if (l.rack == RackPresentation::Full) {
+    add(l.singer, t.shape.card);
+    add(l.expression, t.shape.card);
+    add(l.style, t.shape.card);
+  } else {
+    add(l.rackArea, t.shape.card);
+  }
+  add(l.status, 10.0, 0.80);
+  return fills;
 }
 
 void sunken(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius) {
@@ -1294,15 +1322,22 @@ core::Result<void> SingShell::setAboutOpen(NativeEditorController& controller, b
 }
 
 void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
-  if (std::getenv("SEAM_WASH_VECTOR_REFERENCE") != nullptr) paintVectorWash(c, t);
+  // The panels' translucent fills are painted in software with the wash, under this chrome; the
+  // vector reference draws the wash and the fills here instead.
+  const auto vectorReference = std::getenv("SEAM_WASH_VECTOR_REFERENCE") != nullptr;
+  if (vectorReference) paintVectorWash(c, t);
   const auto& l = layout_;
-  glassPanel(c, t, l.header, t.shape.hero);
-  glassPanel(c, t, l.editor, t.shape.card);
-  glassPanel(c, t, l.lane, t.shape.card);
+  const auto panel = [&](ui::Rect r, double radius, double alpha = 0.90) {
+    if (vectorReference) glassPanel(c, t, r, radius, alpha);
+    else glassPanelEdges(c, t, r, radius);
+  };
+  panel(l.header, t.shape.hero);
+  panel(l.editor, t.shape.card);
+  panel(l.lane, t.shape.card);
   if (l.rack == RackPresentation::Full) {
-    glassPanel(c, t, l.singer, t.shape.card);
-    glassPanel(c, t, l.expression, t.shape.card);
-    glassPanel(c, t, l.style, t.shape.card);
+    panel(l.singer, t.shape.card);
+    panel(l.expression, t.shape.card);
+    panel(l.style, t.shape.card);
     if (t.mode == DesignMode::Scene) {
       // An iridescent edge marks the singer card, the one place the character lives.
       c.save();
@@ -1322,9 +1357,9 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
              StrokeStyle{1.5, true, t.mode == DesignMode::Emo ? std::vector<double>{4.0, 3.0}
                                                               : std::vector<double>{}});
   } else {
-    glassPanel(c, t, l.rackArea, t.shape.card);
+    panel(l.rackArea, t.shape.card);
   }
-  glassPanel(c, t, l.status, 10.0, 0.80);
+  panel(l.status, 10.0, 0.80);
   sunken(c, t, l.transport, 10.0);
   // The SING grid's translucent backdrop depends on the layout alone, so it is panel chrome: drawn
   // once here, under the grid layer's key rows and lines, rather than on every scroll. The other
@@ -1566,14 +1601,17 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     }
   }
   const auto softwareWash = std::getenv("SEAM_WASH_VECTOR_REFERENCE") == nullptr;
+  const auto panels = backgroundGlassPanels(layout_, t);
   const auto composed = layers_.compose(
       canvas,
       paint::BackgroundLayer{.key = backgroundKey(t, surface, scale),
                              .clear = t.color.canvas,
                              .paint = [this, &t](Canvas2D& background) { paintBackground(background, t); },
-                             .paintBase = [&t, softwareWash](PixelSurface& band, double bandScale,
+                             .paintBase = [&t, &panels, softwareWash](PixelSurface& band, double bandScale,
                                                std::uint32_t top, std::uint32_t fullHeight) {
-                               if (softwareWash) paintBackgroundWash(band, bandScale, top, fullHeight, t);
+                               if (!softwareWash) return;
+                               paintBackgroundWash(band, bandScale, top, fullHeight, t);
+                               paintGlassPanelFills(band, bandScale, top, panels);
                              },
                              .paintBaseOverwritesBand = softwareWash},
       frame, retainedSurface_);

@@ -827,17 +827,18 @@ TEST_CASE("the software wash keeps its exact pixels in every look, contrast, sca
     double scale;
     std::uint64_t checksum;
   };
-  // Recorded from the wash before its inner loops were restructured. One changed pixel in any case
+  // Recorded when the squared-radius table began holding the ramp samples it stands in for; the
+  // restructured inner loops before that left every pixel unchanged. One changed pixel in any case
   // fails here; the vector-reference comparison below only bounds the difference.
   const std::array<Expected, 8U> expected{{
-      {DesignMode::Emo, Contrast::Standard, 1.0, 16092935190604001544ULL},
-      {DesignMode::Emo, Contrast::Standard, 2.0, 4195672006217737722ULL},
-      {DesignMode::Emo, Contrast::High, 1.0, 238215074806172002ULL},
-      {DesignMode::Emo, Contrast::High, 2.0, 18101993828275764569ULL},
-      {DesignMode::Scene, Contrast::Standard, 1.0, 6694504892745445383ULL},
-      {DesignMode::Scene, Contrast::Standard, 2.0, 14386326788353607930ULL},
-      {DesignMode::Scene, Contrast::High, 1.0, 13966441028237884171ULL},
-      {DesignMode::Scene, Contrast::High, 2.0, 11406061482680096388ULL},
+      {DesignMode::Emo, Contrast::Standard, 1.0, 17381263823543793971ULL},
+      {DesignMode::Emo, Contrast::Standard, 2.0, 6621297049004613222ULL},
+      {DesignMode::Emo, Contrast::High, 1.0, 15579332292209042187ULL},
+      {DesignMode::Emo, Contrast::High, 2.0, 5225276935309772126ULL},
+      {DesignMode::Scene, Contrast::Standard, 1.0, 15717390572993984259ULL},
+      {DesignMode::Scene, Contrast::Standard, 2.0, 3705706642219751118ULL},
+      {DesignMode::Scene, Contrast::High, 1.0, 1027337065889468027ULL},
+      {DesignMode::Scene, Contrast::High, 2.0, 18264125621610783880ULL},
   }};
   std::array<std::uint64_t, expected.size()> actual{};
   for (std::size_t i = 0U; i < expected.size(); ++i) {
@@ -866,6 +867,76 @@ TEST_CASE("the software wash keeps its exact pixels in every look, contrast, sca
   }
   // Every case is painted and printed before the first comparison, so one run shows them all.
   for (std::size_t i = 0U; i < expected.size(); ++i) CHECK(actual[i] == expected[i].checksum);
+}
+
+TEST_CASE("software glass-panel fills keep their pixels in any banding and stay near CoreGraphics") {
+  using native_ui::design::GlassPanelFill;
+  using native_ui::design::paintBackgroundWash;
+  using native_ui::design::paintGlassPanelFills;
+  using native_ui::paint::LinearGradient;
+  using native_ui::paint::Path;
+  constexpr double scale = 2.0;
+  const auto& tokens = native_ui::design::tokensFor(DesignMode::Scene, Contrast::Standard);
+  // A panel on half-pixel edges, a hero-radius panel and a translucent status strip.
+  const std::array<GlassPanelFill, 3U> fills{{
+      {ui::Rect{20.25, 30.5, 700.0, 520.0}, 18.0, tokens.color.surfaceRaised, tokens.color.surface, 0.90},
+      {ui::Rect{740.0, 30.0, 680.0, 300.0}, 24.0, tokens.color.surfaceRaised, tokens.color.surface, 0.90},
+      {ui::Rect{10.0, 860.0, 1420.0, 30.0}, 10.0, tokens.color.surfaceRaised, tokens.color.surface, 0.80},
+  }};
+  const auto width = static_cast<std::uint32_t>(kWidth * scale);
+  const auto height = static_cast<std::uint32_t>(kHeight * scale);
+  PixelSurface whole{width, height};
+  paintBackgroundWash(whole, scale, 0U, height, tokens);
+  paintGlassPanelFills(whole, scale, 0U, fills);
+  // The compositor's 32-row bands and an odd band height reassemble the same surface.
+  for (const std::uint32_t rows : {32U, 7U}) {
+    PixelSurface banded{width, height};
+    for (std::uint32_t top = 0U; top < height; top += rows) {
+      PixelSurface band{width, std::min(rows, height - top)};
+      paintBackgroundWash(band, scale, top, height, tokens);
+      paintGlassPanelFills(band, scale, top, fills);
+      std::copy(band.pixels().begin(), band.pixels().end(),
+                banded.pixels().begin() + static_cast<std::ptrdiff_t>(top) * width);
+    }
+    CHECK(banded.checksum() == whole.checksum());
+  }
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // CoreGraphics draws the same fills over the same wash, as the shell's vector reference does.
+  PixelSurface vector{width, height};
+  paintBackgroundWash(vector, scale, 0U, height, tokens);
+  {
+    auto c = native_ui::paint::makeCanvas(vector, scale);
+    CHECK(c != nullptr);
+    if (c == nullptr) return;
+    for (const auto& fill : fills) {
+      c->save();
+      c->setAlpha(fill.opacity);
+      c->fill(Path::roundedRect(fill.rect, fill.radius),
+              LinearGradient{{fill.rect.x, fill.rect.y}, {fill.rect.x, fill.rect.bottom()},
+                             {{0.0, fill.top}, {1.0, fill.bottom}}});
+      c->restore();
+    }
+    c->flush();
+  }
+  unsigned maximum = 0U;
+  std::size_t aboveOne = 0U;
+  double total = 0.0;
+  for (std::size_t i = 0U; i < whole.pixels().size(); ++i) {
+    unsigned pixelMax = 0U;
+    for (unsigned shift : {0U, 8U, 16U}) {
+      const auto d = static_cast<unsigned>(std::abs(static_cast<int>((whole.pixels()[i] >> shift) & 255U) -
+                                                    static_cast<int>((vector.pixels()[i] >> shift) & 255U)));
+      pixelMax = std::max(pixelMax, d);
+      total += d;
+    }
+    maximum = std::max(maximum, pixelMax);
+    if (pixelMax > 1U) ++aboveOne;
+  }
+  const auto pixels = static_cast<double>(whole.pixels().size());
+  std::cout << "[panel-fill-difference] max=" << maximum << " mean=" << total / (3.0 * pixels)
+            << " above1=" << 100.0 * static_cast<double>(aboveOne) / pixels << "%\n";
+  CHECK(maximum <= 2U);
+  CHECK(total / (3.0 * pixels) < 0.5);
 }
 
 TEST_CASE("software background wash pixel comparison with vector reference") {
