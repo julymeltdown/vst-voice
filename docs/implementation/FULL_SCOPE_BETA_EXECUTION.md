@@ -4393,3 +4393,16 @@ edit, the focused USTX target passed again in both configurations and
 `git diff --check` passed. This is a model, persistence and resolver slice:
 native editing of the field, dictionary trust/shipping decisions, language
 review, U26 acceptance and Beta GO remain open. `.github` was not touched.
+
+2026-09-28 — Synthetic end-to-end source-alignment timing regression; U16 and
+Beta GO remain open. A frozen source alignment and measured acoustic-analysis
+sidecar now pass through `PhraseRenderPipeline` at compressed and expanded
+tempos. The regression checks exact placement/render extent including the
+3,600-frame pre-utterance, preserves the MIDI 60 score pitch after rendering,
+and checks sample correlation through the mapped measured-unvoiced interval.
+The Release and Debug performance-snapshot suites pass, as do adjacent Release
+synthesis-quality, performance-compiler and formant-expression targets;
+`git diff --check` passes. This is deterministic synthetic-signal evidence,
+not natural-voice perceptual acceptance: the multilingual fixed corpus,
+listening/reviewer evidence and the associated full milestone gates remain
+open. `.github` was not touched.
