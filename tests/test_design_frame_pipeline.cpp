@@ -10,6 +10,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/character/character.hpp"
+#include "seam/native_ui/design/background_wash.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -17,6 +18,8 @@
 #include "seam/native_ui/paint/layer_cache.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -814,6 +817,55 @@ TEST_CASE("squared radius wash table stays within the cold frame pixel tolerance
     CHECK(maximum <= 2U);
     CHECK(differing * 1000U <= exact.retained.pixels().size());
   }
+}
+
+TEST_CASE("the software wash keeps its exact pixels in every look, contrast, scale and banding") {
+  using native_ui::design::paintBackgroundWash;
+  struct Expected final {
+    DesignMode mode;
+    Contrast contrast;
+    double scale;
+    std::uint64_t checksum;
+  };
+  // Recorded from the wash before its inner loops were restructured. One changed pixel in any case
+  // fails here; the vector-reference comparison below only bounds the difference.
+  const std::array<Expected, 8U> expected{{
+      {DesignMode::Emo, Contrast::Standard, 1.0, 16092935190604001544ULL},
+      {DesignMode::Emo, Contrast::Standard, 2.0, 4195672006217737722ULL},
+      {DesignMode::Emo, Contrast::High, 1.0, 238215074806172002ULL},
+      {DesignMode::Emo, Contrast::High, 2.0, 18101993828275764569ULL},
+      {DesignMode::Scene, Contrast::Standard, 1.0, 6694504892745445383ULL},
+      {DesignMode::Scene, Contrast::Standard, 2.0, 14386326788353607930ULL},
+      {DesignMode::Scene, Contrast::High, 1.0, 13966441028237884171ULL},
+      {DesignMode::Scene, Contrast::High, 2.0, 11406061482680096388ULL},
+  }};
+  std::array<std::uint64_t, expected.size()> actual{};
+  for (std::size_t i = 0U; i < expected.size(); ++i) {
+    const auto& e = expected[i];
+    const auto& tokens = native_ui::design::tokensFor(e.mode, e.contrast);
+    const auto width = static_cast<std::uint32_t>(kWidth * e.scale);
+    const auto height = static_cast<std::uint32_t>(kHeight * e.scale);
+    PixelSurface whole{width, height};
+    paintBackgroundWash(whole, e.scale, 0U, height, tokens);
+    actual[i] = whole.checksum();
+    std::cout << "[wash-checksum] " << (e.mode == DesignMode::Emo ? "emo" : "scene") << ' '
+              << (e.contrast == Contrast::High ? "high" : "standard") << ' ' << e.scale << "x "
+              << actual[i] << '\n';
+    // Rows are independent: the compositor's 32-row bands and an odd band height reassemble the
+    // same surface.
+    for (const std::uint32_t rows : {32U, 7U}) {
+      PixelSurface banded{width, height};
+      for (std::uint32_t top = 0U; top < height; top += rows) {
+        PixelSurface band{width, std::min(rows, height - top)};
+        paintBackgroundWash(band, e.scale, top, height, tokens);
+        std::copy(band.pixels().begin(), band.pixels().end(),
+                  banded.pixels().begin() + static_cast<std::ptrdiff_t>(top) * width);
+      }
+      CHECK(banded.checksum() == actual[i]);
+    }
+  }
+  // Every case is painted and printed before the first comparison, so one run shows them all.
+  for (std::size_t i = 0U; i < expected.size(); ++i) CHECK(actual[i] == expected[i].checksum);
 }
 
 TEST_CASE("software background wash pixel comparison with vector reference") {

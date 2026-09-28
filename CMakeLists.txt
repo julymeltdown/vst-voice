@@ -742,6 +742,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   # EMO/SCENE design system and the SING shell. The vector backend is macOS-only while Windows
   # support is deferred; other platforms keep the classic painter through the stubs.
   target_sources(seam_native_ui PRIVATE
+    libs/seam-native-ui/src/design/background_wash.cpp
     libs/seam-native-ui/src/design/design_tokens.cpp
     libs/seam-native-ui/src/design/shell_strings.cpp
     libs/seam-native-ui/src/design/character_surface.cpp
