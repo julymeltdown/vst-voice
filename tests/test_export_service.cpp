@@ -3125,6 +3125,121 @@ TEST_CASE("export recovery reconciles every journalled publication phase") {
   }
 }
 
+TEST_CASE("read-only export inspection distinguishes absent, committed and incomplete sets") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "export-read-only-inspection");
+  const auto project = exportProject(root, 27000U);
+  const auto destination = root / "exports" / "song";
+  seam::authoring::ExportService service;
+
+  const auto missing = service.inspectSetReadOnly(destination);
+  CHECK(missing);
+  if (missing) {
+    CHECK(missing.value().state ==
+          seam::authoring::ExportSetInspectionState::Missing);
+  }
+
+  auto settings = exportSettings(false);
+  settings.replaceExisting = false;
+  CHECK(service.exportSet(project, {}, {}, {}, 1U, destination, settings));
+  const auto masterPath = destination / "master.wav";
+  const auto masterHashBefore = seam::core::sha256File(masterPath);
+  const auto masterTimeBefore = std::filesystem::last_write_time(masterPath);
+  CHECK(masterHashBefore);
+  const auto committed = service.inspectSetReadOnly(destination);
+  CHECK(committed);
+  if (committed) {
+    CHECK(committed.value().state ==
+          seam::authoring::ExportSetInspectionState::Committed);
+  }
+  const auto masterHashAfter = seam::core::sha256File(masterPath);
+  CHECK(masterHashAfter);
+  if (masterHashBefore && masterHashAfter) {
+    CHECK(masterHashBefore.value() == masterHashAfter.value());
+  }
+  CHECK(std::filesystem::last_write_time(masterPath) == masterTimeBefore);
+
+  std::error_code error;
+  CHECK(std::filesystem::remove(masterPath, error));
+  CHECK(!error);
+  const auto incomplete = service.inspectSetReadOnly(destination);
+  CHECK(incomplete);
+  if (incomplete) {
+    CHECK(incomplete.value().state ==
+          seam::authoring::ExportSetInspectionState::Incomplete);
+  }
+}
+
+TEST_CASE("read-only export inspection reports journals without recovering them") {
+  const auto root = seam::test::support::temporaryDirectory(
+      "export-read-only-journal-inspection");
+  const auto project = exportProject(root, 28000U);
+  const auto destination = root / "exports" / "song";
+  seam::authoring::ExportService service;
+  auto initialSettings = exportSettings(false);
+  initialSettings.replaceExisting = false;
+  CHECK(service.exportSet(
+      project, {}, {}, {}, 1U, destination, initialSettings));
+
+  auto interruptedSettings = exportSettings(false);
+  interruptedSettings.publicationFaultInjector =
+      [](seam::authoring::ExportPublicationPhase phase) {
+        return phase == seam::authoring::ExportPublicationPhase::JournalPrepared;
+      };
+  const auto interrupted = service.exportSet(
+      project, {}, {}, {}, 2U, destination, interruptedSettings);
+  CHECK(interrupted);
+  CHECK(interrupted.value().state ==
+        seam::authoring::ExportState::RollbackRequired);
+
+  const auto exportParent = destination.parent_path();
+  const auto journalPath = exportParent /
+      ("." + destination.filename().string() + "-export-journal.json");
+  CHECK(std::filesystem::is_regular_file(journalPath));
+  const auto journalBefore = seam::core::sha256File(journalPath);
+  const auto journalTimeBefore = std::filesystem::last_write_time(journalPath);
+  CHECK(journalBefore);
+  const auto snapshot = [&] {
+    std::vector<std::string> entries;
+    std::error_code error;
+    for (std::filesystem::recursive_directory_iterator iterator{exportParent, error};
+         !error && iterator != std::filesystem::recursive_directory_iterator{};
+         iterator.increment(error)) {
+      const auto relative =
+          std::filesystem::relative(iterator->path(), exportParent, error);
+      if (error) break;
+      const auto status = iterator->symlink_status(error);
+      if (error) break;
+      if (std::filesystem::is_directory(status)) {
+        entries.push_back(relative.generic_string() + "/");
+      } else if (std::filesystem::is_regular_file(status)) {
+        const auto digest = seam::core::sha256File(iterator->path());
+        CHECK(digest);
+        if (digest) {
+          entries.push_back(relative.generic_string() + ":" + digest.value());
+        }
+      }
+    }
+    CHECK(!error);
+    std::sort(entries.begin(), entries.end());
+    return entries;
+  };
+  const auto before = snapshot();
+  const auto inspection = service.inspectSetReadOnly(destination);
+  CHECK(inspection);
+  if (inspection) {
+    CHECK(inspection.value().state ==
+          seam::authoring::ExportSetInspectionState::NeedsRecovery);
+  }
+  CHECK(snapshot() == before);
+  const auto journalAfter = seam::core::sha256File(journalPath);
+  CHECK(journalAfter);
+  if (journalBefore && journalAfter) {
+    CHECK(journalBefore.value() == journalAfter.value());
+  }
+  CHECK(std::filesystem::last_write_time(journalPath) == journalTimeBefore);
+}
+
 TEST_CASE("export rejects symlinked destination files") {
   const auto root = seam::test::support::temporaryDirectory(
       "export-symlink-preserved-file");

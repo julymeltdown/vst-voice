@@ -15,6 +15,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <iterator>
 #include <memory>
 #include <system_error>
 
@@ -1307,6 +1308,134 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   result.state = ExportState::Committed;
   notifyProgress(progress, result.state, {}, completed, totalFiles);
   return result;
+}
+
+core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
+    const std::filesystem::path& destination) const {
+  using Inspection = ExportSetInspection;
+  if (destination.empty()) {
+    return core::failure<Inspection>(core::ErrorCode::InvalidArgument,
+                                     "Export inspection destination is empty");
+  }
+  const auto missing = [](const std::filesystem::file_status& status,
+                          const std::error_code& error) {
+    return error == std::errc::no_such_file_or_directory ||
+           (!error && status.type() == std::filesystem::file_type::not_found);
+  };
+  const auto ioFailure = [](std::string message,
+                            const std::filesystem::path& path,
+                            const std::error_code& error) {
+    return core::failure<Inspection>(core::ErrorCode::IoError,
+                                     std::move(message),
+                                     path.string() + ": " + error.message());
+  };
+
+  std::error_code error;
+  const auto transactionJournal = journalPath(destination);
+  const auto journalStatus =
+      std::filesystem::symlink_status(transactionJournal, error);
+  if (missing(journalStatus, error)) {
+    error.clear();
+  } else if (error) {
+    return ioFailure("Unable to inspect export transaction journal",
+                     transactionJournal, error);
+  } else {
+    if (std::filesystem::is_symlink(journalStatus) ||
+        !std::filesystem::is_regular_file(journalStatus)) {
+      return core::failure<Inspection>(
+          core::ErrorCode::Conflict,
+          "Export transaction journal is not a regular non-symlink file",
+          transactionJournal.string());
+    }
+    const auto journal = readJournal(destination);
+    if (!journal) return core::Result<Inspection>{journal.error()};
+    return Inspection{
+        .state = ExportSetInspectionState::NeedsRecovery,
+        .diagnostic = "An export transaction journal is present; explicit recovery is required.",
+    };
+  }
+
+  const auto destinationStatus =
+      std::filesystem::symlink_status(destination, error);
+  if (missing(destinationStatus, error)) {
+    return Inspection{.state = ExportSetInspectionState::Missing,
+                      .diagnostic = "No export set is present."};
+  }
+  if (error) {
+    return ioFailure("Unable to inspect export destination", destination,
+                     error);
+  }
+  if (std::filesystem::is_symlink(destinationStatus) ||
+      !std::filesystem::is_directory(destinationStatus)) {
+    return core::failure<Inspection>(
+        core::ErrorCode::Conflict,
+        "Export inspection destination must be a regular non-symlink directory",
+        destination.string());
+  }
+
+  const auto receiptPath = destination / "receipt.json";
+  const auto receiptStatus = std::filesystem::symlink_status(receiptPath, error);
+  if (missing(receiptStatus, error)) {
+    return Inspection{.state = ExportSetInspectionState::Incomplete,
+                      .diagnostic = "Export directory has no receipt."};
+  }
+  if (error) {
+    return ioFailure("Unable to inspect export receipt", receiptPath, error);
+  }
+  if (std::filesystem::is_symlink(receiptStatus) ||
+      !std::filesystem::is_regular_file(receiptStatus)) {
+    return core::failure<Inspection>(
+        core::ErrorCode::Conflict,
+        "Export receipt is not a regular non-symlink file",
+        receiptPath.string());
+  }
+
+  const auto receipt = readExportReceipt(destination, false);
+  if (!receipt) return core::Result<Inspection>{receipt.error()};
+  if (receipt.value().state == "PREPARED") {
+    return Inspection{.state = ExportSetInspectionState::Incomplete,
+                      .diagnostic = "Export receipt is prepared but not committed."};
+  }
+  if (receipt.value().state != "COMMITTED") {
+    return core::failure<Inspection>(core::ErrorCode::Conflict,
+                                     "Export receipt has an unknown state",
+                                     receipt.value().state);
+  }
+
+  for (const auto& relative : receipt.value().ownedPaths) {
+    auto current = destination;
+    for (auto component = relative.begin(); component != relative.end();
+         ++component) {
+      current /= *component;
+      const auto status = std::filesystem::symlink_status(current, error);
+      if (missing(status, error)) {
+        return Inspection{
+            .state = ExportSetInspectionState::Incomplete,
+            .diagnostic = "A receipt-owned export file is missing: " +
+                          relative.generic_string(),
+        };
+      }
+      if (error) {
+        return ioFailure("Unable to inspect receipt-owned export path",
+                         current, error);
+      }
+      const auto next = std::next(component);
+      const bool finalComponent = next == relative.end();
+      if (std::filesystem::is_symlink(status) ||
+          (finalComponent && !std::filesystem::is_regular_file(status)) ||
+          (!finalComponent && !std::filesystem::is_directory(status))) {
+        return core::failure<Inspection>(
+            core::ErrorCode::Conflict,
+            "Receipt-owned export path contains an unsafe filesystem entry",
+            current.string());
+      }
+    }
+  }
+
+  const auto verifiedReceipt = readExportReceipt(destination, true);
+  if (!verifiedReceipt) return core::Result<Inspection>{verifiedReceipt.error()};
+  return Inspection{.state = ExportSetInspectionState::Committed,
+                    .diagnostic = "Committed receipt and all receipt-owned file hashes are valid."};
 }
 
 core::Result<ExportResult> ExportService::recoverSet(

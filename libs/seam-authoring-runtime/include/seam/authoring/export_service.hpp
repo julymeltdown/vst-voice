@@ -76,6 +76,22 @@ struct ExportResult final {
   std::filesystem::path setPath;
 };
 
+enum class ExportSetInspectionState {
+  // The destination directory is absent.
+  Missing,
+  // A receipt or receipt-owned output is absent, or the receipt is uncommitted.
+  Incomplete,
+  // A valid publication journal exists; recovery may be needed but was not run.
+  NeedsRecovery,
+  // The committed receipt and every receipt-owned file hash are valid.
+  Committed,
+};
+
+struct ExportSetInspection final {
+  ExportSetInspectionState state{ExportSetInspectionState::Missing};
+  std::string diagnostic;
+};
+
 class ExportService final {
 public:
   [[nodiscard]] core::Result<ExportResult> exportProjectWithSources(
@@ -114,6 +130,9 @@ public:
       std::stop_token stopToken = {}) const;
 
   [[nodiscard]] core::Result<ExportResult> recoverSet(
+      const std::filesystem::path& destination) const;
+  // Reads export transaction state without acquiring locks or reconciling files.
+  [[nodiscard]] core::Result<ExportSetInspection> inspectSetReadOnly(
       const std::filesystem::path& destination) const;
 };
 
