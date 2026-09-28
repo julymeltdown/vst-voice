@@ -4418,3 +4418,15 @@ score-pitch assertions. The focused performance-snapshot CTest passes in
 Release and Debug. This closes only a numerical synthetic release-mapping gap;
 short/long natural vowels, intelligibility, fixed-corpus and listening/reviewer
 qualification, U16 acceptance and Beta GO remain open.
+
+2026-09-28 — U16 mapped release coverage across all exposed classical
+renderers, verified and pushed in `de4112f6`; GitHub CI remains deferred and
+`.github` was not touched. The compressed/expanded frozen-alignment fixture
+now runs six combinations: Classic PSOLA, Spectral Classic and Stretch at
+320/80 BPM. Every combination passes exact placement extent, the score-pitch
+check, measured-voicing/no-fallback checks, interior unvoiced preservation and
+alignment-mapped release-tail correlation above 0.99. Focused Release and
+Debug performance-snapshot CTest both pass. This broadens deterministic
+synthetic coverage only; natural short/long vowels, breath intelligibility,
+fixed-corpus listening/reviewer qualification, U16 acceptance and Beta GO
+remain open.
