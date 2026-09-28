@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <string>
 
 namespace seam::synthesis {
 
@@ -350,11 +351,18 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
         // unvoiced consonant/breath cannot become periodic merely because its
         // position was aligned.
         auto voicedMap = map.value();
+        std::string voicingStatus = frozen->acousticAnalysis
+            ? "source voicing unknown (analysis coverage incomplete)"
+            : "source voicing unknown (analysis unavailable)";
         if (frozen->acousticAnalysis) {
           const bool applied = applyMeasuredVoicing(
               voicedMap, *frozen->acousticAnalysis,
               unit->markers.audioOffset, unit->markers.audioEnd);
-          if (!applied) voicedMap.voicing.clear();
+          if (applied) {
+            voicingStatus = "source voicing measured";
+          } else {
+            voicedMap.voicing.clear();
+          }
         }
         if (requested == voicebank::RendererHint::ClassicPsola) dispatchParameters.psola.sourceMap = voicedMap;
         else if (requested == voicebank::RendererHint::SpectralClassic) dispatchParameters.spectral.sourceMap = voicedMap;
@@ -363,11 +371,13 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
             requestedFrames, placement.targetMidi, dispatchParameters, stopToken);
         if (output) {
           output.value().unit.vowelOnsetOffset = placement.desiredVowelOnset - placement.destinationStart;
-          output.value().diagnostic = requested == voicebank::RendererHint::ClassicPsola ?
-              "Source-aligned PSOLA sustain with compiled performance; transient qualification pending" :
+          const auto rendererStatus = requested == voicebank::RendererHint::ClassicPsola ?
+              "Source-aligned PSOLA sustain with compiled performance" :
               (requested == voicebank::RendererHint::SpectralClassic ?
-              "Source-aligned spectral sustain with compiled performance; transient qualification pending" :
-              "Source-aligned granular sustain with compiled performance; transient qualification pending");
+              "Source-aligned spectral sustain with compiled performance" :
+              "Source-aligned granular sustain with compiled performance");
+          output.value().diagnostic = std::string{rendererStatus} + "; " + voicingStatus +
+              "; transient qualification pending";
         }
         return output;
       }

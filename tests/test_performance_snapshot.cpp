@@ -1585,6 +1585,8 @@ TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into 
   CHECK(measuredSnapshot.sample().frozenAudio.front().sourceAlignment.has_value());
   const auto measuredRender = seam::rendering::PhraseRenderPipeline{}.render(measuredSnapshot);
   CHECK(measuredRender);
+  CHECK(measuredRender.value().rendered.placements.front().diagnostic.find(
+      "source voicing measured") != std::string::npos);
 
   // Same alignment and audio, but no acoustic sidecar: the map has unknown
   // voicing and must not be mistaken for measured voiced input.
@@ -1593,6 +1595,8 @@ TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into 
   CHECK(!unknownSnapshot.sample().frozenAudio.front().acousticAnalysis.has_value());
   const auto unknownRender = seam::rendering::PhraseRenderPipeline{}.render(unknownSnapshot);
   CHECK(unknownRender);
+  CHECK(unknownRender.value().rendered.placements.front().diagnostic.find(
+      "source voicing unknown (analysis unavailable)") != std::string::npos);
   CHECK(measuredRender.value().rendered.audio.samples !=
         unknownRender.value().rendered.audio.samples);
 }
