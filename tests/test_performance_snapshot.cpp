@@ -1587,6 +1587,8 @@ TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into 
   CHECK(measuredRender);
   CHECK(measuredRender.value().rendered.placements.front().diagnostic.find(
       "source voicing measured") != std::string::npos);
+  CHECK(measuredRender.value().rendered.placements.front().diagnostic.find(
+      "Voiced-edge pitch retargeting enabled") != std::string::npos);
 
   // Same alignment and audio, but no acoustic sidecar: the map has unknown
   // voicing and must not be mistaken for measured voiced input.
@@ -1597,6 +1599,8 @@ TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into 
   CHECK(unknownRender);
   CHECK(unknownRender.value().rendered.placements.front().diagnostic.find(
       "source voicing unknown (analysis unavailable)") != std::string::npos);
+  CHECK(unknownRender.value().rendered.placements.front().diagnostic.find(
+      "Voiced-edge pitch retargeting enabled") != std::string::npos);
   CHECK(measuredRender.value().rendered.audio.samples !=
         unknownRender.value().rendered.audio.samples);
 }

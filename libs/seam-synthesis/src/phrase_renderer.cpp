@@ -326,9 +326,13 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
             placement.targetMidi, dispatchParameters, stopToken);
         if (output) {
           output.value().unit.vowelOnsetOffset = placement.desiredVowelOnset - placement.destinationStart;
-          output.value().diagnostic = requested == voicebank::RendererHint::Raw
+          std::string diagnostic = requested == voicebank::RendererHint::Raw
               ? "Short transition compressed from unit markers; Raw sustain pitch loop retained; transient pitch is resampled"
               : "Short transition compressed from unit markers; acoustic qualification pending";
+          if (!output.value().diagnostic.empty()) {
+            diagnostic += "; " + output.value().diagnostic;
+          }
+          output.value().diagnostic = std::move(diagnostic);
         }
         return output;
       }
@@ -376,8 +380,12 @@ core::Result<PhraseRenderResult> ConcatenativePhraseRenderer::render(
               (requested == voicebank::RendererHint::SpectralClassic ?
               "Source-aligned spectral sustain with compiled performance" :
               "Source-aligned granular sustain with compiled performance");
-          output.value().diagnostic = std::string{rendererStatus} + "; " + voicingStatus +
-              "; transient qualification pending";
+          std::string diagnostic = std::string{rendererStatus} + "; " + voicingStatus;
+          if (!output.value().diagnostic.empty()) {
+            diagnostic += "; " + output.value().diagnostic;
+          }
+          diagnostic += "; transient qualification pending";
+          output.value().diagnostic = std::move(diagnostic);
         }
         return output;
       }

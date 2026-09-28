@@ -670,7 +670,8 @@ TEST_CASE("renderer dispatcher executes spectral and stretch backends explicitly
   CHECK(stretched.value().requested == seam::voicebank::RendererHint::Stretch);
   CHECK(stretched.value().actual == seam::voicebank::RendererHint::Stretch);
   CHECK(!stretched.value().usedFallback);
-  CHECK(stretched.value().diagnostic.empty());
+  CHECK(stretched.value().diagnostic.find("stored pitch marks are missing") !=
+        std::string::npos);
 
   unit.renderer = seam::voicebank::RendererHint::SpectralClassic;
   const auto spectral = dispatcher.render(unit, source, sampleRate, 24000, 72);
@@ -678,6 +679,8 @@ TEST_CASE("renderer dispatcher executes spectral and stretch backends explicitly
   CHECK(spectral.value().requested == seam::voicebank::RendererHint::SpectralClassic);
   CHECK(spectral.value().actual == seam::voicebank::RendererHint::SpectralClassic);
   CHECK(!spectral.value().usedFallback);
+  CHECK(spectral.value().diagnostic.find("stored pitch marks are missing") !=
+        std::string::npos);
 }
 
 TEST_CASE("renderer dispatcher reports an actual raw fallback") {

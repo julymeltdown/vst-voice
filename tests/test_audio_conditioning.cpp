@@ -1142,6 +1142,69 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
 }
 
+TEST_CASE("spectral and stretch dispatch disclose unusable voiced-edge pitch marks") {
+  constexpr std::uint32_t rate = 48000U;
+  constexpr std::size_t frames = 24000U;
+  const auto samples = seam::test::support::sineWave(rate, 440.0, 0.5, 0.35F);
+  const seam::voicebank::AudioBuffer source{
+      .sampleRate = rate, .channels = 1U, .interleaved = samples};
+  auto unit = seam::test::support::makeUnit("edge-diagnostic", {"a"},
+      "audio/a.wav", 69, seam::voicebank::UnitKind::Sustain, frames);
+  unit.markers = seam::voicebank::UnitMarkers{
+      .audioOffset = 0, .consonantEnd = 0, .vowelOnset = 2400,
+      .stableStart = 4800, .loopStart = 7200, .loopEnd = 16800,
+      .releaseStart = 19200, .audioEnd = static_cast<seam::time::SampleFrame>(frames)};
+  const auto generated = seam::voicebank::generatePitchMarks(
+      samples, rate, unit.markers.audioOffset, unit.markers.audioEnd,
+      seam::voicebank::producerPitchMarkConfig());
+  CHECK(generated);
+  unit.pitchMarks = generated.value();
+
+  const auto dispatch = [&](seam::voicebank::RendererHint renderer,
+                            const seam::voicebank::Unit& input) {
+    seam::synthesis::RendererDispatchParameters parameters{};
+    parameters.policy = renderer == seam::voicebank::RendererHint::SpectralClassic
+        ? seam::synthesis::RenderPolicy::ForceSpectralClassic
+        : seam::synthesis::RenderPolicy::ForceStretch;
+    parameters.allowRawFallback = false;
+    return seam::synthesis::UnitRendererDispatcher{}.render(
+        input, source, rate, static_cast<seam::time::SampleFrame>(frames),
+        64, parameters);
+  };
+  for (const auto renderer : {seam::voicebank::RendererHint::SpectralClassic,
+                              seam::voicebank::RendererHint::Stretch}) {
+    const auto usable = dispatch(renderer, unit);
+    CHECK(usable);
+    CHECK(usable.value().actual == renderer);
+    CHECK(usable.value().diagnostic.find(
+        "Voiced-edge pitch retargeting enabled") != std::string::npos);
+
+    auto missing = unit;
+    missing.pitchMarks.clear();
+    const auto missingMarks = dispatch(renderer, missing);
+    CHECK(missingMarks);
+    CHECK(missingMarks.value().actual == renderer);
+    CHECK(missingMarks.value().diagnostic.find("marks are missing") != std::string::npos);
+    CHECK(missingMarks.value().diagnostic.find("pitch is not verified") != std::string::npos);
+
+    auto invalid = unit;
+    CHECK(invalid.pitchMarks.size() >= 2U);
+    invalid.pitchMarks[1].frame = invalid.pitchMarks[0].frame;
+    const auto invalidMarks = dispatch(renderer, invalid);
+    CHECK(invalidMarks);
+    CHECK(invalidMarks.value().actual == renderer);
+    CHECK(invalidMarks.value().diagnostic.find("marks are invalid") != std::string::npos);
+
+    auto sparse = unit;
+    sparse.pitchMarks.resize(2U);
+    const auto sparseMarks = dispatch(renderer, sparse);
+    CHECK(sparseMarks);
+    CHECK(sparseMarks.value().actual == renderer);
+    CHECK(sparseMarks.value().diagnostic.find(
+        "fewer than three stored pitch marks") != std::string::npos);
+  }
+}
+
 // U15 scenario 3, second half: "old manifests migrate without fabricated
 // measurements or automatic approval". A legacy bank has no stored analysis and
 // may carry marks from the earlier generator, which ran into fricatives. Migration

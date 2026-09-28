@@ -1,4 +1,8 @@
 #include "seam/synthesis/renderer_dispatcher.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
+#include "voiced_source_marks.hpp"
+
+#include <cmath>
 
 namespace seam::synthesis {
 
@@ -33,6 +37,37 @@ voicebank::RendererHint resolveRequestedRenderer(
 }
 
 namespace {
+
+std::string voicedEdgeRetargetDiagnostic(
+    const voicebank::Unit& unit, voicebank::RendererHint renderer) {
+  if (renderer != voicebank::RendererHint::SpectralClassic &&
+      renderer != voicebank::RendererHint::Stretch) {
+    return {};
+  }
+  if (unit.pitchMarks.empty()) {
+    return "Voiced-edge pitch retargeting unavailable: stored pitch marks are missing; attack/release pitch is not verified";
+  }
+  const auto validation = voicebank::validatePitchMarks(
+      unit.pitchMarks, unit.markers.audioOffset, unit.markers.audioEnd);
+  if (!validation) {
+    return "Voiced-edge pitch retargeting unavailable: stored pitch marks are invalid; attack/release pitch is not verified";
+  }
+  if (unit.pitchMarks.size() < 3U) {
+    return "Voiced-edge pitch retargeting unavailable: fewer than three stored pitch marks are available; attack/release pitch is not verified";
+  }
+  const auto loopStart = unit.markers.loopStart.value_or(unit.markers.stableStart);
+  const auto releaseStart = unit.markers.releaseStart.value_or(unit.markers.audioEnd);
+  const auto loopEnd = unit.markers.loopEnd.value_or(releaseStart);
+  const auto edgeMarks = detail::sustainMarks(
+      unit.pitchMarks, loopStart, loopEnd, unit.markers.stableStart,
+      releaseStart);
+  const auto medianPeriod = detail::medianMarkPeriod(edgeMarks);
+  if (edgeMarks.size() < 3U || !std::isfinite(medianPeriod) ||
+      medianPeriod <= 1.0) {
+    return "Voiced-edge pitch retargeting unavailable: sustain marks are insufficient; attack/release pitch is not verified";
+  }
+  return "Voiced-edge pitch retargeting enabled by usable sustain marks; only nearby voiced marks are transformed, while unknown/unvoiced edge samples stay source-faithful";
+}
 
 core::Result<RenderedUnit> rawFallback(
     const voicebank::Unit& unit,
@@ -124,12 +159,13 @@ core::Result<DispatchedRenderedUnit> UnitRendererDispatcher::render(
   }
 
   if (rendered) {
+    auto diagnostic = voicedEdgeRetargetDiagnostic(unit, requested);
     return DispatchedRenderedUnit{
         .unit = std::move(rendered).value(),
         .requested = requested,
         .actual = requested,
         .usedFallback = false,
-        .diagnostic = {},
+        .diagnostic = std::move(diagnostic),
     };
   }
   if (!parameters.allowRawFallback || requested == voicebank::RendererHint::Raw ||
