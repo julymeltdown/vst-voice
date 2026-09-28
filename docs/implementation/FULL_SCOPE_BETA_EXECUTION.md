@@ -3307,7 +3307,6 @@ and reset behavior. `seam_clap_live_events_tests` passes Debug, Release and
 Sanitizer. This does not
 qualify CC7 gain calibration or delivery/mapping in installed hosts; U33/Beta GO
 remain open.
-
 GitHub CI remains deferred; `.github` is unchanged.
 
 2026-09-25 — Portable WAV receipt oracle made path-exact. The regression now
