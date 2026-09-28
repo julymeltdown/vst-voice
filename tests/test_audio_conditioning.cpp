@@ -1144,7 +1144,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
 }
 
-TEST_CASE("measured voiced islands retarget around mapped fricatives in every classical renderer") {
+TEST_CASE("measured voiced islands retarget around mapped fricatives and score pitch jumps") {
   constexpr std::uint32_t rate = kRate;
   constexpr auto frames = kFrames;
   constexpr std::size_t firstVoicedEnd = kVoicedEnd;
@@ -1159,8 +1159,8 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
       samples[frame] = 0.35F *
           ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
     } else {
-      // Both voiced islands share the voicebank's 220 Hz root, so a score
-      // target of MIDI 69 has the same measured transposition contract in both.
+      // Both voiced islands share the voicebank's 220 Hz root; the compiled
+      // score intentionally changes from MIDI 69 to MIDI 76 after the fricative.
       samples[frame] = 0.5F * static_cast<float>(
           std::sin(2.0 * std::numbers::pi * 220.0 * time));
     }
@@ -1182,27 +1182,37 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
   unit.pitchMarks = marks.value();
   CHECK(unit.validate());
 
-  constexpr std::int32_t targetMidi = 69;
-  constexpr double targetHz = 440.0;
+  constexpr std::int32_t firstTargetMidi = 69;
+  constexpr std::int32_t secondTargetMidi = 76;
+  constexpr double firstTargetHz = 440.0;
+  const auto secondTargetHz = firstTargetHz * std::exp2(
+      static_cast<double>(secondTargetMidi - firstTargetMidi) / 12.0);
   seam::application::ProjectFactory factory{99173U};
   auto project = factory.createProject("Mapped voicing regression");
   const auto trackId = factory.addVocalTrack(project, "Singer");
   const auto regionId = factory.addRegion(project, trackId, "Voiced islands",
       seam::time::Tick{0}, seam::time::Tick{1920});
-  auto [lyric, note] = factory.makeNote(seam::time::Tick{0},
-      seam::time::Tick{1920}, static_cast<std::uint8_t>(targetMidi), U"あ",
+  auto [firstLyric, firstNote] = factory.makeNote(seam::time::Tick{0},
+      seam::time::Tick{1152}, static_cast<std::uint8_t>(firstTargetMidi), U"あ",
+      seam::domain::Language::Japanese);
+  auto [secondLyric, secondNote] = factory.makeNote(seam::time::Tick{1152},
+      seam::time::Tick{768}, static_cast<std::uint8_t>(secondTargetMidi), U"い",
       seam::domain::Language::Japanese);
   auto* region = project.findRegion(regionId);
   CHECK(region != nullptr);
-  region->lyrics.push_back(std::move(lyric));
-  region->notes.push_back(std::move(note));
+  region->lyrics.push_back(std::move(firstLyric));
+  region->lyrics.push_back(std::move(secondLyric));
+  region->notes.push_back(std::move(firstNote));
+  region->notes.push_back(std::move(secondNote));
   const auto compiled = seam::synthesis::compileScorePerformance(
       project, *region, rate);
   CHECK(compiled);
-  CHECK(compiled.value().notes().size() == 1U);
+  CHECK(compiled.value().notes().size() == 2U);
   const auto performanceStart = compiled.value().notes().front().startFrame;
-  CHECK(compiled.value().notes().front().endFrame - performanceStart ==
+  CHECK(compiled.value().notes().back().endFrame - performanceStart ==
         static_cast<seam::time::SampleFrame>(frames));
+  CHECK(compiled.value().notes()[1U].startFrame - performanceStart ==
+        static_cast<seam::time::SampleFrame>(unvoicedEnd));
   const auto performance = std::make_shared<const
       seam::synthesis::CompiledScorePerformance>(compiled.value());
 
@@ -1245,9 +1255,10 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
                                                   releaseStart - 1024U);
     CHECK(attackPitch > 0.0);
     CHECK(secondIslandPitch > 0.0);
-    const auto attackErrorCents = 1200.0 * std::log2(attackPitch / targetHz);
+    const auto attackErrorCents =
+        1200.0 * std::log2(attackPitch / firstTargetHz);
     const auto secondIslandErrorCents =
-        1200.0 * std::log2(secondIslandPitch / targetHz);
+        1200.0 * std::log2(secondIslandPitch / secondTargetHz);
     if (std::abs(attackErrorCents) > 35.0 ||
         std::abs(secondIslandErrorCents) > 35.0) {
       throw seam::test::Failure(std::string{backend} +
@@ -1267,7 +1278,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
   psola.sourceMap = measuredMap;
   const auto classic = seam::synthesis::ClassicPsolaRenderer{}.render(
       unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
-      targetMidi, psola);
+      firstTargetMidi, psola);
   if (!classic) {
     throw seam::test::Failure("measured-map PSOLA failed: " + classic.error().message);
   }
@@ -1282,7 +1293,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
       .sourceMap = measuredMap};
   const auto spectral = seam::synthesis::SpectralClassicRenderer{}.render(
       unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
-      targetMidi, spectralParameters);
+      firstTargetMidi, spectralParameters);
   if (!spectral) {
     throw seam::test::Failure("measured-map Spectral Classic failed: " +
                               spectral.error().message);
@@ -1298,7 +1309,7 @@ TEST_CASE("measured voiced islands retarget around mapped fricatives in every cl
       .sourceMap = measuredMap};
   const auto stretched = seam::synthesis::StretchUnitRenderer{}.render(
       unit, source, rate, static_cast<seam::time::SampleFrame>(frames),
-      targetMidi, stretchParameters);
+      firstTargetMidi, stretchParameters);
   if (!stretched) {
     throw seam::test::Failure("measured-map Stretch failed: " +
                               stretched.error().message);
