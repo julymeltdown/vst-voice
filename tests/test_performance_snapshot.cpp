@@ -1610,13 +1610,12 @@ TEST_CASE("source-aligned phrase rendering carries frozen acoustic voicing into 
         unknownRender.value().rendered.audio.samples);
 }
 
-TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and preserve score pitch") {
+TEST_CASE("all classical snapshot renderers preserve measured boundaries across tempo changes") {
   using namespace seam;
   PerformanceSnapshotFixture fixture;
   auto* region = fixture.project.findRegion(fixture.regionId);
   if (region == nullptr) throw test::Failure{"snapshot fixture region is missing"};
   region->notes.front().midiKey = 60U;
-  fixture.bank.units.front().renderer = voicebank::RendererHint::SpectralClassic;
 
   constexpr std::uint32_t rate = 48000U;
   constexpr std::size_t sourceFrames = 24000U;
@@ -1691,12 +1690,24 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
   if (!wroteAnalysis) throw test::Failure{"could not write acoustic-analysis fixture"};
 
   constexpr double targetHz = 440.0 * 0.5946035575013605; // MIDI 60, source root MIDI 69.
-  for (const auto [tempo, expectedNoteFrames] : {
-           std::pair{320.0, std::size_t{9000U}},
-           std::pair{80.0, std::size_t{36000U}}}) {
-    const auto expectedPlacementFrames = expectedNoteFrames +
+  struct RendererTempoCase final {
+    voicebank::RendererHint renderer;
+    double tempo;
+    std::size_t noteFrames;
+  };
+  const std::array renderCases{
+      RendererTempoCase{voicebank::RendererHint::ClassicPsola, 320.0, 9000U},
+      RendererTempoCase{voicebank::RendererHint::ClassicPsola, 80.0, 36000U},
+      RendererTempoCase{voicebank::RendererHint::SpectralClassic, 320.0, 9000U},
+      RendererTempoCase{voicebank::RendererHint::SpectralClassic, 80.0, 36000U},
+      RendererTempoCase{voicebank::RendererHint::Stretch, 320.0, 9000U},
+      RendererTempoCase{voicebank::RendererHint::Stretch, 80.0, 36000U}};
+  for (const auto& renderCase : renderCases) {
+    fixture.bank.units.front().renderer = renderCase.renderer;
+    const auto expectedPlacementFrames = renderCase.noteFrames +
         static_cast<std::size_t>(unit.markers.vowelOnset - unit.markers.audioOffset);
-    const auto tempoUpdated = fixture.project.tempoMap().addOrReplace(time::Tick{0}, tempo);
+    const auto tempoUpdated = fixture.project.tempoMap().addOrReplace(
+        time::Tick{0}, renderCase.tempo);
     if (!tempoUpdated) throw test::Failure{"could not set fixture tempo"};
     const auto snapshot = fixture.snapshot();
     CHECK(!snapshot.sample().frozenAudio.empty());
@@ -1718,7 +1729,7 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     CHECK_NEAR(timing.destinationEnd - timing.destinationStart,
         static_cast<time::SampleFrame>(expectedPlacementFrames), 0.0);
     CHECK(placement.frameCount == static_cast<time::SampleFrame>(expectedPlacementFrames));
-    CHECK(placement.actualRenderer == voicebank::RendererHint::SpectralClassic);
+    CHECK(placement.actualRenderer == renderCase.renderer);
     CHECK(!placement.usedFallback);
     CHECK(placement.diagnostic.find("source voicing measured") != std::string::npos);
 
