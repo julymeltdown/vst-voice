@@ -951,17 +951,24 @@ TEST_CASE("storing a bank's analyses binds each unit to the bytes present and re
 
 // U16 scenario 1: annotated CV material transposes through the attack, sustain,
 // and release without changing the unvoiced onset or moving the vowel onset.
-// Engineering fixture: noise then a harmonic 440 Hz vowel; marks come from the
-// product's own pitch-mark generator.
-TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoiced onsets") {
+// Engineering fixture: a noisy CV onset, harmonic 440 Hz vowel/release, and a
+// breath/noise tail; marks come from the product's own pitch-mark generator.
+TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoiced edges") {
   constexpr std::uint32_t rate = 48000U;
   constexpr std::size_t frames = 24000U;
   constexpr std::size_t consonantEnd = 3600U;
+  constexpr std::size_t releaseNoiseStart = 21600U;
+  constexpr std::size_t releaseNoiseCheckStart = releaseNoiseStart + 1024U;
   std::vector<float> samples(frames, 0.0F);
   unsigned seed = 424242U;
   for (std::size_t index = 0U; index < frames; ++index) {
     const auto time = static_cast<double>(index) / static_cast<double>(rate);
     if (index < consonantEnd) {
+      seed = seed * 1103515245U + 12345U;
+      samples[index] = 0.3F * ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
+      continue;
+    }
+    if (index >= releaseNoiseStart) {
       seed = seed * 1103515245U + 12345U;
       samples[index] = 0.3F * ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
       continue;
@@ -983,6 +990,10 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
       static_cast<seam::time::SampleFrame>(frames), seam::voicebank::producerPitchMarkConfig());
   CHECK(marks);
   unit.pitchMarks = marks.value();
+  CHECK(std::none_of(unit.pitchMarks.begin(), unit.pitchMarks.end(),
+      [releaseNoiseStart](const auto& mark) {
+        return mark.frame >= static_cast<seam::time::SampleFrame>(releaseNoiseStart + 512U);
+      }));
   CHECK(unit.validate());
 
   const auto regionPitch = [&](const std::vector<float>& rendered, std::size_t begin, std::size_t end) {
@@ -992,7 +1003,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
   };
   const auto checkEdges = [&](const std::vector<float>& rendered, double expected) {
     const auto attack = regionPitch(rendered, consonantEnd + 512U, 8400U);
-    const auto release = regionPitch(rendered, 18000U, frames - 1024U);
+    const auto release = regionPitch(rendered, 18000U, releaseNoiseStart);
     CHECK(attack > 0.0);
     CHECK(release > 0.0);
     CHECK_NEAR(1200.0 * std::log2(attack / expected), 0.0, 25.0);
@@ -1023,7 +1034,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
     const auto& output = rendered.value().samples;
     CHECK(output.size() == frames);
     // Attack: vowel onset through stable-start; release: the release marker to
-    // the end, excluding the final fade. Every pitch-changing renderer must
+    // the end of the voiced tail, before the final breath/noise. Every renderer must
     // agree on both physical voiced edges, not just the sustained vowel.
     checkEdges(output, expected);
 
@@ -1058,11 +1069,31 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
       right += static_cast<double>(samples[index]) * samples[index];
     }
     CHECK(dot / std::sqrt(left * right) > 0.99);
+    dot = 0.0;
+    left = 0.0;
+    right = 0.0;
+    // Stay beyond the final mark's one-period uncertainty band at the
+    // voiced-to-noise boundary; the acoustic map is the production guard there.
+    for (std::size_t index = releaseNoiseCheckStart; index < frames - 512U; ++index) {
+      dot += static_cast<double>(output[index]) * samples[index];
+      left += static_cast<double>(output[index]) * output[index];
+      right += static_cast<double>(samples[index]) * samples[index];
+    }
+    CHECK(dot / std::sqrt(left * right) > 0.99);
     for (const auto* edgeOutput : {&spectral.value().samples, &stretched.value().samples}) {
       dot = 0.0;
       left = 0.0;
       right = 0.0;
       for (std::size_t index = 256U; index < consonantEnd - 512U; ++index) {
+        dot += static_cast<double>((*edgeOutput)[index]) * samples[index];
+        left += static_cast<double>((*edgeOutput)[index]) * (*edgeOutput)[index];
+        right += static_cast<double>(samples[index]) * samples[index];
+      }
+      CHECK(dot / std::sqrt(left * right) > 0.99);
+      dot = 0.0;
+      left = 0.0;
+      right = 0.0;
+      for (std::size_t index = releaseNoiseCheckStart; index < frames - 512U; ++index) {
         dot += static_cast<double>((*edgeOutput)[index]) * samples[index];
         left += static_cast<double>((*edgeOutput)[index]) * (*edgeOutput)[index];
         right += static_cast<double>(samples[index]) * samples[index];
@@ -1081,7 +1112,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
       seam::synthesis::PsolaRenderParameters{.sourcePitchResidual = 0.0F, .pitchCurve = jump});
   CHECK(jumped);
   const auto jumpAttack = regionPitch(jumped.value().samples, consonantEnd + 512U, 8400U);
-  const auto jumpRelease = regionPitch(jumped.value().samples, 18000U + 512U, frames - 1024U);
+  const auto jumpRelease = regionPitch(jumped.value().samples, 18000U + 512U, releaseNoiseStart);
   CHECK_NEAR(1200.0 * std::log2(jumpAttack / 220.0), 0.0, 25.0);
   CHECK_NEAR(1200.0 * std::log2(jumpRelease / 220.0), 700.0, 25.0);
   const auto jumpedExpected = 220.0 * std::pow(2.0, 700.0 / 1200.0);
@@ -1093,7 +1124,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
       });
   CHECK(spectralJump);
   CHECK_NEAR(1200.0 * std::log2(regionPitch(spectralJump.value().samples,
-      18000U + 512U, frames - 1024U) / jumpedExpected), 0.0, 35.0);
+      18000U + 512U, releaseNoiseStart) / jumpedExpected), 0.0, 35.0);
   const auto stretchJump = seam::synthesis::StretchUnitRenderer{}.render(
       unit, source, rate, static_cast<seam::time::SampleFrame>(frames), 57,
       seam::synthesis::StretchRenderParameters{
@@ -1102,7 +1133,7 @@ TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoi
       });
   CHECK(stretchJump);
   CHECK_NEAR(1200.0 * std::log2(regionPitch(stretchJump.value().samples,
-      18000U + 512U, frames - 1024U) / jumpedExpected), 0.0, 35.0);
+      18000U + 512U, releaseNoiseStart) / jumpedExpected), 0.0, 35.0);
 
   // Duration mapping is untouched: the vowel starts where it started in the
   // source, measured by the same analysis on both signals.
