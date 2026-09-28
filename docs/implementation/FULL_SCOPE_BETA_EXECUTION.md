@@ -4459,3 +4459,14 @@ pass (1/1); `git diff --check` passes. This closes only fake-device
 capture/export/import parity. CoreAudio/TCC, physical microphone failure and
 permission journeys, and native UI orchestration remain unverified; U22 and
 full-scope Beta GO remain open.
+
+2026-09-29 — Read-only export-set evidence inspection, verified and pushed in
+`46e0ca50`; GitHub CI remains deferred and `.github` was not touched.
+`ExportService::inspectSetReadOnly` distinguishes missing, incomplete,
+recovery-required and committed output. A committed result requires a valid
+receipt, safe receipt-owned paths, all owned files present, and matching file
+hashes. Journaled publication is reported without locking, cleanup, rollback,
+or receipt rewriting. Release `seam_export_tests` builds and passes 1/1; its
+filesystem snapshot regression confirms journal and transaction paths are
+unchanged. This is a reusable read-only export API, not yet per-job evidence
+or a Studio request-detail UI; U22 and full-scope Beta GO remain open.
