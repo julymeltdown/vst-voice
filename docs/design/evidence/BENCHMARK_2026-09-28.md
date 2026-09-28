@@ -1,5 +1,44 @@
 # Operator-recorded benchmark snapshot — 2026-09-28
 
+## Update at `87d8fe02`: software glass-panel fills
+
+Measured on this machine with the Release build of the code committed as `87d8fe02`. That commit
+paints the translucent glass-panel fills in software with the wash and adds an ordered dither.
+It also makes the squared-radius wash table hold the ramp samples it replaces. A 40-sample full
+run at load average 8.37:
+
+| Case | Look | p50 ms | p95 ms | max ms | p95 budget ms | Verdict |
+|---|---|---:|---:|---:|---:|---|
+| `cold-full-frame` | EMO | 12.067 | 12.667 | 13.127 | 14 | PASS |
+| `retained-background-invalidation` | EMO | 9.262 | 9.600 | 9.849 | 14 | PASS |
+| `scroll-zoom` | EMO | 5.893 | 6.492 | 7.032 | 8 | PASS |
+| `playback` | EMO | 1.628 | 2.111 | 2.188 | 3 | PASS |
+| `dense-10000-notes` | EMO | 3.047 | 4.505 | 5.774 | 8 | PASS |
+| `cold-full-frame` | SCENE | 12.562 | 15.082 | 15.970 | 14 | MISS |
+| `retained-background-invalidation` | SCENE | 9.231 | 9.611 | 9.731 | 14 | PASS |
+| `scroll-zoom` | SCENE | 5.887 | 6.689 | 7.376 | 8 | PASS |
+| `playback` | SCENE | 1.621 | 2.001 | 2.302 | 3 | PASS |
+| `dense-10000-notes` | SCENE | 2.752 | 3.371 | 3.718 | 8 | PASS |
+
+Three case-limited runs (`SEAM_BENCHMARK_CASE=cold-full-frame`, 80 samples) followed at load
+average 8.5–8.6:
+
+| Run | EMO p50 / p95 ms | SCENE p50 / p95 ms |
+|---|---|---|
+| 1 | 12.41 / 14.33 (MISS) | 12.66 / 13.48 (PASS) |
+| 2 | 12.47 / 14.75 (MISS) | 12.42 / 13.59 (PASS) |
+| 3 | 12.24 / 13.20 (PASS) | 13.01 / 15.19 (MISS) |
+
+True-cold p50 dropped from about 15.2 ms to 12.1–13.0 ms in both looks. In an alternating A/B
+against `2116f741` (five runs each, 80 samples), the median p50 went from 15.26 to 12.51 ms
+for EMO and from 15.21 to 12.27 ms for SCENE. p95 now passes 14 ms in 4 of these 8 look-runs,
+moving with load from unrelated processes, so the true-cold budget is **not yet a stable pass**.
+The layer cache was 65,374,226 bytes against the 80 MiB budget: PASS.
+
+The earlier sections below describe `caabbaf5` and are kept for history.
+
+## Snapshot at `caabbaf5`
+
 Source-exact run: the numbers in the table below were re-measured on this machine at master
 `caabbaf5` (working tree clean) with `build/release/seam_phase5_benchmark`, 40 samples per case.
 The earlier transcription of the `52fc8ff5` candidate is kept in the comment at the bottom for
