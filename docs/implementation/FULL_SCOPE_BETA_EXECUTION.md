@@ -3307,6 +3307,7 @@ and reset behavior. `seam_clap_live_events_tests` passes Debug, Release and
 Sanitizer. This does not
 qualify CC7 gain calibration or delivery/mapping in installed hosts; U33/Beta GO
 remain open.
+
 GitHub CI remains deferred; `.github` is unchanged.
 
 2026-09-25 — Portable WAV receipt oracle made path-exact. The regression now
@@ -4446,3 +4447,16 @@ Debug performance-snapshot CTest both pass. This broadens deterministic
 synthetic coverage only; natural short/long vowels, breath intelligibility,
 fixed-corpus listening/reviewer qualification, U16 acceptance and Beta GO
 remain open.
+
+2026-09-29 — U22 recording-to-Studio import parity fixture, verified and
+pushed in `ceb3d5db`; GitHub CI remains deferred and `.github` was not
+touched. A fake physical-input backend now drives `RecordingInputSession`,
+publishes a PCM24 WAV, then imports that exact file through Studio's
+asynchronous raw-WAV path. A second producer workspace uses the standard
+inspect-then-import path; the test compares source hash, inspection receipt,
+marker-review queue state, absence of human review, in-memory project state,
+and recovered durable project state. Release target build and focused CTest
+pass (1/1); `git diff --check` passes. This closes only fake-device
+capture/export/import parity. CoreAudio/TCC, physical microphone failure and
+permission journeys, and native UI orchestration remain unverified; U22 and
+full-scope Beta GO remain open.
