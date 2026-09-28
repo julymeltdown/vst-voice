@@ -2,6 +2,7 @@
 
 ## Commit and push cadence
 
+- This cadence is the default for every implementation turn, including each “continue” handoff. Do not wait for a large milestone or the end of a session before committing and pushing verified work.
 - Keep changes in small, reviewable units. Commit each completed and locally verified unit as soon as its focused checks pass; do not let multiple unrelated units accumulate in one working tree.
 - Push completed work promptly. For work on `master`, push each verified commit to `origin/master`. For isolated `codex/*` worktrees, commit on that branch and notify the integrating developer immediately; the integrating developer should merge, verify, and push each coherent unit to `origin/master`.
 - If a unit is still in progress after roughly 30 minutes, commit a safe checkpoint when the current state is internally consistent. Mark incomplete work clearly in the commit message or handoff; do not present an unverified checkpoint as complete.
