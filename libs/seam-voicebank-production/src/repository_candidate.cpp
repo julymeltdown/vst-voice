@@ -1,4 +1,5 @@
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/operations.hpp"
 #include "candidate_publication_internal.hpp"
 #include "repository_history_internal.hpp"
 
@@ -71,6 +72,7 @@ core::Result<const TakeRecord*> selectedTake(const VoicebankProductionProject& p
         [&](const auto& value) { return value.revisionId == revisionId; });
     if (revision == project.derivedRevisions.end() || revision->inputSha256 != effectiveAudio)
       return core::failure<const TakeRecord*>(core::ErrorCode::Conflict, "Candidate processing chain is incomplete", binding.takeId);
+    if (const auto current = requireCurrentOperation(*revision); !current) return core::Result<const TakeRecord*>{current.error()};
     effectiveAudio = revision->outputSha256;
   }
   if (!isDigest(binding.audioSha256) || binding.audioSha256 != effectiveAudio)

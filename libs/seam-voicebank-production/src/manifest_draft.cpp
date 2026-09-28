@@ -1,4 +1,5 @@
 #include "seam/voicebank_production/manifest_draft.hpp"
+#include "seam/voicebank_production/operations.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "candidate_publication_internal.hpp"
@@ -194,6 +195,7 @@ core::Result<CreatedSampleManifestDraft> createSampleManifestDraft(
       const auto revision = std::find_if(project.derivedRevisions.begin(), project.derivedRevisions.end(), [&](const auto& value) { return value.revisionId == revisionId; });
       if (revision == project.derivedRevisions.end() || revision->inputSha256 != digest)
         return core::failure<Output>(core::ErrorCode::Conflict, "Draft take processing chain is incomplete");
+      if (const auto current = requireCurrentOperation(*revision); !current) return core::Result<Output>{current.error()};
       digest = revision->outputSha256;
     }
     const auto asset = std::find_if(project.assets.begin(), project.assets.end(), [&](const auto& value) { return value.sha256 == digest; });
