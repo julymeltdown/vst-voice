@@ -326,9 +326,14 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
     const auto resume = std::find_if(details.begin(), details.end(), [&](const auto& control) {
       return control.id == "request-detail-resume:" + sha;
     });
+    const auto locate = std::find_if(details.begin(), details.end(), [&](const auto& control) {
+      return control.id == "request-detail-locate:" + sha;
+    });
     CHECK(back != details.end());
     CHECK(resume != details.end());
+    CHECK(locate != details.end());
     if (back != details.end() && resume != details.end()) CHECK(back->bounds.right() <= resume->bounds.x);
+    if (resume != details.end() && locate != details.end()) CHECK(resume->bounds.right() <= locate->bounds.x);
     for (const auto& control : details) {
       CHECK(control.bounds.x >= 44.0);
       CHECK(control.bounds.right() <= width - 44.0);
@@ -348,12 +353,13 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   const auto originalBytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
   CHECK(originalBytes);
   if (!originalBytes) return;
-  // The locator is only a hint: byte drift must be refused before the canonical
-  // request runner can mutate the producer. Restore the immutable definition and
-  // prove the same listed item then completes without duplicate takes.
-  CHECK(std::filesystem::remove(path));
-  CHECK(core::durableAtomicWriteTextNew(path, "not the admitted campaign definition"));
-  CHECK(fixture.controller.beginGenerationRequestResume(sha, "2026-09-28T00:00:08Z"));
+  // A user-selected file is still only a path: byte drift must be refused before
+  // the canonical request runner can mutate the producer. A moved definition can
+  // then resume the same immutable request after its stored locator disappears.
+  const auto tamperedPath = fixture.root / "tampered-campaign.json";
+  CHECK(core::durableAtomicWriteTextNew(tamperedPath, "not the admitted campaign definition"));
+  CHECK(fixture.controller.beginGenerationRequestResumeFromDefinition(
+      sha, tamperedPath, "2026-09-28T00:00:08Z"));
   const auto mismatch = drain(fixture.controller);
   CHECK(!mismatch);
   CHECK(mismatch.error().code == core::ErrorCode::Conflict);
@@ -362,9 +368,24 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(unchanged.value().lastDurableGeneration == before);
   CHECK(unchanged.value().takes.empty());
 
+  const auto movedDirectory = fixture.root / "moved-campaign";
+  std::error_code moveCopyError;
+  std::filesystem::copy(path.parent_path(), movedDirectory, std::filesystem::copy_options::recursive, moveCopyError);
+  CHECK(!moveCopyError);
+  const auto movedPath = movedDirectory / path.filename();
+  CHECK(std::filesystem::exists(movedPath));
+  const auto movedDefinition = core::readTextFileLimited(movedPath, 32U * 1024U * 1024U);
+  CHECK(movedDefinition);
+  if (movedDefinition) CHECK(movedDefinition.value() == originalBytes.value());
   CHECK(std::filesystem::remove(path));
-  CHECK(core::durableAtomicWriteTextNew(path, originalBytes.value()));
   CHECK(fixture.controller.beginGenerationRequestResume(sha, "2026-09-28T00:00:09Z"));
+  const auto missingLocatorResult = drain(fixture.controller);
+  CHECK(!missingLocatorResult);
+  const auto afterMissingLocator = repository.recover(); CHECK(afterMissingLocator);
+  CHECK(afterMissingLocator.value().lastDurableGeneration == before);
+  CHECK(afterMissingLocator.value().takes.empty());
+  CHECK(fixture.controller.beginGenerationRequestResumeFromDefinition(
+      sha, movedPath, "2026-09-28T00:00:10Z"));
   CHECK(drain(fixture.controller));
   auto completed = repository.recover(); CHECK(completed);
   CHECK(completed.value().takes.size() == 2U);
@@ -382,6 +403,9 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   const auto terminalResume = fixture.controller.beginGenerationRequestResume(sha);
   CHECK(!terminalResume);
   CHECK(terminalResume.error().code == core::ErrorCode::InvalidState);
+  const auto terminalLocatedResume = fixture.controller.beginGenerationRequestResumeFromDefinition(sha, movedPath);
+  CHECK(!terminalLocatedResume);
+  CHECK(terminalLocatedResume.error().code == core::ErrorCode::InvalidState);
   const auto terminalControls = seam::native_ui::studioGenerationQueueControls(
       fixture.controller, 1040.0, 720.0, false, 0U);
   CHECK(std::any_of(terminalControls.begin(), terminalControls.end(), [&](const auto& control) {
@@ -394,6 +418,9 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   }));
   CHECK(std::none_of(terminalDetails.begin(), terminalDetails.end(), [](const auto& control) {
     return control.id.starts_with("request-detail-resume:");
+  }));
+  CHECK(std::none_of(terminalDetails.begin(), terminalDetails.end(), [](const auto& control) {
+    return control.id.starts_with("request-detail-locate:");
   }));
 }
 

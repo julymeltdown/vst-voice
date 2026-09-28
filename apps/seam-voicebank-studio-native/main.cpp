@@ -1380,6 +1380,39 @@ public:
     return controller_.beginGenerationCampaignResume();
   }
 
+  seam::core::Result<void> locateGenerationRequestDefinitionFromDialog(std::string_view requestId) {
+    if (generationModal_ || controller_.proceduralImportBusy() || recording_.armed() ||
+        recording_.recordedFrames() > 0U || designer_.busy())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Finish recording, Designer work or production work before locating a campaign definition");
+    const auto* project = controller_.productionProject();
+    if (project == nullptr)
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Open the producer workspace before locating a campaign definition");
+    const auto epoch = controller_.productionSessionEpoch();
+    const auto generation = project->lastDurableGeneration;
+    const auto selected = controller_.selectedIndex();
+    struct ModalGuard final {
+      bool& active;
+      explicit ModalGuard(bool& value) : active(value) { active = true; }
+      ~ModalGuard() { active = false; }
+    } guard{generationModal_};
+    auto dialog = seam::platform::createNativeFileDialog();
+    const auto path = dialog->choose({.purpose = seam::platform::FileDialogPurpose::OpenGenerationCampaign,
+        .title = "Locate Definition for Generation Request", .initialDirectory = {},
+        .suggestedName = "campaign.json", .extensions = {"json"}});
+    if (!path) return seam::core::Result<void>{path.error()};
+    if (!path.value()) return seam::core::success();
+    const auto current = controller_.validateProductionImportContext(epoch, generation, selected);
+    if (!current) return current;
+    if (recording_.armed() || recording_.recordedFrames() > 0U)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Finish recording before resuming a generation request");
+    // A selected path is not trusted as identity. The worker checks its bytes
+    // against the durable request ID before it can write to the producer.
+    return controller_.beginGenerationRequestResumeFromDefinition(requestId, *path.value());
+  }
+
   seam::core::Result<void> assembleBatchFromDialog() {
     if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U)
       return seam::core::failure(seam::core::ErrorCode::Conflict, "Finish recording or candidate work before batch assembly");
@@ -1662,6 +1695,9 @@ public:
       constexpr std::string_view resumeDetailPrefix{"request-detail-resume:"};
       if (id.starts_with(resumeDetailPrefix))
         return controller_.beginGenerationRequestResume(id.substr(resumeDetailPrefix.size()));
+      constexpr std::string_view locateDetailPrefix{"request-detail-locate:"};
+      if (id.starts_with(locateDetailPrefix))
+        return locateGenerationRequestDefinitionFromDialog(id.substr(locateDetailPrefix.size()));
       if (id == "request-detail-previous") {
         const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
         generationRequestJobFirst_ = generationRequestJobFirst_ > rows ? generationRequestJobFirst_ - rows : 0U;

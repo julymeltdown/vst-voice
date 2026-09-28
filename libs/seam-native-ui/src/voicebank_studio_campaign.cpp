@@ -288,12 +288,32 @@ core::Result<void> VoicebankStudioController::beginGenerationRequestResume(
     return core::failure(core::ErrorCode::InvalidState,
         "Generation request is terminal: " + voicebank_production::toString(found->terminal->outcome));
   if (found->request.definitionLocator.empty())
-    return core::failure(core::ErrorCode::NotFound, "Generation request has no campaign definition locator; use Open / resume");
+    return core::failure(core::ErrorCode::NotFound, "Generation request has no campaign definition locator; locate the definition file");
 
-  // The stored locator is only a hint. The campaign worker first reads and
-  // admits the bytes against this request ID; it does not call the producer
-  // writer until that immutable-content check succeeds.
-  return beginGenerationCampaignAdvance(std::filesystem::path{found->request.definitionLocator},
+  return beginGenerationRequestResumeFromDefinition(requestId,
+      std::filesystem::path{found->request.definitionLocator}, std::move(occurredAtUtc));
+}
+
+core::Result<void> VoicebankStudioController::beginGenerationRequestResumeFromDefinition(
+    std::string_view requestId, std::filesystem::path definitionPath, std::string occurredAtUtc) {
+  if (proceduralImportBusy())
+    return core::failure(core::ErrorCode::Conflict, "Production worker is busy");
+  if (!productionProject_ || generationRequestsEpoch_ != productionSessionEpoch_)
+    return core::failure(core::ErrorCode::InvalidState, "Refresh the generation queue for the current producer workspace first");
+  const auto found = std::find_if(generationRequests_.begin(), generationRequests_.end(),
+      [requestId](const auto& record) { return record.request.requestId == requestId; });
+  if (found == generationRequests_.end())
+    return core::failure(core::ErrorCode::NotFound, "Generation request is not in the current queue snapshot");
+  if (found->terminal)
+    return core::failure(core::ErrorCode::InvalidState,
+        "Generation request is terminal: " + voicebank_production::toString(found->terminal->outcome));
+  if (definitionPath.empty())
+    return core::failure(core::ErrorCode::InvalidArgument, "Select a generation campaign definition file");
+
+  // The stored locator or a user-selected replacement is only a path. The campaign
+  // worker first reads and admits the bytes against this request ID; it does not
+  // call the producer writer until that immutable-content check succeeds.
+  return beginGenerationCampaignAdvance(std::move(definitionPath),
       found->request.requestId, std::move(occurredAtUtc));
 }
 

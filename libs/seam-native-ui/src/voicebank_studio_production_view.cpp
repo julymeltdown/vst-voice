@@ -274,18 +274,21 @@ std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
   const auto busy = controller.proceduralImportBusy() || recordingActive;
   if (hasDetail) {
     const auto detailWidth = std::max(0.0, width - 88.0);
-    const auto half = detailWidth / 2.0;
+    const auto third = detailWidth / 3.0;
     std::vector<StudioSampleReviewControl> controls{
-        {"request-detail-back", "Back to requests", {44.0, 80.0, half - 3.0, 22.0}, true}};
-    if (detail != records.end() && !detail->terminal)
+        {"request-detail-back", "Back to requests", {44.0, 80.0, third - 4.0, 22.0}, true}};
+    if (detail != records.end() && !detail->terminal) {
       controls.push_back({"request-detail-resume:" + detail->request.requestId, "Verify & resume",
-          {44.0 + half, 80.0, half - 3.0, 22.0}, !busy});
+          {44.0 + third, 80.0, third - 4.0, 22.0}, !busy});
+      controls.push_back({"request-detail-locate:" + detail->request.requestId, "Locate definition...",
+          {44.0 + 2.0 * third, 80.0, third - 4.0, 22.0}, !busy});
+    }
     if (detail != records.end()) {
       const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
       if (firstJob > 0U)
-        controls.push_back({"request-detail-previous", "Previous jobs", {44.0, 108.0, half - 3.0, 20.0}, !busy});
+        controls.push_back({"request-detail-previous", "Previous jobs", {44.0, 108.0, third * 1.5 - 4.0, 20.0}, !busy});
       if (firstJob + visibleJobs < detail->request.jobs.size())
-        controls.push_back({"request-detail-next", "Next jobs", {44.0 + half, 108.0, half - 3.0, 20.0}, !busy});
+        controls.push_back({"request-detail-next", "Next jobs", {44.0 + third * 1.5, 108.0, third * 1.5 - 4.0, 20.0}, !busy});
     }
     return controls;
   }

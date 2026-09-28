@@ -254,6 +254,11 @@ public:
   [[nodiscard]] core::Result<void> refreshGenerationRequests();
   [[nodiscard]] core::Result<void> beginGenerationRequestResume(std::string_view requestId,
       std::string occurredAtUtc = {});
+  // Resume a queued request from a user-located definition file when its stored locator moved.
+  // The worker still verifies the selected bytes against requestId before producer mutation.
+  [[nodiscard]] core::Result<void> beginGenerationRequestResumeFromDefinition(
+      std::string_view requestId, std::filesystem::path definitionPath,
+      std::string occurredAtUtc = {});
   [[nodiscard]] const std::vector<voicebank_production::GenerationRequestRecord>&
       generationRequests() const noexcept { return generationRequests_; }
   [[nodiscard]] bool generationRequestQueueLoading() const noexcept {
