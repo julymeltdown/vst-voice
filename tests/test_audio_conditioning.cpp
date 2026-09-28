@@ -1050,3 +1050,64 @@ TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the 
   CHECK(sourceStart > 0);
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
 }
+
+// U15 scenario 3, second half: "old manifests migrate without fabricated
+// measurements or automatic approval". A legacy bank has no stored analysis and
+// may carry marks from the earlier generator, which ran into fricatives. Migration
+// is measuring the audio present: nothing is inferred before that, the manifest
+// is not rewritten, and a legacy defect is surfaced for review rather than
+// silently repaired or hidden. Nothing in this path grants a review state.
+TEST_CASE("a legacy bank migrates by measurement without rewriting or inferring anything") {
+  const auto root = seam::test::support::temporaryDirectory("analysis-legacy-migration");
+  std::filesystem::create_directories(root / "audio");
+  CHECK(seam::voicebank::writeMonoPcm16Wav(root / "audio" / "a.wav", kRate,
+      voicedUnvoicedVoiced(kRate, kFrames, kVoicedEnd, kUnvoicedEnd)));
+  auto unit = seam::test::support::makeUnit("a", {"a"}, "audio/a.wav", 55,
+      seam::voicebank::UnitKind::Sustain, kFrames);
+  // Marks as the earlier generator left them: one 200 Hz period apart, running
+  // 1400 samples past the end of the voiced audio into the noise.
+  for (seam::time::SampleFrame frame = 120; frame < static_cast<seam::time::SampleFrame>(kVoicedEnd) + 1400;
+       frame += 240) {
+    unit.pitchMarks.push_back(seam::voicebank::PitchMark{.frame = frame, .confidence = 0.9F});
+  }
+  const auto manifest = seam::test::support::makeManifest({unit});
+  const auto manifestJson = seam::voicebank::ManifestJsonCodec{}.encode(manifest);
+  CHECK(manifestJson);
+  CHECK(seam::core::durableAtomicWriteText(root / "manifest.json", manifestJson.value()));
+  const auto manifestBefore = seam::core::sha256File(root / "manifest.json");
+  CHECK(manifestBefore);
+  const auto count = [&](seam::voicebank::IssueCode code) {
+    const auto report = seam::voicebank::BankValidator{}.validate(manifest, root);
+    return std::count_if(report.issues.begin(), report.issues.end(),
+        [code](const auto& issue) { return issue.code == code; });
+  };
+
+  // Before migration nothing is inferred: absence of a record is not a finding,
+  // and the marks are not judged against a measurement that does not exist.
+  CHECK(count(seam::voicebank::IssueCode::AcousticAnalysisStale) == 0);
+  CHECK(count(seam::voicebank::IssueCode::PitchMarksUnvoiced) == 0);
+
+  const auto stored = seam::voicebank::storeBankAcousticAnalyses(manifest, root);
+  CHECK(stored);
+  CHECK(stored.value().written == 1U);
+  // The stored description is untouched: marks are not moved, dropped or added.
+  CHECK(seam::core::sha256File(root / "manifest.json").value() == manifestBefore.value());
+  // The record is a measurement of the file, identical to measuring it afresh.
+  const auto digest = seam::core::sha256File(root / "audio" / "a.wav");
+  CHECK(digest);
+  const auto decodedWav = seam::voicebank::readWav(root / "audio" / "a.wav");
+  CHECK(decodedWav);
+  const auto fresh = seam::voicebank::analyzeUnitAcoustics(decodedWav.value().monoMix(), kRate,
+      unit, digest.value(), static_cast<seam::time::SampleFrame>(kFrames));
+  CHECK(fresh);
+  const auto text = seam::core::readTextFileLimited(
+      root / seam::voicebank::acousticAnalysisSidecarPath(unit.id), 512U * 1024U);
+  CHECK(text);
+  const auto recorded = seam::voicebank::decodeAcousticAnalysis(text.value(), unit, digest.value(),
+      static_cast<seam::time::SampleFrame>(kFrames));
+  CHECK(recorded);
+  CHECK(recorded.value() == fresh.value());
+  // Now the legacy marks are judged against the measurement, and the ones in the
+  // noise are reported for regeneration.
+  CHECK(count(seam::voicebank::IssueCode::PitchMarksUnvoiced) == 1);
+}
