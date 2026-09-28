@@ -1614,7 +1614,6 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
   using namespace seam;
   PerformanceSnapshotFixture fixture;
   auto* region = fixture.project.findRegion(fixture.regionId);
-  CHECK(region != nullptr);
   if (region == nullptr) throw test::Failure{"snapshot fixture region is missing"};
   region->notes.front().midiKey = 60U;
   fixture.bank.units.front().renderer = voicebank::RendererHint::SpectralClassic;
@@ -1623,13 +1622,19 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
   constexpr std::size_t sourceFrames = 24000U;
   constexpr std::size_t noiseStart = 6000U;
   constexpr std::size_t noiseEnd = 16800U;
+  constexpr std::size_t releaseStart = 19200U;
   std::vector<float> samples(sourceFrames, 0.0F);
   unsigned seed = 1973721U;
+  unsigned releaseSeed = 8246731U;
   for (std::size_t frame = 0U; frame < samples.size(); ++frame) {
     if (frame >= noiseStart && frame < noiseEnd) {
       seed = seed * 1103515245U + 12345U;
       samples[frame] = 0.25F *
           ((static_cast<float>((seed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
+    } else if (frame >= releaseStart) {
+      releaseSeed = releaseSeed * 1103515245U + 12345U;
+      samples[frame] = 0.22F *
+          ((static_cast<float>((releaseSeed >> 16U) & 0x7FFFU) / 16384.0F) - 1.0F);
     } else {
       samples[frame] = 0.25F * static_cast<float>(std::sin(
           2.0 * std::numbers::pi * 440.0 * static_cast<double>(frame) /
@@ -1638,31 +1643,33 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
   }
   const auto audioPath = fixture.bankRoot / "audio/a.wav";
   const auto wroteAudio = voicebank::writeMonoPcm16Wav(audioPath, rate, samples);
-  CHECK(wroteAudio);
   if (!wroteAudio) throw test::Failure{"could not write measured-voicing fixture audio"};
   const auto decoded = voicebank::readWav(audioPath);
-  CHECK(decoded);
   if (!decoded) throw test::Failure{decoded.error().message + ": " + decoded.error().context};
   const auto digest = core::sha256File(audioPath);
-  CHECK(digest);
   if (!digest) throw test::Failure{digest.error().message + ": " + digest.error().context};
   auto& unit = fixture.bank.units.front();
   const auto marks = voicebank::generatePitchMarks(decoded.value().monoMix(), rate,
       unit.markers.audioOffset, unit.markers.audioEnd,
       voicebank::producerPitchMarkConfig());
-  CHECK(marks);
   if (!marks) throw test::Failure{marks.error().message + ": " + marks.error().context};
   unit.pitchMarks = marks.value();
   const auto analysis = voicebank::analyzeUnitAcoustics(decoded.value().monoMix(),
       rate, unit, digest.value(), static_cast<time::SampleFrame>(sourceFrames));
-  CHECK(analysis);
   if (!analysis) throw test::Failure{analysis.error().message + ": " + analysis.error().context};
   const auto* measuredNoise = analysis.value().spanAt(
       static_cast<time::SampleFrame>((noiseStart + noiseEnd) / 2U));
-  CHECK(measuredNoise != nullptr);
   if (measuredNoise == nullptr) throw test::Failure{"acoustic analysis omitted the noise fixture midpoint"};
   CHECK(!measuredNoise->voiced);
-  if (measuredNoise->voiced) throw test::Failure{"deterministic noise was classified as voiced"};
+  CHECK(unit.markers.releaseStart == static_cast<time::SampleFrame>(releaseStart));
+  const auto* voicedBeforeRelease = analysis.value().spanAt(
+      static_cast<time::SampleFrame>(releaseStart - 1500U));
+  const auto* measuredReleaseTail = analysis.value().spanAt(
+      static_cast<time::SampleFrame>(releaseStart + 2400U));
+  CHECK(voicedBeforeRelease != nullptr);
+  CHECK(measuredReleaseTail != nullptr);
+  CHECK(voicedBeforeRelease->voiced);
+  CHECK(!measuredReleaseTail->voiced);
 
   const synthesis::SourcePhonemeAlignment alignment{
       unit.id, digest.value(), {{"a", unit.markers.vowelOnset}}};
@@ -1671,20 +1678,16 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
   std::filesystem::create_directories(alignmentPath.parent_path());
   const auto encodedAlignment = synthesis::encodeSourcePhonemeAlignment(
       alignment, unit, digest.value(), static_cast<time::SampleFrame>(sourceFrames));
-  CHECK(encodedAlignment);
   if (!encodedAlignment) throw test::Failure{encodedAlignment.error().message + ": " + encodedAlignment.error().context};
   const auto wroteAlignment = core::durableAtomicWriteText(alignmentPath, encodedAlignment.value());
-  CHECK(wroteAlignment);
   if (!wroteAlignment) throw test::Failure{"could not write source-alignment fixture"};
   const auto analysisPath = fixture.bankRoot /
       voicebank::acousticAnalysisSidecarPath(unit.id);
   std::filesystem::create_directories(analysisPath.parent_path());
   const auto encodedAnalysis = voicebank::encodeAcousticAnalysis(
       analysis.value(), unit, digest.value(), static_cast<time::SampleFrame>(sourceFrames));
-  CHECK(encodedAnalysis);
   if (!encodedAnalysis) throw test::Failure{encodedAnalysis.error().message + ": " + encodedAnalysis.error().context};
   const auto wroteAnalysis = core::durableAtomicWriteText(analysisPath, encodedAnalysis.value());
-  CHECK(wroteAnalysis);
   if (!wroteAnalysis) throw test::Failure{"could not write acoustic-analysis fixture"};
 
   constexpr double targetHz = 440.0 * 0.5946035575013605; // MIDI 60, source root MIDI 69.
@@ -1694,13 +1697,9 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     const auto expectedPlacementFrames = expectedNoteFrames +
         static_cast<std::size_t>(unit.markers.vowelOnset - unit.markers.audioOffset);
     const auto tempoUpdated = fixture.project.tempoMap().addOrReplace(time::Tick{0}, tempo);
-    CHECK(tempoUpdated);
     if (!tempoUpdated) throw test::Failure{"could not set fixture tempo"};
     const auto snapshot = fixture.snapshot();
     CHECK(!snapshot.sample().frozenAudio.empty());
-    if (snapshot.sample().frozenAudio.empty()) {
-      throw test::Failure{"snapshot has no frozen source audio"};
-    }
     CHECK(snapshot.sample().frozenAudio.front().sourceAlignment.has_value());
     CHECK(snapshot.sample().frozenAudio.front().acousticAnalysis.has_value());
     if (!snapshot.sample().frozenAudio.front().sourceAlignment.has_value() ||
@@ -1714,10 +1713,6 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     if (!rendered) throw test::Failure{rendered.error().message + ": " + rendered.error().context};
     CHECK(rendered.value().timing.placements.size() == 1U);
     CHECK(rendered.value().rendered.placements.size() == 1U);
-    if (rendered.value().timing.placements.size() != 1U ||
-        rendered.value().rendered.placements.size() != 1U) {
-      throw test::Failure{"phrase pipeline did not produce exactly one timing/render placement"};
-    }
     const auto& timing = rendered.value().timing.placements.front();
     const auto& placement = rendered.value().rendered.placements.front();
     CHECK_NEAR(timing.destinationEnd - timing.destinationStart,
@@ -1731,13 +1726,11 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     const auto mapResult = synthesis::compileSourceTargetMap(
         *frozen.sourceAlignment, unit, timing, frozen.verifiedAudioSha256,
         static_cast<time::SampleFrame>(frozen.audio->frameCount()));
-    CHECK(mapResult);
     if (!mapResult) throw test::Failure{mapResult.error().message + ": " + mapResult.error().context};
     auto measuredMap = mapResult.value();
     const auto appliedVoicing = synthesis::applyMeasuredVoicing(measuredMap,
         *frozen.acousticAnalysis, unit.markers.audioOffset, unit.markers.audioEnd);
     CHECK(appliedVoicing);
-    if (!appliedVoicing) throw test::Failure{"could not map frozen measured voicing onto phrase timing"};
     const auto unvoiced = std::max_element(measuredMap.voicing.begin(),
         measuredMap.voicing.end(), [](const auto& lhs, const auto& rhs) {
           const auto lhsLength = lhs.voiced.value_or(true) ? 0 : lhs.end - lhs.start;
@@ -1746,15 +1739,9 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
         });
     CHECK(unvoiced != measuredMap.voicing.end());
     CHECK(unvoiced != measuredMap.voicing.end() && unvoiced->voiced == false);
-    if (unvoiced == measuredMap.voicing.end() || unvoiced->voiced != false) {
-      throw test::Failure{"measured voicing map has no unvoiced interval"};
-    }
 
     const auto& audio = rendered.value().rendered.audio;
     CHECK(audio.samples.size() == expectedPlacementFrames);
-    if (audio.samples.size() != expectedPlacementFrames) {
-      throw test::Failure{"rendered audio extent does not match the expected tempo extent"};
-    }
     const auto toOutputIndex = [&](double sourceFrame) {
       const auto mapped = measuredMap.targetAt(sourceFrame) - static_cast<double>(audio.startFrame);
       if (!std::isfinite(mapped) || mapped < 0.0 ||
@@ -1767,13 +1754,9 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     const auto pitchEnd = toOutputIndex(5400.0);
     CHECK(pitchBegin < pitchEnd);
     CHECK(pitchEnd <= audio.samples.size());
-    if (pitchBegin >= pitchEnd || pitchEnd > audio.samples.size()) {
-      throw test::Failure{"mapped score-pitch window lies outside rendered audio"};
-    }
     const auto pitchWindow = std::span<const float>{audio.samples}.subspan(
         pitchBegin, pitchEnd - pitchBegin);
     const auto measuredPitch = voicebank::analyzePitch(pitchWindow, rate);
-    CHECK(measuredPitch);
     if (!measuredPitch) {
       throw test::Failure{measuredPitch.error().message + ": " + measuredPitch.error().context};
     }
@@ -1782,48 +1765,56 @@ TEST_CASE("compressed and expanded snapshots map measured voiced boundaries and 
     CHECK(score.scoreFrequencyHz.has_value());
     CHECK_NEAR(*score.scoreFrequencyHz, targetHz, 1.0e-6);
 
-    const auto unvoicedTargetStart = measuredMap.targetAt(static_cast<double>(unvoiced->start));
-    const auto unvoicedTargetEnd = measuredMap.targetAt(static_cast<double>(unvoiced->end));
-    const auto unvoicedTargetLength = unvoicedTargetEnd - unvoicedTargetStart;
     const auto audioOrigin = static_cast<double>(audio.startFrame);
-    const auto noiseBeginPosition = unvoicedTargetStart + unvoicedTargetLength * 0.2 - audioOrigin;
-    const auto noiseEndPosition = unvoicedTargetEnd - unvoicedTargetLength * 0.2 - audioOrigin;
-    CHECK(noiseBeginPosition >= 0.0);
-    CHECK(noiseEndPosition <= static_cast<double>(audio.samples.size()));
-    if (noiseBeginPosition < 0.0 || noiseEndPosition > static_cast<double>(audio.samples.size())) {
-      throw test::Failure{"mapped unvoiced preservation window lies outside rendered audio"};
-    }
-    const auto noiseBegin = static_cast<std::size_t>(std::llround(noiseBeginPosition));
-    const auto noiseEndOutput = static_cast<std::size_t>(std::llround(noiseEndPosition));
-    CHECK(noiseBegin < noiseEndOutput);
-    if (noiseBegin >= noiseEndOutput) {
-      throw test::Failure{"mapped unvoiced preservation window is empty"};
-    }
-    double dot = 0.0;
-    double outputEnergy = 0.0;
-    double sourceEnergy = 0.0;
     const auto sourceSamples = frozen.audio->monoMix();
     if (sourceSamples.empty()) throw test::Failure{"frozen source audio is empty"};
-    for (auto outputFrame = noiseBegin; outputFrame < noiseEndOutput; ++outputFrame) {
-      const auto absoluteFrame = audio.startFrame + static_cast<time::SampleFrame>(outputFrame);
-      const auto sourcePosition = std::clamp(measuredMap.sourceAt(
-          static_cast<double>(absoluteFrame)), 0.0,
-          static_cast<double>(sourceSamples.size() - 1U));
-      const auto left = static_cast<std::size_t>(std::floor(sourcePosition));
-      const auto right = std::min(left + 1U, sourceSamples.size() - 1U);
-      const auto fraction = static_cast<float>(sourcePosition - static_cast<double>(left));
-      const auto expected = sourceSamples[left] * (1.0F - fraction) + sourceSamples[right] * fraction;
-      const auto actual = audio.samples[outputFrame];
-      dot += static_cast<double>(actual) * expected;
-      outputEnergy += static_cast<double>(actual) * actual;
-      sourceEnergy += static_cast<double>(expected) * expected;
-    }
-    CHECK(outputEnergy > 0.0);
-    CHECK(sourceEnergy > 0.0);
-    if (outputEnergy <= 0.0 || sourceEnergy <= 0.0) {
-      throw test::Failure{"unvoiced preservation correlation has zero signal energy"};
-    }
-    CHECK(dot / std::sqrt(outputEnergy * sourceEnergy) > 0.99);
+    const auto mappedSourceCorrelation = [&](time::SampleFrame sourceBegin,
+                                            time::SampleFrame sourceEnd) {
+      const auto targetBegin = measuredMap.targetAt(static_cast<double>(sourceBegin));
+      const auto targetEnd = measuredMap.targetAt(static_cast<double>(sourceEnd));
+      const auto targetLength = targetEnd - targetBegin;
+      const auto beginPosition = targetBegin + targetLength * 0.2 - audioOrigin;
+      const auto endPosition = targetEnd - targetLength * 0.2 - audioOrigin;
+      if (!std::isfinite(beginPosition) || !std::isfinite(endPosition) ||
+          beginPosition < 0.0 || endPosition > static_cast<double>(audio.samples.size())) {
+        throw test::Failure{"mapped unvoiced interval lies outside rendered audio"};
+      }
+      const auto outputBegin = static_cast<std::size_t>(std::llround(beginPosition));
+      const auto outputEnd = static_cast<std::size_t>(std::llround(endPosition));
+      if (outputBegin >= outputEnd) {
+        throw test::Failure{"mapped unvoiced interval is empty"};
+      }
+      double dot = 0.0;
+      double outputEnergy = 0.0;
+      double sourceEnergy = 0.0;
+      for (auto outputFrame = outputBegin; outputFrame < outputEnd; ++outputFrame) {
+        const auto absoluteFrame = audio.startFrame + static_cast<time::SampleFrame>(outputFrame);
+        const auto sourcePosition = std::clamp(measuredMap.sourceAt(
+            static_cast<double>(absoluteFrame)), 0.0,
+            static_cast<double>(sourceSamples.size() - 1U));
+        const auto left = static_cast<std::size_t>(std::floor(sourcePosition));
+        const auto right = std::min(left + 1U, sourceSamples.size() - 1U);
+        const auto fraction = static_cast<float>(sourcePosition - static_cast<double>(left));
+        const auto expected = sourceSamples[left] * (1.0F - fraction) + sourceSamples[right] * fraction;
+        const auto actual = audio.samples[outputFrame];
+        dot += static_cast<double>(actual) * expected;
+        outputEnergy += static_cast<double>(actual) * actual;
+        sourceEnergy += static_cast<double>(expected) * expected;
+      }
+      if (outputEnergy <= 0.0 || sourceEnergy <= 0.0) {
+        throw test::Failure{"unvoiced preservation correlation has zero signal energy"};
+      }
+      return dot / std::sqrt(outputEnergy * sourceEnergy);
+    };
+    const auto noiseCorrelation = mappedSourceCorrelation(unvoiced->start, unvoiced->end);
+    CHECK(noiseCorrelation > 0.99);
+    const auto releaseSourceStart = unit.markers.releaseStart.value_or(unit.markers.audioEnd);
+    const auto releaseSourceMidpoint = releaseSourceStart +
+        (unit.markers.audioEnd - releaseSourceStart) / 2;
+    CHECK(measuredMap.voicedAtSource(static_cast<double>(releaseSourceMidpoint)) == false);
+    const auto releaseCorrelation = mappedSourceCorrelation(releaseSourceStart,
+        unit.markers.audioEnd);
+    CHECK(releaseCorrelation > 0.99);
   }
 }
 
