@@ -130,6 +130,95 @@ std::string reviewBasis(const VoicebankProductionProject& project, std::string_v
   return core::sha256Hex("sample-candidate-review-basis-v2\n" + encodeProductionProject(basis));
 }
 
+ReviewBasisIndex::ReviewBasisIndex(const VoicebankProductionProject& project) : project_{project} {
+  const auto index = [](Rows& rows, const std::string& key, std::size_t row) { rows[key].push_back(row); };
+  for (std::size_t row = 0U; row < project.metadataRevisions.size(); ++row)
+    if (!reviewMetadata(project.metadataRevisions[row].kind)) index(metadataByTake_, project.metadataRevisions[row].takeId, row);
+  for (std::size_t row = 0U; row < project.takes.size(); ++row) index(takesById_, project.takes[row].takeId, row);
+  for (std::size_t row = 0U; row < project.unitAssignments.size(); ++row)
+    index(assignmentsByTake_, project.unitAssignments[row].takeId, row);
+  for (std::size_t row = 0U; row < project.derivedRevisions.size(); ++row)
+    index(derivedById_, project.derivedRevisions[row].revisionId, row);
+  for (std::size_t row = 0U; row < project.assets.size(); ++row) index(assetsBySha_, project.assets[row].sha256, row);
+  for (std::size_t row = 0U; row < project.sourceBindings.size(); ++row) index(bindingsById_, project.sourceBindings[row].id, row);
+  for (std::size_t row = 0U; row < project.sourceStrategies.size(); ++row)
+    index(strategiesById_, project.sourceStrategies[row].id, row);
+  for (std::size_t row = 0U; row < project.sourceQualityAssessments.size(); ++row)
+    index(assessmentsByStrategy_, project.sourceQualityAssessments[row].strategyId, row);
+}
+
+// Mirrors reviewBasis(project, takeId) step by step: the same rows survive, in project order,
+// with the same normalization, so the encoded basis and its digest are identical.
+std::string ReviewBasisIndex::basis(std::string_view takeId) const {
+  const auto& project = project_;
+  const auto rows = [](const Rows& map, std::string_view key) -> const std::vector<std::size_t>* {
+    const auto found = map.find(key);
+    return found == map.end() ? nullptr : &found->second;
+  };
+  const auto collect = [&](std::set<std::size_t>& into, const Rows& map, std::string_view key) {
+    if (const auto* found = rows(map, key)) into.insert(found->begin(), found->end());
+  };
+  VoicebankProductionProject basis;
+  basis.schemaVersion = project.schemaVersion;
+  basis.projectId = project.projectId;
+  basis.inventoryId = project.inventoryId;
+  basis.inventorySha256 = project.inventorySha256;
+  basis.selectedSourceStrategyId = project.selectedSourceStrategyId;
+  basis.licenseLocator = project.licenseLocator;
+  basis.licenseSha256 = project.licenseSha256;
+  basis.immutableAssetRoot = project.immutableAssetRoot;
+  basis.lastDurableGeneration = 0U;
+  basis.lifecycle = project.schemaVersion >= 2 ? ProductionLifecycle::Experimental : project.lifecycle;
+  basis.language = project.language;
+  if (const auto* found = rows(metadataByTake_, takeId))
+    for (const auto row : *found) basis.metadataRevisions.push_back(project.metadataRevisions[row]);
+  if (const auto* found = rows(takesById_, takeId))
+    for (const auto row : *found) basis.takes.push_back(project.takes[row]);
+  if (const auto* found = rows(assignmentsByTake_, takeId))
+    for (const auto row : *found) basis.unitAssignments.push_back(project.unitAssignments[row]);
+  std::set<std::size_t> derived, assets, bindings;
+  for (const auto& take : basis.takes) {
+    for (const auto& id : take.derivedRevisionIds) collect(derived, derivedById_, id);
+    collect(assets, assetsBySha_, take.rawAssetSha256);
+    if (!take.sourceBindingId.empty()) collect(bindings, bindingsById_, take.sourceBindingId);
+  }
+  for (const auto row : derived) {
+    const auto& revision = project.derivedRevisions[row];
+    basis.derivedRevisions.push_back(revision);
+    collect(assets, assetsBySha_, revision.inputSha256);
+    collect(assets, assetsBySha_, revision.outputSha256);
+  }
+  for (const auto row : assets) basis.assets.push_back(project.assets[row]);
+  std::set<std::string, std::less<>> strategies;
+  for (const auto row : bindings) {
+    basis.sourceBindings.push_back(project.sourceBindings[row]);
+    strategies.insert(project.sourceBindings[row].strategy.id);
+  }
+  if (basis.schemaVersion >= 2 && !strategies.empty()) {
+    basis.selectedSourceStrategyId.clear();
+    basis.licenseLocator.clear();
+    basis.licenseSha256.clear();
+    std::set<std::size_t> kept, assessed;
+    for (const auto& id : strategies) {
+      collect(kept, strategiesById_, id);
+      collect(assessed, assessmentsByStrategy_, id);
+    }
+    for (const auto row : kept) basis.sourceStrategies.push_back(project.sourceStrategies[row]);
+    for (const auto row : assessed) basis.sourceQualityAssessments.push_back(project.sourceQualityAssessments[row]);
+  } else {
+    if (const auto* found = rows(strategiesById_, project.selectedSourceStrategyId))
+      for (const auto row : *found) basis.sourceStrategies.push_back(project.sourceStrategies[row]);
+    basis.sourceQualityAssessments = project.sourceQualityAssessments;
+  }
+  for (auto& take : basis.takes) take.state = UnitQueueState::MarkerReview;
+  for (auto& assignment : basis.unitAssignments) {
+    assignment.state = assignment.takeId.empty() ? UnitQueueState::Missing : UnitQueueState::MarkerReview;
+    assignment.markerReviewed = false;
+    assignment.pitchReviewed = false;
+  }
+  return core::sha256Hex("sample-candidate-review-basis-v2\n" + encodeProductionProject(basis));
+}
+
 core::Result<std::string> boundedManifest(const voicebank::Manifest& manifest) {
   const auto encoded = voicebank::ManifestJsonCodec{}.encode(manifest);
   if (!encoded) return encoded;

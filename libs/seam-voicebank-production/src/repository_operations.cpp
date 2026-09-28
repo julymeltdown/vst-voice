@@ -179,6 +179,9 @@ core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetad
     return core::failure<CommittedMetadataRevision>(core::ErrorCode::InvalidArgument,
                          "Metadata revision or journal event is invalid");
   }
+  if (revision.kind == "sample-candidate-review-v1" || revision.kind == "sample-candidate-review-v2")
+    return core::failure<CommittedMetadataRevision>(core::ErrorCode::InvalidArgument,
+        "Review material is recorded only by an independent review decision, not as an annotation");
   const auto durable = recover();
   if (!durable) return core::Result<CommittedMetadataRevision>{durable.error()};
   if (encodeProductionProject(durable.value()) != encodeProductionProject(project))
@@ -201,8 +204,7 @@ core::Result<CommittedMetadataRevision> ProductionProjectRepository::recordMetad
                          "Metadata revision identifier already exists");
   }
   const auto original = project;
-  const bool changesMaterial = revision.kind != "sample-candidate-review-v1" && revision.kind != "sample-candidate-review-v2";
-  if (changesMaterial) {
+  {
     const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(),
         [&](const auto& value) { return value.takeId == revision.takeId; });
     if (revision.kind == "candidate-marker-edit" && assignment == project.unitAssignments.end()) return core::failure<CommittedMetadataRevision>(

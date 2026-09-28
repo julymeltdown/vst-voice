@@ -342,4 +342,62 @@ core::Result<SampleCandidateRequest> resolveReviewedSampleCandidate(
   return currentCandidate(project, current.value());
 }
 
+core::Result<ProductionCommitReceipt> ProductionProjectRepository::selectTake(
+    VoicebankProductionProject& project, std::string_view takeId, std::string_view expectedProjectSha256,
+    std::string producerId, std::string occurredAtUtc, std::stop_token stop) {
+  using Output = ProductionCommitReceipt;
+  if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Take selection cancelled");
+  const auto verified = verify(project);
+  if (!verified) return core::Result<Output>{verified.error()};
+  if (core::sha256Hex(encodeProductionProject(project)) != expectedProjectSha256)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Take selection requires the exact current producer snapshot");
+  if (!isProductionUtcTimestamp(occurredAtUtc) ||
+      std::none_of(project.operators.begin(), project.operators.end(), [&](const auto& actor) {
+        return actor.operatorId == producerId && actor.role == "PRODUCER";
+      }))
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Take selection requires a registered producer and a UTC time");
+  auto draft = project;
+  const auto selected = std::find_if(draft.takes.begin(), draft.takes.end(),
+                                     [&](const auto& take) { return take.takeId == takeId; });
+  if (selected == draft.takes.end() || selected->state != UnitQueueState::Retake)
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Only a retained alternative take can be selected",
+                                 std::string{takeId});
+  const auto assignment = std::find_if(draft.unitAssignments.begin(), draft.unitAssignments.end(), [&](const auto& row) {
+    return row.coverageKey == selected->coverageKey && row.pitchLayer == selected->pitchLayer && row.style == selected->style;
+  });
+  if (assignment == draft.unitAssignments.end() || assignment->takeId.empty() || assignment->takeId == takeId ||
+      assignment->promptId != selected->promptId)
+    return core::failure<Output>(core::ErrorCode::Conflict, "The take is not an alternative for a filled assignment",
+                                 std::string{takeId});
+  // The take that filled the assignment is kept as an alternative, whatever its review said.
+  for (auto& take : draft.takes)
+    if (take.takeId == assignment->takeId) take.state = UnitQueueState::Retake;
+  selected->state = UnitQueueState::MarkerReview;
+  assignment->takeId = selected->takeId;
+  assignment->state = UnitQueueState::MarkerReview;
+  assignment->markerReviewed = false;
+  assignment->pitchReviewed = false;
+  invalidateProductionQualification(draft);
+  const auto valid = validateProductionProject(draft);
+  if (!valid) return core::Result<Output>{valid.error()};
+  const auto saved = save(draft, {"select-take", std::string{takeId}, std::move(producerId), std::move(occurredAtUtc)}, stop);
+  bool durable = true;
+  std::string diagnostic;
+  if (!saved) {
+    const auto recovered = recover();
+    if (!recovered || recovered.value().lastDurableGeneration <= project.lastDurableGeneration)
+      return core::Result<Output>{saved.error()};
+    auto comparable = recovered.value();
+    comparable.lastDurableGeneration = draft.lastDurableGeneration;
+    if (encodeProductionProject(comparable) != encodeProductionProject(draft))
+      return core::failure<Output>(core::ErrorCode::Conflict, "Take selection was not confirmed; recovery found different work");
+    draft = recovered.value();
+    durable = false;
+    diagnostic = "The selection is recoverably committed; inspect before retrying. " + saved.error().message;
+  }
+  project = std::move(draft);
+  return Output{project.lastDurableGeneration, core::sha256Hex(encodeProductionProject(project)), durable,
+                std::move(diagnostic)};
+}
+
 }  // namespace seam::voicebank_production

@@ -3,6 +3,7 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voicebank_production/candidate_publication.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 
@@ -45,6 +46,32 @@ struct EditFixture final {
   }
   static production::ProductionJournalEvent event(std::string action, std::string subject) {
     return {.action=std::move(action), .subjectId=std::move(subject), .operatorId="producer", .occurredAtUtc="2026-09-09T10:00:00Z"};
+  }
+  // Approves both units through the supported independent review command, as a reviewer who
+  // neither imported nor edited them. The markers describe the generated 0.12 s fixture audio.
+  void approveThroughReview() {
+    seam::voicebank::Manifest manifest{.id="edit.ownership.review", .version="0.1.0", .displayName="Edit ownership review",
+      .characterId={}, .characterVersion={}, .language=seam::domain::Language::Japanese,
+      .expectedSampleRate=48000U, .styles={"original"}};
+    for (const auto& [id, phone] : {std::pair<std::string, std::string>{"a-69", "a"}, {"i-69", "i"}})
+      manifest.units.push_back({.id=id, .alias=phone, .phones={phone}, .kind=seam::voicebank::UnitKind::Sustain,
+        .audioPath="audio/pending.wav", .rootMidi=69, .style="original", .take=1, .priority=0, .gainDb=0.0F,
+        .renderer=seam::voicebank::RendererHint::ClassicPsola,
+        .markers={.audioOffset=0, .consonantEnd=0, .vowelOnset=0, .stableStart=480,
+                  .loopStart=480, .loopEnd=4800, .releaseStart=5280, .audioEnd=5760},
+        .pitchMarks={}, .enabled=true});
+    // Known periods of the generated 440 Hz fixture; they are not measured singer annotations.
+    for (auto& unit : manifest.units)
+      for (std::int64_t period=1; ; ++period) {
+        const auto frame=static_cast<seam::time::SampleFrame>(std::llround(static_cast<double>(period) * 48000.0 / 440.0));
+        if (frame >= unit.markers.audioEnd) break;
+        unit.pitchMarks.push_back({.frame=frame, .confidence=1.0F, .locked=true});
+      }
+    const auto packet=production::prepareSampleCandidateReview(root / "workspace", project, manifest);
+    if (!packet) throw seam::test::Failure{"review packet: " + packet.error().message};
+    const auto decided=production::commitSampleCandidateReview(root / "workspace", project, packet.value(),
+      "reviewer", "2026-09-09T10:00:30Z", production::SampleCandidateReviewDecision::Accept);
+    if (!decided) throw seam::test::Failure{"review decision: " + decided.error().message};
   }
 };
 } // namespace
@@ -117,17 +144,21 @@ TEST_CASE("production edit rejects stale and locally mutated base snapshots") {
 
 TEST_CASE("production audio edit invalidates only dependent current review status and keeps history") {
   EditFixture fixture;
-  // Isolated mutation-boundary fixture, not an end-to-end approval workflow.
-  // The candidate publication tests exercise the supported independent review API.
+  // Setting approval by hand, even with hand-made PASS records, is refused and writes nothing.
+  auto forged=fixture.project;
   for (std::size_t i=0U; i<2U; ++i) {
-    fixture.project.takes[i].state=production::UnitQueueState::Approved;
-    fixture.project.unitAssignments[i].state=production::UnitQueueState::Approved;
-    fixture.project.unitAssignments[i].markerReviewed=true;
-    fixture.project.unitAssignments[i].pitchReviewed=true;
-    fixture.project.reviews.push_back({.reviewId="review-"+std::to_string(i), .takeId=fixture.project.takes[i].takeId,
+    forged.takes[i].state=production::UnitQueueState::Approved;
+    forged.unitAssignments[i].state=production::UnitQueueState::Approved;
+    forged.unitAssignments[i].markerReviewed=true;
+    forged.unitAssignments[i].pitchReviewed=true;
+    forged.reviews.push_back({.reviewId="review-"+std::to_string(i), .takeId=forged.takes[i].takeId,
       .reviewerId="reviewer", .result="PASS", .reviewedAtUtc="2026-09-09T10:00:00Z"});
   }
-  CHECK(fixture.repository.save(fixture.project, EditFixture::event("review", "isolated-test-state")));
+  CHECK(!fixture.repository.save(forged, EditFixture::event("review", "isolated-test-state")));
+  CHECK(fixture.repository.recover().value().lastDurableGeneration == fixture.project.lastDurableGeneration);
+  fixture.approveThroughReview();
+  CHECK(fixture.project.unitAssignments[0].state == production::UnitQueueState::Approved);
+  CHECK(fixture.project.unitAssignments[1].state == production::UnitQueueState::Approved);
   const auto staged=fixture.repository.stageOperation(fixture.project, "take-b", "",
       {.kind=production::OperationKind::NormalizeGain, .targetPeak=0.15F}, "b-normalized"); CHECK(staged);
   CHECK(fixture.repository.commitStaged(fixture.project, staged.value(), "b-revision", "producer",

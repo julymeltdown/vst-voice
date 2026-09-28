@@ -89,6 +89,22 @@ int registerSource(int argc, char** argv) {
   return 0;
 }
 
+int selectTake(int argc, char** argv) {
+  if (argc != 7 || !digestValid(argv[3])) { printSampleReviewUsage(); return 1; }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError,"Cannot install selection cancellation handlers",{}});
+  production::ProductionProjectRepository repository{argv[2]};
+  auto project = repository.recover(); if (!project) return fail(project.error(),&cancellation);
+  const std::string takeId{argv[4]};
+  const auto receipt = repository.selectTake(project.value(),takeId,argv[3],argv[5],argv[6],cancellation.token());
+  if (!receipt) return fail(receipt.error(),&cancellation);
+  print({{"result","TakeSelected"},{"takeId",takeId},{"generation",std::to_string(receipt.value().committedGeneration)},
+      {"projectSha256",receipt.value().committedProjectSha256},{"durabilityConfirmed",receipt.value().durabilityConfirmed},
+      {"diagnostic",receipt.value().diagnostic},{"state","MARKER_REVIEW"},
+      {"unitApproval","requires a new independent review"},{"releaseEligible",false}});
+  return 0;
+}
+
 int initializeDraft(int argc, char** argv) {
   if (argc!=7) { printSampleReviewUsage(); return 1; }
   const auto definition=readCapturedText(argv[3],argv[4]); if (!definition) return fail(definition.error());
@@ -293,6 +309,7 @@ std::optional<int> runSampleReviewCommand(int argc, char** argv) {
   if (argc<2) return std::nullopt;
   const std::string_view command{argv[1]};
   if (command=="register-source") return registerSource(argc,argv);
+  if (command=="select-take") return selectTake(argc,argv);
   if (command=="migrate-style") return migrateStyle(argc,argv);
   if (command=="inspect-source-quality") return sourceQuality(argc,argv,false);
   if (command=="record-source-quality") return sourceQuality(argc,argv,true);
@@ -308,6 +325,9 @@ void printSampleReviewUsage() {
   std::cout << "  seam_voicebank_cli inspect-source-quality WORKSPACE STRATEGY\n"
     << "  seam_voicebank_cli register-source WORKSPACE PROJECT_SHA256 ID human|procedural|tts pass|blocked|not-assessed SOURCE_USE TRANSFORM REDISTRIBUTE COMMERCIAL LICENSE LICENSE_SHA256 PRODUCER UTC\n"
     << "    Each permission is yes|no. Appends/selects a NEW source; records your declaration, not legal or musical verification.\n"
+    << "  seam_voicebank_cli select-take WORKSPACE PROJECT_SHA256 TAKE PRODUCER UTC\n"
+    << "    Fills an assignment with a retained alternative take; both takes keep their history and the selected\n"
+    << "    take returns to marker review. Only a new independent review approves it again.\n"
     << "  seam_voicebank_cli migrate-style WORKSPACE PLAN_JSON PROJECT_SHA256 PRODUCER UTC\n"
     << "    Applies one verified, resolved legacy style migration plan as a new generation; refuses ambiguous ownership.\n"
     << "  seam_voicebank_cli record-source-quality WORKSPACE STRATEGY PROJECT_SHA256 ID REVIEWER UTC COVERAGE LISTENING EVIDENCE EVIDENCE_SHA256\n"

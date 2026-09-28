@@ -20,8 +20,9 @@ struct RawTakeInput final {
   std::string coverageKey;
   std::int32_t pitchLayer{0};
   std::string supersedesTakeId;
+  // Imports admit material for review: MarkerReview, or Rejected when the importer refuses it on
+  // its own technical evidence. Review status is granted only by an independent review decision.
   UnitQueueState initialState{UnitQueueState::MarkerReview};
-  std::optional<ReviewRecord> review;
   std::string style;
   // Automated source measurements are technical evidence, not a human review.
   // When provided, this is committed atomically with the raw asset and must be
@@ -177,6 +178,14 @@ public:
   // chosen here. Existing approvals become review-required history; nothing is requalified.
   [[nodiscard]] core::Result<ProductionCommitReceipt> applyStyleMigration(
       VoicebankProductionProject& project, const std::filesystem::path& planPath,
+      std::string_view expectedProjectSha256, std::string producerId,
+      std::string occurredAtUtc, std::stop_token stopToken = {});
+  // Fill an assignment with one of its retained alternative takes. The take that filled it stays
+  // a retained alternative with all of its history, and the selected take returns to marker
+  // review: a review decides a take for the assignment it filled, so no approval follows either
+  // take across the switch. The producer chooses; only a new independent review approves again.
+  [[nodiscard]] core::Result<ProductionCommitReceipt> selectTake(
+      VoicebankProductionProject& project, std::string_view takeId,
       std::string_view expectedProjectSha256, std::string producerId,
       std::string occurredAtUtc, std::stop_token stopToken = {});
   [[nodiscard]] core::Result<ExportedU57Inputs> exportU57Inputs(

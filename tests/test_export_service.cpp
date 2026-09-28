@@ -2476,14 +2476,17 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   CHECK(production::encodeProductionProject(repository.recover().value()) == beforeNavigation);
   CHECK(studio.selectUnit(0U));
   CHECK(studio.selectedCandidateMarker() == 0U);
-  // Synthetic prior review state must be invalidated by a manual boundary edit.
+  // Review state is granted only by an independent review decision: a save that sets it by hand
+  // is refused and writes nothing, so the boundary edit below starts from an unreviewed take.
   auto reviewedFixture = repository.recover(); CHECK(reviewedFixture);
   reviewedFixture.value().unitAssignments.front().markerReviewed = true;
   reviewedFixture.value().unitAssignments.front().pitchReviewed = true;
   reviewedFixture.value().unitAssignments.front().state = production::UnitQueueState::Approved;
   reviewedFixture.value().takes.back().state = production::UnitQueueState::Approved;
-  CHECK(repository.save(reviewedFixture.value(), {.action = "save", .subjectId = reviewedFixture.value().projectId,
+  const auto unreviewedGeneration = repository.recover().value().lastDurableGeneration;
+  CHECK(!repository.save(reviewedFixture.value(), {.action = "save", .subjectId = reviewedFixture.value().projectId,
       .operatorId = "producer", .occurredAtUtc = "2026-09-06T01:00:00Z"}));
+  CHECK(repository.recover().value().lastDurableGeneration == unreviewedGeneration);
   CHECK(studio.openProductionProject(root / "producer", producer.inventorySha256, "producer"));
   const auto originalLineage = studio.candidateMarkerPreview()->metadataJson;
   const auto editGeneration = studio.productionProject()->lastDurableGeneration;

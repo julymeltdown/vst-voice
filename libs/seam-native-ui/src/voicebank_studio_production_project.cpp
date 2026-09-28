@@ -1039,7 +1039,7 @@ core::Result<void> VoicebankStudioController::importSelectedProceduralCandidate(
   if (occurredAtUtc.empty()) occurredAtUtc = voicebank_studio_internal::currentUtcTimestamp();
   const auto imported = productionRepository_->importProceduralCandidate(*productionProject_, metadataPath, audioPath, recipe.value(),
       {.takeId = takeId, .promptId = assignment.promptId, .coverageKey = assignment.coverageKey, .pitchLayer = assignment.pitchLayer,
-       .supersedesTakeId = assignment.takeId, .initialState = voicebank_production::UnitQueueState::MarkerReview, .review = std::nullopt,
+       .supersedesTakeId = assignment.takeId, .initialState = voicebank_production::UnitQueueState::MarkerReview,
        // A style-owned producer stores the style on the take as well as on the assignment, so the
        // candidate import has to carry the assignment's own style; the repository then verifies that
        // the candidate's declared style agrees with it instead of accepting any candidate here.

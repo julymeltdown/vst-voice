@@ -1,7 +1,11 @@
 #pragma once
 
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include <map>
 #include <memory>
+#include <set>
+#include <string_view>
+#include <vector>
 
 namespace seam::voicebank_production::candidate_publication_internal {
 
@@ -33,7 +37,25 @@ void cleanupOwnedDirectory(const std::filesystem::path& stage,
     const DirectoryIdentity& stageIdentity);
 [[nodiscard]] core::Result<std::string> boundedManifest(const voicebank::Manifest& manifest);
 [[nodiscard]] std::string coverageKey(const voicebank::Unit& unit);
+// Review decisions and their bound material; every other metadata revision is take material.
+[[nodiscard]] bool reviewMetadata(std::string_view kind);
 [[nodiscard]] std::string reviewBasis(const VoicebankProductionProject& project, std::string_view takeId = {});
+
+// The per-take review basis for many takes of one project. Each basis selects that take's rows
+// from an index instead of copying the whole producer, and is byte-identical to
+// reviewBasis(project, takeId), the value existing review decisions recorded. The project must
+// outlive the index and must not gain or lose rows while it is used.
+class ReviewBasisIndex final {
+public:
+  explicit ReviewBasisIndex(const VoicebankProductionProject& project);
+  [[nodiscard]] std::string basis(std::string_view takeId) const;
+
+private:
+  using Rows = std::map<std::string, std::vector<std::size_t>, std::less<>>;
+  const VoicebankProductionProject& project_;
+  Rows metadataByTake_, takesById_, assignmentsByTake_, derivedById_, assetsBySha_;
+  Rows bindingsById_, strategiesById_, assessmentsByStrategy_;
+};
 [[nodiscard]] core::Result<const TakeRecord*> selectedTake(const VoicebankProductionProject& project,
     const SampleCandidateUnitBinding& binding);
 [[nodiscard]] core::Result<std::map<std::string, OriginAttribution>> collectOriginAttribution(

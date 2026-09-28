@@ -576,7 +576,7 @@ int importProceduralCommand(int argc, char** argv) {
   const auto imported = repository.importProceduralCandidate(project.value(), argv[3], argv[4], recipe.value(),
       {.takeId = argv[6], .promptId = argv[7], .coverageKey = argv[8], .pitchLayer = pitch,
        .supersedesTakeId = argc == 13 ? argv[12] : "", .initialState = seam::voicebank_production::UnitQueueState::MarkerReview,
-       .review = std::nullopt, .style = style},
+       .style = style},
       {.action = argc == 13 ? "retake" : "import-procedural", .subjectId = argv[6],
        .operatorId = argv[10], .occurredAtUtc = argv[11]});
   if (!imported) { printError(imported.error()); return 1; }

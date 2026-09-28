@@ -1,6 +1,7 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "repository_source_internal.hpp"
 #include "repository_history_internal.hpp"
+#include "review_transition_internal.hpp"
 #include "seam/voicebank_production/source_assessment.hpp"
 
 #include "seam/core/file_io.hpp"
@@ -245,11 +246,20 @@ core::Result<void> ProductionProjectRepository::writeGeneration(
     } else if (event.action == "source-quality-assessment") {
       return core::failure(core::ErrorCode::Conflict,"Source assessment event must append exactly one new decision");
     }
+    // History stays append-only, review status is granted only by an independent review
+    // decision, and approvals whose bound material changed are lowered here.
+    const auto reviewed = review_internal::applyReviewTransition(&current.value(), next, event,
+                                                                 allowStyleOwnershipTransition);
+    if (!reviewed) return reviewed;
   } else if (project.lastDurableGeneration != 0U) {
     return core::failure(core::ErrorCode::Conflict, "Production writer has no matching durable base");
   }
   if (occupied == 0U && !project.sourceQualityAssessments.empty())
     return core::failure(core::ErrorCode::Conflict,"A new producer cannot start with preapproved source assessment history");
+  if (occupied == 0U) {
+    const auto reviewed = review_internal::applyReviewTransition(nullptr, next, event, allowStyleOwnershipTransition);
+    if (!reviewed) return reviewed;
+  }
   if (occupied >= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
     return core::failure(core::ErrorCode::Conflict, "Production generation counter is exhausted");
   }

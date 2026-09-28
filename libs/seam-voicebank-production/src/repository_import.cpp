@@ -101,7 +101,7 @@ core::Result<GenerationImportExpectation> captureGenerationImportExpectation(
       renderContentHash.size() != 64U || !std::all_of(renderContentHash.begin(), renderContentHash.end(), [](char c) {
         return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
       }) || sampleRate < 8000U || sampleRate > 384000U || frameCount <= 0 || frameCount > 32LL * 1024LL * 1024LL ||
-      take.takeId.empty() || take.initialState != UnitQueueState::MarkerReview || take.review)
+      take.takeId.empty() || take.initialState != UnitQueueState::MarkerReview)
     return core::failure<GenerationImportExpectation>(core::ErrorCode::InvalidArgument, "Generation expectation is incomplete or exceeds bounds");
   const auto assignment = std::find_if(project.unitAssignments.begin(), project.unitAssignments.end(), [&](const auto& value) {
     return value.style == take.style && value.coverageKey == take.coverageKey && value.pitchLayer == take.pitchLayer && value.promptId == take.promptId &&
@@ -250,7 +250,7 @@ core::Result<AssetRecord> ProductionProjectRepository::importProceduralCandidate
   const auto execution = requireSelectedSourceExecution(project);
   if (!execution) return core::Result<AssetRecord>{execution.error()};
   if (strategy == project.sourceStrategies.end() || strategy->kind != SourceStrategyKind::ProceduralSynthesis ||
-      take.initialState != UnitQueueState::MarkerReview || take.review || event.subjectId != take.takeId ||
+      take.initialState != UnitQueueState::MarkerReview || event.subjectId != take.takeId ||
       event.action != (take.supersedesTakeId.empty() ? "import-procedural" : "retake")) {
     return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument,
         "Procedural candidates require an authorized procedural strategy and an unapproved marker-review import");
@@ -293,7 +293,9 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
   if (!validProject) return core::Result<AssetRecord>{validProject.error()};
   const auto execution = requireSelectedSourceExecution(project);
   if (!execution) return core::Result<AssetRecord>{execution.error()};
-  if (take.initialState == UnitQueueState::Approved || !isProductionUtcTimestamp(event.occurredAtUtc) ||
+  // Import admits material for review; it never records a review or claims one happened.
+  if ((take.initialState != UnitQueueState::MarkerReview && take.initialState != UnitQueueState::Rejected) ||
+      !isProductionUtcTimestamp(event.occurredAtUtc) ||
       std::none_of(project.operators.begin(), project.operators.end(), [&](const auto& value) { return value.operatorId == event.operatorId; }))
     return core::failure<AssetRecord>(core::ErrorCode::InvalidArgument, "Import requires an attributed unapproved take");
   const auto selected = std::find_if(project.sourceStrategies.begin(), project.sourceStrategies.end(),
@@ -341,18 +343,6 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
     return core::failure<AssetRecord>(
         core::ErrorCode::Conflict,
         "Occupied inventory assignment requires an explicit retake chain");
-  }
-  if (take.review.has_value() &&
-      (take.review->takeId != take.takeId || take.review->reviewId.empty() ||
-       take.review->reviewerId.empty() || take.review->reviewedAtUtc.empty() ||
-       (take.review->result != "PASS" && take.review->result != "REJECTED") ||
-       std::any_of(project.reviews.begin(), project.reviews.end(),
-                   [&take](const ReviewRecord& value) {
-                     return value.reviewId == take.review->reviewId;
-                   }))) {
-    return core::failure<AssetRecord>(
-        core::ErrorCode::InvalidArgument,
-        "Raw take review is invalid or duplicated");
   }
   if (lineage && std::any_of(project.metadataRevisions.begin(), project.metadataRevisions.end(),
       [&](const auto& value) { return value.revisionId == lineage->revisionId; })) return core::failure<AssetRecord>(
@@ -423,9 +413,6 @@ core::Result<AssetRecord> ProductionProjectRepository::importRawBound(
       .sourceBindingId = bindingId,
       .style = take.style,
   });
-  if (take.review.has_value()) {
-    project.reviews.push_back(*take.review);
-  }
   project.metadataRevisions.push_back(receipt);
   assignment = std::find_if(
       project.unitAssignments.begin(), project.unitAssignments.end(),

@@ -653,10 +653,19 @@ TEST_CASE("sample candidate cannot reuse approval after a later rejection or sou
   namespace production = seam::voicebank_production;
   auto fixture = reviewedCandidateFixture();
   production::ProductionProjectRepository repository{fixture.root / "workspace"};
-  fixture.project.reviews.push_back({.reviewId = "rejection-a", .takeId = "take-a", .reviewerId = "reviewer",
+  // A later decision is recorded by the review command; a hand-made record without the material
+  // it was made on is refused and writes nothing.
+  auto handMade = fixture.project;
+  handMade.reviews.push_back({.reviewId = "rejection-a", .takeId = "take-a", .reviewerId = "reviewer",
       .result = "REJECTED", .reviewedAtUtc = "2026-09-09T10:04:00Z"});
-  CHECK(repository.save(fixture.project, {.action = "review", .subjectId = "take-a", .operatorId = "reviewer",
+  CHECK(!repository.save(handMade, {.action = "review", .subjectId = "take-a", .operatorId = "reviewer",
       .occurredAtUtc = "2026-09-09T10:04:00Z"}));
+  const auto later = production::prepareSampleCandidateReview(fixture.root / "workspace", fixture.project,
+      fixture.request.manifest);
+  CHECK(later);
+  CHECK(production::commitSampleCandidateReview(fixture.root / "workspace", fixture.project, later.value(),
+      "reviewer", "2026-09-09T10:04:00Z", production::SampleCandidateReviewDecision::Reject));
+  CHECK(fixture.project.takes.front().state == production::UnitQueueState::Rejected);
   fixture.request.expectedGeneration = fixture.project.lastDurableGeneration;
   fixture.request.expectedProjectSha256 = seam::core::sha256Hex(production::encodeProductionProject(fixture.project));
   CHECK(!production::publishSampleCandidate(fixture.root / "workspace", fixture.project, fixture.request, fixture.root / "rejected"));
@@ -1100,16 +1109,13 @@ TEST_CASE("voicebank production project recovers staged deterministic work") {
   const auto imported = repository.importRaw(
       project, sourcePath,
       {.takeId = "take-001", .promptId = "prompt-001",
-       .coverageKey = "cv:k:a", .pitchLayer = 60,
-       .review = production::ReviewRecord{
-           .reviewId = "dry-take-take-001", .takeId = "take-001",
-           .reviewerId = "operator-a", .result = "PASS",
-           .reviewedAtUtc = "2026-08-31T10:01:00Z"}},
+       .coverageKey = "cv:k:a", .pitchLayer = 60},
       {.action = "import", .subjectId = "take-001", .operatorId = "operator-a",
        .occurredAtUtc = "2026-08-31T10:01:00Z"});
   CHECK(imported);
   CHECK(project.lastDurableGeneration == 2U);
-  CHECK(project.reviews.size() == 1U);
+  // An import admits material for review; it records no review of its own.
+  CHECK(project.reviews.empty());
   CHECK(std::filesystem::is_regular_file(repository.assetPath(imported.value())));
 
   auto escapedProject = project;
@@ -1159,18 +1165,29 @@ TEST_CASE("voicebank production project recovers staged deterministic work") {
   auto unknownRevisionOperator = resumed;
   unknownRevisionOperator.derivedRevisions[0].operatorId = "unknown-operator";
   CHECK(!production::validateProductionProject(unknownRevisionOperator));
-  resumed.unitAssignments[0].takeId = "take-001";
-  resumed.unitAssignments[0].state = production::UnitQueueState::MarkerReview;
-  resumed.unitAssignments[0].markerReviewed = true;
-  resumed.unitAssignments[0].pitchReviewed = true;
-  resumed.unitAssignments[0].state = production::UnitQueueState::Approved;
-  resumed.takes[0].state = production::UnitQueueState::Approved;
-  CHECK(recoveredRepository.save(
-      resumed, {.action = "review", .subjectId = "take-001", .operatorId = "reviewer-a",
-                .occurredAtUtc = "2026-08-31T10:03:00Z"}));
+  // Review status comes only from an independent review decision bound to the take's material.
+  // Setting it by hand is refused whether the save calls itself a review or not, and so is a
+  // hand-made PASS record without the material it was made on. Nothing is written.
+  auto forged = resumed;
+  forged.unitAssignments[0].markerReviewed = true;
+  forged.unitAssignments[0].pitchReviewed = true;
+  forged.unitAssignments[0].state = production::UnitQueueState::Approved;
+  forged.takes[0].state = production::UnitQueueState::Approved;
+  for (const auto* action : {"review", "save"}) {
+    auto attempt = forged;
+    CHECK(!recoveredRepository.save(attempt, {.action = action, .subjectId = "take-001",
+        .operatorId = "reviewer-a", .occurredAtUtc = "2026-08-31T10:03:00Z"}));
+  }
+  auto forgedDecision = forged;
+  forgedDecision.reviews.push_back({.reviewId = "hand-made", .takeId = "take-001", .reviewerId = "reviewer-a",
+      .result = "PASS", .reviewedAtUtc = "2026-08-31T10:03:00Z"});
+  CHECK(!recoveredRepository.save(forgedDecision, {.action = "review", .subjectId = "take-001",
+      .operatorId = "reviewer-a", .occurredAtUtc = "2026-08-31T10:03:00Z"}));
+  CHECK(recoveredRepository.recover().value().lastDurableGeneration == resumed.lastDurableGeneration);
 
   const auto queues = production::summarizeQueues(resumed);
-  CHECK(queues.approved == 1U);
+  CHECK(queues.approved == 0U);
+  CHECK(queues.markerReview == 1U);
   CHECK(queues.missing == 1U);
   CHECK(production::selectedStrategyReady(resumed));
   CHECK(recoveredRepository.verify(resumed));
