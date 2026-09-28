@@ -230,7 +230,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
                 CachedPcm{.sampleRate = sampleRate, .startFrame = audio.startFrame,
                           .samples = audio.samples,
                           .rendererIdentity = std::string{kProceduralRendererIdentity},
-                          .fallbackCount = 0U, .fallbackDiagnostic = std::string{}});
+                          .fallbackCount = 0U, .renderNotice = std::string{}});
             if (!stored) return core::Result<ProjectRenderResult>{stored.error()};
           }
           pcm = std::make_shared<RoutedPcm>();
@@ -310,7 +310,7 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
                 CachedPcm{.sampleRate = sampleRate, .startFrame = audio.startFrame,
                           .samples = audio.samples,
                           .rendererIdentity = std::string{kNeuralRendererIdentity},
-                          .fallbackCount = 0U, .fallbackDiagnostic = std::string{}});
+                          .fallbackCount = 0U, .renderNotice = std::string{}});
             if (!stored) return core::Result<ProjectRenderResult>{stored.error()};
           }
           pcm = std::make_shared<RoutedPcm>();
@@ -341,6 +341,21 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
           std::string{},
           options, cache, stopToken, true);
       if (!rendered) return core::Result<ProjectRenderResult>{rendered.error()};
+      if (!output.renderNotice) {
+        const auto notice = std::find_if(
+            rendered.value().phrases.begin(), rendered.value().phrases.end(),
+            [](const RegionRenderPhraseInfo& phrase) {
+              return !phrase.renderNotice.empty();
+            });
+        if (notice != rendered.value().phrases.end()) {
+          output.renderNotice = ProjectRenderNotice{
+              .trackId = track.id,
+              .regionId = region.id,
+              .phraseId = notice->phraseId,
+              .message = notice->renderNotice,
+          };
+        }
+      }
       if (track.id == activeTrack && region.id == activeRegion)
         output.performanceCues = rendered.value().performanceCues;
       if (track.id == activeTrack && region.id == activeRegion) {

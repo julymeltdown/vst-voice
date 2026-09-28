@@ -246,8 +246,8 @@ core::Result<std::shared_ptr<const CachedPcm>> PcmCache::load(
     stream.read(pcm->rendererIdentity.data(),
                 static_cast<std::streamsize>(rendererBytes));
     pcm->fallbackCount = static_cast<std::size_t>(fallbackCount);
-    pcm->fallbackDiagnostic.resize(diagnosticBytes);
-    stream.read(pcm->fallbackDiagnostic.data(),
+    pcm->renderNotice.resize(diagnosticBytes);
+    stream.read(pcm->renderNotice.data(),
                 static_cast<std::streamsize>(diagnosticBytes));
     if (!stream || !validRendererIdentity(pcm->rendererIdentity)) {
       std::scoped_lock lock{mutex_};
@@ -301,7 +301,7 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
   const auto pathResult = pathFor(key);
   if (!pathResult) return core::Result<void>{pathResult.error()};
   const auto rendererBytes = static_cast<std::uint64_t>(pcm.rendererIdentity.size());
-  const auto diagnosticBytes = static_cast<std::uint64_t>(pcm.fallbackDiagnostic.size());
+  const auto diagnosticBytes = static_cast<std::uint64_t>(pcm.renderNotice.size());
   const auto metadataBytes = rendererBytes + diagnosticBytes;
   if (pcm.sampleRate < 8000U || pcm.sampleRate > 384000U ||
       pcm.samples.empty() || pcm.samples.size() > kMaximumFrames ||
@@ -342,7 +342,7 @@ core::Result<void> PcmCache::store(std::string_view key, const CachedPcm& pcm) {
     for (const auto byte : pcm.rendererIdentity) {
       encoded[offset++] = static_cast<std::byte>(byte);
     }
-    for (const auto byte : pcm.fallbackDiagnostic) {
+    for (const auto byte : pcm.renderNotice) {
       encoded[offset++] = static_cast<std::byte>(byte);
     }
     for (const auto sample : pcm.samples) {

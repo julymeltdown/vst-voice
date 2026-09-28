@@ -330,7 +330,7 @@ TEST_CASE("region renderer preserves cached fallback provenance across memory an
     auto provenance = *stored.value();
     provenance.fallbackCount = index + 1U;
     provenance.rendererIdentity = index == 0U ? "raw" : "mixed";
-    provenance.fallbackDiagnostic = "Recorded fallback for cached phrase " + std::to_string(index);
+    provenance.renderNotice = "Recorded fallback for cached phrase " + std::to_string(index);
     CHECK(cache.store(phrase.contentHash, provenance));
     expected.push_back(std::move(provenance));
   }
@@ -349,7 +349,7 @@ TEST_CASE("region renderer preserves cached fallback provenance across memory an
       CHECK(phrase.unitCount == cold.value().phrases[index].unitCount);
       CHECK(phrase.fallbackCount == expected[index].fallbackCount);
       CHECK(phrase.rendererIdentity == expected[index].rendererIdentity);
-      CHECK(phrase.fallbackDiagnostic == expected[index].fallbackDiagnostic);
+      CHECK(phrase.renderNotice == expected[index].renderNotice);
     }
   };
   const auto beforeMemory = cache.stats();

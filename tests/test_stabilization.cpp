@@ -441,14 +441,14 @@ TEST_CASE("PCM cache preserves renderer and fallback provenance across disk hits
       .samples = {0.0F, 0.25F, -0.25F},
       .rendererIdentity = "classic-psola",
       .fallbackCount = 2U,
-      .fallbackDiagnostic = "pitch-preserving fallback was not available"};
+      .renderNotice = "pitch-preserving fallback was not available"};
   CHECK(cache.store("provenance", expected));
   cache.clearMemory();
   const auto loaded = cache.load("provenance");
   CHECK(loaded);
   CHECK(loaded.value()->rendererIdentity == expected.rendererIdentity);
   CHECK(loaded.value()->fallbackCount == expected.fallbackCount);
-  CHECK(loaded.value()->fallbackDiagnostic == expected.fallbackDiagnostic);
+  CHECK(loaded.value()->renderNotice == expected.renderNotice);
   CHECK(loaded.value()->samples == expected.samples);
 }
 

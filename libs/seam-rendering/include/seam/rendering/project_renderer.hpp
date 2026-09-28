@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <vector>
@@ -60,6 +61,16 @@ struct ProjectRenderDiagnostic final {
   std::string context;
 };
 
+// A successful render may still carry an actionable quality limitation. Keep
+// it separate from `diagnostics`, whose entries mean requested content was
+// omitted and make a Final render incomplete.
+struct ProjectRenderNotice final {
+  domain::TrackId trackId;
+  domain::RegionId regionId;
+  std::string phraseId;
+  std::string message;
+};
+
 struct ProjectRenderResult final {
   std::uint32_t sampleRate{48000U};
   std::uint8_t channelCount{2U};
@@ -85,6 +96,10 @@ struct ProjectRenderResult final {
   // Omitted requested content, not informational warnings. Preview may retain
   // the successful clips; Final rendering and export must reject these results.
   std::vector<ProjectRenderDiagnostic> diagnostics;
+  // The first actionable but non-blocking renderer limitation, if any. It is
+  // safe to show for Ready previews and Final renders without weakening
+  // complete-render validation.
+  std::optional<ProjectRenderNotice> renderNotice;
   std::size_t trackCount{0U};
   std::size_t regionCount{0U};
   std::size_t phraseCount{0U};

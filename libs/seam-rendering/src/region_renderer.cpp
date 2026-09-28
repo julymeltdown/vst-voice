@@ -58,10 +58,17 @@ std::string rendererIdentity(
   return std::string{first};
 }
 
-std::string fallbackDiagnostic(
+std::string renderNotice(
     std::span<const synthesis::RenderedPlacementInfo> placements) {
   for (const auto& placement : placements) {
     if (placement.usedFallback && !placement.diagnostic.empty()) {
+      return placement.diagnostic;
+    }
+  }
+  constexpr std::string_view edgeMarkWarning{
+      "Voiced-edge pitch retargeting unavailable"};
+  for (const auto& placement : placements) {
+    if (placement.diagnostic.find(edgeMarkWarning) != std::string::npos) {
       return placement.diagnostic;
     }
   }
@@ -208,7 +215,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
         .fallbackCount = cached != nullptr ? cached->fallbackCount : 0U,
         .cacheHit = cached != nullptr,
         .rendererIdentity = cached != nullptr ? cached->rendererIdentity : "unknown",
-        .fallbackDiagnostic = cached != nullptr ? cached->fallbackDiagnostic : "",
+        .renderNotice = cached != nullptr ? cached->renderNotice : "",
     };
     output.unitCount += info.unitCount;
     output.unitPlan.insert(output.unitPlan.end(),
@@ -249,7 +256,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
         [](const auto& placement) { return placement.usedFallback; }));
     info.rendererIdentity = rendererIdentity(rendered.value().rendered.placements);
     if (rendered.value().styleBlendCompatibility) info.rendererIdentity = "seam.pcm-style-crossfade.v1";
-    info.fallbackDiagnostic = fallbackDiagnostic(rendered.value().rendered.placements);
+    info.renderNotice = renderNotice(rendered.value().rendered.placements);
     output.fallbackCount += info.fallbackCount;
     const auto& audio = rendered.value().rendered.audio;
     const auto mixed = mixPhrase(output, audio.startFrame, audio.samples);
@@ -261,7 +268,7 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
                                                  .samples = audio.samples,
                                                  .rendererIdentity = info.rendererIdentity,
                                                  .fallbackCount = info.fallbackCount,
-                                                 .fallbackDiagnostic = info.fallbackDiagnostic});
+                                                 .renderNotice = info.renderNotice});
       if (!stored) return core::Result<RegionRenderResult>{stored.error()};
     }
     output.phrases.push_back(std::move(info));

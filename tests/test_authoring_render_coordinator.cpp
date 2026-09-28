@@ -7,6 +7,7 @@
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/voicebank/catalog.hpp"
+#include "seam/voicebank/content_identity.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 
 #include <array>
@@ -271,6 +272,56 @@ TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   CHECK(published->result.phraseContentHashes ==
         direct.value().phraseContentHashes);
   CHECK(published->result.activeUnitPlan == direct.value().activeUnitPlan);
+}
+
+TEST_CASE("successful preview carries a classical edge-mark warning to render status") {
+  auto fixture = makeRenderFixture();
+  const auto unit = std::find_if(fixture.source.manifest.units.begin(),
+      fixture.source.manifest.units.end(), [](const auto& candidate) {
+        return candidate.id == "demo.ja.g4.o.01";
+      });
+  CHECK(unit != fixture.source.manifest.units.end());
+  unit->pitchMarks.clear();
+  const auto contentHash = seam::voicebank::computeVoicebankContentHash(
+      fixture.source.manifest, fixture.source.bankRoot);
+  CHECK(contentHash);
+  fixture.source.contentHash = contentHash.value();
+  fixture.project.findVocalTrack(fixture.trackId)->voicebank.contentHash =
+      contentHash.value();
+
+  const std::array sources{fixture.source};
+  seam::rendering::PcmCache cache{uniqueTempRoot("edge-notice-cache")};
+  const seam::rendering::ProductionProjectRenderer renderer;
+  const auto direct = renderer.render(
+      fixture.project, sources, fixture.trackId, fixture.regionId, 7U,
+      48000U, seam::rendering::RenderQuality::Final, {}, &cache);
+  CHECK(direct);
+  CHECK(direct.value().renderNotice.has_value());
+  CHECK(direct.value().renderNotice->message.find(
+      "Voiced-edge pitch retargeting unavailable") != std::string::npos);
+  CHECK(seam::rendering::validateCompleteProjectRender(direct.value()));
+  const auto cached = renderer.render(
+      fixture.project, sources, fixture.trackId, fixture.regionId, 7U,
+      48000U, seam::rendering::RenderQuality::Final, {}, &cache);
+  CHECK(cached);
+  CHECK(cached.value().cacheHits > 0U);
+  CHECK(cached.value().renderNotice.has_value());
+  CHECK(cached.value().renderNotice->message.find(
+      "Voiced-edge pitch retargeting unavailable") != std::string::npos);
+  CHECK(seam::rendering::validateCompleteProjectRender(cached.value()));
+
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-edge-notice")};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+      7U, 48000U, seam::rendering::RenderQuality::Preview);
+  const auto progress = waitForTerminal(coordinator, 7U);
+  CHECK(progress.state == seam::authoring::RenderState::Ready);
+  CHECK(progress.diagnostic.find("non-blocking notice") != std::string::npos);
+  CHECK(progress.diagnostic.find(
+      "Voiced-edge pitch retargeting unavailable") != std::string::npos);
+  const auto published = coordinator.latest();
+  CHECK(published);
+  CHECK(published->diagnostic == progress.diagnostic);
 }
 
 TEST_CASE("render source identity rejects same revision resubmissions cancellation and unrelated coordinators") {

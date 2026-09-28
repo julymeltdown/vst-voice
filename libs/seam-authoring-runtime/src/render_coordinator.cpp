@@ -607,13 +607,27 @@ std::optional<PublishedProjectAudio> AuthoringRenderCoordinator::render(
   audio.failure = RenderFailureKind::None;
   audio.result = std::move(rendered).value();
   if (audio.result.diagnostics.empty()) {
-    audio.diagnostic = "Production multi-track routing render completed";
+    audio.diagnostic = audio.result.renderNotice
+        ? "Render completed with a non-blocking notice: " +
+              audio.result.renderNotice->message + " (track=" +
+              audio.result.renderNotice->trackId.toString() + ", region=" +
+              audio.result.renderNotice->regionId.toString() + ", phrase=" +
+              audio.result.renderNotice->phraseId + ")"
+        : "Production multi-track routing render completed";
   } else {
     const auto& first = audio.result.diagnostics.front();
     audio.diagnostic = "Render completed with " +
                        std::to_string(audio.result.diagnostics.size()) +
                        " diagnostic(s): " + first.message;
     if (!first.context.empty()) audio.diagnostic += " (" + first.context + ")";
+    if (audio.result.renderNotice) {
+      audio.diagnostic += "; render notice: " +
+                          audio.result.renderNotice->message + " (track=" +
+                          audio.result.renderNotice->trackId.toString() +
+                          ", region=" +
+                          audio.result.renderNotice->regionId.toString() +
+                          ", phrase=" + audio.result.renderNotice->phraseId + ")";
+    }
   }
   audio.activeVoicebankId = checked.activeVoicebankId;
   audio.activeVoicebankVersion = checked.activeVoicebankVersion;
