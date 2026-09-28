@@ -243,7 +243,8 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
   // MSVC rejects this one when std::vector value-initializes the element type.
   // The literal constant keeps the same value without that odr-use.
   struct State { double score{std::numeric_limits<double>::infinity()};
-    std::size_t previous{std::numeric_limits<std::size_t>::max()}; double edge{0.0}; bool joined{false}; };
+    std::size_t previous{std::numeric_limits<std::size_t>::max()}; double edge{0.0};
+    double spectralEnvelopeCost{0.0}; bool joined{false}; };
   std::vector<State> states(candidates.size());
   std::vector<std::vector<std::size_t>> byStart(tokens.size()), byEnd(tokens.size() + 1U);
   std::map<std::string_view, const UnitJoinAnalysis*> analysis;
@@ -251,7 +252,9 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
   for (const auto& item : context.analysis) {
     const auto finite = [](const auto& feature) {
       return std::isfinite(feature.levelDb) && std::all_of(feature.correlation.begin(), feature.correlation.end(),
-          [](double value) { return std::isfinite(value) && std::abs(value) <= 1.0; });
+          [](double value) { return std::isfinite(value) && std::abs(value) <= 1.0; }) &&
+          std::all_of(feature.spectralEnvelopeDb.begin(), feature.spectralEnvelopeDb.end(),
+          [](double value) { return std::isfinite(value) && value >= -120.0 && value <= 0.0; });
     };
     if (!finite(item.head) || !finite(item.tail) || !analysis.emplace(item.unitId, &item).second) {
       return core::failure<UnitPlan>(core::ErrorCode::InvalidArgument, "Invalid or duplicate source join evidence", item.unitId);
@@ -284,6 +287,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
       bool joined = false;
       const auto* previousNote = noteFor(region, tokens[candidate.tokenStart - 1U]);
       const auto* nextNote = noteFor(region, tokens[candidate.tokenStart]);
+      double spectralEnvelopeCost = 0.0;
       if (context.requireAcoustic && previousNote && nextNote &&
           (previousNote == nextNote || previousNote->endTick() >= nextNote->startTick)) {
         const auto& tail = analysis.at(previous.unitId)->tail;
@@ -292,11 +296,20 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
         for (std::size_t band = 0; band < tail.correlation.size(); ++band) {
           edge += std::abs(tail.correlation[band] - head.correlation[band]);
         }
+        double spectralDifferenceDb = 0.0;
+        for (std::size_t band = 0; band < tail.spectralEnvelopeDb.size(); ++band) {
+          spectralDifferenceDb += std::abs(tail.spectralEnvelopeDb[band] - head.spectralEnvelopeDb[band]);
+        }
+        // Use mean band distance so the added timbral term is comparable across
+        // this fixed eight-band descriptor and cannot overwhelm pitch proximity.
+        spectralEnvelopeCost = 0.25 * std::min(24.0,
+            spectralDifferenceDb / static_cast<double>(tail.spectralEnvelopeDb.size()));
+        edge += spectralEnvelopeCost;
         joined = true;
       }
       const auto score = states[predecessor].score + candidate.score + edge;
       if (score < states[i].score || (score == states[i].score && predecessor < states[i].previous)) {
-        states[i] = State{score, predecessor, edge, joined};
+        states[i] = State{score, predecessor, edge, spectralEnvelopeCost, joined};
       }
     }
   }
@@ -358,7 +371,8 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
         .alternatives = std::move(alternatives),
         .rationale = {.acoustic = context.requireAcoustic, .joined = state.joined,
             .predecessor = state.previous == none ? std::string{} : candidates[state.previous].unitId,
-            .incomingCost = state.edge, .cumulativeCost = state.score},
+            .incomingCost = state.edge, .spectralEnvelopeCost = state.spectralEnvelopeCost,
+            .cumulativeCost = state.score},
     });
     cursor = state.previous;
   }

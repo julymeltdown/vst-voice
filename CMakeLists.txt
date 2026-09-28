@@ -117,7 +117,7 @@ set(SEAM_VOICE_TRAINING_PYTHON "${Python3_EXECUTABLE}"
 
 set(SEAM_RENDER_ABI_ID "seam-render-abi-4.1-r1")
 set(SEAM_PHONEMIZER_REVISION 4)
-set(SEAM_UNIT_SELECTOR_REVISION 4)
+set(SEAM_UNIT_SELECTOR_REVISION 5)
 # U5: sequential nuclei, explicit timing constraints and onset-aware placement.
 set(SEAM_TIMING_SOLVER_REVISION 11)
 # U5: vowel-landmark-preserving onset waveform retiming.

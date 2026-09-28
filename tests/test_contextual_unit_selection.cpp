@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <numbers>
 
 namespace {
 using namespace seam;
@@ -47,6 +48,33 @@ struct Fixture {
     std::fill(audio.interleaved.begin() + 1920, audio.interleaved.end(), tail);
     CHECK(voicebank::writeMonoPcm16Wav(root / unit.audioPath, audio.sampleRate, audio.interleaved));
     sources.emplace(id, audio); bank.units.push_back(unit);
+  }
+  void addHarmonic(std::string id, std::vector<std::string> phones,
+                   bool headBright, bool tailBright) {
+    auto unit = test::support::makeUnit(id, std::move(phones), "audio/" + id + ".wav", 69,
+        voicebank::UnitKind::Sustain, 3840);
+    voicebank::AudioBuffer audio{.sampleRate = 48000U, .channels = 1U,
+        .interleaved = std::vector<float>(3840U)};
+    constexpr std::size_t halfFrames = 1920U;
+    const auto writeHalf = [&](std::size_t offset, bool bright) {
+      const auto harmonicGain = bright ? 0.75 : 0.0;
+      std::vector<double> wave(halfFrames);
+      double square = 0.0;
+      for (std::size_t frame = 0U; frame < halfFrames; ++frame) {
+        const auto phase = 2.0 * std::numbers::pi * 400.0 * static_cast<double>(frame) / 48000.0;
+        wave[frame] = std::sin(phase) + harmonicGain * std::sin(2.0 * phase);
+        square += wave[frame] * wave[frame];
+      }
+      const auto scale = 0.25 / std::sqrt(square / static_cast<double>(halfFrames));
+      for (std::size_t frame = 0U; frame < halfFrames; ++frame) {
+        audio.interleaved[offset + frame] = static_cast<float>(wave[frame] * scale);
+      }
+    };
+    writeHalf(0U, headBright);
+    writeHalf(halfFrames, tailBright);
+    CHECK(voicebank::writeMonoPcm16Wav(root / unit.audioPath, audio.sampleRate, audio.interleaved));
+    sources.emplace(id, std::move(audio));
+    bank.units.push_back(std::move(unit));
   }
   std::vector<synthesis::UnitJoinAnalysis> analysis(synthesis::UnitSelectionBudget& budget) const {
     std::vector<synthesis::UnitJoinAnalysis> values;
@@ -106,6 +134,54 @@ TEST_CASE("contextual selection optimizes outgoing joins rather than the cheapes
   CHECK(selected.value().entries[1].rationale.incomingCost > 3.0);
   CHECK(selected.value().totalScore < 3.02);
   CHECK_NEAR(selected.value().entries.back().rationale.cumulativeCost, selected.value().totalScore, 1e-12);
+}
+
+TEST_CASE("contextual selection scores gain-normalized spectral envelopes deterministically") {
+  Fixture f;
+  // All candidates have equal RMS, pitch, priority, take, and phone coverage.
+  // Only the selected first unit's tail timbre differs at the a -> i join.
+  f.addHarmonic("a-a-dark-tail", {"a"}, false, false);
+  f.addHarmonic("a-z-bright-tail", {"a"}, false, true);
+  f.addHarmonic("i-bright-head", {"i"}, true, false);
+  f.addHarmonic("u-dark", {"u"}, false, false);
+  const auto metadata = f.select(); CHECK(metadata);
+  CHECK(metadata.value().entries.front().unitId == "a-a-dark-tail");
+
+  synthesis::UnitSelectionBudget budget;
+  const auto evidence = f.analysis(budget);
+  const auto find = [&](std::string_view id) -> const synthesis::UnitJoinAnalysis& {
+    const auto item = std::find_if(evidence.begin(), evidence.end(),
+        [&](const auto& value) { return value.unitId == id; });
+    CHECK(item != evidence.end());
+    return *item;
+  };
+  const auto spectralDistance = [&](const synthesis::SourceBoundaryFeatures& first,
+                                    const synthesis::SourceBoundaryFeatures& second) {
+    double distance = 0.0;
+    for (std::size_t band = 0U; band < first.spectralEnvelopeDb.size(); ++band) {
+      distance += std::abs(first.spectralEnvelopeDb[band] - second.spectralEnvelopeDb[band]);
+    }
+    return distance;
+  };
+  const auto& darkTail = find("a-a-dark-tail").tail;
+  const auto& brightTail = find("a-z-bright-tail").tail;
+  const auto& brightHead = find("i-bright-head").head;
+  CHECK_NEAR(darkTail.levelDb, brightTail.levelDb, 1e-4);
+  CHECK(spectralDistance(brightTail, brightHead) < spectralDistance(darkTail, brightHead));
+
+  const auto context = synthesis::UnitSelectionContext{
+      .analysis = evidence, .requireAcoustic = true, .budget = &budget};
+  const auto selected = f.select(context); CHECK(selected);
+  CHECK(selected.value().entries.front().unitId == "a-z-bright-tail");
+  const auto expectedSpectralCost = 0.25 * std::min(24.0,
+      spectralDistance(brightTail, brightHead) / 8.0);
+  CHECK_NEAR(selected.value().entries[1].rationale.spectralEnvelopeCost,
+      expectedSpectralCost, 1e-12);
+  CHECK(synthesis::describeUnitSelection(selected.value().entries[1]).find("spectral envelope") != std::string::npos);
+
+  std::reverse(f.bank.units.begin(), f.bank.units.end());
+  const auto reversed = f.select({.analysis = evidence, .requireAcoustic = true}); CHECK(reversed);
+  CHECK(reversed.value() == selected.value());
 }
 
 TEST_CASE("repeated occurrences and exact ties remain deterministic across inventory order") {
@@ -174,6 +250,8 @@ TEST_CASE("join proxy uses playable crop gain and physical window with finite si
   unit.gainDb = 6.0F;
   const auto gain = synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), budget); CHECK(gain);
   CHECK_NEAR(gain.value().head.levelDb - original.value().head.levelDb, 6.0, 1e-10);
+  CHECK(gain.value().head.spectralEnvelopeDb == original.value().head.spectralEnvelopeDb);
+  CHECK(gain.value().tail.spectralEnvelopeDb == original.value().tail.spectralEnvelopeDb);
   audio.channels = 2U; audio.interleaved.assign(7680U, 0.2F);
   for (std::size_t i = 1; i < audio.interleaved.size(); i += 2U) audio.interleaved[i] = -0.2F;
   auto silent = synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), budget); CHECK(silent);
@@ -188,6 +266,21 @@ TEST_CASE("join proxy uses playable crop gain and physical window with finite si
   CHECK(!synthesis::analyzeUnitJoin(unit, audio, "unchecked", budget));
   unit.markers.audioEnd = 2;
   CHECK(!synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), budget));
+}
+
+TEST_CASE("spectral-envelope work is charged before bounded analysis completes") {
+  Fixture f; f.addHarmonic("spectral", {"a"}, true, false);
+  const auto& unit = f.bank.units.front();
+  const auto& audio = f.sources.at(unit.id);
+  synthesis::UnitSelectionBudget measured;
+  CHECK(synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), measured));
+  const auto spectralIndex = static_cast<std::size_t>(synthesis::SelectionWork::SpectralOps);
+  CHECK(measured.used[spectralIndex] > 0U);
+  auto shortBudget = synthesis::UnitSelectionBudget{};
+  shortBudget.limits[spectralIndex] = measured.used[spectralIndex] - 1U;
+  const auto rejected = synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), shortBudget);
+  CHECK(!rejected);
+  CHECK(rejected.error().code == core::ErrorCode::Unsupported);
 }
 
 TEST_CASE("source join costs reset at score rests and absent evidence never becomes zero cost") {

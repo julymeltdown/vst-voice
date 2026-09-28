@@ -16,18 +16,18 @@
 
 namespace seam::synthesis {
 
-inline constexpr std::uint32_t kUnitSelectionRevision = 2U;
+inline constexpr std::uint32_t kUnitSelectionRevision = 3U;
 inline constexpr std::size_t kMaximumSelectionTokens = 4096U;
 inline constexpr std::size_t kMaximumSelectionStatesAtBoundary = 256U;
-enum class SelectionWork : std::size_t { Matching, Candidates, States, Edges, Samples, MetadataBytes };
+enum class SelectionWork : std::size_t { Matching, Candidates, States, Edges, Samples, MetadataBytes, SpectralOps };
 // Shared by both style arms, alignment discovery, enumeration and analysis.
 // Limits may be reduced for a caller, never raised above the hard ceilings.
 struct UnitSelectionBudget final {
-  static constexpr std::array<std::size_t, 6> ceilings{
+  static constexpr std::array<std::size_t, 7> ceilings{
       8U * 1024U * 1024U, 65536U, 65536U, 4U * 1024U * 1024U,
-      16U * 1024U * 1024U, 8U * 1024U * 1024U};
-  std::array<std::size_t, 6> limits{ceilings};
-  std::array<std::size_t, 6> used{};
+      16U * 1024U * 1024U, 8U * 1024U * 1024U, 256U * 1024U * 1024U};
+  std::array<std::size_t, 7> limits{ceilings};
+  std::array<std::size_t, 7> used{};
   [[nodiscard]] core::Result<void> spend(SelectionWork work, std::size_t amount,
                                        std::stop_token stop = {});
 };
@@ -35,6 +35,11 @@ struct UnitSelectionBudget final {
 struct SourceBoundaryFeatures final {
   double levelDb{-180.0};
   std::array<double, 4> correlation{};
+  // Eight gain-normalized log-energy bands: 0-125, 125-250, 250-500,
+  // 500-1k, 1-2k, 2-4k, 4-8k Hz, and 8k Hz to Nyquist. Values are dB
+  // relative to total windowed spectral energy, floored at -120 dB.
+  std::array<double, 8> spectralEnvelopeDb{
+      -120.0, -120.0, -120.0, -120.0, -120.0, -120.0, -120.0, -120.0};
   friend bool operator==(const SourceBoundaryFeatures&, const SourceBoundaryFeatures&) = default;
 };
 struct UnitJoinAnalysis final {
@@ -45,8 +50,9 @@ struct UnitJoinAnalysis final {
 };
 // Source-domain proxy only: first/last 20 ms of the playable marker crop,
 // mono arithmetic downmix, gain-aware RMS, normalized autocorrelation at
-// 1/2/4/8 nominal 48 kHz frame delays (rounded at the source sample rate).
-// Does not estimate the eventual pitch/time-mapped or seam-composed boundary.
+// 1/2/4/8 nominal 48 kHz frame delays, and a Hann-windowed, gain-normalized
+// eight-band spectral envelope. Does not estimate the eventual pitch/time-
+// mapped or seam-composed boundary.
 [[nodiscard]] core::Result<UnitJoinAnalysis> analyzeUnitJoin(
     const voicebank::Unit& unit, const voicebank::AudioBuffer& audio,
     std::string_view verifiedAudioSha256, UnitSelectionBudget& budget,
@@ -64,6 +70,7 @@ struct UnitSelectionRationale final {
   bool joined{false};
   std::string predecessor{};
   double incomingCost{0.0};
+  double spectralEnvelopeCost{0.0};
   double cumulativeCost{0.0};
   std::uint32_t revision{kUnitSelectionRevision};
   std::string evidenceHash{};
