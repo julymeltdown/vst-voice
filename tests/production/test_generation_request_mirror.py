@@ -219,9 +219,17 @@ class CppGenerationRequestParityTest(unittest.TestCase):
             terminal_path, terminal = self._record(workspace, "stale", "terminal.json")
             rewrite(terminal_path, terminal | {"requestSha256": hashlib.sha256(payload).hexdigest()})
 
+        def compact_request_bytes(workspace: Path) -> None:
+            # Same fields, other bytes: only canonical encoding refuses it once the terminal is rebound.
+            path, request = self._record(workspace, "completed", "request.json")
+            payload = json.dumps(request, sort_keys=True).encode()
+            path.write_bytes(payload)
+            terminal_path, terminal = self._record(workspace, "completed", "terminal.json")
+            rewrite(terminal_path, terminal | {"requestSha256": hashlib.sha256(payload).hexdigest()})
+
         for forge in (completed_by_a_manual_import, stale_at_its_own_expected_state, exhausted_within_budget,
                       bound_to_other_bytes, extra_request_field, completed_later_than_its_collection,
-                      request_for_an_existing_take):
+                      request_for_an_existing_take, compact_request_bytes):
             with self.subTest(forge.__name__):
                 self._refused(forge.__name__, forge)
 
