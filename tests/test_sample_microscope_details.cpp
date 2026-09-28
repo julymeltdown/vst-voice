@@ -30,7 +30,11 @@ struct Fixture final {
     synthesis::UnitPlanEntry entry;
     entry.rationale.acoustic = true; entry.rationale.joined = true;
     entry.rationale.predecessor = "previous-" + std::string(240U, 'M');
-    entry.rationale.incomingCost = 0.125; entry.rationale.cumulativeCost = 2.125;
+    entry.rationale.incomingCost = 0.125;
+    entry.rationale.levelCost = 0.012;
+    entry.rationale.correlationCost = 0.093;
+    entry.rationale.spectralEnvelopeCost = 0.020;
+    entry.rationale.cumulativeCost = 2.125;
     entry.rationale.evidenceHash = std::string(64U, 'a');
     context = synthesis::describeUnitSelection(entry) + "\nDESTINATION / 日本語 / 한국어 / e\xcc\x81 / 🎵\r\n";
     for (int i = 0; i < 8; ++i) context += "Captured decision " + std::to_string(i) + ": source-boundary proxy; not listening qualification.\n";
@@ -118,6 +122,9 @@ TEST_CASE("sample microscope plots and paged details fit compact and desktop win
     CHECK(readAll(controller) == view.detailsText);
     CHECK(view.detailsText.find(fixture.unit.id) != std::string::npos);
     CHECK(view.detailsText.find(fixture.context) != std::string::npos);
+    CHECK(view.detailsText.find("level 0.012") != std::string::npos);
+    CHECK(view.detailsText.find("short-lag correlation 0.093") != std::string::npos);
+    CHECK(view.detailsText.find("spectral envelope 0.020") != std::string::npos);
     CHECK(!controller.dispatchAccessibility("microscope.next", native_ui::SemanticAction::Activate));
     CHECK(fixture.session.project() == original); CHECK(fixture.session.selection().empty()); CHECK(!fixture.session.canUndo());
     CHECK(fixture.played == 0U); CHECK(fixture.edited == 0U);

@@ -132,6 +132,16 @@ TEST_CASE("contextual selection optimizes outgoing joins rather than the cheapes
   const auto selected = f.select({.analysis = analysis, .requireAcoustic = true}); CHECK(selected);
   CHECK(selected.value().entries[1].unitId == "i-global");
   CHECK(selected.value().entries[1].rationale.incomingCost > 3.0);
+  const auto& rationale = selected.value().entries[1].rationale;
+  CHECK_NEAR(rationale.incomingCost,
+      rationale.levelCost + rationale.correlationCost + rationale.spectralEnvelopeCost, 1e-12);
+  CHECK(rationale.levelCost > 3.0);
+  CHECK_NEAR(rationale.correlationCost, 0.0, 1e-12);
+  CHECK_NEAR(rationale.spectralEnvelopeCost, 0.0, 1e-12);
+  const auto explanation = synthesis::describeUnitSelection(selected.value().entries[1]);
+  CHECK(explanation.find("level ") != std::string::npos);
+  CHECK(explanation.find("short-lag correlation ") != std::string::npos);
+  CHECK(explanation.find("spectral envelope ") != std::string::npos);
   CHECK(selected.value().totalScore < 3.02);
   CHECK_NEAR(selected.value().entries.back().rationale.cumulativeCost, selected.value().totalScore, 1e-12);
 }

@@ -244,6 +244,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
   // The literal constant keeps the same value without that odr-use.
   struct State { double score{std::numeric_limits<double>::infinity()};
     std::size_t previous{std::numeric_limits<std::size_t>::max()}; double edge{0.0};
+    double levelCost{0.0}; double correlationCost{0.0};
     double spectralEnvelopeCost{0.0}; bool joined{false}; };
   std::vector<State> states(candidates.size());
   std::vector<std::vector<std::size_t>> byStart(tokens.size()), byEnd(tokens.size() + 1U);
@@ -283,7 +284,7 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
       if (!spent) return core::Result<UnitPlan>{spent.error()};
       if (!std::isfinite(states[predecessor].score)) continue;
       const auto& previous = candidates[predecessor];
-      double edge = 0.0;
+      double edge = 0.0, levelCost = 0.0, correlationCost = 0.0;
       bool joined = false;
       const auto* previousNote = noteFor(region, tokens[candidate.tokenStart - 1U]);
       const auto* nextNote = noteFor(region, tokens[candidate.tokenStart]);
@@ -292,9 +293,9 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
           (previousNote == nextNote || previousNote->endTick() >= nextNote->startTick)) {
         const auto& tail = analysis.at(previous.unitId)->tail;
         const auto& head = analysis.at(candidate.unitId)->head;
-        edge = 0.5 * std::min(24.0, std::abs(tail.levelDb - head.levelDb));
+        levelCost = 0.5 * std::min(24.0, std::abs(tail.levelDb - head.levelDb));
         for (std::size_t band = 0; band < tail.correlation.size(); ++band) {
-          edge += std::abs(tail.correlation[band] - head.correlation[band]);
+          correlationCost += std::abs(tail.correlation[band] - head.correlation[band]);
         }
         double spectralDifferenceDb = 0.0;
         for (std::size_t band = 0; band < tail.spectralEnvelopeDb.size(); ++band) {
@@ -304,12 +305,13 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
         // this fixed eight-band descriptor and cannot overwhelm pitch proximity.
         spectralEnvelopeCost = 0.25 * std::min(24.0,
             spectralDifferenceDb / static_cast<double>(tail.spectralEnvelopeDb.size()));
-        edge += spectralEnvelopeCost;
+        edge = levelCost + correlationCost + spectralEnvelopeCost;
         joined = true;
       }
       const auto score = states[predecessor].score + candidate.score + edge;
       if (score < states[i].score || (score == states[i].score && predecessor < states[i].previous)) {
-        states[i] = State{score, predecessor, edge, spectralEnvelopeCost, joined};
+        states[i] = State{score, predecessor, edge, levelCost, correlationCost,
+                          spectralEnvelopeCost, joined};
       }
     }
   }
@@ -371,7 +373,9 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
         .alternatives = std::move(alternatives),
         .rationale = {.acoustic = context.requireAcoustic, .joined = state.joined,
             .predecessor = state.previous == none ? std::string{} : candidates[state.previous].unitId,
-            .incomingCost = state.edge, .spectralEnvelopeCost = state.spectralEnvelopeCost,
+            .incomingCost = state.edge, .levelCost = state.levelCost,
+            .correlationCost = state.correlationCost,
+            .spectralEnvelopeCost = state.spectralEnvelopeCost,
             .cumulativeCost = state.score},
     });
     cursor = state.previous;

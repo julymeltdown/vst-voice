@@ -70,6 +70,10 @@ struct UnitSelectionRationale final {
   bool joined{false};
   std::string predecessor{};
   double incomingCost{0.0};
+  // When joined, incomingCost is the sum of these independently inspectable
+  // source-domain terms; they are zero when no acoustic edge was scored.
+  double levelCost{0.0};
+  double correlationCost{0.0};
   double spectralEnvelopeCost{0.0};
   double cumulativeCost{0.0};
   std::uint32_t revision{kUnitSelectionRevision};

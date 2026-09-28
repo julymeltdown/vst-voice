@@ -182,7 +182,9 @@ std::string describeUnitSelection(const UnitPlanEntry& entry) {
       << " v" << entry.rationale.revision << "; tokens " << entry.tokenStart << "+" << entry.tokenCount
       << (entry.forced ? "; forced" : "; automatic") << "; local " << entry.score
       << "; incoming " << entry.rationale.incomingCost
-      << " (spectral envelope " << entry.rationale.spectralEnvelopeCost << ")"
+      << " [level " << entry.rationale.levelCost
+      << ", short-lag correlation " << entry.rationale.correlationCost
+      << ", spectral envelope " << entry.rationale.spectralEnvelopeCost << "]"
       << "; cumulative " << entry.rationale.cumulativeCost;
   if (!entry.rationale.predecessor.empty()) out << "; after " << entry.rationale.predecessor;
   if (!entry.rationale.joined) out << "; no acoustic edge";
