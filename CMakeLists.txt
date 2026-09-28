@@ -132,7 +132,10 @@ set(SEAM_RAW_RENDERER_REVISION 10)
 # Revision 12 retargets the voiced attack and release to the compiled F0 as well
 # as the sustain; they were copied at the source pitch.
 set(SEAM_PSOLA_RENDERER_REVISION 12)
-set(SEAM_SPECTRAL_RENDERER_REVISION 8)
+# Revision 9 refines the analysis hop for retimed voiced-island re-entry and
+# uses that same hop for formant planning/reconstruction. This invalidates PCM
+# produced by the prior phase-resolution behavior.
+set(SEAM_SPECTRAL_RENDERER_REVISION 9)
 set(SEAM_STRETCH_RENDERER_REVISION 5)
 set(SEAM_SEAM_COMPOSER_REVISION 2)
 set(SEAM_PCM_CACHE_FORMAT_REVISION 4)

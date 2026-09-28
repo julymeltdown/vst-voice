@@ -183,6 +183,7 @@ TEST_CASE("generated build identity owns the current application and render ABI"
   CHECK(!seam::build::kRenderAbiId.empty());
   CHECK(seam::build::kRenderAbiId.find("4.1") != std::string_view::npos);
   CHECK(seam::build::kPcmCacheFormatRevision >= 3U);
+  CHECK(seam::build::kSpectralRendererRevision == 9U);
 }
 
 TEST_CASE("JSON preserves int64 surrogate pairs and parser budgets") {
