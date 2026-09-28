@@ -1221,7 +1221,7 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
   const auto secondScorePitch = compiled.value().at(performanceStart + 27000);
   CHECK(secondScorePitch.scoreFrequencyHz.has_value());
   CHECK_NEAR(*secondScorePitch.scoreFrequencyHz, secondTargetHz, 1.0e-6);
-  const auto performance = std::make_shared<const
+  auto performance = std::make_shared<const
       seam::synthesis::CompiledScorePerformance>(compiled.value());
 
   seam::synthesis::SourceTargetMap measuredMap{
@@ -1296,11 +1296,14 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
     return dot / std::sqrt(outputEnergy * sourceEnergy);
   };
   const auto assertVoicedIslandsAndFricative = [&](const std::vector<float>& audio,
-                                                    std::string_view backend) {
-    CHECK(audio.size() == outputFrames);
+                                                    std::string_view backend,
+                                                    std::size_t expectedOutputFrames,
+                                                    std::size_t mappedVoicedReentry,
+                                                    std::size_t mappedRelease) {
+    CHECK(audio.size() == expectedOutputFrames);
     const auto attackPitch = measuredPitch(audio, 512U, 3500U);
-    const auto secondIslandPitch = measuredPitch(audio, 25000U,
-                                                  mappedReleaseStart - 1000U);
+    const auto secondIslandPitch = measuredPitch(audio,
+        mappedVoicedReentry + 1000U, mappedRelease - 1000U);
     CHECK(attackPitch > 0.0);
     CHECK(secondIslandPitch > 0.0);
     const auto attackErrorCents =
@@ -1309,7 +1312,8 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
         1200.0 * std::log2(secondIslandPitch / secondTargetHz);
     const bool spectralBackend = backend == "Spectral Classic";
     const auto secondIslandToneHz = spectralBackend
-        ? dominantToneHz(audio, 26000U, 27500U, secondTargetHz)
+        ? dominantToneHz(audio, mappedVoicedReentry + 2000U,
+                         mappedVoicedReentry + 3500U, secondTargetHz)
         : 0.0;
     const auto secondIslandToneErrorCents = !spectralBackend ? 0.0
         : secondIslandToneHz > 0.0
@@ -1328,7 +1332,14 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
     }
     // The source map's measured unvoiced island must remain source-faithful;
     // pitch marks on either side must not let an OLA grain cross the fricative.
-    CHECK(correlation(audio, 17024U, 22976U) > 0.99);
+    const auto mappedFricativeStart = static_cast<std::size_t>(
+        measuredMap.targetAt(static_cast<double>(firstVoicedEnd)) -
+        static_cast<double>(performanceStart));
+    const auto mappedFricativeEnd = mappedVoicedReentry;
+    const auto mappedFricativeLength = mappedFricativeEnd - mappedFricativeStart;
+    CHECK(correlation(audio,
+        mappedFricativeStart + mappedFricativeLength / 5U,
+        mappedFricativeEnd - mappedFricativeLength / 5U) > 0.99);
   };
 
   seam::synthesis::PsolaRenderParameters psola{};
@@ -1343,7 +1354,9 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
     throw seam::test::Failure("measured-map PSOLA failed: " + classic.error().message);
   }
   CHECK(classic);
-  assertVoicedIslandsAndFricative(classic.value().samples, "PSOLA");
+  assertVoicedIslandsAndFricative(classic.value().samples, "PSOLA",
+      outputFrames, static_cast<std::size_t>(mappedUnvoicedEnd),
+      static_cast<std::size_t>(mappedReleaseStart));
 
   seam::synthesis::SpectralRenderParameters spectralParameters{
       .fftSize = 1024U, .hopSize = 256U, .formantFollow = 0.45F,
@@ -1359,7 +1372,9 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
                               spectral.error().message);
   }
   CHECK(spectral);
-  assertVoicedIslandsAndFricative(spectral.value().samples, "Spectral Classic");
+  assertVoicedIslandsAndFricative(spectral.value().samples, "Spectral Classic",
+      outputFrames, static_cast<std::size_t>(mappedUnvoicedEnd),
+      static_cast<std::size_t>(mappedReleaseStart));
 
   seam::synthesis::StretchRenderParameters stretchParameters{
       .grainSize = 1024U, .hopSize = 256U, .transientPreservation = 0.75F,
@@ -1375,7 +1390,81 @@ TEST_CASE("measured voiced islands retain score pitch and mapped fricatives thro
                               stretched.error().message);
   }
   CHECK(stretched);
-  assertVoicedIslandsAndFricative(stretched.value().samples, "Stretch");
+  assertVoicedIslandsAndFricative(stretched.value().samples, "Stretch",
+      outputFrames, static_cast<std::size_t>(mappedUnvoicedEnd),
+      static_cast<std::size_t>(mappedReleaseStart));
+
+  // The compressed case above is not sufficient evidence for long-vowel
+  // timing. Compile the same score at a slower tempo so its output expands to
+  // 60,000 frames, with the same MIDI change aligned to the mapped re-entry.
+  CHECK(project.tempoMap().addOrReplace(seam::time::Tick{0}, 96.0));
+  const auto expanded = seam::synthesis::compileScorePerformance(
+      project, *region, rate);
+  CHECK(expanded);
+  constexpr std::size_t expandedOutputFrames = 60000U;
+  constexpr auto expandedVoicedReentry = static_cast<seam::time::SampleFrame>(36000U);
+  CHECK(expanded.value().notes().back().endFrame - performanceStart ==
+        static_cast<seam::time::SampleFrame>(expandedOutputFrames));
+  CHECK(expanded.value().notes()[1U].startFrame - performanceStart ==
+        expandedVoicedReentry);
+  CHECK(expanded.value().at(performanceStart + expandedVoicedReentry + 4000)
+            .scoreFrequencyHz.has_value());
+  CHECK_NEAR(*expanded.value().at(
+      performanceStart + expandedVoicedReentry + 4000).scoreFrequencyHz,
+      secondTargetHz, 1.0e-6);
+  performance = std::make_shared<const
+      seam::synthesis::CompiledScorePerformance>(expanded.value());
+  measuredMap = seam::synthesis::SourceTargetMap{
+      .knots = {{0, performanceStart},
+                {static_cast<seam::time::SampleFrame>(unvoicedEnd),
+                 performanceStart + expandedVoicedReentry},
+                {static_cast<seam::time::SampleFrame>(sourceFrames),
+                 performanceStart +
+                     static_cast<seam::time::SampleFrame>(expandedOutputFrames)}},
+      .voicing = {
+          {0, static_cast<seam::time::SampleFrame>(firstVoicedEnd), true},
+          {static_cast<seam::time::SampleFrame>(firstVoicedEnd),
+           static_cast<seam::time::SampleFrame>(unvoicedEnd), false},
+          {static_cast<seam::time::SampleFrame>(unvoicedEnd),
+           static_cast<seam::time::SampleFrame>(sourceFrames), true},
+      }};
+  CHECK(measuredMap.validate(static_cast<seam::time::SampleFrame>(sourceFrames)));
+  const auto expandedRelease = static_cast<std::size_t>(std::llround(
+      measuredMap.targetAt(static_cast<double>(releaseStart)) -
+      static_cast<double>(performanceStart)));
+
+  psola.performance = performance;
+  psola.sourceMap = measuredMap;
+  const auto expandedClassic = seam::synthesis::ClassicPsolaRenderer{}.render(
+      unit, source, rate,
+      static_cast<seam::time::SampleFrame>(expandedOutputFrames),
+      firstTargetMidi, psola);
+  CHECK(expandedClassic);
+  assertVoicedIslandsAndFricative(expandedClassic.value().samples, "PSOLA",
+      expandedOutputFrames, static_cast<std::size_t>(expandedVoicedReentry),
+      expandedRelease);
+
+  spectralParameters.performance = performance;
+  spectralParameters.sourceMap = measuredMap;
+  const auto expandedSpectral = seam::synthesis::SpectralClassicRenderer{}.render(
+      unit, source, rate,
+      static_cast<seam::time::SampleFrame>(expandedOutputFrames),
+      firstTargetMidi, spectralParameters);
+  CHECK(expandedSpectral);
+  assertVoicedIslandsAndFricative(expandedSpectral.value().samples,
+      "Spectral Classic", expandedOutputFrames,
+      static_cast<std::size_t>(expandedVoicedReentry), expandedRelease);
+
+  stretchParameters.performance = performance;
+  stretchParameters.sourceMap = measuredMap;
+  const auto expandedStretch = seam::synthesis::StretchUnitRenderer{}.render(
+      unit, source, rate,
+      static_cast<seam::time::SampleFrame>(expandedOutputFrames),
+      firstTargetMidi, stretchParameters);
+  CHECK(expandedStretch);
+  assertVoicedIslandsAndFricative(expandedStretch.value().samples, "Stretch",
+      expandedOutputFrames, static_cast<std::size_t>(expandedVoicedReentry),
+      expandedRelease);
 }
 
 TEST_CASE("spectral and stretch dispatch disclose unusable voiced-edge pitch marks") {
