@@ -18,7 +18,7 @@ tracked in this worktree, and its `acceptance.md` identifies source `74ba8a6c`, 
 | Both looks pass the owner and independent reviewer rubric | `libs/seam-native-ui/src/design/design_tokens.cpp`; the r6 packet checks EMO/SCENE geometry parity for 18 paired views, but its `acceptance.md` says reviewer PENDING, owner NOT_RUN | **Open:** rubric scores and concept-to-native judgement |
 | SING, VOICE, TUNE, MIX and EXPORT complete with parity | `sing_shell.cpp`, `voice_workspace.cpp`, `tune_workspace.cpp`, `mix_workspace.cpp`, `shell_overlays.cpp` under `libs/seam-native-ui/src/design/`; relevant contract tests below. r6 contains SING, VOICE, TUNE and MIX captures, no EXPORT capture | **Implemented with automated coverage; full parity acceptance open** |
 | Protagonist in ring, Stage, avatar, poses and splash with real state | `assets/character-01/manifest.json` schema 4; `libs/seam-native-ui/src/design/character_surface.cpp`; `tests/test_design_character_surface.cpp`, `tests/test_character_state_art.cpp` | **Source and tests present**; final art review and commercial clearance open |
-| All tests and §10 budgets pass | The earlier merged-tree ctest run passed **206/206** at `44bf8386`; no tracked full ctest result establishes that count for `caabbaf5`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. The recorded 40-sample M3 Max run has true `cold-full-frame` p50/p95 of 15.59/16.50 ms EMO and 14.65/15.26 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. Retained-background p95 is 9.03 / 9.74 ms; scroll/zoom, playback and dense 10k notes all pass. **Update at `87d8fe02`:** a local Release ctest passed 210/210 on the same code. True-cold p50 is 12.1–13.0 ms in both looks. p95 passed 14 ms in 4 of 8 look-runs at load average ~8.5 (13.2–15.2 ms). See the [snapshot](evidence/BENCHMARK_2026-09-28.md) for every case and its provenance. | **Open: true cold p95 is not yet a stable pass** |
+| All tests and §10 budgets pass | The earlier merged-tree ctest run passed **206/206** at `44bf8386`; no tracked full ctest result establishes that count for `caabbaf5`. `benchmarks/phase5_benchmark.cpp` gates shell `prepareFrame+paint`. The recorded 40-sample M3 Max run has true `cold-full-frame` p50/p95 of 15.59/16.50 ms EMO and 14.65/15.26 ms SCENE against the 14 ms p95 budget: **MISS in both looks**. Retained-background p95 is 9.03 / 9.74 ms; scroll/zoom, playback and dense 10k notes all pass. **Update at `3fb39459`:** a local Release ctest passed 210/210. The 40-sample full run passed every case in both looks, with true-cold p50/p95 of 10.89/12.47 ms EMO and 10.99/12.55 ms SCENE, and the design-shell gate reported a pass. All ten alternating A/B look-runs at load average ~12 stayed under 14 ms. See the [snapshot](evidence/BENCHMARK_2026-09-28.md) for every case, the load and the one contention run. | **Met on this machine in the recorded runs**; p95 still responds to heavy unrelated load, and the final-commit JSON must still be archived |
 | §14.4 visual reproducibility | Frozen-clock `rep1`/`rep2` packets at clean master `2acd8ce4` compare **36/36 identical** software frames by RGBA pixel hash with `--require-identical`; the tracked [`rep1` manifest](evidence/ui-fidelity-rep1-manifest.json) records `softwarePixelSha256` per frame | **Partial pass:** the plan's full contrast, scale and platform matrix remains open |
 | FL Studio shows upright, readable, themed editor | `docs/design/SEAM_UI_FIDELITY_REVIEW_2026-09-25.md` §11 calls for F02–F05; r6 `acceptance.md` has no FL Studio captures | **Open:** F02–F05 in both looks in the actual host |
 | Legacy painter removed | `libs/seam-native-ui/src/editor_scene.cpp` is the unavailable-platform presenter; the standalone and CLAP use `SingShell`. `docs/design/SEAM_UI_REDESIGN_CODE_PLAN_2026-09-25.md` records step 21 retirement | **Source complete** |
@@ -91,14 +91,20 @@ CoreGraphics wash, maximum channel difference is 14 across 9.23% of EMO pixels a
 of SCENE pixels. This is a recorded reference comparison, not plan §14 visual acceptance.
 
 At `87d8fe02` the glass-panel fills are also painted in software, in the same band pass as the
-wash. CoreGraphics dithers gradients with a fixed 64-column threshold pattern, so the software
-fill adds an 8×8 ordered dither to keep the dark panel ramps free of banding. Against the vector
-reference, the maximum stays 14 (EMO) and 8 (SCENE). The share of differing pixels rose to 49.7%
-and 51.3% because the two dither patterns differ. Only 0.040% and 0.0005% of pixels differ by
-more than 4 levels. Drawing the same panels over the same wash, the focused
-`seam_design_frame_pipeline_tests` case measures a maximum of 2 levels and a mean of 0.21. The
-remaining cold-frame levers are the grid backdrop and other translucent chrome fills, still drawn
-by CoreGraphics in L0. After them comes the main-thread grid replay of about 4 ms.
+wash. CoreGraphics dithers long gradients with a fixed 64-column threshold pattern, so the
+software fill adds an 8×8 ordered dither to keep the dark panel ramps free of banding. At
+`3fb39459` the canvas draws two-stop gradient fills of rounded rectangles and circles, such as the
+note capsules and knob bodies, with the same rasterizer. It does so only under plain state:
+rectangular clip, normal blend and no glow. Coverage is exact on vertical edges and uses the
+half-plane share along the boundary's tangent elsewhere. The dither follows the logical origin, so
+drawing whole, clipped or banded gives the same pixels. Because the vector reference now draws its
+panels with that fill too, the comparison isolates the wash: 9.88% and 7.13% of pixels differ,
+with a maximum of 14 and 8. The focused tests measure the fills against CoreGraphics itself
+(`ScopedBackendGradients`): at most 2 levels for the panels, and at most 5 levels with a mean
+of 0.21 for capsules and knobs. On a steep capsule ramp, the software rows are within 0.27 levels
+of the exact gradient. CoreGraphics' rows there follow a coarse, undithered table and stray by up
+to 2.91. The remaining main-thread costs are the CoreGraphics strokes of capsules and knobs, the
+grid replay and the character art.
 
 Historical diagnostic stage timing was approximately 7.2–7.8 ms for EMO L0 and 5.6–6.9 ms for SCENE L0,
 7.1–8.1 ms for grid plus content replay, and 0.24–0.36 ms for snapshot copying. Frame preparation
@@ -144,9 +150,9 @@ packet are narrower than the plan's proposed repeated, cross-platform, all-state
 
 ## Remaining acceptance work
 
-1. Close or explicitly rebaseline the true cold §10 miss, then run and archive the release
-   `seam_phase5_benchmark` design-shell JSON and relevant ctest results for the exact final source
-   commit; distinguish shell timing from host state, presentation, and process RSS.
+1. The true cold §10 budget is met in the recorded runs at `3fb39459`. Run and archive the
+   release `seam_phase5_benchmark` design-shell JSON and the relevant ctest results for the exact
+   final source commit. Keep shell timing distinct from host state, presentation and process RSS.
 2. Run FL Studio F02–F05 in both modes. Capture the embedded editor and verify upright text,
    pointer mapping, resizing, keyboard focus and the requested edit/export paths.
 3. Walk the accessibility tree and keyboard flows with VoiceOver and Accessibility Inspector.

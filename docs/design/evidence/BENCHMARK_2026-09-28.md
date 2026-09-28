@@ -1,5 +1,38 @@
 # Operator-recorded benchmark snapshot — 2026-09-28
 
+## Update at `3fb39459`: software gradient fills of round shapes
+
+Measured with the Release build of `3fb39459`. That commit draws two-stop gradient fills of
+rounded rectangles and circles (note capsules, knob bodies) in software instead of through
+CoreGraphics shading. A 40-sample full run, with load average 10.13 before and 20.37 after:
+
+| Case | Look | p50 ms | p95 ms | max ms | p95 budget ms | Verdict |
+|---|---|---:|---:|---:|---:|---|
+| `cold-full-frame` | EMO | 10.888 | 12.473 | 12.490 | 14 | PASS |
+| `retained-background-invalidation` | EMO | 7.549 | 7.809 | 7.900 | 14 | PASS |
+| `scroll-zoom` | EMO | 5.673 | 6.645 | 6.866 | 8 | PASS |
+| `playback` | EMO | 1.518 | 2.003 | 2.192 | 3 | PASS |
+| `dense-10000-notes` | EMO | 2.735 | 3.224 | 3.464 | 8 | PASS |
+| `cold-full-frame` | SCENE | 10.994 | 12.549 | 14.640 | 14 | PASS |
+| `retained-background-invalidation` | SCENE | 7.827 | 9.525 | 19.877 | 14 | PASS |
+| `scroll-zoom` | SCENE | 5.887 | 6.401 | 6.749 | 8 | PASS |
+| `playback` | SCENE | 1.684 | 2.153 | 2.246 | 3 | PASS |
+| `dense-10000-notes` | SCENE | 2.699 | 3.246 | 3.385 | 8 | PASS |
+
+The executable reported the design-shell gate as a pass. The layer cache was 65,374,226 bytes
+against the 80 MiB budget.
+
+Alternating A/B runs used `SEAM_BENCHMARK_CASE=cold-full-frame` with 80 samples: five runs each
+of this build and of the preceding panel-fill build, at load average 11.4–12.6. Median true-cold
+p50 went from 11.90 to 10.59 ms for EMO and from 11.87 to 10.77 ms for SCENE. Median p95 went from
+12.97 to 11.60 ms and from 13.77 to 11.70 ms. All ten look-runs of this build had p95 under 14 ms
+(11.1–13.6 ms).
+
+Unrelated processes later drove the load average to 20–29. A case-limited run at 20.4 measured an
+EMO p50 of 93 ms, which reflects contention, not the frame. The next two runs at 28–29 passed in
+three of four look-runs; the SCENE miss was a p95 of 16.0 ms. The budget is therefore met in every
+run at ordinary load on this machine, but p95 still responds to heavy unrelated load.
+
 ## Update at `87d8fe02`: software glass-panel fills
 
 Measured on this machine with the Release build of the code committed as `87d8fe02`. That commit
