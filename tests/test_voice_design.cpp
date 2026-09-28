@@ -2096,16 +2096,19 @@ TEST_CASE("recipe opt outs preserve ordinary phonation but reject restricted sou
 
 TEST_CASE("Japanese starter compiles every built-in phonemizer symbol through articulated routing") {
   using namespace seam;
+  constexpr std::uint32_t sampleRate = 22050U;
+  constexpr std::int64_t noteDurationTicks = 960;
   domain::Project project{domain::ProjectId{7301U}, "Japanese starter inventory coverage"};
   const auto& inventory = phonemizer::japanesePhoneSymbols();
   domain::VocalRegion region{
       .id = domain::RegionId{7302U}, .name = "starter inventory coverage",
-      .durationTick = time::Tick{static_cast<std::int64_t>(inventory.size()) * 960},
+      .durationTick = time::Tick{static_cast<std::int64_t>(inventory.size()) * noteDurationTicks},
       .lyrics = {{domain::LyricTokenId{7303U}, U"あ", domain::Language::Japanese}}};
   for (std::size_t index = 0U; index < inventory.size(); ++index) {
     const auto& phone = inventory[index];
     region.notes.push_back(domain::Note{.id = domain::NoteId{7304U + static_cast<std::uint64_t>(index)},
-        .startTick = time::Tick{static_cast<std::int64_t>(index) * 960}, .durationTick = time::Tick{960},
+        .startTick = time::Tick{static_cast<std::int64_t>(index) * noteDurationTicks},
+        .durationTick = time::Tick{noteDurationTicks},
         .midiKey = 60U, .lyricTokenId = domain::LyricTokenId{7303U},
         .phoneticHint = "a " + phone + " a"});
   }
@@ -2113,7 +2116,7 @@ TEST_CASE("Japanese starter compiles every built-in phonemizer symbol through ar
   if (!resolved) return;
   const auto& phones = resolved.value().pronunciation.tokens;
   CHECK(phones.size() > 60U);
-  const auto performance = synthesis::compileScorePerformance(project, region, 48000U, phones,
+  const auto performance = synthesis::compileScorePerformance(project, region, sampleRate, phones,
       synthesis::PhonemeTimingPolicy::ProceduralInNote); CHECK(performance);
   if (!performance) return;
   const auto recipe = voice_design::makeJapaneseStarterRecipe("ja-v1-coverage");
@@ -2131,7 +2134,46 @@ TEST_CASE("Japanese starter compiles every built-in phonemizer symbol through ar
   CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "ky" && gesture.posePhone == std::optional<std::string>{"ky"}; }));
   CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "cl" && gesture.kind == voice_design::ArticulationGestureKind::Closure; }));
   CHECK(std::any_of(gestures.begin(), gestures.end(), [](const auto& gesture) { return gesture.phone == "br" && gesture.kind == voice_design::ArticulationGestureKind::Breath; }));
-  const auto stream = voice_design::ArticulatedStream::create(
+  // The articulated renderer exposes planned gesture spans rather than separate marker records.
+  // Keep each span within the immutable phrase context so downstream candidate markers cannot
+  // escape the rendered PCM window.
+  const auto context = plan.value().context();
+  CHECK(context.start == 0);
+  CHECK(context.end > context.start);
+  CHECK(context.end - context.start <= 32LL * 1024LL * 1024LL);
+  for (const auto& gesture : gestures) {
+    CHECK(gesture.span.start >= context.start);
+    CHECK(gesture.span.end > gesture.span.start);
+    CHECK(gesture.span.end <= context.end);
+  }
+
+  auto wholeStream = voice_design::ArticulatedStream::create(
       resource.value(), performance.value(), plan.value(), "neutral", 512U);
-  CHECK(stream);
+  CHECK(wholeStream);
+  if (!wholeStream) return;
+  const auto whole = wholeStream.value().renderOwned(context);
+  CHECK(whole);
+  if (!whole) return;
+  CHECK(whole.value().startFrame == context.start);
+  CHECK(whole.value().samples.size() == static_cast<std::size_t>(context.end - context.start));
+  CHECK(std::all_of(whole.value().samples.begin(), whole.value().samples.end(),
+      [](float sample) { return std::isfinite(sample) && std::abs(sample) <= 1.0F; }));
+  CHECK(std::any_of(whole.value().samples.begin(), whole.value().samples.end(),
+      [](float sample) { return std::abs(sample) > 0.00001F; }));
+
+  auto chunkedStream = voice_design::ArticulatedStream::create(
+      resource.value(), performance.value(), plan.value(), "neutral", 512U);
+  CHECK(chunkedStream);
+  if (!chunkedStream) return;
+  const auto split = context.start + (context.end - context.start) / 2;
+  const auto head = chunkedStream.value().renderOwned({context.start, split}); CHECK(head);
+  if (!head) return;
+  const auto tail = chunkedStream.value().renderOwned({split, context.end}); CHECK(tail);
+  if (!tail) return;
+  CHECK(head.value().startFrame == context.start);
+  CHECK(tail.value().startFrame == split);
+  CHECK(head.value().samples.size() + tail.value().samples.size() == whole.value().samples.size());
+  auto chunkedPcm = head.value().samples;
+  chunkedPcm.insert(chunkedPcm.end(), tail.value().samples.begin(), tail.value().samples.end());
+  CHECK(chunkedPcm == whole.value().samples);
 }
