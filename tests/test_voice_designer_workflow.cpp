@@ -9,6 +9,7 @@
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/voice_design/frication_source.hpp"
+#include "seam/voice_design/audition_fingerprint.hpp"
 #include "seam/voice_design/vocal_tract.hpp"
 #include <thread>
 #include <algorithm>
@@ -830,8 +831,13 @@ TEST_CASE("Designer audition renders deterministic bounded PCM and follows phona
   const auto resource = voice_design::freezeVoiceRecipeResource(designerFixture()); CHECK(resource);
   const auto first = native_ui::renderDesignerAudition(resource.value(), 0U); CHECK(first);
   const auto repeat = native_ui::renderDesignerAudition(resource.value(), 0U); CHECK(repeat);
+  const auto decoded = voice_design::decodeVoiceRecipeResource(resource.value()); CHECK(decoded);
+  const auto sharedDefinition = voice_design::renderPoseAudition(
+      decoded.value(), decoded.value().poses.front().phone, decoded.value().poses.front().style, 69U);
+  CHECK(sharedDefinition);
   CHECK(first.value().sampleRate == 48000U); CHECK(first.value().channels == 1U); CHECK(first.value().frameCount() == 48000U);
   CHECK(first.value().interleaved == repeat.value().interleaved);
+  CHECK(first.value().interleaved == sharedDefinition.value());
   CHECK(first.value().interleaved.front() == 0.0F); CHECK(first.value().interleaved.back() == 0.0F);
   CHECK(std::all_of(first.value().interleaved.begin(), first.value().interleaved.end(), [](float sample) { return std::isfinite(sample) && std::abs(sample) <= 0.90001F; }));
   CHECK(std::any_of(first.value().interleaved.begin(), first.value().interleaved.end(), [](float sample) { return std::abs(sample) > 0.00001F; }));

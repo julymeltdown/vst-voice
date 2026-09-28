@@ -514,7 +514,8 @@ add_library(seam_voice_design
   libs/seam-voice-design/src/articulated_stream.cpp
   libs/seam-voice-design/src/procedural_renderer.cpp
   libs/seam-voice-design/src/recipe_resource.cpp
-  libs/seam-voice-design/src/procedural_candidate.cpp)
+  libs/seam-voice-design/src/procedural_candidate.cpp
+  libs/seam-voice-design/src/audition_fingerprint.cpp)
 target_include_directories(seam_voice_design PUBLIC libs/seam-voice-design/include)
 target_link_libraries(seam_voice_design PUBLIC seam_formats seam_core seam_text seam_phonemizer)
 seam_apply_compiler_options(seam_voice_design)
@@ -1496,6 +1497,11 @@ if(SEAM_BUILD_TESTS)
   add_executable(seam_automatic_performance_tests
     tests/test_main.cpp tests/test_automatic_performance.cpp)
   add_executable(seam_voice_design_tests tests/test_main.cpp tests/test_voice_design.cpp)
+  add_executable(seam_audition_fingerprint_tests tests/test_main.cpp tests/test_audition_fingerprint.cpp)
+  target_include_directories(seam_audition_fingerprint_tests PRIVATE tests)
+  target_link_libraries(seam_audition_fingerprint_tests PRIVATE seam_voice_design)
+  seam_apply_compiler_options(seam_audition_fingerprint_tests)
+  add_test(NAME seam_audition_fingerprint_tests COMMAND seam_audition_fingerprint_tests)
   add_executable(seam_recording_input_tests tests/test_main.cpp tests/test_recording_input_session.cpp)
   target_include_directories(seam_recording_input_tests PRIVATE tests)
   target_link_libraries(seam_recording_input_tests PRIVATE seam_platform)
