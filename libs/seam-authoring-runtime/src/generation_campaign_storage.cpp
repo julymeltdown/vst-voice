@@ -1,10 +1,12 @@
 #include "seam/authoring/generation_campaign.hpp"
+#include <limits>
 namespace seam::authoring {
-core::Result<CampaignStorageUsage> inspectCampaignStorage(const std::filesystem::path& root,
+namespace {
+core::Result<CampaignStorageUsage> scanCampaignStorage(const std::filesystem::path& root,
     std::uint64_t maximumBytes, std::size_t maximumEntries, std::stop_token stop) {
   const auto fail = [](std::string message) { return core::failure<CampaignStorageUsage>(core::ErrorCode::Conflict, std::move(message)); };
   if (stop.stop_requested()) return fail("Campaign storage inspection cancelled");
-  if (maximumBytes == 0U || maximumBytes > (1ULL << 40U) || maximumEntries == 0U || maximumEntries > 1048576U)
+  if (maximumBytes == 0U || maximumEntries == 0U || maximumEntries > 1048576U)
     return fail("Campaign storage inspection limits are invalid");
   std::error_code error;
   const auto status = std::filesystem::symlink_status(root, error);
@@ -27,5 +29,18 @@ core::Result<CampaignStorageUsage> inspectCampaignStorage(const std::filesystem:
     if (error) return fail("Cannot enumerate campaign storage");
   }
   return usage;
+}
+}  // namespace
+
+core::Result<CampaignStorageUsage> inspectCampaignStorage(const std::filesystem::path& root,
+    std::uint64_t maximumBytes, std::size_t maximumEntries, std::stop_token stop) {
+  if (maximumBytes > (1ULL << 40U))
+    return core::failure<CampaignStorageUsage>(core::ErrorCode::Conflict, "Campaign storage inspection limits are invalid");
+  return scanCampaignStorage(root, maximumBytes, maximumEntries, stop);
+}
+
+core::Result<CampaignStorageUsage> measureCampaignStorage(const std::filesystem::path& root,
+    std::size_t maximumEntries, std::stop_token stop) {
+  return scanCampaignStorage(root, std::numeric_limits<std::uint64_t>::max(), maximumEntries, stop);
 }
 }

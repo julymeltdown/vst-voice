@@ -79,7 +79,7 @@ core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
         score.value().trackId, score.value().regionId, 0U, rendering::RenderQuality::Final,
         static_cast<std::uint32_t>(score.value().project.settings().sampleRate), assignment->style);
     if (!snapshot) return core::Result<Output>{snapshot.error()};
-    const auto jobId = "inventory-v1-" + core::sha256Hex(score.value().templateIdentity + "\n" + takeId);
+    const auto jobId = campaignJobId(score.value().templateIdentity, takeId);
     const auto jobDirectory = directory / jobId;
     const voicebank_production::RawTakeInput take{.takeId = takeId, .promptId = assignment->promptId,
         .coverageKey = assignment->coverageKey, .pitchLayer = assignment->pitchLayer,

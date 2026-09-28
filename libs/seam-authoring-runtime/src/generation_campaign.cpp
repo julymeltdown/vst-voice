@@ -8,6 +8,10 @@
 #include <set>
 
 namespace seam::authoring {
+std::string campaignJobId(std::string_view templateIdentity, std::string_view takeId) {
+  return "inventory-v1-" + core::sha256Hex(std::string{templateIdentity} + "\n" + std::string{takeId});
+}
+
 core::Result<VerifiedGenerationCampaign> VerifiedGenerationCampaign::admit(
     std::string_view definition, std::string_view expectedSha256, std::stop_token stop) {
   const auto verified = verifyGenerationCampaign(definition, expectedSha256, stop);
