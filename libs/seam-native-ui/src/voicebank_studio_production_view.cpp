@@ -255,19 +255,46 @@ std::size_t studioGenerationQueueVisibleRows(double height) noexcept {
   return std::min<std::size_t>(rows, 8U);
 }
 
+std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept {
+  if (!std::isfinite(height) || height < 312.0) return 0U;
+  const auto rows = static_cast<std::size_t>(std::max(1.0, std::floor((height - 312.0) / 34.0) + 1.0));
+  return std::min<std::size_t>(rows, 8U);
+}
+
 std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
-    bool recordingActive, std::size_t firstRequest) {
+    bool recordingActive, std::size_t firstRequest, std::string_view detailRequestId, std::size_t firstJob) {
   if (!controller.productionProject() || !controller.manifest().units.empty() || width < 650.0 || height < 250.0)
     return {};
+  const auto& records = controller.generationRequests();
+  const auto detail = std::find_if(records.begin(), records.end(), [detailRequestId](const auto& record) {
+    return !detailRequestId.empty() && record.request.requestId == detailRequestId;
+  });
+  const bool hasDetail = !detailRequestId.empty();
+  const auto busy = controller.proceduralImportBusy() || recordingActive;
+  if (hasDetail) {
+    const auto detailWidth = std::max(0.0, width - 88.0);
+    const auto half = detailWidth / 2.0;
+    std::vector<StudioSampleReviewControl> controls{
+        {"request-detail-back", "Back to requests", {44.0, 80.0, half - 3.0, 22.0}, true}};
+    if (detail != records.end() && !detail->terminal)
+      controls.push_back({"request-detail-resume:" + detail->request.requestId, "Verify & resume",
+          {44.0 + half, 80.0, half - 3.0, 22.0}, !busy});
+    if (detail != records.end()) {
+      const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
+      if (firstJob > 0U)
+        controls.push_back({"request-detail-previous", "Previous jobs", {44.0, 108.0, half - 3.0, 20.0}, !busy});
+      if (firstJob + visibleJobs < detail->request.jobs.size())
+        controls.push_back({"request-detail-next", "Next jobs", {44.0 + half, 108.0, half - 3.0, 20.0}, !busy});
+    }
+    return controls;
+  }
   const auto areaWidth = std::max(0.0, width - 574.0);
   const auto half = areaWidth / 2.0;
-  const bool busy = controller.proceduralImportBusy() || recordingActive;
   std::vector<StudioSampleReviewControl> controls{
       {"queue-close", "Close", {294.0, 80.0, half - 2.0, 22.0}, true},
       {"queue-refresh", controller.generationRequestQueueLoading() ? "Reading..." : "Refresh",
           {294.0 + half, 80.0, half - 2.0, 22.0}, !busy}};
-  const auto& records = controller.generationRequests();
   const auto visibleRows = studioGenerationQueueVisibleRows(height);
   const auto buttonWidth = std::min(146.0, std::max(54.0, areaWidth * 0.38));
   if (firstRequest > 0U)
@@ -277,25 +304,96 @@ std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
   const auto lastRequest = std::min(records.size(), firstRequest + visibleRows);
   for (std::size_t index = firstRequest; index < lastRequest; ++index) {
     const auto& record = records[index];
-    const auto shortId = record.request.requestId.substr(0U, 10U);
-    std::string label;
-    if (record.terminal) {
-      label = "Terminal";
-    } else {
-      label = areaWidth < 260.0 ? "Verify" : "Verify & resume";
-    }
-    controls.push_back({record.terminal ? "queue-terminal:" + record.request.requestId
-                                        : "resume-request:" + record.request.requestId,
-        std::move(label), {294.0 + areaWidth - buttonWidth, 150.0 + static_cast<double>(index - firstRequest) * 30.0,
-            buttonWidth - 2.0, 26.0}, !busy && !record.terminal.has_value()});
+    controls.push_back({"inspect-request:" + record.request.requestId, "Details",
+        {294.0 + areaWidth - buttonWidth, 150.0 + static_cast<double>(index - firstRequest) * 30.0,
+            buttonWidth - 2.0, 26.0}, !busy});
   }
   return controls;
 }
 
 void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
-    const VoicebankStudioController& controller, std::size_t firstRequest) noexcept {
+    const VoicebankStudioController& controller, std::size_t firstRequest,
+    std::string_view detailRequestId, std::size_t firstJob) noexcept {
   const auto width = canvas.logicalWidth();
   const auto height = canvas.logicalHeight();
+  if (!detailRequestId.empty()) {
+    const auto& records = controller.generationRequests();
+    const auto detail = std::find_if(records.begin(), records.end(), [detailRequestId](const auto& record) {
+      return record.request.requestId == detailRequestId;
+    });
+    const ui::Rect region{20.0, 72.0, std::max(0.0, width - 40.0), std::max(0.0, height - 104.0)};
+    canvas.fillRect(region, Color{15, 14, 18, 255});
+    canvas.strokeRect(region, Color{169, 79, 119, 255}, 1.0);
+    canvas.drawText({44.0, 84.0, std::max(0.0, width - 88.0), 18.0},
+        "GENERATION REQUEST · JOB AND COVERAGE DETAIL", Color{239, 233, 241, 255}, 12.0);
+    if (detail == records.end()) {
+      canvas.drawText({44.0, 128.0, std::max(0.0, width - 88.0), 18.0},
+          "REQUEST IS NOT IN THE CURRENT VERIFIED SNAPSHOT · RETURN AND REFRESH",
+          Color{224, 155, 114, 255}, 9.0);
+      return;
+    }
+    const auto& request = detail->request;
+    canvas.drawText({44.0, 116.0, std::max(0.0, width - 88.0), 14.0},
+        "ID " + request.requestId + " · " + request.language + " · " + request.recipeId + " " + request.recipeVersion,
+        Color{101, 187, 184, 255}, 8.0);
+    canvas.drawText({44.0, 134.0, std::max(0.0, width - 88.0), 14.0},
+        "PRODUCER GEN " + std::to_string(request.expectedGeneration) + " · PROJECT SHA256 " + request.expectedProjectSha256,
+        Color{166, 154, 170, 255}, 8.0);
+    canvas.drawText({44.0, 152.0, std::max(0.0, width - 88.0), 14.0},
+        "RECIPE SHA256 " + request.recipeHash + " · SUBMITTED BY " + request.submittedBy + " · " + request.submittedAtUtc,
+        Color{166, 154, 170, 255}, 8.0);
+    canvas.drawText({44.0, 170.0, std::max(0.0, width - 88.0), 14.0},
+        "BUDGET " + std::to_string(request.budget.maximumJobs) + " JOBS · " +
+            std::to_string(request.budget.maximumFrames) + " FRAMES · " +
+            std::to_string(request.budget.maximumBytes) + " BYTES · BATCH " +
+            std::to_string(request.budget.batchMaximumJobs) + " JOBS / " +
+            std::to_string(request.budget.batchMaximumFrames) + " FRAMES",
+        Color{166, 154, 170, 255}, 8.0);
+    const auto locator = request.definitionLocator.empty()
+        ? std::string{"DEFINITION LOCATOR NOT RETAINED · USE OPEN / RESUME FALLBACK"}
+        : "DEFINITION LOCATOR · " + request.definitionLocator;
+    canvas.drawText({44.0, 188.0, std::max(0.0, width - 88.0), 14.0}, locator,
+        Color{166, 154, 170, 255}, 8.0);
+    if (detail->terminal) {
+      const auto& terminal = *detail->terminal;
+      canvas.drawText({44.0, 206.0, std::max(0.0, width - 88.0), 14.0},
+          "TERMINAL " + voicebank_production::toString(terminal.outcome) + " · " +
+              std::to_string(terminal.completedBatches) + "/" + std::to_string(detail->batchCount()) +
+              " BATCHES · " + terminal.detail,
+          Color{224, 155, 114, 255}, 8.0);
+    } else {
+      canvas.drawText({44.0, 206.0, std::max(0.0, width - 88.0), 14.0},
+          "PENDING · DEFINITION BYTES MUST STILL MATCH THE REQUEST ID BEFORE RESUME",
+          Color{224, 155, 114, 255}, 8.0);
+    }
+    const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
+    const auto lastJob = std::min(request.jobs.size(), firstJob + visibleJobs);
+    if (request.jobs.empty()) {
+      canvas.drawText({44.0, 246.0, std::max(0.0, width - 88.0), 16.0},
+          "NO JOBS IN VERIFIED REQUEST", Color{166, 154, 170, 255}, 8.0);
+    }
+    for (std::size_t index = firstJob; index < lastJob; ++index) {
+      const auto& job = request.jobs[index];
+      const auto y = 242.0 + static_cast<double>(index - firstJob) * 34.0;
+      canvas.fillRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{35, 30, 40, 255});
+      canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{73, 63, 81, 255}, 1.0);
+      canvas.drawText({52.0, y + 3.0, std::max(0.0, width - 104.0), 11.0},
+          std::to_string(index + 1U) + ". " + job.jobId + "  →  " + job.takeId + "  ·  " + job.coverageKey,
+          Color{239, 233, 241, 255}, 8.0);
+      canvas.drawText({52.0, y + 16.0, std::max(0.0, width - 104.0), 10.0},
+          "STYLE " + job.style + " · MIDI " + std::to_string(job.pitchLayer) + " · " +
+              std::to_string(job.frameCount) + " FRAMES · BATCH " + std::to_string(job.batchIndex + 1),
+          Color{166, 154, 170, 255}, 7.0);
+    }
+    if (visibleJobs != 0U && !request.jobs.empty()) {
+      canvas.drawText({44.0, height - 54.0, std::max(0.0, width - 88.0), 12.0},
+          "JOBS " + std::to_string(std::min(request.jobs.size(), firstJob + 1U)) + "–" +
+              std::to_string(lastJob) + " OF " + std::to_string(request.jobs.size()) +
+              " · COVERAGE ENTRIES ARE REQUEST DATA, NOT COMPLETION OR REVIEW",
+          Color{101, 187, 184, 255}, 7.0);
+    }
+    return;
+  }
   const ui::Rect region{270.0, 72.0, std::max(0.0, width - 526.0), std::max(0.0, height - 104.0)};
   canvas.fillRect(region, Color{15, 14, 18, 255});
   canvas.strokeRect(region, Color{169, 79, 119, 255}, 1.0);

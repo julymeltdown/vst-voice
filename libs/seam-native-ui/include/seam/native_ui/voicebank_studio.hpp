@@ -566,11 +566,14 @@ struct StudioSampleReviewControl final {
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationControls(
     const VoicebankStudioController& controller, double width, bool recordingActive);
 [[nodiscard]] std::size_t studioGenerationQueueVisibleRows(double height) noexcept;
+[[nodiscard]] std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept;
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
-    bool recordingActive, std::size_t firstRequest);
+    bool recordingActive, std::size_t firstRequest,
+    std::string_view detailRequestId = {}, std::size_t firstJob = 0U);
 void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
-    const VoicebankStudioController& controller, std::size_t firstRequest) noexcept;
+    const VoicebankStudioController& controller, std::size_t firstRequest,
+    std::string_view detailRequestId = {}, std::size_t firstJob = 0U) noexcept;
 [[nodiscard]] std::vector<std::string> studioSampleReviewDetailLines(
     const VoicebankStudioController& controller, double width);
 [[nodiscard]] std::size_t studioSampleReviewVisibleLines(double height) noexcept;

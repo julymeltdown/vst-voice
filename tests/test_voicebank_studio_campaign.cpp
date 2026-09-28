@@ -298,8 +298,11 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   const auto pendingControls = seam::native_ui::studioGenerationQueueControls(
       fixture.controller, 1040.0, 720.0, false, 0U);
   CHECK(std::any_of(pendingControls.begin(), pendingControls.end(), [&](const auto& control) {
-    return control.id == "resume-request:" + sha && control.enabled;
+    return control.id == "inspect-request:" + sha && control.enabled;
   }));
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(280.0) == 0U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(480.0) == 5U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(720.0) == 8U);
   for (const auto [width, height] : {std::pair{720.0, 480.0}, std::pair{1040.0, 720.0},
                                     std::pair{1600.0, 900.0}}) {
     const auto controls = seam::native_ui::studioGenerationQueueControls(
@@ -316,6 +319,30 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
       CHECK(control.bounds.right() <= width - 280.0);
       CHECK(control.bounds.bottom() <= height - 32.0);
     }
+    const auto details = seam::native_ui::studioGenerationQueueControls(
+        fixture.controller, width, height, false, 0U, sha, 0U);
+    const auto back = std::find_if(details.begin(), details.end(),
+        [](const auto& control) { return control.id == "request-detail-back"; });
+    const auto resume = std::find_if(details.begin(), details.end(), [&](const auto& control) {
+      return control.id == "request-detail-resume:" + sha;
+    });
+    CHECK(back != details.end());
+    CHECK(resume != details.end());
+    if (back != details.end() && resume != details.end()) CHECK(back->bounds.right() <= resume->bounds.x);
+    for (const auto& control : details) {
+      CHECK(control.bounds.x >= 44.0);
+      CHECK(control.bounds.right() <= width - 44.0);
+      CHECK(control.bounds.bottom() <= height - 32.0);
+    }
+  }
+  {
+    seam::native_ui::PixelSurface surface(1040U, 720U);
+    surface.clear({0U, 0U, 0U, 255U});
+    const auto beforePaint = surface.checksum();
+    seam::native_ui::RasterCanvas canvas(surface);
+    seam::native_ui::paintStudioGenerationRequestQueue(canvas, fixture.controller, 0U, sha, 0U);
+    CHECK(surface.checksum() != beforePaint);
+    CHECK(surface.pixels()[245U * 1040U + 50U] == (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
   }
 
   const auto originalBytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
@@ -358,7 +385,15 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   const auto terminalControls = seam::native_ui::studioGenerationQueueControls(
       fixture.controller, 1040.0, 720.0, false, 0U);
   CHECK(std::any_of(terminalControls.begin(), terminalControls.end(), [&](const auto& control) {
-    return control.id == "queue-terminal:" + sha && !control.enabled;
+    return control.id == "inspect-request:" + sha && control.enabled;
+  }));
+  const auto terminalDetails = seam::native_ui::studioGenerationQueueControls(
+      fixture.controller, 1040.0, 720.0, false, 0U, sha, 0U);
+  CHECK(std::any_of(terminalDetails.begin(), terminalDetails.end(), [](const auto& control) {
+    return control.id == "request-detail-back";
+  }));
+  CHECK(std::none_of(terminalDetails.begin(), terminalDetails.end(), [](const auto& control) {
+    return control.id.starts_with("request-detail-resume:");
   }));
 }
 

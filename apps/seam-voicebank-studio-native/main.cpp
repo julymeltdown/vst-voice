@@ -1643,14 +1643,35 @@ public:
     const auto controls = generationQueueView_
         ? seam::native_ui::studioGenerationQueueControls(controller_, controller_.logicalWidth(),
             controller_.logicalHeight(), recording_.armed() || recording_.recordedFrames() > 0U,
-            generationRequestFirst_)
+            generationRequestFirst_, generationRequestDetailId_, generationRequestJobFirst_)
         : seam::native_ui::studioGenerationControls(controller_, controller_.logicalWidth(),
             recording_.armed() || recording_.recordedFrames() > 0U);
     const auto found=std::find_if(controls.begin(),controls.end(),[&](const auto& control){return control.id==id;});
     if (generationModal_ || designerView_ || sampleReviewView_ || found==controls.end() || !found->enabled)
       return seam::core::failure(seam::core::ErrorCode::Conflict,"Generation action is unavailable or busy");
     if (generationQueueView_) {
-      if (id == "queue-close") { generationQueueView_ = false; return seam::core::success(); }
+      if (id == "request-detail-back") {
+        generationRequestDetailId_.clear(); generationRequestJobFirst_ = 0U; return seam::core::success();
+      }
+      constexpr std::string_view inspectPrefix{"inspect-request:"};
+      if (id.starts_with(inspectPrefix)) {
+        generationRequestDetailId_ = std::string{id.substr(inspectPrefix.size())};
+        generationRequestJobFirst_ = 0U;
+        return seam::core::success();
+      }
+      constexpr std::string_view resumeDetailPrefix{"request-detail-resume:"};
+      if (id.starts_with(resumeDetailPrefix))
+        return controller_.beginGenerationRequestResume(id.substr(resumeDetailPrefix.size()));
+      if (id == "request-detail-previous") {
+        const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
+        generationRequestJobFirst_ = generationRequestJobFirst_ > rows ? generationRequestJobFirst_ - rows : 0U;
+        return seam::core::success();
+      }
+      if (id == "request-detail-next") {
+        generationRequestJobFirst_ += seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
+        return seam::core::success();
+      }
+      if (id == "queue-close") { generationQueueView_ = false; generationRequestDetailId_.clear(); return seam::core::success(); }
       if (id == "queue-refresh") {
         generationRequestFirst_ = 0U;
         return controller_.refreshGenerationRequests();
@@ -1664,16 +1685,17 @@ public:
         generationRequestFirst_ += seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
         return seam::core::success();
       }
-      constexpr std::string_view resumePrefix{"resume-request:"};
-      if (id.starts_with(resumePrefix))
-        return controller_.beginGenerationRequestResume(id.substr(resumePrefix.size()));
       return seam::core::failure(seam::core::ErrorCode::Unsupported, "Unknown request queue action");
     }
     if (id=="cancel") {
       controller_.cancelProceduralCandidateImport();
       return seam::core::success();
     }
-    if (id=="request-queue") { generationQueueView_ = true; generationRequestFirst_ = 0U; return seam::core::success(); }
+    if (id=="request-queue") {
+      generationQueueView_ = true; generationRequestFirst_ = 0U;
+      generationRequestDetailId_.clear(); generationRequestJobFirst_ = 0U;
+      return seam::core::success();
+    }
     if (id=="plan-campaign") return planCampaignFromDialog();
     if (id=="run-campaign") return runCampaignFromDialog();
     struct ModalGuard {
@@ -1687,11 +1709,13 @@ public:
   void rebuildGenerationAccessibility(double width,double height) {
     using namespace seam::native_ui;
     const auto prefix=generationSemanticPrefix();
-    SemanticNode root{.id=prefix+"root",.role=SemanticRole::Panel,.name="Producer generation actions",
+    SemanticNode root{.id=prefix+"root",.role=SemanticRole::Panel,
+        .name=generationRequestDetailId_.empty()?"Producer generation actions":"Generation request job and coverage details",
         .bounds={0.0,0.0,width,height}};
     const auto controls = generationQueueView_
         ? studioGenerationQueueControls(controller_, width, height,
-            recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_)
+            recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_,
+            generationRequestDetailId_, generationRequestJobFirst_)
         : studioGenerationControls(controller_, width,
             recording_.armed() || recording_.recordedFrames() > 0U);
     for (const auto& control : controls) {
@@ -1701,24 +1725,85 @@ public:
           .actions=enabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
     }
     if (generationQueueView_) {
-      root.children.push_back({.id=prefix+"request-queue-status",.role=SemanticRole::Status,
-          .name="Verified generation request queue",.value=std::string(controller_.generationRequestQueueStatus()),
-          .bounds={294.0,126.0,std::max(0.0,width-574.0),14.0}});
       const auto& requests = controller_.generationRequests();
-      const auto rows = studioGenerationQueueVisibleRows(height);
-      const auto buttonWidth = std::min(146.0, std::max(54.0, std::max(0.0, width - 574.0) * 0.38));
-      const auto detailsWidth = std::max(0.0, width - 574.0 - buttonWidth - 18.0);
-      for (std::size_t index = generationRequestFirst_; index < std::min(requests.size(), generationRequestFirst_ + rows); ++index) {
-        const auto& request = requests[index];
-        std::string value = request.terminal
-            ? "Terminal " + seam::voicebank_production::toString(request.terminal->outcome) + ", " +
-                std::to_string(request.terminal->completedBatches) + " of " + std::to_string(request.batchCount()) + " batches"
-            : "Submitted, " + std::to_string(request.request.jobs.size()) + " jobs, expected producer generation " +
-                std::to_string(request.request.expectedGeneration) + "; campaign definition SHA-256 is checked before resume";
-        root.children.push_back({.id=prefix+"request-status."+request.request.requestId,
-            .role=SemanticRole::Status,.name="Generation request " + request.request.requestId,
-            .value=std::move(value),.bounds={302.0,150.0+static_cast<double>(index-generationRequestFirst_)*30.0,
-                detailsWidth,26.0}});
+      if (!generationRequestDetailId_.empty()) {
+        const auto request = std::find_if(requests.begin(), requests.end(), [this](const auto& entry) {
+          return entry.request.requestId == generationRequestDetailId_;
+        });
+        if (request == requests.end()) {
+          root.children.push_back({.id=prefix+"request-detail-missing",.role=SemanticRole::Status,
+              .name="Selected request unavailable",.value="Request is not in the current verified snapshot; return and refresh",
+              .bounds={44.0,128.0,std::max(0.0,width-88.0),18.0}});
+        } else {
+          const auto& item = *request;
+          root.children.push_back({.id=prefix+"request-detail-identity",.role=SemanticRole::Status,
+              .name="Immutable generation request identity",
+              .value="request=" + item.request.requestId + "; language=" + item.request.language +
+                  "; recipe=" + item.request.recipeId + "@" + item.request.recipeVersion +
+                  "; recipe_sha256=" + item.request.recipeHash,
+              .bounds={44.0,116.0,std::max(0.0,width-88.0),18.0}});
+          root.children.push_back({.id=prefix+"request-detail-producer",.role=SemanticRole::Status,
+              .name="Expected producer state",
+              .value="generation=" + std::to_string(item.request.expectedGeneration) +
+                  "; project_sha256=" + item.request.expectedProjectSha256,
+              .bounds={44.0,134.0,std::max(0.0,width-88.0),18.0}});
+          root.children.push_back({.id=prefix+"request-detail-submission",.role=SemanticRole::Status,
+              .name="Request submission and worker definition",
+              .value="submitted_by=" + item.request.submittedBy + "; submitted_at=" + item.request.submittedAtUtc +
+                  "; definition_locator=" + (item.request.definitionLocator.empty()?"unavailable":item.request.definitionLocator),
+              .bounds={44.0,152.0,std::max(0.0,width-88.0),18.0}});
+          root.children.push_back({.id=prefix+"request-detail-budget",.role=SemanticRole::Status,
+              .name="Admitted generation budgets",
+              .value="jobs=" + std::to_string(item.request.budget.maximumJobs) +
+                  "; frames=" + std::to_string(item.request.budget.maximumFrames) +
+                  "; bytes=" + std::to_string(item.request.budget.maximumBytes) +
+                  "; batch_jobs=" + std::to_string(item.request.budget.batchMaximumJobs) +
+                  "; batch_frames=" + std::to_string(item.request.budget.batchMaximumFrames),
+              .bounds={44.0,170.0,std::max(0.0,width-88.0),18.0}});
+          if (item.terminal)
+            root.children.push_back({.id=prefix+"request-detail-terminal",.role=SemanticRole::Status,
+                .name="Durable terminal outcome",
+                .value=seam::voicebank_production::toString(item.terminal->outcome) + "; " +
+                    std::to_string(item.terminal->completedBatches) + " of " + std::to_string(item.batchCount()) +
+                    " batches; " + item.terminal->detail,
+                .bounds={44.0,206.0,std::max(0.0,width-88.0),18.0}});
+          else
+            root.children.push_back({.id=prefix+"request-detail-pending",.role=SemanticRole::Status,
+                .name="Pending request safety state",
+                .value="Definition bytes must still match the request ID before resume; queue is not evidence of completion or review",
+                .bounds={44.0,206.0,std::max(0.0,width-88.0),18.0}});
+          const auto rows = studioGenerationRequestDetailVisibleRows(height);
+          for (std::size_t index = generationRequestJobFirst_;
+              index < std::min(item.request.jobs.size(), generationRequestJobFirst_ + rows); ++index) {
+            const auto& job = item.request.jobs[index];
+            root.children.push_back({.id=prefix+"generation-job."+job.jobId,.role=SemanticRole::Status,
+                .name="Generation job " + std::to_string(index + 1U) + ": " + job.jobId,
+                .value="take=" + job.takeId + "; coverage=" + job.coverageKey + "; style=" + job.style +
+                    "; pitch_layer=" + std::to_string(job.pitchLayer) + "; frames=" +
+                    std::to_string(job.frameCount) + "; batch=" + std::to_string(job.batchIndex + 1),
+                .bounds={52.0,242.0+static_cast<double>(index-generationRequestJobFirst_)*34.0,
+                    std::max(0.0,width-104.0),30.0}});
+          }
+        }
+      } else {
+        root.children.push_back({.id=prefix+"request-queue-status",.role=SemanticRole::Status,
+            .name="Verified generation request queue",.value=std::string(controller_.generationRequestQueueStatus()),
+            .bounds={294.0,126.0,std::max(0.0,width-574.0),14.0}});
+        const auto rows = studioGenerationQueueVisibleRows(height);
+        const auto buttonWidth = std::min(146.0, std::max(54.0, std::max(0.0, width - 574.0) * 0.38));
+        const auto detailsWidth = std::max(0.0, width - 574.0 - buttonWidth - 18.0);
+        for (std::size_t index = generationRequestFirst_; index < std::min(requests.size(), generationRequestFirst_ + rows); ++index) {
+          const auto& request = requests[index];
+          std::string value = request.terminal
+              ? "Terminal " + seam::voicebank_production::toString(request.terminal->outcome) + ", " +
+                  std::to_string(request.terminal->completedBatches) + " of " + std::to_string(request.batchCount()) + " batches"
+              : "Submitted, " + std::to_string(request.request.jobs.size()) + " jobs, expected producer generation " +
+                  std::to_string(request.request.expectedGeneration) + "; campaign definition SHA-256 is checked before resume";
+          root.children.push_back({.id=prefix+"request-status."+request.request.requestId,
+              .role=SemanticRole::Status,.name="Generation request " + request.request.requestId,
+              .value=std::move(value),.bounds={302.0,150.0+static_cast<double>(index-generationRequestFirst_)*30.0,
+                  detailsWidth,26.0}});
+        }
       }
     }
     if (!generationQueueView_) {
@@ -1796,9 +1881,11 @@ public:
       }
     }
     if (generationQueueView_) {
-      seam::native_ui::paintStudioGenerationRequestQueue(canvas, controller_, generationRequestFirst_);
+      seam::native_ui::paintStudioGenerationRequestQueue(canvas, controller_, generationRequestFirst_,
+          generationRequestDetailId_, generationRequestJobFirst_);
       const auto queueControls = seam::native_ui::studioGenerationQueueControls(controller_, canvas.logicalWidth(),
-          canvas.logicalHeight(), recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_);
+          canvas.logicalHeight(), recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_,
+          generationRequestDetailId_, generationRequestJobFirst_);
       for (const auto& control : queueControls) {
         const auto fill = control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255};
         canvas.fillRect(control.bounds, fill);
@@ -1840,7 +1927,8 @@ public:
       if (event.button == seam::native_ui::PointerButton::Left)
         for (const auto& control : seam::native_ui::studioGenerationQueueControls(controller_,
                  controller_.logicalWidth(), controller_.logicalHeight(),
-                 recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_)) {
+                 recording_.armed() || recording_.recordedFrames() > 0U, generationRequestFirst_,
+                 generationRequestDetailId_, generationRequestJobFirst_)) {
           if (control.bounds.contains(event.position)) {
             if (control.enabled) { lastError_.clear(); record(generationControlAction(control.id)); }
             repaint(); return;
@@ -1990,11 +2078,24 @@ public:
       return;
     }
     if (generationQueueView_) {
-      const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
-      if (deltaY > 0.0 && generationRequestFirst_ > 0U)
-        generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
-      else if (deltaY < 0.0 && generationRequestFirst_ + rows < controller_.generationRequests().size())
-        generationRequestFirst_ += rows;
+      if (!generationRequestDetailId_.empty()) {
+        const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
+        const auto request = std::find_if(controller_.generationRequests().begin(), controller_.generationRequests().end(), [this](const auto& entry) {
+          return entry.request.requestId == generationRequestDetailId_;
+        });
+        if (request != controller_.generationRequests().end()) {
+          if (deltaY > 0.0 && generationRequestJobFirst_ > 0U)
+            generationRequestJobFirst_ = generationRequestJobFirst_ > rows ? generationRequestJobFirst_ - rows : 0U;
+          else if (deltaY < 0.0 && generationRequestJobFirst_ + rows < request->request.jobs.size())
+            generationRequestJobFirst_ += rows;
+        }
+      } else {
+        const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
+        if (deltaY > 0.0 && generationRequestFirst_ > 0U)
+          generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
+        else if (deltaY < 0.0 && generationRequestFirst_ + rows < controller_.generationRequests().size())
+          generationRequestFirst_ += rows;
+      }
       repaint(); return;
     }
     if (designerView_) return;
@@ -2029,12 +2130,26 @@ public:
       using Key = seam::native_ui::NativeKey;
       if (event.key == Key::Escape) {
         if (controller_.proceduralImportBusy()) controller_.cancelProceduralCandidateImport();
-        else generationQueueView_ = false;
+        else if (!generationRequestDetailId_.empty()) {
+          generationRequestDetailId_.clear(); generationRequestJobFirst_ = 0U;
+        } else generationQueueView_ = false;
       }
       else if (event.key == Key::R && !event.repeat && !recording_.armed() &&
           recording_.recordedFrames() == 0U && !controller_.proceduralImportBusy())
         record(controller_.refreshGenerationRequests());
-      else if (event.key == Key::Left && generationRequestFirst_ > 0U) {
+      else if (!generationRequestDetailId_.empty() &&
+          (event.key == Key::Left || event.key == Key::Right)) {
+        const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
+        const auto request = std::find_if(controller_.generationRequests().begin(), controller_.generationRequests().end(), [this](const auto& entry) {
+          return entry.request.requestId == generationRequestDetailId_;
+        });
+        if (request != controller_.generationRequests().end()) {
+          if (event.key == Key::Left && generationRequestJobFirst_ > 0U)
+            generationRequestJobFirst_ = generationRequestJobFirst_ > rows ? generationRequestJobFirst_ - rows : 0U;
+          else if (event.key == Key::Right && generationRequestJobFirst_ + rows < request->request.jobs.size())
+            generationRequestJobFirst_ += rows;
+        }
+      } else if (event.key == Key::Left && generationRequestFirst_ > 0U) {
         const auto rows = seam::native_ui::studioGenerationQueueVisibleRows(controller_.logicalHeight());
         generationRequestFirst_ = generationRequestFirst_ > rows ? generationRequestFirst_ - rows : 0U;
       } else if (event.key == Key::Right) {
@@ -2778,6 +2893,8 @@ private:
   std::string generationSemanticFocus_;
   bool generationQueueView_{false};
   std::size_t generationRequestFirst_{0U};
+  std::string generationRequestDetailId_;
+  std::size_t generationRequestJobFirst_{0U};
   seam::native_ui::AccessibilityTree studioAccessibility_;
   std::string studioSemanticFocus_;
   bool generationModal_{false}, takeImportModal_{false};
