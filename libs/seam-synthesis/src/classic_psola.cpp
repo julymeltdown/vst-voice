@@ -1,6 +1,7 @@
 #include "seam/synthesis/classic_psola.hpp"
 
 #include "seam/voicebank/pitch_marks.hpp"
+#include "voiced_source_marks.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,21 +26,6 @@ float interpolate(std::span<const float> samples, double position) noexcept {
 
 double midiToHz(double midi) noexcept {
   return 440.0 * std::pow(2.0, (midi - 69.0) / 12.0);
-}
-
-double medianPeriod(std::span<const voicebank::PitchMark> marks) {
-  std::vector<double> periods;
-  periods.reserve(marks.size() > 1U ? marks.size() - 1U : 0U);
-  for (std::size_t index = 1; index < marks.size(); ++index) {
-    const auto difference = marks[index].frame - marks[index - 1U].frame;
-    if (difference > 1) periods.push_back(static_cast<double>(difference));
-  }
-  if (periods.empty()) return 0.0;
-  const auto middle = periods.begin() + static_cast<std::ptrdiff_t>(periods.size() / 2U);
-  std::nth_element(periods.begin(), middle, periods.end());
-  if (periods.size() % 2U != 0U) return *middle;
-  const auto lower = *std::max_element(periods.begin(), middle);
-  return (lower + *middle) * 0.5;
 }
 
 double localPeriod(std::span<const voicebank::PitchMark> marks,
@@ -196,29 +182,15 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
     }
   }
 
-  std::vector<voicebank::PitchMark> stableMarks;
-  for (const auto& mark : unit.pitchMarks) {
-    if (mark.frame >= loopStart && mark.frame < loopEnd) stableMarks.push_back(mark);
-  }
-  if (stableMarks.size() < 3U) {
-    for (const auto& mark : unit.pitchMarks) {
-      if (mark.frame >= stableStart && mark.frame < releaseStart) {
-        stableMarks.push_back(mark);
-      }
-    }
-    std::sort(stableMarks.begin(), stableMarks.end(),
-        [](const auto& lhs, const auto& rhs) { return lhs.frame < rhs.frame; });
-    stableMarks.erase(std::unique(stableMarks.begin(), stableMarks.end(),
-        [](const auto& lhs, const auto& rhs) { return lhs.frame == rhs.frame; }),
-        stableMarks.end());
-  }
+  const auto stableMarks = detail::sustainMarks(unit.pitchMarks, loopStart, loopEnd,
+                                                stableStart, releaseStart);
   if (stableMarks.size() < 3U) {
     return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
                                        "Classic PSOLA has too few marks in the sustain region",
                                        unit.id);
   }
 
-  const auto sourceMedianPeriod = medianPeriod(stableMarks);
+  const auto sourceMedianPeriod = detail::medianMarkPeriod(stableMarks);
   if (!std::isfinite(sourceMedianPeriod) || sourceMedianPeriod <= 1.0) {
     return core::failure<RenderedUnit>(core::ErrorCode::Unsupported,
                                        "Classic PSOLA source period is invalid",
@@ -356,144 +328,39 @@ core::Result<RenderedUnit> ClassicPsolaRenderer::render(
   // two over the first and last period of each voiced run. Where the compiled
   // performance accepts unvoiced pitch, the edge keeps its source rendering rather
   // than inventing one; it is not retargeted there.
-  const auto& allMarks = unit.pitchMarks;
-  const auto nearestMark = [&allMarks](double position) {
-    const auto found = std::lower_bound(allMarks.begin(), allMarks.end(), position,
-        [](const voicebank::PitchMark& mark, double value) {
-          return static_cast<double>(mark.frame) < value;
-        });
-    if (found == allMarks.end()) return allMarks.size() - 1U;
-    const auto after = static_cast<std::size_t>(found - allMarks.begin());
-    if (after == 0U) return after;
-    return position - static_cast<double>(allMarks[after - 1U].frame) <=
-                   static_cast<double>(found->frame) - position
-               ? after - 1U
-               : after;
-  };
-  // A mark's period is the gap to its nearer neighbour, so the gap across an
-  // unvoiced span between two voiced runs is never read as one period.
-  const auto markPeriod = [&](std::size_t index) {
-    auto period = std::numeric_limits<double>::infinity();
-    if (index > 0U) {
-      period = std::min(period, static_cast<double>(allMarks[index].frame - allMarks[index - 1U].frame));
-    }
-    if (index + 1U < allMarks.size()) {
-      period = std::min(period, static_cast<double>(allMarks[index + 1U].frame - allMarks[index].frame));
-    }
-    if (!std::isfinite(period)) period = sourceMedianPeriod;
-    return std::clamp(period, sourceMedianPeriod * 0.55, sourceMedianPeriod * 1.8);
-  };
-  const auto voicedMarkNear = [&](double position) -> std::optional<std::size_t> {
-    if (parameters.sourceMap && parameters.sourceMap->voicedAtSource(position) == false) {
-      return std::nullopt;
-    }
-    const auto index = nearestMark(position);
-    if (std::abs(static_cast<double>(allMarks[index].frame) - position) > markPeriod(index)) {
-      return std::nullopt;
-    }
-    return index;
-  };
-  std::vector<float> edgeOverlap(result.samples.size(), 0.0F);
-  std::vector<float> edgeWeights(result.samples.size(), 0.0F);
-  // Lays one grain centred at output position centre, contributing only inside
-  // [regionStart, regionEnd), and returns the output period to the next grain.
-  const auto edgeGrain = [&](double centre, time::SampleFrame regionStart,
-                             time::SampleFrame regionEnd,
-                             const auto& sourcePositionAt) -> core::Result<double> {
-    const auto centreFrame = static_cast<time::SampleFrame>(std::llround(centre));
-    const auto defaultPeriod = [&]() {
-      const auto hz = midiToHz(static_cast<double>(targetMidi) +
-          static_cast<double>(parameters.pitchCurve.centsAt(std::max<time::SampleFrame>(0, centreFrame))) / 100.0);
-      return std::clamp(static_cast<double>(outputSampleRate) / std::max(1.0, hz),
-                        2.0, static_cast<double>(outputSampleRate) / 20.0);
-    };
-    const auto markIndex = voicedMarkNear(sourcePositionAt(centre));
-    if (!markIndex) return defaultPeriod();
-    const auto periodSource = markPeriod(*markIndex);
-    const auto clampedFrame = std::clamp<time::SampleFrame>(centreFrame, 0, outputFrames - 1);
-    auto targetHz = midiToHz(static_cast<double>(targetMidi) +
-        static_cast<double>(parameters.pitchCurve.centsAt(clampedFrame)) / 100.0);
-    if (parameters.performance) {
-      const auto performance = parameters.performance->at(parameters.performanceStartFrame + clampedFrame);
-      if (performance.noteId && !performance.scoreFrequencyHz) return defaultPeriod();
-      if (performance.scoreFrequencyHz) targetHz = *performance.scoreFrequencyHz;
-    }
-    if (!std::isfinite(targetHz) || targetHz <= 1.0 ||
-        targetHz >= static_cast<double>(outputSampleRate) * 0.45) {
-      return core::failure<double>(core::ErrorCode::Unsupported,
-                                   "Classic PSOLA target pitch is unsupported", unit.id);
-    }
-    const auto residual = 1.0 + static_cast<double>(parameters.sourcePitchResidual) *
-                                    (periodSource / sourceMedianPeriod - 1.0);
-    const auto targetPeriod = std::clamp(
-        static_cast<double>(outputSampleRate) / targetHz * residual,
-        2.0, static_cast<double>(outputSampleRate) / 20.0);
-    const auto half = std::max<time::SampleFrame>(
-        2, static_cast<time::SampleFrame>(std::llround(targetPeriod)));
-    const auto grainStep = sourcePerOutput *
-        (periodSource * sampleRateRatio / std::max(1.0, targetPeriod));
-    const auto markFrame = static_cast<double>(allMarks[*markIndex].frame);
-    for (time::SampleFrame relative = -half; relative <= half; ++relative) {
-      const auto destination = centreFrame + relative;
-      if (destination < regionStart || destination >= regionEnd) continue;
-      if (!voicedMarkNear(sourcePositionAt(static_cast<double>(destination)))) continue;
-      const auto window = static_cast<float>(0.5 * (1.0 + std::cos(
-          std::numbers::pi * static_cast<double>(relative) / static_cast<double>(half))));
-      const auto sample = interpolate(mono, markFrame + static_cast<double>(relative) * grainStep);
-      const auto index = static_cast<std::size_t>(destination);
-      edgeOverlap[index] += sample * window;
-      edgeWeights[index] += window;
-    }
-    return targetPeriod;
-  };
+  // The voiced-position rule is shared with Spectral Classic and Stretch.
   const auto mappedSource = [&](double output, double fallback) {
     return parameters.sourceMap
         ? parameters.sourceMap->sourceAt(static_cast<double>(parameters.performanceStartFrame) + output)
         : fallback;
   };
-  if (preFrames > 0) {
-    const auto attackSource = [&](double output) {
-      return mappedSource(output, static_cast<double>(offset) + output * sourcePerOutput);
-    };
-    // Backwards from the sustain's first grain, which sits at preFrames.
-    auto centre = static_cast<double>(preFrames);
-    std::size_t grains = 0U;
-    while (centre > -static_cast<double>(outputSampleRate) / 20.0) {
-      if ((grains++ & 0x3fU) == 0U && stopToken.stop_requested()) {
-        return core::failure<RenderedUnit>(core::ErrorCode::Conflict,
-                                           "Classic PSOLA render was cancelled", unit.id);
-      }
-      const auto period = edgeGrain(centre, 0, preFrames, attackSource);
-      if (!period) return core::Result<RenderedUnit>{period.error()};
-      centre -= period.value();
+  const auto edgePitch = [&](time::SampleFrame frame) {
+    const auto clamped = std::clamp<time::SampleFrame>(frame, 0, outputFrames - 1);
+    auto hz = midiToHz(static_cast<double>(targetMidi) +
+        static_cast<double>(parameters.pitchCurve.centsAt(clamped)) / 100.0);
+    if (parameters.performance) {
+      const auto value = parameters.performance->at(parameters.performanceStartFrame + clamped);
+      if (value.noteId && !value.scoreFrequencyHz) return detail::EdgePitchTarget{hz, false};
+      if (value.scoreFrequencyHz) hz = *value.scoreFrequencyHz;
     }
-  }
-  if (releaseOutputStart < outputFrames) {
-    const auto releaseSource = [&](double output) {
-      return mappedSource(output, static_cast<double>(releaseStart) +
-          (output - static_cast<double>(releaseOutputStart)) * sourcePerOutput);
-    };
-    // Onwards from the sustain's last grain, so the release continues its phase.
-    auto centre = lastSustainCenter.value_or(static_cast<double>(releaseOutputStart));
-    std::size_t grains = 0U;
-    while (centre < static_cast<double>(outputFrames) + static_cast<double>(outputSampleRate) / 20.0) {
-      if ((grains++ & 0x3fU) == 0U && stopToken.stop_requested()) {
-        return core::failure<RenderedUnit>(core::ErrorCode::Conflict,
-                                           "Classic PSOLA render was cancelled", unit.id);
-      }
-      const auto period = edgeGrain(centre, releaseOutputStart, outputFrames, releaseSource);
-      if (!period) return core::Result<RenderedUnit>{period.error()};
-      centre += period.value();
-    }
-  }
-  for (time::SampleFrame frame = 0; frame < outputFrames; ++frame) {
-    if (frame >= preFrames && frame < releaseOutputStart) continue;
-    const auto index = static_cast<std::size_t>(frame);
-    if (edgeWeights[index] <= 1.0e-5F) continue;
-    const auto blend = std::min(edgeWeights[index], 1.0F);
-    result.samples[index] = result.samples[index] * (1.0F - blend) +
-                            (edgeOverlap[index] / edgeWeights[index]) * blend;
-  }
+    return detail::EdgePitchTarget{hz, true};
+  };
+  const auto attackSource = [&](double output) {
+    return mappedSource(output, static_cast<double>(offset) + output * sourcePerOutput);
+  };
+  const auto releaseSource = [&](double output) {
+    return mappedSource(output, static_cast<double>(releaseStart) +
+        (output - static_cast<double>(releaseOutputStart)) * sourcePerOutput);
+  };
+  const auto edgeRetarget = detail::retargetVoicedEdges(
+      mono, unit.pitchMarks,
+      parameters.sourceMap ? &*parameters.sourceMap : nullptr,
+      result.samples, sourceMedianPeriod, outputSampleRate,
+      outputFrames, preFrames, releaseOutputStart,
+      lastSustainCenter.value_or(static_cast<double>(releaseOutputStart)),
+      parameters.sourcePitchResidual, "Classic PSOLA", unit.id,
+      attackSource, releaseSource, edgePitch, stopToken);
+  if (!edgeRetarget) return core::Result<RenderedUnit>{edgeRetarget.error()};
 
   const auto gain = static_cast<float>(std::pow(10.0,
       static_cast<double>(unit.gainDb + parameters.additionalGainDb) / 20.0));

@@ -1,4 +1,6 @@
 #include "seam/synthesis/stretch_renderer.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
+#include "voiced_source_marks.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -273,6 +275,56 @@ core::Result<RenderedUnit> StretchUnitRenderer::render(
       result.samples[index] = loopInterpolate(
           mono, sourcePosition, static_cast<double>(loopStart),
           static_cast<double>(loopEnd));
+    }
+  }
+
+  // Granular pitch shifting above is limited to the stable vowel. Apply the
+  // same measured voiced-edge retargeting as PSOLA and Spectral Classic while
+  // leaving unvoiced or unmeasured consonant/release material untouched.
+  const auto pitchMarkValidation = voicebank::validatePitchMarks(
+      unit.pitchMarks, markers.audioOffset, markers.audioEnd);
+  if (pitchMarkValidation && unit.pitchMarks.size() >= 3U) {
+    const auto edgeMarks = detail::sustainMarks(unit.pitchMarks, loopStart, loopEnd,
+                                                markers.stableStart, releaseStart);
+    const auto medianPeriod = detail::medianMarkPeriod(edgeMarks);
+    if (edgeMarks.size() >= 3U && std::isfinite(medianPeriod) && medianPeriod > 1.0) {
+      const auto mappedSource = [&](double output, double fallback) {
+        return parameters.sourceMap
+            ? parameters.sourceMap->sourceAt(
+                  static_cast<double>(parameters.performanceStartFrame) + output)
+            : fallback;
+      };
+      const auto attackSource = [&](double output) {
+        return mappedSource(output, static_cast<double>(markers.audioOffset) +
+            output * sourcePerOutput);
+      };
+      const auto releaseSource = [&](double output) {
+        return mappedSource(output, static_cast<double>(releaseStart) +
+            (output - static_cast<double>(releaseOutputStart)) * sourcePerOutput);
+      };
+      const auto edgePitch = [&](time::SampleFrame frame) {
+        const auto clamped = std::clamp<time::SampleFrame>(frame, 0, outputFrames - 1);
+        auto hz = sourceHz * pitchRatio(targetMidi, unit.rootMidi,
+                                        parameters.pitchCurve.centsAt(clamped));
+        if (parameters.performance) {
+          const auto value = parameters.performance->at(
+              parameters.performanceStartFrame + clamped);
+          if (value.noteId && !value.scoreFrequencyHz) {
+            return detail::EdgePitchTarget{hz, false};
+          }
+          if (value.scoreFrequencyHz) hz = *value.scoreFrequencyHz;
+        }
+        return detail::EdgePitchTarget{hz, true};
+      };
+      const auto edgeRetarget = detail::retargetVoicedEdges(
+          mono, unit.pitchMarks,
+          parameters.sourceMap ? &*parameters.sourceMap : nullptr,
+          result.samples, medianPeriod, outputSampleRate,
+          outputFrames, preFrames, releaseOutputStart,
+          static_cast<double>(releaseOutputStart), 0.0F,
+          "Stretch", unit.id, attackSource, releaseSource,
+          edgePitch, stopToken);
+      if (!edgeRetarget) return core::Result<RenderedUnit>{edgeRetarget.error()};
     }
   }
   finish(result, unit.gainDb + parameters.additionalGainDb, outputSampleRate);

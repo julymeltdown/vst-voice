@@ -10,6 +10,8 @@
 #include "seam/voicebank/validator.hpp"
 #include "seam/voicebank/wav.hpp"
 #include "seam/synthesis/classic_psola.hpp"
+#include "seam/synthesis/spectral_classic.hpp"
+#include "seam/synthesis/stretch_renderer.hpp"
 #include "seam/synthesis/renderer_capabilities.hpp"
 #include "seam/synthesis/renderer_dispatcher.hpp"
 #include "seam/voicebank/pitch.hpp"
@@ -947,12 +949,11 @@ TEST_CASE("storing a bank's analyses binds each unit to the bytes present and re
   CHECK(!seam::voicebank::storeBankAcousticAnalyses(manifest, root, cancelled.get_token()));
 }
 
-// U16 scenario 1: "Annotated CV/VC material transposes without source-pitched
-// voiced edges." The sustain was retargeted; the recorded attack and release
-// were copied at the source pitch, so a note rendered at 220 Hz from a 440 Hz
-// take began and ended at 440 Hz. Engineering fixture: a noise onset, then a
-// harmonic 440 Hz vowel, marks from the product's own generator.
-TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the sustain") {
+// U16 scenario 1: annotated CV material transposes through the attack, sustain,
+// and release without changing the unvoiced onset or moving the vowel onset.
+// Engineering fixture: noise then a harmonic 440 Hz vowel; marks come from the
+// product's own pitch-mark generator.
+TEST_CASE("all pitch-shifting renderers retarget voiced edges and preserve unvoiced onsets") {
   constexpr std::uint32_t rate = 48000U;
   constexpr std::size_t frames = 24000U;
   constexpr std::size_t consonantEnd = 3600U;
@@ -989,6 +990,30 @@ TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the 
         std::span<const float>(rendered).subspan(begin, end - begin), rate);
     return pitch ? seam::voicebank::medianVoicedPitch(pitch.value()) : 0.0;
   };
+  const auto checkEdges = [&](const std::vector<float>& rendered, double expected) {
+    const auto attack = regionPitch(rendered, consonantEnd + 512U, 8400U);
+    const auto release = regionPitch(rendered, 18000U, frames - 1024U);
+    CHECK(attack > 0.0);
+    CHECK(release > 0.0);
+    CHECK_NEAR(1200.0 * std::log2(attack / expected), 0.0, 25.0);
+    CHECK_NEAR(1200.0 * std::log2(release / expected), 0.0, 25.0);
+  };
+  const auto voicedStart = [&](const std::vector<float>& audio) -> std::int64_t {
+    const auto probe = seam::test::support::makeUnit("probe", {"a"}, "audio/probe.wav", 69,
+        seam::voicebank::UnitKind::Sustain, frames);
+    const auto digest = seam::core::sha256Hex(std::span<const std::byte>(
+        reinterpret_cast<const std::byte*>(audio.data()), audio.size() * sizeof(float)));
+    const auto measured = seam::voicebank::analyzeUnitAcoustics(audio, rate, probe, digest,
+        static_cast<seam::time::SampleFrame>(frames));
+    if (!measured) return -1;
+    for (const auto& span : measured.value().spans) {
+      if (span.voiced) return span.start;
+    }
+    return -1;
+  };
+  const auto sourceStart = voicedStart(samples);
+  CHECK(sourceStart > 0);
+
   for (const std::int32_t target : {57, 64, 76}) {
     const auto expected = 440.0 * std::pow(2.0, (target - 69) / 12.0);
     const auto rendered = seam::synthesis::ClassicPsolaRenderer{}.render(unit, source, rate,
@@ -997,14 +1022,33 @@ TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the 
     CHECK(rendered);
     const auto& output = rendered.value().samples;
     CHECK(output.size() == frames);
-    // Attack: from the vowel onset to the start of the sustain. Release: from the
-    // release marker to the end, less the final fade.
-    const auto attack = regionPitch(output, consonantEnd + 512U, 8400U);
-    const auto release = regionPitch(output, 18000U, frames - 1024U);
-    CHECK(attack > 0.0);
-    CHECK(release > 0.0);
-    CHECK_NEAR(1200.0 * std::log2(attack / expected), 0.0, 25.0);
-    CHECK_NEAR(1200.0 * std::log2(release / expected), 0.0, 25.0);
+    // Attack: vowel onset through stable-start; release: the release marker to
+    // the end, excluding the final fade. Every pitch-changing renderer must
+    // agree on both physical voiced edges, not just the sustained vowel.
+    checkEdges(output, expected);
+
+    const auto spectral = seam::synthesis::SpectralClassicRenderer{}.render(
+        unit, source, rate, static_cast<seam::time::SampleFrame>(frames), target,
+        seam::synthesis::SpectralRenderParameters{
+            .fftSize = 1024U, .hopSize = 256U, .formantFollow = 0.45F,
+            .phaseReset = 0.70F, .additionalGainDb = 0.0F, .pitchCurve = {},
+        });
+    CHECK(spectral);
+    checkEdges(spectral.value().samples, expected);
+    CHECK(std::abs(voicedStart(spectral.value().samples) - sourceStart) <=
+          static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
+
+    const auto stretched = seam::synthesis::StretchUnitRenderer{}.render(
+        unit, source, rate, static_cast<seam::time::SampleFrame>(frames), target,
+        seam::synthesis::StretchRenderParameters{
+            .grainSize = 1024U, .hopSize = 256U, .transientPreservation = 0.75F,
+            .sourceDrift = 0.25F, .additionalGainDb = 0.0F, .pitchCurve = {},
+        });
+    CHECK(stretched);
+    checkEdges(stretched.value().samples, expected);
+    CHECK(std::abs(voicedStart(stretched.value().samples) - sourceStart) <=
+          static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));
+
     // The unvoiced onset keeps its recorded samples: after gain and DC removal it
     // still correlates with the source almost perfectly.
     double dot = 0.0, left = 0.0, right = 0.0;
@@ -1014,6 +1058,17 @@ TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the 
       right += static_cast<double>(samples[index]) * samples[index];
     }
     CHECK(dot / std::sqrt(left * right) > 0.99);
+    for (const auto* edgeOutput : {&spectral.value().samples, &stretched.value().samples}) {
+      dot = 0.0;
+      left = 0.0;
+      right = 0.0;
+      for (std::size_t index = 256U; index < consonantEnd - 512U; ++index) {
+        dot += static_cast<double>((*edgeOutput)[index]) * samples[index];
+        left += static_cast<double>((*edgeOutput)[index]) * (*edgeOutput)[index];
+        right += static_cast<double>(samples[index]) * samples[index];
+      }
+      CHECK(dot / std::sqrt(left * right) > 0.99);
+    }
   }
 
   // Scenario 2's pitch jump, on an edge: a +700-cent step in the pitch curve at
@@ -1029,23 +1084,28 @@ TEST_CASE("classic PSOLA retargets the voiced attack and release as well as the 
   const auto jumpRelease = regionPitch(jumped.value().samples, 18000U + 512U, frames - 1024U);
   CHECK_NEAR(1200.0 * std::log2(jumpAttack / 220.0), 0.0, 25.0);
   CHECK_NEAR(1200.0 * std::log2(jumpRelease / 220.0), 700.0, 25.0);
+  const auto jumpedExpected = 220.0 * std::pow(2.0, 700.0 / 1200.0);
+  const auto spectralJump = seam::synthesis::SpectralClassicRenderer{}.render(
+      unit, source, rate, static_cast<seam::time::SampleFrame>(frames), 57,
+      seam::synthesis::SpectralRenderParameters{
+          .fftSize = 1024U, .hopSize = 256U, .formantFollow = 0.45F,
+          .phaseReset = 0.70F, .additionalGainDb = 0.0F, .pitchCurve = jump,
+      });
+  CHECK(spectralJump);
+  CHECK_NEAR(1200.0 * std::log2(regionPitch(spectralJump.value().samples,
+      18000U + 512U, frames - 1024U) / jumpedExpected), 0.0, 35.0);
+  const auto stretchJump = seam::synthesis::StretchUnitRenderer{}.render(
+      unit, source, rate, static_cast<seam::time::SampleFrame>(frames), 57,
+      seam::synthesis::StretchRenderParameters{
+          .grainSize = 1024U, .hopSize = 256U, .transientPreservation = 0.75F,
+          .sourceDrift = 0.25F, .additionalGainDb = 0.0F, .pitchCurve = jump,
+      });
+  CHECK(stretchJump);
+  CHECK_NEAR(1200.0 * std::log2(regionPitch(stretchJump.value().samples,
+      18000U + 512U, frames - 1024U) / jumpedExpected), 0.0, 35.0);
 
   // Duration mapping is untouched: the vowel starts where it started in the
   // source, measured by the same analysis on both signals.
-  const auto voicedStart = [&](const std::vector<float>& audio) -> std::int64_t {
-    const auto probe = seam::test::support::makeUnit("probe", {"a"}, "audio/probe.wav", 69,
-        seam::voicebank::UnitKind::Sustain, frames);
-    const auto digest = seam::core::sha256Hex(std::span<const std::byte>(
-        reinterpret_cast<const std::byte*>(audio.data()), audio.size() * sizeof(float)));
-    const auto measured = seam::voicebank::analyzeUnitAcoustics(audio, rate, probe, digest,
-        static_cast<seam::time::SampleFrame>(frames));
-    if (!measured) return -1;
-    for (const auto& span : measured.value().spans) {
-      if (span.voiced) return span.start;
-    }
-    return -1;
-  };
-  const auto sourceStart = voicedStart(samples);
   const auto renderedStart = voicedStart(jumped.value().samples);
   CHECK(sourceStart > 0);
   CHECK(std::abs(renderedStart - sourceStart) <= static_cast<std::int64_t>(seam::voicebank::kProducerHopSize));

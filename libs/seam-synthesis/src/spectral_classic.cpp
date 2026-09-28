@@ -1,4 +1,6 @@
 #include "seam/synthesis/spectral_classic.hpp"
+#include "seam/voicebank/pitch_marks.hpp"
+#include "voiced_source_marks.hpp"
 
 #include <algorithm>
 #include <array>
@@ -584,6 +586,57 @@ core::Result<RenderedUnit> SpectralClassicRenderer::render(
       result.samples[index] = loopInterpolate(
           mono, sourcePosition, static_cast<double>(loopStart),
           static_cast<double>(loopEnd));
+    }
+  }
+
+  // The phase vocoder only transforms the stable vowel above. Retarget voiced
+  // attack/release periods through the same stored-mark contract as PSOLA;
+  // fricatives and unmeasured positions keep the source-copy edge.
+  const auto pitchMarkValidation = voicebank::validatePitchMarks(
+      unit.pitchMarks, offset, audioEnd);
+  if (pitchMarkValidation && unit.pitchMarks.size() >= 3U) {
+    const auto edgeMarks = detail::sustainMarks(unit.pitchMarks, loopStart, loopEnd,
+                                                stableStart, releaseStart);
+    const auto medianPeriod = detail::medianMarkPeriod(edgeMarks);
+    if (edgeMarks.size() >= 3U && std::isfinite(medianPeriod) && medianPeriod > 1.0) {
+      const auto mappedSource = [&](double output, double fallback) {
+        return parameters.sourceMap
+            ? parameters.sourceMap->sourceAt(
+                  static_cast<double>(parameters.performanceStartFrame) + output)
+            : fallback;
+      };
+      const auto attackSource = [&](double output) {
+        return mappedSource(output, static_cast<double>(offset) + output * sourcePerOutput);
+      };
+      const auto releaseSource = [&](double output) {
+        return mappedSource(output, static_cast<double>(releaseStart) +
+            (output - static_cast<double>(releaseOutputStart)) * sourcePerOutput);
+      };
+      const auto rootHz = 440.0 * std::exp2(
+          (static_cast<double>(unit.rootMidi) - 69.0) / 12.0);
+      const auto edgePitch = [&](time::SampleFrame frame) {
+        const auto clamped = std::clamp<time::SampleFrame>(frame, 0, outputFrames - 1);
+        auto hz = rootHz * midiRatio(targetMidi, unit.rootMidi,
+                                     parameters.pitchCurve.centsAt(clamped));
+        if (parameters.performance) {
+          const auto value = parameters.performance->at(
+              parameters.performanceStartFrame + clamped);
+          if (value.noteId && !value.scoreFrequencyHz) {
+            return detail::EdgePitchTarget{hz, false};
+          }
+          if (value.scoreFrequencyHz) hz = *value.scoreFrequencyHz;
+        }
+        return detail::EdgePitchTarget{hz, true};
+      };
+      const auto edgeRetarget = detail::retargetVoicedEdges(
+          mono, unit.pitchMarks,
+          parameters.sourceMap ? &*parameters.sourceMap : nullptr,
+          result.samples, medianPeriod, outputSampleRate,
+          outputFrames, preFrames, releaseOutputStart,
+          static_cast<double>(releaseOutputStart), 0.0F,
+          "Spectral Classic", unit.id, attackSource, releaseSource,
+          edgePitch, stopToken);
+      if (!edgeRetarget) return core::Result<RenderedUnit>{edgeRetarget.error()};
     }
   }
 
