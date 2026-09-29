@@ -1204,14 +1204,16 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparationStudio.openProductionProject(root / "studio-preparation", producer.inventorySha256, "producer"));
   for (const auto width:{720.0,1040.0,1600.0}) {
     const auto controls=native_ui::studioGenerationControls(preparationStudio,width,false);
-    CHECK(controls.size()==7U);
+    CHECK(controls.size()==8U);
     for (const auto& control:controls) {
       // Every free campaign action is available: planning creates a definition,
       // while the run control opens a retained definition if this is a fresh session.
-      CHECK(control.enabled);
+      // The preflight is the exception: it needs a campaign identity this fresh session has not
+      // adopted yet, so it stays disabled until one is planned or opened.
+      CHECK(control.enabled == (control.id != "preflight-campaign"));
       CHECK(control.bounds.x>=294.0);
       CHECK(control.bounds.x+control.bounds.width<=width-280.0);
-      CHECK(control.bounds.y>=268.0); CHECK(control.bounds.y+control.bounds.height<=340.0);
+      CHECK(control.bounds.y>=268.0); CHECK(control.bounds.y+control.bounds.height<=358.0);
     }
     CHECK(controls[0].bounds.x+controls[0].bounds.width<controls[1].bounds.x);
     CHECK(controls[0].bounds.y+controls[0].bounds.height<=controls[2].bounds.y);
@@ -1229,7 +1231,7 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(preparationStudio.beginGenerationScoreInspection(root / "shared-score.seam"));
   CHECK(preparationStudio.proceduralImportBusy()); CHECK(!preparationStudio.save());
   const auto busyControls=native_ui::studioGenerationControls(preparationStudio,720.0,false);
-  CHECK(busyControls.size()==7U);
+  CHECK(busyControls.size()==8U);
   for (const auto& control:busyControls) CHECK(control.enabled==(control.id=="cancel"));
   const auto controlById=[](const auto& controls,std::string_view id) {
     return std::find_if(controls.begin(),controls.end(),[&](const auto& control){return control.id==id;});
