@@ -994,12 +994,22 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
   endif()
   seam_apply_compiler_options(seam_editor_native)
 
+  # The Studio application object lives in a library so tests can drive the same code the
+  # window runs, through its keyboard, pointer and accessibility actions, with injected dialogs.
+  add_library(seam_voicebank_studio_app STATIC
+    apps/seam-voicebank-studio-native/studio_app.cpp)
+  target_include_directories(seam_voicebank_studio_app PUBLIC
+    apps/seam-voicebank-studio-native)
+  target_link_libraries(seam_voicebank_studio_app PUBLIC
+    seam_native_ui seam_editor_inspection seam_platform seam_voicebank
+    seam_formats seam_domain seam_core)
+  seam_apply_compiler_options(seam_voicebank_studio_app)
   add_executable(seam_voicebank_studio_native
     apps/seam-voicebank-studio-native/main.cpp
     apps/seam-voicebank-studio-native/options.cpp)
   target_link_libraries(seam_voicebank_studio_native PRIVATE
-    seam_native_ui seam_editor_inspection seam_platform seam_voicebank
-    seam_formats seam_domain seam_core)
+    seam_voicebank_studio_app seam_native_ui seam_editor_inspection seam_platform
+    seam_voicebank seam_formats seam_domain seam_core)
   if(APPLE)
     set_target_properties(seam_voicebank_studio_native PROPERTIES
       MACOSX_BUNDLE TRUE
@@ -2750,6 +2760,17 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_studio_producer_workspace_tests)
     add_test(NAME seam_studio_producer_workspace_tests COMMAND seam_studio_producer_workspace_tests)
     set_tests_properties(seam_studio_producer_workspace_tests PROPERTIES TIMEOUT 180)
+    # Drives the Studio application object itself through frames, accessibility actions and keys,
+    # with scripted dialogs, a silent audio device and a temporary singer folder.
+    add_executable(seam_voicebank_studio_app_tests
+      tests/test_main.cpp tests/test_voicebank_studio_app.cpp)
+    target_include_directories(seam_voicebank_studio_app_tests PRIVATE tests)
+    target_link_libraries(seam_voicebank_studio_app_tests PRIVATE
+      seam_voicebank_studio_app seam_standalone_authoring seam_distribution seam_voice_design
+      seam_application seam_authoring_runtime seam_formats seam_domain seam_core)
+    seam_apply_compiler_options(seam_voicebank_studio_app_tests)
+    add_test(NAME seam_voicebank_studio_app_tests COMMAND seam_voicebank_studio_app_tests)
+    set_tests_properties(seam_voicebank_studio_app_tests PROPERTIES TIMEOUT 180)
     add_executable(seam_studio_recording_import_parity_tests
       tests/test_main.cpp tests/test_studio_recording_import_parity.cpp)
     target_include_directories(seam_studio_recording_import_parity_tests PRIVATE tests)

@@ -5,6 +5,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def studio_source() -> str:
+    """Voicebank Studio's command-line entry point followed by its application object."""
+    directory = ROOT / "apps/seam-voicebank-studio-native"
+    return (directory / "main.cpp").read_text() + "\n" + (directory / "studio_app.cpp").read_text()
+
+
+def studio_platform_defaults() -> str:
+    """The native implementations Studio's injectable platform hooks default to."""
+    return (ROOT / "apps/seam-voicebank-studio-native/studio_app.hpp").read_text()
+
+
 class MacOSSourceContractTests(unittest.TestCase):
     def test_bundle_identity_and_document_type_are_declared(self) -> None:
         plist_path = ROOT / "packaging/macos/ProjectSEAM-App-Info.plist.in"
@@ -230,7 +241,7 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("kAudioObjectPropertyName", input_source)
         self.assertIn("CFStringGetCString", input_source)
         self.assertIn('.deviceName = deviceName_', input_source)
-        studio = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        studio = studio_source()
         self.assertIn('inputBackend_ += " / " + input.deviceName', studio)
         self.assertIn('recordingStatus_ = "CAPTURING FROM " + input.deviceName', studio)
         scene = (ROOT / "libs/seam-native-ui/src/voicebank_studio.cpp").read_text()
@@ -238,9 +249,7 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn('"MIC " + recordingLabel', scene)
 
     def test_voicebank_studio_exposes_a_fail_closed_recording_probe(self) -> None:
-        source = (
-            ROOT / "apps/seam-voicebank-studio-native/main.cpp"
-        ).read_text()
+        source = studio_source()
         options_source = (
             ROOT / "apps/seam-voicebank-studio-native/options.cpp"
         ).read_text()
@@ -331,7 +340,7 @@ class MacOSSourceContractTests(unittest.TestCase):
 
 
     def test_designer_can_install_the_exact_revision_bound_published_singer(self) -> None:
-        source = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        source = studio_source()
         session = (ROOT / "libs/seam-native-ui/src/voice_designer_session.cpp").read_text()
         self.assertIn('"install-published-singer"', source)
         self.assertIn("publishedSingerPackagePath_ = *output.value()", source)
@@ -342,7 +351,8 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("publishedSingerPublicKey_", source)
         self.assertIn("verification.trustedPublicKeys = {trustedSigner}", session)
         self.assertIn("verification.requireTrustedSigner = true", session)
-        self.assertIn("defaultProceduralSearchRoots()", source)
+        self.assertIn("const auto roots = platform_.singerRoots();", source)
+        self.assertIn("distribution::defaultProceduralSearchRoots}", studio_platform_defaults())
         self.assertIn("designer_.installPublishedSinger(", source)
         self.assertIn("publishedSingerPackageDigest_, *publishedSingerPublicKey_", source)
         self.assertIn("publishedSingerDisplayName_ + \" \" + installed.value().version", source)
@@ -350,16 +360,23 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED", source)
 
     def test_designer_hands_the_installed_singer_to_the_song_editor(self) -> None:
-        source = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        source = studio_source()
         platform = (ROOT / "libs/seam-platform/src/application_menu_appkit.mm").read_text()
         self.assertIn('"open-in-song-editor"', source)
         self.assertIn("installedSinger_ = installed.value()", source)
         self.assertIn("installedSinger_.reset()", source)
         self.assertIn("seam::native_ui::createInstalledSingerSongProject(", source)
-        self.assertIn("seam::distribution::defaultProceduralSearchRoots()", source)
-        self.assertIn("seam::platform::locateSongEditorApplication()", source)
+        self.assertIn("installed, platform_.singerRoots(),", source)
+        self.assertIn("platform_.locateSongEditor()", source)
         self.assertIn(
-            "seam::platform::openDocumentWithApplication(project.projectPath, editor.value())", source)
+            "platform_.openDocumentWithApplication(project.projectPath, editor.value())", source)
+        defaults = studio_platform_defaults()
+        self.assertIn("platform::locateSongEditorApplication}", defaults)
+        self.assertIn("openDocumentWithApplication{platform::openDocumentWithApplication}", defaults)
+        self.assertIn("fileDialog{platform::createNativeFileDialog}", defaults)
+        self.assertIn("audioDevice{platform::createSystemAudioDevice}", defaults)
+        self.assertNotIn("createNativeFileDialog()", source)
+        self.assertNotIn("createSystemAudioDevice()", source)
         self.assertIn("event.key == Key::O && event.modifiers.primaryShortcut() && event.modifiers.alt", source)
         self.assertIn("event.key == Key::I && event.modifiers.primaryShortcut() && event.modifiers.alt", source)
         self.assertIn("kSongEditorBundleIdentifier", platform)
