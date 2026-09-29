@@ -2001,6 +2001,7 @@ public:
           .name="Import existing WAV as an unapproved take",
           .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
           .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
+      addRecordingAccessibility(root,prefix);
     }
     root.children.push_back({.id=prefix+"status",.role=SemanticRole::Status,.name="Producer operation status",
         .value=!lastError_.empty()?lastError_:!recordingStatus_.empty()?recordingStatus_:controller_.status(),
@@ -2020,6 +2021,7 @@ public:
         .value="Cmd/Ctrl+R. Requires a producer workspace and selected inventory row. Imported takes require review.",
         .bounds={24.0,48.0,200.0,20.0},.enabled=importEnabled,
         .actions=importEnabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{}});
+    addRecordingAccessibility(root,prefix);
     root.children.push_back({.id=prefix+"status",.role=SemanticRole::Status,.name="Studio operation status",
         .value=!lastError_.empty()?lastError_:!recordingStatus_.empty()?recordingStatus_:controller_.status(),
         .bounds={width-360.0,24.0,340.0,44.0}});
@@ -2027,7 +2029,8 @@ public:
   }
 
   void paint(seam::native_ui::RasterCanvas& canvas) noexcept override {
-    record(recordingInput_.poll());
+    if (const auto polled = recordingInput_.poll(); !polled)
+      (void)noteRecordingFailure("NO TAKE RECORDED / ", polled.error());
     record(pollPendingRecordingExport());
     const auto auditionState = audition_.poll();
     if (!auditionState) { auditionStatus_.clear(); lastError_ = auditionState.error().message; }
@@ -2090,6 +2093,11 @@ public:
         importEnabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{150,145,153,255}, 6.0);
     canvas.fillRect({230.0,48.0,120.0,20.0}, seam::native_ui::Color{72,52,76,255});
     canvas.drawText({236.0,53.0,108.0,12.0}, "Q SAMPLE REVIEW", seam::native_ui::Color{239,233,241,255}, 7.0);
+    for (const auto& control : recordingControls()) {
+      canvas.fillRect(control.bounds, control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255});
+      canvas.drawText({control.bounds.x+6.0,control.bounds.y+6.0,control.bounds.width-12.0,12.0}, control.label,
+          control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{150,145,153,255}, 7.0);
+    }
     canvas.drawText({canvas.logicalWidth() - 360.0, 56.0, 340.0, 12.0},
         !lastError_.empty() ? lastError_ : !recordingStatus_.empty() ? recordingStatus_ :
             (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
@@ -2106,6 +2114,16 @@ public:
   }
 
   void pointerDown(const seam::native_ui::PointerEvent& event) noexcept override {
+    if (event.button == seam::native_ui::PointerButton::Left && !sampleReviewModal_) {
+      for (const auto& control : recordingControls()) {
+        if (!control.bounds.contains(event.position)) continue;
+        if (control.enabled) {
+          lastError_.clear();
+          record(control.id == "record" ? recordingAction() : discardRecording());
+        }
+        repaint(); return;
+      }
+    }
     if (recordingInput_.capturing() || recordingInput_.pending()) {
       lastError_ = "Press R to finish or retry publishing the current recording, or X to discard it";
       repaint(); return;
@@ -2493,9 +2511,14 @@ public:
   }
   seam::core::Result<void> dispatchAccessibility(std::string_view id, seam::native_ui::SemanticAction action) noexcept override {
     using namespace seam::native_ui;
-    if (recordingInput_.capturing() || recordingInput_.pending())
-      return seam::core::failure(seam::core::ErrorCode::Conflict,
-          "Finish or publish the pending recording before changing its target");
+    if (recordingInput_.capturing() || recordingInput_.pending()) {
+      // The capture pins its target row, so only stopping, retrying or discarding it stays reachable.
+      const auto prefix = generationSemanticPrefix();
+      const auto command = id.starts_with(prefix) ? id.substr(prefix.size()) : std::string_view{};
+      if (designerView_ || sampleReviewView_ || (command != "record" && command != "discard-recording"))
+        return seam::core::failure(seam::core::ErrorCode::Conflict,
+            "Finish or publish the pending recording before changing its target");
+    }
     if (!designerView_ && !sampleReviewView_ && controller_.productionProject() && controller_.manifest().units.empty()) {
       const auto prefix=generationSemanticPrefix();
       if (generationModal_ || !id.starts_with(prefix)) return seam::core::failure(seam::core::ErrorCode::Conflict,"Generation accessibility target is stale or modal");
@@ -2503,7 +2526,9 @@ public:
         if (selected==SemanticAction::SetFocus) { generationSemanticFocus_=target; return generationAccessibility_.setFocus(target); }
         if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Generation status is read-only");
         const std::string command{target.substr(prefix.size())};
-        const auto result=command=="import-wav"?importRecordedTakeFromDialog():generationControlAction(command);
+        const auto result=command=="import-wav"?importRecordedTakeFromDialog()
+            :command=="record"?recordingAction():command=="discard-recording"?discardRecording()
+            :generationControlAction(command);
         record(result); repaint(); return result;
       });
     }
@@ -2523,8 +2548,9 @@ public:
       return studioAccessibility_.dispatch(id,action,[&](std::string_view target,SemanticAction selected)->seam::core::Result<void> {
         if (selected==SemanticAction::SetFocus) { studioSemanticFocus_=target; return studioAccessibility_.setFocus(target); }
         if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Studio status is read-only");
-        const auto result=target.substr(prefix.size())=="import-wav"
-            ?importRecordedTakeFromDialog()
+        const auto command=target.substr(prefix.size());
+        const auto result=command=="import-wav"?importRecordedTakeFromDialog()
+            :command=="record"?recordingAction():command=="discard-recording"?discardRecording()
             :seam::core::failure(seam::core::ErrorCode::Unsupported,"Unknown Studio action");
         record(result); repaint(); return result;
       });
@@ -2814,15 +2840,87 @@ public:
     return controller_.stagedRecoveryCandidateCount();
   }
 
+  bool recordingTargetSelected() const noexcept {
+    return controller_.productionProject() != nullptr
+        ? controller_.selectedProductionAssignment() != nullptr
+        : controller_.selectedUnit() != nullptr;
+  }
+  // A failed or lost capture must not keep describing itself as capturing. The error line and the
+  // recording status carry the same message; the status, unlike the transient error line, survives
+  // the next key press, so the creator can still read why nothing was published and that Record is
+  // the way to retry. The returned error carries that message to accessibility and command-line callers.
+  seam::core::Error noteRecordingFailure(std::string_view prefix, const seam::core::Error& error) {
+    recordingStatus_ = std::string{prefix} + error.message;
+    lastError_ = recordingStatus_;
+    return {error.code, recordingStatus_, error.context};
+  }
+  struct RecordingControl final {
+    std::string id, label, name, description;
+    seam::ui::Rect bounds;
+    bool enabled{false};
+  };
+  // Recording is reachable from the unit rail header by pointer and by accessibility, not only through
+  // the R key: a screen-reader user has to be able to start, stop, retry and discard a take, and the
+  // stop and discard actions stay available while every other target is locked by the capture.
+  std::vector<RecordingControl> recordingControls() const {
+    if (designerView_ || sampleReviewView_ || generationQueueView_) return {};
+    const bool capturing = recordingInput_.capturing(), pending = recordingInput_.pending();
+    const bool publishing = pendingRecordingExportStarted_ || pendingRecordingImportStarted_;
+    const seam::ui::Rect primary{52.0,78.0,94.0,22.0}, secondary{150.0,78.0,94.0,22.0};
+    std::vector<RecordingControl> controls;
+    if (capturing)
+      controls.push_back({"record","R STOP + PUBLISH","Stop recording and publish the take",
+          "Shortcut R. Stops the microphone, writes the WAV and imports it as an unapproved take for review.",
+          primary,true});
+    else if (publishing)
+      controls.push_back({"record","PUBLISHING","Publishing the recorded take",
+          "The recorded WAV is being written, verified and imported. Escape cancels the import; the capture is kept.",
+          primary,false});
+    else if (pending)
+      controls.push_back({"record","R RETRY","Retry publishing the recorded take",
+          "Shortcut R. Writes and imports the retained capture again without recording it again.",
+          primary,!controller_.proceduralImportBusy()});
+    else
+      controls.push_back({"record","R RECORD","Record a take for the selected row",
+          "Shortcut R. Opens the microphone only now. The take is imported unapproved and needs marker and pitch review.",
+          primary,recordingTargetSelected() && !controller_.proceduralImportBusy() && !takeImportModal_ && !generationModal_});
+    if (pending && !publishing)
+      controls.push_back({"discard-recording","X DISCARD","Discard the retained capture",
+          "Shortcut X. Drops the in-memory capture only. A WAV already saved in the recordings folder is kept.",
+          secondary,true});
+    return controls;
+  }
+  seam::core::Result<void> recordingAction() {
+    if (recordingInput_.capturing() || recordingInput_.pending()) return stopRecording();
+    return startRecording();
+  }
+  void addRecordingAccessibility(seam::native_ui::SemanticNode& root, const std::string& prefix) const {
+    using seam::native_ui::SemanticAction;
+    for (const auto& control : recordingControls())
+      root.children.push_back({.id=prefix+control.id,.role=seam::native_ui::SemanticRole::Button,.name=control.name,
+          .bounds=control.bounds,.enabled=control.enabled,
+          .actions=control.enabled?std::vector<SemanticAction>{SemanticAction::Activate,SemanticAction::SetFocus}:std::vector<SemanticAction>{},
+          .description=control.description});
+    root.children.push_back({.id=prefix+"microphone",.role=seam::native_ui::SemanticRole::Status,.name="Microphone input",
+        .value=recordingInput_.capturing() ? "Capturing from " + inputBackend_ : "Not capturing / " + inputBackend_,
+        .bounds={controller_.logicalWidth()-360.0,40.0,344.0,14.0}});
+  }
+
   seam::core::Result<void> startRecording() override {
     stopAudition();
     if (controller_.proceduralImportBusy()) return seam::core::failure(seam::core::ErrorCode::Conflict,
         "Finish candidate import before recording");
+    // A take belongs to a producer row or a manifest unit. Without one there is nowhere to publish it,
+    // so the microphone is not opened at all rather than capturing into an unrelated folder.
+    if (!recordingTargetSelected())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Open a producer workspace or voicebank and select a row before recording; the microphone was not opened");
     const auto started = recordingInput_.begin();
     const auto input = recordingInput_.info();
     inputBackend_ = input.backend;
     if (!input.deviceName.empty()) inputBackend_ += " / " + input.deviceName;
-    if (!started) return started;
+    if (!started)
+      return seam::core::Result<void>{noteRecordingFailure("NO TAKE STARTED / ", started.error())};
     controller_.cancelCandidateMarkerDrag();
     markerDrag_.reset();
     pitchDrag_.reset();
@@ -2838,7 +2936,10 @@ public:
 
   seam::core::Result<void> stopRecording() override {
     const auto finished = recordingInput_.finish();
-    if (!finished) return finished;
+    if (!finished) {
+      if (recordingInput_.capturing() || recordingInput_.pending()) return finished;
+      return seam::core::Result<void>{noteRecordingFailure("NO TAKE RECORDED / ", finished.error())};
+    }
     if (!recordingInput_.pending()) return seam::core::success();
     if (pendingRecordingImportStarted_ || pendingRecordingExportStarted_) return seam::core::success();
     const auto frames = recording_.recordedFrames();

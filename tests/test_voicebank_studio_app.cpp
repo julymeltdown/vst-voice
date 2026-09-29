@@ -19,6 +19,7 @@
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
+#include "seam/platform/audio_input_device.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/voicebank/wav.hpp"
@@ -30,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -44,8 +46,20 @@ using native_ui::SemanticNode;
 struct DialogScript final {
   std::map<platform::FileDialogPurpose, std::vector<std::optional<std::filesystem::path>>> paths;
   std::vector<std::optional<platform::ProceduralSingerPublishInput>> publishInputs;
+  std::vector<std::optional<platform::IFileDialog::NewProducerWorkspaceInput>> newWorkspaces;
+  std::vector<std::optional<platform::IFileDialog::ProductionWorkspaceInput>> workspaces;
+  std::vector<std::optional<platform::SourceRegistrationInput>> sourceRegistrations;
+  std::vector<std::string> sourceRegistrationSummaries;
   std::vector<platform::FileDialogRequest> requests;
 };
+
+template <typename Value>
+std::optional<Value> nextAnswer(std::vector<std::optional<Value>>& queue) {
+  if (queue.empty()) return std::nullopt;
+  auto next = std::move(queue.front());
+  queue.erase(queue.begin());
+  return next;
+}
 
 // Answers every modal from the script; an empty queue is the user pressing Cancel.
 class ScriptedDialog final : public platform::IFileDialog {
@@ -62,14 +76,72 @@ public:
   }
   core::Result<std::optional<platform::ProceduralSingerPublishInput>>
   chooseProceduralSingerPublishInput() override {
-    if (script_->publishInputs.empty()) return std::optional<platform::ProceduralSingerPublishInput>{};
-    auto next = script_->publishInputs.front();
-    script_->publishInputs.erase(script_->publishInputs.begin());
-    return next;
+    return nextAnswer(script_->publishInputs);
+  }
+  core::Result<std::optional<NewProducerWorkspaceInput>> chooseNewProducerWorkspace() override {
+    return nextAnswer(script_->newWorkspaces);
+  }
+  core::Result<std::optional<ProductionWorkspaceInput>> chooseProductionWorkspace() override {
+    return nextAnswer(script_->workspaces);
+  }
+  core::Result<std::optional<platform::SourceRegistrationInput>> chooseSourceRegistration(
+      std::string_view summary) override {
+    script_->sourceRegistrationSummaries.emplace_back(summary);
+    return nextAnswer(script_->sourceRegistrations);
   }
 
 private:
   std::shared_ptr<DialogScript> script_;
+};
+
+// A microphone the test controls: it can refuse to open the way CoreAudio reports denied access,
+// deliver audio blocks, and disappear mid-capture the way an unplugged interface does.
+struct MicrophoneScript final {
+  std::string denial;
+  platform::IAudioInputProcessor* processor{nullptr};
+  bool running{false};
+  std::size_t opens{0U};
+  platform::AudioInputDeviceStats stats{};
+  platform::AudioInputDeviceInfo info{.backend = "Harness microphone", .deviceName = "harness-mic",
+      .sampleRate = 48000U, .blockFrames = 256U, .physical = true};
+
+  void sing(double frequencyHz, double seconds) {
+    const auto samples = test::support::sineWave(48000U, frequencyHz, seconds, 0.25F);
+    for (std::size_t offset = 0U; offset < samples.size(); offset += 256U) {
+      const auto count = std::min<std::size_t>(256U, samples.size() - offset);
+      CHECK(processor != nullptr && running);
+      if (processor == nullptr || !running) return;
+      processor->process({.sampleRate = 48000.0, .frameCount = count,
+                          .mono = std::span<const float>{samples}.subspan(offset, count)});
+      ++stats.callbacks;
+      stats.frames += count;
+    }
+  }
+};
+
+class ScriptedMicrophone final : public platform::IAudioInputDevice {
+public:
+  explicit ScriptedMicrophone(std::shared_ptr<MicrophoneScript> script) : script_(std::move(script)) {}
+  core::Result<void> open(const platform::AudioInputDeviceConfig& config,
+                          platform::IAudioInputProcessor& processor) override {
+    ++script_->opens;
+    if (!script_->denial.empty()) return core::failure(core::ErrorCode::IoError, script_->denial);
+    if (config.sampleRate != script_->info.sampleRate || config.blockFrames != script_->info.blockFrames)
+      return core::failure(core::ErrorCode::InvalidArgument, "Unexpected capture format");
+    script_->processor = &processor;
+    return core::success();
+  }
+  core::Result<void> start() override {
+    script_->running = true;
+    return core::success();
+  }
+  void stop() noexcept override { script_->running = false; }
+  bool running() const noexcept override { return script_->running; }
+  platform::AudioInputDeviceInfo info() const override { return script_->info; }
+  platform::AudioInputDeviceStats stats() const noexcept override { return script_->stats; }
+
+private:
+  std::shared_ptr<MicrophoneScript> script_;
 };
 
 struct Launch final {
@@ -95,12 +167,19 @@ public:
   std::shared_ptr<std::vector<Launch>> launches = std::make_shared<std::vector<Launch>>();
   std::unique_ptr<voicebank_studio_native::IVoicebankStudioApp> app;
 
-  explicit StudioHarness(std::filesystem::path root)
+  explicit StudioHarness(std::filesystem::path root,
+                         std::shared_ptr<MicrophoneScript> microphone = nullptr)
       : root_(std::move(root)), singers_(root_ / "singers"), editor_(root_ / "Project SEAM.app") {
     std::filesystem::create_directories(singers_);
     voicebank_studio_native::StudioPlatform hooks;
     hooks.fileDialog = [script = dialogs] { return std::make_unique<ScriptedDialog>(script); };
     hooks.audioDevice = [] { return platform::createThreadedAudioDevice(); };
+    if (microphone) {
+      hooks.recordingInput.physical = [microphone] {
+        return std::make_unique<ScriptedMicrophone>(microphone);
+      };
+      hooks.recordingInput.synthetic = {};
+    }
     hooks.singerRoots = [singers = singers_] {
       return std::vector<distribution::ProceduralSearchRoot>{
           {singers, distribution::ProceduralRootKind::Installed}};
@@ -114,7 +193,9 @@ public:
       recorded->push_back({document, application});
       return core::success();
     };
-    app = voicebank_studio_native::createVoicebankStudioApp(true, std::move(hooks));
+    // The shipped app opens physical input; the scripted microphone stands in for it. Without one
+    // the synthetic test input is used, as the command-line probe does.
+    app = voicebank_studio_native::createVoicebankStudioApp(microphone == nullptr, std::move(hooks));
   }
 
   [[nodiscard]] const std::filesystem::path& singers() const noexcept { return singers_; }
@@ -171,6 +252,12 @@ public:
     app->keyDown(native_ui::KeyEvent{.key = key, .modifiers = modifiers});
   }
 
+  void click(double x, double y) {
+    const native_ui::PointerEvent event{.position = {x, y}, .button = native_ui::PointerButton::Left};
+    app->pointerDown(event);
+    app->pointerUp(event);
+  }
+
   template <typename Done>
   bool settle(Done done) {
     for (int index = 0; index < 10000; ++index) {
@@ -210,6 +297,18 @@ public:
     return platform::UnsavedDecision::Discard;
   }
 };
+
+double midiHz(std::int32_t midi) {
+  return 440.0 * std::pow(2.0, (static_cast<double>(midi) - 69.0) / 12.0);
+}
+
+std::size_t wavFiles(const std::filesystem::path& directory) {
+  std::size_t count = 0U;
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator{directory, error})
+    if (entry.path().extension() == ".wav") ++count;
+  return count;
+}
 
 }  // namespace
 
@@ -406,4 +505,253 @@ TEST_CASE("Voicebank Studio's own actions take a new voice from draft to a song 
       48000.0 * 3.0 * 480.0 / static_cast<double>(time::kDefaultPpq) * 0.5);
   CHECK(master.value().frameCount() >= phraseFrames);
   CHECK(peak > 0.01F);
+}
+
+TEST_CASE("Voicebank Studio records and imports takes through its own actions; refused or lost input stays actionable") {
+  const auto root = test::support::temporaryDirectory("studio-app-recording");
+  auto microphone = std::make_shared<MicrophoneScript>();
+  StudioHarness studio{root, microphone};
+  auto& dialogs = *studio.dialogs;
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+  studio.resize(1100.0, 720.0);
+
+  // Nothing is open, so a take would have nowhere to go: Record refuses without opening the microphone.
+  const auto nowhere = studio.app->startRecording();
+  CHECK(!nowhere.hasValue());
+  if (!nowhere) CHECK(nowhere.error().code == core::ErrorCode::InvalidState);
+  CHECK(microphone->opens == 0U);
+
+  // A new creator starts from the Designer home by creating a producer folder.
+  const auto workspace = root / "voice-workspace";
+  dialogs.newWorkspaces = {platform::IFileDialog::NewProducerWorkspaceInput{
+      .destination = workspace, .projectId = "harness-voice", .producerId = "producer"}};
+  CHECK(studio.activate("create-producer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject() != nullptr; }));
+  if (studio.app->productionProject() == nullptr) return;
+  const auto rows = studio.app->productionProject()->unitAssignments;
+  CHECK(rows.size() >= 2U);
+  if (rows.size() < 2U) return;
+  CHECK(studio.app->productionProject()->takes.empty());
+  const auto missing = studio.app->productionQueues().missing;
+  CHECK(missing == rows.size());
+
+  // Takes need an authorized source: register one in sample review from a license document.
+  const auto license = root / "harness-singer-license.txt";
+  const std::string licenseText =
+      "Harness singer consent: recording, transformation, bank redistribution and commercial renders.";
+  CHECK(core::durableAtomicWriteTextNew(license, licenseText).hasValue());
+  studio.key(NativeKey::Q, {});
+  CHECK(studio.settle([&] {
+    const auto control = studio.node("source-license");
+    return control && control->enabled;
+  }));
+  dialogs.paths[platform::FileDialogPurpose::SourceLicenseEvidence] = {license};
+  CHECK(studio.activate("source-license").hasValue());
+  CHECK(studio.settle([&] {
+    const auto control = studio.node("source-register");
+    return control && control->enabled;
+  }));
+  dialogs.sourceRegistrations = {platform::SourceRegistrationInput{
+      .id = "harness-singer", .kind = "human", .rights = "pass",
+      .permissions = {"yes", "yes", "yes", "yes"}}};
+  CHECK(studio.activate("source-register").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.app->productionProject()->selectedSourceStrategyId == "harness-singer";
+  }));
+  CHECK(dialogs.sourceRegistrationSummaries.size() == 1U);
+  CHECK(studio.settle([&] {
+    const auto back = studio.node("back");
+    return back && back->enabled;
+  }));
+  CHECK(studio.activate("back").hasValue());
+
+  // Microphone access refused: nothing is captured or written, the reason stays readable after the
+  // next key press, and Record stays available for the retry.
+  microphone->denial =
+      "Microphone access was denied. In System Settings > Privacy & Security > Microphone, "
+      "allow SEAM Voicebank Studio, then retry Record.";
+  {
+    const auto button = studio.node("record");
+    CHECK(button.has_value() && button->enabled);
+    CHECK(button && button->name == "Record a take for the selected row");
+  }
+  CHECK(studio.value("microphone").starts_with("Not capturing"));
+  const auto denied = studio.activate("record");
+  CHECK(!denied.hasValue());
+  CHECK(microphone->opens == 1U);
+  const auto deniedStatus = "NO TAKE STARTED / " + microphone->denial;
+  CHECK(studio.value("status") == deniedStatus);
+  studio.key(NativeKey::Left, {});
+  CHECK(studio.value("status") == deniedStatus);
+  {
+    const auto button = studio.node("record");
+    CHECK(button.has_value() && button->enabled);
+  }
+  CHECK(!studio.node("discard-recording").has_value());
+  CHECK(studio.app->lastRecording().empty());
+  CHECK(studio.app->productionProject()->takes.empty());
+
+  // The interface disappears mid-take: the capture ends, nothing is published, Record can retry.
+  microphone->denial.clear();
+  CHECK(studio.activate("record").hasValue());
+  CHECK(microphone->opens == 2U);
+  CHECK(microphone->running);
+  CHECK(studio.value("microphone") == "Capturing from Harness microphone / harness-mic");
+  {
+    const auto button = studio.node("record");
+    CHECK(button && button->enabled && button->name == "Stop recording and publish the take");
+  }
+  // The capture pins its row: importing another WAV meanwhile is refused.
+  const auto importWhileCapturing = studio.activate("import-wav");
+  CHECK(!importWhileCapturing.hasValue());
+  if (!importWhileCapturing) CHECK(importWhileCapturing.error().code == core::ErrorCode::Conflict);
+  microphone->sing(midiHz(rows[0].pitchLayer), 0.2);
+  microphone->running = false;
+  CHECK(studio.value("status") ==
+        "NO TAKE RECORDED / Recording input stopped unexpectedly; no take was published, retry Record");
+  CHECK(studio.value("microphone").starts_with("Not capturing"));
+  {
+    const auto button = studio.node("record");
+    CHECK(button && button->enabled && button->name == "Record a take for the selected row");
+  }
+  CHECK(!studio.node("discard-recording").has_value());
+  CHECK(studio.app->productionQueues().missing == missing);
+  CHECK(studio.app->lastRecording().empty());
+
+  // The license evidence changes after registration, so the first publication is refused. The capture
+  // and its WAV are retained; the creator can retry or discard rather than sing the take again.
+  CHECK(core::durableAtomicWriteText(license, "Edited after registration").hasValue());
+  CHECK(studio.activate("record").hasValue());
+  microphone->sing(midiHz(rows[0].pitchLayer), 0.5);
+  studio.click(99.0, 89.0);  // The pointer reaches the same button: R STOP + PUBLISH.
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->name == "Retry publishing the recorded take";
+  }));
+  {
+    const auto retry = studio.node("record");
+    CHECK(retry && retry->enabled);
+    const auto discard = studio.node("discard-recording");
+    CHECK(discard && discard->enabled);
+  }
+  CHECK(!studio.value("status").empty());
+  const auto recorded = studio.app->lastRecording();
+  CHECK(!recorded.empty() && std::filesystem::is_regular_file(recorded));
+  CHECK(studio.app->lastRecordedFrames() == 24000U);
+  CHECK(studio.app->productionProject()->takes.empty());
+  CHECK(!studio.activate("import-wav").hasValue());
+
+  // Restoring the evidence and pressing R publishes the retained capture without a second WAV.
+  CHECK(core::durableAtomicWriteText(license, licenseText).hasValue());
+  studio.key(NativeKey::R, {});
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return studio.app->productionQueues().markerReview == 1U && button &&
+           button->name == "Record a take for the selected row";
+  }));
+  CHECK(studio.app->lastRecording() == recorded);
+  CHECK(wavFiles(recorded.parent_path()) == 1U);
+  const auto recordedDigest = core::sha256File(recorded);
+  CHECK(recordedDigest.hasValue());
+  {
+    const auto* project = studio.app->productionProject();
+    CHECK(project->takes.size() == 1U);
+    CHECK(project->reviews.empty());
+    if (project->takes.size() == 1U && recordedDigest) {
+      const auto& take = project->takes.front();
+      CHECK(take.takeId == rows[0].plannedTakeId);
+      CHECK(take.state == voicebank_production::UnitQueueState::MarkerReview);
+      CHECK(take.rawAssetSha256 == recordedDigest.value());
+      const auto binding = std::find_if(project->sourceBindings.begin(), project->sourceBindings.end(),
+          [&](const auto& candidate) { return candidate.id == take.sourceBindingId; });
+      CHECK(binding != project->sourceBindings.end());
+      if (binding != project->sourceBindings.end()) CHECK(binding->strategy.id == "harness-singer");
+    }
+    CHECK(project->unitAssignments[0].takeId == rows[0].plannedTakeId);
+    CHECK(!project->unitAssignments[0].markerReviewed);
+    CHECK(!project->unitAssignments[0].pitchReviewed);
+  }
+  CHECK(studio.app->productionQueues().missing == missing - 1U);
+  const auto recordedAudio = voicebank::readWav(recorded);
+  CHECK(recordedAudio.hasValue());
+  if (recordedAudio) {
+    CHECK(recordedAudio.value().sampleRate == 48000U);
+    CHECK(recordedAudio.value().channels == 1U);
+    CHECK(recordedAudio.value().frameCount() == 24000U);
+  }
+
+  // Next row: when publication fails again the creator can discard the capture; the saved WAV stays.
+  studio.key(NativeKey::Down, {});
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->id.ends_with(".1.record");
+  }));
+  CHECK(core::durableAtomicWriteText(license, "Edited again").hasValue());
+  CHECK(studio.activate("record").hasValue());
+  microphone->sing(midiHz(rows[1].pitchLayer), 0.3);
+  // Stopping is reachable through accessibility while every other target is locked by the capture.
+  CHECK(!studio.activate("import-wav").hasValue());
+  CHECK(studio.activate("record").hasValue());
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->name == "Retry publishing the recorded take";
+  }));
+  const auto kept = studio.app->lastRecording();
+  CHECK(kept != recorded && std::filesystem::is_regular_file(kept));
+  CHECK(studio.activate("discard-recording").hasValue());
+  CHECK(studio.value("status") == "Recording capture discarded; saved file kept at " + kept.string());
+  CHECK(std::filesystem::is_regular_file(kept));
+  {
+    const auto button = studio.node("record");
+    CHECK(button && button->enabled && button->name == "Record a take for the selected row");
+  }
+  CHECK(!studio.node("discard-recording").has_value());
+  CHECK(studio.app->productionProject()->takes.size() == 1U);
+  CHECK(core::durableAtomicWriteText(license, licenseText).hasValue());
+
+  // The same row takes an existing WAV through the import action and lands in the same review queue.
+  const auto external = root / "external-take.wav";
+  const auto tone = test::support::sineWave(48000U, midiHz(rows[1].pitchLayer), 0.4, 0.25F);
+  CHECK(voicebank::writeWav(external, {.sampleRate = 48000U, .channels = 1U,
+                                       .sampleFormat = voicebank::WavSampleFormat::Pcm24},
+                            tone)
+            .hasValue());
+  dialogs.paths[platform::FileDialogPurpose::ImportAudio] = {external};
+  CHECK(studio.activate("import-wav").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionQueues().markerReview == 2U; }));
+  const auto externalDigest = core::sha256File(external);
+  CHECK(externalDigest.hasValue());
+  {
+    const auto* project = studio.app->productionProject();
+    CHECK(project->takes.size() == 2U);
+    const auto imported = std::find_if(project->takes.begin(), project->takes.end(),
+        [&](const auto& take) { return take.takeId == rows[1].plannedTakeId; });
+    CHECK(imported != project->takes.end());
+    if (imported != project->takes.end() && externalDigest) {
+      CHECK(imported->rawAssetSha256 == externalDigest.value());
+      CHECK(imported->state == voicebank_production::UnitQueueState::MarkerReview);
+      CHECK(!imported->sourceBindingId.empty());
+    }
+    CHECK(project->reviews.empty());
+  }
+
+  // Both takes are durable: a fresh Studio opens the producer folder from the Designer home, and
+  // opening it does not touch the microphone.
+  const auto generation = studio.app->productionProject()->lastDurableGeneration;
+  studio.app.reset();
+  StudioHarness reopened{root, microphone};
+  CHECK(reopened.app->open(options).hasValue());
+  reopened.resize(1100.0, 720.0);
+  reopened.dialogs->workspaces = {platform::IFileDialog::ProductionWorkspaceInput{
+      .root = workspace, .operatorId = "producer", .producerFolder = true}};
+  CHECK(reopened.activate("back").hasValue());
+  CHECK(reopened.settle([&] { return reopened.app->productionProject() != nullptr; }));
+  if (reopened.app->productionProject() == nullptr) return;
+  CHECK(reopened.app->productionProject()->lastDurableGeneration == generation);
+  CHECK(reopened.app->productionProject()->selectedSourceStrategyId == "harness-singer");
+  CHECK(reopened.app->productionQueues().markerReview == 2U);
+  CHECK(reopened.app->productionQueues().missing == missing - 2U);
+  CHECK(microphone->opens == 4U);
 }
