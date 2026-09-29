@@ -558,6 +558,142 @@ TEST_CASE("Voicebank Studio's own actions take a new voice from draft to a song 
   CHECK(peak > 0.01F);
 }
 
+// A cancelled or interrupted job must not cost the creator the work already on screen. This case
+// drives the narrow window, a long workspace name, an interrupted capture and a cancelled publication
+// through the app surface, and checks after each one that focus, selection, reviewed history and the
+// saved files are exactly what they were before.
+TEST_CASE("Voicebank Studio keeps focus and durable work across narrow windows and cancellations") {
+  const auto root = test::support::temporaryDirectory("studio-app-recovery");
+  auto microphone = std::make_shared<MicrophoneScript>();
+  StudioHarness studio{root, microphone};
+  auto& dialogs = *studio.dialogs;
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+
+  const std::string longProjectId = "bank-recovery-" + std::string(48U, 'x');
+  const auto workspace = root / (longProjectId + "-workspace");
+  dialogs.newWorkspaces = {platform::IFileDialog::NewProducerWorkspaceInput{
+      .destination = workspace, .projectId = longProjectId, .producerId = "producer",
+      .inventory = platform::IFileDialog::NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter}};
+  CHECK(studio.activate("create-producer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject() != nullptr; }));
+  const auto* initialProject = studio.app->productionProject();
+  CHECK(initialProject != nullptr);
+  if (initialProject == nullptr) return;
+  const auto rows = initialProject->unitAssignments;
+  CHECK(!rows.empty());
+  if (rows.empty()) return;
+
+  const auto license = root / "recovery-license.txt";
+  const std::string licenseText =
+      "Harness recovery consent: recording, transformation, bank redistribution and commercial renders.";
+  CHECK(core::durableAtomicWriteTextNew(license, licenseText).hasValue());
+  studio.key(NativeKey::Q, {});
+  CHECK(studio.settle([&] { const auto control = studio.node("source-license"); return control && control->enabled; }));
+  dialogs.paths[platform::FileDialogPurpose::SourceLicenseEvidence] = {license};
+  CHECK(studio.activate("source-license").hasValue());
+  CHECK(studio.settle([&] { const auto control = studio.node("source-register"); return control && control->enabled; }));
+  dialogs.sourceRegistrations = {platform::SourceRegistrationInput{
+      .id = "recovery-singer", .kind = "human", .rights = "pass",
+      .permissions = {"yes", "yes", "yes", "yes"}}};
+  CHECK(studio.activate("source-register").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.app->productionProject()->selectedSourceStrategyId == "recovery-singer";
+  }));
+  dialogs.reviewerRegistrations = {std::string{"listener"}};
+  CHECK(studio.activate("register-reviewer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject()->operators.size() == 2U; }));
+  CHECK(studio.settle([&] { const auto back = studio.node("back"); return back && back->enabled; }));
+  CHECK(studio.activate("back").hasValue());
+
+  // Focus a control, then shrink to the minimum and grow back: focus, selection and status survive.
+  CHECK(studio.settle([&] { const auto button = studio.node("import-wav"); return button && button->enabled; }));
+  CHECK(studio.perform("import-wav", SemanticAction::SetFocus).hasValue());
+  const auto* focusedBefore = studio.frame().focusedNode();
+  CHECK(focusedBefore != nullptr);
+  if (focusedBefore == nullptr) return;
+  const auto focusedId = focusedBefore->id;
+  const auto selectedBefore = studio.app->productionProject()->unitAssignments.front().plannedTakeId;
+  studio.resize(720.0, 520.0);
+  {
+    std::vector<SemanticNode> buttons;
+    collectButtons(studio.frame().root(), buttons);
+    CHECK(!buttons.empty());
+    for (const auto& button : buttons) {
+      if (!button.enabled || button.bounds.width <= 0.0) continue;
+      CHECK(button.bounds.x >= 0.0);
+      CHECK(button.bounds.x + button.bounds.width <= 720.0 + 1e-6);
+    }
+    const auto record = studio.node("record");
+    CHECK(record.has_value() && record->enabled);
+    CHECK(studio.value("microphone").starts_with("Not capturing"));
+  }
+  studio.resize(1100.0, 720.0);
+  CHECK(studio.settle([&] {
+    const auto* focused = studio.frame().focusedNode();
+    return focused != nullptr && focused->id == focusedId;
+  }));
+  const auto* focusedAfter = studio.frame().focusedNode();
+  CHECK(focusedAfter != nullptr && focusedAfter->id == focusedId);
+  CHECK(studio.app->productionProject()->unitAssignments.front().plannedTakeId == selectedBefore);
+
+  // A capture that is interrupted leaves no take, no saved file and no queue change; Record retries.
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->enabled && button->id.ends_with(".0.record");
+  }));
+  CHECK(studio.activate("record").hasValue());
+  microphone->sing(midiHz(rows.front().pitchLayer), 0.2);
+  studio.key(NativeKey::Escape, {});
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->name == "Record a take for the selected row";
+  }));
+  CHECK(studio.app->productionProject()->takes.empty());
+  CHECK(studio.app->productionQueues().missing == rows.size());
+
+  // A capture whose publication is refused is retained: the WAV stays, the take does not exist yet,
+  // and the retry publishes that same file rather than singing again.
+  CHECK(core::durableAtomicWriteText(license, "Edited after registration").hasValue());
+  CHECK(studio.activate("record").hasValue());
+  microphone->sing(midiHz(rows.front().pitchLayer), 0.3);
+  CHECK(studio.activate("record").hasValue());
+  CHECK(studio.settle([&] {
+    const auto button = studio.node("record");
+    return button && button->name == "Retry publishing the recorded take";
+  }));
+  const auto kept = studio.app->lastRecording();
+  CHECK(!kept.empty() && std::filesystem::is_regular_file(kept));
+  CHECK(studio.app->productionProject()->takes.empty());
+  CHECK(studio.app->productionQueues().missing == rows.size());
+  CHECK(core::durableAtomicWriteText(license, licenseText).hasValue());
+  studio.key(NativeKey::R, {});
+  CHECK(studio.settle([&] { return studio.app->productionQueues().markerReview == 1U; }));
+  CHECK(studio.app->lastRecording() == kept);
+  CHECK(wavFiles(kept.parent_path()) == 1U);
+  const auto generation = studio.app->productionProject()->lastDurableGeneration;
+
+  // A fresh Studio reopens the folder with the take, the reviewer and the source intact.
+  studio.app.reset();
+  StudioHarness reopened{root, microphone};
+  CHECK(reopened.app->open(options).hasValue());
+  reopened.resize(720.0, 520.0);
+  reopened.dialogs->workspaces = {platform::IFileDialog::ProductionWorkspaceInput{
+      .root = workspace, .operatorId = "producer", .producerFolder = true}};
+  CHECK(reopened.activate("back").hasValue());
+  CHECK(reopened.settle([&] { return reopened.app->productionProject() != nullptr; }));
+  const auto* recovered = reopened.app->productionProject();
+  CHECK(recovered != nullptr);
+  if (recovered == nullptr) return;
+  CHECK(recovered->lastDurableGeneration == generation);
+  CHECK(recovered->selectedSourceStrategyId == "recovery-singer");
+  CHECK(recovered->operators.size() == 2U);
+  CHECK(recovered->takes.size() == 1U);
+  CHECK(reopened.app->productionQueues().markerReview == 1U);
+  CHECK(reopened.app->productionQueues().missing == rows.size() - 1U);
+}
+
 // The whole signed-bank route through Studio's own surface: record the starter inventory, qualify the
 // source, register a reviewer, capture and accept every unit, publish, sign, install, and hand the
 // installed bank to the song editor as a song. The editor half then opens that song in a fresh
