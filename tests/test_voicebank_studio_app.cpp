@@ -691,6 +691,15 @@ TEST_CASE("Voicebank Studio takes reviewed recordings to an installed bank the s
     return studio.value("status").find("ENGINEERING CANDIDATE COMMITTED") != std::string::npos;
   }));
   CHECK(studio.settle([&] { const auto control = studio.node("sign-bank"); return control && control->enabled; }));
+  studio.snapshot("bank-candidate-published-1100x720", 1100.0, 720.0);
+  // At the smallest window the whole signed-bank row stays on screen and reachable.
+  studio.snapshot("bank-candidate-published-720x520", 720.0, 520.0);
+  {
+    const auto narrow = studio.node("sign-bank");
+    CHECK(narrow.has_value() && narrow->enabled);
+    CHECK(narrow && narrow->bounds.x >= 0.0 && narrow->bounds.right() <= 720.0 + 1e-6);
+    CHECK(narrow && narrow->bounds.bottom() <= 520.0 + 1e-6);
+  }
 
   auto key = distribution::generateSigningKeyPair();
   CHECK(key.hasValue());
