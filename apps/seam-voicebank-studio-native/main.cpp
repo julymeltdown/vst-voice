@@ -1707,6 +1707,12 @@ public:
         generationRequestJobFirst_ += seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight());
         return seam::core::success();
       }
+      if (id == "request-detail-inspect-outputs")
+        return controller_.beginGenerationRequestOutputInspection(
+            generationRequestDetailId_, generationRequestJobFirst_,
+            seam::native_ui::studioGenerationRequestDetailVisibleRows(controller_.logicalHeight()));
+      if (id == "request-detail-cancel-output-inspection")
+        return controller_.cancelGenerationRequestOutputInspection();
       if (id == "queue-close") { generationQueueView_ = false; generationRequestDetailId_.clear(); return seam::core::success(); }
       if (id == "queue-refresh") {
         generationRequestFirst_ = 0U;
@@ -1769,7 +1775,7 @@ public:
         if (request == requests.end()) {
           root.children.push_back({.id=prefix+"request-detail-missing",.role=SemanticRole::Status,
               .name="Selected request unavailable",.value="Request is not in the current verified snapshot; return and refresh",
-              .bounds={44.0,128.0,std::max(0.0,width-88.0),18.0}});
+              .bounds={44.0,170.0,std::max(0.0,width-88.0),18.0}});
         } else {
           const auto& item = *request;
           root.children.push_back({.id=prefix+"request-detail-identity",.role=SemanticRole::Status,
@@ -1777,17 +1783,17 @@ public:
               .value="request=" + item.request.requestId + "; language=" + item.request.language +
                   "; recipe=" + item.request.recipeId + "@" + item.request.recipeVersion +
                   "; recipe_sha256=" + item.request.recipeHash,
-              .bounds={44.0,116.0,std::max(0.0,width-88.0),18.0}});
+              .bounds={44.0,154.0,std::max(0.0,width-88.0),18.0}});
           root.children.push_back({.id=prefix+"request-detail-producer",.role=SemanticRole::Status,
               .name="Expected producer state",
               .value="generation=" + std::to_string(item.request.expectedGeneration) +
                   "; project_sha256=" + item.request.expectedProjectSha256,
-              .bounds={44.0,134.0,std::max(0.0,width-88.0),18.0}});
+              .bounds={44.0,172.0,std::max(0.0,width-88.0),18.0}});
           root.children.push_back({.id=prefix+"request-detail-submission",.role=SemanticRole::Status,
               .name="Request submission and worker definition",
               .value="submitted_by=" + item.request.submittedBy + "; submitted_at=" + item.request.submittedAtUtc +
                   "; definition_locator=" + (item.request.definitionLocator.empty()?"unavailable":item.request.definitionLocator),
-              .bounds={44.0,152.0,std::max(0.0,width-88.0),18.0}});
+              .bounds={44.0,190.0,std::max(0.0,width-88.0),18.0}});
           root.children.push_back({.id=prefix+"request-detail-budget",.role=SemanticRole::Status,
               .name="Admitted generation budgets",
               .value="jobs=" + std::to_string(item.request.budget.maximumJobs) +
@@ -1795,34 +1801,53 @@ public:
                   "; bytes=" + std::to_string(item.request.budget.maximumBytes) +
                   "; batch_jobs=" + std::to_string(item.request.budget.batchMaximumJobs) +
                   "; batch_frames=" + std::to_string(item.request.budget.batchMaximumFrames),
-              .bounds={44.0,170.0,std::max(0.0,width-88.0),18.0}});
+              .bounds={44.0,208.0,std::max(0.0,width-88.0),18.0}});
           if (item.terminal)
             root.children.push_back({.id=prefix+"request-detail-terminal",.role=SemanticRole::Status,
                 .name="Durable terminal outcome",
                 .value=seam::voicebank_production::toString(item.terminal->outcome) + "; " +
                     std::to_string(item.terminal->completedBatches) + " of " + std::to_string(item.batchCount()) +
                     " batches; " + item.terminal->detail,
-                .bounds={44.0,206.0,std::max(0.0,width-88.0),18.0}});
+                .bounds={44.0,244.0,std::max(0.0,width-88.0),18.0}});
           else
             root.children.push_back({.id=prefix+"request-detail-pending",.role=SemanticRole::Status,
                 .name="Pending request safety state",
                 .value="Definition bytes must still match the request ID before resume; queue is not evidence of completion or review",
-                .bounds={44.0,206.0,std::max(0.0,width-88.0),18.0}});
+                .bounds={44.0,244.0,std::max(0.0,width-88.0),18.0}});
           const auto rows = studioGenerationRequestDetailVisibleRows(height);
           const auto campaignProgress = controller_.generationCampaignProgress();
           const auto activeRequestId = controller_.generationCampaignSha256();
+          const auto* outputPage = controller_.generationRequestOutputInspectionPage();
+          std::string outputSummary{"Not inspected for the visible request page"};
+          if (controller_.generationRequestOutputInspectionLoading()) {
+            outputSummary = std::string{controller_.generationRequestOutputInspectionStatus()};
+          } else if (outputPage && outputPage->requestId == item.request.requestId) {
+            outputSummary = "Read-only evidence for jobs " + std::to_string(outputPage->firstJob + 1U) +
+                " through " + std::to_string(outputPage->firstJob + outputPage->jobs.size()) +
+                "; output verification does not imply collection or review";
+          }
+          root.children.push_back({.id=prefix+"request-output-evidence-summary",.role=SemanticRole::Status,
+              .name="Read-only generation output evidence",.value=std::move(outputSummary),
+              .bounds={44.0,262.0,std::max(0.0,width-88.0),14.0}});
           for (std::size_t index = generationRequestJobFirst_;
               index < std::min(item.request.jobs.size(), generationRequestJobFirst_ + rows); ++index) {
             const auto& job = item.request.jobs[index];
             const auto jobState = studioGenerationJobState(item, index, activeRequestId, campaignProgress);
+            const auto* outputEvidence = controller_.generationRequestJobOutputInspection(
+                item.request.requestId, index);
             root.children.push_back({.id=prefix+"generation-job."+job.jobId,.role=SemanticRole::Status,
                 .name="Generation job " + std::to_string(index + 1U) + ": " + job.jobId,
                 .value="state=" + std::string{studioGenerationJobStateLabel(jobState)} +
                     "; take=" + job.takeId + "; coverage=" + job.coverageKey + "; style=" + job.style +
                     "; pitch_layer=" + std::to_string(job.pitchLayer) + "; frames=" +
-                    std::to_string(job.frameCount) + "; batch=" + std::to_string(job.batchIndex + 1),
-                .bounds={52.0,242.0+static_cast<double>(index-generationRequestJobFirst_)*34.0,
-                    std::max(0.0,width-104.0),30.0}});
+                    std::to_string(job.frameCount) + "; batch=" + std::to_string(job.batchIndex + 1) +
+                    "; output_evidence=" + std::string{outputEvidence
+                        ? studioGenerationOutputEvidenceStateLabel(outputEvidence->state)
+                        : std::string_view{"NOT INSPECTED"}} +
+                    (outputEvidence && !outputEvidence->diagnostic.empty()
+                        ? "; output_diagnostic=" + outputEvidence->diagnostic : ""),
+                .bounds={52.0,282.0+static_cast<double>(index-generationRequestJobFirst_)*42.0,
+                    std::max(0.0,width-104.0),40.0}});
           }
         }
       } else {
@@ -2169,7 +2194,9 @@ public:
     if (generationQueueView_) {
       using Key = seam::native_ui::NativeKey;
       if (event.key == Key::Escape) {
-        if (controller_.proceduralImportBusy()) controller_.cancelProceduralCandidateImport();
+        if (controller_.generationRequestOutputInspectionLoading())
+          record(controller_.cancelGenerationRequestOutputInspection());
+        else if (controller_.proceduralImportBusy()) controller_.cancelProceduralCandidateImport();
         else if (!generationRequestDetailId_.empty()) {
           generationRequestDetailId_.clear(); generationRequestJobFirst_ = 0U;
         } else generationQueueView_ = false;

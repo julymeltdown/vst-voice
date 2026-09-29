@@ -256,8 +256,11 @@ std::size_t studioGenerationQueueVisibleRows(double height) noexcept {
 }
 
 std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept {
-  if (!std::isfinite(height) || height < 312.0) return 0U;
-  const auto rows = static_cast<std::size_t>(std::max(1.0, std::floor((height - 312.0) / 34.0) + 1.0));
+  // Detail cards reserve three lines: job identity, campaign lifecycle, and
+  // read-only output evidence. The two action rows occupy the panel header;
+  // keep both the request metadata and footer clear at compact window heights.
+  if (!std::isfinite(height) || height < 388.0) return 0U;
+  const auto rows = static_cast<std::size_t>(std::floor((height - 388.0) / 42.0) + 1.0);
   return std::min<std::size_t>(rows, 8U);
 }
 
@@ -324,6 +327,18 @@ std::string_view studioGenerationJobStateLabel(StudioGenerationJobState state) n
   return "UNKNOWN";
 }
 
+std::string_view studioGenerationOutputEvidenceStateLabel(
+    authoring::GenerationJobInspectionState state) noexcept {
+  switch (state) {
+    case authoring::GenerationJobInspectionState::NotPrepared: return "NOT PREPARED";
+    case authoring::GenerationJobInspectionState::Incomplete: return "INCOMPLETE";
+    case authoring::GenerationJobInspectionState::Prepared: return "PREPARED · NO OUTPUT";
+    case authoring::GenerationJobInspectionState::NeedsRecovery: return "RECOVERY REQUIRED";
+    case authoring::GenerationJobInspectionState::OutputVerified: return "OUTPUT VERIFIED";
+  }
+  return "UNKNOWN";
+}
+
 std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
     bool recordingActive, std::size_t firstRequest, std::string_view detailRequestId, std::size_t firstJob) {
@@ -349,9 +364,16 @@ std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     if (detail != records.end()) {
       const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
       if (firstJob > 0U)
-        controls.push_back({"request-detail-previous", "Previous jobs", {44.0, 108.0, third * 1.5 - 4.0, 20.0}, !busy});
+        controls.push_back({"request-detail-previous", "Previous jobs", {44.0, 108.0, third - 4.0, 20.0}, !busy});
+      if (visibleJobs != 0U && !detail->request.jobs.empty()) {
+        const bool inspectionLoading = controller.generationRequestOutputInspectionLoading();
+        controls.push_back({
+            inspectionLoading ? "request-detail-cancel-output-inspection" : "request-detail-inspect-outputs",
+            inspectionLoading ? "Cancel inspection" : "Inspect outputs",
+            {44.0 + third, 108.0, third - 4.0, 20.0}, inspectionLoading || !busy});
+      }
       if (firstJob + visibleJobs < detail->request.jobs.size())
-        controls.push_back({"request-detail-next", "Next jobs", {44.0 + third * 1.5, 108.0, third * 1.5 - 4.0, 20.0}, !busy});
+        controls.push_back({"request-detail-next", "Next jobs", {44.0 + 2.0 * third, 108.0, third - 4.0, 20.0}, !busy});
     }
     return controls;
   }
@@ -390,25 +412,25 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
     const ui::Rect region{20.0, 72.0, std::max(0.0, width - 40.0), std::max(0.0, height - 104.0)};
     canvas.fillRect(region, Color{15, 14, 18, 255});
     canvas.strokeRect(region, Color{169, 79, 119, 255}, 1.0);
-    canvas.drawText({44.0, 84.0, std::max(0.0, width - 88.0), 18.0},
+    canvas.drawText({44.0, 136.0, std::max(0.0, width - 88.0), 18.0},
         "GENERATION REQUEST · JOB AND COVERAGE DETAIL", Color{239, 233, 241, 255}, 12.0);
     if (detail == records.end()) {
-      canvas.drawText({44.0, 128.0, std::max(0.0, width - 88.0), 18.0},
+      canvas.drawText({44.0, 170.0, std::max(0.0, width - 88.0), 18.0},
           "REQUEST IS NOT IN THE CURRENT VERIFIED SNAPSHOT · RETURN AND REFRESH",
           Color{224, 155, 114, 255}, 9.0);
       return;
     }
     const auto& request = detail->request;
-    canvas.drawText({44.0, 116.0, std::max(0.0, width - 88.0), 14.0},
+    canvas.drawText({44.0, 154.0, std::max(0.0, width - 88.0), 14.0},
         "ID " + request.requestId + " · " + request.language + " · " + request.recipeId + " " + request.recipeVersion,
         Color{101, 187, 184, 255}, 8.0);
-    canvas.drawText({44.0, 134.0, std::max(0.0, width - 88.0), 14.0},
+    canvas.drawText({44.0, 172.0, std::max(0.0, width - 88.0), 14.0},
         "PRODUCER GEN " + std::to_string(request.expectedGeneration) + " · PROJECT SHA256 " + request.expectedProjectSha256,
         Color{166, 154, 170, 255}, 8.0);
-    canvas.drawText({44.0, 152.0, std::max(0.0, width - 88.0), 14.0},
+    canvas.drawText({44.0, 190.0, std::max(0.0, width - 88.0), 14.0},
         "RECIPE SHA256 " + request.recipeHash + " · SUBMITTED BY " + request.submittedBy + " · " + request.submittedAtUtc,
         Color{166, 154, 170, 255}, 8.0);
-    canvas.drawText({44.0, 170.0, std::max(0.0, width - 88.0), 14.0},
+    canvas.drawText({44.0, 208.0, std::max(0.0, width - 88.0), 14.0},
         "BUDGET " + std::to_string(request.budget.maximumJobs) + " JOBS · " +
             std::to_string(request.budget.maximumFrames) + " FRAMES · " +
             std::to_string(request.budget.maximumBytes) + " BYTES · BATCH " +
@@ -418,17 +440,17 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
     const auto locator = request.definitionLocator.empty()
         ? std::string{"DEFINITION LOCATOR NOT RETAINED · USE OPEN / RESUME FALLBACK"}
         : "DEFINITION LOCATOR · " + request.definitionLocator;
-    canvas.drawText({44.0, 188.0, std::max(0.0, width - 88.0), 14.0}, locator,
+    canvas.drawText({44.0, 226.0, std::max(0.0, width - 88.0), 14.0}, locator,
         Color{166, 154, 170, 255}, 8.0);
     if (detail->terminal) {
       const auto& terminal = *detail->terminal;
-      canvas.drawText({44.0, 206.0, std::max(0.0, width - 88.0), 14.0},
+      canvas.drawText({44.0, 244.0, std::max(0.0, width - 88.0), 14.0},
           "TERMINAL " + voicebank_production::toString(terminal.outcome) + " · " +
               std::to_string(terminal.completedBatches) + "/" + std::to_string(detail->batchCount()) +
               " BATCHES · " + terminal.detail,
           Color{224, 155, 114, 255}, 8.0);
     } else {
-      canvas.drawText({44.0, 206.0, std::max(0.0, width - 88.0), 14.0},
+      canvas.drawText({44.0, 244.0, std::max(0.0, width - 88.0), 14.0},
           "PENDING · DEFINITION BYTES MUST STILL MATCH THE REQUEST ID BEFORE RESUME",
           Color{224, 155, 114, 255}, 8.0);
     }
@@ -436,16 +458,31 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
     const auto lastJob = std::min(request.jobs.size(), firstJob + visibleJobs);
     const auto progress = controller.generationCampaignProgress();
     const auto activeRequestId = controller.generationCampaignSha256();
+    const auto* outputPage = controller.generationRequestOutputInspectionPage();
+    std::string outputSummary{"OUTPUT EVIDENCE · NOT INSPECTED FOR THIS PAGE"};
+    Color outputSummaryColor{166, 154, 170, 255};
+    if (controller.generationRequestOutputInspectionLoading()) {
+      outputSummary = std::string{controller.generationRequestOutputInspectionStatus()};
+      outputSummaryColor = Color{224, 155, 114, 255};
+    } else if (outputPage && outputPage->requestId == request.requestId) {
+      outputSummary = "READ-ONLY OUTPUT EVIDENCE · JOBS " +
+          std::to_string(outputPage->firstJob + 1U) + "–" +
+          std::to_string(outputPage->firstJob + outputPage->jobs.size()) +
+          " · COLLECTION AND REVIEW REMAIN SEPARATE";
+      outputSummaryColor = Color{101, 187, 184, 255};
+    }
+    canvas.drawText({44.0, 262.0, std::max(0.0, width - 88.0), 12.0},
+        outputSummary, outputSummaryColor, 7.0);
     if (request.jobs.empty()) {
-      canvas.drawText({44.0, 246.0, std::max(0.0, width - 88.0), 16.0},
+      canvas.drawText({44.0, 286.0, std::max(0.0, width - 88.0), 16.0},
           "NO JOBS IN VERIFIED REQUEST", Color{166, 154, 170, 255}, 8.0);
     }
     for (std::size_t index = firstJob; index < lastJob; ++index) {
       const auto& job = request.jobs[index];
       const auto state = studioGenerationJobState(*detail, index, activeRequestId, progress);
-      const auto y = 242.0 + static_cast<double>(index - firstJob) * 34.0;
-      canvas.fillRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{35, 30, 40, 255});
-      canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0), 30.0}, Color{73, 63, 81, 255}, 1.0);
+      const auto y = 282.0 + static_cast<double>(index - firstJob) * 42.0;
+      canvas.fillRect({44.0, y, std::max(0.0, width - 88.0), 40.0}, Color{35, 30, 40, 255});
+      canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0), 40.0}, Color{73, 63, 81, 255}, 1.0);
       canvas.drawText({52.0, y + 3.0, std::max(0.0, width - 104.0), 11.0},
           std::to_string(index + 1U) + ". " + job.jobId + "  →  " + job.takeId + "  ·  " + job.coverageKey,
           Color{239, 233, 241, 255}, 8.0);
@@ -457,6 +494,20 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
               : state == StudioGenerationJobState::Processing ? Color{224, 155, 114, 255}
               : state == StudioGenerationJobState::Interrupted || state == StudioGenerationJobState::NotCollected
                   ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255}, 7.0);
+      const auto* outputEvidence = controller.generationRequestJobOutputInspection(request.requestId, index);
+      const auto evidenceState = outputEvidence
+          ? studioGenerationOutputEvidenceStateLabel(outputEvidence->state) : std::string_view{"NOT INSPECTED"};
+      const auto evidenceColor = outputEvidence &&
+              outputEvidence->state == authoring::GenerationJobInspectionState::OutputVerified
+          ? Color{101, 187, 184, 255}
+          : outputEvidence && (outputEvidence->state == authoring::GenerationJobInspectionState::Incomplete ||
+                               outputEvidence->state == authoring::GenerationJobInspectionState::NeedsRecovery)
+              ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255};
+      canvas.drawText({52.0, y + 27.0, std::max(0.0, width - 104.0), 10.0},
+          "OUTPUT EVIDENCE · " + std::string{evidenceState} +
+              (outputEvidence && outputEvidence->state == authoring::GenerationJobInspectionState::OutputVerified
+                  ? " · COLLECTION / REVIEW SEPARATE" : ""),
+          evidenceColor, 6.5);
     }
     if (visibleJobs != 0U && !request.jobs.empty()) {
       canvas.drawText({44.0, height - 54.0, std::max(0.0, width - 88.0), 12.0},

@@ -345,8 +345,21 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
     return control.id == "inspect-request:" + sha && control.enabled;
   }));
   CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(280.0) == 0U);
-  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(480.0) == 5U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(320.0) == 0U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(387.0) == 0U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(388.0) == 1U);
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(480.0) == 3U);
   CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(720.0) == 8U);
+  CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
+      authoring::GenerationJobInspectionState::NotPrepared) == "NOT PREPARED");
+  CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
+      authoring::GenerationJobInspectionState::Incomplete) == "INCOMPLETE");
+  CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
+      authoring::GenerationJobInspectionState::Prepared) == "PREPARED · NO OUTPUT");
+  CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
+      authoring::GenerationJobInspectionState::NeedsRecovery) == "RECOVERY REQUIRED");
+  CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
+      authoring::GenerationJobInspectionState::OutputVerified) == "OUTPUT VERIFIED");
   for (const auto [width, height] : {std::pair{720.0, 480.0}, std::pair{1040.0, 720.0},
                                     std::pair{1600.0, 900.0}}) {
     const auto controls = seam::native_ui::studioGenerationQueueControls(
@@ -373,11 +386,20 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
     const auto locate = std::find_if(details.begin(), details.end(), [&](const auto& control) {
       return control.id == "request-detail-locate:" + sha;
     });
+    const auto inspectOutputs = std::find_if(details.begin(), details.end(), [](const auto& control) {
+      return control.id == "request-detail-inspect-outputs";
+    });
     CHECK(back != details.end());
     CHECK(resume != details.end());
     CHECK(locate != details.end());
+    CHECK(inspectOutputs != details.end());
+    if (inspectOutputs != details.end()) {
+      CHECK(inspectOutputs->enabled);
+      CHECK(inspectOutputs->bounds.y == 108.0);
+    }
     if (back != details.end() && resume != details.end()) CHECK(back->bounds.right() <= resume->bounds.x);
     if (resume != details.end() && locate != details.end()) CHECK(resume->bounds.right() <= locate->bounds.x);
+    if (inspectOutputs != details.end()) CHECK(inspectOutputs->bounds.right() <= width - 44.0);
     for (const auto& control : details) {
       CHECK(control.bounds.x >= 44.0);
       CHECK(control.bounds.right() <= width - 44.0);
@@ -391,7 +413,9 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
     seam::native_ui::RasterCanvas canvas(surface);
     seam::native_ui::paintStudioGenerationRequestQueue(canvas, fixture.controller, 0U, sha, 0U);
     CHECK(surface.checksum() != beforePaint);
-    CHECK(surface.pixels()[245U * 1040U + 50U] == (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
+    // The first job card starts below both action rows and the request metadata.
+    CHECK(surface.pixels()[285U * 1040U + 50U] == (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
+    CHECK(surface.pixels()[245U * 1040U + 50U] != (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
   }
 
   const auto originalBytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);

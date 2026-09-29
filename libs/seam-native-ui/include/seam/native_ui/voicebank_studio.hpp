@@ -624,6 +624,8 @@ enum class StudioGenerationJobState : std::uint8_t {
     std::string_view activeRequestId,
     const std::optional<VoicebankStudioController::GenerationCampaignProgress>& progress) noexcept;
 [[nodiscard]] std::string_view studioGenerationJobStateLabel(StudioGenerationJobState state) noexcept;
+[[nodiscard]] std::string_view studioGenerationOutputEvidenceStateLabel(
+    authoring::GenerationJobInspectionState state) noexcept;
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     const VoicebankStudioController& controller, double width, double height,
     bool recordingActive, std::size_t firstRequest,
