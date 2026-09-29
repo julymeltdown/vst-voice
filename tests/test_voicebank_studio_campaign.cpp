@@ -295,6 +295,27 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(!fixture.controller.generationRequests().front().terminal);
   CHECK(fixture.controller.generationRequestQueueStatus().find("1 REQUEST") != std::string_view::npos);
   CHECK(fixture.controller.productionProject()->lastDurableGeneration == before);
+  const auto unpreparedPage = fixture.controller.beginGenerationRequestOutputInspection(sha, 0U, 1U);
+  CHECK(unpreparedPage);
+  CHECK(fixture.controller.proceduralImportBusy());
+  CHECK(drain(fixture.controller));
+  const auto* firstEvidence = fixture.controller.generationRequestOutputInspectionPage();
+  CHECK(firstEvidence != nullptr);
+  if (firstEvidence != nullptr) {
+    CHECK(firstEvidence->requestId == sha);
+    CHECK(firstEvidence->firstJob == 0U);
+    CHECK(firstEvidence->jobs.size() == 1U);
+    if (!firstEvidence->jobs.empty()) CHECK(firstEvidence->jobs.front().state ==
+        authoring::GenerationJobInspectionState::NotPrepared);
+  }
+  CHECK(fixture.controller.generationRequestOutputInspectionStatus().find("INSPECTED 1 JOB") != std::string_view::npos);
+  CHECK(!std::filesystem::exists(destination / "batch-0"));
+  CHECK(fixture.controller.productionProject()->lastDurableGeneration == before);
+  const auto invalidInspectionPage = fixture.controller.beginGenerationRequestOutputInspection(sha, 2U, 1U);
+  CHECK(!invalidInspectionPage);
+  const auto oversizedInspectionPage = fixture.controller.beginGenerationRequestOutputInspection(sha, 0U, 17U);
+  CHECK(!oversizedInspectionPage);
+  if (!oversizedInspectionPage) CHECK(oversizedInspectionPage.error().code == core::ErrorCode::InvalidArgument);
   using JobState = seam::native_ui::StudioGenerationJobState;
   const auto& queuedRequest = fixture.controller.generationRequests().front();
   const auto activeRender = Controller::GenerationCampaignProgress{
@@ -424,6 +445,20 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(fixture.controller.generationRequests().front().terminal->outcome ==
       production::GenerationRequestOutcome::Completed);
   const auto& completedRequest = fixture.controller.generationRequests().front();
+  CHECK(fixture.controller.beginGenerationRequestOutputInspection(sha, 0U, 8U, movedPath));
+  CHECK(drain(fixture.controller));
+  const auto* completedEvidence = fixture.controller.generationRequestOutputInspectionPage();
+  CHECK(completedEvidence != nullptr);
+  if (completedEvidence != nullptr) {
+    CHECK(completedEvidence->jobs.size() == 2U);
+    for (const auto& evidence : completedEvidence->jobs)
+      if (evidence.state != authoring::GenerationJobInspectionState::OutputVerified)
+        throw test::Failure{"Completed request output inspection was not verified: " + evidence.diagnostic};
+  }
+  CHECK(std::all_of(fixture.controller.productionProject()->takes.begin(),
+      fixture.controller.productionProject()->takes.end(), [](const auto& take) {
+        return take.state == production::UnitQueueState::MarkerReview;
+      }));
   for (std::size_t index = 0U; index < completedRequest.request.jobs.size(); ++index)
     CHECK(seam::native_ui::studioGenerationJobState(completedRequest, index, sha, std::nullopt) == JobState::Collected);
   CHECK(seam::native_ui::studioGenerationJobStateLabel(JobState::Collected).find("REVIEW SEPARATE") !=

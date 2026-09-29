@@ -244,6 +244,11 @@ public:
     // status, not a durable job receipt or producer/review outcome.
     std::size_t completedOutputs{0U}, totalOutputs{0U};
   };
+  struct GenerationRequestOutputInspectionPage final {
+    std::string requestId, requestSha256;
+    std::size_t firstJob{0U};
+    std::vector<authoring::GenerationJobInspection> jobs;
+  };
   [[nodiscard]] core::Result<void> beginGenerationCampaignPlan(
       std::filesystem::path recipePath, std::vector<std::string> plannedTakeIds,
       std::filesystem::path destination, std::size_t maximumJobsPerBatch = 0U);
@@ -257,6 +262,13 @@ public:
   // read-only; selecting a pending record advances only after the campaign bytes
   // at its locator hash back to the immutable request identity.
   [[nodiscard]] core::Result<void> refreshGenerationRequests();
+  // Inspects only a bounded visible page. The definition bytes must admit
+  // against the immutable request ID; job directories are derived from the
+  // admitted job identity, not paths in batch.json.
+  [[nodiscard]] core::Result<void> beginGenerationRequestOutputInspection(
+      std::string_view requestId, std::size_t firstJob, std::size_t maximumJobs,
+      std::filesystem::path definitionPath = {});
+  [[nodiscard]] core::Result<void> cancelGenerationRequestOutputInspection();
   [[nodiscard]] core::Result<void> beginGenerationRequestResume(std::string_view requestId,
       std::string occurredAtUtc = {});
   // Resume a queued request from a user-located definition file when its stored locator moved.
@@ -271,6 +283,27 @@ public:
   }
   [[nodiscard]] std::string_view generationRequestQueueStatus() const noexcept {
     return generationRequestQueueStatus_;
+  }
+  [[nodiscard]] bool generationRequestOutputInspectionLoading() const noexcept {
+    return generationRequestOutputInspectionWork_.valid();
+  }
+  [[nodiscard]] std::string_view generationRequestOutputInspectionStatus() const noexcept {
+    return generationRequestOutputInspectionStatus_;
+  }
+  [[nodiscard]] const GenerationRequestOutputInspectionPage*
+      generationRequestOutputInspectionPage() const noexcept {
+    return generationRequestOutputInspectionPage_
+        ? &*generationRequestOutputInspectionPage_ : nullptr;
+  }
+  [[nodiscard]] const authoring::GenerationJobInspection*
+      generationRequestJobOutputInspection(std::string_view requestId,
+                                           std::size_t jobIndex) const noexcept {
+    if (!generationRequestOutputInspectionPage_ ||
+        generationRequestOutputInspectionPage_->requestId != requestId ||
+        jobIndex < generationRequestOutputInspectionPage_->firstJob) return nullptr;
+    const auto offset = jobIndex - generationRequestOutputInspectionPage_->firstJob;
+    return offset < generationRequestOutputInspectionPage_->jobs.size()
+        ? &generationRequestOutputInspectionPage_->jobs[offset] : nullptr;
   }
   void cancelGenerationCampaign() noexcept;
   [[nodiscard]] std::optional<GenerationCampaignProgress> generationCampaignProgress() const noexcept;
@@ -289,7 +322,7 @@ public:
   [[nodiscard]] bool proceduralImportResultReady() const {
     return proceduralImport_.valid() && proceduralImport_.wait_for(std::chrono::seconds{0})==std::future_status::ready;
   }
-  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || campaignWork_.valid() || generationRequestsWork_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
+  [[nodiscard]] bool proceduralImportBusy() const noexcept { return workspaceOpen_.valid() || proceduralImport_.valid() || campaignWork_.valid() || generationRequestsWork_.valid() || generationRequestOutputInspectionWork_.valid() || waveformLoad_.valid() || pitchLoad_.valid() || sampleReviewWork_.valid() || editableUnitLoad_.valid() || candidateDrag_.has_value(); }
   [[nodiscard]] const std::optional<voice_design::ProceduralCandidate>& candidateMarkerPreview() const noexcept {
     return candidateMarkerPreview_;
   }
@@ -502,6 +535,12 @@ private:
   std::future<core::Result<GenerationCampaignOutcome>> campaignWork_;
   std::future<core::Result<std::vector<voicebank_production::GenerationRequestRecord>>>
       generationRequestsWork_;
+  std::future<core::Result<GenerationRequestOutputInspectionPage>>
+      generationRequestOutputInspectionWork_;
+  std::optional<GenerationRequestOutputInspectionPage>
+      generationRequestOutputInspectionPage_;
+  std::uint64_t generationRequestOutputInspectionEpoch_{0U};
+  std::string generationRequestOutputInspectionStatus_{"JOB OUTPUT EVIDENCE NOT INSPECTED"};
   std::vector<voicebank_production::GenerationRequestRecord> generationRequests_;
   std::uint64_t generationRequestsEpoch_{0U};
   std::string generationRequestQueueStatus_{"REQUEST QUEUE NOT LOADED"};

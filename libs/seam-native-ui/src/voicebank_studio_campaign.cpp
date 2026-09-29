@@ -11,14 +11,19 @@
 #include "voicebank_studio_production_support.hpp"
 
 #include "seam/authoring/generation_campaign.hpp"
+#include "seam/authoring/inventory_generation.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/formats/project_json.hpp"
+#include "seam/rendering/render_pipeline.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 
 #include <algorithm>
 #include <exception>
+#include <limits>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -50,6 +55,406 @@ std::string campaignCountStatus(std::string_view prefix, std::size_t completed,
     std::size_t total, std::string_view suffix) {
   return std::string{prefix} + " " + std::to_string(completed) + "/" +
       std::to_string(total) + " BATCH(ES) " + std::string{suffix};
+}
+
+bool missingPath(const std::filesystem::file_status& status, const std::error_code& error) {
+  return error == std::errc::no_such_file_or_directory ||
+      (!error && status.type() == std::filesystem::file_type::not_found);
+}
+
+authoring::GenerationJobInspection incompleteJob(std::string message) {
+  return {.state = authoring::GenerationJobInspectionState::Incomplete,
+      .diagnostic = std::move(message)};
+}
+
+struct ExpectedCampaignJob final {
+  std::string jobId, renderContentHash;
+  voicebank_production::GenerationImportExpectation expectation;
+};
+
+core::Result<ExpectedCampaignJob> expectedCampaignJob(const formats::JsonValue& row,
+    const voicebank_production::GenerationRequestJob& queued,
+    const voicebank_production::VoicebankProductionProject& producer,
+    const synthesis::ProceduralSingerResource& resource) {
+  using Output = ExpectedCampaignJob;
+  const auto invalid = [](std::string message) {
+    return core::failure<Output>(core::ErrorCode::Conflict, std::move(message));
+  };
+  auto score = authoring::buildInventoryGenerationScore(producer, queued.takeId);
+  if (!score) return core::Result<Output>{score.error()};
+  const auto scoreJson = formats::ProjectJsonCodec{}.encode(score.value().project);
+  const auto* frozenScore = row.find("scoreJson");
+  const auto* frozenTemplate = row.find("templateIdentity");
+  if (!scoreJson || frozenScore == nullptr || !frozenScore->isString() ||
+      scoreJson.value() != frozenScore->asString() || frozenTemplate == nullptr || !frozenTemplate->isString() ||
+      score.value().templateIdentity != frozenTemplate->asString() ||
+      authoring::campaignJobId(score.value().templateIdentity, queued.takeId) != queued.jobId)
+    return invalid("Prepared generation score differs from the frozen campaign row");
+  const auto assignmentCount = std::count_if(producer.unitAssignments.begin(), producer.unitAssignments.end(),
+      [&](const auto& item) { return item.plannedTakeId == queued.takeId; });
+  if (assignmentCount != 1)
+    return invalid("Campaign job does not identify exactly one frozen producer assignment");
+  const auto assignment = std::find_if(producer.unitAssignments.begin(), producer.unitAssignments.end(),
+      [&](const auto& item) { return item.plannedTakeId == queued.takeId; });
+  if (assignment->style != queued.style || assignment->coverageKey != queued.coverageKey ||
+      assignment->pitchLayer != queued.pitchLayer)
+    return invalid("Campaign job differs from its frozen producer assignment");
+  auto* track = score.value().project.findVocalTrack(score.value().trackId);
+  if (track == nullptr) return invalid("Campaign score has no expected vocal track");
+  track->proceduralRecipe = domain::ProceduralRecipeReference{
+      resource.identity, "recipe.json", assignment->style};
+  const auto sampleRate = static_cast<std::uint32_t>(score.value().project.settings().sampleRate);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(score.value().project,
+      resource, score.value().trackId, score.value().regionId, 0U,
+      rendering::RenderQuality::Final, sampleRate, assignment->style);
+  if (!snapshot) return core::Result<Output>{snapshot.error()};
+  const auto notes = snapshot.value().compiledPerformance->notes();
+  if (notes.empty()) return invalid("Frozen campaign score contains no renderable notes");
+  const voicebank_production::RawTakeInput take{.takeId = queued.takeId,
+      .promptId = assignment->promptId, .coverageKey = assignment->coverageKey,
+      .pitchLayer = assignment->pitchLayer, .supersedesTakeId = assignment->takeId,
+      .style = assignment->style};
+  const auto expectation = voicebank_production::captureGenerationImportExpectation(producer, take,
+      resource, assignment->style, snapshot.value().contentHash, snapshot.value().sampleRate,
+      notes.back().endFrame - notes.front().startFrame);
+  if (!expectation) return core::Result<Output>{expectation.error()};
+  if (queued.frameCount != expectation.value().frameCount)
+    return invalid("Prepared job frame count differs from the queued campaign request");
+  return Output{queued.jobId, snapshot.value().contentHash, expectation.value()};
+}
+
+std::string generationJournalName(std::uint64_t generation) {
+  const auto decimal = std::to_string(generation);
+  if (decimal.size() > 20U) return {};
+  return std::string(20U - decimal.size(), '0') + decimal + ".json";
+}
+
+core::Result<voicebank_production::VoicebankProductionProject> recoverCampaignProducerBeforeBatch(
+    const voicebank_production::GenerationRequestRecord& record,
+    const formats::JsonValue& plan,
+    const voicebank_production::VoicebankProductionProject& initialProducer,
+    const synthesis::ProceduralSingerResource& resource,
+    const std::filesystem::path& campaignRoot,
+    const std::filesystem::path& workspaceRoot,
+    std::size_t targetBatch,
+    std::stop_token stop) {
+  using Output = voicebank_production::VoicebankProductionProject;
+  const auto fail = [](std::string message) {
+    return core::failure<Output>(core::ErrorCode::Conflict, std::move(message));
+  };
+  auto producer = initialProducer;
+  const auto* rows = plan.find("jobs");
+  if (rows == nullptr || !rows->isArray()) return fail("Campaign job rows are unavailable");
+  voicebank_production::ProductionProjectRepository repository{workspaceRoot};
+  for (std::size_t batchIndex = 0U; batchIndex < targetBatch; ++batchIndex) {
+    if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+    if (producer.lastDurableGeneration >= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+      return fail("Producer generation counter cannot advance through campaign history");
+    const auto generation = producer.lastDurableGeneration + 1U;
+    const auto batchDirectory = campaignRoot / ("batch-" + std::to_string(batchIndex));
+    const auto receiptPath = batchDirectory / "collection.json";
+    std::error_code error;
+    const auto batchStatus = std::filesystem::symlink_status(batchDirectory, error);
+    if (missingPath(batchStatus, error) || error || std::filesystem::is_symlink(batchStatus) ||
+        !std::filesystem::is_directory(batchStatus))
+      return fail("A preceding campaign batch is missing or unsafe");
+    error.clear();
+    const auto receiptStatus = std::filesystem::symlink_status(receiptPath, error);
+    if (missingPath(receiptStatus, error) || error || std::filesystem::is_symlink(receiptStatus) ||
+        !std::filesystem::is_regular_file(receiptStatus))
+      return fail("A preceding campaign batch has no safe collection receipt");
+    const auto receiptBytes = core::readTextFileLimited(receiptPath, 1024U * 1024U);
+    if (!receiptBytes) return core::Result<Output>{receiptBytes.error()};
+    const auto receipt = formats::parseJson(receiptBytes.value());
+    if (!receipt || !receipt.value().isObject()) return fail("A preceding campaign collection receipt is malformed");
+    const auto* originalHash = receipt.value().find("originalProducerSha256");
+    const auto* committedHash = receipt.value().find("committedProducerSha256");
+    const auto* committedGeneration = receipt.value().find("committedGeneration");
+    if (receipt.value().asObject().size() != 6U ||
+        !receipt.value().find("formatId") || !receipt.value().find("formatId")->isString() ||
+        receipt.value().find("formatId")->asString() != "com.project-seam.generation-batch-collection" ||
+        !receipt.value().find("schemaVersion") || !receipt.value().find("schemaVersion")->isInteger() ||
+        receipt.value().find("schemaVersion")->asInt64() != 1 ||
+        originalHash == nullptr || !originalHash->isString() || committedHash == nullptr || !committedHash->isString() ||
+        committedGeneration == nullptr || !committedGeneration->isString())
+      return fail("A preceding campaign receipt has an unsupported shape");
+    const auto producerBytes = voicebank_production::encodeProductionProject(producer);
+    const auto beforeHash = core::sha256Hex(producerBytes);
+    if (originalHash->asString() != beforeHash || committedGeneration->asString() != std::to_string(generation))
+      return fail("A preceding campaign receipt does not continue the frozen producer history");
+    const auto after = repository.recoverGeneration(generation, committedHash->asString());
+    if (!after) return core::Result<Output>{after.error()};
+
+    const auto journalName = generationJournalName(generation);
+    if (journalName.empty()) return fail("Producer journal generation is outside its supported range");
+    const auto journalPath = workspaceRoot / "journal" / journalName;
+    error.clear();
+    const auto journalStatus = std::filesystem::symlink_status(journalPath, error);
+    if (missingPath(journalStatus, error) || error || std::filesystem::is_symlink(journalStatus) ||
+        !std::filesystem::is_regular_file(journalStatus))
+      return fail("A preceding campaign producer journal event is missing or unsafe");
+    const auto journalBytes = core::readTextFileLimited(journalPath, 1024U * 1024U);
+    if (!journalBytes) return core::Result<Output>{journalBytes.error()};
+    const auto journal = formats::parseJson(journalBytes.value());
+    if (!journal || !journal.value().isObject()) return fail("A preceding campaign producer journal event is malformed");
+    const auto* action = journal.value().find("action");
+    const auto* journalGeneration = journal.value().find("generation");
+    const auto* journalHash = journal.value().find("projectSha256");
+    if (action == nullptr || !action->isString() || action->asString() != "import-generated-batch" ||
+        journalGeneration == nullptr || !journalGeneration->isInteger() ||
+        journalGeneration->asInt64() != static_cast<std::int64_t>(generation) ||
+        journalHash == nullptr || !journalHash->isString() || journalHash->asString() != committedHash->asString())
+      return fail("A preceding campaign producer state is not one batch collection");
+
+    formats::JsonValue::Array expectedTakes;
+    std::set<std::string> expectedTakeIds;
+    const auto& planRows = rows->asArray();
+    for (std::size_t index = 0U; index < planRows.size(); ++index) {
+      if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+      const auto& job = record.request.jobs[index];
+      if (job.batchIndex != static_cast<std::int64_t>(batchIndex)) continue;
+      const auto expected = expectedCampaignJob(planRows[index], job, producer, resource);
+      if (!expected) return core::Result<Output>{expected.error()};
+      const auto expectationBytes = voicebank_production::encodeGenerationImportExpectation(
+          expected.value().expectation);
+      if (!expectationBytes) return core::Result<Output>{expectationBytes.error()};
+      const auto collected = repository.findCollectedGeneration(
+          expected.value().expectation, generation, committedHash->asString());
+      if (!collected) return core::Result<Output>{collected.error()};
+      if (!collected.value() || !collected.value()->active ||
+          (collected.value()->state != voicebank_production::UnitQueueState::MarkerReview &&
+           collected.value()->state != voicebank_production::UnitQueueState::Rejected))
+        return fail("A preceding campaign take is not present as unreviewed request-bound material");
+      expectedTakeIds.insert(job.takeId);
+      expectedTakes.emplace_back(formats::JsonValue::Object{
+          {"takeId", collected.value()->takeId}, {"audioSha256", collected.value()->audioSha256},
+          {"expectationSha256", core::sha256Hex(expectationBytes.value())}});
+    }
+    if (expectedTakeIds.empty()) return fail("A preceding campaign batch contains no request jobs");
+    std::set<std::string> introducedTakeIds;
+    for (const auto& take : after.value().takes) {
+      if (std::none_of(producer.takes.begin(), producer.takes.end(),
+          [&](const auto& previous) { return previous.takeId == take.takeId; }))
+        introducedTakeIds.insert(take.takeId);
+    }
+    if (introducedTakeIds != expectedTakeIds) return fail("A preceding producer generation introduced unexpected takes");
+    const auto canonicalReceipt = formats::stringifyJson(formats::JsonValue::Object{
+        {"formatId", "com.project-seam.generation-batch-collection"}, {"schemaVersion", std::int64_t{1}},
+        {"originalProducerSha256", beforeHash}, {"committedProducerSha256", committedHash->asString()},
+        {"committedGeneration", std::to_string(generation)}, {"takes", std::move(expectedTakes)}}, true);
+    if (canonicalReceipt != receiptBytes.value()) return fail("A preceding campaign receipt differs from request-bound producer history");
+    producer = after.value();
+  }
+  return producer;
+}
+
+core::Result<VoicebankStudioController::GenerationRequestOutputInspectionPage>
+inspectRequestOutputPage(const voicebank_production::GenerationRequestRecord& record,
+    const std::filesystem::path& definitionPath,
+    const std::filesystem::path& workspaceRoot,
+    std::size_t firstJob, std::size_t maximumJobs, std::stop_token stop) {
+  using Page = VoicebankStudioController::GenerationRequestOutputInspectionPage;
+  using State = authoring::GenerationJobInspectionState;
+  const auto fail = [](std::string message) {
+    return core::failure<Page>(core::ErrorCode::Conflict, std::move(message));
+  };
+  if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+  if (record.request.requestId.size() != 64U || record.requestSha256.size() != 64U ||
+      definitionPath.empty() || maximumJobs == 0U || maximumJobs > 16U ||
+      workspaceRoot.empty() || record.request.jobs.empty() || firstJob >= record.request.jobs.size())
+    return core::failure<Page>(core::ErrorCode::InvalidArgument,
+        "Generation output inspection request or page bounds are invalid");
+
+  const auto encodedRequest = voicebank_production::encodeGenerationRequest(record.request);
+  if (!encodedRequest || core::sha256Hex(encodedRequest.value()) != record.requestSha256)
+    return fail("Queued generation request does not match its verified request digest");
+
+  std::error_code error;
+  const auto definitionStatus = std::filesystem::symlink_status(definitionPath, error);
+  if (missingPath(definitionStatus, error) || error || std::filesystem::is_symlink(definitionStatus) ||
+      !std::filesystem::is_regular_file(definitionStatus))
+    return fail("Campaign definition is missing or is not a regular non-symlink file");
+  const auto definition = core::readTextFileLimited(definitionPath, 32U * 1024U * 1024U);
+  if (!definition) return core::Result<Page>{definition.error()};
+  const auto campaign = authoring::VerifiedGenerationCampaign::admit(
+      definition.value(), record.request.requestId, stop);
+  if (!campaign) return fail("Campaign definition does not match the immutable queued request: " +
+      campaign.error().message);
+  const auto& plan = campaign.value().plan();
+  const auto* initialJson = plan.find("initialProducerJson");
+  const auto* initialHash = plan.find("initialProducerSha256");
+  const auto* recipeJson = plan.find("recipeJson");
+  const auto* recipeHash = plan.find("recipeSha256");
+  const auto* planJobs = plan.find("jobs");
+  if (initialJson == nullptr || !initialJson->isString() || initialHash == nullptr || !initialHash->isString() ||
+      recipeJson == nullptr || !recipeJson->isString() || recipeHash == nullptr || !recipeHash->isString() ||
+      planJobs == nullptr || !planJobs->isArray() || planJobs->asArray().size() != record.request.jobs.size())
+    return fail("Admitted campaign has incomplete request-bound producer, recipe, or job data");
+
+  const auto initial = voicebank_production::decodeProductionProject(initialJson->asString());
+  if (!initial || core::sha256Hex(initialJson->asString()) != initialHash->asString() ||
+      initialHash->asString() != record.request.expectedProjectSha256 ||
+      initial.value().lastDurableGeneration > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+      static_cast<std::int64_t>(initial.value().lastDurableGeneration) != record.request.expectedGeneration ||
+      initial.value().language != record.request.language)
+    return fail("Campaign producer snapshot differs from the immutable request identity");
+
+  const auto recipe = voice_design::decodeVoiceRecipe(recipeJson->asString());
+  if (!recipe) return fail("Campaign recipe cannot be decoded: " + recipe.error().message);
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe.value(), stop);
+  if (!resource) return fail("Campaign recipe resource is invalid: " + resource.error().message);
+  const auto& identity = resource.value().identity;
+  if (identity.id != record.request.recipeId || identity.version != record.request.recipeVersion ||
+      identity.contentHash != record.request.recipeHash || identity.contentHash != recipeHash->asString())
+    return fail("Campaign recipe identity differs from the immutable request");
+
+  const auto integer = [&](std::string_view key) -> std::optional<std::int64_t> {
+    const auto* value = plan.find(key);
+    if (value == nullptr || !value->isInteger()) return std::nullopt;
+    return value->asInt64();
+  };
+  const auto budgetMaximumJobs = integer("maximumJobs");
+  const auto maximumFrames = integer("maximumFrames");
+  const auto maximumBytes = integer("maximumEstimatedBytes");
+  const auto batchMaximumJobs = integer("batchMaximumJobs");
+  const auto batchMaximumFrames = integer("batchMaximumFrames");
+  if (!budgetMaximumJobs || !maximumFrames || !maximumBytes || !batchMaximumJobs || !batchMaximumFrames ||
+      record.request.budget != voicebank_production::GenerationRequestBudget{
+          *budgetMaximumJobs, *maximumFrames, *maximumBytes, *batchMaximumJobs, *batchMaximumFrames})
+    return fail("Campaign resource budget differs from the immutable request");
+
+  for (std::size_t index = 0U; index < planJobs->asArray().size(); ++index) {
+    if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+    const auto& row = planJobs->asArray()[index];
+    const auto& queued = record.request.jobs[index];
+    const auto fieldString = [&](std::string_view key) -> const std::string* {
+      const auto* value = row.find(key);
+      return value != nullptr && value->isString() ? &value->asString() : nullptr;
+    };
+    const auto fieldInteger = [&](std::string_view key) -> std::optional<std::int64_t> {
+      const auto* value = row.find(key);
+      return value != nullptr && value->isInteger() ? std::optional<std::int64_t>{value->asInt64()} : std::nullopt;
+    };
+    const auto* takeId = fieldString("takeId");
+    const auto* style = fieldString("style");
+    const auto* coverageKey = fieldString("coverageKey");
+    const auto* templateIdentity = fieldString("templateIdentity");
+    const auto pitchLayer = fieldInteger("pitchLayer");
+    const auto frameCount = fieldInteger("frameCount");
+    const auto batchIndex = fieldInteger("batchIndex");
+    if (takeId == nullptr || style == nullptr || coverageKey == nullptr || templateIdentity == nullptr ||
+        !pitchLayer || !frameCount || !batchIndex || *batchIndex < 0 ||
+        queued.takeId != *takeId || queued.style != *style || queued.coverageKey != *coverageKey ||
+        queued.pitchLayer != *pitchLayer || queued.frameCount != *frameCount || queued.batchIndex != *batchIndex ||
+        queued.jobId != authoring::campaignJobId(*templateIdentity, *takeId))
+      return fail("Campaign job rows differ from the immutable request queue");
+  }
+
+  const auto first = firstJob;
+  const auto end = first + std::min(maximumJobs, record.request.jobs.size() - first);
+  Page page{.requestId = record.request.requestId, .requestSha256 = record.requestSha256,
+      .firstJob = first, .jobs = {}};
+  page.jobs.reserve(end - first);
+  const auto absoluteDefinition = std::filesystem::absolute(definitionPath, error);
+  if (error) return fail("Campaign definition path cannot be resolved");
+  const auto campaignRoot = absoluteDefinition.parent_path().lexically_normal();
+  for (std::size_t index = first; index < end; ++index) {
+    if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+    const auto& queued = record.request.jobs[index];
+    const auto batchDirectory = campaignRoot / ("batch-" + std::to_string(queued.batchIndex));
+    const auto jobDirectory = batchDirectory / queued.jobId;
+    error.clear();
+    const auto batchStatus = std::filesystem::symlink_status(batchDirectory, error);
+    if (missingPath(batchStatus, error)) {
+      page.jobs.push_back({.state = State::NotPrepared,
+          .diagnostic = "Campaign batch has not been prepared."});
+      continue;
+    }
+    if (error || std::filesystem::is_symlink(batchStatus) || !std::filesystem::is_directory(batchStatus)) {
+      page.jobs.push_back(incompleteJob("Campaign batch path is unsafe or unreadable."));
+      continue;
+    }
+    error.clear();
+    const auto jobStatus = std::filesystem::symlink_status(jobDirectory, error);
+    if (missingPath(jobStatus, error)) {
+      page.jobs.push_back({.state = State::NotPrepared,
+          .diagnostic = "Generation job has not been prepared."});
+      continue;
+    }
+    if (error || std::filesystem::is_symlink(jobStatus) || !std::filesystem::is_directory(jobStatus)) {
+      page.jobs.push_back(incompleteJob("Generation job path is unsafe or unreadable."));
+      continue;
+    }
+
+    bool unsafePackage = false;
+    bool missingPackage = false;
+    for (const auto* name : {"job.json", "expectation.json", "project.json", "recipe.json"}) {
+      error.clear();
+      const auto packageStatus = std::filesystem::symlink_status(jobDirectory / name, error);
+      if (missingPath(packageStatus, error)) { missingPackage = true; break; }
+      if (error || std::filesystem::is_symlink(packageStatus) || !std::filesystem::is_regular_file(packageStatus)) {
+        unsafePackage = true;
+        break;
+      }
+    }
+    if (unsafePackage) {
+      page.jobs.push_back(incompleteJob("Generation job package contains an unsafe file."));
+      continue;
+    }
+    if (missingPackage) {
+      const auto evidence = authoring::inspectGenerationJobOutputReadOnly(
+          jobDirectory, core::sha256Hex(std::string_view{}), stop);
+      page.jobs.push_back(evidence ? evidence.value() : incompleteJob(evidence.error().message));
+      continue;
+    }
+    const auto manifestSha = core::sha256File(jobDirectory / "job.json");
+    if (!manifestSha) {
+      page.jobs.push_back(incompleteJob("Generation job manifest cannot be hashed."));
+      continue;
+    }
+    const auto* row = &planJobs->asArray()[index];
+    const auto producerForBatch = recoverCampaignProducerBeforeBatch(record, plan, initial.value(),
+        resource.value(), campaignRoot, workspaceRoot,
+        static_cast<std::size_t>(queued.batchIndex), stop);
+    if (!producerForBatch) {
+      if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+      page.jobs.push_back(incompleteJob("Preceding campaign history cannot be verified: " +
+          producerForBatch.error().message));
+      continue;
+    }
+    const auto loadedJob = authoring::loadGenerationJob(jobDirectory, manifestSha.value());
+    if (!loadedJob) {
+      page.jobs.push_back(incompleteJob("Generation job package failed integrity validation: " +
+          loadedJob.error().message));
+      continue;
+    }
+    const auto expected = expectedCampaignJob(*row, queued, producerForBatch.value(), resource.value());
+    if (!expected) {
+      page.jobs.push_back(incompleteJob("Campaign import expectation cannot be reconstructed: " +
+          expected.error().message));
+      continue;
+    }
+    if (loadedJob.value().jobId != expected.value().jobId) {
+      page.jobs.push_back(incompleteJob("Prepared job ID differs from the campaign row."));
+      continue;
+    }
+    if (loadedJob.value().snapshot.contentHash != expected.value().renderContentHash) {
+      page.jobs.push_back(incompleteJob("Prepared render snapshot differs from the campaign score and recipe."));
+      continue;
+    }
+    if (loadedJob.value().expectation != expected.value().expectation) {
+      page.jobs.push_back(incompleteJob("Prepared import expectation differs from the frozen producer assignment."));
+      continue;
+    }
+    const auto evidence = authoring::inspectGenerationJobOutputReadOnly(jobDirectory, manifestSha.value(), stop);
+    if (!evidence) {
+      if (stop.stop_requested()) return fail("Generation output inspection cancelled");
+      page.jobs.push_back(incompleteJob(evidence.error().message));
+    } else {
+      page.jobs.push_back(evidence.value());
+    }
+  }
+  return page;
 }
 
 }  // namespace
@@ -297,6 +702,66 @@ core::Result<void> VoicebankStudioController::refreshGenerationRequests() {
     generationRequestQueueStatus_ = "REQUEST QUEUE FAILED";
     return core::failure(core::ErrorCode::Internal, "Unable to start generation request listing", error.what());
   }
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginGenerationRequestOutputInspection(
+    std::string_view requestId, std::size_t firstJob, std::size_t maximumJobs,
+    std::filesystem::path definitionPath) {
+  if (proceduralImportBusy())
+    return core::failure(core::ErrorCode::Conflict, "Production worker is busy");
+  if (!productionProject_ || generationRequestsEpoch_ != productionSessionEpoch_)
+    return core::failure(core::ErrorCode::InvalidState,
+        "Refresh the generation queue for the current producer workspace first");
+  if (maximumJobs == 0U || maximumJobs > 16U)
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "Inspect between 1 and 16 generation jobs at a time");
+  const auto found = std::find_if(generationRequests_.begin(), generationRequests_.end(),
+      [requestId](const auto& record) { return record.request.requestId == requestId; });
+  if (found == generationRequests_.end())
+    return core::failure(core::ErrorCode::NotFound,
+        "Generation request is not in the current queue snapshot");
+  if (definitionPath.empty()) definitionPath = found->request.definitionLocator;
+  if (definitionPath.empty())
+    return core::failure(core::ErrorCode::NotFound,
+        "Generation request has no campaign definition locator; locate the definition file");
+  if (firstJob >= found->request.jobs.size())
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "Generation output inspection page starts outside the request");
+  const auto record = *found;
+  const auto sessionEpoch = productionSessionEpoch_;
+  const auto workspaceRoot = productionWorkspaceRoot_;
+  if (sessionEpoch == 0U || generationRequestOutputInspectionEpoch_ ==
+      std::numeric_limits<std::uint64_t>::max())
+    return core::failure(core::ErrorCode::Conflict,
+        "Generation output inspection epoch is unavailable");
+  generationRequestOutputInspectionEpoch_ = sessionEpoch;
+  generationRequestOutputInspectionPage_.reset();
+  const auto last = firstJob + std::min(maximumJobs, record.request.jobs.size() - firstJob);
+  generationRequestOutputInspectionStatus_ = "INSPECTING JOBS " + std::to_string(firstJob + 1U) +
+      "-" + std::to_string(last) + "/" + std::to_string(record.request.jobs.size()) + " · READ-ONLY";
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token();
+  try {
+    generationRequestOutputInspectionWork_ = std::async(std::launch::async,
+        [record, definitionPath = std::move(definitionPath), workspaceRoot, firstJob, maximumJobs, stop]() mutable {
+      return inspectRequestOutputPage(record, definitionPath, workspaceRoot, firstJob, maximumJobs, stop);
+    });
+  } catch (const std::exception& error) {
+    generationRequestOutputInspectionEpoch_ = 0U;
+    generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION FAILED";
+    return core::failure(core::ErrorCode::Internal,
+        "Unable to start generation output inspection", error.what());
+  }
+  status_ = generationRequestOutputInspectionStatus_;
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::cancelGenerationRequestOutputInspection() {
+  if (!generationRequestOutputInspectionWork_.valid()) return core::success();
+  generationRequestOutputInspectionEpoch_ = 0U;
+  generationRequestOutputInspectionStatus_ = "CANCELLING JOB OUTPUT INSPECTION";
+  proceduralImportStop_.request_stop();
   return core::success();
 }
 

@@ -271,6 +271,7 @@ VoicebankStudioController::~VoicebankStudioController() {
   if (workspaceOpen_.valid()) workspaceOpen_.wait();
   if (proceduralImport_.valid()) proceduralImport_.wait();
   if (generationRequestsWork_.valid()) generationRequestsWork_.wait();
+  if (generationRequestOutputInspectionWork_.valid()) generationRequestOutputInspectionWork_.wait();
   if (waveformLoad_.valid()) waveformLoad_.wait();
   if (pitchLoad_.valid()) pitchLoad_.wait();
   if (sampleReviewWork_.valid()) sampleReviewWork_.wait();
@@ -279,6 +280,10 @@ VoicebankStudioController::~VoicebankStudioController() {
 
 void VoicebankStudioController::cancelProceduralCandidateImport() noexcept {
   cancelCandidateMarkerDrag();
+  if (generationRequestOutputInspectionWork_.valid() && generationRequestOutputInspectionEpoch_ != 0U) {
+    generationRequestOutputInspectionEpoch_ = 0U;
+    generationRequestOutputInspectionStatus_ = "CANCELLING JOB OUTPUT INSPECTION";
+  }
   proceduralImportStop_.request_stop();
 }
 
@@ -288,6 +293,7 @@ core::Result<void> VoicebankStudioController::finishProceduralCandidateImport() 
   if (proceduralImport_.valid()) proceduralImport_.wait();
   if (campaignWork_.valid()) campaignWork_.wait();
   if (generationRequestsWork_.valid()) generationRequestsWork_.wait();
+  if (generationRequestOutputInspectionWork_.valid()) generationRequestOutputInspectionWork_.wait();
   if (waveformLoad_.valid()) waveformLoad_.wait();
   if (pitchLoad_.valid()) pitchLoad_.wait();
   if (sampleReviewWork_.valid()) sampleReviewWork_.wait();
@@ -639,6 +645,9 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
       generationRequests_.clear();
       generationRequestsEpoch_=0U;
       generationRequestQueueStatus_="REQUEST QUEUE NOT LOADED";
+      generationRequestOutputInspectionPage_.reset();
+      generationRequestOutputInspectionEpoch_=0U;
+      generationRequestOutputInspectionStatus_="JOB OUTPUT EVIDENCE NOT INSPECTED";
       stagedRecoveryCandidateCount_=worker.stagedRecoveryCandidateCount_;
       ++productionSessionEpoch_; generationScoreSelection_.reset(); selectedIndex_=0U;
       // Marker lineage was already parsed by the recovery worker. Adopt it
@@ -684,6 +693,56 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
       generationRequestsEpoch_ = 0U;
       generationRequestQueueStatus_ = "REQUEST QUEUE FAILED";
       return core::failure(core::ErrorCode::Internal, "Generation request listing worker failed", error.what());
+    }
+  }
+  if (generationRequestOutputInspectionWork_.valid()) {
+    if (generationRequestOutputInspectionWork_.wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+      return core::success();
+    const auto expectedEpoch = generationRequestOutputInspectionEpoch_;
+    try {
+      auto result = generationRequestOutputInspectionWork_.get();
+      if (expectedEpoch == 0U) {
+        generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION CANCELLED";
+        return core::success();
+      }
+      if (expectedEpoch != productionSessionEpoch_ || !productionProject_ ||
+          generationRequestsEpoch_ != productionSessionEpoch_) {
+        generationRequestOutputInspectionEpoch_ = 0U;
+        generationRequestOutputInspectionPage_.reset();
+        generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION DISCARDED · WORKSPACE CHANGED";
+        return core::failure(core::ErrorCode::Conflict,
+            "Producer workspace changed before job output evidence could be adopted");
+      }
+      if (!result) {
+        generationRequestOutputInspectionEpoch_ = 0U;
+        generationRequestOutputInspectionPage_.reset();
+        generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION FAILED";
+        return core::Result<void>{result.error()};
+      }
+      const auto& page = result.value();
+      const auto request = std::find_if(generationRequests_.begin(), generationRequests_.end(),
+          [&](const auto& entry) {
+            return entry.request.requestId == page.requestId && entry.requestSha256 == page.requestSha256;
+          });
+      if (request == generationRequests_.end()) {
+        generationRequestOutputInspectionEpoch_ = 0U;
+        generationRequestOutputInspectionPage_.reset();
+        generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION DISCARDED · REQUEST CHANGED";
+        return core::failure(core::ErrorCode::Conflict,
+            "Generation request snapshot changed before output evidence could be adopted");
+      }
+      generationRequestOutputInspectionPage_ = std::move(result).value();
+      generationRequestOutputInspectionStatus_ = "INSPECTED " +
+          std::to_string(generationRequestOutputInspectionPage_->jobs.size()) + " JOB(S) · READ-ONLY";
+      generationRequestOutputInspectionEpoch_ = 0U;
+      status_ = generationRequestOutputInspectionStatus_;
+      return core::success();
+    } catch (const std::exception& error) {
+      generationRequestOutputInspectionEpoch_ = 0U;
+      generationRequestOutputInspectionPage_.reset();
+      generationRequestOutputInspectionStatus_ = "JOB OUTPUT INSPECTION FAILED";
+      return core::failure(core::ErrorCode::Internal,
+          "Generation output inspection worker failed", error.what());
     }
   }
   if (campaignWork_.valid()) {
@@ -987,6 +1046,9 @@ core::Result<void> VoicebankStudioController::openProductionProject(
   generationRequests_.clear();
   generationRequestsEpoch_ = 0U;
   generationRequestQueueStatus_ = "REQUEST QUEUE NOT LOADED";
+  generationRequestOutputInspectionPage_.reset();
+  generationRequestOutputInspectionEpoch_ = 0U;
+  generationRequestOutputInspectionStatus_ = "JOB OUTPUT EVIDENCE NOT INSPECTED";
   ++productionSessionEpoch_;
   generationScoreSelection_.reset();
   if (manifest_.units.empty()) selectedIndex_ = 0U;
