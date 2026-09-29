@@ -1361,6 +1361,39 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   CHECK(job.value().jobId == "job-sa");
   CHECK(job.value().snapshot.contentHash == snapshot.value().contentHash);
   CHECK(job.value().snapshot.sourceProjectId == snapshot.value().sourceProjectId);
+  const auto notPrepared = authoring::inspectGenerationJobOutputReadOnly(
+      root / "not-prepared-job", job.value().manifestSha256);
+  CHECK(notPrepared);
+  if (notPrepared) {
+    CHECK(notPrepared.value().state ==
+          authoring::GenerationJobInspectionState::NotPrepared);
+  }
+  const auto preparedEvidence = authoring::inspectGenerationJobOutputReadOnly(
+      jobDirectory, job.value().manifestSha256);
+  CHECK(preparedEvidence);
+  if (preparedEvidence) {
+    CHECK(preparedEvidence.value().state ==
+          authoring::GenerationJobInspectionState::Prepared);
+    CHECK(!preparedEvidence.value().output);
+  }
+  std::stop_source cancelledInspectionSource;
+  cancelledInspectionSource.request_stop();
+  CHECK(!authoring::inspectGenerationJobOutputReadOnly(
+      jobDirectory, job.value().manifestSha256,
+      cancelledInspectionSource.get_token()));
+  CHECK(!std::filesystem::exists(jobDirectory / "output"));
+  CHECK(std::filesystem::create_directory(jobDirectory / "output"));
+  const auto partialEvidence = authoring::inspectGenerationJobOutputReadOnly(
+      jobDirectory, job.value().manifestSha256);
+  CHECK(partialEvidence);
+  if (partialEvidence) {
+    CHECK(partialEvidence.value().state ==
+          authoring::GenerationJobInspectionState::Incomplete);
+  }
+  CHECK(std::filesystem::is_empty(jobDirectory / "output"));
+  std::error_code partialOutputError;
+  CHECK(std::filesystem::remove(jobDirectory / "output", partialOutputError));
+  CHECK(!partialOutputError);
   CHECK(!authoring::prepareGenerationJob(jobDirectory, "job-sa", snapshot.value(), producer, generatedTake));
   const auto reloadedJob = authoring::loadGenerationJob(jobDirectory, job.value().manifestSha256); CHECK(reloadedJob);
   CHECK(reloadedJob.value().expectation == job.value().expectation);
@@ -1390,6 +1423,19 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto executed = authoring::runGenerationJob(jobDirectory, job.value().manifestSha256); CHECK(executed);
   CHECK(!executed.value().reused);
   const auto modificationTime = std::filesystem::last_write_time(executed.value().audioPath);
+  const auto outputEvidence = authoring::inspectGenerationJobOutputReadOnly(
+      jobDirectory, job.value().manifestSha256);
+  CHECK(outputEvidence);
+  if (outputEvidence) {
+    CHECK(outputEvidence.value().state ==
+          authoring::GenerationJobInspectionState::OutputVerified);
+    CHECK(outputEvidence.value().output.has_value());
+    if (outputEvidence.value().output) {
+      CHECK(outputEvidence.value().output->audioPath == executed.value().audioPath);
+      CHECK(outputEvidence.value().output->audioSha256 == executed.value().audioSha256);
+    }
+  }
+  CHECK(std::filesystem::last_write_time(executed.value().audioPath) == modificationTime);
   const auto resumed = authoring::runGenerationJob(jobDirectory, job.value().manifestSha256); CHECK(resumed);
   CHECK(resumed.value().reused); CHECK(resumed.value().audioSha256 == executed.value().audioSha256);
   CHECK(std::filesystem::last_write_time(executed.value().audioPath) == modificationTime);
@@ -1400,6 +1446,10 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto generatedAudio = core::readFileBytesLimited(executed.value().audioPath, 1024U * 1024U); CHECK(generatedAudio);
   auto alteredAudio = generatedAudio.value(); alteredAudio.push_back(std::byte{0});
   CHECK(core::durableAtomicWrite(executed.value().audioPath, alteredAudio));
+  const auto alteredEvidence = authoring::inspectGenerationJobOutputReadOnly(
+      jobDirectory, job.value().manifestSha256);
+  CHECK(!alteredEvidence);
+  CHECK(core::readFileBytesLimited(executed.value().audioPath, 1024U * 1024U).value() == alteredAudio);
   CHECK(!authoring::runGenerationJob(jobDirectory, job.value().manifestSha256));
   CHECK(core::readFileBytesLimited(executed.value().audioPath, 1024U * 1024U).value() == alteredAudio);
   CHECK(core::durableAtomicWrite(executed.value().audioPath, generatedAudio.value()));
@@ -1409,6 +1459,15 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   const auto interruptedJob = authoring::prepareGenerationJob(interruptedDirectory, "interrupted-return", snapshot.value(), producer, generatedTake); CHECK(interruptedJob);
   CHECK(!authoring::runGenerationJob(interruptedDirectory, interruptedJob.value().manifestSha256, {},
       [](auto phase) { return phase == authoring::ExportPublicationPhase::DestinationPublished; }));
+  const auto recoveryEvidence = authoring::inspectGenerationJobOutputReadOnly(
+      interruptedDirectory, interruptedJob.value().manifestSha256);
+  CHECK(recoveryEvidence);
+  if (recoveryEvidence) {
+    CHECK(recoveryEvidence.value().state ==
+          authoring::GenerationJobInspectionState::NeedsRecovery);
+  }
+  CHECK(std::filesystem::is_regular_file(
+      interruptedDirectory / ".output-export-journal.json"));
   CHECK(authoring::runGenerationJob(interruptedDirectory, interruptedJob.value().manifestSha256));
 #if defined(SEAM_TEST_GENERATION_PROBE) && (defined(__APPLE__) || defined(__linux__))
   for (unsigned phase = 0U; phase < 5U; ++phase) {

@@ -3,6 +3,9 @@
 #include "seam/authoring/export_service.hpp"
 #include "seam/voicebank_production/repository.hpp"
 
+#include <optional>
+#include <string>
+
 namespace seam::authoring {
 struct PreparedGenerationJob final {
   std::string jobId, manifestSha256;
@@ -13,6 +16,27 @@ struct GenerationJobOutput final {
   std::filesystem::path metadataPath, audioPath;
   std::string audioSha256;
   bool reused{false};
+};
+enum class GenerationJobInspectionState {
+  // No job directory has been published.
+  NotPrepared,
+  // The job package or output set is incomplete and cannot be verified.
+  Incomplete,
+  // The frozen job is valid, but no output set has been published.
+  Prepared,
+  // An output publication journal exists; explicit recovery is required.
+  NeedsRecovery,
+  // The committed candidate matches the frozen job expectation.
+  OutputVerified,
+};
+struct GenerationJobOutputEvidence final {
+  std::filesystem::path metadataPath, audioPath;
+  std::string audioSha256;
+};
+struct GenerationJobInspection final {
+  GenerationJobInspectionState state{GenerationJobInspectionState::NotPrepared};
+  std::optional<GenerationJobOutputEvidence> output;
+  std::string diagnostic;
 };
 struct GenerationJobReference final { std::filesystem::path directory; std::string manifestSha256; };
 [[nodiscard]] core::Result<GenerationJobReference> loadGenerationJobReference(const std::filesystem::path& path);
@@ -43,6 +67,11 @@ struct GenerationBatchLimits final {
 // May recover journal-owned publication, but never generates missing output.
 [[nodiscard]] core::Result<GenerationJobOutput> verifyGenerationJobOutput(
     const std::filesystem::path& directory, std::string_view expectedManifestSha256, std::stop_token stopToken = {});
+// Read-only point-in-time evidence. Never renders or performs export recovery;
+// OutputVerified does not mean the producer has collected or reviewed the take.
+[[nodiscard]] core::Result<GenerationJobInspection> inspectGenerationJobOutputReadOnly(
+    const std::filesystem::path& directory, std::string_view expectedManifestSha256,
+    std::stop_token stopToken = {});
 // Publication of the manifest is last. An incomplete directory is not a job.
 [[nodiscard]] core::Result<PreparedGenerationJob> prepareGenerationJob(
     const std::filesystem::path& directory, std::string jobId,

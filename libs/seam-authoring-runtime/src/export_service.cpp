@@ -165,7 +165,12 @@ bool safeRelativePath(const std::filesystem::path& path) {
 }
 
 core::Result<ExportReceiptView> readExportReceipt(
-    const std::filesystem::path& destination, bool validateFiles) {
+    const std::filesystem::path& destination, bool validateFiles,
+    std::stop_token stopToken = {}) {
+  if (stopToken.stop_requested()) {
+    return core::failure<ExportReceiptView>(core::ErrorCode::Conflict,
+                                            "Export receipt inspection cancelled");
+  }
   const auto receiptPath = destination / "receipt.json";
   auto text = core::readTextFileLimited(receiptPath, kMaximumReceiptBytes);
   if (!text) return core::Result<ExportReceiptView>{text.error()};
@@ -197,6 +202,10 @@ core::Result<ExportReceiptView> readExportReceipt(
       .ownedPaths = {std::filesystem::path{"receipt.json"}},
   };
   for (const auto& entry : files->asArray()) {
+    if (stopToken.stop_requested()) {
+      return core::failure<ExportReceiptView>(
+          core::ErrorCode::Conflict, "Export receipt inspection cancelled");
+    }
     const auto* pathValue = entry.isObject() ? entry.find("path") : nullptr;
     const auto* shaValue = entry.isObject() ? entry.find("sha256") : nullptr;
     if (pathValue == nullptr || !pathValue->isString() || shaValue == nullptr ||
@@ -229,7 +238,8 @@ core::Result<ExportReceiptView> readExportReceipt(
           core::ErrorCode::Conflict,
           "Export receipt-owned path is not a regular file", file.string());
     }
-    auto digest = core::sha256File(file);
+    auto digest = core::sha256File(file,
+        4ULL * 1024ULL * 1024ULL * 1024ULL, stopToken);
     if (!digest || digest.value() != shaValue->asString()) {
       return core::failure<ExportReceiptView>(
           core::ErrorCode::Conflict,
@@ -1311,8 +1321,13 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
 }
 
 core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
-    const std::filesystem::path& destination) const {
+    const std::filesystem::path& destination,
+    std::stop_token stopToken) const {
   using Inspection = ExportSetInspection;
+  if (stopToken.stop_requested()) {
+    return core::failure<Inspection>(core::ErrorCode::Conflict,
+                                     "Export inspection cancelled");
+  }
   if (destination.empty()) {
     return core::failure<Inspection>(core::ErrorCode::InvalidArgument,
                                      "Export inspection destination is empty");
@@ -1390,7 +1405,7 @@ core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
         receiptPath.string());
   }
 
-  const auto receipt = readExportReceipt(destination, false);
+  const auto receipt = readExportReceipt(destination, false, stopToken);
   if (!receipt) return core::Result<Inspection>{receipt.error()};
   if (receipt.value().state == "PREPARED") {
     return Inspection{.state = ExportSetInspectionState::Incomplete,
@@ -1403,6 +1418,10 @@ core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
   }
 
   for (const auto& relative : receipt.value().ownedPaths) {
+    if (stopToken.stop_requested()) {
+      return core::failure<Inspection>(core::ErrorCode::Conflict,
+                                       "Export inspection cancelled");
+    }
     auto current = destination;
     for (auto component = relative.begin(); component != relative.end();
          ++component) {
@@ -1432,7 +1451,7 @@ core::Result<ExportSetInspection> ExportService::inspectSetReadOnly(
     }
   }
 
-  const auto verifiedReceipt = readExportReceipt(destination, true);
+  const auto verifiedReceipt = readExportReceipt(destination, true, stopToken);
   if (!verifiedReceipt) return core::Result<Inspection>{verifiedReceipt.error()};
   return Inspection{.state = ExportSetInspectionState::Committed,
                     .diagnostic = "Committed receipt and all receipt-owned file hashes are valid."};

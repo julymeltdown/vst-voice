@@ -26,6 +26,53 @@ bool validJobId(std::string_view value) {
 core::Result<PreparedGenerationJob> fail() {
   return core::failure<PreparedGenerationJob>(core::ErrorCode::Conflict, "Generation job is incomplete, invalid or differs from its frozen request");
 }
+
+core::Result<GenerationJobOutput> verifyCommittedGenerationOutput(
+    const std::filesystem::path& directory,
+    const PreparedGenerationJob& job, std::stop_token stopToken,
+    bool reused) {
+  using Output = GenerationJobOutput;
+  if (stopToken.stop_requested()) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "Generation job inspection cancelled");
+  }
+  const auto& snapshot = job.snapshot;
+  const auto& resource = std::get<synthesis::ProceduralSingerResource>(snapshot.resource);
+  const auto prefix = directory / "output" / "candidates" /
+      (snapshot.trackId.toString() + "-" + snapshot.segment.regionId.toString());
+  const auto metadata = std::filesystem::path{prefix.string() + ".json"};
+  const auto audio = std::filesystem::path{prefix.string() + ".wav"};
+  const auto candidate =
+      voice_design::loadProceduralCandidate(metadata, audio, resource, stopToken);
+  if (!candidate) return core::Result<Output>{candidate.error()};
+  const auto& expected = job.expectation;
+  const auto notes = snapshot.compiledPerformance->notes();
+  if (notes.empty()) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "Generation job has no frozen score notes");
+  }
+  auto markers = rendering::projectProceduralMarkers(snapshot);
+  if (!markers) return core::Result<Output>{markers.error()};
+  for (auto& marker : markers.value()) {
+    marker.ownedSpan.start -= notes.front().startFrame;
+    marker.ownedSpan.end -= notes.front().startFrame;
+  }
+  if (candidate.value().renderContentHash != expected.renderContentHash ||
+      candidate.value().sampleRate != expected.sampleRate ||
+      candidate.value().frameCount != expected.frameCount ||
+      candidate.value().style != expected.style ||
+      candidate.value().scoreOriginFrame != notes.front().startFrame ||
+      candidate.value().markers != markers.value()) {
+    return core::failure<Output>(
+        core::ErrorCode::Conflict,
+        "Published generation output differs from its frozen request");
+  }
+  if (stopToken.stop_requested()) {
+    return core::failure<Output>(core::ErrorCode::Conflict,
+                                 "Generation job inspection cancelled");
+  }
+  return Output{metadata, audio, candidate.value().audioSha256, reused};
+}
 }
 
 core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
@@ -115,24 +162,8 @@ static core::Result<GenerationJobOutput> runGenerationJobImpl(const std::filesys
         core::ErrorCode::Conflict, "Generation publication requires recovery before output can be returned");
   }
   if (stopToken.stop_requested()) return cancelled();
-  const auto prefix = destination / "candidates" / (snapshot.trackId.toString() + "-" + snapshot.segment.regionId.toString());
-  const auto metadata = std::filesystem::path{prefix.string() + ".json"}, audio = std::filesystem::path{prefix.string() + ".wav"};
-  const auto candidate = voice_design::loadProceduralCandidate(metadata, audio, resource, stopToken);
-  if (!candidate) return core::Result<Output>{candidate.error()};
-  const auto& expected = job.value().expectation;
-  const auto notes = snapshot.compiledPerformance->notes();
-  auto markers = rendering::projectProceduralMarkers(snapshot);
-  if (!markers) return core::Result<Output>{markers.error()};
-  for (auto& marker : markers.value()) {
-    marker.ownedSpan.start -= notes.front().startFrame;
-    marker.ownedSpan.end -= notes.front().startFrame;
-  }
-  if (candidate.value().renderContentHash != expected.renderContentHash || candidate.value().sampleRate != expected.sampleRate ||
-      candidate.value().frameCount != expected.frameCount || candidate.value().style != expected.style ||
-      candidate.value().scoreOriginFrame != notes.front().startFrame || candidate.value().markers != markers.value())
-    return core::failure<Output>(core::ErrorCode::Conflict, "Published generation output differs from its frozen request");
-  if (stopToken.stop_requested()) return cancelled();
-  return Output{metadata, audio, candidate.value().audioSha256, reused};
+  return verifyCommittedGenerationOutput(directory, job.value(), stopToken,
+                                         reused);
 }
 
 core::Result<GenerationJobOutput> runGenerationJob(const std::filesystem::path& directory,
@@ -144,6 +175,105 @@ core::Result<GenerationJobOutput> runGenerationJob(const std::filesystem::path& 
 core::Result<GenerationJobOutput> verifyGenerationJobOutput(const std::filesystem::path& directory,
     std::string_view expectedManifestSha256, std::stop_token stopToken) {
   return runGenerationJobImpl(directory, expectedManifestSha256, stopToken, {}, true);
+}
+
+core::Result<GenerationJobInspection> inspectGenerationJobOutputReadOnly(
+    const std::filesystem::path& directory,
+    std::string_view expectedManifestSha256, std::stop_token stopToken) {
+  using Inspection = GenerationJobInspection;
+  if (directory.empty() || !validHash(expectedManifestSha256)) {
+    return core::failure<Inspection>(core::ErrorCode::InvalidArgument,
+                                     "Generation job inspection identity is invalid");
+  }
+  if (stopToken.stop_requested()) {
+    return core::failure<Inspection>(core::ErrorCode::Conflict,
+                                     "Generation job inspection cancelled");
+  }
+
+  const auto missing = [](const std::filesystem::file_status& status,
+                          const std::error_code& error) {
+    return error == std::errc::no_such_file_or_directory ||
+           (!error && status.type() == std::filesystem::file_type::not_found);
+  };
+  std::error_code error;
+  const auto directoryStatus = std::filesystem::symlink_status(directory, error);
+  if (missing(directoryStatus, error)) {
+    return Inspection{.state = GenerationJobInspectionState::NotPrepared,
+                      .diagnostic = "Generation job directory has not been prepared."};
+  }
+  if (error) {
+    return core::failure<Inspection>(core::ErrorCode::IoError,
+        "Unable to inspect generation job directory", error.message());
+  }
+  if (std::filesystem::is_symlink(directoryStatus) ||
+      !std::filesystem::is_directory(directoryStatus)) {
+    return core::failure<Inspection>(core::ErrorCode::Conflict,
+        "Generation job path must be a regular non-symlink directory",
+        directory.string());
+  }
+
+  for (const auto* name : {"job.json", "expectation.json", "project.json",
+                           "recipe.json"}) {
+    const auto path = directory / name;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (missing(status, error)) {
+      return Inspection{.state = GenerationJobInspectionState::Incomplete,
+                        .diagnostic = "Generation job package is missing " +
+                                      std::string{name} + "."};
+    }
+    if (error) {
+      return core::failure<Inspection>(core::ErrorCode::IoError,
+          "Unable to inspect generation job package", path.string() + ": " +
+              error.message());
+    }
+    if (std::filesystem::is_symlink(status) ||
+        !std::filesystem::is_regular_file(status)) {
+      return core::failure<Inspection>(core::ErrorCode::Conflict,
+          "Generation job package entry is not a regular non-symlink file",
+          path.string());
+    }
+  }
+
+  const auto job = loadGenerationJob(directory, expectedManifestSha256);
+  if (!job) return core::Result<Inspection>{job.error()};
+  if (stopToken.stop_requested()) {
+    return core::failure<Inspection>(core::ErrorCode::Conflict,
+                                     "Generation job inspection cancelled");
+  }
+  const auto outputState =
+      ExportService{}.inspectSetReadOnly(directory / "output", stopToken);
+  if (!outputState) return core::Result<Inspection>{outputState.error()};
+  switch (outputState.value().state) {
+    case ExportSetInspectionState::Missing:
+      return Inspection{
+          .state = GenerationJobInspectionState::Prepared,
+          .diagnostic = "Frozen generation job is valid; no output has been published.",
+      };
+    case ExportSetInspectionState::Incomplete:
+      return Inspection{
+          .state = GenerationJobInspectionState::Incomplete,
+          .diagnostic = outputState.value().diagnostic,
+      };
+    case ExportSetInspectionState::NeedsRecovery:
+      return Inspection{
+          .state = GenerationJobInspectionState::NeedsRecovery,
+          .diagnostic = outputState.value().diagnostic,
+      };
+    case ExportSetInspectionState::Committed: {
+      const auto verified = verifyCommittedGenerationOutput(
+          directory, job.value(), stopToken, true);
+      if (!verified) return core::Result<Inspection>{verified.error()};
+      return Inspection{
+          .state = GenerationJobInspectionState::OutputVerified,
+          .output = GenerationJobOutputEvidence{
+              verified.value().metadataPath, verified.value().audioPath,
+              verified.value().audioSha256},
+          .diagnostic = "Committed candidate matches the frozen generation job; collection and review are separate.",
+      };
+    }
+  }
+  return core::failure<Inspection>(core::ErrorCode::Internal,
+                                   "Unknown export inspection state");
 }
 
 core::Result<GenerationJobReference> loadGenerationJobReference(const std::filesystem::path& path) {

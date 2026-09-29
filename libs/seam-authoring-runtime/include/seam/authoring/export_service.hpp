@@ -133,7 +133,8 @@ public:
       const std::filesystem::path& destination) const;
   // Reads export transaction state without acquiring locks or reconciling files.
   [[nodiscard]] core::Result<ExportSetInspection> inspectSetReadOnly(
-      const std::filesystem::path& destination) const;
+      const std::filesystem::path& destination,
+      std::stop_token stopToken = {}) const;
 };
 
 [[nodiscard]] std::string_view exportStateName(ExportState state) noexcept;
