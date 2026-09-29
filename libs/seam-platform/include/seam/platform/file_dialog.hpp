@@ -101,8 +101,12 @@ public:
     }
   };
   struct NewProducerWorkspaceInput final {
+    // The recording inventory to generate: the full Japanese draft, or the vowel starter (five
+    // sustained vowels at two pitches) that reaches a singing test bank quickly.
+    enum class Inventory { JapaneseFull, JapaneseVowelStarter };
     std::filesystem::path destination;
     std::string projectId, producerId;
+    Inventory inventory{Inventory::JapaneseFull};
     [[nodiscard]] core::Result<void> validate() const {
       if (destination.empty() || !destination.is_absolute() || destination.filename().empty() ||
           destination.filename().string().front()=='.')

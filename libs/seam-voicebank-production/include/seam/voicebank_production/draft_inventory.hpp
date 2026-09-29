@@ -61,6 +61,13 @@ struct DraftInventory final {
 // Reads a profile object: missing fields take the defaults and unknown fields are
 // refused (a range test or PASS result is not draft authority).
 [[nodiscard]] core::Result<DraftInventoryProfile> parseDraftInventoryProfile(std::string_view json);
+// The inventories Studio offers when a producer creates a workspace. Both are Japanese draft
+// profiles that the Python generator produces too. The full draft covers every default kind at
+// three pitch layers. The vowel starter records only the five sustained vowels at two pitch layers
+// (MIDI 60 and 66), so a first voice can be recorded, reviewed, published and sung quickly; it can
+// only sing vowel lyrics, and a full workspace is still needed for a complete bank.
+enum class DraftInventoryPreset { JapaneseFull, JapaneseVowelStarter };
+[[nodiscard]] DraftInventoryProfile draftInventoryPresetProfile(DraftInventoryPreset preset, std::string profileId);
 // Checks every generator bound before producing anything.
 [[nodiscard]] core::Result<DraftInventory> generateDraftInventory(const DraftInventoryProfile& profile);
 // Admits a document only when its own profile regenerates it exactly, which

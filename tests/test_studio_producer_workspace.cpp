@@ -97,6 +97,26 @@ TEST_CASE("Studio creates a producer folder, opens it and reopens it without a t
   CHECK(tampered.productionProject() == nullptr);
 }
 
+TEST_CASE("Studio creates a vowel starter workspace whose ten rows reopen from its folder") {
+  const auto parent = seam::test::support::temporaryDirectory("studio-producer-starter");
+  const auto destination = parent / "starter-voice";
+  Controller creator;
+  CHECK(creator.beginCreateProductionProject(destination, "starter-voice", "producer", "2026-09-29T01:00:00Z",
+      production::DraftInventoryPreset::JapaneseVowelStarter));
+  CHECK(drain(creator));
+  const auto* project = creator.productionProject();
+  CHECK(project != nullptr);
+  if (project == nullptr) return;
+  CHECK(project->unitAssignments.size() == 10U);
+  CHECK(creator.selectableUnitCount() == 10U);
+  CHECK(creator.status().find("PRODUCER WORKSPACE CREATED / 10 UNITS MISSING") != std::string_view::npos);
+  Controller reopened;
+  CHECK(reopened.beginOpenProducerFolder(destination, "producer"));
+  CHECK(drain(reopened));
+  CHECK(reopened.productionProject() != nullptr);
+  if (reopened.productionProject() != nullptr) CHECK(reopened.productionProject()->unitAssignments.size() == 10U);
+}
+
 TEST_CASE("Studio workspace creation refusals and cancellation never leave a half-made folder") {
   const auto parent = seam::test::support::temporaryDirectory("studio-producer-refusal");
   Controller refused;

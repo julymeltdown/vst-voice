@@ -110,19 +110,24 @@ public:
       alert.messageText=@"Name the voice and its producer";
       alert.informativeText=@"The project ID also names the generated Japanese draft inventory. Your producer ID becomes this workspace's only PRODUCER; register reviewers later in Sample Review (Q, then V). The requested range stays not assessed.";
       [alert addButtonWithTitle:@"Create Workspace"]; [alert addButtonWithTitle:@"Cancel"];
-      NSView* fields=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,66)];
-      NSTextField* project=[[NSTextField alloc] initWithFrame:NSMakeRect(0,36,480,26)];
+      NSView* fields=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,102)];
+      NSTextField* project=[[NSTextField alloc] initWithFrame:NSMakeRect(0,72,480,26)];
       project.stringValue=folderName!=nil?folderName:@""; project.placeholderString=@"Voice project ID";
       [project setAccessibilityLabel:@"Voice project ID"];
-      NSTextField* producer=[[NSTextField alloc] initWithFrame:NSMakeRect(0,0,480,26)];
+      NSTextField* producer=[[NSTextField alloc] initWithFrame:NSMakeRect(0,36,480,26)];
       producer.placeholderString=@"Your producer ID"; [producer setAccessibilityLabel:@"Producer ID"];
-      [fields addSubview:project]; [fields addSubview:producer]; alert.accessoryView=fields;
+      NSPopUpButton* inventory=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(0,0,480,28) pullsDown:NO];
+      [inventory addItemsWithTitles:@[@"Full Japanese draft: 1026 takes at three pitches",
+          @"Vowel starter: 10 takes, five vowels at two pitches (vowel lyrics only)"]];
+      [inventory setAccessibilityLabel:@"Recording inventory"];
+      [fields addSubview:project]; [fields addSubview:producer]; [fields addSubview:inventory]; alert.accessoryView=fields;
       if (runModalRestoringFocus(alert)!=NSAlertFirstButtonReturn) return Output{};
       const char* projectText=project.stringValue.UTF8String;
       const char* producerText=producer.stringValue.UTF8String;
       if (projectText==nullptr || producerText==nullptr)
         return core::failure<Output>(core::ErrorCode::InvalidArgument,"Project or producer ID is not valid text");
       NewProducerWorkspaceInput input{destination,projectText,producerText};
+      if (inventory.indexOfSelectedItem==1) input.inventory=NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter;
       const auto valid=input.validate(); if (!valid) return core::Result<Output>{valid.error()};
       return Output{std::move(input)};
     }

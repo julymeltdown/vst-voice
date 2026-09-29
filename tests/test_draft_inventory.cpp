@@ -19,6 +19,9 @@ constexpr std::string_view kDefaultScriptSha256{"b65d2b42d1381367204e3b7223f3ca6
 constexpr std::string_view kDefaultFirstIdentity{"c6eea096f83ec23ee63a29980504370c9c18da78e9312e56641ce5ce77be91a8"};
 constexpr std::string_view kCustomInventorySha256{"a521b59c2d6af295d5e77ed0a3ae2bb5b0ee55d8caa46f581e93110006a5c6ad"};
 constexpr std::string_view kCustomScriptSha256{"f45f1f73c4cbd16b5a5a5e25210a16c5604843e3061590e5b9453180d70a49ec"};
+// generate_draft_inventory({"profileId": "starter-voice", "includeKinds": ["sustain"], "pitchLayers": [60, 66]})
+constexpr std::string_view kStarterInventorySha256{"cbec43927a6b01c2b16a7fc99942f91a927d3ca3c717b7d09f28592196a3fbc4"};
+constexpr std::string_view kStarterScriptSha256{"19c99748b9647994bfddef612925b15e7c015870ff799b8a7030679310fbf2c3"};
 constexpr std::string_view kCustomProfile{
     R"({"profileId":"custom \u2014 voice","supportedStyles":["soft, \"airy\"","\u660e\u308b\u3044"],)"
     R"("vowels":["a","o"],"consonants":["k","sh"],"specialPhones":["N","br"],)"
@@ -251,4 +254,33 @@ TEST_CASE("refused producer workspace creation leaves no folder or staging behin
       "2026-09-29T00:00:00Z", stop.get_token()));
   CHECK(entries(parent).empty());
   CHECK(!production::readDraftProducerWorkspaceInventory(parent / "cancelled"));
+}
+
+TEST_CASE("named inventory presets are the full default draft and the Python vowel starter") {
+  const auto full = production::generateDraftInventory(
+      production::draftInventoryPresetProfile(production::DraftInventoryPreset::JapaneseFull, "studio-default"));
+  CHECK(full);
+  if (full) CHECK(full.value().inventorySha256 == kDefaultInventorySha256);
+  const auto profile =
+      production::draftInventoryPresetProfile(production::DraftInventoryPreset::JapaneseVowelStarter, "starter-voice");
+  CHECK((profile.includeKinds == std::vector<std::string>{"sustain"}));
+  CHECK((profile.pitchLayers == std::vector<std::int64_t>{60, 66}));
+  const auto starter = production::generateDraftInventory(profile);
+  CHECK(starter);
+  if (!starter) return;
+  CHECK(starter.value().inventorySha256 == kStarterInventorySha256);
+  CHECK(starter.value().scriptSha256 == kStarterScriptSha256);
+  CHECK((starter.value().requiredCoverage ==
+         std::vector<std::string>{"sustain:a", "sustain:i", "sustain:u", "sustain:e", "sustain:o"}));
+  CHECK(starter.value().units.size() == 20U);
+  const auto project = production::makeDraftProducerProject(starter.value(), "starter-voice", "producer");
+  CHECK(project);
+  if (!project) return;
+  // One assignment per vowel and pitch layer; the two alternates share it.
+  CHECK(project.value().unitAssignments.size() == 10U);
+  CHECK(std::all_of(project.value().unitAssignments.begin(), project.value().unitAssignments.end(),
+      [](const auto& row) { return row.pitchLayer == 60 || row.pitchLayer == 66; }));
+  const auto reloaded = production::loadDraftInventory(starter.value().documentJson);
+  CHECK(reloaded);
+  if (reloaded) CHECK(reloaded.value().inventorySha256 == kStarterInventorySha256);
 }

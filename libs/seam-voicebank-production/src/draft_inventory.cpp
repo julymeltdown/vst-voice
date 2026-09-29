@@ -448,6 +448,16 @@ core::Result<DraftInventory> generateDraftInventory(const DraftInventoryProfile&
   return std::move(generated.value().inventory);
 }
 
+DraftInventoryProfile draftInventoryPresetProfile(DraftInventoryPreset preset, std::string profileId) {
+  DraftInventoryProfile profile;
+  profile.profileId = std::move(profileId);
+  if (preset == DraftInventoryPreset::JapaneseVowelStarter) {
+    profile.includeKinds = {"sustain"};
+    profile.pitchLayers = {60, 66};
+  }
+  return profile;
+}
+
 core::Result<DraftInventory> loadDraftInventory(std::string_view documentJson) {
   using Output = DraftInventory;
   if (documentJson.size() > kMaximumInventoryBytes) return invalid<Output>("Draft inventory exceeds its byte bound");

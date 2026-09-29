@@ -1029,7 +1029,8 @@ core::Result<void> VoicebankStudioController::beginOpenProductionProject(std::fi
 }
 
 core::Result<void> VoicebankStudioController::beginCreateProductionProject(std::filesystem::path destination,
-    std::string projectId, std::string producerId, std::string occurredAtUtc) {
+    std::string projectId, std::string producerId, std::string occurredAtUtc,
+    voicebank_production::DraftInventoryPreset preset) {
   if (proceduralImportBusy() || productionProject_ || !manifest_.units.empty() || dirty_)
     return core::failure(core::ErrorCode::Conflict,"Workspace entry requires an idle source-free Studio");
   if (destination.empty() || projectId.empty() || producerId.empty() ||
@@ -1040,11 +1041,10 @@ core::Result<void> VoicebankStudioController::beginCreateProductionProject(std::
   workspaceOpenEpoch_=productionSessionEpoch_; statusBeforeImport_=status_;
   try {
     workspaceOpen_=std::async(std::launch::async,[destination=std::move(destination),projectId=std::move(projectId),
-        producerId=std::move(producerId),occurredAtUtc=std::move(occurredAtUtc),stop]()
+        producerId=std::move(producerId),occurredAtUtc=std::move(occurredAtUtc),preset,stop]()
         -> core::Result<std::unique_ptr<VoicebankStudioController>> {
       using Output=std::unique_ptr<VoicebankStudioController>;
-      voicebank_production::DraftInventoryProfile profile;
-      profile.profileId=projectId;
+      const auto profile=voicebank_production::draftInventoryPresetProfile(preset,projectId);
       auto created=voicebank_production::createDraftProducerWorkspace(
           destination,profile,projectId,producerId,occurredAtUtc,stop);
       if (!created) return core::Result<Output>{created.error()};

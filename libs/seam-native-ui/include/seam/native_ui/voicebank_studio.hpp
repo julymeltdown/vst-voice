@@ -349,7 +349,8 @@ public:
   // stays NOT_ASSESSED. A published folder is opened even if cancellation
   // arrives after publication.
   [[nodiscard]] core::Result<void> beginCreateProductionProject(std::filesystem::path destination,
-      std::string projectId, std::string producerId, std::string occurredAtUtc = {});
+      std::string projectId, std::string producerId, std::string occurredAtUtc = {},
+      voicebank_production::DraftInventoryPreset preset = voicebank_production::DraftInventoryPreset::JapaneseFull);
   // Opens a producer folder whose inventory.json is verified by regeneration
   // and supplies the digest, so the operator does not type it.
   [[nodiscard]] core::Result<void> beginOpenProducerFolder(std::filesystem::path folder,

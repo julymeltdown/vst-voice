@@ -1113,7 +1113,10 @@ public:
         !canCreateProducerWorkspace())
       return seam::core::failure(seam::core::ErrorCode::Conflict,"Workspace creation context changed while the dialog was open");
     const auto started=controller_.beginCreateProductionProject(input.value()->destination,input.value()->projectId,
-        input.value()->producerId);
+        input.value()->producerId,{},
+        input.value()->inventory==seam::platform::IFileDialog::NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter
+            ?seam::voicebank_production::DraftInventoryPreset::JapaneseVowelStarter
+            :seam::voicebank_production::DraftInventoryPreset::JapaneseFull);
     if (started) designerView_=false;
     return started;
   }

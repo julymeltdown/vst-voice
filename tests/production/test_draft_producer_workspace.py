@@ -38,6 +38,8 @@ CUSTOM_PROFILE = {
     "alternateTakes": 1,
     "sessionBlockSize": 3,
 }
+# Studio's vowel starter preset (draftInventoryPresetProfile): five sustained vowels at two pitches.
+VOWEL_STARTER_PROFILE = {"profileId": "parity-voice", "includeKinds": ["sustain"], "pitchLayers": [60, 66]}
 
 
 def _create(destination: Path, *extra: str) -> subprocess.CompletedProcess[str]:
@@ -94,6 +96,19 @@ class DraftProducerWorkspaceParityTest(unittest.TestCase):
             receipt = json.loads(created.stdout)
             self.assertEqual(receipt["units"], 36)
             self.assert_parity(root, CUSTOM_PROFILE, receipt)
+
+    def test_vowel_starter_workspace_matches_the_external_definition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            payload = json.dumps(VOWEL_STARTER_PROFILE).encode("utf-8")
+            (base / "profile.json").write_bytes(payload)
+            root = base / "starter-voice"
+            created = _create(root, str(base / "profile.json"), hashlib.sha256(payload).hexdigest())
+            self.assertEqual(created.returncode, 0, created.stderr)
+            receipt = json.loads(created.stdout)
+            self.assertEqual(receipt["units"], 20)
+            self.assertEqual(receipt["assignments"], 10)
+            self.assert_parity(root, VOWEL_STARTER_PROFILE, receipt)
 
     def test_refusals_leave_nothing_behind(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
