@@ -5,6 +5,7 @@
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/manifest_draft.hpp"
@@ -126,6 +127,37 @@ int initializeDraft(int argc, char** argv) {
       {"lifecycle",production::toString(project.value().lifecycle)},{"generation",std::to_string(project.value().lastDurableGeneration)},
       {"projectSha256",core::sha256Hex(production::encodeProductionProject(project.value()))},{"releaseEligible",false}});
   return 0;
+}
+
+int newProducerWorkspace(int argc, char** argv) {
+  if (argc!=6 && argc!=8) { printSampleReviewUsage(); return 1; }
+  production::DraftInventoryProfile profile;
+  if (argc==8) {
+    const auto text=readCapturedText(argv[6],argv[7]); if (!text) return fail(text.error());
+    auto parsed=production::parseDraftInventoryProfile(text.value()); if (!parsed) return fail(parsed.error());
+    profile=std::move(parsed.value());
+  } else {
+    profile.profileId=argv[3];
+  }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError,"Cannot install workspace cancellation handlers",{}});
+  std::error_code error;
+  const auto destination=std::filesystem::absolute(argv[2],error).lexically_normal();
+  if (error) return fail({core::ErrorCode::InvalidArgument,"Cannot resolve workspace destination",error.message()},&cancellation);
+  const auto created=production::createDraftProducerWorkspace(destination,profile,argv[3],argv[4],argv[5],cancellation.token());
+  if (!created) return fail(created.error(),&cancellation);
+  const auto& result=created.value();
+  Json::Array diagnostics;
+  for (const auto& item:result.diagnostics) diagnostics.emplace_back(item);
+  print({{"result","ProducerWorkspaceCreated"},{"root",result.root.generic_string()},
+      {"producerWorkspace",result.producerRoot.generic_string()},{"inventory",result.inventoryPath.generic_string()},
+      {"recordingScript",result.scriptPath.generic_string()},{"projectId",result.projectId},{"producerId",result.producerId},
+      {"inventorySha256",result.inventorySha256},{"scriptSha256",result.scriptSha256},
+      {"generation",std::to_string(result.generation)},{"projectSha256",result.projectSha256},
+      {"units",static_cast<std::int64_t>(result.units)},{"assignments",static_cast<std::int64_t>(result.assignments)},
+      {"durabilityConfirmed",result.durabilityConfirmed},{"diagnostics",std::move(diagnostics)},
+      {"rangeAssessment","NOT_ASSESSED"},{"approval","none"},{"releaseEligible",false}});
+  return 0; // A published workspace wins over a late cancellation.
 }
 
 int createDraft(int argc, char** argv) {
@@ -314,6 +346,7 @@ std::optional<int> runSampleReviewCommand(int argc, char** argv) {
   if (command=="inspect-source-quality") return sourceQuality(argc,argv,false);
   if (command=="record-source-quality") return sourceQuality(argc,argv,true);
   if (command=="init-production") return initializeDraft(argc,argv);
+  if (command=="new-producer-workspace") return newProducerWorkspace(argc,argv);
   if (command=="create-sample-draft") return createDraft(argc,argv);
   if (command=="prepare-sample-review") return prepare(argc,argv);
   if (command=="inspect-sample-review") return inspect(argc,argv);
@@ -334,6 +367,10 @@ void printSampleReviewUsage() {
     << "    Outcomes: pass|blocked|not-assessed. Records an independent supplied decision; never grants source rights or unit approval.\n"
     << "  seam_voicebank_cli init-production WORKSPACE DRAFT_DEFINITION FILE_SHA256 PRODUCER UTC\n"
     << "    Creates a new empty Draft from a captured schema-2 or style-owned schema-4 definition, without musical approval.\n"
+    << "  seam_voicebank_cli new-producer-workspace DESTINATION PROJECT_ID PRODUCER UTC [PROFILE_JSON PROFILE_SHA256]\n"
+    << "    Creates DESTINATION as a new folder holding a generated Japanese draft inventory.json, its recording-script.csv\n"
+    << "    and an initialized producer/ workspace. Without a captured profile, the default draft profile is used with\n"
+    << "    PROJECT_ID as its profile ID. The requested range stays NOT_ASSESSED; no source, take or review is created.\n"
     << "  seam_voicebank_cli create-sample-draft WORKSPACE BANK_ID VERSION NAME ja|en|ko STYLE OUTPUT_DIRECTORY\n"
     << "    Copies current takes into a new editable manifest with UNREVIEWED marker/pitch estimates; never approves.\n"
     << "    Schema 4 preserves all assignment-owned styles; STYLE must name an existing style, not a replacement label.\n"

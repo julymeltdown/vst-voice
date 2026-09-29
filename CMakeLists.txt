@@ -489,6 +489,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/repository_review.cpp
   libs/seam-voicebank-production/src/review_transition.cpp
   libs/seam-voicebank-production/src/manifest_draft.cpp
+  libs/seam-voicebank-production/src/draft_inventory.cpp
   libs/seam-voicebank-production/src/source_assessment.cpp
   libs/seam-voicebank-production/src/source_registration.cpp
   libs/seam-voicebank-production/src/style_migration.cpp
@@ -2706,7 +2707,8 @@ if(SEAM_BUILD_TESTS)
     tests/test_production_style_identity.cpp
     tests/test_production_edit_ownership.cpp
     tests/test_production_draft.cpp)
-  add_executable(seam_production_draft_tests tests/test_main.cpp tests/test_production_draft.cpp)
+  add_executable(seam_production_draft_tests tests/test_main.cpp tests/test_production_draft.cpp
+    tests/test_draft_inventory.cpp)
   target_include_directories(seam_production_draft_tests PRIVATE tests)
   target_link_libraries(seam_production_draft_tests PRIVATE seam_voicebank_production)
   seam_apply_compiler_options(seam_production_draft_tests)
