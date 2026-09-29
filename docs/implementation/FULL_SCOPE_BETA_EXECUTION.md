@@ -4470,3 +4470,15 @@ or receipt rewriting. Release `seam_export_tests` builds and passes 1/1; its
 filesystem snapshot regression confirms journal and transaction paths are
 unchanged. This is a reusable read-only export API, not yet per-job evidence
 or a Studio request-detail UI; U22 and full-scope Beta GO remain open.
+
+2026-09-29 — Read-only per-generation-job evidence, verified and pushed in
+`c4b63355`; GitHub CI remains deferred and `.github` was not touched.
+`inspectGenerationJobOutputReadOnly` now distinguishes an unpublished job,
+incomplete package/output, valid prepared package, pending export recovery and
+candidate bytes verified against the frozen job. Candidate validation is
+shared with the run path, receipt hashing propagates cancellation, and the API
+never renders, locks, recovers or collects. Release `seam_export_tests` builds
+and passes 1/1; regressions cover all five states, cancellation, tamper
+rejection, and journal persistence. The Debug build directory is not configured.
+No Studio request-detail UI is wired yet; output verification is not collection
+or human review, and U22/full-scope Beta GO remain open.
