@@ -8,6 +8,8 @@
 #include "seam/native_ui/voice_designer_layout.hpp"
 #include "seam/native_ui/voice_designer_source_selection.hpp"
 #include "seam/native_ui/installed_singer_song.hpp"
+#include "seam/native_ui/installed_bank_song.hpp"
+#include "seam/native_ui/sample_bank_package.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/application_paths.hpp"
 #include "seam/platform/audio_input_device.hpp"
@@ -377,6 +379,152 @@ public:
         " / NOT QUALITY-APPROVED / " + fileName;
     lastError_.clear();
     return seam::core::success();
+  }
+
+  // Packs the published engineering candidate into a signed .seambank. The key is chosen and read
+  // here, zeroed after use, and never retained; a signature proves publisher authenticity and is
+  // never a quality approval or release qualification.
+  seam::core::Result<void> signPublishedSampleBank() {
+    using namespace seam;
+    const auto* candidate = controller_.publishedSampleCandidate()
+        ? &*controller_.publishedSampleCandidate() : nullptr;
+    if (candidate == nullptr)
+      return core::failure(core::ErrorCode::InvalidState,
+          "Publish a complete engineering candidate before signing a bank");
+    if (controller_.proceduralImportBusy() || controller_.dirty())
+      return core::failure(core::ErrorCode::Conflict,
+          "Finish current Studio work and save manifest edits before signing a package");
+    auto dialog = platform_.fileDialog();
+    if (dialog == nullptr)
+      return core::failure(core::ErrorCode::Unsupported, "No native file dialog is available on this platform");
+    const auto keyPath = dialog->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::SelectSingerSigningKey,
+        .title = "Select Private Bank Signing Key",
+        .initialDirectory = controller_.manifestPath().parent_path(),
+        .suggestedName = {}, .extensions = {"json"}});
+    if (!keyPath) return seam::core::Result<void>{keyPath.error()};
+    if (!keyPath.value()) return seam::core::success();
+    auto signingKey = distribution::loadPrivateKey(*keyPath.value());
+    if (!signingKey) return seam::core::Result<void>{signingKey.error()};
+    struct SigningKeyWiper final {
+      distribution::SigningKeyPair& key;
+      ~SigningKeyWiper() { key.privateKey.fill(std::byte{0}); }
+    } wiper{signingKey.value()};
+    const auto packagePath = dialog->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::PublishSampleBank,
+        .title = "Publish Signed Sample Bank Package (Not a Release Qualification)",
+        .initialDirectory = candidate->root.parent_path(),
+        .suggestedName = candidate->root.filename().string() + ".seambank",
+        .extensions = {"seambank"}});
+    if (!packagePath) return seam::core::Result<void>{packagePath.error()};
+    if (!packagePath.value()) return seam::core::success();
+    if (packagePath.value()->extension() != ".seambank")
+      return core::failure(core::ErrorCode::InvalidArgument, "Choose a package destination ending in .seambank");
+    const auto context = controller_.captureSampleReviewContext();
+    if (!context) return seam::core::Result<void>{context.error()};
+    const auto& currentCandidate = controller_.publishedSampleCandidate();
+    if (!currentCandidate || currentCandidate->candidateSha256 != candidate->candidateSha256)
+      return core::failure(core::ErrorCode::Conflict,
+          "The published candidate changed while choosing where to sign it");
+    publishedSampleBankKey_ = signingKey.value().publicKey;
+    sampleBankStatus_.clear();
+    return controller_.beginSampleBankPackaging(context.value(), *candidate, *packagePath.value(), signingKey.value());
+  }
+
+  // Installs the signed package into the installed root of the bank folders the song editor
+  // catalogs, trusting exactly the key that signed it in this session.
+  seam::core::Result<void> installSignedSampleBankFromDialog() {
+    using namespace seam;
+    const auto* signedBank = controller_.publishedSampleBank() ? &*controller_.publishedSampleBank() : nullptr;
+    const auto* candidate = controller_.publishedSampleCandidate()
+        ? &*controller_.publishedSampleCandidate() : nullptr;
+    if (signedBank == nullptr || candidate == nullptr)
+      return core::failure(core::ErrorCode::InvalidState,
+          "Sign the published candidate before installing it as a bank");
+    if (!publishedSampleBankKey_.has_value())
+      return core::failure(core::ErrorCode::InvalidState,
+          "The signing key of this package is not in this session; sign the candidate again");
+    if (controller_.proceduralImportBusy())
+      return core::failure(core::ErrorCode::Conflict, "Finish current Studio work before installing a bank");
+    const auto roots = platform_.voicebankRoots();
+    const auto installRoot = std::find_if(roots.begin(), roots.end(), [](const auto& root) {
+      return root.kind == voicebank::VoicebankRootKind::Installed;
+    });
+    if (installRoot == roots.end() || installRoot->path.empty())
+      return core::failure(core::ErrorCode::InvalidState,
+          "No installed voicebank folder is available on this platform");
+    const auto context = controller_.captureSampleReviewContext();
+    if (!context) return seam::core::Result<void>{context.error()};
+    return controller_.beginSampleBankInstallation(context.value(), *candidate,
+        signedBank->packagePath, installRoot->path, {*publishedSampleBankKey_});
+  }
+
+  // The explicit return-to-song step: write a new song bound to the exact installed bank and hand it
+  // to the Project SEAM editor. The project is written only after the bank re-resolves as a trusted
+  // installation with the reviewed content hash, and an existing file is never replaced.
+  seam::core::Result<void> openInstalledBankInSongEditor() {
+    using namespace seam;
+    const auto* installed = controller_.installedSampleBank() ? &*controller_.installedSampleBank() : nullptr;
+    if (installed == nullptr)
+      return core::failure(core::ErrorCode::InvalidState,
+          "Install the signed bank before opening it in the song editor");
+    auto dialog = platform_.fileDialog();
+    if (dialog == nullptr)
+      return core::failure(core::ErrorCode::Unsupported, "No native file dialog is available on this platform");
+    const auto displayName = installed->voicebankId;
+    const auto chosen = dialog->choose(platform::FileDialogRequest{
+        .purpose = platform::FileDialogPurpose::SaveProject,
+        .title = "Save New Song Project for " + displayName,
+        .initialDirectory = installed->installDirectory.parent_path(),
+        .suggestedName = native_ui::suggestedSongProjectFileName(displayName),
+        .extensions = {"seam"}});
+    if (!chosen) return seam::core::Result<void>{chosen.error()};
+    if (!chosen.value()) return seam::core::success();
+    if (!controller_.installedSampleBank() ||
+        controller_.installedSampleBank()->contentHash != installed->contentHash)
+      return core::failure(core::ErrorCode::Conflict,
+          "The installed bank changed while choosing the song project location");
+    const auto created = native_ui::createInstalledBankSongProject(platform_.voicebankRoots(),
+        native_ui::InstalledBankSongRequest{.projectPath = *chosen.value(),
+                                            .voicebankId = installed->voicebankId,
+                                            .voicebankVersion = installed->voicebankVersion,
+                                            .contentHash = installed->contentHash,
+                                            .installDirectory = installed->installDirectory});
+    if (!created) return seam::core::Result<void>{created.error()};
+    const auto& project = created.value();
+    const auto fileName = project.projectPath.filename().string();
+    auto status = "SONG PROJECT SAVED / NOT OPENED / " + fileName;
+    const auto editor = platform_.locateSongEditor();
+    if (!editor) {
+      reportSampleBankStatus(status);
+      return seam::core::failure(editor.error().code,
+          "Song project saved at " + project.projectPath.string() + ". " + editor.error().message);
+    }
+    const auto opened = platform_.openDocumentWithApplication(project.projectPath, editor.value());
+    if (!opened) {
+      reportSampleBankStatus(status);
+      return seam::core::failure(opened.error().code,
+          "Song project saved at " + project.projectPath.string() + ". " + opened.error().message);
+    }
+    reportSampleBankStatus("OPENED IN PROJECT SEAM / " + project.styleId +
+        " / NOT A RELEASE QUALIFICATION / " + fileName);
+    lastError_.clear();
+    return seam::core::success();
+  }
+
+  // The Studio status line shows the outcome even when the editor launch fails, so a saved song is
+  // never reported as nothing written.
+  void reportSampleBankStatus(std::string value) {
+    sampleBankStatus_ = std::move(value);
+  }
+
+  // One line for the review screen: a failure first, then playback, then the bank hand-off outcome,
+  // and otherwise the controller's own review status.
+  [[nodiscard]] std::string sampleReviewStatusLine() const {
+    if (!lastError_.empty()) return lastError_;
+    if (!auditionStatus_.empty()) return auditionStatus_;
+    if (!sampleBankStatus_.empty()) return sampleBankStatus_;
+    return controller_.sampleReviewStatus();
   }
 
   static std::vector<std::size_t> designerFrications(const seam::voice_design::VoiceRecipe& recipe, std::size_t pose) {
@@ -1764,6 +1912,9 @@ public:
     if (action == "accept" || action == "reject") return confirmStudioSampleReview(controller_, *dialog,
         action == "accept" ? Decision::Accept : Decision::Reject);
     if (action == "publish") { sampleReviewFirstLine_ = 0U; return publishStudioSampleCandidate(controller_, *dialog); }
+    if (action == "sign-bank") { sampleReviewFirstLine_ = 0U; return signPublishedSampleBank(); }
+    if (action == "install-bank") { sampleReviewFirstLine_ = 0U; return installSignedSampleBankFromDialog(); }
+    if (action == "open-bank-in-song-editor") { sampleReviewFirstLine_ = 0U; return openInstalledBankInSongEditor(); }
     return seam::core::failure(seam::core::ErrorCode::InvalidArgument, "Unknown sample review action");
   }
 
@@ -1773,7 +1924,7 @@ public:
     const auto lines = studioSampleReviewDetailLines(controller_, width);
     const auto count = studioSampleReviewVisibleLines(height);
     sampleReviewFirstLine_ = std::min(sampleReviewFirstLine_, lines.size() > count ? lines.size() - count : 0U);
-    paintStudioSampleReview(canvas, controller_, sampleReviewFirstLine_, !lastError_.empty() ? lastError_ : auditionStatus_);
+    paintStudioSampleReview(canvas, controller_, sampleReviewFirstLine_, sampleReviewStatusLine());
     const auto prefix = sampleSemanticPrefix();
     SemanticNode root{.id = prefix + "root", .role = SemanticRole::Panel, .name = "Selected unit review and engineering candidate publication",
         .bounds = {0.0, 0.0, width, height}};
@@ -1787,9 +1938,9 @@ public:
         .value = controller_.sampleReviewerId().empty() ? "None selected" : controller_.sampleReviewerId(), .bounds = {24.0,40.0,width-48.0,16.0}});
     for (std::size_t i = 0U; i < count && sampleReviewFirstLine_ + i < lines.size(); ++i)
       root.children.push_back({.id = prefix + "detail." + std::to_string(sampleReviewFirstLine_ + i), .role = SemanticRole::Status,
-          .name = "Captured review data", .value = lines[sampleReviewFirstLine_ + i], .bounds = {24.0,274.0+18.0*static_cast<double>(i),width-48.0,16.0}});
+          .name = "Captured review data", .value = lines[sampleReviewFirstLine_ + i], .bounds = {24.0,302.0+18.0*static_cast<double>(i),width-48.0,16.0}});
     root.children.push_back({.id = prefix + "status", .role = SemanticRole::Status, .name = "Review operation status",
-        .value = !lastError_.empty() ? lastError_ : controller_.sampleReviewStatus(), .bounds = {24.0,height-28.0,width-48.0,18.0}});
+        .value = sampleReviewStatusLine(), .bounds = {24.0,height-28.0,width-48.0,18.0}});
     sampleReviewAccessibility_.rebuildCustom(std::move(root), sampleReviewSemanticFocus_);
   }
 
@@ -2389,6 +2540,9 @@ public:
       else if (event.key == Key::L) action = "source-license";
       else if (event.key == Key::S) action = "source-register";
       else if (event.key == Key::V) action = "register-reviewer";
+      else if (event.key == Key::B) action = "sign-bank";
+      else if (event.key == Key::P) action = "install-bank";
+      else if (event.key == Key::Y) action = "open-bank-in-song-editor";
       else if (event.key == Key::Space) action = "play";
       else if (event.key == Key::Left) action = "previous-page";
       else if (event.key == Key::Right) action = "next-page";
@@ -2849,6 +3003,16 @@ public:
     return controller_.stagedRecoveryCandidateCount();
   }
 
+  [[nodiscard]] const seam::voicebank_production::PublishedSampleCandidate*
+  publishedSampleCandidate() const noexcept override {
+    return controller_.publishedSampleCandidate() ? &*controller_.publishedSampleCandidate() : nullptr;
+  }
+
+  [[nodiscard]] const seam::native_ui::SampleBankInstallation*
+  installedSampleBank() const noexcept override {
+    return controller_.installedSampleBank() ? &*controller_.installedSampleBank() : nullptr;
+  }
+
   bool recordingTargetSelected() const noexcept {
     return controller_.productionProject() != nullptr
         ? controller_.selectedProductionAssignment() != nullptr
@@ -3182,6 +3346,10 @@ private:
   bool publishedSingerInstalled_{false};
   // What the last installation actually produced; the song hand-off binds to this exact singer.
   std::optional<seam::distribution::InstalledProceduralSinger> installedSinger_;
+  // The public key of the package this session signed last, and what the bank hand-off last did. The
+  // private key is never retained; the song editor is asked to trust exactly this key on installation.
+  std::optional<seam::distribution::Ed25519PublicKey> publishedSampleBankKey_;
+  std::string sampleBankStatus_;
   std::uint64_t publishedDesignerEpoch_{};
   std::uint64_t publishedDesignerRevision_{};
   seam::native_ui::VoicebankStudioController controller_;

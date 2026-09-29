@@ -686,6 +686,8 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/voice_designer_model.cpp
     libs/seam-native-ui/src/voice_designer_session.cpp
     libs/seam-native-ui/src/installed_singer_song.cpp
+    libs/seam-native-ui/src/installed_bank_song.cpp
+    libs/seam-native-ui/src/sample_bank_package.cpp
     libs/seam-native-ui/src/voice_designer_audition.cpp
     libs/seam-native-ui/src/voicebank_studio_production_view.cpp
     libs/seam-native-ui/src/voicebank_studio_production_support.cpp
@@ -2737,6 +2739,14 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_wav_read_limits_tests COMMAND seam_wav_read_limits_tests)
   if(SEAM_BUILD_NATIVE_DESKTOP)
     add_executable(seam_studio_sample_review_tests tests/test_main.cpp tests/test_studio_sample_review.cpp)
+    add_executable(seam_studio_bank_handoff_tests tests/test_main.cpp tests/test_studio_bank_handoff.cpp)
+    target_include_directories(seam_studio_bank_handoff_tests PRIVATE tests)
+    target_link_libraries(seam_studio_bank_handoff_tests PRIVATE
+      seam_native_ui seam_voicebank_production seam_distribution seam_authoring_runtime
+      seam_application seam_voicebank seam_formats seam_domain seam_core)
+    seam_apply_compiler_options(seam_studio_bank_handoff_tests)
+    add_test(NAME seam_studio_bank_handoff_tests COMMAND seam_studio_bank_handoff_tests)
+    set_tests_properties(seam_studio_bank_handoff_tests PROPERTIES TIMEOUT 180)
     target_include_directories(seam_studio_sample_review_tests PRIVATE tests)
     target_link_libraries(seam_studio_sample_review_tests PRIVATE seam_native_ui seam_voicebank_production)
     seam_apply_compiler_options(seam_studio_sample_review_tests)

@@ -56,11 +56,22 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
       available && registration && controller.validateSampleReviewContext(registration->context)});
   controls.push_back({"register-reviewer", "V REGISTER REVIEWER...", {32.0+2.0*third,126.0,third,24.0},
       available && project != nullptr});
+  // The signed-bank route is deliberately its own row: signing and installing reviewed material is a
+  // separate decision from publishing it, so it is never implied by E PUBLISH alone.
+  const auto* published = controller.publishedSampleCandidate() ? &*controller.publishedSampleCandidate() : nullptr;
+  const auto* signedBank = controller.publishedSampleBank() ? &*controller.publishedSampleBank() : nullptr;
+  const auto* installedBank = controller.installedSampleBank() ? &*controller.installedSampleBank() : nullptr;
+  const auto quarter = std::max(1.0, (width - 60.0) / 4.0);
+  controls.push_back({"sign-bank", "B SIGN BANK...", {24.0,154.0,quarter,24.0}, available && published != nullptr});
+  controls.push_back({"install-bank", "P INSTALL BANK...", {28.0+quarter,154.0,quarter,24.0},
+      available && signedBank != nullptr && installedBank == nullptr});
+  controls.push_back({"open-bank-in-song-editor", "Y NEW SONG...", {32.0+2.0*quarter,154.0,quarter,24.0},
+      available && installedBank != nullptr});
   return controls;
 }
 
 std::size_t studioSampleReviewVisibleLines(double height) noexcept {
-  return static_cast<std::size_t>(std::max(1.0, (height - 316.0) / 18.0));
+  return static_cast<std::size_t>(std::max(1.0, (height - 344.0) / 18.0));
 }
 
 std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioController& controller, double width) {
@@ -112,6 +123,19 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
     values.push_back("PUBLICATION GENERATION " + std::to_string(published->sourceGeneration));
     if (!published->diagnostic.empty()) values.push_back(published->diagnostic);
   }
+  if (const auto& signedBank = controller.publishedSampleBank()) {
+    values.push_back("B SIGN BANK PACKAGES THE REVIEWED CANDIDATE ABOVE; SIGNING PROVES PUBLISHER AUTHENTICITY ONLY.");
+    values.push_back("LAST SIGNED PACKAGE " + signedBank->packagePath.string());
+    values.push_back("PACKAGE SHA256 " + signedBank->packageDigest);
+    values.push_back("SIGNER KEY " + signedBank->signerKeyId);
+  }
+  if (const auto& installedBank = controller.installedSampleBank()) {
+    values.push_back("P INSTALL BANK INSTALLS THE SIGNED PACKAGE INTO THE SONG EDITOR'S BANK FOLDER.");
+    values.push_back("INSTALLED BANK " + installedBank->voicebankId + " " + installedBank->voicebankVersion);
+    values.push_back("INSTALLED CONTENT SHA256 " + installedBank->contentHash);
+    values.push_back("INSTALLED AT " + installedBank->installDirectory.string());
+    values.push_back("Y NEW SONG WRITES A SONG BOUND TO THIS EXACT BANK, THEN OPENS IT IN PROJECT SEAM.");
+  }
   if (const auto& receipt = controller.sampleReviewReceipt()) {
     values.push_back("LAST REVIEW COMMIT " + std::to_string(receipt->committedGeneration) + " / " + receipt->committedProjectSha256);
     for (const auto& review : receipt->reviews)
@@ -160,10 +184,10 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
     canvas.drawText({control.bounds.x + 4.0, control.bounds.y + 4.0, control.bounds.width - 8.0, control.bounds.height - 8.0},
         control.label, control.enabled ? theme.primaryText : theme.secondaryText, 10.0);
   }
-  canvas.drawText({24.0, 158.0, width - 48.0, 18.0},
+  canvas.drawText({24.0, 186.0, width - 48.0, 18.0},
       "UNIT " + std::to_string(controller.selectableUnitCount() == 0U ? 0U : controller.selectedIndex() + 1U) + " / " + std::to_string(controller.selectableUnitCount()) +
-      " | N DRAFT | O OPEN | C CAPTURE | R REVIEWER | A/X REVIEW | I/D SOURCE | E PUBLISH | SPACE PLAY", theme.secondaryText, 10.0);
-  const ui::Rect wave{24.0, 184.0, width - 48.0, 54.0};
+      " | N DRAFT | O OPEN | C CAPTURE | R REVIEWER | A/X REVIEW | I/D SOURCE | E PUBLISH | B/P/Y BANK | SPACE PLAY", theme.secondaryText, 10.0);
+  const ui::Rect wave{24.0, 212.0, width - 48.0, 54.0};
   canvas.fillRect(wave, theme.panelAlternate);
   if (const auto& inspection = controller.sampleReviewInspection(); inspection && !inspection->peaks.empty()) {
     const auto step = wave.width / static_cast<double>(inspection->peaks.size());
@@ -191,11 +215,11 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
   const auto lines = studioSampleReviewDetailLines(controller, width);
   const auto first = std::min(firstDetailLine, lines.empty() ? 0U : lines.size() - 1U);
   const auto count = std::min(studioSampleReviewVisibleLines(height), lines.size() - first);
-  canvas.drawText({24.0, 246.0, width - 48.0, 16.0},
+  canvas.drawText({24.0, 274.0, width - 48.0, 16.0},
       "REVIEW DATA " + std::to_string(first + 1U) + "-" + std::to_string(first + count) + " / " + std::to_string(lines.size()) +
           " | LEFT/RIGHT PAGE | UP/DOWN UNIT", theme.secondaryText, 10.0);
   for (std::size_t i = 0U; i < count; ++i)
-    canvas.drawText({24.0, 274.0 + static_cast<double>(i) * 18.0, width - 48.0, 16.0}, lines[first + i], theme.primaryText, 11.0);
+    canvas.drawText({24.0, 302.0 + static_cast<double>(i) * 18.0, width - 48.0, 16.0}, lines[first + i], theme.primaryText, 11.0);
   canvas.drawText({24.0, height - 28.0, width - 48.0, 18.0}, interactionStatus.empty() ? controller.sampleReviewStatus() : interactionStatus, theme.accent, 11.0);
 }
 

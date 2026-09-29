@@ -611,7 +611,7 @@ TEST_CASE("Studio source quality capture cancellation preserves source history a
   fixture.controller.cancelProceduralCandidateImport(); CHECK(!collectDraft(fixture.controller));
   CHECK(!fixture.controller.sourceQualityInspection()); CHECK(!fixture.controller.sourceQualityReceipt()); fixture.sourceUnchanged();
   for (double width : {720.0,960.0,1440.0}) {
-    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==19U);
+    const auto controls=native_ui::studioSampleReviewControls(fixture.controller,width); CHECK(controls.size()==22U);
     for (std::size_t i=0U;i<controls.size();++i) for (std::size_t j=i+1U;j<controls.size();++j) {
       const auto& a=controls[i].bounds; const auto& b=controls[j].bounds;
       CHECK(a.right()<=b.x || b.right()<=a.x || a.bottom()<=b.y || b.bottom()<=a.y);

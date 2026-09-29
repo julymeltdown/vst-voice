@@ -2,6 +2,9 @@
 
 #include "seam/core/result.hpp"
 #include "seam/authoring/generation_job.hpp"
+#include "seam/distribution/signing.hpp"
+#include "seam/native_ui/sample_bank_package.hpp"
+#include "seam/voicebank/catalog.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/sample_microscope_model.hpp"
@@ -139,6 +142,17 @@ public:
   [[nodiscard]] const std::string& sampleReviewerId() const noexcept { return sampleReviewerId_; }
   [[nodiscard]] const std::optional<voicebank_production::SampleCandidateReviewReceipt>& sampleReviewReceipt() const noexcept { return sampleReviewReceipt_; }
   [[nodiscard]] const std::optional<voicebank_production::PublishedSampleCandidate>& publishedSampleCandidate() const noexcept { return publishedSampleCandidate_; }
+  // The signed package and its installation. Signing is explicit and separate from publication, so
+  // neither of these appears without an explicit key and an explicit destination.
+  [[nodiscard]] core::Result<void> beginSampleBankPackaging(const SampleReviewContext& context,
+      voicebank_production::PublishedSampleCandidate candidate,
+      std::filesystem::path packagePath, distribution::SigningKeyPair signingKey);
+  [[nodiscard]] const std::optional<distribution::SeambankPackageInfo>& publishedSampleBank() const noexcept { return publishedSampleBank_; }
+  [[nodiscard]] core::Result<void> beginSampleBankInstallation(const SampleReviewContext& context,
+      voicebank_production::PublishedSampleCandidate candidate,
+      std::filesystem::path packagePath, std::filesystem::path installRoot,
+      std::vector<distribution::Ed25519PublicKey> trustedPublicKeys);
+  [[nodiscard]] const std::optional<SampleBankInstallation>& installedSampleBank() const noexcept { return installedSampleBank_; }
   [[nodiscard]] const std::string& sampleReviewStatus() const noexcept { return sampleReviewStatus_; }
   struct CandidatePitchInspection final {
     std::string audioSha256, boundaryRevisionId;
@@ -476,6 +490,8 @@ private:
     std::optional<voicebank_production::VoicebankProductionProject> committedProject;
     std::optional<voicebank_production::SampleCandidateReviewReceipt> receipt;
     std::optional<voicebank_production::PublishedSampleCandidate> published;
+    std::optional<distribution::SeambankPackageInfo> publishedBank;
+    std::optional<SampleBankInstallation> installedBank;
     std::optional<LoadedUnit> loadedUnit;
     std::optional<voicebank_production::CreatedSampleManifestDraft> createdDraft;
     std::string draftLoadDiagnostic;
@@ -510,6 +526,8 @@ private:
   std::optional<voicebank_production::ProductionCommitReceipt> reviewerRegistrationReceipt_;
   std::optional<voicebank_production::SampleCandidateReviewReceipt> sampleReviewReceipt_;
   std::optional<voicebank_production::PublishedSampleCandidate> publishedSampleCandidate_;
+  std::optional<distribution::SeambankPackageInfo> publishedSampleBank_;
+  std::optional<SampleBankInstallation> installedSampleBank_;
   std::optional<voicebank_production::CreatedSampleManifestDraft> createdSampleManifestDraft_;
   std::string sampleManifestDraftLoadDiagnostic_;
   std::uint64_t sampleReviewSelectionRevision_{0U};

@@ -46,6 +46,10 @@ enum class FileDialogPurpose {
   OpenGenerationCampaign,
   SaveDesignerRecipe,
   PublishSampleCandidate,
+  // Names the signed .seambank Studio builds from an already published engineering candidate,
+  // and the package the shipped editor installs. Signing is separate from publication: the
+  // candidate directory is not distributable until it is packed and signed with an explicit key.
+  PublishSampleBank,
   OpenSampleManifest,
   CreateSampleManifestDraft,
   SourceQualityEvidence,

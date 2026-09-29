@@ -5,6 +5,7 @@
 #include "seam/core/result.hpp"
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/native_ui/native_window.hpp"
+#include "seam/native_ui/sample_bank_package.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/audio_input_device.hpp"
@@ -13,6 +14,7 @@
 #include "seam/voicebank_production/operations.hpp"
 #include "seam/voicebank_production/project.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank/catalog.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -34,6 +36,11 @@ struct StudioPlatform final {
   platform::RecordingInputFactories recordingInput{};
   std::function<std::vector<distribution::ProceduralSearchRoot>()> singerRoots{
       distribution::defaultProceduralSearchRoots};
+  // The voicebank roots the song editor catalogs. A signed sample bank built here is installed into
+  // the installed root of this list and the hand-off re-scans the same list, so the bank Studio
+  // writes is the bank the editor finds; a test supplies its own folder instead of the user library.
+  std::function<std::vector<voicebank::VoicebankSearchRoot>()> voicebankRoots{
+      voicebank::defaultVoicebankSearchRoots};
   std::function<core::Result<std::filesystem::path>()> locateSongEditor{
       platform::locateSongEditorApplication};
   std::function<core::Result<void>(const std::filesystem::path&, const std::filesystem::path&)>
@@ -69,6 +76,12 @@ public:
   [[nodiscard]] virtual voicebank_production::ProductionQueueSummary
   productionQueues() const noexcept = 0;
   [[nodiscard]] virtual std::size_t stagedRecoveryCandidateCount() const noexcept = 0;
+  // The signed package and installation this session produced, so a caller can verify the bank that
+  // was actually installed instead of inferring it from a folder listing.
+  [[nodiscard]] virtual const voicebank_production::PublishedSampleCandidate*
+  publishedSampleCandidate() const noexcept = 0;
+  [[nodiscard]] virtual const native_ui::SampleBankInstallation*
+  installedSampleBank() const noexcept = 0;
 };
 
 [[nodiscard]] std::unique_ptr<IVoicebankStudioApp> createVoicebankStudioApp(

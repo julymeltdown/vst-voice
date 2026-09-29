@@ -22,6 +22,7 @@
 #include "seam/platform/audio_input_device.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <algorithm>
@@ -53,6 +54,11 @@ struct DialogScript final {
   std::vector<std::string> sourceRegistrationSummaries;
   std::vector<std::optional<std::string>> reviewerRegistrations;
   std::vector<std::string> reviewerRegistrationSummaries;
+  std::vector<std::optional<platform::SampleManifestDraftIdentityInput>> sampleDraftIdentities;
+  std::vector<std::optional<platform::SourceQualityDecisionInput>> sourceQualityDecisions;
+  std::vector<std::optional<std::string>> sampleReviewers;
+  std::vector<bool> sampleReviewConfirmations;
+  std::vector<std::string> sampleReviewSummaries;
   std::vector<platform::FileDialogRequest> requests;
 };
 
@@ -95,6 +101,23 @@ public:
   core::Result<std::optional<std::string>> chooseReviewerRegistration(std::string_view summary) override {
     script_->reviewerRegistrationSummaries.emplace_back(summary);
     return nextAnswer(script_->reviewerRegistrations);
+  }
+  core::Result<std::optional<platform::SampleManifestDraftIdentityInput>> chooseSampleManifestDraftIdentity() override {
+    return nextAnswer(script_->sampleDraftIdentities);
+  }
+  core::Result<std::optional<platform::SourceQualityDecisionInput>> chooseSourceQualityDecision(
+      std::string_view, const std::vector<std::string>&) override {
+    return nextAnswer(script_->sourceQualityDecisions);
+  }
+  core::Result<std::optional<std::string>> chooseSampleReviewer(const std::vector<std::string>&) override {
+    return nextAnswer(script_->sampleReviewers);
+  }
+  core::Result<bool> confirmSampleReview(std::string_view summary, bool) override {
+    script_->sampleReviewSummaries.emplace_back(summary);
+    if (script_->sampleReviewConfirmations.empty()) return core::Result<bool>{false};
+    const auto next = script_->sampleReviewConfirmations.front();
+    script_->sampleReviewConfirmations.erase(script_->sampleReviewConfirmations.begin());
+    return core::Result<bool>{next};
   }
 
 private:
@@ -176,8 +199,10 @@ public:
 
   explicit StudioHarness(std::filesystem::path root,
                          std::shared_ptr<MicrophoneScript> microphone = nullptr)
-      : root_(std::move(root)), singers_(root_ / "singers"), editor_(root_ / "Project SEAM.app") {
+      : root_(std::move(root)), singers_(root_ / "singers"), banks_(root_ / "voicebanks"),
+        editor_(root_ / "Project SEAM.app") {
     std::filesystem::create_directories(singers_);
+    std::filesystem::create_directories(banks_);
     voicebank_studio_native::StudioPlatform hooks;
     hooks.fileDialog = [script = dialogs] { return std::make_unique<ScriptedDialog>(script); };
     hooks.audioDevice = [] { return platform::createThreadedAudioDevice(); };
@@ -190,6 +215,10 @@ public:
     hooks.singerRoots = [singers = singers_] {
       return std::vector<distribution::ProceduralSearchRoot>{
           {singers, distribution::ProceduralRootKind::Installed}};
+    };
+    hooks.voicebankRoots = [banks = banks_] {
+      return std::vector<voicebank::VoicebankSearchRoot>{
+          {banks, voicebank::VoicebankRootKind::Installed}};
     };
     hooks.locateSongEditor = [editor = editor_]() -> core::Result<std::filesystem::path> {
       return editor;
@@ -206,6 +235,7 @@ public:
   }
 
   [[nodiscard]] const std::filesystem::path& singers() const noexcept { return singers_; }
+  [[nodiscard]] const std::filesystem::path& voicebanks() const noexcept { return banks_; }
   [[nodiscard]] const std::filesystem::path& editor() const noexcept { return editor_; }
 
   void resize(double width, double height) {
@@ -291,6 +321,7 @@ public:
 private:
   std::filesystem::path root_;
   std::filesystem::path singers_;
+  std::filesystem::path banks_;
   std::filesystem::path editor_;
   double width_{1100.0};
   double height_{720.0};
@@ -524,6 +555,230 @@ TEST_CASE("Voicebank Studio's own actions take a new voice from draft to a song 
   const auto phraseFrames = static_cast<std::size_t>(
       48000.0 * 3.0 * 480.0 / static_cast<double>(time::kDefaultPpq) * 0.5);
   CHECK(master.value().frameCount() >= phraseFrames);
+  CHECK(peak > 0.01F);
+}
+
+// The whole signed-bank route through Studio's own surface: record the starter inventory, qualify the
+// source, register a reviewer, capture and accept every unit, publish, sign, install, and hand the
+// installed bank to the song editor as a song. The editor half then opens that song in a fresh
+// standalone session and exports what it renders, so the export is the installed bank actually singing.
+TEST_CASE("Voicebank Studio takes reviewed recordings to an installed bank the song editor sings with") {
+  const auto root = test::support::temporaryDirectory("studio-app-bank-journey");
+  auto microphone = std::make_shared<MicrophoneScript>();
+  StudioHarness studio{root, microphone};
+  auto& dialogs = *studio.dialogs;
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+  studio.resize(1100.0, 720.0);
+
+  // A vowel starter workspace keeps this journey to ten recording rows at two pitches.
+  const auto workspace = root / "starter-workspace";
+  dialogs.newWorkspaces = {platform::IFileDialog::NewProducerWorkspaceInput{
+      .destination = workspace, .projectId = "bank-journey", .producerId = "producer",
+      .inventory = platform::IFileDialog::NewProducerWorkspaceInput::Inventory::JapaneseVowelStarter}};
+  CHECK(studio.activate("create-producer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject() != nullptr; }));
+  const auto* project = studio.app->productionProject();
+  CHECK(project != nullptr);
+  if (project == nullptr) return;
+  const auto rows = project->unitAssignments;
+  CHECK(!rows.empty());
+  if (rows.empty()) return;
+  const auto selectedStyle = rows.front().style;
+
+  // The source license and its explicit declaration, then the reviewer, exactly as the producer does.
+  const auto license = root / "bank-journey-license.txt";
+  const std::string licenseText =
+      "Harness bank journey consent: recording, transformation, bank redistribution and commercial renders.";
+  CHECK(core::durableAtomicWriteTextNew(license, licenseText).hasValue());
+  studio.key(NativeKey::Q, {});
+  CHECK(studio.settle([&] { const auto control = studio.node("source-license"); return control && control->enabled; }));
+  dialogs.paths[platform::FileDialogPurpose::SourceLicenseEvidence] = {license};
+  CHECK(studio.activate("source-license").hasValue());
+  CHECK(studio.settle([&] { const auto control = studio.node("source-register"); return control && control->enabled; }));
+  dialogs.sourceRegistrations = {platform::SourceRegistrationInput{
+      .id = "bank-journey-singer", .kind = "human", .rights = "pass",
+      .permissions = {"yes", "yes", "yes", "yes"}}};
+  CHECK(studio.activate("source-register").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.app->productionProject()->selectedSourceStrategyId == "bank-journey-singer";
+  }));
+  dialogs.reviewerRegistrations = {std::string{"listener"}};
+  CHECK(studio.activate("register-reviewer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject()->operators.size() == 2U; }));
+  CHECK(studio.settle([&] { const auto back = studio.node("back"); return back && back->enabled; }));
+  CHECK(studio.activate("back").hasValue());
+
+  // Every row is recorded from the scripted microphone at its own pitch layer.
+  for (std::size_t row = 0U; row < rows.size(); ++row) {
+    CHECK(studio.settle([&] {
+      const auto button = studio.node("record");
+      return button && button->enabled && button->id.ends_with("." + std::to_string(row) + ".record");
+    }));
+    CHECK(studio.activate("record").hasValue());
+    CHECK(microphone->running);
+    microphone->sing(midiHz(rows[row].pitchLayer), 0.3);
+    CHECK(studio.activate("record").hasValue());
+    CHECK(studio.settle([&] {
+      const auto button = studio.node("record");
+      return button && button->name == "Record a take for the selected row";
+    }));
+    if (row + 1U < rows.size()) {
+      studio.key(NativeKey::Down, {});
+      CHECK(studio.settle([&] {
+        const auto button = studio.node("record");
+        return button && button->id.ends_with("." + std::to_string(row + 1U) + ".record");
+      }));
+    }
+  }
+  CHECK(studio.app->productionQueues().markerReview == rows.size());
+
+  // Source evidence and an independent source-quality decision: source decisions never approve units.
+  const auto qualityEvidence = root / "bank-journey-source-quality.txt";
+  CHECK(core::durableAtomicWriteTextNew(qualityEvidence,
+      "Harness source coverage and listening assessed by the reviewer for this journey").hasValue());
+  studio.key(NativeKey::Q, {});
+  CHECK(studio.settle([&] { const auto control = studio.node("source-evidence"); return control && control->enabled; }));
+  dialogs.paths[platform::FileDialogPurpose::SourceQualityEvidence] = {qualityEvidence};
+  CHECK(studio.activate("source-evidence").hasValue());
+  CHECK(studio.settle([&] { const auto control = studio.node("source-decision"); return control && control->enabled; }));
+  dialogs.sourceQualityDecisions = {platform::SourceQualityDecisionInput{
+      .id = "bank-journey-quality", .reviewerId = "listener", .coverage = "pass", .listening = "pass"}};
+  CHECK(studio.activate("source-decision").hasValue());
+  CHECK(studio.settle([&] {
+    const auto* current = studio.app->productionProject();
+    return current && current->unitAssignments.front().state == voicebank_production::UnitQueueState::MarkerReview &&
+        studio.value("status").find("SOURCE QUALITY RECORDED") != std::string::npos;
+  }));
+  // The draft gives every row a manifest so each unit can be captured, reviewed and accepted.
+  dialogs.sampleDraftIdentities = {platform::SampleManifestDraftIdentityInput{
+      .id = "bank-journey", .version = "1.0.0", .displayName = "Bank Journey",
+      .language = "ja", .style = selectedStyle}};
+  const auto draftRoot = root / "bank-journey-draft";
+  dialogs.paths[platform::FileDialogPurpose::CreateSampleManifestDraft] = {draftRoot};
+  CHECK(studio.activate("create-draft").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.value("status").find("DRAFT COMMITTED / OPENED") != std::string::npos;
+  }));
+
+  for (std::size_t index = 0U; index < rows.size(); ++index) {
+    CHECK(studio.settle([&] { const auto control = studio.node("capture"); return control && control->enabled; }));
+    CHECK(studio.activate("capture").hasValue());
+    CHECK(studio.settle([&] { const auto control = studio.node("reviewer"); return control && control->enabled; }));
+    dialogs.sampleReviewers = {std::string{"listener"}};
+    CHECK(studio.activate("reviewer").hasValue());
+    CHECK(studio.settle([&] { const auto control = studio.node("accept"); return control && control->enabled; }));
+    dialogs.sampleReviewConfirmations = {true};
+    CHECK(studio.activate("accept").hasValue());
+    CHECK(studio.settle([&] {
+      return studio.value("status").find("REVIEW COMMITTED") != std::string::npos;
+    }));
+    if (index + 1U < rows.size()) {
+      CHECK(studio.activate("next-unit").hasValue());
+      CHECK(studio.settle([&] {
+        return studio.value("status").find("REVIEW COMMITTED") == std::string::npos ||
+            studio.node("capture").has_value();
+      }));
+    }
+  }
+
+  // Publication, signing, installation and the song hand-off are four separate explicit steps.
+  const auto candidate = root / "bank-candidate";
+  dialogs.paths[platform::FileDialogPurpose::PublishSampleCandidate] = {candidate};
+  CHECK(studio.activate("publish").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.value("status").find("ENGINEERING CANDIDATE COMMITTED") != std::string::npos;
+  }));
+  CHECK(studio.settle([&] { const auto control = studio.node("sign-bank"); return control && control->enabled; }));
+
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto keyPath = root / "keys" / "bank-signer.json";
+  std::filesystem::create_directories(keyPath.parent_path());
+  CHECK(distribution::savePrivateKey(key.value(), keyPath).hasValue());
+  const auto package = root / "out" / "bank-journey.seambank";
+  std::filesystem::create_directories(package.parent_path());
+  dialogs.paths[platform::FileDialogPurpose::SelectSingerSigningKey] = {keyPath};
+  dialogs.paths[platform::FileDialogPurpose::PublishSampleBank] = {package};
+  CHECK(studio.activate("sign-bank").hasValue());
+  CHECK(studio.settle([&] { return std::filesystem::exists(package); }));
+  CHECK(studio.settle([&] { const auto control = studio.node("install-bank"); return control && control->enabled; }));
+  CHECK(studio.activate("install-bank").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.value("status").find("INSTALLED AS A TRUSTED BANK") != std::string::npos;
+  }));
+  const auto* installed = studio.app->installedSampleBank();
+  CHECK(installed != nullptr);
+  if (installed == nullptr) return;
+  const auto installedContentHash = installed->contentHash;
+
+  // Cancelling the song location writes nothing and launches nothing.
+  CHECK(studio.settle([&] {
+    const auto control = studio.node("open-bank-in-song-editor"); return control && control->enabled;
+  }));
+  CHECK(studio.activate("open-bank-in-song-editor").hasValue());
+  CHECK(studio.launches->empty());
+
+  const auto songs = root / "songs";
+  std::filesystem::create_directories(songs);
+  const auto song = songs / "Bank Journey Song.seam";
+  dialogs.paths[platform::FileDialogPurpose::SaveProject] = {song};
+  CHECK(studio.activate("open-bank-in-song-editor").hasValue());
+  CHECK(studio.launches->size() == 1U);
+  CHECK(std::filesystem::exists(song));
+  CHECK(studio.value("status").starts_with("OPENED IN PROJECT SEAM / " + selectedStyle));
+
+  // The editor half: a fresh standalone session sees only the installed bank, opens the handed-off
+  // song with no missing-bank diagnostic, sings through it and exports non-silent audio.
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / "cache",
+      .voicebankRoots = {{studio.voicebanks(), voicebank::VoicebankRootKind::Installed}},
+      .sampleRate = 48000U, .outputChannels = 2U, .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  if (!session) return;
+  auto editorDialog = std::make_unique<EditorDialog>();
+  auto* editorResponses = editorDialog.get();
+  standalone::StandaloneApplicationControllerConfig editorConfig{
+      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+  editorConfig.voicebankInstallRoot = studio.voicebanks();
+  editorConfig.trustedVoicebankKeys = {key.value().publicKey};
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(editorDialog), std::make_unique<DiscardPrompt>(), editorConfig);
+  CHECK(controller.hasValue());
+  if (!controller) return;
+  CHECK(std::find_if(controller.value()->voicebankCards().begin(), controller.value()->voicebankCards().end(),
+      [&](const auto& card) { return card.contentHash == installedContentHash; }) !=
+      controller.value()->voicebankCards().end());
+  editorResponses->responses.push_back(song);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenProject).hasValue());
+  auto& runtime = session.value()->runtime();
+  for (const auto& diagnostic : runtime.diagnostics())
+    CHECK(diagnostic.code != "BANK_MISSING");
+  const auto* track = runtime.document().session().project().findVocalTrack(runtime.selectedTrack());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(track->voicebank.contentHash == installedContentHash);
+  time::Tick start{0};
+  for (const char32_t* lyric : {U"あ", U"い", U"う"}) {
+    auto [token, note] = runtime.document().factory().makeNote(
+        start, time::Tick{480}, 60U, std::u32string{lyric}, domain::Language::Japanese);
+    CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(
+        runtime.selectedRegion(), std::move(token), std::move(note))).hasValue());
+    start = start + time::Tick{480};
+  }
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto exported = controller.value()->exportSet(root / "export", settings);
+  CHECK(exported.hasValue());
+  if (!exported) return;
+  const auto master = voicebank::readWav(exported.value().masterPath);
+  CHECK(master.hasValue());
+  if (!master) return;
+  float peak = 0.0F;
+  for (const auto sample : master.value().interleaved) peak = std::max(peak, std::fabs(sample));
   CHECK(peak > 0.01F);
 }
 

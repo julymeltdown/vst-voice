@@ -2,6 +2,7 @@
 #include "voicebank_studio_production_support.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
+#include "seam/native_ui/sample_bank_package.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/take_inspection_receipt.hpp"
@@ -342,6 +343,66 @@ core::Result<void> VoicebankStudioController::beginSampleCandidatePublication(co
   return core::success();
 }
 
+core::Result<void> VoicebankStudioController::beginSampleBankPackaging(const SampleReviewContext& context,
+    production::PublishedSampleCandidate candidate, std::filesystem::path packagePath,
+    distribution::SigningKeyPair signingKey) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Sample review work is busy");
+  const auto current = validateSampleReviewContext(context); if (!current) return current;
+  if (!productionProject_) return core::failure(core::ErrorCode::InvalidState, "Open a producer workspace before packing a bank");
+  if (candidate.sourceGeneration != productionProject_->lastDurableGeneration)
+    return core::failure(core::ErrorCode::Conflict, "Pack the published candidate of the current durable producer generation");
+  if (packagePath.empty()) return core::failure(core::ErrorCode::InvalidArgument, "Choose a new signed package destination");
+  if (installedSampleBank_ && installedSampleBank_->packageDigest == candidate.candidateSha256)
+    return core::failure(core::ErrorCode::Conflict, "This published candidate is already installed");
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
+  try {
+    sampleReviewWork_ = std::async(std::launch::async,
+        [context, candidate = std::move(candidate), packagePath = std::move(packagePath),
+         signingKey = signingKey, stop]() mutable -> core::Result<SampleReviewWorkResult> {
+      if (const auto check = cancelled(stop); !check) return core::Result<SampleReviewWorkResult>{check.error()};
+      auto packed = packPublishedSampleBank(candidate, packagePath, signingKey);
+      if (!packed) return core::Result<SampleReviewWorkResult>{packed.error()};
+      if (const auto check = cancelled(stop); !check) {
+        // The package exists. A late cancellation must not report that nothing was written.
+        return SampleReviewWorkResult{.context = context, .publishedBank = std::move(packed.value()),
+            .draftLoadDiagnostic = "Signed package committed; cancellation arrived after signing. Inspect the retained package before any retry."};
+      }
+      return SampleReviewWorkResult{.context = context, .publishedBank = std::move(packed.value())};
+    });
+  } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal, "Cannot start sample bank packaging", error.what()); }
+  sampleReviewStatus_ = status_ = "SIGNING ENGINEERING CANDIDATE / NOT A RELEASE QUALIFICATION / ESC CANCEL";
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginSampleBankInstallation(const SampleReviewContext& context,
+    production::PublishedSampleCandidate candidate, std::filesystem::path packagePath,
+    std::filesystem::path installRoot, std::vector<distribution::Ed25519PublicKey> trustedPublicKeys) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Sample review work is busy");
+  const auto current = validateSampleReviewContext(context); if (!current) return current;
+  if (packagePath.empty() || installRoot.empty())
+    return core::failure(core::ErrorCode::InvalidArgument, "Installing a signed bank needs its package and installation folder");
+  if (trustedPublicKeys.empty())
+    return core::failure(core::ErrorCode::InvalidArgument, "Installing a signed bank needs the explicit signing key that produced it");
+  if (installedSampleBank_ && installedSampleBank_->contentHash == candidate.contentSha256)
+    return core::failure(core::ErrorCode::Conflict, "The reviewed candidate content is already installed");
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
+  try {
+    sampleReviewWork_ = std::async(std::launch::async,
+        [context, contentHash = candidate.contentSha256, packagePath = std::move(packagePath),
+         installRoot = std::move(installRoot), trustedPublicKeys = std::move(trustedPublicKeys),
+         stop]() -> core::Result<SampleReviewWorkResult> {
+      if (const auto check = cancelled(stop); !check) return core::Result<SampleReviewWorkResult>{check.error()};
+      auto installed = installSignedSampleBank(packagePath, installRoot, trustedPublicKeys, contentHash);
+      if (!installed) return core::Result<SampleReviewWorkResult>{installed.error()};
+      return SampleReviewWorkResult{.context = context, .installedBank = std::move(installed.value())};
+    });
+  } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal, "Cannot start signed bank installation", error.what()); }
+  sampleReviewStatus_ = status_ = "INSTALLING REVIEWED BANK / NOT A RELEASE QUALIFICATION / ESC CANCEL";
+  return core::success();
+}
+
 void VoicebankStudioController::adoptLoadedSampleUnit(SampleReviewWorkResult::LoadedUnit loaded) {
   manifest_ = std::move(loaded.manifest); audio_ = std::move(loaded.audio); microscope_ = std::move(loaded.microscope);
   manifestPath_ = std::move(loaded.manifestPath); root_ = std::move(loaded.root);
@@ -420,6 +481,21 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
       sampleReviewStatus_ = "ENGINEERING CANDIDATE COMMITTED / NOT SIGNED OR INSTALLED";
       if (!current) sampleReviewStatus_ += " / CAPTURED CONTEXT, NOT CURRENT EDITS";
       if (!publishedSampleCandidate_->durabilityConfirmed) sampleReviewStatus_ += " / DURABILITY UNCONFIRMED: " + publishedSampleCandidate_->diagnostic;
+      status_ = sampleReviewStatus_;
+      return core::success();
+    }
+    if (value.publishedBank) {
+      publishedSampleBank_ = std::move(value.publishedBank);
+      sampleReviewStatus_ = "SIGNED PACKAGE COMMITTED / NOT INSTALLED / NOT A RELEASE QUALIFICATION";
+      if (!current) sampleReviewStatus_ += " / CAPTURED CONTEXT, NOT CURRENT EDITS";
+      if (value.draftLoadDiagnostic.empty()) status_ = sampleReviewStatus_;
+      else { sampleReviewStatus_ += " / " + value.draftLoadDiagnostic; status_ = sampleReviewStatus_; }
+      return core::success();
+    }
+    if (value.installedBank) {
+      installedSampleBank_ = std::move(value.installedBank);
+      sampleReviewStatus_ = "INSTALLED AS A TRUSTED BANK / NOT A RELEASE QUALIFICATION / " +
+          installedSampleBank_->voicebankId + " " + installedSampleBank_->voicebankVersion;
       status_ = sampleReviewStatus_;
       return core::success();
     }

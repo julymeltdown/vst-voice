@@ -283,13 +283,23 @@ TEST_CASE("Studio shutdown collects the actual decision outcome even when cancel
 TEST_CASE("Studio review controls and paged evidence remain bounded at the minimum viewport") {
   Fixture fixture; fixture.capture();
   const auto controls = native_ui::studioSampleReviewControls(fixture.controller, 720.0);
-  CHECK(controls.size() == 19U);
+  CHECK(controls.size() == 22U);
   CHECK(std::any_of(controls.begin(), controls.end(), [](const auto& control) {
     return control.id == "register-reviewer" && control.enabled;
   }));
+  // The signed-bank row is present but disabled until a candidate has actually been published.
+  CHECK(std::any_of(controls.begin(), controls.end(), [](const auto& control) {
+    return control.id == "sign-bank" && !control.enabled;
+  }));
+  CHECK(std::any_of(controls.begin(), controls.end(), [](const auto& control) {
+    return control.id == "install-bank" && !control.enabled;
+  }));
+  CHECK(std::any_of(controls.begin(), controls.end(), [](const auto& control) {
+    return control.id == "open-bank-in-song-editor" && !control.enabled;
+  }));
   for (const auto& control : controls) {
     CHECK(control.bounds.x >= 0.0); CHECK(control.bounds.right() <= 720.0);
-    CHECK(control.bounds.y >= 0.0); CHECK(control.bounds.bottom() < 158.0);
+    CHECK(control.bounds.y >= 0.0); CHECK(control.bounds.bottom() < 186.0);
     if (control.id == "accept" || control.id == "reject") CHECK(!control.enabled);
   }
   const auto lines = native_ui::studioSampleReviewDetailLines(fixture.controller, 720.0);
