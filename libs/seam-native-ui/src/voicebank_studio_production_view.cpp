@@ -281,7 +281,10 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
           {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U},
           {"run-campaign",campaignReady?"Resume campaign":"Open / resume",
               {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free},
-          {"request-queue","Requests",{294.0,322.0,areaWidth-2.0,18.0},free}};
+          // A campaign cannot advance until its held-out phrases render audibly, so the preflight is
+          // its own explicit step rather than something a run performs implicitly.
+          {"preflight-campaign","Preflight",{294.0,322.0,cellWidth-2.0,18.0},free && campaignReady},
+          {"request-queue","Requests",{294.0+cellWidth,322.0,cellWidth-2.0,18.0},free}};
 }
 
 std::size_t studioGenerationQueueVisibleRows(double height) noexcept {

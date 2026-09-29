@@ -675,6 +675,85 @@ core::Result<void> VoicebankStudioController::beginGenerationCampaignAdvance(
   return core::success();
 }
 
+core::Result<void> VoicebankStudioController::beginGenerationCampaignPreflight(
+    std::filesystem::path campaignPath, std::string campaignSha256) {
+  using Outcome = GenerationCampaignOutcome;
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict, "Production worker is busy");
+  if (!productionProject_ || !productionRepository_)
+    return core::failure(core::ErrorCode::InvalidState, "Campaign preflight requires a producer workspace");
+  if (campaignPath.empty() || campaignSha256.size() != 64U)
+    return core::failure(core::ErrorCode::InvalidArgument, "Campaign identity is invalid");
+  const auto root = campaignPath.parent_path();
+  if (root.empty())
+    return core::failure(core::ErrorCode::InvalidArgument, "Campaign definition has no containing directory");
+  // The held-out phrases are rendered into their own new directory beside the definition, under the
+  // same rule the campaign itself follows: an existing preflight is verified, never replaced.
+  const auto directory = root / "preflight";
+  const auto workspace = productionWorkspaceRoot_;
+  proceduralImportStop_ = std::stop_source{};
+  const auto stop = proceduralImportStop_.get_token();
+  statusBeforeImport_ = status_;
+  auto progress = std::make_shared<std::atomic<std::uint64_t>>(
+      packCampaignProgress(GenerationCampaignProgress::Phase::Rendering, 0U, 0U));
+  generationCampaignProgress_ = progress;
+  try {
+    campaignWork_ = std::async(std::launch::async,
+        [campaignPath = std::move(campaignPath), campaignSha256 = std::move(campaignSha256),
+         directory = std::move(directory), root, workspace, stop]() mutable -> core::Result<Outcome> {
+      const auto bytes = core::readTextFileLimited(campaignPath, 32U * 1024U * 1024U);
+      if (!bytes) return core::Result<Outcome>{bytes.error()};
+      // A preflight already committed for this exact definition is admitted as it stands; the
+      // phrases were rendered once and their report is the evidence a campaign may advance on.
+      std::error_code probe;
+      if (std::filesystem::exists(directory, probe)) {
+        const auto existing = authoring::verifyCampaignPreflight(root, bytes.value(), campaignSha256, stop);
+        if (existing) {
+          return Outcome{.campaignPath = campaignPath, .campaignSha256 = campaignSha256,
+              .producer = {}, .adoptedProducer = false,
+              .status = "CAMPAIGN PREFLIGHT ALREADY ADMITTED / NOT GENERATED"};
+        }
+        // An interrupted or failed attempt leaves a directory the campaign can never advance on.
+        // It is preserved under its own name rather than deleted, so a retry is possible without
+        // destroying the phrases that were rendered before the interruption.
+        bool preserved = false;
+        for (std::size_t attempt = 1U; attempt <= 64U; ++attempt) {
+          const auto spent = root / ("preflight-attempt-" + std::to_string(attempt));
+          std::error_code probeSpent;
+          if (std::filesystem::exists(spent, probeSpent)) continue;
+          std::error_code renameError;
+          std::filesystem::rename(directory, spent, renameError);
+          preserved = !renameError;
+          break;
+        }
+        if (!preserved)
+          return core::failure<Outcome>(core::ErrorCode::Conflict,
+              "An incomplete preflight is retained at preflight/ and no free attempt name is available to retry without deleting it",
+              directory.string());
+      }
+      auto report = authoring::runInventoryPreflight(bytes.value(), campaignSha256, directory, {}, stop);
+      if (!report) return core::Result<Outcome>{report.error()};
+      // The producer is not touched by a preflight, so the durable state is re-read only to confirm
+      // this session's workspace still matches what the campaign definition was planned from.
+      voicebank_production::ProductionProjectRepository repository{workspace};
+      const auto durable = repository.recover();
+      if (!durable) return core::Result<Outcome>{durable.error()};
+      const bool passed = report.value().passed;
+      auto outcome = Outcome{.campaignPath = campaignPath, .campaignSha256 = campaignSha256,
+          .producer = std::move(durable).value(), .adoptedProducer = false,
+          .status = passed ? "CAMPAIGN PREFLIGHT PASSED / NOT GENERATED / NOT REVIEWED"
+                           : "CAMPAIGN PREFLIGHT FAILED / " + std::to_string(report.value().defective) +
+                                 " OF " + std::to_string(report.value().phrases.size()) +
+                                 " PHRASES REFUSED / CAMPAIGN CANNOT ADVANCE",
+          .preflightReport = std::move(report.value())};
+      return outcome;
+    });
+  } catch (const std::exception& error) {
+    return core::failure(core::ErrorCode::Internal, "Unable to start campaign preflight worker", error.what());
+  }
+  status_ = "RENDERING HELD-OUT PREFLIGHT PHRASES / ESC CANCEL";
+  return core::success();
+}
+
 core::Result<void> VoicebankStudioController::beginGenerationCampaignResume(std::string occurredAtUtc) {
   if (campaignPath_.empty() || campaignSha256_.empty())
     return core::failure(core::ErrorCode::InvalidState,

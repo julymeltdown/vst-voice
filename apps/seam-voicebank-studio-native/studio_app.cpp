@@ -1653,6 +1653,21 @@ public:
     return controller_.beginGenerationCampaignResume();
   }
 
+  // Renders the campaign's held-out phrases. A campaign that has not cleared its own preflight
+  // cannot be advanced, so this is the step between planning and generating. It generates and
+  // collects nothing, and a failed report is reported as a failure rather than a completed step.
+  seam::core::Result<void> preflightCampaignFromDialog() {
+    if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U ||
+        designer_.busy())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "Finish recording, Designer work or production work before a campaign preflight");
+    if (controller_.generationCampaignPath().empty())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Plan a campaign or resume a retained one before rendering its preflight phrases");
+    return controller_.beginGenerationCampaignPreflight(controller_.generationCampaignPath(),
+                                                        controller_.generationCampaignSha256());
+  }
+
   seam::core::Result<void> locateGenerationRequestDefinitionFromDialog(std::string_view requestId) {
     if (generationModal_ || controller_.proceduralImportBusy() || recording_.armed() ||
         recording_.recordedFrames() > 0U || designer_.busy())
@@ -2017,6 +2032,7 @@ public:
     }
     if (id=="plan-campaign") return planCampaignFromDialog();
     if (id=="run-campaign") return runCampaignFromDialog();
+    if (id=="preflight-campaign") return preflightCampaignFromDialog();
     struct ModalGuard {
       bool& active;
       explicit ModalGuard(bool& value):active(value) { active=true; }
@@ -3011,6 +3027,11 @@ public:
   [[nodiscard]] const seam::native_ui::SampleBankInstallation*
   installedSampleBank() const noexcept override {
     return controller_.installedSampleBank() ? &*controller_.installedSampleBank() : nullptr;
+  }
+
+  [[nodiscard]] const seam::authoring::InventoryPreflightReport*
+  campaignPreflightReport() const noexcept override {
+    return controller_.campaignPreflightReport() ? &*controller_.campaignPreflightReport() : nullptr;
   }
 
   bool recordingTargetSelected() const noexcept {

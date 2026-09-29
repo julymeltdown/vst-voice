@@ -518,7 +518,7 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
         [&](const auto& control) { return control.id == id; });
   };
   const auto idle = seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, false);
-  CHECK(idle.size() == 7U);
+  CHECK(idle.size() == 8U);
   CHECK(byId(idle, "plan-campaign") != idle.end());
   CHECK(byId(idle, "plan-campaign")->enabled);
   // A persisted campaign can be selected after restart, even before this
@@ -526,6 +526,10 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
   CHECK(byId(idle, "run-campaign") != idle.end());
   CHECK(byId(idle, "run-campaign")->enabled);
   CHECK(byId(idle, "run-campaign")->label == "Open / resume");
+  // A preflight needs a planned campaign identity, so it is unavailable before one exists and
+  // available once this controller has adopted or published one.
+  CHECK(byId(idle, "preflight-campaign") != idle.end());
+  CHECK(!byId(idle, "preflight-campaign")->enabled);
   for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, true)) {
     CHECK(!control.enabled);
   }
@@ -536,16 +540,22 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
   const auto planned = seam::native_ui::studioGenerationControls(fixture.controller, 1040.0, false);
   CHECK(byId(planned, "run-campaign")->enabled);
   CHECK(byId(planned, "run-campaign")->label == "Resume campaign");
+  CHECK(byId(planned, "preflight-campaign")->enabled);
   // The campaign row sits below the single-job rows and does not collide with
   // them, and it stays inside the panel for the narrowest supported width.
   CHECK(byId(planned, "plan-campaign")->bounds.y > byId(planned, "assemble")->bounds.y);
   CHECK(byId(planned, "plan-campaign")->bounds.y == byId(planned, "run-campaign")->bounds.y);
   CHECK(byId(planned, "plan-campaign")->bounds.x + byId(planned, "plan-campaign")->bounds.width <=
       byId(planned, "run-campaign")->bounds.x);
+  // The preflight shares the campaign row and sits beside the resume action without overlapping it.
+  CHECK(byId(planned, "preflight-campaign")->bounds.y > byId(planned, "run-campaign")->bounds.y);
+  CHECK(byId(planned, "preflight-campaign")->bounds.y == byId(planned, "request-queue")->bounds.y);
+  CHECK(byId(planned, "preflight-campaign")->bounds.x + byId(planned, "preflight-campaign")->bounds.width <=
+      byId(planned, "request-queue")->bounds.x);
   for (const auto width : {720.0, 1040.0, 1600.0}) {
     for (const auto& control : seam::native_ui::studioGenerationControls(fixture.controller, width, false)) {
       CHECK(control.bounds.x + control.bounds.width <= width - 280.0);
-      CHECK(control.bounds.y + control.bounds.height <= 340.0);
+      CHECK(control.bounds.y + control.bounds.height <= 358.0);
     }
   }
 }

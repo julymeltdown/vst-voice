@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/authoring/generation_job.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/native_ui/sample_bank_package.hpp"
 #include "seam/voicebank/catalog.hpp"
@@ -277,6 +278,16 @@ public:
   // Advances the campaign identity this controller published or adopted last.
   [[nodiscard]] core::Result<void> beginGenerationCampaignResume(
       std::string occurredAtUtc = {});
+  // Renders the campaign's held-out phrases into a new preflight directory. A campaign cannot be
+  // advanced until its report is admitted, so this is the step between planning and generating;
+  // it generates and collects nothing, and the producer stays exactly as it was.
+  [[nodiscard]] core::Result<void> beginGenerationCampaignPreflight(
+      std::filesystem::path campaignPath, std::string campaignSha256);
+  // The submitted report of the preflight this session ran, so the UI can show what was rendered and
+  // which classes failed rather than only that the step happened.
+  [[nodiscard]] const std::optional<authoring::InventoryPreflightReport>& campaignPreflightReport() const noexcept {
+    return campaignPreflightReport_;
+  }
   // The registry is durable across Studio restarts. Listing is asynchronous and
   // read-only; selecting a pending record advances only after the campaign bytes
   // at its locator hash back to the immutable request identity.
@@ -575,6 +586,9 @@ private:
     voicebank_production::VoicebankProductionProject producer;
     bool adoptedProducer{false};
     std::string status;
+    // Present only when this worker rendered the held-out phrases. A preflight that admits an
+    // existing report carries no new report, because the phrases were rendered in an earlier run.
+    std::optional<authoring::InventoryPreflightReport> preflightReport;
   };
   std::future<core::Result<GenerationCampaignOutcome>> campaignWork_;
   std::future<core::Result<std::vector<voicebank_production::GenerationRequestRecord>>>
@@ -591,6 +605,7 @@ private:
   std::shared_ptr<std::atomic<std::uint64_t>> generationCampaignProgress_;
   std::filesystem::path campaignPath_;
   std::string campaignSha256_;
+  std::optional<authoring::InventoryPreflightReport> campaignPreflightReport_;
   std::string productionOperatorId_;
   std::size_t stagedRecoveryCandidateCount_{0U};
   double logicalWidth_{1440.0};

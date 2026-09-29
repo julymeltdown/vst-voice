@@ -6,6 +6,7 @@
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/sample_bank_package.hpp"
+#include "seam/authoring/inventory_preflight.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/audio_input_device.hpp"
@@ -82,6 +83,9 @@ public:
   publishedSampleCandidate() const noexcept = 0;
   [[nodiscard]] virtual const native_ui::SampleBankInstallation*
   installedSampleBank() const noexcept = 0;
+  // The held-out phrase report of the preflight this session ran, when one has been run.
+  [[nodiscard]] virtual const authoring::InventoryPreflightReport*
+  campaignPreflightReport() const noexcept = 0;
 };
 
 [[nodiscard]] std::unique_ptr<IVoicebankStudioApp> createVoicebankStudioApp(

@@ -2782,6 +2782,15 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_voicebank_studio_app_tests)
     add_test(NAME seam_voicebank_studio_app_tests COMMAND seam_voicebank_studio_app_tests)
     set_tests_properties(seam_voicebank_studio_app_tests PROPERTIES TIMEOUT 180)
+    add_executable(seam_studio_generation_bank_tests
+      tests/test_main.cpp tests/test_studio_generation_bank_journey.cpp)
+    target_include_directories(seam_studio_generation_bank_tests PRIVATE tests)
+    target_link_libraries(seam_studio_generation_bank_tests PRIVATE
+      seam_voicebank_studio_app seam_standalone_authoring seam_distribution seam_voice_design
+      seam_authoring_runtime seam_application seam_formats seam_domain seam_core)
+    seam_apply_compiler_options(seam_studio_generation_bank_tests)
+    add_test(NAME seam_studio_generation_bank_tests COMMAND seam_studio_generation_bank_tests)
+    set_tests_properties(seam_studio_generation_bank_tests PROPERTIES TIMEOUT 300)
     add_executable(seam_studio_recording_import_parity_tests
       tests/test_main.cpp tests/test_studio_recording_import_parity.cpp)
     target_include_directories(seam_studio_recording_import_parity_tests PRIVATE tests)

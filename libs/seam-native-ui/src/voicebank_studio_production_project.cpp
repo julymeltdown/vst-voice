@@ -785,6 +785,7 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
         takeInspection_.reset();
         refreshCandidateMarkerPreview();
       }
+      if (outcome.preflightReport) campaignPreflightReport_ = std::move(outcome.preflightReport);
       status_ = std::move(outcome.status);
       return core::success();
     } catch (const std::exception& error) {
