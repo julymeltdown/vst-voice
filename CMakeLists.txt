@@ -684,6 +684,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/voicebank_studio.cpp
     libs/seam-native-ui/src/voice_designer_model.cpp
     libs/seam-native-ui/src/voice_designer_session.cpp
+    libs/seam-native-ui/src/installed_singer_song.cpp
     libs/seam-native-ui/src/voice_designer_audition.cpp
     libs/seam-native-ui/src/voicebank_studio_production_view.cpp
     libs/seam-native-ui/src/voicebank_studio_production_support.cpp

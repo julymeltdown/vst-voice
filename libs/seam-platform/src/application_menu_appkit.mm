@@ -3,6 +3,11 @@
 #if defined(__APPLE__)
 #import <Cocoa/Cocoa.h>
 
+#include "seam/core/environment.hpp"
+#include "seam/platform/application_paths.hpp"
+
+#include <system_error>
+
 @interface SEAMMenuTarget : NSObject
 @property(nonatomic, assign) seam::platform::IApplicationCommandDispatcher* dispatcher;
 - (void)newProject:(id)sender;
@@ -1073,6 +1078,99 @@ core::Result<void> openExternalPath(const std::filesystem::path& path) {
                          "Unable to open external path", path.string());
   }
   return core::success();
+}
+
+core::Result<std::filesystem::path> locateSongEditorApplication() {
+  @autoreleasepool {
+    NSString* expected = [NSString
+        stringWithUTF8String:std::string{kSongEditorBundleIdentifier}.c_str()];
+    std::filesystem::path running;
+    NSString* bundlePath = [[NSBundle mainBundle] bundlePath];
+    if (bundlePath != nil && bundlePath.UTF8String != nullptr) {
+      running = std::filesystem::path{bundlePath.UTF8String};
+    }
+    std::string rejected;
+    for (const auto& candidate : songEditorApplicationCandidates(
+             core::environmentVariable("SEAM_STANDALONE_PATH"), running,
+             core::environmentVariable("HOME"))) {
+      std::error_code error;
+      if (!std::filesystem::is_directory(candidate, error)) continue;
+      NSString* path = [NSString stringWithUTF8String:candidate.string().c_str()];
+      NSBundle* bundle = path == nil ? nil : [NSBundle bundleWithPath:path];
+      if (bundle != nil && [bundle.bundleIdentifier isEqualToString:expected]) {
+        return candidate;
+      }
+      if (!rejected.empty()) rejected += "; ";
+      rejected += candidate.string();
+    }
+    NSURL* registered =
+        [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:expected];
+    NSBundle* registeredBundle =
+        registered == nil ? nil : [NSBundle bundleWithURL:registered];
+    if (registeredBundle != nil &&
+        [registeredBundle.bundleIdentifier isEqualToString:expected] &&
+        registered.fileSystemRepresentation != nullptr) {
+      return std::filesystem::path{registered.fileSystemRepresentation};
+    }
+    return core::failure<std::filesystem::path>(
+        core::ErrorCode::NotFound,
+        "Project SEAM was not found beside Voicebank Studio or in an Applications folder; install it or set SEAM_STANDALONE_PATH",
+        rejected);
+  }
+}
+
+core::Result<void> openDocumentWithApplication(
+    const std::filesystem::path& document,
+    const std::filesystem::path& application) {
+  if (document.empty() || application.empty()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "A document and an application are required");
+  }
+  @autoreleasepool {
+    NSString* documentPath = [NSString stringWithUTF8String:document.string().c_str()];
+    NSString* applicationPath =
+        [NSString stringWithUTF8String:application.string().c_str()];
+    if (documentPath == nil || applicationPath == nil) {
+      return core::failure(core::ErrorCode::InvalidArgument,
+                           "Document and application paths must be valid UTF-8");
+    }
+    NSURL* documentURL = [NSURL fileURLWithPath:documentPath isDirectory:NO];
+    NSURL* applicationURL = [NSURL fileURLWithPath:applicationPath isDirectory:YES];
+    NSWorkspaceOpenConfiguration* configuration =
+        [NSWorkspaceOpenConfiguration configuration];
+    configuration.activates = YES;
+    // AppKit calls the completion handler on a concurrent queue, so waiting here cannot starve it.
+    // The wait is bounded because a first launch can be held by a system prompt the user must answer.
+    dispatch_semaphore_t finished = dispatch_semaphore_create(0);
+    __block NSString* openFailure = nil;
+    [[NSWorkspace sharedWorkspace]
+                      openURLs:@[ documentURL ]
+          withApplicationAtURL:applicationURL
+                 configuration:configuration
+             completionHandler:^(NSRunningApplication* launched, NSError* error) {
+               (void)launched;
+               if (error != nil) {
+                 NSString* description = error.localizedDescription;
+                 openFailure = description != nil ? [description copy] : @"unknown error";
+               }
+               dispatch_semaphore_signal(finished);
+             }];
+    const auto deadline =
+        dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(30) * static_cast<int64_t>(NSEC_PER_SEC));
+    if (dispatch_semaphore_wait(finished, deadline) != 0) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "The song editor did not confirm opening the project within 30 seconds",
+                           document.string());
+    }
+    if (openFailure != nil) {
+      const char* reason = openFailure.UTF8String;
+      return core::failure(core::ErrorCode::IoError,
+                           std::string{"The song editor could not open the project: "} +
+                               (reason != nullptr ? reason : "unknown error"),
+                           document.string());
+    }
+    return core::success();
+  }
 }
 
 core::Result<void> copyTextToClipboard(std::string_view text) {

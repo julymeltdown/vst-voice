@@ -1,6 +1,7 @@
 #include "seam/platform/application_paths.hpp"
 #include "seam/core/environment.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <system_error>
 #include <utility>
@@ -191,6 +192,30 @@ core::Result<std::filesystem::path> applicationSupportDirectory() {
   auto paths = ApplicationPaths::resolve();
   if (!paths) return core::Result<std::filesystem::path>{paths.error()};
   return paths.value().userDataRoot;
+}
+
+std::vector<std::filesystem::path> songEditorApplicationCandidates(
+    const std::optional<std::string>& configuredPath,
+    const std::filesystem::path& runningApplicationBundle,
+    const std::optional<std::string>& home) {
+  std::vector<std::filesystem::path> result;
+  const auto add = [&result](std::filesystem::path candidate) {
+    if (candidate.empty()) return;
+    candidate = candidate.lexically_normal();
+    if (candidate.filename().empty()) candidate = candidate.parent_path();
+    if (std::find(result.begin(), result.end(), candidate) == result.end())
+      result.push_back(std::move(candidate));
+  };
+  if (configuredPath.has_value() && !configuredPath->empty())
+    add(std::filesystem::path{*configuredPath});
+  auto running = runningApplicationBundle.lexically_normal();
+  if (!running.empty() && running.filename().empty()) running = running.parent_path();
+  if (running.extension() == ".app" && running.has_parent_path())
+    add(running.parent_path() / "Project SEAM.app");
+  add(std::filesystem::path{"/Applications/Project SEAM.app"});
+  if (home.has_value() && !home->empty())
+    add(std::filesystem::path{*home} / "Applications" / "Project SEAM.app");
+  return result;
 }
 
 }  // namespace seam::platform

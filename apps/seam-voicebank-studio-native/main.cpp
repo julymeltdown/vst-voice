@@ -6,6 +6,9 @@
 #include "seam/native_ui/voice_designer_session.hpp"
 #include "seam/native_ui/voice_designer_layout.hpp"
 #include "seam/native_ui/voice_designer_source_selection.hpp"
+#include "seam/native_ui/installed_singer_song.hpp"
+#include "seam/platform/application_menu.hpp"
+#include "seam/platform/application_paths.hpp"
 #include "seam/platform/audio_input_device.hpp"
 #include "seam/platform/recording_session.hpp"
 #include "seam/platform/recording_input_session.hpp"
@@ -276,6 +279,7 @@ public:
     publishedSingerDisplayName_ = published.value().manifest.displayName;
     publishedSingerPublicKey_ = signingKey.value().publicKey;
     publishedSingerInstalled_ = false;
+    installedSinger_.reset();
     designerPublishStatus_ = "PUBLISHED SIGNED PACKAGE / NOT QUALITY-APPROVED / " +
         published.value().manifest.displayName + " " + published.value().manifest.version;
     return core::success();
@@ -306,8 +310,67 @@ public:
         publishedSingerPackageDigest_, *publishedSingerPublicKey_, installRoot->path);
     if (!installed) return seam::core::Result<void>{installed.error()};
     publishedSingerInstalled_ = true;
+    installedSinger_ = installed.value();
     designerPublishStatus_ = "INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED / " +
-        publishedSingerDisplayName_ + " " + installed.value().version;
+        publishedSingerDisplayName_ + " " + installed.value().version + " / CMD-ALT-O SONG EDITOR";
+    lastError_.clear();
+    return seam::core::success();
+  }
+
+  // The explicit return-to-song step after installation: save a new song project bound to the exact
+  // singer just installed and hand it to the Project SEAM editor. The project is written only after
+  // the singer re-resolves as trusted and renderable, and an existing file is never replaced.
+  seam::core::Result<void> openInstalledSingerInSongEditor() {
+    if (!publishedSingerInstalled_ || !installedSinger_.has_value())
+      return seam::core::failure(seam::core::ErrorCode::InvalidState,
+          "Install the published singer before opening it in the song editor");
+    const auto stillCurrent = [this, epoch = publishedDesignerEpoch_, revision = publishedDesignerRevision_] {
+      return designer_.model() && !designer_.busy() && !designer_.model()->dirty() &&
+             designer_.epoch() == epoch && designer_.model()->revision() == revision;
+    };
+    if (!stillCurrent())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "The Designer changed after installation; publish and install the saved voice again");
+    const auto installed = *installedSinger_;
+    const auto displayName = publishedSingerDisplayName_.empty() ? installed.id : publishedSingerDisplayName_;
+    auto dialog = seam::platform::createNativeFileDialog();
+    if (dialog == nullptr)
+      return seam::core::failure(seam::core::ErrorCode::Unsupported,
+          "No native file dialog is available on this platform");
+    const auto chosen = dialog->choose(seam::platform::FileDialogRequest{
+        .purpose = seam::platform::FileDialogPurpose::SaveProject,
+        .title = "Save New Song Project for " + displayName,
+        .initialDirectory = designer_.path().parent_path(),
+        .suggestedName = seam::native_ui::suggestedSongProjectFileName(displayName),
+        .extensions = {"seam"}});
+    if (!chosen) return seam::core::Result<void>{chosen.error()};
+    if (!chosen.value()) return seam::core::success();
+    if (!stillCurrent() || !installedSinger_.has_value())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,
+          "The Designer changed while choosing the song project location");
+    const auto& recipe = designer_.model()->recipe();
+    const auto pose = designer_.auditionPose();
+    const auto created = seam::native_ui::createInstalledSingerSongProject(
+        installed, seam::distribution::defaultProceduralSearchRoots(),
+        seam::native_ui::InstalledSingerSongRequest{
+            .projectPath = *chosen.value(),
+            .preferredStyle = pose < recipe.poses.size() ? recipe.poses[pose].style : std::string{},
+            .renderableEngineId = std::string{seam::voice_design::kSourceFilterEngineId},
+            .renderableEngineRevision = seam::voice_design::kSourceFilterEngineRevision});
+    if (!created) return seam::core::Result<void>{created.error()};
+    const auto& project = created.value();
+    const auto fileName = project.projectPath.filename().string();
+    designerPublishStatus_ = "SONG PROJECT SAVED / NOT OPENED / " + fileName;
+    const auto editor = seam::platform::locateSongEditorApplication();
+    if (!editor)
+      return seam::core::failure(editor.error().code,
+          "Song project saved at " + project.projectPath.string() + ". " + editor.error().message);
+    const auto opened = seam::platform::openDocumentWithApplication(project.projectPath, editor.value());
+    if (!opened)
+      return seam::core::failure(opened.error().code,
+          "Song project saved at " + project.projectPath.string() + ". " + opened.error().message);
+    designerPublishStatus_ = "OPENED IN PROJECT SEAM / " + project.singer.style +
+        " / NOT QUALITY-APPROVED / " + fileName;
     lastError_.clear();
     return seam::core::success();
   }
@@ -596,6 +659,12 @@ public:
     if (designer_.busy()) { if (event.key == Key::Escape) designer_.cancel(); return; }
     if (event.key == Key::P && event.modifiers.primaryShortcut() && event.modifiers.alt) {
       record(publishDesignerSingerFromDialog()); return;
+    }
+    if (event.key == Key::I && event.modifiers.primaryShortcut() && event.modifiers.alt) {
+      stopAudition(); record(installPublishedSinger()); return;
+    }
+    if (event.key == Key::O && event.modifiers.primaryShortcut() && event.modifiers.alt) {
+      stopAudition(); record(openInstalledSingerInSongEditor()); return;
     }
     if (event.key == Key::P && event.modifiers.primaryShortcut() && event.modifiers.shift) {
       record(prepareDesignerFromDialog()); return;
@@ -1095,13 +1164,22 @@ public:
       addAction("publish-singer", "Publish signed singer package", enabled && !designer_.model()->dirty() &&
           !designer_.path().empty(), 24.0+smallWidth*5.0,82.0,smallWidth,
           "Publish the saved recipe as a .seamsinger package. Requires explicit version, display name, language and private signing key. A valid signature does not mean the voice was reviewed or quality-approved. Shortcut: Command/Control-Option-P.");
-      addAction("install-published-singer", "Install published singer", enabled &&
-          !publishedSingerPackagePath_.empty() && publishedSingerPublicKey_.has_value() &&
-          !publishedSingerPackageDigest_.empty() &&
-          !publishedSingerInstalled_ && designer_.epoch() == publishedDesignerEpoch_ &&
-          designer_.model()->revision() == publishedDesignerRevision_ && !designer_.model()->dirty(),
-          24.0+smallWidth*6.0,82.0,smallWidth,
-          "Install the exact signed package just published into the current user's default standalone singer folder. Trusts the signing key explicitly selected for publication. Installation is not voice-quality approval.");
+      // After installation the same slot becomes the return-to-song action, so the next step is where
+      // the finished one was instead of an extra control squeezed into the row.
+      if (publishedSingerInstalled_ && installedSinger_.has_value())
+        addAction("open-in-song-editor", "Open in song editor", enabled &&
+            designer_.epoch() == publishedDesignerEpoch_ &&
+            designer_.model()->revision() == publishedDesignerRevision_ && !designer_.model()->dirty(),
+            24.0+smallWidth*6.0,82.0,smallWidth,
+            "Save a new song project bound to the exact singer just installed and open it in Project SEAM. An existing project is never replaced. Opening a song is not voice-quality approval. Shortcut: Command/Control-Option-O.");
+      else
+        addAction("install-published-singer", "Install published singer", enabled &&
+            !publishedSingerPackagePath_.empty() && publishedSingerPublicKey_.has_value() &&
+            !publishedSingerPackageDigest_.empty() &&
+            !publishedSingerInstalled_ && designer_.epoch() == publishedDesignerEpoch_ &&
+            designer_.model()->revision() == publishedDesignerRevision_ && !designer_.model()->dirty(),
+            24.0+smallWidth*6.0,82.0,smallWidth,
+            "Install the exact signed package just published into the current user's default standalone singer folder. Trusts the signing key explicitly selected for publication. Installation is not voice-quality approval. Shortcut: Command/Control-Option-I.");
       const auto audioWidth = std::max(1.0, (width-48.0)/7.0);
       addAction("render", "Render current audition", enabled && !designer_.auditionBusy(), 24.0,layout.helpY,audioWidth);
       addAction("play-current", "Play current B", enabled && static_cast<bool>(designer_.auditionAudio()), 24.0+audioWidth,layout.helpY,audioWidth);
@@ -1175,7 +1253,7 @@ public:
   static std::string designerButtonLabel(std::string_view suffix) {
     const std::pair<std::string_view,std::string_view> labels[]{
       {"new","New"},{"open","Open"},{"save","Save"},{"back","Producer"},{"previous","Previous"},{"next","Next"},
-      {"save-as","Save as"},{"duplicate-pose","Duplicate"},{"remove-pose","Remove pose"},{"undo","Undo"},{"redo","Redo"},{"publish-singer","Publish"},{"install-published-singer","Install"},
+      {"save-as","Save as"},{"duplicate-pose","Duplicate"},{"remove-pose","Remove pose"},{"undo","Undo"},{"redo","Redo"},{"publish-singer","Publish"},{"install-published-singer","Install"},{"open-in-song-editor","Song editor"},
       {"render","Render"},{"play-current","Play B"},{"pin-reference","Pin A"},{"play-reference","Play A"},
       {"clear-reference","Clear A"},{"stop","Stop"},{"cancel-preview","Cancel"},{"prepare-draft","Prepare generation job"},
       {"add-plosive","Add stop"},{"add-frication","Add noise"}};
@@ -1968,6 +2046,7 @@ public:
       publishedSingerDisplayName_.clear();
       publishedSingerPublicKey_.reset();
       publishedSingerInstalled_ = false;
+      installedSinger_.reset();
     }
     if (designerView_) { paintDesigner(canvas); if (designer_.busy() || designer_.auditionBusy() || audition_.active()) repaint(); return; }
     if (sampleReviewView_) { paintSampleReview(canvas); if (controller_.proceduralImportBusy() || audition_.active()) repaint(); return; }
@@ -2553,6 +2632,11 @@ public:
           const auto result = installPublishedSinger();
           record(result); repaint(); return result;
         }
+        else if (suffix == "open-in-song-editor") {
+          lastError_.clear(); stopAudition();
+          const auto result = openInstalledSingerInSongEditor();
+          record(result); repaint(); return result;
+        }
         else if (suffix == "create-producer") {
           lastError_.clear(); stopAudition();
           const auto result = createDesignerProducerWorkspace();
@@ -2982,6 +3066,8 @@ private:
   std::string publishedSingerDisplayName_;
   std::optional<seam::distribution::Ed25519PublicKey> publishedSingerPublicKey_;
   bool publishedSingerInstalled_{false};
+  // What the last installation actually produced; the song hand-off binds to this exact singer.
+  std::optional<seam::distribution::InstalledProceduralSinger> installedSinger_;
   std::uint64_t publishedDesignerEpoch_{};
   std::uint64_t publishedDesignerRevision_{};
   seam::native_ui::VoicebankStudioController controller_;

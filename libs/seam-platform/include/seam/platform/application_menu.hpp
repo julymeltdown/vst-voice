@@ -341,6 +341,15 @@ createNativeUnsavedChangesPrompt();
     const std::filesystem::path& path);
 [[nodiscard]] core::Result<void> openExternalPath(
     const std::filesystem::path& path);
+// Finds the song editor through songEditorApplicationCandidates() and, as a last resort, the
+// operating system's registration for kSongEditorBundleIdentifier. A candidate is returned only when
+// it identifies itself as the song editor, so a stale or unrelated path is never launched.
+[[nodiscard]] core::Result<std::filesystem::path> locateSongEditorApplication();
+// Opens one document in exactly this application and waits, bounded, for the operating system to
+// report whether the application accepted it. It never falls back to the document's default
+// handler. Windows support is a TODO; platforms without it report Unsupported.
+[[nodiscard]] core::Result<void> openDocumentWithApplication(
+    const std::filesystem::path& document, const std::filesystem::path& application);
 [[nodiscard]] core::Result<void> copyTextToClipboard(std::string_view text);
 [[nodiscard]] core::Result<bool> requestEulaAcceptance(
     const std::filesystem::path& path);

@@ -44,6 +44,17 @@ core::Result<void> openExternalPath(const std::filesystem::path&) {
                        "External path opening is unavailable");
 }
 
+core::Result<std::filesystem::path> locateSongEditorApplication() {
+  return core::failure<std::filesystem::path>(core::ErrorCode::Unsupported,
+      "Opening the song editor from Studio is unavailable on this platform; open the saved project in Project SEAM");
+}
+
+core::Result<void> openDocumentWithApplication(const std::filesystem::path&,
+                                               const std::filesystem::path&) {
+  return core::failure(core::ErrorCode::Unsupported,
+      "Opening a document in a chosen application is unavailable on this platform");
+}
+
 core::Result<void> copyTextToClipboard(std::string_view) {
   return core::failure(core::ErrorCode::Unsupported,
                        "Clipboard access is unavailable");

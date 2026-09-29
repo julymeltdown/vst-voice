@@ -80,6 +80,18 @@ core::Result<void> openExternalPath(const std::filesystem::path& path) {
   return core::success();
 }
 
+// Windows support is a TODO (see README.md): Studio's song-editor hand-off is macOS-only for now.
+core::Result<std::filesystem::path> locateSongEditorApplication() {
+  return core::failure<std::filesystem::path>(core::ErrorCode::Unsupported,
+      "Opening the song editor from Studio is not implemented on Windows yet; open the saved project in Project SEAM");
+}
+
+core::Result<void> openDocumentWithApplication(const std::filesystem::path&,
+                                               const std::filesystem::path&) {
+  return core::failure(core::ErrorCode::Unsupported,
+      "Opening a document in a chosen application is not implemented on Windows yet");
+}
+
 core::Result<void> copyTextToClipboard(std::string_view text) {
   constexpr std::size_t kMaxClipboardBytes = 1U << 20U;
   if (text.size() > kMaxClipboardBytes ||

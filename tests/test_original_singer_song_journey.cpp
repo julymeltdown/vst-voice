@@ -24,6 +24,9 @@
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/authoring/render_coordinator.hpp"
 #include "seam/native_ui/voice_designer_session.hpp"
+#include "seam/native_ui/installed_singer_song.hpp"
+#include "seam/platform/application_paths.hpp"
+#include "seam/standalone/native_editor_app.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voice_design/voice_recipe.hpp"
@@ -1567,4 +1570,177 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
   CHECK(reopenedExport.hasValue());
   if (!reopenedExport) return;
   CHECK(reopenedExport.value().masterSha256 == exported.value().masterSha256);
+}
+
+// U22 return-to-song. After Studio installs the designed singer, its "Open in song editor" action
+// writes a new song project bound to that exact installation and hands it to the editor. The project
+// has to open in a fresh editor session, resolve the installed singer rather than the draft, package or
+// staging copy, record the same reference the editor's own New Project screen would, and sing. Every
+// refusal must leave nothing behind, and an existing file is never replaced.
+TEST_CASE("Studio's song hand-off writes a new project the editor opens and sings with the installed singer") {
+  using namespace seam;
+  const auto root = test::support::temporaryDirectory("studio-song-handoff");
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  if (!key) return;
+  const auto installRoot = root / "singers";
+
+  auto designer = std::make_unique<native_ui::VoiceDesignerSession>();
+  designer->setProtectedRoots({installRoot});
+  CHECK(designer->create(songRecipe()).hasValue());
+  if (designer->model() == nullptr) return;
+  const auto draft = root / "drafts" / "designed.json";
+  std::filesystem::create_directories(draft.parent_path());
+  CHECK(designer->beginSave(draft).hasValue());
+  CHECK(drainDesigner(*designer).hasValue());
+  distribution::PublishProceduralSingerOptions publishOptions;
+  publishOptions.version = "1.0.0";
+  publishOptions.language = "ja";
+  publishOptions.displayName = "Handoff Voice";
+  const auto package = root / "handoff.seamsinger";
+  const auto published = designer->publishSavedSinger(root / "staging", package, key.value(), publishOptions);
+  CHECK(published.hasValue());
+  if (!published) return;
+  // Studio's Install action: the exact package just published, trusted through the key that signed it.
+  const auto installed = designer->installPublishedSinger(
+      designer->epoch(), designer->model()->revision(), package,
+      published.value().container.packageDigest, key.value().publicKey, installRoot);
+  CHECK(installed.hasValue());
+  if (!installed) return;
+
+  const std::vector<distribution::ProceduralSearchRoot> roots{
+      {installRoot, distribution::ProceduralRootKind::Installed}};
+  const auto request = [](std::filesystem::path path) {
+    return native_ui::InstalledSingerSongRequest{
+        .projectPath = std::move(path),
+        // Not declared by this singer: the hand-off must fall back to a declared style.
+        .preferredStyle = "whisper",
+        .renderableEngineId = std::string{voice_design::kSourceFilterEngineId},
+        .renderableEngineRevision = voice_design::kSourceFilterEngineRevision};
+  };
+  const auto refused = [&roots](const distribution::InstalledProceduralSinger& singer,
+                                const native_ui::InstalledSingerSongRequest& attempt,
+                                core::ErrorCode code, bool leavesNoFile = true) {
+    const auto result = native_ui::createInstalledSingerSongProject(singer, roots, attempt);
+    CHECK(!result.hasValue());
+    if (!result.hasValue()) CHECK(result.error().code == code);
+    std::error_code error;
+    if (leavesNoFile) CHECK(!std::filesystem::exists(attempt.projectPath, error));
+  };
+
+  refused(distribution::InstalledProceduralSinger{}, request(root / "nothing.seam"), core::ErrorCode::InvalidState);
+  refused(installed.value(), request("relative.seam"), core::ErrorCode::InvalidArgument);
+  refused(installed.value(), request(root / "song.txt"), core::ErrorCode::InvalidArgument);
+  refused(installed.value(), request(root / ".hidden.seam"), core::ErrorCode::InvalidArgument);
+  refused(installed.value(), request(installRoot / "inside.seam"), core::ErrorCode::InvalidArgument);
+  refused(installed.value(), request(root / "missing" / "song.seam"), core::ErrorCode::NotFound);
+  {
+    std::ofstream(root / "existing.seam", std::ios::binary) << "keep";
+    refused(installed.value(), request(root / "existing.seam"), core::ErrorCode::Conflict, false);
+    std::ifstream kept(root / "existing.seam", std::ios::binary);
+    const std::string content{std::istreambuf_iterator<char>{kept}, std::istreambuf_iterator<char>{}};
+    CHECK(content == "keep");
+  }
+  auto otherEngine = request(root / "refused.seam");
+  otherEngine.renderableEngineId = "seam.other-engine";
+  refused(installed.value(), otherEngine, core::ErrorCode::Conflict);
+  auto newerRevision = request(root / "refused.seam");
+  newerRevision.renderableEngineRevision = voice_design::kSourceFilterEngineRevision + 1U;
+  refused(installed.value(), newerRevision, core::ErrorCode::Conflict);
+  auto changedContent = installed.value();
+  changedContent.contentHash = std::string(64U, '0');
+  refused(changedContent, request(root / "refused.seam"), core::ErrorCode::Conflict);
+  auto elsewhere = installed.value();
+  elsewhere.installDirectory = root / "elsewhere";
+  refused(elsewhere, request(root / "refused.seam"), core::ErrorCode::NotFound);
+
+  const auto song = native_ui::createInstalledSingerSongProject(
+      installed.value(), roots, request(root / "Handoff Voice Song.seam"));
+  CHECK(song.hasValue());
+  if (!song) return;
+  CHECK(song.value().projectPath == std::filesystem::canonical(root / "Handoff Voice Song.seam"));
+  CHECK(song.value().projectName == "Handoff Voice Song");
+  CHECK(song.value().singer.style == "neutral");
+  const auto digest = core::sha256File(song.value().projectPath);
+  CHECK(digest.hasValue() && digest.value() == song.value().projectSha256);
+  // A second hand-off to the same name is refused and leaves the first project byte-identical.
+  refused(installed.value(), request(root / "Handoff Voice Song.seam"), core::ErrorCode::Conflict, false);
+  const auto unchanged = core::sha256File(song.value().projectPath);
+  CHECK(unchanged.hasValue() && unchanged.value() == song.value().projectSha256);
+
+  // Installation owns the singer now: drop the Designer, draft, package and staging copy so the song
+  // can only resolve through the installed resource.
+  designer.reset();
+  std::error_code cleanupError;
+  static_cast<void>(std::filesystem::remove_all(draft.parent_path(), cleanupError));
+  static_cast<void>(std::filesystem::remove(package, cleanupError));
+  static_cast<void>(std::filesystem::remove_all(root / "staging", cleanupError));
+  CHECK(!std::filesystem::exists(draft));
+  CHECK(!std::filesystem::exists(package));
+
+  Installed fixture;
+  fixture.root = root;
+  fixture.installRoot = installRoot;
+  fixture.key = key.value();
+  auto editor = makeEditor(fixture);
+  const auto offers = editor.controller->installedSingerOffers();
+  CHECK(offers.hasValue());
+  if (!offers) return;
+  const auto choices = standalone::makeNativeNewProjectSingerChoices(offers.value(), {}, 0U, false);
+  CHECK(choices.selectable.size() == 1U);
+  if (choices.selectable.size() == 1U) CHECK(choices.selectable.front().reference == song.value().singer);
+
+  editor.dialog->responses.push_back(song.value().projectPath);
+  const auto opened = editor.controller->dispatch(platform::ApplicationCommand::OpenProject);
+  CHECK(opened.hasValue());
+  if (!opened) return;
+  const auto diagnostics = editor.session->runtime().diagnostics();
+  CHECK(std::none_of(diagnostics.begin(), diagnostics.end(), [](const auto& diagnostic) {
+    return diagnostic.code == "BANK_MISSING";
+  }));
+  const auto* track = editor.session->runtime().document().session().project().findVocalTrack(
+      editor.session->runtime().selectedTrack());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  CHECK(track->proceduralRecipe == song.value().singer);
+  CHECK(track->voicebank.id.empty());
+  writeSong(editor);
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto exported = editor.controller->exportSet(root / "export", settings);
+  CHECK(exported.hasValue());
+  if (!exported) return;
+  CHECK(exported.value().masterSha256.size() == 64U);
+  CHECK(std::filesystem::exists(exported.value().masterPath));
+}
+
+TEST_CASE("Studio suggests safe song file names and looks for the song editor beside itself first") {
+  using namespace seam;
+  CHECK(native_ui::suggestedSongProjectFileName("Aoi") == "Aoi Song.seam");
+  CHECK(native_ui::suggestedSongProjectFileName("a/b:c\\d") == "a-b-c-d Song.seam");
+  CHECK(native_ui::suggestedSongProjectFileName("..hidden") == "hidden Song.seam");
+  CHECK(native_ui::suggestedSongProjectFileName("  ") == "New Song.seam");
+  CHECK(native_ui::suggestedSongProjectFileName("") == "New Song.seam");
+  std::string wide;
+  std::string whole;
+  std::string split{"x"};
+  for (int index = 0; index < 100; ++index) wide += "\xE3\x81\x82";
+  for (int index = 0; index < 32; ++index) whole += "\xE3\x81\x82";
+  for (int index = 0; index < 31; ++index) split += "\xE3\x81\x82";
+  CHECK(native_ui::suggestedSongProjectFileName(wide) == whole + " Song.seam");
+  CHECK(native_ui::suggestedSongProjectFileName("x" + wide) == split + " Song.seam");
+
+  using Paths = std::vector<std::filesystem::path>;
+  CHECK((platform::songEditorApplicationCandidates(
+             std::nullopt, "/Build/SEAM Voicebank Studio.app", std::string{"/Users/me"}) ==
+         Paths{"/Build/Project SEAM.app", "/Applications/Project SEAM.app",
+               "/Users/me/Applications/Project SEAM.app"}));
+  CHECK((platform::songEditorApplicationCandidates(
+             std::string{"/Custom/Editor.app"}, "/Applications/SEAM Voicebank Studio.app", std::nullopt) ==
+         Paths{"/Custom/Editor.app", "/Applications/Project SEAM.app"}));
+  CHECK((platform::songEditorApplicationCandidates(std::string{}, "/usr/local/bin/studio", std::string{}) ==
+         Paths{"/Applications/Project SEAM.app"}));
+  CHECK((platform::songEditorApplicationCandidates(
+             std::nullopt, "/Build/SEAM Voicebank Studio.app/", std::nullopt) ==
+         Paths{"/Build/Project SEAM.app", "/Applications/Project SEAM.app"}));
 }

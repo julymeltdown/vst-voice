@@ -3,6 +3,10 @@
 #include "seam/core/result.hpp"
 
 #include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace seam::platform {
 
@@ -39,5 +43,18 @@ struct ApplicationPaths final {
 [[nodiscard]] core::Result<ApplicationPaths> applicationPaths(
     std::filesystem::path executablePath = {});
 [[nodiscard]] core::Result<std::filesystem::path> applicationSupportDirectory();
+
+// The Project SEAM song editor's macOS bundle identifier. Voicebank Studio hands a song project only
+// to an application that identifies itself with this value.
+inline constexpr std::string_view kSongEditorBundleIdentifier = "com.project-seam.standalone";
+
+// Where Voicebank Studio looks for the song editor, in order: an explicit SEAM_STANDALONE_PATH, the
+// folder holding the running application bundle (a side-by-side build or installation), then the
+// system and per-user Applications folders. Duplicates are removed. Existence and bundle identity
+// are checked by locateSongEditorApplication(), never assumed from a path.
+[[nodiscard]] std::vector<std::filesystem::path> songEditorApplicationCandidates(
+    const std::optional<std::string>& configuredPath,
+    const std::filesystem::path& runningApplicationBundle,
+    const std::optional<std::string>& home);
 
 }  // namespace seam::platform

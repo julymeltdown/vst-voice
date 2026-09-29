@@ -349,6 +349,23 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("installProceduralPackage(packagePath, installRoot, options)", session)
         self.assertIn("INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED", source)
 
+    def test_designer_hands_the_installed_singer_to_the_song_editor(self) -> None:
+        source = (ROOT / "apps/seam-voicebank-studio-native/main.cpp").read_text()
+        platform = (ROOT / "libs/seam-platform/src/application_menu_appkit.mm").read_text()
+        self.assertIn('"open-in-song-editor"', source)
+        self.assertIn("installedSinger_ = installed.value()", source)
+        self.assertIn("installedSinger_.reset()", source)
+        self.assertIn("seam::native_ui::createInstalledSingerSongProject(", source)
+        self.assertIn("seam::distribution::defaultProceduralSearchRoots()", source)
+        self.assertIn("seam::platform::locateSongEditorApplication()", source)
+        self.assertIn(
+            "seam::platform::openDocumentWithApplication(project.projectPath, editor.value())", source)
+        self.assertIn("event.key == Key::O && event.modifiers.primaryShortcut() && event.modifiers.alt", source)
+        self.assertIn("event.key == Key::I && event.modifiers.primaryShortcut() && event.modifiers.alt", source)
+        self.assertIn("kSongEditorBundleIdentifier", platform)
+        self.assertIn("isEqualToString:expected", platform)
+        self.assertIn("withApplicationAtURL:applicationURL", platform)
+
 
 if __name__ == "__main__":
     unittest.main()
