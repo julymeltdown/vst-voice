@@ -51,10 +51,29 @@ public:
     @autoreleasepool {
       NSOpenPanel* panel=[NSOpenPanel openPanel];
       panel.title=@"Open Existing Producer Workspace";
+      panel.message=@"Choose a producer folder created by Studio, or an existing producer workspace.";
       panel.canChooseDirectories=YES; panel.canChooseFiles=NO;
       panel.canCreateDirectories=NO; panel.allowsMultipleSelection=NO;
       if (runModalRestoringFocus(panel)!=NSModalResponseOK || panel.URL==nil) return Output{};
       const auto root=pathFromUrl(panel.URL);
+      std::error_code error;
+      const bool producerFolder=std::filesystem::is_regular_file(root/"inventory.json",error) &&
+          std::filesystem::is_directory(root/"producer",error);
+      if (producerFolder) {
+        NSAlert* alert=[[NSAlert alloc] init];
+        alert.messageText=@"Open producer folder";
+        alert.informativeText=@"Studio verifies this folder's inventory.json and uses its digest. Enter your existing producer ID. Opening does not register an operator, approve sources, or publish changes.";
+        [alert addButtonWithTitle:@"Open Workspace"]; [alert addButtonWithTitle:@"Cancel"];
+        NSTextField* identity=[[NSTextField alloc] initWithFrame:NSMakeRect(0,0,480,26)];
+        identity.placeholderString=@"Existing producer ID"; [identity setAccessibilityLabel:@"Producer operator ID"];
+        alert.accessoryView=identity;
+        if (runModalRestoringFocus(alert)!=NSAlertFirstButtonReturn) return Output{};
+        if (identity.stringValue.length==0U || identity.stringValue.length>128U || identity.stringValue.UTF8String==nullptr)
+          return core::failure<Output>(core::ErrorCode::InvalidArgument,"Producer ID is invalid");
+        ProductionWorkspaceInput input{root,{},identity.stringValue.UTF8String,true};
+        const auto valid=input.validate(); if (!valid) return core::Result<Output>{valid.error()};
+        return Output{std::move(input)};
+      }
       NSAlert* alert=[[NSAlert alloc] init];
       alert.messageText=@"Bind producer workspace context";
       alert.informativeText=@"Enter the expected inventory SHA-256 and your existing operator ID. Opening does not register an operator, approve sources, or publish changes.";
@@ -71,6 +90,39 @@ public:
           digest.stringValue.UTF8String==nullptr || identity.stringValue.UTF8String==nullptr)
         return core::failure<Output>(core::ErrorCode::InvalidArgument,"Workspace digest or operator ID is invalid");
       ProductionWorkspaceInput input{root,digest.stringValue.UTF8String,identity.stringValue.UTF8String};
+      const auto valid=input.validate(); if (!valid) return core::Result<Output>{valid.error()};
+      return Output{std::move(input)};
+    }
+  }
+  core::Result<std::optional<NewProducerWorkspaceInput>> chooseNewProducerWorkspace() override {
+    using Output=std::optional<NewProducerWorkspaceInput>;
+    if (![NSThread isMainThread]) return core::failure<Output>(core::ErrorCode::InvalidState,"Workspace creation must run on the main thread");
+    @autoreleasepool {
+      NSSavePanel* panel=[NSSavePanel savePanel];
+      panel.title=@"Create Producer Workspace";
+      panel.message=@"Name a new folder. Studio creates inventory.json, recording-script.csv and producer/ inside it. Nothing is recorded or approved yet.";
+      panel.prompt=@"Create"; panel.nameFieldLabel=@"Folder:"; panel.nameFieldStringValue=@"New Voice";
+      panel.canCreateDirectories=YES; panel.showsTagField=NO;
+      if (runModalRestoringFocus(panel)!=NSModalResponseOK || panel.URL==nil) return Output{};
+      const auto destination=pathFromUrl(panel.URL);
+      NSString* folderName=panel.URL.lastPathComponent;
+      NSAlert* alert=[[NSAlert alloc] init];
+      alert.messageText=@"Name the voice and its producer";
+      alert.informativeText=@"The project ID also names the generated Japanese draft inventory. Your producer ID becomes this workspace's only PRODUCER; reviewers are registered later. The requested range stays not assessed.";
+      [alert addButtonWithTitle:@"Create Workspace"]; [alert addButtonWithTitle:@"Cancel"];
+      NSView* fields=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,66)];
+      NSTextField* project=[[NSTextField alloc] initWithFrame:NSMakeRect(0,36,480,26)];
+      project.stringValue=folderName!=nil?folderName:@""; project.placeholderString=@"Voice project ID";
+      [project setAccessibilityLabel:@"Voice project ID"];
+      NSTextField* producer=[[NSTextField alloc] initWithFrame:NSMakeRect(0,0,480,26)];
+      producer.placeholderString=@"Your producer ID"; [producer setAccessibilityLabel:@"Producer ID"];
+      [fields addSubview:project]; [fields addSubview:producer]; alert.accessoryView=fields;
+      if (runModalRestoringFocus(alert)!=NSAlertFirstButtonReturn) return Output{};
+      const char* projectText=project.stringValue.UTF8String;
+      const char* producerText=producer.stringValue.UTF8String;
+      if (projectText==nullptr || producerText==nullptr)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument,"Project or producer ID is not valid text");
+      NewProducerWorkspaceInput input{destination,projectText,producerText};
       const auto valid=input.validate(); if (!valid) return core::Result<Output>{valid.error()};
       return Output{std::move(input)};
     }

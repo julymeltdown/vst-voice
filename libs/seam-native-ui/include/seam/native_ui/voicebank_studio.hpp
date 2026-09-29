@@ -14,6 +14,7 @@
 #include "seam/native_ui/pitch_contour.hpp"
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/voicebank_production/draft_inventory.hpp"
 #include "seam/voicebank_production/generation_request.hpp"
 #include "seam/voicebank_production/manifest_draft.hpp"
 #include "seam/voice_design/procedural_candidate.hpp"
@@ -337,6 +338,21 @@ public:
       std::string operatorId, bool requireRegisteredProducer = false);
   [[nodiscard]] core::Result<void> beginOpenProductionProject(std::filesystem::path workspaceRoot,
       std::string expectedInventorySha256, std::string operatorId);
+  // Creates DESTINATION as a new producer folder (generated Japanese draft
+  // inventory, recording script and an initialized producer/) off the UI
+  // thread, then opens it as PRODUCER through the same adoption as
+  // beginOpenProductionProject. Nothing is approved and the requested range
+  // stays NOT_ASSESSED. A published folder is opened even if cancellation
+  // arrives after publication.
+  [[nodiscard]] core::Result<void> beginCreateProductionProject(std::filesystem::path destination,
+      std::string projectId, std::string producerId, std::string occurredAtUtc = {});
+  // Opens a producer folder whose inventory.json is verified by regeneration
+  // and supplies the digest, so the operator does not type it.
+  [[nodiscard]] core::Result<void> beginOpenProducerFolder(std::filesystem::path folder,
+      std::string operatorId);
+  // The folder this session created, if the current workspace came from creation.
+  [[nodiscard]] const std::optional<voicebank_production::CreatedDraftProducerWorkspace>&
+      createdProducerWorkspace() const noexcept { return createdProducerWorkspace_; }
   [[nodiscard]] bool workspaceOpening() const noexcept { return workspaceOpen_.valid(); }
   [[nodiscard]] core::Result<void> save();
   // Returns authorization for this unchanged sample state only. Does not
@@ -517,6 +533,8 @@ private:
   std::uint64_t productionSessionEpoch_{0U};
   std::future<core::Result<std::unique_ptr<VoicebankStudioController>>> workspaceOpen_;
   std::uint64_t workspaceOpenEpoch_{0U};
+  bool workspaceOpenCreates_{false};
+  std::optional<voicebank_production::CreatedDraftProducerWorkspace> createdProducerWorkspace_;
   std::unique_ptr<voicebank_production::ProductionProjectRepository>
       productionRepository_;
   std::optional<voicebank_production::VoicebankProductionProject>

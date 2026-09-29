@@ -2742,6 +2742,13 @@ if(SEAM_BUILD_TESTS)
     seam_apply_compiler_options(seam_studio_campaign_tests)
     add_test(NAME seam_studio_campaign_tests COMMAND seam_studio_campaign_tests)
     set_tests_properties(seam_studio_campaign_tests PROPERTIES TIMEOUT 180)
+    add_executable(seam_studio_producer_workspace_tests
+      tests/test_main.cpp tests/test_studio_producer_workspace.cpp)
+    target_include_directories(seam_studio_producer_workspace_tests PRIVATE tests)
+    target_link_libraries(seam_studio_producer_workspace_tests PRIVATE seam_native_ui seam_voicebank_production)
+    seam_apply_compiler_options(seam_studio_producer_workspace_tests)
+    add_test(NAME seam_studio_producer_workspace_tests COMMAND seam_studio_producer_workspace_tests)
+    set_tests_properties(seam_studio_producer_workspace_tests PROPERTIES TIMEOUT 180)
     add_executable(seam_studio_recording_import_parity_tests
       tests/test_main.cpp tests/test_studio_recording_import_parity.cpp)
     target_include_directories(seam_studio_recording_import_parity_tests PRIVATE tests)

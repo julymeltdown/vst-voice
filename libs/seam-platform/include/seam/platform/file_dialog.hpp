@@ -86,8 +86,12 @@ public:
   struct ProductionWorkspaceInput final {
     std::filesystem::path root;
     std::string inventorySha256, operatorId;
+    // A producer folder holding inventory.json and producer/. Studio verifies
+    // that inventory and takes the digest from it, so none is entered here.
+    bool producerFolder{false};
     [[nodiscard]] core::Result<void> validate() const {
-      if (root.empty() || inventorySha256.size()!=64U || operatorId.empty() || operatorId.size()>128U)
+      if (root.empty() || (producerFolder ? !inventorySha256.empty() : inventorySha256.size()!=64U) ||
+          operatorId.empty() || operatorId.size()>128U)
         return core::failure(core::ErrorCode::InvalidArgument,"Workspace path, inventory digest and bounded operator ID are required");
       for (const char c:inventorySha256) if (!((c>='0' && c<='9') || (c>='a' && c<='f')))
         return core::failure(core::ErrorCode::InvalidArgument,"Inventory SHA-256 must use lowercase hexadecimal");
@@ -96,8 +100,27 @@ public:
       return core::success();
     }
   };
+  struct NewProducerWorkspaceInput final {
+    std::filesystem::path destination;
+    std::string projectId, producerId;
+    [[nodiscard]] core::Result<void> validate() const {
+      if (destination.empty() || !destination.is_absolute() || destination.filename().empty() ||
+          destination.filename().string().front()=='.')
+        return core::failure(core::ErrorCode::InvalidArgument,"Choose a visible new folder for the producer workspace");
+      for (const auto* value:{&projectId,&producerId}) {
+        if (value->empty() || value->size()>128U)
+          return core::failure(core::ErrorCode::InvalidArgument,"Project and producer IDs must be 1 to 128 bytes");
+        for (const char c:*value) if (static_cast<unsigned char>(c)<32U || c==127)
+          return core::failure(core::ErrorCode::InvalidArgument,"Project and producer IDs cannot contain control characters");
+      }
+      return core::success();
+    }
+  };
   [[nodiscard]] virtual core::Result<std::optional<ProductionWorkspaceInput>> chooseProductionWorkspace() {
     return core::failure<std::optional<ProductionWorkspaceInput>>(core::ErrorCode::Unsupported,"Production workspace entry is unavailable on this platform");
+  }
+  [[nodiscard]] virtual core::Result<std::optional<NewProducerWorkspaceInput>> chooseNewProducerWorkspace() {
+    return core::failure<std::optional<NewProducerWorkspaceInput>>(core::ErrorCode::Unsupported,"Producer workspace creation is unavailable on this platform");
   }
   [[nodiscard]] virtual core::Result<std::optional<SourceRegistrationInput>> chooseSourceRegistration(std::string_view) {
     return core::failure<std::optional<SourceRegistrationInput>>(core::ErrorCode::Unsupported,"Source registration entry is unavailable");

@@ -631,10 +631,20 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
     if (workspaceOpen_.wait_for(std::chrono::seconds{0})!=std::future_status::ready) return core::success();
     try {
       auto recovered=workspaceOpen_.get();
-      if (proceduralImportStop_.stop_requested()) { status_="WORKSPACE OPEN CANCELLED"; return core::success(); }
+      const bool creating=std::exchange(workspaceOpenCreates_,false);
+      // A published folder is opened even when cancellation arrived after publication.
+      const bool created=recovered && recovered.value()->createdProducerWorkspace_.has_value();
+      if (proceduralImportStop_.stop_requested() && !created) {
+        status_=creating?"WORKSPACE CREATION CANCELLED / NOTHING CREATED":"WORKSPACE OPEN CANCELLED";
+        return core::success();
+      }
       if (!recovered) { status_=statusBeforeImport_; return core::Result<void>{recovered.error()}; }
       if (productionSessionEpoch_!=workspaceOpenEpoch_ || productionProject_ || !manifest_.units.empty()) {
         status_=statusBeforeImport_;
+        if (created)
+          return core::failure(core::ErrorCode::Conflict,
+              "The producer folder was created, but Studio changed before it opened; open it with Open producer workspace",
+              recovered.value()->createdProducerWorkspace_->root.string());
         return core::failure(core::ErrorCode::Conflict,"Workspace opening context changed before adoption");
       }
       auto& worker=*recovered.value();
@@ -642,6 +652,7 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
       productionRepository_=std::move(worker.productionRepository_);
       productionWorkspaceRoot_=std::move(worker.productionWorkspaceRoot_);
       productionOperatorId_=std::move(worker.productionOperatorId_);
+      createdProducerWorkspace_=std::move(worker.createdProducerWorkspace_);
       generationRequests_.clear();
       generationRequestsEpoch_=0U;
       generationRequestQueueStatus_="REQUEST QUEUE NOT LOADED";
@@ -659,9 +670,13 @@ core::Result<void> VoicebankStudioController::pollProceduralCandidateImport() {
       candidateMarkersEdited_=worker.candidateMarkersEdited_; selectedCandidateMarker_=0U;
       candidateUndo_.clear(); candidateRedo_.clear(); candidateView_.reset(); candidateViewPeaks_.clear();
       candidateWaveform_.reset(); candidateWaveformError_.clear(); candidatePitch_.reset(); candidatePitchError_.clear();
-      status_=stagedRecoveryCandidateCount_==0U?"PRODUCTION RECOVERED":"RECOVERY CANDIDATES";
+      if (createdProducerWorkspace_)
+        status_="PRODUCER WORKSPACE CREATED / "+std::to_string(createdProducerWorkspace_->assignments)+
+            " UNITS MISSING / RANGE NOT ASSESSED"+(createdProducerWorkspace_->durabilityConfirmed?"":" / DURABILITY UNCONFIRMED");
+      else status_=stagedRecoveryCandidateCount_==0U?"PRODUCTION RECOVERED":"RECOVERY CANDIDATES";
       return core::success();
     } catch (const std::exception& error) {
+      workspaceOpenCreates_=false;
       status_=statusBeforeImport_;
       return core::failure(core::ErrorCode::Internal,"Workspace recovery worker failed",error.what());
     }
@@ -1010,6 +1025,70 @@ core::Result<void> VoicebankStudioController::beginOpenProductionProject(std::fi
     });
   } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal,"Cannot start workspace recovery",error.what()); }
   status_="OPENING WORKSPACE / ESC CANCEL";
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginCreateProductionProject(std::filesystem::path destination,
+    std::string projectId, std::string producerId, std::string occurredAtUtc) {
+  if (proceduralImportBusy() || productionProject_ || !manifest_.units.empty() || dirty_)
+    return core::failure(core::ErrorCode::Conflict,"Workspace entry requires an idle source-free Studio");
+  if (destination.empty() || projectId.empty() || producerId.empty() ||
+      productionSessionEpoch_==std::numeric_limits<std::uint64_t>::max())
+    return core::failure(core::ErrorCode::InvalidArgument,"Workspace creation identity is invalid");
+  if (occurredAtUtc.empty()) occurredAtUtc=voicebank_studio_internal::currentUtcTimestamp();
+  proceduralImportStop_=std::stop_source{}; const auto stop=proceduralImportStop_.get_token();
+  workspaceOpenEpoch_=productionSessionEpoch_; statusBeforeImport_=status_;
+  try {
+    workspaceOpen_=std::async(std::launch::async,[destination=std::move(destination),projectId=std::move(projectId),
+        producerId=std::move(producerId),occurredAtUtc=std::move(occurredAtUtc),stop]()
+        -> core::Result<std::unique_ptr<VoicebankStudioController>> {
+      using Output=std::unique_ptr<VoicebankStudioController>;
+      voicebank_production::DraftInventoryProfile profile;
+      profile.profileId=projectId;
+      auto created=voicebank_production::createDraftProducerWorkspace(
+          destination,profile,projectId,producerId,occurredAtUtc,stop);
+      if (!created) return core::Result<Output>{created.error()};
+      // The folder is published, so opening it is no longer optional.
+      auto worker=std::make_unique<VoicebankStudioController>();
+      const auto opened=worker->openProductionProject(created.value().producerRoot,created.value().inventorySha256,producerId,true);
+      if (!opened) return core::failure<Output>(opened.error().code,
+          "The producer folder was created but could not be opened: "+opened.error().message,created.value().root.string());
+      worker->createdProducerWorkspace_=std::move(created.value());
+      return worker;
+    });
+  } catch (const std::exception& error) {
+    return core::failure(core::ErrorCode::Internal,"Cannot start workspace creation",error.what());
+  }
+  workspaceOpenCreates_=true;
+  status_="CREATING PRODUCER WORKSPACE / ESC CANCEL";
+  return core::success();
+}
+
+core::Result<void> VoicebankStudioController::beginOpenProducerFolder(std::filesystem::path folder,
+    std::string operatorId) {
+  if (proceduralImportBusy() || productionProject_ || !manifest_.units.empty() || dirty_)
+    return core::failure(core::ErrorCode::Conflict,"Workspace entry requires an idle source-free Studio");
+  if (folder.empty() || operatorId.empty() || productionSessionEpoch_==std::numeric_limits<std::uint64_t>::max())
+    return core::failure(core::ErrorCode::InvalidArgument,"Workspace opening identity is invalid");
+  proceduralImportStop_=std::stop_source{}; const auto stop=proceduralImportStop_.get_token();
+  workspaceOpenEpoch_=productionSessionEpoch_; statusBeforeImport_=status_;
+  try {
+    workspaceOpen_=std::async(std::launch::async,[folder=std::move(folder),actor=std::move(operatorId),stop]()
+        -> core::Result<std::unique_ptr<VoicebankStudioController>> {
+      using Output=std::unique_ptr<VoicebankStudioController>;
+      const auto read=voicebank_production::readDraftProducerWorkspaceInventory(folder);
+      if (!read) return core::Result<Output>{read.error()};
+      if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Workspace opening cancelled");
+      auto worker=std::make_unique<VoicebankStudioController>();
+      const auto opened=worker->openProductionProject(read.value().producerRoot,read.value().inventory.inventorySha256,actor,true);
+      if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict,"Workspace opening cancelled");
+      if (!opened) return core::Result<Output>{opened.error()};
+      return worker;
+    });
+  } catch (const std::exception& error) {
+    return core::failure(core::ErrorCode::Internal,"Cannot start workspace recovery",error.what());
+  }
+  status_="OPENING PRODUCER FOLDER / ESC CANCEL";
   return core::success();
 }
 

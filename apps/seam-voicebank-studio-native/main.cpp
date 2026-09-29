@@ -652,7 +652,10 @@ public:
       if (audition_.active()) auditionStatus_ = "CURRENT B / NOT APPROVED";
       return;
     }
-    if (event.key == Key::D && event.modifiers.primaryShortcut()) { record(openDesignerProducerWorkspace()); return; }
+    if (event.key == Key::D && event.modifiers.primaryShortcut()) {
+      record(event.modifiers.shift ? createDesignerProducerWorkspace() : openDesignerProducerWorkspace());
+      return;
+    }
     if (event.key == Key::N && event.modifiers.primaryShortcut()) {
       const auto discard = allowDesignerReplacement();
       if (!discard) { record(seam::core::Result<void>{discard.error()}); return; }
@@ -1010,12 +1013,39 @@ public:
     if (epoch!=designer_.epoch() || revision!=(designer_.model()?designer_.model()->revision():0U) ||
         producerEpoch!=controller_.productionSessionEpoch() || designer_.busy() || controller_.proceduralImportBusy())
       return seam::core::failure(seam::core::ErrorCode::Conflict,"Workspace opening context changed while the dialog was open");
-    const auto opened=controller_.beginOpenProductionProject(input.value()->root,input.value()->inventorySha256,input.value()->operatorId);
+    // A producer folder's verified inventory.json supplies the digest.
+    const auto opened=input.value()->producerFolder
+        ? controller_.beginOpenProducerFolder(input.value()->root,input.value()->operatorId)
+        : controller_.beginOpenProductionProject(input.value()->root,input.value()->inventorySha256,input.value()->operatorId);
     if (opened) designerView_=false;
     return opened;
   }
+  bool canCreateProducerWorkspace() const noexcept {
+    return !controller_.productionProject() && controller_.manifest().units.empty();
+  }
+  seam::core::Result<void> createDesignerProducerWorkspace() {
+    if (designer_.busy() || designerDrag_ || controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames()>0U)
+      return seam::core::failure(seam::core::ErrorCode::Conflict,"Finish active Designer or producer work before creating a workspace");
+    if (!canCreateProducerWorkspace())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,"A producer workspace or bank is already open in this window");
+    const auto epoch=designer_.epoch(), revision=designer_.model()?designer_.model()->revision():0U;
+    const auto producerEpoch=controller_.productionSessionEpoch();
+    auto dialog=seam::platform::createNativeFileDialog();
+    const auto input=dialog->chooseNewProducerWorkspace();
+    if (!input) return seam::core::Result<void>{input.error()};
+    if (!input.value()) return seam::core::success();
+    const auto valid=input.value()->validate(); if (!valid) return valid;
+    if (epoch!=designer_.epoch() || revision!=(designer_.model()?designer_.model()->revision():0U) ||
+        producerEpoch!=controller_.productionSessionEpoch() || designer_.busy() || controller_.proceduralImportBusy() ||
+        !canCreateProducerWorkspace())
+      return seam::core::failure(seam::core::ErrorCode::Conflict,"Workspace creation context changed while the dialog was open");
+    const auto started=controller_.beginCreateProductionProject(input.value()->destination,input.value()->projectId,
+        input.value()->producerId);
+    if (started) designerView_=false;
+    return started;
+  }
   static seam::ui::Rect designerEntryBounds(std::size_t index,double width) {
-    return {24.0,174.0+static_cast<double>(index)*72.0,std::max(0.0,std::min(width-48.0,440.0)),56.0};
+    return {24.0,174.0+static_cast<double>(index)*62.0,std::max(0.0,std::min(width-48.0,440.0)),50.0};
   }
   void rebuildDesignerAccessibility(const std::vector<std::string>& values, std::size_t first, double width, double height) {
     using namespace seam::native_ui;
@@ -1033,7 +1063,15 @@ public:
       root.children.push_back({.id = prefix + buttons[index].first, .role = SemanticRole::Button, .name = index==3U && !controller_.productionProject() && controller_.manifest().units.empty()?"Open producer workspace":buttons[index].second,
           .bounds = !designer_.model() && (index<2U || index==3U) ? designerEntryBounds(index==3U?2U:index,width) : seam::ui::Rect{24.0 + static_cast<double>(index) * buttonWidth,58.0,buttonWidth,20.0}, .enabled = available,
           .actions = available ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{},
-          .description = index==0U ? "Creates a Japanese source-filter draft covering symbols emitted by the built-in Japanese phonemizer; screening defaults are not a qualified singer." : std::string{}});
+          .description = index==0U ? "Creates a Japanese source-filter draft covering symbols emitted by the built-in Japanese phonemizer; screening defaults are not a qualified singer."
+              : index==3U && canCreateProducerWorkspace() ? "Cmd/Ctrl-D. Opens a producer folder created by Studio, or an existing producer workspace with its inventory digest."
+              : std::string{}});
+    }
+    if (!designer_.model() && canCreateProducerWorkspace()) {
+      root.children.push_back({.id = prefix + "create-producer", .role = SemanticRole::Button, .name = "Create producer workspace",
+          .bounds = designerEntryBounds(3U,width), .enabled = enabled,
+          .actions = enabled ? std::vector<SemanticAction>{SemanticAction::Activate, SemanticAction::SetFocus} : std::vector<SemanticAction>{},
+          .description = "Cmd/Ctrl-Shift-D. Creates a new folder with a generated Japanese draft inventory, its recording script and an initialized producer workspace. Nothing is recorded or approved."});
     }
     if (designer_.model()) {
       const auto seed = std::to_string(designer_.model()->recipe().seed);
@@ -1178,21 +1216,23 @@ public:
     };
     line(24.0, "VOICE DESIGNER / DRAFT RECIPE");
     if (!designer_.model()) {
-      line(58.0, "CMD/CTRL-N NEW / O OPEN / S SAVE / SHIFT-S SAVE AS / D BACK");
+      line(58.0, "CMD/CTRL-N NEW / O OPEN / S SAVE / SHIFT-S SAVE AS / D PRODUCER / SHIFT-D NEW PRODUCER");
       line(82.0, "CMD/CTRL-L DUPLICATE POSE / CMD/CTRL-SHIFT-L REMOVE (UNDOABLE)");
     }
     const auto* model = designer_.model();
     if (!model) {
       rebuildDesignerAccessibility({}, 0U, canvas.logicalWidth(), canvas.logicalHeight());
       line(112.0, "Create a draft or open a saved recipe to begin.");
-      const std::array<const char*,3U> labels{"NEW VOICE DRAFT","OPEN SAVED RECIPE","OPEN PRODUCER WORKSPACE"};
-      for (std::size_t index=0U;index<labels.size();++index) {
+      const bool creatable=canCreateProducerWorkspace();
+      const std::array<const char*,4U> labels{"NEW VOICE DRAFT","OPEN SAVED RECIPE",
+          creatable?"OPEN PRODUCER WORKSPACE":"BACK TO PRODUCER","NEW PRODUCER WORKSPACE"};
+      for (std::size_t index=0U;index<(creatable?4U:3U);++index) {
         const auto bounds=designerEntryBounds(index,canvas.logicalWidth());
         canvas.fillRect(bounds,Color{58,39,59,255});
-        canvas.drawText({bounds.x+16.0,bounds.y+16.0,bounds.width-32.0,24.0},labels[index],Color{239,233,241,255},16.0);
+        canvas.drawText({bounds.x+16.0,bounds.y+13.0,bounds.width-32.0,24.0},labels[index],Color{239,233,241,255},16.0);
       }
       if (designer_.busy()) line(146.0, "OPENING VOICE / ESC CANCEL");
-      if (!lastError_.empty()) line(406.0, lastError_, Color{193,115,160,255});
+      if (!lastError_.empty()) line(designerEntryBounds(4U,canvas.logicalWidth()).y, lastError_, Color{193,115,160,255});
       return;
     }
     line(112.0, model->recipe().id + (model->dirty() ? " / UNSAVED" : " / SAVED"));
@@ -2043,8 +2083,9 @@ public:
         }
       }
       if (!model && !designer_.busy() && event.button==seam::native_ui::PointerButton::Left) {
-        for (std::size_t index=0U;index<3U;++index) if (designerEntryBounds(index,controller_.logicalWidth()).contains(event.position)) {
-          record(dispatchAccessibility(designerSemanticPrefix()+(index==0U?"new":index==1U?"open":"back"),seam::native_ui::SemanticAction::Activate));
+        for (std::size_t index=0U;index<(canCreateProducerWorkspace()?4U:3U);++index) if (designerEntryBounds(index,controller_.logicalWidth()).contains(event.position)) {
+          record(dispatchAccessibility(designerSemanticPrefix()+(index==0U?"new":index==1U?"open":index==2U?"back":"create-producer"),
+              seam::native_ui::SemanticAction::Activate));
           return;
         }
       }
@@ -2510,6 +2551,11 @@ public:
         else if (suffix == "install-published-singer") {
           lastError_.clear(); stopAudition();
           const auto result = installPublishedSinger();
+          record(result); repaint(); return result;
+        }
+        else if (suffix == "create-producer") {
+          lastError_.clear(); stopAudition();
+          const auto result = createDesignerProducerWorkspace();
           record(result); repaint(); return result;
         }
         else if (suffix == "back") key = NativeKey::D;
