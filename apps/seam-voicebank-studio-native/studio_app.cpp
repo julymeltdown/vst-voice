@@ -1755,6 +1755,7 @@ public:
     if (action == "source-decision") { sampleReviewFirstLine_ = 0U; return confirmStudioSourceQuality(controller_, *dialog); }
     if (action == "source-license") { sampleReviewFirstLine_ = 0U; return captureStudioSourceLicense(controller_, *dialog); }
     if (action == "source-register") { sampleReviewFirstLine_ = 0U; return registerStudioSource(controller_, *dialog); }
+    if (action == "register-reviewer") { sampleReviewFirstLine_ = 0U; return registerStudioReviewer(controller_, *dialog); }
     if (action == "create-draft") { sampleReviewFirstLine_ = 0U; return createStudioSampleManifestDraft(controller_, *dialog); }
     if (action == "reviewer") return chooseStudioSampleReviewer(controller_, *dialog);
     if (action == "accept" || action == "reject") return confirmStudioSampleReview(controller_, *dialog,
@@ -2384,6 +2385,7 @@ public:
       else if (event.key == Key::D) action = "source-decision";
       else if (event.key == Key::L) action = "source-license";
       else if (event.key == Key::S) action = "source-register";
+      else if (event.key == Key::V) action = "register-reviewer";
       else if (event.key == Key::Space) action = "play";
       else if (event.key == Key::Left) action = "previous-page";
       else if (event.key == Key::Right) action = "next-page";
@@ -2525,6 +2527,7 @@ public:
       return generationAccessibility_.dispatch(id,action,[&](std::string_view target,SemanticAction selected)->seam::core::Result<void> {
         if (selected==SemanticAction::SetFocus) { generationSemanticFocus_=target; return generationAccessibility_.setFocus(target); }
         if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Generation status is read-only");
+        lastError_.clear();
         const std::string command{target.substr(prefix.size())};
         const auto result=command=="import-wav"?importRecordedTakeFromDialog()
             :command=="record"?recordingAction():command=="discard-recording"?discardRecording()
@@ -2538,6 +2541,8 @@ public:
       return sampleReviewAccessibility_.dispatch(id, action, [&](std::string_view target, SemanticAction selected) -> seam::core::Result<void> {
         if (selected == SemanticAction::SetFocus) { sampleReviewSemanticFocus_ = target; return sampleReviewAccessibility_.setFocus(target); }
         if (selected != SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported, "Review data is inspection-only; use the explicit controls");
+        // A new action starts with a clean error line, as a key press does; its own failure sets it again.
+        lastError_.clear();
         const auto result = sampleReviewAction(target.substr(prefix.size())); record(result); repaint(); return result;
       });
     }
@@ -2548,6 +2553,7 @@ public:
       return studioAccessibility_.dispatch(id,action,[&](std::string_view target,SemanticAction selected)->seam::core::Result<void> {
         if (selected==SemanticAction::SetFocus) { studioSemanticFocus_=target; return studioAccessibility_.setFocus(target); }
         if (selected!=SemanticAction::Activate) return seam::core::failure(seam::core::ErrorCode::Unsupported,"Studio status is read-only");
+        lastError_.clear();
         const auto command=target.substr(prefix.size());
         const auto result=command=="import-wav"?importRecordedTakeFromDialog()
             :command=="record"?recordingAction():command=="discard-recording"?discardRecording()

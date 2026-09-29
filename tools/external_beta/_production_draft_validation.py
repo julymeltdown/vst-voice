@@ -23,7 +23,7 @@ MAX_ABORTED_JOURNAL_BYTES = 16 * 1024 * 1024
 JOURNAL_ACTIONS = {
     "create", "import", "transform", "marker", "retake", "review", "select-take", "save", "candidate-export",
     "import-procedural", "import-generated-batch",
-    "source-quality-assessment", "source-register",
+    "source-quality-assessment", "source-register", "reviewer-register",
 }
 QUEUE_STATES = {"MISSING", "REJECTED", "RETAKE", "MARKER_REVIEW", "PITCH_REVIEW", "APPROVED"}
 HEX64_LOWER = re.compile(r"^[0-9a-f]{64}$")

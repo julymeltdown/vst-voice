@@ -371,6 +371,16 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
       status_ = sampleReviewStatus_;
       return core::success();
     }
+    if (value.reviewerRegistrationReceipt) {
+      reviewerRegistrationReceipt_ = std::move(value.reviewerRegistrationReceipt);
+      if (current) { productionProject_ = std::move(value.committedProject); refreshCandidateMarkerPreview(); }
+      invalidateSampleReview();
+      sampleReviewStatus_ = "REVIEWER REGISTERED / " + value.registeredReviewerId + " / ATTRIBUTION ONLY, NOTHING APPROVED";
+      if (!current) sampleReviewStatus_ += " / CONTEXT CHANGED: REOPEN PRODUCER";
+      if (!reviewerRegistrationReceipt_->durabilityConfirmed) sampleReviewStatus_ += " / " + reviewerRegistrationReceipt_->diagnostic;
+      status_ = sampleReviewStatus_;
+      return core::success();
+    }
     if (value.sourceQualityReceipt) {
       sourceQualityReceipt_ = std::move(value.sourceQualityReceipt);
       if (current) { productionProject_ = std::move(value.committedProject); refreshCandidateMarkerPreview(); }

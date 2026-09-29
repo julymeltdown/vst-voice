@@ -172,6 +172,14 @@ public:
       VoicebankProductionProject& project, const SourceStrategyAssessment& source,
       std::string_view expectedProjectSha256, std::string producerId,
       std::string occurredAtUtc, std::stop_token stopToken = {});
+  // Append one REVIEWER identity declared by the workspace's registered producer. The identity only
+  // attributes later review and source-quality decisions: nothing is approved, existing reviews,
+  // takes and sources stay unchanged, and an identity already registered is never renamed or given
+  // another role. A producer ID therefore cannot also become a reviewer ID.
+  [[nodiscard]] core::Result<ProductionCommitReceipt> registerReviewer(
+      VoicebankProductionProject& project, std::string reviewerId,
+      std::string_view expectedProjectSha256, std::string producerId,
+      std::string occurredAtUtc, std::stop_token stopToken = {});
   // The one durable path from a legacy (pre-style) producer to style ownership. The plan is the
   // exact document a verified legacy inventory was migrated against, its proposed project has to
   // agree with this operation's own result, and unresolved ownership is refused rather than

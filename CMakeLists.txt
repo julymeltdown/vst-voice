@@ -492,6 +492,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/draft_inventory.cpp
   libs/seam-voicebank-production/src/source_assessment.cpp
   libs/seam-voicebank-production/src/source_registration.cpp
+  libs/seam-voicebank-production/src/reviewer_registration.cpp
   libs/seam-voicebank-production/src/style_migration.cpp
   libs/seam-voicebank-production/src/take_inspection_receipt.cpp
 )

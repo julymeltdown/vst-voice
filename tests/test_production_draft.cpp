@@ -397,3 +397,64 @@ TEST_CASE("legacy producer generations retain exact bytes and unknown origins wh
   CHECK(!production::requireTakeSourceExecution(legacy, "old-take"));
   CHECK(production::requireTakeSourceExecution(legacy, "new-take"));
 }
+
+TEST_CASE("reviewer registration appends one usable reviewer identity without approving or rewriting anything") {
+  DraftFixture fixture; fixture.source("original"); fixture.assignment("a"); CHECK(fixture.importTake("a"));
+  production::ProductionProjectRepository repository{fixture.root / "workspace"};
+  const auto before = fixture.project;
+  const auto hash = seam::core::sha256Hex(production::encodeProductionProject(before));
+  const auto result = repository.registerReviewer(fixture.project, "listener", hash, "producer", "2026-09-09T10:05:00Z");
+  CHECK(result);
+  if (!result) return;
+  CHECK(result.value().durabilityConfirmed);
+  CHECK(result.value().committedGeneration == before.lastDurableGeneration + 1U);
+  CHECK(fixture.project.operators.size() == before.operators.size() + 1U);
+  CHECK(fixture.project.operators.back().operatorId == "listener");
+  CHECK(fixture.project.operators.back().role == "REVIEWER");
+  // Nothing else moved: takes, reviews, sources, queues and lifecycle are exactly as before.
+  auto comparable = fixture.project;
+  comparable.operators.pop_back();
+  comparable.lastDurableGeneration = before.lastDurableGeneration;
+  CHECK(production::encodeProductionProject(comparable) == production::encodeProductionProject(before));
+  CHECK(fixture.project.reviews.empty());
+  CHECK(repository.verify(fixture.project));
+  CHECK(production::encodeProductionProject(repository.recover().value()) ==
+        production::encodeProductionProject(fixture.project));
+  // The registered identity is a reviewer the rest of the workflow accepts.
+  auto decision = fixture.quality("quality-listener");
+  decision.reviewerId = "listener";
+  decision.reviewedAtUtc = "2026-09-09T10:06:00Z";
+  CHECK(fixture.assess(decision));
+  CHECK(fixture.project.sourceQualityAssessments.size() == 1U);
+}
+
+TEST_CASE("reviewer registration refuses non-producers, reused identities, stale snapshots and malformed input") {
+  DraftFixture fixture;
+  production::ProductionProjectRepository repository{fixture.root / "workspace"};
+  const auto before = production::encodeProductionProject(fixture.project);
+  const auto hash = seam::core::sha256Hex(before);
+  constexpr auto at = "2026-09-09T10:01:00Z";
+  // Only a registered producer declares reviewers.
+  CHECK(!repository.registerReviewer(fixture.project, "listener", hash, "reviewer", at));
+  CHECK(!repository.registerReviewer(fixture.project, "listener", hash, "nobody", at));
+  // An identity keeps its one role: neither a producer nor an existing reviewer is registered again.
+  const auto reused = repository.registerReviewer(fixture.project, "producer", hash, "producer", at);
+  CHECK(!reused);
+  if (!reused) CHECK(reused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(!repository.registerReviewer(fixture.project, "reviewer", hash, "producer", at));
+  CHECK(!repository.registerReviewer(fixture.project, "listener", std::string(64U, 'b'), "producer", at));
+  for (const auto& malformed : {std::string{}, std::string(129U, 'x'), std::string{" listener"},
+                                std::string{"listener "}, std::string{"list\nener"}})
+    CHECK(!repository.registerReviewer(fixture.project, malformed, hash, "producer", at));
+  CHECK(!repository.registerReviewer(fixture.project, "listener", hash, "producer", "yesterday"));
+  std::stop_source cancelled;
+  cancelled.request_stop();
+  CHECK(!repository.registerReviewer(fixture.project, "listener", hash, "producer", at, cancelled.get_token()));
+  CHECK(production::encodeProductionProject(fixture.project) == before);
+  CHECK(production::encodeProductionProject(repository.recover().value()) == before);
+  // Once one registration lands, a second made from the older snapshot is refused.
+  auto stale = fixture.project;
+  CHECK(repository.registerReviewer(fixture.project, "listener", hash, "producer", at));
+  CHECK(!repository.registerReviewer(stale, "second-listener", hash, "producer", "2026-09-09T10:02:00Z"));
+  CHECK(fixture.project.operators.back().operatorId == "listener");
+}

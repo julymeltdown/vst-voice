@@ -89,6 +89,43 @@ core::Result<void> registerStudioSource(VoicebankStudioController& controller, p
   return controller.beginSourceRegistration(expected,std::move(source));
 }
 
+core::Result<void> VoicebankStudioController::beginReviewerRegistration(const SampleReviewContext& context, std::string reviewerId) {
+  if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict,"Finish current Studio work before registering a reviewer");
+  const auto current = validateSampleReviewContext(context); if (!current) return current;
+  proceduralImportStop_ = std::stop_source{}; const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
+  try {
+    sampleReviewWork_ = std::async(std::launch::async,
+        [context,project=*productionProject_,root=productionWorkspaceRoot_,producer=productionOperatorId_,
+         reviewer=std::move(reviewerId),utc=voicebank_studio_internal::currentUtcTimestamp(),stop]() mutable -> core::Result<SampleReviewWorkResult> {
+      const auto receipt = production::ProductionProjectRepository{root}.registerReviewer(project,reviewer,context.projectSha256,producer,utc,stop);
+      if (!receipt) return core::Result<SampleReviewWorkResult>{receipt.error()};
+      return SampleReviewWorkResult{.context=context,.committedProject=std::move(project),
+          .reviewerRegistrationReceipt=receipt.value(),.registeredReviewerId=std::move(reviewer)};
+    });
+  } catch (const std::exception& error) { return core::failure(core::ErrorCode::Internal,"Cannot start reviewer registration",error.what()); }
+  sampleReviewStatus_ = status_ = "REGISTERING REVIEWER / ATTRIBUTION ONLY / NOTHING IS APPROVED";
+  return core::success();
+}
+
+core::Result<void> registerStudioReviewer(VoicebankStudioController& controller, platform::IFileDialog& dialog) {
+  if (controller.proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict,"Finish current Studio work first");
+  const auto context = controller.captureSampleReviewContext(); if (!context) return core::Result<void>{context.error()};
+  const auto* project = controller.productionProject();
+  if (project == nullptr) return core::failure(core::ErrorCode::InvalidState,"Open a producer workspace before registering a reviewer");
+  std::string reviewers;
+  for (const auto& actor : project->operators)
+    if (actor.role == "REVIEWER") reviewers += (reviewers.empty() ? "" : ", ") + actor.operatorId;
+  const std::string summary = "PRODUCER " + controller.productionOperatorId() + "\nPROJECT SHA256 " + context.value().projectSha256 +
+      "\nREGISTERED REVIEWERS " + (reviewers.empty() ? std::string{"none"} : reviewers) +
+      "\nA reviewer ID attributes later accept, reject and source-quality decisions. Registering one approves nothing, "
+      "and the ID cannot be renamed or reused for another role.";
+  const auto entered = dialog.chooseReviewerRegistration(summary);
+  if (!entered) return core::Result<void>{entered.error()};
+  if (!entered.value()) return core::success();
+  const auto current = controller.validateSampleReviewContext(context.value()); if (!current) return current;
+  return controller.beginReviewerRegistration(context.value(),*entered.value());
+}
+
 core::Result<void> VoicebankStudioController::beginSourceQualityEvidenceCapture(
     const SampleReviewContext& context, std::filesystem::path evidencePath) {
   if (proceduralImportBusy()) return core::failure(core::ErrorCode::Conflict,"Finish current Studio work before source evidence capture");

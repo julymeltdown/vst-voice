@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -50,6 +51,8 @@ struct DialogScript final {
   std::vector<std::optional<platform::IFileDialog::ProductionWorkspaceInput>> workspaces;
   std::vector<std::optional<platform::SourceRegistrationInput>> sourceRegistrations;
   std::vector<std::string> sourceRegistrationSummaries;
+  std::vector<std::optional<std::string>> reviewerRegistrations;
+  std::vector<std::string> reviewerRegistrationSummaries;
   std::vector<platform::FileDialogRequest> requests;
 };
 
@@ -88,6 +91,10 @@ public:
       std::string_view summary) override {
     script_->sourceRegistrationSummaries.emplace_back(summary);
     return nextAnswer(script_->sourceRegistrations);
+  }
+  core::Result<std::optional<std::string>> chooseReviewerRegistration(std::string_view summary) override {
+    script_->reviewerRegistrationSummaries.emplace_back(summary);
+    return nextAnswer(script_->reviewerRegistrations);
   }
 
 private:
@@ -256,6 +263,19 @@ public:
     const native_ui::PointerEvent event{.position = {x, y}, .button = native_ui::PointerButton::Left};
     app->pointerDown(event);
     app->pointerUp(event);
+  }
+
+  // Writes what the harness sees, at the given window size, when SEAM_STUDIO_APP_SNAPSHOT_DIR names a
+  // directory; the checks never depend on it. The window returns to its previous size afterwards.
+  void snapshot(std::string_view name, double width, double height) {
+    const char* directory = std::getenv("SEAM_STUDIO_APP_SNAPSHOT_DIR");
+    if (directory == nullptr || *directory == '\0') return;
+    const auto previousWidth = width_, previousHeight = height_;
+    resize(width, height);
+    frame();
+    CHECK(surface_.writePpm(std::filesystem::path{directory} / (std::string{name} + ".ppm")).hasValue());
+    resize(previousWidth, previousHeight);
+    frame();
   }
 
   template <typename Done>
@@ -561,6 +581,22 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
     return studio.app->productionProject()->selectedSourceStrategyId == "harness-singer";
   }));
   CHECK(dialogs.sourceRegistrationSummaries.size() == 1U);
+  // The producer declares a reviewer before any review. An identity keeps its one role, so the
+  // producer's own ID is refused and the workspace is unchanged until a new ID is entered.
+  dialogs.reviewerRegistrations = {std::string{"producer"}, std::string{"listener"}};
+  CHECK(studio.activate("register-reviewer").hasValue());
+  CHECK(studio.settle([&] { return studio.value("status").find("already registered") != std::string::npos; }));
+  CHECK(studio.app->productionProject()->operators.size() == 1U);
+  CHECK(studio.activate("register-reviewer").hasValue());
+  CHECK(studio.settle([&] { return studio.app->productionProject()->operators.size() == 2U; }));
+  CHECK(studio.app->productionProject()->operators.back().operatorId == "listener");
+  CHECK(studio.app->productionProject()->operators.back().role == "REVIEWER");
+  CHECK(dialogs.reviewerRegistrationSummaries.size() == 2U);
+  if (dialogs.reviewerRegistrationSummaries.size() == 2U)
+    CHECK(dialogs.reviewerRegistrationSummaries.back().find("REGISTERED REVIEWERS none") != std::string::npos);
+  CHECK(studio.value("status").starts_with("REVIEWER REGISTERED / listener"));
+  studio.snapshot("sample-review-reviewer-registered-720x520", 720.0, 520.0);
+  studio.snapshot("sample-review-reviewer-registered-1100x720", 1100.0, 720.0);
   CHECK(studio.settle([&] {
     const auto back = studio.node("back");
     return back && back->enabled;
@@ -619,6 +655,7 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
   CHECK(!studio.node("discard-recording").has_value());
   CHECK(studio.app->productionQueues().missing == missing);
   CHECK(studio.app->lastRecording().empty());
+  studio.snapshot("producer-microphone-lost-1100x720", 1100.0, 720.0);
 
   // The license evidence changes after registration, so the first publication is refused. The capture
   // and its WAV are retained; the creator can retry or discard rather than sing the take again.
@@ -637,6 +674,7 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
     CHECK(discard && discard->enabled);
   }
   CHECK(!studio.value("status").empty());
+  studio.snapshot("producer-publication-retry-720x520", 720.0, 520.0);
   const auto recorded = studio.app->lastRecording();
   CHECK(!recorded.empty() && std::filesystem::is_regular_file(recorded));
   CHECK(studio.app->lastRecordedFrames() == 24000U);
@@ -751,6 +789,7 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
   if (reopened.app->productionProject() == nullptr) return;
   CHECK(reopened.app->productionProject()->lastDurableGeneration == generation);
   CHECK(reopened.app->productionProject()->selectedSourceStrategyId == "harness-singer");
+  CHECK(reopened.app->productionProject()->operators.size() == 2U);
   CHECK(reopened.app->productionQueues().markerReview == 2U);
   CHECK(reopened.app->productionQueues().missing == missing - 2U);
   CHECK(microphone->opens == 4U);

@@ -108,6 +108,10 @@ public:
       voicebank_production::SourceStrategyAssessment source);
   [[nodiscard]] const std::optional<SourceRegistrationInspection>& sourceRegistrationInspection() const noexcept { return sourceRegistrationInspection_; }
   [[nodiscard]] const std::optional<voicebank_production::ProductionCommitReceipt>& sourceRegistrationReceipt() const noexcept { return sourceRegistrationReceipt_; }
+  // The current producer declares one new reviewer identity; nothing is reviewed or approved.
+  [[nodiscard]] core::Result<void> beginReviewerRegistration(const SampleReviewContext& context, std::string reviewerId);
+  [[nodiscard]] const std::optional<voicebank_production::ProductionCommitReceipt>& reviewerRegistrationReceipt() const noexcept { return reviewerRegistrationReceipt_; }
+  [[nodiscard]] const std::string& productionOperatorId() const noexcept { return productionOperatorId_; }
   [[nodiscard]] core::Result<void> beginSourceQualityEvidenceCapture(const SampleReviewContext& context,
       std::filesystem::path evidencePath);
   [[nodiscard]] core::Result<void> beginSourceQualityDecision(const SourceQualityInspection& expected, std::string id,
@@ -478,6 +482,8 @@ private:
     std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt;
     std::optional<SourceRegistrationInspection> sourceRegistrationInspection;
     std::optional<voicebank_production::ProductionCommitReceipt> sourceRegistrationReceipt;
+    std::optional<voicebank_production::ProductionCommitReceipt> reviewerRegistrationReceipt;
+    std::string registeredReviewerId;
   };
   void adoptLoadedSampleUnit(SampleReviewWorkResult::LoadedUnit loaded);
   [[nodiscard]] core::Result<SampleReviewWorkResult::LoadedUnit> prepareSampleManifestLoad(
@@ -500,6 +506,7 @@ private:
   std::optional<voicebank_production::ProductionCommitReceipt> sourceQualityReceipt_;
   std::optional<SourceRegistrationInspection> sourceRegistrationInspection_;
   std::optional<voicebank_production::ProductionCommitReceipt> sourceRegistrationReceipt_;
+  std::optional<voicebank_production::ProductionCommitReceipt> reviewerRegistrationReceipt_;
   std::optional<voicebank_production::SampleCandidateReviewReceipt> sampleReviewReceipt_;
   std::optional<voicebank_production::PublishedSampleCandidate> publishedSampleCandidate_;
   std::optional<voicebank_production::CreatedSampleManifestDraft> createdSampleManifestDraft_;
@@ -668,5 +675,6 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
 [[nodiscard]] core::Result<void> confirmStudioSourceQuality(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> captureStudioSourceLicense(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 [[nodiscard]] core::Result<void> registerStudioSource(VoicebankStudioController& controller, platform::IFileDialog& dialog);
+[[nodiscard]] core::Result<void> registerStudioReviewer(VoicebankStudioController& controller, platform::IFileDialog& dialog);
 
 }  // namespace seam::native_ui

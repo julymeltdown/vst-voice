@@ -148,6 +148,13 @@ public:
   [[nodiscard]] virtual core::Result<std::optional<std::string>> chooseSampleReviewer(const std::vector<std::string>&) {
     return core::failure<std::optional<std::string>>(core::ErrorCode::Unsupported, "Registered reviewer selection is unavailable on this platform");
   }
+  // The producer declares a reviewer identity before anyone can review. The summary names the
+  // producer, the exact project and the identities already registered; the answer is one new ID.
+  // Registering is attribution for later decisions, never evidence that a review happened.
+  [[nodiscard]] virtual core::Result<std::optional<std::string>> chooseReviewerRegistration(std::string_view summary) {
+    static_cast<void>(summary);
+    return core::failure<std::optional<std::string>>(core::ErrorCode::Unsupported, "Reviewer registration entry is unavailable on this platform");
+  }
   // A procedural review is about one installed resource and the evidence a reviewer examined. The
   // identity is asked for explicitly because a recorded decision is a human attribution, and the
   // evidence is named by the reviewer because the digests are computed from the files they point at.

@@ -48,10 +48,14 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
   const auto& source = controller.sourceQualityInspection();
   const bool sourceCaptured = source && controller.validateSampleReviewContext(source->context);
   controls.push_back({"source-decision", "ASSESS SOURCE...", {width - 190.0, 40.0, 166.0, 22.0}, available && sourceCaptured && !source->reviewers.empty()});
-  controls.push_back({"source-license", "L CAPTURE SOURCE LICENSE...", {24.0,126.0,(width-52.0)/2.0,24.0}, available && project && project->schemaVersion>=2});
+  // Sources and the people who review them are declared on one row, before any unit review.
+  const auto third = std::max(1.0, (width - 56.0) / 3.0);
+  controls.push_back({"source-license", "L CAPTURE SOURCE LICENSE...", {24.0,126.0,third,24.0}, available && project && project->schemaVersion>=2});
   const auto& registration = controller.sourceRegistrationInspection();
-  controls.push_back({"source-register", "S REGISTER NEW SOURCE...", {26.0+(width-48.0)/2.0,126.0,(width-52.0)/2.0,24.0},
+  controls.push_back({"source-register", "S REGISTER NEW SOURCE...", {28.0+third,126.0,third,24.0},
       available && registration && controller.validateSampleReviewContext(registration->context)});
+  controls.push_back({"register-reviewer", "V REGISTER REVIEWER...", {32.0+2.0*third,126.0,third,24.0},
+      available && project != nullptr});
   return controls;
 }
 
@@ -66,6 +70,13 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
       "Publication requires complete accepted coverage; it creates a new engineering directory, not a signed release.",
       "Template export remains a separate preparation operation; it is not this publication workflow."};
   if (const auto* project = controller.productionProject()) values.emplace_back(sourceQualificationLabel(*project));
+  if (const auto* project = controller.productionProject()) {
+    std::string reviewers;
+    for (const auto& actor : project->operators)
+      if (actor.role == "REVIEWER") reviewers += (reviewers.empty() ? "" : ", ") + actor.operatorId;
+    values.push_back(reviewers.empty() ? "REVIEWERS NONE REGISTERED / V REGISTER REVIEWER BEFORE ANY UNIT OR SOURCE REVIEW"
+                                       : "REVIEWERS " + reviewers);
+  }
   if (const auto& registration = controller.sourceRegistrationInspection()) {
     values.push_back("CAPTURED SOURCE LICENSE / PRODUCER " + registration->producerId);
     values.push_back("LICENSE " + registration->evidencePath.generic_string());

@@ -108,7 +108,7 @@ public:
       NSString* folderName=panel.URL.lastPathComponent;
       NSAlert* alert=[[NSAlert alloc] init];
       alert.messageText=@"Name the voice and its producer";
-      alert.informativeText=@"The project ID also names the generated Japanese draft inventory. Your producer ID becomes this workspace's only PRODUCER; reviewers are registered later. The requested range stays not assessed.";
+      alert.informativeText=@"The project ID also names the generated Japanese draft inventory. Your producer ID becomes this workspace's only PRODUCER; register reviewers later in Sample Review (Q, then V). The requested range stays not assessed.";
       [alert addButtonWithTitle:@"Create Workspace"]; [alert addButtonWithTitle:@"Cancel"];
       NSView* fields=[[NSView alloc] initWithFrame:NSMakeRect(0,0,480,66)];
       NSTextField* project=[[NSTextField alloc] initWithFrame:NSMakeRect(0,36,480,26)];
@@ -333,6 +333,38 @@ public:
       if (index <= 0 || static_cast<std::size_t>(index) > reviewers.size())
         return core::failure<Output>(core::ErrorCode::InvalidArgument, "No reviewer was explicitly selected");
       return Output{reviewers[static_cast<std::size_t>(index - 1)]};
+    }
+  }
+  core::Result<std::optional<std::string>> chooseReviewerRegistration(std::string_view summary) override {
+    using Output = std::optional<std::string>;
+    if (![NSThread isMainThread] || summary.size() > 16384U || nsString(summary) == nil)
+      return core::failure<Output>(core::ErrorCode::InvalidArgument, "Reviewer registration context is invalid or oversized");
+    @autoreleasepool {
+      NSAlert* alert = [[NSAlert alloc] init];
+      alert.messageText = @"Register a reviewer";
+      alert.informativeText = @"Enter the identity of the person who will listen and accept or reject takes. Registering approves nothing. "
+          @"Whoever imported, processed or annotated a take cannot review it, so a producer registers a separate reviewer identity.";
+      [alert addButtonWithTitle:@"Cancel"];
+      [alert addButtonWithTitle:@"Register Reviewer"];
+      NSView* view = [[NSView alloc] initWithFrame:NSMakeRect(0,0,480,152)];
+      NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0,40,480,112)];
+      scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
+      NSTextView* context = [[NSTextView alloc] initWithFrame:NSMakeRect(0,0,460,112)];
+      context.editable = NO; context.selectable = YES; context.string = nsString(summary);
+      context.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+      context.textContainer.widthTracksTextView = YES; context.autoresizingMask = NSViewWidthSizable;
+      context.verticallyResizable = YES; [context setAccessibilityLabel:@"Producer, project and registered identities"];
+      scroll.documentView = context; [view addSubview:scroll];
+      NSTextField* identity = [[NSTextField alloc] initWithFrame:NSMakeRect(0,0,480,26)];
+      identity.placeholderString = @"New reviewer ID"; [identity setAccessibilityLabel:@"New reviewer ID"];
+      [view addSubview:identity];
+      alert.accessoryView = view;
+      alert.window.initialFirstResponder = identity;
+      if (runModalRestoringFocus(alert) != NSAlertSecondButtonReturn) return Output{};
+      const char* text = identity.stringValue.UTF8String;
+      if (text == nullptr || identity.stringValue.length == 0U || identity.stringValue.length > 128U)
+        return core::failure<Output>(core::ErrorCode::InvalidArgument, "Enter a reviewer ID of at most 128 characters");
+      return Output{std::string{text}};
     }
   }
   core::Result<bool> confirmSampleReview(std::string_view summary, bool accept) override {
