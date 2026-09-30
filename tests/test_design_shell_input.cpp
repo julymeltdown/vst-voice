@@ -1914,7 +1914,8 @@ TEST_CASE("a failed render's status line names its reason, not only that it fail
 
   // Failed with a RENDER_FAILED diagnostic: the title and the reason, as a warning.
   const std::string reason =
-      "Project has no audible rendered tracks: Voicebank cannot cover the phoneme sequence";
+      "Project has no audible rendered tracks: "
+      "No voicebank unit covers the sound \"a\" of the lyric \"あ\" at bar 1, beat 1";
   state.renderStatus.state = RenderStatusState::Failed;
   state.renderStatus.diagnostic = reason;
   state.diagnostics.push_back(authoring::Diagnostic{.code = "RENDER_FAILED"});

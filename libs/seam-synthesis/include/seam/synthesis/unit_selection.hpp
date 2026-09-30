@@ -4,6 +4,7 @@
 #include "seam/domain/project.hpp"
 #include "seam/phonemizer/phonemizer.hpp"
 #include "seam/synthesis/source_phoneme_alignment.hpp"
+#include "seam/time/meter_map.hpp"
 #include "seam/voicebank/voicebank.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -63,6 +64,9 @@ struct UnitSelectionContext final {
   bool requireAcoustic{false};
   UnitSelectionBudget* budget{nullptr};
   std::stop_token stop{};
+  // The project's meter map, when the caller has one, so that a failed selection can say where the note
+  // it cannot sing begins in bars and beats. It is only read to word a failure; it never chooses a unit.
+  const time::MeterMap* meters{nullptr};
 };
 
 // Heuristic score points (lower is preferred), not physical or perceptual units.

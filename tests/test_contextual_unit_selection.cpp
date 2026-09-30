@@ -429,3 +429,128 @@ TEST_CASE("selection work budget is shared across repeated arms and source crop 
   std::stop_source stop; stop.request_stop();
   CHECK(!synthesis::analyzeUnitJoin(unit, audio, std::string(64U, 'a'), samples, stop.get_token()));
 }
+
+namespace {
+bool mentions(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
+}  // namespace
+
+// The words a failed selection gives the creator: which sound has no unit, whose lyric it is and where
+// its note begins. The Fixture's three notes sing a, i and u at ticks 0, 480 and 960, each with the
+// lyric あ, and the project counts 960 ticks to a beat in 4/4.
+
+TEST_CASE("a phrase no chain of units can cover names the sound, its lyric and where the note begins") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  const auto selected = f.select({.meters = &f.project.meterMap()});
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(selected.error().code == core::ErrorCode::NotFound);
+  const auto& message = selected.error().message;
+  CHECK(mentions(message, "sound \"u\""));
+  CHECK(mentions(message, "lyric \"あ\""));
+  CHECK(mentions(message, "bar 1, beat 2"));
+  CHECK(selected.error().context.empty());
+}
+
+TEST_CASE("the sound named is the first one the chain cannot pass, not a later one that is also missing") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("u", {"u"}, 0.5F, 0.5F);
+  const auto selected = f.select({.meters = &f.project.meterMap()});
+  CHECK(!selected);
+  if (selected) return;
+  const auto& message = selected.error().message;
+  CHECK(mentions(message, "sound \"i\""));
+  CHECK(!mentions(message, "sound \"u\""));
+  CHECK(mentions(message, "bar 1, beat 1"));
+}
+
+TEST_CASE("a unit that spans several sounds moves the place where the chain stops") {
+  Fixture f;
+  f.add("a-i", {"a", "i"}, 0.5F, 0.5F);
+  const auto selected = f.select({.meters = &f.project.meterMap()});
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(mentions(selected.error().message, "sound \"u\""));
+  CHECK(!mentions(selected.error().message, "sound \"i\""));
+}
+
+TEST_CASE("without a meter map the failure still names the sound and the lyric but gives no position") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  const auto selected = f.select();
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(mentions(selected.error().message, "sound \"u\""));
+  CHECK(mentions(selected.error().message, "lyric \"あ\""));
+  CHECK(!mentions(selected.error().message, "bar "));
+}
+
+TEST_CASE("a voicebank with several styles says which style had no unit") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  f.bank.styles = {"original"};
+  const auto single = f.select();
+  CHECK(!single);
+  if (single) return;
+  CHECK(!mentions(single.error().message, "style"));
+  f.bank.styles = {"original", "growl"};
+  const auto several = f.select();
+  CHECK(!several);
+  if (several) return;
+  CHECK(mentions(several.error().message, "style \"original\""));
+}
+
+TEST_CASE("a very long lyric is shortened in the failure message") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  f.project.findRegion(f.region)->lyrics.back().surface = std::u32string(200U, U'あ');
+  const auto selected = f.select();
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(selected.error().message.size() < 200U);
+  CHECK(mentions(selected.error().message, "\u2026"));
+  CHECK(mentions(selected.error().message, "sound \"u\""));
+}
+
+TEST_CASE("the position counts from where the region begins, not from its own first tick") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  f.project.findRegion(f.region)->startTick = time::Tick{3840};  // The second 4/4 bar.
+  const auto selected = f.select({.meters = &f.project.meterMap()});
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(mentions(selected.error().message, "bar 2, beat 2"));
+}
+
+TEST_CASE("the lyric named is the one that owns the sound, which a shared lyric leaves on another note") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  auto* region = f.project.findRegion(f.region);
+  region->lyrics[2].surface = U"う";
+  f.tokens[2].lyricOwner = region->lyrics[0].id;
+  const auto selected = f.select();
+  CHECK(!selected);
+  if (selected) return;
+  CHECK(mentions(selected.error().message, "lyric \"あ\""));
+  CHECK(!mentions(selected.error().message, "う"));
+}
+
+TEST_CASE("a render snapshot that cannot be built for want of a unit says which note lacks it") {
+  Fixture f;
+  f.add("a", {"a"}, 0.5F, 0.5F);
+  f.add("i", {"i"}, 0.5F, 0.5F);
+  const auto built = f.snapshot();
+  CHECK(!built);
+  if (built) return;
+  CHECK(built.error().code == core::ErrorCode::NotFound);
+  CHECK(mentions(built.error().message, "sound \"u\""));
+  CHECK(mentions(built.error().message, "lyric \"あ\""));
+  CHECK(mentions(built.error().message, "bar 1, beat 2"));
+}

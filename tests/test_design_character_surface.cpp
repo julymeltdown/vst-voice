@@ -766,7 +766,7 @@ TEST_CASE("error toast paints complete long ASCII and CJK causes as measured bod
   cjk += "/source.wav";
   const std::string renderFailure =
       "Render did not complete — Project has no audible rendered tracks: "
-      "Voicebank cannot cover the phoneme sequence";
+      "No voicebank unit covers the sound \"a\" of the lyric \"あ\" at bar 1, beat 1";
   for (const auto& reason : {ascii, cjk, renderFailure}) {
     // The captured production failure must also fit above an existing diagnostics toast, where
     // the canonical lane holds two cause rows. The longer path fixtures use all three rows.

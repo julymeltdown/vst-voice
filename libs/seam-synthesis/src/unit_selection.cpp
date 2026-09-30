@@ -77,6 +77,34 @@ const domain::UnitSelectionOverride* overrideFor(
   return iterator == overrides.end() ? nullptr : &*iterator;
 }
 
+// A lyric quoted in a failure message is read on one status line, so a long one is cut.
+constexpr std::size_t kMessageLyricCodePoints = 24U;
+
+// The sentence for a phrase that no chain of units covers. The chain stops at the first token no unit can
+// start once every token before it has been placed, and that token is the sound to name: its symbol, the
+// lyric that owns it, where its note begins when the caller supplied the meter map, and the style when the
+// voicebank has several to choose from. It is wording only; nothing here influences which units are chosen.
+std::string describeUncoveredSound(const voicebank::Manifest& manifest, const domain::VocalRegion& region,
+                                   const domain::PhonemeToken& token, std::string_view style,
+                                   const time::MeterMap* meters) {
+  std::string text = "No voicebank unit covers the sound \"" + token.symbol + "\"";
+  const auto* note = noteFor(region, token);
+  const auto* lyric = region.findLyric(token.lyricOwner);
+  if (lyric == nullptr && note != nullptr) lyric = region.findLyric(note->lyricTokenId);
+  if (lyric != nullptr && !lyric->surface.empty()) {
+    const auto shown = lyric->surface.substr(0U, kMessageLyricCodePoints);
+    text += " of the lyric \"" + domain::toUtf8(shown);
+    if (shown.size() < lyric->surface.size()) text += "\u2026";
+    text += "\"";
+  }
+  if (meters != nullptr && note != nullptr) {
+    const auto place = meters->barBeatAt(region.startTick + note->startTick);
+    text += " at bar " + std::to_string(place.bar) + ", beat " + std::to_string(place.beat);
+  }
+  if (manifest.styles.size() > 1U) text += " in the style \"" + std::string{style} + "\"";
+  return text;
+}
+
 }  // namespace
 
 core::Result<std::vector<UnitCandidate>> UnitCandidateGenerator::generate(
@@ -327,7 +355,19 @@ core::Result<UnitPlan> DeterministicUnitSelector::select(
     if (std::isfinite(states[i].score) && (best == none || states[i].score < states[best].score ||
         (states[i].score == states[best].score && i < best))) best = i;
   }
-  if (best == none) return core::failure<UnitPlan>(core::ErrorCode::NotFound, "Voicebank cannot cover the phoneme sequence");
+  if (best == none) {
+    // The chain reaches as far as the furthest token boundary any placed unit ends on, so the token at
+    // that boundary is one no unit can start. A placed unit is a candidate whose state has a finite score.
+    std::size_t reached = 0U;
+    for (std::size_t i = 0; i < candidates.size(); ++i) {
+      if (std::isfinite(states[i].score)) {
+        reached = std::max(reached, candidates[i].tokenStart + candidates[i].tokenCount);
+      }
+    }
+    return core::failure<UnitPlan>(core::ErrorCode::NotFound,
+        describeUncoveredSound(manifest, region, tokens[std::min(reached, tokens.size() - 1U)], style,
+                               context.meters));
+  }
   UnitPlan plan;
   plan.totalScore = states[best].score;
   auto cursor = best;

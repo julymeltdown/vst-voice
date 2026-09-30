@@ -857,6 +857,30 @@ TEST_CASE("authoring_render_coordinator_publishes_voicebank_failures_as_silence"
   CHECK(mismatched->result.interleaved.empty());
 }
 
+TEST_CASE("authoring_render_coordinator_render_failure_names_the_sound_the_voicebank_cannot_sing") {
+  // The bundled voice has no stand-alone /a/, so the default lyric あ cannot be rendered. The reason the
+  // creator reads has to say which sound, whose lyric and where, not only that the voicebank cannot cover
+  // the phoneme sequence.
+  auto fixture = makeRenderFixture();
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->unitSelectionOverrides.clear();
+  auto* lyric = region->findLyric(region->notes.front().lyricTokenId);
+  CHECK(lyric != nullptr);
+  if (lyric == nullptr) return;
+  lyric->surface = U"あ";
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-uncovered-sound")};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     91U, 48000U, seam::rendering::RenderQuality::Preview);
+  const auto progress = waitForTerminal(coordinator, 91U);
+  CHECK(progress.state == seam::authoring::RenderState::Failed);
+  CHECK(progress.failure == seam::authoring::RenderFailureKind::RenderFailed);
+  CHECK(progress.diagnostic.find(
+            "No voicebank unit covers the sound \"a\" of the lyric \"あ\" at bar 1, beat 1") !=
+        std::string::npos);
+}
+
 TEST_CASE("authoring_render_coordinator_failed_render_preserves_previous_audio") {
   auto fixture = makeRenderFixture();
   seam::authoring::AuthoringRenderCoordinator coordinator{

@@ -1378,7 +1378,10 @@ core::Result<RenderSnapshot> RenderSnapshotFactory::create(
   // evidence as the actual search. Every eligible competitor must be readable;
   // an error is not permission to remove it from the optimization problem.
   std::set<std::string> competingUnits;
-  synthesis::UnitSelectionContext selectionContext{.budget = &selectionBudget, .stop = stop};
+  // The project's own meter map, not the phrase project's, so a failed selection can say where the note
+  // it cannot sing begins in the bars and beats the creator sees.
+  synthesis::UnitSelectionContext selectionContext{
+      .budget = &selectionBudget, .stop = stop, .meters = &project.meterMap()};
   const auto collect = [&](std::string_view selectedStyle) -> core::Result<void> {
     const auto candidates = synthesis::UnitCandidateGenerator{}.generate(voicebankValue,
         *phraseRegion, phonemes.tokens, selectedStyle, phraseRegion->unitSelectionOverrides, evidence, true, selectionContext);

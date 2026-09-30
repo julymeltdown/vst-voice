@@ -264,7 +264,8 @@ def derive_fixture(base: dict[str, Any], state: str) -> dict[str, Any]:
         region["lyrics"] = []
     elif state == "failed":
         # A real render failure, not a missing bank: the demo bank cannot sing ra, so the render
-        # fails with "Voicebank cannot cover the phoneme sequence" and the shell must say why.
+        # fails with 'No voicebank unit covers the sound "r" ...' (it names the sound, the lyric and
+        # the note's bar and beat) and the shell must say why.
         region["lyrics"][2]["surface"] = "\u3089"
     elif state == "rendering":
         # A 600-note song keeps the render running for about a second and a half after launch,

@@ -694,7 +694,9 @@ TEST_CASE("the lane's playhead passes under the error and diagnostics toasts, ne
   CHECK(f.controller.openExpressionLane(seam::ui::ExpressionChannel::Breathiness).hasValue());
   auto state = f.controller.sceneState();
   state.renderStatus.state = RenderStatusState::Failed;
-  state.renderStatus.diagnostic = "Voicebank cannot cover the phoneme sequence";
+  state.renderStatus.diagnostic =
+      "Project has no audible rendered tracks: "
+      "No voicebank unit covers the sound \"a\" of the lyric \"あ\" at bar 1, beat 1";
   state.diagnostics.push_back(seam::authoring::Diagnostic{.code = "RENDER_FAILED"});
   state.playheadPixel = -1.0;
   auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{10};
