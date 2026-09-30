@@ -2340,3 +2340,63 @@ TEST_CASE("authoring runtime does not try to hand back old-format audio when a f
   CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{20}));
   CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
 }
+
+TEST_CASE("authoring runtime does not let a seam completion that is already publishing refill the transport a format change replaced") {
+  // A completion that holds the audition lock when the format changes has checked its request current
+  // and is about to publish. The format change has to wait for it, so that what it publishes goes to
+  // the transport it was published to, which the change then replaces; and nothing is published after
+  // the change, because the preview is no longer wanted. Retiring the preview after the replacement,
+  // under a lock taken only for that, let the completion publish old preview audio to the new
+  // transport, which accepts it when only the block size changed. Found by the second developer's
+  // review of 4781ca1d; it fails before that commit too.
+  using namespace seam;
+  RenderGate gate;
+  HeldHook duringPublication;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  auto config = configFor(test::support::temporaryDirectory("runtime-format-change-in-flight-seam"));
+  config.renderHooks = gate.hooks();
+  config.duringSeamPreviewPublication = [&] { duringPublication.pass(); };
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  ReleaseHeldOnExit releaseOnExit{duringPublication};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto block = runtime.transport().config().blockFrames;
+
+  // The seam completion is inside the audition lock, with the preview's current audio in hand.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(duringPublication.waitEntered(std::chrono::seconds{10}));
+
+  // The format changes on another thread: same rate, another block size. It waits for the completion.
+  // The new canonical render is held, so that the transport is looked at while it has no audio.
+  gate.arm();
+  std::atomic<bool> finished{false};
+  core::Result<void> changed = core::success();
+  std::jthread change{[&] {
+    changed = runtime.reconfigureAudio(48000U, 2U, block + 64U);
+    finished.store(true);
+  }};
+  std::this_thread::sleep_for(std::chrono::milliseconds{300});
+  CHECK(!finished.load());
+  CHECK(runtime.transport().config().blockFrames == block);
+  duringPublication.release();
+  change.join();
+  CHECK(changed);
+  CHECK(runtime.transport().config().blockFrames == block + 64U);
+
+  // What the completion published went with the old transport. The preview is over, and the new
+  // transport holds nothing until the new canonical render is published to it.
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(!runtime.transport().state().available);
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(!runtime.transport().state().available);
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+  gate.release();
+  CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{20}));
+}

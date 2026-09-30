@@ -592,12 +592,26 @@ core::Result<void> AuthoringRuntime::reconfigureAudio(
   config.sampleRate = sampleRate;
   config.outputChannels = outputChannels;
   config.blockFrames = blockFrames;
-  const auto reconfigured = transport_.reconfigure(config);
-  if (!reconfigured) return reconfigured;
+  bool comparison = false;
+  {
+    // Replacing the transport and ending the transient audio are one step for everything that
+    // publishes. A completion that already holds this lock has checked its request current and
+    // publishes first, to the transport that is about to go, and what it published goes with it; a
+    // completion that comes later finds that nothing is wanted. Retiring after the replacement,
+    // with the lock taken only for that, let a completion in between publish old preview audio to
+    // the new transport, which accepts it whenever only the block size changed. A refusal leaves
+    // the transport, and the transient audio on it, as they were.
+    std::lock_guard lock(performanceAuditionMutex_);
+    const auto reconfigured = transport_.reconfigure(config);
+    if (!reconfigured) return reconfigured;
+    comparison = retireTransientAudioLocked();
+  }
+  // Cancelling may deliver a coordinator's completion on this thread, and that takes the lock above.
+  seamPreviewRenderer_.cancel();
+  if (comparison) performanceAuditionRenderer_.cancel();
   previewSampleRate_ = sampleRate;
   config_.previewSampleRate = sampleRate;
   config_.outputChannels = outputChannels;
-  retireTransientAudio();
   requestPreview(true);
   return core::success();
 }
@@ -919,6 +933,11 @@ void AuthoringRuntime::publishCompletedSeamPreview() {
   bool published = false;
   {
     std::lock_guard lock(performanceAuditionMutex_);
+    // A preview that is no longer wanted publishes nothing and restores nothing. Whoever ends a
+    // preview (a revocation, a failure, a format change) clears this flag under this lock, so a
+    // completion that comes after that has nothing to publish even when its render has not been
+    // cancelled yet.
+    if (!seamPreviewActive_.load(std::memory_order_acquire)) return;
     // The audio of the newest request, and only once it has finished. A request that was revoked
     // or replaced leaves its finished audio behind in the coordinator, and that audio must not
     // reach the transport. revokeSeamPreview cancels before it takes this lock, so a revocation
@@ -975,21 +994,16 @@ void AuthoringRuntime::revokeSeamPreview() {
   seamPreviewReady_.store(false, std::memory_order_release);
 }
 
-void AuthoringRuntime::retireTransientAudio() {
-  revokeSeamPreview();
-  bool comparison = false;
-  {
-    std::lock_guard lock(performanceAuditionMutex_);
-    comparison = performanceAuditionActive_.exchange(false, std::memory_order_acq_rel);
-    performanceAuditionReady_.store(false, std::memory_order_release);
-    // The transport holds nothing now, so nothing waits behind a preview. What was owed stays owed
-    // until the decision that follows (an emptied score is cleared again, a render is published)
-    // settles it or owes it afresh.
-    canonicalBehindSeamPreview_ = false;
-  }
-  // Like revokeSeamPreview: cancelling may deliver the coordinator's completion on this thread,
-  // and that takes the lock above.
-  if (comparison) performanceAuditionRenderer_.cancel();
+bool AuthoringRuntime::retireTransientAudioLocked() {
+  seamPreviewActive_.store(false, std::memory_order_release);
+  seamPreviewReady_.store(false, std::memory_order_release);
+  const bool comparison = performanceAuditionActive_.exchange(false, std::memory_order_acq_rel);
+  performanceAuditionReady_.store(false, std::memory_order_release);
+  // The transport holds nothing now, so nothing waits behind a preview. What was owed stays owed
+  // until the decision that follows (an emptied score is cleared again, a render is published)
+  // settles it or owes it afresh.
+  canonicalBehindSeamPreview_ = false;
+  return comparison;
 }
 
 void AuthoringRuntime::publishCompletedPerformanceAudition() {

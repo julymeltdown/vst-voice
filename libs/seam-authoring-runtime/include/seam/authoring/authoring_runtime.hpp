@@ -241,8 +241,11 @@ private:
   // performance comparison owns playback any longer, and the audio they were rendered as is for the
   // old format. Both end without a hand-back (the coordinator's canonical audio is for the old
   // format too, and the transport would refuse it); the render that follows is the next audio the
-  // transport is given.
-  void retireTransientAudio();
+  // transport is given. Needs performanceAuditionMutex_, the lock that the replacement of the
+  // transport is made under, so that no completion can publish between the two. Returns whether a
+  // comparison was open: its render is cancelled by the caller once the lock is released, because
+  // cancelling can deliver the completion on the calling thread and that takes the lock.
+  [[nodiscard]] bool retireTransientAudioLocked();
   void recordDiagnostic(const core::Error& error);
   void recordRenderFailure(RenderFailureKind failure, std::string message);
   void clearRenderDiagnostics() noexcept;
