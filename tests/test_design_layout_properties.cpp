@@ -424,6 +424,23 @@ std::vector<Surface> overlaySurfaces() {
          f.shell.setDiagnosticsOpen(true);
          return true;
        }},
+      {"diagnostic-notices", OverlayKind::Diagnostics,
+       [](LayoutFixture& f) {
+         // The editor's own notices, the refusal worded as long as a refusal can be and the selection
+         // notice with its two actions: the popover has to bound them as it bounds any diagnostic.
+         authoring::Diagnostic sync{.code = "SELECTION_SYNC_FAILED",
+                                    .severity = authoring::DiagnosticSeverity::Warning,
+                                    .messageKey = "editor.selection-sync-failed",
+                                    .actions = authoring::DiagnosticRegistry::actions("SELECTION_SYNC_FAILED"),
+                                    .occurrenceCount = 3U};
+         sync.setDetail("The host is busy and did not follow the editor to the region it moved to");
+         f.controller.setDiagnostics({sync});
+         f.controller.noteRefusal(core::Error{
+             core::ErrorCode::Conflict,
+             "Select at most 10000 notes entirely within the active region before distributing lyrics"});
+         f.shell.setDiagnosticsOpen(true);
+         return true;
+       }},
       {"replacement-review", OverlayKind::ReplacementReview,
        [](LayoutFixture& f) {
          f.session.selection().selectOnly(f.firstNote());

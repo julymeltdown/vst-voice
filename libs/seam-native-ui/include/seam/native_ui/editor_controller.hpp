@@ -252,6 +252,20 @@ public:
   [[nodiscard]] core::Result<void> setAccessibilityValue(
       std::string_view id, std::string_view value);
   void setDiagnostics(std::vector<authoring::Diagnostic> diagnostics);
+  // A key press or a text commit that the editor refused as things stand (ErrorCode::Conflict: "Selected
+  // notes must belong to the active region", "No native text composition is active") becomes a notice
+  // in the diagnostics stack, in the refusal's own words, so that the creator is told and not left with
+  // a key that did nothing. A notice belongs to the editor and not to the document: raising one never
+  // touches the project or its dirty state, the same refusal again coalesces (its count goes up), and it
+  // outlives the owner replacing its diagnostics with setDiagnostics. It goes when it is dismissed.
+  // Any other error is the owner's to report, and a success needs no telling. This changes state and
+  // asks for a repaint and calls no host callback, so an owner may call it with its own lock held.
+  void noteRefusal(const core::Error& error);
+  // The host refused the last move of the editor's selection and has not followed since. The edit that
+  // moved the editor stays. The editor asks again before its next key press or pointer press, three
+  // tries in all for one move, and then leaves the notice standing with its Retry, which starts a new
+  // count.
+  [[nodiscard]] bool hostSelectionPending() const noexcept { return hostSelectionRefused_; }
   [[nodiscard]] const DiagnosticPanelModel& diagnosticPanel() const noexcept {
     return diagnosticPanel_;
   }
@@ -762,6 +776,23 @@ private:
   // that place: the region when there is one, else the track, else nothing. Every path that moves the
   // editor's own selection ends here, because the host follows the editor and never leads it.
   void followSelectionOnHost();
+  // One try at telling the host where the editor stands now, which is not necessarily where the move
+  // that failed put it. A refusal raises the selection notice and a success takes it down.
+  void tellHostSelection();
+  // The host has been told where the editor stands, by the move itself or by the creator's own choice
+  // of a track or region: nothing is pending any more.
+  void hostSelectionFollowed();
+  // Asks the host again, at the start of a key press or a pointer press, while a move is still
+  // refused and has had fewer than three tries. Only the selection is sent again: the edit that moved
+  // the editor stays as it is, and nothing is retried while painting.
+  void retryHostSelectionBeforeInput();
+  // The notices are the editor's own and the owner's diagnostics are the owner's, so the panel is
+  // rebuilt from both whenever either changes: the owner's in the order the owner gave them, then the
+  // notices.
+  void rebuildDiagnosticPanel();
+  void raiseNotice(authoring::Diagnostic notice);
+  void removeNotice(const authoring::Diagnostic& notice);
+  void removeNoticesWithCode(std::string_view code);
   // The editor is standing somewhere else: on another track, on another region, or on a region it has
   // just made. What was selected, targeted or previewed belonged to the place it left, and a key press
   // acts on the selection wherever its notes are shown, so the note selection, the seam and Unit targets
@@ -1007,6 +1038,10 @@ private:
   ArrangementPanelModel arrangementPanel_;
   AccessibilityTree accessibilityTree_;
   DiagnosticPanelModel diagnosticPanel_;
+  std::vector<authoring::Diagnostic> ownerDiagnostics_;
+  std::vector<authoring::Diagnostic> notices_;
+  bool hostSelectionRefused_{false};
+  unsigned hostSelectionTries_{0U};
   RecoverySupportPanelModel recoverySupportPanel_;
   std::optional<voicebank::Unit> microscopeUnit_;
   voicebank::AudioBuffer microscopeAudio_;

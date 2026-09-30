@@ -1859,7 +1859,11 @@ void NativeEditorApp::keyDown(const native_ui::KeyEvent& event) noexcept {
   // Without the vector backend the window shows a notice, not an editor: no key edits a score
   // nobody can see. Application commands above still run.
   if (!shell_.available()) return;
-  record(authoring_->controller().keyDown(event));
+  const auto pressed = authoring_->controller().keyDown(event);
+  record(pressed);
+  // lastError_ reaches only stderr when the process ends, never the window. A key the editor refused as
+  // things stand is shown in the window as a notice.
+  if (!pressed) authoring_->controller().noteRefusal(pressed.error());
 }
 void NativeEditorApp::textComposition(
     std::u32string text,
@@ -1868,7 +1872,13 @@ void NativeEditorApp::textComposition(
                                                         selection));
 }
 void NativeEditorApp::textCommit(std::u32string text) noexcept {
-  record(authoring_->controller().commitTextComposition(std::move(text)));
+  auto& controller = authoring_->controller();
+  // A commit that arrives with no field open (the field ended first) has nothing to refuse and
+  // nothing to tell.
+  const bool composing = controller.textInputActive();
+  const auto committed = controller.commitTextComposition(std::move(text));
+  record(committed);
+  if (!committed && composing) controller.noteRefusal(committed.error());
 }
 void NativeEditorApp::textCancel() noexcept {
   authoring_->controller().cancelTextComposition();

@@ -3532,6 +3532,39 @@ TEST_CASE("every diagnostic's recovery actions are reachable from the popover, n
   }
 }
 
+TEST_CASE("the editor's own notice is reachable from the popover and answered by the editor, not the host") {
+  OverlayFixture f;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  CHECK(f.frame());
+  f.controller.setDiagnostics({authoring::Diagnostic{
+      .code = "MEDIA_MISSING", .severity = authoring::DiagnosticSeverity::Warning,
+      .messageKey = "test", .actions = {authoring::DiagnosticAction::RelinkMedia}}});
+  f.controller.noteRefusal(
+      core::Error{core::ErrorCode::Conflict, "Select notes before distributing lyrics"});
+  f.shell.setDiagnosticsOpen(true);
+  CHECK(f.frame());
+  // The owner's diagnostic leads and the notice follows it, with the one action it offers.
+  CHECK(f.node("diagnostic.0.MEDIA_MISSING") != nullptr);
+  CHECK(f.node("diagnostic.1.EDIT_REFUSED") != nullptr);
+  CHECK(f.node("diagnostic-action.1.DISMISS") != nullptr);
+  CHECK(f.node("diagnostic-action.1.RETRY") == nullptr);
+  CHECK(f.shell.dispatchController(f.controller, "diagnostic-action.1.DISMISS",
+                                   SemanticAction::Activate)
+            .hasValue());
+  // The editor answered its own notice: the host's diagnostic action was never called, and only the
+  // notice went.
+  CHECK(f.diagnosticActions == 0U);
+  CHECK(f.controller.diagnosticPanel().entries().size() == 1U);
+  CHECK(f.controller.diagnosticPanel().entries().front().diagnostic.code == "MEDIA_MISSING");
+  CHECK(f.frame());
+  CHECK(f.node("diagnostic.1.EDIT_REFUSED") == nullptr);
+  // The owner's own action still goes to the host.
+  CHECK(f.shell.dispatchController(f.controller, "diagnostic-action.0.RELINK_MEDIA",
+                                   SemanticAction::Activate)
+            .hasValue());
+  CHECK(f.diagnosticActions == 1U);
+}
+
 TEST_CASE("the export progress strip is a status-bar segment with the controller's own cancel") {
   OverlayFixture f;
   if (!native_ui::paint::vectorBackendAvailable()) return;

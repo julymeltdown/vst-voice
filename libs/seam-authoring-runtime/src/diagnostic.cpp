@@ -60,6 +60,11 @@ constexpr DiagnosticAction kSupportExported[]{
     DiagnosticAction::OpenSupportFolder,
     DiagnosticAction::DeleteSupportBundle,
     DiagnosticAction::Dismiss};
+// A notice the editor raises about what it did not do, or could not tell its host: there is nothing to
+// repair, only to be told. The editor answers both actions itself, so they work wherever the editor
+// runs, in a plug-in that connects no diagnostic actions as much as in the standalone application.
+constexpr DiagnosticAction kNotice[]{DiagnosticAction::Dismiss};
+constexpr DiagnosticAction kRetryNotice[]{DiagnosticAction::Retry, DiagnosticAction::Dismiss};
 
 constexpr std::array definitions{
     Definition{"PROJECT_NOT_FOUND", DiagnosticSeverity::Error, kOpenSupport},
@@ -82,6 +87,8 @@ constexpr std::array definitions{
                kSupportPreview},
     Definition{"SUPPORT_BUNDLE_EXPORTED", DiagnosticSeverity::Info,
                kSupportExported},
+    Definition{"EDIT_REFUSED", DiagnosticSeverity::Warning, kNotice},
+    Definition{"SELECTION_SYNC_FAILED", DiagnosticSeverity::Warning, kRetryNotice},
 };
 
 const Definition* find(std::string_view code) noexcept {

@@ -19,6 +19,17 @@
 namespace seam::clap_editor {
 using namespace detail;
 
+namespace {
+
+// A key or a commit the editor refused as things stand is shown to the creator, in the refusal's own
+// words, as a notice in the editor's diagnostics. It is state only (the controller changes its own
+// panel and asks for a repaint), so it is safe under mutex_, and it never touches the project.
+void tellRefusal(native_ui::NativeEditorController& controller, const core::Result<void>& result) {
+  if (!result) controller.noteRefusal(result.error());
+}
+
+}  // namespace
+
 void EditorRuntime::requestRenderAfterEdit() {
   offlineRender_.invalidate("An edit invalidated the prepared final bounce");
   offlineAudioReady_.store(false, std::memory_order_release);
@@ -80,14 +91,20 @@ void EditorRuntime::keyDown(const native_ui::KeyEvent& event) noexcept {
   }
   std::lock_guard lock(mutex_);
   if (controller_->replacementReviewOpen() || controller_->sampleMicroscopeOpen()) {
-    static_cast<void>(controller_->keyDown(event)); return;
+    const auto result = controller_->keyDown(event);
+    tellRefusal(*controller_, result);
+    return;
   }
   // Without the vector backend the view shows a notice, not an editor: no key edits a score nobody
   // can see. A unit or seam the shell's Phonemes lane targeted takes S, R and the seam keys in the
   // controller itself.
   if (!shell_.available()) return;
   const auto before = session_.revision();
-  static_cast<void>(controller_->keyDown(event));
+  // The key is handled first, and the refusal is then told to the controller that stands afterwards:
+  // the order in which a call's arguments are evaluated is not specified, and the runtime can rebuild
+  // its controller (rebuildController).
+  const auto pressed = controller_->keyDown(event);
+  tellRefusal(*controller_, pressed);
   if (session_.revision() != before) requestRenderAfterEdit();
 }
 
@@ -100,7 +117,11 @@ void EditorRuntime::textComposition(
 void EditorRuntime::textCommit(std::u32string text) noexcept {
   std::lock_guard lock(mutex_);
   const auto before = session_.revision();
-  static_cast<void>(controller_->commitTextComposition(std::move(text)));
+  // A commit that arrives with no field open (the field ended first) has nothing to refuse and
+  // nothing to tell.
+  const bool composing = controller_->textInputActive();
+  const auto committed = controller_->commitTextComposition(std::move(text));
+  if (composing) tellRefusal(*controller_, committed);
   if (session_.revision() != before) requestRenderAfterEdit();
 }
 

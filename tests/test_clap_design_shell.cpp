@@ -449,3 +449,68 @@ TEST_CASE("CLAP shell: a host that points the editor at where it already is keep
   CHECK(runtime.selectTrack(places.leadTrack).hasValue());
   CHECK(runtime.controller().sceneState().selectedNoteCount == 1U);
 }
+
+// A key the editor refuses as things stand used to do nothing at all in the plug-in: the result was
+// dropped, and the creator was left with a key that did nothing and no word why. It is now a notice in the
+// editor's own diagnostics. This is library evidence for the embedded editor, not FL Studio host evidence.
+TEST_CASE("CLAP shell: a key the editor refuses is shown as a notice that coalesces and leaves the project alone") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellRuntime shell;
+  auto& runtime = shell.runtime;
+  const auto project = runtime.projectCopy();
+  const auto revision = runtime.revision();
+  const auto notices = [&] {
+    std::vector<authoring::Diagnostic> found;
+    for (const auto& entry : runtime.controller().diagnosticPanel().entries())
+      if (entry.diagnostic.code == "EDIT_REFUSED") found.push_back(entry.diagnostic);
+    return found;
+  };
+  CHECK(notices().empty());
+
+  // Shift-L distributes lyrics over the selected notes, and none is selected, so the editor refuses it as
+  // things stand. (A Command-modified key would not do: the shell keeps those for itself.)
+  const KeyEvent distribute{.key = NativeKey::L, .modifiers = {.shift = true}};
+  runtime.keyDown(distribute);
+  auto shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().detail == "Select notes before distributing lyrics");
+  CHECK(shown.front().severity == authoring::DiagnosticSeverity::Warning);
+  CHECK(shown.front().occurrenceCount == 1U);
+  // A notice belongs to the editor and not to the document: the project and its revision, which is what
+  // the plug-in reports to the host as a change, are as they were.
+  CHECK(runtime.projectCopy() == project);
+  CHECK(runtime.revision() == revision);
+
+  // The same refusal again is the same notice.
+  runtime.keyDown(distribute);
+  shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().occurrenceCount == 2U);
+  CHECK(runtime.revision() == revision);
+
+  // The creator dismisses it through the action the popover offers, which the editor answers itself:
+  // the plug-in connects no diagnostic action of its own.
+  CHECK(runtime.controller().activateDiagnostic(0U, authoring::DiagnosticAction::Dismiss));
+  CHECK(notices().empty());
+  CHECK(runtime.projectCopy() == project);
+  CHECK(runtime.revision() == revision);
+
+  // A commit that arrives with no field open has nothing to refuse, so it tells nothing.
+  runtime.textCommit(U"stray");
+  CHECK(notices().empty());
+  CHECK(runtime.revision() == revision);
+
+  // A commit that is refused while a field is open is told: the Find field took the document as it stood,
+  // and the project changed before the commit.
+  CHECK(runtime.controller().beginFindInput());
+  CHECK(runtime.textInputActive());
+  CHECK(runtime.controller().renameSelectedRegion("Renamed while finding"));
+  CHECK(runtime.revision() != revision);
+  runtime.textCommit(U"query");
+  shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().detail == "Find/replace input belongs to a changed document or region");
+}

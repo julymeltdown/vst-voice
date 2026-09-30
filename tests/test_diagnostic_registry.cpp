@@ -78,3 +78,40 @@ TEST_CASE("diagnostic registry exposes bounded recovery and copy actions") {
             seam::authoring::DiagnosticAction::CopyDiagnostic) ==
         "COPY_DIAGNOSTIC");
 }
+
+TEST_CASE("diagnostic registry registers the editor's own notices with only the actions the editor answers itself") {
+  using namespace seam::authoring;
+  // The plug-in connects no diagnostic action callback, so a notice the editor raises can offer only
+  // what the editor does without one: dismissing it and, for the host that would not follow, asking
+  // again.
+  CHECK(DiagnosticRegistry::isRegistered("EDIT_REFUSED"));
+  CHECK(DiagnosticRegistry::isRegistered("SELECTION_SYNC_FAILED"));
+  CHECK(DiagnosticRegistry::severity("EDIT_REFUSED") == DiagnosticSeverity::Warning);
+  CHECK(DiagnosticRegistry::severity("SELECTION_SYNC_FAILED") == DiagnosticSeverity::Warning);
+  CHECK((DiagnosticRegistry::actions("EDIT_REFUSED") == std::vector{DiagnosticAction::Dismiss}));
+  CHECK((DiagnosticRegistry::actions("SELECTION_SYNC_FAILED") ==
+         std::vector{DiagnosticAction::Retry, DiagnosticAction::Dismiss}));
+
+  Diagnostic refused{.code = "EDIT_REFUSED",
+                     .severity = DiagnosticSeverity::Warning,
+                     .messageKey = "editor.edit-refused",
+                     .actions = DiagnosticRegistry::actions("EDIT_REFUSED"),
+                     .occurrenceCount = 1U};
+  refused.setDetail("Selected notes must belong to the active region");
+  CHECK(DiagnosticRegistry::validate(refused));
+  // An action the editor cannot answer is not offered: a refused key has nothing to retry and no
+  // callback to copy through.
+  refused.actions = {DiagnosticAction::Retry};
+  CHECK(!DiagnosticRegistry::validate(refused));
+  refused.actions = {DiagnosticAction::CopyDiagnostic};
+  CHECK(!DiagnosticRegistry::validate(refused));
+
+  Diagnostic sync{.code = "SELECTION_SYNC_FAILED",
+                  .severity = DiagnosticSeverity::Warning,
+                  .messageKey = "editor.selection-sync-failed",
+                  .actions = DiagnosticRegistry::actions("SELECTION_SYNC_FAILED"),
+                  .occurrenceCount = 1U};
+  CHECK(DiagnosticRegistry::validate(sync));
+  sync.actions = {DiagnosticAction::OpenSettings};
+  CHECK(!DiagnosticRegistry::validate(sync));
+}

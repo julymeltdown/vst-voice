@@ -3339,6 +3339,313 @@ TEST_CASE("native controller tells the host where each structural edit leaves th
   CHECK(told("region", controller.selectedRegion()));
 }
 
+TEST_CASE("native controller tells the creator when the host will not follow the editor and asks again before the next input") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  bool refuse = true;
+  unsigned documentChanges = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId id) -> core::Result<void> {
+         host.push_back("region " + id.toString());
+         if (refuse) return core::failure(core::ErrorCode::Conflict, "The host is busy");
+         return core::success();
+       },
+       .documentChanged = [&] { ++documentChanges; }}};
+  controller.resize(1280.0, 720.0);
+  const auto syncNotice = [&]() -> const authoring::Diagnostic* {
+    const auto& entries = controller.diagnosticPanel().entries();
+    const auto found = std::find_if(entries.begin(), entries.end(), [](const auto& entry) {
+      return entry.diagnostic.code == "SELECTION_SYNC_FAILED";
+    });
+    return found == entries.end() ? nullptr : &found->diagnostic;
+  };
+  const auto key = [&] { static_cast<void>(controller.keyDown({.key = native_ui::NativeKey::Escape})); };
+  const auto press = [&] {
+    static_cast<void>(controller.pointerDown(native_ui::PointerEvent{
+        .position = {2.0, 2.0}, .button = native_ui::PointerButton::Left, .modifiers = {}, .clickCount = 1}));
+  };
+
+  // A region the editor adds stands the editor on it. The host refuses to follow, and the edit stays.
+  const auto added = controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840});
+  CHECK(added);
+  if (!added) return;
+  const auto told = "region " + added.value().toString();
+  CHECK(controller.selectedRegion() == added.value());
+  CHECK(fixture.session.project().findRegion(added.value()) != nullptr);
+  CHECK(documentChanges == 1U);
+  CHECK(controller.hostSelectionPending());
+  CHECK((host == std::vector<std::string>{told}));
+  const auto* notice = syncNotice();
+  CHECK(notice != nullptr);
+  if (notice == nullptr) return;
+  CHECK(notice->severity == authoring::DiagnosticSeverity::Warning);
+  CHECK(notice->detail == "The host is busy");
+  CHECK((notice->actions == std::vector{authoring::DiagnosticAction::Retry,
+                                        authoring::DiagnosticAction::Dismiss}));
+
+  // The next two presses ask again, three tries in all for this move, and then the editor stops
+  // asking. Only the selection is sent, and nothing is painted into trying.
+  key();
+  CHECK(host.size() == 2U);
+  press();
+  CHECK(host.size() == 3U);
+  key();
+  press();
+  CHECK(host.size() == 3U);
+  CHECK((host == std::vector<std::string>{told, told, told}));
+  CHECK(controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().size() == 1U);
+  notice = syncNotice();
+  CHECK(notice != nullptr);
+  if (notice == nullptr) return;
+  CHECK(notice->occurrenceCount == 3U);
+  CHECK(documentChanges == 1U);
+  CHECK(fixture.session.project().findRegion(added.value()) != nullptr);
+
+  // The notice stands, and its Retry starts a new count. The host can follow now.
+  refuse = false;
+  CHECK(controller.activateDiagnostic(0U, authoring::DiagnosticAction::Retry));
+  CHECK(host.size() == 4U);
+  CHECK(!controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().empty());
+  key();
+  CHECK(host.size() == 4U);
+}
+
+TEST_CASE("native controller takes the selection notice down when the host follows by another route") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  bool refuse = true;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId id) -> core::Result<void> {
+         host.push_back("region " + id.toString());
+         if (refuse) return core::failure(core::ErrorCode::Conflict, "The host is busy");
+         return core::success();
+       }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  CHECK(controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840}));
+  CHECK(controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().size() == 1U);
+
+  // Dismissing the notice is the creator's answer to it. The move is still refused, so the editor
+  // still asks before the next press, and a refusal then raises the notice again.
+  CHECK(controller.activateDiagnostic(0U, authoring::DiagnosticAction::Dismiss));
+  CHECK(controller.diagnosticPanel().entries().empty());
+  CHECK(controller.hostSelectionPending());
+  CHECK(controller.keyDown({.key = native_ui::NativeKey::Escape}));
+  CHECK(host.size() == 2U);
+  CHECK(controller.diagnosticPanel().entries().size() == 1U);
+
+  // The creator chooses a region and the host accepts it: the host is where the editor is.
+  refuse = false;
+  CHECK(controller.selectRegion(lead));
+  CHECK(!controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().empty());
+}
+
+TEST_CASE("native controller shows a refused key as a notice that coalesces and leaves the project alone") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  unsigned documentChanges = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.documentChanged = [&] { ++documentChanges; }}};
+  controller.resize(1280.0, 720.0);
+  const auto project = fixture.session.project();
+  const auto revision = fixture.session.revision();
+  const auto entries = [&]() -> const std::vector<native_ui::DiagnosticPanelEntry>& {
+    return controller.diagnosticPanel().entries();
+  };
+  const core::Error mixed{core::ErrorCode::Conflict, "Selected notes must belong to the active region"};
+
+  controller.noteRefusal(mixed);
+  CHECK(entries().size() == 1U);
+  CHECK(entries().front().diagnostic.code == "EDIT_REFUSED");
+  CHECK(entries().front().diagnostic.severity == authoring::DiagnosticSeverity::Warning);
+  CHECK(entries().front().diagnostic.detail == mixed.message);
+  CHECK((entries().front().diagnostic.actions == std::vector{authoring::DiagnosticAction::Dismiss}));
+  // The same refusal again is the same notice. Another refusal is another.
+  controller.noteRefusal(mixed);
+  CHECK(entries().size() == 1U);
+  CHECK(entries().front().diagnostic.occurrenceCount == 2U);
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "Finish the active edit first"});
+  CHECK(entries().size() == 2U);
+  // Only a refusal of things as they stand is a notice. Anything else is the owner's to report.
+  controller.noteRefusal(core::Error{core::ErrorCode::NotFound, "The note is gone"});
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, ""});
+  CHECK(entries().size() == 2U);
+  // A notice is the editor's own: the project, its revision and its change notifications are as they were.
+  CHECK(fixture.session.project() == project);
+  CHECK(fixture.session.revision() == revision);
+  CHECK(documentChanges == 0U);
+
+  // The owner replaces its diagnostics. The notices stay, and they follow the owner's entries in the
+  // order the owner gave them: the toast is the owner's first entry, so a refused key never hides a
+  // failure that the creator has to act on.
+  controller.setDiagnostics({
+      authoring::Diagnostic{.code = "MEDIA_MISSING", .severity = authoring::DiagnosticSeverity::Warning,
+                            .messageKey = "media.missing", .actions = {authoring::DiagnosticAction::RelinkMedia}},
+      authoring::Diagnostic{.code = "BANK_MISSING", .severity = authoring::DiagnosticSeverity::Error,
+                            .messageKey = "bank.missing", .actions = {authoring::DiagnosticAction::RelinkVoicebank}}});
+  CHECK(entries().size() == 4U);
+  CHECK(entries()[0U].diagnostic.code == "MEDIA_MISSING");
+  CHECK(entries()[1U].diagnostic.code == "BANK_MISSING");
+  CHECK(entries()[2U].diagnostic.code == "EDIT_REFUSED");
+  CHECK(entries()[3U].diagnostic.code == "EDIT_REFUSED");
+  controller.setDiagnostics({});
+  CHECK(entries().size() == 2U);
+
+  // Dismissing one removes it, and the owner's next list does not bring it back.
+  CHECK(controller.activateDiagnostic(0U, authoring::DiagnosticAction::Dismiss));
+  CHECK(entries().size() == 1U);
+  controller.setDiagnostics({});
+  CHECK(entries().size() == 1U);
+  controller.dismissDiagnostic(0U);
+  CHECK(entries().empty());
+  CHECK(fixture.session.project() == project);
+  CHECK(documentChanges == 0U);
+}
+
+TEST_CASE("native controller bounds its refusal notices and never lets them push out the host notice") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId) -> core::Result<void> {
+         return core::failure(core::ErrorCode::Conflict, "The host is busy");
+       }}};
+  controller.resize(1280.0, 720.0);
+  CHECK(controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840}));
+  CHECK(controller.hostSelectionPending());
+  for (int i = 0; i < 9; ++i)
+    controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "Refusal " + std::to_string(i)});
+  const auto& entries = controller.diagnosticPanel().entries();
+  const auto count = [&](std::string_view code) {
+    return std::count_if(entries.begin(), entries.end(),
+                         [code](const auto& entry) { return entry.diagnostic.code == code; });
+  };
+  CHECK(count("EDIT_REFUSED") == 8);
+  CHECK(count("SELECTION_SYNC_FAILED") == 1);
+  const auto has = [&](std::string_view detail) {
+    return std::any_of(entries.begin(), entries.end(),
+                       [detail](const auto& entry) { return entry.diagnostic.detail == detail; });
+  };
+  CHECK(!has("Refusal 0"));
+  CHECK(has("Refusal 1"));
+  CHECK(has("Refusal 8"));
+}
+
+TEST_CASE("native controller does not bring back an owner's diagnostic that the creator dismissed") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.resize(1280.0, 720.0);
+  const auto& entries = controller.diagnosticPanel().entries();
+  controller.setDiagnostics({
+      authoring::Diagnostic{.code = "MEDIA_MISSING", .severity = authoring::DiagnosticSeverity::Warning,
+                            .messageKey = "media.missing", .actions = {authoring::DiagnosticAction::RelinkMedia}},
+      authoring::Diagnostic{.code = "BANK_MISSING", .severity = authoring::DiagnosticSeverity::Error,
+                            .messageKey = "bank.missing", .actions = {authoring::DiagnosticAction::RelinkVoicebank}}});
+  CHECK(entries.size() == 2U);
+  controller.dismissDiagnostic(1U);
+  CHECK(entries.size() == 1U);
+  // A notice rebuilds the panel from the owner's list, and that list no longer holds what was dismissed.
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "Finish the active edit first"});
+  CHECK(entries.size() == 2U);
+  if (entries.size() != 2U) return;
+  CHECK(entries[0U].diagnostic.code == "MEDIA_MISSING");
+  CHECK(entries[1U].diagnostic.code == "EDIT_REFUSED");
+  // The owner's next list is the owner's to give: it may bring the same issue back.
+  controller.setDiagnostics({authoring::Diagnostic{.code = "BANK_MISSING",
+                                                   .severity = authoring::DiagnosticSeverity::Error,
+                                                   .messageKey = "bank.missing",
+                                                   .actions = {authoring::DiagnosticAction::RelinkVoicebank}}});
+  CHECK(entries.size() == 2U);
+  if (entries.size() != 2U) return;
+  CHECK(entries[0U].diagnostic.code == "BANK_MISSING");
+  CHECK(entries[1U].diagnostic.code == "EDIT_REFUSED");
+}
+
+TEST_CASE("native controller gives the host a new count of tries when the creator presses Retry") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::size_t asked = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId) -> core::Result<void> {
+         ++asked;
+         return core::failure(core::ErrorCode::Conflict, "The host is busy");
+       }}};
+  controller.resize(1280.0, 720.0);
+  const auto key = [&] { static_cast<void>(controller.keyDown({.key = native_ui::NativeKey::Escape})); };
+  CHECK(controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840}));
+  CHECK(asked == 1U);
+  // The move's tries are the move itself and two more, each before a key press.
+  key();
+  key();
+  key();
+  CHECK(asked == 3U);
+  // Retry asks once, and the host is refusing still. It starts a new count, so the next two presses ask
+  // again and the editor then stops again.
+  CHECK(controller.activateDiagnostic(0U, authoring::DiagnosticAction::Retry));
+  CHECK(asked == 4U);
+  CHECK(controller.hostSelectionPending());
+  key();
+  key();
+  key();
+  CHECK(asked == 6U);
+  CHECK(controller.diagnosticPanel().entries().size() == 1U);
+}
+
+TEST_CASE("native controller takes the selection notice down when the creator's own track choice reaches the host") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  bool refuse = true;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId) -> core::Result<void> {
+         if (refuse) return core::failure(core::ErrorCode::Conflict, "The host is busy");
+         return core::success();
+       }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = controller.selectedTrack();
+  // A new track has no region yet, so the host is told the track, and refuses.
+  CHECK(controller.addVocalTrack("Second"));
+  CHECK(controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().size() == 1U);
+  // The creator chooses a track and the host accepts it: the host is where the editor is.
+  refuse = false;
+  CHECK(controller.selectTrack(lead));
+  CHECK(!controller.hostSelectionPending());
+  CHECK(controller.diagnosticPanel().entries().empty());
+}
+
+TEST_CASE("diagnostic presentation words the editor's own notices") {
+  using namespace seam;
+  authoring::Diagnostic refused{.code = "EDIT_REFUSED", .severity = authoring::DiagnosticSeverity::Warning,
+                                .messageKey = "editor.edit-refused",
+                                .actions = {authoring::DiagnosticAction::Dismiss}};
+  refused.setDetail("Selected notes must belong to the active region");
+  const auto edit = native_ui::presentDiagnostic(refused);
+  CHECK(edit.title == "Nothing was changed");
+  CHECK(edit.impact == "Selected notes must belong to the active region");
+  CHECK((edit.primaryActionKinds == std::vector{authoring::DiagnosticAction::Dismiss}));
+  CHECK(edit.technicalDetail.find("EDIT_REFUSED / editor.edit-refused") == 0U);
+  refused.detail.clear();
+  CHECK(native_ui::presentDiagnostic(refused).impact == "No reason was given.");
+
+  authoring::Diagnostic sync{.code = "SELECTION_SYNC_FAILED", .severity = authoring::DiagnosticSeverity::Warning,
+                             .messageKey = "editor.selection-sync-failed",
+                             .actions = {authoring::DiagnosticAction::Retry, authoring::DiagnosticAction::Dismiss}};
+  sync.setDetail("The host is busy");
+  const auto selection = native_ui::presentDiagnostic(sync);
+  CHECK(selection.title == "Selection is out of step");
+  CHECK(selection.impact.find("kept") != std::string::npos);
+  CHECK((selection.primaryActionKinds ==
+         std::vector{authoring::DiagnosticAction::Retry, authoring::DiagnosticAction::Dismiss}));
+  CHECK(selection.primaryActions[0U] == "Retry");
+  CHECK(selection.technicalDetail.find("Detail: The host is busy") != std::string::npos);
+}
+
 TEST_CASE("native tempo meter dispatch guards context and notifies document changes only on success") {
   using namespace seam;
   NativeUiFixture fixture;

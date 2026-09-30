@@ -71,6 +71,34 @@ std::optional<domain::NoteId> noteIdForSemanticId(std::string_view id) noexcept 
   return domain::NoteId{rawId};
 }
 
+constexpr std::string_view kEditRefusedCode = "EDIT_REFUSED";
+constexpr std::string_view kSelectionSyncFailedCode = "SELECTION_SYNC_FAILED";
+// How many refusals of different wording the stack keeps; the oldest goes first.
+constexpr std::size_t kMaximumRefusalNotices = 8U;
+// Tries the host gets for one move of the editor's selection: the move itself and two more, each
+// before a key press or a pointer press.
+constexpr unsigned kHostSelectionTries = 3U;
+
+// The diagnostics the editor raises itself. The owner's own are never these: the editor answers
+// their actions, not the owner.
+bool isEditorNotice(const authoring::Diagnostic& diagnostic) noexcept {
+  return diagnostic.code == kEditRefusedCode || diagnostic.code == kSelectionSyncFailedCode;
+}
+
+authoring::Diagnostic makeNotice(std::string_view code, std::string_view messageKey,
+                                 std::string_view detail) {
+  authoring::Diagnostic notice{
+      .code = std::string{code},
+      .severity = authoring::DiagnosticRegistry::severity(code),
+      .messageKey = std::string{messageKey},
+      .affectedIds = {},
+      .actions = authoring::DiagnosticRegistry::actions(code),
+      .occurrenceCount = 1U,
+  };
+  notice.setDetail(detail);
+  return notice;
+}
+
 }
 
 NativeEditorController::NativeEditorController(
@@ -86,7 +114,22 @@ NativeEditorController::NativeEditorController(
       callbacks_(std::move(callbacks)) {
   diagnosticPanel_.setActionHandler(
       [this](const authoring::Diagnostic& diagnostic,
-             authoring::DiagnosticAction action) {
+             authoring::DiagnosticAction action) -> core::Result<void> {
+        if (isEditorNotice(diagnostic)) {
+          // Copied first: removing the notice rebuilds the panel that this reference points into.
+          const auto notice = diagnostic;
+          if (action == authoring::DiagnosticAction::Dismiss) {
+            removeNotice(notice);
+            return core::success();
+          }
+          if (action == authoring::DiagnosticAction::Retry) {
+            hostSelectionTries_ = 1U;  // A new count: this is the first try of it.
+            tellHostSelection();
+            return core::success();
+          }
+          return core::failure(core::ErrorCode::InvalidArgument,
+                               "The editor does not offer that action on its own notices");
+        }
         if (!callbacks_.diagnosticAction) {
           return core::failure(core::ErrorCode::Unsupported,
                                "Diagnostic action is not connected");
@@ -2912,9 +2955,59 @@ void NativeEditorController::closeSampleMicroscope() noexcept {
 
 void NativeEditorController::setDiagnostics(
     std::vector<authoring::Diagnostic> diagnostics) {
+  ownerDiagnostics_ = std::move(diagnostics);
+  rebuildDiagnosticPanel();
+}
+
+void NativeEditorController::noteRefusal(const core::Error& error) {
+  if (error.code != core::ErrorCode::Conflict || error.message.empty()) return;
+  raiseNotice(makeNotice(kEditRefusedCode, "editor.edit-refused", error.message));
+}
+
+void NativeEditorController::rebuildDiagnosticPanel() {
   diagnosticPanel_.clear();
-  for (auto& diagnostic : diagnostics) diagnosticPanel_.add(std::move(diagnostic));
+  // The owner's diagnostics keep the order the owner gave them: the first entry is the toast, and the
+  // owner decides what leads. The editor's notices follow, so a refused key never hides a failure the
+  // creator has to act on, and the toast counts them among the rest. With nothing else to show, the
+  // first notice is the toast.
+  for (const auto& diagnostic : ownerDiagnostics_) diagnosticPanel_.add(diagnostic);
+  for (const auto& notice : notices_) diagnosticPanel_.add(notice);
   repaint();
+}
+
+void NativeEditorController::raiseNotice(authoring::Diagnostic notice) {
+  if (!authoring::DiagnosticRegistry::validate(notice)) return;
+  const auto same = std::find_if(notices_.begin(), notices_.end(), [&notice](const auto& held) {
+    return held.sameIssueAs(notice);
+  });
+  if (same != notices_.end()) {
+    same->addOccurrences(notice.occurrenceCount);
+  } else {
+    notices_.push_back(std::move(notice));
+    // Only refusals are bounded, and the oldest of them goes: the notice that reports the host is
+    // the one failure here that must not be pushed out by a run of refused keys.
+    const auto refusals = static_cast<std::size_t>(std::count_if(
+        notices_.begin(), notices_.end(),
+        [](const auto& held) { return held.code == kEditRefusedCode; }));
+    if (refusals > kMaximumRefusalNotices) {
+      notices_.erase(std::find_if(notices_.begin(), notices_.end(), [](const auto& held) {
+        return held.code == kEditRefusedCode;
+      }));
+    }
+  }
+  rebuildDiagnosticPanel();
+}
+
+void NativeEditorController::removeNotice(const authoring::Diagnostic& notice) {
+  // The argument may be an entry of the panel that the rebuild replaces, so what is removed is
+  // decided first.
+  std::erase_if(notices_, [&notice](const auto& held) { return held.sameIssueAs(notice); });
+  rebuildDiagnosticPanel();
+}
+
+void NativeEditorController::removeNoticesWithCode(std::string_view code) {
+  const auto removed = std::erase_if(notices_, [code](const auto& held) { return held.code == code; });
+  if (removed != 0U) rebuildDiagnosticPanel();
 }
 
 core::Result<void> NativeEditorController::activateDiagnostic(
@@ -2923,8 +3016,18 @@ core::Result<void> NativeEditorController::activateDiagnostic(
 }
 
 void NativeEditorController::dismissDiagnostic(std::size_t index) {
-  diagnosticPanel_.dismiss(index);
-  repaint();
+  if (index >= diagnosticPanel_.entries().size()) return;
+  // A copy: rebuilding the panel replaces its entries.
+  const auto dismissed = diagnosticPanel_.entries()[index].diagnostic;
+  if (isEditorNotice(dismissed)) {
+    removeNotice(dismissed);
+    return;
+  }
+  // The owner's list is the source of the panel, so it is the owner's entry that has to go, or the
+  // next rebuild would bring it back.
+  std::erase_if(ownerDiagnostics_,
+                [&dismissed](const auto& held) { return held.sameIssueAs(dismissed); });
+  rebuildDiagnosticPanel();
 }
 
 void NativeEditorController::setRecoverySupportView(RecoverySupportView view) {
@@ -2982,6 +3085,7 @@ core::Result<void> NativeEditorController::selectTrack(domain::TrackId trackId) 
   if (callbacks_.selectTrack) {
     const auto hostSelection = callbacks_.selectTrack(trackId);
     if (!hostSelection) return hostSelection;
+    hostSelectionFollowed();
   }
   auto selected = arrangementPanel_.selectTrack(session_.project(), trackId);
   if (!selected) return selected;
@@ -3024,6 +3128,7 @@ core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionI
   if (callbacks_.selectRegion) {
     const auto hostSelection = callbacks_.selectRegion(regionId);
     if (!hostSelection) return hostSelection;
+    hostSelectionFollowed();
   }
   auto selected = arrangementPanel_.selectRegion(session_.project(), regionId);
   if (!selected) return selected;
@@ -3087,15 +3192,51 @@ void NativeEditorController::leavePlace() {
 }
 
 void NativeEditorController::followSelectionOnHost() {
+  // A new move starts a new count of tries.
+  hostSelectionTries_ = 1U;
+  tellHostSelection();
+}
+
+void NativeEditorController::tellHostSelection() {
+  core::Result<void> told = core::success();
   if (regionId_.valid()) {
-    if (callbacks_.selectRegion) static_cast<void>(callbacks_.selectRegion(regionId_));
+    if (callbacks_.selectRegion) told = callbacks_.selectRegion(regionId_);
   } else if (session_.project().findVocalTrack(selectedTrackId_) != nullptr) {
-    if (callbacks_.selectTrack) static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
+    if (callbacks_.selectTrack) told = callbacks_.selectTrack(selectedTrackId_);
   } else if (callbacks_.clearVocalTarget) {
     // Nothing is left to sing: the editor rests on an audio track or on none, and the host lets go of
     // the vocal track and region it was following.
-    static_cast<void>(callbacks_.clearVocalTarget());
+    told = callbacks_.clearVocalTarget();
   }
+  if (told) {
+    hostSelectionFollowed();
+    return;
+  }
+  // The score is the authority: the edit that moved the editor stays, and the host is asked again
+  // later. Until it has followed, the creator is told that what the host renders and previews may
+  // not be where the editor is.
+  hostSelectionRefused_ = true;
+  auto notice = makeNotice(kSelectionSyncFailedCode, "editor.selection-sync-failed",
+                           told.error().message);
+  // One notice for the one failure: a refusal in other words replaces it, the same refusal again
+  // raises its count.
+  const auto held = std::find_if(notices_.begin(), notices_.end(), [](const auto& value) {
+    return value.code == kSelectionSyncFailedCode;
+  });
+  if (held != notices_.end() && !held->sameIssueAs(notice)) notices_.erase(held);
+  raiseNotice(std::move(notice));
+}
+
+void NativeEditorController::hostSelectionFollowed() {
+  hostSelectionRefused_ = false;
+  hostSelectionTries_ = 0U;
+  removeNoticesWithCode(kSelectionSyncFailedCode);
+}
+
+void NativeEditorController::retryHostSelectionBeforeInput() {
+  if (!hostSelectionRefused_ || hostSelectionTries_ >= kHostSelectionTries) return;
+  ++hostSelectionTries_;
+  tellHostSelection();
 }
 
 core::Result<domain::TrackId> NativeEditorController::addVocalTrack(
@@ -4269,6 +4410,7 @@ core::Result<void> NativeEditorController::beginBatchLyricEdit() {
 
 core::Result<void> NativeEditorController::pointerDown(
     const PointerEvent& event) {
+  retryHostSelectionBeforeInput();
   vibratoKeyboardFocus_.reset();
   // Pointer input arrives only from the SING shell, which forwards presses in its grid and lane (in
   // this controller's hosted geometry) and the plots of its microscope and dynamics sheets (in the
@@ -5342,6 +5484,7 @@ core::Result<void> NativeEditorController::pointerUp(
 }
 
 core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
+  retryHostSelectionBeforeInput();
   if (replacementOpen_) {
     if (dynamicsDraft_) {
       using Action = ui::DynamicsPlotViewport::Action;

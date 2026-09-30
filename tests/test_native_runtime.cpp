@@ -7,6 +7,7 @@
 #include "seam/platform/crash_capture.hpp"
 #include "seam/platform/ring_buffer_processor.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/standalone/native_editor_app.hpp"
 #include "seam/rendering/audio_ring_buffer.hpp"
 #include "seam/rendering/pcm_cache.hpp"
@@ -758,4 +759,70 @@ TEST_CASE("native startup promotes missing voicebank into an actionable diagnost
   CHECK(!missing->actions.empty());
   CHECK(missing->actions.front() ==
         seam::authoring::DiagnosticAction::InstallVoicebank);
+}
+
+// A key the editor refuses as things stand was recorded in lastError_, which only reaches stderr when the
+// process ends, and the creator was told nothing. It is now a notice in the editor's own diagnostics as
+// well. This is library evidence for the standalone application's input path, not a live window.
+TEST_CASE("native app shows a key the editor refuses as a notice and keeps the project as it was") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("native-refused-key-notice");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  if (!app) return;
+  auto& controller = app.value()->authoring().controller();
+  const auto notices = [&controller] {
+    std::vector<seam::authoring::Diagnostic> found;
+    for (const auto& entry : controller.diagnosticPanel().entries())
+      if (entry.diagnostic.code == "EDIT_REFUSED") found.push_back(entry.diagnostic);
+    return found;
+  };
+  // The owner's own diagnostics (a bank that is not installed) lead the panel, so the notice is found by
+  // its code and not assumed to be first.
+  const auto noticeIndex = [&controller]() -> std::size_t {
+    const auto& entries = controller.diagnosticPanel().entries();
+    for (std::size_t i = 0U; i < entries.size(); ++i)
+      if (entries[i].diagnostic.code == "EDIT_REFUSED") return i;
+    return entries.size();
+  };
+  const auto revision = controller.documentRevision();
+  CHECK(notices().empty());
+
+  // Shift-L distributes lyrics over the selected notes, and none is selected.
+  const seam::native_ui::KeyEvent distribute{.key = seam::native_ui::NativeKey::L,
+                                             .modifiers = {.shift = true}};
+  app.value()->keyDown(distribute);
+  auto shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().detail == "Select notes before distributing lyrics");
+  CHECK(app.value()->lastError().find("Select notes before distributing lyrics") != std::string::npos);
+  CHECK(controller.documentRevision() == revision);
+
+  // The same refusal again is the same notice, and dismissing it is the creator's.
+  app.value()->keyDown(distribute);
+  shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().occurrenceCount == 2U);
+  CHECK(controller.activateDiagnostic(noticeIndex(), seam::authoring::DiagnosticAction::Dismiss));
+  CHECK(notices().empty());
+
+  // A commit that arrives with no field open has nothing to refuse, so it tells nothing.
+  app.value()->textCommit(U"stray");
+  CHECK(notices().empty());
+
+  // A commit that is refused while a field is open is told: the Find field took the document as it stood.
+  CHECK(controller.beginFindInput());
+  CHECK(controller.renameSelectedRegion("Renamed while finding"));
+  CHECK(controller.documentRevision() != revision);
+  app.value()->textCommit(U"query");
+  shown = notices();
+  CHECK(shown.size() == 1U);
+  if (shown.size() != 1U) return;
+  CHECK(shown.front().detail == "Find/replace input belongs to a changed document or region");
 }

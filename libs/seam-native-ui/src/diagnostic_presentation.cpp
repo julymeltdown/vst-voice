@@ -43,6 +43,17 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
   } else if (diagnostic.code == "RENDER_STALE") {
     result.title = "Playback is behind your edits";
     result.impact = "What you hear may not match the score yet. Retry asks playback to catch up.";
+  } else if (diagnostic.code == "EDIT_REFUSED") {
+    // Whatever the creator pressed was refused as things stand, so the title says what is true of every
+    // such refusal (nothing changed, which reads as well for an undo with nothing to undo as for a
+    // delete), and the refusal's own words say why.
+    result.title = "Nothing was changed";
+    result.impact = diagnostic.detail.empty() ? std::string{"No reason was given."}
+                                              : diagnostic.detail;
+  } else if (diagnostic.code == "SELECTION_SYNC_FAILED") {
+    result.title = "Selection is out of step";
+    result.impact = "Your edit is kept, but the renderer did not follow the new selection. "
+                    "Retry asks it again.";
   } else if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY") {
     result.title = "Support report is ready to review";
     result.impact = "Review listed files before export.";
