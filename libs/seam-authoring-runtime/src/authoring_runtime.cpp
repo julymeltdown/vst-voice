@@ -1058,8 +1058,8 @@ void AuthoringRuntime::oweTransport(TransportDebt debt, const core::Error& refus
                   refusal.message)
             : transportBehindDiagnostic(
                   "playback.update-pending",
-                  "Playback has not received the newest render and still plays an earlier "
-                  "version. Handing it over was refused.",
+                  "Playback has not received the newest render yet, so it may play an earlier "
+                  "version or nothing until it does. Handing it over was refused.",
                   refusal.message);
   }
   transportDebtChanged_.notify_all();
