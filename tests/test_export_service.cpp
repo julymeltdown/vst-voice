@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 
 #include "seam/authoring/export_service.hpp"
+#include "seam/build/version.hpp"
 #include "seam/authoring/voicebank_installer_service.hpp"
 #include "seam/distribution/seambank.hpp"
 #include "seam/distribution/signing.hpp"
@@ -2937,6 +2938,9 @@ TEST_CASE("single-file export rolls back the master when receipt rotation fails"
   };
   const auto previousMaster = readBytes(destination);
   const auto previousReceipt = readBytes(receipt);
+  // A single-file export's receipt names the commit this binary was built from.
+  CHECK(previousReceipt.find("\"applicationBuildSha\": \"" + std::string{seam::build::kSourceCommit} + "\"") !=
+        std::string::npos);
   const auto receiptBackup = receipt + ".previous";
   CHECK(std::filesystem::create_directories(receiptBackup));
   std::ofstream{std::filesystem::path{receiptBackup} / "keep.txt"}
@@ -3396,7 +3400,9 @@ TEST_CASE("export receipt records canonical project and render identities") {
   CHECK(text.find("\"projectSchema\": " + std::to_string(seam::formats::ProjectJsonCodec::kSchemaVersion)) != std::string::npos);
   CHECK(text.find("\"renderQuality\": \"Final\"") != std::string::npos);
   CHECK(text.find("\"renderAbi\": \"") != std::string::npos);
-  CHECK(text.find("\"applicationBuildSha\": \"") != std::string::npos);
+  // The receipt names the commit this binary was built from, not merely some commit.
+  CHECK(text.find("\"applicationBuildSha\": \"" + std::string{seam::build::kSourceCommit} + "\"") !=
+        std::string::npos);
   CHECK(text.find("\"executionDateUnixMs\": ") != std::string::npos);
 }
 

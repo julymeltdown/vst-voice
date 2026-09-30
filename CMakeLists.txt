@@ -10,8 +10,20 @@ set(SEAM_BUILD_ID "${PROJECT_VERSION}-local" CACHE STRING
     "Project SEAM candidate/build identity")
 # A local Git HEAD identifies the source base, not a clean release checkout.
 # Exact executed bytes and dirty-source qualification remain separate evidence.
+# seam-source-commit:begin
 set(SEAM_LOCAL_SOURCE_BASE "0000000000000000000000000000000000000000")
-if(NOT DEFINED SEAM_SOURCE_COMMIT)
+# A SEAM_SOURCE_COMMIT that a caller supplies is authoritative and is never replaced: release
+# automation passes it with -D and requires it to equal HEAD. When nobody supplies one the commit is
+# the checkout's HEAD, read again at every configure. CMake records the value it chose in
+# SEAM_SOURCE_COMMIT_FROM_HEAD, and a cache entry that still equals that record was never supplied
+# by anyone, so it follows HEAD instead of keeping the commit of the first configure. A -D value that
+# happens to equal the recorded one cannot be told apart from it; release automation is unaffected
+# because it requires its value to be HEAD anyway.
+set(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD FALSE)
+if(NOT DEFINED SEAM_SOURCE_COMMIT OR
+   (DEFINED SEAM_SOURCE_COMMIT_FROM_HEAD AND
+    "${SEAM_SOURCE_COMMIT}" STREQUAL "${SEAM_SOURCE_COMMIT_FROM_HEAD}"))
+  set(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD TRUE)
   execute_process(COMMAND git rev-parse HEAD
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESULT_VARIABLE SEAM_LOCAL_GIT_RESULT OUTPUT_VARIABLE SEAM_LOCAL_GIT_HEAD
@@ -22,6 +34,36 @@ if(NOT DEFINED SEAM_SOURCE_COMMIT)
 endif()
 set(SEAM_SOURCE_COMMIT "${SEAM_LOCAL_SOURCE_BASE}" CACHE STRING
     "40-character source commit for the generated release identity")
+if(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD)
+  set(SEAM_SOURCE_COMMIT "${SEAM_LOCAL_SOURCE_BASE}" CACHE STRING
+      "40-character source commit for the generated release identity" FORCE)
+  set(SEAM_SOURCE_COMMIT_FROM_HEAD "${SEAM_LOCAL_SOURCE_BASE}" CACHE INTERNAL
+      "The commit CMake, not a caller, chose for SEAM_SOURCE_COMMIT")
+  # Re-run CMake whenever HEAD moves, so a build after a commit, a checkout or a reset stamps the
+  # commit that was built rather than the one that was current when the directory was configured.
+  execute_process(COMMAND git symbolic-ref -q HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE SEAM_GIT_BRANCH_RESULT OUTPUT_VARIABLE SEAM_GIT_BRANCH_REF
+    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  set(SEAM_GIT_WATCHED HEAD logs/HEAD packed-refs)
+  if(SEAM_GIT_BRANCH_RESULT EQUAL 0 AND SEAM_GIT_BRANCH_REF)
+    list(APPEND SEAM_GIT_WATCHED "${SEAM_GIT_BRANCH_REF}")
+  endif()
+  foreach(SEAM_GIT_NAME IN LISTS SEAM_GIT_WATCHED)
+    execute_process(COMMAND git rev-parse --git-path "${SEAM_GIT_NAME}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      RESULT_VARIABLE SEAM_GIT_PATH_RESULT OUTPUT_VARIABLE SEAM_GIT_PATH
+      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(SEAM_GIT_PATH_RESULT EQUAL 0 AND SEAM_GIT_PATH)
+      file(REAL_PATH "${SEAM_GIT_PATH}" SEAM_GIT_ABSOLUTE
+           BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+      if(EXISTS "${SEAM_GIT_ABSOLUTE}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SEAM_GIT_ABSOLUTE}")
+      endif()
+    endif()
+  endforeach()
+endif()
+# seam-source-commit:end
 set(SEAM_BUILD_EPOCH "0" CACHE STRING
     "UTC build epoch for the generated release identity")
 string(LENGTH "${SEAM_SOURCE_COMMIT}" SEAM_SOURCE_COMMIT_LENGTH)
@@ -2541,6 +2583,14 @@ if(SEAM_BUILD_TESTS)
         tests/test_verifier_required_paths.py)
     set_tests_properties(seam_verifier_required_paths_unit PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
+    # SEAM_SOURCE_COMMIT follows HEAD unless a caller supplies it (a throw-away Git project built
+    # around the real identity block), so receipts name the commit that was built.
+    add_test(NAME seam_cmake_source_commit_identity
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/test_cmake_source_commit.py)
+    set_tests_properties(seam_cmake_source_commit_identity PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "SEAM_TEST_CMAKE=${CMAKE_COMMAND};PYTHONDONTWRITEBYTECODE=1" TIMEOUT 120)
     add_test(NAME seam_runtime_process_lifecycle_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest tools.neural_runtime.test_process_lifecycle)
     set_tests_properties(seam_runtime_process_lifecycle_tests PROPERTIES
