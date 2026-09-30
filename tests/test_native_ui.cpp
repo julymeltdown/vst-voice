@@ -3139,6 +3139,66 @@ TEST_CASE("native controller reconcile keeps the editor consistent when the host
   CHECK(controller.arrangementPanel().tracks().empty());
 }
 
+TEST_CASE("native controller tells the host where each structural edit leaves the editor") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); },
+       .clearVocalTarget = [&] { host.push_back("clear"); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = controller.selectedTrack();
+  const auto leadRegion = fixture.regionId;
+  const auto told = [&](const char* place, domain::RegionId region) {
+    return host == std::vector<std::string>{std::string{place} + " " + region.toString()};
+  };
+
+  // A region added to the selected track: the editor stands on it.
+  host.clear();
+  const auto added = controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840});
+  CHECK(added);
+  if (!added) return;
+  CHECK(told("region", added.value()));
+
+  // Split: the editor stands on the right half.
+  host.clear();
+  CHECK(controller.splitSelectedRegion(time::Tick{1920}));
+  const auto right = controller.selectedRegion();
+  CHECK(right != added.value());
+  CHECK(told("region", right));
+
+  // Duplicate the region: the editor stands on the copy.
+  host.clear();
+  CHECK(controller.duplicateSelectedRegion());
+  const auto copy = controller.selectedRegion();
+  CHECK(copy != right);
+  CHECK(told("region", copy));
+
+  // A new track has no region yet, so the host is told the track.
+  host.clear();
+  const auto harmony = controller.addVocalTrack("Harmony");
+  CHECK(harmony);
+  if (!harmony) return;
+  CHECK((host == std::vector<std::string>{"track " + harmony.value().toString()}));
+
+  // A region copied to another track: the editor follows the copy onto that track.
+  CHECK(controller.selectTrack(lead));
+  CHECK(controller.selectRegion(leadRegion));
+  host.clear();
+  CHECK(controller.copySelectedRegionToTrack(harmony.value()));
+  CHECK(controller.selectedTrack() == harmony.value());
+  CHECK(controller.selectedRegion() != leadRegion);
+  CHECK(told("region", controller.selectedRegion()));
+
+  // A duplicated track: the editor stands on the copy's first region.
+  host.clear();
+  CHECK(controller.duplicateSelectedTrack());
+  CHECK(controller.selectedTrack() != harmony.value());
+  CHECK(controller.selectedRegion().valid());
+  CHECK(told("region", controller.selectedRegion()));
+}
+
 TEST_CASE("native tempo meter dispatch guards context and notifies document changes only on success") {
   using namespace seam;
   NativeUiFixture fixture;

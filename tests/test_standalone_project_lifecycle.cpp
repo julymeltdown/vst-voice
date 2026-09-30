@@ -1486,6 +1486,90 @@ TEST_CASE("standalone a score with no vocal track clears the runtime's selection
   CHECK(!session->runtime().technicalEdits().regionId().valid());
 }
 
+// Every one of these makes the editor stand somewhere new: the region it created or the track it
+// copied. The host follows, so the render, the technical edits and the character name that place too,
+// and Undo and Redo keep all of them in agreement afterwards.
+TEST_CASE("standalone adding a region or a track moves the session and the runtime with the editor") {
+  auto fixture = makeStructuralEditFixture("structural-add-follows");
+  auto& editor = fixture.editor();
+  const auto added = editor.addRegionToSelectedTrack();
+  CHECK(added);
+  if (!added) return;
+  CHECK(editor.selectedRegion() == added.value());
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  checkEditingTargetFollowsScore(fixture);
+
+  const auto track = editor.addVocalTrack("Harmony");
+  CHECK(track);
+  if (!track) return;
+  CHECK(editor.selectedTrack() == track.value());
+  CHECK(!editor.selectedRegion().valid());
+  checkEditingTargetFollowsScore(fixture);
+  const auto region = editor.addVocalRegion("Harmony phrase", seam::time::Tick{0}, seam::time::Tick{1920});
+  CHECK(region);
+  if (!region) return;
+  CHECK(editor.selectedRegion() == region.value());
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() != track.value());
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone splitting and duplicating move the session and the runtime with the editor") {
+  auto fixture = makeStructuralEditFixture("structural-split-duplicate-follows");
+  auto& editor = fixture.editor();
+  const auto lead = editor.selectedTrack();
+
+  // Splitting stands the editor on the right half, which is a region the runtime has not selected yet.
+  CHECK(editor.splitSelectedRegion(seam::time::Tick{7680}));
+  CHECK(editor.selectedRegion() != fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedRegion() == fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+
+  // Duplicating a region stands the editor on the copy.
+  CHECK(editor.duplicateSelectedRegion());
+  CHECK(editor.selectedRegion() != fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  checkEditingTargetFollowsScore(fixture);
+
+  // Duplicating a track stands the editor on the copy's first region.
+  CHECK(editor.duplicateSelectedTrack());
+  CHECK(editor.selectedTrack() != lead);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() == lead);
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone copying a region to another track moves the session and the runtime with the editor") {
+  auto fixture = makeStructuralEditFixture("structural-copy-follows");
+  auto& editor = fixture.editor();
+  const auto lead = editor.selectedTrack();
+  const auto harmony = editor.addVocalTrack("Harmony");
+  CHECK(harmony);
+  if (!harmony) return;
+  CHECK(editor.selectTrack(lead));
+  CHECK(editor.selectRegion(fixture.lead));
+  checkEditingTargetFollowsScore(fixture);
+
+  CHECK(editor.copySelectedRegionToTrack(harmony.value()));
+  CHECK(editor.selectedTrack() == harmony.value());
+  CHECK(editor.selectedRegion() != fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  checkEditingTargetFollowsScore(fixture);
+}
+
 TEST_CASE("standalone harmony controller routes every named mode to its scale") {
   using seam::platform::HarmonyMenuRequest;
   using seam::platform::HarmonyScale;
@@ -2355,9 +2439,16 @@ TEST_CASE("standalone editor track selection synchronizes the authoring runtime"
   const auto region = session->controller().addVocalRegion(
       "Harmony phrase", time::Tick{0}, time::Tick{3840});
   CHECK(region);
-  CHECK(session->runtime().selectedTrack() != added.value());
   const auto wasDirty = session->runtime().document().dirty();
 
+  // The editor stands on the region it just added, and the host followed it there. Going to the lead
+  // track and back is a selection like any other: each step moves the session and the runtime with the
+  // editor, and neither dirties the project.
+  CHECK(session->runtime().selectedTrack() == added.value());
+  CHECK(session->runtime().selectedRegion() == region.value());
+  CHECK(session->controller().selectTrack(lead));
+  CHECK(session->trackId() == lead);
+  CHECK(session->runtime().selectedTrack() == lead);
   CHECK(session->controller().selectTrack(added.value()));
   CHECK(session->controller().selectedTrack() == added.value());
   CHECK(session->trackId() == added.value());

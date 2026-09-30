@@ -3080,20 +3080,22 @@ void NativeEditorController::reconcileWithProject() {
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(project, selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
-  if (moved) {
-    // The host follows, so that its render, preview and technical edits name the place the editor is
-    // now working in rather than one that no longer exists.
-    if (regionId_.valid()) {
-      if (callbacks_.selectRegion) static_cast<void>(callbacks_.selectRegion(regionId_));
-    } else if (vocal != nullptr) {
-      if (callbacks_.selectTrack) static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
-    } else if (callbacks_.clearVocalTarget) {
-      // Nothing is left to sing: the editor rests on an audio track or on none, and the host lets go of
-      // the vocal track and region it was following.
-      static_cast<void>(callbacks_.clearVocalTarget());
-    }
-  }
+  // The host follows, so that its render, preview and technical edits name the place the editor is
+  // now working in rather than one that no longer exists.
+  if (moved) followSelectionOnHost();
   repaint();
+}
+
+void NativeEditorController::followSelectionOnHost() {
+  if (regionId_.valid()) {
+    if (callbacks_.selectRegion) static_cast<void>(callbacks_.selectRegion(regionId_));
+  } else if (session_.project().findVocalTrack(selectedTrackId_) != nullptr) {
+    if (callbacks_.selectTrack) static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
+  } else if (callbacks_.clearVocalTarget) {
+    // Nothing is left to sing: the editor rests on an audio track or on none, and the host lets go of
+    // the vocal track and region it was following.
+    static_cast<void>(callbacks_.clearVocalTarget());
+  }
 }
 
 core::Result<domain::TrackId> NativeEditorController::addVocalTrack(
@@ -3113,6 +3115,7 @@ core::Result<domain::TrackId> NativeEditorController::addVocalTrack(
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success(id);
@@ -3145,6 +3148,7 @@ core::Result<domain::RegionId> NativeEditorController::addVocalRegion(
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success(id);
@@ -3604,6 +3608,7 @@ core::Result<void> NativeEditorController::splitSelectedRegion(
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success();
@@ -3630,6 +3635,7 @@ core::Result<void> NativeEditorController::duplicateSelectedTrack() {
   }
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success();
@@ -3650,6 +3656,7 @@ core::Result<void> NativeEditorController::duplicateSelectedRegion() {
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.setRegionId(regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success();
@@ -3675,6 +3682,7 @@ core::Result<void> NativeEditorController::copySelectedRegionToTrack(
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
+  followSelectionOnHost();
   markDocumentChanged();
   repaint();
   return core::success();
