@@ -691,10 +691,19 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact,
       track->muted = true;
     }
   }
+  // Whether there is anything to render is a question about the whole score. The renderer renders
+  // every region that has notes; the track and region chosen below only decide whose performance
+  // (cues, waveform, unit plan) it reports back. So a region on screen with no notes is not an
+  // empty score: the score can sound in another region, and an edit made while that region is
+  // selected still has to be rendered. A request is composed exactly when something is audible,
+  // and the caller relies on it: no request means nothing to render, and it settles the status
+  // and the transport instead of leaving a superseded render on screen.
+  const auto nothingAudible = !hasBackingAudio && !anyNoteToSing;
   if (assessment != nullptr) {
     assessment->bankUnavailable = !project.vocalTracks().empty() && !anyUsableSinger;
-    assessment->nothingAudible = !hasBackingAudio && !anyNoteToSing;
+    assessment->nothingAudible = nothingAudible;
   }
+  if (nothingAudible) return std::nullopt;
 
   auto activeTrack = selectedTrack_;
   auto activeRegion = selectedRegion_;
@@ -706,14 +715,6 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact,
     std::tie(activeTrack, activeRegion) =
         firstRenderableSelection(project, states);
   }
-
-  if ((!activeTrack.valid() || !activeRegion.valid()) && !hasBackingAudio) {
-    return std::nullopt;
-  }
-
-  const auto* region = project.findRegion(activeRegion);
-  const auto hasNotes = region != nullptr && !region->notes.empty();
-  if (!hasNotes && !hasBackingAudio) return std::nullopt;
 
   return PreviewRequest{
       .project = std::move(project),

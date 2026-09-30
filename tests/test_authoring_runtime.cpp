@@ -148,9 +148,9 @@ seam::authoring::AuthoringRuntimeConfig configFor(
 }
 
 bool waitReady(seam::authoring::AuthoringRuntime& runtime,
-               std::uint64_t revision) {
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds{20};
+               std::uint64_t revision,
+               std::chrono::seconds timeout = std::chrono::seconds{20}) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {
     const auto progress = runtime.renderer().progress();
     if (progress.state == seam::authoring::RenderState::Failed) {
@@ -1173,20 +1173,107 @@ TEST_CASE("authoring runtime keeps rendering the backing audio when the last not
   CHECK(runtime.transport().state().available);
 }
 
-TEST_CASE("authoring runtime does not treat an empty selected region as an empty score") {
+TEST_CASE("authoring runtime renders the whole score when the region on screen has no notes") {
   // The region on screen has no notes, but the score still sounds in another region of the same
-  // track. Nothing is reset: only a score with nothing to sound anywhere is idle.
+  // track, and the renderer renders every region that has notes. An edit made while the empty
+  // region is selected changes what the creator hears, so it renders again like any other edit;
+  // the audio must not stay at the score as it was.
   auto fixture = makeFixture();
   const auto emptyRegion = fixture.document->factory().addRegion(
       fixture.document->session().project(), fixture.resolvedTrack, "EMPTY",
       seam::time::Tick{7680}, seam::time::Tick{1920});
+  const auto track = fixture.resolvedTrack;
   seam::authoring::AuthoringRuntime runtime{
       std::move(fixture.document),
       configFor(seam::test::support::temporaryDirectory("runtime-empty-selected-region"))};
   CHECK(runtime.initialize());
   CHECK(waitReady(runtime, runtime.document().session().revision()));
   CHECK(runtime.selectRegion(emptyRegion));
-  runtime.requestPreview(true);
-  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Ready);
+  const auto submitted = runtime.renderer().stats().submitted;
+
+  CHECK(runtime.execute(std::make_unique<seam::application::SetVocalTrackMixCommand>(
+      track, -6.0F, 0.0F, false, false)));
+  CHECK(waitReady(runtime, runtime.document().session().revision(), std::chrono::seconds{5}));
+  CHECK(runtime.renderer().stats().submitted == submitted + 1U);
   CHECK(runtime.transport().state().available);
+
+  // Undoing it renders the earlier mix again, just the same.
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision(), std::chrono::seconds{5}));
+  CHECK(runtime.renderer().stats().submitted == submitted + 2U);
+}
+
+TEST_CASE("authoring runtime settles a render in flight when an edit is made with an empty region selected") {
+  // The render in flight is for the score as it was. It finishes as a stale one and is dropped, so
+  // the edit has to ask for a render of its own: nothing else is left to report the end of the old
+  // one, and the status would stay on "rendering" for good.
+  RenderGate gate;
+  auto fixture = makeFixture();
+  const auto emptyRegion = fixture.document->factory().addRegion(
+      fixture.document->session().project(), fixture.resolvedTrack, "EMPTY",
+      seam::time::Tick{7680}, seam::time::Tick{1920});
+  const auto track = fixture.resolvedTrack;
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-empty-region-in-flight"));
+  config.renderHooks = gate.hooks();
+  gate.arm();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Rendering);
+
+  CHECK(runtime.selectRegion(emptyRegion));
+  CHECK(runtime.execute(std::make_unique<seam::application::SetVocalTrackMixCommand>(
+      track, -6.0F, 0.0F, false, false)));
+  gate.release();
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision, std::chrono::seconds{5}));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Ready);
+  CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime reports the performance of the region on screen, and none for an empty one") {
+  // The renderer renders every region that has notes and reports the performance of one of them:
+  // the region on screen. An empty region has none to report, and the score's other regions are not
+  // offered in its place, so the views beside it never show another region's performance under
+  // this one's name.
+  auto fixture = makeFixture();
+  const auto emptyRegion = fixture.document->factory().addRegion(
+      fixture.document->session().project(), fixture.resolvedTrack, "EMPTY",
+      seam::time::Tick{7680}, seam::time::Tick{1920});
+  const auto track = fixture.resolvedTrack;
+  const auto region = fixture.resolvedRegion;
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-empty-region-performance"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  {
+    const auto first = runtime.renderer().latest();
+    CHECK(first->result.performanceRegionId == region);
+    CHECK(!first->result.activeUnitPlan.empty());
+  }
+
+  CHECK(runtime.selectRegion(emptyRegion));
+  CHECK(runtime.execute(std::make_unique<seam::application::SetVocalTrackMixCommand>(
+      track, -6.0F, 0.0F, false, false)));
+  CHECK(waitReady(runtime, runtime.document().session().revision(), std::chrono::seconds{5}));
+  {
+    const auto empty = runtime.renderer().latest();
+    CHECK(empty->result.performanceRegionId == emptyRegion);
+    CHECK(empty->result.performanceCues.empty());
+    CHECK(empty->result.activeUnitPlan.empty());
+    // The score itself was rendered: the region with notes is in it.
+    CHECK(empty->result.phraseCount > 0U);
+    CHECK(!empty->result.interleaved.empty());
+  }
+
+  CHECK(runtime.selectRegion(region));
+  CHECK(runtime.execute(std::make_unique<seam::application::SetVocalTrackMixCommand>(
+      track, -3.0F, 0.0F, false, false)));
+  CHECK(waitReady(runtime, runtime.document().session().revision(), std::chrono::seconds{5}));
+  {
+    const auto back = runtime.renderer().latest();
+    CHECK(back->result.performanceRegionId == region);
+    CHECK(!back->result.activeUnitPlan.empty());
+  }
 }

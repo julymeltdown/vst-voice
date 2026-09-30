@@ -82,6 +82,11 @@ public:
   // dropped only when the bank resolves. The outcome of a render attempt is left out while a newer
   // attempt is queued or running, because it describes an attempt that one has replaced, and is
   // cleared for good by a render that succeeds.
+  // The standing condition is an assessment made when a render request was last composed, which
+  // happens after every document change and every bank selection, relink or refresh the runtime
+  // performs. It is not a live look at the resources: a bank bound directly through
+  // VoicebankSession::bindTrack is reported as resolved only once the runtime has composed again,
+  // which handleDocumentChanged does.
   [[nodiscard]] std::vector<Diagnostic> diagnostics() const;
   // Forgets what has been recorded. A condition that still holds is not a record and is reported
   // again, so dismissing it does not make a missing bank go away.
