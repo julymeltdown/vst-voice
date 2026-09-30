@@ -1077,10 +1077,11 @@ TEST_CASE("a render the worker had taken but not yet reported is not reported as
   CHECK(!coordinator.acquireCurrent());
 }
 
-TEST_CASE("a request cancelled between its admission and its queued report is not reported as queued afterwards") {
-  // The submitting thread reports "queued" after it has left the coordinator's lock. A cancel in
-  // that gap already found the request pending and reported the cancellation; the late report
-  // must not put the request back on screen with nothing left to render it.
+TEST_CASE("a request cancelled while its submitting thread has yet to finish is left cancelled") {
+  // The request has been admitted and reported as queued; its submitting thread is held before it
+  // notifies and wakes the worker. A cancel in that interval finds the request pending and reports
+  // the cancellation; the thread carrying on afterwards must not put the request back on screen
+  // with nothing left to render it.
   auto fixture = makeRenderFixture();
   HookBarrier admitted;
   ReleaseOnExit release{admitted};
@@ -1342,4 +1343,109 @@ TEST_CASE("authoring_render_coordinator_shutdown_joins_active_worker") {
   CHECK(coordinator->progress().state ==
         seam::authoring::RenderState::Cancelled);
   coordinator.reset();
+}
+
+TEST_CASE("a queued replacement request keeps what the screen knew about the audio it replaces") {
+  auto fixture = makeRenderFixture();
+  DebounceObservation observation;
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-queued-content"), observation.hooks()};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 700U,
+                     48000U, seam::rendering::RenderQuality::Preview, true);
+  const auto first = waitForTerminal(coordinator, 700U);
+  CHECK(first.state == seam::authoring::RenderState::Ready);
+  CHECK(!first.activeRenderer.empty());
+  // A debounced request stays queued until the debounce ends, which is far away here.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 701U,
+                     48000U, seam::rendering::RenderQuality::Preview, false);
+  CHECK(observation.waitFor(701U, false));
+  const auto queued = coordinator.progress();
+  CHECK(queued.state == seam::authoring::RenderState::Queued);
+  CHECK(queued.requestedRevision == 701U);
+  CHECK(queued.publishedRevision == 700U);
+  CHECK(queued.publishedQuality == seam::rendering::RenderQuality::Preview);
+  CHECK(queued.audibleAudioStale);
+  CHECK(!queued.activeVoicebankId.empty());
+  CHECK(queued.activeVoicebankId == first.activeVoicebankId);
+  CHECK(queued.activeVoicebankVersion == first.activeVoicebankVersion);
+  CHECK(queued.activeRenderer == first.activeRenderer);
+}
+
+
+TEST_CASE("a replacement request is reported as queued before the worker can take it, and never again once it has finished") {
+  // The worker is busy with request 600. Request 601 is admitted, and its submitting thread is held
+  // right after the admission, as a thread that has been preempted there would be. The worker then
+  // finishes 600, takes 601 and renders it to the end before that thread runs again. The screen
+  // must already say that 601 is queued at the moment the worker takes it, and must not go back to
+  // "queued" over a render that has finished.
+  auto fixture = makeRenderFixture();
+  HookBarrier busy;
+  HookBarrier submitterHeld;
+  seam::authoring::AuthoringRenderCoordinator* coordinatorPtr = nullptr;
+  std::atomic<int> stateWhenTaken{-1};
+  std::atomic<std::uint64_t> revisionWhenTaken{0U};
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforeRender = [&](std::uint64_t revision, std::stop_token) {
+    if (revision == 600U) busy.pass();
+  };
+  hooks.afterSubmitAdmission = [&](std::uint64_t revision) {
+    if (revision == 601U) submitterHeld.pass();
+  };
+  hooks.afterAdmission = [&](std::uint64_t revision, std::stop_token) {
+    if (revision != 601U || coordinatorPtr == nullptr) return;
+    const auto progress = coordinatorPtr->progress();
+    stateWhenTaken.store(static_cast<int>(progress.state));
+    revisionWhenTaken.store(progress.requestedRevision);
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-queued-order"), std::move(hooks)};
+  coordinatorPtr = &coordinator;
+
+  std::mutex logMutex;
+  std::vector<std::pair<seam::authoring::RenderState, std::uint64_t>> observations;
+  const auto observe = [&] {
+    const auto progress = coordinator.progress();
+    std::lock_guard lock(logMutex);
+    observations.emplace_back(progress.state, progress.requestedRevision);
+  };
+  coordinator.setProgressCallback(observe);
+  coordinator.setCompletionCallback(observe);
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 600U,
+                     48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(busy.waitEntered());
+  std::jthread submitter{[&] {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 601U,
+                       48000U, seam::rendering::RenderQuality::Preview, true);
+  }};
+  ReleaseOnExit releaseBusy{busy};
+  ReleaseOnExit releaseSubmitter{submitterHeld};
+  CHECK(submitterHeld.waitEntered());
+  busy.release();
+  // The worker finishes 600 as a stale render, takes 601 and renders it, with the submitter held.
+  CHECK(waitForCondition([&] {
+    const auto progress = coordinator.progress();
+    return progress.requestedRevision == 601U &&
+           progress.state == seam::authoring::RenderState::Ready;
+  }));
+  submitterHeld.release();
+  submitter.join();
+
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Ready);
+  CHECK(progress.requestedRevision == 601U);
+  CHECK(progress.publishedRevision == 601U);
+  CHECK(stateWhenTaken.load() == static_cast<int>(seam::authoring::RenderState::Queued));
+  CHECK(revisionWhenTaken.load() == 601U);
+  std::lock_guard lock(logMutex);
+  bool readySeen = false;
+  bool regressed = false;
+  for (const auto& [state, revision] : observations) {
+    if (revision != 601U) continue;
+    if (state == seam::authoring::RenderState::Ready) readySeen = true;
+    else if (readySeen && (state == seam::authoring::RenderState::Queued ||
+                           state == seam::authoring::RenderState::Rendering)) regressed = true;
+  }
+  CHECK(readySeen);
+  CHECK(!regressed);
 }

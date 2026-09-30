@@ -178,7 +178,8 @@ struct RenderCoordinatorHooks final {
   // "rendering": the request is no longer pending and not yet visibly in flight.
   std::function<void(std::uint64_t, std::stop_token)> afterAdmission;
   // afterSubmitAdmission runs on the submitting thread once the request has been admitted and
-  // before it reports "queued".
+  // reported as queued, before it reports that to the progress callback and wakes the worker. The
+  // worker may already be running, so it can take the request, and finish it, while this is held.
   std::function<void(std::uint64_t)> afterSubmitAdmission;
   std::chrono::milliseconds debounceInterval{20};
 };
@@ -208,8 +209,10 @@ public:
   void cancel() noexcept;
   // The score has nothing left to sound. Cancels whatever is queued or rendering, revokes the
   // audio that was current and reports "idle" exactly as a coordinator that never rendered does.
-  // It is not a cancellation the creator asked for, so nothing is counted or reported as
-  // cancelled. The retained publication is history and stays readable.
+  // It is not a cancellation the creator asked for, so none is reported: the progress goes to
+  // idle, not to cancelled, and no completion is reported as one. The work it abandons is still
+  // counted in stats().cancelled, as abandoned work always is. The retained publication is
+  // history and stays readable.
   void resetToIdle() noexcept;
   // Reject captured audio immediately when new document intent is queued,
   // including the interval before a debounced render is submitted.

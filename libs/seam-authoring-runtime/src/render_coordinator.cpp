@@ -258,6 +258,7 @@ void AuthoringRenderCoordinator::submitWithSources(
     activeVoicebankVersion = source->manifest.version;
   }
   std::uint64_t requestId = 0U;
+  bool reported = false;
   {
     std::lock_guard lock(mutex_);
     if (shutdown_.load(std::memory_order_acquire)) return;
@@ -287,30 +288,37 @@ void AuthoringRenderCoordinator::submitWithSources(
         .immediate = immediate,
         .impact = std::move(impact),
     };
+    // The worker takes a request only under this lock, so this request is on screen as queued
+    // before anything can report it rendering or finished, and nothing the worker reports for it
+    // can be overwritten by a later "queued". It used to be reported after the lock was released:
+    // a worker that was already running took the request and finished it in that gap, and the
+    // late report put "queued" over "ready". The lock order is mutex_ then progressMutex_; nothing
+    // takes them the other way round, and no callback or hook runs while they are held.
+    const auto previous = progress();
+    const auto audible = publication_.acquire();
+    const auto audibleAudioStale =
+        audible && audible->state == RenderState::Ready &&
+        (audible->projectRevision != revision || audible->quality != quality);
+    reported = updateProgressIfCurrent(requestId, RenderProgress{
+        .state = RenderState::Queued,
+        .requestedRevision = revision,
+        .publishedRevision = previous.publishedRevision,
+        .requestedQuality = quality,
+        .publishedQuality = previous.publishedQuality,
+        .completedPhrases = 0U,
+        .totalPhrases = 0U,
+        .fraction = 0.0,
+        .audibleAudioStale = audibleAudioStale,
+        .diagnostic = "Production render request queued",
+        .activeVoicebankId = activeVoicebankId,
+        .activeVoicebankVersion = activeVoicebankVersion,
+        .activeRenderer = previous.activeRenderer,
+    });
   }
   submitted_.fetch_add(1U, std::memory_order_relaxed);
   if (hooks_.afterSubmitAdmission) hooks_.afterSubmitAdmission(revision);
-  const auto previous = progress();
-  const auto audible = publication_.acquire();
-  const auto audibleAudioStale =
-      audible && audible->state == RenderState::Ready &&
-      (audible->projectRevision != revision || audible->quality != quality);
-  const auto reported = updateProgressIfCurrent(requestId, RenderProgress{
-      .state = RenderState::Queued,
-      .requestedRevision = revision,
-      .publishedRevision = progress().publishedRevision,
-      .requestedQuality = quality,
-      .publishedQuality = previous.publishedQuality,
-      .completedPhrases = 0U,
-      .totalPhrases = 0U,
-      .fraction = 0.0,
-      .audibleAudioStale = audibleAudioStale,
-      .diagnostic = "Production render request queued",
-      .activeVoicebankId = activeVoicebankId,
-      .activeVoicebankVersion = activeVoicebankVersion,
-      .activeRenderer = previous.activeRenderer,
-  });
-  // Before the worker is woken, so the callback sees the request as queued.
+  // The callback reads the progress when it runs, so a worker that has already moved the request
+  // on is reported as it is now, never as it was.
   if (reported) notifyProgress();
   condition_.notify_all();
 }
