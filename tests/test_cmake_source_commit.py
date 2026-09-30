@@ -88,6 +88,25 @@ class SourceCommitFollowsHeadTests(unittest.TestCase):
     def without_reflog(self) -> None:
         self.git("config", "core.logAllRefUpdates", "false")
 
+    def linked_worktree(self, branch: str):
+        """A linked worktree on a new branch with the identity block beside it, and functions that run
+        Git in it and commit in it (returning the new HEAD)."""
+        linked = self.temp / "linked"
+        self.git("worktree", "add", "-q", "-b", branch, str(linked))
+        shutil.copy(self.source / "CMakeLists.txt", linked / "CMakeLists.txt")
+
+        def in_linked(*args: str) -> str:
+            done = subprocess.run(["git", *args], cwd=linked, env=GIT_ENV,
+                                  check=True, capture_output=True, text=True)
+            return done.stdout.strip()
+
+        def commit_in_linked(message: str) -> str:
+            in_linked("commit", "-q", "--allow-empty", "-m", message)
+            time.sleep(0.05)  # The build system compares modification times.
+            return in_linked("rev-parse", "HEAD")
+
+        return linked, in_linked, commit_in_linked
+
     def cached(self) -> str:
         for line in (self.build / "CMakeCache.txt").read_text(encoding="utf-8").splitlines():
             if line.startswith("SEAM_SOURCE_COMMIT:"):
@@ -226,20 +245,10 @@ class SourceCommitFollowsHeadTests(unittest.TestCase):
         self.repository()
         self.without_reflog()
         self.commit("first")
-        linked = self.temp / "linked"
-        self.git("worktree", "add", "-q", "-b", "linked-branch", str(linked))
+        linked, _, commit_in_linked = self.linked_worktree("linked-branch")
         self.git("pack-refs", "--all", "--prune")
-        shutil.copy(self.source / "CMakeLists.txt", linked / "CMakeLists.txt")
-
-        def in_linked(*args: str) -> str:
-            done = subprocess.run(["git", *args], cwd=linked, env=GIT_ENV,
-                                  check=True, capture_output=True, text=True)
-            return done.stdout.strip()
-
         self.cmake("-S", str(linked), "-B", str(self.build), *GENERATOR)
-        in_linked("commit", "-q", "--allow-empty", "-m", "second")
-        time.sleep(0.05)
-        second = in_linked("rev-parse", "HEAD")
+        second = commit_in_linked("second")
         self.build_all()
         self.assertEqual(self.cached(), second)
 
@@ -253,6 +262,27 @@ class SourceCommitFollowsHeadTests(unittest.TestCase):
         second = self.commit("second")
         self.build_all()
         self.assertEqual(self.cached(), second)
+
+    def test_a_reftable_linked_worktree_follows_a_new_commit(self) -> None:
+        # A commit on a branch rewrites the shared reftable stack. The worktree keeps a stack of its own,
+        # which holds only its HEAD, and a commit on a detached HEAD is what rewrites that one; git-path
+        # names the worktree stack, so the shared one has to be found through the common directory.
+        try:
+            self.git("init", "-q", "--ref-format=reftable")
+        except subprocess.CalledProcessError:
+            self.skipTest("this Git cannot create a reftable repository")
+        self.without_reflog()
+        self.commit("first")
+        linked, in_linked, commit_in_linked = self.linked_worktree("review/reftable")
+        self.cmake("-S", str(linked), "-B", str(self.build), *GENERATOR)
+        second = commit_in_linked("second")
+        self.assertIn("Configuring done", self.build_output())
+        self.assertEqual(self.cached(), second)
+        self.assertNotIn("Configuring done", self.build_output())
+        in_linked("checkout", "-q", "--detach", "HEAD")
+        third = commit_in_linked("third")
+        self.build_all()
+        self.assertEqual(self.cached(), third)
 
     def test_an_explicit_commit_replaces_an_earlier_default(self) -> None:
         self.repository()

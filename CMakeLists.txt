@@ -81,6 +81,21 @@ if(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD)
       endif()
     endif()
   endforeach()
+  # A linked worktree keeps a reftable stack of its own, which is the one git-path names above and
+  # which holds only that worktree's HEAD. A commit on a branch rewrites the stack that every worktree
+  # shares, and that one is found through the common directory.
+  execute_process(COMMAND git rev-parse --git-common-dir
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    RESULT_VARIABLE SEAM_GIT_COMMON_RESULT OUTPUT_VARIABLE SEAM_GIT_COMMON_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  if(SEAM_GIT_COMMON_RESULT EQUAL 0 AND SEAM_GIT_COMMON_DIR)
+    cmake_path(ABSOLUTE_PATH SEAM_GIT_COMMON_DIR BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+               NORMALIZE OUTPUT_VARIABLE SEAM_GIT_COMMON_ABSOLUTE)
+    if(EXISTS "${SEAM_GIT_COMMON_ABSOLUTE}/reftable/tables.list")
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                   "${SEAM_GIT_COMMON_ABSOLUTE}/reftable/tables.list")
+    endif()
+  endif()
 endif()
 # seam-source-commit:end
 set(SEAM_BUILD_EPOCH "0" CACHE STRING
