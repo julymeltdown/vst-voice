@@ -57,6 +57,27 @@ Diagnostic renderDiagnostic(RenderFailureKind failure, std::string_view message)
   return diagnostic;
 }
 
+// The first tries are close together, because a feeder that is late is usually back in moments.
+constexpr unsigned kFastTransportRetries = 50U;
+constexpr std::chrono::milliseconds kFastTransportRetryGap{2};
+constexpr std::chrono::milliseconds kSlowTransportRetryGap{50};
+
+// What the creator is told while the transport is behind the score. The refusal's own words go into
+// the detail, for the support report.
+Diagnostic transportBehindDiagnostic(std::string_view messageKey, std::string_view what,
+                                     std::string_view refusal) {
+  Diagnostic diagnostic{
+      .code = "RENDER_STALE",
+      .severity = DiagnosticRegistry::severity("RENDER_STALE"),
+      .messageKey = std::string{messageKey},
+      .affectedIds = {},
+      .actions = DiagnosticRegistry::actions("RENDER_STALE"),
+      .occurrenceCount = 1U,
+  };
+  diagnostic.setDetail(std::string{what} + " Refused: " + std::string{refusal});
+  return diagnostic;
+}
+
 }  // namespace
 
 AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
@@ -145,6 +166,8 @@ std::vector<Diagnostic> AuthoringRuntime::diagnostics() const {
   };
   if (bankUnavailable_)
     add(renderDiagnostic(RenderFailureKind::VoicebankMissing, "voicebank-missing"));
+  // Also a standing condition: it holds until the transport has been given what it is owed.
+  if (transportDebtDiagnostic_.has_value()) add(*transportDebtDiagnostic_);
   for (const auto& recorded : diagnostics_) {
     if (recorded.attemptOutcome && attemptInFlight) continue;
     add(recorded.value);
@@ -166,7 +189,12 @@ void AuthoringRuntime::settleWithNothingToRender() {
     // checking that the render is still current; taking it here means a publication that was
     // already under way finishes before the audio is dropped, and a later one fails that check.
     std::lock_guard lock(performanceAuditionMutex_);
-    static_cast<void>(transport_.clearAudio());
+    const auto cleared = transport_.clearAudio();
+    // A transport that refused still holds the audio, and playing on would sound it. The score is
+    // empty all the same, so the coordinator goes idle; what is left is owed to the transport,
+    // reported for as long as it is, and asked for again until the transport takes it.
+    if (cleared) settleTransportDebt();
+    else oweTransport(TransportDebt::Clear, cleared.error());
   }
   renderer_.resetToIdle();
 }
@@ -222,6 +250,18 @@ void AuthoringRuntime::shutdown() noexcept {
   previewWorker_.request_stop();
   previewCondition_.notify_all();
   if (previewWorker_.joinable()) previewWorker_.join();
+  {
+    // The helper that asks the transport again for an owed change works on the transport and the
+    // coordinator, so it goes before either. It is taken out under the lock that starts it, so
+    // that nothing starts another one, and stopped and joined without holding that lock.
+    std::jthread retry;
+    {
+      std::lock_guard lock(performanceAuditionMutex_);
+      debtRetryRetired_ = true;
+      retry = std::move(debtRetry_);
+    }
+    retry.request_stop();
+  }
   seamPreviewActive_.store(false, std::memory_order_release);
   seamPreviewReady_.store(false, std::memory_order_release);
   seamPreviewRenderer_.setCompletionCallback({});
@@ -418,7 +458,13 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
     return core::failure(core::ErrorCode::Conflict,
                          "Canonical audio is not ready for seam A/B restore");
   }
-  return transport_.publishAudio(std::move(canonical));
+  // Under the lock that every decision about the transport is made under, so that a refusal is
+  // owed and not lost.
+  std::lock_guard lock(performanceAuditionMutex_);
+  auto restored = transport_.publishAudio(std::move(canonical));
+  if (restored) settleTransportDebt();
+  else oweTransport(TransportDebt::Publish, restored.error());
+  return restored;
 }
 
 core::Result<void> AuthoringRuntime::auditionPerformance(
@@ -490,14 +536,7 @@ core::Result<void> AuthoringRuntime::stopPerformanceAudition() {
       return core::success();
     performanceAuditionActive_.store(false, std::memory_order_release);
     performanceAuditionReady_.store(false, std::memory_order_release);
-    auto canonical = renderer_.acquire();
-    if (canonical && canonical->state == RenderState::Ready)
-      restored = transport_.publishAudio(std::move(canonical));
-    else {
-      restored = core::failure(core::ErrorCode::Conflict,
-          "Canonical audio is unavailable after performance comparison");
-      static_cast<void>(transport_.pause());
-    }
+    restored = restoreCanonicalAudio();
   }
   // Cancellation may invoke the coordinator callback, which takes the mutex above.
   performanceAuditionRenderer_.cancel();
@@ -839,7 +878,14 @@ void AuthoringRuntime::publishCompletedAudio() {
         !performanceAuditionActive_.load(std::memory_order_acquire) &&
         renderer_.matchesCurrent(*handle)) {
       const auto published = transport_.publishAudio(std::move(handle));
-      if (published) retainedAcceptedAudition_.reset();
+      if (published) {
+        retainedAcceptedAudition_.reset();
+        settleTransportDebt();
+      } else {
+        // The render is ready and the transport did not take it, so what plays is an older version.
+        // Saying nothing would leave the status at "ready" over audio the creator did not ask for.
+        oweTransport(TransportDebt::Publish, published.error());
+      }
     }
   }
   std::function<void()> callback;
@@ -913,15 +959,144 @@ void AuthoringRuntime::publishCompletedPerformanceAudition() {
     } else {
       performanceAuditionActive_.store(false, std::memory_order_release);
       performanceAuditionReady_.store(false, std::memory_order_release);
-      auto canonical = renderer_.acquire();
-      if (canonical && canonical->state == RenderState::Ready)
-        static_cast<void>(transport_.publishAudio(std::move(canonical)));
-      else
-        static_cast<void>(transport_.pause());
+      // A refusal is owed; the comparison already failed, and that is what the caller is told.
+      static_cast<void>(restoreCanonicalAudio());
     }
   }
   if (!published && progress.state == RenderState::Failed)
     recordRenderFailure(progress.failure, progress.diagnostic);
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(callbackMutex_);
+    callback = completionCallback_;
+  }
+  if (callback) callback();
+}
+
+void AuthoringRuntime::oweTransport(TransportDebt debt, const core::Error& refusal) {
+  transportDebt_ = debt;
+  ++transportDebtSerial_;
+  {
+    std::lock_guard lock(diagnosticsMutex_);
+    transportDebtDiagnostic_ =
+        debt == TransportDebt::Clear
+            ? transportBehindDiagnostic(
+                  "playback.clear-pending",
+                  "Playback still holds audio that should no longer sound. Letting go of it is "
+                  "being retried.",
+                  refusal.message)
+            : transportBehindDiagnostic(
+                  "playback.update-pending",
+                  "Playback has not received the newest render and still plays an earlier "
+                  "version. Handing it over is being retried.",
+                  refusal.message);
+  }
+  transportDebtChanged_.notify_all();
+  if (debtRetryActive_ || debtRetryRetired_) return;
+  try {
+    // The previous helper, if there was one, has ended: it cleared debtRetryActive_ as its last act
+    // under this lock, so the assignment joins a thread with nothing left to do.
+    debtRetry_ = std::jthread([this](std::stop_token stop) { retryTransportDebt(stop); });
+    debtRetryActive_ = true;
+  } catch (...) {
+    // No thread to ask again with. The debt stays reported, and the next request asks again.
+  }
+}
+
+void AuthoringRuntime::settleTransportDebt() {
+  if (transportDebt_ == TransportDebt::None) return;
+  transportDebt_ = TransportDebt::None;
+  ++transportDebtSerial_;
+  {
+    std::lock_guard lock(diagnosticsMutex_);
+    transportDebtDiagnostic_.reset();
+  }
+  transportDebtChanged_.notify_all();
+}
+
+bool AuthoringRuntime::repayTransportDebt() {
+  // Runs on the helper thread as well as on the thread that decides. It never owes: starting a
+  // helper from the helper would make the assignment join the thread that is running it.
+  switch (transportDebt_) {
+    case TransportDebt::None:
+      return false;
+    case TransportDebt::Clear:
+      if (!transport_.clearAudio()) return false;
+      break;
+    case TransportDebt::Publish: {
+      // A transient preview holds the transport while it lasts, and its end hands the canonical
+      // audio back; an accepted take keeps it until its canonical render arrives. In both the
+      // change that is owed is no longer this one's to make.
+      const bool transientHolds = seamPreviewActive_.load(std::memory_order_acquire) ||
+                                  performanceAuditionActive_.load(std::memory_order_acquire) ||
+                                  retainedAcceptedAudition_ != nullptr;
+      if (!transientHolds) {
+        auto canonical = renderer_.acquire();
+        if (canonical && canonical->state == RenderState::Ready &&
+            !transport_.publishAudio(std::move(canonical))) {
+          return false;
+        }
+      }
+      break;
+    }
+  }
+  settleTransportDebt();
+  return true;
+}
+
+core::Result<void> AuthoringRuntime::restoreCanonicalAudio() {
+  auto canonical = renderer_.acquire();
+  if (canonical && canonical->state == RenderState::Ready) {
+    auto restored = transport_.publishAudio(std::move(canonical));
+    if (restored) settleTransportDebt();
+    else oweTransport(TransportDebt::Publish, restored.error());
+    return restored;
+  }
+  // A transport that cannot even be paused would go on playing the comparison's audio, so letting go
+  // of it is owed.
+  const auto paused = transport_.pause();
+  if (!paused) oweTransport(TransportDebt::Clear, paused.error());
+  return core::failure(core::ErrorCode::Conflict,
+                       "Canonical audio is unavailable after performance comparison");
+}
+
+void AuthoringRuntime::retryTransportDebt(std::stop_token stop) {
+  unsigned attempts = 0U;
+  std::uint64_t seen = 0U;
+  for (;;) {
+    bool repaid = false;
+    {
+      std::unique_lock lock(performanceAuditionMutex_);
+      // A debt that replaced the one being worked on starts with its own tries.
+      if (seen != transportDebtSerial_) {
+        seen = transportDebtSerial_;
+        attempts = 0U;
+      }
+      // Deciding to end and saying so are one step under the lock, so that a debt owed after this
+      // point sees that no helper is running and starts one.
+      if (stop.stop_requested() || transportDebt_ == TransportDebt::None ||
+          attempts >= config_.transportRetryAttempts) {
+        debtRetryActive_ = false;
+        return;
+      }
+      const auto gap = attempts < kFastTransportRetries ? kFastTransportRetryGap
+                                                        : kSlowTransportRetryGap;
+      static_cast<void>(transportDebtChanged_.wait_for(
+          lock, stop, gap, [&] { return transportDebtSerial_ != seen; }));
+      if (stop.stop_requested()) {
+        debtRetryActive_ = false;
+        return;
+      }
+      if (transportDebtSerial_ != seen) continue;
+      ++attempts;
+      repaid = repayTransportDebt();
+    }
+    // The window is painted on demand: a change nobody asked about has to be announced.
+    if (repaid) notifyCompletion();
+  }
+}
+
+void AuthoringRuntime::notifyCompletion() {
   std::function<void()> callback;
   {
     std::lock_guard lock(callbackMutex_);

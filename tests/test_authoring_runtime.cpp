@@ -363,6 +363,50 @@ std::vector<seam::domain::NoteId> noteIdsOf(seam::authoring::AuthoringRuntime& r
   return ids;
 }
 
+// Stops the transport's feeder and fills its control queue, so that the transport refuses whatever
+// it is asked next: a feeder that has stopped draining, or has fallen a long way behind.
+void holdTransportFull(seam::authoring::AuthoringRuntime& runtime) {
+  runtime.transport().shutdown();
+  unsigned accepted = 0U;
+  while (accepted < 4096U && runtime.transport().setLoop({})) ++accepted;
+  CHECK(accepted > 0U);
+  CHECK(accepted < 4096U);
+}
+
+template <typename Predicate>
+bool eventually(Predicate predicate,
+                std::chrono::milliseconds limit = std::chrono::seconds{10}) {
+  const auto end = std::chrono::steady_clock::now() + limit;
+  while (!predicate() && std::chrono::steady_clock::now() < end)
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  return predicate();
+}
+
+// True while the runtime reports, for the given reason, that the transport is behind the score.
+bool reportsTransportBehind(const seam::authoring::AuthoringRuntime& runtime, std::string_view key) {
+  const auto diagnostics = runtime.diagnostics();
+  return std::any_of(diagnostics.begin(), diagnostics.end(), [key](const auto& value) {
+    return value.code == "RENDER_STALE" && value.messageKey == key;
+  });
+}
+
+// True once the ring has yielded nothing but silence for a run of reads. What the feeder produced
+// before it was told to stop is read out first.
+bool ringGoesSilent(seam::authoring::AuthoringRuntime& runtime) {
+  std::vector<float> samples(2048U);
+  unsigned quiet = 0U;
+  const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+  while (quiet < 20U && std::chrono::steady_clock::now() < end) {
+    std::fill(samples.begin(), samples.end(), 0.0F);
+    static_cast<void>(runtime.transport().ringBuffer().readFrames(samples));
+    const bool silent = std::all_of(samples.begin(), samples.end(),
+                                    [](float value) { return value == 0.0F; });
+    quiet = silent ? quiet + 1U : 0U;
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  return quiet >= 20U;
+}
+
 }  // namespace
 
 TEST_CASE("authoring runtime reopens relative recipe references and rejects changed content") {
@@ -1587,4 +1631,224 @@ TEST_CASE("authoring runtime reports the performance of the region on screen, an
     CHECK(back->result.performanceRegionId == region);
     CHECK(!back->result.activeUnitPlan.empty());
   }
+}
+
+TEST_CASE("authoring runtime does not settle as empty while the transport still holds the old audio") {
+  // The transport's control queue is full, so it refuses to let go of the audio it holds. The score
+  // was emptied, but the old audio is still loaded and would sound once the feeder ran again. The
+  // runtime used to drop the refusal and report an idle, empty score all the same.
+  using namespace seam;
+  auto fixture = makeFixture();
+  std::atomic<unsigned> announced{0U};
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-refused-clear"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.transport().play());
+  CHECK(eventually([&] { return runtime.transport().state().playing; }));
+  holdTransportFull(runtime);
+
+  const auto rejectedBefore = runtime.transport().feederStats().rejectedCommands;
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(runtime.transport().feederStats().rejectedCommands > rejectedBefore);
+
+  // The audio is still there, and the runtime says that it is still there.
+  CHECK(runtime.transport().state().available);
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+  // Dismissing records does not make a condition that still holds go away.
+  runtime.clearDiagnostics();
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  // The feeder takes commands again and the runtime finishes the clear on its own.
+  runtime.setCompletionCallback([&announced] { announced.fetch_add(1U); });
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return !runtime.transport().state().available; }));
+  CHECK(eventually([&] { return !runtime.transport().state().playing; }));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.clear-pending"); }));
+  // A window that paints on demand has to be told: nothing else happens to ask it to repaint.
+  CHECK(eventually([&] { return announced.load() > 0U; }));
+  CHECK(ringGoesSilent(runtime));
+  CHECK(runtime.renderer().progress().state == authoring::RenderState::Idle);
+}
+
+TEST_CASE("authoring runtime hands a finished render to the transport once the transport can take it") {
+  // The render is ready but the transport refuses it, so the transport keeps playing the older
+  // audio. The runtime used to drop the refusal; the status said ready and the old version played.
+  using namespace seam;
+  auto fixture = makeFixture();
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-refused-publication"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto oldRevision = runtime.transport().state().publishedRevision;
+  holdTransportFull(runtime);
+
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(revision > oldRevision);
+  CHECK(waitForRenderState(runtime, authoring::RenderState::Ready, revision));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{3}));
+  CHECK(runtime.transport().state().publishedRevision == oldRevision);
+
+  CHECK(runtime.transport().start());
+  CHECK(waitReady(runtime, revision));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+}
+
+TEST_CASE("authoring runtime lets a newer render replace a clear it still owes") {
+  // Emptying the score owes the transport a clear; bringing the notes back owes it the new audio
+  // instead. The clear is not carried out late over the audio that followed it.
+  using namespace seam;
+  auto fixture = makeFixture();
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-owed-clear-replaced"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+  CHECK(runtime.undo());
+  const auto revision = runtime.document().session().revision();
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{5}));
+  CHECK(!reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  CHECK(runtime.transport().start());
+  CHECK(waitReady(runtime, revision));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+  // Nothing is left owed to run late and take the audio away again.
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(runtime.transport().state().available);
+  CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime shuts down promptly while the transport still owes it a change") {
+  using namespace seam;
+  auto fixture = makeFixture();
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-owed-shutdown"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  // Retrying is still under way when the runtime is asked to stop. It must not hold it up.
+  const auto started = std::chrono::steady_clock::now();
+  runtime.shutdown();
+  CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds{2});
+}
+
+TEST_CASE("authoring runtime asks the transport on its own only a bounded number of times") {
+  // A feeder that stays away is not asked for ever: the tries end, the condition stays reported,
+  // and the next request (what the creator's Retry sends) asks again. A debt that comes later gets
+  // a helper of its own.
+  using namespace seam;
+  auto fixture = makeFixture();
+  auto config = configFor(test::support::temporaryDirectory("runtime-owed-clear-bounded"));
+  config.transportRetryAttempts = 50U;
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  // Fifty tries, 2 ms apart, are long over when the feeder comes back.
+  std::this_thread::sleep_for(std::chrono::milliseconds{500});
+  CHECK(runtime.transport().start());
+  std::this_thread::sleep_for(std::chrono::milliseconds{300});
+  CHECK(runtime.transport().state().available);
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  // What the creator's Retry asks for. The feeder can take it now.
+  runtime.requestPreview(true);
+  CHECK(!runtime.transport().state().available);
+  CHECK(!reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  // A second time: the helper of the first has ended, and this debt starts its own.
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return !runtime.transport().state().available; }, std::chrono::seconds{3}));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.clear-pending"); }));
+}
+
+TEST_CASE("authoring runtime stops owing the transport once it takes the audio that follows") {
+  // With no asking of its own, nothing pays the owed clear. The audio that follows the emptied
+  // score does: the transport takes it, so it is no longer behind, and nothing is reported.
+  using namespace seam;
+  auto fixture = makeFixture();
+  auto config = configFor(test::support::temporaryDirectory("runtime-owed-clear-settled-by-render"));
+  config.transportRetryAttempts = 0U;
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  CHECK(runtime.transport().start());
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(runtime.transport().state().available);
+  CHECK(reportsTransportBehind(runtime, "playback.clear-pending"));
+
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.transport().state().available);
+  CHECK(!reportsTransportBehind(runtime, "playback.clear-pending"));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+}
+
+TEST_CASE("authoring runtime owes the canonical audio when the transport refuses it after a seam preview") {
+  using namespace seam;
+  auto fixture = makeFixture();
+  auto* fixtureRegion = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  CHECK(fixtureRegion != nullptr);
+  const auto key = domain::PhonemeKey{.noteId = fixtureRegion->notes.front().id, .ordinal = 0U};
+  fixtureRegion->seamOverrides.push_back(domain::SeamOverride{
+      .incomingStartKey = key,
+      .seamAmount = 0.9F,
+      .overlap = time::Microseconds{4'000},
+      .phaseReset = 1.0F,
+      .envelopeBlend = 0.1F,
+      .curve = domain::SeamCurve::HardCharacter,
+      .locked = true,
+  });
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-seam-restore-refused"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+
+  holdTransportFull(runtime);
+  // The preview ends, the canonical audio is not taken, and the transport still holds the preview.
+  const auto restored = runtime.previewSeam(key, false);
+  CHECK(!restored);
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+  CHECK(runtime.transport().state().available);
 }

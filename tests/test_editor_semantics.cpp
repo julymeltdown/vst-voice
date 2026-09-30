@@ -388,7 +388,12 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
   CHECK(diagnostics->children.size() == 2U);
   CHECK(diagnostics->children.front().bounds.width > 0.0);
   CHECK(diagnostics->children.front().bounds.height > 0.0);
-  CHECK(diagnostics->children.front().value.find("render.stale") !=
+  // The node says what is wrong in words (RENDER_STALE has its own copy now) and still carries the
+  // stable key for anyone who needs to tell the issues apart.
+  CHECK(diagnostics->children.front().name == "Playback is behind your edits");
+  CHECK(diagnostics->children.front().value.find("match the score") != std::string::npos);
+  CHECK(diagnostics->children.front().value.find("render.stale") == std::string::npos);
+  CHECK(diagnostics->children.front().description.find("render.stale") !=
         std::string::npos);
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
       *diagnostics, "diagnostic-action.0.RETRY"));

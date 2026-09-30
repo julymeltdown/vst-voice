@@ -43,6 +43,11 @@ struct AuthoringRuntimeConfig final {
   //    completion has found its request current and before it hands the audio to the transport.
   std::function<void()> beforeSeamPreviewPublication{};
   std::function<void()> duringSeamPreviewPublication{};
+  // How many times the runtime, on its own, asks the transport again for a change it refused (see
+  // diagnostics(): the "playback.clear-pending" and "playback.update-pending" entries). The first
+  // fifty tries are 2 ms apart and the rest 50 ms apart, so the default keeps trying for about five
+  // seconds. Zero leaves the asking to the next request: an edit, or the creator's Retry.
+  unsigned transportRetryAttempts{150U};
 };
 
 class AuthoringRuntime final {
@@ -97,6 +102,12 @@ public:
   // performs. It is not a live look at the resources: a bank bound directly through
   // VoicebankSession::bindTrack is reported as resolved only once the runtime has composed again,
   // which handleDocumentChanged does.
+  // A third kind is the transport being behind the score: the feeder refused a clear or a
+  // publication (its control queue was full), so playback still holds audio that no longer matches.
+  // Like a missing bank it is a standing condition, not a record: it is reported for as long as the
+  // runtime still owes the transport the change, whatever the render is doing, and it goes when the
+  // change has been made. The runtime asks again on its own for a bounded time, and again at every
+  // request that decides what the transport should hold.
   [[nodiscard]] std::vector<Diagnostic> diagnostics() const;
   // Forgets what has been recorded. A condition that still holds is not a record and is reported
   // again, so dismissing it does not make a missing bank go away.
@@ -230,6 +241,30 @@ private:
   void recordRenderFailure(RenderFailureKind failure, std::string message);
   void clearRenderDiagnostics() noexcept;
 
+  // What the feeder refused to do for the score, and the score still needs. The transport holds
+  // what it held until the change is made, so the runtime keeps the obligation instead of acting as
+  // if the change had been made. Only the newest decision counts: a clear replaces a publication
+  // that was owed and the other way round, and either is settled by a change that succeeds.
+  enum class TransportDebt : std::uint8_t {
+    None,
+    // The score has nothing to play and the transport still holds audio.
+    Clear,
+    // The canonical audio was not handed over and the transport still holds an earlier version.
+    Publish,
+  };
+  // The next four need performanceAuditionMutex_, the lock under which every decision about what the
+  // transport holds is made.
+  void oweTransport(TransportDebt debt, const core::Error& refusal);
+  void settleTransportDebt();
+  // Makes the change that is owed. True when the debt is gone (paid, or no longer applicable).
+  [[nodiscard]] bool repayTransportDebt();
+  // Hands the transport the canonical audio again after a transient one, or pauses it when there is
+  // none. A refusal is owed.
+  [[nodiscard]] core::Result<void> restoreCanonicalAudio();
+  // The body of the helper thread that retries an owed change; it exists only while one is owed.
+  void retryTransportDebt(std::stop_token stop);
+  void notifyCompletion();
+
   std::unique_ptr<ProjectDocument> document_;
   AuthoringRuntimeConfig config_;
   VoicebankSession voicebanks_;
@@ -270,6 +305,18 @@ private:
   std::vector<RecordedDiagnostic> diagnostics_;
   // Derived from the last render request that was composed; see PreviewAssessment.
   bool bankUnavailable_{false};
+  // What diagnostics() says of transportDebt_. Written with it, under performanceAuditionMutex_.
+  std::optional<Diagnostic> transportDebtDiagnostic_;
+  // Guarded by performanceAuditionMutex_.
+  TransportDebt transportDebt_{TransportDebt::None};
+  // Counts the changes to transportDebt_, so that a retry can tell that the debt it was working on
+  // has been replaced.
+  std::uint64_t transportDebtSerial_{0U};
+  bool debtRetryActive_{false};
+  // Set by shutdown(): no retry thread is started after it.
+  bool debtRetryRetired_{false};
+  std::condition_variable_any transportDebtChanged_;
+  std::jthread debtRetry_;
 };
 
 }  // namespace seam::authoring

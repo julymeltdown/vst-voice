@@ -2221,6 +2221,73 @@ TEST_CASE("standalone_controller_compares_two_takes_from_one_playhead") {
   CHECK(!session->runtime().performanceAuditionActive());
 }
 
+TEST_CASE("standalone comparison that ends while the transport is full leaves the canonical audio owed") {
+  // Ending a comparison hands the canonical audio back to the transport. When the feeder refuses it,
+  // the transport still holds the compared take. That is reported, and handed over once it can be.
+  const auto root = seam::test::support::temporaryDirectory("standalone-comparison-refused-restore");
+  auto session = makeSession(root);
+  addNote(*session);
+  bool quit = false;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config,
+      [&quit] { quit = true; });
+  CHECK(controller);
+  if (!controller) return;
+  const auto regionId = session->regionId();
+  const auto performance = [&]() -> const seam::domain::RegionPerformanceState& {
+    return session->runtime().document().session().project().findRegion(regionId)->performance;
+  };
+  const auto waitFor = [](const auto& predicate) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (predicate()) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    return predicate();
+  };
+  CHECK(controller.value()->dispatch(
+      seam::platform::ApplicationCommand::ProposeAutomaticPerformance));
+  finishAutomaticPerformanceProposal(*controller.value());
+  CHECK(controller.value()->proposeAutomaticPerformance(seam::platform::PerformanceEditScope::Whole, {}));
+  finishAutomaticPerformanceProposal(*controller.value());
+  const std::string firstId = performance().takes[0].id;
+  const std::string secondId = performance().takes[1].id;
+  CHECK(controller.value()->acceptPerformanceTake(
+      firstId, seam::platform::PerformanceEditScope::Whole, {}));
+  CHECK(waitFor([&] { return static_cast<bool>(session->runtime().renderer().acquireCurrent()); }));
+  CHECK(controller.value()->beginPerformanceComparison(
+      secondId, seam::platform::PerformanceEditScope::Whole, {}));
+  CHECK(waitFor([&] { return session->runtime().performanceAuditionReady(); }));
+
+  // The feeder stops taking commands and its queue fills.
+  session->runtime().transport().shutdown();
+  unsigned queued = 0U;
+  while (queued < 4096U && session->runtime().transport().setLoop({})) ++queued;
+  CHECK(queued > 0U);
+  CHECK(queued < 4096U);
+  const auto behind = [&] {
+    const auto diagnostics = session->runtime().diagnostics();
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [](const auto& value) {
+      return value.code == "RENDER_STALE" && value.messageKey == "playback.update-pending";
+    });
+  };
+  CHECK(!behind());
+
+  // Swapping back to the canonical take cannot hand its audio over, and says so.
+  const auto swapped = controller.value()->swapPerformanceComparison();
+  CHECK(!swapped);
+  CHECK(!session->runtime().performanceAuditionActive());
+  CHECK(behind());
+
+  CHECK(session->runtime().transport().start());
+  CHECK(waitFor([&] { return !behind(); }));
+  CHECK(!session->runtime().audiblePublication().performanceAudition);
+  CHECK(session->runtime().transport().state().available);
+}
+
 TEST_CASE("standalone app installs a trusted procedural singer without changing the song") {
   using namespace seam;
   const auto root = test::support::temporaryDirectory("standalone-procedural-install");

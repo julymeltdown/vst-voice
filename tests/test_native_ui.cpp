@@ -682,6 +682,25 @@ TEST_CASE("diagnostic presentation keeps support reachable when it is the recove
   CHECK(preview.primaryActions[1U] == "Dismiss");
 }
 
+TEST_CASE("diagnostic presentation says in words that playback is behind the score") {
+  // Shown while the transport still owes the score a clear or a publication.
+  for (const auto* key : {"playback.clear-pending", "playback.update-pending"}) {
+    const auto presentation = seam::native_ui::presentDiagnostic({
+        .code = "RENDER_STALE",
+        .severity = seam::authoring::DiagnosticSeverity::Warning,
+        .messageKey = key,
+        .actions = {seam::authoring::DiagnosticAction::Retry,
+                    seam::authoring::DiagnosticAction::CopyDiagnostic},
+    });
+    CHECK(presentation.title == "Playback is behind your edits");
+    CHECK(presentation.impact.find("playback.") == std::string::npos);
+    CHECK(presentation.primaryActionKinds.size() == 1U);
+    CHECK(presentation.primaryActionKinds[0U] == seam::authoring::DiagnosticAction::Retry);
+    CHECK(presentation.primaryActions[0U] == "Retry");
+    CHECK(presentation.technicalDetail == std::string{"RENDER_STALE / "} + key);
+  }
+}
+
 TEST_CASE("editor interaction state owns hovered note detail independently") {
   seam::native_ui::EditorInteractionState interaction;
   const seam::domain::NoteId noteId{42U};
