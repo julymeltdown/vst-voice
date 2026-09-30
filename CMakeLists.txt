@@ -12,17 +12,22 @@ set(SEAM_BUILD_ID "${PROJECT_VERSION}-local" CACHE STRING
 # Exact executed bytes and dirty-source qualification remain separate evidence.
 # seam-source-commit:begin
 set(SEAM_LOCAL_SOURCE_BASE "0000000000000000000000000000000000000000")
-# A SEAM_SOURCE_COMMIT that a caller supplies is authoritative and is never replaced: release
-# automation passes it with -D and requires it to equal HEAD. When nobody supplies one the commit is
-# the checkout's HEAD, read again at every configure. CMake records the value it chose in
-# SEAM_SOURCE_COMMIT_FROM_HEAD, and a cache entry that still equals that record was never supplied
-# by anyone, so it follows HEAD instead of keeping the commit of the first configure. A -D value that
-# happens to equal the recorded one cannot be told apart from it; release automation is unaffected
-# because it requires its value to be HEAD anyway.
+# A SEAM_SOURCE_COMMIT that a caller supplies is authoritative: release automation passes it with -D
+# and requires it to equal HEAD. When nobody supplies one the commit is the HEAD of the checkout, read
+# again at every configure. CMake records the value it chose in SEAM_SOURCE_COMMIT_FROM_HEAD, and a
+# cache entry that still equals that record was never supplied by anyone, so it follows HEAD instead
+# of keeping the commit of the first configure.
+# A -D value given without a type leaves the cache entry UNINITIALIZED until the set() below types
+# it, so a caller is recognised by the entry type even when the value equals the recorded one, and the
+# record is dropped so that the value stays authoritative at every later configure. Only a typed
+# -DSEAM_SOURCE_COMMIT:STRING=... that equals the recorded value cannot be told from a default.
+get_property(SEAM_SOURCE_COMMIT_CACHE_TYPE CACHE SEAM_SOURCE_COMMIT PROPERTY TYPE)
 set(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD FALSE)
-if(NOT DEFINED SEAM_SOURCE_COMMIT OR
-   (DEFINED SEAM_SOURCE_COMMIT_FROM_HEAD AND
-    "${SEAM_SOURCE_COMMIT}" STREQUAL "${SEAM_SOURCE_COMMIT_FROM_HEAD}"))
+if("${SEAM_SOURCE_COMMIT_CACHE_TYPE}" STREQUAL "UNINITIALIZED")
+  unset(SEAM_SOURCE_COMMIT_FROM_HEAD CACHE)
+elseif(NOT DEFINED SEAM_SOURCE_COMMIT OR
+       (DEFINED SEAM_SOURCE_COMMIT_FROM_HEAD AND
+        "${SEAM_SOURCE_COMMIT}" STREQUAL "${SEAM_SOURCE_COMMIT_FROM_HEAD}"))
   set(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD TRUE)
   execute_process(COMMAND git rev-parse HEAD
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -41,11 +46,14 @@ if(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD)
       "The commit CMake, not a caller, chose for SEAM_SOURCE_COMMIT")
   # Re-run CMake whenever HEAD moves, so a build after a commit, a checkout or a reset stamps the
   # commit that was built rather than the one that was current when the directory was configured.
+  # What a commit changes depends on the repository: the branch ref, or HEAD itself when it is
+  # detached, and logs/HEAD unless reflogs are off; a reftable repository keeps every ref in
+  # reftable/tables.list instead.
   execute_process(COMMAND git symbolic-ref -q HEAD
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     RESULT_VARIABLE SEAM_GIT_BRANCH_RESULT OUTPUT_VARIABLE SEAM_GIT_BRANCH_REF
     OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-  set(SEAM_GIT_WATCHED HEAD logs/HEAD packed-refs)
+  set(SEAM_GIT_WATCHED HEAD logs/HEAD packed-refs reftable/tables.list)
   if(SEAM_GIT_BRANCH_RESULT EQUAL 0 AND SEAM_GIT_BRANCH_REF)
     list(APPEND SEAM_GIT_WATCHED "${SEAM_GIT_BRANCH_REF}")
   endif()
@@ -55,8 +63,19 @@ if(SEAM_SOURCE_COMMIT_FOLLOWS_HEAD)
       RESULT_VARIABLE SEAM_GIT_PATH_RESULT OUTPUT_VARIABLE SEAM_GIT_PATH
       OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
     if(SEAM_GIT_PATH_RESULT EQUAL 0 AND SEAM_GIT_PATH)
-      file(REAL_PATH "${SEAM_GIT_PATH}" SEAM_GIT_ABSOLUTE
-           BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+      cmake_path(ABSOLUTE_PATH SEAM_GIT_PATH BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                 NORMALIZE OUTPUT_VARIABLE SEAM_GIT_ABSOLUTE)
+      # A branch that is only packed, or has no commit yet, has no loose ref file to watch, and with
+      # reflogs off nothing else changes when the next commit creates one. The directory that will
+      # hold the file changes then, so the nearest one that exists is watched instead.
+      if(NOT EXISTS "${SEAM_GIT_ABSOLUTE}" AND "${SEAM_GIT_NAME}" STREQUAL "${SEAM_GIT_BRANCH_REF}")
+        foreach(SEAM_GIT_LEVEL RANGE 1 32)
+          cmake_path(GET SEAM_GIT_ABSOLUTE PARENT_PATH SEAM_GIT_ABSOLUTE)
+          if(EXISTS "${SEAM_GIT_ABSOLUTE}")
+            break()
+          endif()
+        endforeach()
+      endif()
       if(EXISTS "${SEAM_GIT_ABSOLUTE}")
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SEAM_GIT_ABSOLUTE}")
       endif()
