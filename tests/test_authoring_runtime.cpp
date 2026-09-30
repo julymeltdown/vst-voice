@@ -934,6 +934,74 @@ TEST_CASE("authoring runtime stops wanting a seam preview whose render failed") 
   CHECK(!runtime.seamPreviewReady());
 }
 
+TEST_CASE("authoring runtime takes a request for a seam preview only after one that is being published has finished") {
+  // The flags that say a seam preview is wanted and ready, and the request for it, change under
+  // the lock a completion holds while it publishes. A request made while an older preview is being
+  // handed to the transport waits for that. Without it the older one publishes after the newer was
+  // asked for, and marks the newer one ready before it has rendered.
+  HeldHook publishing;
+  HeldHook newerArrived;
+  std::atomic<int> publications{0};
+  std::atomic<int> completions{0};
+  std::atomic<bool> started{false};
+  std::atomic<bool> finished{false};
+  std::atomic<bool> accepted{false};
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-asked-late"));
+  config.duringSeamPreviewPublication = [&] {
+    if (publications.fetch_add(1) == 0) publishing.pass();
+  };
+  config.beforeSeamPreviewPublication = [&] {
+    if (completions.fetch_add(1) == 1) newerArrived.pass();
+  };
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  std::jthread asker;
+  ReleaseHeldOnExit releasePublishing{publishing};
+  ReleaseHeldOnExit releaseNewer{newerArrived};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto notes = noteIdsOf(runtime, fixture.resolvedRegion);
+  CHECK(notes.size() >= 2U);
+  const auto olderKey = seam::domain::PhonemeKey{.noteId = notes[0], .ordinal = 0U};
+  const auto newerKey = seam::domain::PhonemeKey{.noteId = notes[1], .ordinal = 0U};
+
+  CHECK(runtime.previewSeam(olderKey, true));
+  CHECK(publishing.waitEntered(std::chrono::seconds{10}));
+
+  asker = std::jthread([&] {
+    started.store(true);
+    accepted.store(static_cast<bool>(runtime.previewSeam(newerKey, true)));
+    finished.store(true);
+  });
+  const auto startDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (!started.load() && std::chrono::steady_clock::now() < startDeadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(started.load());
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(!finished.load());
+
+  publishing.release();
+  asker.join();
+  CHECK(accepted.load());
+
+  // The newer completion has reached the runtime. The flags describe the newer request: wanted, and
+  // not yet ready, whatever the older preview did on its way out.
+  CHECK(newerArrived.waitEntered(std::chrono::seconds{20}));
+  CHECK(runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+
+  newerArrived.release();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (!runtime.seamPreviewReady() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(runtime.seamPreviewActive());
+  CHECK(runtime.seamPreviewReady());
+}
+
 TEST_CASE("authoring runtime ends a seam preview on every change that makes it stale") {
   // Each path that changes the score, or tells the runtime it changed, revokes the preview on its
   // own: an edit, its undo and its redo, and a document that changed under the runtime.

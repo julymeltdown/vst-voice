@@ -393,6 +393,15 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
                   [key](const auto& value) {
                     return value.incomingStartKey == key;
                   });
+    // Asking for a preview and saying that it is wanted and not yet ready are one step with a
+    // completion's decision to publish, under the lock it holds while it decides: a completion is
+    // entirely before this (it publishes the older preview, and the flags then describe this
+    // request) or entirely after it (it finds its request replaced). Without the lock, the older
+    // completion published after this request was made and marked it ready before it had rendered.
+    // The submission takes the coordinator's admission lock inside this one, the order every other
+    // path uses; the seam coordinator has no progress callback, so nothing reports back into the
+    // runtime from under it.
+    std::lock_guard lock(performanceAuditionMutex_);
     seamPreviewActive_.store(true, std::memory_order_release);
     seamPreviewReady_.store(false, std::memory_order_release);
     seamPreviewRenderer_.submitWithSources(
