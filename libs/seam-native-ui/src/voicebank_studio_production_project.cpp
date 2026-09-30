@@ -424,7 +424,10 @@ core::Result<void> VoicebankStudioController::beginGenerationPreparation(
           core::sha256Hex(voicebank_production::encodeProductionProject(durable.value())))
         return core::failure<ProductionImportResult>(core::ErrorCode::Conflict, "Producer changed since the Studio workspace was loaded");
       const auto prepared = authoring::prepareGenerationJobFromScore(directory, std::move(jobId), scorePath,
-          trackId, regionId, captured, plannedTakeId, stop, expectedScoreSha256, std::move(selectedRecipe));
+          trackId, regionId, captured, plannedTakeId, stop, expectedScoreSha256, std::move(selectedRecipe),
+          // Studio shows an occupied row as a retake before it asks for the job folder, so this is
+          // the caller that opts in to superseding the row's current take.
+          authoring::GenerationTakePolicy::RetakeOccupied);
       if (!prepared) return core::Result<ProductionImportResult>{prepared.error()};
       // Package publication is not interrupted halfway; a late stop must not hide
       // its successfully written reference. Later generation enforces the frozen state.
@@ -482,14 +485,24 @@ core::Result<void> VoicebankStudioController::beginPreparedGenerationJob(
           return core::failure<ProductionImportResult>(core::ErrorCode::Conflict, "Producer changed during generation recognition");
         return ProductionImportResult{std::move(captured), "GENERATION ALREADY COLLECTED", false};
       }
-      if (request.projectStateSha256 != capturedHash || request.takeId != selected.plannedTakeId || request.supersedesTakeId != selected.takeId)
+      // The job freezes the identity the producer will accept for this assignment: the planned
+      // take ID while the row is unoccupied, or the derived retake identity once it holds one.
+      // Re-deriving it here refuses a job whose assignment moved on after it was prepared.
+      const auto identity = voicebank_production::nextProceduralTakeIdentity(captured, selected);
+      if (request.projectStateSha256 != capturedHash || request.takeId != identity.takeId || request.supersedesTakeId != identity.supersedesTakeId)
         return core::failure<ProductionImportResult>(core::ErrorCode::Conflict, "Generation request is stale or differs from the planned take");
       const auto output = authoring::runGenerationJob(directory, manifestSha256, stop);
       if (!output) return core::Result<ProductionImportResult>{output.error()};
       const auto& recipe = std::get<synthesis::ProceduralSingerResource>(job.value().snapshot.resource);
       const auto imported = repository.importProceduralCandidate(captured, output.value().metadataPath, output.value().audioPath, recipe,
           {.takeId = request.takeId, .promptId = request.promptId, .coverageKey = request.coverageKey,
-           .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId},
+           .pitchLayer = request.pitchLayer, .supersedesTakeId = request.supersedesTakeId,
+           // A style-owned producer stores the style on the take as well as on the assignment, and the
+           // repository refuses a collection whose take carries none; a legacy workspace keeps the empty
+           // style it always had, where a non-empty one is the invalid value. The CLI and batch paths
+           // already apply this rule, so the interactive path has to as well.
+           .style = captured.schemaVersion >= voicebank_production::kProductionStyleSchemaVersion
+               ? request.style : std::string{}},
           {.action = request.supersedesTakeId.empty() ? "import-procedural" : "retake", .subjectId = request.takeId,
            .operatorId = operatorId, .occurredAtUtc = occurredAtUtc}, stop, &request);
       if (!imported) return core::Result<ProductionImportResult>{imported.error()};
@@ -1211,12 +1224,16 @@ core::Result<void> VoicebankStudioController::importSelectedProceduralCandidate(
   const auto recipe = voice_design::loadVoiceRecipeResource(recipePath, {}, stopToken);
   if (!recipe) return core::Result<void>{recipe.error()};
   const auto assignment = *selected;
-  const bool retake = !assignment.takeId.empty();
-  const auto takeId = retake ? assignment.plannedTakeId + "-retake-" + std::to_string(productionProject_->takes.size() + 1U) : assignment.plannedTakeId;
+  // One shared rule decides the take identity, so an imported candidate and a
+  // prepared generation job for the same occupied row land on the same retake
+  // identity instead of racing to different names.
+  const auto identity = voicebank_production::nextProceduralTakeIdentity(*productionProject_, assignment);
+  const bool retake = !identity.supersedesTakeId.empty();
+  const auto takeId = identity.takeId;
   if (occurredAtUtc.empty()) occurredAtUtc = voicebank_studio_internal::currentUtcTimestamp();
   const auto imported = productionRepository_->importProceduralCandidate(*productionProject_, metadataPath, audioPath, recipe.value(),
       {.takeId = takeId, .promptId = assignment.promptId, .coverageKey = assignment.coverageKey, .pitchLayer = assignment.pitchLayer,
-       .supersedesTakeId = assignment.takeId, .initialState = voicebank_production::UnitQueueState::MarkerReview,
+       .supersedesTakeId = identity.supersedesTakeId, .initialState = voicebank_production::UnitQueueState::MarkerReview,
        // A style-owned producer stores the style on the take as well as on the assignment, so the
        // candidate import has to carry the assignment's own style; the repository then verifies that
        // the candidate's declared style agrees with it instead of accepting any candidate here.
@@ -1256,11 +1273,9 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
     return core::failure(core::ErrorCode::InvalidState,
         "The take was inspected for a different unit. Inspect it for the selected unit before import.");
   }
-  const auto retake = !assignment.takeId.empty();
-  const auto takeId = retake
-      ? assignment.plannedTakeId + "-retake-" +
-            std::to_string(productionProject_->takes.size() + 1U)
-      : assignment.plannedTakeId;
+  const auto identity = voicebank_production::nextProceduralTakeIdentity(*productionProject_, assignment);
+  const auto retake = !identity.supersedesTakeId.empty();
+  const auto takeId = identity.takeId;
   const auto inspectionEvidence = voicebank_production::makeTakeInspectionRevision(
       {{takeId, assignment.promptId, assignment.coverageKey, assignment.pitchLayer},
        *takeInspection_},
@@ -1271,7 +1286,7 @@ core::Result<void> VoicebankStudioController::importSelectedTake(
        .promptId = assignment.promptId,
        .coverageKey = assignment.coverageKey,
        .pitchLayer = assignment.pitchLayer,
-       .supersedesTakeId = assignment.takeId,
+       .supersedesTakeId = identity.supersedesTakeId,
        .initialState = takeInspection_->accepted()
                            ? voicebank_production::UnitQueueState::MarkerReview
                            : voicebank_production::UnitQueueState::Rejected,

@@ -81,6 +81,17 @@ core::Result<std::string> snapshotSourceEvidence(const std::filesystem::path& ro
 }
 }  // namespace
 
+ProceduralTakeIdentity nextProceduralTakeIdentity(
+    const VoicebankProductionProject& project, const UnitAssignment& assignment) {
+  if (assignment.takeId.empty()) return ProceduralTakeIdentity{assignment.plannedTakeId, {}};
+  // Retakes are numbered by the same durable count the interactive retake action
+  // uses, so a prepared job and a live import for one occupied row agree on the
+  // take identity instead of racing to different names.
+  return ProceduralTakeIdentity{
+      assignment.plannedTakeId + "-retake-" + std::to_string(project.takes.size() + 1U),
+      assignment.takeId};
+}
+
 core::Result<GenerationImportExpectation> captureGenerationImportExpectation(
     const VoicebankProductionProject& project, const RawTakeInput& take,
     const synthesis::ProceduralSingerResource& recipe, std::string style,

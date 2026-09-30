@@ -91,12 +91,19 @@ struct GenerationRecipeSelection final {
   synthesis::ProceduralSingerResource resource;
   std::string style;
 };
+// What preparing a job for an assignment that already holds a take means. Replacing accepted
+// material has to be a decision the caller makes explicitly, so the default refuses: the job would
+// name a take ID the producer already holds. A caller that shows the row as a retake to its user
+// opts in, and the job then supersedes the current take under a derived identity. The identity
+// comes from durable state alone, so the job still names the take its collection will commit.
+enum class GenerationTakePolicy : std::uint8_t { NewTakeOnly, RetakeOccupied };
 [[nodiscard]] core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
     const std::filesystem::path& directory, std::string jobId,
     const std::filesystem::path& scorePath, domain::TrackId trackId, domain::RegionId regionId,
     const voicebank_production::VoicebankProductionProject& producer, std::string_view plannedTakeId,
     std::stop_token stopToken = {}, std::string_view expectedScoreSha256 = {},
-    std::optional<GenerationRecipeSelection> selectedRecipe = std::nullopt);
+    std::optional<GenerationRecipeSelection> selectedRecipe = std::nullopt,
+    GenerationTakePolicy takePolicy = GenerationTakePolicy::NewTakeOnly);
 [[nodiscard]] core::Result<PreparedGenerationJob> loadGenerationJob(
     const std::filesystem::path& directory, std::string_view expectedManifestSha256);
 }

@@ -30,6 +30,20 @@ struct RawTakeInput final {
   std::optional<MetadataRevision> technicalInspection;
 };
 
+// The take identity a new procedural candidate for one assignment must carry.
+// An unoccupied assignment takes its planned take ID. An assignment that already
+// accepted a take keeps that take and the new candidate supersedes it under a
+// deterministic retake identity, because the producer refuses to reuse a take ID
+// and refuses to replace an occupied row without an explicit retake chain. The
+// identity is derived from durable state alone, so a job prepared before the
+// candidate was rendered still names the take the collection will commit, and a
+// second collection of the same bytes is recognized instead of re-imported.
+struct ProceduralTakeIdentity final {
+  std::string takeId, supersedesTakeId;
+};
+[[nodiscard]] ProceduralTakeIdentity nextProceduralTakeIdentity(
+    const VoicebankProductionProject& project, const UnitAssignment& assignment);
+
 // Captured before worker generation. Integrity/staleness check, not a signature
 // or source approval. The durable job layer must retain this original value.
 struct GenerationImportExpectation final {

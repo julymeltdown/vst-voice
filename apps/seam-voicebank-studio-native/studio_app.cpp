@@ -1759,7 +1759,7 @@ public:
       if (*chosen.value() >= selection->regions.size())
         return seam::core::failure(seam::core::ErrorCode::InvalidArgument, "Generation region selection is invalid");
       const auto destination = dialog->choose({.purpose = seam::platform::FileDialogPurpose::PrepareGenerationJob,
-          .title = selection->selectedRecipe ? "Prepare Frozen Designer Snapshot (No Audio Generated)" : "Prepare New Job Folder (No Audio Generated)", .initialDirectory = selection->path.parent_path(),
+          .title = generationPreparationTitle(selection->selectedRecipe.has_value()), .initialDirectory = selection->path.parent_path(),
           .suggestedName = "generation-job", .extensions = {"seamjobdir"}});
       if (!destination) return seam::core::Result<void>{destination.error()};
       if (!destination.value()) return seam::core::success();
@@ -1782,6 +1782,21 @@ public:
     return controller_.beginGenerationScoreInspection(*path.value());
   }
 
+  // Replacing a take is a decision the person choosing a job folder has to see, so a row that
+  // already holds one is named as a retake in the dialogs that lead to and run its job.
+  bool selectedRowHoldsTake() const {
+    const auto* assignment = controller_.selectedProductionAssignment();
+    return assignment != nullptr && !assignment->takeId.empty();
+  }
+  const char* generationPreparationTitle(bool designerSnapshot) const {
+    const bool retake = selectedRowHoldsTake();
+    if (designerSnapshot)
+      return retake ? "Prepare Frozen Designer Retake Snapshot (No Audio Generated)"
+                    : "Prepare Frozen Designer Snapshot (No Audio Generated)";
+    return retake ? "Prepare Retake Job Folder (No Audio Generated)"
+                  : "Prepare New Job Folder (No Audio Generated)";
+  }
+
   seam::core::Result<void> generationFromDialog(bool batch = false) {
     if (controller_.proceduralImportBusy()) return seam::core::failure(seam::core::ErrorCode::Conflict, "Production worker is busy");
     if (recording_.armed() || recording_.recordedFrames() > 0U) return seam::core::failure(seam::core::ErrorCode::Conflict,
@@ -1796,7 +1811,9 @@ public:
     auto dialog = platform_.fileDialog();
     const auto path = dialog->choose({.purpose = batch ? seam::platform::FileDialogPurpose::OpenGenerationBatch
                                                     : seam::platform::FileDialogPurpose::OpenGenerationJob,
-        .title = batch ? "Generate and Collect an Unapproved Batch" : "Generate and Collect an Unapproved Candidate",
+        .title = batch ? "Generate and Collect an Unapproved Batch"
+                       : (selectedRowHoldsTake() ? "Generate and Collect an Unapproved Retake"
+                                                 : "Generate and Collect an Unapproved Candidate"),
         .initialDirectory = {}, .suggestedName = batch ? "batch.json" : "job.seamjob",
         .extensions = {batch ? "json" : "seamjob"}});
     if (!path) return seam::core::Result<void>{path.error()};

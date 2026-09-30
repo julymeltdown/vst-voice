@@ -79,7 +79,8 @@ core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
     const std::filesystem::path& directory, std::string jobId,
     const std::filesystem::path& scorePath, domain::TrackId trackId, domain::RegionId regionId,
     const voicebank_production::VoicebankProductionProject& producer, std::string_view plannedTakeId, std::stop_token stopToken,
-    std::string_view expectedScoreSha256, std::optional<GenerationRecipeSelection> selectedRecipe) {
+    std::string_view expectedScoreSha256, std::optional<GenerationRecipeSelection> selectedRecipe,
+    GenerationTakePolicy takePolicy) {
   using Output = PreparedGenerationJob;
   const auto cancelled = [] { return core::failure<Output>(core::ErrorCode::Conflict, "Generation preparation cancelled"); };
   if (stopToken.stop_requested()) return cancelled();
@@ -124,9 +125,16 @@ core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
       0U, rendering::RenderQuality::Final, static_cast<std::uint32_t>(rate), reference.style);
   if (!snapshot) return core::Result<Output>{snapshot.error()};
   if (stopToken.stop_requested()) return cancelled();
+  // The default names the planned take, which the producer refuses when the assignment already
+  // holds one. A caller that opts in regenerates the occupied unit as a retake instead: the new
+  // candidate supersedes the current take under a derived identity, because the producer refuses
+  // to reuse a take ID or to replace an occupied assignment without an explicit retake chain.
+  auto identity = voicebank_production::ProceduralTakeIdentity{std::string{plannedTakeId}, assignment.takeId};
+  if (takePolicy == GenerationTakePolicy::RetakeOccupied)
+    identity = voicebank_production::nextProceduralTakeIdentity(producer, assignment);
   return prepareGenerationJob(directory, std::move(jobId), snapshot.value(), producer,
-      {.takeId = std::string{plannedTakeId}, .promptId = assignment.promptId, .coverageKey = assignment.coverageKey,
-       .pitchLayer = assignment.pitchLayer, .supersedesTakeId = assignment.takeId, .style = assignment.style});
+      {.takeId = identity.takeId, .promptId = assignment.promptId, .coverageKey = assignment.coverageKey,
+       .pitchLayer = assignment.pitchLayer, .supersedesTakeId = identity.supersedesTakeId, .style = assignment.style});
 }
 
 static core::Result<GenerationJobOutput> runGenerationJobImpl(const std::filesystem::path& directory,
