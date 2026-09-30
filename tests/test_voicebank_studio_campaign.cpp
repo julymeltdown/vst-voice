@@ -12,6 +12,7 @@
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/text/unicode.hpp"
+#include "seam/text/text_engine.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 
@@ -565,13 +566,16 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
 TEST_CASE("generation control wording fits its button at every supported window width") {
   Fixture fixture;
   namespace ui = seam::native_ui;
+  // A canvas with no text engine measures with the bitmap face, the widest the canvas can draw.
+  ui::PixelSurface surface{8U, 8U};
+  const ui::RasterCanvas canvas{surface};
   const auto advance = ui::RasterCanvas::fallbackTextAdvance(10.0);
   // The canvas without a text engine keeps exactly this many columns of a label, so a label that
   // survives the truncation is drawn whole there, and whole under any narrower system face.
   const auto sweep = [&](const std::string& state) {
     for (double width = 720.0; width <= 1800.0; width += 2.0) {
       for (const auto& control : ui::studioGenerationControls(fixture.controller, width, false)) {
-        const std::string painted{ui::studioControlPaintLabel(control, 10.0, 4.0)};
+        const std::string painted{ui::studioControlPaintLabel(canvas, control, 10.0, 4.0)};
         const auto columns = static_cast<std::size_t>(std::floor((control.bounds.width - 8.0) / advance));
         if (text::truncateUtf8ToDisplayWidth(painted, columns) != painted)
           throw seam::test::Failure{"With " + state + " campaign state at window width " + std::to_string(width) +
@@ -599,43 +603,45 @@ TEST_CASE("generation control wording fits its button at every supported window 
   // announces the full action; a wider window paints every label whole.
   const auto narrow = ui::studioGenerationControls(fixture.controller, 720.0, false);
   CHECK(byId(narrow, "plan-campaign")->label == "Plan campaign");
-  CHECK(ui::studioControlPaintLabel(*byId(narrow, "plan-campaign"), 10.0, 4.0) == "Plan");
+  CHECK(ui::studioControlPaintLabel(canvas, *byId(narrow, "plan-campaign"), 10.0, 4.0) == "Plan");
   CHECK(byId(narrow, "run-campaign")->label == "Resume campaign");
-  CHECK(ui::studioControlPaintLabel(*byId(narrow, "run-campaign"), 10.0, 4.0) == "Resume");
+  CHECK(ui::studioControlPaintLabel(canvas, *byId(narrow, "run-campaign"), 10.0, 4.0) == "Resume");
   const auto wide = ui::studioGenerationControls(fixture.controller, 1040.0, false);
   for (const auto& control : wide)
-    CHECK(ui::studioControlPaintLabel(control, 10.0, 4.0) == control.label);
+    CHECK(ui::studioControlPaintLabel(canvas, control, 10.0, 4.0) == control.label);
 
   // A control with no compact wording paints its label as it is, and the fit rule itself prefers
   // the earliest candidate that fits and falls back to the last one.
-  const ui::StudioSampleReviewControl plain{"plain", "A long label", {0.0, 0.0, 30.0, 18.0}, true};
-  CHECK(ui::studioControlPaintLabel(plain, 10.0, 4.0) == "A long label");
-  CHECK(ui::studioFitText({"first choice", "second", "third"}, 60.0, 10.0) == "second");
-  CHECK(ui::studioFitText({"first choice", "second", "third"}, 18.0, 10.0) == "third");
-  CHECK(ui::studioFitText({"first choice", "second", "third"}, 200.0, 10.0) == "first choice");
-  CHECK(ui::studioFitText({}, 200.0, 10.0).empty());
+  const ui::StudioSampleReviewControl uncompacted{"plain", "A long label", {0.0, 0.0, 30.0, 18.0}, true};
+  CHECK(ui::studioControlPaintLabel(canvas, uncompacted, 10.0, 4.0) == "A long label");
+  CHECK(ui::studioFitText(canvas, {"first choice", "second", "third"}, 60.0, 10.0) == "second");
+  CHECK(ui::studioFitText(canvas, {"first choice", "second", "third"}, 18.0, 10.0) == "third");
+  CHECK(ui::studioFitText(canvas, {"first choice", "second", "third"}, 200.0, 10.0) == "first choice");
+  CHECK(ui::studioFitText(canvas, {}, 200.0, 10.0).empty());
 }
 
 TEST_CASE("word wrapping never splits a word and keeps each line inside its width") {
   namespace ui = seam::native_ui;
+  ui::PixelSurface surface{8U, 8U};
+  const ui::RasterCanvas canvas{surface};
   const std::string hint = "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD";
-  const auto two = ui::studioWrapWords(hint, 146.0, 6.0);
+  const auto two = ui::studioWrapWords(canvas, hint, 146.0, 6.0);
   CHECK(two.size() == 2U);
   if (two.size() == 2U) {
     CHECK(two[0] == "R REC / CMD/CTRL-I");
     CHECK(two[1] == "IMPORT / SHIFT-B BUILD");
   }
-  CHECK(ui::studioWrapWords(hint, 526.0, 6.0).size() == 1U);
-  CHECK(ui::studioWrapWords("", 100.0, 6.0).empty());
-  CHECK(ui::studioWrapWords("   ", 100.0, 6.0).empty());
+  CHECK(ui::studioWrapWords(canvas, hint, 526.0, 6.0).size() == 1U);
+  CHECK(ui::studioWrapWords(canvas, "", 100.0, 6.0).empty());
+  CHECK(ui::studioWrapWords(canvas, "   ", 100.0, 6.0).empty());
   // A word wider than the width stays whole on a line of its own instead of being split.
-  const auto stuck = ui::studioWrapWords("A UNBROKENIDENTIFIER B", 60.0, 6.0);
+  const auto stuck = ui::studioWrapWords(canvas, "A UNBROKENIDENTIFIER B", 60.0, 6.0);
   CHECK(stuck.size() == 3U);
   if (stuck.size() == 3U) CHECK(stuck[1] == "UNBROKENIDENTIFIER");
 
   const auto advance = ui::RasterCanvas::fallbackTextAdvance(6.0);
   for (double width = 0.0; width <= 600.0; width += 6.0) {
-    const auto lines = ui::studioWrapWords(hint, width, 6.0);
+    const auto lines = ui::studioWrapWords(canvas, hint, width, 6.0);
     std::string joined;
     for (const auto line : lines) {
       if (!joined.empty()) joined += ' ';
@@ -649,6 +655,61 @@ TEST_CASE("word wrapping never splits a word and keeps each line inside its widt
     if (joined != hint)
       throw seam::test::Failure{"Wrapping at width " + std::to_string(width) + " changed the text to \"" + joined + "\""};
   }
+}
+
+TEST_CASE("a system text engine keeps whole wording wherever it truly fits and never truncates") {
+  Fixture fixture;
+  namespace ui = seam::native_ui;
+  auto engine = text::TextEngine::createSystem();
+  CHECK(engine);
+  if (!engine) return;
+  ui::PixelSurface plainSurface{8U, 8U};
+  const ui::RasterCanvas plain{plainSurface};
+  // Planned, so the campaign controls carry their Resume wording as well.
+  CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
+      {"take-sa", "take-sa-soft"}, fixture.root / "campaign-engine", 1U));
+  CHECK(drain(fixture.controller));
+
+  for (const double scale : {1.0, 2.0}) {
+    ui::PixelSurface surface{8U, 8U};
+    const ui::RasterCanvas canvas{surface, scale, engine.value().get()};
+    CHECK(canvas.measureText("", 10.0) == 0.0);
+    // The premise of choosing against the bitmap face when no engine is installed: a system face is
+    // narrower, so a label that fits the bitmap face fits the system face.
+    CHECK(canvas.measureText("Plan campaign", 10.0) < plain.measureText("Plan campaign", 10.0));
+    for (double width = 720.0; width <= 1800.0; width += 2.0) {
+      for (const auto& control : ui::studioGenerationControls(fixture.controller, width, false)) {
+        const auto painted = ui::studioControlPaintLabel(canvas, control, 10.0, 4.0);
+        const auto box = control.bounds.width - 8.0;
+        const auto measured = canvas.measureText(painted, 10.0);
+        if (measured > box)
+          throw seam::test::Failure{"At window width " + std::to_string(width) + " and scale " + std::to_string(scale) +
+              ", control \"" + control.id + "\" paints \"" + std::string{painted} + "\" needing " +
+              std::to_string(measured) + " px in " + std::to_string(box)};
+        // Nothing is shortened that did not have to be.
+        if (canvas.measureText(control.label, 10.0) <= box && painted != control.label)
+          throw seam::test::Failure{"At window width " + std::to_string(width) + ", control \"" + control.id +
+              "\" shortened a label that fits as \"" + std::string{painted} + "\""};
+        // What the canvas measured is enough for the engine to draw it with no ellipsis, in the same
+        // physical box drawText hands it.
+        const auto physical = static_cast<std::uint32_t>(std::ceil(box * scale));
+        const auto drawn = engine.value()->render(painted, text::TextStyle{
+            .pixelHeight = static_cast<float>(10.0 * scale), .letterSpacing = 0.0F, .lineSpacing = 1.20F,
+            .maximumWidth = physical, .maximumLines = 1U, .ellipsize = true});
+        CHECK(drawn);
+        if (drawn && drawn.value().metrics.truncated)
+          throw seam::test::Failure{"The engine truncates \"" + std::string{painted} + "\" at window width " +
+              std::to_string(width) + " and scale " + std::to_string(scale)};
+      }
+    }
+  }
+  // The real window keeps the full wording the bitmap face could not hold.
+  const ui::RasterCanvas real{plainSurface, 2.0, engine.value().get()};
+  const auto narrow = ui::studioGenerationControls(fixture.controller, 720.0, false);
+  std::size_t whole = 0U;
+  for (const auto& control : narrow)
+    if (ui::studioControlPaintLabel(real, control, 10.0, 4.0) == control.label) ++whole;
+  CHECK(whole > 0U);
 }
 
 TEST_CASE("the intake shortcut hint wraps at the minimum window instead of being cut") {

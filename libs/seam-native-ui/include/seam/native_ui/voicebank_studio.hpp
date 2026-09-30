@@ -673,19 +673,22 @@ struct StudioSampleReviewControl final {
   // accessible name, so the semantic tree keeps the full action wording at every window width.
   std::string compactLabel{};
 };
-// The first candidate that fits `width` at `size` in the widest face the canvas can draw, or the
-// last candidate when none does. A candidate that fits is never truncated, with or without a system
-// text engine, so a layout can choose its wording at the width it is given.
+// The first candidate that fits `width` at `size` as `canvas` would draw it, or the last candidate
+// when none does. A candidate that fits is never truncated, so a layout can choose its wording at the
+// width it is given. A canvas with no text engine measures with the bitmap face, the widest the
+// canvas can draw, which makes that choice safe for any narrower system face as well.
 [[nodiscard]] std::string_view studioFitText(
-    std::initializer_list<std::string_view> candidates, double width, double size) noexcept;
-// Splits `text` at spaces into lines that each fit `width` at `size` in the widest face the canvas
-// can draw. A word wider than `width` stays whole on a line of its own. The views point into `text`.
+    const RasterCanvas& canvas, std::initializer_list<std::string_view> candidates, double width,
+    double size) noexcept;
+// Splits `text` at spaces into lines that each fit `width` at `size` as `canvas` would draw them. A
+// word wider than `width` stays whole on a line of its own. The views point into `text`.
 [[nodiscard]] std::vector<std::string_view> studioWrapWords(
-    std::string_view text, double width, double size);
+    const RasterCanvas& canvas, std::string_view text, double width, double size);
 // What to paint for a control at `fontSize` inside `horizontalPadding` on each side: the full label
 // when it fits, otherwise the compact label when the control has one.
 [[nodiscard]] std::string_view studioControlPaintLabel(
-    const StudioSampleReviewControl& control, double fontSize, double horizontalPadding = 4.0) noexcept;
+    const RasterCanvas& canvas, const StudioSampleReviewControl& control, double fontSize,
+    double horizontalPadding = 4.0) noexcept;
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioSampleReviewControls(
     const VoicebankStudioController& controller, double width);
 [[nodiscard]] std::vector<StudioSampleReviewControl> studioGenerationControls(

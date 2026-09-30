@@ -263,6 +263,24 @@ double RasterCanvas::fallbackTextAdvance(double size, double scale) noexcept {
   return static_cast<double>(fallbackGlyphPixel(size, scale) * 6) / scale;
 }
 
+double RasterCanvas::measureText(std::string_view text, double size) const noexcept {
+  if (text.empty() || !std::isfinite(size) || size <= 0.0) return 0.0;
+  if (textEngine_ != nullptr) {
+    try {
+      const auto metrics = textEngine_->measure(
+          text, text::TextStyle{.pixelHeight = static_cast<float>(size * scale_),
+                                .letterSpacing = 0.0F,
+                                .lineSpacing = 1.20F,
+                                .maximumWidth = 0U,
+                                .maximumLines = 1U,
+                                .ellipsize = false});
+      if (metrics) return metrics.value().width / scale_;
+    } catch (...) {
+    }
+  }
+  return static_cast<double>(text::utf8DisplayWidth(text)) * fallbackTextAdvance(size, scale_);
+}
+
 double RasterCanvas::logicalHeight() const noexcept {
   return static_cast<double>(surface_.height()) / scale_;
 }

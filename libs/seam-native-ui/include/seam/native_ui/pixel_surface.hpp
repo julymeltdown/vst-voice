@@ -80,6 +80,10 @@ public:
   // label that fits it cannot be truncated under a system text engine either.
   [[nodiscard]] static double fallbackTextAdvance(double size, double scale = 1.0) noexcept;
 
+  // Logical width `text` needs on one line at `size`: the installed text engine's own measurement,
+  // or the bitmap face's columns when none is installed. Drawing it into a narrower box truncates it.
+  [[nodiscard]] double measureText(std::string_view text, double size) const noexcept;
+
   void clear(Color color) noexcept;
   void fillRect(ui::Rect rect, Color color) noexcept;
   void strokeRect(ui::Rect rect, Color color, double thickness = 1.0) noexcept;

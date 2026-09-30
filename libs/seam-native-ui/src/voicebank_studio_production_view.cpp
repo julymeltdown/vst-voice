@@ -1,7 +1,5 @@
 #include "voicebank_studio_production_view.hpp"
 
-#include "seam/text/unicode.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -15,13 +13,13 @@ std::string_view sourceQualificationLabel(const voicebank_production::VoicebankP
       ? "SOURCE QUALIFICATION READY" : "SOURCE QUALIFICATION PENDING";
 }
 
-// Draws `text` on at most `maximumLines` lines, wrapped at spaces to what `bounds.width` holds in the
-// widest face the canvas can draw, so the wording survives a narrow column instead of being cut.
+// Draws `text` on at most `maximumLines` lines, wrapped at spaces to what `bounds.width` holds as the
+// canvas draws it, so the wording survives a narrow column instead of being cut.
 void drawWrappedText(RasterCanvas& canvas, ui::Rect bounds, std::string_view text, Color color,
                      double size, double lineHeight, std::size_t maximumLines) noexcept {
   if (bounds.width <= 0.0 || maximumLines == 0U) return;
   try {
-    const auto lines = studioWrapWords(text, bounds.width, size);
+    const auto lines = studioWrapWords(canvas, text, bounds.width, size);
     const auto count = std::min(lines.size(), maximumLines);
     for (std::size_t index = 0U; index < count; ++index)
       canvas.drawText(ui::Rect{bounds.x, bounds.y + static_cast<double>(index) * lineHeight,
@@ -32,29 +30,25 @@ void drawWrappedText(RasterCanvas& canvas, ui::Rect bounds, std::string_view tex
 }
 } // namespace
 
-std::vector<std::string_view> studioWrapWords(std::string_view text, double width, double size) {
+std::vector<std::string_view> studioWrapWords(const RasterCanvas& canvas, std::string_view text,
+                                              double width, double size) {
   std::vector<std::string_view> lines;
-  const auto advance = RasterCanvas::fallbackTextAdvance(size);
-  const auto columns = advance > 0.0 && width > 0.0
-      ? static_cast<std::size_t>(std::floor(width / advance)) : std::size_t{0U};
   bool open = false;
-  std::size_t lineStart = 0U, lineEnd = 0U, lineColumns = 0U;
+  std::size_t lineStart = 0U, lineEnd = 0U;
   for (std::size_t index = 0U; index < text.size();) {
     while (index < text.size() && text[index] == ' ') ++index;
     if (index >= text.size()) break;
     const auto found = text.find(' ', index);
     const auto end = found == std::string_view::npos ? text.size() : found;
-    const auto wordColumns = text::utf8DisplayWidth(text.substr(index, end - index));
-    // The spaces between two words on one line are part of the line and take a column each.
-    if (open && lineColumns + (index - lineEnd) + wordColumns <= columns) {
-      lineColumns += (index - lineEnd) + wordColumns;
+    // The spaces between two words on one line are part of the line, so the whole candidate line is
+    // measured rather than summing word widths.
+    if (open && width > 0.0 && canvas.measureText(text.substr(lineStart, end - lineStart), size) <= width) {
       lineEnd = end;
     } else {
       if (open) lines.push_back(text.substr(lineStart, lineEnd - lineStart));
       open = true;
       lineStart = index;
       lineEnd = end;
-      lineColumns = wordColumns;
     }
     index = end;
   }
@@ -62,19 +56,20 @@ std::vector<std::string_view> studioWrapWords(std::string_view text, double widt
   return lines;
 }
 
-std::string_view studioFitText(std::initializer_list<std::string_view> candidates, double width,
+std::string_view studioFitText(const RasterCanvas& canvas,
+                               std::initializer_list<std::string_view> candidates, double width,
                                double size) noexcept {
   if (candidates.size() == 0U) return {};
-  const auto advance = RasterCanvas::fallbackTextAdvance(size);
   for (const auto candidate : candidates)
-    if (static_cast<double>(text::utf8DisplayWidth(candidate)) * advance <= width) return candidate;
+    if (canvas.measureText(candidate, size) <= width) return candidate;
   return *(candidates.end() - 1);
 }
 
-std::string_view studioControlPaintLabel(const StudioSampleReviewControl& control, double fontSize,
+std::string_view studioControlPaintLabel(const RasterCanvas& canvas,
+                                         const StudioSampleReviewControl& control, double fontSize,
                                          double horizontalPadding) noexcept {
   if (control.compactLabel.empty()) return control.label;
-  return studioFitText({control.label, control.compactLabel},
+  return studioFitText(canvas, {control.label, control.compactLabel},
                        control.bounds.width - 2.0 * horizontalPadding, fontSize);
 }
 
