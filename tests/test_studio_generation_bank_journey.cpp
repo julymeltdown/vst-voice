@@ -219,6 +219,19 @@ public:
     return false;
   }
 
+  // Writes what the harness sees, at the given window size, when SEAM_STUDIO_APP_SNAPSHOT_DIR names
+  // a directory; the checks never depend on it. The window returns to its previous size afterwards.
+  void snapshot(std::string_view name, double width, double height) {
+    const char* directory = std::getenv("SEAM_STUDIO_APP_SNAPSHOT_DIR");
+    if (directory == nullptr || *directory == '\0') return;
+    const auto previousWidth = width_, previousHeight = height_;
+    resize(width, height);
+    frame();
+    CHECK(surface_.writePpm(std::filesystem::path{directory} / (std::string{name} + ".ppm")).hasValue());
+    resize(previousWidth, previousHeight);
+    frame();
+  }
+
 private:
   std::filesystem::path root_, banks_, editor_;
   double width_{1100.0};
@@ -244,6 +257,129 @@ public:
     return platform::UnsavedDecision::Discard;
   }
 };
+
+// Accepts the unit the review view is on and every unit after it, each through the reviewer and
+// confirmation dialogs Studio itself opens. A unit counts as reviewed when the producer records a
+// review for it, not when a status line an earlier unit left behind still says so.
+void acceptRemainingUnits(StudioHarness& studio, std::size_t first, std::size_t assignments) {
+  auto& dialogs = *studio.dialogs;
+  for (std::size_t index = first; index < assignments; ++index) {
+    CHECK(studio.settle([&] { const auto control = studio.node("capture"); return control && control->enabled; }));
+    CHECK(studio.activate("capture").hasValue());
+    CHECK(studio.settle([&] { const auto control = studio.node("reviewer"); return control && control->enabled; }));
+    dialogs.sampleReviewers = {std::string{"listener"}};
+    CHECK(studio.activate("reviewer").hasValue());
+    CHECK(studio.settle([&] { const auto control = studio.node("accept"); return control && control->enabled; }));
+    const auto reviewed = studio.app->productionProject()->reviews.size();
+    dialogs.sampleReviewConfirmations = {true};
+    CHECK(studio.activate("accept").hasValue());
+    CHECK(studio.settle([&] { return studio.app->productionProject()->reviews.size() > reviewed; }));
+    if (index + 1U < assignments) {
+      CHECK(studio.activate("next-unit").hasValue());
+      CHECK(studio.settle([&] { return studio.node("capture").has_value(); }));
+    }
+  }
+}
+
+struct SungBank final {
+  std::filesystem::path installDirectory;
+  std::string contentHash;
+};
+
+// Publishes the reviewed candidate, signs it, installs it and opens a song bound to the installed
+// bank in a fresh editor session that exports audio. Every step is one of Studio's own actions or
+// the standalone editor's own controller; nothing here reads the producer's files to shortcut them.
+SungBank publishSignInstallAndSing(StudioHarness& studio, const std::filesystem::path& root,
+                                   const std::string& tag) {
+  auto& dialogs = *studio.dialogs;
+  const auto candidate = root / (tag + "-candidate");
+  dialogs.paths[platform::FileDialogPurpose::PublishSampleCandidate] = {candidate};
+  CHECK(studio.activate("publish").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.value("status").find("ENGINEERING CANDIDATE COMMITTED") != std::string::npos;
+  }));
+  CHECK(studio.settle([&] { const auto control = studio.node("sign-bank"); return control && control->enabled; }));
+  auto key = distribution::generateSigningKeyPair();
+  CHECK(key.hasValue());
+  const auto keyPath = root / "keys" / (tag + "-signer.json");
+  std::filesystem::create_directories(keyPath.parent_path());
+  CHECK(distribution::savePrivateKey(key.value(), keyPath).hasValue());
+  const auto package = root / "out" / (tag + "-journey.seambank");
+  std::filesystem::create_directories(package.parent_path());
+  dialogs.paths[platform::FileDialogPurpose::SelectSingerSigningKey] = {keyPath};
+  dialogs.paths[platform::FileDialogPurpose::PublishSampleBank] = {package};
+  CHECK(studio.activate("sign-bank").hasValue());
+  CHECK(studio.settle([&] { return std::filesystem::exists(package); }));
+  CHECK(studio.settle([&] { const auto control = studio.node("install-bank"); return control && control->enabled; }));
+  CHECK(studio.activate("install-bank").hasValue());
+  CHECK(studio.settle([&] {
+    return studio.value("status").find("INSTALLED AS A TRUSTED BANK") != std::string::npos;
+  }));
+  const auto* installed = studio.app->installedSampleBank();
+  CHECK(installed != nullptr);
+  SungBank bank{installed->installDirectory, installed->contentHash};
+
+  const auto songs = root / (tag + "-songs");
+  std::filesystem::create_directories(songs);
+  const auto song = songs / "Journey Song.seam";
+  dialogs.paths[platform::FileDialogPurpose::SaveProject] = {song};
+  CHECK(studio.settle([&] {
+    const auto control = studio.node("open-bank-in-song-editor"); return control && control->enabled;
+  }));
+  const auto launched = studio.launches->size();
+  CHECK(studio.activate("open-bank-in-song-editor").hasValue());
+  CHECK(studio.launches->size() == launched + 1U);
+  CHECK(std::filesystem::exists(song));
+
+  // The editor half: the installed bank opens without a missing-bank diagnostic and exports
+  // non-silent audio for phrases nobody recorded or generated.
+  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
+      .cacheRoot = root / (tag + "-cache"),
+      .voicebankRoots = {{studio.voicebanks(), voicebank::VoicebankRootKind::Installed}},
+      .sampleRate = 48000U, .outputChannels = 2U, .bindFirstAvailableVoicebank = false,
+      .allowDevelopmentVoicebanks = false});
+  CHECK(session.hasValue());
+  auto editorDialog = std::make_unique<EditorDialog>();
+  auto* editorResponses = editorDialog.get();
+  standalone::StandaloneApplicationControllerConfig editorConfig{
+      .autosaveRoot = root / (tag + "-autosaves"), .recentProjectsPath = root / (tag + "-recent.json")};
+  editorConfig.voicebankInstallRoot = studio.voicebanks();
+  editorConfig.trustedVoicebankKeys = {key.value().publicKey};
+  auto controller = standalone::StandaloneApplicationController::create(
+      *session.value(), std::move(editorDialog), std::make_unique<DiscardPrompt>(), editorConfig);
+  CHECK(controller.hasValue());
+  const auto card = std::find_if(controller.value()->voicebankCards().begin(),
+      controller.value()->voicebankCards().end(),
+      [&](const auto& value) { return value.contentHash == bank.contentHash; });
+  CHECK(card != controller.value()->voicebankCards().end());
+  editorResponses->responses.push_back(song);
+  CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenProject).hasValue());
+  auto& runtime = session.value()->runtime();
+  for (const auto& diagnostic : runtime.diagnostics())
+    CHECK(diagnostic.code != "BANK_MISSING");
+  const auto* track = runtime.document().session().project().findVocalTrack(runtime.selectedTrack());
+  CHECK(track != nullptr);
+  CHECK(track->voicebank.contentHash == bank.contentHash);
+  time::Tick start{0};
+  for (const char32_t* lyric : {U"あ", U"い", U"う"}) {
+    auto [token, note] = runtime.document().factory().makeNote(
+        start, time::Tick{480}, 60U, std::u32string{lyric}, domain::Language::Japanese);
+    CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(
+        runtime.selectedRegion(), std::move(token), std::move(note))).hasValue());
+    start = start + time::Tick{480};
+  }
+  authoring::ExportSettings settings;
+  settings.includeMaster = true;
+  const auto exported = controller.value()->exportSet(root / (tag + "-export"), settings);
+  CHECK(exported.hasValue());
+  const auto master = voicebank::readWav(exported.value().masterPath);
+  CHECK(master.hasValue());
+  float peak = 0.0F;
+  for (const auto sample : master.value().interleaved) peak = std::max(peak, std::fabs(sample));
+  CHECK(peak > 0.01F);
+  return bank;
+}
+
 
 }  // namespace
 
@@ -395,119 +531,21 @@ TEST_CASE("Voicebank Studio generates, preflights, reviews and installs a bank a
   const auto draftAudio = core::sha256File(draftRoot / "manifest.json");
   CHECK(draftAudio.hasValue());
 
-  const auto assignments = studio.app->productionProject()->unitAssignments.size();
-  for (std::size_t index = 0U; index < assignments; ++index) {
-    CHECK(studio.settle([&] { const auto control = studio.node("capture"); return control && control->enabled; }));
-    CHECK(studio.activate("capture").hasValue());
-    CHECK(studio.settle([&] { const auto control = studio.node("reviewer"); return control && control->enabled; }));
-    dialogs.sampleReviewers = {std::string{"listener"}};
-    CHECK(studio.activate("reviewer").hasValue());
-    CHECK(studio.settle([&] { const auto control = studio.node("accept"); return control && control->enabled; }));
-    dialogs.sampleReviewConfirmations = {true};
-    CHECK(studio.activate("accept").hasValue());
-    CHECK(studio.settle([&] {
-      return studio.value("status").find("REVIEW COMMITTED") != std::string::npos;
-    }));
-    if (index + 1U < assignments) {
-      CHECK(studio.activate("next-unit").hasValue());
-      CHECK(studio.settle([&] {
-        return studio.node("capture").has_value();
-      }));
+  // Every unit's active take is in the draft under its content-addressed audio name, so the draft
+  // is built from the campaign's own generated material and from nothing else.
+  {
+    const auto& current = *studio.app->productionProject();
+    for (const auto& row : current.unitAssignments) {
+      const auto take = std::find_if(current.takes.begin(), current.takes.end(),
+          [&](const auto& value) { return value.takeId == row.takeId; });
+      CHECK(take != current.takes.end());
+      CHECK(std::filesystem::exists(draftRoot / "audio" / (take->rawAssetSha256 + ".wav")));
     }
   }
 
-  // Publish, sign, install and open a song bound to the installed bank.
-  const auto candidate = root / "generation-candidate";
-  dialogs.paths[platform::FileDialogPurpose::PublishSampleCandidate] = {candidate};
-  CHECK(studio.activate("publish").hasValue());
-  CHECK(studio.settle([&] {
-    return studio.value("status").find("ENGINEERING CANDIDATE COMMITTED") != std::string::npos;
-  }));
-  CHECK(studio.settle([&] { const auto control = studio.node("sign-bank"); return control && control->enabled; }));
-  auto key = distribution::generateSigningKeyPair();
-  CHECK(key.hasValue());
-  if (!key) return;
-  const auto keyPath = root / "keys" / "generation-signer.json";
-  std::filesystem::create_directories(keyPath.parent_path());
-  CHECK(distribution::savePrivateKey(key.value(), keyPath).hasValue());
-  const auto package = root / "out" / "generation-journey.seambank";
-  std::filesystem::create_directories(package.parent_path());
-  dialogs.paths[platform::FileDialogPurpose::SelectSingerSigningKey] = {keyPath};
-  dialogs.paths[platform::FileDialogPurpose::PublishSampleBank] = {package};
-  CHECK(studio.activate("sign-bank").hasValue());
-  CHECK(studio.settle([&] { return std::filesystem::exists(package); }));
-  CHECK(studio.settle([&] { const auto control = studio.node("install-bank"); return control && control->enabled; }));
-  CHECK(studio.activate("install-bank").hasValue());
-  CHECK(studio.settle([&] {
-    return studio.value("status").find("INSTALLED AS A TRUSTED BANK") != std::string::npos;
-  }));
-  const auto* installed = studio.app->installedSampleBank();
-  CHECK(installed != nullptr);
-  if (installed == nullptr) return;
-  const auto contentHash = installed->contentHash;
-
-  const auto songs = root / "songs";
-  std::filesystem::create_directories(songs);
-  const auto song = songs / "Generation Journey Song.seam";
-  dialogs.paths[platform::FileDialogPurpose::SaveProject] = {song};
-  CHECK(studio.settle([&] {
-    const auto control = studio.node("open-bank-in-song-editor"); return control && control->enabled;
-  }));
-  CHECK(studio.activate("open-bank-in-song-editor").hasValue());
-  CHECK(studio.launches->size() == 1U);
-  CHECK(std::filesystem::exists(song));
-
-  // The editor half: the installed bank carries the campaign's own audio, opens without a
-  // missing-bank diagnostic and exports non-silent audio.
-  auto session = standalone::AuthoringSession::create(standalone::AuthoringSessionConfig{
-      .cacheRoot = root / "cache",
-      .voicebankRoots = {{studio.voicebanks(), voicebank::VoicebankRootKind::Installed}},
-      .sampleRate = 48000U, .outputChannels = 2U, .bindFirstAvailableVoicebank = false,
-      .allowDevelopmentVoicebanks = false});
-  CHECK(session.hasValue());
-  if (!session) return;
-  auto editorDialog = std::make_unique<EditorDialog>();
-  auto* editorResponses = editorDialog.get();
-  standalone::StandaloneApplicationControllerConfig editorConfig{
-      .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
-  editorConfig.voicebankInstallRoot = studio.voicebanks();
-  editorConfig.trustedVoicebankKeys = {key.value().publicKey};
-  auto controller = standalone::StandaloneApplicationController::create(
-      *session.value(), std::move(editorDialog), std::make_unique<DiscardPrompt>(), editorConfig);
-  CHECK(controller.hasValue());
-  if (!controller) return;
-  const auto card = std::find_if(controller.value()->voicebankCards().begin(),
-      controller.value()->voicebankCards().end(),
-      [&](const auto& value) { return value.contentHash == contentHash; });
-  CHECK(card != controller.value()->voicebankCards().end());
-  editorResponses->responses.push_back(song);
-  CHECK(controller.value()->dispatch(platform::ApplicationCommand::OpenProject).hasValue());
-  auto& runtime = session.value()->runtime();
-  for (const auto& diagnostic : runtime.diagnostics())
-    CHECK(diagnostic.code != "BANK_MISSING");
-  const auto* track = runtime.document().session().project().findVocalTrack(runtime.selectedTrack());
-  CHECK(track != nullptr);
-  if (track == nullptr) return;
-  CHECK(track->voicebank.contentHash == contentHash);
-  time::Tick start{0};
-  for (const char32_t* lyric : {U"あ", U"い", U"う"}) {
-    auto [token, note] = runtime.document().factory().makeNote(
-        start, time::Tick{480}, 60U, std::u32string{lyric}, domain::Language::Japanese);
-    CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(
-        runtime.selectedRegion(), std::move(token), std::move(note))).hasValue());
-    start = start + time::Tick{480};
-  }
-  authoring::ExportSettings settings;
-  settings.includeMaster = true;
-  const auto exported = controller.value()->exportSet(root / "export", settings);
-  CHECK(exported.hasValue());
-  if (!exported) return;
-  const auto master = voicebank::readWav(exported.value().masterPath);
-  CHECK(master.hasValue());
-  if (!master) return;
-  float peak = 0.0F;
-  for (const auto sample : master.value().interleaved) peak = std::max(peak, std::fabs(sample));
-  CHECK(peak > 0.01F);
+  acceptRemainingUnits(studio, 0U, studio.app->productionProject()->unitAssignments.size());
+  const auto bank = publishSignInstallAndSing(studio, root, "generation");
+  CHECK(bank.contentHash.size() == 64U);
 }
 
 // Regenerating one unit that already holds a collected take. The route the product offers for
@@ -517,8 +555,9 @@ TEST_CASE("Voicebank Studio generates, preflights, reviews and installs a bank a
 // prepare/run path regenerates an occupied unit as a superseding retake after the voice was
 // edited, that the superseded take stays in the repository, that the earlier source-quality
 // assessment stops qualifying anything until a fresh one covers the new material, and that the
-// draft and the reviewer's decision then land on the regenerated take. The audio is synthetic and
-// the reviewer is scripted; this is not a judgement about either take.
+// draft, the reviewer's decision and finally the installed bank a new song sings with carry the
+// regenerated take and none of the audio it replaced. The audio is synthetic and the reviewer is
+// scripted; this is not a judgement about either take.
 TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supersedes the old take") {
   const auto root = test::support::temporaryDirectory("studio-generation-retake");
   StudioHarness studio{root};
@@ -563,6 +602,8 @@ TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supers
   CHECK(studio.activate("back").hasValue());
 
   // The first campaign collects one take per unit, exactly as the sibling journey does.
+  studio.snapshot("generation-panel-ready-720x520", 720.0, 520.0);
+  studio.snapshot("generation-panel-ready-1100x720", 1100.0, 720.0);
   const auto recipePath = root / "retake-recipe.json";
   CHECK(voice_design::saveVoiceRecipeFile(recipePath, journeyRecipe()).hasValue());
   const auto campaign = root / "retake-campaign";
@@ -574,6 +615,8 @@ TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supers
   CHECK(studio.settle([&] { const auto control = studio.node("preflight-campaign"); return control && control->enabled; }));
   CHECK(studio.activate("preflight-campaign").hasValue());
   CHECK(studio.settle([&] { return studio.value("status").find("CAMPAIGN PREFLIGHT PASSED") != std::string::npos; }));
+  studio.snapshot("generation-preflight-passed-720x520", 720.0, 520.0);
+  studio.snapshot("generation-preflight-passed-1100x720", 1100.0, 720.0);
   CHECK(studio.settle([&] { const auto control = studio.node("run-campaign"); return control && control->enabled; }));
   CHECK(studio.activate("run-campaign").hasValue());
   CHECK(studio.settle([&] { return studio.value("status").find("CAMPAIGN COLLECTED") != std::string::npos; }));
@@ -667,6 +710,8 @@ TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supers
   CHECK(studio.activate("prepare").hasValue());
   CHECK(studio.settle([&] { return studio.value("status").find("JOB PREPARED") != std::string::npos; }));
   CHECK(studio.app->productionProject()->takes.size() == collectedTakes);
+  studio.snapshot("generation-retake-prepared-720x520", 720.0, 520.0);
+  studio.snapshot("generation-retake-prepared-1100x720", 1100.0, 720.0);
   // Studio names the action for what it is before it asks where the job goes.
   CHECK(titleOf(platform::FileDialogPurpose::PrepareGenerationJob) ==
         "Prepare Retake Job Folder (No Audio Generated)");
@@ -696,6 +741,8 @@ TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supers
   }
   CHECK(titleOf(platform::FileDialogPurpose::OpenGenerationJob) ==
         "Generate and Collect an Unapproved Retake");
+  studio.snapshot("generation-retake-collected-720x520", 720.0, 520.0);
+  studio.snapshot("generation-retake-collected-1100x720", 1100.0, 720.0);
   const auto* regenerated = studio.app->productionProject();
   CHECK(regenerated != nullptr);
   if (regenerated == nullptr) return;
@@ -783,4 +830,14 @@ TEST_CASE("Voicebank Studio regenerates a collected unit as a retake that supers
   CHECK(reviews.back().result == "PASS");
   CHECK(std::none_of(reviews.begin(), reviews.end(),
       [&](const auto& review) { return review.takeId == originalTakeId; }));
+
+  // Every other unit is accepted the same way, and the reviewed bank is then published, signed,
+  // installed and sung from a new song. The installed bank holds the regenerated audio for the
+  // unit and none of the audio it replaced, which is what makes the regeneration reach the singer.
+  CHECK(studio.activate("next-unit").hasValue());
+  CHECK(studio.settle([&] { return studio.node("capture").has_value(); }));
+  acceptRemainingUnits(studio, 1U, studio.app->productionProject()->unitAssignments.size());
+  const auto bank = publishSignInstallAndSing(studio, root, "retake");
+  CHECK(std::filesystem::exists(bank.installDirectory / "audio" / (retakeAudio + ".wav")));
+  CHECK(!std::filesystem::exists(bank.installDirectory / "audio" / (originalAudio + ".wav")));
 }
