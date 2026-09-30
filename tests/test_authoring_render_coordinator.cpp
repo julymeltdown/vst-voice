@@ -1097,6 +1097,8 @@ TEST_CASE("a request cancelled while its submitting thread has yet to finish is 
   CHECK(admitted.waitEntered());
   coordinator.cancel();
   CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+  // The report is for the request that was cancelled, which is the one the cancel found.
+  CHECK(coordinator.progress().requestedRevision == 506U);
   admitted.release();
   submitter.join();
   CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
@@ -1448,4 +1450,95 @@ TEST_CASE("a replacement request is reported as queued before the worker can tak
   }
   CHECK(readySeen);
   CHECK(!regressed);
+}
+
+TEST_CASE("a request submitted while a cancel is being reported is queued after it and stays on screen") {
+  // cancel() drops the queued request, revokes the current one and reports the cancellation. A
+  // submission that landed between the revocation and the report was reported as queued, and then
+  // the report for the request before it was written over that: a render that was about to run sat
+  // on screen as "cancelled". The steps are one step under the admission lock, so a submission
+  // made while cancel() is in progress waits for it.
+  auto fixture = makeRenderFixture();
+  HookBarrier cancelling;
+  HookBarrier taken;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.debounceInterval = std::chrono::seconds{30};  // request 800 stays queued, never taken
+  hooks.duringCancel = [&cancelling] { cancelling.pass(); };
+  hooks.afterAdmission = [&taken](std::uint64_t revision, std::stop_token) {
+    if (revision == 801U) taken.pass();
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-step"), std::move(hooks)};
+  std::jthread canceller;
+  std::jthread submitter;
+  ReleaseOnExit releaseCancelling{cancelling};
+  ReleaseOnExit releaseTaken{taken};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 800U,
+                     48000U, seam::rendering::RenderQuality::Preview, false);
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Queued);
+
+  canceller = std::jthread{[&] { coordinator.cancel(); }};
+  CHECK(cancelling.waitEntered());
+  submitter = std::jthread{[&] {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 801U,
+                       48000U, seam::rendering::RenderQuality::Preview, true);
+  }};
+  // Long enough for a submission that can get in to do so; one that has to wait is still waiting.
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  cancelling.release();
+  canceller.join();
+
+  // The worker has taken request 801 and not yet reported it as rendering: what is on screen is
+  // what the last report said, and that must be the queued request, not the cancelled one.
+  CHECK(taken.waitEntered());
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Queued);
+  CHECK(progress.requestedRevision == 801U);
+  taken.release();
+  submitter.join();
+  CHECK(waitForTerminal(coordinator, 801U).state == seam::authoring::RenderState::Ready);
+  CHECK(coordinator.stats().cancelled == 1U);
+}
+
+TEST_CASE("a request submitted while a reset is settling is admitted after it and renders") {
+  // resetToIdle() drops the queued request, revokes the current one and publishes idle. A
+  // submission that landed between the first steps and the last was admitted, and the last step
+  // then revoked it: the worker rendered it for nothing and discarded it as stale, with the screen
+  // on "idle". It is one step under the admission lock, so a submission made while it is in
+  // progress waits for it and then renders.
+  auto fixture = makeRenderFixture();
+  HookBarrier settling;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.debounceInterval = std::chrono::seconds{30};  // request 802 stays queued, never taken
+  hooks.duringReset = [&settling] { settling.pass(); };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-step"), std::move(hooks)};
+  std::jthread resetter;
+  std::jthread submitter;
+  ReleaseOnExit releaseSettling{settling};
+
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 802U,
+                     48000U, seam::rendering::RenderQuality::Preview, false);
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Queued);
+
+  resetter = std::jthread{[&] { coordinator.resetToIdle(); }};
+  CHECK(settling.waitEntered());
+  submitter = std::jthread{[&] {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 803U,
+                       48000U, seam::rendering::RenderQuality::Preview, true);
+  }};
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  settling.release();
+  resetter.join();
+  submitter.join();
+
+  const auto progress = waitForTerminal(coordinator, 803U);
+  CHECK(progress.state == seam::authoring::RenderState::Ready);
+  CHECK(progress.requestedRevision == 803U);
+  CHECK(static_cast<bool>(coordinator.acquireCurrent()));
+  const auto stats = coordinator.stats();
+  CHECK(stats.completed == 1U);
+  CHECK(stats.stale == 0U);
+  CHECK(stats.cancelled == 1U);  // request 802, dropped by the reset
 }

@@ -181,6 +181,13 @@ struct RenderCoordinatorHooks final {
   // reported as queued, before it reports that to the progress callback and wakes the worker. The
   // worker may already be running, so it can take the request, and finish it, while this is held.
   std::function<void(std::uint64_t)> afterSubmitAdmission;
+  // duringCancel and duringReset run inside cancel() and resetToIdle(), after the queued request has
+  // been dropped and the current one revoked and before the coordinator writes its own state, so a
+  // test that holds one can show that a submission from another thread has to wait for the whole
+  // step. Unlike the two barriers above they run with the admission lock (mutex_) held: the held
+  // thread must not call the coordinator, and the test must release it before it ends.
+  std::function<void()> duringCancel;
+  std::function<void()> duringReset;
   std::chrono::milliseconds debounceInterval{20};
 };
 
@@ -207,12 +214,17 @@ public:
                   .scope = application::CommandAudioImpact::ProjectAudio,
                   .projectWide = true});
   void cancel() noexcept;
+  // Dropping the queued request, revoking the current one and reporting the cancellation are one
+  // step under the admission lock: a submission is either before it (and is what gets cancelled)
+  // or after it (and is reported as queued over the cancellation), never in between.
   // The score has nothing left to sound. Cancels whatever is queued or rendering, revokes the
   // audio that was current and reports "idle" exactly as a coordinator that never rendered does.
   // It is not a cancellation the creator asked for, so none is reported: the progress goes to
   // idle, not to cancelled, and no completion is reported as one. The work it abandons is still
   // counted in stats().cancelled, as abandoned work always is. The retained publication is
-  // history and stays readable.
+  // history and stays readable. Like cancel() it is one step under the admission lock: the queue,
+  // the revocation, the revision floor and the idle report change together, so a submission that
+  // arrives during it is admitted after it and renders.
   void resetToIdle() noexcept;
   // Reject captured audio immediately when new document intent is queued,
   // including the interval before a debounced render is submitted.
@@ -287,9 +299,10 @@ private:
   void updateProgress(RenderProgress value) noexcept;
   // Reports on behalf of one request, and only while it is still the newest: the check and the
   // write are one step under the progress lock, and every path that revokes a request (a newer
-  // submission, cancel, resetToIdle) revokes it before it writes its own state. A thread that
-  // was slow to report therefore cannot put "queued", "rendering" or an ending back over a
-  // state that replaced its request.
+  // submission, cancel, resetToIdle) revokes it and writes its own state in one step under the
+  // admission lock. A thread that was slow to report therefore cannot put "queued", "rendering"
+  // or an ending back over a state that replaced its request, and a path that revokes cannot
+  // write its own state over the report of a request that was admitted after it.
   [[nodiscard]] bool updateProgressIfCurrent(std::uint64_t requestId,
                                              RenderProgress value) noexcept;
   void notifyCompletion();

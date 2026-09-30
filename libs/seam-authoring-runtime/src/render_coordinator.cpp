@@ -329,69 +329,76 @@ void AuthoringRenderCoordinator::invalidateCurrent() noexcept {
 
 void AuthoringRenderCoordinator::resetToIdle() noexcept {
   bool droppedPending = false;
+  bool changed = false;
   {
+    // Stopping the render, dropping the queued request, revoking the current one, resetting the
+    // revision floor and publishing "idle" are one step under the admission lock, the lock a
+    // submission needs to be admitted: a submission is either before it (and is dropped with the
+    // rest) or after it (and renders). Split in two, the queue was dropped, a submission was
+    // admitted in between, and the second half revoked it, so it rendered for nothing. The
+    // progress lock is taken inside it, in the order every other path uses, so a worker that has
+    // taken a request but not yet reported on it cannot put "rendering" back after this.
     std::lock_guard lock(mutex_);
     activeStopSource_.request_stop();
     droppedPending = pending_.has_value();
     pending_.reset();
-  }
-  if (droppedPending) cancelled_.fetch_add(1U, std::memory_order_relaxed);
-  bool changed = false;
-  {
-    // Revoking the request and publishing "idle" are one step for every writer that reports on
-    // behalf of a request: a worker that has taken a request but not yet reported on it cannot
-    // put "rendering" back after this.
-    std::lock_guard lock(progressMutex_);
+    if (hooks_.duringReset) hooks_.duringReset();
+    std::lock_guard progressLock(progressMutex_);
     latestSubmittedRequestId_.store(0U, std::memory_order_release);
     latestSubmittedRevision_.store(0U, std::memory_order_release);
     changed = progress_.state != RenderState::Idle;
     progress_ = RenderProgress{};
   }
+  if (droppedPending) cancelled_.fetch_add(1U, std::memory_order_relaxed);
   condition_.notify_all();
   if (changed) notifyCompletion();
 }
 
 void AuthoringRenderCoordinator::cancel() noexcept {
-  std::uint64_t revision = latestSubmittedRevision_.load(std::memory_order_acquire);
   bool cancelledPending = false;
-  bool wasActive = false;
+  bool reported = false;
   {
+    // Dropping the queued request, revoking the current one and reporting the cancellation are one
+    // step under the admission lock, like resetToIdle(): a submission is either before it (and is
+    // what gets cancelled) or after it (and is reported as queued over the cancellation). Written
+    // after the lock was released, the cancellation overwrote the queued report of a request that
+    // had been admitted in the gap and left a render that was about to run on screen as cancelled.
     std::lock_guard lock(mutex_);
+    const auto revision = latestSubmittedRevision_.load(std::memory_order_acquire);
     activeStopSource_.request_stop();
     cancelledPending = pending_.has_value();
-    wasActive = active_;
+    const bool wasActive = active_;
     pending_.reset();
     latestSubmittedRequestId_.store(0U, std::memory_order_release);
+    if (hooks_.duringCancel) hooks_.duringCancel();
+    std::lock_guard progressLock(progressMutex_);
+    const auto current = progress_;
+    // Cancelling always revokes the audio that was current. It reports a cancellation only when
+    // a request was queued or rendering: with nothing in flight there is nothing to cancel, so a
+    // fresh project does not open on "cancelled", and a render that had just finished is not
+    // relabelled as if it had been stopped.
+    const auto inFlight = cancelledPending || wasActive ||
+                          current.state == RenderState::Queued ||
+                          current.state == RenderState::Rendering;
+    if (inFlight) {
+      progress_ = RenderProgress{
+          .state = RenderState::Cancelled,
+          .requestedRevision = revision,
+          .publishedRevision = current.publishedRevision,
+          .requestedQuality = current.requestedQuality,
+          .publishedQuality = current.publishedQuality,
+          .completedPhrases = current.completedPhrases,
+          .totalPhrases = current.totalPhrases,
+          .fraction = current.fraction,
+          .audibleAudioStale = current.audibleAudioStale,
+          .diagnostic = "Production render request cancelled",
+      };
+      reported = true;
+    }
   }
-  if (cancelledPending) {
-    cancelled_.fetch_add(1U, std::memory_order_relaxed);
-  }
-  const auto current = progress();
-  // Cancelling always revokes the audio that was current. It reports a cancellation only when
-  // a request was queued or rendering: with nothing in flight there is nothing to cancel, so a
-  // fresh project does not open on "cancelled", and a render that had just finished is not
-  // relabelled as if it had been stopped.
-  const auto inFlight = cancelledPending || wasActive ||
-                        current.state == RenderState::Queued ||
-                        current.state == RenderState::Rendering;
-  if (!inFlight) {
-    condition_.notify_all();
-    return;
-  }
-  updateProgress(RenderProgress{
-      .state = RenderState::Cancelled,
-      .requestedRevision = revision,
-      .publishedRevision = current.publishedRevision,
-      .requestedQuality = current.requestedQuality,
-      .publishedQuality = current.publishedQuality,
-      .completedPhrases = current.completedPhrases,
-      .totalPhrases = current.totalPhrases,
-      .fraction = current.fraction,
-      .audibleAudioStale = current.audibleAudioStale,
-      .diagnostic = "Production render request cancelled",
-  });
+  if (cancelledPending) cancelled_.fetch_add(1U, std::memory_order_relaxed);
   condition_.notify_all();
-  notifyCompletion();
+  if (reported) notifyCompletion();
 }
 
 RealtimeProjectAudioPublication::ReadHandle AuthoringRenderCoordinator::acquireCurrent() const noexcept {
