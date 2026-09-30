@@ -114,6 +114,10 @@ private:
   [[nodiscard]] domain::VocalRegion* region() noexcept;
   [[nodiscard]] Rect noteBounds(const IndexedNote& indexed) const noexcept;
   [[nodiscard]] NoteVisual makeNoteVisual(const IndexedNote& indexed) const;
+  // Rebuilds the index when the session has moved on since it was built. Undo, redo, a command run
+  // by an application menu and a replaced project all edit the project without passing through this
+  // model, and every one of them advances the session's revision.
+  void synchronizeIndex() const;
 
   application::EditorSession& session_;
   application::ProjectFactory& factory_;
@@ -121,7 +125,9 @@ private:
   PianoRollViewport viewport_{{0.0, 0.0, 1280.0, 720.0}, 72.0};
   TimelineTransform timeline_;
   PitchTransform pitch_{18.0, 84};
-  NoteSpatialIndex index_;
+  // A cache of the project's notes, refreshed from a const reader. Owner-thread only, like the model.
+  mutable NoteSpatialIndex index_;
+  mutable std::uint64_t indexedRevision_{0U};
 };
 
 }  // namespace seam::ui

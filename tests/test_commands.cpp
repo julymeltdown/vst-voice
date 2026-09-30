@@ -42,6 +42,44 @@ TEST_CASE("add note command is undoable and redoable") {
   CHECK(session.revision() == 3);
 }
 
+TEST_CASE("undo and redo never leave a selection naming a note that is gone") {
+  // The session owns both the project and the selection. Reverting the command that made a note
+  // removes it, and a selection that still named it would report a selected note nobody can see.
+  Fixture fixture;
+  auto [lyricA, noteA] = fixture.factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{480}, 60, U"a");
+  auto [lyricB, noteB] = fixture.factory.makeNote(
+      seam::time::Tick{480}, seam::time::Tick{480}, 62, U"i");
+  const auto noteAId = noteA.id;
+  const auto noteBId = noteB.id;
+  auto* region = fixture.project.findRegion(fixture.regionId);
+  region->lyrics.push_back(lyricA);
+  region->notes.push_back(noteA);
+  seam::application::EditorSession session{std::move(fixture.project)};
+
+  CHECK(session.execute(std::make_unique<seam::application::AddNoteCommand>(
+      fixture.regionId, std::move(lyricB), std::move(noteB))));
+  session.selection().replace({noteAId, noteBId});
+  CHECK(session.undo());
+  CHECK(session.project().findNote(noteBId) == nullptr);
+  CHECK(session.selection().contains(noteAId));
+  CHECK(!session.selection().contains(noteBId));
+  CHECK(session.selection().size() == 1U);
+
+  // Redo of a removal takes away a note the user selected after undoing it.
+  CHECK(session.redo());
+  CHECK(session.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      std::vector<seam::domain::NoteId>{noteBId})));
+  CHECK(session.undo());
+  CHECK(session.project().findNote(noteBId) != nullptr);
+  session.selection().replace({noteAId, noteBId});
+  CHECK(session.redo());
+  CHECK(session.project().findNote(noteBId) == nullptr);
+  CHECK(session.selection().contains(noteAId));
+  CHECK(!session.selection().contains(noteBId));
+  CHECK(session.selection().size() == 1U);
+}
+
 TEST_CASE("adding notes refreshes pronunciation identity with exact undo and bounded revision") {
   Fixture fixture;
   auto* region = fixture.project.findRegion(fixture.regionId);

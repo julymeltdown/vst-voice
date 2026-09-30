@@ -11,6 +11,20 @@ void EditorSession::log(core::LogLevel level, std::string_view message) {
   logger_->write(level, "editor-session", message);
 }
 
+void EditorSession::dropVanishedNotesFromSelection() {
+  if (selection_.empty()) return;
+  std::vector<domain::NoteId> surviving;
+  surviving.reserve(selection_.size());
+  for (const auto& track : project_.vocalTracks()) {
+    for (const auto& region : track.regions) {
+      for (const auto& note : region.notes) {
+        if (selection_.contains(note.id)) surviving.push_back(note.id);
+      }
+    }
+  }
+  if (surviving.size() != selection_.size()) selection_.replace(surviving);
+}
+
 core::Result<void> EditorSession::execute(std::unique_ptr<ICommand> command) {
   if (health_ == SessionHealth::RecoveryRequired) {
     return core::failure(core::ErrorCode::Conflict,
@@ -85,6 +99,7 @@ core::Result<void> EditorSession::undo() {
   undo_.pop_back();
   redo_.push_back(std::move(command));
   lastImpact_ = impact;
+  dropVanishedNotesFromSelection();
   incrementRevision();
   return core::success();
 }
@@ -126,6 +141,7 @@ core::Result<void> EditorSession::redo() {
   redo_.pop_back();
   undo_.push_back(std::move(command));
   lastImpact_ = impact;
+  dropVanishedNotesFromSelection();
   incrementRevision();
   return core::success();
 }

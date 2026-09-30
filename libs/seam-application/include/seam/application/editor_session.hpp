@@ -49,6 +49,9 @@ private:
   [[nodiscard]] static bool samePerformanceInputs(const domain::Project& left,
                                                  const domain::Project& right);
   void incrementRevision() noexcept { ++revision_; }
+  // Undo and redo add and remove notes without the caller knowing which. A selection that still named
+  // a removed note would report a selected note nobody can see, so it is reduced to the survivors.
+  void dropVanishedNotesFromSelection();
   void log(core::LogLevel level, std::string_view message);
 
   domain::Project project_;

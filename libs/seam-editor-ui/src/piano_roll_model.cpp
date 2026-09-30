@@ -45,6 +45,13 @@ double PianoRollModel::pixelAtMicrosecondOffset(
 
 void PianoRollModel::rebuildIndex() {
   index_.rebuild(session_.project());
+  indexedRevision_ = session_.revision();
+}
+
+void PianoRollModel::synchronizeIndex() const {
+  if (indexedRevision_ == session_.revision()) return;
+  index_.rebuild(session_.project());
+  indexedRevision_ = session_.revision();
 }
 
 Rect PianoRollModel::noteBounds(const IndexedNote& indexed) const noexcept {
@@ -148,6 +155,7 @@ std::optional<NoteVisual> PianoRollModel::noteAt(std::size_t index) const {
 }
 
 std::vector<NoteVisual> PianoRollModel::visibleNotes() const {
+  synchronizeIndex();
   const auto contentWidth = std::max(0.0, viewport_.bounds.width - viewport_.keyboardWidth);
   const auto start = timeline_.pixelToTick(0.0);
   const auto end = timeline_.pixelToTick(contentWidth);

@@ -4,6 +4,7 @@
 #include <set>
 
 #include "seam/application/editor_session.hpp"
+#include "seam/application/note_commands.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/ui/note_spatial_index.hpp"
 #include "seam/ui/note_visual_layout.hpp"
@@ -264,6 +265,77 @@ TEST_CASE("piano roll defaults newly drawn notes to Japanese Hiragana") {
   const auto* lyric = region->findLyric(note->lyricTokenId);
   CHECK(lyric != nullptr);
   CHECK(lyric->surface == U"あ");
+}
+
+TEST_CASE("piano roll shows what the project holds after edits made outside the model") {
+  // The model paints from an index it derives from the project. Undo, redo, a command run straight
+  // on the session and a replaced project all change the project without going through the model. A
+  // note that is gone must leave the screen, and a note that came back must not stay invisible.
+  seam::application::ProjectFactory factory{10};
+  auto project = factory.createProject("External edits");
+  project.settings().snapGrid = seam::time::Tick{240};
+  const auto trackId = factory.addVocalTrack(project, "Track");
+  const auto regionId = factory.addRegion(
+      project, trackId, "Region", seam::time::Tick{0}, seam::time::Tick{15360});
+  seam::application::EditorSession session{std::move(project)};
+  seam::ui::PianoRollModel model{session, factory, regionId};
+  model.setViewport({{0, 0, 1280, 720}, 72});
+  model.pitch().setTopMidiKey(84);
+
+  const auto added = model.drawNote({72.0 + 10.0, model.pitch().midiToPixel(60) + 4.0},
+                                    seam::time::Tick{480}, U"a");
+  CHECK(added);
+  const auto painted = model.visibleNotes();
+  CHECK(painted.size() == 1U);
+  const seam::ui::Point onNote{painted.front().bounds.x + 2.0, painted.front().bounds.y + 2.0};
+  CHECK(model.hitTest(onNote) == added.value());
+
+  // Undo on the session, exactly as the application's Edit menu runs it.
+  CHECK(session.undo());
+  CHECK(model.noteCount() == 0U);
+  CHECK(model.visibleNotes().empty());
+  CHECK(!model.hitTest(onNote).has_value());
+
+  // Redo brings the note back with its lyric, not as a bare capsule.
+  CHECK(session.redo());
+  const auto restored = model.visibleNotes();
+  CHECK(restored.size() == 1U);
+  if (!restored.empty()) {
+    CHECK(restored.front().noteId == added.value());
+    CHECK(restored.front().lyric == "a");
+  }
+  CHECK(model.hitTest(onNote) == added.value());
+
+  // A command executed directly on the session is painted as well.
+  auto [lyric, note] = factory.makeNote(
+      seam::time::Tick{960}, seam::time::Tick{480}, 62U, U"i");
+  const auto laterId = note.id;
+  CHECK(session.execute(std::make_unique<seam::application::AddNoteCommand>(
+      regionId, std::move(lyric), std::move(note))));
+  const auto both = model.visibleNotes();
+  CHECK(both.size() == 2U);
+  CHECK(std::any_of(both.begin(), both.end(), [laterId](const auto& visual) {
+    return visual.noteId == laterId;
+  }));
+
+  // Replacing the whole project is the last way in.
+  seam::application::ProjectFactory otherFactory{10};
+  auto other = otherFactory.createProject("Replacement");
+  const auto otherTrack = otherFactory.addVocalTrack(other, "Track");
+  const auto otherRegion = otherFactory.addRegion(
+      other, otherTrack, "Region", seam::time::Tick{0}, seam::time::Tick{15360});
+  CHECK(otherRegion == regionId);
+  auto [otherLyric, otherNote] = otherFactory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{480}, 67U, U"u");
+  auto* otherTarget = other.findRegion(otherRegion);
+  CHECK(otherTarget != nullptr);
+  if (otherTarget == nullptr) return;
+  otherTarget->lyrics.push_back(std::move(otherLyric));
+  otherTarget->notes.push_back(std::move(otherNote));
+  CHECK(session.replaceProject(std::move(other)));
+  const auto replaced = model.visibleNotes();
+  CHECK(replaced.size() == 1U);
+  if (!replaced.empty()) CHECK(replaced.front().midiKey == 67U);
 }
 
 TEST_CASE("piano roll visuals stay within the selected region") {

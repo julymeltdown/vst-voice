@@ -1091,6 +1091,80 @@ TEST_CASE("standalone_harmony_menu_creates_editable_track_and_recovers_selection
   }
 }
 
+TEST_CASE("standalone menu Undo and Redo leave the editor showing the document") {
+  // Command-Z is the Edit menu's key equivalent, so it arrives as an application command and never
+  // passes through the editor's own key handler. The editor keeps a spatial index of the notes it
+  // paints and a mirror of the document's unsaved state (the title's Edited marker and the mascot's
+  // mood). Both have to follow an edit the editor did not make itself.
+  const auto root = seam::test::support::temporaryDirectory("standalone-menu-undo-editor");
+  auto session = makeSession(root);
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+
+  auto& editor = session->controller();
+  editor.resize(1280.0, 720.0);
+  const auto& roll = editor.pianoRoll();
+  CHECK(roll.noteCount() == 0U);
+
+  // A double-click on an empty piece of the grid draws a note, as it does in the window.
+  const seam::native_ui::EditorSceneLayout layout{};
+  const seam::ui::Point click{roll.viewport().keyboardWidth + 60.0,
+                              layout.contentTop() + roll.pitch().midiToPixel(64) + 4.0};
+  const seam::native_ui::PointerEvent doubleClick{.position = click,
+      .button = seam::native_ui::PointerButton::Left, .modifiers = {}, .clickCount = 2};
+  CHECK(editor.pointerDown(doubleClick));
+  CHECK(editor.pointerUp(doubleClick));
+  CHECK(roll.noteCount() == 1U);
+  CHECK(roll.visibleNotes().size() == 1U);
+  CHECK(editor.sceneState().dirty);
+  CHECK(editor.sceneState().selectedNoteCount == 1U);
+  const seam::ui::Point onNote{click.x, click.y - layout.contentTop()};
+  CHECK(roll.hitTest(onNote).has_value());
+
+  // Saving makes the score clean; Edit > Undo then makes it differ from the saved file again.
+  CHECK(session->saveProjectAs(root / "song.seam"));
+  CHECK(!session->runtime().document().dirty());
+  CHECK(!editor.sceneState().dirty);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(roll.noteCount() == 0U);
+  CHECK(roll.visibleNotes().empty());
+  CHECK(!roll.hitTest(onNote).has_value());
+  // Nothing is left selected either: the note the selection named no longer exists.
+  CHECK(editor.sceneState().selectedNoteCount == 0U);
+  CHECK(session->runtime().document().dirty());
+  CHECK(editor.sceneState().dirty);
+
+  // Save again, then Edit > Redo: the note is back with its lyric and the score is unsaved again.
+  CHECK(session->saveProject());
+  CHECK(!editor.sceneState().dirty);
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::Redo));
+  const auto restored = roll.visibleNotes();
+  CHECK(restored.size() == 1U);
+  if (!restored.empty()) CHECK(restored.front().lyric == "あ");
+  CHECK(roll.hitTest(onNote).has_value());
+  CHECK(session->runtime().document().dirty());
+  CHECK(editor.sceneState().dirty);
+
+  // Every other application command reports through the same path: a harmony track added to a saved
+  // score leaves the unsaved marker on.
+  CHECK(session->saveProject());
+  CHECK(!editor.sceneState().dirty);
+  const auto* lead = session->runtime().document().session().project().findRegion(session->regionId());
+  CHECK(lead != nullptr);
+  if (lead == nullptr || lead->notes.empty()) return;
+  session->runtime().document().session().selection().selectOnly(lead->notes.front().id);
+  CHECK(controller.value()->createHarmonyTrack(seam::platform::HarmonyMenuRequest{
+      .scope = seam::platform::PerformanceEditScope::SelectedNotes,
+      .scale = seam::platform::HarmonyScale::Chromatic, .tonicPitchClass = 0, .offset = 3}));
+  CHECK(session->runtime().document().dirty());
+  CHECK(editor.sceneState().dirty);
+}
+
 TEST_CASE("standalone harmony controller routes every named mode to its scale") {
   using seam::platform::HarmonyMenuRequest;
   using seam::platform::HarmonyScale;

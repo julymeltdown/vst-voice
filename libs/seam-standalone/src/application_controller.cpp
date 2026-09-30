@@ -2655,7 +2655,14 @@ core::Result<bool> StandaloneApplicationController::requestClose() {
 
 core::Result<void> StandaloneApplicationController::onDocumentChanged(
     std::chrono::steady_clock::time_point now) {
-  return autosave_.onSuccessfulCommand(session_.runtime().document(), now);
+  auto& document = session_.runtime().document();
+  auto recorded = autosave_.onSuccessfulCommand(document, now);
+  // The editor keeps a mirror of the document's unsaved state: the Edited marker in the title and the
+  // mascot's mood. Application commands (Undo, Redo, a singer or take change) edit the document
+  // without going through the editor, and every one of them reports here, so the mirror is refreshed
+  // alongside the autosave. It follows the document even when the autosave itself failed.
+  session_.controller().setDirty(document.dirty());
+  return recorded;
 }
 
 core::Result<void> StandaloneApplicationController::tickAutosave(
