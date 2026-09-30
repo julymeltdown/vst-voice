@@ -2187,3 +2187,156 @@ TEST_CASE("authoring runtime stops expecting audio behind a seam preview once th
                    std::chrono::seconds{5}));
   refusedPreviewChangesNothing();
 }
+
+TEST_CASE("authoring runtime announces the canonical audio that a failed seam preview owes") {
+  // The window is painted on demand, so a change nobody announces is not drawn. A seam preview that
+  // fails can leave the canonical audio owed: an earlier preview's audio is on the transport and the
+  // transport refuses the hand-back. The warning that follows is announced by the failure itself;
+  // waiting for a retry to succeed would leave a hand-back that is refused for good unannounced.
+  // Found by the second developer's review of f810b69f.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  std::atomic<unsigned> announced{0U};
+  std::atomic<bool> watching{false};
+  std::atomic<bool> sawWarning{false};
+  std::atomic<bool> heldLockWhenAnnounced{false};
+  std::atomic<unsigned> probesStarted{0U};
+  std::atomic<unsigned> probesDone{0U};
+  auto config = configFor(test::support::temporaryDirectory("runtime-seam-failure-announced"));
+  config.transportRetryAttempts = 0U;
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  // Declared after the runtime, so it is destroyed first: the probes below use the runtime.
+  struct ProbesFinished final {
+    std::atomic<unsigned>& started;
+    std::atomic<unsigned>& done;
+    ~ProbesFinished() {
+      const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+      while (done.load() < started.load() && std::chrono::steady_clock::now() < end)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+  } probesFinished{probesStarted, probesDone};
+  // What a window does when it is told: it asks what there is to show. The audible publication is
+  // read under the audition lock, so a thread that cannot read it while the callback runs shows
+  // that the announcement was made with that lock held. The probe is another thread and the wait
+  // for it is bounded, so a violation fails the case and does not hang it.
+  runtime.setCompletionCallback([&] {
+    announced.fetch_add(1U);
+    if (!watching.load()) return;
+    auto read = std::make_shared<std::atomic<bool>>(false);
+    probesStarted.fetch_add(1U);
+    std::thread([&runtime, &probesDone, read] {
+      static_cast<void>(runtime.audiblePublication());
+      read->store(true);
+      probesDone.fetch_add(1U);
+    }).detach();
+    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (!read->load() && std::chrono::steady_clock::now() < end)
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    if (!read->load()) heldLockWhenAnnounced.store(true);
+    if (!runtime.seamPreviewActive() && reportsTransportBehind(runtime, "playback.update-pending"))
+      sawWarning.store(true);
+  });
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  holdTransportFull(runtime);
+  watching.store(true);
+
+  // The next preview is refused, and so is the hand-back of the canonical audio.
+  const auto before = announced.load();
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return !runtime.seamPreviewActive(); }, std::chrono::seconds{20}));
+  CHECK(eventually([&] { return sawWarning.load(); }, std::chrono::seconds{3}));
+  CHECK(announced.load() > before);
+  CHECK(!heldLockWhenAnnounced.load());
+}
+
+TEST_CASE("authoring runtime gives the new canonical audio to a transport that a format change emptied") {
+  // A format change discards everything the transport held, the seam preview's audio included, and
+  // what the preview was rendered as is for the old format. The preview no longer owns playback, so
+  // the canonical render that follows is the next audio the transport is given. Found by the second
+  // developer's review of f810b69f; it fails the same way before that commit.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-seam-format-change"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  CHECK(runtime.transport().state().available);
+
+  CHECK(runtime.reconfigureAudio(44100U, 2U, 256U));
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(eventually([&] {
+    auto audio = runtime.renderer().acquireCurrent();
+    return audio && audio->state == authoring::RenderState::Ready &&
+           audio->result.sampleRate == 44100U;
+  }, std::chrono::seconds{20}));
+  CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{5}));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+}
+
+TEST_CASE("authoring runtime does not try to hand back old-format audio when a format change ends a comparison") {
+  // A comparison ends with a hand-back of the canonical audio. After a format change the canonical
+  // audio the coordinator still holds is for the old format, which the transport refuses, so trying
+  // would report playback as behind for as long as the new render takes. The transport holds nothing
+  // and the new render is the next audio it is given.
+  using namespace seam;
+  using namespace seam::domain;
+  using seam::time::Tick;
+  RenderGate gate;
+  auto fixture = makeFixture();
+  auto* prepared = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  prepared->notes.resize(1U);
+  prepared->unitSelectionOverrides.resize(1U);
+  auto config = configFor(test::support::temporaryDirectory("runtime-comparison-format-change"));
+  config.renderHooks = gate.hooks();
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto original = runtime.document().session().project();
+  const auto& region = *original.findRegion(fixture.resolvedRegion);
+  const auto pronunciation = phonemizer::resolveJapanesePronunciation(region);
+  CHECK(pronunciation);
+  const auto job = runtime.document().session().capturePerformanceJob();
+  CHECK(job);
+  PerformanceTake proposal{.id = "format-attack", .sourceRegionId = region.id,
+      .capturedRevision = region.performance.revision,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = pronunciation.value().identity,
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, region.durationTick},
+      .lanes = {{PerformanceChannel::Attack, {{Tick{0}, 150.0}}}}};
+  CHECK(runtime.executePerformanceResult(job.value(),
+      std::make_unique<application::AddPerformanceProposalCommand>(region.id, region.performance, proposal)));
+  const auto accepted = std::vector<AcceptedPerformanceSelection>{
+      {proposal.id, PerformanceChannel::Attack, region.notes.front().id, Tick{0}}};
+  CHECK(runtime.auditionPerformance(region.id, accepted));
+  CHECK(eventually([&] { return runtime.performanceAuditionReady(); }, std::chrono::seconds{10}));
+
+  // The new render is held in flight, so the transport is looked at while it is empty.
+  gate.arm();
+  CHECK(runtime.reconfigureAudio(44100U, 2U, 256U));
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(!runtime.performanceAuditionActive());
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+  gate.release();
+  CHECK(eventually([&] { return runtime.transport().state().available; }, std::chrono::seconds{20}));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+}

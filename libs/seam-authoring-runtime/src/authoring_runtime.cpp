@@ -597,6 +597,7 @@ core::Result<void> AuthoringRuntime::reconfigureAudio(
   previewSampleRate_ = sampleRate;
   config_.previewSampleRate = sampleRate;
   config_.outputChannels = outputChannels;
+  retireTransientAudio();
   requestPreview(true);
   return core::success();
 }
@@ -954,7 +955,9 @@ void AuthoringRuntime::publishCompletedSeamPreview() {
       }
     }
   }
-  if (!published) return;
+  // Told outside the lock, whichever way it went: a preview that failed has changed what the window
+  // shows too (the preview is no longer wanted, and the canonical audio may be owed), and the window
+  // is painted on demand, so a change that is not announced is not drawn.
   std::function<void()> callback;
   {
     std::lock_guard lock(callbackMutex_);
@@ -970,6 +973,23 @@ void AuthoringRuntime::revokeSeamPreview() {
   std::lock_guard lock(performanceAuditionMutex_);
   seamPreviewActive_.store(false, std::memory_order_release);
   seamPreviewReady_.store(false, std::memory_order_release);
+}
+
+void AuthoringRuntime::retireTransientAudio() {
+  revokeSeamPreview();
+  bool comparison = false;
+  {
+    std::lock_guard lock(performanceAuditionMutex_);
+    comparison = performanceAuditionActive_.exchange(false, std::memory_order_acq_rel);
+    performanceAuditionReady_.store(false, std::memory_order_release);
+    // The transport holds nothing now, so nothing waits behind a preview. What was owed stays owed
+    // until the decision that follows (an emptied score is cleared again, a render is published)
+    // settles it or owes it afresh.
+    canonicalBehindSeamPreview_ = false;
+  }
+  // Like revokeSeamPreview: cancelling may deliver the coordinator's completion on this thread,
+  // and that takes the lock above.
+  if (comparison) performanceAuditionRenderer_.cancel();
 }
 
 void AuthoringRuntime::publishCompletedPerformanceAudition() {

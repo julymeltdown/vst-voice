@@ -237,6 +237,12 @@ private:
   // completion is entirely before this (and whatever the caller publishes next replaces it) or
   // entirely after (and finds its request revoked).
   void revokeSeamPreview();
+  // A format change has discarded what the transport held, so neither the seam preview nor a
+  // performance comparison owns playback any longer, and the audio they were rendered as is for the
+  // old format. Both end without a hand-back (the coordinator's canonical audio is for the old
+  // format too, and the transport would refuse it); the render that follows is the next audio the
+  // transport is given.
+  void retireTransientAudio();
   void recordDiagnostic(const core::Error& error);
   void recordRenderFailure(RenderFailureKind failure, std::string message);
   void clearRenderDiagnostics() noexcept;
