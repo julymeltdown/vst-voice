@@ -75,6 +75,11 @@ public:
     return textEngine_ != nullptr;
   }
 
+  // Logical width of one display column when no text engine is installed and the bitmap face draws
+  // the text. That face is the widest the canvas can draw at the sizes the applications use, so a
+  // label that fits it cannot be truncated under a system text engine either.
+  [[nodiscard]] static double fallbackTextAdvance(double size, double scale = 1.0) noexcept;
+
   void clear(Color color) noexcept;
   void fillRect(ui::Rect rect, Color color) noexcept;
   void strokeRect(ui::Rect rect, Color color, double thickness = 1.0) noexcept;

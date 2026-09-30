@@ -19,6 +19,12 @@ constexpr std::uint64_t kMaximumPixels = 128ULL * 1024ULL * 1024ULL;
 
 using Glyph = std::array<std::uint8_t, 7>;
 
+// Physical pixels per bitmap-face cell at a logical size; the face is seven cells tall and six
+// cells (five drawn plus one gap) wide, and never smaller than one physical pixel per cell.
+[[nodiscard]] std::int32_t fallbackGlyphPixel(double size, double scale) noexcept {
+  return std::max(1, static_cast<std::int32_t>(std::lround(size * scale / 7.0)));
+}
+
 Glyph glyphFor(char value) noexcept {
   const auto character = (value >= 'a' && value <= 'z')
                              ? static_cast<char>(value - 'a' + 'A')
@@ -252,6 +258,11 @@ double RasterCanvas::logicalWidth() const noexcept {
   return static_cast<double>(surface_.width()) / scale_;
 }
 
+double RasterCanvas::fallbackTextAdvance(double size, double scale) noexcept {
+  if (!std::isfinite(size) || size <= 0.0 || !std::isfinite(scale) || scale <= 0.0) return 0.0;
+  return static_cast<double>(fallbackGlyphPixel(size, scale) * 6) / scale;
+}
+
 double RasterCanvas::logicalHeight() const noexcept {
   return static_cast<double>(surface_.height()) / scale_;
 }
@@ -453,8 +464,7 @@ void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
     }
   }
 
-  const auto glyphPixel = std::max(1, static_cast<std::int32_t>(
-      std::lround(size * scale_ / 7.0)));
+  const auto glyphPixel = fallbackGlyphPixel(size, scale_);
   if (top + glyphPixel * 7 > bottom) return;
   const auto advance = glyphPixel * 6;
   const auto safe = text::truncateUtf8ToDisplayWidth(

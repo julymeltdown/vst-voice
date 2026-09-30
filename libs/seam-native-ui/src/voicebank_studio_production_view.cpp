@@ -1,5 +1,7 @@
 #include "voicebank_studio_production_view.hpp"
 
+#include "seam/text/unicode.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -12,7 +14,69 @@ std::string_view sourceQualificationLabel(const voicebank_production::VoicebankP
   return voicebank_production::selectedStrategyReady(project)
       ? "SOURCE QUALIFICATION READY" : "SOURCE QUALIFICATION PENDING";
 }
+
+// Draws `text` on at most `maximumLines` lines, wrapped at spaces to what `bounds.width` holds in the
+// widest face the canvas can draw, so the wording survives a narrow column instead of being cut.
+void drawWrappedText(RasterCanvas& canvas, ui::Rect bounds, std::string_view text, Color color,
+                     double size, double lineHeight, std::size_t maximumLines) noexcept {
+  if (bounds.width <= 0.0 || maximumLines == 0U) return;
+  try {
+    const auto lines = studioWrapWords(text, bounds.width, size);
+    const auto count = std::min(lines.size(), maximumLines);
+    for (std::size_t index = 0U; index < count; ++index)
+      canvas.drawText(ui::Rect{bounds.x, bounds.y + static_cast<double>(index) * lineHeight,
+                               bounds.width, lineHeight}, lines[index], color, size);
+  } catch (...) {
+    canvas.drawText(bounds, text, color, size);
+  }
+}
 } // namespace
+
+std::vector<std::string_view> studioWrapWords(std::string_view text, double width, double size) {
+  std::vector<std::string_view> lines;
+  const auto advance = RasterCanvas::fallbackTextAdvance(size);
+  const auto columns = advance > 0.0 && width > 0.0
+      ? static_cast<std::size_t>(std::floor(width / advance)) : std::size_t{0U};
+  bool open = false;
+  std::size_t lineStart = 0U, lineEnd = 0U, lineColumns = 0U;
+  for (std::size_t index = 0U; index < text.size();) {
+    while (index < text.size() && text[index] == ' ') ++index;
+    if (index >= text.size()) break;
+    const auto found = text.find(' ', index);
+    const auto end = found == std::string_view::npos ? text.size() : found;
+    const auto wordColumns = text::utf8DisplayWidth(text.substr(index, end - index));
+    // The spaces between two words on one line are part of the line and take a column each.
+    if (open && lineColumns + (index - lineEnd) + wordColumns <= columns) {
+      lineColumns += (index - lineEnd) + wordColumns;
+      lineEnd = end;
+    } else {
+      if (open) lines.push_back(text.substr(lineStart, lineEnd - lineStart));
+      open = true;
+      lineStart = index;
+      lineEnd = end;
+      lineColumns = wordColumns;
+    }
+    index = end;
+  }
+  if (open) lines.push_back(text.substr(lineStart, lineEnd - lineStart));
+  return lines;
+}
+
+std::string_view studioFitText(std::initializer_list<std::string_view> candidates, double width,
+                               double size) noexcept {
+  if (candidates.size() == 0U) return {};
+  const auto advance = RasterCanvas::fallbackTextAdvance(size);
+  for (const auto candidate : candidates)
+    if (static_cast<double>(text::utf8DisplayWidth(candidate)) * advance <= width) return candidate;
+  return *(candidates.end() - 1);
+}
+
+std::string_view studioControlPaintLabel(const StudioSampleReviewControl& control, double fontSize,
+                                         double horizontalPadding) noexcept {
+  if (control.compactLabel.empty()) return control.label;
+  return studioFitText({control.label, control.compactLabel},
+                       control.bounds.width - 2.0 * horizontalPadding, fontSize);
+}
 
 std::vector<StudioSampleReviewControl> studioSampleReviewControls(
     const VoicebankStudioController& controller, double width) {
@@ -274,13 +338,16 @@ std::vector<StudioSampleReviewControl> studioGenerationControls(
   }
   const bool campaignReady=!controller.generationCampaignPath().empty();
   const bool free=!busy && !recordingActive;
+  // Each label is the full accessible name. Where the narrowest supported window leaves a button too
+  // narrow for it, the compact label is painted instead; both fit the minimum window's button.
   return {{"prepare","Prepare",{294.0,268.0,cellWidth-2.0,18.0},enabled},
           {"generate","Run job",{294.0+cellWidth,268.0,cellWidth-2.0,18.0},enabled},
           {"assemble","Make batch",{294.0,286.0,cellWidth-2.0,18.0},enabled},
-          {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled},
-          {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U},
+          {busy?"cancel":"batch",busy?"Cancel work":"Run batch",{294.0+cellWidth,286.0,cellWidth-2.0,18.0},busy || enabled,
+              busy?"Cancel":""},
+          {"plan-campaign","Plan campaign",{294.0,304.0,cellWidth-2.0,18.0},free && plannedTakeIds!=0U,"Plan"},
           {"run-campaign",campaignReady?"Resume campaign":"Open / resume",
-              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free},
+              {294.0+cellWidth,304.0,cellWidth-2.0,18.0},free,campaignReady?"Resume":"Open"},
           // A campaign cannot advance until its held-out phrases render audibly, so the preflight is
           // its own explicit step rather than something a run performs implicitly.
           {"preflight-campaign","Preflight",{294.0,322.0,cellWidth-2.0,18.0},free && campaignReady},
@@ -646,9 +713,11 @@ void paintProductionEmptyCanvas(
                   assignment->takeId.empty() ? "NO AUDIO IMPORTED"
                                              : "TAKE " + assignment->takeId,
                   theme.secondaryText, 8.0);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 176.0,
-                           std::max(0.0, region.width - 48.0), 16.0},
-                  "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD", theme.secondaryText, 6.0);
+  // The shortcut hint wraps to the width this column has rather than running past its edge; the
+  // generation panel starts at y = 268, so two lines from y = 228 stay clear of it.
+  drawWrappedText(canvas, ui::Rect{region.x + 24.0, region.y + 156.0,
+                                   std::max(0.0, region.width - 48.0), 24.0},
+                  "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD", theme.secondaryText, 6.0, 12.0, 2U);
   canvas.drawText(ui::Rect{region.x + 24.0, region.y + 196.0,
                            std::max(0.0, region.width - 48.0), 16.0},
                   "CMD/CTRL-SHIFT: I JOB / B BATCH",

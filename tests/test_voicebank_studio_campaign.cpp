@@ -11,11 +11,13 @@
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/formats/json_value.hpp"
+#include "seam/text/unicode.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <thread>
 #include <utility>
@@ -558,4 +560,120 @@ TEST_CASE("campaign controls appear only when the producer and identity allow th
       CHECK(control.bounds.y + control.bounds.height <= 358.0);
     }
   }
+}
+
+TEST_CASE("generation control wording fits its button at every supported window width") {
+  Fixture fixture;
+  namespace ui = seam::native_ui;
+  const auto advance = ui::RasterCanvas::fallbackTextAdvance(10.0);
+  // The canvas without a text engine keeps exactly this many columns of a label, so a label that
+  // survives the truncation is drawn whole there, and whole under any narrower system face.
+  const auto sweep = [&](const std::string& state) {
+    for (double width = 720.0; width <= 1800.0; width += 2.0) {
+      for (const auto& control : ui::studioGenerationControls(fixture.controller, width, false)) {
+        const std::string painted{ui::studioControlPaintLabel(control, 10.0, 4.0)};
+        const auto columns = static_cast<std::size_t>(std::floor((control.bounds.width - 8.0) / advance));
+        if (text::truncateUtf8ToDisplayWidth(painted, columns) != painted)
+          throw seam::test::Failure{"With " + state + " campaign state at window width " + std::to_string(width) +
+              ", control \"" + control.id + "\" would paint \"" + painted + "\" in a button that holds " +
+              std::to_string(columns) + " columns"};
+        // Shortening what is painted never shortens what is announced.
+        CHECK(!control.label.empty());
+        CHECK(painted == control.label || painted == control.compactLabel);
+      }
+    }
+  };
+  sweep("an unplanned");
+  CHECK(fixture.controller.beginGenerationCampaignPlan(fixture.recipePath,
+      {"take-sa", "take-sa-soft"}, fixture.root / "campaign-fit", 1U));
+  // The controls while the plan runs offer to cancel it; they must fit as well.
+  sweep("a planning");
+  CHECK(drain(fixture.controller));
+  sweep("a planned");
+
+  const auto byId = [](const auto& controls, std::string_view id) {
+    return std::find_if(controls.begin(), controls.end(),
+        [&](const auto& control) { return control.id == id; });
+  };
+  // The minimum window paints compact wording where the full wording cannot fit, and still
+  // announces the full action; a wider window paints every label whole.
+  const auto narrow = ui::studioGenerationControls(fixture.controller, 720.0, false);
+  CHECK(byId(narrow, "plan-campaign")->label == "Plan campaign");
+  CHECK(ui::studioControlPaintLabel(*byId(narrow, "plan-campaign"), 10.0, 4.0) == "Plan");
+  CHECK(byId(narrow, "run-campaign")->label == "Resume campaign");
+  CHECK(ui::studioControlPaintLabel(*byId(narrow, "run-campaign"), 10.0, 4.0) == "Resume");
+  const auto wide = ui::studioGenerationControls(fixture.controller, 1040.0, false);
+  for (const auto& control : wide)
+    CHECK(ui::studioControlPaintLabel(control, 10.0, 4.0) == control.label);
+
+  // A control with no compact wording paints its label as it is, and the fit rule itself prefers
+  // the earliest candidate that fits and falls back to the last one.
+  const ui::StudioSampleReviewControl plain{"plain", "A long label", {0.0, 0.0, 30.0, 18.0}, true};
+  CHECK(ui::studioControlPaintLabel(plain, 10.0, 4.0) == "A long label");
+  CHECK(ui::studioFitText({"first choice", "second", "third"}, 60.0, 10.0) == "second");
+  CHECK(ui::studioFitText({"first choice", "second", "third"}, 18.0, 10.0) == "third");
+  CHECK(ui::studioFitText({"first choice", "second", "third"}, 200.0, 10.0) == "first choice");
+  CHECK(ui::studioFitText({}, 200.0, 10.0).empty());
+}
+
+TEST_CASE("word wrapping never splits a word and keeps each line inside its width") {
+  namespace ui = seam::native_ui;
+  const std::string hint = "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD";
+  const auto two = ui::studioWrapWords(hint, 146.0, 6.0);
+  CHECK(two.size() == 2U);
+  if (two.size() == 2U) {
+    CHECK(two[0] == "R REC / CMD/CTRL-I");
+    CHECK(two[1] == "IMPORT / SHIFT-B BUILD");
+  }
+  CHECK(ui::studioWrapWords(hint, 526.0, 6.0).size() == 1U);
+  CHECK(ui::studioWrapWords("", 100.0, 6.0).empty());
+  CHECK(ui::studioWrapWords("   ", 100.0, 6.0).empty());
+  // A word wider than the width stays whole on a line of its own instead of being split.
+  const auto stuck = ui::studioWrapWords("A UNBROKENIDENTIFIER B", 60.0, 6.0);
+  CHECK(stuck.size() == 3U);
+  if (stuck.size() == 3U) CHECK(stuck[1] == "UNBROKENIDENTIFIER");
+
+  const auto advance = ui::RasterCanvas::fallbackTextAdvance(6.0);
+  for (double width = 0.0; width <= 600.0; width += 6.0) {
+    const auto lines = ui::studioWrapWords(hint, width, 6.0);
+    std::string joined;
+    for (const auto line : lines) {
+      if (!joined.empty()) joined += ' ';
+      joined += std::string{line};
+      const auto columns = static_cast<std::size_t>(width / advance);
+      if (text::utf8DisplayWidth(line) > columns && line.find(' ') != std::string_view::npos)
+        throw seam::test::Failure{"Wrapped line \"" + std::string{line} + "\" is wider than " + std::to_string(columns) +
+            " columns at width " + std::to_string(width)};
+    }
+    // Wrapping only chooses where the line breaks fall; it never adds, drops or splits a word.
+    if (joined != hint)
+      throw seam::test::Failure{"Wrapping at width " + std::to_string(width) + " changed the text to \"" + joined + "\""};
+  }
+}
+
+TEST_CASE("the intake shortcut hint wraps at the minimum window instead of being cut") {
+  Fixture fixture;
+  namespace ui = seam::native_ui;
+  const auto ink = ui::VoicebankStudioTheme{}.secondaryText.bgra();
+  // Pixels of the hint's colour inside the centre column's content box for the given rows. The
+  // hint is the only text of that colour on these rows, above the generation panel that starts at 268.
+  const auto lit = [&](std::uint32_t width, std::uint32_t height, std::uint32_t firstRow, std::uint32_t rows) {
+    ui::PixelSurface surface{width, height};
+    ui::RasterCanvas canvas{surface};
+    fixture.controller.resize(static_cast<double>(width), static_cast<double>(height));
+    ui::VoicebankStudioScenePainter{}.paint(canvas, fixture.controller);
+    const std::uint32_t left = 294U, content = width - 256U - 270U - 48U;
+    std::size_t count = 0U;
+    for (std::uint32_t y = firstRow; y < firstRow + rows; ++y)
+      for (std::uint32_t x = left; x < left + content; ++x)
+        if (surface.pixels()[static_cast<std::size_t>(y) * width + x] == ink) ++count;
+    return count;
+  };
+  const auto wide = lit(1100U, 720U, 228U, 20U);
+  CHECK(wide > 0U);
+  // Wrapping keeps every character, so the minimum window shows exactly the ink the wide window
+  // shows, only on two lines; a cut hint would show less.
+  CHECK(lit(720U, 520U, 228U, 20U) == wide);
+  CHECK(lit(720U, 520U, 240U, 8U) > 0U);
+  CHECK(lit(1100U, 720U, 240U, 8U) == 0U);
 }

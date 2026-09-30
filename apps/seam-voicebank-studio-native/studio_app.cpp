@@ -2255,7 +2255,8 @@ public:
       canvas.fillRect({294.0,268.0,canvas.logicalWidth()-574.0,bottom-268.0},seam::native_ui::Color{15,14,18,255});
       for (const auto& control:generationControls) {
         canvas.fillRect(control.bounds,control.enabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
-        canvas.drawText({control.bounds.x+4.0,control.bounds.y+2.0,control.bounds.width-8.0,14.0},control.label,
+        canvas.drawText({control.bounds.x+4.0,control.bounds.y+2.0,control.bounds.width-8.0,14.0},
+            seam::native_ui::studioControlPaintLabel(control,10.0,4.0),
             control.enabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{125,118,129,255},10.0);
       }
     }
