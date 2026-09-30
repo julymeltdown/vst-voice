@@ -127,6 +127,9 @@ struct RegionWaveformRequest final {
   std::uint64_t documentRevision{0U};
   domain::TrackId track{};
   domain::RegionId region{};
+  // What the canonical render is doing now. It decides what a project that has published nothing
+  // yet says: "Rendering" while a render is on its way, "No render" when none is.
+  authoring::RenderState render{authoring::RenderState::Idle};
 };
 
 // Binds the audible publication to the region on screen. The waveform shows only for a Ready

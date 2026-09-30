@@ -191,6 +191,33 @@ TEST_CASE("the note waveform shows only a current render of the region's own aud
   CHECK(!bind(newer, false, 5U, region).shown());
 }
 
+TEST_CASE("the note waveform of a project that has published nothing says whether a render is on its way") {
+  // Before the first render the coordinator hands out a publication that never rendered. Calling that
+  // "Rendering" told a fresh, empty project that a render was under way when none was; it is only
+  // true while one is queued or running.
+  const domain::TrackId track{11U};
+  const domain::RegionId region{12U};
+  RegionEnvelopeCache cache;
+  const auto bind = [&](authoring::RenderState render) {
+    return bindRegionWaveform(
+        RegionWaveformRequest{.audio = std::make_shared<const authoring::PublishedProjectAudio>(),
+                              .stale = false,
+                              .documentRevision = 3U,
+                              .track = track,
+                              .region = region,
+                              .render = render},
+        cache);
+  };
+  const auto idle = bind(authoring::RenderState::Idle);
+  CHECK(!idle.shown());
+  CHECK(idle.caption == "No render");
+  CHECK(!idle.reason.empty());
+  CHECK(bind(authoring::RenderState::Cancelled).caption == "No render");
+  CHECK(bind(authoring::RenderState::Queued).caption == "Rendering");
+  CHECK(bind(authoring::RenderState::Rendering).caption == "Rendering");
+  CHECK(!bind(authoring::RenderState::Rendering).shown());
+}
+
 TEST_CASE("stopping the envelope cache waits for a callback in flight and silences later ones") {
   std::atomic<bool> inCallback{false};
   std::atomic<bool> callbackFinished{false};

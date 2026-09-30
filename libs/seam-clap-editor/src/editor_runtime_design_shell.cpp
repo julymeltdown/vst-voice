@@ -65,7 +65,8 @@ void EditorRuntime::activateDesignShellWith(
                                                  .stale = audible.stale,
                                                  .documentRevision = session_.revision(),
                                                  .track = authoring_->selectedTrack(),
-                                                 .region = authoring_->selectedRegion()},
+                                                 .region = authoring_->selectedRegion(),
+                                                 .render = authoring_->renderer().progress().state},
                 waveforms_);
           },
       // What EditorRuntime::keyDown handles itself (Command-Shift-O/E score interchange) and the

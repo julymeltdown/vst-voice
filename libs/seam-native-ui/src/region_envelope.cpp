@@ -171,6 +171,14 @@ RegionWaveform bindRegionWaveform(const RegionWaveformRequest& request,
                                        : "The last render failed: " + audio->diagnostic);
     case authoring::RenderState::Cancelled:
       return omit("No render", "The last render was cancelled.");
+    case authoring::RenderState::Idle:
+      // A publication that never rendered. Whether a render is on its way is the coordinator's
+      // to say, not the publication's: a fresh project with nothing to render is not rendering.
+      cache.clear();
+      if (request.render == authoring::RenderState::Queued ||
+          request.render == authoring::RenderState::Rendering)
+        return omit("Rendering", "The waveform appears when the current render is ready.");
+      return omit("No render", "Nothing has been rendered yet.");
     default:
       return omit("Rendering", "The waveform appears when the current render is ready.");
   }

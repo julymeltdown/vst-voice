@@ -749,7 +749,8 @@ core::Result<void> NativeEditorApp::initialize() {
                     .stale = audible.stale,
                     .documentRevision = runtime.document().session().revision(),
                     .track = runtime.selectedTrack(),
-                    .region = runtime.selectedRegion()},
+                    .region = runtime.selectedRegion(),
+                    .render = runtime.renderer().progress().state},
                 waveforms_);
           },
       // Exactly the shortcuts keyDown dispatches as application commands below, plus the
