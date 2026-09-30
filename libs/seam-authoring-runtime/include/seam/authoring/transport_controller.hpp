@@ -45,8 +45,15 @@ public:
 
   [[nodiscard]] core::Result<void> publishAudio(
       RealtimeProjectAudioPublication::ReadHandle audio);
-  // Drops the published audio: stops playback, empties the timeline and forgets the published
-  // revision, so the transport reports "nothing to play" until the next successful publication.
+  // Returns the transport to "nothing to play": stops playback, empties the timeline and forgets
+  // the published revision, and also forgets what a reconfigure was carrying for the audio it
+  // dropped (the loop, whether it was playing, the playhead), so the next publication starts
+  // silent at the beginning. A transport that holds no audio and has no dropped audio to forget
+  // is left alone and sent nothing; in particular a play asked for before any audio ever existed
+  // stays, so a session that starts playing still plays the first audio it is given.
+  // The feeder applies its commands on its own thread. When this returns they are queued, not
+  // acknowledged: state() reports available, loop, publishedRevision and timelineEnd at once, but
+  // playing, playhead and what is already in the ring follow a moment later.
   [[nodiscard]] core::Result<void> clearAudio();
   [[nodiscard]] core::Result<void> play();
   [[nodiscard]] core::Result<void> pause();
@@ -94,6 +101,9 @@ private:
   time::SampleFrame pendingPlayhead_{0};
   bool pendingPlayheadValid_{false};
   bool resumeAfterReconfigure_{false};
+  // True from a reconfigure that dropped published audio until audio is published again or
+  // cleared: loop_, pendingPlayhead_ and resumeAfterReconfigure_ then describe that audio.
+  bool audioDroppedByReconfigure_{false};
   bool started_{false};
 };
 

@@ -134,7 +134,19 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   }
 
   const bool wasStarted = started_;
-  const bool wasPlaying = feeder_->playing();
+  // With audio published, the feeder knows whether it is playing and where it is. With none, the
+  // feeder was just rebuilt by an earlier reconfigure (or was never given anything), and what the
+  // creator was doing is what the controller recorded then: a second change of settings has no
+  // reason to forget a play or a playhead that the first one carried.
+  bool wasPlaying = feeder_->playing();
+  auto currentPlayhead = feeder_->playhead();
+  {
+    std::lock_guard lock(stateMutex_);
+    if (timelineEnd_ == time::SampleFrame{0}) {
+      wasPlaying = wasPlaying || resumeAfterReconfigure_;
+      if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
+    }
+  }
   const auto previousSampleRate = config_.sampleRate;
   const auto scaleFrame = [previousSampleRate, &config](
                                time::SampleFrame frame) {
@@ -149,7 +161,7 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
     remappedLoop.endFrame = scaleFrame(remappedLoop.endFrame);
     if (remappedLoop.endFrame <= remappedLoop.startFrame) remappedLoop = {};
   }
-  const auto remappedPlayhead = scaleFrame(feeder_->playhead());
+  const auto remappedPlayhead = scaleFrame(currentPlayhead);
   service_->stop();
   started_ = false;
 
@@ -191,6 +203,11 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   config_ = config;
   {
     std::lock_guard lock(stateMutex_);
+    // The published audio is dropped here, but what the creator was doing with it (playing,
+    // looping, where the playhead was) is carried for the audio that follows. Remember that it
+    // belongs to audio that is gone, across as many reconfigures as happen before new audio comes.
+    audioDroppedByReconfigure_ =
+        audioDroppedByReconfigure_ || timelineEnd_ > time::SampleFrame{0};
     loop_ = remappedLoop;
     publishedRevision_ = 0U;
     timelineEnd_ = 0;
@@ -329,6 +346,7 @@ core::Result<void> TransportController::publishAudio(
     timelineEnd_ = timeline.value()->endFrame();
     pendingPlayheadValid_ = false;
     resumeAfterReconfigure_ = false;
+    audioDroppedByReconfigure_ = false;
   }
   return core::success();
 }
@@ -337,8 +355,14 @@ core::Result<void> TransportController::clearAudio() {
   std::lock_guard lifecycleLock(lifecycleMutex_);
   {
     std::lock_guard lock(stateMutex_);
-    // Nothing was published, or it was already dropped: there is nothing to clear.
-    if (timelineEnd_ == time::SampleFrame{0}) return core::success();
+    // An empty timeline does not make a clean transport. A reconfigure empties the timeline but
+    // keeps what the creator was doing (playing, looping, where the playhead was) for the audio
+    // rendered next. That belongs to audio that is about to be declared gone, so it is dropped
+    // with it. A play asked for before any audio ever existed belongs to no audio: it stays, so a
+    // session that starts playing still plays the first audio it is given, however many changes
+    // come before it.
+    const bool holdsAudio = timelineEnd_ != time::SampleFrame{0};
+    if (!holdsAudio && !audioDroppedByReconfigure_) return core::success();
   }
   auto timeline = std::make_shared<rendering::RoutedPlaybackTimeline>(config_.sampleRate);
   const auto configured =
@@ -360,6 +384,7 @@ core::Result<void> TransportController::clearAudio() {
     timelineEnd_ = time::SampleFrame{0};
     pendingPlayheadValid_ = false;
     resumeAfterReconfigure_ = false;
+    audioDroppedByReconfigure_ = false;
   }
   return core::success();
 }

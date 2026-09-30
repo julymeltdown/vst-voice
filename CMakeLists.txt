@@ -2251,6 +2251,16 @@ if(SEAM_BUILD_TESTS)
     COMMAND seam_authoring_render_coordinator_tests)
   set_tests_properties(seam_authoring_render_coordinator_tests PROPERTIES TIMEOUT 180)
 
+  add_executable(seam_authoring_transport_tests
+    tests/test_main.cpp
+    tests/test_transport_controller.cpp)
+  target_include_directories(seam_authoring_transport_tests PRIVATE tests)
+  target_link_libraries(seam_authoring_transport_tests PRIVATE
+    seam_authoring_runtime seam_rendering)
+  seam_apply_compiler_options(seam_authoring_transport_tests)
+  add_test(NAME seam_authoring_transport_tests COMMAND seam_authoring_transport_tests)
+  set_tests_properties(seam_authoring_transport_tests PROPERTIES TIMEOUT 180)
+
   add_executable(seam_inventory_preflight_tests
    tests/test_main.cpp
    tests/test_inventory_preflight.cpp)

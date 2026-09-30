@@ -417,3 +417,211 @@ TEST_CASE("a transport whose audio was cleared plays silence when it is asked to
   const auto output = readFrames(controller, 64U);
   CHECK(std::all_of(output.begin(), output.end(), [](float value) { return value == 0.0F; }));
 }
+
+namespace {
+
+seam::authoring::TransportConfig transportConfigAt(std::uint32_t sampleRate) {
+  return seam::authoring::TransportConfig{.sampleRate = sampleRate,
+                                          .outputChannels = 2U,
+                                          .ringCapacityFrames = 1024U,
+                                          .blockFrames = 64U,
+                                          .watermarkFrames = 256U};
+}
+
+}  // namespace
+
+TEST_CASE("clearing the transport's audio after a reconfigure drops the play and the loop the reconfigure was carrying") {
+  // A reconfigure empties the timeline, because the old audio has the wrong sample rate, but keeps
+  // what the creator was doing so the audio rendered for the new format can carry on from there.
+  // If the score is emptied before that audio arrives, what was kept belongs to audio that no
+  // longer exists: handing it to whatever is written next would start a vocal playing, inside a
+  // loop the creator set for something else.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 100, .endFrame = 2000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(!controller.state().available);
+  CHECK(controller.clearAudio());
+  CHECK(!controller.state().loop.enabled);
+
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  // A play that was wrongly resumed shows within a few milliseconds; wait that long for it.
+  CHECK(!waitUntil([&] { return controller.state().playing; }, std::chrono::milliseconds{100}));
+  CHECK(!controller.state().loop.enabled);
+  CHECK(controller.state().publishedRevision == 1U);
+}
+
+TEST_CASE("a reconfigure after the transport's audio was cleared does not bring the old play back") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 100, .endFrame = 2000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.clearAudio());
+  CHECK(waitUntil([&] { return !controller.state().playing; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, std::chrono::milliseconds{100}));
+  CHECK(!controller.state().loop.enabled);
+  CHECK(controller.state().publishedRevision == 1U);
+}
+
+TEST_CASE("clearing the transport's audio leaves a play that was asked for before any audio existed") {
+  // A session that starts playing still plays the first audio it is given, however many changes
+  // that leave nothing to sing come before it: the play belongs to no audio, so a clear that has
+  // nothing to drop must not take it away.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.clearAudio());
+  // A clear that stopped the feeder would show within a few milliseconds; wait that long for it.
+  CHECK(!waitUntil([&] { return !controller.state().playing; }, std::chrono::milliseconds{100}));
+  CHECK(controller.publishAudio(publishAudio(publication, 3U, 96000U)));
+  CHECK(waitUntil([&] { return controller.state().playhead > 0; }));
+  CHECK(controller.state().playing);
+  CHECK(controller.state().publishedRevision == 3U);
+}
+
+TEST_CASE("a second reconfigure before the audio is rendered again keeps the play and the loop") {
+  // The audio settings can change twice before the score has been rendered for the new format.
+  // The second reconfigure finds a feeder that was only just rebuilt, which is not playing;
+  // what the creator was doing is what the first reconfigure recorded.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 100, .endFrame = 2000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.reconfigure(transportConfigAt(48000U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 96000U)));
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.state().loop.enabled);
+}
+
+TEST_CASE("a second reconfigure before the audio is rendered again keeps the playhead") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.reconfigure(transportConfigAt(48000U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 96000U)));
+  // 40000 frames at 48 kHz are 36750 at 44.1 kHz and 40000 again: nothing is lost on the way back.
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(!controller.state().playing);
+}
+
+TEST_CASE("the audio a reconfigure dropped is still remembered after a second reconfigure") {
+  // What the first reconfigure carried belongs to audio that is gone, and the second one finds the
+  // timeline already empty. A clear that comes after both must still drop it.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 100, .endFrame = 2000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.reconfigure(transportConfigAt(48000U)));
+  CHECK(controller.clearAudio());
+  CHECK(!controller.state().loop.enabled);
+
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, std::chrono::milliseconds{100}));
+  CHECK(!controller.state().loop.enabled);
+}
+
+TEST_CASE("clearing the transport's audio after a reconfigure forgets the playhead the reconfigure saved") {
+  // The position a reconfigure keeps is a place in the audio that was dropped. The audio that comes
+  // next starts at the beginning, even when nothing was playing and no loop was set.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.clearAudio());
+
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != 0; }, std::chrono::milliseconds{100}));
+  CHECK(controller.state().publishedRevision == 1U);
+}
+
+TEST_CASE("clearing the transport's audio when it holds nothing sends the feeder nothing") {
+  // A score with nothing audible asks for this on every change it sees, so a transport that is
+  // already clean must not be handed four commands each time.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.clearAudio());                                        // pristine: nothing queued
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U)));  // timeline, loop, seek
+  CHECK(controller.clearAudio());                                        // stop, timeline, loop, seek
+  CHECK(controller.clearAudio());                                        // already clean: nothing
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 96000U)));  // timeline, loop, seek
+  CHECK(controller.play());                                              // playing
+  // The feeder handles its commands in the order they were queued: once it is playing it has
+  // counted every one before the play.
+  CHECK(waitUntil([&] { return controller.state().playhead > 0; }));
+  CHECK(controller.feederStats().controlCommands == base + 3U + 4U + 3U + 1U);
+}
+
+TEST_CASE("clearing the transport's audio twice after a reconfigure sends the feeder nothing the second time") {
+  // What the first clear dropped is dropped: a second one has nothing left to forget.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  // The feeder was rebuilt, so its command count starts again from nothing.
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.clearAudio());                                                  // stop, timeline, loop, seek
+  CHECK(controller.clearAudio());                                                  // nothing left: nothing
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 88200U, 0.0F, 44100U)));  // timeline, loop, seek
+  CHECK(controller.play());                                                        // playing
+  CHECK(waitUntil([&] { return controller.state().playhead > 0; }));
+  CHECK(controller.feederStats().controlCommands == base + 4U + 3U + 1U);
+}
+
+TEST_CASE("a transport that had finished playing does not start again when the audio settings change") {
+  // The request to play is remembered until the creator pauses, but the feeder stops by itself at
+  // the end of the audio. A reconfigure goes by what the feeder was doing, not by what was asked.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playhead == 512; }));
+  CHECK(waitUntil([&] { return !controller.state().playing; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, std::chrono::milliseconds{100}));
+}
