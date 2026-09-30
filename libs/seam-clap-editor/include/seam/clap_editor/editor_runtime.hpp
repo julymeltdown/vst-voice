@@ -119,8 +119,9 @@ public:
   // by a reader. Returns false if none is, and the preview is dropped.
   [[nodiscard]] bool publish(RenderedPreview preview);
   // Like publish(), but a preview that finds every slot held is kept, and offered again until a
-  // slot is free or something newer replaces it (publish, publishWhenFree or revoke): only the
-  // newest waiting preview is kept. The caller never waits, and neither does a reader; a helper
+  // slot is free or something newer replaces it (a publish() that finds a slot, publishWhenFree or
+  // revoke): only the newest waiting preview is kept. A publish() that finds no slot is dropped and
+  // leaves the waiting preview alone. The caller never waits, and neither does a reader; a helper
   // thread that lives only while a preview waits makes the offers. Returns whether the preview
   // was visible when the call returned.
   bool publishWhenFree(RenderedPreview preview);
