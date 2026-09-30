@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -3077,4 +3078,64 @@ TEST_CASE("standalone lifecycle save notifications cannot turn newer edits into 
     const auto saved = formats::ProjectJsonCodec{}.load(destination); CHECK(saved);
     CHECK(formats::ProjectJsonCodec{}.encode(saved.value()).value() == approved.project);
   }
+}
+
+TEST_CASE("standalone starts an empty project with an idle render, not a cancelled one") {
+  // Starting the application refreshes its voicebank browser, which revokes the authority of any
+  // earlier sound. A project with no notes has no render to revoke, so the status the creator
+  // sees on a fresh project must not announce a cancellation nobody asked for.
+  const auto root = seam::test::support::temporaryDirectory("standalone-empty-project-render-status");
+  auto session = makeSession(root);
+  CHECK(session->runtime().renderer().progress().state == seam::authoring::RenderState::Idle);
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto controller = seam::standalone::StandaloneApplicationController::create(*session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(controller);
+  if (!controller) return;
+  const auto progress = session->runtime().renderer().progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.diagnostic.empty());
+  CHECK(session->runtime().renderer().stats().cancelled == 0U);
+}
+
+TEST_CASE("standalone asks for a repaint when a render is queued and when it starts, not only when it ends") {
+  // The window draws on demand, and the debounced submission happens after the frame of the edit
+  // itself. Without a request at each of those transitions the frame that shows the new attempt
+  // is never painted until the attempt is over.
+  const auto root = seam::test::support::temporaryDirectory("standalone-render-progress-repaint");
+  std::atomic<int> repaints{0};
+  auto created = seam::standalone::AuthoringSession::create(
+      seam::standalone::AuthoringSessionConfig{
+          .cacheRoot = root / "cache",
+          .voicebankRoots = {seam::voicebank::VoicebankSearchRoot{
+              .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+              .kind = seam::voicebank::VoicebankRootKind::Development,
+          }},
+          .sampleRate = 48000U,
+          .outputChannels = 2U,
+          .bindFirstAvailableVoicebank = true,
+          .allowDevelopmentVoicebanks = true,
+      },
+      seam::native_ui::EditorHostCallbacks{
+          .requestRepaint = [&repaints] { repaints.fetch_add(1, std::memory_order_relaxed); },
+      });
+  CHECK(created);
+  if (!created) return;
+  auto session = std::move(created).value();
+  const auto before = repaints.load(std::memory_order_relaxed);
+  addNote(*session);
+  const auto revision = session->runtime().document().session().revision();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = session->runtime().renderer().progress();
+    if (progress.state == seam::authoring::RenderState::Ready &&
+        progress.requestedRevision == revision) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  CHECK(session->runtime().renderer().progress().state == seam::authoring::RenderState::Ready);
+  // Queued and Rendering both happen before the render can finish, so both requests are already
+  // in by the time the render is ready; the completion's own request may still be on its way.
+  CHECK(repaints.load(std::memory_order_relaxed) - before >= 2);
 }

@@ -121,6 +121,7 @@ private:
   void configureController();
   void onDocumentChanged();
   void onRenderCompleted();
+  void onRenderProgress();
 
   std::unique_ptr<authoring::AuthoringRuntime> runtime_;
   std::unique_ptr<native_ui::NativeEditorController> controller_;

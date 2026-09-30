@@ -30,6 +30,9 @@ struct AuthoringRuntimeConfig final {
   std::uint8_t outputChannels{2U};
   bool allowDevelopmentVoicebanks{false};
   bool enableTransport{true};
+  // Observation points of the preview coordinator, for tests that must hold a render in
+  // flight. Empty in production.
+  RenderCoordinatorHooks renderHooks{};
 };
 
 class AuthoringRuntime final {
@@ -73,10 +76,9 @@ public:
   [[nodiscard]] const TechnicalEditController& technicalEdits() const noexcept {
     return technicalEdits_;
   }
-  [[nodiscard]] std::vector<Diagnostic> diagnostics() const {
-    std::lock_guard lock(diagnosticsMutex_);
-    return diagnostics_;
-  }
+  // What the creator should be told now. A render failure is left out while a newer render is
+  // queued or running, because it describes an attempt that render has replaced.
+  [[nodiscard]] std::vector<Diagnostic> diagnostics() const;
   void clearDiagnostics() noexcept {
     std::lock_guard lock(diagnosticsMutex_);
     diagnostics_.clear();

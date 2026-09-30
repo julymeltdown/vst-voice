@@ -825,6 +825,93 @@ TEST_CASE("authoring_render_coordinator_cancellation_is_not_failure") {
   CHECK(coordinator.stats().failed == 0U);
 }
 
+TEST_CASE("cancelling a coordinator that has nothing in flight reports nothing as cancelled") {
+  // A fresh project has nothing to render, and the application still revokes the old sound's
+  // authority when it refreshes its voicebanks. There is no request to cancel, so the status
+  // must stay idle instead of announcing a cancellation the creator never asked for.
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-idle")};
+  std::atomic<int> notifications{0};
+  coordinator.setCompletionCallback([&notifications] { notifications.fetch_add(1); });
+  coordinator.cancel();
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.diagnostic.empty());
+  CHECK(progress.failure == seam::authoring::RenderFailureKind::None);
+  CHECK(coordinator.stats().cancelled == 0U);
+  CHECK(notifications.load() == 0);
+  CHECK(!coordinator.acquireCurrent());
+  // The coordinator is still usable: the next request queues and renders as usual.
+  auto fixture = makeRenderFixture();
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 78U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 78U).state == seam::authoring::RenderState::Ready);
+}
+
+TEST_CASE("cancelling after a render has finished does not turn the finished render into a cancellation") {
+  // A cancel that arrives just after the render ended used to overwrite Ready with Cancelled,
+  // so the status said the phrase was cancelled while the published audio was complete.
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-finished")};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 79U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 79U).state == seam::authoring::RenderState::Ready);
+  const auto cancelledBefore = coordinator.stats().cancelled;
+  coordinator.cancel();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Ready);
+  CHECK(coordinator.stats().cancelled == cancelledBefore);
+  // Revoking the current-audio authority is unchanged: the retained audio is not current.
+  CHECK(!coordinator.acquireCurrent());
+  const auto retained = coordinator.acquire();
+  CHECK(retained);
+  CHECK(retained->state == seam::authoring::RenderState::Ready);
+}
+
+TEST_CASE("the progress callback reports a queued request and a started render, and only the completion callback the end") {
+  // A window that draws on demand paints "queued" and "rendering" only if something asks for
+  // those frames, and the debounced submission happens after the edit's own frame. The
+  // progress callback is that request; the completion callback keeps meaning "the attempt is over".
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-progress-callback")};
+  std::mutex mutex;
+  std::vector<seam::authoring::RenderState> progressStates;
+  std::vector<seam::authoring::RenderState> completionStates;
+  coordinator.setProgressCallback([&] {
+    std::lock_guard lock(mutex);
+    progressStates.push_back(coordinator.progress().state);
+  });
+  coordinator.setCompletionCallback([&] {
+    std::lock_guard lock(mutex);
+    completionStates.push_back(coordinator.progress().state);
+  });
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 80U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 80U).state == seam::authoring::RenderState::Ready);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (std::chrono::steady_clock::now() < deadline) {
+    {
+      std::lock_guard lock(mutex);
+      if (!completionStates.empty()) break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  std::lock_guard lock(mutex);
+  CHECK(progressStates.size() == 2U);
+  if (progressStates.size() == 2U) {
+    CHECK(progressStates[0] == seam::authoring::RenderState::Queued);
+    CHECK(progressStates[1] == seam::authoring::RenderState::Rendering);
+  }
+  CHECK(completionStates.size() == 1U);
+  if (completionStates.size() == 1U) {
+    CHECK(completionStates.front() == seam::authoring::RenderState::Ready);
+  }
+}
+
 TEST_CASE("authoring_render_coordinator_publishes_voicebank_failures_as_silence") {
   auto fixture = makeRenderFixture();
   seam::authoring::AuthoringRenderCoordinator coordinator{

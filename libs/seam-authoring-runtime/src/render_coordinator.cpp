@@ -188,6 +188,7 @@ void AuthoringRenderCoordinator::shutdown() noexcept {
   if (shutdown_.exchange(true, std::memory_order_acq_rel)) return;
 
   setCompletionCallback({});
+  setProgressCallback({});
   const auto revision =
       latestSubmittedRevision_.load(std::memory_order_acquire);
   bool hadPending = false;
@@ -307,6 +308,8 @@ void AuthoringRenderCoordinator::submitWithSources(
       .activeVoicebankVersion = activeVoicebankVersion,
       .activeRenderer = previous.activeRenderer,
   });
+  // Before the worker is woken, so the callback sees the request as queued.
+  notifyProgress();
   condition_.notify_all();
 }
 
@@ -317,10 +320,12 @@ void AuthoringRenderCoordinator::invalidateCurrent() noexcept {
 void AuthoringRenderCoordinator::cancel() noexcept {
   std::uint64_t revision = latestSubmittedRevision_.load(std::memory_order_acquire);
   bool cancelledPending = false;
+  bool wasActive = false;
   {
     std::lock_guard lock(mutex_);
     activeStopSource_.request_stop();
     cancelledPending = pending_.has_value();
+    wasActive = active_;
     pending_.reset();
     latestSubmittedRequestId_.store(0U, std::memory_order_release);
   }
@@ -328,6 +333,17 @@ void AuthoringRenderCoordinator::cancel() noexcept {
     cancelled_.fetch_add(1U, std::memory_order_relaxed);
   }
   const auto current = progress();
+  // Cancelling always revokes the audio that was current. It reports a cancellation only when
+  // a request was queued or rendering: with nothing in flight there is nothing to cancel, so a
+  // fresh project does not open on "cancelled", and a render that had just finished is not
+  // relabelled as if it had been stopped.
+  const auto inFlight = cancelledPending || wasActive ||
+                        current.state == RenderState::Queued ||
+                        current.state == RenderState::Rendering;
+  if (!inFlight) {
+    condition_.notify_all();
+    return;
+  }
   updateProgress(RenderProgress{
       .state = RenderState::Cancelled,
       .requestedRevision = revision,
@@ -389,6 +405,12 @@ void AuthoringRenderCoordinator::setCompletionCallback(
   completionCallback_ = std::move(callback);
 }
 
+void AuthoringRenderCoordinator::setProgressCallback(
+    std::function<void()> callback) {
+  std::lock_guard lock(callbackMutex_);
+  progressCallback_ = std::move(callback);
+}
+
 void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
   while (!stopToken.stop_requested()) {
     Request request;
@@ -444,6 +466,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
                                       ? std::string{}
                                       : activeSource->manifest.version,
     });
+    notifyProgress();
 
     if (hooks_.beforeRender) {
       hooks_.beforeRender(request.revision, requestToken);
@@ -840,6 +863,15 @@ void AuthoringRenderCoordinator::notifyCompletion() {
   {
     std::lock_guard lock(callbackMutex_);
     callback = completionCallback_;
+  }
+  if (callback) callback();
+}
+
+void AuthoringRenderCoordinator::notifyProgress() {
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(callbackMutex_);
+    callback = progressCallback_;
   }
   if (callback) callback();
 }

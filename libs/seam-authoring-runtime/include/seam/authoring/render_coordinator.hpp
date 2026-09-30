@@ -223,6 +223,14 @@ public:
   [[nodiscard]] RenderProgress progress() const noexcept;
   [[nodiscard]] RenderCoordinatorStats stats() const noexcept;
   void setCompletionCallback(std::function<void()> callback);
+  // Called when a request has been queued and again when its render has started: the two
+  // states that are neither an ending nor a cancellation. A surface that draws on demand
+  // uses it to show that a newer attempt has begun, which the completion callback alone
+  // cannot say because it only fires once the attempt is over. It runs on the thread that
+  // made the transition, outside every coordinator lock, but the submitting thread may hold
+  // locks of its own: keep it to a cheap request for a repaint and never call back into
+  // submit, cancel or shutdown from it.
+  void setProgressCallback(std::function<void()> callback);
 
 private:
   struct Request final {
@@ -262,6 +270,7 @@ private:
       std::span<const rendering::TrackSingerSource> sources);
   void updateProgress(RenderProgress value) noexcept;
   void notifyCompletion();
+  void notifyProgress();
 
   mutable std::mutex mutex_;
   std::condition_variable_any condition_;
@@ -285,6 +294,7 @@ private:
 
   mutable std::mutex callbackMutex_;
   std::function<void()> completionCallback_;
+  std::function<void()> progressCallback_;
   std::atomic<bool> shutdown_{false};
   std::jthread worker_;
 };

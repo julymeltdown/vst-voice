@@ -20,8 +20,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <memory>
+#include <mutex>
+#include <stop_token>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -157,6 +160,125 @@ bool waitReady(seam::authoring::AuthoringRuntime& runtime,
       return true;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  return false;
+}
+
+// Holds the preview render in flight, so a test can look at the runtime while a newer attempt is
+// running. The hook runs on the render worker after it has published "rendering".
+struct RenderGate final {
+  std::mutex mutex;
+  std::condition_variable_any changed;
+  bool armed{false};
+  bool entered{false};
+  bool released{false};
+
+  seam::authoring::RenderCoordinatorHooks hooks() {
+    seam::authoring::RenderCoordinatorHooks value;
+    value.beforeRender = [this](std::uint64_t, std::stop_token token) {
+      std::unique_lock lock(mutex);
+      if (!armed) return;
+      entered = true;
+      changed.notify_all();
+      static_cast<void>(changed.wait(lock, token, [this] { return released; }));
+    };
+    return value;
+  }
+  void arm() {
+    std::lock_guard lock(mutex);
+    armed = true;
+    entered = false;
+    released = false;
+  }
+  [[nodiscard]] bool waitEntered(std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex);
+    return changed.wait_for(lock, timeout, [this] { return entered; });
+  }
+  void release() {
+    std::lock_guard lock(mutex);
+    released = true;
+    changed.notify_all();
+  }
+};
+
+// A project whose only note sings a sound the bundled bank does not have (it has no stand-alone
+// /a/), so its first render fails and the lyric can then be changed to one the bank sings.
+struct UncoveredLyricFixture final {
+  std::unique_ptr<seam::authoring::ProjectDocument> document;
+  seam::domain::TrackId track{};
+  seam::domain::RegionId region{};
+  seam::domain::LyricTokenId lyric{};
+};
+
+UncoveredLyricFixture makeUncoveredLyricFixture() {
+  seam::voicebank::VoicebankCatalog catalog;
+  const std::vector roots{seam::voicebank::VoicebankSearchRoot{
+      .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+      .kind = seam::voicebank::VoicebankRootKind::Development,
+  }};
+  const auto scanned = catalog.scan(roots);
+  if (!scanned || scanned.value().empty()) {
+    throw seam::test::Failure{"production voicebank fixture is unavailable"};
+  }
+  const auto candidate = scanned.value().front();
+  seam::application::ProjectFactory factory{1000U};
+  auto project = factory.createProject("Uncovered lyric");
+  static_cast<void>(project.tempoMap().addOrReplace(seam::time::Tick{0}, 120.0));
+  const auto trackId = factory.addVocalTrack(project, "VOICE");
+  const auto regionId = factory.addRegion(
+      project, trackId, "PHRASE", seam::time::Tick{0}, seam::time::Tick{3840});
+  auto* track = project.findVocalTrack(trackId);
+  auto* region = project.findRegion(regionId);
+  track->voicebank = seam::domain::VoicebankReference{
+      .id = candidate.manifest.id,
+      .version = candidate.manifest.version,
+      .contentHash = candidate.contentHash,
+  };
+  auto [lyric, note] = factory.makeNote(
+      seam::time::Tick{0}, seam::time::Tick{960}, 64U, U"あ",
+      seam::domain::Language::Japanese);
+  const auto lyricId = lyric.id;
+  region->lyrics.push_back(std::move(lyric));
+  region->notes.push_back(std::move(note));
+  region->sortNotes();
+  auto document = std::unique_ptr<seam::authoring::ProjectDocument>{
+      new seam::authoring::ProjectDocument(
+          std::move(project),
+          seam::application::ProjectFactory{factory.nextIdValue()})};
+  return UncoveredLyricFixture{.document = std::move(document),
+                               .track = trackId,
+                               .region = regionId,
+                               .lyric = lyricId};
+}
+
+bool hasDiagnostic(const std::vector<seam::authoring::Diagnostic>& diagnostics,
+                   std::string_view code) {
+  return std::any_of(diagnostics.begin(), diagnostics.end(),
+                     [code](const auto& value) { return value.code == code; });
+}
+
+bool waitForRenderState(seam::authoring::AuthoringRuntime& runtime,
+                        seam::authoring::RenderState state,
+                        std::uint64_t requestedRevision = 0U) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto progress = runtime.renderer().progress();
+    if (progress.state == state &&
+        (requestedRevision == 0U || progress.requestedRevision == requestedRevision)) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  return false;
+}
+
+// The runtime records a failure from the completion callback, a moment after the coordinator
+// publishes "failed", so a test that saw the state waits for the record too.
+bool waitForDiagnostic(seam::authoring::AuthoringRuntime& runtime, std::string_view code) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (hasDiagnostic(runtime.diagnostics(), code)) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
   }
   return false;
 }
@@ -681,4 +803,88 @@ TEST_CASE("authoring_runtime_coalesces_rapid_audio_edits_to_latest_revision") {
   CHECK(stats.submitted - beforeSubmitted <= 2U);
   CHECK(stats.completed >= 1U);
   CHECK(runtime.renderer().latest()->projectRevision == latestRevision);
+}
+
+TEST_CASE("authoring runtime hides the last render's failure while a newer render is in flight") {
+  // The failure describes an attempt the newer one has replaced. While the creator's fix is
+  // rendering, the status must not keep saying the render did not complete.
+  RenderGate gate;
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-superseded-failure"));
+  config.renderHooks = gate.hooks();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Failed));
+  CHECK(runtime.renderer().progress().diagnostic.find("No voicebank unit covers") !=
+        std::string::npos);
+  CHECK(waitForDiagnostic(runtime, "RENDER_FAILED"));
+
+  // The creator changes the lyric to one the bank sings; the new render is held in flight.
+  // Before that, an unrelated problem is on record too (a command that named no lyric): it is
+  // not the last render's outcome, so a newer render must not hide it.
+  CHECK(!runtime.execute(std::make_unique<seam::application::SetLyricCommand>(
+      seam::domain::LyricTokenId{999999U}, U"こ", seam::domain::Language::Japanese)));
+  CHECK(hasDiagnostic(runtime.diagnostics(), "PROJECT_NOT_FOUND"));
+  gate.arm();
+  CHECK(runtime.execute(std::make_unique<seam::application::SetLyricCommand>(
+      fixture.lyric, U"こ", seam::domain::Language::Japanese)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Rendering);
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+  CHECK(hasDiagnostic(runtime.diagnostics(), "PROJECT_NOT_FOUND"));
+
+  // When it finishes, the failure is gone for good.
+  gate.release();
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Ready, revision));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+}
+
+TEST_CASE("authoring runtime shows the last failure again when the newer render is cancelled") {
+  // A newer attempt hides the last failure only while it is running. If it is cancelled, nothing
+  // has succeeded, so the last outcome still stands.
+  RenderGate gate;
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-cancelled-retry"));
+  config.renderHooks = gate.hooks();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Failed));
+  CHECK(waitForDiagnostic(runtime, "RENDER_FAILED"));
+
+  gate.arm();
+  CHECK(runtime.execute(std::make_unique<seam::application::SetLyricCommand>(
+      fixture.lyric, U"こ", seam::domain::Language::Japanese)));
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+
+  runtime.renderer().cancel();
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+  gate.release();
+}
+
+TEST_CASE("authoring runtime hides the last render's failure while a newer render is still queued") {
+  // The new request waits out the coordinator's debounce before it starts. That interval is the
+  // first thing the creator sees after a fix, so the old failure has to be gone from it too.
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-queued-failure"));
+  config.renderHooks.debounceInterval = std::chrono::seconds{30};
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  // The first render is immediate, so it does not wait; it fails on the uncovered lyric.
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Failed));
+  CHECK(waitForDiagnostic(runtime, "RENDER_FAILED"));
+
+  CHECK(runtime.execute(std::make_unique<seam::application::SetLyricCommand>(
+      fixture.lyric, U"こ", seam::domain::Language::Japanese)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Queued, revision));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+
+  // The request is cancelled before its debounce ends; nothing succeeded, so the failure is back.
+  runtime.renderer().cancel();
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
 }

@@ -90,6 +90,7 @@ AuthoringSession::AuthoringSession(
 AuthoringSession::~AuthoringSession() {
   if (runtime_) {
     runtime_->setCompletionCallback({});
+    runtime_->renderer().setProgressCallback({});
     runtime_->shutdown();
   }
   controller_.reset();
@@ -130,6 +131,7 @@ core::Result<void> AuthoringSession::initialize(
   static_cast<void>(runtime_->selectRegion(regionId_));
   configureController();
   runtime_->setCompletionCallback([this] { onRenderCompleted(); });
+  runtime_->renderer().setProgressCallback([this] { onRenderProgress(); });
   runtime_->handleDocumentChanged();
   return core::success();
 }
@@ -357,6 +359,13 @@ void AuthoringSession::onDocumentChanged() {
 }
 
 void AuthoringSession::onRenderCompleted() {
+  if (externalCallbacks_.requestRepaint) externalCallbacks_.requestRepaint();
+}
+
+void AuthoringSession::onRenderProgress() {
+  // A render was queued or has started. The window paints on demand and the debounced submission
+  // comes after the frame of the edit itself, so without this request the frame that shows the new
+  // attempt (and no longer the last failure) would not be painted until the attempt is over.
   if (externalCallbacks_.requestRepaint) externalCallbacks_.requestRepaint();
 }
 

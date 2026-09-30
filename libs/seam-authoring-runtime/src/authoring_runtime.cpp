@@ -24,6 +24,14 @@ bool isResolved(const TrackVoicebankState& state) noexcept {
   return state.resolution.resolved();
 }
 
+// The diagnostics a finished render leaves behind. A render that succeeds clears every one of them,
+// and a newer render that is still running supersedes them.
+bool isRenderOutcomeCode(std::string_view code) noexcept {
+  static constexpr std::array<std::string_view, 3> codes{
+      "BANK_MISSING", "BANK_UNTRUSTED", "RENDER_FAILED"};
+  return std::find(codes.begin(), codes.end(), code) != codes.end();
+}
+
 std::string_view renderDiagnosticCode(RenderFailureKind failure) noexcept {
   switch (failure) {
     case RenderFailureKind::VoicebankMissing:
@@ -52,7 +60,7 @@ AuthoringRuntime::AuthoringRuntime(std::unique_ptr<ProjectDocument> document,
       config_(std::move(config)),
       voicebanks_(config_.voicebankRoots,
                   config_.allowDevelopmentVoicebanks),
-      renderer_(config_.cacheRoot),
+      renderer_(config_.cacheRoot, config_.renderHooks),
       seamPreviewRenderer_(config_.cacheRoot / "seam-previews"),
       performanceAuditionRenderer_(config_.cacheRoot / "performance-auditions"),
       transport_(TransportConfig{
@@ -117,13 +125,28 @@ void AuthoringRuntime::recordRenderFailure(RenderFailureKind failure,
 }
 
 void AuthoringRuntime::clearRenderDiagnostics() noexcept {
-  static constexpr std::array<std::string_view, 3> codes{
-      "BANK_MISSING", "BANK_UNTRUSTED", "RENDER_FAILED"};
   std::lock_guard lock(diagnosticsMutex_);
   std::erase_if(diagnostics_, [](const auto& diagnostic) {
-    return std::find(codes.begin(), codes.end(), diagnostic.code) !=
-           codes.end();
+    return isRenderOutcomeCode(diagnostic.code);
   });
+}
+
+std::vector<Diagnostic> AuthoringRuntime::diagnostics() const {
+  // A render failure describes the attempt that produced it. While a newer attempt is queued or
+  // rendering, saying the render did not complete would be wrong: it is under way. The failure
+  // stays on record, so it comes back if that attempt is cancelled and goes for good when one
+  // succeeds.
+  const auto state = renderer_.progress().state;
+  const auto superseded =
+      state == RenderState::Queued || state == RenderState::Rendering;
+  std::lock_guard lock(diagnosticsMutex_);
+  auto result = diagnostics_;
+  if (superseded) {
+    std::erase_if(result, [](const auto& diagnostic) {
+      return isRenderOutcomeCode(diagnostic.code);
+    });
+  }
+  return result;
 }
 
 core::Result<void> AuthoringRuntime::initialize() {
