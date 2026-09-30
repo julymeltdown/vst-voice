@@ -49,14 +49,18 @@ public:
   // the published revision, and also forgets what a reconfigure was carrying for the audio it
   // dropped (the loop, whether it was playing, the playhead), so the next publication starts
   // silent at the beginning. A transport that holds no audio and has no dropped audio to forget
-  // is left alone and sent nothing; in particular a play asked for before any audio ever existed
-  // stays, so a session that starts playing still plays the first audio it is given.
+  // is left alone and sent nothing. In particular a play asked for while it held none stays
+  // armed, whenever it was asked: it belongs to no audio, so there is nothing for a clear to
+  // drop, and it plays the first audio the transport is given.
   // The feeder applies its commands on its own thread. When this returns they are queued, not
   // acknowledged: state() reports available, loop, publishedRevision and timelineEnd at once, but
   // playing, playhead and what is already in the ring follow a moment later.
   [[nodiscard]] core::Result<void> clearAudio();
   [[nodiscard]] core::Result<void> play();
   [[nodiscard]] core::Result<void> pause();
+  // Pauses and rewinds. It also supersedes what a reconfigure was carrying for the audio to come
+  // (the play, and the playhead): the creator asked for the beginning last. A pause or a play
+  // leaves the carried position alone.
   [[nodiscard]] core::Result<void> stop();
   [[nodiscard]] core::Result<void> seek(time::SampleFrame frame);
   [[nodiscard]] core::Result<void> setLoop(rendering::PlaybackLoop range);

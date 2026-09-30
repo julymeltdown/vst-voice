@@ -358,9 +358,9 @@ core::Result<void> TransportController::clearAudio() {
     // An empty timeline does not make a clean transport. A reconfigure empties the timeline but
     // keeps what the creator was doing (playing, looping, where the playhead was) for the audio
     // rendered next. That belongs to audio that is about to be declared gone, so it is dropped
-    // with it. A play asked for before any audio ever existed belongs to no audio: it stays, so a
-    // session that starts playing still plays the first audio it is given, however many changes
-    // come before it.
+    // with it. A play asked for while the transport held no audio, and none had been dropped by a
+    // reconfigure, belongs to no audio: it stays armed, so a session that starts playing still
+    // plays the first audio it is given, however many changes come before it.
     const bool holdsAudio = timelineEnd_ != time::SampleFrame{0};
     if (!holdsAudio && !audioDroppedByReconfigure_) return core::success();
   }
@@ -417,6 +417,10 @@ core::Result<void> TransportController::stop() {
   {
     std::lock_guard lock(stateMutex_);
     resumeAfterReconfigure_ = false;
+    // A reconfigure keeps the playhead for the audio that follows it, and a Stop is what the
+    // creator asked for last: that audio starts at the beginning. A Pause or a Play leaves the
+    // saved position alone.
+    if (pendingPlayheadValid_) pendingPlayhead_ = 0;
   }
   auto result = feeder_->setPlaying(false);
   if (!result) return result;

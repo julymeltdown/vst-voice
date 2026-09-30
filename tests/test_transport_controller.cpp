@@ -479,7 +479,7 @@ TEST_CASE("a reconfigure after the transport's audio was cleared does not bring 
   CHECK(controller.state().publishedRevision == 1U);
 }
 
-TEST_CASE("clearing the transport's audio leaves a play that was asked for before any audio existed") {
+TEST_CASE("clearing the transport's audio leaves a play that was asked for while it held no audio") {
   // A session that starts playing still plays the first audio it is given, however many changes
   // that leave nothing to sing come before it: the play belongs to no audio, so a clear that has
   // nothing to drop must not take it away.
@@ -495,6 +495,26 @@ TEST_CASE("clearing the transport's audio leaves a play that was asked for befor
   CHECK(waitUntil([&] { return controller.state().playhead > 0; }));
   CHECK(controller.state().playing);
   CHECK(controller.state().publishedRevision == 3U);
+}
+
+TEST_CASE("a play asked for after the transport's audio was cleared stays armed for the next audio") {
+  // The armed play is not limited to a transport that never had audio: it belongs to whatever
+  // audio comes next, so a clear that finds nothing held and nothing dropped leaves it alone.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U)));  // timeline, loop, seek
+  CHECK(controller.clearAudio());                                         // stop, timeline, loop, seek
+  CHECK(controller.play());
+  CHECK(controller.clearAudio());                                         // nothing held, nothing dropped: nothing
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 96000U)));
+  // timeline, loop, seek and, because the play was armed, playing. A clear that had dropped it
+  // would have queued four commands of its own and left the transport paused.
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= base + 3U + 4U + 1U + 4U; }));
+  CHECK(controller.feederStats().controlCommands == base + 3U + 4U + 1U + 4U);
+  CHECK(controller.state().playing);
+  CHECK(controller.state().publishedRevision == 2U);
 }
 
 TEST_CASE("a second reconfigure before the audio is rendered again keeps the play and the loop") {
@@ -624,4 +644,88 @@ TEST_CASE("a transport that had finished playing does not start again when the a
   CHECK(controller.publishAudio(publishAudio(publication, 2U, 88200U, 0.0F, 44100U)));
   CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
   CHECK(!waitUntil([&] { return controller.state().playing; }, std::chrono::milliseconds{100}));
+}
+
+TEST_CASE("a stop after a reconfigure supersedes the playhead the reconfigure saved") {
+  // A reconfigure keeps the playhead for the audio that follows it. A Stop rewinds, and it is what
+  // the creator asked for last: the audio that comes next starts at the beginning.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.stop());                                                        // paused, seek
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));  // timeline, loop, seek
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= base + 2U + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != 0; }, std::chrono::milliseconds{100}));
+  CHECK(!controller.state().playing);
+  CHECK(controller.state().publishedRevision == 11U);
+}
+
+TEST_CASE("a stop between two reconfigures still starts the audio that follows at the beginning") {
+  // The second reconfigure finds the timeline empty, so it goes by what the first one recorded. A
+  // Stop in between has replaced that record.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.stop());
+  CHECK(controller.reconfigure(transportConfigAt(48000U)));
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 96000U)));  // timeline, loop, seek
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= base + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != 0; }, std::chrono::milliseconds{100}));
+  CHECK(!controller.state().playing);
+}
+
+TEST_CASE("a stop after a reconfigure supersedes the play and the playhead the reconfigure carried") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing && controller.state().playhead > 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.stop());
+  const auto base = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));  // timeline, loop, seek
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= base + 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playing || controller.state().playhead != 0; },
+                   std::chrono::milliseconds{100}));
+}
+
+TEST_CASE("a pause after a reconfigure keeps the playhead the reconfigure saved") {
+  // Only a Stop rewinds. A Pause holds the place, so the audio that comes next resumes from it.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.pause());
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  // 40000 frames at 48 kHz are 36750 at 44.1 kHz.
+  CHECK(waitUntil([&] { return controller.state().playhead == 36750; }));
+  CHECK(!controller.state().playing);
+}
+
+TEST_CASE("a play after a reconfigure keeps the playhead the reconfigure saved") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.play());
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.state().playing && controller.state().playhead >= 36750; }));
 }
