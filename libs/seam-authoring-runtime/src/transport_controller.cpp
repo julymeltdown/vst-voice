@@ -78,6 +78,22 @@ rendering::PlaybackLoop remapLoop(rendering::PlaybackLoop loop,
   return loop;
 }
 
+// The routing of everything the authoring transport plays: one master bus straight to the device.
+domain::ProjectRouting authoringMasterRouting(std::uint8_t outputChannels) {
+  const domain::BusId masterId{1U};
+  return domain::ProjectRouting{
+      .deviceOutputChannels = outputChannels,
+      .masterBus = masterId,
+      .buses = {domain::AudioBus{.id = masterId,
+                                 .name = "Authoring Master",
+                                 .channelCount = outputChannels}},
+      .sends = {},
+      .deviceRoutes = {domain::DeviceOutputRoute{
+          .sourceBus = masterId,
+          .matrix = domain::RoutingMatrix::identity(outputChannels)}},
+  };
+}
+
 }  // namespace
 
 TransportController::TransportController(TransportConfig config)
@@ -233,17 +249,7 @@ TransportController::makeTimeline(const PublishedProjectAudio& audio,
   }
 
   const domain::BusId masterId{1U};
-  domain::ProjectRouting routing{
-      .deviceOutputChannels = config_.outputChannels,
-      .masterBus = masterId,
-      .buses = {domain::AudioBus{.id = masterId,
-                                 .name = "Authoring Master",
-                                 .channelCount = config_.outputChannels}},
-      .sends = {},
-      .deviceRoutes = {domain::DeviceOutputRoute{
-          .sourceBus = masterId,
-          .matrix = domain::RoutingMatrix::identity(config_.outputChannels)}},
-  };
+  auto routing = authoringMasterRouting(config_.outputChannels);
   auto timeline = std::make_shared<rendering::RoutedPlaybackTimeline>(
       config_.sampleRate);
   std::vector<rendering::RoutedPlaybackClip> clips;
@@ -321,6 +327,37 @@ core::Result<void> TransportController::publishAudio(
     loop_ = remappedLoop;
     publishedRevision_ = audio->projectRevision;
     timelineEnd_ = timeline.value()->endFrame();
+    pendingPlayheadValid_ = false;
+    resumeAfterReconfigure_ = false;
+  }
+  return core::success();
+}
+
+core::Result<void> TransportController::clearAudio() {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  {
+    std::lock_guard lock(stateMutex_);
+    // Nothing was published, or it was already dropped: there is nothing to clear.
+    if (timelineEnd_ == time::SampleFrame{0}) return core::success();
+  }
+  auto timeline = std::make_shared<rendering::RoutedPlaybackTimeline>(config_.sampleRate);
+  const auto configured =
+      timeline->configure(authoringMasterRouting(config_.outputChannels), {});
+  if (!configured) return configured;
+  const auto stopped = feeder_->setPlaying(false);
+  if (!stopped) return stopped;
+  const auto emptied = feeder_->setTimeline(
+      std::shared_ptr<const rendering::RoutedPlaybackTimeline>{std::move(timeline)});
+  if (!emptied) return emptied;
+  const auto unlooped = feeder_->setLoop({});
+  if (!unlooped) return unlooped;
+  const auto rewound = feeder_->seek(0);
+  if (!rewound) return rewound;
+  {
+    std::lock_guard lock(stateMutex_);
+    loop_ = {};
+    publishedRevision_ = 0U;
+    timelineEnd_ = time::SampleFrame{0};
     pendingPlayheadValid_ = false;
     resumeAfterReconfigure_ = false;
   }

@@ -189,6 +189,50 @@ struct DebounceObservation final {
   }
 };
 
+template <typename Predicate>
+bool waitForCondition(Predicate&& predicate,
+                      std::chrono::milliseconds timeout = std::chrono::milliseconds{8000}) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  return predicate();
+}
+
+// Holds a coordinator thread at one of its hooks until the test lets it go. It ignores stop
+// requests on purpose: a test that acts while the thread is held decides, and only it, when the
+// thread continues. The wait is bounded so a failed check cannot hang the runner.
+struct HookBarrier final {
+  std::mutex mutex;
+  std::condition_variable condition;
+  bool entered{false};
+  bool released{false};
+
+  void pass() {
+    std::unique_lock lock(mutex);
+    entered = true;
+    condition.notify_all();
+    static_cast<void>(condition.wait_for(lock, std::chrono::seconds{20},
+                                         [this] { return released; }));
+  }
+  [[nodiscard]] bool waitEntered() {
+    std::unique_lock lock(mutex);
+    return condition.wait_for(lock, std::chrono::seconds{10}, [this] { return entered; });
+  }
+  void release() {
+    std::lock_guard lock(mutex);
+    released = true;
+    condition.notify_all();
+  }
+};
+
+// Lets a held thread go when a case ends, whether it finished or stopped on a failed check.
+struct ReleaseOnExit final {
+  HookBarrier& barrier;
+  ~ReleaseOnExit() { barrier.release(); }
+};
+
 }  // namespace
 
 TEST_CASE("coordinator publishes typed procedural previews without sample bank approval") {
@@ -910,6 +954,188 @@ TEST_CASE("the progress callback reports a queued request and a started render, 
   if (completionStates.size() == 1U) {
     CHECK(completionStates.front() == seam::authoring::RenderState::Ready);
   }
+}
+
+TEST_CASE("resetting a coordinator that has nothing in flight reports and notifies nothing") {
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-nothing")};
+  std::atomic<int> notifications{0};
+  coordinator.setCompletionCallback([&notifications] { notifications.fetch_add(1); });
+  coordinator.resetToIdle();
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.diagnostic.empty());
+  CHECK(coordinator.stats().cancelled == 0U);
+  CHECK(notifications.load() == 0);
+  CHECK(!coordinator.acquireCurrent());
+  // The coordinator is still usable: the next request renders as usual.
+  auto fixture = makeRenderFixture();
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 501U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 501U).state == seam::authoring::RenderState::Ready);
+}
+
+TEST_CASE("resetting a coordinator whose request is still queued drops it quietly and reports idle") {
+  auto fixture = makeRenderFixture();
+  DebounceObservation observation;
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-queued"), observation.hooks()};
+  std::atomic<int> completions{0};
+  coordinator.setCompletionCallback([&completions] { completions.fetch_add(1); });
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 502U, 48000U,
+                     seam::rendering::RenderQuality::Preview, false);
+  CHECK(observation.waitFor(502U, false));
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Queued);
+  coordinator.resetToIdle();
+  CHECK(observation.waitFor(502U, true));
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.requestedRevision == 0U);
+  CHECK(progress.diagnostic.empty());
+  CHECK(completions.load() == 1);
+  CHECK(!coordinator.acquireCurrent());
+  {
+    std::lock_guard lock(observation.mutex);
+    CHECK(observation.renderedRevisions.empty());
+  }
+  // The dropped request is counted as dropped; it neither completed nor failed.
+  CHECK(coordinator.stats().cancelled == 1U);
+  CHECK(coordinator.stats().completed == 0U);
+  CHECK(coordinator.stats().failed == 0U);
+  // Nothing is newer any more, so a revision lower than the dropped request's is accepted: a score
+  // that was emptied and then replaced by one with a lower revision still renders.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 501U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 501U).state == seam::authoring::RenderState::Ready);
+}
+
+TEST_CASE("resetting a coordinator while it renders reports idle at once and the abandoned render never speaks again") {
+  auto fixture = makeRenderFixture();
+  std::mutex gateMutex;
+  std::condition_variable_any gateCondition;
+  bool entered = false;
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.beforeRender = [&](std::uint64_t, std::stop_token token) {
+    std::unique_lock lock(gateMutex);
+    entered = true;
+    gateCondition.notify_all();
+    // Until the coordinator asks the render to stop.
+    static_cast<void>(gateCondition.wait(lock, token, [] { return false; }));
+  };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-rendering"), std::move(hooks)};
+  std::atomic<int> completions{0};
+  coordinator.setCompletionCallback([&completions] { completions.fetch_add(1); });
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 504U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  {
+    std::unique_lock lock(gateMutex);
+    CHECK(gateCondition.wait_for(lock, std::chrono::seconds{10}, [&] { return entered; }));
+  }
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Rendering);
+  coordinator.resetToIdle();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Idle);
+  CHECK(completions.load() == 1);
+  // The abandoned render winds down on its own: it is counted as cancelled, publishes nothing and
+  // leaves the state alone.
+  CHECK(waitForCondition([&] { return coordinator.stats().cancelled == 1U; }));
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.requestedRevision == 0U);
+  CHECK(!coordinator.acquireCurrent());
+  CHECK(coordinator.stats().completed == 0U);
+  CHECK(coordinator.stats().failed == 0U);
+  CHECK(completions.load() == 1);
+}
+
+TEST_CASE("a render the worker had taken but not yet reported is not reported as rendering after a reset") {
+  // Between taking a request and saying so, the worker counts the phrases of the whole project.
+  // A reset that lands in that interval must not be overwritten by a state that no longer holds.
+  auto fixture = makeRenderFixture();
+  HookBarrier admitted;
+  ReleaseOnExit release{admitted};
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.afterAdmission = [&admitted](std::uint64_t, std::stop_token) { admitted.pass(); };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-admitted"), std::move(hooks)};
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                     fixture.regionId, 505U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(admitted.waitEntered());
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Queued);
+  coordinator.resetToIdle();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Idle);
+  admitted.release();
+  CHECK(waitForCondition([&] { return coordinator.stats().cancelled == 1U; }));
+  const auto progress = coordinator.progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.requestedRevision == 0U);
+  CHECK(!coordinator.acquireCurrent());
+}
+
+TEST_CASE("a request cancelled between its admission and its queued report is not reported as queued afterwards") {
+  // The submitting thread reports "queued" after it has left the coordinator's lock. A cancel in
+  // that gap already found the request pending and reported the cancellation; the late report
+  // must not put the request back on screen with nothing left to render it.
+  auto fixture = makeRenderFixture();
+  HookBarrier admitted;
+  ReleaseOnExit release{admitted};
+  seam::authoring::RenderCoordinatorHooks hooks;
+  hooks.afterSubmitAdmission = [&admitted](std::uint64_t) { admitted.pass(); };
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-cancel-admitted"), std::move(hooks)};
+  std::jthread submitter{[&] {
+    coordinator.submit(fixture.project, {fixture.source}, fixture.trackId,
+                       fixture.regionId, 506U, 48000U,
+                       seam::rendering::RenderQuality::Preview, false);
+  }};
+  CHECK(admitted.waitEntered());
+  coordinator.cancel();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+  admitted.release();
+  submitter.join();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(coordinator.stats().cancelled == 1U);
+}
+
+TEST_CASE("resetting a coordinator after a failure or a finished render returns it to idle and keeps the publication as history") {
+  auto fixture = makeRenderFixture();
+  seam::authoring::AuthoringRenderCoordinator coordinator{
+      uniqueTempRoot("render-coordinator-reset-terminal")};
+  std::atomic<int> completions{0};
+  coordinator.setCompletionCallback([&completions] { completions.fetch_add(1); });
+  // A failure: the coordinator was given no voicebank.
+  coordinator.submit(fixture.project, {}, fixture.trackId, fixture.regionId, 507U, 48000U,
+                     seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 507U).state == seam::authoring::RenderState::Failed);
+  CHECK(waitForCondition([&] { return completions.load() >= 1; }));
+  const auto beforeReset = completions.load();
+  coordinator.resetToIdle();
+  {
+    const auto progress = coordinator.progress();
+    CHECK(progress.state == seam::authoring::RenderState::Idle);
+    CHECK(progress.failure == seam::authoring::RenderFailureKind::None);
+    CHECK(progress.diagnostic.empty());
+  }
+  CHECK(completions.load() == beforeReset + 1);
+  // A render that finished.
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId,
+                     508U, 48000U, seam::rendering::RenderQuality::Preview, true);
+  CHECK(waitForTerminal(coordinator, 508U).state == seam::authoring::RenderState::Ready);
+  const auto cancelledBefore = coordinator.stats().cancelled;
+  coordinator.resetToIdle();
+  CHECK(coordinator.progress().state == seam::authoring::RenderState::Idle);
+  CHECK(coordinator.stats().cancelled == cancelledBefore);
+  // The audio that was current no longer is; the publication itself stays readable as history.
+  CHECK(!coordinator.acquireCurrent());
+  const auto retained = coordinator.acquire();
+  CHECK(retained);
+  CHECK(retained->state == seam::authoring::RenderState::Ready);
+  CHECK(retained->projectRevision == 508U);
 }
 
 TEST_CASE("authoring_render_coordinator_publishes_voicebank_failures_as_silence") {

@@ -257,6 +257,7 @@ void AuthoringRenderCoordinator::submitWithSources(
     activeVoicebankId = source->manifest.id;
     activeVoicebankVersion = source->manifest.version;
   }
+  std::uint64_t requestId = 0U;
   {
     std::lock_guard lock(mutex_);
     if (shutdown_.load(std::memory_order_acquire)) return;
@@ -267,7 +268,7 @@ void AuthoringRenderCoordinator::submitWithSources(
       latestSubmittedRequestId_.store(0U, std::memory_order_release);
       activeStopSource_.request_stop(); pending_.reset(); return;
     }
-    const auto requestId = ++nextRequestId_;
+    requestId = ++nextRequestId_;
     latestSubmittedRevision_.store(revision, std::memory_order_release);
     latestSubmittedRequestId_.store(requestId, std::memory_order_release);
     activeStopSource_.request_stop();
@@ -288,12 +289,13 @@ void AuthoringRenderCoordinator::submitWithSources(
     };
   }
   submitted_.fetch_add(1U, std::memory_order_relaxed);
+  if (hooks_.afterSubmitAdmission) hooks_.afterSubmitAdmission(revision);
   const auto previous = progress();
   const auto audible = publication_.acquire();
   const auto audibleAudioStale =
       audible && audible->state == RenderState::Ready &&
       (audible->projectRevision != revision || audible->quality != quality);
-  updateProgress(RenderProgress{
+  const auto reported = updateProgressIfCurrent(requestId, RenderProgress{
       .state = RenderState::Queued,
       .requestedRevision = revision,
       .publishedRevision = progress().publishedRevision,
@@ -309,12 +311,36 @@ void AuthoringRenderCoordinator::submitWithSources(
       .activeRenderer = previous.activeRenderer,
   });
   // Before the worker is woken, so the callback sees the request as queued.
-  notifyProgress();
+  if (reported) notifyProgress();
   condition_.notify_all();
 }
 
 void AuthoringRenderCoordinator::invalidateCurrent() noexcept {
   latestSubmittedRequestId_.store(0U, std::memory_order_release);
+}
+
+void AuthoringRenderCoordinator::resetToIdle() noexcept {
+  bool droppedPending = false;
+  {
+    std::lock_guard lock(mutex_);
+    activeStopSource_.request_stop();
+    droppedPending = pending_.has_value();
+    pending_.reset();
+  }
+  if (droppedPending) cancelled_.fetch_add(1U, std::memory_order_relaxed);
+  bool changed = false;
+  {
+    // Revoking the request and publishing "idle" are one step for every writer that reports on
+    // behalf of a request: a worker that has taken a request but not yet reported on it cannot
+    // put "rendering" back after this.
+    std::lock_guard lock(progressMutex_);
+    latestSubmittedRequestId_.store(0U, std::memory_order_release);
+    latestSubmittedRevision_.store(0U, std::memory_order_release);
+    changed = progress_.state != RenderState::Idle;
+    progress_ = RenderProgress{};
+  }
+  condition_.notify_all();
+  if (changed) notifyCompletion();
 }
 
 void AuthoringRenderCoordinator::cancel() noexcept {
@@ -445,11 +471,12 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       requestToken = activeStopSource_.get_token();
       active_ = true;
     }
+    if (hooks_.afterAdmission) hooks_.afterAdmission(request.revision, requestToken);
 
     const auto totalPhrases = countPhrases(request.project, request.sampleRate, request.voicebanks);
     const auto* activeSource =
         sourceFor(request.voicebanks, request.activeTrack);
-    updateProgress(RenderProgress{
+    const auto reportedRendering = updateProgressIfCurrent(request.requestId, RenderProgress{
         .state = RenderState::Rendering,
         .requestedRevision = request.revision,
         .publishedRevision = progress().publishedRevision,
@@ -466,7 +493,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
                                       ? std::string{}
                                       : activeSource->manifest.version,
     });
-    notifyProgress();
+    if (reportedRendering) notifyProgress();
 
     if (hooks_.beforeRender) {
       hooks_.beforeRender(request.revision, requestToken);
@@ -489,7 +516,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       if (request.requestId ==
           latestSubmittedRequestId_.load(std::memory_order_acquire)) {
         const auto current = progress();
-        updateProgress(RenderProgress{
+        static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
             .state = RenderState::Cancelled,
             .requestedRevision = request.revision,
             .publishedRevision = current.publishedRevision,
@@ -500,7 +527,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
             .fraction = current.fraction,
             .audibleAudioStale = current.audibleAudioStale,
             .diagnostic = "Production render cancelled",
-        });
+        }));
         notifyCompletion();
       }
       continue;
@@ -515,7 +542,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
       const auto previous = publication_.acquire();
       if (previous && previous->state == RenderState::Ready) {
         failed_.fetch_add(1U, std::memory_order_relaxed);
-        updateProgress(RenderProgress{
+        static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
             .state = RenderState::Failed,
             .requestedRevision = request.revision,
             .publishedRevision = previous->projectRevision,
@@ -530,7 +557,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
             .activeVoicebankVersion = audio->activeVoicebankVersion,
             .activeRenderer = audio->activeRenderer,
             .failure = audio->failure,
-        });
+        }));
         notifyCompletion();
         continue;
       }
@@ -544,7 +571,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
     const auto activeRenderer = audio->activeRenderer;
     if (!publication_.publish(std::move(*audio))) {
       failed_.fetch_add(1U, std::memory_order_relaxed);
-      updateProgress(RenderProgress{
+      static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
           .state = RenderState::Failed,
           .requestedRevision = request.revision,
           .publishedRevision = progress().publishedRevision,
@@ -559,7 +586,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
           .activeVoicebankVersion = activeVoicebankVersion,
           .activeRenderer = activeRenderer,
           .failure = RenderFailureKind::PublicationBusy,
-      });
+      }));
       notifyCompletion();
       continue;
     }
@@ -569,7 +596,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
     } else {
       failed_.fetch_add(1U, std::memory_order_relaxed);
     }
-    updateProgress(RenderProgress{
+    static_cast<void>(updateProgressIfCurrent(request.requestId, RenderProgress{
         .state = state,
         .requestedRevision = request.revision,
         .publishedRevision = request.revision,
@@ -583,7 +610,7 @@ void AuthoringRenderCoordinator::workerLoop(std::stop_token stopToken) {
         .activeVoicebankVersion = activeVoicebankVersion,
         .activeRenderer = activeRenderer,
         .failure = failure,
-    });
+    }));
     notifyCompletion();
   }
 }
@@ -856,6 +883,17 @@ std::size_t AuthoringRenderCoordinator::countPhrases(
 void AuthoringRenderCoordinator::updateProgress(RenderProgress value) noexcept {
   std::lock_guard lock(progressMutex_);
   progress_ = std::move(value);
+}
+
+bool AuthoringRenderCoordinator::updateProgressIfCurrent(std::uint64_t requestId,
+                                                         RenderProgress value) noexcept {
+  std::lock_guard lock(progressMutex_);
+  if (requestId == 0U ||
+      latestSubmittedRequestId_.load(std::memory_order_acquire) != requestId) {
+    return false;
+  }
+  progress_ = std::move(value);
+  return true;
 }
 
 void AuthoringRenderCoordinator::notifyCompletion() {

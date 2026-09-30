@@ -3,6 +3,7 @@
 #include "seam/authoring/authoring_runtime.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/application/performance_commands.hpp"
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <condition_variable>
 #include <filesystem>
@@ -281,6 +283,50 @@ bool waitForDiagnostic(seam::authoring::AuthoringRuntime& runtime, std::string_v
     std::this_thread::sleep_for(std::chrono::milliseconds{2});
   }
   return false;
+}
+
+// True once the coordinator has counted `count` cancelled requests: the moment an abandoned render
+// has finished winding down.
+bool waitForCancelled(seam::authoring::AuthoringRuntime& runtime, std::uint64_t count) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (runtime.renderer().stats().cancelled >= count) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  return false;
+}
+
+// A short backing track, so that a render has something to sound when no vocal can be rendered.
+seam::domain::AudioTrack makeBackingTrack(seam::authoring::AuthoringRuntime& runtime,
+                                          const std::filesystem::path& directory) {
+  const auto media = directory / "backing.wav";
+  CHECK(seam::voicebank::writeMonoPcm16Wav(
+      media, 48000U, seam::test::support::sineWave(48000U, 220.0, 0.05)));
+  const auto source = seam::rendering::StreamingPcmSource::open(media, 4096U);
+  if (!source) throw seam::test::Failure{"the backing fixture cannot be opened"};
+  return seam::domain::AudioTrack{
+      .id = runtime.document().factory().nextTrackId(),
+      .name = "Backing",
+      .mediaPath = media.string(),
+      .mediaHash = source.value()->info().contentHash,
+      .mediaOwnership = seam::domain::MediaOwnership::ExternalReference,
+      .originalFilename = media.filename().string(),
+      .sourceSampleRate = source.value()->info().sampleRate,
+      .sourceChannels = source.value()->info().channels,
+      .sourceFrameCount = source.value()->info().frameCount,
+      .startTick = seam::time::Tick{0},
+      .outputRoute = {.bus = seam::domain::BusId{1U},
+                      .matrix = seam::domain::RoutingMatrix::monoToStereo()},
+  };
+}
+
+std::vector<seam::domain::NoteId> noteIdsOf(seam::authoring::AuthoringRuntime& runtime,
+                                            seam::domain::RegionId regionId) {
+  const auto* region = runtime.document().session().project().findRegion(regionId);
+  if (region == nullptr) throw seam::test::Failure{"the region is missing"};
+  std::vector<seam::domain::NoteId> ids;
+  for (const auto& note : region->notes) ids.push_back(note.id);
+  return ids;
 }
 
 }  // namespace
@@ -887,4 +933,260 @@ TEST_CASE("authoring runtime hides the last render's failure while a newer rende
   runtime.renderer().cancel();
   CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Cancelled);
   CHECK(hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+}
+
+// A vocal whose bank cannot be found is a condition of the project, not the outcome of a render.
+// Backing audio does not change it: the render that follows sounds the backing alone, and the
+// vocal is still missing. None of the attempts below may hide it.
+TEST_CASE("authoring runtime keeps an unresolved vocal bank on record while a backing render is in flight") {
+  RenderGate gate;
+  auto fixture = makeFixture();
+  const auto root = seam::test::support::temporaryDirectory("runtime-missing-bank-in-flight");
+  auto config = configFor(root / "cache");
+  config.voicebankRoots.clear();
+  config.enableTransport = false;
+  config.renderHooks = gate.hooks();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Idle);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  gate.arm();
+  CHECK(runtime.execute(std::make_unique<seam::application::AddAudioTrackCommand>(
+      makeBackingTrack(runtime, root))));
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Rendering);
+  CHECK(!runtime.voicebanks()
+             .resolveTrack(runtime.document().session().project(), fixture.resolvedTrack)
+             .resolved());
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  runtime.renderer().cancel();
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+  gate.release();
+}
+
+TEST_CASE("authoring runtime keeps an unresolved vocal bank on record while a backing render is queued") {
+  auto fixture = makeFixture();
+  const auto root = seam::test::support::temporaryDirectory("runtime-missing-bank-queued");
+  auto config = configFor(root / "cache");
+  config.voicebankRoots.clear();
+  config.enableTransport = false;
+  config.renderHooks.debounceInterval = std::chrono::seconds{30};
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  CHECK(runtime.execute(std::make_unique<seam::application::AddAudioTrackCommand>(
+      makeBackingTrack(runtime, root))));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Queued, revision));
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  runtime.renderer().cancel();
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Cancelled);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime still reports an unresolved vocal bank after a backing-only render succeeds") {
+  // A successful render clears the outcome of the attempts before it. It says nothing about a vocal
+  // bank it was never given.
+  auto fixture = makeFixture();
+  const auto root = seam::test::support::temporaryDirectory("runtime-missing-bank-partial");
+  auto config = configFor(root / "cache");
+  config.voicebankRoots.clear();
+  config.enableTransport = false;
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  std::atomic<int> completions{0};
+  runtime.setCompletionCallback([&completions] { completions.fetch_add(1); });
+  CHECK(runtime.initialize());
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  CHECK(runtime.execute(std::make_unique<seam::application::AddAudioTrackCommand>(
+      makeBackingTrack(runtime, root))));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Ready, revision));
+  // The completion callback is where a finished render is folded into the diagnostics; it runs a
+  // moment after the state is published.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (completions.load() < 1 && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  CHECK(completions.load() >= 1);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime stops reporting a missing vocal bank once the bank resolves") {
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-missing-bank-resolves"));
+  config.voicebankRoots.clear();
+  config.enableTransport = false;
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  // The bank is installed, and the application asks for a render as it does after any change.
+  CHECK(runtime.voicebanks().addSearchRoot(seam::voicebank::VoicebankSearchRoot{
+      .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+      .kind = seam::voicebank::VoicebankRootKind::Development}));
+  runtime.requestPreview(true);
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Ready));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime does not report a missing bank for a resolved track that has no region yet") {
+  const auto reference = makeFixture().candidate;
+  seam::application::ProjectFactory factory{5000U};
+  auto project = factory.createProject("No region yet");
+  const auto trackId = factory.addVocalTrack(project, "VOICE");
+  project.findVocalTrack(trackId)->voicebank = seam::domain::VoicebankReference{
+      .id = reference.manifest.id,
+      .version = reference.manifest.version,
+      .contentHash = reference.contentHash};
+  auto document = std::unique_ptr<seam::authoring::ProjectDocument>{
+      new seam::authoring::ProjectDocument(
+          std::move(project), seam::application::ProjectFactory{factory.nextIdValue()})};
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-resolved-no-region"));
+  config.enableTransport = false;
+  seam::authoring::AuthoringRuntime runtime{std::move(document), config};
+  CHECK(runtime.initialize());
+  CHECK(runtime.voicebanks()
+            .resolveTrack(runtime.document().session().project(), trackId)
+            .resolved());
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime keeps reporting a missing bank after a dismissal until the bank resolves") {
+  // Dismissing clears what was recorded. A condition that still holds is not a record.
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-missing-bank-dismissed"));
+  config.voicebankRoots.clear();
+  config.enableTransport = false;
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+  runtime.clearDiagnostics();
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime settles on idle when the last note is deleted, and the old failure goes with it") {
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-last-note-deleted"));
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Failed));
+  CHECK(waitForDiagnostic(runtime, "RENDER_FAILED"));
+
+  const auto notes = noteIdsOf(runtime, fixture.region);
+  CHECK(notes.size() == 1U);
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(notes)));
+
+  // The score is empty. There is no render, so no render failed and no attempt is on screen.
+  const auto progress = runtime.renderer().progress();
+  CHECK(progress.state == seam::authoring::RenderState::Idle);
+  CHECK(progress.failure == seam::authoring::RenderFailureKind::None);
+  CHECK(progress.diagnostic.empty());
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "BANK_UNTRUSTED"));
+}
+
+TEST_CASE("authoring runtime settles on idle when the last note is deleted while its render is in flight") {
+  // The render for the score that was finishes as a stale one and is dropped. Nothing was left to
+  // report its end, so the status stayed on "rendering" for good.
+  RenderGate gate;
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-last-note-in-flight"));
+  config.renderHooks = gate.hooks();
+  gate.arm();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Rendering);
+
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.region))));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Idle);
+  gate.release();
+  CHECK(waitForCancelled(runtime, 1U));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Idle);
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "RENDER_FAILED"));
+}
+
+TEST_CASE("authoring runtime stops offering the old audio to the transport when the score is emptied") {
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-emptied-transport"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.transport().state().available);
+
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  CHECK(!runtime.transport().state().available);
+  CHECK(!runtime.transport().state().playing);
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Idle);
+
+  // Bringing the notes back renders and publishes again.
+  CHECK(runtime.undo());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.transport().state().available);
+}
+
+TEST_CASE("authoring runtime settles on idle when the only voice that could sing stops being available") {
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-voice-unavailable"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.transport().state().available);
+  CHECK(!hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+
+  // The development bank stops being trusted, so the track's bank can no longer be used. The notes
+  // are still in the score, but nothing can sing them and there is no backing audio.
+  runtime.voicebanks().setAllowDevelopmentFixtures(false);
+  runtime.requestPreview(true);
+  CHECK(!runtime.voicebanks()
+             .resolveTrack(runtime.document().session().project(), fixture.resolvedTrack)
+             .resolved());
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Idle);
+  CHECK(!runtime.transport().state().available);
+  CHECK(hasDiagnostic(runtime.diagnostics(), "BANK_MISSING"));
+}
+
+TEST_CASE("authoring runtime keeps rendering the backing audio when the last note is deleted") {
+  auto fixture = makeFixture();
+  const auto root = seam::test::support::temporaryDirectory("runtime-backing-remains");
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), configFor(root / "cache")};
+  CHECK(runtime.initialize());
+  CHECK(runtime.execute(std::make_unique<seam::application::AddAudioTrackCommand>(
+      makeBackingTrack(runtime, root))));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      noteIdsOf(runtime, fixture.resolvedRegion))));
+  // The backing still sounds, so a new render follows the edit and replaces the old audio.
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Ready);
+  CHECK(runtime.transport().state().available);
+}
+
+TEST_CASE("authoring runtime does not treat an empty selected region as an empty score") {
+  // The region on screen has no notes, but the score still sounds in another region of the same
+  // track. Nothing is reset: only a score with nothing to sound anywhere is idle.
+  auto fixture = makeFixture();
+  const auto emptyRegion = fixture.document->factory().addRegion(
+      fixture.document->session().project(), fixture.resolvedTrack, "EMPTY",
+      seam::time::Tick{7680}, seam::time::Tick{1920});
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-empty-selected-region"))};
+  CHECK(runtime.initialize());
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.selectRegion(emptyRegion));
+  runtime.requestPreview(true);
+  CHECK(runtime.renderer().progress().state == seam::authoring::RenderState::Ready);
+  CHECK(runtime.transport().state().available);
 }

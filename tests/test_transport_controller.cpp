@@ -330,3 +330,90 @@ TEST_CASE("transport_controller_reconfigure_serializes_with_control_calls") {
   CHECK(controller.config().sampleRate == 44100U ||
         controller.config().sampleRate == 48000U);
 }
+
+TEST_CASE("clearing the transport's audio stops playback, empties the timeline and forgets the revision") {
+  // A score that has been emptied has nothing to play. Without this the transport keeps the
+  // last audio it was given and plays a vocal that is no longer in the project.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 5U, 4096U, 0.5F)));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{
+      .enabled = true, .startFrame = 100, .endFrame = 2000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playhead > 0; }));
+  CHECK(controller.clearAudio());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return !state.playing && state.playhead == 0;
+  }));
+  const auto state = controller.state();
+  CHECK(!state.available);
+  CHECK(state.timelineEnd == 0);
+  CHECK(state.publishedRevision == 0U);
+  CHECK(!state.loop.enabled);
+  CHECK(!state.availabilityDiagnostic.empty());
+  // Whatever the old audio had already put into the ring is discarded, not played.
+  const auto output = readFrames(controller, 32U);
+  CHECK(std::all_of(output.begin(), output.end(), [](float value) { return value == 0.0F; }));
+  // Playing what is not there is refused, as it is before the first render.
+  CHECK(!controller.seek(seam::time::SampleFrame{10}));
+  // The next audio is accepted whatever its revision: an older number than the cleared one is
+  // not "older audio" any more.
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  // Long enough that playback, had it been resumed, would still be running when it is checked.
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 96000U, 0.25F)));
+  const auto republished = controller.state();
+  CHECK(republished.available);
+  CHECK(republished.publishedRevision == 2U);
+  CHECK(republished.timelineEnd == 96000);
+  // The play that came before the clear is not resumed by the next audio: a score that was emptied
+  // and then written again starts silent until the creator plays it.
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 3U; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  CHECK(!controller.state().playing);
+  CHECK(!controller.state().loop.enabled);
+}
+
+TEST_CASE("clearing the transport's audio when nothing is published changes nothing") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 512U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 128U}};
+  CHECK(controller.start());
+  CHECK(controller.clearAudio());
+  CHECK(!controller.state().available);
+  CHECK(controller.state().publishedRevision == 0U);
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 256U)));
+  CHECK(controller.state().available);
+}
+
+TEST_CASE("a transport whose audio was cleared plays silence when it is asked to play") {
+  // The old audio must be gone from the timeline, not only from the transport's bookkeeping: a
+  // creator who presses play on an emptied score hears nothing, not the vocal that was deleted.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 4U, 4096U, 0.5F)));
+  const auto commandsBefore = controller.feederStats().controlCommands;
+  CHECK(controller.clearAudio());
+  CHECK(controller.play());
+  // clearAudio queues four control commands and play one.
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= commandsBefore + 5U; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds{50});
+  const auto output = readFrames(controller, 64U);
+  CHECK(std::all_of(output.begin(), output.end(), [](float value) { return value == 0.0F; }));
+}

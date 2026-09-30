@@ -76,9 +76,15 @@ public:
   [[nodiscard]] const TechnicalEditController& technicalEdits() const noexcept {
     return technicalEdits_;
   }
-  // What the creator should be told now. A render failure is left out while a newer render is
-  // queued or running, because it describes an attempt that render has replaced.
+  // What the creator should be told now. Two kinds of render diagnostic are told apart by where
+  // they come from. A standing condition of the project (no vocal track has a bank it can be
+  // rendered with) is reported for as long as it holds, whatever a render is doing, and is
+  // dropped only when the bank resolves. The outcome of a render attempt is left out while a newer
+  // attempt is queued or running, because it describes an attempt that one has replaced, and is
+  // cleared for good by a render that succeeds.
   [[nodiscard]] std::vector<Diagnostic> diagnostics() const;
+  // Forgets what has been recorded. A condition that still holds is not a record and is reported
+  // again, so dismissing it does not make a missing bank go away.
   void clearDiagnostics() noexcept {
     std::lock_guard lock(diagnosticsMutex_);
     diagnostics_.clear();
@@ -175,9 +181,22 @@ private:
         .scope = application::CommandAudioImpact::ProjectAudio,
         .projectWide = true};
   };
+  // What composing a render request learns about the score, whether or not a request results.
+  struct PreviewAssessment final {
+    // The score has vocal tracks and none of them has a bank (or a recipe) it can be rendered with.
+    bool bankUnavailable{false};
+    // Nothing anywhere in the score could sound: no backing audio, and no note on a track that has
+    // something to sing it. Only then is there nothing to render; a selected region with no notes
+    // does not make the score empty.
+    bool nothingAudible{false};
+  };
 
   [[nodiscard]] std::optional<PreviewRequest> makePreviewRequest(
-      application::CommandImpact impact) const;
+      application::CommandImpact impact, PreviewAssessment* assessment = nullptr) const;
+  void noteBankAvailability(bool unavailable);
+  // Nothing is left to render: drops the attempt outcomes, the audio the transport still holds and
+  // the coordinator's state, so nothing keeps sounding or describing a render of a score that is gone.
+  void settleWithNothingToRender();
   void submitPreview(PreviewRequest request, bool immediate);
   void previewWorkerLoop(std::stop_token stopToken);
   [[nodiscard]] TechnicalRenderView currentTechnicalRenderView() const;
@@ -223,7 +242,14 @@ private:
   std::shared_ptr<const PublishedProjectAudio> retainedAcceptedAudition_;
   bool initialized_{false};
   mutable std::mutex diagnosticsMutex_;
-  std::vector<Diagnostic> diagnostics_;
+  struct RecordedDiagnostic final {
+    Diagnostic value;
+    // The outcome of a render attempt: superseded by a newer attempt, cleared by a success.
+    bool attemptOutcome{false};
+  };
+  std::vector<RecordedDiagnostic> diagnostics_;
+  // Derived from the last render request that was composed; see PreviewAssessment.
+  bool bankUnavailable_{false};
 };
 
 }  // namespace seam::authoring

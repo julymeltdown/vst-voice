@@ -45,6 +45,9 @@ public:
 
   [[nodiscard]] core::Result<void> publishAudio(
       RealtimeProjectAudioPublication::ReadHandle audio);
+  // Drops the published audio: stops playback, empties the timeline and forgets the published
+  // revision, so the transport reports "nothing to play" until the next successful publication.
+  [[nodiscard]] core::Result<void> clearAudio();
   [[nodiscard]] core::Result<void> play();
   [[nodiscard]] core::Result<void> pause();
   [[nodiscard]] core::Result<void> stop();

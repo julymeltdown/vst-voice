@@ -1,7 +1,6 @@
 #include "seam/authoring/authoring_runtime.hpp"
 
 #include <algorithm>
-#include <array>
 #include <filesystem>
 #include <utility>
 
@@ -24,14 +23,6 @@ bool isResolved(const TrackVoicebankState& state) noexcept {
   return state.resolution.resolved();
 }
 
-// The diagnostics a finished render leaves behind. A render that succeeds clears every one of them,
-// and a newer render that is still running supersedes them.
-bool isRenderOutcomeCode(std::string_view code) noexcept {
-  static constexpr std::array<std::string_view, 3> codes{
-      "BANK_MISSING", "BANK_UNTRUSTED", "RENDER_FAILED"};
-  return std::find(codes.begin(), codes.end(), code) != codes.end();
-}
-
 std::string_view renderDiagnosticCode(RenderFailureKind failure) noexcept {
   switch (failure) {
     case RenderFailureKind::VoicebankMissing:
@@ -50,6 +41,20 @@ std::string_view renderDiagnosticCode(RenderFailureKind failure) noexcept {
       return {};
   }
   return {};
+}
+
+Diagnostic renderDiagnostic(RenderFailureKind failure, std::string_view message) {
+  const auto code = renderDiagnosticCode(failure);
+  Diagnostic diagnostic{
+      .code = std::string{code},
+      .severity = DiagnosticRegistry::severity(code),
+      .messageKey = "render." + std::string{renderFailureName(failure)},
+      .affectedIds = {},
+      .actions = DiagnosticRegistry::actions(code),
+      .occurrenceCount = 1U,
+  };
+  diagnostic.setDetail(message);
+  return diagnostic;
 }
 
 }  // namespace
@@ -89,64 +94,81 @@ void AuthoringRuntime::recordDiagnostic(const core::Error& error) {
   const auto existing = std::find_if(
       diagnostics_.begin(), diagnostics_.end(),
       [&diagnostic](const auto& value) {
-        return value.sameIssueAs(diagnostic);
+        return value.value.sameIssueAs(diagnostic);
       });
   if (existing != diagnostics_.end()) {
-    existing->addOccurrences(diagnostic.occurrenceCount);
+    existing->value.addOccurrences(diagnostic.occurrenceCount);
   } else {
-    diagnostics_.push_back(std::move(diagnostic));
+    diagnostics_.push_back(RecordedDiagnostic{std::move(diagnostic), false});
   }
 }
 
 void AuthoringRuntime::recordRenderFailure(RenderFailureKind failure,
                                             std::string message) {
-  const auto code = renderDiagnosticCode(failure);
-  if (code.empty()) return;
-  Diagnostic diagnostic{
-      .code = std::string{code},
-      .severity = DiagnosticRegistry::severity(code),
-      .messageKey = "render." + std::string{renderFailureName(failure)},
-      .affectedIds = {},
-      .actions = DiagnosticRegistry::actions(code),
-      .occurrenceCount = 1U,
-  };
-  diagnostic.setDetail(message);
+  if (renderDiagnosticCode(failure).empty()) return;
+  auto diagnostic = renderDiagnostic(failure, message);
   std::lock_guard lock(diagnosticsMutex_);
   const auto existing = std::find_if(
       diagnostics_.begin(), diagnostics_.end(),
       [&diagnostic](const auto& value) {
-        return value.sameIssueAs(diagnostic);
+        return value.value.sameIssueAs(diagnostic);
       });
   if (existing != diagnostics_.end()) {
-    existing->addOccurrences(diagnostic.occurrenceCount);
+    existing->value.addOccurrences(diagnostic.occurrenceCount);
   } else {
-    diagnostics_.push_back(std::move(diagnostic));
+    diagnostics_.push_back(RecordedDiagnostic{std::move(diagnostic), true});
   }
 }
 
 void AuthoringRuntime::clearRenderDiagnostics() noexcept {
   std::lock_guard lock(diagnosticsMutex_);
-  std::erase_if(diagnostics_, [](const auto& diagnostic) {
-    return isRenderOutcomeCode(diagnostic.code);
-  });
+  std::erase_if(diagnostics_, [](const auto& recorded) { return recorded.attemptOutcome; });
 }
 
 std::vector<Diagnostic> AuthoringRuntime::diagnostics() const {
-  // A render failure describes the attempt that produced it. While a newer attempt is queued or
-  // rendering, saying the render did not complete would be wrong: it is under way. The failure
+  // The outcome of a render attempt describes that attempt. While a newer attempt is queued or
+  // rendering, saying the render did not complete would be wrong: it is under way. The outcome
   // stays on record, so it comes back if that attempt is cancelled and goes for good when one
-  // succeeds.
+  // succeeds. A missing vocal bank is not an outcome: no attempt makes it any less missing, so it
+  // is reported whatever a render is doing.
   const auto state = renderer_.progress().state;
-  const auto superseded =
+  const auto attemptInFlight =
       state == RenderState::Queued || state == RenderState::Rendering;
   std::lock_guard lock(diagnosticsMutex_);
-  auto result = diagnostics_;
-  if (superseded) {
-    std::erase_if(result, [](const auto& diagnostic) {
-      return isRenderOutcomeCode(diagnostic.code);
-    });
+  std::vector<Diagnostic> result;
+  result.reserve(diagnostics_.size() + 1U);
+  const auto add = [&result](const Diagnostic& diagnostic) {
+    const auto known = std::any_of(
+        result.begin(), result.end(),
+        [&diagnostic](const auto& value) { return value.sameIssueAs(diagnostic); });
+    if (!known) result.push_back(diagnostic);
+  };
+  if (bankUnavailable_)
+    add(renderDiagnostic(RenderFailureKind::VoicebankMissing, "voicebank-missing"));
+  for (const auto& recorded : diagnostics_) {
+    if (recorded.attemptOutcome && attemptInFlight) continue;
+    add(recorded.value);
   }
   return result;
+}
+
+void AuthoringRuntime::noteBankAvailability(bool unavailable) {
+  std::lock_guard lock(diagnosticsMutex_);
+  bankUnavailable_ = unavailable;
+}
+
+void AuthoringRuntime::settleWithNothingToRender() {
+  // The attempt outcomes go first and the coordinator last: resetting the coordinator tells the
+  // completion callback, which reads them.
+  clearRenderDiagnostics();
+  if (config_.enableTransport) {
+    // The completion callback publishes a finished render to the transport under this mutex, after
+    // checking that the render is still current; taking it here means a publication that was
+    // already under way finishes before the audio is dropped, and a later one fails that check.
+    std::lock_guard lock(performanceAuditionMutex_);
+    static_cast<void>(transport_.clearAudio());
+  }
+  renderer_.resetToIdle();
 }
 
 core::Result<void> AuthoringRuntime::initialize() {
@@ -170,7 +192,6 @@ core::Result<void> AuthoringRuntime::initialize() {
   const auto states = voicebanks_.resolveAll(document_->session().project());
   const auto [trackId, regionId] = firstRenderableSelection(
       document_->session().project(), states);
-  const auto hadRenderableSelection = trackId.valid();
   selectedTrack_ = trackId;
   selectedRegion_ = regionId;
   if (!selectedTrack_.valid() &&
@@ -183,11 +204,8 @@ core::Result<void> AuthoringRuntime::initialize() {
                           : fallbackTrack.regions.front().id;
   }
   technicalEdits_.setRegion(selectedRegion_);
-  if (!hadRenderableSelection &&
-      !document_->session().project().vocalTracks().empty()) {
-    recordRenderFailure(RenderFailureKind::VoicebankMissing,
-                        "voicebank-missing");
-  }
+  // Whether a missing bank is reported is decided where a render request is composed, so that it
+  // follows the score and the banks from then on and not only from this first look.
   initialized_ = true;
   requestPreview(true);
   return core::success();
@@ -596,8 +614,13 @@ void AuthoringRuntime::requestPreviewImpl(
   // The publication itself stays alive for readers and technical diagnostics.
   invalidatePreview();
 
-  auto request = makePreviewRequest(std::move(impact));
-  if (!request.has_value()) return;
+  PreviewAssessment assessment;
+  auto request = makePreviewRequest(std::move(impact), &assessment);
+  noteBankAvailability(assessment.bankUnavailable);
+  if (!request.has_value()) {
+    if (assessment.nothingAudible) settleWithNothingToRender();
+    return;
+  }
   if (immediate) {
     std::lock_guard lock(previewMutex_);
     submitPreview(std::move(*request), true);
@@ -615,7 +638,8 @@ void AuthoringRuntime::requestPreviewImpl(
 }
 
 std::optional<AuthoringRuntime::PreviewRequest>
-AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
+AuthoringRuntime::makePreviewRequest(application::CommandImpact impact,
+                                     PreviewAssessment* assessment) const {
   auto project = document_->session().project();
   // A host-owned timing authority replaces the document's map for this render only.
   // The substituted project is what the renderer compiles and what the render identity
@@ -638,16 +662,27 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
   const auto hasBackingAudio = std::any_of(
       project.audioTracks().begin(), project.audioTracks().end(),
       [](const auto& track) { return !track.mediaPath.empty(); });
+  const auto trackHasNotes = [](const domain::VocalTrack& track) {
+    return std::any_of(track.regions.begin(), track.regions.end(),
+                       [](const domain::VocalRegion& region) { return !region.notes.empty(); });
+  };
   std::vector<rendering::TrackSingerSource> sources;
   sources.reserve(states.size());
+  bool anyUsableSinger = false;
+  bool anyNoteToSing = false;
   for (const auto& state : states) {
     if (const auto* track = project.findVocalTrack(state.trackId); track && track->proceduralRecipe) {
+      anyUsableSinger = true;
+      anyNoteToSing = anyNoteToSing || trackHasNotes(*track);
       const auto& savedPath = document_->identity().projectPath;
       sources.emplace_back(rendering::TrackRecipeFileSource{state.trackId, *track->proceduralRecipe,
           savedPath ? std::optional<std::filesystem::path>{savedPath->parent_path()} : std::nullopt});
       continue;
     }
     if (state.resolution.resolved()) {
+      anyUsableSinger = true;
+      if (const auto* track = project.findVocalTrack(state.trackId); track != nullptr)
+        anyNoteToSing = anyNoteToSing || trackHasNotes(*track);
       sources.push_back(sourceFor(state.trackId,
                                   *state.resolution.candidate));
       continue;
@@ -655,6 +690,10 @@ AuthoringRuntime::makePreviewRequest(application::CommandImpact impact) const {
     if (auto* track = project.findVocalTrack(state.trackId); track != nullptr) {
       track->muted = true;
     }
+  }
+  if (assessment != nullptr) {
+    assessment->bankUnavailable = !project.vocalTracks().empty() && !anyUsableSinger;
+    assessment->nothingAudible = !hasBackingAudio && !anyNoteToSing;
   }
 
   auto activeTrack = selectedTrack_;

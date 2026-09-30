@@ -172,6 +172,14 @@ struct RenderCoordinatorHooks final {
   // interval lets cancellation be synchronized inside the actual timed wait.
   std::function<void(std::uint64_t)> beforeDebounceWait;
   std::function<void(std::uint64_t)> afterDebounceWait;
+  // Test-only barriers in windows that have no other observable moment. Both run outside every
+  // coordinator lock, so they may block; a test that holds one must release it before it ends.
+  // afterAdmission runs on the render worker once it has taken a request and before it reports
+  // "rendering": the request is no longer pending and not yet visibly in flight.
+  std::function<void(std::uint64_t, std::stop_token)> afterAdmission;
+  // afterSubmitAdmission runs on the submitting thread once the request has been admitted and
+  // before it reports "queued".
+  std::function<void(std::uint64_t)> afterSubmitAdmission;
   std::chrono::milliseconds debounceInterval{20};
 };
 
@@ -198,6 +206,11 @@ public:
                   .scope = application::CommandAudioImpact::ProjectAudio,
                   .projectWide = true});
   void cancel() noexcept;
+  // The score has nothing left to sound. Cancels whatever is queued or rendering, revokes the
+  // audio that was current and reports "idle" exactly as a coordinator that never rendered does.
+  // It is not a cancellation the creator asked for, so nothing is counted or reported as
+  // cancelled. The retained publication is history and stays readable.
+  void resetToIdle() noexcept;
   // Reject captured audio immediately when new document intent is queued,
   // including the interval before a debounced render is submitted.
   void invalidateCurrent() noexcept;
@@ -269,6 +282,13 @@ private:
       const domain::Project& project, std::uint32_t sampleRate,
       std::span<const rendering::TrackSingerSource> sources);
   void updateProgress(RenderProgress value) noexcept;
+  // Reports on behalf of one request, and only while it is still the newest: the check and the
+  // write are one step under the progress lock, and every path that revokes a request (a newer
+  // submission, cancel, resetToIdle) revokes it before it writes its own state. A thread that
+  // was slow to report therefore cannot put "queued", "rendering" or an ending back over a
+  // state that replaced its request.
+  [[nodiscard]] bool updateProgressIfCurrent(std::uint64_t requestId,
+                                             RenderProgress value) noexcept;
   void notifyCompletion();
   void notifyProgress();
 
