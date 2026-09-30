@@ -2982,11 +2982,8 @@ core::Result<void> NativeEditorController::selectTrack(domain::TrackId trackId) 
   if (!selected) return selected;
   selectedTrackId_ = arrangementPanel_.selectedTrack();
   regionId_ = arrangementPanel_.selectedRegion();
-  seamTarget_.reset();
-  unitTarget_.reset();
-  seamPreviewAlternate_ = false;
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
-  session_.selection().clear();
   pianoRoll_.rebuildIndex();
   repaint();
   return core::success();
@@ -3027,11 +3024,8 @@ core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionI
   if (!selected) return selected;
   selectedTrackId_ = arrangementPanel_.selectedTrack();
   regionId_ = arrangementPanel_.selectedRegion();
-  seamTarget_.reset();
-  unitTarget_.reset();
-  seamPreviewAlternate_ = false;
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
-  session_.selection().clear();
   pianoRoll_.rebuildIndex();
   repaint();
   return core::success();
@@ -3070,13 +3064,7 @@ void NativeEditorController::reconcileWithProject() {
   const bool moved = targetTrack != selectedTrackId_ || targetRegion != regionId_;
   selectedTrackId_ = targetTrack;
   regionId_ = targetRegion;
-  if (moved) {
-    // What was selected, targeted or previewed belonged to the place the editor has left.
-    seamTarget_.reset();
-    unitTarget_.reset();
-    seamPreviewAlternate_ = false;
-    session_.selection().clear();
-  }
+  if (moved) leavePlace();
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(project, selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
@@ -3084,6 +3072,13 @@ void NativeEditorController::reconcileWithProject() {
   // now working in rather than one that no longer exists.
   if (moved) followSelectionOnHost();
   repaint();
+}
+
+void NativeEditorController::leavePlace() {
+  seamTarget_.reset();
+  unitTarget_.reset();
+  seamPreviewAlternate_ = false;
+  session_.selection().clear();
 }
 
 void NativeEditorController::followSelectionOnHost() {
@@ -3112,6 +3107,7 @@ core::Result<domain::TrackId> NativeEditorController::addVocalTrack(
   if (!result) return core::Result<domain::TrackId>{result.error()};
   selectedTrackId_ = id;
   regionId_ = {};
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
@@ -3145,6 +3141,7 @@ core::Result<domain::RegionId> NativeEditorController::addVocalRegion(
           }));
   if (!result) return core::Result<domain::RegionId>{result.error()};
   regionId_ = id;
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
@@ -3605,6 +3602,9 @@ core::Result<void> NativeEditorController::splitSelectedRegion(
   if (!result) return result;
   const auto right = commandPtr->splitRegionId();
   if (right.valid()) regionId_ = right;
+  // Notes at or after the split moved to the new region, so a selection made before the split may name
+  // notes in either half. It is dropped rather than guessed at.
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
@@ -3633,6 +3633,7 @@ core::Result<void> NativeEditorController::duplicateSelectedTrack() {
                     : track->regions.front().id;
     pianoRoll_.setRegionId(regionId_);
   }
+  leavePlace();
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();
   followSelectionOnHost();
@@ -3653,6 +3654,7 @@ core::Result<void> NativeEditorController::duplicateSelectedRegion() {
   if (!result) return result;
   const auto duplicated = commandPtr->duplicatedRegionId();
   if (duplicated.valid()) regionId_ = duplicated;
+  leavePlace();
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.setRegionId(regionId_);
   pianoRoll_.rebuildIndex();
@@ -3679,6 +3681,7 @@ core::Result<void> NativeEditorController::copySelectedRegionToTrack(
   if (!result) return result;
   selectedTrackId_ = targetTrackId;
   regionId_ = commandPtr->duplicatedRegionId();
+  leavePlace();
   pianoRoll_.setRegionId(regionId_);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   pianoRoll_.rebuildIndex();

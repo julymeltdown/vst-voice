@@ -762,6 +762,12 @@ private:
   // that place: the region when there is one, else the track, else nothing. Every path that moves the
   // editor's own selection ends here, because the host follows the editor and never leads it.
   void followSelectionOnHost();
+  // The editor is standing somewhere else: on another track, on another region, or on a region it has
+  // just made. What was selected, targeted or previewed belonged to the place it left, and a key press
+  // acts on the selection wherever its notes are shown, so the note selection, the seam and Unit targets
+  // and the seam A/B state go with the place. Every path that moves the editor calls this once, after it
+  // has changed the editor's own track and region and before the piano roll's index is rebuilt.
+  void leavePlace();
   // The timbral channels are stored through the session's performance-result path, which the
   // authoring runtime does not observe. Their commands therefore have to announce their own edit or
   // the project changes while the renderer is never asked to follow: the creator's nudge would be

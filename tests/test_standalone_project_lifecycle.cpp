@@ -1570,6 +1570,115 @@ TEST_CASE("standalone copying a region to another track moves the session and th
   checkEditingTargetFollowsScore(fixture);
 }
 
+namespace {
+
+// A note selected in the lead region belongs to the place the editor is about to leave. Whatever moves
+// the editor, the selection must not follow it to a place where those notes are not shown, or a key
+// press would act on notes the creator cannot see. The move receives a function that selects the note.
+void checkMoveDropsNoteSelection(
+    const std::string& name,
+    const std::function<bool(StructuralEditFixture&, const std::function<void()>&)>& move) {
+  auto fixture = makeStructuralEditFixture("structural-forward-selection-" + name);
+  auto& editable = fixture.session->runtime().document().session();
+  const auto* region = editable.project().findRegion(fixture.lead);
+  CHECK(region != nullptr);
+  if (region == nullptr || region->notes.empty()) return;
+  const auto noteId = region->notes.front().id;
+  const auto select = [&] {
+    editable.selection().selectOnly(noteId);
+    CHECK(fixture.editor().sceneState().selectedNoteCount == 1U);
+  };
+  CHECK(move(fixture, select));
+  CHECK(editable.selection().empty());
+  CHECK(fixture.editor().sceneState().selectedNoteCount == 0U);
+}
+
+}  // namespace
+
+TEST_CASE("standalone adding a region drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("add-region", [](StructuralEditFixture& f, const auto& select) {
+    select();
+    return f.editor().addRegionToSelectedTrack().hasValue();
+  });
+}
+
+TEST_CASE("standalone adding a track drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("add-track", [](StructuralEditFixture& f, const auto& select) {
+    select();
+    return f.editor().addVocalTrack("Harmony").hasValue();
+  });
+}
+
+TEST_CASE("standalone splitting a region drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("split", [](StructuralEditFixture& f, const auto& select) {
+    select();
+    return f.editor().splitSelectedRegion(seam::time::Tick{7680}).hasValue();
+  });
+}
+
+TEST_CASE("standalone duplicating a region drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("duplicate-region", [](StructuralEditFixture& f, const auto& select) {
+    select();
+    return f.editor().duplicateSelectedRegion().hasValue();
+  });
+}
+
+TEST_CASE("standalone duplicating a track drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("duplicate-track", [](StructuralEditFixture& f, const auto& select) {
+    select();
+    return f.editor().duplicateSelectedTrack().hasValue();
+  });
+}
+
+TEST_CASE("standalone copying a region to another track drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("copy-to-track", [](StructuralEditFixture& f, const auto& select) {
+    const auto lead = f.editor().selectedTrack();
+    const auto harmony = f.editor().addVocalTrack("Harmony");
+    if (!harmony) return false;
+    if (!f.editor().selectTrack(lead) || !f.editor().selectRegion(f.lead)) return false;
+    select();
+    return f.editor().copySelectedRegionToTrack(harmony.value()).hasValue();
+  });
+}
+
+TEST_CASE("standalone choosing another region drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("select-region", [](StructuralEditFixture& f, const auto& select) {
+    const auto added = f.editor().addRegionToSelectedTrack();
+    if (!added) return false;
+    if (!f.editor().selectRegion(f.lead)) return false;
+    select();
+    return f.editor().selectRegion(added.value()).hasValue();
+  });
+}
+
+TEST_CASE("standalone choosing another track drops the note selection of the place the editor left") {
+  checkMoveDropsNoteSelection("select-track", [](StructuralEditFixture& f, const auto& select) {
+    const auto lead = f.editor().selectedTrack();
+    const auto harmony = f.editor().addVocalTrack("Harmony");
+    if (!harmony) return false;
+    if (!f.editor().selectTrack(lead) || !f.editor().selectRegion(f.lead)) return false;
+    select();
+    return f.editor().selectTrack(harmony.value()).hasValue();
+  });
+}
+
+TEST_CASE("standalone Delete after a move cannot remove a note of the place the editor left") {
+  // The piano roll deletes every selected note, wherever it lives. A selection that followed the editor to
+  // another region would let a key press remove notes the creator is not looking at.
+  auto fixture = makeStructuralEditFixture("structural-delete-after-move");
+  auto& editor = fixture.editor();
+  auto& editable = fixture.session->runtime().document().session();
+  const auto* region = editable.project().findRegion(fixture.lead);
+  CHECK(region != nullptr);
+  if (region == nullptr || region->notes.empty()) return;
+  const auto noteId = region->notes.front().id;
+  editable.selection().selectOnly(noteId);
+  CHECK(editor.duplicateSelectedRegion());
+  CHECK(editor.selectedRegion() != fixture.lead);
+  static_cast<void>(editor.keyDown(seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::Delete}));
+  CHECK(editable.project().findNote(noteId) != nullptr);
+}
+
 TEST_CASE("standalone harmony controller routes every named mode to its scale") {
   using seam::platform::HarmonyMenuRequest;
   using seam::platform::HarmonyScale;

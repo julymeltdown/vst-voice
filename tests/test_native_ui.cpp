@@ -2919,6 +2919,95 @@ TEST_CASE("native seam controls expose presets, fields, reset, and A/B preview")
   CHECK(region->seamOverrides.empty());
 }
 
+namespace {
+
+// Where the Unit lane and the seam lane sit when the editor is 1280 x 720, so a click can be aimed at
+// either of them the way the seam test above aims it.
+struct TechnicalLaneClicks final {
+  double x{};
+  double unitY{};
+  double seamY{};
+};
+
+TechnicalLaneClicks aimAtTechnicalLanes(const seam::native_ui::NativeEditorController& controller) {
+  const seam::native_ui::EditorSceneLayout layout;
+  const auto state = controller.sceneState();
+  const auto technical = seam::native_ui::resolveTechnicalLaneHeights(
+      seam::native_ui::TechnicalLaneLayoutInput{
+          .presentation = state.technicalLanes,
+          .populated = {!state.phonemes.tokens.empty(), true,
+                        !state.seamOverrides.empty(), !state.pitchAutomation.empty()},
+          .previewHeights = {layout.phonemeLaneHeight, layout.unitLaneHeight,
+                             layout.seamLaneHeight, layout.automationLaneHeight},
+          .contentTop = layout.contentTop(),
+          .contentBottom = 720.0 - layout.statusHeight,
+      });
+  const auto unitTop = technical.pianoBottom + technical.values[0U];
+  return TechnicalLaneClicks{
+      .x = layout.keyboardWidth + 160.0,
+      .unitY = unitTop + 8.0,
+      .seamY = unitTop + technical.values[1U] + 8.0,
+  };
+}
+
+seam::native_ui::PointerEvent leftClickAt(double x, double y) {
+  return seam::native_ui::PointerEvent{
+      .position = seam::ui::Point{x, y},
+      .button = seam::native_ui::PointerButton::Left,
+      .modifiers = {},
+      .clickCount = 1,
+  };
+}
+
+}  // namespace
+
+TEST_CASE("native Unit target does not follow the editor to the region it duplicates") {
+  // R cycles the renderer of the Unit the creator chose. A choice made in one region must not be acted
+  // on from the copy that replaces it on screen, where that Unit is not the one being looked at.
+  NativeUiFixture fixture;
+  std::size_t rendererCycleCalls = 0U;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .cycleUnitVariant = [](seam::domain::PhonemeKey) { return seam::core::success(); },
+          .cycleUnitRenderer = [&rendererCycleCalls](seam::domain::PhonemeKey) {
+            ++rendererCycleCalls;
+            return seam::core::success();
+          },
+      }};
+  controller.resize(1280.0, 720.0);
+  const auto clicks = aimAtTechnicalLanes(controller);
+  const auto pressR = [&controller] {
+    return controller.keyDown(seam::native_ui::KeyEvent{
+        .key = seam::native_ui::NativeKey::R, .modifiers = {}, .repeat = false});
+  };
+  CHECK(controller.pointerDown(leftClickAt(clicks.x, clicks.unitY)));
+  CHECK(pressR());
+  CHECK(rendererCycleCalls == 1U);
+  CHECK(controller.duplicateSelectedRegion());
+  static_cast<void>(pressR());
+  CHECK(rendererCycleCalls == 1U);
+}
+
+TEST_CASE("native seam target and its A/B state do not follow the editor to the region it duplicates") {
+  NativeUiFixture fixture;
+  seam::native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      seam::native_ui::EditorHostCallbacks{
+          .previewSeam = [](seam::domain::PhonemeKey, bool) { return seam::core::success(); },
+      }};
+  controller.resize(1280.0, 720.0);
+  const auto clicks = aimAtTechnicalLanes(controller);
+  CHECK(controller.pointerDown(leftClickAt(clicks.x, clicks.seamY)));
+  CHECK(controller.sceneState().selectedSeam.has_value());
+  CHECK(controller.toggleSelectedSeamPreview());
+  CHECK(controller.sceneState().seamPreviewAlternate);
+  CHECK(controller.duplicateSelectedRegion());
+  // A seam belongs to a note of the region it was chosen in, and its "B" side is a preview of that seam.
+  CHECK(!controller.sceneState().selectedSeam.has_value());
+  CHECK(!controller.sceneState().seamPreviewAlternate);
+}
+
 TEST_CASE("native arrangement controller exposes undoable track and region editing") {
   NativeUiFixture fixture;
   seam::native_ui::NativeEditorController controller{
