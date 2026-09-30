@@ -33,6 +33,16 @@ struct AuthoringRuntimeConfig final {
   // Observation points of the preview coordinator, for tests that must hold a render in
   // flight. Empty in production.
   RenderCoordinatorHooks renderHooks{};
+  // Test-only barriers around the seam preview's publication, for tests that must hold a
+  // completion while something else happens. Empty in production. A test that holds one must
+  // release it before the runtime is destroyed.
+  //  - beforeSeamPreviewPublication runs where the preview's completion is delivered (the render
+  //    thread, or the thread that cancelled the render), before the runtime decides anything and
+  //    outside every runtime lock.
+  //  - duringSeamPreviewPublication runs with the runtime's audition lock held, once the
+  //    completion has found its request current and before it hands the audio to the transport.
+  std::function<void()> beforeSeamPreviewPublication{};
+  std::function<void()> duringSeamPreviewPublication{};
 };
 
 class AuthoringRuntime final {
@@ -211,6 +221,11 @@ private:
   void publishCompletedAudio();
   void publishCompletedSeamPreview();
   void publishCompletedPerformanceAudition();
+  // Ends the transient seam preview: it stops being wanted, and its render is cancelled. The
+  // flags change under the audition lock, the lock a completion holds while it publishes, so a
+  // completion is entirely before this (and whatever the caller publishes next replaces it) or
+  // entirely after (and finds its request revoked).
+  void revokeSeamPreview();
   void recordDiagnostic(const core::Error& error);
   void recordRenderFailure(RenderFailureKind failure, std::string message);
   void clearRenderDiagnostics() noexcept;

@@ -203,6 +203,40 @@ struct RenderGate final {
   }
 };
 
+// Keeps the thread that called a runtime hook inside it until release(), so a test can act while
+// that thread is at a known point. The wait is bounded, so a test that fails before it releases
+// does not leave the runtime's destructor, which joins that thread, waiting for long.
+struct HeldHook final {
+  std::mutex mutex;
+  std::condition_variable changed;
+  bool entered{false};
+  bool released{false};
+
+  void pass() {
+    std::unique_lock lock(mutex);
+    entered = true;
+    changed.notify_all();
+    static_cast<void>(
+        changed.wait_for(lock, std::chrono::seconds{20}, [this] { return released; }));
+  }
+  [[nodiscard]] bool waitEntered(std::chrono::seconds timeout) {
+    std::unique_lock lock(mutex);
+    return changed.wait_for(lock, timeout, [this] { return entered; });
+  }
+  void release() {
+    std::lock_guard lock(mutex);
+    released = true;
+    changed.notify_all();
+  }
+};
+
+// Declared after the runtime, so it is destroyed first: a check that throws while a hook is held
+// lets go of it, and whatever else is waiting on it, before the runtime is torn down.
+struct ReleaseHeldOnExit final {
+  HeldHook& hook;
+  ~ReleaseHeldOnExit() { hook.release(); }
+};
+
 // A project whose only note sings a sound the bundled bank does not have (it has no stand-alone
 // /a/), so its first render fails and the lyric can then be changed to one the bank sings.
 struct UncoveredLyricFixture final {
@@ -734,6 +768,215 @@ TEST_CASE("authoring_runtime_seam_preview is transient and restores canonical au
   CHECK(!runtime.seamPreviewReady());
   CHECK(runtime.document().session().project() == beforeProject);
   CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime does not publish a seam preview that was revoked while its completion was on its way") {
+  // A seam preview that has finished rendering reaches the runtime on the render thread. When the
+  // score is emptied before it gets there, the audio of the score that was must not reach the
+  // transport afterwards: nothing is left to play.
+  HeldHook held;
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-revoked"));
+  config.beforeSeamPreviewPublication = [&held] { held.pass(); };
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  ReleaseHeldOnExit releaseOnExit{held};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto notes = noteIdsOf(runtime, fixture.resolvedRegion);
+  const auto key = seam::domain::PhonemeKey{.noteId = notes.front(), .ordinal = 0U};
+
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(held.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.seamPreviewActive());
+
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(notes)));
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.transport().state().available);
+
+  held.release();
+  // The completion now runs its course. Nothing it does may put audio back on the transport.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{300};
+  while (std::chrono::steady_clock::now() < deadline &&
+         !runtime.transport().state().available && !runtime.seamPreviewReady()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(!runtime.transport().state().available);
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(!runtime.seamPreviewActive());
+}
+
+TEST_CASE("authoring runtime keeps a newer seam preview when an older one's completion arrives after it was asked for") {
+  // The older preview has rendered and its completion is on its way when the newer one is asked
+  // for. By the time the older completion runs, the coordinator describes the newer request. It
+  // must neither publish the older audio nor end the newer request.
+  HeldHook older;
+  HeldHook newer;
+  std::atomic<int> arrivals{0};
+  std::atomic<bool> seamAnnounced{false};
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-replaced"));
+  config.beforeSeamPreviewPublication = [&] {
+    (arrivals.fetch_add(1) == 0 ? older : newer).pass();
+  };
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  // The runtime tells its observer when a seam preview becomes audible. The canonical render
+  // completes through the same callback, and is told apart by the flag it cannot have set.
+  runtime.setCompletionCallback([&] {
+    if (runtime.seamPreviewReady()) seamAnnounced.store(true);
+  });
+  ReleaseHeldOnExit releaseOlder{older};
+  ReleaseHeldOnExit releaseNewer{newer};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto notes = noteIdsOf(runtime, fixture.resolvedRegion);
+  CHECK(notes.size() >= 2U);
+  const auto olderKey = seam::domain::PhonemeKey{.noteId = notes[0], .ordinal = 0U};
+  const auto newerKey = seam::domain::PhonemeKey{.noteId = notes[1], .ordinal = 0U};
+
+  CHECK(runtime.previewSeam(olderKey, true));
+  CHECK(older.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.previewSeam(newerKey, true));
+  CHECK(runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+
+  older.release();
+  CHECK(newer.waitEntered(std::chrono::seconds{20}));
+  // The older completion has come and gone, and the newer one is now on its way.
+  CHECK(runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+
+  newer.release();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (!(runtime.seamPreviewReady() && seamAnnounced.load()) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(runtime.seamPreviewActive());
+  CHECK(runtime.seamPreviewReady());
+  CHECK(seamAnnounced.load());
+}
+
+TEST_CASE("authoring runtime restores the canonical audio only after a seam preview that is being published has finished") {
+  // The restore of the canonical audio is the last word on what the transport plays. A seam
+  // preview completion that is already handing its audio to the transport must finish first, or
+  // it lands after the restore and the preview keeps sounding after it was taken away.
+  HeldHook held;
+  std::atomic<bool> started{false};
+  std::atomic<bool> finished{false};
+  std::atomic<bool> restored{false};
+  auto fixture = makeFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-restore"));
+  config.duringSeamPreviewPublication = [&held] { held.pass(); };
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  std::jthread restorer;
+  ReleaseHeldOnExit releaseOnExit{held};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision));
+  const auto key = seam::domain::PhonemeKey{
+      .noteId = noteIdsOf(runtime, fixture.resolvedRegion).front(), .ordinal = 0U};
+
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(held.waitEntered(std::chrono::seconds{10}));
+
+  restorer = std::jthread([&] {
+    started.store(true);
+    restored.store(static_cast<bool>(runtime.previewSeam(key, false)));
+    finished.store(true);
+  });
+  const auto startDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (!started.load() && std::chrono::steady_clock::now() < startDeadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  CHECK(started.load());
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(!finished.load());
+
+  held.release();
+  restorer.join();
+  CHECK(restored.load());
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(runtime.transport().state().available);
+  CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime stops wanting a seam preview whose render failed") {
+  // A preview that cannot be rendered must not leave the runtime waiting for audio that will never
+  // come: while it is wanted, a canonical render would not publish over it.
+  HeldHook held;
+  auto fixture = makeUncoveredLyricFixture();
+  auto config = configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-failed"));
+  config.beforeSeamPreviewPublication = [&held] { held.pass(); };
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  ReleaseHeldOnExit releaseOnExit{held};
+  CHECK(runtime.initialize());
+  CHECK(waitForRenderState(runtime, seam::authoring::RenderState::Failed));
+  const auto key = seam::domain::PhonemeKey{
+      .noteId = noteIdsOf(runtime, fixture.region).front(), .ordinal = 0U};
+
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(held.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.seamPreviewActive());
+
+  held.release();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+  while (runtime.seamPreviewActive() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  CHECK(!runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+}
+
+TEST_CASE("authoring runtime ends a seam preview on every change that makes it stale") {
+  // Each path that changes the score, or tells the runtime it changed, revokes the preview on its
+  // own: an edit, its undo and its redo, and a document that changed under the runtime.
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-seam-preview-stale"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto notes = noteIdsOf(runtime, fixture.resolvedRegion);
+  const auto key = seam::domain::PhonemeKey{.noteId = notes.front(), .ordinal = 0U};
+  const auto hearSeamPreview = [&] {
+    CHECK(runtime.previewSeam(key, true));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{20};
+    while (!runtime.seamPreviewReady() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
+    CHECK(runtime.seamPreviewActive());
+    CHECK(runtime.seamPreviewReady());
+  };
+  const auto expectNoSeamPreview = [&] {
+    CHECK(!runtime.seamPreviewActive());
+    CHECK(!runtime.seamPreviewReady());
+  };
+
+  hearSeamPreview();
+  CHECK(runtime.execute(std::make_unique<seam::application::RemoveNotesCommand>(
+      std::vector<seam::domain::NoteId>{notes.back()})));
+  expectNoSeamPreview();
+
+  hearSeamPreview();
+  CHECK(runtime.undo());
+  expectNoSeamPreview();
+
+  hearSeamPreview();
+  CHECK(runtime.redo());
+  expectNoSeamPreview();
+
+  hearSeamPreview();
+  runtime.handleDocumentChanged();
+  expectNoSeamPreview();
 }
 
 TEST_CASE("authoring_runtime_development_voicebank_policy_is_enforced") {

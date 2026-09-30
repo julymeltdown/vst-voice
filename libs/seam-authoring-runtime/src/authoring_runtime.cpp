@@ -322,9 +322,7 @@ core::Result<void> AuthoringRuntime::afterCommandExecution(
   }
   if (result && impact.scope != application::CommandAudioImpact::ViewOnly &&
       impact.scope != application::CommandAudioImpact::MetadataOnly) {
-    seamPreviewRenderer_.cancel();
-    seamPreviewActive_.store(false, std::memory_order_release);
-    seamPreviewReady_.store(false, std::memory_order_release);
+    revokeSeamPreview();
     requestPreviewImpl(false, impact, preserveAcceptedAudio);
   }
   return result;
@@ -339,9 +337,7 @@ core::Result<void> AuthoringRuntime::undo() {
     const auto& impact = document_->lastImpact();
     if (impact.scope != application::CommandAudioImpact::ViewOnly &&
         impact.scope != application::CommandAudioImpact::MetadataOnly) {
-      seamPreviewRenderer_.cancel();
-      seamPreviewActive_.store(false, std::memory_order_release);
-      seamPreviewReady_.store(false, std::memory_order_release);
+      revokeSeamPreview();
       requestPreview(false, document_->lastImpact());
     }
   }
@@ -357,9 +353,7 @@ core::Result<void> AuthoringRuntime::redo() {
     const auto& impact = document_->lastImpact();
     if (impact.scope != application::CommandAudioImpact::ViewOnly &&
         impact.scope != application::CommandAudioImpact::MetadataOnly) {
-      seamPreviewRenderer_.cancel();
-      seamPreviewActive_.store(false, std::memory_order_release);
-      seamPreviewReady_.store(false, std::memory_order_release);
+      revokeSeamPreview();
       requestPreview(false, document_->lastImpact());
     }
   }
@@ -409,9 +403,7 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
     return core::success();
   }
 
-  seamPreviewRenderer_.cancel();
-  seamPreviewActive_.store(false, std::memory_order_release);
-  seamPreviewReady_.store(false, std::memory_order_release);
+  revokeSeamPreview();
   auto canonical = renderer_.acquire();
   if (!canonical || canonical->state != RenderState::Ready) {
     return core::failure(core::ErrorCode::Conflict,
@@ -574,9 +566,7 @@ void AuthoringRuntime::setCompletionCallback(
 
 void AuthoringRuntime::handleDocumentChanged() {
   document_->synchronizeDirtyState();
-  seamPreviewRenderer_.cancel();
-  seamPreviewActive_.store(false, std::memory_order_release);
-  seamPreviewReady_.store(false, std::memory_order_release);
+  revokeSeamPreview();
   requestPreview(false, document_->session().lastImpact());
 }
 
@@ -852,31 +842,45 @@ void AuthoringRuntime::publishCompletedAudio() {
 }
 
 void AuthoringRuntime::publishCompletedSeamPreview() {
-  const auto progress = seamPreviewRenderer_.progress();
-  if (progress.state != RenderState::Ready) {
-    seamPreviewActive_.store(false, std::memory_order_release);
-    seamPreviewReady_.store(false, std::memory_order_release);
-    return;
+  if (config_.beforeSeamPreviewPublication) config_.beforeSeamPreviewPublication();
+  bool published = false;
+  {
+    std::lock_guard lock(performanceAuditionMutex_);
+    // The audio of the newest request, and only once it has finished. A request that was revoked
+    // or replaced leaves its finished audio behind in the coordinator, and that audio must not
+    // reach the transport. revokeSeamPreview cancels before it takes this lock, so a revocation
+    // that has completed is always seen here, and one that is still under way waits for this
+    // publication to finish and then replaces it.
+    auto handle = seamPreviewRenderer_.acquireCurrent();
+    if (handle) {
+      if (config_.duringSeamPreviewPublication) config_.duringSeamPreviewPublication();
+      published = static_cast<bool>(transport_.publishAudio(std::move(handle)));
+    } else if (seamPreviewRenderer_.progress().state != RenderState::Failed) {
+      // Cancelled, replaced, or not finished: cancelling or replacing a request does not stop its
+      // completion from arriving, and by then the progress describes the cancellation or the newer
+      // request. Only a failure of the request that is current acts on the preview; until then the
+      // revoker, or the newer request, owns the flags.
+      return;
+    }
+    seamPreviewReady_.store(published, std::memory_order_release);
+    if (!published) seamPreviewActive_.store(false, std::memory_order_release);
   }
-  auto handle = seamPreviewRenderer_.acquire();
-  if (!handle || handle->state != RenderState::Ready) {
-    seamPreviewActive_.store(false, std::memory_order_release);
-    seamPreviewReady_.store(false, std::memory_order_release);
-    return;
-  }
-  const auto published = transport_.publishAudio(std::move(handle));
-  if (!published) {
-    seamPreviewActive_.store(false, std::memory_order_release);
-    seamPreviewReady_.store(false, std::memory_order_release);
-    return;
-  }
-  seamPreviewReady_.store(true, std::memory_order_release);
+  if (!published) return;
   std::function<void()> callback;
   {
     std::lock_guard lock(callbackMutex_);
     callback = completionCallback_;
   }
   if (callback) callback();
+}
+
+void AuthoringRuntime::revokeSeamPreview() {
+  // Cancelling delivers the coordinator's completion on this thread when a render was in flight,
+  // and that takes the lock below, so the lock is not held across it.
+  seamPreviewRenderer_.cancel();
+  std::lock_guard lock(performanceAuditionMutex_);
+  seamPreviewActive_.store(false, std::memory_order_release);
+  seamPreviewReady_.store(false, std::memory_order_release);
 }
 
 void AuthoringRuntime::publishCompletedPerformanceAudition() {
