@@ -1165,6 +1165,215 @@ TEST_CASE("standalone menu Undo and Redo leave the editor showing the document")
   CHECK(editor.sceneState().dirty);
 }
 
+namespace {
+
+// A score with one lead region holding one note, an application controller on it, and the editor
+// sized the way the window sizes it. The tests below make a structural edit through the editor and
+// then undo or redo it through the same application command the Edit menu sends, or through the
+// editor's own key handler, which is the only Undo a plug-in window has.
+struct StructuralEditFixture final {
+  std::unique_ptr<seam::standalone::AuthoringSession> session;
+  std::unique_ptr<seam::standalone::StandaloneApplicationController> app;
+  seam::domain::RegionId lead{};
+
+  [[nodiscard]] seam::native_ui::NativeEditorController& editor() { return session->controller(); }
+  [[nodiscard]] const seam::domain::Project& project() const {
+    return session->runtime().document().session().project();
+  }
+};
+
+StructuralEditFixture makeStructuralEditFixture(const std::string& name) {
+  StructuralEditFixture fixture;
+  const auto root = seam::test::support::temporaryDirectory(name);
+  fixture.session = makeSession(root);
+  addNote(*fixture.session);
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  auto created = seam::standalone::StandaloneApplicationController::create(*fixture.session,
+      std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), config);
+  CHECK(created);
+  if (!created) return fixture;
+  fixture.app = std::move(created).value();
+  fixture.lead = fixture.session->regionId();
+  fixture.editor().resize(1280.0, 720.0);
+  return fixture;
+}
+
+// What the arrangement lane draws for one vocal track: its regions in order, each with its note count.
+std::vector<std::pair<seam::domain::RegionId, std::size_t>> laneRegions(
+    const seam::native_ui::NativeEditorController& editor, seam::domain::TrackId track) {
+  std::vector<std::pair<seam::domain::RegionId, std::size_t>> regions;
+  for (const auto& item : editor.arrangementPanel().tracks()) {
+    if (item.id != track || !item.vocal) continue;
+    for (const auto& region : item.regions) regions.emplace_back(region.id, region.noteCount);
+  }
+  return regions;
+}
+
+// After a structural edit has been undone or redone, every owner of "where the editor is working"
+// has to describe the score as it is now: the editor, the authoring session, the runtime that
+// renders, the piano roll and the arrangement lane. A region or track that no longer exists must
+// not be named by any of them.
+void checkEditingTargetFollowsScore(StructuralEditFixture& fixture) {
+  auto& editor = fixture.editor();
+  const auto* track = fixture.project().findVocalTrack(editor.selectedTrack());
+  CHECK(track != nullptr);
+  if (track == nullptr) return;
+  if (editor.selectedRegion().valid()) {
+    CHECK(track->findRegion(editor.selectedRegion()) != nullptr);
+  } else {
+    // Nothing is selected only when the track has no region to select.
+    CHECK(track->regions.empty());
+  }
+  CHECK(fixture.session->trackId() == editor.selectedTrack());
+  CHECK(fixture.session->regionId() == editor.selectedRegion());
+  CHECK(fixture.session->runtime().selectedTrack() == editor.selectedTrack());
+  CHECK(fixture.session->runtime().selectedRegion() == editor.selectedRegion());
+  CHECK(editor.pianoRoll().regionId() == editor.selectedRegion());
+  std::vector<std::pair<seam::domain::RegionId, std::size_t>> expected;
+  for (const auto& region : track->regions) expected.emplace_back(region.id, region.notes.size());
+  CHECK(laneRegions(editor, editor.selectedTrack()) == expected);
+  for (const auto& item : editor.arrangementPanel().tracks()) {
+    if (item.id != editor.selectedTrack()) continue;
+    for (const auto& region : item.regions) {
+      CHECK(region.selected == (region.id == editor.selectedRegion()));
+    }
+  }
+}
+
+}  // namespace
+
+TEST_CASE("standalone deleting the selected region leaves no note selected") {
+  // The selection names notes. A region that is deleted takes its notes with it, so a selection that
+  // still named them would report selected notes nobody can see.
+  auto fixture = makeStructuralEditFixture("structural-delete-region-selection");
+  auto& editor = fixture.editor();
+  auto& editable = fixture.session->runtime().document().session();
+  const auto* lead = editable.project().findRegion(fixture.lead);
+  CHECK(lead != nullptr);
+  if (lead == nullptr || lead->notes.empty()) return;
+  const auto noteId = lead->notes.front().id;
+  editable.selection().selectOnly(noteId);
+  CHECK(editor.sceneState().selectedNoteCount == 1U);
+  CHECK(editor.deleteSelectedRegion());
+  CHECK(editable.project().findNote(noteId) == nullptr);
+  CHECK(editable.selection().empty());
+  CHECK(editor.sceneState().selectedNoteCount == 0U);
+}
+
+TEST_CASE("standalone menu Undo and Redo of removing the only region keep the editor on the score") {
+  auto fixture = makeStructuralEditFixture("structural-only-region");
+  auto& editor = fixture.editor();
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+
+  // Removing the only region leaves nothing to edit, and nothing pretends otherwise.
+  CHECK(editor.deleteSelectedRegion());
+  CHECK(!editor.selectedRegion().valid());
+  CHECK(editor.pianoRoll().visibleNotes().empty());
+  checkEditingTargetFollowsScore(fixture);
+
+  // Edit > Undo brings the region and its note back, and the editor is on it again rather than on
+  // an empty piano roll over a score that has a note in it.
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedRegion() == fixture.lead);
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+  checkEditingTargetFollowsScore(fixture);
+
+  // Edit > Redo removes it once more.
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(!editor.selectedRegion().valid());
+  CHECK(editor.pianoRoll().visibleNotes().empty());
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone menu Undo and Redo of an added region keep the editor on a region that exists") {
+  auto fixture = makeStructuralEditFixture("structural-added-region");
+  auto& editor = fixture.editor();
+  const auto added = editor.addRegionToSelectedTrack();
+  CHECK(added);
+  if (!added) return;
+  CHECK(editor.selectedRegion() == added.value());
+
+  // Undoing the addition removes the region the editor was standing on. It goes back to the region
+  // the score still has instead of naming one that is gone.
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(fixture.project().findRegion(added.value()) == nullptr);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+  checkEditingTargetFollowsScore(fixture);
+
+  // Redo brings the region back into the lane; the editor stays on the region it is working in.
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(fixture.project().findRegion(added.value()) != nullptr);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone menu Redo of a removal under the editor moves it to a region that exists") {
+  auto fixture = makeStructuralEditFixture("structural-redo-under-editor");
+  auto& editor = fixture.editor();
+  const auto added = editor.addRegionToSelectedTrack();
+  CHECK(added);
+  if (!added) return;
+  CHECK(editor.deleteSelectedRegion());
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(fixture.project().findRegion(added.value()) != nullptr);
+
+  // The editor stands on the restored region, and then the removal is redone underneath it.
+  CHECK(editor.selectRegion(added.value()));
+  CHECK(editor.selectedRegion() == added.value());
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(fixture.project().findRegion(added.value()) == nullptr);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone editor Command-Z and Command-Shift-Z keep the editor on a region that exists") {
+  // A plug-in window has no application menu, so the editor's own key handler is its Undo.
+  auto fixture = makeStructuralEditFixture("structural-editor-key-undo");
+  auto& editor = fixture.editor();
+  const seam::native_ui::KeyEvent undoKey{.key = seam::native_ui::NativeKey::Z,
+      .modifiers = seam::native_ui::InputModifiers{.command = true}};
+  const seam::native_ui::KeyEvent redoKey{.key = seam::native_ui::NativeKey::Z,
+      .modifiers = seam::native_ui::InputModifiers{.shift = true, .command = true}};
+
+  const auto added = editor.addRegionToSelectedTrack();
+  CHECK(added);
+  if (!added) return;
+  CHECK(editor.keyDown(undoKey));
+  CHECK(fixture.project().findRegion(added.value()) == nullptr);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(editor.keyDown(redoKey));
+  CHECK(fixture.project().findRegion(added.value()) != nullptr);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(editor.keyDown(undoKey));
+  checkEditingTargetFollowsScore(fixture);
+
+  // The only region removed and brought back by the editor's own Undo.
+  CHECK(editor.deleteSelectedRegion());
+  CHECK(!editor.selectedRegion().valid());
+  CHECK(editor.keyDown(undoKey));
+  CHECK(editor.selectedRegion() == fixture.lead);
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone menu Undo of removing the only track puts the editor back on it") {
+  auto fixture = makeStructuralEditFixture("structural-only-track");
+  auto& editor = fixture.editor();
+  const auto track = editor.selectedTrack();
+  CHECK(track.valid());
+  CHECK(editor.removeSelectedTrack());
+  CHECK(!editor.selectedTrack().valid());
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() == track);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+  checkEditingTargetFollowsScore(fixture);
+}
+
 TEST_CASE("standalone harmony controller routes every named mode to its scale") {
   using seam::platform::HarmonyMenuRequest;
   using seam::platform::HarmonyScale;

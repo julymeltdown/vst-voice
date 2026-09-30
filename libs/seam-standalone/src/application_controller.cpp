@@ -1521,16 +1521,9 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::Undo: {
       auto result = session_.runtime().undo();
       if (result) {
-        // Undoing a newly created harmony can remove the track currently open
-        // in both editors. Re-anchor selection before any view renders again.
-        auto& runtime = session_.runtime();
-        const auto& project = runtime.document().session().project();
-        if (project.findVocalTrack(runtime.selectedTrack()) == nullptr &&
-            !project.vocalTracks().empty()) {
-          const auto fallback = project.vocalTracks().front().id;
-          static_cast<void>(runtime.selectTrack(fallback));
-          static_cast<void>(session_.controller().selectTrack(fallback));
-        }
+        // Undo can remove or restore the track or region open in the editor: a harmony track, a
+        // region that was added, a region that was deleted. Re-anchor before any view renders again.
+        session_.controller().reconcileWithProject();
         static_cast<void>(onDocumentChanged());
         notifyStateChanged();
       }
@@ -1539,6 +1532,8 @@ core::Result<void> StandaloneApplicationController::dispatch(
     case platform::ApplicationCommand::Redo: {
       auto result = session_.runtime().redo();
       if (result) {
+        // Redo can remove the track or region the editor is on just as Undo can.
+        session_.controller().reconcileWithProject();
         static_cast<void>(onDocumentChanged());
         notifyStateChanged();
       }

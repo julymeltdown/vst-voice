@@ -23,6 +23,7 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/application/render_commands.hpp"
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/phonemizer/language_resolver.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -2910,6 +2911,113 @@ TEST_CASE("native arrangement controller exposes undoable track and region editi
   CHECK(fixture.session.project().findVocalTrack(addedTrack.value()) == nullptr);
   CHECK(fixture.session.undo());
   CHECK(fixture.session.project().findVocalTrack(addedTrack.value()) != nullptr);
+}
+
+TEST_CASE("native controller reconcile moves the editor off a region that Undo removed and tells the host") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+
+  const auto added = controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840});
+  CHECK(added);
+  if (!added) return;
+  CHECK(controller.selectedRegion() == added.value());
+  CHECK(controller.arrangementPanel().tracks().front().regions.size() == 2U);
+
+  // Undo on the session alone leaves the editor naming a region that is gone. That is the state the
+  // application's Undo and Redo and the editor's own key handler repair before anything paints.
+  CHECK(fixture.session.undo());
+  CHECK(fixture.session.project().findRegion(controller.selectedRegion()) == nullptr);
+  host.clear();
+  controller.reconcileWithProject();
+  CHECK(controller.selectedRegion() == lead);
+  CHECK(controller.pianoRoll().regionId() == lead);
+  CHECK(controller.arrangementPanel().tracks().front().regions.size() == 1U);
+  CHECK(controller.pianoRoll().visibleNotes().size() == 1U);
+  CHECK((host == std::vector<std::string>{"region " + lead.toString()}));
+}
+
+TEST_CASE("native controller reconcile moves the editor off a track that Undo removed") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  const auto voice = controller.selectedTrack();
+
+  const auto harmony = controller.addVocalTrack("Harmony");
+  CHECK(harmony);
+  if (!harmony) return;
+  CHECK(controller.selectedTrack() == harmony.value());
+  CHECK(!controller.selectedRegion().valid());
+  CHECK(fixture.session.undo());
+  host.clear();
+  controller.reconcileWithProject();
+  CHECK(controller.selectedTrack() == voice);
+  CHECK(controller.selectedRegion() == lead);
+  CHECK(controller.arrangementPanel().tracks().size() == 1U);
+  CHECK((host == std::vector<std::string>{"region " + lead.toString()}));
+}
+
+TEST_CASE("native controller reconcile puts the editor on a region that came back after the last one was removed") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  const auto voice = controller.selectedTrack();
+  CHECK(controller.pianoRoll().visibleNotes().size() == 1U);
+
+  // Removing the only region goes through the same routine, so the host is told that the track has
+  // no region rather than being left on the one that was deleted.
+  host.clear();
+  CHECK(controller.deleteSelectedRegion());
+  CHECK(!controller.selectedRegion().valid());
+  CHECK(controller.pianoRoll().visibleNotes().empty());
+  CHECK((host == std::vector<std::string>{"track " + voice.toString()}));
+
+  CHECK(fixture.session.undo());
+  host.clear();
+  controller.reconcileWithProject();
+  CHECK(controller.selectedRegion() == lead);
+  CHECK(controller.pianoRoll().visibleNotes().size() == 1U);
+  CHECK((host == std::vector<std::string>{"region " + lead.toString()}));
+}
+
+TEST_CASE("native controller reconcile refreshes the lane but leaves an intact target and selection alone") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  const auto voice = controller.selectedTrack();
+  fixture.session.selection().selectOnly(fixture.noteId);
+
+  // A region added by a command the editor did not issue does not move the editor, and it does not
+  // cost the note selection, but the lane has to show it.
+  CHECK(fixture.session.execute(std::make_unique<application::AddVocalRegionCommand>(voice,
+      domain::VocalRegion{.id = fixture.factory.nextRegionId(), .name = "Outside",
+                          .startTick = time::Tick{7680}, .durationTick = time::Tick{3840}})));
+  CHECK(controller.arrangementPanel().tracks().front().regions.size() == 1U);
+  controller.reconcileWithProject();
+  CHECK(controller.arrangementPanel().tracks().front().regions.size() == 2U);
+  CHECK(controller.selectedRegion() == lead);
+  CHECK(fixture.session.selection().size() == 1U);
+  CHECK(host.empty());
 }
 
 TEST_CASE("native tempo meter dispatch guards context and notifies document changes only on success") {

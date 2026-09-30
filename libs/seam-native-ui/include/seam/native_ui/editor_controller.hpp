@@ -434,6 +434,13 @@ public:
   [[nodiscard]] core::Result<void> editMeter(std::uint64_t expectedRevision, time::Tick tick,
       std::optional<application::EditMeterCommand::Signature> signature);
   [[nodiscard]] core::Result<void> selectRegion(domain::RegionId regionId);
+  // Brings the editor's idea of where it is working back in line with the score. Undo, Redo and any
+  // command the editor did not issue itself can remove or restore the track or region the editor is
+  // on. When that has happened the editor moves to a track and region the score still has (or to none
+  // when it has none), the note selection is cleared, the host is told so that its render follows,
+  // and the arrangement lane and piano roll are rebuilt. When nothing has vanished only the lane and
+  // the piano roll are refreshed, so a note selection the change left intact survives.
+  void reconcileWithProject();
   [[nodiscard]] core::Result<domain::TrackId> addVocalTrack(
       std::string name);
   [[nodiscard]] core::Result<domain::RegionId> addVocalRegion(

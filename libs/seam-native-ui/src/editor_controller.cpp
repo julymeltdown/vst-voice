@@ -3037,6 +3037,58 @@ core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionI
   return core::success();
 }
 
+void NativeEditorController::reconcileWithProject() {
+  const auto& project = session_.project();
+  const auto* vocal = project.findVocalTrack(selectedTrackId_);
+  const auto audioSelected = vocal == nullptr &&
+      std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+                  [this](const auto& track) { return track.id == selectedTrackId_; });
+  auto targetTrack = selectedTrackId_;
+  auto targetRegion = regionId_;
+  if (vocal == nullptr && !audioSelected) {
+    // The track the editor was on is gone (a harmony track that was undone, a track whose removal was
+    // redone), or none was selected because the last one had been removed and has since come back.
+    targetTrack = {};
+    if (!project.vocalTracks().empty()) {
+      targetTrack = project.vocalTracks().front().id;
+    } else if (!project.audioTracks().empty()) {
+      targetTrack = project.audioTracks().front().id;
+    }
+    vocal = project.findVocalTrack(targetTrack);
+  }
+  if (vocal == nullptr) {
+    targetRegion = {};  // An audio track holds no vocal region.
+  } else if (vocal->findRegion(targetRegion) == nullptr) {
+    // The region is gone, or none was selected because the track's only region had been removed and
+    // has since come back.
+    targetRegion = vocal->regions.empty() ? domain::RegionId{} : vocal->regions.front().id;
+  }
+
+  const bool moved = targetTrack != selectedTrackId_ || targetRegion != regionId_;
+  selectedTrackId_ = targetTrack;
+  regionId_ = targetRegion;
+  if (moved) {
+    // What was selected, targeted or previewed belonged to the place the editor has left.
+    seamTarget_.reset();
+    unitTarget_.reset();
+    seamPreviewAlternate_ = false;
+    session_.selection().clear();
+  }
+  pianoRoll_.setRegionId(regionId_);
+  arrangementPanel_.rebuild(project, selectedTrackId_, regionId_);
+  pianoRoll_.rebuildIndex();
+  if (moved) {
+    // The host follows, so that its render, preview and technical edits name the place the editor is
+    // now working in rather than one that no longer exists.
+    if (regionId_.valid()) {
+      if (callbacks_.selectRegion) static_cast<void>(callbacks_.selectRegion(regionId_));
+    } else if (vocal != nullptr && callbacks_.selectTrack) {
+      static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
+    }
+  }
+  repaint();
+}
+
 core::Result<domain::TrackId> NativeEditorController::addVocalTrack(
     std::string name) {
   if (name.empty()) {
@@ -3128,22 +3180,9 @@ core::Result<void> NativeEditorController::removeSelectedTrack() {
   }
   auto result = session_.execute(std::move(command));
   if (!result) return result;
-  selectedTrackId_ = {};
-  regionId_ = {};
-  if (!session_.project().vocalTracks().empty()) {
-    selectedTrackId_ = session_.project().vocalTracks().front().id;
-    if (!session_.project().vocalTracks().front().regions.empty()) {
-      regionId_ = session_.project().vocalTracks().front().regions.front().id;
-    }
-  } else if (!session_.project().audioTracks().empty()) {
-    selectedTrackId_ = session_.project().audioTracks().front().id;
-  }
-  pianoRoll_.setRegionId(regionId_);
-  arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
-  pianoRoll_.rebuildIndex();
-  session_.selection().clear();
+  // The track the editor was on is gone: it moves to one the score still has.
+  reconcileWithProject();
   markDocumentChanged();
-  repaint();
   return core::success();
 }
 
@@ -3643,15 +3682,10 @@ core::Result<void> NativeEditorController::deleteSelectedRegion() {
       std::make_unique<application::RemoveVocalRegionCommand>(
           selectedTrackId_, regionId_));
   if (!result) return result;
-  const auto* track = session_.project().findVocalTrack(selectedTrackId_);
-  regionId_ = track == nullptr || track->regions.empty()
-                  ? domain::RegionId{}
-                  : track->regions.front().id;
-  pianoRoll_.setRegionId(regionId_);
-  arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
-  pianoRoll_.rebuildIndex();
+  // The region the editor was on is gone: it moves to the track's first region, or to none, and the
+  // notes the region held are no longer selected.
+  reconcileWithProject();
   markDocumentChanged();
-  repaint();
   return core::success();
 }
 
@@ -5625,13 +5659,13 @@ core::Result<void> NativeEditorController::keyDown(const KeyEvent& event) {
   if (event.modifiers.primaryShortcut() && event.key == NativeKey::Z) {
     result = event.modifiers.shift ? session_.redo() : session_.undo();
     if (result) {
-      pianoRoll_.rebuildIndex();
+      reconcileWithProject();
       markDocumentChanged();
     }
   } else if (event.modifiers.primaryShortcut() && event.key == NativeKey::Y) {
     result = session_.redo();
     if (result) {
-      pianoRoll_.rebuildIndex();
+      reconcileWithProject();
       markDocumentChanged();
     }
   } else if ((event.key == NativeKey::Delete ||
