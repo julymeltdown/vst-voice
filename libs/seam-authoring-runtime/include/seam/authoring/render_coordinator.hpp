@@ -182,10 +182,13 @@ struct RenderCoordinatorHooks final {
   // worker may already be running, so it can take the request, and finish it, while this is held.
   std::function<void(std::uint64_t)> afterSubmitAdmission;
   // duringCancel and duringReset run inside cancel() and resetToIdle(), after the queued request has
-  // been dropped and the current one revoked and before the coordinator writes its own state, so a
-  // test that holds one can show that a submission from another thread has to wait for the whole
-  // step. Unlike the two barriers above they run with the admission lock (mutex_) held: the held
-  // thread must not call the coordinator, and the test must release it before it ends.
+  // been dropped and before the coordinator writes its own state, so a test that holds one can show
+  // that a submission from another thread has to wait for the whole step. They are not at the same
+  // point in the step: duringCancel comes after the current request has been revoked, duringReset
+  // before it (the revocation and the revision floor are stored together with the new state, under
+  // the progress lock, which follows the hook). Unlike the two barriers above they run with the
+  // admission lock (mutex_) held: the held thread must not call the coordinator, and the test must
+  // release it before it ends.
   std::function<void()> duringCancel;
   std::function<void()> duringReset;
   std::chrono::milliseconds debounceInterval{20};
