@@ -86,6 +86,28 @@ native_ui::RenderStatusView EditorRuntime::renderStatusView() const {
   return controller_->renderStatus().view();
 }
 
+void EditorRuntime::publishPreviewFromAuthoring() {
+  // A coordinator that is idle has nothing current: it was reset because the score has nothing to
+  // sound, or it has never rendered. What it retains is history, not a preview, and handing it to
+  // the host would keep a vocal that is no longer in the project playable, so the preview is
+  // emptied instead of republished. In every other state the last audio stays on offer, which is
+  // what lets a failed or cancelled render leave the previous one playing.
+  if (authoring_->renderer().progress().state == authoring::RenderState::Idle) {
+    static_cast<void>(previewPublication_.publish(RenderedPreview{}));
+  } else {
+    const auto shared = authoring_->renderer().latest();
+    if (shared == nullptr || shared->state == authoring::RenderState::Idle) return;
+    static_cast<void>(previewPublication_.publish(makeRenderedPreview(*shared)));
+  }
+  refreshRenderStatusView();
+  std::function<void()> callback;
+  {
+    std::lock_guard lock(mutex_);
+    callback = renderReadyCallback_;
+  }
+  if (callback) callback();
+}
+
 std::string_view previewStatusName(PreviewStatus status) noexcept {
   switch (status) {
     case PreviewStatus::Empty: return "empty";

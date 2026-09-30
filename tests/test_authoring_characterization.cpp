@@ -308,3 +308,45 @@ TEST_CASE("authoring_characterization_revision_zero_preview_is_published") {
   CHECK(preview->status == PreviewStatus::Ready);
   CHECK(!preview->interleaved.empty());
 }
+
+TEST_CASE("authoring_characterization_a_project_with_nothing_to_sing_no_longer_offers_the_old_preview") {
+  // Replacing the project by one with no notes leaves nothing to play. The coordinator keeps the
+  // last audio it rendered as history, and the plug-in must not hand that history to the host as the
+  // preview: a vocal that is no longer in the project would go on sounding.
+  EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  const auto ready = waitReady(runtime);
+  CHECK(ready != nullptr);
+  CHECK(ready->status == PreviewStatus::Ready);
+  CHECK(!ready->interleaved.empty());
+
+  const auto original = runtime.projectCopy();
+  auto emptied = original;
+  for (auto& track : emptied.vocalTracks()) {
+    for (auto& region : track.regions) {
+      region.notes.clear();
+      region.lyrics.clear();
+      region.unitSelectionOverrides.clear();
+      region.phonemeOverrides.clear();
+      region.seamOverrides.clear();
+    }
+  }
+  CHECK(runtime.replaceProject(std::move(emptied)));
+  CHECK(runtime.projectCopy().noteCount() == 0U);
+
+  // The reset reaches the plug-in on the thread that made the change, so nothing is waited for.
+  const auto preview = runtime.renderedPreview();
+  CHECK(preview != nullptr);
+  CHECK(preview->status == PreviewStatus::Empty);
+  CHECK(preview->interleaved.empty());
+  CHECK(preview->stereo.empty());
+  CHECK(runtime.renderStatusView().state == seam::native_ui::RenderStatusState::Idle);
+  CHECK(!runtime.renderStatusView().hasAudibleAudio);
+
+  // Writing the notes back renders and publishes again.
+  CHECK(runtime.replaceProject(original));
+  const auto restored = waitReady(runtime);
+  CHECK(restored != nullptr);
+  CHECK(restored->status == PreviewStatus::Ready);
+  CHECK(!restored->interleaved.empty());
+}

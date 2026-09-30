@@ -269,20 +269,6 @@ RenderedPreview EditorRuntime::makeRenderedPreview(
   return output;
 }
 
-void EditorRuntime::publishPreviewFromAuthoring() {
-  const auto shared = authoring_->renderer().latest();
-  if (shared == nullptr || shared->state == authoring::RenderState::Idle) return;
-  static_cast<void>(previewPublication_.publish(makeRenderedPreview(*shared)));
-  refreshRenderStatusView();
-  std::function<void()> callback;
-  {
-    std::lock_guard lock(mutex_);
-    callback = renderReadyCallback_;
-  }
-  if (callback) callback();
-}
-
-
 core::Result<void> EditorRuntime::bindVoicebankLocked(
     const voicebank::VoicebankCandidate& candidate) {
   if (!trackId_.valid()) {
