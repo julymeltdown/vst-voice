@@ -243,6 +243,112 @@ TEST_CASE("piano roll draws, selects, moves, and hit-tests notes") {
   CHECK(session.project().findNote(added.value()) != nullptr);
 }
 
+namespace {
+
+// Two regions on one track with a note in each and a far-right note in the second, and a roll that shows
+// the second. The selection lives in the session, so it can name notes of a region the roll is not
+// showing: the plug-in editor rebuilds its controller around another region while the session, and the
+// selection in it, stay.
+struct TwoRegionRoll final {
+  seam::application::ProjectFactory factory{10};
+  seam::domain::RegionId first{};
+  seam::domain::RegionId second{};
+  seam::domain::NoteId firstNote{};
+  seam::domain::NoteId secondNote{};
+  seam::domain::NoteId secondFarNote{};
+  seam::application::EditorSession session;
+  seam::ui::PianoRollModel model;
+
+  TwoRegionRoll() : session(makeProject()), model(session, factory, second) {
+    model.setViewport({{0, 0, 1280, 720}, 72});
+    model.pitch().setTopMidiKey(84);
+  }
+
+  seam::domain::Project makeProject() {
+    using seam::time::Tick;
+    auto project = factory.createProject("Two regions");
+    const auto track = factory.addVocalTrack(project, "Track");
+    first = factory.addRegion(project, track, "First", Tick{0}, Tick{7680});
+    second = factory.addRegion(project, track, "Second", Tick{7680}, Tick{15360});
+    const auto add = [&](seam::domain::RegionId region, Tick start, std::uint8_t key) {
+      auto [lyric, note] = factory.makeNote(start, Tick{480}, key, U"a", seam::domain::Language::Japanese);
+      const auto id = note.id;
+      auto* target = project.findRegion(region);
+      target->lyrics.push_back(std::move(lyric));
+      target->notes.push_back(std::move(note));
+      return id;
+    };
+    firstNote = add(first, Tick{0}, 60);
+    secondNote = add(second, Tick{0}, 62);
+    secondFarNote = add(second, Tick{14000}, 64);
+    return project;
+  }
+};
+
+}  // namespace
+
+TEST_CASE("piano roll refuses to delete, move or resize a selection that names notes of another region") {
+  TwoRegionRoll f;
+  const auto* lead = f.session.project().findNote(f.firstNote);
+  CHECK(lead != nullptr);
+  if (lead == nullptr) return;
+  const auto start = lead->startTick;
+  const auto duration = lead->durationTick;
+  const auto key = lead->midiKey;
+  const auto revision = f.session.revision();
+  const auto refuse = [&](const auto& act) {
+    f.session.selection().selectOnly(f.firstNote);
+    CHECK(!act());
+    // The document was not touched, the note is where it was, and the stale selection was dropped.
+    CHECK(f.session.revision() == revision);
+    const auto* note = f.session.project().findNote(f.firstNote);
+    CHECK(note != nullptr);
+    if (note != nullptr) {
+      CHECK(note->startTick == start);
+      CHECK(note->durationTick == duration);
+      CHECK(note->midiKey == key);
+    }
+    CHECK(f.session.selection().empty());
+  };
+  refuse([&] { return f.model.deleteSelection(); });
+  refuse([&] { return f.model.moveSelection(seam::time::Tick{240}, 2); });
+  refuse([&] { return f.model.resizeSelection(seam::time::Tick{0}, seam::time::Tick{240}); });
+}
+
+TEST_CASE("piano roll refuses a mixed selection whole and keeps only what it shows selected") {
+  TwoRegionRoll f;
+  f.session.selection().replace({f.firstNote, f.secondNote});
+  CHECK(!f.model.deleteSelection());
+  CHECK(f.session.project().findNote(f.firstNote) != nullptr);
+  CHECK(f.session.project().findNote(f.secondNote) != nullptr);
+  // What stays selected is what the roll shows, so a second try deletes exactly that and nothing else.
+  CHECK(f.session.selection().noteIds() == std::vector<seam::domain::NoteId>{f.secondNote});
+  CHECK(f.model.deleteSelection());
+  CHECK(f.session.project().findNote(f.secondNote) == nullptr);
+  CHECK(f.session.project().findNote(f.firstNote) != nullptr);
+}
+
+TEST_CASE("piano roll that shows no region refuses every selected note") {
+  TwoRegionRoll f;
+  f.model.setRegionId(seam::domain::RegionId{});
+  f.session.selection().selectOnly(f.secondNote);
+  CHECK(!f.model.deleteSelection());
+  CHECK(f.session.project().findNote(f.secondNote) != nullptr);
+  CHECK(f.session.selection().empty());
+}
+
+TEST_CASE("piano roll deletes a selected note of its region that lies beyond the viewport") {
+  // Membership in the region is what counts, not whether the note is on screen.
+  TwoRegionRoll f;
+  const auto visible = f.model.visibleNotes();
+  CHECK(std::none_of(visible.begin(), visible.end(),
+                     [&](const auto& note) { return note.noteId == f.secondFarNote; }));
+  f.session.selection().selectOnly(f.secondFarNote);
+  CHECK(f.model.deleteSelection());
+  CHECK(f.session.project().findNote(f.secondFarNote) == nullptr);
+  CHECK(f.session.project().findNote(f.secondNote) != nullptr);
+}
+
 TEST_CASE("piano roll defaults newly drawn notes to Japanese Hiragana") {
   seam::application::ProjectFactory factory{10};
   auto project = factory.createProject("Japanese piano roll");

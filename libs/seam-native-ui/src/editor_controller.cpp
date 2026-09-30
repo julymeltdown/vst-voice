@@ -102,6 +102,11 @@ NativeEditorController::NativeEditorController(
   selectedTrackId_ = owner == session_.project().vocalTracks().end()
                          ? domain::TrackId{}
                          : owner->id;
+  // The selection belongs to the session, which outlives a controller that is rebuilt around another
+  // region (the plug-in editor does that whenever the host points it somewhere else). A controller shows
+  // one region, so it keeps only the part of the selection that names notes of that region.
+  const auto owned = pianoRoll_.ownedSelection();
+  if (owned.elsewhere != 0U) session_.selection().replace(owned.notes);
   arrangementPanel_.rebuild(session_.project(), selectedTrackId_, regionId_);
   resize(logicalWidth_, logicalHeight_);
 }

@@ -100,6 +100,17 @@ public:
   [[nodiscard]] core::Result<void> setSelectionMelisma();
   [[nodiscard]] core::Result<void> deleteSelection();
   [[nodiscard]] core::Result<domain::NoteId> duplicateSelection();
+
+  // The selected notes that live in the region this roll shows, and how many selected notes do not. The
+  // selection belongs to the session, not to the roll, so it can outlive the region it was made in: the
+  // plug-in editor rebuilds its controller around another region while the session stays. Membership in
+  // the region decides, never what is on screen, because a selected note far outside the viewport is
+  // still this region's note.
+  struct OwnedSelection final {
+    std::vector<domain::NoteId> notes;
+    std::size_t elsewhere{0U};
+  };
+  [[nodiscard]] OwnedSelection ownedSelection() const;
   [[nodiscard]] core::Result<LyricDistributionReport> distributeSelectedLyrics(
       std::u32string text,
       // Omitted preserves each target language; explicit Unspecified resets it.
@@ -112,6 +123,12 @@ public:
 private:
   [[nodiscard]] const domain::VocalRegion* region() const noexcept;
   [[nodiscard]] domain::VocalRegion* region() noexcept;
+  // For a command that changes notes by identity: the selected notes of this region, or a refusal when the
+  // selection also names notes of another region. Acting on the shown part alone would change less than
+  // the creator was told is selected, and acting on all of it would change notes out of sight, so the
+  // command is refused without touching the document. The stale part is dropped from the selection, so the
+  // next try acts on what is drawn as selected. outcome completes "nothing was ...".
+  [[nodiscard]] core::Result<std::vector<domain::NoteId>> selectionForCommand(std::string_view outcome);
   [[nodiscard]] Rect noteBounds(const IndexedNote& indexed) const noexcept;
   [[nodiscard]] NoteVisual makeNoteVisual(const IndexedNote& indexed) const;
   // Rebuilds the index when the session has moved on since it was built. Undo, redo, a command run

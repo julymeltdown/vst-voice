@@ -34,6 +34,37 @@ domain::VocalRegion* PianoRollModel::region() noexcept {
   return session_.project().findRegion(regionId_);
 }
 
+PianoRollModel::OwnedSelection PianoRollModel::ownedSelection() const {
+  OwnedSelection result;
+  const auto selected = session_.selection().noteIds();
+  const auto* shown = region();
+  if (shown == nullptr) {
+    result.elsewhere = selected.size();
+    return result;
+  }
+  std::unordered_set<domain::NoteId> members;
+  members.reserve(shown->notes.size());
+  for (const auto& note : shown->notes) members.insert(note.id);
+  for (const auto noteId : selected) {
+    if (members.contains(noteId)) {
+      result.notes.push_back(noteId);
+    } else {
+      ++result.elsewhere;
+    }
+  }
+  return result;
+}
+
+core::Result<std::vector<domain::NoteId>> PianoRollModel::selectionForCommand(
+    std::string_view outcome) {
+  auto owned = ownedSelection();
+  if (owned.elsewhere == 0U) return core::success(std::move(owned.notes));
+  session_.selection().replace(owned.notes);
+  return core::failure<std::vector<domain::NoteId>>(
+      core::ErrorCode::Conflict,
+      "The selection named notes outside this region, so nothing was " + std::string{outcome} +
+          "; those notes were dropped from the selection");
+}
 
 double PianoRollModel::pixelAtMicrosecondOffset(
     time::Tick absoluteStart, time::Microseconds offset) const noexcept {
@@ -289,7 +320,9 @@ core::Result<void> PianoRollModel::moveSelection(
     deltaTick = quantizer.snap(deltaTick);
   }
   std::vector<application::NoteMove> moves;
-  for (const auto noteId : session_.selection().noteIds()) {
+  const auto selected = selectionForCommand("moved");
+  if (!selected) return core::Result<void>{selected.error()};
+  for (const auto noteId : selected.value()) {
     const auto* note = session_.project().findNote(noteId);
     if (note == nullptr) {
       continue;
@@ -321,7 +354,9 @@ core::Result<void> PianoRollModel::resizeSelection(
     deltaEnd = quantizer.snap(deltaEnd);
   }
   std::vector<application::NoteResize> resizes;
-  for (const auto noteId : session_.selection().noteIds()) {
+  const auto selected = selectionForCommand("resized");
+  if (!selected) return core::Result<void>{selected.error()};
+  for (const auto noteId : selected.value()) {
     const auto* note = session_.project().findNote(noteId);
     if (note == nullptr) {
       continue;
@@ -498,13 +533,14 @@ core::Result<void> PianoRollModel::setSelectionMelisma() {
 }
 
 core::Result<void> PianoRollModel::deleteSelection() {
-  const auto selected = session_.selection().noteIds();
-  if (selected.empty()) {
+  const auto selected = selectionForCommand("deleted");
+  if (!selected) return core::Result<void>{selected.error()};
+  if (selected.value().empty()) {
     return core::failure(core::ErrorCode::Conflict,
                          "No selected notes can be deleted");
   }
   const auto result = session_.execute(
-      std::make_unique<application::RemoveNotesCommand>(selected));
+      std::make_unique<application::RemoveNotesCommand>(selected.value()));
   if (result) {
     session_.selection().clear();
     rebuildIndex();

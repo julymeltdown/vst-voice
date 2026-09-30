@@ -343,3 +343,109 @@ TEST_CASE("CLAP shell: the plug-in's export refusal reads from the string table"
   if (run != nullptr)
     CHECK(run->description == pseudo.text(native_ui::design::Str::InAPlugInExportFromYour));
 }
+
+namespace {
+
+// The plug-in editor on its default score, shown in the shell.
+struct ShellRuntime final {
+  clap_editor::EditorRuntime runtime{
+      std::nullopt, {},
+      {{std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
+        voicebank::VoicebankRootKind::Development}}};
+  ShellRuntime() {
+    runtime.activateDesignShell(
+        native_ui::design::DesignPreferences{.mode = native_ui::design::DesignMode::Emo});
+    runtime.resize(1600.0, 900.0);
+  }
+};
+
+// Somewhere for the host to point the editor: a second region on the lead's track and a new track with a
+// region of its own. The editor ends where it began, on the lead's first region.
+struct RetargetPlaces final {
+  domain::TrackId leadTrack;
+  domain::RegionId leadRegion;
+  domain::RegionId secondRegion;
+  domain::TrackId otherTrack;
+  domain::RegionId otherRegion;
+};
+
+RetargetPlaces addRetargetPlaces(clap_editor::EditorRuntime& runtime) {
+  RetargetPlaces places{.leadTrack = runtime.trackId(), .leadRegion = runtime.regionId()};
+  const auto second = runtime.controller().addRegionToSelectedTrack();
+  CHECK(second.hasValue());
+  if (second) places.secondRegion = second.value();
+  const auto track = runtime.controller().addVocalTrack("OTHER");
+  CHECK(track.hasValue());
+  if (track) places.otherTrack = track.value();
+  const auto region = runtime.controller().addRegionToSelectedTrack();
+  CHECK(region.hasValue());
+  if (region) places.otherRegion = region.value();
+  CHECK(runtime.selectTrack(places.leadTrack).hasValue());
+  CHECK(runtime.selectRegion(places.leadRegion).hasValue());
+  return places;
+}
+
+std::vector<domain::NoteId> notesOf(clap_editor::EditorRuntime& runtime, domain::RegionId region) {
+  std::vector<domain::NoteId> ids;
+  const auto project = runtime.projectCopy();
+  if (const auto* found = project.findRegion(region)) {
+    for (const auto& note : found->notes) ids.push_back(note.id);
+  }
+  return ids;
+}
+
+// The lead's first note, selected the way a creator selects it: through the shell.
+void selectLeadNote(clap_editor::EditorRuntime& runtime) {
+  paintFrame(runtime);
+  // The snapshot publishes the shell's notes, which the paged list below reads.
+  CHECK(runtime.accessibilitySnapshot().virtualizedNoteCount > 0U);
+  const auto notes = runtime.accessibilityNotes(0U, 1U);
+  CHECK(!notes.empty());
+  if (notes.empty()) return;
+  CHECK(runtime.dispatchAccessibility(notes.front().id, SemanticAction::Activate));
+  CHECK(runtime.controller().sceneState().selectedNoteCount == 1U);
+}
+
+// The host points the editor somewhere else through the plug-in's own selection API. The controller is
+// rebuilt around the new place, and the note selection, which belongs to the session the controllers
+// share, must not come with it: the editor shows another region, and a key press acts on what it shows.
+void checkRetargetDropsNoteSelection(bool toOtherTrack) {
+  ShellRuntime shell;
+  auto& runtime = shell.runtime;
+  const auto places = addRetargetPlaces(runtime);
+  const auto leadNotes = notesOf(runtime, places.leadRegion);
+  CHECK(!leadNotes.empty());
+  selectLeadNote(runtime);
+  const auto retargeted = toOtherTrack ? runtime.selectTrack(places.otherTrack)
+                                       : runtime.selectRegion(places.secondRegion);
+  CHECK(retargeted.hasValue());
+  CHECK(runtime.controller().selectedRegion() ==
+        (toOtherTrack ? places.otherRegion : places.secondRegion));
+  CHECK(runtime.controller().sceneState().selectedNoteCount == 0U);
+  runtime.keyDown(KeyEvent{.key = NativeKey::Delete});
+  CHECK(notesOf(runtime, places.leadRegion) == leadNotes);
+}
+
+}  // namespace
+
+TEST_CASE("CLAP shell: a host that points the editor at another region cannot delete a note it left behind") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  checkRetargetDropsNoteSelection(false);
+}
+
+TEST_CASE("CLAP shell: a host that points the editor at another track cannot delete a note it left behind") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  checkRetargetDropsNoteSelection(true);
+}
+
+TEST_CASE("CLAP shell: a host that points the editor at where it already is keeps the note selection") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellRuntime shell;
+  auto& runtime = shell.runtime;
+  const auto places = addRetargetPlaces(runtime);
+  selectLeadNote(runtime);
+  CHECK(runtime.selectRegion(places.leadRegion).hasValue());
+  CHECK(runtime.controller().sceneState().selectedNoteCount == 1U);
+  CHECK(runtime.selectTrack(places.leadTrack).hasValue());
+  CHECK(runtime.controller().sceneState().selectedNoteCount == 1U);
+}

@@ -3008,6 +3008,38 @@ TEST_CASE("native seam target and its A/B state do not follow the editor to the 
   CHECK(!controller.sceneState().seamPreviewAlternate);
 }
 
+TEST_CASE("native controller built around another region adopts only its own part of the shared selection") {
+  // The selection belongs to the session, and the plug-in editor rebuilds its controller around another
+  // region while the session stays. A controller shows one region, so it keeps only the notes in it.
+  NativeUiFixture fixture;
+  const auto lead = fixture.session.project().vocalTracks().front().id;
+  const auto other = fixture.factory.addRegion(fixture.session.project(), lead, "Other",
+                                               seam::time::Tick{7680}, seam::time::Tick{7680});
+  fixture.session.selection().selectOnly(fixture.noteId);
+  {
+    seam::native_ui::NativeEditorController same{fixture.session, fixture.factory, fixture.regionId};
+    CHECK(same.sceneState().selectedNoteCount == 1U);
+  }
+  CHECK(fixture.session.selection().size() == 1U);
+  seam::native_ui::NativeEditorController elsewhere{fixture.session, fixture.factory, other};
+  CHECK(elsewhere.sceneState().selectedNoteCount == 0U);
+  CHECK(fixture.session.selection().empty());
+
+  // A selection that spans both regions keeps exactly the part the controller shows.
+  auto [lyric, note] = fixture.factory.makeNote(seam::time::Tick{0}, seam::time::Tick{960}, 67U, U"edge",
+                                                seam::domain::Language::English);
+  const auto otherNote = note.id;
+  auto* otherRegion = fixture.session.project().findRegion(other);
+  CHECK(otherRegion != nullptr);
+  if (otherRegion == nullptr) return;
+  otherRegion->lyrics.push_back(std::move(lyric));
+  otherRegion->notes.push_back(std::move(note));
+  fixture.session.selection().replace({fixture.noteId, otherNote});
+  seam::native_ui::NativeEditorController leadEditor{fixture.session, fixture.factory, fixture.regionId};
+  CHECK(leadEditor.sceneState().selectedNoteCount == 1U);
+  CHECK(fixture.session.selection().contains(fixture.noteId));
+}
+
 TEST_CASE("native arrangement controller exposes undoable track and region editing") {
   NativeUiFixture fixture;
   seam::native_ui::NativeEditorController controller{
