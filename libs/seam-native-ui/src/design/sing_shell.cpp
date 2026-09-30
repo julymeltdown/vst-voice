@@ -384,6 +384,18 @@ ui::Rect singNoteCapsuleBounds(const ui::NoteVisual& note, ui::Rect grid) noexce
   return b;
 }
 
+ui::Rect singLyricEditorBounds(ui::Rect note, double textWidth, ui::Rect grid) noexcept {
+  const auto wanted = std::max({note.width, kLyricEditorMinWidth,
+                                std::max(0.0, textWidth) + 2.0 * kLyricEditorInset +
+                                    kLyricEditorCaretRoom});
+  const auto width = std::min(wanted, std::max(0.0, grid.width));
+  const auto height = std::min(std::max(note.height, kLyricEditorMinHeight), std::max(0.0, grid.height));
+  const auto x = std::max(grid.x, std::min(note.x, grid.right() - width));
+  const auto centred = note.y + (note.height - height) * 0.5;
+  const auto y = std::max(grid.y, std::min(centred, grid.bottom() - height));
+  return {x, y, width, height};
+}
+
 std::vector<SingOverlapBadge> layoutSingOverlapBadges(
     const std::vector<ui::NoteVisual>& notes, ui::Rect grid) {
   std::vector<SingOverlapBadge> result;
@@ -2534,15 +2546,19 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   }
   if (state.lyricEditor.has_value() && !state.timeMapInputActive) {
     layerTo(paint::Layer::Dynamic, "lyric-editor");
-    const auto editor = fromLegacy(*state.lyricEditor);
+    const auto textStyle = style(FontRole::Ui, t.type.lyric);
+    const auto textWidth =
+        state.compositionPreview.empty() ? 0.0 : c.measure(state.compositionPreview, textStyle);
+    const auto editor = singLyricEditorBounds(fromLegacy(*state.lyricEditor), textWidth, l.grid);
     c.fill(Path::roundedRect(editor, 6.0), t.color.surfaceSunken);
     c.save();
     c.setGlow(t.color.accent, 8.0);
     c.stroke(Path::roundedRect(editor, 6.0), t.color.accent, StrokeStyle{1.5});
     c.restore();
     if (!state.compositionPreview.empty())
-      c.text({editor.x + 8.0, editor.y, editor.width - 16.0, editor.height},
-             state.compositionPreview, style(FontRole::Ui, t.type.lyric), t.color.textPrimary);
+      c.text({editor.x + kLyricEditorInset, editor.y, editor.width - 2.0 * kLyricEditorInset,
+              editor.height},
+             state.compositionPreview, textStyle, t.color.textPrimary);
   }
   layerTo(paint::Layer::Content);
 }

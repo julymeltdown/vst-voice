@@ -134,6 +134,15 @@ inline constexpr double kNoteWaveformColumn = 2.0;
 // Keep compressed overlap bands filled rather than shrinking them to hairline outlines. These
 // are paint bounds only: musical duration, pitch, selection and gesture geometry stay in the model.
 [[nodiscard]] ui::Rect singNoteCapsuleBounds(const ui::NoteVisual& note, ui::Rect grid) noexcept;
+// The inline lyric editor's box. A note drawn with a double-click is about 28 px wide, far too small
+// to show what is typed, so the box keeps the note's left edge and row, grows to hold the text on
+// one line with its padding and the caret, and never falls below a usable minimum. It then slides as
+// far as it must to stay inside the grid, and is never wider or taller than the grid.
+inline constexpr double kLyricEditorInset = 8.0;
+inline constexpr double kLyricEditorCaretRoom = 10.0;
+inline constexpr double kLyricEditorMinWidth = 96.0;
+inline constexpr double kLyricEditorMinHeight = 24.0;
+[[nodiscard]] ui::Rect singLyricEditorBounds(ui::Rect note, double textWidth, ui::Rect grid) noexcept;
 struct SingOverlapBadge final {
   std::size_t group{0U};
   std::size_t members{0U};

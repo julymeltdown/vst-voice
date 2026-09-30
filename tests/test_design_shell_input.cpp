@@ -61,8 +61,9 @@ struct ShellFixture final {
   SingShell shell;
   std::optional<native_ui::TextInputRequest> lastTextInput;
 
-  explicit ShellFixture(time::Tick regionStart = time::Tick{0}, bool wide = false)
-      : session(makeProject(regionStart, wide)),
+  explicit ShellFixture(time::Tick regionStart = time::Tick{0}, bool wide = false,
+                        time::Tick noteDuration = time::Tick{960})
+      : session(makeProject(regionStart, wide, noteDuration)),
         controller{session, factory, regionId,
                    native_ui::EditorHostCallbacks{
                        .beginTextInput =
@@ -77,14 +78,14 @@ struct ShellFixture final {
 
   // A wide project adds notes far to the right, far above and below, and a dense overlap, so
   // scrolling moves notes across every grid edge.
-  domain::Project makeProject(time::Tick regionStart, bool wide) {
+  domain::Project makeProject(time::Tick regionStart, bool wide, time::Tick noteDuration) {
     auto project = factory.createProject("Design shell");
     project.settings().characterDisplay = domain::CharacterDisplayMode::Off;
     trackId = factory.addVocalTrack(project, "Singer");
     regionId = factory.addRegion(project, trackId, "Phrase", regionStart,
                                  wide ? time::Tick{96000} : time::Tick{7680});
     auto [lyric, note] =
-        factory.makeNote(time::Tick{960}, time::Tick{960}, 72U, U"\u3042", domain::Language::Japanese);
+        factory.makeNote(time::Tick{960}, noteDuration, 72U, U"\u3042", domain::Language::Japanese);
     auto* region = project.findRegion(regionId);
     region->lyrics.push_back(std::move(lyric));
     region->notes.push_back(std::move(note));
@@ -303,6 +304,45 @@ TEST_CASE("batch lyric input anchors on the selected note in the shell grid") {
   CHECK(f.controller.sceneState().lyricEditor.has_value());
   CHECK(f.shell.prepareFrame(f.controller, 1500.0, 900.0));
   CHECK(!f.controller.sceneState().lyricEditor.has_value());
+}
+
+TEST_CASE("the inline lyric editor paints what is typed whole, even over a short note") {
+  // A note drawn with a double-click is a sixteenth, about 28 px wide. The editor opened over it
+  // used the note's own rectangle, so whatever was typed was clipped to a few pixels and the
+  // creator wrote a lyric blind.
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  ShellFixture f{time::Tick{0}, false, time::Tick{240}};
+  CHECK(f.frame());
+  const auto notes = f.controller.pianoRoll().visibleNotes();
+  CHECK(notes.size() == 1U);
+  if (notes.empty()) return;
+  CHECK(notes.front().bounds.width < 40.0);
+
+  CHECK(f.controller.beginLyricEdit(f.note().id).hasValue());
+  CHECK(f.controller.updateTextComposition(U"komorebi", {}).hasValue());
+  CHECK(f.controller.sceneState().lyricEditor.has_value());
+  CHECK(f.shell.prepareFrame(f.controller, 1600.0, 900.0));
+  native_ui::PixelSurface surface{1600U, 900U};
+  native_ui::RasterCanvas canvas{surface, 1.0, nullptr};
+  native_ui::paint::ScopedTextCapture capture;
+  CHECK(f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()));
+
+  const native_ui::paint::TextRecord* typed = nullptr;
+  for (const auto& record : capture.records()) {
+    if (record.text == "komorebi") typed = &record;
+  }
+  CHECK(typed != nullptr);
+  if (typed == nullptr) return;
+  // The box the painter gives the text is the editor's own box less its padding. It has to be at
+  // least as wide as the text, or the backend clips or elides whatever does not fit.
+  CHECK(typed->bounds.width + 1e-9 >= typed->naturalWidth);
+  CHECK(!typed->elided);
+  CHECK(typed->ink.width >= typed->naturalWidth - 0.5);
+  const auto grid = f.shell.layout().grid;
+  CHECK(typed->ink.x >= grid.x);
+  CHECK(typed->ink.right() <= grid.right());
+  CHECK(typed->ink.x >= typed->clip.x - 1e-9);
+  CHECK(typed->ink.right() <= typed->clip.right() + 1e-9);
 }
 
 TEST_CASE("a track rename field is an inline field card in the shell") {
@@ -978,6 +1018,49 @@ TEST_CASE("compressed note capsules retain their body and never cross their allo
     CHECK(capsule.bottom() <= grid.y + note.bounds.bottom());
     CHECK(capsule.height >= height * 0.8 - 1e-9);
   }
+}
+
+TEST_CASE("the inline lyric editor box grows past a short note and stays inside the grid") {
+  namespace design = native_ui::design;
+  const ui::Rect grid{80.0, 172.0, 1040.0, 504.0};
+  // A note drawn with a double-click is a sixteenth: about 28 px wide and 16 tall.
+  const ui::Rect shortNote{300.0, 400.0, 28.0, 16.0};
+  const auto box = design::singLyricEditorBounds(shortNote, 13.0, grid);
+  CHECK_NEAR(box.x, shortNote.x, 1e-9);
+  CHECK(box.width >= design::kLyricEditorMinWidth);
+  CHECK(box.width >= 13.0 + 2.0 * design::kLyricEditorInset);
+  CHECK(box.height >= design::kLyricEditorMinHeight);
+  CHECK_NEAR(box.y + box.height * 0.5, shortNote.y + shortNote.height * 0.5, 1e-9);
+
+  // Longer text widens the box by the text and its padding; a wide note is never narrowed.
+  const auto longer = design::singLyricEditorBounds(shortNote, 300.0, grid);
+  CHECK(longer.width >= 300.0 + 2.0 * design::kLyricEditorInset);
+  const ui::Rect wideNote{300.0, 400.0, 500.0, 16.0};
+  CHECK(design::singLyricEditorBounds(wideNote, 13.0, grid).width >= wideNote.width - 1e-9);
+
+  // Wherever the note sits, and however long the text, the box stays inside the grid.
+  for (const auto& note : {ui::Rect{grid.x - 10.0, grid.y - 10.0, 28.0, 16.0},
+                           ui::Rect{grid.right() - 5.0, grid.bottom() - 4.0, 28.0, 16.0},
+                           ui::Rect{grid.right() + 400.0, grid.y + 100.0, 28.0, 16.0},
+                           ui::Rect{600.0, grid.y - 50.0, 28.0, 16.0}}) {
+    for (const auto textWidth : {0.0, 13.0, 300.0, 5000.0}) {
+      const auto b = design::singLyricEditorBounds(note, textWidth, grid);
+      CHECK(b.x >= grid.x - 1e-9);
+      CHECK(b.y >= grid.y - 1e-9);
+      CHECK(b.right() <= grid.right() + 1e-9);
+      CHECK(b.bottom() <= grid.bottom() + 1e-9);
+    }
+  }
+  // Text wider than the grid fills the grid rather than overrunning it.
+  const auto huge = design::singLyricEditorBounds(shortNote, 5000.0, grid);
+  CHECK_NEAR(huge.x, grid.x, 1e-9);
+  CHECK_NEAR(huge.width, grid.width, 1e-9);
+
+  // A grid narrower than the minimum is filled rather than overrun.
+  const ui::Rect narrow{10.0, 10.0, 60.0, 40.0};
+  const auto squeezed = design::singLyricEditorBounds({20.0, 20.0, 20.0, 16.0}, 13.0, narrow);
+  CHECK_NEAR(squeezed.x, narrow.x, 1e-9);
+  CHECK_NEAR(squeezed.width, narrow.width, 1e-9);
 }
 
 TEST_CASE("small overlap badges count the entire group and stay clear of ordinary note bodies") {
