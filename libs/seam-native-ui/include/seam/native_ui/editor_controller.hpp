@@ -141,6 +141,10 @@ struct EditorHostCallbacks final {
   // The same for a region picked inside the selected track (the MIX arrangement). The editor
   // selects the region itself; the host follows so its render and preview name that region.
   std::function<core::Result<void>(domain::RegionId)> selectRegion;
+  // The editor has no vocal track to work on: the last one was removed, or only audio tracks remain.
+  // The host drops its own vocal selection, so nothing it renders, auditions or edits still names a
+  // track or region that is gone. Like the two selections above it is view state and dirties nothing.
+  std::function<core::Result<void>()> clearVocalTarget;
   // Sets the project's output channel count (1 to 8) where the host, not an audio device, owns
   // that choice: a plug-in's output ports. The standalone app leaves it empty and sets channels
   // through applyAudioSettings, so MIX shows the control only where this is connected.

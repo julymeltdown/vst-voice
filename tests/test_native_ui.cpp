@@ -360,6 +360,35 @@ TEST_CASE("embedded dynamics inspector receives complete drag gestures without l
   CHECK(restored.controller().sceneState().replacementReview.rows[0].find("3.981") != std::string::npos);
 }
 
+TEST_CASE("embedded editor lets the host go of the last vocal track that was removed and follows its return") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  const auto root = test::support::temporaryDirectory("embedded-last-track");
+  clap_editor::EditorRuntime runtime{fixture.session.project(), {},
+      {{root / "absent-bank", voicebank::VoicebankRootKind::Installed}}};
+  const auto track = runtime.trackId();
+  const auto region = runtime.regionId();
+  CHECK(track.valid());
+  CHECK(region.valid());
+  CHECK(runtime.voicebankResolution().diagnostic != "CLAP editor contains no vocal track");
+
+  // The plug-in follows what the editor selects. When the last vocal track is removed there is nothing
+  // to follow, and the host must not go on naming the track, its region or its voicebank.
+  CHECK(runtime.controller().removeSelectedTrack());
+  CHECK(runtime.projectCopy().vocalTracks().empty());
+  CHECK(!runtime.trackId().valid());
+  CHECK(!runtime.regionId().valid());
+  CHECK(runtime.voicebankResolution().status == voicebank::VoicebankResolveStatus::InvalidReference);
+  CHECK(runtime.voicebankResolution().diagnostic == "CLAP editor contains no vocal track");
+
+  // A plug-in window has no application menu: the editor's own Undo brings the track back.
+  const native_ui::KeyEvent undoKey{.key = native_ui::NativeKey::Z,
+      .modifiers = native_ui::InputModifiers{.command = true}};
+  CHECK(runtime.controller().keyDown(undoKey));
+  CHECK(runtime.trackId() == track);
+  CHECK(runtime.regionId() == region);
+}
+
 TEST_CASE("embedded editor review callback commits retained edits and dirty state") {
   NativeUiFixture fixture;
   auto project = fixture.session.project();
@@ -3018,6 +3047,96 @@ TEST_CASE("native controller reconcile refreshes the lane but leaves an intact t
   CHECK(controller.selectedRegion() == lead);
   CHECK(fixture.session.selection().size() == 1U);
   CHECK(host.empty());
+}
+
+TEST_CASE("native controller reconcile tells the host to let go once when the last vocal track is removed") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); },
+       .clearVocalTarget = [&] { host.push_back("clear"); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  const auto voice = controller.selectedTrack();
+
+  host.clear();
+  CHECK(controller.removeSelectedTrack());
+  CHECK(!controller.selectedTrack().valid());
+  CHECK(!controller.selectedRegion().valid());
+  CHECK(!controller.pianoRoll().regionId().valid());
+  CHECK(controller.pianoRoll().visibleNotes().empty());
+  CHECK((host == std::vector<std::string>{"clear"}));
+
+  // Reconciling again with nowhere to move is quiet: the host has already been told.
+  host.clear();
+  controller.reconcileWithProject();
+  CHECK(host.empty());
+
+  // Undo brings the track and its region back, and the host follows them rather than staying clear.
+  CHECK(fixture.session.undo());
+  controller.reconcileWithProject();
+  CHECK(controller.selectedTrack() == voice);
+  CHECK(controller.selectedRegion() == lead);
+  CHECK((host == std::vector<std::string>{"region " + lead.toString()}));
+}
+
+TEST_CASE("native controller reconcile rests on an audio track only while the score has no vocal track") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  const domain::TrackId audio{9902U};
+  fixture.session.project().audioTracks().push_back(domain::AudioTrack{
+      .id = audio, .name = "Backing", .mediaPath = "backing.wav", .mediaHash = std::string(64U, 'b'),
+      .originalFilename = "backing.wav", .sourceSampleRate = 48000U, .sourceChannels = 2U,
+      .sourceFrameCount = 48000U, .startTick = time::Tick{0}});
+  std::vector<std::string> host;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectTrack = [&](domain::TrackId id) { host.push_back("track " + id.toString()); return core::success(); },
+       .selectRegion = [&](domain::RegionId id) { host.push_back("region " + id.toString()); return core::success(); },
+       .clearVocalTarget = [&] { host.push_back("clear"); return core::success(); }}};
+  controller.resize(1280.0, 720.0);
+  const auto lead = fixture.regionId;
+  const auto voice = controller.selectedTrack();
+
+  // The vocal track goes and only the audio track is left: the editor rests on it, and the host is
+  // told that no vocal track or region is being worked on.
+  host.clear();
+  CHECK(controller.removeSelectedTrack());
+  CHECK(controller.selectedTrack() == audio);
+  CHECK(!controller.selectedRegion().valid());
+  CHECK((host == std::vector<std::string>{"clear"}));
+
+  // The vocal track comes back. Resting on the audio track was not a choice, so the editor leaves it.
+  CHECK(fixture.session.undo());
+  host.clear();
+  controller.reconcileWithProject();
+  CHECK(controller.selectedTrack() == voice);
+  CHECK(controller.selectedRegion() == lead);
+  CHECK(controller.pianoRoll().visibleNotes().size() == 1U);
+  CHECK((host == std::vector<std::string>{"region " + lead.toString()}));
+}
+
+TEST_CASE("native controller reconcile keeps the editor consistent when the host refuses to let go") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  unsigned refusals = 0U;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.clearVocalTarget = [&] {
+        ++refusals;
+        return core::failure(core::ErrorCode::Conflict, "The host is busy");
+      }}};
+  controller.resize(1280.0, 720.0);
+
+  // The score is the authority: a host that cannot follow does not undo the removal or leave the
+  // editor naming the track that is gone.
+  CHECK(controller.removeSelectedTrack());
+  CHECK(refusals == 1U);
+  CHECK(fixture.session.project().vocalTracks().empty());
+  CHECK(!controller.selectedTrack().valid());
+  CHECK(!controller.selectedRegion().valid());
+  CHECK(controller.pianoRoll().visibleNotes().empty());
+  CHECK(controller.arrangementPanel().tracks().empty());
 }
 
 TEST_CASE("native tempo meter dispatch guards context and notifies document changes only on success") {

@@ -495,68 +495,6 @@ std::vector<domain::RegionId> EditorRuntime::regionIds(
   return ids;
 }
 
-core::Result<void> EditorRuntime::selectTrack(domain::TrackId trackId) {
-  std::lock_guard lock(mutex_);
-  const auto* track = session_.project().findVocalTrack(trackId);
-  if (track == nullptr || track->regions.empty()) {
-    return core::failure(core::ErrorCode::NotFound,
-                         "Selected vocal track has no editable region");
-  }
-  const auto selected = authoring_->selectTrack(trackId);
-  if (!selected) return selected;
-  trackId_ = authoring_->selectedTrack();
-  regionId_ = authoring_->selectedRegion();
-  refreshAllVoicebankResolutionsLocked();
-  rebuildController();
-  controller_->setCharacterMetadata(character_.displayName(),
-                                    character_.styleName());
-  requestRender(renderSampleRate_);
-  requestRepaint();
-  return core::success();
-}
-
-core::Result<void> EditorRuntime::selectRegion(domain::RegionId regionId) {
-  std::lock_guard lock(mutex_);
-  const auto* track = session_.project().findVocalTrack(trackId_);
-  if (track == nullptr || track->findRegion(regionId) == nullptr) {
-    return core::failure(core::ErrorCode::NotFound,
-                         "Selected region does not belong to the active track");
-  }
-  const auto selected = authoring_->selectRegion(regionId);
-  if (!selected) return selected;
-  trackId_ = authoring_->selectedTrack();
-  regionId_ = authoring_->selectedRegion();
-  rebuildController();
-  controller_->setCharacterMetadata(character_.displayName(),
-                                    character_.styleName());
-  requestRender(renderSampleRate_);
-  requestRepaint();
-  return core::success();
-}
-
-// The controller already moved its own selection; only the host side follows here. A region names
-// its track, so a region selection moves both.
-core::Result<void> EditorRuntime::followEditorSelection(domain::TrackId trackId,
-                                                        domain::RegionId regionId) {
-  std::lock_guard lock(mutex_);
-  const auto selected = regionId.valid() ? authoring_->selectRegion(regionId)
-                                         : authoring_->selectTrack(trackId);
-  if (!selected) return selected;
-  const auto trackChanged = authoring_->selectedTrack() != trackId_;
-  const auto regionChanged = authoring_->selectedRegion() != regionId_;
-  trackId_ = authoring_->selectedTrack();
-  regionId_ = authoring_->selectedRegion();
-  if (trackChanged) {
-    refreshAllVoicebankResolutionsLocked();
-    if (controller_)
-      controller_->setAudioState(voicebankResolution_.resolved(),
-                                 voicebankStatusLabel(voicebankResolution_));
-  }
-  if (trackChanged || regionChanged) requestRender(renderSampleRate_);
-  requestRepaint();
-  return core::success();
-}
-
 core::Result<void> EditorRuntime::setTrackMix(
     domain::TrackId trackId, float gainDb, float pan, bool muted, bool solo) {
   std::lock_guard lock(mutex_);

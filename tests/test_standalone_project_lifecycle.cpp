@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 #include "test_support.hpp"
 
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/application/render_commands.hpp"
 #include "seam/build/version.hpp"
@@ -1242,6 +1243,24 @@ void checkEditingTargetFollowsScore(StructuralEditFixture& fixture) {
   }
 }
 
+// The last vocal track is gone. The editor may rest on an audio track, but nothing that says which
+// vocal track or region is being worked on may still name one: not the editor, the authoring
+// session, the runtime that renders, its technical edits, the piano roll or the lane.
+void checkNoVocalEditingTarget(StructuralEditFixture& fixture) {
+  auto& editor = fixture.editor();
+  CHECK(fixture.project().vocalTracks().empty());
+  CHECK(fixture.project().findVocalTrack(editor.selectedTrack()) == nullptr);
+  CHECK(!editor.selectedRegion().valid());
+  CHECK(!fixture.session->trackId().valid());
+  CHECK(!fixture.session->regionId().valid());
+  CHECK(!fixture.session->runtime().selectedTrack().valid());
+  CHECK(!fixture.session->runtime().selectedRegion().valid());
+  CHECK(!fixture.session->runtime().technicalEdits().regionId().valid());
+  CHECK(!editor.pianoRoll().regionId().valid());
+  CHECK(editor.pianoRoll().visibleNotes().empty());
+  CHECK(editor.sceneState().selectedNoteCount == 0U);
+}
+
 }  // namespace
 
 TEST_CASE("standalone deleting the selected region leaves no note selected") {
@@ -1372,6 +1391,99 @@ TEST_CASE("standalone menu Undo of removing the only track puts the editor back 
   CHECK(editor.selectedRegion() == fixture.lead);
   CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
   checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone removing the last vocal track leaves no owner naming it, through Undo and Redo") {
+  auto fixture = makeStructuralEditFixture("structural-last-track-owners");
+  auto& editor = fixture.editor();
+  const auto track = editor.selectedTrack();
+  CHECK(editor.removeSelectedTrack());
+  CHECK(!editor.selectedTrack().valid());
+  checkNoVocalEditingTarget(fixture);
+
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() == track);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  checkEditingTargetFollowsScore(fixture);
+
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  checkNoVocalEditingTarget(fixture);
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() == track);
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone editor keys keep every owner off a removed last vocal track") {
+  // A plug-in window has no application menu, so the editor's own key handler is its Undo.
+  auto fixture = makeStructuralEditFixture("structural-last-track-keys");
+  auto& editor = fixture.editor();
+  const seam::native_ui::KeyEvent undoKey{.key = seam::native_ui::NativeKey::Z,
+      .modifiers = seam::native_ui::InputModifiers{.command = true}};
+  const seam::native_ui::KeyEvent redoKey{.key = seam::native_ui::NativeKey::Z,
+      .modifiers = seam::native_ui::InputModifiers{.shift = true, .command = true}};
+  const auto track = editor.selectedTrack();
+  CHECK(editor.removeSelectedTrack());
+  checkNoVocalEditingTarget(fixture);
+  CHECK(editor.keyDown(undoKey));
+  CHECK(editor.selectedTrack() == track);
+  checkEditingTargetFollowsScore(fixture);
+  CHECK(editor.keyDown(redoKey));
+  checkNoVocalEditingTarget(fixture);
+  CHECK(editor.keyDown(undoKey));
+  checkEditingTargetFollowsScore(fixture);
+}
+
+TEST_CASE("standalone removing the last vocal track beside an audio track rests on it and Undo comes back") {
+  auto fixture = makeStructuralEditFixture("structural-last-vocal-audio-remains");
+  auto& editor = fixture.editor();
+  const auto vocal = editor.selectedTrack();
+  const seam::domain::TrackId audio{9901U};
+  CHECK(fixture.session->runtime().execute(std::make_unique<seam::application::AddAudioTrackCommand>(
+      seam::domain::AudioTrack{.id = audio, .name = "Backing", .mediaPath = "/tmp/seam-no-such-backing.wav",
+                               .mediaHash = std::string(64U, 'b'), .originalFilename = "backing.wav",
+                               .sourceSampleRate = 48000U, .sourceChannels = 2U, .sourceFrameCount = 48000U,
+                               .startTick = seam::time::Tick{0}})));
+  CHECK(editor.selectedTrack() == vocal);
+  CHECK(editor.removeSelectedTrack());
+
+  // Only the audio track is left. The editor rests on it, and the vocal target is nowhere.
+  CHECK(editor.selectedTrack() == audio);
+  checkNoVocalEditingTarget(fixture);
+
+  // The vocal track and its note are back, and the editor is on them rather than on the audio track
+  // it was only resting on.
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Undo));
+  CHECK(editor.selectedTrack() == vocal);
+  CHECK(editor.selectedRegion() == fixture.lead);
+  CHECK(editor.pianoRoll().visibleNotes().size() == 1U);
+  checkEditingTargetFollowsScore(fixture);
+
+  CHECK(fixture.app->dispatch(seam::platform::ApplicationCommand::Redo));
+  CHECK(editor.selectedTrack() == audio);
+  checkNoVocalEditingTarget(fixture);
+}
+
+TEST_CASE("standalone a score with no vocal track clears the runtime's selection") {
+  const auto root = seam::test::support::temporaryDirectory("standalone-empty-score-selection");
+  auto session = makeSession(root);
+  addNote(*session);
+  CHECK(session->runtime().selectedTrack().valid());
+  CHECK(session->runtime().selectedRegion().valid());
+  CHECK(session->createNewProject(seam::authoring::NewProjectRequest{
+      .name = "Empty",
+      .tempoBpm = 120.0,
+      .sampleRate = 48000U,
+      .outputChannels = 2U,
+      .createInitialVocalTrack = false,
+      .initialVoicebank = std::nullopt,
+      .projectPath = root / "empty.seam",
+  }));
+  CHECK(session->runtime().document().session().project().vocalTracks().empty());
+  CHECK(!session->trackId().valid());
+  CHECK(!session->regionId().valid());
+  CHECK(!session->runtime().selectedTrack().valid());
+  CHECK(!session->runtime().selectedRegion().valid());
+  CHECK(!session->runtime().technicalEdits().regionId().valid());
 }
 
 TEST_CASE("standalone harmony controller routes every named mode to its scale") {

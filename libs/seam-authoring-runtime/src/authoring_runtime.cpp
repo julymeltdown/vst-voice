@@ -236,6 +236,15 @@ core::Result<void> AuthoringRuntime::selectRegion(domain::RegionId regionId) {
   return core::success();
 }
 
+void AuthoringRuntime::clearSelection() {
+  if (selectedTrack_.valid() || selectedRegion_.valid()) {
+    static_cast<void>(stopPerformanceAudition());
+  }
+  selectedTrack_ = {};
+  selectedRegion_ = {};
+  technicalEdits_.setRegion({});
+}
+
 core::Result<void> AuthoringRuntime::execute(
     std::unique_ptr<application::ICommand> command) {
   const auto impact = command == nullptr

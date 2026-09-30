@@ -179,6 +179,18 @@ void AuthoringSession::configureController() {
         }
         return core::success();
       },
+      // The editor has no vocal track left to work on (the last was removed, or only audio tracks
+      // remain): the runtime lets go of its selection too, so no render, audition or technical edit
+      // names a track or region that is gone.
+      .clearVocalTarget = [this] {
+        runtime_->clearSelection();
+        trackId_ = {};
+        regionId_ = {};
+        if (externalCallbacks_.requestRepaint) {
+          externalCallbacks_.requestRepaint();
+        }
+        return core::success();
+      },
       .documentChanged = [this] { onDocumentChanged(); },
       .stopPlaying = [this] {
         const auto result = runtime_->transport().stop();
@@ -667,6 +679,9 @@ core::Result<void> AuthoringSession::rebindAfterProjectReplacement() {
   if (selectedTrack != nullptr) {
     auto track = runtime_->selectTrack(trackId_);
     if (!track) return track;
+  } else {
+    // The score has no vocal region to work on, so nothing the previous score selected is left to name.
+    runtime_->clearSelection();
   }
   if (selectedRegion != nullptr) {
     auto region = runtime_->selectRegion(regionId_);

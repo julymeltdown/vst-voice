@@ -84,6 +84,10 @@ public:
 
   [[nodiscard]] core::Result<void> selectTrack(domain::TrackId trackId);
   [[nodiscard]] core::Result<void> selectRegion(domain::RegionId regionId);
+  // The editor has no vocal track to work on: the last one was removed, or the score was replaced by
+  // one without a vocal region. Drops the selection, so that nothing this runtime renders, auditions
+  // or edits still names a track or region that is gone. Selection is view state and dirties nothing.
+  void clearSelection();
   [[nodiscard]] domain::TrackId selectedTrack() const noexcept {
     return selectedTrack_;
   }

@@ -398,6 +398,11 @@ private:
   // voicebank and technical edits follow, without rebuilding the controller mid-call.
   [[nodiscard]] core::Result<void> followEditorSelection(domain::TrackId trackId,
                                                          domain::RegionId regionId);
+  // The editor found no vocal track left to work on and has cleared its own selection. The host lets go
+  // too: the render, the live voicebank resource and the audio state stop naming the removed track.
+  [[nodiscard]] core::Result<void> clearEditorSelection();
+  // What the editor selects, the host follows; with nothing to select it lets go.
+  void attachSelectionCallbacks(native_ui::EditorHostCallbacks& callbacks);
   void requestRepaint() const;
   void requestRenderAfterEdit();
   enum class ShellPointerPhase : std::uint8_t { Down, Move, Up };

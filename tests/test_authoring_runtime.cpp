@@ -286,6 +286,29 @@ TEST_CASE("authoring_runtime_note_edit_renders_and_publishes_transport_audio") {
   CHECK(runtime.transport().state().publishedRevision == revision);
 }
 
+TEST_CASE("authoring runtime clearSelection lets go of the vocal target and its technical edits") {
+  auto fixture = makeFixture();
+  seam::authoring::AuthoringRuntime runtime{std::move(fixture.document),
+      configFor(seam::test::support::temporaryDirectory("runtime-clear-selection"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(runtime.selectedTrack() == fixture.resolvedTrack);
+  CHECK(runtime.selectedRegion() == fixture.resolvedRegion);
+  CHECK(runtime.technicalEdits().regionId() == fixture.resolvedRegion);
+
+  runtime.clearSelection();
+  CHECK(!runtime.selectedTrack().valid());
+  CHECK(!runtime.selectedRegion().valid());
+  CHECK(!runtime.technicalEdits().regionId().valid());
+
+  // Clearing what is already clear is harmless, and a selection can be made again afterwards.
+  runtime.clearSelection();
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectedTrack() == fixture.resolvedTrack);
+  CHECK(runtime.selectedRegion().valid());
+}
+
 TEST_CASE("authoring runtime publishes overlapping voices with consistent progress and undo audio") {
   auto fixture = makeFixture();
   auto* region = fixture.document->session().project().findRegion(fixture.resolvedRegion);

@@ -3040,7 +3040,10 @@ core::Result<void> NativeEditorController::selectRegion(domain::RegionId regionI
 void NativeEditorController::reconcileWithProject() {
   const auto& project = session_.project();
   const auto* vocal = project.findVocalTrack(selectedTrackId_);
-  const auto audioSelected = vocal == nullptr &&
+  // An audio track is only somewhere to rest while the score has no vocal track. With a host connected
+  // nothing lets the editor choose one, so an audio selection beside a vocal track is what a removal
+  // left behind, and it gives way to the vocal track that has come back.
+  const auto audioSelected = vocal == nullptr && project.vocalTracks().empty() &&
       std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
                   [this](const auto& track) { return track.id == selectedTrackId_; });
   auto targetTrack = selectedTrackId_;
@@ -3082,8 +3085,12 @@ void NativeEditorController::reconcileWithProject() {
     // now working in rather than one that no longer exists.
     if (regionId_.valid()) {
       if (callbacks_.selectRegion) static_cast<void>(callbacks_.selectRegion(regionId_));
-    } else if (vocal != nullptr && callbacks_.selectTrack) {
-      static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
+    } else if (vocal != nullptr) {
+      if (callbacks_.selectTrack) static_cast<void>(callbacks_.selectTrack(selectedTrackId_));
+    } else if (callbacks_.clearVocalTarget) {
+      // Nothing is left to sing: the editor rests on an audio track or on none, and the host lets go of
+      // the vocal track and region it was following.
+      static_cast<void>(callbacks_.clearVocalTarget());
     }
   }
   repaint();

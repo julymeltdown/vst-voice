@@ -1170,6 +1170,7 @@ if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)
     libs/seam-clap-editor/src/editor_runtime_input.cpp
     libs/seam-clap-editor/src/editor_runtime_design_shell.cpp
     libs/seam-clap-editor/src/editor_runtime_project.cpp
+    libs/seam-clap-editor/src/editor_runtime_selection.cpp
     libs/seam-clap-editor/src/editor_runtime_preview.cpp
     libs/seam-clap-editor/src/editor_runtime_interchange.cpp
     libs/seam-clap-editor/src/editor_runtime_state.cpp

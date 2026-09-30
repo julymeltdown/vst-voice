@@ -435,8 +435,7 @@ void EditorRuntime::configureControllerCallbacks() {
         requestRepaint();
         return core::success();
       },
-      // MIX region and track choices move the host's render; output channels are the plug-in's ports.
-      .selectTrack = [this](domain::TrackId id) { return followEditorSelection(id, {}); }, .selectRegion = [this](domain::RegionId id) { return followEditorSelection({}, id); },
+      // Output channels are the plug-in's ports; the selection callbacks are attached below.
       .configureOutputChannels = [this](std::uint8_t channels) { return configureOutputChannels(channels); },
       .documentChanged = [this] {
         authoring_->handleDocumentChanged();
@@ -539,6 +538,7 @@ void EditorRuntime::configureControllerCallbacks() {
       },
       .resetOutputClip = [this] { resetOutputClip(); },
   };
+  attachSelectionCallbacks(callbacks);
   controller_ = std::make_unique<native_ui::NativeEditorController>(
       session_, factory_, regionId_, std::move(callbacks));
   controller_->setMeasurementCoordinator(authoring_->renderer());
