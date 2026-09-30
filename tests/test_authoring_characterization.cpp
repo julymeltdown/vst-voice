@@ -4,8 +4,10 @@
 #include "seam/phonemizer/japanese_phonemizer.hpp"
 #include "seam/voicebank/catalog.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -20,7 +22,9 @@ namespace {
 
 using seam::clap_editor::EditorRuntime;
 using seam::clap_editor::PreviewStatus;
+using seam::clap_editor::RealtimePreviewPublication;
 using seam::clap_editor::RenderedPreview;
+using Handle = RealtimePreviewPublication::ReadHandle;
 
 std::vector<seam::voicebank::VoicebankSearchRoot> fixtureRoots() {
   return {seam::voicebank::VoicebankSearchRoot{
@@ -52,6 +56,77 @@ void checkSubmitted(EditorRuntime& runtime, const std::function<seam::core::Resu
     std::this_thread::sleep_for(std::chrono::milliseconds{2});
   }
   CHECK(runtime.renderStats().submitted > before);
+}
+
+RenderedPreview previewOf(std::uint64_t revision) {
+  RenderedPreview preview;
+  preview.revision = revision;
+  preview.status = PreviewStatus::Ready;
+  preview.sampleRate = 48000U;
+  preview.interleaved.assign(16U, 0.5F);
+  return preview;
+}
+
+bool eventually(const std::function<bool()>& condition,
+                std::chrono::milliseconds timeout = std::chrono::milliseconds{2000}) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (condition()) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds{2});
+  }
+  return condition();
+}
+
+// Readers hold all three slots of a publication, and the newest of them is the published one, so
+// the publication has nowhere to put anything: the situation the cases below are about.
+std::vector<Handle> holdEverySlot(RealtimePreviewPublication& publication) {
+  std::vector<Handle> held;
+  held.push_back(publication.acquire());  // the slot that starts out published, empty
+  CHECK(publication.publish(previewOf(1U)));
+  held.push_back(publication.acquire());
+  CHECK(publication.publish(previewOf(2U)));
+  held.push_back(publication.acquire());
+  CHECK(held[2]->revision == 2U);
+  CHECK(!publication.publish(previewOf(99U)));  // no slot is free
+  return held;
+}
+
+// The same for a runtime: readers hold three different previews it published, so it has no slot
+// for the next one.
+std::vector<Handle> holdEveryPreviewSlot(EditorRuntime& runtime) {
+  std::vector<Handle> held;
+  held.push_back(runtime.acquireRenderedPreview());
+  for (int render = 0; render < 2; ++render) {
+    runtime.requestRender(48000U);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+    bool distinct = false;
+    while (!distinct && std::chrono::steady_clock::now() < deadline) {
+      auto candidate = runtime.acquireRenderedPreview();
+      distinct = candidate &&
+                 std::none_of(held.begin(), held.end(),
+                              [&](const Handle& prior) { return prior.get() == candidate.get(); });
+      if (distinct) {
+        held.push_back(std::move(candidate));
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+      }
+    }
+    CHECK(distinct);
+  }
+  return held;
+}
+
+seam::domain::Project withNothingToSing(seam::domain::Project project) {
+  for (auto& track : project.vocalTracks()) {
+    for (auto& region : track.regions) {
+      region.notes.clear();
+      region.lyrics.clear();
+      region.unitSelectionOverrides.clear();
+      region.phonemeOverrides.clear();
+      region.seamOverrides.clear();
+    }
+  }
+  return project;
 }
 
 }  // namespace
@@ -349,4 +424,160 @@ TEST_CASE("authoring_characterization_a_project_with_nothing_to_sing_no_longer_o
   CHECK(restored != nullptr);
   CHECK(restored->status == PreviewStatus::Ready);
   CHECK(!restored->interleaved.empty());
+}
+
+TEST_CASE("a preview that finds every slot held is published as soon as a slot is free") {
+  RealtimePreviewPublication publication;
+  auto held = holdEverySlot(publication);
+  CHECK(!publication.publishWhenFree(previewOf(3U)));
+  CHECK(publication.acquire()->revision == 2U);  // the newest that got in, for now
+  held[0] = Handle{};                            // a reader lets go of a slot
+  CHECK(eventually([&] { return publication.acquire()->revision == 3U; }));
+  // The readers that kept their slots still read what they were given.
+  CHECK(held[1]->revision == 1U);
+  CHECK(held[2]->revision == 2U);
+}
+
+TEST_CASE("only the newest of the previews that wait for a slot is published") {
+  RealtimePreviewPublication publication;
+  auto held = holdEverySlot(publication);
+  CHECK(!publication.publishWhenFree(previewOf(3U)));
+  CHECK(!publication.publishWhenFree(previewOf(4U)));
+  held[0] = Handle{};
+  bool sawThird = false;
+  CHECK(eventually([&] {
+    const auto handle = publication.acquire();
+    sawThird = sawThird || handle->revision == 3U;
+    return handle->revision == 4U;
+  }));
+  CHECK(!sawThird);
+}
+
+TEST_CASE("a preview that waits for a slot is still offered the second time readers hold every slot") {
+  // Two periods of pressure in a row: the helper that served the first is gone when the second
+  // begins, so the second needs a new one.
+  RealtimePreviewPublication publication;
+  auto held = holdEverySlot(publication);
+  CHECK(!publication.publishWhenFree(previewOf(3U)));
+  held[0] = Handle{};
+  CHECK(eventually([&] { return publication.acquire()->revision == 3U; }));
+  held[0] = publication.acquire();  // holds revision 3: every slot is held again
+  CHECK(held[0]->revision == 3U);
+  CHECK(!publication.publishWhenFree(previewOf(4U)));
+  held[1] = Handle{};
+  CHECK(eventually([&] { return publication.acquire()->revision == 4U; }));
+}
+
+TEST_CASE("a revoked publication offers nothing while readers hold every slot, and forgets what was waiting") {
+  RealtimePreviewPublication publication;
+  auto held = holdEverySlot(publication);
+  CHECK(!publication.publishWhenFree(previewOf(3U)));
+  publication.revoke();
+  {
+    const auto handle = publication.acquire();
+    CHECK(handle);
+    CHECK(handle->status == PreviewStatus::Empty);
+    CHECK(handle->interleaved.empty());
+  }
+  // A reader that held a slot before the revocation reads it until it lets go.
+  CHECK(held[2]->status == PreviewStatus::Ready);
+  CHECK(held[2]->revision == 2U);
+  held.clear();
+  // The preview that was waiting for a slot does not come back now that there is one.
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  CHECK(publication.acquire()->status == PreviewStatus::Empty);
+  CHECK(publication.publish(previewOf(5U)));
+  CHECK(publication.acquire()->revision == 5U);
+}
+
+TEST_CASE("a publication that was revoked uses the free slot, whichever it is, and leaves the slots readers hold") {
+  RealtimePreviewPublication publication;
+  CHECK(publication.publish(previewOf(1U)));
+  const auto first = publication.acquire();   // holds the slot of revision 1
+  CHECK(publication.publish(previewOf(2U)));
+  const auto second = publication.acquire();  // holds the slot of revision 2
+  publication.revoke();
+  // The one slot that is free is the one that started out published, and nothing is published
+  // now, so it is a candidate like any other.
+  CHECK(publication.publish(previewOf(3U)));
+  CHECK(publication.acquire()->revision == 3U);
+  CHECK(first->revision == 1U);
+  CHECK(second->revision == 2U);
+  // With the third slot held as well there is nowhere left to put a fourth.
+  const auto third = publication.acquire();
+  CHECK(!publication.publish(previewOf(4U)));
+}
+
+TEST_CASE("authoring_characterization_a_project_with_nothing_to_sing_is_revoked_while_readers_hold_every_slot") {
+  // The plug-in's own readers (the audio callback, a paint, a copy) hold slots for a moment, and
+  // enough of them at once leave the publication with nowhere to put an empty preview. The preview
+  // must be gone all the same, and stay gone when they let go.
+  EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  CHECK(waitReady(runtime)->status == PreviewStatus::Ready);
+  auto held = holdEveryPreviewSlot(runtime);
+  CHECK(runtime.replaceProject(withNothingToSing(runtime.projectCopy())));
+  // Nothing is waited for and no reader lets go.
+  CHECK(runtime.renderedPreview()->status == PreviewStatus::Empty);
+  {
+    const auto handle = runtime.acquireRenderedPreview();
+    CHECK(handle->status == PreviewStatus::Empty);
+  }
+  CHECK(runtime.renderStatusView().state == seam::native_ui::RenderStatusState::Idle);
+  held.clear();
+  runtime.requestRender(48000U);  // the coordinator is idle: this emits no completion
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  CHECK(runtime.renderedPreview()->status == PreviewStatus::Empty);
+}
+
+TEST_CASE("authoring_characterization_a_render_that_finishes_while_readers_hold_every_slot_is_published_when_one_is_free") {
+  EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  CHECK(waitReady(runtime)->status == PreviewStatus::Ready);
+  auto held = holdEveryPreviewSlot(runtime);
+  const auto completedBefore = runtime.renderStats().completed;
+  auto edited = runtime.projectCopy();
+  auto* region = edited.findRegion(runtime.regionId());
+  CHECK(region != nullptr);
+  CHECK(!region->notes.empty());
+  region->notes.front().midiKey = 66U;
+  CHECK(runtime.replaceProject(std::move(edited)));
+  const auto revision = runtime.revision();
+  CHECK(eventually([&] { return runtime.renderStats().completed > completedBefore; },
+                   std::chrono::seconds{20}));
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  // The new audio has nowhere to go yet: the old is still what the host hears.
+  CHECK(runtime.renderedPreview()->revision != revision);
+  held[0] = Handle{};
+  CHECK(eventually(
+      [&] {
+        const auto preview = runtime.renderedPreview();
+        return preview->revision == revision && preview->status == PreviewStatus::Ready &&
+               !preview->interleaved.empty();
+      },
+      std::chrono::seconds{5}));
+}
+
+TEST_CASE("authoring_characterization_a_project_emptied_while_a_render_waits_for_a_slot_stays_empty") {
+  EditorRuntime runtime(std::nullopt, std::filesystem::path{"assets/character-01"},
+                        fixtureRoots());
+  CHECK(waitReady(runtime)->status == PreviewStatus::Ready);
+  auto held = holdEveryPreviewSlot(runtime);
+  const auto completedBefore = runtime.renderStats().completed;
+  auto edited = runtime.projectCopy();
+  auto* region = edited.findRegion(runtime.regionId());
+  CHECK(region != nullptr);
+  CHECK(!region->notes.empty());
+  region->notes.front().midiKey = 66U;
+  CHECK(runtime.replaceProject(edited));
+  CHECK(eventually([&] { return runtime.renderStats().completed > completedBefore; },
+                   std::chrono::seconds{20}));
+  std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  // A render is waiting for a slot. The score is emptied before one is free.
+  CHECK(runtime.replaceProject(withNothingToSing(edited)));
+  CHECK(runtime.renderedPreview()->status == PreviewStatus::Empty);
+  held.clear();
+  // The render that was waiting does not come back for the notes that are no longer there.
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(runtime.renderedPreview()->status == PreviewStatus::Empty);
 }

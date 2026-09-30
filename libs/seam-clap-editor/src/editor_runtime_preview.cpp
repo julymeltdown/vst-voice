@@ -90,14 +90,17 @@ void EditorRuntime::publishPreviewFromAuthoring() {
   // A coordinator that is idle has nothing current: it was reset because the score has nothing to
   // sound, or it has never rendered. What it retains is history, not a preview, and handing it to
   // the host would keep a vocal that is no longer in the project playable, so the preview is
-  // emptied instead of republished. In every other state the last audio stays on offer, which is
-  // what lets a failed or cancelled render leave the previous one playing.
+  // revoked instead of republished. Revoked, not published over: an empty publication would need a
+  // free slot, and readers can hold them all. In every other state the last audio stays on offer,
+  // which is what lets a failed or cancelled render leave the previous one playing.
   if (authoring_->renderer().progress().state == authoring::RenderState::Idle) {
-    static_cast<void>(previewPublication_.publish(RenderedPreview{}));
+    previewPublication_.revoke();
   } else {
     const auto shared = authoring_->renderer().latest();
     if (shared == nullptr || shared->state == authoring::RenderState::Idle) return;
-    static_cast<void>(previewPublication_.publish(makeRenderedPreview(*shared)));
+    // Readers that hold every slot do not lose the render: the publication keeps it and offers
+    // it again until a slot is free.
+    static_cast<void>(previewPublication_.publishWhenFree(makeRenderedPreview(*shared)));
   }
   refreshRenderStatusView();
   std::function<void()> callback;
@@ -164,6 +167,7 @@ RealtimePreviewPublication::ReadHandle
 RealtimePreviewPublication::acquire() const noexcept {
   for (;;) {
     const auto slot = published_.load(std::memory_order_acquire);
+    if (slot == kNothing) return ReadHandle{nullptr, 0U, &empty_};
     slots_[slot].readers.fetch_add(1U, std::memory_order_acquire);
     if (slot == published_.load(std::memory_order_acquire)) {
       return ReadHandle{this, slot, &slots_[slot].preview};
@@ -172,11 +176,12 @@ RealtimePreviewPublication::acquire() const noexcept {
   }
 }
 
-bool RealtimePreviewPublication::publish(RenderedPreview preview) {
-  std::scoped_lock lock(writerMutex_);
+bool RealtimePreviewPublication::install(RenderedPreview& preview) {
   const auto current = published_.load(std::memory_order_acquire);
-  for (std::size_t offset = 1U; offset < kSlotCount; ++offset) {
-    const auto candidate = (current + offset) % kSlotCount;
+  // With nothing published every slot is a candidate; otherwise the published one is not.
+  const bool nothing = current == kNothing;
+  for (std::size_t offset = nothing ? 0U : 1U; offset < kSlotCount; ++offset) {
+    const auto candidate = nothing ? offset : (current + offset) % kSlotCount;
     if (slots_[candidate].readers.load(std::memory_order_acquire) != 0U) {
       continue;
     }
@@ -185,6 +190,57 @@ bool RealtimePreviewPublication::publish(RenderedPreview preview) {
     return true;
   }
   return false;
+}
+
+bool RealtimePreviewPublication::publish(RenderedPreview preview) {
+  std::scoped_lock lock(writerMutex_);
+  if (!install(preview)) return false;
+  pending_.reset();
+  return true;
+}
+
+bool RealtimePreviewPublication::publishWhenFree(RenderedPreview preview) {
+  std::scoped_lock lock(writerMutex_);
+  if (install(preview)) {
+    pending_.reset();
+    return true;
+  }
+  pending_ = std::move(preview);
+  if (!offering_) {
+    offering_ = true;
+    // Any earlier helper has finished with the lock: it cleared offering_ under it.
+    try {
+      offerer_ = std::jthread([this](std::stop_token stop) { offerPending(stop); });
+    } catch (...) {
+      // No thread to make the offers: the preview keeps waiting, and the next publication or
+      // revoke supersedes it, as it would have.
+      offering_ = false;
+    }
+  }
+  return false;
+}
+
+void RealtimePreviewPublication::revoke() {
+  std::scoped_lock lock(writerMutex_);
+  pending_.reset();
+  published_.store(kNothing, std::memory_order_release);
+}
+
+void RealtimePreviewPublication::offerPending(std::stop_token stop) {
+  for (unsigned attempt = 0U;; ++attempt) {
+    {
+      std::scoped_lock lock(writerMutex_);
+      if (stop.stop_requested() || !pending_.has_value() || install(*pending_)) {
+        pending_.reset();
+        offering_ = false;
+        return;
+      }
+    }
+    // A reader holds a slot for one audio block or one paint, so one is free again in moments. A
+    // reader that holds one for good only costs this thread an occasional look.
+    std::this_thread::sleep_for(attempt < 50U ? std::chrono::milliseconds{2}
+                                              : std::chrono::milliseconds{20});
+  }
 }
 
 }  // namespace seam::clap_editor

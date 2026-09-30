@@ -110,18 +110,46 @@ public:
   };
 
   RealtimePreviewPublication();
+  ~RealtimePreviewPublication() = default;
+  // Never waits, allocates or takes a lock, so the audio callback can call it. When nothing is
+  // published (before the first publication, and after revoke()) the handle is to an empty
+  // preview, not to a null pointer.
   [[nodiscard]] ReadHandle acquire() const noexcept;
+  // Makes the preview visible if a slot is free: one that is neither the published slot nor held
+  // by a reader. Returns false if none is, and the preview is dropped.
   [[nodiscard]] bool publish(RenderedPreview preview);
+  // Like publish(), but a preview that finds every slot held is kept, and offered again until a
+  // slot is free or something newer replaces it (publish, publishWhenFree or revoke): only the
+  // newest waiting preview is kept. The caller never waits, and neither does a reader; a helper
+  // thread that lives only while a preview waits makes the offers. Returns whether the preview
+  // was visible when the call returned.
+  bool publishWhenFree(RenderedPreview preview);
+  // Publishes nothing: from the next acquire() on, readers get an empty preview, however many
+  // slots readers hold, and a preview that was waiting for a slot is forgotten. A reader that
+  // already holds a slot keeps reading it until it lets go. Needs no free slot.
+  void revoke();
 
 private:
   static constexpr std::size_t kSlotCount = 3U;
+  // What published_ holds when nothing is published: one past the last slot.
+  static constexpr std::size_t kNothing = kSlotCount;
   struct Slot final {
     RenderedPreview preview;
     mutable std::atomic<std::uint32_t> readers{0U};
   };
+  // Puts the preview into a slot that is free and publishes it. Moves from `preview` only when it
+  // does. Needs writerMutex_.
+  [[nodiscard]] bool install(RenderedPreview& preview);
+  void offerPending(std::stop_token stop);
+  const RenderedPreview empty_{};
   std::array<Slot, kSlotCount> slots_{};
   std::atomic<std::size_t> published_{0U};
   std::mutex writerMutex_;
+  // Both guarded by writerMutex_.
+  std::optional<RenderedPreview> pending_;
+  bool offering_{false};
+  // Last, so it is stopped and joined before anything it uses is destroyed.
+  std::jthread offerer_;
 };
 
 struct RenderServiceStats final {
