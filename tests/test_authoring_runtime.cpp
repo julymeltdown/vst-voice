@@ -1852,3 +1852,338 @@ TEST_CASE("authoring runtime owes the canonical audio when the transport refuses
   CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
   CHECK(runtime.transport().state().available);
 }
+
+TEST_CASE("authoring runtime does not forgive an owed publication because a seam preview was asked for") {
+  // A seam preview that has only been requested holds no audio, so the canonical audio the transport
+  // is owed is still owed. If the preview then fails there is nothing left that would restore it.
+  // Found by the second developer's review of b3d0394f.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  HeldHook beforePublication;
+  auto config = configFor(test::support::temporaryDirectory("runtime-owed-publication-seam-asked"));
+  config.beforeSeamPreviewPublication = [&] { beforePublication.pass(); };
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  ReleaseHeldOnExit releaseOnExit{beforePublication};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitForRenderState(runtime, authoring::RenderState::Ready, revision));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{3}));
+
+  // The preview is asked for and its completion is held, so it is active and holds no audio.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(beforePublication.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.seamPreviewActive());
+  CHECK(!runtime.seamPreviewReady());
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  // The transport is still full when the preview's audio arrives, so the preview is refused.
+  beforePublication.release();
+  CHECK(eventually([&] { return !runtime.seamPreviewActive(); }));
+  CHECK(!runtime.seamPreviewReady());
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return runtime.transport().state().publishedRevision == revision; },
+                   std::chrono::seconds{5}));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+}
+
+TEST_CASE("authoring runtime hands over a render that finished while a seam preview that then failed was pending") {
+  // A canonical render that finishes while a seam preview is only asked for is not handed to the
+  // transport: the preview is about to replace it. When the preview then never arrives, the render
+  // is still what the transport should hold, and nobody else is going to hand it over.
+  using namespace seam;
+  RenderGate gate;
+  HeldHook beforePublication;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  auto config = configFor(test::support::temporaryDirectory("runtime-seam-failed-after-skipped-canonical"));
+  config.renderHooks = gate.hooks();
+  config.beforeSeamPreviewPublication = [&] { beforePublication.pass(); };
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  ReleaseHeldOnExit releaseOnExit{beforePublication};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto oldRevision = runtime.transport().state().publishedRevision;
+
+  // The edit's render is held in flight; the preview is asked for, and its completion is held too.
+  gate.arm();
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(gate.waitEntered(std::chrono::seconds{10}));
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(beforePublication.waitEntered(std::chrono::seconds{10}));
+  holdTransportFull(runtime);
+
+  // The render finishes while the preview is pending, so it is not handed to the transport.
+  gate.release();
+  CHECK(waitForRenderState(runtime, authoring::RenderState::Ready, revision));
+  CHECK(runtime.transport().state().publishedRevision == oldRevision);
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+
+  // The preview arrives and the transport refuses it. The render is handed over, or owed.
+  beforePublication.release();
+  CHECK(eventually([&] { return !runtime.seamPreviewActive(); }));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{3}));
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return runtime.transport().state().publishedRevision == revision; },
+                   std::chrono::seconds{5}));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+}
+
+TEST_CASE("authoring runtime settles an owed publication when a seam preview takes the transport") {
+  // With no asking of its own, nothing pays the owed publication. A seam preview that the transport
+  // takes replaces what the transport held, so the canonical audio is no longer owed to it; the
+  // preview's end hands the canonical audio back.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  auto config = configFor(test::support::temporaryDirectory("runtime-owed-publication-seam-takes"));
+  config.transportRetryAttempts = 0U;
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{10}));
+  CHECK(runtime.transport().start());
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+}
+
+TEST_CASE("authoring runtime settles an owed publication when a comparison takes the transport") {
+  // With no asking of its own, nothing pays the owed publication. A comparison that the transport
+  // takes replaces what the transport held, so the canonical audio is no longer owed to it; the
+  // comparison's end hands the canonical audio back.
+  using namespace seam;
+  using namespace seam::domain;
+  using seam::time::Tick;
+  auto fixture = makeFixture();
+  auto* prepared = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  prepared->notes.resize(1U);
+  prepared->unitSelectionOverrides.resize(1U);
+  auto config = configFor(test::support::temporaryDirectory("runtime-owed-publication-comparison-takes"));
+  config.transportRetryAttempts = 0U;
+  authoring::AuthoringRuntime runtime{std::move(fixture.document), config};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto original = runtime.document().session().project();
+  const auto& region = *original.findRegion(fixture.resolvedRegion);
+  const auto pronunciation = phonemizer::resolveJapanesePronunciation(region);
+  CHECK(pronunciation);
+  const auto job = runtime.document().session().capturePerformanceJob();
+  CHECK(job);
+  PerformanceTake proposal{.id = "owed-attack-2", .sourceRegionId = region.id,
+      .capturedRevision = region.performance.revision,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = pronunciation.value().identity,
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, region.durationTick},
+      .lanes = {{PerformanceChannel::Attack, {{Tick{0}, 150.0}}}}};
+  CHECK(runtime.executePerformanceResult(job.value(),
+      std::make_unique<application::AddPerformanceProposalCommand>(region.id, region.performance, proposal)));
+  const auto accepted = std::vector<AcceptedPerformanceSelection>{
+      {proposal.id, PerformanceChannel::Attack, region.notes.front().id, Tick{0}}};
+
+  holdTransportFull(runtime);
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{10}));
+  CHECK(runtime.transport().start());
+  std::this_thread::sleep_for(std::chrono::milliseconds{150});
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  CHECK(runtime.auditionPerformance(region.id, accepted));
+  CHECK(eventually([&] { return runtime.performanceAuditionReady(); }, std::chrono::seconds{20}));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+}
+
+TEST_CASE("authoring runtime hands over the canonical render of an accepted take that the transport refused") {
+  // The accepted take stays on the transport until the render that includes it arrives. When that
+  // render arrives and is refused, keeping the take does not excuse it: the render is still owed.
+  // Found by the second developer's review of b3d0394f.
+  using namespace seam;
+  using namespace seam::domain;
+  using seam::time::Tick;
+  auto fixture = makeFixture();
+  auto* prepared = fixture.document->session().project().findRegion(fixture.resolvedRegion);
+  prepared->notes.resize(1U);
+  prepared->unitSelectionOverrides.resize(1U);
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-owed-publication-accepted-take"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto original = runtime.document().session().project();
+  const auto& region = *original.findRegion(fixture.resolvedRegion);
+  const auto pronunciation = phonemizer::resolveJapanesePronunciation(region);
+  CHECK(pronunciation);
+  const auto job = runtime.document().session().capturePerformanceJob();
+  CHECK(job);
+  PerformanceTake proposal{.id = "owed-attack", .sourceRegionId = region.id,
+      .capturedRevision = region.performance.revision,
+      .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+      .pronunciation = pronunciation.value().identity,
+      .generatorId = "fixture", .generatorVersion = "1", .range = {Tick{0}, region.durationTick},
+      .lanes = {{PerformanceChannel::Attack, {{Tick{0}, 150.0}}}}};
+  CHECK(runtime.executePerformanceResult(job.value(),
+      std::make_unique<application::AddPerformanceProposalCommand>(region.id, region.performance, proposal)));
+  const auto accepted = std::vector<AcceptedPerformanceSelection>{
+      {proposal.id, PerformanceChannel::Attack, region.notes.front().id, Tick{0}}};
+  CHECK(runtime.auditionPerformance(region.id, accepted));
+  CHECK(eventually([&] { return runtime.performanceAuditionReady(); }, std::chrono::seconds{10}));
+  const auto stored = runtime.document().session().project();
+  holdTransportFull(runtime);
+
+  CHECK(runtime.acceptPerformanceAudition(std::make_unique<application::SetAcceptedPerformanceCommand>(
+      region.id, stored.findRegion(region.id)->performance, accepted)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitForRenderState(runtime, authoring::RenderState::Ready, revision));
+  // The canonical render has arrived and the transport refused it.
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{3}));
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(reportsTransportBehind(runtime, "playback.update-pending"));
+
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] {
+    return runtime.transport().state().publishedRevision == revision &&
+           !runtime.audiblePublication().performanceAudition;
+  }, std::chrono::seconds{5}));
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+}
+
+TEST_CASE("authoring runtime leaves a transport that holds the newest audio alone when a seam preview fails") {
+  // A seam preview that put nothing on the transport and left nothing waiting behind it changes
+  // nothing when it fails: the transport holds the newest canonical audio already. Handing it over
+  // again would republish it during playback and, when the transport refuses, report that playback
+  // is behind when it is not.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-seam-failed-nothing-behind"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision));
+  CHECK(runtime.transport().state().publishedRevision == revision);
+  holdTransportFull(runtime);
+
+  // The preview is refused: the transport is full, and what it holds is the newest audio.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return !runtime.seamPreviewActive(); }, std::chrono::seconds{20}));
+  CHECK(!runtime.seamPreviewReady());
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+  CHECK(!reportsTransportBehind(runtime, "playback.clear-pending"));
+  CHECK(runtime.transport().state().publishedRevision == revision);
+}
+
+TEST_CASE("authoring runtime hands the canonical audio back when a seam preview fails after an earlier one took the transport") {
+  // The earlier preview's audio is still on the transport when the next request fails, and the
+  // request that failed is no longer wanted, so nothing else would replace it.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-seam-failed-after-earlier-preview"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+  holdTransportFull(runtime);
+
+  // The next preview is refused, and the transport still holds the earlier one's audio.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return !runtime.seamPreviewActive(); }, std::chrono::seconds{20}));
+  CHECK(eventually([&] { return reportsTransportBehind(runtime, "playback.update-pending"); },
+                   std::chrono::seconds{3}));
+
+  CHECK(runtime.transport().start());
+  CHECK(eventually([&] { return !reportsTransportBehind(runtime, "playback.update-pending"); }));
+}
+
+TEST_CASE("authoring runtime stops expecting audio behind a seam preview once the canonical audio is back") {
+  // What waited behind a preview is handed over when that preview ends: by the creator's restore,
+  // or by the render of the next edit. A preview that fails afterwards changes nothing on the
+  // transport, and playback must not be reported as behind.
+  using namespace seam;
+  auto fixture = makeFixture();
+  const auto key = domain::PhonemeKey{
+      .noteId = fixture.document->session().project().findRegion(fixture.resolvedRegion)->notes.front().id,
+      .ordinal = 0U};
+  authoring::AuthoringRuntime runtime{
+      std::move(fixture.document),
+      configFor(test::support::temporaryDirectory("runtime-seam-failed-after-handback"))};
+  CHECK(runtime.initialize());
+  CHECK(runtime.selectTrack(fixture.resolvedTrack));
+  CHECK(runtime.selectRegion(fixture.resolvedRegion));
+  CHECK(waitReady(runtime, runtime.document().session().revision()));
+  const auto refusedPreviewChangesNothing = [&] {
+    holdTransportFull(runtime);
+    CHECK(runtime.previewSeam(key, true));
+    CHECK(eventually([&] { return !runtime.seamPreviewActive(); }, std::chrono::seconds{20}));
+    std::this_thread::sleep_for(std::chrono::milliseconds{200});
+    CHECK(!reportsTransportBehind(runtime, "playback.update-pending"));
+    CHECK(runtime.transport().start());
+  };
+
+  // The creator's restore ends a preview.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  CHECK(runtime.previewSeam(key, false));
+  refusedPreviewChangesNothing();
+
+  // The render of an edit ends a preview.
+  CHECK(runtime.previewSeam(key, true));
+  CHECK(eventually([&] { return runtime.seamPreviewReady(); }, std::chrono::seconds{20}));
+  CHECK(runtime.execute(std::make_unique<application::SetVocalTrackMixCommand>(
+      fixture.resolvedTrack, -6.0F, 0.0F, false, false)));
+  const auto revision = runtime.document().session().revision();
+  CHECK(waitReady(runtime, revision));
+  CHECK(eventually([&] { return runtime.transport().state().publishedRevision == revision; },
+                   std::chrono::seconds{5}));
+  refusedPreviewChangesNothing();
+}

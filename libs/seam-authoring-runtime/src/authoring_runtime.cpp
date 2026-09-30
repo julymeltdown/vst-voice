@@ -193,8 +193,12 @@ void AuthoringRuntime::settleWithNothingToRender() {
     // A transport that refused still holds the audio, and playing on would sound it. The score is
     // empty all the same, so the coordinator goes idle; what is left is owed to the transport,
     // reported for as long as it is, and asked for again until the transport takes it.
-    if (cleared) settleTransportDebt();
-    else oweTransport(TransportDebt::Clear, cleared.error());
+    if (cleared) {
+      settleTransportDebt();
+      canonicalBehindSeamPreview_ = false;  // The transport holds nothing, so nothing is behind.
+    } else {
+      oweTransport(TransportDebt::Clear, cleared.error());
+    }
   }
   renderer_.resetToIdle();
 }
@@ -252,8 +256,10 @@ void AuthoringRuntime::shutdown() noexcept {
   if (previewWorker_.joinable()) previewWorker_.join();
   {
     // The helper that asks the transport again for an owed change works on the transport and the
-    // coordinator, so it goes before either. It is taken out under the lock that starts it, so
-    // that nothing starts another one, and stopped and joined without holding that lock.
+    // coordinator, so it goes before either. The preview worker has been joined, so it owes
+    // nothing more. Setting debtRetryRetired_ is the boundary: it is set under the lock that
+    // starts a helper, so from then on nothing starts another one. The helper is taken out under
+    // that lock, and stopped and joined without holding it.
     std::jthread retry;
     {
       std::lock_guard lock(performanceAuditionMutex_);
@@ -462,8 +468,12 @@ core::Result<void> AuthoringRuntime::previewSeam(domain::PhonemeKey key,
   // owed and not lost.
   std::lock_guard lock(performanceAuditionMutex_);
   auto restored = transport_.publishAudio(std::move(canonical));
-  if (restored) settleTransportDebt();
-  else oweTransport(TransportDebt::Publish, restored.error());
+  if (restored) {
+    settleTransportDebt();
+    canonicalBehindSeamPreview_ = false;
+  } else {
+    oweTransport(TransportDebt::Publish, restored.error());
+  }
   return restored;
 }
 
@@ -874,17 +884,24 @@ void AuthoringRuntime::publishCompletedAudio() {
   }
   if (config_.enableTransport) {
     std::lock_guard lock(performanceAuditionMutex_);
-    if (!seamPreviewActive_.load(std::memory_order_acquire) &&
-        !performanceAuditionActive_.load(std::memory_order_acquire) &&
-        renderer_.matchesCurrent(*handle)) {
-      const auto published = transport_.publishAudio(std::move(handle));
-      if (published) {
-        retainedAcceptedAudition_.reset();
-        settleTransportDebt();
+    if (renderer_.matchesCurrent(*handle)) {
+      const auto seamAsked = seamPreviewActive_.load(std::memory_order_acquire);
+      if (seamAsked || performanceAuditionActive_.load(std::memory_order_acquire)) {
+        // A transient preview holds the transport, or is about to, and its end hands this render
+        // over. A seam preview that fails ends without doing so, and finds this.
+        if (seamAsked) canonicalBehindSeamPreview_ = true;
       } else {
-        // The render is ready and the transport did not take it, so what plays is an older version.
-        // Saying nothing would leave the status at "ready" over audio the creator did not ask for.
-        oweTransport(TransportDebt::Publish, published.error());
+        const auto published = transport_.publishAudio(std::move(handle));
+        if (published) {
+          retainedAcceptedAudition_.reset();
+          canonicalBehindSeamPreview_ = false;
+          settleTransportDebt();
+        } else {
+          // The render is ready and the transport did not take it, so what plays is an older
+          // version. Saying nothing would leave the status at "ready" over audio the creator did
+          // not ask for.
+          oweTransport(TransportDebt::Publish, published.error());
+        }
       }
     }
   }
@@ -918,7 +935,24 @@ void AuthoringRuntime::publishCompletedSeamPreview() {
       return;
     }
     seamPreviewReady_.store(published, std::memory_order_release);
-    if (!published) seamPreviewActive_.store(false, std::memory_order_release);
+    if (published) {
+      // The preview has replaced whatever the transport held, so nothing older is owed to it. Its
+      // end hands the canonical audio back, and until then the canonical audio is behind it.
+      settleTransportDebt();
+      canonicalBehindSeamPreview_ = true;
+    } else {
+      seamPreviewActive_.store(false, std::memory_order_release);
+      // A preview that put nothing on the transport and left nothing waiting behind it changes
+      // nothing. When something waits (an earlier preview's audio is on the transport, or a render
+      // that finished while this one was only asked for was left unpublished for it), nobody else is
+      // going to hand it over: it is handed over now, or owed. A comparison that is audible keeps
+      // the transport.
+      if (canonicalBehindSeamPreview_ &&
+          !(performanceAuditionActive_.load(std::memory_order_acquire) &&
+            performanceAuditionReady_.load(std::memory_order_acquire))) {
+        static_cast<void>(restoreCanonicalAudio());
+      }
+    }
   }
   if (!published) return;
   std::function<void()> callback;
@@ -956,6 +990,9 @@ void AuthoringRuntime::publishCompletedPerformanceAudition() {
     }
     if (published) {
       performanceAuditionReady_.store(true, std::memory_order_release);
+      // The comparison has replaced whatever the transport held; its end hands the canonical audio
+      // back.
+      settleTransportDebt();
     } else {
       performanceAuditionActive_.store(false, std::memory_order_release);
       performanceAuditionReady_.store(false, std::memory_order_release);
@@ -982,13 +1019,13 @@ void AuthoringRuntime::oweTransport(TransportDebt debt, const core::Error& refus
         debt == TransportDebt::Clear
             ? transportBehindDiagnostic(
                   "playback.clear-pending",
-                  "Playback still holds audio that should no longer sound. Letting go of it is "
-                  "being retried.",
+                  "Playback still holds audio that should no longer sound. Letting go of it was "
+                  "refused.",
                   refusal.message)
             : transportBehindDiagnostic(
                   "playback.update-pending",
                   "Playback has not received the newest render and still plays an earlier "
-                  "version. Handing it over is being retried.",
+                  "version. Handing it over was refused.",
                   refusal.message);
   }
   transportDebtChanged_.notify_all();
@@ -1022,21 +1059,32 @@ bool AuthoringRuntime::repayTransportDebt() {
       return false;
     case TransportDebt::Clear:
       if (!transport_.clearAudio()) return false;
+      canonicalBehindSeamPreview_ = false;
       break;
     case TransportDebt::Publish: {
-      // A transient preview holds the transport while it lasts, and its end hands the canonical
-      // audio back; an accepted take keeps it until its canonical render arrives. In both the
-      // change that is owed is no longer this one's to make.
-      const bool transientHolds = seamPreviewActive_.load(std::memory_order_acquire) ||
-                                  performanceAuditionActive_.load(std::memory_order_acquire) ||
-                                  retainedAcceptedAudition_ != nullptr;
-      if (!transientHolds) {
-        auto canonical = renderer_.acquire();
-        if (canonical && canonical->state == RenderState::Ready &&
-            !transport_.publishAudio(std::move(canonical))) {
-          return false;
-        }
+      // A transient preview that is audible holds the transport while it lasts, and its end hands
+      // the canonical audio back (and owes it again if the transport refuses): the change owed here
+      // is that end's to make. A preview that has only been asked for holds nothing, so the
+      // canonical audio is handed over now. Were it forgiven because a preview is pending, a
+      // preview that then failed would leave nobody to restore it.
+      const bool transientAudible =
+          seamPreviewReady_.load(std::memory_order_acquire) ||
+          (performanceAuditionActive_.load(std::memory_order_acquire) &&
+           performanceAuditionReady_.load(std::memory_order_acquire));
+      if (transientAudible) break;
+      // An accepted take stays on the transport until the render that includes it arrives, so that
+      // the take it replaced is not heard in between. The audio owed is that render, once it is
+      // current; until then there is nothing to hand over, and the render's own publication settles
+      // the debt. Holding on to the take never excuses a render that has arrived.
+      const bool takePending = retainedAcceptedAudition_ != nullptr;
+      auto canonical = takePending ? renderer_.acquireCurrent() : renderer_.acquire();
+      if (!canonical || canonical->state != RenderState::Ready) {
+        if (takePending) return false;
+        break;  // Nothing has been rendered to hand over.
       }
+      if (!transport_.publishAudio(std::move(canonical))) return false;
+      retainedAcceptedAudition_.reset();
+      canonicalBehindSeamPreview_ = false;
       break;
     }
   }
@@ -1048,8 +1096,12 @@ core::Result<void> AuthoringRuntime::restoreCanonicalAudio() {
   auto canonical = renderer_.acquire();
   if (canonical && canonical->state == RenderState::Ready) {
     auto restored = transport_.publishAudio(std::move(canonical));
-    if (restored) settleTransportDebt();
-    else oweTransport(TransportDebt::Publish, restored.error());
+    if (restored) {
+      settleTransportDebt();
+      canonicalBehindSeamPreview_ = false;
+    } else {
+      oweTransport(TransportDebt::Publish, restored.error());
+    }
     return restored;
   }
   // A transport that cannot even be paused would go on playing the comparison's audio, so letting go

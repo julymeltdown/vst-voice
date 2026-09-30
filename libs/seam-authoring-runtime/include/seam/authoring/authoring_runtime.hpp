@@ -309,6 +309,13 @@ private:
   std::optional<Diagnostic> transportDebtDiagnostic_;
   // Guarded by performanceAuditionMutex_.
   TransportDebt transportDebt_{TransportDebt::None};
+  // Guarded by performanceAuditionMutex_. True while the canonical audio the transport should hold
+  // is behind a seam preview: the preview's audio is on the transport, or a render that finished
+  // while the preview was only asked for was left unpublished for it. The preview's end hands the
+  // canonical audio over. A preview that fails has no end of its own, so it hands the audio over
+  // then, and only when this is set: a preview that changed nothing on the transport costs it
+  // nothing, not a republication and not a refusal that would be reported as playback being behind.
+  bool canonicalBehindSeamPreview_{false};
   // Counts the changes to transportDebt_, so that a retry can tell that the debt it was working on
   // has been replaced.
   std::uint64_t transportDebtSerial_{0U};

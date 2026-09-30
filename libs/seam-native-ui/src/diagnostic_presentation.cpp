@@ -42,8 +42,7 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
     result.impact = "Your project remains editable; retry after resolving the reported issue.";
   } else if (diagnostic.code == "RENDER_STALE") {
     result.title = "Playback is behind your edits";
-    result.impact = "What you hear may not match the score yet. Playback is still being updated; "
-                    "Retry asks again now.";
+    result.impact = "What you hear may not match the score yet. Retry asks playback to catch up.";
   } else if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY") {
     result.title = "Support report is ready to review";
     result.impact = "Review listed files before export.";
