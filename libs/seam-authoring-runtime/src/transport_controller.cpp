@@ -134,19 +134,6 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   }
 
   const bool wasStarted = started_;
-  // With audio published, the feeder knows whether it is playing and where it is. With none, the
-  // feeder was just rebuilt by an earlier reconfigure (or was never given anything), and what the
-  // creator was doing is what the controller recorded then: a second change of settings has no
-  // reason to forget a play or a playhead that the first one carried.
-  bool wasPlaying = feeder_->playing();
-  auto currentPlayhead = feeder_->playhead();
-  {
-    std::lock_guard lock(stateMutex_);
-    if (timelineEnd_ == time::SampleFrame{0}) {
-      wasPlaying = wasPlaying || resumeAfterReconfigure_;
-      if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
-    }
-  }
   const auto previousSampleRate = config_.sampleRate;
   const auto scaleFrame = [previousSampleRate, &config](
                                time::SampleFrame frame) {
@@ -161,9 +148,25 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
     remappedLoop.endFrame = scaleFrame(remappedLoop.endFrame);
     if (remappedLoop.endFrame <= remappedLoop.startFrame) remappedLoop = {};
   }
-  const auto remappedPlayhead = scaleFrame(currentPlayhead);
   service_->stop();
   started_ = false;
+  // The feeder has stopped, so what it reports is final. The commands still queued to it are not
+  // final, and they go with it: what the creator asked for last says what they would have made of
+  // it, which is what the audio that follows has to carry. With no audio published the feeder was
+  // just rebuilt by an earlier reconfigure (or was never given anything), and what the creator was
+  // doing is what the controller recorded then: a second change of settings has no reason to
+  // forget a play or a playhead that the first one carried.
+  const auto point = currentPoint();
+  bool wasPlaying = point.playing;
+  auto currentPlayhead = point.playhead;
+  {
+    std::lock_guard lock(stateMutex_);
+    if (timelineEnd_ == time::SampleFrame{0}) {
+      wasPlaying = wasPlaying || resumeAfterReconfigure_;
+      if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
+    }
+  }
+  const auto remappedPlayhead = scaleFrame(currentPlayhead);
 
   std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> nextRing;
   std::unique_ptr<rendering::MultichannelPlaybackFeeder> nextFeeder;
@@ -201,6 +204,9 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   feeder_ = std::move(nextFeeder);
   service_ = std::move(nextService);
   config_ = config;
+  // The new feeder has consumed nothing, and nothing has been sent to it.
+  queuedCommands_ = 0U;
+  queuedIntent_.reset();
   {
     std::lock_guard lock(stateMutex_);
     // The published audio is dropped here, but what the creator was doing with it (playing,
@@ -321,24 +327,25 @@ core::Result<void> TransportController::publishAudio(
   rendering::PlaybackLoop remappedLoop;
   time::SampleFrame remappedPlayhead{0};
   bool resumeAfterReconfigure = false;
+  // Where the feeder is going to be, not where it last said it was: a Stop that it has not yet
+  // applied has already decided where the replacement starts.
+  const auto current = currentPoint();
   {
     std::lock_guard lock(stateMutex_);
     remappedLoop = remapLoop(loop_, timeline.value()->endFrame());
     remappedPlayhead = std::clamp<time::SampleFrame>(
-        pendingPlayheadValid_ ? pendingPlayhead_ : feeder_->playhead(), 0,
+        pendingPlayheadValid_ ? pendingPlayhead_ : current.playhead, 0,
         timeline.value()->endFrame());
     resumeAfterReconfigure = resumeAfterReconfigure_;
   }
-  const auto result = feeder_->setTimeline(timeline.value());
-  if (!result) return result;
-  const auto loopResult = feeder_->setLoop(remappedLoop);
-  if (!loopResult) return loopResult;
-  const auto seekResult = feeder_->seek(remappedPlayhead);
-  if (!seekResult) return seekResult;
-  if (resumeAfterReconfigure) {
-    const auto resumeResult = feeder_->setPlaying(true);
-    if (!resumeResult) return resumeResult;
-  }
+  // The timeline, the loop that belongs to it, the playhead in it and, when a play is waiting for
+  // audio, the play reach the feeder together or not at all: a publication that does not fit
+  // leaves the feeder without a timeline that the controller never recorded.
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.timeline(timeline.value()).loop(remappedLoop).seek(remappedPlayhead);
+  if (resumeAfterReconfigure) script.playing(true);
+  const auto sent = send(std::move(script));
+  if (!sent) return sent;
   {
     std::lock_guard lock(stateMutex_);
     loop_ = remappedLoop;
@@ -368,15 +375,15 @@ core::Result<void> TransportController::clearAudio() {
   const auto configured =
       timeline->configure(authoringMasterRouting(config_.outputChannels), {});
   if (!configured) return configured;
-  const auto stopped = feeder_->setPlaying(false);
-  if (!stopped) return stopped;
-  const auto emptied = feeder_->setTimeline(
-      std::shared_ptr<const rendering::RoutedPlaybackTimeline>{std::move(timeline)});
-  if (!emptied) return emptied;
-  const auto unlooped = feeder_->setLoop({});
-  if (!unlooped) return unlooped;
-  const auto rewound = feeder_->seek(0);
-  if (!rewound) return rewound;
+  // Pause, empty, unloop, rewind: all of it or none. A clear that is refused has cleared nothing,
+  // so the transport still holds what it held and the next clear tries the whole of it again.
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.playing(false)
+      .timeline(std::shared_ptr<const rendering::RoutedPlaybackTimeline>{std::move(timeline)})
+      .loop({})
+      .seek(0);
+  const auto sent = send(std::move(script));
+  if (!sent) return sent;
   {
     std::lock_guard lock(stateMutex_);
     loop_ = {};
@@ -396,35 +403,41 @@ core::Result<void> TransportController::play() {
     if (!started) return started;
     started_ = true;
   }
-  {
-    std::lock_guard lock(stateMutex_);
-    resumeAfterReconfigure_ = true;
-  }
-  return feeder_->setPlaying(true);
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.playing(true);
+  const auto sent = send(std::move(script));
+  if (!sent) return sent;
+  std::lock_guard lock(stateMutex_);
+  resumeAfterReconfigure_ = true;
+  return core::success();
 }
 
 core::Result<void> TransportController::pause() {
   std::lock_guard lifecycleLock(lifecycleMutex_);
-  {
-    std::lock_guard lock(stateMutex_);
-    resumeAfterReconfigure_ = false;
-  }
-  return feeder_->setPlaying(false);
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.playing(false);
+  const auto sent = send(std::move(script));
+  if (!sent) return sent;
+  std::lock_guard lock(stateMutex_);
+  resumeAfterReconfigure_ = false;
+  return core::success();
 }
 
 core::Result<void> TransportController::stop() {
   std::lock_guard lifecycleLock(lifecycleMutex_);
-  {
-    std::lock_guard lock(stateMutex_);
-    resumeAfterReconfigure_ = false;
-    // A reconfigure keeps the playhead for the audio that follows it, and a Stop is what the
-    // creator asked for last: that audio starts at the beginning. A Pause or a Play leaves the
-    // saved position alone.
-    if (pendingPlayheadValid_) pendingPlayhead_ = 0;
-  }
-  auto result = feeder_->setPlaying(false);
-  if (!result) return result;
-  return feeder_->seek(0);
+  // Pause and rewind reach the feeder together: a Stop that is refused has neither paused nor
+  // rewound anything.
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.playing(false).seek(0);
+  const auto sent = send(std::move(script));
+  if (!sent) return sent;
+  std::lock_guard lock(stateMutex_);
+  resumeAfterReconfigure_ = false;
+  // A reconfigure keeps the playhead for the audio that follows it, and a Stop is what the
+  // creator asked for last: that audio starts at the beginning. A Pause or a Play leaves the
+  // saved position alone.
+  if (pendingPlayheadValid_) pendingPlayhead_ = 0;
+  return core::success();
 }
 
 core::Result<void> TransportController::seek(time::SampleFrame frame) {
@@ -440,7 +453,9 @@ core::Result<void> TransportController::seek(time::SampleFrame frame) {
                            "Transport seek is outside the published audio timeline");
     }
   }
-  return feeder_->seek(frame);
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.seek(frame);
+  return send(std::move(script));
 }
 
 core::Result<void> TransportController::setLoop(
@@ -459,12 +474,35 @@ core::Result<void> TransportController::setLoop(
                            "Playback loop is outside the published audio timeline");
     }
   }
-  const auto result = feeder_->setLoop(range);
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.loop(range);
+  const auto result = send(std::move(script));
   if (result) {
     std::lock_guard lock(stateMutex_);
     loop_ = range;
   }
   return result;
+}
+
+rendering::PlaybackPoint TransportController::currentPoint() const noexcept {
+  if (queuedIntent_ && feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt) {
+    return queuedIntent_->point;
+  }
+  return rendering::PlaybackPoint{.playing = feeder_->playing(),
+                                  .playhead = feeder_->playhead()};
+}
+
+core::Result<void> TransportController::send(
+    rendering::MultichannelPlaybackFeeder::ControlScript script) {
+  const auto count = static_cast<std::uint64_t>(script.size());
+  if (count == 0U) return core::success();
+  // Worked out before the script is sent: the feeder may consume it the moment it is queued.
+  const auto projected = script.projectedFrom(currentPoint());
+  auto sent = feeder_->apply(std::move(script));
+  if (!sent) return sent;
+  queuedCommands_ += count;
+  queuedIntent_ = QueuedIntent{.acknowledgedAt = queuedCommands_, .point = projected};
+  return core::success();
 }
 
 TransportState TransportController::state() const noexcept {

@@ -729,3 +729,238 @@ TEST_CASE("a play after a reconfigure keeps the playhead the reconfigure saved")
   CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
   CHECK(waitUntil([&] { return controller.state().playing && controller.state().playhead >= 36750; }));
 }
+
+namespace {
+
+// Sends the feeder `count` commands that change nothing (an empty loop). With the service not
+// running nothing consumes them: they stay in the feeder's queue, which holds 64 commands.
+void occupyQueue(seam::authoring::TransportController& controller, std::size_t count) {
+  for (std::size_t index = 0U; index < count; ++index) CHECK(controller.setLoop({}));
+}
+
+bool hasSound(const std::vector<float>& samples) {
+  return std::any_of(samples.begin(), samples.end(), [](float value) { return value != 0.0F; });
+}
+
+constexpr auto kQuiet = std::chrono::milliseconds{100};
+
+}  // namespace
+
+TEST_CASE("a publication that does not fit in the feeder's queue queues nothing and can be made again") {
+  // The service is not running, so nothing takes commands out of the queue. 63 of its 64 slots
+  // are taken and a publication needs three.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  for (unsigned index = 0U; index < 63U; ++index) CHECK(controller.pause());
+  CHECK(!controller.publishAudio(publishAudio(publication, 1U, 96000U, 0.25F)));
+  CHECK(!controller.state().available);
+  CHECK(controller.feederStats().rejectedCommands == 3U);
+  // There is nothing to clear, and nothing is sent to clear it.
+  CHECK(controller.clearAudio());
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 63U; }));
+  // Not even the timeline went in: the feeder saw the 63 pauses and nothing else, so when it is
+  // told to play it has nothing to play.
+  CHECK(!waitUntil([&] { return controller.feederStats().controlCommands > 63U; }, kQuiet));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 64U; }));
+  std::this_thread::sleep_for(kQuiet);
+  CHECK(!hasSound(readFrames(controller, 32U)));
+  // Asking again, now that the queue has room, publishes it, and it plays.
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U, 0.25F)));
+  CHECK(controller.state().available);
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() >= 64U; }));
+  CHECK(hasSound(readFrames(controller, 32U)));
+}
+
+TEST_CASE("a clear that does not fit in the feeder's queue clears nothing and can be asked again") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.publishAudio(publishAudio(publication, 5U, 4096U, 0.5F)));  // three commands
+  occupyQueue(controller, 58);  // 61 of 64 taken: a clear needs four
+  CHECK(!controller.clearAudio());
+  // What was published is still published, as far as the controller knows...
+  const auto state = controller.state();
+  CHECK(state.available);
+  CHECK(state.publishedRevision == 5U);
+  CHECK(state.timelineEnd == 4096);
+  CHECK(controller.feederStats().rejectedCommands == 4U);
+  // ...and as far as the feeder does: none of the clear reached it, not even its pause.
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 61U; }));
+  CHECK(!waitUntil([&] { return controller.feederStats().controlCommands > 61U; }, kQuiet));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() >= 64U; }));
+  CHECK(hasSound(readFrames(controller, 32U)));
+  // Asked again with room in the queue, the clear is carried out whole.
+  CHECK(controller.clearAudio());
+  CHECK(!controller.state().available);
+  CHECK(controller.state().publishedRevision == 0U);
+}
+
+TEST_CASE("a stop that does not fit in the feeder's queue pauses nothing and rewinds nothing") {
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  occupyQueue(controller, 63);  // one slot left: a stop needs two
+  CHECK(!controller.stop());
+  CHECK(controller.feederStats().rejectedCommands == 2U);
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 63U; }));
+  CHECK(!waitUntil([&] { return controller.feederStats().controlCommands > 63U; }, kQuiet));
+}
+
+TEST_CASE("a pause that does not fit in the feeder's queue does not forget the play that is waiting for audio") {
+  // A play asked for before there is any audio stays armed: the first publication carries it.
+  // A pause that was turned away did not pause anything, so the play is still armed.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  controller.shutdown();
+  occupyQueue(controller, 64);  // the queue is full
+  CHECK(!controller.pause());
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 65U; }));
+  const auto before = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U, 0.25F)));
+  // Timeline, loop, playhead, and the play that was still armed.
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= before + 4U; }));
+  CHECK(!waitUntil([&] { return controller.feederStats().controlCommands > before + 4U; }, kQuiet));
+}
+
+TEST_CASE("a stop that does not fit in the feeder's queue does not forget the play that is waiting for audio") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  controller.shutdown();
+  occupyQueue(controller, 64);  // the queue is full
+  CHECK(!controller.stop());
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 65U; }));
+  const auto before = controller.feederStats().controlCommands;
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U, 0.25F)));
+  // Timeline, loop, playhead, and the play that is still armed.
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= before + 4U; }));
+  CHECK(!waitUntil([&] { return controller.feederStats().controlCommands > before + 4U; }, kQuiet));
+}
+
+TEST_CASE("a stop that does not fit in the feeder's queue leaves the playhead a reconfigure saved") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));  // saves 36750 for the audio to come
+  controller.shutdown();
+  occupyQueue(controller, 64);
+  CHECK(!controller.stop());
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 64U; }));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  CHECK(waitUntil([&] { return controller.state().playhead == 36750; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != 36750; }, kQuiet));
+}
+
+TEST_CASE("a stop the feeder has not applied yet decides where the audio that replaces it starts") {
+  // The feeder applies commands on its own thread, so what it reports lags what was asked. The
+  // replacement goes by what was asked: the creator pressed Stop, so it starts at the beginning.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(waitUntil([&] { return controller.state().playhead == 40000; }));
+  controller.shutdown();  // nothing is applied from here on; what follows stays queued
+  const auto applied = controller.feederStats().controlCommands;
+  CHECK(controller.stop());
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 96000U)));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= applied + 2U + 3U; }));
+  CHECK(controller.state().publishedRevision == 11U);
+  CHECK(!waitUntil([&] { return controller.state().playhead != 0; }, kQuiet));
+  CHECK(!controller.state().playing);
+}
+
+TEST_CASE("a stop the feeder has not applied yet is what a reconfigure carries for the audio to come") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.seek(seam::time::SampleFrame{40000}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing && controller.state().playhead > 40000; }));
+  controller.shutdown();
+  CHECK(controller.stop());  // queued, not applied: the feeder still reports playing, past 40000
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 3U; }));
+  CHECK(controller.state().publishedRevision == 11U);
+  CHECK(!waitUntil([&] { return controller.state().playing || controller.state().playhead != 0; }, kQuiet));
+}
+
+TEST_CASE("a pause the feeder has not applied yet is not undone by a reconfigure") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+  controller.shutdown();
+  CHECK(controller.pause());  // queued, not applied: the feeder still reports playing
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 3U; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, kQuiet));
+}
+
+TEST_CASE("a loop the feeder has not applied yet moves the playhead a reconfigure carries, as the feeder will") {
+  // The feeder sends a playhead that is past the end of a new loop back to its start. A reconfigure
+  // before the feeder has done that carries the start, not the playhead it had.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 10U, 96000U)));
+  CHECK(waitUntil([&] { return controller.feederStats().controlCommands >= 3U; }));
+  controller.shutdown();
+  CHECK(controller.seek(seam::time::SampleFrame{50000}));
+  CHECK(controller.setLoop(seam::rendering::PlaybackLoop{.enabled = true, .startFrame = 10000, .endFrame = 20000}));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 11U, 88200U, 0.0F, 44100U)));
+  CHECK(controller.start());
+  // 10000 frames at 48 kHz are 9187.5, which rounds to 9188, at 44.1 kHz.
+  CHECK(waitUntil([&] { return controller.state().playhead == 9188; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != 9188; }, kQuiet));
+  CHECK(controller.state().loop.enabled);
+}
+
+TEST_CASE("what was asked is recorded afresh for the feeder that a reconfigure builds") {
+  // The new feeder counts the commands it consumes from nothing, and so does the record of what
+  // was sent to it. Otherwise the feeder could never catch up with the record, and every later
+  // decision would go by what was asked, not by what the feeder reports.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 96000U)));
+  CHECK(controller.reconfigure(transportConfigAt(44100U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 88200U, 0.0F, 44100U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing && controller.state().playhead > 100; }));
+  CHECK(controller.pause());
+  CHECK(waitUntil([&] { return !controller.state().playing; }));
+  controller.shutdown();
+  // The feeder has applied all of it, and the playhead moved on from where the play found it.
+  const auto playhead = controller.state().playhead;
+  CHECK(playhead > 100);
+  CHECK(controller.reconfigure(transportConfigAt(48000U)));
+  CHECK(controller.publishAudio(publishAudio(publication, 3U, 96000U)));
+  CHECK(controller.start());
+  const auto expected = static_cast<seam::time::SampleFrame>(
+      std::llround(static_cast<long double>(playhead) * 48000.0L / 44100.0L));
+  CHECK(waitUntil([&] { return controller.state().playhead == expected; }));
+  CHECK(!waitUntil([&] { return controller.state().playhead != expected; }, kQuiet));
+}

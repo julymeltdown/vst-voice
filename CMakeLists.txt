@@ -1933,6 +1933,7 @@ if(SEAM_BUILD_TESTS)
     tests/test_inspection.cpp
     tests/test_stabilization.cpp
     tests/test_multichannel.cpp
+    tests/test_multichannel_control_script.cpp
     tests/test_distribution.cpp
     tests/test_update_manifest.cpp
     tests/test_trust_policy.cpp
@@ -2253,7 +2254,8 @@ if(SEAM_BUILD_TESTS)
 
   add_executable(seam_authoring_transport_tests
     tests/test_main.cpp
-    tests/test_transport_controller.cpp)
+    tests/test_transport_controller.cpp
+    tests/test_multichannel_control_script.cpp)
   target_include_directories(seam_authoring_transport_tests PRIVATE tests)
   target_link_libraries(seam_authoring_transport_tests PRIVATE
     seam_authoring_runtime seam_rendering)

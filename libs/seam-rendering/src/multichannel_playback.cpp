@@ -19,6 +19,23 @@ bool MultichannelPlaybackFeeder::ControlQueue::push(
   return true;
 }
 
+bool MultichannelPlaybackFeeder::ControlQueue::pushAll(
+    std::span<ControlCommand> commands) noexcept {
+  const auto size = slots_.size();
+  const auto write = writeIndex_.load(std::memory_order_relaxed);
+  const auto read = readIndex_.load(std::memory_order_acquire);
+  // The consumer only moves the read index forward, so what is free now is at least this much.
+  const auto used = (write + size - read) % size;
+  const auto free = (size - 1U) - used;
+  if (commands.size() > free) return false;
+  for (std::size_t index = 0U; index < commands.size(); ++index) {
+    slots_[(write + index) % size].emplace(std::move(commands[index]));
+  }
+  // One store publishes the whole group: the consumer sees all of it or none of it.
+  writeIndex_.store((write + commands.size()) % size, std::memory_order_release);
+  return true;
+}
+
 std::optional<MultichannelPlaybackFeeder::ControlCommand>
 MultichannelPlaybackFeeder::ControlQueue::pop() noexcept {
   const auto read = readIndex_.load(std::memory_order_relaxed);
@@ -27,6 +44,75 @@ MultichannelPlaybackFeeder::ControlQueue::pop() noexcept {
   slots_[read].reset();
   readIndex_.store((read + 1U) % slots_.size(), std::memory_order_release);
   return command;
+}
+
+MultichannelPlaybackFeeder::ControlScript&
+MultichannelPlaybackFeeder::ControlScript::timeline(
+    std::shared_ptr<const RoutedPlaybackTimeline> value) {
+  commands_.push_back(ControlCommand{.kind = ControlKind::Timeline,
+                                     .timeline = std::move(value),
+                                     .loop = {},
+                                     .frame = 0,
+                                     .playing = false});
+  return *this;
+}
+
+MultichannelPlaybackFeeder::ControlScript&
+MultichannelPlaybackFeeder::ControlScript::loop(PlaybackLoop value) {
+  commands_.push_back(ControlCommand{.kind = ControlKind::Loop,
+                                     .timeline = {},
+                                     .loop = value,
+                                     .frame = 0,
+                                     .playing = false});
+  return *this;
+}
+
+MultichannelPlaybackFeeder::ControlScript&
+MultichannelPlaybackFeeder::ControlScript::playing(bool value) {
+  commands_.push_back(ControlCommand{.kind = ControlKind::Playing,
+                                     .timeline = {},
+                                     .loop = {},
+                                     .frame = 0,
+                                     .playing = value});
+  return *this;
+}
+
+MultichannelPlaybackFeeder::ControlScript&
+MultichannelPlaybackFeeder::ControlScript::seek(time::SampleFrame frame) {
+  commands_.push_back(ControlCommand{.kind = ControlKind::Seek,
+                                     .timeline = {},
+                                     .loop = {},
+                                     .frame = frame,
+                                     .playing = false});
+  return *this;
+}
+
+// What consuming each command does to the playing flag and the playhead. processControls() below
+// does the same to the feeder's own state, and the multichannel tests check that the two agree.
+PlaybackPoint MultichannelPlaybackFeeder::ControlScript::projectedFrom(
+    PlaybackPoint from) const noexcept {
+  for (const auto& command : commands_) {
+    switch (command.kind) {
+      case ControlKind::Timeline:
+        if (command.timeline != nullptr &&
+            from.playhead > command.timeline->endFrame()) {
+          from.playhead = command.timeline->endFrame();
+        }
+        break;
+      case ControlKind::Loop:
+        if (command.loop.enabled && from.playhead >= command.loop.endFrame) {
+          from.playhead = command.loop.startFrame;
+        }
+        break;
+      case ControlKind::Playing:
+        from.playing = command.playing;
+        break;
+      case ControlKind::Seek:
+        from.playhead = command.frame;
+        break;
+    }
+  }
+  return from;
 }
 
 MultichannelPlaybackFeeder::MultichannelPlaybackFeeder(
@@ -40,8 +126,34 @@ MultichannelPlaybackFeeder::MultichannelPlaybackFeeder(
       scratch_(blockFrames_ * outputChannels_, 0.0F),
       controls_(controlQueueCapacity) {}
 
+core::Result<void> MultichannelPlaybackFeeder::validate(
+    const ControlCommand& command) const {
+  switch (command.kind) {
+    case ControlKind::Timeline:
+      if (command.timeline == nullptr ||
+          command.timeline->sampleRate() != sampleRate_ ||
+          command.timeline->outputChannels() != outputChannels_) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+                             "Routed timeline does not match feeder format");
+      }
+      break;
+    case ControlKind::Loop:
+      if (command.loop.enabled && command.loop.endFrame <= command.loop.startFrame) {
+        return core::failure(core::ErrorCode::InvalidArgument,
+                             "Playback loop end must be after loop start");
+      }
+      break;
+    case ControlKind::Playing:
+    case ControlKind::Seek:
+      break;
+  }
+  return core::success();
+}
+
 core::Result<void> MultichannelPlaybackFeeder::enqueue(
     ControlCommand command) {
+  const auto valid = validate(command);
+  if (!valid) return valid;
   if (!controls_.push(std::move(command))) {
     stats_.rejectedCommands.fetch_add(1U, std::memory_order_relaxed);
     return core::failure(core::ErrorCode::Conflict,
@@ -52,11 +164,6 @@ core::Result<void> MultichannelPlaybackFeeder::enqueue(
 
 core::Result<void> MultichannelPlaybackFeeder::setTimeline(
     std::shared_ptr<const RoutedPlaybackTimeline> timeline) {
-  if (timeline == nullptr || timeline->sampleRate() != sampleRate_ ||
-      timeline->outputChannels() != outputChannels_) {
-    return core::failure(core::ErrorCode::InvalidArgument,
-                         "Routed timeline does not match feeder format");
-  }
   return enqueue(ControlCommand{.kind = ControlKind::Timeline,
                                 .timeline = std::move(timeline),
                                 .loop = {},
@@ -65,10 +172,6 @@ core::Result<void> MultichannelPlaybackFeeder::setTimeline(
 }
 
 core::Result<void> MultichannelPlaybackFeeder::setLoop(PlaybackLoop loop) {
-  if (loop.enabled && loop.endFrame <= loop.startFrame) {
-    return core::failure(core::ErrorCode::InvalidArgument,
-                         "Playback loop end must be after loop start");
-  }
   return enqueue(ControlCommand{.kind = ControlKind::Loop,
                                 .timeline = {},
                                 .loop = loop,
@@ -92,6 +195,29 @@ core::Result<void> MultichannelPlaybackFeeder::seek(time::SampleFrame frame) {
                                 .playing = false});
 }
 
+core::Result<void> MultichannelPlaybackFeeder::apply(ControlScript script) {
+  auto& commands = script.commands_;
+  if (commands.empty()) return core::success();
+  for (const auto& command : commands) {
+    const auto valid = validate(command);
+    if (!valid) return valid;
+  }
+  if (commands.size() > controls_.capacity()) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "Multichannel playback control script is larger than the control queue");
+  }
+  if (!controls_.pushAll(commands)) {
+    stats_.rejectedCommands.fetch_add(commands.size(), std::memory_order_relaxed);
+    return core::failure(core::ErrorCode::Conflict,
+                         "Multichannel playback control queue is full");
+  }
+  return core::success();
+}
+
+std::uint64_t MultichannelPlaybackFeeder::acknowledgedCommands() const noexcept {
+  return acknowledgedCommands_.load(std::memory_order_acquire);
+}
+
 bool MultichannelPlaybackFeeder::playing() const noexcept {
   return publishedPlaying_.load(std::memory_order_acquire);
 }
@@ -109,6 +235,7 @@ bool MultichannelPlaybackFeeder::processControls() noexcept {
   bool resetNeeded = false;
   while (auto command = controls_.pop()) {
     stats_.controlCommands.fetch_add(1U, std::memory_order_relaxed);
+    ++consumedCommands_;
     switch (command->kind) {
       case ControlKind::Timeline: {
         timeline_ = std::move(command->timeline);
@@ -145,6 +272,9 @@ bool MultichannelPlaybackFeeder::processControls() noexcept {
     stats_.resetRequests.fetch_add(1U, std::memory_order_relaxed);
   }
   publishState();
+  // After the state: whoever sees this count sees a playing flag and a playhead that include every
+  // command it covers.
+  acknowledgedCommands_.store(consumedCommands_, std::memory_order_release);
   if (pendingResetEpoch_ != 0U) {
     if (!ring_.resetAcknowledged(pendingResetEpoch_)) {
       stats_.resetWaits.fetch_add(1U, std::memory_order_relaxed);
