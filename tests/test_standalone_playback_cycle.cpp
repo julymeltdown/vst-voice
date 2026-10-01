@@ -179,6 +179,11 @@ struct PlaybackRig final {
   // The device the app has now. A change of audio settings replaces it, or keeps the old one when
   // the new one cannot be opened.
   void refreshDevice() { device = devices->alive.empty() ? nullptr : devices->alive.back(); }
+  // What the transport was last told about the device is what the device does. A painted frame
+  // tells it too, so this is asked straight after something the app did, with no frame between.
+  bool transportKnowsTheDevice() {
+    return transport().consumerRunning() == (device != nullptr && device->running());
+  }
   // The creator picks another buffer size in the audio settings: the editor stops its device,
   // builds the transport again and opens a new device, and puts the old one back when it cannot.
   seam::core::Result<seam::authoring::AudioSettings> changeBlockSize() {
@@ -804,4 +809,79 @@ TEST_CASE("standalone playback: a render that arrives while the device plays the
     checkHeardIs(heard, wanted, heardBefore, "the rest of the song after the render");
   }
   CHECK(!rig.device->running());
+}
+
+TEST_CASE("standalone playback: the transport is told what the app does with the device as it does it") {
+  const auto root =
+      seam::test::support::temporaryDirectory("playback-cycle-transport-knows-the-device");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  CHECK(rig.transportKnowsTheDevice());
+
+  // Play starts the device and Pause stops it, and no frame is painted after either.
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+  CHECK(rig.pressPlay());
+  CHECK(!rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+
+  // A Play whose device cannot start leaves the device stopped, and the transport knows it.
+  // The feeder applies the Pause on its own thread, and a person cannot press a second button
+  // within a millisecond: the button shows Play once it has.
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && !state.playing;
+  }));
+  rig.device->failStart = true;
+  CHECK(!rig.pressPlay());
+  CHECK(!rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+  rig.device->failStart = false;
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && !state.playing;
+  }));
+
+  // The device stops by itself while the song plays and no frame is painted, and the creator
+  // changes the buffer size. The device the change leaves is not running, and the transport is
+  // told so by the change and not by the next frame.
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+  rig.device->stop();
+  CHECK(rig.changeBlockSize());
+  CHECK(!rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+}
+
+TEST_CASE("standalone playback: a render that arrives after the device has stopped on its own does not start it again") {
+  const auto root =
+      seam::test::support::temporaryDirectory("playback-cycle-render-after-the-device-stopped");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  static_cast<void>(playUntilTheFeederHasFinished(rig));
+  // The feeder has handed over the whole song and the ring holds the end of it.
+  CHECK(!rig.transport().state().playing);
+  CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
+
+  // The device stops by itself, as when it is unplugged, and the next frame is painted: nobody is
+  // going to play the end of the song, and the creator did not press Pause.
+  rig.device->stop();
+  rig.paint();
+  CHECK(!rig.device->running());
+  const auto starts = rig.device->starts();
+
+  // The creator adds a note after the end of the song, and the render that follows replaces the
+  // audio. A Play carried to the replacement would start the device again.
+  rig.addNote(4800, 1920, U"\u3053");
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.available && state.settled &&
+           state.publishedRevision == rig.app->authoring().runtime().document().session().revision();
+  }));
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+  CHECK(rig.device->starts() == starts);
 }

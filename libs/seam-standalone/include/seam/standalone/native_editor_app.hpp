@@ -165,6 +165,14 @@ private:
   void refreshCrashRecoveryContext();
   void setAudioUnavailable(const core::Error& error) noexcept;
   void clearAudioUnavailable() noexcept;
+  // Tells the transport whether the audio device, its consumer, runs (see
+  // TransportController::setConsumerRunning). The transport cannot see the device, and what it does
+  // at the end of a song depends on whether the device is there to play it out. Called when the app
+  // starts or stops the device (startAudioForPlayback, stopAudioForPlayback), as restartAudio
+  // returns, and once per painted frame for a device that stops on its own. A device that has just
+  // stopped on its own and a render that lands before the next frame still meet: the window is one
+  // frame, and nothing here closes it.
+  void reportConsumerToTransport() noexcept;
   void record(const core::Result<void>& result) noexcept;
   // Background threads (render completion, envelope workers) ask for a repaint only through here,
   // under windowMutex_, so detachWindow() is a real barrier.

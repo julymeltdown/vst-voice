@@ -886,6 +886,12 @@ core::Result<void> NativeEditorApp::initializeAudio() {
 }
 
 core::Result<void> NativeEditorApp::startAudioForPlayback() {
+  // However this returns (started, refused, or found running already), the transport is told what
+  // the device is doing then.
+  struct ReportOnExit final {
+    NativeEditorApp& app;
+    ~ReportOnExit() { app.reportConsumerToTransport(); }
+  } reportOnExit{*this};
   if (authoring_ == nullptr || audioDevice_ == nullptr || processor_ == nullptr) {
     return core::failure(core::ErrorCode::InvalidState,
                          "Audio playback is unavailable before initialization");
@@ -923,10 +929,24 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
 
 void NativeEditorApp::stopAudioForPlayback() noexcept {
   if (audioDevice_ != nullptr) audioDevice_->stop();
+  reportConsumerToTransport();
+}
+
+void NativeEditorApp::reportConsumerToTransport() noexcept {
+  if (authoring_ == nullptr) return;
+  authoring_->runtime().transport().setConsumerRunning(audioDevice_ != nullptr &&
+                                                        audioDevice_->running());
 }
 
 core::Result<void> NativeEditorApp::restartAudio(
     const authoring::AudioSettings& settings) {
+  // However this returns (the new device, the old one put back, or none), the transport is told
+  // what the device is doing then, and not by the next painted frame: the old device may have
+  // stopped by itself since the last one, and the new one is not started until a Play needs it.
+  struct ReportOnExit final {
+    NativeEditorApp& app;
+    ~ReportOnExit() { app.reportConsumerToTransport(); }
+  } reportOnExit{*this};
   if (authoring_ == nullptr || processor_ == nullptr || audioSettings_ == nullptr) {
     return core::failure(core::ErrorCode::InvalidState,
                          "Audio settings are unavailable before audio initialization");
@@ -1598,6 +1618,9 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
     const auto applied = applicationController_->applyPendingRendererProvenance();
     if (!applied) record(applied.error());
   }
+  // A device can stop on its own (it is unplugged, or the system takes it away). The transport
+  // cannot see that, and is told once per frame, before it is asked what to do about the device.
+  reportConsumerToTransport();
   const auto transport = authoring_->runtime().transport().state();
   switch (decideDeviceAction(
       transport, authoring_->runtime().transport().ringBuffer().availableReadFrames(),

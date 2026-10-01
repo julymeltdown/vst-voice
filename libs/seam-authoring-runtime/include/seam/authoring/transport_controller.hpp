@@ -6,6 +6,7 @@
 #include "seam/rendering/multichannel_playback.hpp"
 #include "seam/rendering/multichannel_routing.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -115,22 +116,46 @@ public:
   // follows the creator's commands by a moment. A Pause that is queued is not playing, and a Play
   // that is queued is, and so is a Play that waits for audio to be rendered.
   //
-  // The end of the audio is told from the ring and not from the feeder's playing flag. The feeder
-  // reports that it has stopped when it has handed over the last of the audio, which is as far
-  // ahead of the consumer as the ring is deep, and it reports that it is still playing until its
-  // next turn when the last block it handed over ended exactly with the audio. So at the end of
-  // the audio the creator is playing when the ring still holds audio that nobody has played and
-  // nobody has been asked to drop, and the feeder says it is playing, or the consumer was running
-  // (consumerWasRunning) and the creator's last request was a Play (not a Pause, a Stop or a
-  // clear). With the audio all played, or with nobody playing the ring out, the song is over
-  // whatever the feeder reports. The feeder has to have applied everything the creator sent for
-  // the ring to say anything: until then what was sent decides, and a seek or a loop change that
-  // follows the end makes it drop the ring.
+  // The end of the audio is told from the ring and from the consumer, and not from the feeder's
+  // playing flag. The feeder reports that it has stopped when it has handed over the last of the
+  // audio, which is as far ahead of the consumer as the ring is deep, and it reports that it is
+  // still playing until its next turn when the last block it handed over ended exactly with the
+  // audio. So at the end of the audio the creator is playing when the ring still holds audio that
+  // nobody has played and nobody has been asked to drop, and the creator's last request was a Play
+  // (not a Pause, a Stop or a clear), and a consumer is playing it out (consumerWasRunning) or the
+  // Play has not been taken up by any consumer yet (see setConsumerRunning). A consumer that ran
+  // and has stopped has taken its Play up, and what its ring still holds is not played by it: with
+  // the audio all played, or with nobody to play the ring out, the song is over whatever the
+  // feeder's flag says, and the answer does not depend on whether the feeder has taken the turn
+  // that lowers that flag. The feeder has to have applied everything the creator sent for the ring
+  // to say anything: until then what was sent decides, and a seek or a loop change that follows
+  // the end makes it drop the ring.
   //
   // An error is Conflict, and nothing was queued or recorded: the place the creator is at cannot be
   // read from the ring at this moment (see SpscInterleavedAudioRingBuffer::nextFrame), or the
   // feeder's queue is full. The transport is as it was.
   [[nodiscard]] core::Result<bool> suspend(bool consumerWasRunning);
+  // For the owner of the consumer, to say whether the consumer runs: when it has started it, when
+  // it has stopped it, and once per frame for a device that can stop on its own. The transport
+  // cannot see the device: a ring that nobody reads looks like one that is read until the feeder
+  // asks the consumer to drop something. Two decisions need it, both at the end of the audio,
+  // where the feeder has handed over the last of it and the ring holds the rest:
+  //  - A publication carries the Play to the replacement while a consumer runs, or while a Play
+  //    stands that no consumer has taken up. A consumer that stopped on its own (a device that was
+  //    unplugged) is not started again by a render.
+  //  - suspend() takes the same two for a consumer that was playing the end out, next to
+  //    consumerWasRunning, which says what the owner saw as it stopped the consumer.
+  // A Play that no consumer has taken up is what play() leaves while the consumer is not running,
+  // and it lasts until the consumer runs. It counts for as long as the Play stands: a Pause, a
+  // Stop, a suspension or a clear takes the Play away, and a Play that is asked for after that is
+  // taken up or not by the consumer as it is then. An owner that never says anything has a
+  // consumer that never runs and a Play that is never taken up: whatever Play is asked for stands.
+  // Thread-safe and lock-free: the owner calls it from the thread that paints, and a publication
+  // reads it on the render thread.
+  void setConsumerRunning(bool running) noexcept;
+  // What the owner last said: false until it says that the consumer runs. It is not the device, and
+  // for a device that stops on its own it is as old as the owner's last statement.
+  [[nodiscard]] bool consumerRunning() const noexcept;
   // For the owner of a consumer that is not running (the audio device is stopped), after the
   // creator asked for playback and before the consumer is started. Starting the consumer first
   // would play whatever the ring still holds of audio from before, and waiting for the ring to
@@ -266,6 +291,13 @@ private:
   // starts again. A feeder that still reports that it is playing at the end of audio that was all
   // played is told to stop, so that a replacement that is longer does not play its new end.
   bool playRequested_{false};
+  // What the owner of the consumer last said (see setConsumerRunning), and whether no consumer has
+  // run since the last Play that was asked for while none did: two bits of one word (see
+  // transport_controller.cpp), so that a publication on the render thread reads both together and
+  // play() cannot record a Play as waiting for a consumer that has just started. The second is read
+  // only with playRequested_. A consumer that runs has taken every Play up, so the two are never
+  // set together. Atomic, and not guarded: the owner says it from its own thread.
+  std::atomic<std::uint8_t> consumer_{0U};
   // True from a reconfigure that dropped published audio until audio is published again or
   // cleared: loop_, pendingPlayhead_ and playRequested_ then describe that audio.
   bool audioDroppedByReconfigure_{false};

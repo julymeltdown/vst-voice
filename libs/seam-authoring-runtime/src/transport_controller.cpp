@@ -3,8 +3,10 @@
 #include "seam/domain/routing.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <thread>
@@ -94,6 +96,26 @@ domain::ProjectRouting authoringMasterRouting(std::uint8_t outputChannels) {
           .sourceBus = masterId,
           .matrix = domain::RoutingMatrix::identity(outputChannels)}},
   };
+}
+
+// The word the owner of the consumer and play() share (see TransportController::setConsumerRunning):
+// whether the consumer runs, and whether no consumer has run since the last Play that was asked for
+// while none did. The second is only read with playRequested_, which is what says that a Play
+// stands: a Pause, a Stop, a suspension or a clear takes that Play away and leaves the bit, and the
+// next play() sets it again from the consumer as it is then.
+constexpr std::uint8_t kConsumerRuns = 1U;
+constexpr std::uint8_t kPlayAwaitsConsumer = 2U;
+
+// A Play was asked for. It waits for a consumer unless a consumer runs, and a consumer that runs
+// has taken it up already. One compare-exchange: a consumer that the owner starts on another thread
+// in between is not left with a Play that waits for it. A consumer that runs never leaves the bit
+// set (setConsumerRunning), so after this the bit says whether the consumer is not running.
+void awaitConsumerForPlay(std::atomic<std::uint8_t>& word) noexcept {
+  auto seen = word.load(std::memory_order_acquire);
+  while ((seen & kConsumerRuns) == 0U &&
+         !word.compare_exchange_weak(seen, static_cast<std::uint8_t>(seen | kPlayAwaitsConsumer),
+                                     std::memory_order_acq_rel, std::memory_order_acquire)) {
+  }
 }
 
 }  // namespace
@@ -355,18 +377,24 @@ core::Result<void> TransportController::publishAudio(
     // playing it while the feeder mixes it (the feeder may have finished by the time it applies
     // the replacement, which starts it again from where the creator is), and while the ring holds
     // the end of it that the feeder has handed over and the device has not played: the replacement
-    // drops the ring, so the end is the replacement's to play. A song that has been played out
-    // stays ended, and so does one the creator paused or put back at the start, however the audio
-    // is replaced after that. This is asked before the place is: the device only moves forward, so
-    // what it plays in between leaves a replacement that starts where the creator was and
-    // finishes at once, and not one that waits at a place the creator has already heard.
+    // drops the ring, so the end is the replacement's to play. That is so while a consumer plays
+    // the end out, or no consumer has taken the Play up yet. A consumer that has stopped is not
+    // restarted by a render: nobody hears what its ring still holds, and a Play carried for it
+    // would start the device again. A song that has been played out stays ended, and so does one
+    // the creator paused or put back at the start, however the audio is replaced after that. This
+    // is asked before the place is: the device only moves forward, so what it plays in between
+    // leaves a replacement that starts where the creator was and finishes at once, and not one
+    // that waits at a place the creator has already heard.
     const auto point = currentPoint();
     const auto held = heldAudio(point);
-    playsOn = playRequested_ &&
-              (timelineEnd_ == time::SampleFrame{0} || held.mixing || held.endInRing);
-    // The feeder still reports that it is playing, at the end of the audio, though the ring holds
-    // nothing left to hear: it has not taken the turn that says the song is over. The replacement
-    // must not take that for a Play, or one that is longer than the song would play its new end.
+    // One read of the word: a consumer that runs, or a Play that no consumer has taken up.
+    const bool consumerServes = consumer_.load(std::memory_order_acquire) != 0U;
+    playsOn = playRequested_ && (timelineEnd_ == time::SampleFrame{0} || held.mixing ||
+                                 (held.endInRing && consumerServes));
+    // The feeder still reports that it is playing, at the end of the audio, though nothing in the
+    // ring is the creator's to hear: it has not taken the turn that says the song is over. The
+    // replacement must not take that for a Play, or one that is longer than the song would play
+    // its new end, and a consumer that stopped would be started again for it.
     parksAtTheEnd =
         !playsOn && point.playing && timelineEnd_ != time::SampleFrame{0} && !held.mixing;
     // Where the creator is going to be, not where the feeder last said it was: a Stop that it has
@@ -469,6 +497,7 @@ core::Result<void> TransportController::play() {
   if (!sent) return sent;
   std::lock_guard lock(stateMutex_);
   playRequested_ = true;
+  awaitConsumerForPlay(consumer_);
   return core::success();
 }
 
@@ -524,14 +553,17 @@ core::Result<bool> TransportController::suspend(bool consumerWasRunning) {
     const bool waitsForAudio = timelineEnd_ == time::SampleFrame{0} && playRequested_;
     // The feeder hands over the last of the audio as far ahead of the consumer as the ring is
     // deep, so at the end of the audio it is the ring that says whether the creator is still
-    // listening: it holds audio that nobody has played and nobody is going to drop, and either the
-    // feeder still reports that it is playing (it has not taken the turn that says it has
-    // finished), or the creator's last request was a Play and the consumer was running to play the
-    // end out. A song that has been played out is over, and so is one that nobody was playing,
-    // whatever the feeder reports: a Play that put it back would start it again from the
-    // beginning.
+    // listening: it holds audio that nobody has played and nobody is going to drop, the creator's
+    // last request was a Play, and the consumer was running to play the end out, or no consumer has
+    // taken that Play up yet and will. The feeder's own flag is not asked. It is lowered by a turn
+    // the feeder may not have taken, and it says the same of a consumer that played the song to
+    // its last block and of one that stopped on its own. A song that has been played out is over,
+    // and so is one that nobody was playing, whatever the feeder reports: a Play that put it back
+    // would start it again from the beginning.
+    const bool awaitsConsumer =
+        (consumer_.load(std::memory_order_acquire) & kPlayAwaitsConsumer) != 0U;
     const bool hearsTheEnd =
-        held.endInRing && (point.playing || (playRequested_ && consumerWasRunning));
+        held.endInRing && playRequested_ && (consumerWasRunning || awaitsConsumer);
     playsOn = waitsForAudio || held.mixing || hearsTheEnd;
     // The place the creator is at goes to the feeder whether it is playing or has finished: a
     // finished feeder stands at the end of the audio, and a play from there would start the song
@@ -686,6 +718,20 @@ TransportController::HeldAudio TransportController::heldAudio(
       .mixing = point.playing && !atEnd,
       .endInRing = atEnd && settled && !ring_->resetPending() && ring_->availableReadFrames() > 0U,
   };
+}
+
+void TransportController::setConsumerRunning(bool running) noexcept {
+  if (running) {
+    // A consumer that runs has taken every Play up: only this bit is left.
+    consumer_.store(kConsumerRuns, std::memory_order_release);
+  } else {
+    // A Play that is waiting stays so: it is the Play of a consumer that has not started yet.
+    consumer_.fetch_and(static_cast<std::uint8_t>(~kConsumerRuns), std::memory_order_acq_rel);
+  }
+}
+
+bool TransportController::consumerRunning() const noexcept {
+  return (consumer_.load(std::memory_order_acquire) & kConsumerRuns) != 0U;
 }
 
 core::Result<void> TransportController::carryAudiblePosition(
