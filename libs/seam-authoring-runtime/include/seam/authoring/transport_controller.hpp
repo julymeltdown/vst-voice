@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -35,6 +36,9 @@ struct TransportState final {
   // Whether the feeder has applied every command it was sent. playing and playhead are the
   // feeder's own report, so until then they show what the creator asked for before the last
   // command, and a decision about the audio device that goes by them can undo that command.
+  // Once it is true they include every command sent: the feeder moves on its own thread, and
+  // state() reads the count of the commands it has applied before the state that count covers, so
+  // a report never pairs the newest count with a playing flag from before the last command.
   bool settled{true};
 };
 
@@ -94,6 +98,12 @@ public:
   [[nodiscard]] core::Result<void> awaitStartBuffer(std::chrono::milliseconds timeout);
 
   [[nodiscard]] TransportState state() const noexcept;
+  // For tests. Called with the feeder before each read state() makes of what the feeder reports,
+  // so that a test can have the feeder apply a command at any point of one sample. It is empty in
+  // the product. Set it only while no thread calls state() and the feeder's service is stopped
+  // (shutdown() stops it): the probe is then the only thing that moves the feeder.
+  using StateSampleProbe = std::function<void(rendering::MultichannelPlaybackFeeder&)>;
+  void setStateSampleProbe(StateSampleProbe probe);
   [[nodiscard]] TransportConfig config() const noexcept {
     std::lock_guard lock(lifecycleMutex_);
     return config_;
@@ -155,6 +165,8 @@ private:
   // these start again from nothing whenever a reconfigure builds a new feeder.
   std::uint64_t queuedCommands_{0U};
   std::optional<QueuedIntent> queuedIntent_;
+  // Guarded by lifecycleMutex_, which state() holds while it calls it.
+  StateSampleProbe stateSampleProbe_;
 };
 
 }  // namespace seam::authoring

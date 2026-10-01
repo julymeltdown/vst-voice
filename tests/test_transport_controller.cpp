@@ -1131,3 +1131,59 @@ TEST_CASE("transport_controller_await_start_buffer_does_not_wait_for_audio_the_f
   CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{2000}));
   CHECK(std::chrono::steady_clock::now() - began < std::chrono::milliseconds{1000});
 }
+
+TEST_CASE("transport_controller_state_never_pairs_an_applied_pause_with_the_playing_flag_from_before_it") {
+  // The feeder applies the creator's commands on its own thread, so it can apply one at any moment
+  // of the few reads state() makes of what it reports. A report that says every command is applied
+  // has to carry the state they led to, wherever in the sample the feeder moved: a repaint that
+  // went by such a report would see a pause as applied and the audio as still playing, and start
+  // the audio device again after the creator paused it.
+  for (std::size_t movesBeforeRead = 0U; movesBeforeRead <= 3U; ++movesBeforeRead) {
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{
+        seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                         .outputChannels = 2U,
+                                         .ringCapacityFrames = 1024U,
+                                         .blockFrames = 64U,
+                                         .watermarkFrames = 256U}};
+    CHECK(controller.publishAudio(publishAudio(publication, 1U, 4096U)));
+    CHECK(controller.play());
+    // 4096 frames do not fit in the ring and nothing reads it: the feeder is playing, and stays so.
+    CHECK(waitUntil([&] {
+      const auto state = controller.state();
+      return state.settled && state.playing;
+    }));
+    // From here the test is the only thing that moves the feeder.
+    controller.shutdown();
+    CHECK(controller.pause());
+    CHECK(!controller.state().settled);
+    CHECK(controller.state().playing);
+
+    std::size_t reads = 0U;
+    bool moved = false;
+    seam::rendering::MultichannelPlaybackFeeder* feeder = nullptr;
+    controller.setStateSampleProbe([&](seam::rendering::MultichannelPlaybackFeeder& reported) {
+      feeder = &reported;
+      if (reads++ == movesBeforeRead) {
+        static_cast<void>(reported.feedOnce());
+        moved = true;
+      }
+    });
+    const auto sampled = controller.state();
+    controller.setStateSampleProbe({});
+    CHECK(feeder != nullptr);
+    // The sample is made of three reads. The feeder moved before the one asked for, or, for the last
+    // case, after all of them.
+    CHECK(moved == (movesBeforeRead < 3U));
+    // Either the report says the feeder has not applied the pause, or it carries what the pause
+    // led to. It never says the pause is applied and the audio is still playing.
+    CHECK(!(sampled.settled && sampled.playing));
+    if (sampled.settled) CHECK(!sampled.playing);
+
+    // Whatever the sample caught, the feeder applies the pause and the next sample says so.
+    if (!moved && feeder != nullptr) static_cast<void>(feeder->feedOnce());
+    const auto later = controller.state();
+    CHECK(later.settled);
+    CHECK(!later.playing);
+  }
+}

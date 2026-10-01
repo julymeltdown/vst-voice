@@ -892,15 +892,14 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
   }
   if (audioDevice_->running()) return core::success();
 
+  // This brings the device up for playback that was asked for already: the creator's Play has sent
+  // it before it calls this, and a repaint calls it for a transport that reports it is playing. It
+  // sends the transport no command. A repaint decides from a report that can be a moment old, and a
+  // Play sent from here would undo a Pause the creator gave in that moment.
   auto& transport = authoring_->runtime().transport();
-  auto state = transport.state();
-  if (!state.available) {
+  if (!transport.state().available) {
     return core::failure(core::ErrorCode::Conflict,
                          "Playable audio is not ready for the audio device");
-  }
-  if (!state.playing) {
-    const auto played = transport.play();
-    if (!played) return played;
   }
 
   // The device is stopped, so nothing reads the ring while the feeder fills it: the transport

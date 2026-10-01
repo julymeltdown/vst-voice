@@ -557,18 +557,38 @@ core::Result<void> TransportController::send(
 TransportState TransportController::state() const noexcept {
   std::lock_guard lifecycleLock(lifecycleMutex_);
   std::lock_guard lock(stateMutex_);
+  const auto probe = [this] {
+    if (stateSampleProbe_) stateSampleProbe_(*feeder_);
+  };
+  // The feeder publishes its playing flag and its playhead and only then, with release, the count of
+  // the commands they include. So the count is read first, with acquire: a sample that finds every
+  // command applied then reads a playing flag and a playhead that include all of them (and anything
+  // the feeder did since, such as reaching the end of the audio). Read last, the count could be newer
+  // than the playing flag it is paired with, and a pause the feeder has just applied would be
+  // reported as applied beside a flag that still says playing.
+  probe();
+  const auto acknowledged = feeder_->acknowledgedCommands();
+  probe();
+  const auto playing = feeder_->playing();
+  probe();
+  const auto playhead = feeder_->playhead();
   return TransportState{
-      .playing = feeder_->playing(),
+      .playing = playing,
       .available = timelineEnd_ > time::SampleFrame{0},
       .availabilityDiagnostic = timelineEnd_ == time::SampleFrame{0}
                                     ? "Render audio before starting transport"
                                     : std::string{},
-      .playhead = feeder_->playhead(),
+      .playhead = playhead,
       .loop = loop_,
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,
-      .settled = feeder_->acknowledgedCommands() >= queuedCommands_,
+      .settled = acknowledged >= queuedCommands_,
   };
+}
+
+void TransportController::setStateSampleProbe(StateSampleProbe probe) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  stateSampleProbe_ = std::move(probe);
 }
 
 }  // namespace seam::authoring

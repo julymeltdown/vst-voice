@@ -149,6 +149,14 @@ class MacOSSourceContractTests(unittest.TestCase):
         # feeder's clear in the place of the stopped device (see TransportController).
         self.assertIn("transport.awaitStartBuffer(", native_app)
         self.assertIn("stopAudioForPlayback();", native_app)
+        # Bringing the device up sends the transport no command. A repaint starts the device from a
+        # report that can be a moment old, and a Play sent from there would undo a Pause given in that
+        # moment; every caller that asks for playback sends its own Play first.
+        start_at = native_app.index("core::Result<void> NativeEditorApp::startAudioForPlayback() {")
+        start_body = native_app[start_at : native_app.index("\n}\n", start_at)]
+        self.assertNotIn(".play(", start_body)
+        self.assertNotIn(".pause(", start_body)
+        self.assertNotIn(".stop(", start_body)
         self.assertIn("Unable to open startup project", entry)
         self.assertIn("Unable to start requested playback", entry)
         self.assertIn('"audio_frames="', entry)
