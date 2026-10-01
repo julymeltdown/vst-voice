@@ -209,6 +209,13 @@ NativeEditorApp::~NativeEditorApp() {
   if (applicationMenu_ != nullptr) applicationMenu_->uninstall();
   applicationController_.reset();
   shutdownAudio();
+  // The device goes before the authoring runtime, which owns the ring that its callback reads. A
+  // device that did not say that it has stopped may still be calling back, and its destructor makes
+  // a last attempt to stop it: that must find the ring still there. The runtime is reset here, and
+  // not left to the members' destruction, because its render workers ask the window for repaints
+  // through members that are declared after it. The processor reads only the ring and the meter,
+  // and nothing calls it once the device is gone, so it may outlive the ring until the members go.
+  audioDevice_.reset();
   authoring_.reset();
 }
 
@@ -1620,8 +1627,8 @@ core::Result<void> NativeEditorApp::writeUiEvidence(const std::filesystem::path&
 
 
 void NativeEditorApp::shutdownAudio() noexcept {
-  // A device that does not say that it has stopped is destroyed with the app, before the processor
-  // it reads, and its destructor makes a last attempt.
+  // A device that does not say that it has stopped is destroyed by the destructor next, before the
+  // authoring runtime that owns the ring it reads, and its own destructor makes a last attempt.
   static_cast<void>(stopAudioForPlayback());
   if (authoring_ != nullptr) {
     static_cast<void>(authoring_->runtime().transport().pause());

@@ -50,6 +50,8 @@ class PumpedAudioDevice;
 struct PumpedDevices final {
   std::vector<PumpedAudioDevice*> alive;
   bool failNextOpen{false};
+  // Called as a device is destroyed, before it is gone from the list.
+  std::function<void(const PumpedAudioDevice&)> onDestroyed;
 };
 
 class PumpedAudioDevice final : public seam::platform::IAudioDevice {
@@ -59,7 +61,10 @@ public:
     devices.failNextOpen = false;
     devices.alive.push_back(this);
   }
-  ~PumpedAudioDevice() override { std::erase(devices_->alive, this); }
+  ~PumpedAudioDevice() override {
+    if (devices_->onDestroyed) devices_->onDestroyed(*this);
+    std::erase(devices_->alive, this);
+  }
   PumpedAudioDevice(const PumpedAudioDevice&) = delete;
   PumpedAudioDevice& operator=(const PumpedAudioDevice&) = delete;
 
@@ -799,6 +804,41 @@ TEST_CASE("standalone playback: a Pause whose device does not stop is told to th
   // Play after that plays.
   CHECK(rig.pressPlay());
   CHECK(rig.device->running());
+}
+
+TEST_CASE("standalone playback: a device that does not say that it has stopped is destroyed before the ring its callback reads") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-teardown-stop-fails");
+  PlaybackRig rig{root};
+  // The transport owns the ring that the device's callback reads, and owns this probe: the token
+  // lives exactly as long as the transport does, so it says whether the ring is still there without
+  // touching it.
+  auto token = std::make_shared<int>(0);
+  const std::weak_ptr<int> ringIsThere = token;
+  rig.transport().setConsumerReportProbe([keep = std::move(token)](bool) {});
+  struct AtDestruction final {
+    bool seen{false};
+    bool ringIsThere{false};
+    bool running{false};
+    std::size_t stopAttempts{0U};
+  } atDestruction;
+  rig.devices->onDestroyed = [&](const PumpedAudioDevice& device) {
+    atDestruction = {true, !ringIsThere.expired(), device.running(), device.stopAttempts()};
+  };
+  static_cast<void>(rig.writeTheSong());
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+
+  // The creator closes the app while the platform does not say that the device has stopped: a
+  // callback may still be reading the ring when the app lets the device go, and the ring must
+  // outlive that.
+  rig.device->failStop = true;
+  rig.app.reset();
+  CHECK(atDestruction.seen);
+  CHECK(atDestruction.running);
+  CHECK(atDestruction.stopAttempts >= 1U);
+  CHECK(atDestruction.ringIsThere);
+  // The ring went with the runtime afterwards, so the token did follow it.
+  CHECK(ringIsThere.expired());
 }
 
 TEST_CASE("standalone audio settings: a Pause the feeder has not applied yet is not undone by a change") {
