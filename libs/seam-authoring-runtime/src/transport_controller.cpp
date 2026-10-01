@@ -721,6 +721,7 @@ TransportController::HeldAudio TransportController::heldAudio(
 }
 
 void TransportController::setConsumerRunning(bool running) noexcept {
+  if (consumerReportProbe_) consumerReportProbe_(running);
   if (running) {
     // A consumer that runs has taken every Play up: only this bit is left.
     consumer_.store(kConsumerRuns, std::memory_order_release);
@@ -732,6 +733,10 @@ void TransportController::setConsumerRunning(bool running) noexcept {
 
 bool TransportController::consumerRunning() const noexcept {
   return (consumer_.load(std::memory_order_acquire) & kConsumerRuns) != 0U;
+}
+
+void TransportController::setConsumerReportProbe(ConsumerReportProbe probe) {
+  consumerReportProbe_ = std::move(probe);
 }
 
 core::Result<void> TransportController::carryAudiblePosition(

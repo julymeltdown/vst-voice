@@ -92,7 +92,16 @@ public:
     ++starts_;
     return seam::core::success();
   }
-  void stop() noexcept override { running_ = false; }
+  seam::core::Result<void> stop() noexcept override {
+    ++stopAttempts_;
+    // A stop that the platform does not report as done: the device goes on running, and a callback
+    // may still be in flight.
+    if (failStop && running_) {
+      return seam::core::failure(seam::core::ErrorCode::IoError, "the pumped device cannot stop");
+    }
+    running_ = false;
+    return seam::core::success();
+  }
   bool running() const noexcept override { return running_; }
   seam::platform::AudioDeviceInfo info() const override { return info_; }
   seam::platform::AudioDeviceStats stats() const noexcept override { return {}; }
@@ -115,10 +124,12 @@ public:
     return left_;
   }
   [[nodiscard]] std::size_t starts() const noexcept { return starts_; }
+  [[nodiscard]] std::size_t stopAttempts() const noexcept { return stopAttempts_; }
 
   static constexpr std::size_t kMaximumBlock = 1024U;
   bool failStart{false};
   bool failOpen{false};
+  bool failStop{false};
 
 private:
   PumpedDevices* devices_;
@@ -129,6 +140,7 @@ private:
   std::vector<float> right_;
   bool running_{false};
   std::size_t starts_{0U};
+  std::size_t stopAttempts_{0U};
 };
 
 bool waitUntil(const std::function<bool()>& predicate,
@@ -464,6 +476,8 @@ TEST_CASE("standalone playback: a Play that cannot start the device is told to t
   CHECK(!pressed);
   CHECK(!pressed.error().message.empty());
   CHECK(!rig.device->running());
+  // The device that did not start is made sure of, once: it is not left to the platform.
+  CHECK(rig.device->stopAttempts() == 1U);
   // The transport is not left playing to a device that is not there.
   CHECK(waitUntil([&] {
     const auto state = rig.transport().state();
@@ -657,6 +671,136 @@ TEST_CASE("standalone audio settings: a change while the device plays the end of
   CHECK(!rig.device->running());
 }
 
+namespace {
+
+// The notices about audio that the creator is shown.
+std::size_t audioNotices(PlaybackRig& rig) {
+  rig.paint();
+  const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
+  return static_cast<std::size_t>(std::count_if(entries.begin(), entries.end(), [](const auto& entry) {
+    return entry.diagnostic.code == "AUDIO_UNAVAILABLE";
+  }));
+}
+
+}  // namespace
+
+TEST_CASE("standalone audio settings: a device that does not say that it has stopped keeps the audio as it was") {
+  const auto root = seam::test::support::temporaryDirectory("settings-stop-fails");
+  // What the app tells the transport about the consumer, in order. Declared before the rig, which
+  // reports as it is torn down.
+  std::vector<bool> told;
+  PlaybackRig rig{root};
+  rig.transport().setConsumerReportProbe([&told](bool running) { told.push_back(running); });
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  const auto heardBefore = playBlocks(rig, 12).size();
+  CHECK(heardBefore > 4000U);
+  const auto before = rig.app->audioSettings();
+  CHECK(before);
+  auto* const original = rig.device;
+  const auto commandsBefore = rig.transport().feederStats().controlCommands;
+  const auto configBefore = rig.transport().config();
+
+  // The platform does not say that the device has stopped: it may still be calling back, so nothing
+  // that its callback reads is touched. The creator is told, and nothing has changed.
+  const auto toldBefore = told.size();
+  original->failStop = true;
+  const auto refused = rig.changeBlockSize();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::IoError);
+  CHECK(rig.app->audioSettings().value().blockFrames == before.value().blockFrames);
+  CHECK(rig.devices->alive.size() == 1U);
+  CHECK(rig.device == original);
+  CHECK(original->running());
+  CHECK(rig.transport().config().blockFrames == configBefore.blockFrames);
+  CHECK(rig.transport().feederStats().controlCommands == commandsBefore);
+  CHECK(rig.transport().state().playing);
+  // The transport is told what is true: the device that did not say that it has stopped is the
+  // consumer still, and it was not reported as gone on the way to being put back.
+  CHECK(rig.transport().consumerRunning());
+  CHECK(rig.transportKnowsTheDevice());
+  // And at no point: the old device is the consumer until it says that it has stopped, so the
+  // transport was never told that it was gone, not even for as long as the change was under way.
+  CHECK(told.size() > toldBefore);
+  CHECK(std::all_of(told.begin() + static_cast<std::ptrdiff_t>(toldBefore), told.end(),
+                    [](bool running) { return running; }));
+
+  // Asked again once the device says that it stops, the change goes through, and the song goes on
+  // from where the creator was.
+  original->failStop = false;
+  CHECK(rig.changeBlockSize());
+  CHECK(rig.app->audioSettings().value().blockFrames != before.value().blockFrames);
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  checkHeardIs(rest, expected, heardBefore, "playback after the change that was asked again");
+}
+
+TEST_CASE("standalone playback: a device that does not say that it has stopped is asked again by the next frame") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-stop-fails");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  CHECK(rig.pressPlay());
+  rig.device->failStop = true;
+
+  // The song plays out. Each frame that finds the ring empty asks the device to stop, and it does
+  // not say that it has: it goes on running, and is asked again.
+  std::vector<float> heard;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+  while (rig.device->stopAttempts() < 3U && std::chrono::steady_clock::now() < deadline) {
+    rig.pump(768U, heard);
+    rig.paint();
+    std::this_thread::sleep_for(1ms);
+  }
+  CHECK(rig.device->stopAttempts() >= 3U);
+  CHECK(rig.device->running());
+  checkHeardIs(heard, expected, 0U, "playback while the device does not stop");
+  // The creator is told once, and not by every frame that asks again.
+  CHECK(audioNotices(rig) == 1U);
+  CHECK(!rig.app->lastError().empty());
+
+  // The device stops when it can, and what the creator was told of it goes.
+  rig.device->failStop = false;
+  CHECK(rig.paintUntil([&] { return !rig.device->running(); }));
+  CHECK(audioNotices(rig) == 0U);
+}
+
+TEST_CASE("standalone playback: a Pause whose device does not stop is told to the creator and pauses the transport") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-pause-stop-fails");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  static_cast<void>(playBlocks(rig, 4));
+
+  rig.device->failStop = true;
+  const auto paused = rig.pressPlay();
+  CHECK(!paused);
+  CHECK(!paused.error().message.empty());
+  // The song is paused, though the device runs on: it is the consumer of the ring until it says that
+  // it has stopped.
+  CHECK(rig.device->running());
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && !state.playing;
+  }));
+  CHECK(audioNotices(rig) == 1U);
+
+  // The consumer answers the feeder's request to drop the ring, and the device stops once it says
+  // that it can.
+  std::vector<float> heard;
+  rig.pump(256U, heard);
+  CHECK(rig.device->running());
+  rig.device->failStop = false;
+  CHECK(rig.paintUntil([&] { return !rig.device->running(); }));
+  CHECK(audioNotices(rig) == 0U);
+  // Play after that plays.
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+}
+
 TEST_CASE("standalone audio settings: a Pause the feeder has not applied yet is not undone by a change") {
   const auto root = seam::test::support::temporaryDirectory("settings-pending-pause");
   PlaybackRig rig{root};
@@ -677,7 +821,7 @@ TEST_CASE("standalone audio settings: a device that had stopped is not started b
   static_cast<void>(playUntilTheFeederHasFinished(rig));
   CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
   // The device stops by itself, as when it is unplugged: nobody is playing the end of the song.
-  rig.device->stop();
+  CHECK(rig.device->stop());
   CHECK(!rig.device->running());
 
   CHECK(rig.changeBlockSize());
@@ -909,7 +1053,7 @@ TEST_CASE("standalone playback: the transport is told what the app does with the
   CHECK(rig.pressPlay());
   CHECK(rig.device->running());
   CHECK(rig.transportKnowsTheDevice());
-  rig.device->stop();
+  CHECK(rig.device->stop());
   CHECK(rig.changeBlockSize());
   CHECK(!rig.device->running());
   CHECK(rig.transportKnowsTheDevice());
@@ -928,7 +1072,7 @@ TEST_CASE("standalone playback: a render that arrives after the device has stopp
 
   // The device stops by itself, as when it is unplugged, and the next frame is painted: nobody is
   // going to play the end of the song, and the creator did not press Pause.
-  rig.device->stop();
+  CHECK(rig.device->stop());
   rig.paint();
   CHECK(!rig.device->running());
   const auto starts = rig.device->starts();
@@ -1116,7 +1260,7 @@ TEST_CASE("standalone playback: a device that ran for a waiting Play and stopped
 
   // The device stops by itself, as when it is unplugged, with the end of the song still in the
   // ring. It took the creator's Play up when it ran, and nobody is going to play that end.
-  rig.device->stop();
+  CHECK(rig.device->stop());
   CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
   CHECK(rig.device->starts() == 1U);
   CHECK(!rig.transport().state().playAwaitsConsumer);

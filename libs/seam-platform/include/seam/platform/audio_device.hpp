@@ -44,7 +44,22 @@ public:
   [[nodiscard]] virtual core::Result<void> open(
       const AudioDeviceConfig& config, IAudioProcessor& processor) = 0;
   [[nodiscard]] virtual core::Result<void> start() = 0;
-  virtual void stop() noexcept = 0;
+  // Stops the callback, and says whether it is stopped. Success is a boundary: no callback is
+  // running and none will be entered, so whoever owns what the callback reads (the ring buffer
+  // whose resets it answers, the processor) may take over the consumer's part, replace it or let
+  // it go. Stopping a device that is not running succeeds, and a stop that failed can be asked
+  // again.
+  //
+  // An error means that quiescence is not established: the platform did not say that the device
+  // has stopped, and a callback may be in flight. Until a later stop succeeds the owner does not
+  // hand the consumer's part over: it does not answer the ring's resets in the device's place,
+  // replace or free what the callback reads, or start another device on that ring. running() goes
+  // on saying true, which is the device's conservative claim to still be the consumer. It is not
+  // evidence that audio is being played, and nothing about what the creator hears is decided from
+  // it. The destructor makes a last attempt whatever the answer. Whether that ends callbacks that
+  // a failed stop left running has not been verified on any platform, so an owner that has to
+  // destroy such a device destroys it before anything its callback reads.
+  [[nodiscard]] virtual core::Result<void> stop() noexcept = 0;
   [[nodiscard]] virtual bool running() const noexcept = 0;
   [[nodiscard]] virtual AudioDeviceInfo info() const = 0;
   [[nodiscard]] virtual AudioDeviceStats stats() const noexcept = 0;

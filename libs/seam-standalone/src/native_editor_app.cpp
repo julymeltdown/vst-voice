@@ -362,7 +362,13 @@ core::Result<void> NativeEditorApp::initialize() {
             }
           }
         } else {
-          stopAudioForPlayback();
+          const auto stopped = stopAudioForPlayback();
+          if (!stopped) {
+            // The transport is paused, and the device is still running: the next frame asks it to
+            // stop again, and the creator is told that it did not.
+            requestWindowRepaint();
+            return stopped;
+          }
         }
         requestWindowRepaint();
         return core::success();
@@ -917,7 +923,9 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
 
   auto started = audioDevice_->start();
   if (!started) {
-    audioDevice_->stop();
+    // A device whose start failed is not running, and stopping a device that is not running
+    // succeeds (see IAudioDevice::stop): this only makes sure.
+    static_cast<void>(audioDevice_->stop());
     setAudioUnavailable(started.error());
     return started;
   }
@@ -927,9 +935,34 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
   return core::success();
 }
 
-void NativeEditorApp::stopAudioForPlayback() noexcept {
-  if (audioDevice_ != nullptr) audioDevice_->stop();
-  reportConsumerToTransport();
+core::Result<void> NativeEditorApp::stopAudioForPlayback() noexcept {
+  // Stopped or not, the transport is told what the device is doing then. A device that does not say
+  // that it has stopped goes on saying that it runs, and the transport goes on treating it as the
+  // consumer.
+  struct ReportOnExit final {
+    NativeEditorApp& app;
+    ~ReportOnExit() { app.reportConsumerToTransport(); }
+  } reportOnExit{*this};
+  if (audioDevice_ == nullptr) return core::success();
+  auto stopped = audioDevice_->stop();
+  if (!stopped) {
+    // A device that does not say that it has stopped goes on being the consumer of the ring: it
+    // stays here and running() goes on saying so, so that a later frame decides again and asks
+    // again. The creator is told, and the notice goes when a stop succeeds.
+    setAudioUnavailable(stopped.error());
+    audioStopFailed_ = true;
+    return stopped;
+  }
+  if (audioStopFailed_) {
+    // It has stopped now, and what the creator was told of it is no longer true.
+    audioStopFailed_ = false;
+    clearAudioUnavailable();
+    if (authoring_ != nullptr) {
+      const auto info = audioDevice_->info();
+      authoring_->controller().setAudioState(info.physical, info.backend);
+    }
+  }
+  return core::success();
 }
 
 void NativeEditorApp::reportConsumerToTransport() noexcept {
@@ -973,14 +1006,27 @@ core::Result<void> NativeEditorApp::restartAudio(
             };
   const auto wasRunning = audioDevice_ != nullptr && audioDevice_->running();
   auto previousDevice = std::move(audioDevice_);
-  if (previousDevice != nullptr) previousDevice->stop();
-  // The old device was the consumer, and it is stopped: nothing runs until a device is put back. The
-  // transport is told now, and not only as this returns, because the Play that restores what the
-  // creator was doing is asked for below, before any device is started, and a Play that is asked
-  // for while no consumer runs is one that waits for a consumer (see
+  if (previousDevice != nullptr) {
+    // The device is the consumer of the ring until it says that it has stopped. When it does not,
+    // nothing is changed: it stays where it was, running, the transport is not asked anything,
+    // nothing answers the ring's resets in its place, no processor is replaced and no other device
+    // is opened on the ring, and the transport is not told that the consumer is gone: the exit
+    // guard reports the device that was put back, which still runs. The creator is told, and can
+    // ask again.
+    auto stopped = previousDevice->stop();
+    if (!stopped) {
+      audioDevice_ = std::move(previousDevice);
+      return stopped;
+    }
+  }
+  // The old device was the consumer, and it has said that it is stopped: nothing runs until a
+  // device is put back. The transport is told now, and not only as this returns, because the Play
+  // that restores what the creator was doing is asked for below, before any device is started, and
+  // a Play that is asked for while no consumer runs is one that waits for a consumer (see
   // TransportController::setConsumerRunning). Asked for with the old device still reported as
   // running, it would look like a Play that a consumer has taken up, and a render that lands before
-  // the next painted frame would drop it.
+  // the next painted frame would drop it. A stop that the device did not report is not told: it
+  // returned above.
   reportConsumerToTransport();
   // With the device stopped nothing reads the ring, so the transport can say where the creator is
   // and what they were doing: playing, paused, or listening to the end of a song that the feeder
@@ -1129,6 +1175,8 @@ core::Result<void> NativeEditorApp::restartAudio(
 }
 
 void NativeEditorApp::setAudioUnavailable(const core::Error& error) noexcept {
+  // A notice that is raised now is not the one about a device that did not stop.
+  audioStopFailed_ = false;
   lastError_ = error.message;
   if (!error.context.empty()) lastError_ += ": " + error.context;
   audioDiagnostic_ = authoring::Diagnostic{
@@ -1149,6 +1197,7 @@ void NativeEditorApp::setAudioUnavailable(const core::Error& error) noexcept {
 
 void NativeEditorApp::clearAudioUnavailable() noexcept {
   audioDiagnostic_.reset();
+  audioStopFailed_ = false;
 }
 
 core::Result<void> NativeEditorApp::refreshSupportReports(
@@ -1571,7 +1620,9 @@ core::Result<void> NativeEditorApp::writeUiEvidence(const std::filesystem::path&
 
 
 void NativeEditorApp::shutdownAudio() noexcept {
-  stopAudioForPlayback();
+  // A device that does not say that it has stopped is destroyed with the app, before the processor
+  // it reads, and its destructor makes a last attempt.
+  static_cast<void>(stopAudioForPlayback());
   if (authoring_ != nullptr) {
     static_cast<void>(authoring_->runtime().transport().pause());
   }
@@ -1634,7 +1685,9 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
       transport, authoring_->runtime().transport().ringBuffer().availableReadFrames(),
       audioDevice_ != nullptr, audioDevice_ != nullptr && audioDevice_->running())) {
     case DeviceAction::Stop:
-      stopAudioForPlayback();
+      // A device that does not say that it has stopped is asked again by the next frame, and the
+      // creator has been told by the notice that asking raised.
+      static_cast<void>(stopAudioForPlayback());
       break;
     case DeviceAction::Start: {
       const auto started = startAudioForPlayback();
@@ -2130,7 +2183,7 @@ native_ui::design::ShellVoiceHost NativeEditorApp::makeVoiceHost() {
     if (started) requestWindowRepaint();
     return started;
   };
-  host.stop = [this] { voiceAudition_.stop(); };
+  host.stop = [this] { record(voiceAudition_.stop()); };
   host.level = [this]() -> std::optional<float> {
     const auto polled = voiceAudition_.poll();
     if (!polled) {

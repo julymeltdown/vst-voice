@@ -145,7 +145,7 @@ std::int16_t floatToS16(float value) noexcept {
 class PulseAudioDevice final : public IAudioDevice {
 public:
   ~PulseAudioDevice() override {
-    stop();
+    static_cast<void>(stop());
     closeHandle();
   }
 
@@ -236,7 +236,9 @@ public:
     return core::success();
   }
 
-  void stop() noexcept override {
+  // The callback thread is joined before the stream is drained, so once it returns no callback
+  // runs: there is no stop that fails. (Not compiled on the macOS development machine.)
+  core::Result<void> stop() noexcept override {
     if (worker_.joinable()) {
       worker_.request_stop();
       worker_.join();
@@ -249,6 +251,7 @@ public:
         lastError_.store(error, std::memory_order_relaxed);
       }
     }
+    return core::success();
   }
 
   bool running() const noexcept override {

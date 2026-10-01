@@ -92,7 +92,10 @@ public:
     running_ = true;
     return seam::core::success();
   }
-  void stop() noexcept override { running_ = false; }
+  seam::core::Result<void> stop() noexcept override {
+    running_ = false;
+    return seam::core::success();
+  }
   bool running() const noexcept override { return running_; }
   seam::platform::AudioDeviceInfo info() const override { return info_; }
   seam::platform::AudioDeviceStats stats() const noexcept override { return {}; }
@@ -165,7 +168,7 @@ TEST_CASE("threaded audio device drives the real callback contract") {
   for (int attempt = 0; attempt < 100 && device->stats().callbacks < 8U; ++attempt) {
     std::this_thread::sleep_for(2ms);
   }
-  device->stop();
+  CHECK(device->stop());
   service.stop();
   CHECK(device->stats().callbacks >= 8U);
   CHECK(device->stats().frames >= 1024U);
@@ -208,7 +211,7 @@ TEST_CASE("playback controls remain race-free while feeder and callback threads 
     std::this_thread::sleep_for(200us);
   }
   std::this_thread::sleep_for(30ms);
-  device->stop();
+  CHECK(device->stop());
   service.stop();
   CHECK(feeder.stats().controlCommands > 100U);
   CHECK(device->stats().callbacks > 0U);
@@ -245,7 +248,7 @@ TEST_CASE("system audio adapter reports an explicit bounded open result") {
 
   if (opened) {
     CHECK(device->info().physical);
-    device->stop();
+    CHECK(device->stop());
   } else {
     CHECK(!opened.error().message.empty());
   }

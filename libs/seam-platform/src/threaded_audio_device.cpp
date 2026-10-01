@@ -32,7 +32,7 @@ core::Result<void> validateConfig(const AudioDeviceConfig& config) {
 
 class ThreadedAudioDevice final : public IAudioDevice {
 public:
-  ~ThreadedAudioDevice() override { stop(); }
+  ~ThreadedAudioDevice() override { static_cast<void>(stop()); }
 
   core::Result<void> open(const AudioDeviceConfig& config,
                           IAudioProcessor& processor) override {
@@ -100,12 +100,15 @@ public:
     return core::success();
   }
 
-  void stop() noexcept override {
+  // Joining the callback thread is the boundary: once it returns no callback runs, so there is no
+  // stop that fails.
+  core::Result<void> stop() noexcept override {
     if (worker_.joinable()) {
       worker_.request_stop();
       worker_.join();
     }
     running_.store(false, std::memory_order_release);
+    return core::success();
   }
 
   bool running() const noexcept override {

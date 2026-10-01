@@ -15,7 +15,7 @@ public:
     return core::failure(core::ErrorCode::Conflict,
                          "Unavailable audio device cannot start");
   }
-  void stop() noexcept override {}
+  core::Result<void> stop() noexcept override { return core::success(); }
   bool running() const noexcept override { return false; }
   AudioDeviceInfo info() const override {
     return AudioDeviceInfo{.backend = "unavailable"};

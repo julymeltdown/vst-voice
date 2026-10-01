@@ -164,6 +164,13 @@ public:
   // What the owner last said: false until it says that the consumer runs. It is not the device, and
   // for a device that stops on its own it is as old as the owner's last statement.
   [[nodiscard]] bool consumerRunning() const noexcept;
+  // For tests. Called with what the owner says, as it says it and before the transport takes it in,
+  // so that a test can see in what order the owner tells the transport what the consumer does: a
+  // report that is made and then corrected leaves nothing in consumerRunning() to see. It is empty
+  // in the product. It must not throw and must not call into this controller. Set it only while
+  // nothing calls setConsumerRunning(): the owner's own thread is the only one that does.
+  using ConsumerReportProbe = std::function<void(bool)>;
+  void setConsumerReportProbe(ConsumerReportProbe probe);
   // For the owner of a consumer that is not running (the audio device is stopped), after the
   // creator asked for playback and before the consumer is started. Starting the consumer first
   // would play whatever the ring still holds of audio from before, and waiting for the ring to
@@ -316,6 +323,8 @@ private:
   std::optional<QueuedIntent> queuedIntent_;
   // Guarded by lifecycleMutex_, which state() holds while it calls it.
   StateSampleProbe stateSampleProbe_;
+  // Read by setConsumerRunning() without a lock, so it is set only while nothing calls that.
+  ConsumerReportProbe consumerReportProbe_;
   // The last place audiblePlayhead() confirmed: what state() reports when it cannot. Guarded by
   // lifecycleMutex_ and stateMutex_, as audiblePlayhead() is.
   mutable time::SampleFrame lastAudiblePlayhead_{0};

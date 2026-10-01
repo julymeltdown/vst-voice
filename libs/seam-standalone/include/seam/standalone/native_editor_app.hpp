@@ -97,7 +97,10 @@ public:
   // Its device scale is the last painted canvas's pixels per logical point.
   [[nodiscard]] core::Result<void> writeUiEvidence(const std::filesystem::path& dir);
   [[nodiscard]] core::Result<void> startAudioForPlayback();
-  void stopAudioForPlayback() noexcept;
+  // Stops the device, once it says that it has stopped. A device that does not say so stays the
+  // consumer of the transport's ring and keeps running(); the error says that, and asking again
+  // tries again.
+  [[nodiscard]] core::Result<void> stopAudioForPlayback() noexcept;
   void shutdownAudio() noexcept;
   [[nodiscard]] core::Result<void> openProject(
       const std::filesystem::path& path);
@@ -213,6 +216,9 @@ private:
   std::filesystem::path recoveryRoot_;
   std::string startupDeviceId_;
   std::optional<authoring::Diagnostic> audioDiagnostic_;
+  // The audio notice above says that the device did not stop (see stopAudioForPlayback), and goes
+  // when it has.
+  bool audioStopFailed_{false};
   // A notice that this project's recorded sound came from different renderer code than this build
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.

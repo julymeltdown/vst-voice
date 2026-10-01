@@ -2737,6 +2737,9 @@ TEST_CASE("candidate audition session reports device failures and releases callb
     platform::AudioDeviceStats stats;
     platform::IAudioProcessor* processor{};
     bool running{false}, failOpen{false}, failStart{false}, destroyed{false};
+    // A stop that the platform does not report as done: the device goes on running and the
+    // session has to keep what the callback reads.
+    bool failStop{false};
     unsigned stops{0U};
   };
   class Device final : public platform::IAudioDevice {
@@ -2753,13 +2756,18 @@ TEST_CASE("candidate audition session reports device failures and releases callb
       if (state_->failStart) return core::failure(core::ErrorCode::IoError, "fixture start failure");
       state_->running = true; return core::success();
     }
-    void stop() noexcept override {
+    core::Result<void> stop() noexcept override {
       // Device shutdown may still touch the processor; session must retain it.
       if (state_->processor) {
         std::array<float, 1> sample{};
         state_->processor->process({.sampleRate = 8000.0, .frameCount = 1U, .left = sample});
       }
-      state_->running = false; ++state_->stops;
+      ++state_->stops;
+      if (state_->failStop && state_->running) {
+        return core::failure(core::ErrorCode::IoError, "fixture stop failure");
+      }
+      state_->running = false;
+      return core::success();
     }
     bool running() const noexcept override { return state_->running; }
     platform::AudioDeviceInfo info() const override { return state_->info; }
@@ -2807,6 +2815,60 @@ TEST_CASE("candidate audition session reports device failures and releases callb
     CHECK(session.start(std::make_unique<Device>(state), audio, 0U, 8000U, 0.25F, now));
   }
   CHECK(state->destroyed); CHECK(state->stops == 1U);
+  // The platform does not say that the device has stopped: a callback may still be reading the
+  // processor, so the session keeps the device and the processor, stays active and says so, and
+  // asking again asks the device again.
+  {
+    auto stuck = std::make_shared<State>();
+    Session session;
+    CHECK(session.start(std::make_unique<Device>(stuck), audio, 0U, 8000U, 0.25F, now));
+    stuck->failStop = true;
+    const auto refused = session.stop();
+    CHECK(!refused); CHECK(refused.error().code == core::ErrorCode::IoError);
+    CHECK(session.active()); CHECK(stuck->running); CHECK(!stuck->destroyed);
+    CHECK(stuck->processor != nullptr); CHECK(stuck->stops == 1U);
+    // An audition that cannot be stopped is not replaced: the new device is dropped, never opened.
+    auto replacement = std::make_shared<State>();
+    CHECK(!session.start(std::make_unique<Device>(replacement), audio, 0U, 8000U, 0.25F, now));
+    CHECK(replacement->destroyed); CHECK(replacement->processor == nullptr);
+    CHECK(session.active()); CHECK(!stuck->destroyed); CHECK(stuck->stops == 2U);
+    // A failure that the session finds is reported together with the output that did not stop.
+    stuck->stats.writeFailures = 1U;
+    const auto failed = session.poll(now);
+    CHECK(!failed);
+    CHECK(failed.error().context.find("did not stop") != std::string::npos);
+    CHECK(session.active()); CHECK(!stuck->destroyed);
+    // Once the device says that it has stopped, the next stop lets everything go.
+    stuck->failStop = false;
+    CHECK(session.stop());
+    CHECK(!session.active()); CHECK(stuck->destroyed); CHECK(!stuck->running);
+  }
+  // An audition that has finished is over when its device says that it has stopped, and not before.
+  {
+    auto stuck = std::make_shared<State>();
+    Session session;
+    CHECK(session.start(std::make_unique<Device>(stuck), audio, 0U, 8000U, 0.25F, now));
+    std::vector<float> output(8000U);
+    stuck->processor->process({.sampleRate = 8000.0, .frameCount = output.size(), .left = output});
+    stuck->failStop = true;
+    CHECK(!session.poll(now));
+    CHECK(session.active()); CHECK(!stuck->destroyed);
+    stuck->failStop = false;
+    const auto over = session.poll(now);
+    CHECK(over); CHECK(!over.value());
+    CHECK(!session.active()); CHECK(stuck->destroyed);
+  }
+  // A session that goes while its device does not stop makes one last attempt, and lets go of the
+  // device before the processor the device reads.
+  {
+    auto stuck = std::make_shared<State>();
+    {
+      Session session;
+      CHECK(session.start(std::make_unique<Device>(stuck), audio, 0U, 8000U, 0.25F, now));
+      stuck->failStop = true;
+    }
+    CHECK(stuck->stops == 1U); CHECK(stuck->destroyed);
+  }
 }
 
 TEST_CASE("candidate audition is bounded block invariant and runs on the output callback") {
@@ -2845,7 +2907,7 @@ TEST_CASE("candidate audition is bounded block invariant and runs on the output 
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
   while (!threaded.value()->finished() && std::chrono::steady_clock::now() < deadline)
     std::this_thread::sleep_for(std::chrono::milliseconds{2});
-  device->stop();
+  CHECK(device->stop());
   CHECK(threaded.value()->finished()); CHECK(!threaded.value()->failed());
   CHECK(device->stats().callbacks > 0U); CHECK(!device->info().physical);
 }

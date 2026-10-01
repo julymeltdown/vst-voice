@@ -393,8 +393,9 @@ int main() {
     return 1;
   }
   std::this_thread::sleep_for(250ms);
-  device->stop();
+  const bool deviceStopped = static_cast<bool>(device->stop());
   service.stop();
+  if (!deviceStopped) return 1;
 
   const auto totalPaintMs = std::accumulate(paintSamples.begin(), paintSamples.end(), 0.0);
   std::sort(paintSamples.begin(), paintSamples.end());

@@ -1560,8 +1560,11 @@ public:
     if (!lastError_.empty()) line(layout.errorY, lastError_, Color{193,115,160,255});
   }
   void stopAudition() noexcept {
-    audition_.stop();
-    auditionStatus_.clear();
+    // A session whose device does not say that it has stopped stays active, still playing, and the
+    // status stays what it is: the creator is told, and stopping again asks the device again.
+    const auto stopped = audition_.stop();
+    record(stopped);
+    if (stopped) auditionStatus_.clear();
   }
   seam::core::Result<void> auditionCandidate(bool selectedGesture) {
     if (controller_.proceduralImportBusy() || recording_.armed() || recording_.recordedFrames() > 0U)

@@ -120,7 +120,10 @@ UInt32 deviceBufferFrameSize(AudioDeviceID device,
 class CoreAudioDevice final : public IAudioDevice {
 public:
   ~CoreAudioDevice() override {
-    stop();
+    // A last attempt, whatever it answers. Whether disposing of the unit in close() ends callbacks
+    // that a failed stop left running has not been verified: the owner destroys the device before
+    // anything its callback reads (see IAudioDevice::stop).
+    static_cast<void>(stop());
     close();
   }
 
@@ -230,11 +233,19 @@ public:
     return core::success();
   }
 
-  void stop() noexcept override {
+  core::Result<void> stop() noexcept override {
     if (unit_ != nullptr && running()) {
-      static_cast<void>(AudioOutputUnitStop(unit_));
+      const auto status = AudioOutputUnitStop(unit_);
+      // The platform did not say that the unit has stopped, so a render callback may still be
+      // running: the device goes on saying that it runs, and its owner goes on treating it as the
+      // consumer of what the callback reads.
+      if (status != noErr) {
+        return core::failure(core::ErrorCode::IoError, "Unable to stop CoreAudio output",
+                             statusText(status));
+      }
     }
     running_.store(false, std::memory_order_release);
+    return core::success();
   }
 
   bool running() const noexcept override {

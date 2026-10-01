@@ -97,7 +97,7 @@ WAVEFORMATEXTENSIBLE requestedFormat(const AudioDeviceConfig& config) noexcept {
 class WasapiAudioDevice final : public IAudioDevice {
 public:
   ~WasapiAudioDevice() override {
-    stop();
+    static_cast<void>(stop());
     close();
   }
 
@@ -268,7 +268,10 @@ public:
     return core::success();
   }
 
-  void stop() noexcept override {
+  // The worker thread that renders is joined before the client is stopped, so once it returns no
+  // callback runs, whatever the client's own status: there is no stop that fails. (Not compiled on
+  // the macOS development machine.)
+  core::Result<void> stop() noexcept override {
     if (worker_.joinable()) {
       worker_.request_stop();
       if (event_ != nullptr) SetEvent(event_);
@@ -279,6 +282,7 @@ public:
       static_cast<void>(client_->Reset());
     }
     running_.store(false, std::memory_order_release);
+    return core::success();
   }
 
   bool running() const noexcept override {

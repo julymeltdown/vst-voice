@@ -266,7 +266,8 @@ int main(int argc, char** argv) {
   result = device->start();
   if (!result) return 9;
   std::this_thread::sleep_for(350ms);
-  device->stop();
+  result = device->stop();
+  if (!result) return 9;
   service.stop();
 
   std::vector<float> preview(48000U * 2U, 0.0F);
