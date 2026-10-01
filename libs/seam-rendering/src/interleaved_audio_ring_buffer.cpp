@@ -139,25 +139,25 @@ bool SpscInterleavedAudioRingBuffer::resetPending() const noexcept {
          acknowledgedResetEpoch_.load(std::memory_order_acquire);
 }
 
-std::optional<std::int64_t> SpscInterleavedAudioRingBuffer::nextFramePosition() const noexcept {
+SpscInterleavedAudioRingBuffer::NextFrame SpscInterleavedAudioRingBuffer::nextFrame() const noexcept {
   const auto logicalCapacity = frameCapacity_ + 1U;
   // The consumer would have to move between every pair of loads below for a reader to start again
-  // more than a few times; the bound only keeps a reader that could not be answered from waiting
-  // for ever.
+  // more than a few times; the bound only keeps a reader that cannot be answered from waiting for
+  // ever, and what it is then told is Busy: it did not see the ring empty.
   constexpr int kAttempts = 1000;
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
     const auto read = readTotal_.load(std::memory_order_acquire);
     if (snapshotProbe_) snapshotProbe_(1);
     const auto written = writeTotal_.load(std::memory_order_acquire);
     if (snapshotProbe_) snapshotProbe_(2);
-    if (written <= read) return std::nullopt;
-    const auto position = positions_[read % logicalCapacity].load(std::memory_order_acquire);
+    if (written <= read) return NextFrame{NextFrame::Kind::Empty, 0};
+    const auto place = positions_[read % logicalCapacity].load(std::memory_order_acquire);
     if (snapshotProbe_) snapshotProbe_(3);
     if (readTotal_.load(std::memory_order_acquire) != read) continue;
-    if (position == kNoPosition) return std::nullopt;
-    return position;
+    if (place == kNoPosition) return NextFrame{NextFrame::Kind::Unplaced, 0};
+    return NextFrame{NextFrame::Kind::Placed, place};
   }
-  return std::nullopt;
+  return NextFrame{NextFrame::Kind::Busy, 0};
 }
 
 void SpscInterleavedAudioRingBuffer::setSnapshotProbe(SnapshotProbe probe) {

@@ -1608,6 +1608,162 @@ TEST_CASE("transport_controller_audible_playhead_goes_by_where_a_loop_the_feeder
   CHECK(controller.state().audiblePlayhead == 0);
 }
 
+namespace {
+
+// Every time the ring is read for where the consumer is (at the point where the reader has a
+// place), the device plays one frame and the feeder mixes one in its place: the ring holds as many
+// frames as before, and no reading of it holds still. A reader that is bounded gives up.
+struct MovingConsumer final {
+  seam::authoring::TransportController& controller;
+  seam::rendering::MultichannelPlaybackFeeder& feeder;
+  std::size_t attempts{0U};
+  std::size_t consumed{0U};
+  std::size_t produced{0U};
+  void begin() {
+    controller.ringBuffer().setSnapshotProbe([this](int point) {
+      if (point != 3) return;
+      ++attempts;
+      std::vector<float> frame(2U);
+      consumed += controller.ringBuffer().readFrames(frame);
+      produced += feeder.feedOnce();
+    });
+  }
+  void end() { controller.ringBuffer().setSnapshotProbe({}); }
+};
+
+// The ring is full from the start of the song, the device has played 300 frames and the feeder has
+// filled the ring again, and the playhead on screen has been asked for: it shows 300.
+void playedThreeHundred(seam::authoring::TransportController& controller,
+                        seam::rendering::MultichannelPlaybackFeeder& feeder) {
+  static_cast<void>(readFrames(controller, 300U));
+  while (controller.ringBuffer().availableWriteFrames() > 0U) {
+    if (feeder.feedOnce() == 0U) break;
+  }
+  CHECK(controller.ringBuffer().availableReadFrames() == 1024U);
+  CHECK(controller.state().audiblePlayhead == 300);
+}
+
+}  // namespace
+
+TEST_CASE("transport_controller_audible_playhead_stays_where_it_was_when_the_ring_cannot_be_read") {
+  // The consumer moves under every attempt to read where it is, with the ring full: that is not an
+  // empty ring, and the feeder, which is a ringful ahead, does not stand in for the device. What is
+  // shown stays at the last place that was confirmed, which the device has reached or passed.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  playedThreeHundred(controller, feeder);
+  MovingConsumer moving{controller, feeder};
+  moving.begin();
+  const auto sampled = controller.state();
+  moving.end();
+  CHECK(moving.attempts > 1U);
+  CHECK(moving.consumed == moving.attempts);
+  CHECK(moving.produced == moving.attempts);
+  CHECK(sampled.audiblePlayhead == 300);
+  CHECK(sampled.audiblePlayhead <= static_cast<seam::time::SampleFrame>(300U + moving.consumed));
+  // Read at rest, the ring says where the device is.
+  CHECK(controller.state().audiblePlayhead == static_cast<seam::time::SampleFrame>(300U + moving.consumed));
+}
+
+TEST_CASE("transport_controller_pause_is_refused_and_changes_nothing_when_the_ring_cannot_be_read") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  MovingConsumer moving{controller, feeder};
+  moving.begin();
+  const auto refused = controller.pause();
+  moving.end();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(moving.attempts > 1U);
+  // Nothing was sent: what the feeder has applied is everything, and it is still playing.
+  CHECK(controller.state().settled);
+  CHECK(controller.state().playing);
+  // Asked again with the ring at rest, the pause goes on from where the device is, which is where
+  // the consumer got to while the first one was refused.
+  CHECK(controller.pause());
+  CHECK(controller.play());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), static_cast<double>(moving.consumed) / 1000.0, 0.002);
+}
+
+TEST_CASE("transport_controller_loop_change_is_refused_and_changes_nothing_when_the_ring_cannot_be_read") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  MovingConsumer moving{controller, feeder};
+  const seam::rendering::PlaybackLoop loop{.enabled = true, .startFrame = 0, .endFrame = 20000};
+  moving.begin();
+  const auto refused = controller.setLoop(loop);
+  moving.end();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(moving.attempts > 1U);
+  CHECK(controller.state().settled);
+  CHECK(!controller.state().loop.enabled);
+  CHECK(controller.setLoop(loop));
+  CHECK(controller.start());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), static_cast<double>(moving.consumed) / 1000.0, 0.002);
+}
+
+TEST_CASE("transport_controller_publication_is_refused_and_changes_nothing_when_the_ring_cannot_be_read") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  MovingConsumer moving{controller, feeder};
+  CHECK(publishAudio(publication, 2U, kMixedAheadSongFrames));
+  moving.begin();
+  const auto refused = controller.publishAudio(publication.acquire());
+  moving.end();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(moving.attempts > 1U);
+  CHECK(controller.state().settled);
+  CHECK(controller.state().publishedRevision == 1U);
+  // Asked again with the ring at rest, the replacement goes on from where the device is.
+  CHECK(controller.publishAudio(publication.acquire()));
+  CHECK(controller.state().publishedRevision == 2U);
+  CHECK(controller.start());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), static_cast<double>(moving.consumed) / 1000.0, 0.002);
+}
+
+TEST_CASE("transport_controller_reconfigure_is_refused_and_leaves_the_transport_running_when_the_ring_cannot_be_read") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  const auto original = wrappingConfig();
+  seam::authoring::TransportController controller{original};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, kMixedAheadSongFrames)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() == 1024U; }));
+  auto& feeder = feederOf(controller);
+  MovingConsumer moving{controller, feeder};
+  auto changed = original;
+  changed.blockFrames = 32U;
+  changed.watermarkFrames = 512U;
+  // The reconfigure stops the feeder's service before it asks the ring, so that the probe, which
+  // moves the feeder, is the only thing that does.
+  moving.begin();
+  const auto refused = controller.reconfigure(changed);
+  moving.end();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(moving.attempts > 1U);
+  CHECK(controller.config().blockFrames == original.blockFrames);
+  CHECK(controller.state().publishedRevision == 1U);
+  // The feeder's service was started again: it fills what the device takes.
+  static_cast<void>(readFrames(controller, 512U));
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() == 1024U; }));
+  // Asked again, with the ring at rest, the change is made.
+  CHECK(controller.reconfigure(changed));
+  CHECK(controller.config().blockFrames == 32U);
+}
+
 TEST_CASE("transport_controller_a_seek_the_feeder_has_not_applied_decides_where_pause_and_play_go_on_from") {
   // A seek that waits for the feeder is where playback goes on from, however many commands follow
   // it, until the feeder has applied it; then the device is at the place the audio is.

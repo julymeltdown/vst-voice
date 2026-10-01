@@ -36,7 +36,10 @@ struct TransportState final {
   // goes by the frames themselves, which carry their place, and not by how far ahead the feeder is,
   // so it is right for audio that loops, that began inside a loop and that the feeder has finished
   // while the device still plays its tail. Where a command has put the playhead and the feeder has
-  // not yet applied it, it is there.
+  // not yet applied it, it is there. When the ring cannot say where the device is (the device moved
+  // under every attempt to read it, which no real device does), it is the last place that was
+  // confirmed, so that the playhead on screen stays where it was; nothing that carries the creator's
+  // place to the audio that follows goes by that value, and they refuse instead.
   time::SampleFrame audiblePlayhead{0};
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};
@@ -64,7 +67,12 @@ public:
   // Every call below that sends the feeder commands (publishAudio, clearAudio, play, pause, stop,
   // seek, setLoop) sends them as one script: the feeder gets all of them or none, and a call that
   // returns an error has queued nothing and left what this controller records exactly as it was,
-  // so the creator can ask again and nothing half-done has to be undone first.
+  // so the creator can ask again and nothing half-done has to be undone first. A pause, a loop
+  // change and a publication carry the creator's place to the audio that follows, and are refused
+  // with Conflict when that place cannot be read from the ring at that moment (see
+  // SpscInterleavedAudioRingBuffer::nextFrame): a place that is guessed would be the feeder's, which
+  // is ahead of the creator by what the ring holds, and would skip that audio. So is reconfigure(),
+  // which leaves the transport as it was.
   //
   // The feeder applies its commands on its own thread, so what it reports (state().playing and
   // state().playhead) follows a moment after a call returns. The decisions this controller makes
@@ -168,17 +176,26 @@ private:
   // and so it is when the feeder has asked the device to drop what the ring holds. The place a
   // command carries is never later than where the device is when the feeder applies it, because
   // the device only moves forward, so what the device has played is at worst played again.
-  // Needs lifecycleMutex_ and stateMutex_.
-  [[nodiscard]] time::SampleFrame audiblePlayhead() const noexcept;
+  // The feeder's playhead stands in for the device only when the ring held no frame at the moment
+  // it was asked (the device has played everything the feeder mixed, so the feeder's next frame is
+  // the device's), and it was taken before the ring was asked: whatever the feeder mixed in between
+  // the device has played too, so it is at worst played again. That goes by the order the audio is
+  // played in and not by the number of the frame: a loop that wrapped in between puts the feeder at
+  // a lower number, which is still later in the audio that is played.
+  // Empty when the ring has frames and cannot say where the device is among them (Busy or
+  // Unplaced): the feeder is then ahead of the device by what the ring holds, and its playhead must
+  // not stand in. Needs lifecycleMutex_ and stateMutex_.
+  [[nodiscard]] std::optional<time::SampleFrame> audiblePlayhead() const noexcept;
   // Adds to a script that makes the feeder drop the audio it has mixed ahead of the device the
   // seek that keeps playback where the creator hears it. A playing feeder that has audio keeps
   // mixing until it applies the script, so that its playhead and the audible position being equal
   // when they are sampled says nothing about the moment it applies it: for such a feeder the seek
   // is always there. A feeder that has no audio mixes none, and has nothing to keep. A feeder that
   // is not playing has a tail only when the ring still holds audio, and then only a script that
-  // drops the ring needs the seek (`alsoWhenNotPlaying`). Needs lifecycleMutex_ and stateMutex_.
-  void carryAudiblePosition(rendering::MultichannelPlaybackFeeder::ControlScript& script,
-                            bool alsoWhenNotPlaying) const;
+  // drops the ring needs the seek (`alsoWhenNotPlaying`). A Conflict, with the script as it was, when
+  // the position is needed and audiblePlayhead() has none. Needs lifecycleMutex_ and stateMutex_.
+  [[nodiscard]] core::Result<void> carryAudiblePosition(
+      rendering::MultichannelPlaybackFeeder::ControlScript& script, bool alsoWhenNotPlaying) const;
 
   TransportConfig config_;
   std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> ring_;
@@ -202,6 +219,9 @@ private:
   std::optional<QueuedIntent> queuedIntent_;
   // Guarded by lifecycleMutex_, which state() holds while it calls it.
   StateSampleProbe stateSampleProbe_;
+  // The last place audiblePlayhead() confirmed: what state() reports when it cannot. Guarded by
+  // lifecycleMutex_ and stateMutex_, as audiblePlayhead() is.
+  mutable time::SampleFrame lastAudiblePlayhead_{0};
 };
 
 }  // namespace seam::authoring

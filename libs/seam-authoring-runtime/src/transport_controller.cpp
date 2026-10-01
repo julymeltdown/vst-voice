@@ -168,7 +168,17 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
     // that carries on is the one the creator is at; whether playback carries on is a separate
     // matter, and it is the feeder's playing flag (the creator's last play or pause), which a
     // tail does not change.
-    currentPlayhead = audiblePlayhead();
+    const auto audible = audiblePlayhead();
+    if (!audible) {
+      // The feeder was stopped for this, and nothing else has changed: it goes on as it was, and
+      // the change is refused, because a position that is guessed would skip what the ring holds.
+      const auto restored = wasStarted ? service_->start() : core::success();
+      started_ = wasStarted && static_cast<bool>(restored);
+      return core::failure(core::ErrorCode::Conflict,
+                           "The place the creator is at could not be read, so the audio format was not changed",
+                           restored ? std::string{} : restored.error().message);
+    }
+    currentPlayhead = *audible;
     if (timelineEnd_ == time::SampleFrame{0}) {
       wasPlaying = wasPlaying || resumeAfterReconfigure_;
       if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
@@ -342,9 +352,17 @@ core::Result<void> TransportController::publishAudio(
     // not yet applied has already decided where the replacement starts, and the feeder stands a
     // ringful of audio ahead of the device. This publication drops that audio, so the replacement
     // starts where the device is, or the creator would not hear it.
-    remappedPlayhead = std::clamp<time::SampleFrame>(
-        pendingPlayheadValid_ ? pendingPlayhead_ : audiblePlayhead(), 0,
-        timeline.value()->endFrame());
+    time::SampleFrame startsAt = pendingPlayhead_;
+    if (!pendingPlayheadValid_) {
+      const auto audible = audiblePlayhead();
+      // Nothing has been sent or recorded: the render stays owed, and is published when it can be.
+      if (!audible) {
+        return core::failure(core::ErrorCode::Conflict,
+                             "The place the creator is at could not be read, so the audio was not published");
+      }
+      startsAt = *audible;
+    }
+    remappedPlayhead = std::clamp<time::SampleFrame>(startsAt, 0, timeline.value()->endFrame());
     resumeAfterReconfigure = resumeAfterReconfigure_;
   }
   // The timeline, the loop that belongs to it, the playhead in it and, when a play is waiting for
@@ -442,7 +460,8 @@ core::Result<void> TransportController::pause() {
     // follows goes on from its playhead. From where it stands, that would skip the audio the
     // creator had not heard yet: the pause puts the playhead where they are.
     std::lock_guard lock(stateMutex_);
-    carryAudiblePosition(script, false);
+    const auto carried = carryAudiblePosition(script, false);
+    if (!carried) return carried;
   }
   const auto sent = send(std::move(script));
   if (!sent) return sent;
@@ -508,7 +527,8 @@ core::Result<void> TransportController::setLoop(
     // A loop change drops the audio the feeder has mixed ahead of the device as a pause does, and
     // playback goes on from the feeder's playhead.
     std::lock_guard lock(stateMutex_);
-    carryAudiblePosition(script, true);
+    const auto carried = carryAudiblePosition(script, true);
+    if (!carried) return carried;
   }
   const auto result = send(std::move(script));
   if (result) {
@@ -561,33 +581,56 @@ rendering::PlaybackPoint TransportController::currentPoint() const noexcept {
                                   .playhead = feeder_->playhead()};
 }
 
-time::SampleFrame TransportController::audiblePlayhead() const noexcept {
+std::optional<time::SampleFrame> TransportController::audiblePlayhead() const noexcept {
+  const auto confirmed = [this](time::SampleFrame place) {
+    lastAudiblePlayhead_ = place;
+    return std::optional<time::SampleFrame>{place};
+  };
   const bool pending = queuedIntent_ && feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt;
   // A command that put the playhead somewhere is waiting for the feeder: playback goes on from
   // there, whatever the ring still holds of audio from before it.
-  if (pending && queuedIntent_->positionIsExplicit) return queuedIntent_->point.playhead;
+  if (pending && queuedIntent_->positionIsExplicit) return confirmed(queuedIntent_->point.playhead);
   // Where playback goes on from when the ring holds nothing that is still to be heard. It is taken
-  // before the ring is asked: the playhead only moves forward, so a ring that the device empties
-  // in between cannot make the answer later than the device.
+  // before the ring is asked: what the feeder mixes after that, and the device then plays, is at
+  // worst played again, so the answer is not later than the device in the order the audio is played
+  // in (it can be a higher number, in a loop that wrapped in between).
   const auto playhead = pending ? queuedIntent_->point.playhead : feeder_->playhead();
   // A reset the device has not answered drops what the ring holds: that audio is not going to be
   // heard, and the feeder has put the playhead where playback goes on.
-  if (ring_->resetPending()) return playhead;
-  if (const auto next = ring_->nextFramePosition()) return *next;
-  return playhead;
+  if (ring_->resetPending()) return confirmed(playhead);
+  const auto next = ring_->nextFrame();
+  switch (next.kind) {
+    case rendering::SpscInterleavedAudioRingBuffer::NextFrame::Kind::Placed:
+      return confirmed(next.place);
+    case rendering::SpscInterleavedAudioRingBuffer::NextFrame::Kind::Empty:
+      return confirmed(playhead);
+    // The ring has frames and cannot say where the device is among them. The feeder is ahead of it
+    // by what they are, so its playhead is not a stand-in.
+    case rendering::SpscInterleavedAudioRingBuffer::NextFrame::Kind::Unplaced:
+    case rendering::SpscInterleavedAudioRingBuffer::NextFrame::Kind::Busy:
+      break;
+  }
+  return std::nullopt;
 }
 
-void TransportController::carryAudiblePosition(
+core::Result<void> TransportController::carryAudiblePosition(
     rendering::MultichannelPlaybackFeeder::ControlScript& script, bool alsoWhenNotPlaying) const {
   const auto point = currentPoint();
-  const auto audible = audiblePlayhead();
   // A playing feeder that has audio goes on mixing until it applies the script, so that the
   // audible position being the feeder's own playhead now does not make it so when the script is
   // applied: the seek is always there, and the feeder puts its playhead where the creator was when
   // they asked. A feeder with no audio mixes nothing, and its playhead is not a place in audio.
   const bool mixesOn = point.playing && timelineEnd_ > time::SampleFrame{0};
-  if (mixesOn || (alsoWhenNotPlaying && audible != point.playhead)) script.seek(audible);
+  if (mixesOn || alsoWhenNotPlaying) {
+    const auto audible = audiblePlayhead();
+    if (!audible) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "The place the creator is at could not be read, so nothing was changed");
+    }
+    if (mixesOn || *audible != point.playhead) script.seek(*audible);
+  }
   if (stateSampleProbe_) stateSampleProbe_(*feeder_);
+  return core::success();
 }
 
 core::Result<void> TransportController::send(
@@ -628,6 +671,7 @@ TransportState TransportController::state() const noexcept {
   const auto playing = feeder_->playing();
   probe();
   const auto playhead = feeder_->playhead();
+  const auto audible = audiblePlayhead();
   return TransportState{
       .playing = playing,
       .available = timelineEnd_ > time::SampleFrame{0},
@@ -635,7 +679,7 @@ TransportState TransportController::state() const noexcept {
                                     ? "Render audio before starting transport"
                                     : std::string{},
       .playhead = playhead,
-      .audiblePlayhead = audiblePlayhead(),
+      .audiblePlayhead = audible.value_or(lastAudiblePlayhead_),
       .loop = loop_,
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,

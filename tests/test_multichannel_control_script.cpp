@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -543,6 +544,7 @@ TEST_CASE("a_ring_says_whether_a_reset_waits_for_its_consumer") {
 namespace {
 
 using Ring = seam::rendering::SpscInterleavedAudioRingBuffer;
+using Kind = Ring::NextFrame::Kind;
 
 // Frames of one value each, and the place in the audio of each of them: first, first + 1, and so on.
 struct Block final {
@@ -568,14 +570,24 @@ std::size_t take(Ring& ring, std::size_t frames) {
   return ring.readFrames(output);
 }
 
-// The place in the audio of each frame the consumer finds in the ring, in the order it plays them.
+// The place of the ring's next frame, when the ring says where it is, and nothing when it has none
+// to say (an empty ring, a frame without a place, a reader the consumer never left alone).
+std::optional<std::int64_t> placeOf(const Ring& ring) {
+  const auto next = ring.nextFrame();
+  if (next.kind != Kind::Placed) return std::nullopt;
+  return next.place;
+}
+
+// The place in the audio of each frame the consumer finds in the ring, in the order it plays them,
+// until the ring is empty.
 std::vector<std::int64_t> placesInRing(Rig& rig) {
   std::vector<std::int64_t> places;
   std::vector<float> frame(kChannels);
-  while (const auto place = rig.ring.nextFramePosition()) {
+  while (const auto place = placeOf(rig.ring)) {
     places.push_back(*place);
     static_cast<void>(rig.ring.readFrames(frame));
   }
+  CHECK(rig.ring.nextFrame().kind == Kind::Empty);
   return places;
 }
 
@@ -587,19 +599,19 @@ void appendPlaces(std::vector<std::int64_t>& places, std::int64_t first, std::in
 
 TEST_CASE("a_ring_says_where_in_the_audio_the_frame_is_that_its_consumer_plays_next") {
   Ring ring(8U, kChannels);
-  CHECK(!ring.nextFramePosition());
+  CHECK(ring.nextFrame().kind == Kind::Empty);
   CHECK(put(ring, blockOf(100, 5)) == 5U);
-  CHECK(ring.nextFramePosition() == 100);
+  CHECK(placeOf(ring) == 100);
   CHECK(take(ring, 3U) == 3U);
-  CHECK(ring.nextFramePosition() == 103);
+  CHECK(placeOf(ring) == 103);
   // Frames that follow each other in the ring need not follow each other in the audio: a loop that
   // has wrapped and a seek put the next frames anywhere.
   CHECK(put(ring, blockOf(10, 4)) == 4U);
   CHECK(take(ring, 2U) == 2U);
-  CHECK(ring.nextFramePosition() == 10);
+  CHECK(placeOf(ring) == 10);
   // Nothing is next once the last frame has been played, though its slot still holds its place.
   CHECK(take(ring, 8U) == 4U);
-  CHECK(!ring.nextFramePosition());
+  CHECK(ring.nextFrame().kind == Kind::Empty);
 }
 
 TEST_CASE("a_ring_goes_on_saying_where_its_next_frame_is_as_its_slots_come_round_again") {
@@ -608,20 +620,21 @@ TEST_CASE("a_ring_goes_on_saying_where_its_next_frame_is_as_its_slots_come_round
   for (int round = 0; round < 60; ++round) {
     const auto frames = static_cast<std::size_t>(1 + round % 8);
     CHECK(put(ring, blockOf(place, frames)) == frames);
-    CHECK(ring.nextFramePosition() == place);
+    CHECK(placeOf(ring) == place);
     CHECK(take(ring, frames - 1U) == frames - 1U);
-    CHECK(ring.nextFramePosition() == place + static_cast<std::int64_t>(frames) - 1);
+    CHECK(placeOf(ring) == place + static_cast<std::int64_t>(frames) - 1);
     CHECK(take(ring, 1U) == 1U);
-    CHECK(!ring.nextFramePosition());
+    CHECK(ring.nextFrame().kind == Kind::Empty);
     place += 17;
   }
 }
 
-TEST_CASE("frames_written_without_a_place_have_none_and_a_block_with_too_few_places_is_refused") {
+TEST_CASE("frames_written_without_a_place_are_not_an_empty_ring_and_a_block_with_too_few_places_is_refused") {
   Ring ring(8U, kChannels);
   const std::vector<float> plain(3U * kChannels, 0.25F);
   CHECK(ring.writeFrames(plain) == 3U);
-  CHECK(!ring.nextFramePosition());
+  // The ring has frames and cannot say where they are in the audio: that is not an empty ring.
+  CHECK(ring.nextFrame().kind == Kind::Unplaced);
   // A place for every frame, or nothing is written.
   auto block = blockOf(50, 4);
   block.places.pop_back();
@@ -631,9 +644,9 @@ TEST_CASE("frames_written_without_a_place_have_none_and_a_block_with_too_few_pla
   CHECK(ring.availableReadFrames() == 3U);
   // Frames that come after have theirs, and they are found once those that have none are played.
   CHECK(put(ring, blockOf(50, 2)) == 2U);
-  CHECK(!ring.nextFramePosition());
+  CHECK(ring.nextFrame().kind == Kind::Unplaced);
   CHECK(take(ring, 3U) == 3U);
-  CHECK(ring.nextFramePosition() == 50);
+  CHECK(placeOf(ring) == 50);
 }
 
 TEST_CASE("a_ring_whose_consumer_answered_a_reset_has_no_next_frame_until_something_is_written") {
@@ -642,13 +655,13 @@ TEST_CASE("a_ring_whose_consumer_answered_a_reset_has_no_next_frame_until_someth
   CHECK(take(ring, 1U) == 1U);
   const auto epoch = ring.requestConsumerReset();
   // Until the consumer answers, the ring holds the frames it was asked to drop.
-  CHECK(ring.nextFramePosition() == 21);
+  CHECK(placeOf(ring) == 21);
   CHECK(ring.serviceResetRequest());
   CHECK(ring.resetAcknowledged(epoch));
   CHECK(ring.availableReadFrames() == 0U);
-  CHECK(!ring.nextFramePosition());
+  CHECK(ring.nextFrame().kind == Kind::Empty);
   CHECK(put(ring, blockOf(300, 2)) == 2U);
-  CHECK(ring.nextFramePosition() == 300);
+  CHECK(placeOf(ring) == 300);
 }
 
 TEST_CASE("a_reader_that_the_consumer_and_the_producer_move_under_gets_the_place_of_the_next_frame") {
@@ -672,11 +685,12 @@ TEST_CASE("a_reader_that_the_consumer_and_the_producer_move_under_gets_the_place
         played = take(ring, frames);
         written = put(ring, blockOf(8, frames));
       });
-      const auto next = ring.nextFramePosition();
+      const auto next = ring.nextFrame();
       CHECK(moved);
       CHECK(played == frames);
       CHECK(written == frames);
-      CHECK(next == static_cast<std::int64_t>(frames));
+      CHECK(next.kind == Kind::Placed);
+      CHECK(next.place == static_cast<std::int64_t>(frames));
     }
   }
 }
@@ -692,13 +706,13 @@ TEST_CASE("a_reader_that_a_reset_moves_under_does_not_answer_with_a_frame_that_w
       static_cast<void>(ring.requestConsumerReset());
       static_cast<void>(ring.serviceResetRequest());
     });
-    const auto next = ring.nextFramePosition();
+    const auto next = ring.nextFrame();
     CHECK(moved);
-    CHECK(!next);
+    CHECK(next.kind == Kind::Empty);
   }
 }
 
-TEST_CASE("a_reader_that_the_consumer_never_leaves_alone_gives_up_without_an_answer") {
+TEST_CASE("a_reader_that_the_consumer_never_leaves_alone_gives_up_and_does_not_call_the_ring_empty") {
   Ring ring(8U, kChannels);
   CHECK(put(ring, blockOf(0, 8)) == 8U);
   std::int64_t place = 8;
@@ -710,9 +724,14 @@ TEST_CASE("a_reader_that_the_consumer_never_leaves_alone_gives_up_without_an_ans
     static_cast<void>(take(ring, 1U));
     static_cast<void>(put(ring, blockOf(place++, 1U)));
   });
-  CHECK(!ring.nextFramePosition());
+  // The ring is full the whole time. It is not empty, and the reader does not know where the
+  // consumer is: Busy, which is neither of those.
+  CHECK(ring.nextFrame().kind == Kind::Busy);
   CHECK(attempts > 1);
   CHECK(attempts <= 100000);
+  ring.setSnapshotProbe({});
+  CHECK(ring.availableReadFrames() == 8U);
+  CHECK(placeOf(ring) == static_cast<std::int64_t>(attempts));
 }
 
 TEST_CASE("a_feeder_writes_each_frame_to_the_ring_with_its_place_in_the_audio") {
