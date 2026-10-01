@@ -156,7 +156,11 @@ void AuthoringSession::configureController() {
         const auto result = playing ? runtime_->transport().play()
                                     : runtime_->transport().pause();
         if (externalCallbacks_.setPlaying) {
-          static_cast<void>(externalCallbacks_.setPlaying(result && playing));
+          // The host that owns the audio device may not be able to start it, and then Play did
+          // nothing the creator can hear. That is for the creator to be told, and the host has
+          // already put the transport back, so the failure is the host's.
+          const auto hosted = externalCallbacks_.setPlaying(result && playing);
+          if (result && !hosted) return hosted;
         }
         return result;
       },

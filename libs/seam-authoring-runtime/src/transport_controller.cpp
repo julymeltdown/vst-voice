@@ -3,9 +3,11 @@
 #include "seam/domain/routing.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -404,6 +406,18 @@ core::Result<void> TransportController::play() {
     started_ = true;
   }
   rendering::MultichannelPlaybackFeeder::ControlScript script;
+  {
+    std::lock_guard lock(stateMutex_);
+    // Play at the end of the audio plays it again from the start, as it does in any editor. Played
+    // from where it stands it would end in the same instant: the creator would press Play and
+    // nothing would sound. A loop never stands at the end, and with no audio there is nothing to
+    // rewind, so a play that waits for audio stays what it was.
+    const auto point = currentPoint();
+    if (timelineEnd_ > time::SampleFrame{0} && !loop_.enabled && !point.playing &&
+        point.playhead >= timelineEnd_) {
+      script.seek(0);
+    }
+  }
   script.playing(true);
   const auto sent = send(std::move(script));
   if (!sent) return sent;
@@ -484,6 +498,41 @@ core::Result<void> TransportController::setLoop(
   return result;
 }
 
+core::Result<void> TransportController::awaitStartBuffer(std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  for (;;) {
+    {
+      // Held for one look at a time, never across the sleep: the render thread publishes through
+      // the same lock.
+      std::lock_guard lifecycleLock(lifecycleMutex_);
+      std::size_t target = 0U;
+      {
+        std::lock_guard lock(stateMutex_);
+        if (timelineEnd_ == time::SampleFrame{0}) {
+          return core::failure(core::ErrorCode::Conflict,
+                               "Playable audio became unavailable while buffering");
+        }
+        target = std::min({config_.watermarkFrames, ring_->capacityFrames(),
+                           static_cast<std::size_t>(timelineEnd_)});
+      }
+      // Until the feeder has applied every command, what it asked the consumer to drop is not all
+      // that it is going to ask, and what it reports is not what the creator asked for.
+      if (feeder_->acknowledgedCommands() >= queuedCommands_) {
+        static_cast<void>(ring_->serviceResetRequest());
+        if (ring_->availableReadFrames() >= target) return core::success();
+        // The feeder is not playing: it has finished the audio, or the creator paused. Nothing more
+        // is coming, so waiting for the start buffer would only run the timeout out.
+        if (!feeder_->playing()) return core::success();
+      }
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return core::failure(core::ErrorCode::Conflict,
+                           "Audio playback did not reach its startup buffer before timeout");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+}
+
 rendering::PlaybackPoint TransportController::currentPoint() const noexcept {
   if (queuedIntent_ && feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt) {
     return queuedIntent_->point;
@@ -518,6 +567,7 @@ TransportState TransportController::state() const noexcept {
       .loop = loop_,
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,
+      .settled = feeder_->acknowledgedCommands() >= queuedCommands_,
   };
 }
 

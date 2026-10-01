@@ -2166,6 +2166,7 @@ if(SEAM_BUILD_TESTS)
       tests/test_sample_microscope_details.cpp
       tests/test_style_coverage_sheet.cpp
       tests/test_standalone_authoring_integration.cpp
+      tests/test_standalone_playback_cycle.cpp
       tests/test_standalone_project_lifecycle.cpp
       tests/test_standalone_voicebank_workflow.cpp)
     if(SEAM_BUILD_CLAP_EDITOR_PLUGIN)

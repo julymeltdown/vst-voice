@@ -49,8 +49,7 @@ std::size_t SpscInterleavedAudioRingBuffer::writeFrames(
   return frameCount;
 }
 
-bool SpscInterleavedAudioRingBuffer::consumeResetRequest(
-    std::span<float> output) noexcept {
+bool SpscInterleavedAudioRingBuffer::serviceResetRequest() noexcept {
   const auto requested = requestedResetEpoch_.load(std::memory_order_acquire);
   const auto acknowledged =
       acknowledgedResetEpoch_.load(std::memory_order_relaxed);
@@ -58,6 +57,12 @@ bool SpscInterleavedAudioRingBuffer::consumeResetRequest(
   const auto write = writeFrame_.load(std::memory_order_acquire);
   readFrame_.store(write, std::memory_order_release);
   acknowledgedResetEpoch_.store(requested, std::memory_order_release);
+  return true;
+}
+
+bool SpscInterleavedAudioRingBuffer::consumeResetRequest(
+    std::span<float> output) noexcept {
+  if (!serviceResetRequest()) return false;
   std::fill(output.begin(), output.end(), 0.0F);
   return true;
 }

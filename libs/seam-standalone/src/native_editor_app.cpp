@@ -8,6 +8,7 @@
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/eula_acceptance.hpp"
 #include "seam/standalone/native_project_dialog.hpp"
+#include "seam/standalone/playback_device_policy.hpp"
 #include "seam/formats/json_value.hpp"
 #include "seam/native_ui/design/shell_evidence.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
@@ -902,27 +903,12 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
     if (!played) return played;
   }
 
-  const auto transportConfig = transport.config();
-  auto targetFrames = std::min(transportConfig.watermarkFrames,
-                               transport.ringBuffer().capacityFrames());
-  if (state.timelineEnd > 0) {
-    targetFrames = std::min(
-        targetFrames, static_cast<std::size_t>(state.timelineEnd));
-  }
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::seconds{2};
-  while (transport.ringBuffer().availableReadFrames() < targetFrames) {
-    if (!transport.state().available) {
-      return core::failure(core::ErrorCode::Conflict,
-                           "Playable audio became unavailable while buffering");
-    }
-    if (std::chrono::steady_clock::now() >= deadline) {
-      return core::failure(
-          core::ErrorCode::Conflict,
-          "Audio playback did not reach its startup buffer before timeout");
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds{1});
-  }
+  // The device is stopped, so nothing reads the ring while the feeder fills it: the transport
+  // answers the feeder's request to drop audio from before a seek or a play in the device's place,
+  // so that the device starts on audio that follows what the creator asked for, and the wait for
+  // the start buffer is one that can end.
+  const auto buffered = transport.awaitStartBuffer(std::chrono::seconds{2});
+  if (!buffered) return buffered;
 
   auto started = audioDevice_->start();
   if (!started) {
@@ -1594,11 +1580,19 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
     if (!applied) record(applied.error());
   }
   const auto transport = authoring_->runtime().transport().state();
-  if (!transport.playing) stopAudioForPlayback();
-  else if (transport.available && audioDevice_ != nullptr &&
-           !audioDevice_->running()) {
-    const auto started = startAudioForPlayback();
-    if (!started) record(started);
+  switch (decideDeviceAction(
+      transport, authoring_->runtime().transport().ringBuffer().availableReadFrames(),
+      audioDevice_ != nullptr, audioDevice_ != nullptr && audioDevice_->running())) {
+    case DeviceAction::Stop:
+      stopAudioForPlayback();
+      break;
+    case DeviceAction::Start: {
+      const auto started = startAudioForPlayback();
+      if (!started) record(started);
+      break;
+    }
+    case DeviceAction::None:
+      break;
   }
   const auto progress = authoring_->runtime().renderer().progress();
   authoring_->controller().setPlaying(transport.playing);

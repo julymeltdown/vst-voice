@@ -88,3 +88,39 @@ TEST_CASE("multichannel callback does not count reset zero-fill as an underflow"
   CHECK(afterReset.underflowFrames == 64U);
   CHECK(afterReset.intentionalResetFrames == 64U);
 }
+
+TEST_CASE("the owner of a stopped consumer answers a requested reset in its place") {
+  seam::rendering::SpscInterleavedAudioRingBuffer ring{128U, 2U};
+  std::vector<float> input(64U * 2U, 0.25F);
+  CHECK(ring.writeFrames(input) == 64U);
+
+  // With no reset waiting it changes nothing, so audio is never dropped for no reason.
+  CHECK(!ring.serviceResetRequest());
+  CHECK(ring.availableReadFrames() == 64U);
+
+  // A reset is waiting for a consumer that is not running: the owner answers it, and the frames
+  // that were written before it are gone.
+  const auto epoch = ring.requestConsumerReset();
+  CHECK(!ring.resetAcknowledged(epoch));
+  CHECK(ring.serviceResetRequest());
+  CHECK(ring.resetAcknowledged(epoch));
+  CHECK(ring.availableReadFrames() == 0U);
+
+  // What the producer writes after the answer is kept by a second look.
+  std::vector<float> after(8U * 2U, 0.5F);
+  CHECK(ring.writeFrames(after) == 8U);
+  CHECK(!ring.serviceResetRequest());
+  CHECK(ring.availableReadFrames() == 8U);
+  std::vector<float> output(8U * 2U, 0.0F);
+  CHECK(ring.readFrames(output) == 8U);
+  CHECK(output.front() == 0.5F);
+
+  // A running consumer still answers for itself, and marks that read as a reset; the owner finds
+  // nothing left to answer.
+  const auto second = ring.requestConsumerReset();
+  std::vector<float> block(4U * 2U, 1.0F);
+  CHECK(ring.readFrames(block) == 0U);
+  CHECK(ring.lastReadWasReset());
+  CHECK(ring.resetAcknowledged(second));
+  CHECK(!ring.serviceResetRequest());
+}

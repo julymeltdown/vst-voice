@@ -28,6 +28,14 @@ public:
 
   [[nodiscard]] std::uint64_t requestConsumerReset() noexcept;
   [[nodiscard]] bool resetAcknowledged(std::uint64_t epoch) const noexcept;
+  // The consumer's half of a reset, without reading anything, for the owner of a consumer that is
+  // not running (an audio device that is stopped). The producer asks for a reset and writes nothing
+  // until it is acknowledged, and only the consumer acknowledges: with the device stopped nobody
+  // would, so the owner answers in its place. Drops what the ring holds and acknowledges the request
+  // that is waiting. Returns whether one was: with none waiting it changes nothing, so audio written
+  // after the last reset is kept.
+  // Call it only while no thread is inside readFrames(): the consumer's work is not shared.
+  [[nodiscard]] bool serviceResetRequest() noexcept;
   [[nodiscard]] bool lastReadWasReset() const noexcept {
     return lastReadWasReset_.load(std::memory_order_acquire);
   }

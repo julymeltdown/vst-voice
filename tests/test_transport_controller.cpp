@@ -964,3 +964,170 @@ TEST_CASE("what was asked is recorded afresh for the feeder that a reconfigure b
   CHECK(waitUntil([&] { return controller.state().playhead == expected; }));
   CHECK(!waitUntil([&] { return controller.state().playhead != expected; }, kQuiet));
 }
+
+namespace {
+
+// What a consumer that is still running takes: everything the ring holds, as the audio callback does.
+std::vector<float> playOut(seam::authoring::TransportController& controller) {
+  return readFrames(controller, controller.ringBuffer().availableReadFrames());
+}
+
+}  // namespace
+
+TEST_CASE("transport_controller_play_at_the_end_plays_the_audio_again_from_its_start") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(controller.play());
+  // 512 frames fit in the ring: the feeder hands all of them over and reports the end.
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == state.timelineEnd;
+  }));
+  const auto first = playOut(controller);
+  CHECK(first.size() >= 512U * 2U);
+  CHECK_NEAR(first[100U * 2U], 0.100, 0.002);
+
+  // The playhead stands at the end. Played from there it would end in the same instant, and the
+  // creator would press Play and hear nothing: Play starts the audio again from its beginning.
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() >= 512U; }));
+  const auto again = playOut(controller);
+  CHECK(again.size() >= 512U * 2U);
+  CHECK_NEAR(again[0], 0.000, 0.002);
+  CHECK_NEAR(again[100U * 2U], 0.100, 0.002);
+  CHECK_NEAR(again[400U * 2U], 0.400, 0.002);
+}
+
+TEST_CASE("transport_controller_play_away_from_the_end_does_not_rewind") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(controller.seek(200));
+  CHECK(waitUntil([&] { return controller.state().settled && controller.state().playhead == 200; }));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() >= 64U; }));
+  // Played from where it stood, not from the start.
+  const auto output = playOut(controller);
+  CHECK_NEAR(output[0], 0.200, 0.002);
+}
+
+TEST_CASE("transport_controller_state_is_settled_once_the_feeder_has_applied_what_was_sent") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.state().settled);
+  // The service is not running, so nothing takes the commands out of the queue.
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(!controller.state().settled);
+  CHECK(!waitUntil([&] { return controller.state().settled; }, kQuiet));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  CHECK(controller.state().available);
+}
+
+TEST_CASE("transport_controller_await_start_buffer_answers_the_clear_that_no_consumer_reads") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 300U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == state.timelineEnd;
+  }));
+  // The device plays some of it and is stopped: audio from before is left in the ring, and it is
+  // fewer frames than the start buffer.
+  static_cast<void>(readFrames(controller, 100U));
+  const auto stale = controller.ringBuffer().availableReadFrames();
+  CHECK(stale > 0U);
+  CHECK(stale < 256U);
+
+  // The creator seeks to the start and presses Play. The feeder applies both, asks the consumer to
+  // drop what the ring holds, and writes nothing until it has. The consumer is stopped.
+  CHECK(controller.seek(0));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  CHECK(waitUntil([&] { return controller.feederStats().resetWaits > 0U; }));
+  CHECK(!waitUntil([&] { return controller.ringBuffer().availableReadFrames() != stale; }, kQuiet));
+
+  // The owner of the stopped consumer answers in its place, and what arrives follows the seek.
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{2000}));
+  CHECK(controller.ringBuffer().availableReadFrames() >= 256U);
+  const auto heard = readFrames(controller, 64U);
+  CHECK_NEAR(heard[0], 0.000, 0.002);
+  CHECK_NEAR(heard[10U * 2U], 0.010, 0.002);
+  CHECK_NEAR(heard[63U * 2U], 0.063, 0.002);
+
+  // A second look finds nothing to answer and keeps what has been written since.
+  const auto buffered = controller.ringBuffer().availableReadFrames();
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{2000}));
+  CHECK(controller.ringBuffer().availableReadFrames() >= buffered);
+}
+
+TEST_CASE("transport_controller_await_start_buffer_waits_for_the_commands_before_it_answers") {
+  // A reset is asked for when the feeder applies a command, so until it has applied every command
+  // there may be one still to come, and the ring still holds audio from before.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  // The service is not running, so nothing is applied, and the wait gives up rather than start a
+  // consumer on audio that may be from before.
+  const auto result = controller.awaitStartBuffer(std::chrono::milliseconds{40});
+  CHECK(!result);
+  CHECK(result.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(!result.error().message.empty());
+}
+
+TEST_CASE("transport_controller_await_start_buffer_refuses_to_start_without_audio") {
+  seam::authoring::TransportController controller{};
+  CHECK(controller.start());
+  const auto result = controller.awaitStartBuffer(std::chrono::milliseconds{40});
+  CHECK(!result);
+  CHECK(result.error().code == seam::core::ErrorCode::Conflict);
+}
+
+TEST_CASE("transport_controller_await_start_buffer_does_not_wait_for_audio_the_feeder_is_not_going_to_write") {
+  // The creator paused, or the audio is finished: nothing more will be written, so the wait for
+  // the start buffer would only run out its timeout. The consumer starts on what there is.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{
+      seam::authoring::TransportConfig{.sampleRate = 48000U,
+                                       .outputChannels = 2U,
+                                       .ringCapacityFrames = 1024U,
+                                       .blockFrames = 64U,
+                                       .watermarkFrames = 256U}};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  CHECK(!controller.state().playing);
+  const auto began = std::chrono::steady_clock::now();
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{2000}));
+  CHECK(std::chrono::steady_clock::now() - began < std::chrono::milliseconds{1000});
+}

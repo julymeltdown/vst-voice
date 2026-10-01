@@ -6,6 +6,7 @@
 #include "seam/rendering/multichannel_playback.hpp"
 #include "seam/rendering/multichannel_routing.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -31,6 +32,10 @@ struct TransportState final {
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};
   time::SampleFrame timelineEnd{0};
+  // Whether the feeder has applied every command it was sent. playing and playhead are the
+  // feeder's own report, so until then they show what the creator asked for before the last
+  // command, and a decision about the audio device that goes by them can undo that command.
+  bool settled{true};
 };
 
 class TransportController final {
@@ -76,6 +81,17 @@ public:
   [[nodiscard]] core::Result<void> seek(time::SampleFrame frame);
   [[nodiscard]] core::Result<void> setLoop(rendering::PlaybackLoop range);
   [[nodiscard]] core::Result<void> reconfigure(TransportConfig config);
+  // For the owner of a consumer that is not running (the audio device is stopped), after the
+  // creator asked for playback and before the consumer is started. Starting the consumer first
+  // would play whatever the ring still holds of audio from before, and waiting for the ring to
+  // fill while the consumer is stopped never ends: for a seek, a play, a loop or a timeline the
+  // feeder asks the consumer to drop what the ring holds and writes nothing until it has, and a
+  // stopped consumer does not answer. So this waits for the feeder to apply every command it was
+  // sent, answers the request that the commands made in the consumer's place, and waits for the
+  // ring to hold the start buffer, or all of the audio when that is less or the feeder has no more
+  // to give. An error is Conflict: the audio went away, or did not arrive within the timeout.
+  // Call it only while no thread reads ringBuffer().
+  [[nodiscard]] core::Result<void> awaitStartBuffer(std::chrono::milliseconds timeout);
 
   [[nodiscard]] TransportState state() const noexcept;
   [[nodiscard]] TransportConfig config() const noexcept {

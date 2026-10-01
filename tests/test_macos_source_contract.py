@@ -145,7 +145,9 @@ class MacOSSourceContractTests(unittest.TestCase):
         self.assertIn("result.startPaused = false", entry)
         self.assertIn("startTransportWhenReady", entry)
         self.assertIn("return app.startAudioForPlayback()", entry)
-        self.assertIn("availableReadFrames() < targetFrames", native_app)
+        # The device starts only once the transport reports the start buffer, after answering the
+        # feeder's clear in the place of the stopped device (see TransportController).
+        self.assertIn("transport.awaitStartBuffer(", native_app)
         self.assertIn("stopAudioForPlayback();", native_app)
         self.assertIn("Unable to open startup project", entry)
         self.assertIn("Unable to start requested playback", entry)
