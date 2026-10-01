@@ -974,6 +974,14 @@ core::Result<void> NativeEditorApp::restartAudio(
   const auto wasRunning = audioDevice_ != nullptr && audioDevice_->running();
   auto previousDevice = std::move(audioDevice_);
   if (previousDevice != nullptr) previousDevice->stop();
+  // The old device was the consumer, and it is stopped: nothing runs until a device is put back. The
+  // transport is told now, and not only as this returns, because the Play that restores what the
+  // creator was doing is asked for below, before any device is started, and a Play that is asked
+  // for while no consumer runs is one that waits for a consumer (see
+  // TransportController::setConsumerRunning). Asked for with the old device still reported as
+  // running, it would look like a Play that a consumer has taken up, and a render that lands before
+  // the next painted frame would drop it.
+  reportConsumerToTransport();
   // With the device stopped nothing reads the ring, so the transport can say where the creator is
   // and what they were doing: playing, paused, or listening to the end of a song that the feeder
   // has already handed over. The feeder's report cannot say it: it follows the creator's commands

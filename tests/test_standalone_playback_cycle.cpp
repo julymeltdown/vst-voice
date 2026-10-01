@@ -324,6 +324,21 @@ void checkHeardIs(const std::vector<float>& heard, const std::vector<float>& exp
   CHECK(audible);
 }
 
+// What the creator hears of a replacement render from "from" to its end, once and in order. The
+// last 64 frames of a replacement are faded out, so they are left out of the comparison.
+void checkRestOfReplacementHeardIs(const std::vector<float>& rest,
+                                   const std::vector<float>& rendered, std::size_t from,
+                                   const char* what) {
+  constexpr std::size_t kFade = 64U;
+  CHECK(rest.size() > kFade);
+  CHECK(rendered.size() > kFade);
+  if (rest.size() <= kFade || rendered.size() <= kFade) return;
+  const std::vector<float> heard(rest.begin(), rest.end() - static_cast<std::ptrdiff_t>(kFade));
+  const std::vector<float> wanted(rendered.begin(),
+                                  rendered.end() - static_cast<std::ptrdiff_t>(kFade));
+  checkHeardIs(heard, wanted, from, what);
+}
+
 }  // namespace
 
 TEST_CASE("standalone playback: a song is heard to its last sample") {
@@ -683,6 +698,8 @@ TEST_CASE("standalone audio settings: a device that cannot be opened is given up
   CHECK(rig.app->audioSettings().value().blockFrames == before.value().blockFrames);
   // The device that was there is back, and the song goes on from where the creator had got to.
   CHECK(rig.device != nullptr);
+  CHECK(rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
   const auto rest = rig.playUntilTheAppStopsTheDevice();
   checkHeardIs(rest, expected, heardBefore, "playback after the old device was put back");
 }
@@ -738,6 +755,7 @@ TEST_CASE("standalone audio settings: a change that cannot tell where the creato
   CHECK(rig.app->audioSettings().value().blockFrames == before.value().blockFrames);
   CHECK(rig.device != nullptr);
   CHECK(rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
   const auto state = rig.transport().state();
   CHECK(state.settled);
   CHECK(state.playing);
@@ -796,18 +814,9 @@ TEST_CASE("standalone playback: a render that arrives while the device plays the
   CHECK(rendered.size() > expected.size());
 
   // The creator was listening to the song: it goes on from where they were, once and in order, to
-  // the end of the song as it now is. The last 64 frames of a replacement are faded out, so they
-  // are left out of the comparison.
+  // the end of the song as it now is.
   const auto rest = rig.playUntilTheAppStopsTheDevice();
-  constexpr std::size_t kFade = 64U;
-  CHECK(rest.size() > kFade);
-  CHECK(rendered.size() > kFade);
-  if (rest.size() > kFade && rendered.size() > kFade) {
-    const std::vector<float> heard(rest.begin(), rest.end() - static_cast<std::ptrdiff_t>(kFade));
-    const std::vector<float> wanted(rendered.begin(),
-                                    rendered.end() - static_cast<std::ptrdiff_t>(kFade));
-    checkHeardIs(heard, wanted, heardBefore, "the rest of the song after the render");
-  }
+  checkRestOfReplacementHeardIs(rest, rendered, heardBefore, "the rest of the song after the render");
   CHECK(!rig.device->running());
 }
 
@@ -884,4 +893,72 @@ TEST_CASE("standalone playback: a render that arrives after the device has stopp
   CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
   CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
   CHECK(rig.device->starts() == starts);
+}
+
+namespace {
+
+// The creator changes the buffer size while the device plays the end of the song. The device that
+// the change makes is not started, because there is no audio for it until the render for the new
+// transport lands, and the render and its feeder then finish before any frame is painted: the end
+// of the song that they hand over has not been heard by anyone. Returns what the creator had heard
+// before the change.
+std::size_t changeSettingsDuringTheEndOfTheSong(PlaybackRig& rig) {
+  const auto heardBefore = playUntilTheFeederHasFinished(rig).size();
+  CHECK(!rig.transport().state().playing);
+  CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
+  CHECK(rig.changeBlockSize());
+  CHECK(!rig.device->running());
+  CHECK(rig.transportKnowsTheDevice());
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.available && state.settled && !state.playing &&
+           rig.transport().ringBuffer().availableReadFrames() > 0U;
+  }));
+  CHECK(!rig.device->running());
+  return heardBefore;
+}
+
+}  // namespace
+
+TEST_CASE("standalone audio settings: the Play that waits for the new device is still the creator's when the render lands before the device starts") {
+  const auto root =
+      seam::test::support::temporaryDirectory("settings-play-waits-for-the-new-device");
+  PlaybackRig rig{root};
+  CHECK(rig.writeTheSong().size() > 40000U);
+  static_cast<void>(changeSettingsDuringTheEndOfTheSong(rig));
+
+  // Nobody has played any of the end of the song that the new feeder handed over, and no device
+  // has taken the creator's Play up. A second change of settings finds the creator still playing,
+  // and the song goes on through it.
+  CHECK(rig.changeBlockSize());
+  CHECK(waitUntil([&] { return rig.transport().state().playing; }, 500ms));
+}
+
+TEST_CASE("standalone audio settings: an edit that lands before the new device has started goes on with the unheard rest of the song") {
+  const auto root =
+      seam::test::support::temporaryDirectory("settings-edit-before-the-new-device-starts");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  const auto heardBefore = changeSettingsDuringTheEndOfTheSong(rig);
+  CHECK(heardBefore < expected.size());
+
+  // The creator adds a note after the end of the song, and the render that follows replaces the
+  // audio. The Play that waited for the new device is still the creator's: the replacement carries
+  // it, and the next frame starts the device.
+  rig.addNote(4800, 960, U"\u3053");
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.available && state.settled &&
+           state.publishedRevision == rig.app->authoring().runtime().document().session().revision();
+  }));
+  const auto replacement = rig.app->authoring().runtime().audiblePublication().audio;
+  CHECK(replacement != nullptr);
+  const auto rendered = PlaybackRig::leftChannel(*replacement);
+  CHECK(rendered.size() > expected.size());
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  checkRestOfReplacementHeardIs(rest, rendered, heardBefore,
+                                "the rest of the song after a settings change and an edit");
+  CHECK(!rig.device->running());
 }
