@@ -37,9 +37,10 @@ struct TransportState final {
   // so it is right for audio that loops, that began inside a loop and that the feeder has finished
   // while the device still plays its tail. Where a command has put the playhead and the feeder has
   // not yet applied it, it is there. When the ring cannot say where the device is (the device moved
-  // under every attempt to read it, which no real device does), it is the last place that was
-  // confirmed, so that the playhead on screen stays where it was; nothing that carries the creator's
-  // place to the audio that follows goes by that value, and they refuse instead.
+  // under every attempt to read it: an adversarial schedule, and how often a real device meets it
+  // has not been measured), it is the last place that was confirmed, so that the playhead on screen
+  // stays where it was; nothing that carries the creator's place to the audio that follows goes by
+  // that value, and they refuse instead.
   time::SampleFrame audiblePlayhead{0};
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};

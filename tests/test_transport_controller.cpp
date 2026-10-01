@@ -1645,6 +1645,37 @@ void playedThreeHundred(seam::authoring::TransportController& controller,
 
 }  // namespace
 
+TEST_CASE("transport_controller_audible_playhead_of_an_empty_ring_is_where_the_feeder_was_before_the_ring_was_asked") {
+  // The device has played everything the feeder mixed: the ring is empty, and the creator is where
+  // the feeder is. The feeder is asked before the ring. What it mixes in between is audio the
+  // creator has not heard, and a place taken from it after the ring was found empty would skip it.
+  // Here the feeder mixes 64 frames after the ring's counts were read, so the ring is no longer
+  // empty when the answer is given, and the answer is still the place of the first of those frames.
+  using Kind = seam::rendering::SpscInterleavedAudioRingBuffer::NextFrame::Kind;
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  static_cast<void>(readFrames(controller, 1024U));
+  CHECK(controller.ringBuffer().nextFrame().kind == Kind::Empty);
+  bool moved = false;
+  std::size_t mixed = 0U;
+  controller.ringBuffer().setSnapshotProbe([&](int point) {
+    // Point 2 is after the counts that found the ring empty were read.
+    if (point != 2 || moved) return;
+    moved = true;
+    mixed = feeder.feedOnce();
+  });
+  const auto sampled = controller.state();
+  controller.ringBuffer().setSnapshotProbe({});
+  CHECK(moved);
+  CHECK(mixed == 64U);
+  CHECK(feeder.playhead() == 1024 + 64);
+  CHECK(controller.ringBuffer().availableReadFrames() == 64U);
+  CHECK(controller.ringBuffer().nextFrame().place == 1024);
+  CHECK(sampled.audiblePlayhead == 1024);
+}
+
 TEST_CASE("transport_controller_audible_playhead_stays_where_it_was_when_the_ring_cannot_be_read") {
   // The consumer moves under every attempt to read where it is, with the ring full: that is not an
   // empty ring, and the feeder, which is a ringful ahead, does not stand in for the device. What is
