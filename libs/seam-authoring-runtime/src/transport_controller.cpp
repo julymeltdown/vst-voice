@@ -344,10 +344,31 @@ core::Result<void> TransportController::publishAudio(
   if (!timeline) return core::Result<void>{timeline.error()};
   rendering::PlaybackLoop remappedLoop;
   time::SampleFrame remappedPlayhead{0};
-  bool playWaitsForAudio = false;
+  bool playsOn = false;
+  bool parksAtTheEnd = false;
   {
     std::lock_guard lock(stateMutex_);
     remappedLoop = remapLoop(loop_, timeline.value()->endFrame());
+    // Whether the creator is playing, and has to go on playing the replacement. A Play that was
+    // asked for while the transport held no audio (before the first render, or after a change of
+    // settings dropped it) waits for the audio and starts with it. With audio held, the creator is
+    // playing it while the feeder mixes it (the feeder may have finished by the time it applies
+    // the replacement, which starts it again from where the creator is), and while the ring holds
+    // the end of it that the feeder has handed over and the device has not played: the replacement
+    // drops the ring, so the end is the replacement's to play. A song that has been played out
+    // stays ended, and so does one the creator paused or put back at the start, however the audio
+    // is replaced after that. This is asked before the place is: the device only moves forward, so
+    // what it plays in between leaves a replacement that starts where the creator was and
+    // finishes at once, and not one that waits at a place the creator has already heard.
+    const auto point = currentPoint();
+    const auto held = heldAudio(point);
+    playsOn = playRequested_ &&
+              (timelineEnd_ == time::SampleFrame{0} || held.mixing || held.endInRing);
+    // The feeder still reports that it is playing, at the end of the audio, though the ring holds
+    // nothing left to hear: it has not taken the turn that says the song is over. The replacement
+    // must not take that for a Play, or one that is longer than the song would play its new end.
+    parksAtTheEnd =
+        !playsOn && point.playing && timelineEnd_ != time::SampleFrame{0} && !held.mixing;
     // Where the creator is going to be, not where the feeder last said it was: a Stop that it has
     // not yet applied has already decided where the replacement starts, and the feeder stands a
     // ringful of audio ahead of the device. This publication drops that audio, so the replacement
@@ -363,19 +384,15 @@ core::Result<void> TransportController::publishAudio(
       startsAt = *audible;
     }
     remappedPlayhead = std::clamp<time::SampleFrame>(startsAt, 0, timeline.value()->endFrame());
-    // A Play that was asked for while the transport held no audio (before the first render, or
-    // after a change of settings dropped it) waits for the audio and starts with it. With audio
-    // held, the feeder's own playing flag is what the creator left it at: a song that ended on its
-    // own stays ended, and so does one the creator put back at the start, however the audio is
-    // replaced after that.
-    playWaitsForAudio = playRequested_ && timelineEnd_ == time::SampleFrame{0};
   }
-  // The timeline, the loop that belongs to it, the playhead in it and, when a play is waiting for
-  // audio, the play reach the feeder together or not at all: a publication that does not fit
-  // leaves the feeder without a timeline that the controller never recorded.
+  // The timeline, the loop that belongs to it, the playhead in it and, when the creator is playing,
+  // the play reach the feeder together or not at all: a publication that does not fit leaves the
+  // feeder without a timeline that the controller never recorded.
   rendering::MultichannelPlaybackFeeder::ControlScript script;
   script.timeline(timeline.value()).loop(remappedLoop).seek(remappedPlayhead);
-  if (playWaitsForAudio) script.playing(true);
+  if (playsOn) script.playing(true);
+  else if (parksAtTheEnd) script.playing(false);
+  if (stateSampleProbe_) stateSampleProbe_(*feeder_);
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   {
@@ -502,17 +519,20 @@ core::Result<bool> TransportController::suspend(bool consumerWasRunning) {
     // report follows the commands by a moment, and one that has been queued and not applied is the
     // state the feeder is about to be in.
     const auto point = currentPoint();
+    const auto held = heldAudio(point);
     // A Play that waits for audio: nothing is published to play, so nothing reports it.
     const bool waitsForAudio = timelineEnd_ == time::SampleFrame{0} && playRequested_;
-    // The feeder reports that it has stopped when it has handed over the last of the audio, and the
-    // consumer still plays the end of it out of the ring. That is the creator listening to the song,
-    // unless they asked for it to stop (playRequested_), unless a command of theirs that the feeder
-    // has not applied yet is going to drop what the ring holds, and unless nobody is playing the
-    // ring out (the consumer was not running) or it has been played out.
-    const bool settled = feeder_->acknowledgedCommands() >= queuedCommands_;
-    const bool endIsPlayedOut = settled && playRequested_ && consumerWasRunning &&
-                                !ring_->resetPending() && ring_->availableReadFrames() > 0U;
-    playsOn = point.playing || waitsForAudio || endIsPlayedOut;
+    // The feeder hands over the last of the audio as far ahead of the consumer as the ring is
+    // deep, so at the end of the audio it is the ring that says whether the creator is still
+    // listening: it holds audio that nobody has played and nobody is going to drop, and either the
+    // feeder still reports that it is playing (it has not taken the turn that says it has
+    // finished), or the creator's last request was a Play and the consumer was running to play the
+    // end out. A song that has been played out is over, and so is one that nobody was playing,
+    // whatever the feeder reports: a Play that put it back would start it again from the
+    // beginning.
+    const bool hearsTheEnd =
+        held.endInRing && (point.playing || (playRequested_ && consumerWasRunning));
+    playsOn = waitsForAudio || held.mixing || hearsTheEnd;
     // The place the creator is at goes to the feeder whether it is playing or has finished: a
     // finished feeder stands at the end of the audio, and a play from there would start the song
     // again.
@@ -650,6 +670,22 @@ std::optional<time::SampleFrame> TransportController::audiblePlayhead() const no
       break;
   }
   return std::nullopt;
+}
+
+TransportController::HeldAudio TransportController::heldAudio(
+    const rendering::PlaybackPoint& point) const noexcept {
+  if (timelineEnd_ == time::SampleFrame{0}) return {};
+  // A feeder that does not loop and stands at the end of the audio has handed over the last of it,
+  // whatever its playing flag says: the flag falls on the feeder's next turn when the last block it
+  // mixed ended exactly with the audio, and until then it reports a song that has not finished.
+  const bool atEnd = !loop_.enabled && point.playhead >= timelineEnd_;
+  // What the ring holds is the answer to the commands the feeder has applied. One that has not been
+  // applied yet (a seek, a loop change, a pause) makes the feeder drop the ring.
+  const bool settled = feeder_->acknowledgedCommands() >= queuedCommands_;
+  return HeldAudio{
+      .mixing = point.playing && !atEnd,
+      .endInRing = atEnd && settled && !ring_->resetPending() && ring_->availableReadFrames() > 0U,
+  };
 }
 
 core::Result<void> TransportController::carryAudiblePosition(

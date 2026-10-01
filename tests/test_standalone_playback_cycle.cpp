@@ -210,8 +210,9 @@ struct PlaybackRig final {
         std::make_unique<seam::application::AddNoteCommand>(
             app->authoring().regionId(), std::move(token), std::move(note))));
   }
-  // About two seconds of song: longer than the transport's ring, so the feeder cannot finish until
-  // the device has played most of it. Returns the left channel of the render the transport holds.
+  // Three seconds of song (144000 frames at 48 kHz): longer than the transport's ring, so the
+  // feeder cannot finish until the device has played most of it. Returns the left channel of the
+  // render the transport holds.
   std::vector<float> writeTheSong() {
     addNote(0, 1920, U"\u3053");
     addNote(1920, 1920, U"\u306a");
@@ -758,4 +759,49 @@ TEST_CASE("standalone playback: a render that arrives after the song has ended a
   }));
   CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
   CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone playback: a render that arrives while the device plays the end of the song goes on with the rest of it") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-render-during-the-end");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+
+  const auto heardBefore = playUntilTheFeederHasFinished(rig).size();
+  // The feeder has handed over the whole song and the device has not yet played the end of it.
+  CHECK(!rig.transport().state().playing);
+  CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
+  CHECK(heardBefore < expected.size());
+
+  // The creator adds a note after the end of the song, and the render that follows replaces the
+  // audio while the device has the end of the song still to play. The device is not played until
+  // the feeder has applied the replacement, so that what is heard is what the replacement makes of
+  // the song and not what was in the ring.
+  rig.addNote(4800, 960, U"\u3053");
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.available && state.settled &&
+           state.publishedRevision == rig.app->authoring().runtime().document().session().revision();
+  }));
+  const auto replacement = rig.app->authoring().runtime().audiblePublication().audio;
+  CHECK(replacement != nullptr);
+  const auto rendered = PlaybackRig::leftChannel(*replacement);
+  // The new note makes the song longer, and changes the audio after the place the creator is at:
+  // what is heard says whether it is the replacement or the end of the song that was in the ring.
+  CHECK(rendered.size() > expected.size());
+
+  // The creator was listening to the song: it goes on from where they were, once and in order, to
+  // the end of the song as it now is. The last 64 frames of a replacement are faded out, so they
+  // are left out of the comparison.
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  constexpr std::size_t kFade = 64U;
+  CHECK(rest.size() > kFade);
+  CHECK(rendered.size() > kFade);
+  if (rest.size() > kFade && rendered.size() > kFade) {
+    const std::vector<float> heard(rest.begin(), rest.end() - static_cast<std::ptrdiff_t>(kFade));
+    const std::vector<float> wanted(rendered.begin(),
+                                    rendered.end() - static_cast<std::ptrdiff_t>(kFade));
+    checkHeardIs(heard, wanted, heardBefore, "the rest of the song after the render");
+  }
+  CHECK(!rig.device->running());
 }

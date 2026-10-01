@@ -113,14 +113,19 @@ public:
   //
   // And it says whether the creator was playing, which the feeder's own report does not: that
   // follows the creator's commands by a moment. A Pause that is queued is not playing, and a Play
-  // that is queued is, and so is a Play that waits for audio to be rendered. A feeder that has
-  // handed over the last of the audio reports that it is not playing while the consumer still plays
-  // the end of it out, and that is playing too. It is when the consumer was running
-  // (consumerWasRunning), the creator's last request was a Play (not a Pause, a Stop or a clear),
-  // the feeder has applied everything the creator sent (until then what was sent decides, and a
-  // seek or a loop change that follows the end makes it drop the ring), and the ring still holds
-  // audio that nobody has played and nobody has been asked to drop. With the audio all played, or
-  // with nobody playing the ring out, the song is over.
+  // that is queued is, and so is a Play that waits for audio to be rendered.
+  //
+  // The end of the audio is told from the ring and not from the feeder's playing flag. The feeder
+  // reports that it has stopped when it has handed over the last of the audio, which is as far
+  // ahead of the consumer as the ring is deep, and it reports that it is still playing until its
+  // next turn when the last block it handed over ended exactly with the audio. So at the end of
+  // the audio the creator is playing when the ring still holds audio that nobody has played and
+  // nobody has been asked to drop, and the feeder says it is playing, or the consumer was running
+  // (consumerWasRunning) and the creator's last request was a Play (not a Pause, a Stop or a
+  // clear). With the audio all played, or with nobody playing the ring out, the song is over
+  // whatever the feeder reports. The feeder has to have applied everything the creator sent for
+  // the ring to say anything: until then what was sent decides, and a seek or a loop change that
+  // follows the end makes it drop the ring.
   //
   // An error is Conflict, and nothing was queued or recorded: the place the creator is at cannot be
   // read from the ring at this moment (see SpscInterleavedAudioRingBuffer::nextFrame), or the
@@ -141,11 +146,11 @@ public:
   [[nodiscard]] TransportState state() const noexcept;
   // For tests. Called with the feeder before each read state() makes of what the feeder reports,
   // so that a test can have the feeder apply a command at any point of one sample, and once more
-  // after pause() and setLoop() have chosen the position their script carries and before they send
-  // it, so that a test can have the feeder mix on in between. It is empty in the product. It must
-  // not throw and must not call into this controller. Set it only while no thread calls state()
-  // and the feeder's service is stopped (shutdown() stops it): the probe is then the only thing
-  // that moves the feeder.
+  // after pause(), setLoop(), suspend() and publishAudio() have chosen what their script carries
+  // and before they send it, so that a test can have the feeder mix on in between. It is empty in
+  // the product. It must not throw and must not call into this controller. Set it only while no
+  // thread calls state() and the feeder's service is stopped (shutdown() stops it): the probe is
+  // then the only thing that moves the feeder.
   using StateSampleProbe = std::function<void(rendering::MultichannelPlaybackFeeder&)>;
   void setStateSampleProbe(StateSampleProbe probe);
   [[nodiscard]] TransportConfig config() const noexcept {
@@ -221,6 +226,21 @@ private:
   // the position is needed and audiblePlayhead() has none. Needs lifecycleMutex_ and stateMutex_.
   [[nodiscard]] core::Result<void> carryAudiblePosition(
       rendering::MultichannelPlaybackFeeder::ControlScript& script, bool alsoWhenNotPlaying) const;
+  // What there is still to hear of the audio the transport holds, going by the feeder (or by the
+  // commands that are queued for it, which are what it is about to be) and by the ring. Neither
+  // member is set when the transport holds no audio.
+  struct HeldAudio final {
+    // The feeder is mixing audio that it has not handed over yet: it is playing, and not at the
+    // end of audio that does not loop.
+    bool mixing{false};
+    // The feeder has handed over the last of the audio, whether or not it has taken the turn that
+    // says so, and the ring holds audio that nobody has played and nobody has been asked to drop.
+    // Only a feeder that has applied everything it was sent can say this: the ring is not the
+    // answer to a command that has not been applied.
+    bool endInRing{false};
+  };
+  // Needs lifecycleMutex_ and stateMutex_.
+  [[nodiscard]] HeldAudio heldAudio(const rendering::PlaybackPoint& point) const noexcept;
 
   TransportConfig config_;
   std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> ring_;
@@ -236,9 +256,15 @@ private:
   // The creator's last request of playback was a Play: set by play(), cleared by pause(), stop(),
   // clearAudio() and suspend(), and set to what the transport was doing by a reconfigure, for the
   // audio that follows it. It is not the feeder's playing flag, which also goes false when the
-  // audio ends on its own, and it is not consumed by a publication: a song that ended on its own
-  // stays ended, however the audio is replaced after it. A publication starts the feeder only when
-  // the transport held no audio, when the Play was waiting for it.
+  // audio ends on its own, and it is not consumed by a publication. A publication starts the
+  // feeder when the creator is playing the audio it replaces and the replacement has to carry on:
+  // when the transport held no audio (the Play was waiting for it), while the feeder is mixing
+  // (it may finish before it applies the replacement), and while the creator still hears the end
+  // of the audio (the feeder has stopped, the ring holds the rest, and the replacement drops it).
+  // A song that has ended stays ended however the audio is replaced after it: nothing is left to
+  // hear when it was all played, and nothing the creator paused, stopped or put back at the start
+  // starts again. A feeder that still reports that it is playing at the end of audio that was all
+  // played is told to stop, so that a replacement that is longer does not play its new end.
   bool playRequested_{false};
   // True from a reconfigure that dropped published audio until audio is published again or
   // cleared: loop_, pendingPlayhead_ and playRequested_ then describe that audio.
