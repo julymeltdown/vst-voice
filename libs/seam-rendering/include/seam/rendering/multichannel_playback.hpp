@@ -24,15 +24,6 @@ struct PlaybackPoint final {
   time::SampleFrame playhead{0};
 };
 
-// Where the feeder was `frames` frames of mixed audio ago, for a feeder that has mixed ahead of
-// its consumer: the playhead stepped back through the frames in the order they were mixed, past the
-// start of the loop to its end when the loop has wrapped since, and never before the start of the
-// audio. The consumer is at that point when it has not yet played those `frames`. A loop that does
-// not hold the playhead has not wrapped since the audio was mixed, so the playhead steps straight
-// back.
-[[nodiscard]] time::SampleFrame rewoundPlayhead(time::SampleFrame playhead, std::size_t frames,
-                                                const PlaybackLoop& loop) noexcept;
-
 struct MultichannelFeederStats final {
   std::uint64_t feedCalls{0U};
   std::uint64_t framesMixed{0U};
@@ -153,6 +144,8 @@ private:
   std::uint8_t outputChannels_{2U};
   std::size_t blockFrames_{1024U};
   std::vector<float> scratch_;
+  // Where in the audio each frame of scratch_ is. The ring keeps it with the frame.
+  std::vector<time::SampleFrame> positionScratch_;
   RoutingWorkspace workspace_;
   ControlQueue controls_;
   std::shared_ptr<const RoutedPlaybackTimeline> timeline_;

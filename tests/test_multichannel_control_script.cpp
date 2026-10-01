@@ -11,7 +11,6 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -541,34 +540,208 @@ TEST_CASE("a_ring_says_whether_a_reset_waits_for_its_consumer") {
   CHECK(!ring.resetPending());
 }
 
-TEST_CASE("rewound_playhead_steps_back_through_the_frames_that_were_mixed") {
-  using seam::rendering::rewoundPlayhead;
-  const PlaybackLoop none = loopOf(0, 0, false);
-  CHECK(rewoundPlayhead(5000, 0U, none) == 5000);
-  CHECK(rewoundPlayhead(5000, 1200U, none) == 3800);
-  // Never before the start of the audio, and no overflow however many frames the ring held.
-  CHECK(rewoundPlayhead(500, 1200U, none) == 0);
-  CHECK(rewoundPlayhead(1200, std::numeric_limits<std::size_t>::max(), none) == 0);
-  // A loop that is not enabled is not a loop.
-  CHECK(rewoundPlayhead(1200, 500U, loopOf(1000, 2000, false)) == 700);
+namespace {
+
+using Ring = seam::rendering::SpscInterleavedAudioRingBuffer;
+
+// Frames of one value each, and the place in the audio of each of them: first, first + 1, and so on.
+struct Block final {
+  std::vector<float> samples;
+  std::vector<std::int64_t> places;
+};
+
+Block blockOf(std::int64_t first, std::size_t frames) {
+  Block block;
+  block.samples.assign(frames * kChannels, 0.5F);
+  for (std::size_t frame = 0U; frame < frames; ++frame) {
+    block.places.push_back(first + static_cast<std::int64_t>(frame));
+  }
+  return block;
 }
 
-TEST_CASE("rewound_playhead_steps_back_across_the_end_of_a_loop_that_has_wrapped") {
-  using seam::rendering::rewoundPlayhead;
-  const auto loop = loopOf(1000, 2000, true);
-  // Within the pass the playhead is in.
-  CHECK(rewoundPlayhead(1600, 300U, loop) == 1300);
-  CHECK(rewoundPlayhead(1600, 600U, loop) == 1000);
-  // Past the start of the loop: the previous pass ended at the end of the loop.
-  CHECK(rewoundPlayhead(1200, 500U, loop) == 1700);
-  CHECK(rewoundPlayhead(1200, 700U, loop) == 1500);
-  // Whole passes land where they began, at the start of the loop and not at its end.
-  CHECK(rewoundPlayhead(1200, 1200U, loop) == 1000);
-  CHECK(rewoundPlayhead(1000, 1000U, loop) == 1000);
-  CHECK(rewoundPlayhead(1200, 3200U, loop) == 1000);
-  // The playhead stands at the end of the loop until the next block wraps it.
-  CHECK(rewoundPlayhead(2000, 300U, loop) == 1700);
-  // A playhead outside the loop has not wrapped: the feeder plays on from where it is to the end.
-  CHECK(rewoundPlayhead(400, 300U, loop) == 100);
-  CHECK(rewoundPlayhead(2500, 100U, loop) == 2400);
+std::size_t put(Ring& ring, const Block& block) {
+  return ring.writeFrames(block.samples, block.places);
+}
+
+std::size_t take(Ring& ring, std::size_t frames) {
+  std::vector<float> output(frames * kChannels);
+  return ring.readFrames(output);
+}
+
+// The place in the audio of each frame the consumer finds in the ring, in the order it plays them.
+std::vector<std::int64_t> placesInRing(Rig& rig) {
+  std::vector<std::int64_t> places;
+  std::vector<float> frame(kChannels);
+  while (const auto place = rig.ring.nextFramePosition()) {
+    places.push_back(*place);
+    static_cast<void>(rig.ring.readFrames(frame));
+  }
+  return places;
+}
+
+void appendPlaces(std::vector<std::int64_t>& places, std::int64_t first, std::int64_t end) {
+  for (auto place = first; place < end; ++place) places.push_back(place);
+}
+
+}  // namespace
+
+TEST_CASE("a_ring_says_where_in_the_audio_the_frame_is_that_its_consumer_plays_next") {
+  Ring ring(8U, kChannels);
+  CHECK(!ring.nextFramePosition());
+  CHECK(put(ring, blockOf(100, 5)) == 5U);
+  CHECK(ring.nextFramePosition() == 100);
+  CHECK(take(ring, 3U) == 3U);
+  CHECK(ring.nextFramePosition() == 103);
+  // Frames that follow each other in the ring need not follow each other in the audio: a loop that
+  // has wrapped and a seek put the next frames anywhere.
+  CHECK(put(ring, blockOf(10, 4)) == 4U);
+  CHECK(take(ring, 2U) == 2U);
+  CHECK(ring.nextFramePosition() == 10);
+  // Nothing is next once the last frame has been played, though its slot still holds its place.
+  CHECK(take(ring, 8U) == 4U);
+  CHECK(!ring.nextFramePosition());
+}
+
+TEST_CASE("a_ring_goes_on_saying_where_its_next_frame_is_as_its_slots_come_round_again") {
+  Ring ring(8U, kChannels);
+  std::int64_t place = 1000;
+  for (int round = 0; round < 60; ++round) {
+    const auto frames = static_cast<std::size_t>(1 + round % 8);
+    CHECK(put(ring, blockOf(place, frames)) == frames);
+    CHECK(ring.nextFramePosition() == place);
+    CHECK(take(ring, frames - 1U) == frames - 1U);
+    CHECK(ring.nextFramePosition() == place + static_cast<std::int64_t>(frames) - 1);
+    CHECK(take(ring, 1U) == 1U);
+    CHECK(!ring.nextFramePosition());
+    place += 17;
+  }
+}
+
+TEST_CASE("frames_written_without_a_place_have_none_and_a_block_with_too_few_places_is_refused") {
+  Ring ring(8U, kChannels);
+  const std::vector<float> plain(3U * kChannels, 0.25F);
+  CHECK(ring.writeFrames(plain) == 3U);
+  CHECK(!ring.nextFramePosition());
+  // A place for every frame, or nothing is written.
+  auto block = blockOf(50, 4);
+  block.places.pop_back();
+  CHECK(ring.writeFrames(block.samples, block.places) == 0U);
+  block.places.assign(5U, std::int64_t{7});
+  CHECK(ring.writeFrames(block.samples, block.places) == 0U);
+  CHECK(ring.availableReadFrames() == 3U);
+  // Frames that come after have theirs, and they are found once those that have none are played.
+  CHECK(put(ring, blockOf(50, 2)) == 2U);
+  CHECK(!ring.nextFramePosition());
+  CHECK(take(ring, 3U) == 3U);
+  CHECK(ring.nextFramePosition() == 50);
+}
+
+TEST_CASE("a_ring_whose_consumer_answered_a_reset_has_no_next_frame_until_something_is_written") {
+  Ring ring(8U, kChannels);
+  CHECK(put(ring, blockOf(20, 6)) == 6U);
+  CHECK(take(ring, 1U) == 1U);
+  const auto epoch = ring.requestConsumerReset();
+  // Until the consumer answers, the ring holds the frames it was asked to drop.
+  CHECK(ring.nextFramePosition() == 21);
+  CHECK(ring.serviceResetRequest());
+  CHECK(ring.resetAcknowledged(epoch));
+  CHECK(ring.availableReadFrames() == 0U);
+  CHECK(!ring.nextFramePosition());
+  CHECK(put(ring, blockOf(300, 2)) == 2U);
+  CHECK(ring.nextFramePosition() == 300);
+}
+
+TEST_CASE("a_reader_that_the_consumer_and_the_producer_move_under_gets_the_place_of_the_next_frame") {
+  // The ring holds eight frames, places 0 to 7. At the point the reader has reached (1: it has the
+  // count of frames read, 2: it has the count of frames written too, 3: it has a place) the consumer
+  // plays some frames and the producer writes as many more, over the slots they left. The slot the
+  // reader is at has then been written again, with a place that belongs to a later frame, and the
+  // reader must not answer with it: it starts again and finds the frame that is next now. When the
+  // consumer has played every frame it had, the frames that the producer has written since are what
+  // the ring holds, and the reader must not take the ring for empty.
+  for (const std::size_t frames : {std::size_t{3}, std::size_t{8}}) {
+    for (const int point : {1, 2, 3}) {
+      Ring ring(8U, kChannels);
+      CHECK(put(ring, blockOf(0, 8)) == 8U);
+      bool moved = false;
+      std::size_t played = 0U;
+      std::size_t written = 0U;
+      ring.setSnapshotProbe([&](int at) {
+        if (at != point || moved) return;
+        moved = true;
+        played = take(ring, frames);
+        written = put(ring, blockOf(8, frames));
+      });
+      const auto next = ring.nextFramePosition();
+      CHECK(moved);
+      CHECK(played == frames);
+      CHECK(written == frames);
+      CHECK(next == static_cast<std::int64_t>(frames));
+    }
+  }
+}
+
+TEST_CASE("a_reader_that_a_reset_moves_under_does_not_answer_with_a_frame_that_was_dropped") {
+  for (const int point : {1, 2, 3}) {
+    Ring ring(8U, kChannels);
+    CHECK(put(ring, blockOf(40, 5)) == 5U);
+    bool moved = false;
+    ring.setSnapshotProbe([&](int at) {
+      if (at != point || moved) return;
+      moved = true;
+      static_cast<void>(ring.requestConsumerReset());
+      static_cast<void>(ring.serviceResetRequest());
+    });
+    const auto next = ring.nextFramePosition();
+    CHECK(moved);
+    CHECK(!next);
+  }
+}
+
+TEST_CASE("a_reader_that_the_consumer_never_leaves_alone_gives_up_without_an_answer") {
+  Ring ring(8U, kChannels);
+  CHECK(put(ring, blockOf(0, 8)) == 8U);
+  std::int64_t place = 8;
+  int attempts = 0;
+  // Each time the reader has a place the consumer has played a frame and the producer written one.
+  ring.setSnapshotProbe([&](int at) {
+    if (at != 3) return;
+    ++attempts;
+    static_cast<void>(take(ring, 1U));
+    static_cast<void>(put(ring, blockOf(place++, 1U)));
+  });
+  CHECK(!ring.nextFramePosition());
+  CHECK(attempts > 1);
+  CHECK(attempts <= 100000);
+}
+
+TEST_CASE("a_feeder_writes_each_frame_to_the_ring_with_its_place_in_the_audio") {
+  Rig rig;
+  Script script;
+  // The loop begins after the audio does: the first pass plays up to the end of the loop, and each
+  // pass after that plays the whole of it.
+  script.timeline(timelineOf(100)).loop(loopOf(10, 20)).playing(true);
+  CHECK(rig.feeder.apply(std::move(script)));
+  CHECK(rig.feeder.feedOnce() == 16U);
+  CHECK(rig.feeder.feedOnce() == 16U);
+  std::vector<std::int64_t> expected;
+  appendPlaces(expected, 0, 16);   // The first block.
+  appendPlaces(expected, 16, 20);  // The rest of the first pass.
+  appendPlaces(expected, 10, 20);  // A whole pass.
+  appendPlaces(expected, 10, 12);  // The start of the next.
+  CHECK(placesInRing(rig) == expected);
+}
+
+TEST_CASE("a_feeder_that_reaches_the_end_of_the_audio_has_written_the_place_of_every_frame_up_to_it") {
+  for (const Frame start : {Frame{0}, Frame{30}}) {
+    Rig rig;
+    Script script;
+    script.timeline(timelineOf(40)).seek(start).playing(true);
+    CHECK(rig.feeder.apply(std::move(script)));
+    while (rig.feeder.feedOnce() > 0U) {
+    }
+    std::vector<std::int64_t> expected;
+    appendPlaces(expected, start, 40);
+    CHECK(placesInRing(rig) == expected);
+  }
 }

@@ -163,9 +163,12 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   auto currentPlayhead = point.playhead;
   {
     std::lock_guard lock(stateMutex_);
-    // What the feeder had mixed ahead of the device goes with the ring that is replaced. The
-    // position that carries on is the one the creator is at.
-    if (point.playing) currentPlayhead = audiblePlayhead();
+    // The audio the feeder had mixed ahead of the device goes with the ring that is replaced, and
+    // so does the tail of audio a feeder that has finished leaves the device to play. The position
+    // that carries on is the one the creator is at; whether playback carries on is a separate
+    // matter, and it is the feeder's playing flag (the creator's last play or pause), which a
+    // tail does not change.
+    currentPlayhead = audiblePlayhead();
     if (timelineEnd_ == time::SampleFrame{0}) {
       wasPlaying = wasPlaying || resumeAfterReconfigure_;
       if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
@@ -439,7 +442,7 @@ core::Result<void> TransportController::pause() {
     // follows goes on from its playhead. From where it stands, that would skip the audio the
     // creator had not heard yet: the pause puts the playhead where they are.
     std::lock_guard lock(stateMutex_);
-    keepAudiblePosition(script);
+    carryAudiblePosition(script, false);
   }
   const auto sent = send(std::move(script));
   if (!sent) return sent;
@@ -505,7 +508,7 @@ core::Result<void> TransportController::setLoop(
     // A loop change drops the audio the feeder has mixed ahead of the device as a pause does, and
     // playback goes on from the feeder's playhead.
     std::lock_guard lock(stateMutex_);
-    keepAudiblePosition(script);
+    carryAudiblePosition(script, true);
   }
   const auto result = send(std::move(script));
   if (result) {
@@ -559,26 +562,32 @@ rendering::PlaybackPoint TransportController::currentPoint() const noexcept {
 }
 
 time::SampleFrame TransportController::audiblePlayhead() const noexcept {
+  const bool pending = queuedIntent_ && feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt;
   // A command that put the playhead somewhere is waiting for the feeder: playback goes on from
   // there, whatever the ring still holds of audio from before it.
-  if (queuedIntent_ && queuedIntent_->positionIsExplicit &&
-      feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt) {
-    return queuedIntent_->point.playhead;
-  }
-  const auto playhead = feeder_->playhead();
-  const auto unplayed = ring_->availableReadFrames();
+  if (pending && queuedIntent_->positionIsExplicit) return queuedIntent_->point.playhead;
+  // Where playback goes on from when the ring holds nothing that is still to be heard. It is taken
+  // before the ring is asked: the playhead only moves forward, so a ring that the device empties
+  // in between cannot make the answer later than the device.
+  const auto playhead = pending ? queuedIntent_->point.playhead : feeder_->playhead();
   // A reset the device has not answered drops what the ring holds: that audio is not going to be
   // heard, and the feeder has put the playhead where playback goes on.
   if (ring_->resetPending()) return playhead;
-  return rendering::rewoundPlayhead(playhead, unplayed, loop_);
+  if (const auto next = ring_->nextFramePosition()) return *next;
+  return playhead;
 }
 
-void TransportController::keepAudiblePosition(
-    rendering::MultichannelPlaybackFeeder::ControlScript& script) const {
+void TransportController::carryAudiblePosition(
+    rendering::MultichannelPlaybackFeeder::ControlScript& script, bool alsoWhenNotPlaying) const {
   const auto point = currentPoint();
-  if (!point.playing) return;
   const auto audible = audiblePlayhead();
-  if (audible != point.playhead) script.seek(audible);
+  // A playing feeder that has audio goes on mixing until it applies the script, so that the
+  // audible position being the feeder's own playhead now does not make it so when the script is
+  // applied: the seek is always there, and the feeder puts its playhead where the creator was when
+  // they asked. A feeder with no audio mixes nothing, and its playhead is not a place in audio.
+  const bool mixesOn = point.playing && timelineEnd_ > time::SampleFrame{0};
+  if (mixesOn || (alsoWhenNotPlaying && audible != point.playhead)) script.seek(audible);
+  if (stateSampleProbe_) stateSampleProbe_(*feeder_);
 }
 
 core::Result<void> TransportController::send(

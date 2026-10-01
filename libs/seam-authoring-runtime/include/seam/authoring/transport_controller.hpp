@@ -31,10 +31,12 @@ struct TransportState final {
   std::string availabilityDiagnostic;
   time::SampleFrame playhead{0};
   // Where the creator hears the transport, which is behind `playhead` while it plays: the feeder
-  // mixes ahead of the audio device, and `playhead` is where it has mixed to. This is that
-  // position less the audio the device has not played yet, and it is what a playhead on screen
-  // shows. Where a command has put the playhead and the feeder has not yet applied it, it is
-  // there.
+  // mixes ahead of the audio device, and `playhead` is where it has mixed to. This is the place in
+  // the audio of the frame the device plays next, and it is what a playhead on screen shows. It
+  // goes by the frames themselves, which carry their place, and not by how far ahead the feeder is,
+  // so it is right for audio that loops, that began inside a loop and that the feeder has finished
+  // while the device still plays its tail. Where a command has put the playhead and the feeder has
+  // not yet applied it, it is there.
   time::SampleFrame audiblePlayhead{0};
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};
@@ -105,9 +107,12 @@ public:
 
   [[nodiscard]] TransportState state() const noexcept;
   // For tests. Called with the feeder before each read state() makes of what the feeder reports,
-  // so that a test can have the feeder apply a command at any point of one sample. It is empty in
-  // the product. Set it only while no thread calls state() and the feeder's service is stopped
-  // (shutdown() stops it): the probe is then the only thing that moves the feeder.
+  // so that a test can have the feeder apply a command at any point of one sample, and once more
+  // after pause() and setLoop() have chosen the position their script carries and before they send
+  // it, so that a test can have the feeder mix on in between. It is empty in the product. It must
+  // not throw and must not call into this controller. Set it only while no thread calls state()
+  // and the feeder's service is stopped (shutdown() stops it): the probe is then the only thing
+  // that moves the feeder.
   using StateSampleProbe = std::function<void(rendering::MultichannelPlaybackFeeder&)>;
   void setStateSampleProbe(StateSampleProbe probe);
   [[nodiscard]] TransportConfig config() const noexcept {
@@ -153,20 +158,27 @@ private:
   // the feeder has not consumed them and by the feeder's own report once it has. Needs
   // lifecycleMutex_.
   [[nodiscard]] rendering::PlaybackPoint currentPoint() const noexcept;
-  // Where the creator hears the transport: the feeder's playhead less the audio it has mixed ahead
-  // of the device and the device has not played, which the ring still holds. This is the position
-  // that playback goes on from when the feeder drops that audio and carries on or comes back, as a
-  // pause, a loop change, a publication and a change of settings make it do. Its own playhead is
-  // ahead of the creator by a ringful, and a playhead taken from it skips that much of the song.
+  // Where the creator hears the transport: the place in the audio of the frame the device plays
+  // next (the ring keeps it with every frame), and the feeder's playhead when the ring holds none.
+  // This is the position that playback goes on from when the feeder drops the audio it has mixed
+  // ahead of the device and carries on or comes back, as a pause, a loop change, a publication and
+  // a change of settings make it do. The feeder's own playhead is ahead of the creator by what the
+  // ring holds, and a position taken from it skips that much of the audio.
   // Where a command has put the playhead and the feeder has not yet applied it, that is the answer,
-  // and so it is when the feeder has asked the device to drop what the ring holds. Needs
-  // lifecycleMutex_ and stateMutex_.
+  // and so it is when the feeder has asked the device to drop what the ring holds. The place a
+  // command carries is never later than where the device is when the feeder applies it, because
+  // the device only moves forward, so what the device has played is at worst played again.
+  // Needs lifecycleMutex_ and stateMutex_.
   [[nodiscard]] time::SampleFrame audiblePlayhead() const noexcept;
-  // Adds to a script that makes a playing feeder drop the audio it has mixed ahead the seek that
-  // keeps playback where the creator hears it, when that is not where the feeder stands. Needs
-  // lifecycleMutex_ and stateMutex_.
-  void keepAudiblePosition(
-      rendering::MultichannelPlaybackFeeder::ControlScript& script) const;
+  // Adds to a script that makes the feeder drop the audio it has mixed ahead of the device the
+  // seek that keeps playback where the creator hears it. A playing feeder that has audio keeps
+  // mixing until it applies the script, so that its playhead and the audible position being equal
+  // when they are sampled says nothing about the moment it applies it: for such a feeder the seek
+  // is always there. A feeder that has no audio mixes none, and has nothing to keep. A feeder that
+  // is not playing has a tail only when the ring still holds audio, and then only a script that
+  // drops the ring needs the seek (`alsoWhenNotPlaying`). Needs lifecycleMutex_ and stateMutex_.
+  void carryAudiblePosition(rendering::MultichannelPlaybackFeeder::ControlScript& script,
+                            bool alsoWhenNotPlaying) const;
 
   TransportConfig config_;
   std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> ring_;

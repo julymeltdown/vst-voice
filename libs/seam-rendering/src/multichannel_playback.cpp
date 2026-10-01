@@ -2,28 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdint>
-#include <limits>
 #include <thread>
 
 namespace seam::rendering {
-
-time::SampleFrame rewoundPlayhead(time::SampleFrame playhead, std::size_t frames,
-                                  const PlaybackLoop& loop) noexcept {
-  constexpr auto kMostFrames = std::numeric_limits<time::SampleFrame>::max();
-  const auto back = static_cast<time::SampleFrame>(
-      std::min<std::uint64_t>(frames, static_cast<std::uint64_t>(kMostFrames)));
-  const bool inLoop = loop.enabled && loop.endFrame > loop.startFrame && playhead >= loop.startFrame &&
-                      playhead <= loop.endFrame;
-  if (!inLoop) return std::max<time::SampleFrame>(0, playhead - back);
-  // The loop plays from its start to its end over and over, so stepping back past its start lands
-  // at its end, and a step of whole loops lands where it began.
-  const auto length = loop.endFrame - loop.startFrame;
-  const auto intoLoop = playhead - loop.startFrame;
-  if (back <= intoLoop) return playhead - back;
-  const auto beyond = (back - intoLoop) % length;
-  return beyond == 0 ? loop.startFrame : loop.endFrame - beyond;
-}
 
 MultichannelPlaybackFeeder::ControlQueue::ControlQueue(std::size_t capacity)
     : slots_(std::max<std::size_t>(2U, capacity) + 1U) {}
@@ -148,6 +129,7 @@ MultichannelPlaybackFeeder::MultichannelPlaybackFeeder(
       outputChannels_(outputChannels),
       blockFrames_(std::max<std::size_t>(1U, blockFrames)),
       scratch_(blockFrames_ * outputChannels_, 0.0F),
+      positionScratch_(blockFrames_, 0),
       controls_(controlQueueCapacity) {}
 
 core::Result<void> MultichannelPlaybackFeeder::validate(
@@ -342,6 +324,9 @@ bool MultichannelPlaybackFeeder::mixWithLoop(
                                       chunk * outputChannels_);
     const auto mixed = timeline_->mix(playhead_, chunk, destination, workspace_);
     if (!mixed) return false;
+    for (std::size_t offset = 0U; offset < chunk; ++offset) {
+      positionScratch_[mixedFrames + offset] = playhead_ + static_cast<time::SampleFrame>(offset);
+    }
     playhead_ += static_cast<time::SampleFrame>(chunk);
     mixedFrames += chunk;
   }
@@ -367,10 +352,12 @@ std::size_t MultichannelPlaybackFeeder::feedOnce() noexcept {
     return 0U;
   }
   stats_.framesMixed.fetch_add(mixed, std::memory_order_relaxed);
-  // Only what was mixed goes to the ring. A silent tail that padded the last block of the audio to
-  // a whole block would put frames in the ring that are not part of the audio, and the ring would
-  // then hold more than the playhead accounts for.
-  const auto written = ring_.writeFrames(output.first(mixed * outputChannels_));
+  // Only what was mixed goes to the ring, each frame with its place in the audio. A silent tail
+  // that padded the last block of the audio to a whole block would put frames in the ring that are
+  // not part of the audio.
+  const auto written = ring_.writeFrames(
+      output.first(mixed * outputChannels_),
+      std::span<const std::int64_t>{positionScratch_}.first(mixed));
   stats_.framesWritten.fetch_add(written, std::memory_order_relaxed);
   publishState();
   return written;

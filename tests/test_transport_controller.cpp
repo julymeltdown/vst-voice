@@ -1390,3 +1390,241 @@ TEST_CASE("transport_controller_audible_playhead_reaches_the_end_with_the_audio_
   static_cast<void>(readFrames(controller, 2000U));
   CHECK(controller.state().audiblePlayhead == 3000);
 }
+
+namespace {
+
+// A ring of 1024 frames, so that the frames the feeder has mixed ahead wrap its slots.
+seam::authoring::TransportConfig wrappingConfig() {
+  auto config = mixedAheadConfig();
+  config.ringCapacityFrames = 1024U;
+  config.watermarkFrames = 1024U;
+  return config;
+}
+
+// The feeder belongs to the controller. A sample probe hands it to the test, which can move it
+// when the controller's service is stopped (shutdown()) and nothing else does.
+seam::rendering::MultichannelPlaybackFeeder& feederOf(seam::authoring::TransportController& controller) {
+  seam::rendering::MultichannelPlaybackFeeder* found = nullptr;
+  controller.setStateSampleProbe(
+      [&found](seam::rendering::MultichannelPlaybackFeeder& feeder) { found = &feeder; });
+  static_cast<void>(controller.state());
+  controller.setStateSampleProbe({});
+  CHECK(found != nullptr);
+  return *found;
+}
+
+// The feeder has mixed the first 1024 frames of the song into a ring that holds no more, and has
+// stopped: the creator has heard none of them.
+void prepareFullRing(seam::authoring::TransportController& controller,
+                     seam::authoring::RealtimeProjectAudioPublication& publication) {
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, kMixedAheadSongFrames)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() == 1024U; }));
+  controller.shutdown();
+  CHECK(controller.state().settled);
+  CHECK(controller.state().playhead == 1024);
+  CHECK(controller.state().audiblePlayhead == 0);
+}
+
+// While the audible position is worked out the device plays 64 frames and the feeder mixes 64 more,
+// over the slots the device left: the indices of the ring's slots have wrapped, and the ring holds
+// frames 64 to 1087 of the song. The creator is at frame 64.
+void movesTheRingWhileThePositionIsTaken(seam::authoring::TransportController& controller,
+                                         seam::rendering::MultichannelPlaybackFeeder& feeder,
+                                         bool& moved) {
+  controller.ringBuffer().setSnapshotProbe([&controller, &feeder, &moved](int point) {
+    if (point != 1 || moved) return;
+    moved = true;
+    std::vector<float> output(64U * 2U);
+    static_cast<void>(controller.ringBuffer().readFrames(output));
+    static_cast<void>(feeder.feedOnce());
+  });
+}
+
+}  // namespace
+
+TEST_CASE("transport_controller_audible_playhead_is_where_the_creator_is_when_the_ring_wraps_under_the_sample") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  bool moved = false;
+  movesTheRingWhileThePositionIsTaken(controller, feeder, moved);
+  CHECK(controller.state().audiblePlayhead == 64);
+  CHECK(moved);
+}
+
+TEST_CASE("transport_controller_pause_goes_on_from_where_the_creator_was_when_the_ring_wraps_under_the_sample") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  bool moved = false;
+  movesTheRingWhileThePositionIsTaken(controller, feeder, moved);
+  CHECK(controller.pause());
+  CHECK(moved);
+  controller.ringBuffer().setSnapshotProbe({});
+  CHECK(controller.play());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), 0.064, 0.002);
+}
+
+TEST_CASE("transport_controller_audible_playhead_in_a_loop_that_begins_after_the_audio_is_in_the_first_pass") {
+  // The loop begins at frame 512. The feeder has mixed 1024 frames of the first pass, from the
+  // start of the audio, and the creator has heard none: they are at the start, not 1024 frames
+  // back through a loop that has not wrapped.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, kMixedAheadSongFrames)));
+  CHECK(controller.setLoop({.enabled = true, .startFrame = 512, .endFrame = 2048}));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.ringBuffer().availableReadFrames() == 1024U; }));
+  controller.shutdown();
+  const auto before = controller.state();
+  CHECK(before.playhead == 1024);
+  CHECK(before.audiblePlayhead == 0);
+  CHECK(controller.pause());
+  CHECK(controller.play());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  // Audio from the start of the song, and not silence.
+  const auto next = readFrames(controller, 8U);
+  CHECK_NEAR(next[0], 0.0, 0.0001);
+  CHECK_NEAR(next[7U * 2U], 0.007, 0.0001);
+}
+
+TEST_CASE("transport_controller_pause_keeps_the_audio_the_feeder_mixes_after_the_position_was_taken") {
+  // The device has played everything the feeder mixed, so the creator is at frame 1024 and so is
+  // the feeder. The feeder mixes one more block before the pause reaches it: the pause has to put
+  // the playhead at frame 1024 all the same, or that block is dropped and playback goes on after it.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  CHECK_NEAR(readFrames(controller, 1024U)[1023U * 2U], 1.023, 0.002);
+  CHECK(controller.state().audiblePlayhead == 1024);
+  bool moved = false;
+  controller.setStateSampleProbe([&moved](seam::rendering::MultichannelPlaybackFeeder& feeder) {
+    if (moved) return;
+    moved = true;
+    static_cast<void>(feeder.feedOnce());
+  });
+  CHECK(controller.pause());
+  CHECK(moved);
+  controller.setStateSampleProbe({});
+  CHECK(controller.play());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), 1.024, 0.002);
+}
+
+TEST_CASE("transport_controller_loop_change_keeps_the_audio_the_feeder_mixes_after_the_position_was_taken") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  CHECK_NEAR(readFrames(controller, 1024U)[1023U * 2U], 1.023, 0.002);
+  CHECK(controller.state().audiblePlayhead == 1024);
+  bool moved = false;
+  controller.setStateSampleProbe([&moved](seam::rendering::MultichannelPlaybackFeeder& feeder) {
+    if (moved) return;
+    moved = true;
+    static_cast<void>(feeder.feedOnce());
+  });
+  CHECK(controller.setLoop({.enabled = true, .startFrame = 0, .endFrame = 20000}));
+  CHECK(moved);
+  controller.setStateSampleProbe({});
+  CHECK(controller.start());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 8U).front(), 1.024, 0.002);
+}
+
+TEST_CASE("transport_controller_reconfigure_keeps_the_place_in_the_audio_the_device_has_reached_after_the_feeder_finished") {
+  // The audio is short enough for the ring: the feeder has handed all of it over and is finished,
+  // and the device has played 1000 of the 3000 frames. A change of settings drops the 2000 that
+  // are left in the ring, so playback has to carry on from frame 1000 and not from the end: the
+  // feeder finished, and that is not the creator's pause or play, so it does not start playback.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  auto config = mixedAheadConfig();
+  seam::authoring::TransportController controller{config};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == 3000;
+  }));
+  controller.shutdown();
+  CHECK_NEAR(readFrames(controller, 1000U).back(), 0.999, 0.002);
+  CHECK(controller.state().audiblePlayhead == 1000);
+  CHECK(controller.ringBuffer().availableReadFrames() == 2000U);
+  config.blockFrames = 32U;
+  CHECK(controller.reconfigure(config));
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 3000U)));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  const auto after = controller.state();
+  CHECK(!after.playing);
+  CHECK(after.audiblePlayhead == 1000);
+  CHECK(after.playhead == 1000);
+}
+
+TEST_CASE("transport_controller_loop_change_after_the_feeder_finished_keeps_the_place_the_device_has_reached") {
+  // The feeder has handed all 3000 frames over and is finished, and the device has played 1000. A
+  // loop change drops the 2000 that are left in the ring, and the place the audio would go on from
+  // is the one the device was at, not the end that the finished feeder stands at.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{mixedAheadConfig()};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == 3000;
+  }));
+  controller.shutdown();
+  CHECK_NEAR(readFrames(controller, 1000U).back(), 0.999, 0.002);
+  CHECK(controller.state().audiblePlayhead == 1000);
+  CHECK(controller.setLoop({}));
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  const auto after = controller.state();
+  CHECK(!after.playing);
+  CHECK(after.playhead == 1000);
+  CHECK(after.audiblePlayhead == 1000);
+}
+
+TEST_CASE("transport_controller_audible_playhead_goes_by_where_a_loop_the_feeder_has_not_applied_will_put_it") {
+  // The audio has been played to its end and the feeder is finished. A loop that ends before the
+  // playhead moves it to the start of the loop when the feeder applies it, and until then that is
+  // where the creator is.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{mixedAheadConfig()};
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == 3000;
+  }));
+  controller.shutdown();
+  static_cast<void>(readFrames(controller, 3000U));
+  CHECK(controller.state().audiblePlayhead == 3000);
+  CHECK(controller.setLoop({.enabled = true, .startFrame = 0, .endFrame = 1000}));
+  CHECK(!controller.state().settled);
+  CHECK(controller.state().audiblePlayhead == 0);
+}
+
+TEST_CASE("transport_controller_a_seek_the_feeder_has_not_applied_decides_where_pause_and_play_go_on_from") {
+  // A seek that waits for the feeder is where playback goes on from, however many commands follow
+  // it, until the feeder has applied it; then the device is at the place the audio is.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{mixedAheadConfig()};
+  playAndHear(controller, publication, 1000U);
+  controller.shutdown();
+  CHECK(controller.seek(2000));
+  CHECK(controller.setLoop({}));
+  CHECK(controller.pause());
+  CHECK(!controller.state().settled);
+  CHECK(controller.state().audiblePlayhead == 2000);
+  CHECK(controller.play());
+  CHECK(controller.awaitStartBuffer(std::chrono::milliseconds{1500}));
+  CHECK_NEAR(readFrames(controller, 64U).front(), 2.0, 0.002);
+  controller.shutdown();
+  const auto after = controller.state();
+  CHECK(after.settled);
+  CHECK(after.audiblePlayhead == 2064);
+}
