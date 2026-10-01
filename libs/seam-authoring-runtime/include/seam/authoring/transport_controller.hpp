@@ -102,6 +102,30 @@ public:
   [[nodiscard]] core::Result<void> seek(time::SampleFrame frame);
   [[nodiscard]] core::Result<void> setLoop(rendering::PlaybackLoop range);
   [[nodiscard]] core::Result<void> reconfigure(TransportConfig config);
+  // For the owner of the audio consumer, when it takes the consumer away to change it (another
+  // device, another sample rate or block size) and puts one back. Call it once the consumer is
+  // stopped; when it says playback is to go on, call play() once the new consumer is back.
+  //
+  // It pauses the transport at the place the creator is at. That includes the end of the audio: a
+  // feeder that has handed over the last of it leaves the consumer a tail to play out, the consumer
+  // is gone and the tail goes with it, so that a play from here starts at the place the creator was
+  // and not, as a play at the end of the audio does, at its beginning.
+  //
+  // And it says whether the creator was playing, which the feeder's own report does not: that
+  // follows the creator's commands by a moment. A Pause that is queued is not playing, and a Play
+  // that is queued is, and so is a Play that waits for audio to be rendered. A feeder that has
+  // handed over the last of the audio reports that it is not playing while the consumer still plays
+  // the end of it out, and that is playing too. It is when the consumer was running
+  // (consumerWasRunning), the creator's last request was a Play (not a Pause, a Stop or a clear),
+  // the feeder has applied everything the creator sent (until then what was sent decides, and a
+  // seek or a loop change that follows the end makes it drop the ring), and the ring still holds
+  // audio that nobody has played and nobody has been asked to drop. With the audio all played, or
+  // with nobody playing the ring out, the song is over.
+  //
+  // An error is Conflict, and nothing was queued or recorded: the place the creator is at cannot be
+  // read from the ring at this moment (see SpscInterleavedAudioRingBuffer::nextFrame), or the
+  // feeder's queue is full. The transport is as it was.
+  [[nodiscard]] core::Result<bool> suspend(bool consumerWasRunning);
   // For the owner of a consumer that is not running (the audio device is stopped), after the
   // creator asked for playback and before the consumer is started. Starting the consumer first
   // would play whatever the ring still holds of audio from before, and waiting for the ring to
@@ -209,9 +233,15 @@ private:
   time::SampleFrame timelineEnd_{0};
   time::SampleFrame pendingPlayhead_{0};
   bool pendingPlayheadValid_{false};
-  bool resumeAfterReconfigure_{false};
+  // The creator's last request of playback was a Play: set by play(), cleared by pause(), stop(),
+  // clearAudio() and suspend(), and set to what the transport was doing by a reconfigure, for the
+  // audio that follows it. It is not the feeder's playing flag, which also goes false when the
+  // audio ends on its own, and it is not consumed by a publication: a song that ended on its own
+  // stays ended, however the audio is replaced after it. A publication starts the feeder only when
+  // the transport held no audio, when the Play was waiting for it.
+  bool playRequested_{false};
   // True from a reconfigure that dropped published audio until audio is published again or
-  // cleared: loop_, pendingPlayhead_ and resumeAfterReconfigure_ then describe that audio.
+  // cleared: loop_, pendingPlayhead_ and playRequested_ then describe that audio.
   bool audioDroppedByReconfigure_{false};
   bool started_{false};
   // Guarded by lifecycleMutex_. The feeder counts the commands it consumes from its own start, so

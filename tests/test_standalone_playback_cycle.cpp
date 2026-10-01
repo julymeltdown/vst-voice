@@ -42,10 +42,32 @@ namespace {
 
 using namespace std::chrono_literals;
 
+class PumpedAudioDevice;
+
+// The pumped devices that are alive, oldest first, and what the next one that is made does when it
+// is opened. A change of audio settings makes a new device and drops the old one, or drops the new
+// one and keeps the old when the new cannot be opened.
+struct PumpedDevices final {
+  std::vector<PumpedAudioDevice*> alive;
+  bool failNextOpen{false};
+};
+
 class PumpedAudioDevice final : public seam::platform::IAudioDevice {
 public:
+  explicit PumpedAudioDevice(PumpedDevices& devices) : devices_(&devices) {
+    failOpen = devices.failNextOpen;
+    devices.failNextOpen = false;
+    devices.alive.push_back(this);
+  }
+  ~PumpedAudioDevice() override { std::erase(devices_->alive, this); }
+  PumpedAudioDevice(const PumpedAudioDevice&) = delete;
+  PumpedAudioDevice& operator=(const PumpedAudioDevice&) = delete;
+
   seam::core::Result<void> open(const seam::platform::AudioDeviceConfig& config,
                                 seam::platform::IAudioProcessor& processor) override {
+    if (failOpen) {
+      return seam::core::failure(seam::core::ErrorCode::IoError, "the pumped device cannot open");
+    }
     processor_ = &processor;
     info_ = seam::platform::AudioDeviceInfo{.backend = "pumped-test-device",
                                             .deviceId = "pumped-test-device",
@@ -96,8 +118,10 @@ public:
 
   static constexpr std::size_t kMaximumBlock = 1024U;
   bool failStart{false};
+  bool failOpen{false};
 
 private:
+  PumpedDevices* devices_;
   seam::platform::IAudioProcessor* processor_{nullptr};
   seam::platform::AudioDeviceInfo info_;
   std::array<std::span<float>, 2U> views_{};
@@ -118,13 +142,14 @@ bool waitUntil(const std::function<bool()>& predicate,
 }
 
 struct PlaybackRig final {
+  // Declared before the app, so that it outlives every device the app drops.
+  std::shared_ptr<PumpedDevices> devices = std::make_shared<PumpedDevices>();
   std::unique_ptr<seam::standalone::NativeEditorApp> app;
   PumpedAudioDevice* device{nullptr};
   seam::native_ui::PixelSurface surface{1280U, 720U};
   std::shared_ptr<const seam::authoring::PublishedProjectAudio> published;
 
   explicit PlaybackRig(const std::filesystem::path& root) {
-    auto handle = std::make_shared<PumpedAudioDevice*>(nullptr);
     seam::standalone::NativeEditorAppConfig config;
     config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
     config.applicationSupportRoot = root;
@@ -138,20 +163,40 @@ struct PlaybackRig final {
         .path = std::filesystem::path{SEAM_SOURCE_PRODUCTION_VOICEBANK},
         .kind = seam::voicebank::VoicebankRootKind::Development,
     }};
-    config.threadedAudioDeviceFactory = [handle] {
-      auto created = std::make_unique<PumpedAudioDevice>();
-      *handle = created.get();
-      return created;
+    config.threadedAudioDeviceFactory = [registry = devices] {
+      return std::make_unique<PumpedAudioDevice>(*registry);
     };
     auto created = seam::standalone::NativeEditorApp::create(std::move(config));
     CHECK(created);
     app = std::move(created).value();
-    device = *handle;
+    refreshDevice();
     CHECK(device != nullptr);
   }
 
   seam::authoring::TransportController& transport() {
     return app->authoring().runtime().transport();
+  }
+  // The device the app has now. A change of audio settings replaces it, or keeps the old one when
+  // the new one cannot be opened.
+  void refreshDevice() { device = devices->alive.empty() ? nullptr : devices->alive.back(); }
+  // The creator picks another buffer size in the audio settings: the editor stops its device,
+  // builds the transport again and opens a new device, and puts the old one back when it cannot.
+  seam::core::Result<seam::authoring::AudioSettings> changeBlockSize() {
+    const auto current = app->audioSettings();
+    CHECK(current);
+    auto requested = current.value();
+    requested.blockFrames = requested.blockFrames == 128U ? 256U : 128U;
+    auto applied = app->applyAudioSettings(requested);
+    refreshDevice();
+    return applied;
+  }
+  // A frame is painted at a time, as in a window, until the predicate holds.
+  bool paintUntil(const std::function<bool()>& predicate,
+                  std::chrono::milliseconds timeout = std::chrono::seconds{30}) {
+    return waitUntil([this, &predicate] {
+      paint();
+      return predicate();
+    }, timeout);
   }
   void paint() {
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
@@ -468,4 +513,249 @@ TEST_CASE("standalone playback policy: with no device there is nothing to start 
       }
     }
   }
+}
+
+namespace {
+
+// The device plays some callbacks of the song, a millisecond apart. Returns what it played.
+std::vector<float> playBlocks(PlaybackRig& rig, int blocks) {
+  std::vector<float> heard;
+  for (int block = 0; block < blocks; ++block) {
+    rig.pump(768U, heard);
+    std::this_thread::sleep_for(1ms);
+  }
+  return heard;
+}
+
+// Presses Play and lets the device play until the feeder has handed over the last of the song.
+// The device is still playing then: the ring holds the end of the song, and the transport no longer
+// reports that it is playing.
+std::vector<float> playUntilTheFeederHasFinished(PlaybackRig& rig) {
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  std::vector<float> heard;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto state = rig.transport().state();
+    if (state.settled && !state.playing) break;
+    rig.pump(256U, heard);
+    std::this_thread::sleep_for(1ms);
+  }
+  return heard;
+}
+
+// The creator pauses while the song plays, in the moment before the feeder has applied it. The
+// feeder's service is stopped, so that the Pause stays queued, as it would for the moment it takes.
+void pauseBeforeTheFeederHasApplied(PlaybackRig& rig) {
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  static_cast<void>(playBlocks(rig, 4));
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && state.playing;
+  }));
+  rig.transport().shutdown();
+  CHECK(rig.pressPlay());
+  CHECK(!rig.device->running());
+  // The feeder still reports what it was doing before the Pause.
+  const auto state = rig.transport().state();
+  CHECK(state.playing);
+  CHECK(!state.settled);
+}
+
+}  // namespace
+
+TEST_CASE("standalone audio settings: a change while the device plays the end of the song lets it be heard to its last sample") {
+  const auto root = seam::test::support::temporaryDirectory("settings-tail");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+
+  const auto heardBefore = playUntilTheFeederHasFinished(rig).size();
+  // The feeder has handed over the whole song and the device has not yet played the end of it.
+  CHECK(!rig.transport().state().playing);
+  CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
+  CHECK(heardBefore < expected.size());
+
+  CHECK(rig.changeBlockSize());
+  // The creator was listening to the song: it goes on from where they were, once and in order.
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  checkHeardIs(rest, expected, heardBefore, "the end of the song after the change");
+  CHECK(!rig.device->running());
+}
+
+TEST_CASE("standalone audio settings: a Pause the feeder has not applied yet is not undone by a change") {
+  const auto root = seam::test::support::temporaryDirectory("settings-pending-pause");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  pauseBeforeTheFeederHasApplied(rig);
+
+  CHECK(rig.changeBlockSize());
+  // The creator paused: the song does not play and nothing starts the device.
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone audio settings: a device that had stopped is not started by a change though the ring holds the end of the song") {
+  const auto root = seam::test::support::temporaryDirectory("settings-device-stopped");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  static_cast<void>(playUntilTheFeederHasFinished(rig));
+  CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
+  // The device stops by itself, as when it is unplugged: nobody is playing the end of the song.
+  rig.device->stop();
+  CHECK(!rig.device->running());
+
+  CHECK(rig.changeBlockSize());
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone audio settings: a Pause the feeder has applied stays a Pause through a change") {
+  const auto root = seam::test::support::temporaryDirectory("settings-settled-pause");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  CHECK(rig.pressPlay());
+  static_cast<void>(playBlocks(rig, 4));
+  CHECK(rig.pressPlay());
+  CHECK(!rig.device->running());
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && !state.playing;
+  }));
+
+  CHECK(rig.changeBlockSize());
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone audio settings: a song that has been played to its end is not started again by a change") {
+  const auto root = seam::test::support::temporaryDirectory("settings-after-the-end");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  CHECK(rig.pressPlay());
+
+  // The device plays all of it, and no frame has been painted since: the app has not yet noticed
+  // that the song is over, and the device is still running.
+  std::vector<float> heard;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto state = rig.transport().state();
+    if (state.settled && !state.playing &&
+        rig.transport().ringBuffer().availableReadFrames() == 0U) {
+      break;
+    }
+    rig.pump(768U, heard);
+    std::this_thread::sleep_for(1ms);
+  }
+  checkHeardIs(heard, expected, 0U, "playback");
+  CHECK(rig.device->running());
+  CHECK(!rig.transport().state().playing);
+
+  CHECK(rig.changeBlockSize());
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone audio settings: a device that cannot be opened is given up and playback goes on from where it was") {
+  const auto root = seam::test::support::temporaryDirectory("settings-open-fails");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  const auto heardBefore = playBlocks(rig, 12).size();
+  CHECK(heardBefore > 4000U);
+  const auto before = rig.app->audioSettings();
+  CHECK(before);
+
+  rig.devices->failNextOpen = true;
+  CHECK(!rig.changeBlockSize());
+  CHECK(rig.app->audioSettings().value().blockFrames == before.value().blockFrames);
+  // The device that was there is back, and the song goes on from where the creator had got to.
+  CHECK(rig.device != nullptr);
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  checkHeardIs(rest, expected, heardBefore, "playback after the old device was put back");
+}
+
+TEST_CASE("standalone audio settings: a Pause the feeder has not applied yet is kept when the new device cannot be opened") {
+  const auto root = seam::test::support::temporaryDirectory("settings-open-fails-paused");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  pauseBeforeTheFeederHasApplied(rig);
+
+  rig.devices->failNextOpen = true;
+  CHECK(!rig.changeBlockSize());
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+}
+
+TEST_CASE("standalone audio settings: a change that cannot tell where the creator is changes nothing and playback goes on") {
+  const auto root = seam::test::support::temporaryDirectory("settings-place-unreadable");
+  PlaybackRig rig{root};
+  static_cast<void>(rig.writeTheSong());
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  static_cast<void>(playBlocks(rig, 12));
+  const auto before = rig.app->audioSettings();
+  CHECK(before);
+
+  // From here the test moves the feeder: its service stops. The ring cannot be read for where the
+  // device is when the device plays one frame and the feeder mixes one at every attempt.
+  rig.transport().shutdown();
+  seam::rendering::MultichannelPlaybackFeeder* feeder = nullptr;
+  rig.transport().setStateSampleProbe(
+      [&feeder](seam::rendering::MultichannelPlaybackFeeder& found) { feeder = &found; });
+  static_cast<void>(rig.transport().state());
+  rig.transport().setStateSampleProbe({});
+  CHECK(feeder != nullptr);
+  auto& ring = rig.transport().ringBuffer();
+  std::size_t attempts = 0U;
+  ring.setSnapshotProbe([&](int point) {
+    if (point != 3) return;
+    ++attempts;
+    std::vector<float> frame(2U);
+    static_cast<void>(ring.readFrames(frame));
+    static_cast<void>(feeder->feedOnce());
+  });
+  const auto changed = rig.changeBlockSize();
+  ring.setSnapshotProbe({});
+
+  CHECK(!changed);
+  CHECK(changed.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(attempts > 1U);
+  // Nothing was changed: the settings are as they were, the device that was stopped for the change
+  // runs again, and the transport is as it was.
+  CHECK(rig.app->audioSettings().value().blockFrames == before.value().blockFrames);
+  CHECK(rig.device != nullptr);
+  CHECK(rig.device->running());
+  const auto state = rig.transport().state();
+  CHECK(state.settled);
+  CHECK(state.playing);
+}
+
+TEST_CASE("standalone playback: a render that arrives after the song has ended and been rewound does not play it again") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-render-after-the-end");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  CHECK(rig.pressPlay());
+  static_cast<void>(rig.playUntilTheAppStopsTheDevice());
+  CHECK(!rig.device->running());
+
+  // The creator puts the playhead back at the start, and does not press Play. They edit a note,
+  // and the render that follows replaces the audio.
+  CHECK(rig.transport().seek(0));
+  CHECK(rig.stoppedAt(0));
+  rig.addNote(3840, 960, U"\u306b");
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.available &&
+           state.publishedRevision == rig.app->authoring().runtime().document().session().revision();
+  }));
+  CHECK(!waitUntil([&] { return rig.transport().state().playing; }, 300ms));
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
 }

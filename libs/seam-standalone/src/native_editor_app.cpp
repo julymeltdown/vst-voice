@@ -951,11 +951,31 @@ core::Result<void> NativeEditorApp::restartAudio(
                 .outputChannels = previous.outputChannels,
                 .physical = false,
             };
-  const auto wasPlaying = authoring_->runtime().transport().state().playing;
   const auto wasRunning = audioDevice_ != nullptr && audioDevice_->running();
   auto previousDevice = std::move(audioDevice_);
   if (previousDevice != nullptr) previousDevice->stop();
-  static_cast<void>(authoring_->runtime().transport().pause());
+  // With the device stopped nothing reads the ring, so the transport can say where the creator is
+  // and what they were doing: playing, paused, or listening to the end of a song that the feeder
+  // has already handed over. The feeder's report cannot say it: it follows the creator's commands
+  // by a moment, and it says the song has stopped before the creator has heard the end of it. The
+  // transport is paused where the creator is, and playback is put back below when they were
+  // playing, on the new device or on the old one when the new one cannot be opened.
+  const auto suspended = authoring_->runtime().transport().suspend(wasRunning);
+  if (!suspended) {
+    // Nothing was queued or recorded, so the transport is as it was and the device is all that is
+    // left to put back. The ring still holds what the device had not played.
+    audioDevice_ = std::move(previousDevice);
+    if (audioDevice_ != nullptr && wasRunning) {
+      const auto restarted = audioDevice_->start();
+      if (!restarted) {
+        // Playback cannot go on, and the creator is told, as when a Play cannot start the device.
+        static_cast<void>(authoring_->runtime().transport().pause());
+        setAudioUnavailable(restarted.error());
+      }
+    }
+    return core::Result<void>{suspended.error()};
+  }
+  const bool resumePlayback = suspended.value();
 
   auto open = [this](const authoring::AudioSettings& requested,
                      std::unique_ptr<platform::IAudioDevice>& device,
@@ -1014,7 +1034,7 @@ core::Result<void> NativeEditorApp::restartAudio(
       const auto info = audioDevice_->info();
       authoring_->controller().setAudioState(info.physical, info.backend);
       clearAudioUnavailable();
-      if (wasPlaying) {
+      if (resumePlayback) {
         const auto resumed = authoring_->runtime().transport().play();
         if (!resumed) return resumed;
         if (wasRunning &&
@@ -1057,7 +1077,7 @@ core::Result<void> NativeEditorApp::restartAudio(
       const auto info = audioDevice_->info();
       authoring_->controller().setAudioState(info.physical, info.backend);
       clearAudioUnavailable();
-      if (wasPlaying) {
+      if (resumePlayback) {
         const auto resumed = authoring_->runtime().transport().play();
         if (!resumed) return resumed;
         if (wasRunning &&

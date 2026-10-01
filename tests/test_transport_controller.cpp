@@ -1815,3 +1815,235 @@ TEST_CASE("transport_controller_a_seek_the_feeder_has_not_applied_decides_where_
   CHECK(after.settled);
   CHECK(after.audiblePlayhead == 2064);
 }
+
+TEST_CASE("transport_controller_suspend_pauses_where_the_creator_is_and_says_that_they_were_playing") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{mixedAheadConfig()};
+  playAndHear(controller, publication, 1000U);
+  const auto suspended = controller.suspend(true);
+  CHECK(suspended);
+  CHECK(suspended.value());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing;
+  }));
+  // The feeder had mixed a ringful ahead of the creator. It is paused where they are.
+  CHECK(controller.state().audiblePlayhead == 1000);
+  CHECK(controller.play());
+  CHECK_NEAR(firstFrameHeardOnceApplied(controller), 1.0, 0.002);
+}
+
+TEST_CASE("transport_controller_suspend_goes_by_what_the_creator_asked_for_not_by_what_the_feeder_reports") {
+  // The feeder applies the creator's commands on its own thread, so what it reports can be a
+  // command behind. A Pause that waits for it is not playing, a Play that waits for it is, and a
+  // Pause it has applied is not.
+  {
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    playAndHear(controller, publication, 1000U);
+    controller.shutdown();
+    CHECK(controller.pause());
+    CHECK(controller.state().playing);
+    CHECK(!controller.state().settled);
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+  {
+    // The Play reaches the feeder with the audio that it was waiting for, and the feeder has not
+    // applied it yet.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    CHECK(controller.start());
+    CHECK(controller.play());
+    auto changed = mixedAheadConfig();
+    changed.blockFrames = 32U;
+    CHECK(controller.reconfigure(changed));
+    controller.shutdown();
+    CHECK(controller.publishAudio(publishAudio(publication, 1U, kMixedAheadSongFrames)));
+    CHECK(!controller.state().playing);
+    CHECK(!controller.state().settled);
+    const auto suspended = controller.suspend(false);
+    CHECK(suspended);
+    CHECK(suspended.value());
+  }
+  {
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    playAndHear(controller, publication, 1000U);
+    CHECK(controller.pause());
+    CHECK(waitUntil([&] {
+      const auto state = controller.state();
+      return state.settled && !state.playing;
+    }));
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+}
+
+TEST_CASE("transport_controller_suspend_withdraws_a_play_that_waits_for_audio_until_it_is_asked_for_again") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{mixedAheadConfig()};
+  CHECK(controller.start());
+  // Asked to play before anything was rendered, and then the settings changed: the new feeder has
+  // never been told to play, and the Play waits for the audio that is rendered next.
+  CHECK(controller.play());
+  auto changed = mixedAheadConfig();
+  changed.blockFrames = 32U;
+  CHECK(controller.reconfigure(changed));
+  const auto suspended = controller.suspend(false);
+  CHECK(suspended);
+  CHECK(suspended.value());
+  // The transport is paused: the audio that arrives does not start it, until it is asked to play.
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, kMixedAheadSongFrames)));
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, kQuiet));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+}
+
+namespace {
+
+// The feeder has handed over the whole of a short song and stopped, and the creator has heard
+// "heard" frames of it: the ring holds the rest, which the consumer is still playing out.
+void endOfTheSongInTheRing(seam::authoring::TransportController& controller,
+                           seam::authoring::RealtimeProjectAudioPublication& publication,
+                           std::size_t heard) {
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && !state.playing && state.playhead == 3000;
+  }));
+  static_cast<void>(readFrames(controller, heard));
+  CHECK(controller.ringBuffer().availableReadFrames() == 3000U - heard);
+}
+
+}  // namespace
+
+TEST_CASE("transport_controller_suspend_says_that_they_are_playing_while_the_consumer_plays_the_end_out") {
+  // The feeder reports that it has stopped as soon as it has handed over the last of the audio, and
+  // the consumer plays what the ring holds of it for a while after that.
+  {
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 1000U);
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(suspended.value());
+    // It is paused where the creator is, and not at the end of the audio: a play goes on from there
+    // and does not start the song again.
+    CHECK(waitUntil([&] {
+      const auto state = controller.state();
+      return state.settled && !state.playing;
+    }));
+    CHECK(controller.state().audiblePlayhead == 1000);
+    CHECK(controller.play());
+    CHECK_NEAR(firstFrameHeardOnceApplied(controller), 1.0, 0.002);
+  }
+  {
+    // Nobody is playing the ring out: the consumer was not running.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 1000U);
+    const auto suspended = controller.suspend(false);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+  {
+    // The consumer has played all of it.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 3000U);
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+  {
+    // The creator paused during the end of the song, and the consumer goes on playing the ring out.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 1000U);
+    CHECK(controller.pause());
+    CHECK(waitUntil([&] { return controller.state().settled; }));
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+  {
+    // The creator put the playhead back at the start after the song ended: the feeder has dropped
+    // the ring, though the consumer has not answered yet.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 1000U);
+    CHECK(controller.seek(0));
+    CHECK(waitUntil([&] {
+      const auto state = controller.state();
+      return state.settled && state.playhead == 0;
+    }));
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+  {
+    // The same, and the feeder has not applied the seek yet.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 1000U);
+    controller.shutdown();
+    CHECK(controller.seek(0));
+    CHECK(!controller.state().settled);
+    const auto suspended = controller.suspend(true);
+    CHECK(suspended);
+    CHECK(!suspended.value());
+  }
+}
+
+TEST_CASE("transport_controller_suspend_is_refused_and_changes_nothing_when_the_ring_cannot_be_read") {
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{wrappingConfig()};
+  prepareFullRing(controller, publication);
+  auto& feeder = feederOf(controller);
+  MovingConsumer moving{controller, feeder};
+  moving.begin();
+  const auto refused = controller.suspend(true);
+  moving.end();
+  CHECK(!refused);
+  CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+  CHECK(moving.attempts > 1U);
+  // Nothing was sent: the feeder has applied everything and is still playing.
+  CHECK(controller.state().settled);
+  CHECK(controller.state().playing);
+  // Asked again with the ring at rest, it pauses the transport where the device is.
+  const auto again = controller.suspend(true);
+  CHECK(again);
+  CHECK(again.value());
+  CHECK(controller.start());
+  CHECK(waitUntil([&] { return !controller.state().playing; }));
+}
+
+TEST_CASE("a publication after the audio has ended and been put back at the start does not play it again") {
+  // The creator pressed Play once, the song ended on its own, they put the playhead back at the
+  // start and did not press Play, and a render arrives for an edit they made. The Play they pressed
+  // was for the audio that has ended: it does not start the audio that replaces it.
+  seam::authoring::RealtimeProjectAudioPublication publication;
+  seam::authoring::TransportController controller{transportConfigAt(48000U)};
+  CHECK(controller.start());
+  CHECK(controller.publishAudio(publishAudio(publication, 1U, 512U)));
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playhead == 512; }));
+  CHECK(waitUntil([&] { return !controller.state().playing; }));
+  CHECK(controller.seek(0));
+  CHECK(waitUntil([&] {
+    const auto state = controller.state();
+    return state.settled && state.playhead == 0 && !state.playing;
+  }));
+  CHECK(controller.publishAudio(publishAudio(publication, 2U, 512U)));
+  CHECK(waitUntil([&] { return controller.state().settled; }));
+  CHECK(!waitUntil([&] { return controller.state().playing; }, kQuiet));
+  // A Play that is pressed after that plays it.
+  CHECK(controller.play());
+  CHECK(waitUntil([&] { return controller.state().playing; }));
+}

@@ -180,7 +180,7 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
     }
     currentPlayhead = *audible;
     if (timelineEnd_ == time::SampleFrame{0}) {
-      wasPlaying = wasPlaying || resumeAfterReconfigure_;
+      wasPlaying = wasPlaying || playRequested_;
       if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
     }
   }
@@ -237,7 +237,7 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
     timelineEnd_ = 0;
     pendingPlayhead_ = remappedPlayhead;
     pendingPlayheadValid_ = true;
-    resumeAfterReconfigure_ = wasPlaying;
+    playRequested_ = wasPlaying;
   }
   started_ = wasStarted;
   return core::success();
@@ -344,7 +344,7 @@ core::Result<void> TransportController::publishAudio(
   if (!timeline) return core::Result<void>{timeline.error()};
   rendering::PlaybackLoop remappedLoop;
   time::SampleFrame remappedPlayhead{0};
-  bool resumeAfterReconfigure = false;
+  bool playWaitsForAudio = false;
   {
     std::lock_guard lock(stateMutex_);
     remappedLoop = remapLoop(loop_, timeline.value()->endFrame());
@@ -363,14 +363,19 @@ core::Result<void> TransportController::publishAudio(
       startsAt = *audible;
     }
     remappedPlayhead = std::clamp<time::SampleFrame>(startsAt, 0, timeline.value()->endFrame());
-    resumeAfterReconfigure = resumeAfterReconfigure_;
+    // A Play that was asked for while the transport held no audio (before the first render, or
+    // after a change of settings dropped it) waits for the audio and starts with it. With audio
+    // held, the feeder's own playing flag is what the creator left it at: a song that ended on its
+    // own stays ended, and so does one the creator put back at the start, however the audio is
+    // replaced after that.
+    playWaitsForAudio = playRequested_ && timelineEnd_ == time::SampleFrame{0};
   }
   // The timeline, the loop that belongs to it, the playhead in it and, when a play is waiting for
   // audio, the play reach the feeder together or not at all: a publication that does not fit
   // leaves the feeder without a timeline that the controller never recorded.
   rendering::MultichannelPlaybackFeeder::ControlScript script;
   script.timeline(timeline.value()).loop(remappedLoop).seek(remappedPlayhead);
-  if (resumeAfterReconfigure) script.playing(true);
+  if (playWaitsForAudio) script.playing(true);
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   {
@@ -379,7 +384,6 @@ core::Result<void> TransportController::publishAudio(
     publishedRevision_ = audio->projectRevision;
     timelineEnd_ = timeline.value()->endFrame();
     pendingPlayheadValid_ = false;
-    resumeAfterReconfigure_ = false;
     audioDroppedByReconfigure_ = false;
   }
   return core::success();
@@ -417,7 +421,7 @@ core::Result<void> TransportController::clearAudio() {
     publishedRevision_ = 0U;
     timelineEnd_ = time::SampleFrame{0};
     pendingPlayheadValid_ = false;
-    resumeAfterReconfigure_ = false;
+    playRequested_ = false;
     audioDroppedByReconfigure_ = false;
   }
   return core::success();
@@ -447,7 +451,7 @@ core::Result<void> TransportController::play() {
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   std::lock_guard lock(stateMutex_);
-  resumeAfterReconfigure_ = true;
+  playRequested_ = true;
   return core::success();
 }
 
@@ -466,7 +470,7 @@ core::Result<void> TransportController::pause() {
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   std::lock_guard lock(stateMutex_);
-  resumeAfterReconfigure_ = false;
+  playRequested_ = false;
   return core::success();
 }
 
@@ -479,12 +483,47 @@ core::Result<void> TransportController::stop() {
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   std::lock_guard lock(stateMutex_);
-  resumeAfterReconfigure_ = false;
+  playRequested_ = false;
   // A reconfigure keeps the playhead for the audio that follows it, and a Stop is what the
   // creator asked for last: that audio starts at the beginning. A Pause or a Play leaves the
   // saved position alone.
   if (pendingPlayheadValid_) pendingPlayhead_ = 0;
   return core::success();
+}
+
+core::Result<bool> TransportController::suspend(bool consumerWasRunning) {
+  std::lock_guard lifecycleLock(lifecycleMutex_);
+  rendering::MultichannelPlaybackFeeder::ControlScript script;
+  script.playing(false);
+  bool playsOn = false;
+  {
+    std::lock_guard lock(stateMutex_);
+    // Decided before the pause goes out, and from what the creator asked for: the feeder's own
+    // report follows the commands by a moment, and one that has been queued and not applied is the
+    // state the feeder is about to be in.
+    const auto point = currentPoint();
+    // A Play that waits for audio: nothing is published to play, so nothing reports it.
+    const bool waitsForAudio = timelineEnd_ == time::SampleFrame{0} && playRequested_;
+    // The feeder reports that it has stopped when it has handed over the last of the audio, and the
+    // consumer still plays the end of it out of the ring. That is the creator listening to the song,
+    // unless they asked for it to stop (playRequested_), unless a command of theirs that the feeder
+    // has not applied yet is going to drop what the ring holds, and unless nobody is playing the
+    // ring out (the consumer was not running) or it has been played out.
+    const bool settled = feeder_->acknowledgedCommands() >= queuedCommands_;
+    const bool endIsPlayedOut = settled && playRequested_ && consumerWasRunning &&
+                                !ring_->resetPending() && ring_->availableReadFrames() > 0U;
+    playsOn = point.playing || waitsForAudio || endIsPlayedOut;
+    // The place the creator is at goes to the feeder whether it is playing or has finished: a
+    // finished feeder stands at the end of the audio, and a play from there would start the song
+    // again.
+    const auto carried = carryAudiblePosition(script, true);
+    if (!carried) return core::Result<bool>{carried.error()};
+  }
+  const auto sent = send(std::move(script));
+  if (!sent) return core::Result<bool>{sent.error()};
+  std::lock_guard lock(stateMutex_);
+  playRequested_ = false;
+  return core::success(playsOn);
 }
 
 core::Result<void> TransportController::seek(time::SampleFrame frame) {
