@@ -24,6 +24,15 @@ struct PlaybackPoint final {
   time::SampleFrame playhead{0};
 };
 
+// Where the feeder was `frames` frames of mixed audio ago, for a feeder that has mixed ahead of
+// its consumer: the playhead stepped back through the frames in the order they were mixed, past the
+// start of the loop to its end when the loop has wrapped since, and never before the start of the
+// audio. The consumer is at that point when it has not yet played those `frames`. A loop that does
+// not hold the playhead has not wrapped since the audio was mixed, so the playhead steps straight
+// back.
+[[nodiscard]] time::SampleFrame rewoundPlayhead(time::SampleFrame playhead, std::size_t frames,
+                                                const PlaybackLoop& loop) noexcept;
+
 struct MultichannelFeederStats final {
   std::uint64_t feedCalls{0U};
   std::uint64_t framesMixed{0U};
@@ -60,6 +69,9 @@ public:
     ControlScript& playing(bool value);
     ControlScript& seek(time::SampleFrame frame);
     [[nodiscard]] std::size_t size() const noexcept { return commands_.size(); }
+    // Whether the script puts the playhead somewhere itself, with a seek. A script without one
+    // leaves the playhead where the feeder has mixed to, which is ahead of where its consumer is.
+    [[nodiscard]] bool seeks() const noexcept;
     // Whether the feeder is playing and where it is once it has consumed the script, if it is at
     // `from` when it starts. Playback that goes on meanwhile is not part of it. The rules are the
     // ones the feeder applies to each command when it consumes it; the two are kept in step by the
@@ -131,8 +143,10 @@ private:
   [[nodiscard]] core::Result<void> validate(const ControlCommand& command) const;
   [[nodiscard]] bool processControls() noexcept;
   void publishState() noexcept;
-  [[nodiscard]] bool mixWithLoop(std::span<float> output,
-                                 std::size_t frameCount) noexcept;
+  // Mixes up to `frameCount` frames and says how many it mixed in `mixedFrames`: fewer only when
+  // the audio ends inside the block. The rest of `output` is silence that is not part of the audio.
+  [[nodiscard]] bool mixWithLoop(std::span<float> output, std::size_t frameCount,
+                                 std::size_t& mixedFrames) noexcept;
 
   SpscInterleavedAudioRingBuffer& ring_;
   std::uint32_t sampleRate_{48000U};

@@ -30,6 +30,12 @@ struct TransportState final {
   bool available{false};
   std::string availabilityDiagnostic;
   time::SampleFrame playhead{0};
+  // Where the creator hears the transport, which is behind `playhead` while it plays: the feeder
+  // mixes ahead of the audio device, and `playhead` is where it has mixed to. This is that
+  // position less the audio the device has not played yet, and it is what a playhead on screen
+  // shows. Where a command has put the playhead and the feeder has not yet applied it, it is
+  // there.
+  time::SampleFrame audiblePlayhead{0};
   rendering::PlaybackLoop loop;
   std::uint64_t publishedRevision{0U};
   time::SampleFrame timelineEnd{0};
@@ -135,6 +141,9 @@ private:
   struct QueuedIntent final {
     std::uint64_t acknowledgedAt{0U};
     rendering::PlaybackPoint point;
+    // Whether those commands put the playhead somewhere themselves, with a seek. When they do not,
+    // the playhead is wherever the feeder has mixed to by the time it applies them.
+    bool positionIsExplicit{false};
   };
   // Sends a script to the feeder and records what it leads to. An error queues nothing and records
   // nothing. Needs lifecycleMutex_.
@@ -144,6 +153,20 @@ private:
   // the feeder has not consumed them and by the feeder's own report once it has. Needs
   // lifecycleMutex_.
   [[nodiscard]] rendering::PlaybackPoint currentPoint() const noexcept;
+  // Where the creator hears the transport: the feeder's playhead less the audio it has mixed ahead
+  // of the device and the device has not played, which the ring still holds. This is the position
+  // that playback goes on from when the feeder drops that audio and carries on or comes back, as a
+  // pause, a loop change, a publication and a change of settings make it do. Its own playhead is
+  // ahead of the creator by a ringful, and a playhead taken from it skips that much of the song.
+  // Where a command has put the playhead and the feeder has not yet applied it, that is the answer,
+  // and so it is when the feeder has asked the device to drop what the ring holds. Needs
+  // lifecycleMutex_ and stateMutex_.
+  [[nodiscard]] time::SampleFrame audiblePlayhead() const noexcept;
+  // Adds to a script that makes a playing feeder drop the audio it has mixed ahead the seek that
+  // keeps playback where the creator hears it, when that is not where the feeder stands. Needs
+  // lifecycleMutex_ and stateMutex_.
+  void keepAudiblePosition(
+      rendering::MultichannelPlaybackFeeder::ControlScript& script) const;
 
   TransportConfig config_;
   std::unique_ptr<rendering::SpscInterleavedAudioRingBuffer> ring_;

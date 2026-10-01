@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -498,4 +499,76 @@ TEST_CASE("the projection of random control scripts is what the feeder does with
                   projected, "round " + std::to_string(round));
     }
   }
+}
+
+TEST_CASE("a_feeder_puts_only_the_audio_in_the_ring_and_not_the_silence_that_would_fill_its_last_block") {
+  Rig rig;
+  Script script;
+  script.timeline(timelineOf(40)).playing(true);
+  CHECK(rig.feeder.apply(std::move(script)));
+  CHECK(rig.feeder.feedOnce() == 16U);
+  CHECK(rig.feeder.feedOnce() == 16U);
+  // 40 frames are two blocks and half of a third. The last block holds 8 frames of audio and the
+  // ring gets those 8: the playhead accounts for every frame the ring holds.
+  CHECK(rig.feeder.feedOnce() == 8U);
+  CHECK(rig.feeder.playhead() == 40);
+  CHECK(!rig.feeder.playing());
+  CHECK(rig.ring.availableReadFrames() == 40U);
+  CHECK(rig.feeder.feedOnce() == 0U);
+  CHECK(rig.ring.availableReadFrames() == 40U);
+}
+
+TEST_CASE("a_script_says_whether_it_puts_the_playhead_somewhere_itself") {
+  CHECK(!Script{}.seeks());
+  CHECK(!Script{}.playing(true).loop(loopOf(0, 10, true)).seeks());
+  CHECK(Script{}.seek(0).seeks());
+  CHECK(Script{}.playing(false).seek(40).playing(true).seeks());
+}
+
+TEST_CASE("a_ring_says_whether_a_reset_waits_for_its_consumer") {
+  seam::rendering::SpscInterleavedAudioRingBuffer ring(64U, kChannels);
+  CHECK(!ring.resetPending());
+  const auto epoch = ring.requestConsumerReset();
+  CHECK(ring.resetPending());
+  CHECK(!ring.resetAcknowledged(epoch));
+  CHECK(ring.serviceResetRequest());
+  CHECK(!ring.resetPending());
+  CHECK(ring.resetAcknowledged(epoch));
+  // A second request is pending again, whether or not the first was answered.
+  static_cast<void>(ring.requestConsumerReset());
+  CHECK(ring.resetPending());
+  CHECK(ring.serviceResetRequest());
+  CHECK(!ring.resetPending());
+}
+
+TEST_CASE("rewound_playhead_steps_back_through_the_frames_that_were_mixed") {
+  using seam::rendering::rewoundPlayhead;
+  const PlaybackLoop none = loopOf(0, 0, false);
+  CHECK(rewoundPlayhead(5000, 0U, none) == 5000);
+  CHECK(rewoundPlayhead(5000, 1200U, none) == 3800);
+  // Never before the start of the audio, and no overflow however many frames the ring held.
+  CHECK(rewoundPlayhead(500, 1200U, none) == 0);
+  CHECK(rewoundPlayhead(1200, std::numeric_limits<std::size_t>::max(), none) == 0);
+  // A loop that is not enabled is not a loop.
+  CHECK(rewoundPlayhead(1200, 500U, loopOf(1000, 2000, false)) == 700);
+}
+
+TEST_CASE("rewound_playhead_steps_back_across_the_end_of_a_loop_that_has_wrapped") {
+  using seam::rendering::rewoundPlayhead;
+  const auto loop = loopOf(1000, 2000, true);
+  // Within the pass the playhead is in.
+  CHECK(rewoundPlayhead(1600, 300U, loop) == 1300);
+  CHECK(rewoundPlayhead(1600, 600U, loop) == 1000);
+  // Past the start of the loop: the previous pass ended at the end of the loop.
+  CHECK(rewoundPlayhead(1200, 500U, loop) == 1700);
+  CHECK(rewoundPlayhead(1200, 700U, loop) == 1500);
+  // Whole passes land where they began, at the start of the loop and not at its end.
+  CHECK(rewoundPlayhead(1200, 1200U, loop) == 1000);
+  CHECK(rewoundPlayhead(1000, 1000U, loop) == 1000);
+  CHECK(rewoundPlayhead(1200, 3200U, loop) == 1000);
+  // The playhead stands at the end of the loop until the next block wraps it.
+  CHECK(rewoundPlayhead(2000, 300U, loop) == 1700);
+  // A playhead outside the loop has not wrapped: the feeder plays on from where it is to the end.
+  CHECK(rewoundPlayhead(400, 300U, loop) == 100);
+  CHECK(rewoundPlayhead(2500, 100U, loop) == 2400);
 }

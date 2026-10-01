@@ -1659,7 +1659,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   authoring_->controller().setDiagnostics(std::move(diagnostics));
   const auto& project = authoring_->runtime().document().session().project();
   const auto tick = project.tempoMap().tickAtSampleFrame(
-      transport.playhead, authoring_->runtime().transport().sampleRate());
+      transport.audiblePlayhead, authoring_->runtime().transport().sampleRate());
   if (applicationController_ != nullptr) {
     authoring_->controller().setExportProgress(
         applicationController_->exportProgress().progress());

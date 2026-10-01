@@ -2,9 +2,28 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <thread>
 
 namespace seam::rendering {
+
+time::SampleFrame rewoundPlayhead(time::SampleFrame playhead, std::size_t frames,
+                                  const PlaybackLoop& loop) noexcept {
+  constexpr auto kMostFrames = std::numeric_limits<time::SampleFrame>::max();
+  const auto back = static_cast<time::SampleFrame>(
+      std::min<std::uint64_t>(frames, static_cast<std::uint64_t>(kMostFrames)));
+  const bool inLoop = loop.enabled && loop.endFrame > loop.startFrame && playhead >= loop.startFrame &&
+                      playhead <= loop.endFrame;
+  if (!inLoop) return std::max<time::SampleFrame>(0, playhead - back);
+  // The loop plays from its start to its end over and over, so stepping back past its start lands
+  // at its end, and a step of whole loops lands where it began.
+  const auto length = loop.endFrame - loop.startFrame;
+  const auto intoLoop = playhead - loop.startFrame;
+  if (back <= intoLoop) return playhead - back;
+  const auto beyond = (back - intoLoop) % length;
+  return beyond == 0 ? loop.startFrame : loop.endFrame - beyond;
+}
 
 MultichannelPlaybackFeeder::ControlQueue::ControlQueue(std::size_t capacity)
     : slots_(std::max<std::size_t>(2U, capacity) + 1U) {}
@@ -85,6 +104,11 @@ MultichannelPlaybackFeeder::ControlScript::seek(time::SampleFrame frame) {
                                      .frame = frame,
                                      .playing = false});
   return *this;
+}
+
+bool MultichannelPlaybackFeeder::ControlScript::seeks() const noexcept {
+  return std::any_of(commands_.begin(), commands_.end(),
+                     [](const ControlCommand& command) { return command.kind == ControlKind::Seek; });
 }
 
 // What consuming each command does to the playing flag and the playhead. processControls() below
@@ -286,10 +310,10 @@ bool MultichannelPlaybackFeeder::processControls() noexcept {
 }
 
 bool MultichannelPlaybackFeeder::mixWithLoop(
-    std::span<float> output, std::size_t frameCount) noexcept {
+    std::span<float> output, std::size_t frameCount, std::size_t& mixedFrames) noexcept {
   std::fill(output.begin(), output.end(), 0.0F);
+  mixedFrames = 0U;
   if (timeline_ == nullptr) return true;
-  std::size_t mixedFrames = 0U;
   while (mixedFrames < frameCount) {
     if (loop_.enabled && playhead_ >= loop_.endFrame) {
       playhead_ = loop_.startFrame;
@@ -337,12 +361,16 @@ std::size_t MultichannelPlaybackFeeder::feedOnce() noexcept {
   }
   const auto frames = std::min(blockFrames_, writable);
   auto output = std::span<float>{scratch_}.first(frames * outputChannels_);
-  if (!mixWithLoop(output, frames)) {
+  std::size_t mixed = 0U;
+  if (!mixWithLoop(output, frames, mixed)) {
     stats_.mixFailures.fetch_add(1U, std::memory_order_relaxed);
     return 0U;
   }
-  stats_.framesMixed.fetch_add(frames, std::memory_order_relaxed);
-  const auto written = ring_.writeFrames(output);
+  stats_.framesMixed.fetch_add(mixed, std::memory_order_relaxed);
+  // Only what was mixed goes to the ring. A silent tail that padded the last block of the audio to
+  // a whole block would put frames in the ring that are not part of the audio, and the ring would
+  // then hold more than the playhead accounts for.
+  const auto written = ring_.writeFrames(output.first(mixed * outputChannels_));
   stats_.framesWritten.fetch_add(written, std::memory_order_relaxed);
   publishState();
   return written;

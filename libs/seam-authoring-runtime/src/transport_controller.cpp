@@ -163,6 +163,9 @@ core::Result<void> TransportController::reconfigure(TransportConfig config) {
   auto currentPlayhead = point.playhead;
   {
     std::lock_guard lock(stateMutex_);
+    // What the feeder had mixed ahead of the device goes with the ring that is replaced. The
+    // position that carries on is the one the creator is at.
+    if (point.playing) currentPlayhead = audiblePlayhead();
     if (timelineEnd_ == time::SampleFrame{0}) {
       wasPlaying = wasPlaying || resumeAfterReconfigure_;
       if (pendingPlayheadValid_) currentPlayhead = pendingPlayhead_;
@@ -329,14 +332,15 @@ core::Result<void> TransportController::publishAudio(
   rendering::PlaybackLoop remappedLoop;
   time::SampleFrame remappedPlayhead{0};
   bool resumeAfterReconfigure = false;
-  // Where the feeder is going to be, not where it last said it was: a Stop that it has not yet
-  // applied has already decided where the replacement starts.
-  const auto current = currentPoint();
   {
     std::lock_guard lock(stateMutex_);
     remappedLoop = remapLoop(loop_, timeline.value()->endFrame());
+    // Where the creator is going to be, not where the feeder last said it was: a Stop that it has
+    // not yet applied has already decided where the replacement starts, and the feeder stands a
+    // ringful of audio ahead of the device. This publication drops that audio, so the replacement
+    // starts where the device is, or the creator would not hear it.
     remappedPlayhead = std::clamp<time::SampleFrame>(
-        pendingPlayheadValid_ ? pendingPlayhead_ : current.playhead, 0,
+        pendingPlayheadValid_ ? pendingPlayhead_ : audiblePlayhead(), 0,
         timeline.value()->endFrame());
     resumeAfterReconfigure = resumeAfterReconfigure_;
   }
@@ -430,6 +434,13 @@ core::Result<void> TransportController::pause() {
   std::lock_guard lifecycleLock(lifecycleMutex_);
   rendering::MultichannelPlaybackFeeder::ControlScript script;
   script.playing(false);
+  {
+    // The feeder drops the audio it has mixed ahead of the device when it pauses, and a play that
+    // follows goes on from its playhead. From where it stands, that would skip the audio the
+    // creator had not heard yet: the pause puts the playhead where they are.
+    std::lock_guard lock(stateMutex_);
+    keepAudiblePosition(script);
+  }
   const auto sent = send(std::move(script));
   if (!sent) return sent;
   std::lock_guard lock(stateMutex_);
@@ -490,6 +501,12 @@ core::Result<void> TransportController::setLoop(
   }
   rendering::MultichannelPlaybackFeeder::ControlScript script;
   script.loop(range);
+  {
+    // A loop change drops the audio the feeder has mixed ahead of the device as a pause does, and
+    // playback goes on from the feeder's playhead.
+    std::lock_guard lock(stateMutex_);
+    keepAudiblePosition(script);
+  }
   const auto result = send(std::move(script));
   if (result) {
     std::lock_guard lock(stateMutex_);
@@ -541,16 +558,46 @@ rendering::PlaybackPoint TransportController::currentPoint() const noexcept {
                                   .playhead = feeder_->playhead()};
 }
 
+time::SampleFrame TransportController::audiblePlayhead() const noexcept {
+  // A command that put the playhead somewhere is waiting for the feeder: playback goes on from
+  // there, whatever the ring still holds of audio from before it.
+  if (queuedIntent_ && queuedIntent_->positionIsExplicit &&
+      feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt) {
+    return queuedIntent_->point.playhead;
+  }
+  const auto playhead = feeder_->playhead();
+  const auto unplayed = ring_->availableReadFrames();
+  // A reset the device has not answered drops what the ring holds: that audio is not going to be
+  // heard, and the feeder has put the playhead where playback goes on.
+  if (ring_->resetPending()) return playhead;
+  return rendering::rewoundPlayhead(playhead, unplayed, loop_);
+}
+
+void TransportController::keepAudiblePosition(
+    rendering::MultichannelPlaybackFeeder::ControlScript& script) const {
+  const auto point = currentPoint();
+  if (!point.playing) return;
+  const auto audible = audiblePlayhead();
+  if (audible != point.playhead) script.seek(audible);
+}
+
 core::Result<void> TransportController::send(
     rendering::MultichannelPlaybackFeeder::ControlScript script) {
   const auto count = static_cast<std::uint64_t>(script.size());
   if (count == 0U) return core::success();
   // Worked out before the script is sent: the feeder may consume it the moment it is queued.
   const auto projected = script.projectedFrom(currentPoint());
+  // Commands that have not been applied yet and put the playhead somewhere keep doing so, whatever
+  // a script that follows them leaves alone.
+  const bool positionIsExplicit =
+      script.seeks() || (queuedIntent_ && queuedIntent_->positionIsExplicit &&
+                         feeder_->acknowledgedCommands() < queuedIntent_->acknowledgedAt);
   auto sent = feeder_->apply(std::move(script));
   if (!sent) return sent;
   queuedCommands_ += count;
-  queuedIntent_ = QueuedIntent{.acknowledgedAt = queuedCommands_, .point = projected};
+  queuedIntent_ = QueuedIntent{.acknowledgedAt = queuedCommands_,
+                               .point = projected,
+                               .positionIsExplicit = positionIsExplicit};
   return core::success();
 }
 
@@ -579,6 +626,7 @@ TransportState TransportController::state() const noexcept {
                                     ? "Render audio before starting transport"
                                     : std::string{},
       .playhead = playhead,
+      .audiblePlayhead = audiblePlayhead(),
       .loop = loop_,
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,

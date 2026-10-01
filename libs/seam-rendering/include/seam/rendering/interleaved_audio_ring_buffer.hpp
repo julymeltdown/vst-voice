@@ -36,6 +36,10 @@ public:
   // after the last reset is kept.
   // Call it only while no thread is inside readFrames(): the consumer's work is not shared.
   [[nodiscard]] bool serviceResetRequest() noexcept;
+  // Whether the producer has asked for a reset that no consumer has answered yet. What the ring
+  // holds is then audio that is going to be dropped unplayed, and not audio that is about to be
+  // heard. Safe to call from any thread.
+  [[nodiscard]] bool resetPending() const noexcept;
   [[nodiscard]] bool lastReadWasReset() const noexcept {
     return lastReadWasReset_.load(std::memory_order_acquire);
   }

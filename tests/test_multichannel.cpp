@@ -303,7 +303,10 @@ TEST_CASE("multichannel feeder stops after non-looping timeline end") {
   seam::rendering::MultichannelPlaybackFeeder feeder{ring, 48000U, 4U, 32U};
   CHECK(feeder.setTimeline(timeline));
   CHECK(feeder.setPlaying(true));
-  CHECK(feeder.feedOnce() == 32U);
+  // The timeline is 20 frames and the block 32: the feeder hands over the 20 frames of audio, not a
+  // block padded with silence that is not part of it.
+  CHECK(feeder.feedOnce() == 20U);
+  CHECK(ring.availableReadFrames() == 20U);
   CHECK(!feeder.playing());
   CHECK(feeder.playhead() == 20);
   CHECK(feeder.feedOnce() == 0U);

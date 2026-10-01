@@ -106,4 +106,9 @@ bool SpscInterleavedAudioRingBuffer::resetAcknowledged(
   return acknowledgedResetEpoch_.load(std::memory_order_acquire) >= epoch;
 }
 
+bool SpscInterleavedAudioRingBuffer::resetPending() const noexcept {
+  return requestedResetEpoch_.load(std::memory_order_acquire) !=
+         acknowledgedResetEpoch_.load(std::memory_order_acquire);
+}
+
 }  // namespace seam::rendering
