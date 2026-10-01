@@ -53,6 +53,14 @@ struct TransportState final {
   // state() reads the count of the commands it has applied before the state that count covers, so
   // a report never pairs the newest count with a playing flag from before the last command.
   bool settled{true};
+  // A Play stands that no consumer has taken up: the creator asked for it, a Pause, a Stop, a
+  // suspension or a clear has not withdrawn it, and the owner of the consumer has not said since
+  // that the consumer runs (see setConsumerRunning). Its audio can be all in the ring already, with
+  // the feeder finished and playing false (a Play asked for within a ring's length of the end of
+  // the song, or one that waited for audio and was carried by the render that came), and then
+  // nothing but this tells the owner to start the consumer. A consumer that ran and stopped has
+  // taken its Play up, and is not started again by it.
+  bool playAwaitsConsumer{false};
 };
 
 class TransportController final {

@@ -221,6 +221,20 @@ struct PlaybackRig final {
   std::vector<float> writeTheSong() {
     addNote(0, 1920, U"\u3053");
     addNote(1920, 1920, U"\u306a");
+    return awaitTheRender();
+  }
+  // A song that fits in the transport's ring: the feeder hands all of it over in one turn, and
+  // reports that it has stopped before anyone has heard any of it. Returns the left channel of the
+  // render the transport holds.
+  std::vector<float> writeAShortSong() {
+    addNote(0, 480, U"\u3053");
+    auto rendered = awaitTheRender();
+    CHECK(rendered.size() > 4000U);
+    CHECK(rendered.size() + 1024U < transport().ringBuffer().capacityFrames());
+    return rendered;
+  }
+  // Waits until the transport holds the render of the document as it is, and returns its left channel.
+  std::vector<float> awaitTheRender() {
     CHECK(waitUntil([this] {
       const auto state = transport().state();
       return state.available &&
@@ -476,11 +490,13 @@ TEST_CASE("standalone playback: a Play that cannot start the device is told to t
 
 namespace {
 
-seam::authoring::TransportState reported(bool playing, bool settled, bool available = true) {
+seam::authoring::TransportState reported(bool playing, bool settled, bool available = true,
+                                         bool playAwaits = false) {
   seam::authoring::TransportState state;
   state.playing = playing;
   state.settled = settled;
   state.available = available;
+  state.playAwaitsConsumer = playAwaits;
   return state;
 }
 
@@ -523,14 +539,49 @@ TEST_CASE("standalone playback policy: a report that does not yet include every 
   CHECK(decideDeviceAction(reported(true, false), 4096U, true, false) == DeviceAction::None);
 }
 
+TEST_CASE("standalone playback policy: a Play that no device has taken up starts the device for the audio the feeder has handed over") {
+  using seam::standalone::DeviceAction;
+  using seam::standalone::decideDeviceAction;
+  // The feeder handed over all of a short song in one turn and reports that it is not playing: the
+  // ring holds the song and nobody has played any of it.
+  CHECK(decideDeviceAction(reported(false, true, true, true), 4096U, true, false) ==
+        DeviceAction::Start);
+  CHECK(decideDeviceAction(reported(false, true, true, true), 1U, true, false) ==
+        DeviceAction::Start);
+  // An empty ring has nothing to start a device for.
+  CHECK(decideDeviceAction(reported(false, true, true, true), 0U, true, false) ==
+        DeviceAction::None);
+  // Nor has a transport with nothing rendered, and a report that does not include every command
+  // says nothing about what the creator asked last.
+  CHECK(decideDeviceAction(reported(false, true, false, true), 4096U, true, false) ==
+        DeviceAction::None);
+  CHECK(decideDeviceAction(reported(false, false, true, true), 4096U, true, false) ==
+        DeviceAction::None);
+  // A device that runs has taken the Play up: it plays the ring out, and is stopped when it has.
+  CHECK(decideDeviceAction(reported(false, true, true, true), 4096U, true, true) ==
+        DeviceAction::None);
+  CHECK(decideDeviceAction(reported(false, true, true, true), 0U, true, true) == DeviceAction::Stop);
+  // The same ring with no Play waiting for a device (one that ran and stopped on its own, or one
+  // that was paused) starts nothing.
+  CHECK(decideDeviceAction(reported(false, true, true, false), 4096U, true, false) ==
+        DeviceAction::None);
+  // A transport that is playing starts a device as it always did, waiting Play or not.
+  CHECK(decideDeviceAction(reported(true, true, true, true), 4096U, true, false) ==
+        DeviceAction::Start);
+  CHECK(decideDeviceAction(reported(true, false, true, true), 4096U, true, false) ==
+        DeviceAction::None);
+}
+
 TEST_CASE("standalone playback policy: with no device there is nothing to start or stop") {
   using seam::standalone::DeviceAction;
   using seam::standalone::decideDeviceAction;
   for (const bool playing : {false, true}) {
     for (const bool settled : {false, true}) {
-      for (const std::size_t buffered : {std::size_t{0U}, std::size_t{4096U}}) {
-        CHECK(decideDeviceAction(reported(playing, settled), buffered, false, false) ==
-              DeviceAction::None);
+      for (const bool awaits : {false, true}) {
+        for (const std::size_t buffered : {std::size_t{0U}, std::size_t{4096U}}) {
+          CHECK(decideDeviceAction(reported(playing, settled, true, awaits), buffered, false,
+                                   false) == DeviceAction::None);
+        }
       }
     }
   }
@@ -960,5 +1011,141 @@ TEST_CASE("standalone audio settings: an edit that lands before the new device h
   const auto rest = rig.playUntilTheAppStopsTheDevice();
   checkRestOfReplacementHeardIs(rest, rendered, heardBefore,
                                 "the rest of the song after a settings change and an edit");
+  CHECK(!rig.device->running());
+}
+
+TEST_CASE("standalone audio settings: a change in the last ring of the song, with no edit, starts the new device once and the rest of the song is heard") {
+  const auto root = seam::test::support::temporaryDirectory("settings-no-edit-new-device-starts");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeTheSong();
+  CHECK(expected.size() > 40000U);
+  const auto heardBefore = changeSettingsDuringTheEndOfTheSong(rig);
+  CHECK(heardBefore < expected.size());
+
+  // The new feeder has handed over the rest of the song and reports that it has stopped, and no
+  // frame has been painted since: it is not playing when a frame looks, and the new device has not
+  // started. The Play that it has not taken up is all that says the creator is waiting to hear the
+  // end of the song.
+  CHECK(!rig.transport().state().playing);
+  CHECK(rig.transport().state().playAwaitsConsumer);
+  CHECK(rig.device->starts() == 0U);
+
+  // Painted frames alone start the device, once, and it plays what the creator had not heard, once
+  // and in order.
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  CHECK(rig.device->starts() == 1U);
+  CHECK(!rig.transport().state().playAwaitsConsumer);
+  const auto rest = rig.playUntilTheAppStopsTheDevice();
+  checkHeardIs(rest, expected, heardBefore,
+               "the rest of the song after a settings change with no edit");
+  CHECK(!rig.device->running());
+  // The song has been played out, and nothing starts the device for it again.
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+  CHECK(rig.device->starts() == 1U);
+}
+
+namespace {
+
+// The feeder hands over a song that fits in the ring in one turn and reports that it has stopped,
+// and with no device running nobody has played any of it. No frame is painted meanwhile, so the
+// first one that is painted finds a transport that is not playing.
+void waitForTheFeederToHandOver(PlaybackRig& rig, std::size_t songFrames) {
+  CHECK(waitUntil([&] {
+    const auto state = rig.transport().state();
+    return state.settled && !state.playing &&
+           rig.transport().ringBuffer().availableReadFrames() >= songFrames;
+  }));
+  CHECK(!rig.device->running());
+}
+
+}  // namespace
+
+TEST_CASE("standalone playback: a Play that only the transport was asked for starts the device, and the song is heard to its end") {
+  // The Transport menu's Play sends the transport a Play and the device nothing (see
+  // StandaloneApplicationController::dispatch, TogglePlayback), so it is the painted frame that
+  // starts the device. A feeder that hands over a song in one turn is never seen playing by a frame.
+  for (const bool shortSong : {true, false}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        shortSong ? "playback-cycle-menu-play-short" : "playback-cycle-menu-play-long");
+    PlaybackRig rig{root};
+    const auto expected = shortSong ? rig.writeAShortSong() : rig.writeTheSong();
+    CHECK(rig.transport().play());
+    CHECK(!rig.device->running());
+    if (shortSong) waitForTheFeederToHandOver(rig, expected.size());
+    CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+    CHECK(rig.device->starts() == 1U);
+    const auto heard = rig.playUntilTheAppStopsTheDevice();
+    checkHeardIs(heard, expected, 0U, shortSong ? "a short song" : "a long song");
+    CHECK(!rig.device->running());
+    CHECK(rig.device->starts() == 1U);
+  }
+}
+
+TEST_CASE("standalone playback: a Pause or a Stop that comes before the device has started takes a waiting Play away") {
+  for (const bool stop : {false, true}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        stop ? "playback-cycle-waiting-play-stop" : "playback-cycle-waiting-play-pause");
+    PlaybackRig rig{root};
+    const auto expected = rig.writeAShortSong();
+    CHECK(rig.transport().play());
+    waitForTheFeederToHandOver(rig, expected.size());
+    CHECK(rig.transport().state().playAwaitsConsumer);
+    // The ring still holds the song when the creator pauses: it is not theirs to hear any more.
+    if (stop) {
+      CHECK(rig.transport().stop());
+    } else {
+      CHECK(rig.transport().pause());
+    }
+    CHECK(!rig.transport().state().playAwaitsConsumer);
+    CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+    CHECK(rig.device->starts() == 0U);
+  }
+}
+
+TEST_CASE("standalone playback: a device that ran for a waiting Play and stopped on its own is not started again for the end of the song") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-waiting-play-served");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeAShortSong();
+  CHECK(rig.transport().play());
+  waitForTheFeederToHandOver(rig, expected.size());
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  CHECK(rig.device->starts() == 1U);
+  std::vector<float> heard;
+  rig.pump(256U, heard);
+  CHECK(heard.size() == 256U);
+
+  // The device stops by itself, as when it is unplugged, with the end of the song still in the
+  // ring. It took the creator's Play up when it ran, and nobody is going to play that end.
+  rig.device->stop();
+  CHECK(!rig.paintUntil([&] { return rig.device->running(); }, 300ms));
+  CHECK(rig.device->starts() == 1U);
+  CHECK(!rig.transport().state().playAwaitsConsumer);
+}
+
+TEST_CASE("standalone playback: a Play that waited for a device that cannot start is told to the creator, and starts it when it can") {
+  const auto root = seam::test::support::temporaryDirectory("playback-cycle-waiting-play-no-device");
+  PlaybackRig rig{root};
+  const auto expected = rig.writeAShortSong();
+  rig.device->failStart = true;
+  CHECK(rig.transport().play());
+  waitForTheFeederToHandOver(rig, expected.size());
+
+  // The frame that starts the device is the one that learns it cannot start, and the creator is
+  // told. The Play is theirs still: no device took it up.
+  CHECK(rig.paintUntil([&] {
+    const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
+    return std::any_of(entries.begin(), entries.end(), [](const auto& entry) {
+      return entry.diagnostic.code == "AUDIO_UNAVAILABLE";
+    });
+  }));
+  CHECK(!rig.device->running());
+  CHECK(rig.transport().state().playAwaitsConsumer);
+
+  // The device works again: the next frame starts it, and the song is heard to its end.
+  rig.device->failStart = false;
+  CHECK(rig.paintUntil([&] { return rig.device->running(); }));
+  CHECK(rig.device->starts() == 1U);
+  const auto heard = rig.playUntilTheAppStopsTheDevice();
+  checkHeardIs(heard, expected, 0U, "a short song after a start that failed");
   CHECK(!rig.device->running());
 }

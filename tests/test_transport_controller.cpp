@@ -2387,6 +2387,95 @@ TEST_CASE("transport_controller_a_play_that_no_consumer_has_taken_up_goes_on_thr
   }
 }
 
+TEST_CASE("transport_controller_says_that_a_play_waits_for_a_consumer_until_one_runs") {
+  // A feeder that has handed over all of a short song reports that it is not playing, and the ring
+  // holds the song for a consumer nobody has started. Only this tells the owner of the consumer that
+  // the creator's Play has not been served.
+  {
+    // Nothing was played, so there is no Play to wait.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    CHECK(controller.start());
+    CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+    CHECK(waitUntil([&] { return controller.state().settled; }));
+    CHECK(!controller.state().playAwaitsConsumer);
+  }
+  {
+    // An owner that never says anything has a consumer that never runs: whatever Play is asked for
+    // stands.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    CHECK(controller.start());
+    CHECK(controller.publishAudio(publishAudio(publication, 1U, 3000U)));
+    CHECK(controller.play());
+    CHECK(controller.state().playAwaitsConsumer);
+  }
+  {
+    // A Play that the owner has told no consumer took up, with every command applied, the feeder
+    // finished, and all of the song in the ring.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 0U, Consumer::NotStartedYet);
+    const auto state = controller.state();
+    CHECK(state.settled);
+    CHECK(state.available);
+    CHECK(!state.playing);
+    CHECK(state.playAwaitsConsumer);
+    CHECK(controller.ringBuffer().availableReadFrames() == 3000U);
+    // It stands through a seek, which asks for nothing else, and through a render that lands.
+    CHECK(controller.seek(500));
+    CHECK(controller.state().playAwaitsConsumer);
+    CHECK(controller.publishAudio(publishAudio(publication, 2U, 4000U)));
+    CHECK(waitUntil([&] { return controller.state().settled; }));
+    CHECK(controller.state().playAwaitsConsumer);
+  }
+  {
+    // A consumer that is running takes a Play up, whether it was started for the Play or was running
+    // when it was asked for, and a consumer that has taken a Play up and stopped does not wait for it
+    // again: the ring holds the end of a song that nobody is going to hear.
+    for (const auto consumer : {Consumer::StartedAfterPlay, Consumer::RunningBeforePlay}) {
+      seam::authoring::RealtimeProjectAudioPublication publication;
+      seam::authoring::TransportController controller{mixedAheadConfig()};
+      endOfTheSongInTheRing(controller, publication, 1000U, consumer);
+      CHECK(!controller.state().playAwaitsConsumer);
+      controller.setConsumerRunning(false);
+      CHECK(!controller.state().playAwaitsConsumer);
+    }
+    // The same for a Play that waited, once the consumer has been started for it.
+    seam::authoring::RealtimeProjectAudioPublication publication;
+    seam::authoring::TransportController controller{mixedAheadConfig()};
+    endOfTheSongInTheRing(controller, publication, 0U, Consumer::NotStartedYet);
+    CHECK(controller.state().playAwaitsConsumer);
+    controller.setConsumerRunning(true);
+    CHECK(!controller.state().playAwaitsConsumer);
+    controller.setConsumerRunning(false);
+    CHECK(!controller.state().playAwaitsConsumer);
+  }
+  {
+    // A Pause, a Stop, a suspension and a clear take the Play away, and a Play that is asked for
+    // after that waits for the consumer as it is then: the bit that was left standing is not a Play.
+    enum class Withdrawal { Pause, Stop, Suspend, Clear };
+    for (const auto withdrawal :
+         {Withdrawal::Pause, Withdrawal::Stop, Withdrawal::Suspend, Withdrawal::Clear}) {
+      seam::authoring::RealtimeProjectAudioPublication publication;
+      seam::authoring::TransportController controller{mixedAheadConfig()};
+      endOfTheSongInTheRing(controller, publication, 0U, Consumer::NotStartedYet);
+      CHECK(controller.state().playAwaitsConsumer);
+      switch (withdrawal) {
+        case Withdrawal::Pause: CHECK(controller.pause()); break;
+        case Withdrawal::Stop: CHECK(controller.stop()); break;
+        case Withdrawal::Suspend: CHECK(controller.suspend(false)); break;
+        case Withdrawal::Clear: CHECK(controller.clearAudio()); break;
+      }
+      CHECK(!controller.state().playAwaitsConsumer);
+      CHECK(waitUntil([&] { return controller.state().settled; }));
+      CHECK(!controller.state().playAwaitsConsumer);
+      CHECK(controller.play());
+      CHECK(controller.state().playAwaitsConsumer);
+    }
+  }
+}
+
 TEST_CASE("transport_controller_a_publication_decides_what_the_creator_hears_before_it_asks_where_the_creator_is") {
   // The consumer plays the rest of the end of the song while the publication reads where it is, so
   // that by the time the place is known the ring is empty. The creator was hearing the end when the

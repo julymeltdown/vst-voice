@@ -805,6 +805,9 @@ TransportState TransportController::state() const noexcept {
       .publishedRevision = publishedRevision_,
       .timelineEnd = timelineEnd_,
       .settled = acknowledged >= queuedCommands_,
+      .playAwaitsConsumer =
+          playRequested_ &&
+          (consumer_.load(std::memory_order_acquire) & kPlayAwaitsConsumer) != 0U,
   };
 }
 
