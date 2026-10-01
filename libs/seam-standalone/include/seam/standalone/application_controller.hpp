@@ -119,6 +119,10 @@ struct StandaloneApplicationControllerConfig final {
   // A surface that owns a command while it is on screen (the VOICE workspace's Voice Designer owns
   // Undo and Redo) handles it here first; returning nothing leaves the command to this controller.
   std::function<std::optional<core::Result<void>>(platform::ApplicationCommand)> interceptCommand;
+  // The clock the autosave policy reads (when a change counts toward the next snapshot, and when the
+  // interval has passed). Empty in the shipping app, which reads the steady clock. A test moves it by
+  // hand, so that an interval of a minute does not have to be waited out.
+  std::function<std::chrono::steady_clock::time_point()> clock;
 };
 
 class StandaloneApplicationController final
@@ -330,11 +334,15 @@ public:
   [[nodiscard]] core::Result<voicebank::VoicebankCoverageReport>
   selectedRegionCoverage() const;
   [[nodiscard]] core::Result<void> onDocumentChanged(
-      std::chrono::steady_clock::time_point now =
-          std::chrono::steady_clock::now());
-  [[nodiscard]] core::Result<void> tickAutosave(
-      std::chrono::steady_clock::time_point now =
-          std::chrono::steady_clock::now());
+      std::chrono::steady_clock::time_point now);
+  // The same, at the controller's own clock.
+  [[nodiscard]] core::Result<void> onDocumentChanged();
+  [[nodiscard]] core::Result<void> tickAutosave(std::chrono::steady_clock::time_point now);
+  // The periodic autosave check, at the controller's own clock. A host calls it from its frames.
+  [[nodiscard]] core::Result<void> tickAutosave();
+  // When tickAutosave() next has work (see AutosaveService::nextTickDue), at the controller's own
+  // clock. A host that paints only on request has to ask for a frame then.
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> autosaveDue() const noexcept;
   [[nodiscard]] core::Result<std::vector<authoring::RecoveryCandidate>>
   recoveryCandidates() const;
   [[nodiscard]] core::Result<void> recover(
@@ -360,6 +368,8 @@ private:
 
   [[nodiscard]] core::Result<void> initialize();
   [[nodiscard]] core::Result<bool> confirmDestructiveAction();
+  // The autosave policy's clock: the configured one, or the steady clock.
+  [[nodiscard]] std::chrono::steady_clock::time_point now() const;
   [[nodiscard]] core::Result<bool> chooseAndSaveAs();
   [[nodiscard]] core::Result<void> openPath(
       const std::filesystem::path& path);

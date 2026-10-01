@@ -129,8 +129,10 @@ public:
   [[nodiscard]] virtual bool wantsClose() const noexcept = 0;
   // A time (steady clock) at which the client wants a frame although nothing requested one, such as
   // a tooltip whose hover delay ends then, or the protagonist's idle breath, which is asked for at
-  // its own pace and not at the display's rate. A window that paints only on request checks it while
-  // it waits for events; nothing means no frame is due.
+  // its own pace and not at the display's rate, or periodic work that its frames do (the standalone
+  // app's autosave interval). A window that paints only on request checks it while it waits for
+  // events; nothing means no frame is due. A client whose frames do periodic work must say so here,
+  // because a window that has nothing to animate runs no frame of its own accord.
   [[nodiscard]] virtual std::optional<std::chrono::steady_clock::time_point> nextFrameDue()
       const noexcept {
     return std::nullopt;

@@ -153,6 +153,8 @@ public:
       std::string_view id, std::string_view value) override;
   [[nodiscard]] bool requestClose() noexcept override;
   [[nodiscard]] bool wantsClose() const noexcept override;
+  // The shell's deadline (a waiting tooltip, the idle breath) and the owner thread's time-driven work
+  // that a frame does: the autosave tick of a document that has unsaved changes.
   [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue()
       const noexcept override;
 

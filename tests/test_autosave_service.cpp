@@ -167,6 +167,44 @@ TEST_CASE("autosave_service_triggers_at_command_and_interval_thresholds") {
   CHECK(service.discover().value().size() == 2U);
 }
 
+TEST_CASE("autosave_service_says_when_its_tick_next_has_work") {
+  const auto root = seam::test::support::temporaryDirectory("autosave-due");
+  auto fixture = makeFixture();
+  seam::authoring::AutosaveService service({
+      .root = root,
+      .interval = std::chrono::seconds{60},
+      .commandThreshold = 25U,
+      .minimumCommandDelay = std::chrono::seconds{15},
+      .maximumGenerations = 5U,
+      .faultInjector = {},
+      .wallClock = {},
+  });
+  const auto start = std::chrono::steady_clock::time_point{};
+  // Nothing is unsaved, so there is nothing to wait for.
+  CHECK(!service.nextTickDue(fixture.document).has_value());
+  // After an edit a snapshot is due one interval after the last request, and none was requested yet.
+  CHECK(fixture.document.execute(move(fixture.noteId, seam::time::Tick{0},
+                                      seam::time::Tick{240})));
+  CHECK(service.nextTickDue(fixture.document) == start + std::chrono::seconds{60});
+  // A tick before that time does nothing, and the deadline stays where it was.
+  CHECK(service.tick(fixture.document, start + std::chrono::seconds{59}));
+  CHECK(service.nextTickDue(fixture.document) == start + std::chrono::seconds{60});
+  // At or after it the tick requests a snapshot, and the deadline moves a whole interval on from the
+  // time of that request, not from the time it was due.
+  CHECK(service.tick(fixture.document, start + std::chrono::seconds{75}));
+  CHECK(service.nextTickDue(fixture.document) == start + std::chrono::seconds{135});
+  CHECK(service.flush());
+  CHECK(service.discover().value().size() == 1U);
+  // A run of commands that asks for a snapshot counts the same way.
+  for (std::size_t index = 0; index < 25U; ++index)
+    CHECK(service.onSuccessfulCommand(fixture.document, start + std::chrono::seconds{100}));
+  CHECK(service.nextTickDue(fixture.document) == start + std::chrono::seconds{160});
+  CHECK(service.flush());
+  // A document that has been saved has nothing to wait for, whatever the clock says.
+  fixture.document.markSaved(root / "saved.seam", "hash");
+  CHECK(!service.nextTickDue(fixture.document).has_value());
+}
+
 TEST_CASE("autosave_service_keeps_only_five_newest_generations") {
   const auto root = seam::test::support::temporaryDirectory("autosave-prune");
   auto fixture = makeFixture();

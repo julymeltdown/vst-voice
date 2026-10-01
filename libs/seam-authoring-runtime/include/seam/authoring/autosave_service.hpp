@@ -60,6 +60,13 @@ public:
       const ProjectDocument& document,
       std::chrono::steady_clock::time_point now =
           std::chrono::steady_clock::now());
+  // When tick() next has something to do: nothing for a document with no unsaved change, and
+  // otherwise one interval after the last request. A time that has passed means a request is due at
+  // once. A host that paints only on request calls tick() from its frames, so it has to ask for a
+  // frame at this time: no animation or event does it. Like tick() and onSuccessfulCommand(), it is
+  // for the thread that owns the document.
+  [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextTickDue(
+      const ProjectDocument& document) const noexcept;
   [[nodiscard]] core::Result<void> flush();
   [[nodiscard]] core::Result<std::vector<RecoveryCandidate>> discover() const;
   [[nodiscard]] core::Result<void> recover(

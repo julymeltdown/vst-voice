@@ -62,6 +62,23 @@ public:
   }
 };
 
+// A window that paints nothing and counts the frames the app asks it for, so a test can pump frames
+// the way the native window does: when one was requested, and when the app's deadline has passed.
+class FrameCounter final : public seam::native_ui::INativeWindow {
+public:
+  seam::core::Result<void> open(const seam::native_ui::NativeWindowConfig&,
+                                seam::native_ui::INativeWindowClient&) override {
+    return seam::core::success();
+  }
+  int run() override { return 0; }
+  void requestRepaint() noexcept override { requests.fetch_add(1U); }
+  void beginTextInput(const seam::native_ui::TextInputRequest&) override {}
+  void endTextInput() noexcept override {}
+  seam::native_ui::PixelSurface snapshot() const override { return seam::native_ui::PixelSurface{1U, 1U}; }
+  std::string backendName() const override { return "frame-counter"; }
+  std::atomic<std::uint64_t> requests{0U};
+};
+
 struct JourneyApp final {
   std::unique_ptr<seam::standalone::NativeEditorApp> app;
   JourneyDialog* dialog{nullptr};
@@ -134,6 +151,25 @@ struct JourneyApp final {
 std::string lyricOf(seam::domain::VocalRegion& region, const seam::domain::Note& note) {
   const auto* lyric = region.findLyric(note.lyricTokenId);
   return lyric == nullptr ? std::string{} : seam::domain::toUtf8(lyric->surface);
+}
+
+// The snapshots the autosave service has written for an app created on this test root (whose data
+// directory is Data), counting only those taken at this document revision when one is given. A
+// snapshot is a project file and a metadata file beside it, written last, so it counts once it is
+// complete.
+std::size_t autosaveSnapshots(const std::filesystem::path& testRoot,
+                              const std::string& revision = {}) {
+  const auto marker = revision.empty() ? std::string{"revision-"} : "revision-" + revision + "-";
+  const auto autosaves = testRoot / "Data" / "Autosaves";
+  std::error_code error;
+  if (!std::filesystem::is_directory(autosaves, error)) return 0U;
+  std::size_t count = 0U;
+  for (std::filesystem::recursive_directory_iterator it{autosaves, error}, end;
+       !error && it != end; it.increment(error)) {
+    const auto name = it->path().filename().string();
+    if (name.starts_with(marker) && name.ends_with(".meta.json")) ++count;
+  }
+  return count;
 }
 
 }  // namespace
@@ -456,20 +492,6 @@ TEST_CASE("sing shell journey: after detachWindow no render or envelope worker t
 
 TEST_CASE("sing shell journey: a settled window asks for no frame, and an idle singer asks for one a breath at a time") {
   if (!seam::native_ui::paint::vectorBackendAvailable()) return;
-  class FrameCounter final : public seam::native_ui::INativeWindow {
-  public:
-    seam::core::Result<void> open(const seam::native_ui::NativeWindowConfig&,
-                                  seam::native_ui::INativeWindowClient&) override {
-      return seam::core::success();
-    }
-    int run() override { return 0; }
-    void requestRepaint() noexcept override { requests.fetch_add(1U); }
-    void beginTextInput(const seam::native_ui::TextInputRequest&) override {}
-    void endTextInput() noexcept override {}
-    seam::native_ui::PixelSurface snapshot() const override { return seam::native_ui::PixelSurface{1U, 1U}; }
-    std::string backendName() const override { return "frame-counter"; }
-    std::atomic<std::uint64_t> requests{0U};
-  };
   using Clock = std::chrono::steady_clock;
   const auto breath = std::chrono::duration_cast<Clock::duration>(
       std::chrono::duration<double>(seam::native_ui::design::CharacterAnimator::kBreathFrameSeconds));
@@ -491,7 +513,7 @@ TEST_CASE("sing shell journey: a settled window asks for no frame, and an idle s
       std::this_thread::sleep_for(5ms);
     }
     // Nothing is going on now. However many frames are painted, none asks for the next: a window
-    // that did would repaint at the display's rate for ever. Under Reduce Motion nothing is due
+    // that did would repaint at the display's rate for ever. Under Reduce Motion no animation is due
     // either; otherwise the breath is, a breath after the frame that painted it.
     for (int frame = 0; frame < 30; ++frame) {
       *now += 30ms;
@@ -500,7 +522,11 @@ TEST_CASE("sing shell journey: a settled window asks for no frame, and an idle s
       CHECK(window.requests.load() == before);
       const auto due = f.app->nextFrameDue();
       if (reduceMotion) {
-        CHECK(!due.has_value());
+        // What a frame is still due for is the autosave of a document with unsaved changes, and only
+        // that. Nothing has been requested yet, so it is due one interval after the clock's zero.
+        const auto unsaved = f.app->authoring().runtime().document().dirty();
+        CHECK(due.has_value() == unsaved);
+        if (due.has_value()) CHECK(*due == Clock::time_point{} + 60s);
       } else {
         CHECK(due.has_value());
         CHECK(due == *now + breath);
@@ -509,4 +535,128 @@ TEST_CASE("sing shell journey: a settled window asks for no frame, and an idle s
     f.app->detachWindow();
     f.app->shutdownAudio();
   }
+}
+
+TEST_CASE("sing shell journey: an edited document is autosaved by a window that has nothing to animate") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using Clock = std::chrono::steady_clock;
+  const auto root = seam::test::support::temporaryDirectory("journey-idle-autosave");
+  // Under Reduce Motion nothing animates, so once the window has settled no frame is asked for, and
+  // the autosave tick that a frame does runs only if the app says when it is due. The interval counts
+  // on the clock that the animation reads, which the test moves by hand: no minute is waited out.
+  const auto now = std::make_shared<Clock::time_point>(Clock::time_point{} + 10s);
+  JourneyApp f{root, {}, true, [now] { return *now; }};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  FrameCounter window;
+  f.app->setWindow(window);
+  // The window is detached before it is destroyed, whatever way the test ends.
+  struct Detach final {
+    JourneyApp& journey;
+    ~Detach() {
+      journey.app->detachWindow();
+      journey.app->shutdownAudio();
+    }
+  } detach{f};
+  f.paint();
+  seam::native_ui::RasterCanvas canvas{f.surface, 1.0};
+  for (int frame = 0; frame < 20; ++frame) {
+    *now += 50ms;
+    f.app->paint(canvas);
+    std::this_thread::sleep_for(5ms);
+  }
+  // What the native window's loop does between events: it paints a frame when one was asked for and
+  // when the app's own deadline has passed, and otherwise paints none. Returns how many it painted.
+  const auto pump = [&] {
+    int frames = 0;
+    while (frames < 100) {
+      const bool asked = window.requests.exchange(0U) != 0U;
+      const auto due = f.app->nextFrameDue();
+      if (!asked && !(due.has_value() && *due <= *now)) break;
+      static_cast<void>(f.app->paintFrame(canvas));
+      ++frames;
+    }
+    return frames;
+  };
+  const auto showing = [&f] {
+    const auto* node = f.find("shell.waveform");
+    return node != nullptr && node->value == "Showing the current render";
+  };
+  // Paints what is asked for, with real time passing so that the render and envelope workers can
+  // publish, until the render is on show and the window asks for nothing more.
+  const auto settle = [&] {
+    const auto limit = Clock::now() + 60s;
+    int quiet = 0;
+    while (Clock::now() < limit && !(quiet >= 10 && showing())) {
+      *now += 1ms;
+      quiet = pump() == 0 ? quiet + 1 : 0;
+      std::this_thread::sleep_for(20ms);
+    }
+    CHECK(showing());
+    CHECK(quiet >= 10);
+  };
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  if (grid == nullptr) return;
+  const auto gridBounds = grid->bounds;
+  const auto addKo = [&](double x) {
+    f.doubleClick({gridBounds.x + x, gridBounds.y + gridBounds.height * 0.5});
+    f.paint();
+    for (const auto& note : f.region()->notes) {
+      if (lyricOf(*f.region(), note) == "\u3053") continue;
+      CHECK(f.app->dispatchAccessibility("note." + note.id.toString(), SemanticAction::EditText));
+      f.app->textCommit(U"\u3053");
+      f.paint();
+      return;
+    }
+  };
+  const auto revisionOf = [&f] {
+    return std::to_string(f.app->authoring().runtime().document().session().revision());
+  };
+  // The service writes on its own thread, in real time.
+  const auto snapshotAppears = [&](const std::string& revision) {
+    const auto limit = Clock::now() + 60s;
+    while (autosaveSnapshots(root, revision) == 0U && Clock::now() < limit)
+      std::this_thread::sleep_for(20ms);
+    return autosaveSnapshots(root, revision) != 0U;
+  };
+
+  // 1. A phrase is written, and the window is left alone. Its first snapshot is due one interval
+  // after the clock's zero, which nothing animating or asking would bring a frame to.
+  addKo(240.0);
+  settle();
+  CHECK(f.app->authoring().runtime().document().dirty());
+  const auto first = revisionOf();
+  const auto due = f.app->nextFrameDue();
+  CHECK(due.has_value());
+  if (!due.has_value()) return;
+  CHECK(*due > *now);
+  CHECK(*due <= *now + 60s);
+  CHECK(autosaveSnapshots(root) == 0U);
+  CHECK(pump() == 0);
+  *now = *due - 1s;
+  CHECK(pump() == 0);
+  CHECK(autosaveSnapshots(root) == 0U);
+  *now = *due + 1s;
+  CHECK(pump() == 1);
+  CHECK(snapshotAppears(first));
+
+  // 2. The deadline then moves a whole interval on from the frame that took the snapshot, and an edit
+  // made after it reaches a snapshot the same way, with nobody touching the window.
+  const auto tickedAt = *now;
+  CHECK(f.app->nextFrameDue() == tickedAt + 60s);
+  addKo(600.0);
+  settle();
+  const auto second = revisionOf();
+  CHECK(second != first);
+  CHECK(f.app->nextFrameDue() == tickedAt + 60s);
+  *now = tickedAt + 59s;
+  CHECK(pump() == 0);
+  CHECK(autosaveSnapshots(root, second) == 0U);
+  *now = tickedAt + 61s;
+  CHECK(pump() == 1);
+  CHECK(snapshotAppears(second));
+  CHECK(f.app->nextFrameDue() == tickedAt + 121s);
+  *now = tickedAt + 120s;
+  CHECK(pump() == 0);
 }

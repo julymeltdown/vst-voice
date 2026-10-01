@@ -2660,9 +2660,26 @@ core::Result<void> StandaloneApplicationController::onDocumentChanged(
   return recorded;
 }
 
+core::Result<void> StandaloneApplicationController::onDocumentChanged() {
+  return onDocumentChanged(now());
+}
+
 core::Result<void> StandaloneApplicationController::tickAutosave(
     std::chrono::steady_clock::time_point now) {
   return autosave_.tick(session_.runtime().document(), now);
+}
+
+core::Result<void> StandaloneApplicationController::tickAutosave() {
+  return tickAutosave(now());
+}
+
+std::optional<std::chrono::steady_clock::time_point>
+StandaloneApplicationController::autosaveDue() const noexcept {
+  return autosave_.nextTickDue(session_.runtime().document());
+}
+
+std::chrono::steady_clock::time_point StandaloneApplicationController::now() const {
+  return config_.clock ? config_.clock() : std::chrono::steady_clock::now();
 }
 
 core::Result<std::vector<authoring::RecoveryCandidate>>

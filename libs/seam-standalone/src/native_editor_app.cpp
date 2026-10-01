@@ -727,6 +727,9 @@ core::Result<void> NativeEditorApp::initialize() {
               return std::nullopt;
             return shell_.routeUndo(command == platform::ApplicationCommand::Redo);
           },
+          // The autosave interval counts on the clock the animation reads, so a test that moves one
+          // moves both. Empty in the shipping app.
+          .clock = config_.uiClock,
       },
       [this] { closeRequested_.store(true, std::memory_order_release); });
   if (!application) return core::Result<void>{application.error()};
@@ -2044,7 +2047,17 @@ std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameD
     const noexcept {
   // The shipping app injects no UI clock, so the shell reads the steady clock and its time is the
   // window's; only a test moves it by hand (NativeEditorAppConfig::uiClock).
-  return shell_.nextFrameDue();
+  auto due = shell_.nextFrameDue();
+  // paint() also does the owner thread's time-driven work, and a window that paints only on request
+  // paints for it only if it is asked to. Today that work is the autosave tick: with nothing
+  // animating (Reduce Motion, a held pose) no frame would ever run it, and a document edited and then
+  // left alone would not be saved again however long it stayed open. Work that a worker finishes asks
+  // for its own frame when it has published (progressChanged, stateChanged).
+  if (applicationController_ != nullptr && authoring_ != nullptr) {
+    if (const auto autosave = applicationController_->autosaveDue(); autosave.has_value())
+      due = due.has_value() ? std::min(*due, *autosave) : *autosave;
+  }
+  return due;
 }
 
 platform::AudioDeviceInfo NativeEditorApp::audioInfo() const {

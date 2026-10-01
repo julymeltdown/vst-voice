@@ -220,6 +220,12 @@ core::Result<void> AutosaveService::tick(
   return request(document);
 }
 
+std::optional<std::chrono::steady_clock::time_point> AutosaveService::nextTickDue(
+    const ProjectDocument& document) const noexcept {
+  if (!document.dirty()) return std::nullopt;
+  return lastRequestedAt_ + config_.interval;
+}
+
 core::Result<void> AutosaveService::flush() {
   std::unique_lock lock(mutex_);
   condition_.wait(lock, [this] { return !pending_.has_value() && !writing_; });
