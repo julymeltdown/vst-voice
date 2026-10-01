@@ -28,8 +28,10 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -174,6 +176,67 @@ private:
   std::shared_ptr<MicrophoneScript> script_;
 };
 
+// An audition output the test controls, as the microphone above is. It plays nothing. It can refuse to
+// open, as a device that has gone away does, and it can refuse to say that it has stopped, as a platform
+// whose stop returns an error does: the device is then still the audition's, and still running.
+struct OutputScript final {
+  platform::IAudioProcessor* processor{nullptr};
+  platform::AudioDeviceInfo info{};
+  bool running{false};
+  bool failOpen{false};
+  bool failStop{false};
+  bool destroyed{false};
+  unsigned opens{0U};
+  unsigned starts{0U};
+  unsigned stops{0U};
+  std::uint64_t callbacks{0U};
+};
+
+class ScriptedOutput final : public platform::IAudioDevice {
+public:
+  explicit ScriptedOutput(std::shared_ptr<OutputScript> script) : script_(std::move(script)) {}
+  ~ScriptedOutput() override {
+    // The last attempt every device makes, whatever it answers.
+    static_cast<void>(stop());
+    script_->destroyed = true;
+    script_->processor = nullptr;
+  }
+  core::Result<void> open(const platform::AudioDeviceConfig& config,
+                          platform::IAudioProcessor& processor) override {
+    ++script_->opens;
+    if (script_->failOpen)
+      return core::failure(core::ErrorCode::IoError, "scripted audition output will not open");
+    script_->processor = &processor;
+    script_->info = {.backend = "harness-output", .deviceId = "harness-output",
+                     .deviceName = "harness output", .sampleRate = config.sampleRate,
+                     .blockFrames = config.blockFrames, .outputChannels = config.outputChannels,
+                     .physical = false};
+    return core::success();
+  }
+  core::Result<void> start() override {
+    script_->running = true;
+    ++script_->starts;
+    return core::success();
+  }
+  core::Result<void> stop() noexcept override {
+    ++script_->stops;
+    if (script_->running && script_->failStop)
+      return core::failure(core::ErrorCode::IoError, "scripted audition output did not stop");
+    script_->running = false;
+    return core::success();
+  }
+  bool running() const noexcept override { return script_->running; }
+  platform::AudioDeviceInfo info() const override { return script_->info; }
+  // One callback per look while it runs, so the session sees progress without a clock.
+  platform::AudioDeviceStats stats() const noexcept override {
+    if (script_->running) ++script_->callbacks;
+    return {.callbacks = script_->callbacks};
+  }
+
+private:
+  std::shared_ptr<OutputScript> script_;
+};
+
 struct Launch final {
   std::filesystem::path document;
   std::filesystem::path application;
@@ -198,7 +261,8 @@ public:
   std::unique_ptr<voicebank_studio_native::IVoicebankStudioApp> app;
 
   explicit StudioHarness(std::filesystem::path root,
-                         std::shared_ptr<MicrophoneScript> microphone = nullptr)
+                         std::shared_ptr<MicrophoneScript> microphone = nullptr,
+                         std::function<std::unique_ptr<platform::IAudioDevice>()> audioDevice = {})
       : root_(std::move(root)), singers_(root_ / "singers"), banks_(root_ / "voicebanks"),
         editor_(root_ / "Project SEAM.app") {
     std::filesystem::create_directories(singers_);
@@ -206,6 +270,8 @@ public:
     voicebank_studio_native::StudioPlatform hooks;
     hooks.fileDialog = [script = dialogs] { return std::make_unique<ScriptedDialog>(script); };
     hooks.audioDevice = [] { return platform::createThreadedAudioDevice(); };
+    // A silent threaded device unless a test brings its own.
+    if (audioDevice) hooks.audioDevice = std::move(audioDevice);
     if (microphone) {
       hooks.recordingInput.physical = [microphone] {
         return std::make_unique<ScriptedMicrophone>(microphone);
@@ -1193,4 +1259,102 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
   CHECK(reopened.app->productionQueues().markerReview == 2U);
   CHECK(reopened.app->productionQueues().missing == missing - 2U);
   CHECK(microphone->opens == 4U);
+}
+
+TEST_CASE("Voicebank Studio names the audition that plays, and one that cannot replace it changes neither the name nor the answer") {
+  const auto root = test::support::temporaryDirectory("studio-audition-stop-refused");
+  std::vector<std::shared_ptr<OutputScript>> outputs;
+  bool refuseToOpen = false;
+  StudioHarness studio{root, nullptr, [&] {
+    auto script = std::make_shared<OutputScript>();
+    script->failOpen = refuseToOpen;
+    outputs.push_back(script);
+    return std::make_unique<ScriptedOutput>(script);
+  }};
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+  studio.resize(1100.0, 720.0);
+  CHECK(studio.activate("new").hasValue());
+  // The starter's vowel is rendered and kept as A; then the voice changes, and its vowel is B.
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+  studio.key(NativeKey::B, {.command = true});
+  CHECK(studio.node("reference-state").has_value());
+  const auto original = studio.value("control.0");
+  CHECK(studio.setValue("control.0", original == "0.550000" ? "0.65" : "0.55").hasValue());
+  CHECK(studio.value("control.0") != original);
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+  CHECK(outputs.empty());
+
+  // A device that will not open: nothing plays, so nothing is named, and the creator is told.
+  refuseToOpen = true;
+  studio.key(NativeKey::Space, {});
+  CHECK(outputs.size() == 1U);
+  if (outputs.size() != 1U) return;
+  CHECK(outputs.front()->opens == 1U);
+  CHECK(outputs.front()->starts == 0U);
+  CHECK(outputs.front()->destroyed);
+  CHECK(studio.app->lastError() == "scripted audition output will not open");
+  CHECK(studio.value("audition-state") == "Vowel ready");
+  refuseToOpen = false;
+
+  // The same key with a device that opens: B plays and is named, and the error is gone.
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.value("audition-state") == "CURRENT B / NOT APPROVED");
+  CHECK(studio.app->lastError().empty());
+  CHECK(outputs.size() == 2U);
+  if (outputs.size() != 2U) return;
+  const auto playingB = outputs[1];
+  CHECK(playingB->running);
+
+  // The platform does not say that B's device stopped. Asking for A is refused: B is still playing
+  // and is still B, the device made for A never opened, and the action answers with the failure.
+  playingB->failStop = true;
+  const auto refusedA = studio.activate("play-reference");
+  CHECK(!refusedA.hasValue());
+  if (!refusedA.hasValue()) CHECK(refusedA.error().message == "scripted audition output did not stop");
+  CHECK(studio.value("audition-state") == "CURRENT B / NOT APPROVED");
+  CHECK(studio.app->lastError() == "scripted audition output did not stop");
+  CHECK(playingB->running);
+  CHECK(!playingB->destroyed);
+  CHECK(outputs.size() == 3U);
+  if (outputs.size() != 3U) return;
+  CHECK(outputs[2]->opens == 0U);
+  CHECK(outputs[2]->destroyed);
+
+  // Space is a stop while something plays, and it asks again. A device that still does not stop
+  // keeps its name and the error; one that stops lets go of both.
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.value("audition-state") == "CURRENT B / NOT APPROVED");
+  CHECK(studio.app->lastError() == "scripted audition output did not stop");
+  CHECK(playingB->running);
+  playingB->failStop = false;
+  studio.key(NativeKey::Space, {});
+  CHECK(!playingB->running);
+  CHECK(playingB->destroyed);
+  CHECK(studio.value("audition-state") == "Vowel ready");
+  CHECK(studio.app->lastError().empty());
+
+  // With nothing playing, A is asked for and named. Then the same refusal the other way round:
+  // asking for B while A plays leaves A named, and the answer is the failure.
+  CHECK(studio.activate("play-reference").hasValue());
+  CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  const auto playingA = outputs.back();
+  CHECK(playingA->running);
+  playingA->failStop = true;
+  const auto refusedB = studio.activate("play-current");
+  CHECK(!refusedB.hasValue());
+  CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  CHECK(studio.app->lastError() == "scripted audition output did not stop");
+  CHECK(playingA->running);
+  CHECK(!playingA->destroyed);
+  // It goes when the platform lets it, and B replaces it.
+  playingA->failStop = false;
+  CHECK(studio.activate("play-current").hasValue());
+  CHECK(studio.value("audition-state") == "CURRENT B / NOT APPROVED");
+  CHECK(studio.app->lastError().empty());
+  CHECK(playingA->destroyed);
+  CHECK(outputs.back()->running);
 }

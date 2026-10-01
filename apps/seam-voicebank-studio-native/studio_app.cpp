@@ -804,6 +804,53 @@ public:
     return started;
   }
 
+  // Starts the audio the Designer has ready and names it once it plays. The audition that plays now
+  // goes first, and when its device does not say that it has stopped it is still the audition: the
+  // start is refused, nothing is replaced, and the label of what plays stays what it was. Only a
+  // start that succeeded names the audio it started.
+  seam::core::Result<void> playDesignerAudio(
+      const std::shared_ptr<const seam::voicebank::AudioBuffer>& audio, std::string label) {
+    if (!audio) return seam::core::failure(seam::core::ErrorCode::InvalidState, "No audition audio is ready");
+    const auto started = audition_.start(platform_.audioDevice(), audio, 0U, audio->frameCount(), 0.25F);
+    if (started) auditionStatus_ = std::move(label);
+    return started;
+  }
+  // What Space means in the Designer: render the audio the modifiers name when it is not ready, and
+  // play it when it is. The result is the answer to whoever asked: the key handler shows it, and the
+  // accessibility actions return it.
+  seam::core::Result<void> designerSpace(const seam::native_ui::KeyEvent& event) {
+    if (event.modifiers.primaryShortcut()) {
+      if (const auto plosive=selectedDesignerPlosive()) {
+        using Mode=seam::native_ui::PlosiveAuditionMode;
+        const auto mode=event.modifiers.alt?Mode::VowelStop:event.modifiers.shift?Mode::StopVowel:Mode::Source;
+        if (!designer_.plosiveAudio() || designer_.plosiveAudioIndex()!=plosive || designer_.plosiveAudioMode()!=mode)
+          return designer_.beginPlosiveAudition(*plosive,mode);
+        return playDesignerAudio(designer_.plosiveAudio(), mode==Mode::VowelStop?"SELECTED VOWEL + STOP / NOT APPROVED":mode==Mode::StopVowel?"STOP + SELECTED VOWEL / NOT APPROVED":"PLOSIVE SOURCE / 50 ms CLOSURE / NOT APPROVED");
+      }
+      const auto index = selectedDesignerFrication();
+      if (!index) {
+        if (const auto phone=selectedDesignerArticulation()) {
+          if (!designer_.articulationAudio() || designer_.articulationAudioPhone()!=phone)
+            return designer_.beginArticulationAudition(*phone);
+          return playDesignerAudio(designer_.articulationAudio(), *phone+" + SELECTED VOWEL / NOT APPROVED");
+        }
+        return seam::core::failure(seam::core::ErrorCode::InvalidState,"Select an auditionable vowel or source articulation first");
+      }
+      using Mode=seam::native_ui::FricationAuditionMode;
+      const auto mode=event.modifiers.alt?Mode::VowelFrication:event.modifiers.shift?Mode::FricationVowel:Mode::Source;
+      if (!designer_.fricationAudio() || designer_.fricationAudioIndex() != index || designer_.fricationAudioMode()!=mode)
+        return designer_.beginFricationAudition(*index,mode);
+      return playDesignerAudio(designer_.fricationAudio(), fricationPreviewDescription()+" / NOT APPROVED");
+    }
+    if (event.modifiers.shift) {
+      if (!designer_.referenceMatchesSelection())
+        return seam::core::failure(seam::core::ErrorCode::Conflict, "Pin a reference and match its pose/style/pitch before A/B playback");
+      return playDesignerAudio(designer_.auditionReference()->audio, "REFERENCE A / NOT APPROVED");
+    }
+    if (!designer_.auditionAudio()) return designer_.beginAudition();
+    return playDesignerAudio(designer_.auditionAudio(), "CURRENT B / NOT APPROVED");
+  }
+
   void designerKey(const seam::native_ui::KeyEvent& event) {
     designerSemanticFocus_.clear();
     using Key = seam::native_ui::NativeKey;
@@ -826,53 +873,7 @@ public:
       else if (designer_.model()) record(designer_.pinAuditionReference(designer_.epoch(), designer_.model()->revision()));
       return;
     }
-    if (event.key == Key::Space) {
-      if (event.modifiers.primaryShortcut()) {
-        if (const auto plosive=selectedDesignerPlosive()) {
-          using Mode=seam::native_ui::PlosiveAuditionMode;
-          const auto mode=event.modifiers.alt?Mode::VowelStop:event.modifiers.shift?Mode::StopVowel:Mode::Source;
-          if (!designer_.plosiveAudio() || designer_.plosiveAudioIndex()!=plosive || designer_.plosiveAudioMode()!=mode) { record(designer_.beginPlosiveAudition(*plosive,mode)); return; }
-          const auto& audio=designer_.plosiveAudio();
-          record(audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F));
-          if (audition_.active()) auditionStatus_=mode==Mode::VowelStop?"SELECTED VOWEL + STOP / NOT APPROVED":mode==Mode::StopVowel?"STOP + SELECTED VOWEL / NOT APPROVED":"PLOSIVE SOURCE / 50 ms CLOSURE / NOT APPROVED";
-          return;
-        }
-        const auto index = selectedDesignerFrication();
-        if (!index) {
-          if (const auto phone=selectedDesignerArticulation()) {
-            if (!designer_.articulationAudio() || designer_.articulationAudioPhone()!=phone) {
-              record(designer_.beginArticulationAudition(*phone)); return;
-            }
-            const auto& audio=designer_.articulationAudio();
-            record(audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F));
-            if (audition_.active()) auditionStatus_=*phone+" + SELECTED VOWEL / NOT APPROVED";
-            return;
-          }
-          record(seam::core::failure(seam::core::ErrorCode::InvalidState,"Select an auditionable vowel or source articulation first")); return;
-        }
-        using Mode=seam::native_ui::FricationAuditionMode;
-        const auto mode=event.modifiers.alt?Mode::VowelFrication:event.modifiers.shift?Mode::FricationVowel:Mode::Source;
-        if (!designer_.fricationAudio() || designer_.fricationAudioIndex() != index || designer_.fricationAudioMode()!=mode) { record(designer_.beginFricationAudition(*index,mode)); return; }
-        const auto& audio = designer_.fricationAudio();
-        record(audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F));
-        if (audition_.active()) auditionStatus_ = fricationPreviewDescription()+" / NOT APPROVED";
-        return;
-      }
-      if (event.modifiers.shift) {
-        if (!designer_.referenceMatchesSelection()) {
-          record(seam::core::failure(seam::core::ErrorCode::Conflict, "Pin a reference and match its pose/style/pitch before A/B playback")); return;
-        }
-        const auto& audio = designer_.auditionReference()->audio;
-        record(audition_.start(platform_.audioDevice(), audio, 0U, audio->frameCount(), 0.25F));
-        if (audition_.active()) auditionStatus_ = "REFERENCE A / NOT APPROVED";
-        return;
-      }
-      if (!designer_.auditionAudio()) { record(designer_.beginAudition()); return; }
-      const auto& audio = designer_.auditionAudio();
-      record(audition_.start(platform_.audioDevice(), audio, 0U, audio->frameCount(), 0.25F));
-      if (audition_.active()) auditionStatus_ = "CURRENT B / NOT APPROVED";
-      return;
-    }
+    if (event.key == Key::Space) { record(designerSpace(event)); return; }
     if (event.key == Key::D && event.modifiers.primaryShortcut()) {
       record(event.modifiers.shift ? createDesignerProducerWorkspace() : openDesignerProducerWorkspace());
       return;
@@ -2789,9 +2790,7 @@ public:
         }
         if (!designer_.articulationAudio() || designer_.articulationAudioPhone()!=phone)
           return seam::core::failure(seam::core::ErrorCode::Conflict,"Articulation preview is no longer ready");
-        const auto& audio=designer_.articulationAudio();
-        const auto result=audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F);
-        if (result) auditionStatus_=phone+" + SELECTED VOWEL / NOT APPROVED";
+        const auto result=playDesignerAudio(designer_.articulationAudio(),phone+" + SELECTED VOWEL / NOT APPROVED");
         record(result); repaint(); return result;
       }
       if (suffix.starts_with("remove-plosive.") || suffix.starts_with("plosive-seed.") || suffix.starts_with("render-plosive.") || suffix.starts_with("render-plosive-phrase.") || suffix.starts_with("render-plosive-coda.") || suffix.starts_with("play-plosive.")) {
@@ -2808,9 +2807,7 @@ public:
         if (suffix.starts_with("play-plosive.")) {
           if (!designer_.plosiveAudio() || designer_.plosiveAudioIndex()!=index)
             return seam::core::failure(seam::core::ErrorCode::Conflict,"Plosive preview is no longer ready");
-          const auto& audio=designer_.plosiveAudio();
-          const auto result=audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F);
-          if (result) auditionStatus_=designer_.plosiveAudioIsCoda()?"SELECTED VOWEL + STOP / NOT APPROVED":designer_.plosiveAudioIsPhrase()?"STOP + SELECTED VOWEL / NOT APPROVED":"PLOSIVE SOURCE / 50 ms CLOSURE / NOT APPROVED";
+          const auto result=playDesignerAudio(designer_.plosiveAudio(),designer_.plosiveAudioIsCoda()?"SELECTED VOWEL + STOP / NOT APPROVED":designer_.plosiveAudioIsPhrase()?"STOP + SELECTED VOWEL / NOT APPROVED":"PLOSIVE SOURCE / 50 ms CLOSURE / NOT APPROVED");
           record(result); repaint(); return result;
         }
         const auto result=suffix.starts_with("remove-plosive.")?designer_.removePlosive(designer_.epoch(),designer_.model()->revision(),index):editDesignerPlosiveSeed(index);
@@ -2831,9 +2828,7 @@ public:
         if (suffix.starts_with("play-frication.")) {
           if (!designer_.fricationAudio() || designer_.fricationAudioIndex() != index)
             return seam::core::failure(seam::core::ErrorCode::Conflict,"Frication preview is no longer ready");
-          const auto& audio = designer_.fricationAudio();
-          const auto result = audition_.start(platform_.audioDevice(),audio,0U,audio->frameCount(),0.25F);
-          if (result) auditionStatus_ = fricationPreviewDescription()+" / NOT APPROVED";
+          const auto result = playDesignerAudio(designer_.fricationAudio(),fricationPreviewDescription()+" / NOT APPROVED");
           record(result); repaint(); return result;
         }
         const auto result = suffix.starts_with("remove-frication.") ? designer_.removeFrication(designer_.epoch(),designer_.model()->revision(),index)
@@ -2881,10 +2876,15 @@ public:
         else if (suffix == "play-current" || suffix == "play-reference") {
           if ((suffix == "play-current" && !designer_.auditionAudio()) || (suffix == "play-reference" && !designer_.referenceMatchesSelection()))
             return seam::core::failure(seam::core::ErrorCode::Conflict, "Requested audition is no longer available");
-          key = NativeKey::Space; shift = suffix == "play-reference";
+          // The audition that plays goes first, and the session says so when it cannot: a device that
+          // does not stop leaves the old audition playing, with its label and the error in place, and
+          // the creator's action is answered with that failure and not with success.
+          lastError_.clear();
+          const auto result = designerSpace({.key = NativeKey::Space, .modifiers = {.shift = suffix == "play-reference"}});
+          record(result); repaint(); return result;
         } else return seam::core::failure(seam::core::ErrorCode::Unsupported, "Unknown Designer action");
         lastError_.clear(); stopAudition();
-        designerKey({.key = key, .modifiers = {.shift = shift, .control = key != NativeKey::Space, .command = key != NativeKey::Space}});
+        designerKey({.key = key, .modifiers = {.shift = shift, .control = true, .command = true}});
       }
       repaint(); return seam::core::success();
     });
