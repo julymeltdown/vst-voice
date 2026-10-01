@@ -279,6 +279,10 @@ public:
   static constexpr double kBreathHertz = 0.25;
   static constexpr double kBlinkSeconds = 0.12;
   static constexpr double kSpinnerSecondsPerTurn = 1.2;
+  // The breath drifts at most about a third of a point between two frames this far apart, which no
+  // eye tells from a smoother one, and a window that paints on demand pays for every frame it asks
+  // for.
+  static constexpr double kBreathFrameSeconds = 0.1;
 
   explicit CharacterAnimator(std::uint64_t seed = 0x5EA3C0FFEEULL) noexcept;
 
@@ -292,6 +296,13 @@ public:
   // The interval the current blink was drawn from, in [4, 7] seconds and reproducible from the seed.
   [[nodiscard]] double blinkIntervalSeconds() const noexcept { return intervalSeconds_; }
   [[nodiscard]] double secondsUntilBlink(std::chrono::steady_clock::time_point now) const noexcept;
+  // How long after now this animator needs its next frame, or nothing when it needs none (a held
+  // pose, Reduce Motion). A blink and the render spinner move at the pace of the frames and need the
+  // next one at once (zero). The breath alone needs one every kBreathFrameSeconds, and a blink that
+  // is about to begin is not made to wait for that. now is the instant the animator was last
+  // advanced to.
+  [[nodiscard]] std::optional<std::chrono::steady_clock::duration> nextFrameDelay(
+      std::chrono::steady_clock::time_point now) const noexcept;
 
 private:
   [[nodiscard]] double drawInterval() noexcept;
@@ -302,6 +313,7 @@ private:
   bool scheduled_{false};
   Motion motion_;
   bool moving_{false};
+  CharacterState state_{CharacterState::Idle};
 };
 
 // ---- painting -----------------------------------------------------------------------------------

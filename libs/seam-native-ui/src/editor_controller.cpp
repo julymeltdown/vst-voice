@@ -2955,6 +2955,11 @@ void NativeEditorController::closeSampleMicroscope() noexcept {
 
 void NativeEditorController::setDiagnostics(
     std::vector<authoring::Diagnostic> diagnostics) {
+  // A host sets its list once per painted frame. The panel is made of this list and the notices
+  // alone, and every change to either rebuilds it, so a list that is what it was leaves the panel as
+  // it is and asks for no frame: a frame that asked for the next one for nothing would never let the
+  // window idle.
+  if (diagnostics == ownerDiagnostics_) return;
   ownerDiagnostics_ = std::move(diagnostics);
   rebuildDiagnosticPanel();
 }

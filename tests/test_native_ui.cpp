@@ -3567,6 +3567,69 @@ TEST_CASE("native controller does not bring back an owner's diagnostic that the 
   CHECK(entries[1U].diagnostic.code == "EDIT_REFUSED");
 }
 
+TEST_CASE("native controller asks for a frame for the host's diagnostics only when they change") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::size_t repaints = 0U;
+  native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      native_ui::EditorHostCallbacks{.requestRepaint = [&repaints] { ++repaints; }}};
+  controller.resize(1280.0, 720.0);
+  const authoring::Diagnostic media{.code = "MEDIA_MISSING",
+                                    .severity = authoring::DiagnosticSeverity::Warning,
+                                    .messageKey = "media.missing",
+                                    .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const authoring::Diagnostic bank{.code = "BANK_MISSING",
+                                   .severity = authoring::DiagnosticSeverity::Error,
+                                   .messageKey = "bank.missing",
+                                   .actions = {authoring::DiagnosticAction::RelinkVoicebank}};
+  const auto& entries = controller.diagnosticPanel().entries();
+
+  // A host sets its list once per painted frame. A list that is what it was leaves the panel as it
+  // is and asks for no frame, or the window that painted it would never idle.
+  repaints = 0U;
+  for (int frame = 0; frame < 5; ++frame) controller.setDiagnostics({});
+  CHECK(repaints == 0U);
+  controller.setDiagnostics({media, bank});
+  CHECK(repaints == 1U);
+  CHECK(entries.size() == 2U);
+  for (int frame = 0; frame < 5; ++frame) controller.setDiagnostics({media, bank});
+  CHECK(repaints == 1U);
+  CHECK(entries.size() == 2U);
+
+  // Whatever the creator can see change is a change: a count, a detail, the order the host gave, an
+  // entry fewer.
+  auto counted = bank;
+  counted.occurrenceCount = 2U;
+  controller.setDiagnostics({media, counted});
+  CHECK(repaints == 2U);
+  CHECK(entries.size() == 2U);
+  if (entries.size() == 2U) CHECK(entries[1U].diagnostic.occurrenceCount == 2U);
+  auto detailed = counted;
+  detailed.setDetail("the voicebank folder was moved");
+  controller.setDiagnostics({media, detailed});
+  CHECK(repaints == 3U);
+  controller.setDiagnostics({detailed, media});
+  CHECK(repaints == 4U);
+  CHECK(entries.size() == 2U);
+  if (entries.size() == 2U) CHECK(entries[0U].diagnostic.code == "BANK_MISSING");
+  controller.setDiagnostics({detailed});
+  CHECK(repaints == 5U);
+  CHECK(entries.size() == 1U);
+  controller.setDiagnostics({});
+  CHECK(repaints == 6U);
+  CHECK(entries.empty());
+
+  // The editor's own notices rebuild the panel as they come, and a list that is still what it was
+  // does not undo them.
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "Finish the active edit first"});
+  CHECK(entries.size() == 1U);
+  const auto afterNotice = repaints;
+  controller.setDiagnostics({});
+  CHECK(repaints == afterNotice);
+  CHECK(entries.size() == 1U);
+}
+
 TEST_CASE("native controller gives the host a new count of tries when the creator presses Retry") {
   using namespace seam;
   NativeUiFixture fixture;

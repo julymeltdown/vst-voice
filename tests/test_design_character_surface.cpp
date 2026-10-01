@@ -609,6 +609,75 @@ TEST_CASE("the blink is seeded in [4, 7] s, and Reduce Motion advances nothing")
   CHECK_NEAR(idleNow.motion().spinner, 0.0, 1e-12);
 }
 
+TEST_CASE("an animator asks for the next frame at the pace of its breath, and at once for a blink or the spinner") {
+  using native_ui::design::CharacterAnimator;
+  using Duration = std::chrono::steady_clock::duration;
+  const auto breath = std::chrono::duration_cast<Duration>(
+      std::chrono::duration<double>(CharacterAnimator::kBreathFrameSeconds));
+  const auto immediately = Duration::zero();
+
+  // Nothing moves in a held pose or under Reduce Motion, so no frame is asked for; an animator that
+  // has not been advanced has not been asked to move.
+  {
+    CharacterAnimator animator{5U};
+    CHECK(!animator.nextFrameDelay(at(0.0)).has_value());
+    for (const auto state : {CharacterState::Listening, CharacterState::Complete,
+                             CharacterState::Warning, CharacterState::Error}) {
+      animator.advance(state, at(1.0), false);
+      CHECK(!animator.nextFrameDelay(at(1.0)).has_value());
+    }
+    for (const auto state : {CharacterState::Idle, CharacterState::Singing,
+                             CharacterState::Rendering}) {
+      animator.advance(state, at(1.0), true);
+      CHECK(!animator.nextFrameDelay(at(1.0)).has_value());
+    }
+  }
+
+  // The render spinner turns at the pace of the frames.
+  {
+    CharacterAnimator animator{5U};
+    animator.advance(CharacterState::Rendering, at(1.0), false);
+    CHECK(animator.nextFrameDelay(at(1.0)) == immediately);
+  }
+
+  // A singer between blinks breathes: a frame every kBreathFrameSeconds, and sooner only for a blink
+  // that is about to begin.
+  CharacterAnimator idle{11U};
+  idle.advance(CharacterState::Idle, at(0.0), false);
+  const auto interval = idle.blinkIntervalSeconds();
+  CHECK(idle.nextFrameDelay(at(0.0)) == breath);
+  idle.advance(CharacterState::Idle, at(1.0), false);
+  CHECK(idle.nextFrameDelay(at(1.0)) == breath);
+  const auto beforeBlink = at(interval - 0.04);
+  idle.advance(CharacterState::Idle, beforeBlink, false);
+  const auto soon = idle.nextFrameDelay(beforeBlink);
+  CHECK(soon.has_value());
+  if (soon.has_value()) {
+    CHECK(*soon > immediately);
+    CHECK(*soon < breath);
+  }
+  // From the blink's first instant to its last, each frame is asked for at once.
+  for (const auto into : {0.001, 0.03, 0.06, 0.09, 0.119}) {
+    const auto now = at(interval + into);
+    idle.advance(CharacterState::Idle, now, false);
+    CHECK(idle.nextFrameDelay(now) == immediately);
+  }
+  // Once it is over, the next blink is seconds away and the breath sets the pace again.
+  const auto after = at(interval + CharacterAnimator::kBlinkSeconds + 0.01);
+  idle.advance(CharacterState::Idle, after, false);
+  CHECK(idle.nextFrameDelay(after) == breath);
+
+  // A singer who sings breathes and does not blink, so no blink is to be followed: not by one that
+  // was never idle, and not by one that was idle and had a blink scheduled.
+  CharacterAnimator singing{11U};
+  singing.advance(CharacterState::Singing, at(0.0), false);
+  CHECK(singing.nextFrameDelay(at(0.0)) == breath);
+  CharacterAnimator wasIdle{11U};
+  wasIdle.advance(CharacterState::Idle, at(0.0), false);
+  wasIdle.advance(CharacterState::Singing, at(interval + 0.05), false);
+  CHECK(wasIdle.nextFrameDelay(at(interval + 0.05)) == breath);
+}
+
 TEST_CASE("the empty-project line appears only for a region that genuinely has no notes") {
   using native_ui::design::emptyProjectPrompt;
   using native_ui::design::kEmptyProjectPrompt;
@@ -1160,10 +1229,31 @@ TEST_CASE("an animating frame asks for the next one, and a still frame asks for 
   if (!native_ui::paint::vectorBackendAvailable()) return;
   if (!std::filesystem::is_directory(designAssetRoot())) return;
   // A state with motion (idle breathing, singing, the render spinner) has to keep the frame loop
-  // alive, or the drift and the blink would stop after one frame.
+  // alive, or the drift and the blink would stop after one frame. The breath asks for its next
+  // frame through nextFrameDue(), at its own pace; the spinner asks for each at once.
   {
     ShellFixture f;
     CHECK(f.frame());
+    f.now = at(11.0);
+    CHECK(f.frame());
+    f.repaints = 0;
+    f.now = at(12.0);
+    CHECK(f.frame());
+    CHECK(f.shell.characterState() == CharacterState::Idle);
+    CHECK(f.repaints == 0);
+    CHECK(f.shell.nextFrameDue().has_value());
+  }
+  {
+    ShellFixture f;
+    native_ui::RenderStatusView status;
+    status.state = RenderStatusState::Rendering;
+    status.fraction = 0.4;
+    f.controller.setRenderStatus(status);
+    CHECK(f.frame());
+    f.repaints = 0;
+    f.now = at(10.5);
+    CHECK(f.frame());
+    CHECK(f.shell.characterState() == CharacterState::Rendering);
     CHECK(f.repaints > 0);
   }
   // A held pose animates nothing, so it requests no further frame: the protagonist is still and the
@@ -1177,6 +1267,7 @@ TEST_CASE("an animating frame asks for the next one, and a still frame asks for 
     CHECK(f.frame());
     CHECK(f.shell.characterState() == state);
     CHECK(f.repaints == 0);
+    CHECK(!f.shell.nextFrameDue().has_value());
   }
   // Reduce Motion: no motion at all, so no frame is requested, whatever the state. The state itself
   // is unchanged, which is the point: a screen that reduces motion still says what the singer is
@@ -1192,6 +1283,7 @@ TEST_CASE("an animating frame asks for the next one, and a still frame asks for 
     CHECK(f.frame());
     CHECK(f.shell.characterState() == CharacterState::Rendering);
     CHECK(f.repaints == 0);
+    CHECK(!f.shell.nextFrameDue().has_value());
   }
 }
 
@@ -1274,8 +1366,9 @@ TEST_CASE("an idle frame asks for the next one only when a painted surface actua
     const auto moved = f.surface.checksum() != first;
     CHECK(moved == size.moves);
     // The rail and the drawer show a still portrait and no header avatar: nothing moved, so the
-    // window idles. The full rack's ring breathes, so the loop continues there.
-    CHECK((f.repaints > 0) == size.moves);
+    // window idles. The full rack's ring breathes, so the loop continues there, a breath at a time.
+    CHECK(f.repaints == 0);
+    CHECK(f.shell.nextFrameDue().has_value() == size.moves);
   }
   // A render in flight turns only the full rack's ring. The rail's portrait has no spinner, so a
   // compact window asks for nothing while it renders.
@@ -1292,6 +1385,7 @@ TEST_CASE("an idle frame asks for the next one only when a painted surface actua
     f.now = at(10.5);
     CHECK(f.frame(1100.0, 700.0));
     CHECK(f.repaints == 0);
+    CHECK(!f.shell.nextFrameDue().has_value());
   }
   // Reduce Motion asks for nothing even where the ring would breathe.
   {
@@ -1303,7 +1397,152 @@ TEST_CASE("an idle frame asks for the next one only when a painted surface actua
     CHECK(f.frame());
     CHECK(f.shell.characterState() == CharacterState::Idle);
     CHECK(f.repaints == 0);
+    CHECK(!f.shell.nextFrameDue().has_value());
   }
+}
+
+TEST_CASE("the idle breath asks for its frames through nextFrameDue at its own pace, and a blink asks for each at once") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  using native_ui::design::CharacterAnimator;
+  const auto breath = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(CharacterAnimator::kBreathFrameSeconds));
+  // The shells' animators share the default seed, so a probe advanced at the same first frame knows
+  // when the first blink falls.
+  CharacterAnimator probe;
+  static_cast<void>(probe.advance(CharacterState::Idle, at(10.0), false));
+  const auto blinkAt = 10.0 + probe.secondsUntilBlink(at(10.0));
+
+  ShellFixture f;
+  CHECK(f.frame());
+  CHECK(f.shell.characterState() == CharacterState::Idle);
+  // A second on, the fades that the first frames start are over.
+  f.now = at(11.0);
+  CHECK(f.frame());
+  f.repaints = 0;
+  f.now = at(12.0);
+  CHECK(f.frame());
+  // Between blinks a frame does not ask for the next one: the breath moves too little for that. The
+  // next is due a breath later, and the frame painted then has the one after it due a breath on.
+  CHECK(f.repaints == 0);
+  CHECK(f.shell.nextFrameDue() == at(12.0) + breath);
+  f.now = at(12.0) + breath;
+  CHECK(f.frame());
+  CHECK(f.repaints == 0);
+  CHECK(f.shell.nextFrameDue() == f.now + breath);
+
+  // A blink that is about to begin is not made to wait for a whole breath.
+  f.now = at(blinkAt - 0.04);
+  CHECK(f.frame());
+  CHECK(f.repaints == 0);
+  const auto soon = f.shell.nextFrameDue();
+  CHECK(soon.has_value());
+  if (soon.has_value()) {
+    CHECK(*soon > f.now);
+    CHECK(*soon < f.now + breath);
+  }
+  // From its first instant to its last, a blink asks for the next frame at once.
+  for (const auto into : {0.1, 0.4, 0.7, 0.95}) {
+    f.repaints = 0;
+    f.now = at(blinkAt + CharacterAnimator::kBlinkSeconds * into);
+    CHECK(f.frame());
+    CHECK(f.repaints > 0);
+  }
+  // Once it is over, the breath sets the pace again.
+  f.repaints = 0;
+  f.now = at(blinkAt + CharacterAnimator::kBlinkSeconds + 0.05);
+  CHECK(f.frame());
+  CHECK(f.repaints == 0);
+  CHECK(f.shell.nextFrameDue() == f.now + breath);
+
+  // A frame after which nothing animates leaves nothing due, though the one before it asked: the
+  // singer's state has become a held pose (a failed render).
+  native_ui::RenderStatusView failed;
+  failed.state = RenderStatusState::Failed;
+  f.controller.setRenderStatus(failed);
+  f.repaints = 0;
+  f.now += std::chrono::seconds{1};
+  CHECK(f.frame());
+  CHECK(f.shell.characterState() == CharacterState::Error);
+  CHECK(f.repaints == 0);
+  CHECK(!f.shell.nextFrameDue().has_value());
+}
+
+TEST_CASE("a waiting tooltip and the idle breath share nextFrameDue, and the earlier is due first") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  const auto breath = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(native_ui::design::CharacterAnimator::kBreathFrameSeconds));
+  ShellFixture f;
+  f.now = at(11.0);
+  CHECK(f.frame());
+  f.now = at(12.0);
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto play = f.shell.layout().playButton;
+  CHECK(play.width > 0.0);
+  const ui::Point over{play.x + play.width * 0.5, play.y + play.height * 0.5};
+  // The pointer comes to rest on the button at this instant, and its tip is due a delay later. The
+  // breath is due first: a tenth of a second on.
+  f.now = at(13.0);
+  static_cast<void>(f.shell.pointerMove(f.controller, native_ui::PointerEvent{.position = over}));
+  CHECK(f.frame());
+  CHECK(f.shell.nextFrameDue() == at(13.0) + breath);
+  // Half a second on, the tip is 50 ms away and the breath 100 ms: the tip is due first.
+  f.now = at(13.0) + std::chrono::milliseconds{550};
+  CHECK(f.frame());
+  CHECK(f.shell.nextFrameDue() == at(13.0) + native_ui::design::kTooltipDelay);
+}
+
+TEST_CASE("a frame that is not painted leaves no frame due") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  ShellFixture f;
+  CHECK(f.frame());
+  f.now = at(12.0);
+  CHECK(f.frame());
+  CHECK(f.shell.nextFrameDue().has_value());
+  // The window shrinks to the smallest layout and then has no pixels at all, as a minimised window
+  // has none: the shell cannot paint into the surface and says so, and the frame it owed from the
+  // one before is not owed by a frame that did not happen.
+  CHECK(f.shell.prepareFrame(f.controller, 480.0, 320.0));
+  native_ui::PixelSurface nothing{0U, 0U};
+  native_ui::RasterCanvas canvas{nothing, 1.0};
+  f.now = at(13.0);
+  CHECK(!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()));
+  CHECK(!f.shell.nextFrameDue().has_value());
+}
+
+TEST_CASE("a window that cannot be painted waits for no tip either") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  if (!std::filesystem::is_directory(designAssetRoot())) return;
+  ShellFixture f;
+  f.now = at(11.0);
+  CHECK(f.frame());
+  f.now = at(12.0);
+  CHECK(f.frame());
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto play = f.shell.layout().playButton;
+  CHECK(play.width > 0.0);
+  const ui::Point over{play.x + play.width * 0.5, play.y + play.height * 0.5};
+  // The pointer comes to rest on the button, and half a second on its tip is 50 ms away: a frame is
+  // due for it, and it is the tip that is due first.
+  f.now = at(13.0);
+  static_cast<void>(f.shell.pointerMove(f.controller, native_ui::PointerEvent{.position = over}));
+  CHECK(f.frame());
+  f.now = at(13.0) + std::chrono::milliseconds{550};
+  CHECK(f.frame());
+  CHECK(f.shell.nextFrameDue() == at(13.0) + native_ui::design::kTooltipDelay);
+  // The window then has no pixels, as a minimised window has none, before the tip's time comes. The
+  // shell cannot paint, so the tip still waits, and a frame that cannot be painted is not asked for
+  // whatever is waiting to be shown in it.
+  native_ui::PixelSurface nothing{0U, 0U};
+  native_ui::RasterCanvas canvas{nothing, 1.0};
+  f.now = at(13.0) + std::chrono::milliseconds{560};
+  CHECK(!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()));
+  CHECK(!f.shell.nextFrameDue().has_value());
 }
 
 TEST_CASE("the header avatar is reserved only where the header has room, never in the menu layouts") {

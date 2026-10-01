@@ -253,9 +253,11 @@ public:
   [[nodiscard]] const std::optional<ShownTooltip>& lastFrameTooltip() const noexcept {
     return shownTooltip_;
   }
-  // When a frame is next needed for a tooltip that is waiting out its delay, in the shell's UI
-  // clock, or nothing. A host that paints only on request (the standalone window) asks for a frame
-  // then; one that paints on a timer (the plug-in) needs nothing.
+  // When a frame is next needed although nothing has asked for one, in the shell's UI clock, or
+  // nothing: for a tooltip that is waiting out its delay, and for the protagonist's idle breath,
+  // which moves too little between frames to be asked for each of them at the display's rate. A
+  // host that paints only on request (the standalone window) asks for a frame then; one that paints
+  // on a timer (the plug-in) needs nothing.
   [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue() const noexcept;
   // What a tooltip over a point, or for a published node, would say: the node's description, after
   // the whole text of a label the last frame elided inside it; for an elided label outside any
@@ -669,6 +671,9 @@ private:
   // Whether a surface painted this frame showed that motion (the header avatar, the full rack's
   // ring). Only then does the frame ask for the next one; the Stage's fade asks on its own.
   mutable bool motionShown_{false};
+  // When the idle breath next needs a frame: set by the frame that painted it, and offered through
+  // nextFrameDue(). A breath is not asked for with repaint(), which the host answers at once.
+  std::optional<std::chrono::steady_clock::time_point> idleFrameDue_;
   // The error toast the last frame's status bar painted, if any.
   mutable std::optional<CharacterToast> errorToast_{};
   std::optional<float> auditionLevel_{};

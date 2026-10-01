@@ -6,6 +6,7 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 
+#include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -65,7 +67,10 @@ struct JourneyApp final {
   JourneyDialog* dialog{nullptr};
   seam::native_ui::PixelSurface surface{1600U, 900U};
 
-  JourneyApp(const std::filesystem::path& root, std::vector<std::filesystem::path> answers) {
+  // Reduce Motion and the clock that the animation reads are for the tests that count frames.
+  JourneyApp(const std::filesystem::path& root, std::vector<std::filesystem::path> answers,
+             bool reduceMotion = false,
+             std::function<std::chrono::steady_clock::time_point()> uiClock = {}) {
     seam::standalone::NativeEditorAppConfig config;
     config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
     config.applicationSupportRoot = root;
@@ -80,7 +85,8 @@ struct JourneyApp final {
         .kind = seam::voicebank::VoicebankRootKind::Development,
     }};
     config.designPreferences = seam::native_ui::design::DesignPreferences{
-        .mode = seam::native_ui::design::DesignMode::Scene};
+        .mode = seam::native_ui::design::DesignMode::Scene, .reduceMotion = reduceMotion};
+    config.uiClock = std::move(uiClock);
     auto owned = std::make_unique<JourneyDialog>(std::move(answers));
     dialog = owned.get();
     auto shared = std::make_shared<std::unique_ptr<JourneyDialog>>(std::move(owned));
@@ -446,4 +452,61 @@ TEST_CASE("sing shell journey: after detachWindow no render or envelope worker t
   }
   CHECK(showing());
   f.app->shutdownAudio();
+}
+
+TEST_CASE("sing shell journey: a settled window asks for no frame, and an idle singer asks for one a breath at a time") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  class FrameCounter final : public seam::native_ui::INativeWindow {
+  public:
+    seam::core::Result<void> open(const seam::native_ui::NativeWindowConfig&,
+                                  seam::native_ui::INativeWindowClient&) override {
+      return seam::core::success();
+    }
+    int run() override { return 0; }
+    void requestRepaint() noexcept override { requests.fetch_add(1U); }
+    void beginTextInput(const seam::native_ui::TextInputRequest&) override {}
+    void endTextInput() noexcept override {}
+    seam::native_ui::PixelSurface snapshot() const override { return seam::native_ui::PixelSurface{1U, 1U}; }
+    std::string backendName() const override { return "frame-counter"; }
+    std::atomic<std::uint64_t> requests{0U};
+  };
+  using Clock = std::chrono::steady_clock;
+  const auto breath = std::chrono::duration_cast<Clock::duration>(
+      std::chrono::duration<double>(seam::native_ui::design::CharacterAnimator::kBreathFrameSeconds));
+  const auto root = seam::test::support::temporaryDirectory("journey-settled-frames");
+  for (const bool reduceMotion : {true, false}) {
+    // The animation reads this clock, which the test moves by hand: a blink cannot fall among the
+    // frames it counts, and the fades that a window starts with finish as the clock passes them.
+    const auto now = std::make_shared<Clock::time_point>(Clock::time_point{} + 10s);
+    JourneyApp f{root / (reduceMotion ? "still" : "moving"), {}, reduceMotion, [now] { return *now; }};
+    CHECK(f.app != nullptr);
+    if (f.app == nullptr) return;
+    FrameCounter window;
+    f.app->setWindow(window);
+    f.paint();
+    seam::native_ui::RasterCanvas canvas{f.surface, 1.0};
+    for (int frame = 0; frame < 20; ++frame) {
+      *now += 50ms;
+      f.app->paint(canvas);
+      std::this_thread::sleep_for(5ms);
+    }
+    // Nothing is going on now. However many frames are painted, none asks for the next: a window
+    // that did would repaint at the display's rate for ever. Under Reduce Motion nothing is due
+    // either; otherwise the breath is, a breath after the frame that painted it.
+    for (int frame = 0; frame < 30; ++frame) {
+      *now += 30ms;
+      const auto before = window.requests.load();
+      f.app->paint(canvas);
+      CHECK(window.requests.load() == before);
+      const auto due = f.app->nextFrameDue();
+      if (reduceMotion) {
+        CHECK(!due.has_value());
+      } else {
+        CHECK(due.has_value());
+        CHECK(due == *now + breath);
+      }
+    }
+    f.app->detachWindow();
+    f.app->shutdownAudio();
+  }
 }

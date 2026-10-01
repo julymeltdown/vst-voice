@@ -627,9 +627,24 @@ double CharacterAnimator::secondsUntilBlink(std::chrono::steady_clock::time_poin
   return std::max(0.0, std::chrono::duration<double>(blinkAt_ - now).count());
 }
 
+std::optional<std::chrono::steady_clock::duration> CharacterAnimator::nextFrameDelay(
+    std::chrono::steady_clock::time_point now) const noexcept {
+  using Duration = std::chrono::steady_clock::duration;
+  if (!moving_) return std::nullopt;
+  if (state_ == CharacterState::Rendering) return Duration::zero();
+  const auto breath =
+      std::chrono::duration_cast<Duration>(std::chrono::duration<double>(kBreathFrameSeconds));
+  // Only an idle singer blinks. advance() leaves blinkAt_ in the past for as long as a blink is
+  // under way and moves it on once it is over, so a blinkAt_ that has passed is a blink to follow.
+  if (state_ != CharacterState::Idle || !scheduled_) return breath;
+  if (now >= blinkAt_) return Duration::zero();
+  return std::min(breath, blinkAt_ - now);
+}
+
 bool CharacterAnimator::advance(CharacterState state,
                                 std::chrono::steady_clock::time_point now, bool reduceMotion) {
   const auto previous = motion_;
+  state_ = state;
   if (reduceMotion || !characterStateAnimates(state)) {
     motion_ = Motion{};
     moving_ = false;

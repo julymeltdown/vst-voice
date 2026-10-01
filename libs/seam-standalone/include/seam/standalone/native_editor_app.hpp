@@ -69,6 +69,10 @@ struct NativeEditorAppConfig final {
   std::function<std::unique_ptr<platform::IUnsavedChangesPrompt>()> unsavedChangesPromptFactory;
   // An explicit look for the shell, neither read from nor written to the user's preferences.
   std::optional<native_ui::design::DesignPreferences> designPreferences;
+  // The clock the shell animates against (the blink, the breath, the fades, the tooltips). Empty in
+  // the shipping app, which uses the steady clock. A test moves it by hand, so that a blink cannot
+  // fall among the frames it counts.
+  std::function<std::chrono::steady_clock::time_point()> uiClock;
 };
 
 [[nodiscard]] NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(

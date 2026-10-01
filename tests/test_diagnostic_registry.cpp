@@ -21,6 +21,71 @@ TEST_CASE("diagnostic detail remains bounded display safe and separate from its 
   diagnostic.detail = std::string(4097U, 'a'); CHECK(!authoring::DiagnosticRegistry::validate(diagnostic));
 }
 
+TEST_CASE("a diagnostic equals another only when every field it carries is the same") {
+  using namespace seam;
+  const authoring::Diagnostic base{
+      .code = "BANK_MISSING",
+      .severity = authoring::DiagnosticSeverity::Error,
+      .messageKey = "bank.missing",
+      .affectedIds = {"track-1"},
+      .actions = {authoring::DiagnosticAction::RelinkVoicebank},
+      .occurrenceCount = 1U,
+  };
+  CHECK(base == authoring::Diagnostic{base});
+  {
+    auto other = base;
+    other.code = "MEDIA_MISSING";
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.severity = authoring::DiagnosticSeverity::Warning;
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.messageKey = "media.missing";
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.affectedIds = {"track-2"};
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.actions = {authoring::DiagnosticAction::ChooseVoicebank};
+    CHECK(!(other == base));
+  }
+  {
+    // How many times it came is not which issue it is, and it is part of what the creator is shown.
+    auto other = base;
+    other.occurrenceCount = 2U;
+    CHECK(other.sameIssueAs(base));
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.setDetail("the voicebank folder was moved");
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.detailTruncated = true;
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.detailEscaped = true;
+    CHECK(!(other == base));
+  }
+  {
+    auto other = base;
+    other.detailSourceHash = "0123abcd";
+    CHECK(!(other == base));
+  }
+}
+
 TEST_CASE("diagnostic registry validates registered codes and actions") {
   CHECK(seam::authoring::DiagnosticRegistry::isRegistered("BANK_UNTRUSTED"));
   const auto actions = seam::authoring::DiagnosticRegistry::actions("BANK_UNTRUSTED");

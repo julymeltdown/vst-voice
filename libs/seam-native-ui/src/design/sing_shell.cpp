@@ -1408,6 +1408,8 @@ void SingShell::paintBackground(Canvas2D& c, const DesignTokens& t) const {
 bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
                       const EditorSceneState& state, time::Tick playhead) {
   const ScopedActiveShellStrings activeStrings{strings_.get()};
+  // The frame that paints decides whether it owes another; one that does not paint owes none.
+  idleFrameDue_.reset();
   if (!presented_ ||
       layout_.width != std::max(canvas.logicalWidth(), 480.0) ||
       layout_.height != std::max(canvas.logicalHeight(), 320.0)) {
@@ -1641,6 +1643,11 @@ void SingShell::scheduleAnimationRepaint() {
   // for nothing at all, and a state that only breathes or spins asks only for as long as it does. The
   // Stage's own fade is the other source, and it asks until it settles.
   //
+  // A tween, the render spinner and a blink need the next frame as soon as it can be painted. The
+  // breath does not: it moves a third of a point between frames a tenth of a second apart, so it
+  // asks for them through nextFrameDue() at that pace, and a window that is otherwise still idles
+  // between them instead of repainting at the display's rate.
+  //
   // The request asks for a frame; what that frame costs is decided when it is composed. A blink or a
   // breath changes only the avatar and ring items of the dynamic layer, so the frame rasterizes that
   // layer alone and lastFrameDamage() names just those rectangles for the presenter to invalidate.
@@ -1665,7 +1672,13 @@ void SingShell::scheduleAnimationRepaint() {
   // The state animating is not enough: at a width whose rack is a rail or a drawer and whose header
   // has no avatar, no painted surface carries the motion and the next frame would be identical.
   if (preferences_.reduceMotion || !characterStateAnimates(characterState_) || !motionShown_) return;
-  repaint();
+  const auto delay = animator_.nextFrameDelay(frameNow_);
+  if (!delay.has_value()) return;
+  if (*delay <= std::chrono::steady_clock::duration::zero()) {
+    repaint();
+    return;
+  }
+  idleFrameDue_ = frameNow_ + *delay;
 }
 
 namespace {
@@ -3582,10 +3595,12 @@ void SingShell::updateTooltip(std::chrono::steady_clock::time_point now) {
 
 std::optional<std::chrono::steady_clock::time_point> SingShell::nextFrameDue() const noexcept {
   if (!presented_) return std::nullopt;
+  auto due = idleFrameDue_;
   const auto at = tooltip_.showsAt();
   // Once a frame has painted at or after that time, the tip is on screen (or had no room).
-  if (!at.has_value() || (lastPaintAt_.has_value() && *lastPaintAt_ >= *at)) return std::nullopt;
-  return at;
+  if (at.has_value() && !(lastPaintAt_.has_value() && *lastPaintAt_ >= *at))
+    due = due.has_value() ? std::min(*due, *at) : *at;
+  return due;
 }
 
 StatusMessage singStatusMessage(const EditorSceneState& state) {

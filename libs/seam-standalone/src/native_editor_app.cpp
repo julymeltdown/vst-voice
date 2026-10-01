@@ -341,6 +341,7 @@ core::Result<void> NativeEditorApp::initialize() {
     shell_.activate();
   else
     shell_.activate(native_ui::design::locateDesignAssets(), native_ui::design::DesignPreferences{});
+  if (config_.uiClock) shell_.setUiClock(config_.uiClock);
   shell_.setRepaintCallback([this] {
     requestWindowRepaint();
   });
@@ -2041,7 +2042,8 @@ bool NativeEditorApp::wantsClose() const noexcept {
 
 std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameDue()
     const noexcept {
-  // The shell reads the steady clock (the app injects no UI clock), so its time is the window's.
+  // The shipping app injects no UI clock, so the shell reads the steady clock and its time is the
+  // window's; only a test moves it by hand (NativeEditorAppConfig::uiClock).
   return shell_.nextFrameDue();
 }
 

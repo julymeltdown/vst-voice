@@ -45,6 +45,10 @@ struct Diagnostic final {
   void setDetail(std::string_view text);
   [[nodiscard]] bool sameIssueAs(const Diagnostic& other) const noexcept;
   void addOccurrences(std::size_t additional) noexcept;
+  // Every field, how many times it came among them. sameIssueAs asks whether two are the one issue
+  // and leaves the count out; this asks whether one says what the other already says, which is what
+  // a host that sets the same list every frame needs to know.
+  [[nodiscard]] bool operator==(const Diagnostic&) const = default;
 };
 
 class DiagnosticRegistry final {
