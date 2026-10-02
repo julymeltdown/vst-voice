@@ -22,6 +22,7 @@
 #include "seam/platform/audio_input_device.hpp"
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
+#include "seam/text/text_engine.hpp"
 #include "seam/voicebank/catalog.hpp"
 #include "seam/voicebank/wav.hpp"
 
@@ -320,9 +321,29 @@ public:
   const native_ui::AccessibilityTree& frame() {
     surface_ = native_ui::PixelSurface{static_cast<std::uint32_t>(width_),
                                        static_cast<std::uint32_t>(height_)};
-    native_ui::RasterCanvas canvas{surface_, 1.0};
+    native_ui::RasterCanvas canvas{surface_, 1.0, systemFont()};
     app->paint(canvas);
     return *app->accessibilityTree();
+  }
+
+  // The harness paints through the built-in bitmap face, which is not the face the shipping window
+  // uses: the AppKit window loads a system font engine and hands it to every frame. A capture taken
+  // here therefore shows the fallback metrics unless SEAM_STUDIO_APP_SYSTEM_FONT names a directory of
+  // font files to load, which is how the shipped rendering is checked rather than assumed. No case
+  // depends on it, so the default stays the built-in face.
+  static text::TextEngine* systemFont() {
+    static std::unique_ptr<text::TextEngine> engine = [] {
+      const char* directory = std::getenv("SEAM_STUDIO_APP_SYSTEM_FONT");
+      if (directory == nullptr || *directory == '\0') return std::unique_ptr<text::TextEngine>{};
+      text::FontSearchOptions options;
+      for (const auto& entry : std::filesystem::directory_iterator{directory}) {
+        if (entry.is_regular_file()) options.additionalCandidates.push_back(entry.path());
+      }
+      if (options.additionalCandidates.empty()) return std::unique_ptr<text::TextEngine>{};
+      auto loaded = text::TextEngine::createFromTrustedFiles(options);
+      return loaded ? std::move(loaded).value() : std::unique_ptr<text::TextEngine>{};
+    }();
+    return engine.get();
   }
 
   std::optional<SemanticNode> node(std::string_view suffix) {

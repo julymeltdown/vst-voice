@@ -22,8 +22,14 @@ void drawWrappedText(RasterCanvas& canvas, ui::Rect bounds, std::string_view tex
     const auto lines = studioWrapWords(canvas, text, bounds.width, size);
     const auto count = std::min(lines.size(), maximumLines);
     for (std::size_t index = 0U; index < count; ++index)
-      canvas.drawText(ui::Rect{bounds.x, bounds.y + static_cast<double>(index) * lineHeight,
-                               bounds.width, lineHeight}, lines[index], color, size);
+      // Each line is drawn through the wrapping draw rather than the clipping one. A line that is
+      // one unbroken token, which is what an identifier is, is wider than this column, and the
+      // clipping draw answers that with an ellipsis: the creator was shown "P00001-c6eea096f83ec23e…"
+      // in place of the id. The wrapping draw breaks it instead and shows all of it.
+      canvas.drawTextWrapped(
+          ui::Rect{bounds.x, bounds.y + static_cast<double>(index) * lineHeight, bounds.width,
+                   lineHeight},
+          lines[index], color, size, lineHeight);
   } catch (...) {
     canvas.drawText(bounds, text, color, size);
   }
@@ -691,37 +697,80 @@ void paintProductionEmptyCanvas(
                     "NO PRODUCTION UNITS", theme.primaryText, 14.0);
     return;
   }
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 32.0,
-                           std::max(0.0, region.width - 48.0), 24.0},
-                  region.width < 320.0 ? "INTAKE" : "PRODUCTION INTAKE", theme.primaryText, 14.0);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 72.0,
-                           std::max(0.0, region.width - 48.0), 18.0},
-                  assignment->coverageKey + "  PITCH " +
-                      std::to_string(assignment->pitchLayer),
-                  theme.accent, 9.0);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 104.0,
-                           std::max(0.0, region.width - 48.0), 16.0},
-                  "PROMPT " + assignment->promptId,
-                  theme.secondaryText, 8.0);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 132.0,
-                           std::max(0.0, region.width - 48.0), 16.0},
-                  assignment->takeId.empty() ? "NO AUDIO IMPORTED"
-                                             : "TAKE " + assignment->takeId,
-                  theme.secondaryText, 8.0);
-  // The shortcut hint wraps to the width this column has rather than running past its edge; the
-  // generation panel starts at y = 268, so two lines from y = 228 stay clear of it.
-  drawWrappedText(canvas, ui::Rect{region.x + 24.0, region.y + 156.0,
-                                   std::max(0.0, region.width - 48.0), 24.0},
-                  "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD", theme.secondaryText, 6.0, 12.0, 2U);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 196.0,
-                           std::max(0.0, region.width - 48.0), 16.0},
-                  "CMD/CTRL-SHIFT: I JOB / B BATCH",
-                  theme.secondaryText, 7.0);
-  canvas.drawText(ui::Rect{region.x + 24.0, region.y + 214.0,
-                           std::max(0.0, region.width - 48.0), 16.0},
-                  "SHIFT-P PREPARE / P WAVE / N F0", theme.secondaryText, 7.0);
-  const auto left = region.x + 24.0;
+  // Everything below is read rather than decoration, so it is drawn at a size a person can read at a
+  // glance, and each row is laid out from the size it is drawn at rather than at a fixed offset. The
+  // column is only 146 points wide at the narrowest window the app supports, so a row that does not
+  // fit wraps instead of being cut: a truncated prompt id or a cut shortcut is a row the creator
+  // cannot use. Every row ends above kProductionColumnBottom, because the generation panel starts
+  // there and used to paint over the last two shortcut rows and erase them.
+  constexpr double kBodyText = 12.0;
+  constexpr double kBodyLine = 16.0;
+  constexpr double kBodyGap = 6.0;
+  const auto contentLeft = region.x + 24.0;
   const auto contentWidth = std::max(0.0, region.width - 48.0);
+  // The generation panel is drawn at y = 268 over this column, so the column stops clear of it.
+  constexpr double kProductionColumnBottom = 260.0;
+  // The column starts below the studio status row, which is drawn across the top of this region at
+  // kStudioStatusTop (76) and is 36 points tall. The column used to start at 72 and its first row was
+  // painted under that status.
+  auto intakeTop = region.y + 44.0;
+  const auto advance = [&](double lines) {
+    const auto used = lines * kBodyLine + kBodyGap;
+    intakeTop += used;
+    return used;
+  };
+  canvas.drawText(ui::Rect{contentLeft, intakeTop, contentWidth, 24.0},
+                  region.width < 320.0 ? "INTAKE" : "PRODUCTION INTAKE", theme.primaryText, 14.0);
+  advance(1.0);
+  // Each of these rows is wrapped over the lines it needs and bounded by the space that is left, so
+  // a long value is said in full and a short one does not leave a gap where a second line would be.
+  const auto wrappedRow = [&](const std::string& text, const seam::native_ui::Color& color,
+                              double size) {
+    const auto remaining = std::max(0.0, kProductionColumnBottom - intakeTop);
+    if (remaining <= 0.0) return;
+    // The row is as tall as the lines it actually needs, bounded by the space left above the
+    // generation panel. Both halves matter: a fixed line count truncated the prompt id, and taking
+    // every line that would fit left a gap the height of the column after a two-line row.
+    const auto linesThatFit = static_cast<std::size_t>(
+        std::max(1.0, std::floor(remaining / (size * 1.35))));
+    const auto linesNeeded = std::max<std::size_t>(1U, studioWrapWords(canvas, text, contentWidth, size).size());
+    const auto lines = std::min(linesThatFit, linesNeeded);
+    drawWrappedText(canvas,
+                    ui::Rect{contentLeft, intakeTop, contentWidth,
+                             static_cast<double>(lines) * size * 1.35},
+                    text, color, size, size * 1.35, lines);
+    advance(static_cast<double>(lines));
+  };
+  wrappedRow(assignment->coverageKey + "  PITCH " + std::to_string(assignment->pitchLayer),
+             theme.accent, kBodyText);
+  wrappedRow("PROMPT " + assignment->promptId, theme.secondaryText, kBodyText);
+  wrappedRow(assignment->takeId.empty() ? "NO AUDIO IMPORTED" : "TAKE " + assignment->takeId,
+             theme.secondaryText, kBodyText);
+  // The three shortcut rows are one block. They were three fixed rows at 6 and 7 point, which at the
+  // narrowest window needed more height than the column had above the generation panel: the last two
+  // were painted over and the creator could not see them at all. As one wrapped block they take the
+  // lines they need, in the order they were read. They are reference rather than the value being
+  // worked on, and at the narrowest window the column has room for two lines of them at the body
+  // size and not for all six, so they are given the largest size that still fits whole. Every one of
+  // these shortcuts is also the accessible name and description of the control it belongs to.
+  constexpr std::string_view kShortcutHints =
+      "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD / CMD/CTRL-SHIFT I JOB B BATCH / "
+      "SHIFT-P PREPARE / P WAVE / N F0";
+  {
+    const auto linesAt = [&](double size) {
+      return static_cast<double>(
+          studioWrapWords(canvas, kShortcutHints, contentWidth, size).size());
+    };
+    auto size = kBodyText;
+    while (size > 8.0) {
+      const auto lines = std::max(1.0, linesAt(size));
+      const auto used = lines * size * 1.35 + kBodyGap;
+      if (used <= std::max(0.0, kProductionColumnBottom - intakeTop)) break;
+      size -= 1.0;
+    }
+    wrappedRow(std::string{kShortcutHints}, theme.secondaryText, size);
+  }
+  const auto left = region.x + 24.0;
   if (!controller.candidateMarkerError().empty()) {
     canvas.drawText(ui::Rect{left, region.y + 232.0, contentWidth, 24.0},
         controller.candidateMarkerError(), theme.accent, 8.0);

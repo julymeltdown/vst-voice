@@ -712,29 +712,123 @@ TEST_CASE("a system text engine keeps whole wording wherever it truly fits and n
   CHECK(whole > 0U);
 }
 
+// The wrapping draw has to break a sentence at its spaces and has to keep an unbroken token whole
+// rather than replacing its tail with an ellipsis. Both were wrong with a system face loaded: the
+// line broke at whatever character would not fit ("missi" then "ng"), and an identifier wider than
+// its column came out as "P00001-c6eea096f83ec23e…". Neither can be seen on the built-in bitmap face,
+// which is what a canvas with no engine draws, so this runs against a real engine.
+TEST_CASE("wrapped text with a system engine breaks at words and keeps a long token whole") {
+  namespace ui = seam::native_ui;
+  auto engine = text::TextEngine::createSystem();
+  CHECK(engine);
+  if (!engine) return;
+  const ui::Color ink{239, 233, 241, 255};
+  const ui::Color background{15, 14, 18, 255};
+  const auto rowsWith = [&](const std::string& text, double width, double height) {
+    ui::PixelSurface surface{400U, 300U};
+    surface.clear(background);
+    ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    canvas.drawTextWrapped({20.0, 20.0, width, height}, text, ink, 12.0, 16.0);
+    std::vector<std::uint32_t> rows;
+    for (std::uint32_t y = 0U; y < surface.height(); ++y)
+      for (std::uint32_t x = 0U; x < surface.width(); ++x)
+        if (surface.pixels()[static_cast<std::size_t>(y) * surface.width() + x] !=
+            background.bgra()) {
+          rows.push_back(y);
+          break;
+        }
+    return rows;
+  };
+  // A sentence in a box that holds part of it takes more than one line.
+  CHECK(rowsWith("Selected source execution evidence is missing or changed", 200.0, 60.0).size() >
+        rowsWith("Selected source execution evidence is missing or changed", 600.0, 60.0).size());
+  // An unbroken token wider than the column is broken across lines rather than drawn as a shorter
+  // token with an ellipsis in place of its tail. In a 120 point box the token needs five lines, and
+  // an ellipsized draw would show one line ending well before the right edge of the box.
+  const auto token = "P00001-c6eea096f83ec23ee63a29980504370c9c18da78e9312e56641ce5ce77be91a8";
+  CHECK(rowsWith(token, 120.0, 80.0).size() >= 4U);
+  // Every full line of the token reaches the right edge of its box. A line that lost its tail to an
+  // ellipsis stops at the width of the ellipsis plus what was kept, which is short of the edge.
+  // A token whose tail was replaced by an ellipsis still draws on the same number of rows, so the
+  // row count does not see it; what sees it is the ink on the last row, which an ellipsized draw
+  // leaves short of the box while a broken one reaches it. The final row of the token is short, so
+  // this checks the row above it, which is a full one.
+  // The widest inked column of each drawn line. A broken token fills every one of its lines to the
+  // right edge of the box, because the break falls where the next character will not fit and no
+  // character is dropped. An ellipsized draw ends each line short of that edge, because the
+  // ellipsis takes the room the dropped tail had, so the two are told apart by the width of a line
+  // and not by how many lines there are.
+  const auto lineWidths = [&](const std::string& text, double width, double height) {
+    ui::PixelSurface surface{400U, 300U};
+    surface.clear(background);
+    ui::RasterCanvas canvas{surface, 1.0, engine.value().get()};
+    canvas.drawTextWrapped({20.0, 20.0, width, height}, text, ink, 12.0, 16.0);
+    std::vector<std::uint32_t> widths;
+    std::uint32_t right = 0U;
+    bool inLine = false;
+    for (std::uint32_t y = 0U; y < surface.height(); ++y) {
+      std::uint32_t rowRight = 0U;
+      for (std::uint32_t x = 0U; x < surface.width(); ++x)
+        if (surface.pixels()[static_cast<std::size_t>(y) * surface.width() + x] !=
+            background.bgra())
+          rowRight = x;
+      if (rowRight != 0U) {
+        inLine = true;
+        if (rowRight > right) right = rowRight;
+      } else if (inLine) {
+        widths.push_back(right);
+        right = 0U;
+        inLine = false;
+      }
+    }
+    if (inLine) widths.push_back(right);
+    return widths;
+  };
+  const auto widths = lineWidths(token, 120.0, 80.0);
+  CHECK(widths.size() >= 4U);
+  // Every line but the last is a full one and reaches the right edge of the 120 point box, because
+  // the break falls where the next character will not fit and nothing is dropped.
+  for (std::size_t index = 0U; index + 1U < widths.size(); ++index)
+    CHECK(widths[index] >= 20U + 100U);
+}
+
 TEST_CASE("the intake shortcut hint wraps at the minimum window instead of being cut") {
   Fixture fixture;
   namespace ui = seam::native_ui;
   const auto ink = ui::VoicebankStudioTheme{}.secondaryText.bgra();
-  // Pixels of the hint's colour inside the centre column's content box for the given rows. The
-  // hint is the only text of that colour on these rows, above the generation panel that starts at 268.
-  const auto lit = [&](std::uint32_t width, std::uint32_t height, std::uint32_t firstRow, std::uint32_t rows) {
+  // The rows of the intake column that carry secondary text, and the ink in the column for a band of
+  // rows. The column is laid out from the height of the rows above each one, and those wrap to a
+  // different number of lines at each window width, so no row is written down here: what is pinned is
+  // where the text ends, which is a property of the layout rather than of one window size.
+  const auto bands = [&](std::uint32_t width, std::uint32_t height) {
     ui::PixelSurface surface{width, height};
     ui::RasterCanvas canvas{surface};
     fixture.controller.resize(static_cast<double>(width), static_cast<double>(height));
     ui::VoicebankStudioScenePainter{}.paint(canvas, fixture.controller);
     const std::uint32_t left = 294U, content = width - 256U - 270U - 48U;
-    std::size_t count = 0U;
-    for (std::uint32_t y = firstRow; y < firstRow + rows; ++y)
-      for (std::uint32_t x = left; x < left + content; ++x)
-        if (surface.pixels()[static_cast<std::size_t>(y) * width + x] == ink) ++count;
-    return count;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> found;
+    std::uint32_t start = 0U;
+    bool open = false;
+    for (std::uint32_t y = 72U; y < height; ++y) {
+      bool any = false;
+      for (std::uint32_t x = left; x < left + content && !any; ++x)
+        any = surface.pixels()[static_cast<std::size_t>(y) * width + x] == ink;
+      if (any && !open) { start = y; open = true; }
+      if (!any && open) { found.emplace_back(start, y - 1U); open = false; }
+    }
+    if (open) found.emplace_back(start, height - 1U);
+    return found;
   };
-  const auto wide = lit(1100U, 720U, 228U, 20U);
-  CHECK(wide > 0U);
-  // Wrapping keeps every character, so the minimum window shows exactly the ink the wide window
-  // shows, only on two lines; a cut hint would show less.
-  CHECK(lit(720U, 520U, 228U, 20U) == wide);
-  CHECK(lit(720U, 520U, 240U, 8U) > 0U);
-  CHECK(lit(1100U, 720U, 240U, 8U) == 0U);
+  const auto narrow = bands(720U, 520U);
+  const auto wide = bands(1100U, 720U);
+  // There is a hint at both widths, and it is the last band of secondary text in the column.
+  CHECK(narrow.size() >= 4U);
+  CHECK(wide.size() >= 4U);
+  // The generation panel starts at 268 and used to paint over the last two shortcut rows outright,
+  // so the creator could not see them at all. Nothing of the column is drawn from there down.
+  constexpr std::uint32_t kGenerationPanelTop = 268U;
+  CHECK(!narrow.empty() && narrow.back().second < kGenerationPanelTop);
+  CHECK(!wide.empty() && wide.back().second < kGenerationPanelTop);
+  // The hint is drawn at all: the band nearest the panel is the hint and it carries ink.
+  CHECK(!narrow.empty() && narrow.back().first <= narrow.back().second);
 }

@@ -52,14 +52,20 @@ inline constexpr double kStudioHintHeight = 26.0;
 inline constexpr double kStudioHintBaseline = 52.0;
 inline constexpr double kStudioHintText = 12.0;
 inline constexpr double kStudioControlText = 12.0;
-// The header panel is 72 points tall and is the only band that is free at every window width: below
-// it the production view fills its own region from 72 down, so a status row there overlapped the
-// PRODUCTION INTAKE heading at wider windows. The app status therefore shares the row with the two
-// shortcut strips and takes what is left of it to the right, which is 136 points at the narrowest
-// window the app supports and grows from there. It wraps, because a clipped sentence shows the
-// creator its middle and hides what it says.
-inline constexpr double kStudioStatusTop = 48.0;
+// The app status is a sentence and it is given a full width row of its own for that reason. The two
+// widths it has to work at are measured, not guessed: at 720 points the longest message needs about
+// 545 points of type at 12 point, and the space beside the shortcut strips is 136, so a status
+// squeezed there needs four lines and gets two, and the sentence is cut at both ends. The row below
+// the header gives it 214 points at that width, which is three lines of the longest message and one
+// line at 1100. The intake column starts below it (its first row is at region.y + 44), so the two
+// never overlap. It wraps because a clipped sentence shows the creator its middle and hides what it
+// says.
+inline constexpr double kStudioStatusTop = 76.0;
 inline constexpr double kStudioStatusHeight = 36.0;
+// The status spans the window between the units rail, which occupies the first 252 points, and the
+// inspector column on the right, which is 238 wide with an 8 point gap before it.
+inline constexpr double kStudioStatusLeft = 258.0;
+inline constexpr double kStudioStatusRightMargin = 246.0;
 // The recording row is inside the units rail column, in the band between the rail heading and its
 // first row. The rail occupies the first 252 points of the window and its rows start at 108, so this
 // band is the one place in the window that is free at every width: the header above it is taken by
@@ -2347,17 +2353,15 @@ public:
       canvas.drawText({control.bounds.x+6.0,control.bounds.y+5.0,control.bounds.width-12.0,16.0}, control.label,
           control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{150,145,153,255}, kStudioControlText);
     }
-    // The status is the sentence the app is currently saying, on its own row under the header panel
-    // (kStudioStatusTop) and starting after the shortcut strips end so it can never overlap them. It
-    // wraps to the two lines that fit above the recording row, so a long message is said in full
-    // instead of being cut: a clipped sentence shows the creator its middle and hides what it says.
-    // The status stops before the inspector column on the right (238 points wide) as well as before
-    // the window edge, because at the narrowest window a status that ran to the edge was drawn under
-    // the production project heading and both became unreadable.
-    const auto inspectorLeft = canvas.logicalWidth() - 238.0;
-    const auto statusLeft = reviewLeft + reviewWidth + 8.0;
-    const auto statusWidth =
-        std::max(0.0, std::min(canvas.logicalWidth(), inspectorLeft) - statusLeft - 8.0);
+    // The status is the sentence the app is currently saying. It has a full width row of its own
+    // (kStudioStatusTop) between the units rail and the inspector column, and it wraps inside it, so
+    // a long message is said in full instead of being cut: a clipped sentence shows the creator its
+    // middle and hides what it says. Both edges are bounded by a column, not by the window, so a long
+    // sentence can never be drawn under the rail or the production project heading.
+    const auto statusLeft = std::max(kStudioStatusLeft, reviewLeft + reviewWidth + 8.0);
+    const auto statusRight = std::min(canvas.logicalWidth() - kStudioStatusRightMargin,
+                                      canvas.logicalWidth());
+    const auto statusWidth = std::max(0.0, statusRight - statusLeft);
     canvas.drawTextWrapped({statusLeft, kStudioStatusTop, statusWidth, kStudioStatusHeight},
         !lastError_.empty() ? lastError_ : !recordingStatus_.empty() ? recordingStatus_ :
             (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),

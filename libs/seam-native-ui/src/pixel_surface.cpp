@@ -517,30 +517,90 @@ void RasterCanvas::drawTextWrapped(ui::Rect bounds, std::string_view text, Color
   auto drewWithEngine = false;
   if (textEngine_ != nullptr) {
     try {
-      const auto rendered = textEngine_->renderShared(
-          text, text::TextStyle{
-                    .pixelHeight = static_cast<float>(size * scale_),
-                    .letterSpacing = 0.0F,
-                    .lineSpacing = static_cast<float>(spacing / size),
-                    .maximumWidth = width,
-                    .maximumLines = lines,
-                    .ellipsize = true,
-                });
-      if (rendered) {
+      // The engine breaks a line wherever the next character will not fit, so it can split a word
+      // across two lines ("missi" then "ng"), and with ellipsize on it ends a line that still had
+      // room by drawing an ellipsis. Both are wrong for a sentence. The lines are therefore broken
+      // here, at the spaces, using the engine to measure each candidate line in the same face it
+      // will draw with, and each line is drawn as one whole line with no ellipsis.
+      const auto styleFor = [&](std::size_t maximumLines, bool bounded) {
+        return text::TextStyle{
+                   .pixelHeight = static_cast<float>(size * scale_),
+                   .letterSpacing = 0.0F,
+                   .lineSpacing = static_cast<float>(spacing / size),
+                   // A measurement carries no width, so it is the width of the text as it is and not
+                   // the width of whatever the renderer decided to keep of it.
+                   .maximumWidth = bounded ? width : 0U,
+                   .maximumLines = std::max<std::size_t>(1U, maximumLines),
+                   .ellipsize = false,
+               };
+      };
+      const auto fits = [&](std::string_view candidate) {
+        const auto metrics = textEngine_->measure(candidate, styleFor(1U, false));
+        return metrics && metrics.value().width <= static_cast<double>(width);
+      };
+      std::vector<std::string_view> wrapped;
+      std::size_t wordStart = 0U;
+      while (wordStart < text.size()) {
+        while (wordStart < text.size() && text[wordStart] == ' ') ++wordStart;
+        if (wordStart >= text.size()) break;
+        const auto found = text.find(' ', wordStart);
+        const auto wordEnd = found == std::string_view::npos ? text.size() : found;
+        const auto candidate = text.substr(wordStart, wordEnd - wordStart);
+        // A word with no space in it and wider than the column cannot be given a line of its own,
+        // because a line is what has to fit. It is split at the last character that does fit and
+        // the rest becomes the next line. An identifier is such a word, and the earlier behavior was
+        // to draw it as one line and let it be clipped, which is what put an ellipsis where the tail
+        // of a prompt id should have been.
+        if (!fits(candidate)) {
+          std::size_t pieceStart = wordStart;
+          while (pieceStart < wordEnd) {
+            auto pieceEnd = pieceStart;
+            while (pieceEnd < wordEnd &&
+                   fits(text.substr(pieceStart, pieceEnd + 1U - pieceStart)))
+              ++pieceEnd;
+            if (pieceEnd == pieceStart) ++pieceEnd;
+            wrapped.push_back(text.substr(pieceStart, pieceEnd - pieceStart));
+            pieceStart = pieceEnd;
+          }
+          wordStart = wordEnd;
+          continue;
+        }
+        if (wrapped.empty()) {
+          wrapped.push_back(candidate);
+        } else {
+          const auto joined = std::string{wrapped.back()} + ' ' + std::string{candidate};
+          if (fits(joined)) {
+            // The word fits on the line being built, so the line grows to reach the end of this
+            // word. It stays a view into the caller text rather than a copy.
+            const auto lineStart = static_cast<std::size_t>(wrapped.back().data() - text.data());
+            wrapped.back() = text.substr(lineStart, wordEnd - lineStart);
+          } else {
+            wrapped.push_back(candidate);
+          }
+        }
+        wordStart = wordEnd;
+      }
+      if (wrapped.empty()) wrapped.push_back(text);
+      const auto count = std::min<std::size_t>(lines, wrapped.size());
+      for (std::size_t index = 0U; index < count; ++index) {
+        const auto lineTop = top + static_cast<std::int32_t>(
+            std::lround(static_cast<double>(index) * spacing * scale_));
+        const auto rendered = textEngine_->renderShared(wrapped[index], styleFor(1U, true));
+        if (!rendered) continue;
         const auto& bitmap = rendered.value()->bitmap;
-        const auto rowStart = static_cast<std::uint32_t>(std::max(0, -top));
         const auto rowEnd = static_cast<std::uint32_t>(std::max(
-            0, std::min({static_cast<std::int32_t>(bitmap.height), bottom - top,
-                         static_cast<std::int32_t>(surface_.height()) - top})));
-        const auto columnStart = static_cast<std::uint32_t>(std::max(0, -left));
+            0, std::min({static_cast<std::int32_t>(bitmap.height), bottom - lineTop,
+                         static_cast<std::int32_t>(surface_.height()) - lineTop})));
+        const auto rowStart = static_cast<std::uint32_t>(std::max(0, -lineTop));
         const auto columnEnd = static_cast<std::uint32_t>(std::max(
             0, std::min({static_cast<std::int32_t>(bitmap.width),
                          static_cast<std::int32_t>(width),
                          static_cast<std::int32_t>(surface_.width()) - left})));
+        const auto columnStart = static_cast<std::uint32_t>(std::max(0, -left));
         const auto sourceOpaque = Color{color.red, color.green, color.blue, 255U}.bgra();
         for (auto row = rowStart; row < rowEnd; ++row) {
           auto destinationIndex =
-              static_cast<std::size_t>(top + static_cast<std::int32_t>(row)) *
+              static_cast<std::size_t>(lineTop + static_cast<std::int32_t>(row)) *
                   surface_.width() +
               static_cast<std::size_t>(left + static_cast<std::int32_t>(columnStart));
           for (auto column = columnStart; column < columnEnd; ++column, ++destinationIndex) {
