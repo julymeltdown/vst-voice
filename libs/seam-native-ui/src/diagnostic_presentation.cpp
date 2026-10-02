@@ -54,6 +54,12 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
     result.title = "Selection is out of step";
     result.impact = "Your edit is kept, but the renderer did not follow the new selection. "
                     "Retry asks it again.";
+  } else if (diagnostic.code == "AUDIO_STOP_REFUSED") {
+    // The device is running and the audio is playing, which is the opposite of an unavailable output:
+    // what the creator is told is that stopping did not take, and that the next frame asks again.
+    result.title = "Audio is still playing";
+    result.impact = "The output device did not stop when asked. It keeps playing, and SEAM asks it to "
+                    "stop again until it does.";
   } else if (diagnostic.code == "SUPPORT_BUNDLE_PREVIEW_READY") {
     result.title = "Support report is ready to review";
     result.impact = "Review listed files before export.";

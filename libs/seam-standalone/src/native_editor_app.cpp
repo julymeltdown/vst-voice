@@ -905,7 +905,7 @@ core::Result<void> NativeEditorApp::initializeAudio() {
         return restartAudio(settings);
       });
   if (physicalError.has_value()) setAudioUnavailable(*physicalError);
-  else clearAudioUnavailable();
+  else clearAudioNotice();
   return core::success();
 }
 
@@ -947,7 +947,7 @@ core::Result<void> NativeEditorApp::startAudioForPlayback() {
     setAudioUnavailable(started.error());
     return started;
   }
-  clearAudioUnavailable();
+  clearAudioNotice();
   const auto info = audioDevice_->info();
   authoring_->controller().setAudioState(info.physical, info.backend);
   return core::success();
@@ -966,15 +966,17 @@ core::Result<void> NativeEditorApp::stopAudioForPlayback() noexcept {
   if (!stopped) {
     // A device that does not say that it has stopped goes on being the consumer of the ring: it
     // stays here and running() goes on saying so, so that a later frame decides again and asks
-    // again. The creator is told, and the notice goes when a stop succeeds.
-    setAudioUnavailable(stopped.error());
+    // again. The creator is told what is true of it, which is that it is still playing rather than
+    // that audio is unavailable (it is not: the output is running), and the notice goes when a stop
+    // succeeds.
+    setAudioStopRefused(stopped.error());
     audioStopFailed_ = true;
     return stopped;
   }
   if (audioStopFailed_) {
     // It has stopped now, and what the creator was told of it is no longer true.
     audioStopFailed_ = false;
-    clearAudioUnavailable();
+    clearAudioNotice();
     if (authoring_ != nullptr) {
       const auto info = audioDevice_->info();
       authoring_->controller().setAudioState(info.physical, info.backend);
@@ -1132,7 +1134,7 @@ core::Result<void> NativeEditorApp::restartAudio(
       processor_ = std::move(nextProcessor);
       const auto info = audioDevice_->info();
       authoring_->controller().setAudioState(info.physical, info.backend);
-      clearAudioUnavailable();
+      clearAudioNotice();
       if (resumePlayback) {
         const auto resumed = authoring_->runtime().transport().play();
         if (!resumed) return resumed;
@@ -1175,7 +1177,7 @@ core::Result<void> NativeEditorApp::restartAudio(
       audioDevice_ = std::move(previousDevice);
       const auto info = audioDevice_->info();
       authoring_->controller().setAudioState(info.physical, info.backend);
-      clearAudioUnavailable();
+      clearAudioNotice();
       if (resumePlayback) {
         const auto resumed = authoring_->runtime().transport().play();
         if (!resumed) return resumed;
@@ -1202,25 +1204,38 @@ core::Result<void> NativeEditorApp::restartAudio(
 void NativeEditorApp::setAudioUnavailable(const core::Error& error) noexcept {
   // A notice that is raised now is not the one about a device that did not stop.
   audioStopFailed_ = false;
+  raiseAudioNotice("AUDIO_UNAVAILABLE", "audio.unavailable", error);
+}
+
+void NativeEditorApp::setAudioStopRefused(const core::Error& error) noexcept {
+  raiseAudioNotice("AUDIO_STOP_REFUSED", "audio.stop-refused", error);
+}
+
+void NativeEditorApp::raiseAudioNotice(std::string_view code, std::string_view messageKey,
+                                       const core::Error& error) noexcept {
   lastError_ = error.message;
   if (!error.context.empty()) lastError_ += ": " + error.context;
   audioDiagnostic_ = authoring::Diagnostic{
-      .code = "AUDIO_UNAVAILABLE",
-      .severity = authoring::DiagnosticRegistry::severity("AUDIO_UNAVAILABLE"),
-      .messageKey = "audio.unavailable",
+      .code = std::string{code},
+      .severity = authoring::DiagnosticRegistry::severity(code),
+      .messageKey = std::string{messageKey},
       .affectedIds = {},
-      .actions = authoring::DiagnosticRegistry::actions("AUDIO_UNAVAILABLE"),
+      .actions = authoring::DiagnosticRegistry::actions(code),
       .occurrenceCount = 1U,
   };
-  if (authoring_ != nullptr) {
+  // An output that could not be opened is not online; one that would not stop is running, which is
+  // what it still is, and reporting it offline is what made the old notice read backwards.
+  if (authoring_ != nullptr && code == "AUDIO_UNAVAILABLE") {
     authoring_->controller().setAudioState(false, "unavailable");
+  }
+  if (authoring_ != nullptr) {
     auto diagnostics = authoring_->runtime().diagnostics();
     diagnostics.push_back(*audioDiagnostic_);
     authoring_->controller().setDiagnostics(std::move(diagnostics));
   }
 }
 
-void NativeEditorApp::clearAudioUnavailable() noexcept {
+void NativeEditorApp::clearAudioNotice() noexcept {
   audioDiagnostic_.reset();
   audioStopFailed_ = false;
 }

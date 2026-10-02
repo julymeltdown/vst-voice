@@ -186,7 +186,13 @@ private:
   [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
   void refreshCrashRecoveryContext();
   void setAudioUnavailable(const core::Error& error) noexcept;
-  void clearAudioUnavailable() noexcept;
+  // A device that would not say that it stopped is a different fact from one that could not be opened:
+  // it is still running, so it gets its own notice and the audio state is left as it is.
+  void setAudioStopRefused(const core::Error& error) noexcept;
+  // Either notice goes through here, so the two codes share one construction and one panel rebuild.
+  void raiseAudioNotice(std::string_view code, std::string_view messageKey,
+                        const core::Error& error) noexcept;
+  void clearAudioNotice() noexcept;
   // Tells the transport whether the audio device, its consumer, runs (see
   // TransportController::setConsumerRunning). The transport cannot see the device, and what it does
   // at the end of a song depends on whether the device is there to play it out. Called when the app

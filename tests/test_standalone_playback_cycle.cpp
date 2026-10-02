@@ -948,7 +948,9 @@ std::size_t audioNotices(PlaybackRig& rig) {
   rig.paint();
   const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
   return static_cast<std::size_t>(std::count_if(entries.begin(), entries.end(), [](const auto& entry) {
-    return entry.diagnostic.code == "AUDIO_UNAVAILABLE";
+    // Either notice the audio device raises: one that could not be opened, and one that would not say
+    // it had stopped. Both are the audio device telling the creator something about itself.
+    return entry.diagnostic.code == "AUDIO_UNAVAILABLE" || entry.diagnostic.code == "AUDIO_STOP_REFUSED";
   }));
 }
 
@@ -1650,6 +1652,16 @@ bool audioNoticeShown(PlaybackRig& rig) {
   });
 }
 
+// The code of a notice the audio device has raised, empty when it has raised none.
+std::string audioNoticeCode(PlaybackRig& rig) {
+  const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
+  for (const auto& entry : entries) {
+    if (entry.diagnostic.code == "AUDIO_UNAVAILABLE" || entry.diagnostic.code == "AUDIO_STOP_REFUSED")
+      return entry.diagnostic.code;
+  }
+  return {};
+}
+
 }  // namespace
 
 TEST_CASE("standalone playback window: a Transport-menu command asks for the frame that shows it") {
@@ -2037,6 +2049,10 @@ TEST_CASE("standalone playback window: a device that will not stop is asked agai
     std::this_thread::sleep_for(5ms);
   }
   CHECK(rig.device->running());
+  // What the creator is told is that the audio is still playing, not that audio is unavailable: the
+  // output is running, and a notice that says otherwise reads backwards about the state it describes.
+  CHECK(audioNoticeCode(rig) == "AUDIO_STOP_REFUSED");
+  CHECK(!audioNoticeShown(rig));
   CHECK(rig.framesPainted - framesBefore >= 150U);
   CHECK(rig.device->stopAttempts() - askedBefore >= 100U);
 

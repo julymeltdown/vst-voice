@@ -76,6 +76,11 @@ constexpr std::array definitions{
     Definition{"RENDERER_CHANGED", DiagnosticSeverity::Warning, kRendererChanged},
     Definition{"MEDIA_MISSING", DiagnosticSeverity::Error, kRelinkSupport},
     Definition{"AUDIO_UNAVAILABLE", DiagnosticSeverity::Error, kOpenSettings},
+    // A device that would not say that it stopped is a different fact from one that could not be
+    // opened: the output is running and the audio is playing, so the notice says what is true of it
+    // (the device is still going) rather than that audio is unavailable, which is not. Asking again is
+    // what stops it, and there is nothing for the creator to configure.
+    Definition{"AUDIO_STOP_REFUSED", DiagnosticSeverity::Warning, kNotice},
     Definition{"PERSISTENCE_FAILED", DiagnosticSeverity::Critical, kRecoverSupport},
     Definition{"RECOVERY_FAILED", DiagnosticSeverity::Critical, kRecoverSupport},
     Definition{"EXPORT_FAILED", DiagnosticSeverity::Error, kRetrySupport},
