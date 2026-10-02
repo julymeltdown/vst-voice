@@ -44,46 +44,83 @@ enum class DeviceAction { None, Start, Stop };
   return transport.available && !deviceRunning ? DeviceAction::Start : DeviceAction::None;
 }
 
-// How long a window that paints only on request waits before a frame asks the device again, after a
-// Start that failed. A device that cannot start is not asked at the display's rate.
+// How long a Start that failed holds the next one back (see DeviceStartRetry).
 inline constexpr std::chrono::milliseconds kDeviceRetryDelay{250};
 
-// What a frame that has dealt with the device leaves for the next one. A window that has nothing to
-// animate runs no frame of its own accord (see INativeWindowClient::nextFrameDue), and what a frame
-// does for the device is work that goes on over frames: a decision that waits for the feeder, a start
-// that failed, a device that is still to be asked to stop, a song that is still to be played. So a
-// frame that leaves any of it asks for the next one, and a window with none of it goes to sleep.
-struct DeviceFollowUp final {
-  // Another frame at the display's rate.
-  bool frameNow{false};
-  // Another frame after this long, for work that is not to be asked again at once.
-  std::optional<std::chrono::milliseconds> retryAfter;
+// The time that a Start which failed holds the next one back until. A window paints for many reasons
+// that have nothing to do with the device (an animation, a pointer, a worker that landed), and a frame
+// that finds a Play that no device has taken up asks the device to start. Without a hold, a backend that
+// cannot start would be asked at the rate of those frames, on the thread that paints, and the creator's
+// Play, which stays theirs, would be tried dozens of times a second. With one, the first frame after the
+// delay asks, and a window that has nothing else to paint is woken for it (nextFrameDue()).
+//
+// The hold belongs to the Play that wanted the device and to that device. It stays through the frames
+// that come early, which neither ask the device nor move it, and through a report that does not yet
+// include every command the creator sent, which says nothing about whether the Play is still wanted. It
+// goes when the Start works; when a complete report no longer wants a device started (a Pause, a Stop,
+// the audio taken away), because the next Play is a new one and is asked at once; when there is no
+// device; and when the creator changes the audio settings (clear()), because the device that comes of
+// that has its own first try.
+class DeviceStartRetry final {
+public:
+  using Clock = std::chrono::steady_clock;
+
+  // The action that a frame at `now` takes of what it decided: a Start that is held back is not taken.
+  [[nodiscard]] constexpr DeviceAction gate(DeviceAction decided,
+                                            Clock::time_point now) const noexcept {
+    return decided == DeviceAction::Start && notBefore_.has_value() && now < *notBefore_
+               ? DeviceAction::None
+               : decided;
+  }
+
+  // What the frame leaves behind. `decided` is what decideDeviceAction said, `taken` what the frame
+  // did of it (gate), `failed` whether doing it failed, and `at` the time when it was done, after the
+  // attempt, which can take a while: a hold counts from when the device said no.
+  constexpr void afterFrame(const authoring::TransportState& transport, bool deviceExists,
+                            DeviceAction decided, DeviceAction taken, bool failed,
+                            Clock::time_point at) noexcept {
+    if (taken == DeviceAction::Start) {
+      if (failed) {
+        notBefore_ = at + kDeviceRetryDelay;
+      } else {
+        notBefore_.reset();
+      }
+      return;
+    }
+    // A Start that was held back leaves the hold where it was.
+    if (decided == DeviceAction::Start) return;
+    if (!deviceExists || transport.settled) notBefore_.reset();
+  }
+
+  // The creator changed what the hold was about: another device, with its own first try.
+  constexpr void clear() noexcept { notBefore_.reset(); }
+
+  // When a window that has nothing else to paint is to be woken for the next try, if one is held.
+  [[nodiscard]] constexpr std::optional<Clock::time_point> notBefore() const noexcept {
+    return notBefore_;
+  }
+
+private:
+  std::optional<Clock::time_point> notBefore_;
 };
 
-// The follow-up of a frame, given the transport report that the frame decided by, what it decided
-// (action) and whether doing it failed, and whether the device runs once that is done:
-//  - A device that runs is the consumer of the ring and plays a song whose playhead and level are to
-//    be shown, so the window keeps painting for as long as it runs: not only while the output meter
-//    has a block to show, which it has not until the first one has been played, and has not when the
-//    callback stalls, or when the platform will not say that the device has stopped. A device that is
-//    to be stopped and does not stop runs on, and is asked again by the next frame.
+// Whether the frame that has dealt with the device asks for another at once. A window that has nothing
+// to animate runs no frame of its own accord (see INativeWindowClient::nextFrameDue), and some of what a
+// frame does for the device goes on over frames:
+//  - A device that runs is the consumer of the ring and plays a song whose playhead and level are to be
+//    shown, so the window keeps painting for as long as it runs: not only while the output meter has a
+//    block to show, which it has not until the first one has been played, and has not when the callback
+//    stalls, or when the platform will not say that the device has stopped. A device that is to be
+//    stopped and does not stop runs on, and is asked again by the next frame.
 //  - A report that does not yet include every command the creator sent decides nothing
 //    (decideDeviceAction), so a frame that meets one asks for another: the feeder applies the commands
 //    on its own thread, a moment after they are sent, and a frame that is painted for a menu command
 //    comes before that.
-//  - A Start that failed is asked again, later (kDeviceRetryDelay): the Play that wanted it is the
-//    creator's still, and nothing else would ask the device again.
-// With no device there is nothing to follow up.
-[[nodiscard]] constexpr DeviceFollowUp deviceFollowUp(const authoring::TransportState& transport,
-                                                      bool deviceExists,
-                                                      DeviceAction action,
-                                                      bool actionFailed,
-                                                      bool deviceRunning) noexcept {
-  DeviceFollowUp followUp;
-  if (!deviceExists) return followUp;
-  followUp.frameNow = deviceRunning || !transport.settled;
-  if (action == DeviceAction::Start && actionFailed) followUp.retryAfter = kDeviceRetryDelay;
-  return followUp;
+// A Start that failed is not in this: it is asked again later, once its hold is over
+// (DeviceStartRetry). With no device there is nothing to ask for.
+[[nodiscard]] constexpr bool deviceNeedsFrame(const authoring::TransportState& transport,
+                                              bool deviceExists, bool deviceRunning) noexcept {
+  return deviceExists && (deviceRunning || !transport.settled);
 }
 
 }  // namespace seam::standalone

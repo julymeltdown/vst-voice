@@ -16,6 +16,7 @@
 #include "seam/standalone/application_controller.hpp"
 #include "seam/standalone/authoring_session.hpp"
 #include "seam/standalone/native_project_dialog.hpp"
+#include "seam/standalone/playback_device_policy.hpp"
 #include "seam/standalone/production_configuration.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/authoring/support_bundle.hpp"
@@ -158,7 +159,7 @@ public:
   [[nodiscard]] bool wantsClose() const noexcept override;
   // The shell's deadline (a waiting tooltip, the idle breath) and the owner thread's time-driven work
   // that a frame does: the autosave tick of a document that has unsaved changes, and the next try at
-  // a start of the audio device that failed (see deviceFollowUp).
+  // a start of the audio device that failed (see DeviceStartRetry).
   [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue()
       const noexcept override;
 
@@ -231,9 +232,9 @@ private:
   // The audio notice above says that the device did not stop (see stopAudioForPlayback), and goes
   // when it has.
   bool audioStopFailed_{false};
-  // When a frame is to try the audio device's start again, after one that failed: what the last
-  // frame's follow-up asked for (see deviceFollowUp), reported by nextFrameDue().
-  std::optional<std::chrono::steady_clock::time_point> deviceRetryAt_;
+  // The hold that a start of the audio device that failed puts on the next one: no frame asks the
+  // device again before it is over, and nextFrameDue() wakes a still window for it.
+  DeviceStartRetry deviceRetry_;
   // A notice that this project's recorded sound came from different renderer code than this build
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.

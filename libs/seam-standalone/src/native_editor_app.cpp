@@ -1012,6 +1012,9 @@ core::Result<void> NativeEditorApp::restartAudio(
       settings.outputChannels == previous.outputChannels) {
     return core::success();
   }
+  // The creator changed the audio settings: whatever device comes of that is asked to start for a Play
+  // that stands without the hold that the old device's failed start put on it. It has its own first try.
+  deviceRetry_.clear();
   const auto previousDeviceInfo =
       audioDevice_ != nullptr
           ? audioDevice_->info()
@@ -1701,9 +1704,12 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   // cannot see that, and is told once per frame, before it is asked what to do about the device.
   reportConsumerToTransport();
   const auto transport = authoring_->runtime().transport().state();
-  const auto deviceAction = decideDeviceAction(
+  const auto decidedAction = decideDeviceAction(
       transport, authoring_->runtime().transport().ringBuffer().availableReadFrames(),
       audioDevice_ != nullptr, audioDevice_ != nullptr && audioDevice_->running());
+  // A Start that failed holds the next one back (see DeviceStartRetry). The frames that come meanwhile,
+  // for whatever reason, neither ask the device nor move the deadline.
+  const auto deviceAction = deviceRetry_.gate(decidedAction, uiNow());
   auto deviceActionFailed = false;
   switch (deviceAction) {
     case DeviceAction::Stop:
@@ -1724,15 +1730,15 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
       break;
   }
   // A window that paints only on request runs no frame that nothing asked for, and what a frame does
-  // for the device goes on over frames: while there is more to do, this one asks for the next.
-  const auto followUp = deviceFollowUp(transport, audioDevice_ != nullptr, deviceAction,
-                                       deviceActionFailed,
-                                       audioDevice_ != nullptr && audioDevice_->running());
-  deviceRetryAt_ = followUp.retryAfter.has_value()
-                       ? std::optional<std::chrono::steady_clock::time_point>{
-                             uiNow() + *followUp.retryAfter}
-                       : std::nullopt;
-  if (followUp.frameNow) requestWindowRepaint();
+  // for the device goes on over frames: while there is more to do, this one asks for the next, and a
+  // start that failed is asked again by its deadline. The time of the failure is read now, after the
+  // attempt, which can take a while.
+  deviceRetry_.afterFrame(transport, audioDevice_ != nullptr, decidedAction, deviceAction,
+                          deviceActionFailed, uiNow());
+  if (deviceNeedsFrame(transport, audioDevice_ != nullptr,
+                       audioDevice_ != nullptr && audioDevice_->running())) {
+    requestWindowRepaint();
+  }
   const auto progress = authoring_->runtime().renderer().progress();
   authoring_->controller().setPlaying(transport.playing);
   authoring_->controller().setLoopEnabled(transport.loop.enabled);
@@ -1843,7 +1849,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   }
   // The output meter reads what the audio thread measured in the blocks the device received. A
   // stopped or missing device publishes nothing, so the meter shows its empty scale. The window
-  // keeps repainting while the device runs (see deviceFollowUp), so the hold and decay move.
+  // keeps repainting while the device runs (see deviceNeedsFrame), so the hold and decay move.
   if (auto reading = outputMeter_.read(audioDevice_ != nullptr && audioDevice_->running(),
                                        std::chrono::steady_clock::now())) {
     authoring_->controller().setOutputLevel(native_ui::EditorSceneState::OutputLevel{
@@ -2094,8 +2100,8 @@ std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameD
     if (const auto autosave = applicationController_->autosaveDue(); autosave.has_value())
       due = due.has_value() ? std::min(*due, *autosave) : *autosave;
   }
-  if (deviceRetryAt_.has_value())
-    due = due.has_value() ? std::min(*due, *deviceRetryAt_) : *deviceRetryAt_;
+  if (const auto retry = deviceRetry_.notBefore(); retry.has_value())
+    due = due.has_value() ? std::min(*due, *retry) : *retry;
   return due;
 }
 

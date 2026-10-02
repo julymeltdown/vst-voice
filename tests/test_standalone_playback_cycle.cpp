@@ -55,6 +55,8 @@ struct PumpedDevices final {
   bool failNextOpen{false};
   // Called as a device is destroyed, before it is gone from the list.
   std::function<void(const PumpedAudioDevice&)> onDestroyed;
+  // Called as a device is asked to start, before it answers: a start that takes time, on the test's clock.
+  std::function<void()> onStart;
 };
 
 class PumpedAudioDevice final : public seam::platform::IAudioDevice {
@@ -90,6 +92,7 @@ public:
   }
   seam::core::Result<void> start() override {
     ++startAttempts_;
+    if (devices_->onStart) devices_->onStart();
     if (processor_ == nullptr) {
       return seam::core::failure(seam::core::ErrorCode::InvalidState, "pumped device is not open");
     }
@@ -746,55 +749,109 @@ TEST_CASE("standalone playback policy: with no device there is nothing to start 
   }
 }
 
-TEST_CASE("standalone playback policy: a frame leaves the next one to be asked for while the device still needs it") {
-  using seam::standalone::DeviceAction;
-  using seam::standalone::deviceFollowUp;
-  using seam::standalone::kDeviceRetryDelay;
+TEST_CASE("standalone playback policy: a frame asks for another at once while the device runs or the report is incomplete") {
+  using seam::standalone::deviceNeedsFrame;
   // A device that runs keeps the window painting: the playhead and the level are shown for as long as
   // it plays, whether or not a block has been measured yet, and a device that is to be stopped and does
   // not stop is asked again by the next frame.
-  for (const auto action : {DeviceAction::None, DeviceAction::Start, DeviceAction::Stop}) {
-    for (const bool failed : {false, true}) {
-      CHECK(deviceFollowUp(reported(true, true), true, action, failed, true).frameNow);
-      CHECK(deviceFollowUp(reported(false, true), true, action, failed, true).frameNow);
-    }
-  }
+  CHECK(deviceNeedsFrame(reported(true, true), true, true));
+  CHECK(deviceNeedsFrame(reported(false, true), true, true));
+  CHECK(deviceNeedsFrame(reported(false, false), true, true));
   // A report that does not yet include every command decides nothing (decideDeviceAction), so the
   // frame that meets one asks for another: the feeder applies the command a moment after it is sent.
-  CHECK(deviceFollowUp(reported(false, false), true, DeviceAction::None, false, false).frameNow);
-  CHECK(deviceFollowUp(reported(true, false), true, DeviceAction::None, false, false).frameNow);
+  CHECK(deviceNeedsFrame(reported(false, false), true, false));
+  CHECK(deviceNeedsFrame(reported(true, false), true, false));
   // A device that is stopped, and a report that is complete, leave nothing: the window may sleep,
-  // whatever the transport is doing.
-  for (const bool playing : {false, true}) {
-    const auto idle = deviceFollowUp(reported(playing, true), true, DeviceAction::None, false, false);
-    CHECK(!idle.frameNow);
-    CHECK(!idle.retryAfter.has_value());
-  }
-  // A Start that failed leaves the device stopped, and is asked again later and not at once.
-  const auto failedStart =
-      deviceFollowUp(reported(true, true), true, DeviceAction::Start, true, false);
-  CHECK(!failedStart.frameNow);
-  CHECK(failedStart.retryAfter == kDeviceRetryDelay);
-  // A Start that worked has nothing to ask again, and the device that runs keeps the window painting.
-  const auto started = deviceFollowUp(reported(true, true), true, DeviceAction::Start, false, true);
-  CHECK(started.frameNow);
-  CHECK(!started.retryAfter.has_value());
-  // A Stop that was refused leaves the device running, and the next frame asks again.
-  const auto refused = deviceFollowUp(reported(false, true), true, DeviceAction::Stop, true, true);
-  CHECK(refused.frameNow);
-  CHECK(!refused.retryAfter.has_value());
-  // A Stop that worked leaves nothing.
-  const auto stopped = deviceFollowUp(reported(false, true), true, DeviceAction::Stop, false, false);
-  CHECK(!stopped.frameNow);
-  CHECK(!stopped.retryAfter.has_value());
-  // With no device there is nothing to follow up, whatever the report says.
+  // whatever the transport is doing. A Start that failed is not in this, it has a hold of its own.
+  CHECK(!deviceNeedsFrame(reported(false, true), true, false));
+  CHECK(!deviceNeedsFrame(reported(true, true), true, false));
+  // With no device there is nothing to ask for, whatever the report says.
   for (const bool playing : {false, true}) {
     for (const bool settled : {false, true}) {
-      const auto none = deviceFollowUp(reported(playing, settled), false, DeviceAction::None, false, false);
-      CHECK(!none.frameNow);
-      CHECK(!none.retryAfter.has_value());
+      for (const bool running : {false, true}) {
+        CHECK(!deviceNeedsFrame(reported(playing, settled), false, running));
+      }
     }
   }
+}
+
+TEST_CASE("standalone playback policy: a Start that failed holds the next one back until its delay is over") {
+  using seam::standalone::DeviceAction;
+  using seam::standalone::DeviceStartRetry;
+  using seam::standalone::kDeviceRetryDelay;
+  using Clock = DeviceStartRetry::Clock;
+  const auto t0 = Clock::time_point{} + 10s;
+  const auto wanted = reported(true, true);
+  const auto paused = reported(false, true);
+  DeviceStartRetry retry;
+
+  // Nothing is held at first: every action is taken as it was decided.
+  CHECK(!retry.notBefore().has_value());
+  for (const auto action : {DeviceAction::None, DeviceAction::Start, DeviceAction::Stop}) {
+    CHECK(retry.gate(action, t0) == action);
+  }
+
+  // A Start that failed holds the next one back, counting from when the device said no: not at that
+  // moment, not a millisecond before the delay is over, and again from the moment it is over.
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  CHECK(retry.notBefore() == t0 + kDeviceRetryDelay);
+  CHECK(retry.gate(DeviceAction::Start, t0) == DeviceAction::None);
+  CHECK(retry.gate(DeviceAction::Start, t0 + kDeviceRetryDelay - 1ms) == DeviceAction::None);
+  CHECK(retry.gate(DeviceAction::Start, t0 + kDeviceRetryDelay) == DeviceAction::Start);
+  CHECK(retry.gate(DeviceAction::Start, t0 + 1h) == DeviceAction::Start);
+  // Only a Start is held back.
+  CHECK(retry.gate(DeviceAction::None, t0) == DeviceAction::None);
+  CHECK(retry.gate(DeviceAction::Stop, t0) == DeviceAction::Stop);
+
+  // A frame that comes early and is held back neither asks the device nor moves the deadline, early
+  // or late in the delay.
+  for (const auto early : {0ms, 100ms, 249ms}) {
+    retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::None, false, t0 + early);
+    CHECK(retry.notBefore() == t0 + kDeviceRetryDelay);
+  }
+  // A report that does not yet include every command says nothing about whether the Play is still
+  // wanted: the hold stays.
+  retry.afterFrame(reported(false, false), true, DeviceAction::None, DeviceAction::None, false,
+                   t0 + 110ms);
+  CHECK(retry.notBefore() == t0 + kDeviceRetryDelay);
+  retry.afterFrame(reported(true, false), true, DeviceAction::None, DeviceAction::None, false,
+                   t0 + 120ms);
+  CHECK(retry.notBefore() == t0 + kDeviceRetryDelay);
+
+  // The Start that is asked once the delay is over fails again: the new hold counts from then.
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0 + 300ms);
+  CHECK(retry.notBefore() == t0 + 300ms + kDeviceRetryDelay);
+
+  // A complete report that no longer wants a device started (a Pause, a Stop, the audio taken away)
+  // takes the hold away: the next Play is a new one, and is asked at once.
+  retry.afterFrame(paused, true, DeviceAction::None, DeviceAction::None, false, t0 + 310ms);
+  CHECK(!retry.notBefore().has_value());
+  CHECK(retry.gate(DeviceAction::Start, t0 + 311ms) == DeviceAction::Start);
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  retry.afterFrame(reported(true, true, false), true, DeviceAction::None, DeviceAction::None, false,
+                   t0 + 20ms);
+  CHECK(!retry.notBefore().has_value());
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  retry.afterFrame(paused, true, DeviceAction::Stop, DeviceAction::Stop, false, t0 + 20ms);
+  CHECK(!retry.notBefore().has_value());
+
+  // A Start that worked has nothing to hold.
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, false,
+                   t0 + kDeviceRetryDelay);
+  CHECK(!retry.notBefore().has_value());
+
+  // The device is gone: so is the hold, whatever the report says.
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  retry.afterFrame(reported(true, false), false, DeviceAction::None, DeviceAction::None, false,
+                   t0 + 20ms);
+  CHECK(!retry.notBefore().has_value());
+
+  // The creator changed the audio settings: the device that comes of that has its own first try.
+  retry.afterFrame(wanted, true, DeviceAction::Start, DeviceAction::Start, true, t0);
+  retry.clear();
+  CHECK(!retry.notBefore().has_value());
+  CHECK(retry.gate(DeviceAction::Start, t0) == DeviceAction::Start);
 }
 
 namespace {
@@ -1554,6 +1611,20 @@ bool runWindow(PlaybackRig& rig, std::vector<float>& heard, const std::function<
   return until();
 }
 
+// Like runWindow, with a turn of a millisecond of the window's clock and not a frame's time, for a case
+// that has to stay inside a delay of that clock while the threads that the app waits on (the feeder
+// applies what the creator did a moment after it was sent) take their time in real time.
+bool runWindowFine(PlaybackRig& rig, std::vector<float>& heard, const std::function<bool()>& until,
+                   int turns = 200) {
+  for (int turn = 0; turn < turns; ++turn) {
+    rig.windowTurn(1ms);
+    rig.pump(768U, heard);
+    if (until()) return true;
+    std::this_thread::sleep_for(2ms);
+  }
+  return until();
+}
+
 // Whether the creator is shown that the audio is unavailable, as of the last frame that was painted.
 bool audioNoticeShown(PlaybackRig& rig) {
   const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
@@ -1695,22 +1766,146 @@ TEST_CASE("standalone playback window: a Play that cannot start the device is tr
     CHECK(runWindow(rig, heard, [&] { return audioNoticeShown(rig); }, 300));
     CHECK(!rig.device->running());
     CHECK(rig.transport().state().playAwaitsConsumer);
-    // The device goes on failing for a while. It is asked again now and then. Under Reduce Motion no
-    // other frame is painted, so what asks is the one that the failure scheduled, a quarter of a
-    // second on, and not one at every turn of the loop; a window that animates paints more frames,
-    // and each of them asks.
+    // The device goes on failing for a while. It is asked again once in a quarter of a second, and not
+    // by every frame that is painted meanwhile: under Reduce Motion the only frame is the one that the
+    // hold's deadline asks for, and a window that animates paints frames of its own, which neither ask
+    // the device nor move that deadline. 160 turns of 16 ms are two and a half seconds.
     const auto attemptsBefore = rig.device->startAttempts();
     rig.runTurns(160);
     const auto retries = rig.device->startAttempts() - attemptsBefore;
-    CHECK(retries >= 5U);
-    if (reduceMotion) CHECK(retries <= 20U);
-    // The device works again. Nothing else happens: the window asks for the frame itself.
+    CHECK(retries >= 9U);
+    CHECK(retries <= 11U);
+    // The device works again. Nothing else happens: the window asks for the frame itself, once the hold
+    // is over, and no later than that and a turn or two of the loop.
     rig.device->failStart = false;
+    const auto recoveredFrom = *rig.clock;
     CHECK(runWindow(rig, heard, [&] { return rig.device->running(); }, 300));
+    CHECK(*rig.clock - recoveredFrom <= seam::standalone::kDeviceRetryDelay + 32ms);
     CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 1500));
     CHECK(rig.device->starts() == 1U);
     checkHeardIs(heard, expected, 0U, "a Play whose device could not start");
   }
+}
+
+TEST_CASE("standalone playback window: a frame that comes early neither asks a device that cannot start nor moves the deadline") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using seam::standalone::kDeviceRetryDelay;
+  for (const bool reduceMotion : {true, false}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        reduceMotion ? "playback-window-start-hold-still" : "playback-window-start-hold-moving");
+    PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = reduceMotion}};
+    static_cast<void>(rig.writeTheSong());
+    rig.restWindow(reduceMotion);
+    // The device cannot start, and takes a hundred milliseconds to say so, which the window's clock
+    // counts: the hold runs from when the device said no, and not from when it was asked.
+    rig.device->failStart = true;
+    rig.devices->onStart = [clock = rig.clock] { *clock += 100ms; };
+    CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+    std::vector<float> heard;
+    CHECK(runWindow(rig, heard, [&] { return rig.device->startAttempts() == 1U; }, 300));
+    rig.devices->onStart = {};
+    const auto failedAt = *rig.clock;
+    const auto deadline = failedAt + kDeviceRetryDelay;
+    CHECK(rig.transport().state().playAwaitsConsumer);
+    // Frames come for other reasons, a pointer or an animation. Each is painted, and none of them asks
+    // the device or moves the deadline: not at the moment of the failure, and not for as long as the
+    // hold lasts.
+    rig.windowEvent();
+    CHECK(rig.windowTurn(0ms));
+    CHECK(rig.device->startAttempts() == 1U);
+    for (int turn = 1; turn <= 15; ++turn) {
+      rig.windowEvent();
+      CHECK(rig.windowTurn(16ms));
+      CHECK(rig.device->startAttempts() == 1U);
+      if (reduceMotion) CHECK(rig.app->nextFrameDue() == deadline);
+    }
+    // 249 ms after the failure the device is still not asked, and at 250 ms the first frame that is
+    // painted asks it.
+    rig.windowEvent();
+    CHECK(rig.windowTurn(9ms));
+    CHECK(*rig.clock == failedAt + 249ms);
+    CHECK(rig.device->startAttempts() == 1U);
+    rig.windowEvent();
+    CHECK(rig.windowTurn(1ms));
+    CHECK(*rig.clock == deadline);
+    CHECK(rig.device->startAttempts() == 2U);
+    // It failed again, and the next hold runs from that frame.
+    rig.windowEvent();
+    CHECK(rig.windowTurn(16ms));
+    CHECK(rig.device->startAttempts() == 2U);
+    CHECK(!rig.device->running());
+    CHECK(rig.transport().state().playAwaitsConsumer);
+  }
+}
+
+TEST_CASE("standalone playback window: a Pause or a Stop takes the hold away, and the next Play is asked at once") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using seam::standalone::kDeviceRetryDelay;
+  for (const auto command : {ApplicationCommand::TogglePlayback, ApplicationCommand::StopPlayback}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        command == ApplicationCommand::StopPlayback ? "playback-window-start-hold-stop"
+                                                    : "playback-window-start-hold-pause");
+    PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+    static_cast<void>(rig.writeTheSong());
+    rig.restWindow();
+    rig.device->failStart = true;
+    CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+    std::vector<float> heard;
+    CHECK(runWindow(rig, heard, [&] { return rig.device->startAttempts() == 1U; }, 300));
+    const auto failedAt = *rig.clock;
+    CHECK(rig.app->nextFrameDue().has_value());
+    // Inside the hold the creator takes the Play away: a Pause, which the transport that still plays
+    // with no device to take it up answers, or a Stop.
+    CHECK(rig.menu(command));
+    CHECK(runWindowFine(rig, heard,
+                        [&] { return !rig.playShown() && rig.transport().state().settled; }));
+    CHECK(!rig.transport().state().playAwaitsConsumer);
+    for (int turn = 0; turn < 4; ++turn) {
+      rig.windowTurn(1ms);
+      std::this_thread::sleep_for(2ms);
+    }
+    // That was inside the delay, and the hold is gone with the Play: nothing is waited for.
+    CHECK(*rig.clock - failedAt < kDeviceRetryDelay);
+    CHECK(!rig.app->nextFrameDue().has_value());
+    CHECK(rig.device->startAttempts() == 1U);
+    // The next Play is a new one, and the device is asked for it at once, inside what would have been
+    // the delay of the old one.
+    rig.device->failStart = false;
+    CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+    CHECK(runWindowFine(rig, heard, [&] { return rig.device->running(); }, 100));
+    CHECK(*rig.clock - failedAt < kDeviceRetryDelay);
+    CHECK(rig.device->starts() == 1U);
+    CHECK(rig.menu(ApplicationCommand::StopPlayback));
+    CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 300));
+  }
+}
+
+TEST_CASE("standalone playback window: a change of audio settings gives the new device its own first try") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using seam::standalone::kDeviceRetryDelay;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-start-hold-settings");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  rig.device->failStart = true;
+  CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+  std::vector<float> heard;
+  CHECK(runWindow(rig, heard, [&] { return rig.device->startAttempts() == 1U; }, 300));
+  const auto failedAt = *rig.clock;
+  // Inside the hold the creator picks another buffer size. The device that comes of that is another
+  // one, and the Play stands for it: it is not held back for what the old one did.
+  const auto changed = rig.changeBlockSize();
+  CHECK(changed);
+  CHECK(rig.device->startAttempts() == 0U);
+  CHECK(rig.transport().state().playAwaitsConsumer);
+  // The old device's hold is gone before a frame has been painted for the new one: the window is not
+  // to be woken for the retry of a device that has been replaced.
+  CHECK(!rig.app->nextFrameDue().has_value());
+  rig.windowEvent();
+  CHECK(runWindowFine(rig, heard, [&] { return rig.device->running(); }, 100));
+  CHECK(*rig.clock - failedAt < kDeviceRetryDelay);
+  CHECK(rig.device->starts() == 1U);
+  CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 1500));
 }
 
 TEST_CASE("standalone playback window: the window goes on painting while the device plays, with nothing animating") {
