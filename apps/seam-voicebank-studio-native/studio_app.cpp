@@ -52,6 +52,22 @@ inline constexpr double kStudioHintHeight = 26.0;
 inline constexpr double kStudioHintBaseline = 52.0;
 inline constexpr double kStudioHintText = 12.0;
 inline constexpr double kStudioControlText = 12.0;
+// The header panel is 72 points tall and is the only band that is free at every window width: below
+// it the production view fills its own region from 72 down, so a status row there overlapped the
+// PRODUCTION INTAKE heading at wider windows. The app status therefore shares the row with the two
+// shortcut strips and takes what is left of it to the right, which is 136 points at the narrowest
+// window the app supports and grows from there. It wraps, because a clipped sentence shows the
+// creator its middle and hides what it says.
+inline constexpr double kStudioStatusTop = 48.0;
+inline constexpr double kStudioStatusHeight = 36.0;
+// The recording row is inside the units rail column, in the band between the rail heading and its
+// first row. The rail occupies the first 252 points of the window and its rows start at 108, so this
+// band is the one place in the window that is free at every width: the header above it is taken by
+// the title, the status and the microphone line, and everything to the right of the rail is taken by
+// the production body, which fills its region from 72 down to the bottom.
+inline constexpr double kStudioRecordLeft = 8.0;
+inline constexpr double kStudioRecordTop = 74.0;
+inline constexpr double kStudioRecordHeight = 24.0;
 
 class VoicebankStudioApp final : public IVoicebankStudioApp {
 public:
@@ -2331,14 +2347,22 @@ public:
       canvas.drawText({control.bounds.x+6.0,control.bounds.y+5.0,control.bounds.width-12.0,16.0}, control.label,
           control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{150,145,153,255}, kStudioControlText);
     }
-    // The status takes what is left of the row to the right of the strips, which is what it is given:
-    // a fixed 340 points ran off a 720-point window and the creator saw the tail of a sentence.
-    const auto statusLeft = std::max(reviewLeft + reviewWidth + 8.0, canvas.logicalWidth() * 0.5);
-    const auto statusWidth = std::max(0.0, canvas.logicalWidth() - statusLeft - 8.0);
-    canvas.drawText({statusLeft, hintBaseline, statusWidth, hintHeight-4.0},
+    // The status is the sentence the app is currently saying, on its own row under the header panel
+    // (kStudioStatusTop) and starting after the shortcut strips end so it can never overlap them. It
+    // wraps to the two lines that fit above the recording row, so a long message is said in full
+    // instead of being cut: a clipped sentence shows the creator its middle and hides what it says.
+    // The status stops before the inspector column on the right (238 points wide) as well as before
+    // the window edge, because at the narrowest window a status that ran to the edge was drawn under
+    // the production project heading and both became unreadable.
+    const auto inspectorLeft = canvas.logicalWidth() - 238.0;
+    const auto statusLeft = reviewLeft + reviewWidth + 8.0;
+    const auto statusWidth =
+        std::max(0.0, std::min(canvas.logicalWidth(), inspectorLeft) - statusLeft - 8.0);
+    canvas.drawTextWrapped({statusLeft, kStudioStatusTop, statusWidth, kStudioStatusHeight},
         !lastError_.empty() ? lastError_ : !recordingStatus_.empty() ? recordingStatus_ :
             (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
-        !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255}, kStudioHintText);
+        !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255},
+        kStudioHintText, kStudioHintText * 1.35);
     if (controller_.proceduralImportBusy() || pendingRecordingExportStarted_ ||
         audition_.active() || recordingInput_.capturing()) repaint();
   }
@@ -3136,9 +3160,12 @@ public:
     const bool publishing = pendingRecordingExportStarted_ || pendingRecordingImportStarted_;
     // The buttons are as wide as their labels at the size they are drawn (kStudioControlText), which
     // they were not: at 7 point the longest label fitted 94 points and at 12 it does not, so the
-    // labels were cut off mid-word. The row sits below the hint strips above it either way.
-    const seam::ui::Rect primary{52.0,80.0,std::max(94.0,primaryWidth),24.0},
-        secondary{52.0 + std::max(94.0,primaryWidth) + 6.0,80.0,std::max(94.0,discardWidth),24.0};
+    // labels were cut off mid-word. The row is pinned to kStudioRecordTop, which clears the header
+    // panel above and the units rail below: the status is a different row and a different column, so
+    // a message that wraps onto a second line cannot land on a button.
+    const seam::ui::Rect primary{kStudioRecordLeft,kStudioRecordTop,std::max(94.0,primaryWidth),kStudioRecordHeight},
+        secondary{kStudioRecordLeft + std::max(94.0,primaryWidth) + 6.0,kStudioRecordTop,
+                  std::max(94.0,discardWidth),kStudioRecordHeight};
     std::vector<RecordingControl> controls;
     if (capturing)
       controls.push_back({"record","R STOP + PUBLISH","Stop recording and publish the take",

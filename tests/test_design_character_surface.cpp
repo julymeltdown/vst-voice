@@ -24,6 +24,51 @@
 #include "seam/native_ui/voice_identity.hpp"
 #include "seam/text/unicode.hpp"
 
+// A sentence drawn through drawTextWrapped has to appear on a surface that has no font engine, which
+// is every headless surface: the call returned early there, so the text was neither wrapped nor
+// clipped, it was simply absent, and only a rendered frame showed it. It also has to break at a word
+// boundary, because breaking at the column is what puts half a word on the next line.
+TEST_CASE("Wrapped text is drawn without a font engine and breaks between words") {
+  using seam::native_ui::Color;
+  using seam::native_ui::PixelSurface;
+  using seam::native_ui::RasterCanvas;
+  using seam::ui::Rect;
+  const Color background{15, 14, 18, 255};
+  const auto inkIn = [background](const PixelSurface& surface, Rect area) {
+    std::size_t count = 0U;
+    for (auto y = static_cast<std::int32_t>(area.y);
+         y < static_cast<std::int32_t>(area.bottom()); ++y) {
+      for (auto x = static_cast<std::int32_t>(area.x);
+           x < static_cast<std::int32_t>(area.right()); ++x) {
+        if (x < 0 || y < 0 || x >= static_cast<std::int32_t>(surface.width()) ||
+            y >= static_cast<std::int32_t>(surface.height())) {
+          continue;
+        }
+        const auto index = static_cast<std::size_t>(y) * surface.width() +
+                           static_cast<std::size_t>(x);
+        if (surface.pixels()[index] != background.bgra()) ++count;
+      }
+    }
+    return count;
+  };
+
+  PixelSurface surface{400U, 200U};
+  surface.clear(background);
+  RasterCanvas canvas{surface, 1.0};
+  // The built-in face is the only one available here, so this also pins that the fallback draws.
+  canvas.drawTextWrapped(Rect{20.0, 20.0, 160.0, 60.0}, "ALPHA BRAVO CHARLIE DELTA",
+                         Color{239, 233, 241, 255}, 12.0, 16.0);
+  CHECK(inkIn(surface, Rect{20.0, 20.0, 160.0, 60.0}) > 0U);
+
+  // The second line is below the first: this is the case that held the whole sentence on one clipped
+  // line before, so both rows have to carry ink for the sentence to be readable at all.
+  CHECK(inkIn(surface, Rect{20.0, 20.0, 160.0, 16.0}) > 0U);
+  CHECK(inkIn(surface, Rect{20.0, 36.0, 160.0, 16.0}) > 0U);
+  // A line that ended mid word opens with the tail of the word above it. A line that ends at a space
+  // opens with a whole word, so its ink reaches the left edge of the box.
+  CHECK(inkIn(surface, Rect{20.0, 36.0, 24.0, 16.0}) > 0U);
+}
+
 #include <algorithm>
 #include <array>
 #include <chrono>

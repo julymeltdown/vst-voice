@@ -495,6 +495,153 @@ void RasterCanvas::drawText(ui::Rect bounds, std::string_view text,
   }
 }
 
+void RasterCanvas::drawTextWrapped(ui::Rect bounds, std::string_view text, Color color,
+                                   double size, double lineHeight) noexcept {
+  if (bounds.width <= 0.0 || bounds.height <= 0.0 || text.empty() ||
+      !std::isfinite(size) || size <= 0.0) {
+    return;
+  }
+  // The engine lays the text out within this width over as many lines as it needs, and draws every
+  // one of them; the height says how many of those lines are wanted, so a sentence that does not fit
+  // is wrapped rather than cut. It is drawn through the same path as drawText, which keeps the
+  // rendering of a line identical whether it was wrapped or not.
+  const auto spacing = lineHeight > 0.0 ? lineHeight : size * 1.20;
+  const auto lines = static_cast<std::uint32_t>(std::max(
+      1.0, std::floor(bounds.height / std::max(1.0, spacing))));
+  const auto left = static_cast<std::int32_t>(std::floor(bounds.x * scale_));
+  const auto top = static_cast<std::int32_t>(std::floor(bounds.y * scale_));
+  const auto right = static_cast<std::int32_t>(std::ceil(bounds.right() * scale_));
+  const auto bottom = static_cast<std::int32_t>(std::ceil(bounds.bottom() * scale_));
+  const auto width = static_cast<std::uint32_t>(std::max(
+      1, static_cast<std::int32_t>(std::ceil(bounds.width * scale_))));
+  auto drewWithEngine = false;
+  if (textEngine_ != nullptr) {
+    try {
+      const auto rendered = textEngine_->renderShared(
+          text, text::TextStyle{
+                    .pixelHeight = static_cast<float>(size * scale_),
+                    .letterSpacing = 0.0F,
+                    .lineSpacing = static_cast<float>(spacing / size),
+                    .maximumWidth = width,
+                    .maximumLines = lines,
+                    .ellipsize = true,
+                });
+      if (rendered) {
+        const auto& bitmap = rendered.value()->bitmap;
+        const auto rowStart = static_cast<std::uint32_t>(std::max(0, -top));
+        const auto rowEnd = static_cast<std::uint32_t>(std::max(
+            0, std::min({static_cast<std::int32_t>(bitmap.height), bottom - top,
+                         static_cast<std::int32_t>(surface_.height()) - top})));
+        const auto columnStart = static_cast<std::uint32_t>(std::max(0, -left));
+        const auto columnEnd = static_cast<std::uint32_t>(std::max(
+            0, std::min({static_cast<std::int32_t>(bitmap.width),
+                         static_cast<std::int32_t>(width),
+                         static_cast<std::int32_t>(surface_.width()) - left})));
+        const auto sourceOpaque = Color{color.red, color.green, color.blue, 255U}.bgra();
+        for (auto row = rowStart; row < rowEnd; ++row) {
+          auto destinationIndex =
+              static_cast<std::size_t>(top + static_cast<std::int32_t>(row)) *
+                  surface_.width() +
+              static_cast<std::size_t>(left + static_cast<std::int32_t>(columnStart));
+          for (auto column = columnStart; column < columnEnd; ++column, ++destinationIndex) {
+            const auto coverage = bitmap.alpha[
+                static_cast<std::size_t>(row) * bitmap.width + column];
+            if (coverage == 0U) continue;
+            const auto alpha = static_cast<std::uint32_t>(
+                (static_cast<std::uint32_t>(coverage) * color.alpha + 127U) / 255U);
+            auto& destination = surface_.pixels()[destinationIndex];
+            if (alpha == 255U) {
+              destination = sourceOpaque;
+              continue;
+            }
+            const auto inverse = 255U - alpha;
+            const auto blue =
+                (static_cast<std::uint32_t>(color.blue) * alpha +
+                 (destination & 0xFFU) * inverse + 127U) /
+                255U;
+            const auto green =
+                (static_cast<std::uint32_t>(color.green) * alpha +
+                 ((destination >> 8U) & 0xFFU) * inverse + 127U) /
+                255U;
+            const auto red =
+                (static_cast<std::uint32_t>(color.red) * alpha +
+                 ((destination >> 16U) & 0xFFU) * inverse + 127U) /
+                255U;
+            destination = static_cast<std::uint32_t>(blue | (green << 8U) | (red << 16U) |
+                                                     (alpha << 24U));
+          }
+        }
+        drewWithEngine = true;
+      }
+    } catch (const std::exception&) {
+      // A font that cannot render the text leaves the surface as it was, as drawText does, and the
+      // built-in face below draws it instead.
+    }
+  }
+  if (drewWithEngine) return;
+
+  // The same built-in face drawText falls back to. Without this a sentence drawn through this
+  // call would vanish on any surface that has no font engine loaded, which is the whole of the
+  // studio's own test surface and any headless render: the text would be neither clipped nor
+  // wrapped, it would simply not be there. The words are broken across lines by the same advance
+  // the face draws at, so the wrapping agrees with what is drawn.
+  const auto glyphPixel = fallbackGlyphPixel(size, scale_);
+  const auto faceHeight = glyphPixel * 7;
+  if (top + faceHeight > bottom) return;
+  const auto advance = std::max(1, glyphPixel * 6);
+  const auto columnsPerLine = static_cast<std::size_t>(
+      std::max(1, (right - left) / advance));
+  const auto rowsThatFit = static_cast<std::size_t>(std::max(
+      1.0, static_cast<double>(bottom - top) /
+               std::max(1.0, spacing * static_cast<double>(scale_))));
+  // The line ends at the last space that fits, so a line is a whole number of words. Cutting at the
+  // column instead, as a fixed width truncation does, is what puts half a word on the next line.
+  std::size_t lineStart = 0U;
+  for (std::size_t line = 0U; line < rowsThatFit; ++line) {
+    const auto lineTop = top + static_cast<std::int32_t>(std::lround(
+        static_cast<double>(line) * spacing * scale_));
+    if (lineTop + faceHeight > bottom) break;
+    const auto remaining = std::string_view{text}.substr(lineStart);
+    // The truncation measures in display columns, so a multi byte character is never split across
+    // the break, and it returns the text it kept rather than a view onto a temporary.
+    const auto fits =
+        text::truncateUtf8ToDisplayWidth(remaining, columnsPerLine);
+    // Walk back to the last space inside what fits. A word longer than a whole line has no space to
+    // walk back to and is drawn whole, so nothing is silently dropped.
+    auto safeBytes = fits.size();
+    if (fits.size() < remaining.size()) {
+      const auto lastSpace = fits.find_last_of(' ');
+      if (lastSpace != std::string::npos && lastSpace > 0U) safeBytes = lastSpace;
+    }
+    auto x = left;
+    for (const auto character : std::string_view{fits}.substr(0, safeBytes)) {
+      if (x + advance > right) break;
+      drawGlyph(x, lineTop, character, glyphPixel, color);
+      x += advance;
+    }
+    const auto consumed = safeBytes;
+    if (consumed == 0U || lineStart + consumed >= text.size()) {
+      // Either the whole remainder fit, or the next word is longer than a line. The remainder is
+      // drawn on this line as far as it goes rather than dropped.
+      if (safeBytes < fits.size()) {
+        auto x2 = left + advance * static_cast<std::int32_t>(safeBytes);
+        for (const auto character : std::string_view{fits}.substr(safeBytes)) {
+          if (x2 + advance > right) break;
+          drawGlyph(x2, lineTop, character, glyphPixel, color);
+          x2 += advance;
+        }
+      }
+      break;
+    }
+    // The next line starts after the space that the break consumed, so it does not open with the
+    // blank that separated the two words.
+    auto next = lineStart + consumed;
+    while (next < text.size() && (text[next] == ' ' || text[next] == '\t')) ++next;
+    if (next <= lineStart) next = lineStart + std::max<std::size_t>(1U, consumed);
+    lineStart = next;
+  }
+}
+
 void RasterCanvas::drawVerticalGradient(ui::Rect rect, Color top,
                                         Color bottom) noexcept {
   const auto physicalTop = static_cast<std::int32_t>(std::floor(rect.y * scale_));

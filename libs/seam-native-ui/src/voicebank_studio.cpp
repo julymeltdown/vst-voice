@@ -588,9 +588,21 @@ void VoicebankStudioScenePainter::paint(
                         controller.manifest().characterVersion,
                     theme_.secondaryText, 6.0);
   }
-  canvas.drawText(ui::Point{width - 360.0, 18.0},
-                  recording ? "RECORDING" : controller.status(),
-                  recording ? theme_.accent : theme_.secondaryText, 8.0);
+  // The top right is one status area rather than labels that have to share it. The status is a
+  // sentence, so it wraps over the two lines the panel has for it instead of being clipped to one:
+  // clipped, it showed the creator the start of a message and hid what it said. The microphone line
+  // has its own row under it, and both stop before the panel ends, so neither can grow into the row
+  // below or off the window.
+  constexpr double kHeaderStatusWidth = 344.0;
+  constexpr double kHeaderStatusTop = 12.0;
+  constexpr double kHeaderStatusHeight = 20.0;
+  constexpr double kHeaderMicTop = 34.0;
+  constexpr double kHeaderMicHeight = 12.0;
+  const auto headerStatusLeft = width - kHeaderStatusWidth - 16.0;
+  canvas.drawTextWrapped(
+      ui::Rect{headerStatusLeft, kHeaderStatusTop, kHeaderStatusWidth, kHeaderStatusHeight},
+      recording ? "RECORDING" : controller.status(),
+      recording ? theme_.accent : theme_.secondaryText, 8.0, 10.0);
   constexpr std::size_t recordingLabelColumns = 44U;
   const bool recordingLabelTruncated =
       text::utf8DisplayWidth(recordingBackend) > recordingLabelColumns;
@@ -599,7 +611,7 @@ void VoicebankStudioScenePainter::paint(
       recordingLabelTruncated ? recordingLabelColumns - 1U
                               : recordingLabelColumns);
   if (recordingLabelTruncated) recordingLabel += "…";
-  canvas.drawText(ui::Rect{width - 360.0, 40.0, 344.0, 14.0},
+  canvas.drawText(ui::Rect{headerStatusLeft, kHeaderMicTop, kHeaderStatusWidth, kHeaderMicHeight},
                   "MIC " + recordingLabel, theme_.secondaryText, 7.0);
 
   canvas.fillRect(ui::Rect{0.0, 72.0, 252.0, height - 72.0}, theme_.panelAlternate);

@@ -1133,7 +1133,15 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
   CHECK(core::durableAtomicWriteText(license, "Edited after registration").hasValue());
   CHECK(studio.activate("record").hasValue());
   microphone->sing(midiHz(rows[0].pitchLayer), 0.5);
-  studio.click(99.0, 89.0);  // The pointer reaches the same button: R STOP + PUBLISH.
+  // The pointer reaches the same button: R STOP + PUBLISH. It is clicked at the centre the button
+  // publishes rather than at coordinates written down here, because the button is sized from its own
+  // label and so its geometry is not a constant a case can hold.
+  const auto stopButton = studio.node("record");
+  CHECK(stopButton.has_value());
+  if (stopButton) {
+    studio.click(stopButton->bounds.x + stopButton->bounds.width * 0.5,
+                 stopButton->bounds.y + stopButton->bounds.height * 0.5);
+  }
   CHECK(studio.settle([&] {
     const auto button = studio.node("record");
     return button && button->name == "Retry publishing the recorded take";

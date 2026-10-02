@@ -93,6 +93,13 @@ public:
                 double size = 12.0) noexcept;
   void drawText(ui::Rect bounds, std::string_view text, Color color,
                 double size = 12.0) noexcept;
+  // Draws text that does not fit `bounds` on one line as several lines inside it, at `lineHeight`
+  // apart, and stops when the next line would not fit the height. A word too long for any line is
+  // drawn whole rather than broken, so nothing is ever silently dropped. The single-line drawText
+  // clips instead, which is right for a label in a fixed strip and wrong for a sentence: a clipped
+  // sentence shows the creator its middle and hides what it says.
+  void drawTextWrapped(ui::Rect bounds, std::string_view text, Color color,
+                       double size = 12.0, double lineHeight = 0.0) noexcept;
   void drawVerticalGradient(ui::Rect rect, Color top, Color bottom) noexcept;
   void drawImageNearest(ui::Rect destination, const PixelSurface& image,
                         double opacity = 1.0) noexcept;
