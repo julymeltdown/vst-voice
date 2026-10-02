@@ -2785,8 +2785,12 @@ public:
         if (!designer_.model() || phone.empty())
           return seam::core::failure(seam::core::ErrorCode::InvalidArgument,"Articulation action target is invalid");
         // The error a refused stop left goes when the action is asked again, as it does for the
-        // keyed actions: a refusal sets it again and a success leaves it clear.
-        lastError_.clear(); stopAudition();
+        // keyed actions: a refusal sets it again and a success leaves it clear. Play does not stop
+        // the audition first: its start stops it, once, and answers for it. Asked twice, a stop that
+        // only the first ask refuses would leave its error on screen beside a source that plays. The
+        // other actions stop it and report a refusal.
+        lastError_.clear();
+        if (!suffix.starts_with("play-articulation.")) stopAudition();
         if (suffix.starts_with("render-articulation.")) {
           const auto result=designer_.beginArticulationAudition(phone); record(result); repaint(); return result;
         }
@@ -2800,7 +2804,8 @@ public:
         const auto parsed=std::from_chars(number.data(),number.data()+number.size(),index);
         if (parsed.ec!=std::errc{} || parsed.ptr!=number.data()+number.size() || !designer_.model())
           return seam::core::failure(seam::core::ErrorCode::InvalidArgument,"Plosive action target is invalid");
-        lastError_.clear(); stopAudition();
+        lastError_.clear();
+        if (!suffix.starts_with("play-plosive.")) stopAudition();  // Play's start stops it, once
         if (suffix.starts_with("render-plosive.") || suffix.starts_with("render-plosive-phrase.") || suffix.starts_with("render-plosive-coda.")) {
           using Mode=seam::native_ui::PlosiveAuditionMode;
           const auto mode=suffix.starts_with("render-plosive-coda.")?Mode::VowelStop:suffix.starts_with("render-plosive-phrase.")?Mode::StopVowel:Mode::Source;
@@ -2821,7 +2826,8 @@ public:
         const auto parsed = std::from_chars(number.data(),number.data()+number.size(),index);
         if (parsed.ec != std::errc{} || parsed.ptr != number.data()+number.size() || !designer_.model())
           return seam::core::failure(seam::core::ErrorCode::InvalidArgument,"Frication action target is invalid");
-        lastError_.clear(); stopAudition();
+        lastError_.clear();
+        if (!suffix.starts_with("play-frication.")) stopAudition();  // Play's start stops it, once
         if (suffix.starts_with("render-frication.") || suffix.starts_with("render-frication-phrase.") || suffix.starts_with("render-frication-coda.")) {
           using Mode=seam::native_ui::FricationAuditionMode;
           const auto mode=suffix.starts_with("render-frication-coda.")?Mode::VowelFrication:suffix.starts_with("render-frication-phrase.")?Mode::FricationVowel:Mode::Source;

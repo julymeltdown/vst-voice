@@ -178,13 +178,16 @@ private:
 
 // An audition output the test controls, as the microphone above is. It plays nothing. It can refuse to
 // open, as a device that has gone away does, and it can refuse to say that it has stopped, as a platform
-// whose stop returns an error does: the device is then still the audition's, and still running.
+// whose stop returns an error does: the device is then still the audition's, and still running. The
+// refusal stays until the test lifts it (failStop), or is given for a number of asks (refuseStops) and
+// then goes, as a platform that does not say that it has stopped once and says it the next time does.
 struct OutputScript final {
   platform::IAudioProcessor* processor{nullptr};
   platform::AudioDeviceInfo info{};
   bool running{false};
   bool failOpen{false};
   bool failStop{false};
+  unsigned refuseStops{0U};
   bool destroyed{false};
   unsigned opens{0U};
   unsigned starts{0U};
@@ -220,8 +223,10 @@ public:
   }
   core::Result<void> stop() noexcept override {
     ++script_->stops;
-    if (script_->running && script_->failStop)
+    if (script_->running && (script_->failStop || script_->refuseStops > 0U)) {
+      if (script_->refuseStops > 0U) --script_->refuseStops;
       return core::failure(core::ErrorCode::IoError, "scripted audition output did not stop");
+    }
     script_->running = false;
     return core::success();
   }
@@ -1382,9 +1387,13 @@ std::optional<SemanticNode> findContaining(StudioHarness& studio, std::string_vi
 // asked for through its accessible Play control while reference A plays on an output that will not
 // say that it has stopped. The source's start is refused, so the answer is the failure, A stays
 // named and running, and the output made for the source never opens. When the output lets go, the
-// same control plays the source.
+// same control plays the source. The output either refuses until it lets go, or (refuseOnce) refuses
+// the first time it is asked and says that it has stopped the next time. The action asks it to stop
+// once: asked twice, the second ask of a refuse-once output would succeed inside the same action, and
+// the action would answer success with the first ask's error still on screen beside a source that plays.
 void checkSourceAuditionAfterRefusedStop(std::string_view tag, std::string_view controlName,
-                                         std::string_view renderPart, std::string_view playPart) {
+                                         std::string_view renderPart, std::string_view playPart,
+                                         bool refuseOnce = false) {
   const auto root = test::support::temporaryDirectory("studio-source-audition-" + std::string{tag});
   std::vector<std::shared_ptr<OutputScript>> outputs;
   StudioHarness studio{root, nullptr, [&] {
@@ -1429,10 +1438,16 @@ void checkSourceAuditionAfterRefusedStop(std::string_view tag, std::string_view 
   CHECK(!outputs.empty());
   if (outputs.empty()) return;
   const auto playingA = outputs.back();
-  playingA->failStop = true;
+  const auto asked = playingA->stops;
+  if (refuseOnce) playingA->refuseStops = 1U;
+  else playingA->failStop = true;
   const auto source = findContaining(studio, playPart);
   CHECK(source.has_value());
-  if (!source || !source->enabled) return;
+  if (!source) return;
+  // The replacement is offered while A plays. A control that went away with A would let this case
+  // return here without having asked for anything.
+  CHECK(source->enabled);
+  if (!source->enabled) return;
   const auto refused = studio.app->dispatchAccessibility(source->id, SemanticAction::Activate);
   CHECK(!refused.hasValue());
   if (!refused.hasValue()) CHECK(refused.error().message == "scripted audition output did not stop");
@@ -1442,12 +1457,16 @@ void checkSourceAuditionAfterRefusedStop(std::string_view tag, std::string_view 
   CHECK(!playingA->destroyed);
   CHECK(outputs.back()->opens == 0U);
   CHECK(outputs.back()->destroyed);
+  CHECK(playingA->stops == asked + 1U);
 
-  // The output lets go: the same control plays the source, and A is gone.
-  playingA->failStop = false;
+  // The output lets go (it has, for a refuse-once output): the same control plays the source, and A
+  // is gone.
+  if (!refuseOnce) playingA->failStop = false;
   const auto retry = findContaining(studio, playPart);
   CHECK(retry.has_value());
-  if (!retry || !retry->enabled) return;
+  if (!retry) return;
+  CHECK(retry->enabled);
+  if (!retry->enabled) return;
   CHECK(studio.app->dispatchAccessibility(retry->id, SemanticAction::Activate).hasValue());
   CHECK(playingA->destroyed);
   CHECK(outputs.back()->running);
@@ -1470,4 +1489,69 @@ TEST_CASE("Voicebank Studio's plosive audition keeps the retained audition when 
 TEST_CASE("Voicebank Studio's articulation audition keeps the retained audition when the output will not stop") {
   checkSourceAuditionAfterRefusedStop("articulation", "TAIL CENTER", ".render-articulation.",
                                       ".play-articulation.");
+}
+
+TEST_CASE("Voicebank Studio's frication audition asks the retained output to stop once, so a refusal is the answer and the next ask plays") {
+  checkSourceAuditionAfterRefusedStop("frication-once", "NOISE CENTER", ".render-frication.",
+                                      ".play-frication.", true);
+}
+
+TEST_CASE("Voicebank Studio's plosive audition asks the retained output to stop once, so a refusal is the answer and the next ask plays") {
+  checkSourceAuditionAfterRefusedStop("plosive-once", "BURST CENTER", ".render-plosive.",
+                                      ".play-plosive.", true);
+}
+
+TEST_CASE("Voicebank Studio's articulation audition asks the retained output to stop once, so a refusal is the answer and the next ask plays") {
+  checkSourceAuditionAfterRefusedStop("articulation-once", "TAIL CENTER", ".render-articulation.",
+                                      ".play-articulation.", true);
+}
+
+TEST_CASE("Voicebank Studio names nothing when the audition that replaces the one that plays cannot open") {
+  const auto root = test::support::temporaryDirectory("studio-audition-replacement-cannot-open");
+  std::vector<std::shared_ptr<OutputScript>> outputs;
+  bool refuseToOpen = false;
+  StudioHarness studio{root, nullptr, [&] {
+    auto script = std::make_shared<OutputScript>();
+    script->failOpen = refuseToOpen;
+    outputs.push_back(script);
+    return std::make_unique<ScriptedOutput>(script);
+  }};
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+  studio.resize(1100.0, 720.0);
+  CHECK(studio.activate("new").hasValue());
+  // The starter's vowel is rendered and kept as A; then the voice changes, and its vowel is B.
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+  studio.key(NativeKey::B, {.command = true});
+  CHECK(studio.node("reference-state").has_value());
+  const auto original = studio.value("control.0");
+  CHECK(studio.setValue("control.0", original == "0.550000" ? "0.65" : "0.55").hasValue());
+  CHECK(studio.value("control.0") != original);
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.value("audition-state") == "CURRENT B / NOT APPROVED");
+  CHECK(outputs.size() == 1U);
+  if (outputs.size() != 1U) return;
+  const auto playingB = outputs.front();
+  CHECK(playingB->running);
+
+  // A is asked for on a device that will not open. B's device said that it stopped, as the start asked
+  // it to, so nothing plays any more and nothing is named; the creator is told why A does not play.
+  refuseToOpen = true;
+  const auto refusedA = studio.activate("play-reference");
+  CHECK(!refusedA.hasValue());
+  if (!refusedA.hasValue()) CHECK(refusedA.error().message == "scripted audition output will not open");
+  CHECK(!playingB->running);
+  CHECK(playingB->destroyed);
+  CHECK(studio.value("audition-state") == "Vowel ready");
+  CHECK(studio.app->lastError() == "scripted audition output will not open");
+
+  // The device opens again: A plays and is named, and the error is gone.
+  refuseToOpen = false;
+  CHECK(studio.activate("play-reference").hasValue());
+  CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  CHECK(studio.app->lastError().empty());
 }
