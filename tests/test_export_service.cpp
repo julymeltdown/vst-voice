@@ -27,6 +27,7 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/candidate_markers.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
+#include "seam/text/text_engine.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/candidate_audition.hpp"
 #include "seam/native_ui/candidate_audition_session.hpp"
@@ -2413,6 +2414,27 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
     native_ui::RasterCanvas canvas{surface};
     native_ui::VoicebankStudioScenePainter{}.paint(canvas, studio);
     CHECK(surface.writePpm(root / ("candidate-markers-" + std::to_string(width) + ".ppm")));
+  }
+  // The marker state block is only drawn once a gesture preview exists, so it has no frame in the
+  // ordinary capture set and a source check cannot see it. When SEAM_CANDIDATE_MARKER_CAPTURE names a
+  // directory, the same frames are kept there as well, so the block can be read at both widths. No
+  // check depends on it.
+  if (const char* capture = std::getenv("SEAM_CANDIDATE_MARKER_CAPTURE")) {
+    if (*capture != '\0') {
+      std::filesystem::create_directories(capture);
+      // The harness paints through the built-in bitmap face by default, which is not the face the
+      // shipping window uses. When a font directory is named the frames are drawn with it, which is
+      // what a size decision has to be checked against.
+      auto engine = text::TextEngine::createSystem();
+      for (const auto width : {720U, 1440U}) {
+        studio.resize(static_cast<double>(width), 900.0);
+        native_ui::PixelSurface surface{width, 900U};
+        native_ui::RasterCanvas canvas{surface, 1.0, engine ? engine.value().get() : nullptr};
+        native_ui::VoicebankStudioScenePainter{}.paint(canvas, studio);
+        CHECK(surface.writePpm(std::filesystem::path{capture} /
+                               ("candidate-markers-" + std::to_string(width) + ".ppm")));
+      }
+    }
   }
   CHECK(!studio.takeInspection()); CHECK(studio.status() == "RAW WAVEFORM / NOT REVIEWED");
   CHECK(studio.productionProject()->reviews.empty());

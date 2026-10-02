@@ -779,40 +779,67 @@ void paintProductionEmptyCanvas(
     wrappedRow(std::string{kShortcutHints}, theme.secondaryText, size);
   }
   const auto left = region.x + 24.0;
+  // The marker state block starts where the intake column ended, and each of its rows advances it.
+  auto markerTop = intakeTop;
   if (!controller.candidateMarkerError().empty()) {
-    canvas.drawText(ui::Rect{left, region.y + 232.0, contentWidth, 24.0},
-        controller.candidateMarkerError(), theme.accent, 8.0);
+    drawWrappedText(canvas, ui::Rect{left, markerTop, contentWidth,
+                                    kProductionColumnBottom - markerTop},
+                    controller.candidateMarkerError(), theme.accent, kBodyText,
+                    kBodyLine, 4U);
     return;
   }
   const auto& preview = controller.candidateMarkerPreview();
   if (!preview) return;
-  canvas.drawText(ui::Rect{left, region.y + 232.0, contentWidth, 16.0},
-      "LEFT/RIGHT GESTURE", theme.primaryText, 7.0);
-  canvas.drawText(ui::Rect{left, region.y + 252.0, contentWidth, 16.0},
-      "NOT MEASURED", theme.accent, 7.0);
-  canvas.drawText(ui::Rect{left, region.y + 270.0, contentWidth, 16.0},
-      "NOT APPROVED", theme.accent, 7.0);
+  // The marker state is read, not decoration, so it is at the body size and each row advances by the
+  // height it needs. The rows used to sit at fixed offsets (region.y + 232, + 252, + 270, + 290) that
+  // assumed one line each, and the marker window below them assumed the block was 86 points tall, so
+  // a row that took a second line landed on the one below and on the first marker.
+  const auto markerRow = [&](const std::string& text, const Color& color) {
+    const auto lines = std::max<std::size_t>(
+        1U, studioWrapWords(canvas, text, contentWidth, kBodyText).size());
+    drawWrappedText(canvas,
+                    ui::Rect{left, markerTop, contentWidth,
+                             static_cast<double>(lines) * kBodyLine},
+                    text, color, kBodyText, kBodyLine, lines);
+    markerTop += static_cast<double>(lines) * kBodyLine + kBodyGap;
+  };
+  markerRow("LEFT/RIGHT GESTURE", theme.primaryText);
+  markerRow("NOT MEASURED", theme.accent);
+  markerRow("NOT APPROVED", theme.accent);
+  markerRow(std::to_string(controller.selectedCandidateMarker() + 1U) + " OF " +
+                std::to_string(preview->markers.size()) +
+                (controller.candidateMarkerDragging()
+                     ? " DRAFT"
+                     : (controller.candidateMarkersEdited() ? " MANUAL" : " PLANNED")),
+            theme.secondaryText);
   const auto& waveform = controller.candidateWaveform();
-  const auto rowTop = std::min(region.y + (waveform ? 404.0 : 318.0), height - 64.0);
+  // The marker window starts below the state block, wherever that block ended, rather than at a fixed
+  // offset that assumed how many lines the block took.
+  const auto rowTop = std::min(markerTop + 24.0, height - 64.0);
+  // A marker row is 62 points tall (kMarkerRowPitch below), so that is what the number of rows that fit
+  // is counted in. It was 48, and the taller row at the same count ran past the bottom of the window.
+  constexpr double kMarkerRowPitch = 62.0;
   const auto [first, visible] = controller.candidateMarkerWindow(static_cast<std::size_t>(
-      std::max(0.0, height - rowTop - 16.0) / 48.0));
-  canvas.drawText(ui::Rect{left, region.y + 290.0, contentWidth, 16.0},
-      std::to_string(controller.selectedCandidateMarker() + 1U) + " OF " + std::to_string(preview->markers.size()) +
-          (controller.candidateMarkerDragging() ? " DRAFT" : (controller.candidateMarkersEdited() ? " MANUAL" : " PLANNED")),
-      theme.secondaryText, 7.0);
+      std::max(0.0, height - rowTop - 16.0) / kMarkerRowPitch));
   if (!controller.candidateWaveformError().empty()) {
-    canvas.drawText(ui::Rect{left, region.y + 310.0, contentWidth, 16.0},
-        "RAW AUDIO LOAD FAILED", theme.accent, 7.0);
+    markerRow("RAW AUDIO LOAD FAILED", theme.accent);
     return;
   }
   if (waveform && !waveform->peaks.empty()) {
     const auto wave = VoicebankStudioController::candidateWaveformBounds(width, height);
-    canvas.fillRect(wave, theme.panelAlternate);
-    const auto middle = wave.y + wave.height / 2.0;
-    canvas.line({wave.x, middle}, {wave.right(), middle}, theme.grid);
+    // The waveform is drawn over the marker rows when its own geometry reaches back into them, and a
+    // taller marker row reaches further down than it did. It is drawn inside the band that is left
+    // below the rows on show rather than at a fixed y, so it cannot cover a label.
+    const auto rowsBottom = rowTop + static_cast<double>(visible) * kMarkerRowPitch;
+    const auto waveBottom = std::max(rowsBottom, wave.y + wave.height);
+    const ui::Rect safe{wave.x, std::max(wave.y, rowsBottom),
+                        wave.width, std::max(0.0, waveBottom - std::max(wave.y, rowsBottom))};
+    canvas.fillRect(safe, theme.panelAlternate);
+    const auto middle = safe.y + safe.height / 2.0;
+    canvas.line({safe.x, middle}, {safe.right(), middle}, theme.grid);
     const auto& peaks = controller.candidateWaveformPeaks();
     const auto [viewStart, viewEnd] = controller.candidateWaveformView();
-    const auto step = wave.width / static_cast<double>(peaks.size());
+    const auto step = safe.width / static_cast<double>(peaks.size());
     double amplitude = 0.0;
     for (const auto& [low, high] : peaks) {
       amplitude = std::max({amplitude, std::abs(static_cast<double>(low)), std::abs(static_cast<double>(high))});
@@ -820,20 +847,20 @@ void paintProductionEmptyCanvas(
     if (amplitude == 0.0) amplitude = 1.0;
     if (!controller.candidatePitchView()) for (std::size_t index = 0U; index < peaks.size(); ++index) {
       const auto [low, high] = peaks[index];
-      const auto x = wave.x + (static_cast<double>(index) + 0.5) * step;
-      const auto gain = std::max(0.0, wave.height / 2.0 - 4.0);
+      const auto x = safe.x + (static_cast<double>(index) + 0.5) * step;
+      const auto gain = std::max(0.0, safe.height / 2.0 - 4.0);
       canvas.line({x, middle - static_cast<double>(high) / amplitude * gain},
                   {x, middle - static_cast<double>(low) / amplitude * gain}, theme.waveform);
     }
-    const auto scale = wave.width / static_cast<double>(viewEnd - viewStart);
+    const auto scale = safe.width / static_cast<double>(viewEnd - viewStart);
     if (controller.candidatePitchView()) {
       std::optional<ui::Point> previous;
       for (const auto& point : controller.candidatePitchInspection()->contour) {
         if (point.sourceFrame < static_cast<double>(viewStart) || point.sourceFrame >= static_cast<double>(viewEnd)) {
           previous.reset(); continue;
         }
-        const ui::Point plotted{wave.x + (point.sourceFrame - static_cast<double>(viewStart)) * scale,
-            middle - std::clamp(point.centsFromTarget / 1200.0, -1.0, 1.0) * std::max(0.0, wave.height / 2.0 - 4.0)};
+        const ui::Point plotted{safe.x + (point.sourceFrame - static_cast<double>(viewStart)) * scale,
+            middle - std::clamp(point.centsFromTarget / 1200.0, -1.0, 1.0) * std::max(0.0, safe.height / 2.0 - 4.0)};
         if (previous && point.connectedToPrevious) canvas.line(*previous, plotted, theme.pitch);
         canvas.fillRect({plotted.x - 1.0, plotted.y - 1.0, 3.0, 3.0},
             std::abs(point.centsFromTarget) > 1200.0 ? theme.accent : theme.pitch);
@@ -843,31 +870,36 @@ void paintProductionEmptyCanvas(
     for (std::size_t index = 0U; index < preview->markers.size(); ++index) {
       const auto& marker = preview->markers[index];
       if (marker.ownedSpan.end <= viewStart || marker.ownedSpan.start >= viewEnd) continue;
-      const auto x = wave.x + static_cast<double>(std::max(marker.ownedSpan.start, viewStart) - viewStart) * scale;
-      const auto end = wave.x + static_cast<double>(std::min(marker.ownedSpan.end, viewEnd) - viewStart) * scale;
-      canvas.strokeRect({x, wave.y, end - x, wave.height},
+      const auto x = safe.x + static_cast<double>(std::max(marker.ownedSpan.start, viewStart) - viewStart) * scale;
+      const auto end = safe.x + static_cast<double>(std::min(marker.ownedSpan.end, viewEnd) - viewStart) * scale;
+      canvas.strokeRect({x, safe.y, end - x, safe.height},
           index == controller.selectedCandidateMarker() ? theme.pitch : theme.accent, 1.0);
       if (index == controller.selectedCandidateMarker()) {
-        if (marker.ownedSpan.start >= viewStart) canvas.fillRect({x - 2.0, wave.y + 2.0, 4.0, 8.0}, theme.pitch);
-        if (marker.ownedSpan.end <= viewEnd) canvas.fillRect({end - 2.0, wave.bottom() - 10.0, 4.0, 8.0}, theme.pitch);
+        if (marker.ownedSpan.start >= viewStart) canvas.fillRect({x - 2.0, safe.y + 2.0, 4.0, 8.0}, theme.pitch);
+        if (marker.ownedSpan.end <= viewEnd) canvas.fillRect({end - 2.0, safe.bottom() - 10.0, 4.0, 8.0}, theme.pitch);
       }
     }
-    canvas.drawText(ui::Rect{left, wave.bottom() + 4.0, contentWidth, 12.0},
+    canvas.drawText(ui::Rect{left, safe.bottom() + 4.0, contentWidth, 12.0},
         controller.candidatePitchView() ? "F0 EST +/-1200C / B WAVE" :
-            std::to_string(viewStart) + " TO " + std::to_string(viewEnd) + " / AUTO", theme.secondaryText, 6.0);
+            std::to_string(viewStart) + " TO " + std::to_string(viewEnd) + " / AUTO",
+        theme.secondaryText, kBodyText);
   }
   for (std::size_t index = 0U; index < visible; ++index) {
     const auto& marker = preview->markers[first + index];
-    const auto top = rowTop + static_cast<double>(index) * 48.0;
+    // Each marker row holds a name and span, a phone key, and a position bar. Both labels were 7 and
+    // 6 point; they are 12 now, so the row is 62 points tall (kMarkerRowPitch above) rather than 48.
+    const auto top = rowTop + static_cast<double>(index) * kMarkerRowPitch;
     if (first + index == controller.selectedCandidateMarker())
-      canvas.fillRect({left, top, contentWidth, 44.0}, theme.selected);
-    canvas.drawText(ui::Rect{left, top, contentWidth, 14.0},
+      canvas.fillRect({left, top, contentWidth, 58.0}, theme.selected);
+    canvas.drawTextWrapped(ui::Rect{left, top, contentWidth, 17.0},
         marker.phone + "  [" + std::to_string(marker.ownedSpan.start) + ", " +
-            std::to_string(marker.ownedSpan.end) + ") FRAMES", theme.primaryText, 7.0);
-    canvas.drawText(ui::Rect{left, top + 16.0, contentWidth, 12.0}, marker.key.toString(), theme.secondaryText, 6.0);
-    canvas.fillRect(ui::Rect{left, top + 32.0, contentWidth, 5.0}, theme.grid);
+            std::to_string(marker.ownedSpan.end) + ") FRAMES", theme.primaryText,
+        kBodyText, kBodyLine);
+    canvas.drawTextWrapped(ui::Rect{left, top + 18.0, contentWidth, 17.0}, marker.key.toString(),
+                           theme.secondaryText, kBodyText, kBodyLine);
+    canvas.fillRect(ui::Rect{left, top + 40.0, contentWidth, 5.0}, theme.grid);
     const auto scale = contentWidth / static_cast<double>(preview->frameCount);
-    canvas.fillRect(ui::Rect{left + static_cast<double>(marker.ownedSpan.start) * scale, top + 32.0,
+    canvas.fillRect(ui::Rect{left + static_cast<double>(marker.ownedSpan.start) * scale, top + 40.0,
         static_cast<double>(marker.ownedSpan.end - marker.ownedSpan.start) * scale, 5.0}, theme.accent);
   }
 }
