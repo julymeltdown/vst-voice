@@ -46,7 +46,8 @@ inline void check(bool condition, std::string_view expression,
 
 inline void checkNear(double lhs, double rhs, double epsilon,
                       std::string_view expression, std::string_view file, int line) {
-  if (std::abs(lhs - rhs) > epsilon) {
+  if (!std::isfinite(lhs) || !std::isfinite(rhs) || !std::isfinite(epsilon) ||
+      epsilon < 0.0 || std::abs(lhs - rhs) > epsilon) {
     std::ostringstream stream;
     stream << file << ':' << line << ": CHECK_NEAR failed: " << expression
            << " (" << lhs << " vs " << rhs << ", epsilon " << epsilon << ')';

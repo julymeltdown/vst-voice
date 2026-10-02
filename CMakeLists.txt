@@ -1600,6 +1600,12 @@ if(SEAM_BUILD_TESTS)
   seam_apply_compiler_options(seam_melisma_tests)
   add_test(NAME seam_melisma_tests COMMAND seam_melisma_tests)
 
+  add_executable(seam_test_framework_tests
+    tests/test_main.cpp tests/test_test_framework.cpp)
+  target_include_directories(seam_test_framework_tests PRIVATE tests)
+  seam_apply_compiler_options(seam_test_framework_tests)
+  add_test(NAME seam_test_framework_tests COMMAND seam_test_framework_tests)
+
   add_executable(seam_performance_compiler_tests tests/test_main.cpp tests/test_performance_compiler.cpp)
   add_executable(seam_automatic_performance_tests
     tests/test_main.cpp tests/test_automatic_performance.cpp)
