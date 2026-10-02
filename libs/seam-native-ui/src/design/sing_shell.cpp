@@ -5,12 +5,14 @@
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
 #include "seam/native_ui/voice_identity.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
 #include "seam/native_ui/paint/qoi.hpp"
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cctype>
 #include <charconv>
 #include <cmath>
@@ -44,6 +46,36 @@ using paint::TextStyle;
 constexpr double kPi = std::numbers::pi;
 constexpr Color kWhite{255, 255, 255, 255};
 constexpr Color kBlack{0, 0, 0, 255};
+
+// Bind a changing overlay's identity to the exact panel and hit rectangles that were painted.
+// Content identity alone is not enough when a resize or responsive reflow maps the same list rows
+// to different points on screen.
+std::optional<std::uint64_t> drawnOverlayFingerprint(
+    const ShellOverlay& overlay, const NativeEditorController& controller,
+    const EditorSceneState& state, const SingLayout& layout, ui::Rect panel) {
+  if (panel.width <= 0.0 || panel.height <= 0.0) return std::nullopt;
+  const auto content = overlay.drawnContentForInput(controller, state, layout, panel);
+  if (!content.has_value()) return std::nullopt;
+
+  IdentityHash hash;
+  hash.number(*content);
+  const auto addRect = [&hash](ui::Rect rect) {
+    hash.number(std::bit_cast<std::uint64_t>(rect.x));
+    hash.number(std::bit_cast<std::uint64_t>(rect.y));
+    hash.number(std::bit_cast<std::uint64_t>(rect.width));
+    hash.number(std::bit_cast<std::uint64_t>(rect.height));
+  };
+  addRect(panel);
+  for (const auto& control : overlay.controls(controller, state, layout, panel)) {
+    hash.text(control.id);
+    addRect(control.bounds);
+    hash.number(static_cast<std::uint64_t>(control.role));
+    hash.number(control.enabled ? 1U : 0U);
+    hash.number(control.selected ? 1U : 0U);
+    hash.number(control.activatable ? 1U : 0U);
+  }
+  return hash.value();
+}
 
 // Append independent subpaths without joining their edges. Used only for adjacent draw calls
 // whose shapes cannot overlap; their individual coverage and paint order are then unchanged.
@@ -3859,9 +3891,10 @@ void SingShell::paintOverlay(Canvas2D& c, const DesignTokens& t,
                              const EditorSceneState& state, const ShellOverlay& overlay) const {
   const auto slot = overlaySlot(controller, state);
   const auto panel = paintShellOverlay(overlay, c, t, controller, state, layout_, slot);
-  // What a press that comes next has to find still there (see ShellOverlay::drawnContent).
+  // What a press that comes next has to find still there: both its content and the actual hit-map.
   overlayDrawn_.reset();
-  if (const auto drawn = overlay.drawnContent(controller, state); drawn.has_value())
+  if (const auto drawn = drawnOverlayFingerprint(overlay, controller, state, layout_, panel);
+      drawn.has_value())
     overlayDrawn_ = DrawnOverlay{overlay.kind(), *drawn};
   // The menu shows which item holds the keyboard, since arrows and Tab walk it.
   if (overlay.kind() != OverlayKind::SingerMenu || panel.width <= 0.0 || semanticFocus_.empty())
@@ -4322,7 +4355,8 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     // content changed since that frame (an eviction, a dismissal), or no painted frame has shown this
     // overlay at all (it was opened, or closed and opened again, since the last paint), and the press
     // would act on whatever stands under it. It does nothing, and the next frame shows what is there.
-    if (const auto now = overlay->drawnContent(controller, state); now.has_value()) {
+    if (const auto now = drawnOverlayFingerprint(*overlay, controller, state, layout_, panel);
+        now.has_value()) {
       const auto seen = overlayDrawn_.has_value() && overlayDrawn_->kind == overlay->kind() &&
                         overlayDrawn_->content == *now;
       if (!seen) {

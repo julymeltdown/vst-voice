@@ -144,6 +144,15 @@ public:
     static_cast<void>(state);
     return std::nullopt;
   }
+  // Some shells project an inner surface's controls into their own card (Settings -> Audio). They
+  // forward this fingerprint so pointer input is checked against the same content the pixels showed.
+  [[nodiscard]] virtual std::optional<std::uint64_t> drawnContentForInput(
+      const NativeEditorController& controller, const EditorSceneState& state,
+      const SingLayout& layout, ui::Rect panel) const {
+    static_cast<void>(layout);
+    static_cast<void>(panel);
+    return drawnContent(controller, state);
+  }
   // Paints the panel's content and its control chrome. The shell has already drawn the scrim, the
   // card and the title; every control in `controls` is drawn at its own rectangle.
   virtual void paint(paint::Canvas2D& c, const DesignTokens& tokens,

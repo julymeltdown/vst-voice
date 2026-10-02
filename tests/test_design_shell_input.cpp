@@ -2793,6 +2793,13 @@ std::string voicebankCardIdNow(OverlayFixture& f, std::size_t index) {
 std::string audioDeviceIdNow(OverlayFixture& f, std::size_t index) {
   return native_ui::audioDeviceId(index, f.controller.sceneState().audioSettings.devices.at(index));
 }
+std::string shellFocusNow(OverlayFixture& f) {
+  const auto* focused = f.shell.accessibilityTree().focusedNode();
+  return focused == nullptr ? std::string{} : focused->id;
+}
+bool isConflictResult(const auto& result) {
+  return !result && result.error().code == core::ErrorCode::Conflict;
+}
 
 void checkOverlayContract(OverlayFixture& f, std::string_view panelPrefix,
                           std::vector<std::string> required, std::vector<std::string> optional,
@@ -4478,14 +4485,6 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
 TEST_CASE("a list changed after paint refuses the old pointer press without taking focus or acting") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
 
-  const auto shellFocus = [](OverlayFixture& f) {
-    const auto* focused = f.shell.accessibilityTree().focusedNode();
-    return focused == nullptr ? std::string{} : focused->id;
-  };
-  const auto isConflict = [](const auto& result) {
-    return !result && result.error().code == core::ErrorCode::Conflict;
-  };
-
   {
     OverlayFixture f;
     authoring::VoicebankCard card;
@@ -4502,14 +4501,14 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
     CHECK(oldCard != nullptr);
     if (oldCard == nullptr) return;
     const auto oldBounds = oldCard->bounds;
-    const auto oldFocus = shellFocus(f);
+    const auto oldFocus = shellFocusNow(f);
     const auto oldEditorFocus = f.controller.sceneState().focusedNote;
     card.selectable = false;
     f.controller.setVoicebankCards({card});
     const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
-    CHECK(isConflict(stalePress));
+    CHECK(isConflictResult(stalePress));
     CHECK(f.selectedBanks.empty());
-    CHECK(shellFocus(f) == oldFocus);
+    CHECK(shellFocusNow(f) == oldFocus);
     CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
   }
 
@@ -4526,14 +4525,14 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
     CHECK(oldReport != nullptr);
     if (oldReport == nullptr) return;
     const auto oldBounds = oldReport->bounds;
-    const auto oldFocus = shellFocus(f);
+    const auto oldFocus = shellFocusNow(f);
     const auto oldEditorFocus = f.controller.sceneState().focusedNote;
     support.mode = native_ui::RecoverySupportMode::Preview;
     f.controller.setRecoverySupportView(support);
     const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
-    CHECK(isConflict(stalePress));
+    CHECK(isConflictResult(stalePress));
     CHECK(f.selectedReports == 0U);
-    CHECK(shellFocus(f) == oldFocus);
+    CHECK(shellFocusNow(f) == oldFocus);
     CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
   }
 
@@ -4552,7 +4551,7 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
     CHECK(oldReport != nullptr);
     if (oldReport == nullptr) return;
     const auto oldBounds = oldReport->bounds;
-    const auto oldFocus = shellFocus(f);
+    const auto oldFocus = shellFocusNow(f);
     const auto oldEditorFocus = f.controller.sceneState().focusedNote;
     const auto oldSelection = f.session.selection().noteIds();
     const auto oldRevision = f.session.revision();
@@ -4561,9 +4560,9 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
     f.controller.setRecoverySupportView({});
     CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
     const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
-    CHECK(isConflict(stalePress));
+    CHECK(isConflictResult(stalePress));
     CHECK(f.selectedReports == 0U);
-    CHECK(shellFocus(f) == oldFocus);
+    CHECK(shellFocusNow(f) == oldFocus);
     CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
     CHECK(f.session.selection().noteIds() == oldSelection);
     CHECK(f.session.revision() == oldRevision);
@@ -4585,7 +4584,7 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
     CHECK(oldDevice != nullptr);
     if (oldDevice == nullptr) return;
     const auto oldBounds = oldDevice->bounds;
-    const auto oldFocus = shellFocus(f);
+    const auto oldFocus = shellFocusNow(f);
     const auto oldEditorFocus = f.controller.sceneState().focusedNote;
     devices.front().id = "device-new";
     devices.front().name = "New device";
@@ -4595,11 +4594,191 @@ TEST_CASE("a list changed after paint refuses the old pointer press without taki
                                                            .outputChannels = 2U},
                                   devices, 0U, 0U);
     const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
-    CHECK(isConflict(stalePress));
+    CHECK(isConflictResult(stalePress));
     CHECK(f.appliedAudio.empty());
-    CHECK(shellFocus(f) == oldFocus);
+    CHECK(shellFocusNow(f) == oldFocus);
     CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
   }
+}
+
+TEST_CASE("the Settings audio projection refuses output rows after replacement or dismissal") {
+  using native_ui::SemanticAction;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+
+  {
+    OverlayFixture f;
+    std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices{
+        {.id = "old-output", .name = "Old output", .physical = true, .selected = true}};
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "old-output",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  devices, 0U, 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+    CHECK(f.frame());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Settings);
+    const auto oldId = audioDeviceIdNow(f, 0U);
+    const auto* oldOutput = f.node(oldId);
+    CHECK(oldOutput != nullptr);
+    if (oldOutput == nullptr) return;
+    const auto oldBounds = oldOutput->bounds;
+    const auto oldFocus = shellFocusNow(f);
+    const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+
+    devices.front().id = "new-output";
+    devices.front().name = "New output";
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "new-output",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  devices, 0U, 0U);
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflictResult(stalePress));
+    CHECK(f.appliedAudio.empty());
+    CHECK(shellFocusNow(f) == oldFocus);
+    CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+
+    CHECK(f.frame());
+    const auto freshId = audioDeviceIdNow(f, 0U);
+    const auto* freshOutput = f.node(freshId);
+    CHECK(freshOutput != nullptr);
+    if (freshOutput == nullptr) return;
+    const auto freshPoint = centre(freshOutput->bounds);
+    CHECK(f.shell.pointerDown(f.controller, press(freshPoint)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(freshPoint)).hasValue());
+    CHECK(!f.appliedAudio.empty());
+    if (!f.appliedAudio.empty()) CHECK(f.appliedAudio.back().deviceId == "new-output");
+  }
+
+  {
+    OverlayFixture f;
+    native_ui::EditorSceneState::AudioDeviceOption device{
+        .id = "old-output", .name = "Old output", .physical = true, .selected = true};
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "old-output",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  {device}, 0U, 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+    CHECK(f.frame());
+    const auto* oldOutput = f.node(audioDeviceIdNow(f, 0U));
+    CHECK(oldOutput != nullptr);
+    if (oldOutput == nullptr) return;
+    const auto oldPoint = centre(oldOutput->bounds);
+    CHECK(f.shell.dispatchController(f.controller, "shell.overlay.settings.section.appearance",
+                                    SemanticAction::Activate).hasValue());
+    const auto stalePress = f.shell.pointerDown(f.controller, press(oldPoint));
+    CHECK(isConflictResult(stalePress));
+    CHECK(f.appliedAudio.empty());
+  }
+
+  {
+    OverlayFixture f;
+    std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
+    for (std::size_t i = 0U; i < 12U; ++i)
+      devices.push_back({.id = "output-" + std::to_string(i),
+                         .name = "Output " + std::to_string(i), .physical = true,
+                         .selected = i == 0U});
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "output-0",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  devices, 0U, 0U);
+    CHECK(f.frame(480.0, 320.0));
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+    CHECK(f.frame(480.0, 320.0));
+    const auto* oldOutput = f.node(audioDeviceIdNow(f, 0U), 480.0, 320.0);
+    CHECK(oldOutput != nullptr);
+    if (oldOutput == nullptr) return;
+    const auto oldPoint = centre(oldOutput->bounds);
+    CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::Down}));
+    const auto stalePress = f.shell.pointerDown(f.controller, press(oldPoint));
+    CHECK(isConflictResult(stalePress));
+    CHECK(f.appliedAudio.empty());
+  }
+
+  {
+    OverlayFixture f;
+    native_ui::EditorSceneState::AudioDeviceOption device{
+        .id = "old-output", .name = "Old output", .physical = true, .selected = true};
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "old-output",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  {device}, 0U, 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.dispatchSemantic(f.controller, "shell.settings", SemanticAction::Activate).hasValue());
+    CHECK(f.frame());
+    const auto oldId = audioDeviceIdNow(f, 0U);
+    const auto* oldOutput = f.node(oldId);
+    CHECK(oldOutput != nullptr);
+    if (oldOutput == nullptr) return;
+    const auto oldBounds = oldOutput->bounds;
+    const auto oldRevision = f.session.revision();
+    f.shell.setSettingsOpen(false);
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+
+    // The old row pixels remain until paint; a press there must not become a score edit.
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflictResult(stalePress));
+    CHECK(f.session.revision() == oldRevision);
+    CHECK(f.appliedAudio.empty());
+  }
+}
+
+TEST_CASE("the voice browser refuses a painted card coordinate after responsive reflow") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  OverlayFixture f;
+  std::vector<authoring::VoicebankCard> cards;
+  for (std::size_t i = 0U; i < 20U; ++i) {
+    authoring::VoicebankCard card;
+    card.id = "bank-" + std::to_string(i);
+    card.version = "1.0.0";
+    card.contentHash = "hash-" + std::to_string(i);
+    card.displayName = "Bank " + std::to_string(i);
+    card.selectable = true;
+    cards.push_back(std::move(card));
+  }
+  f.controller.setVoicebankCards(cards);
+  f.controller.showVoicebankBrowser();
+  CHECK(f.frame(640.0, 600.0));
+  const auto oldId = voicebankCardIdNow(f, 2U);
+  const auto* oldCard = f.node(oldId, 640.0, 600.0);
+  CHECK(oldCard != nullptr);
+  if (oldCard == nullptr) return;
+  const auto oldBounds = oldCard->bounds;
+  const auto oldFocus = shellFocusNow(f);
+  const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+
+  CHECK(f.shell.prepareFrame(f.controller, 960.0, 600.0));
+  f.controller.rebuildAccessibilityTree();
+  f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  const auto* replacementCard = f.node(voicebankCardIdNow(f, 3U), 960.0, 600.0);
+  CHECK(replacementCard != nullptr);
+  if (replacementCard == nullptr) return;
+  const auto oldPoint = centre(oldBounds);
+  CHECK(oldPoint.x >= replacementCard->bounds.x && oldPoint.x <= replacementCard->bounds.right());
+  CHECK(oldPoint.y >= replacementCard->bounds.y && oldPoint.y <= replacementCard->bounds.bottom());
+
+  // The same list and first index remain, but the painted grid has two columns while the current
+  // semantics reflow it to three. The old point now lands on bank-3 until a frame is painted.
+  const auto stalePress = f.shell.pointerDown(f.controller, press(oldPoint));
+  CHECK(isConflictResult(stalePress));
+  CHECK(f.selectedBanks.empty());
+  CHECK(shellFocusNow(f) == oldFocus);
+  CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+
+  CHECK(f.frame(960.0, 600.0));
+  const auto* freshCard = f.node(voicebankCardIdNow(f, 3U), 960.0, 600.0);
+  CHECK(freshCard != nullptr);
+  if (freshCard == nullptr) return;
+  const auto freshPoint = centre(freshCard->bounds);
+  CHECK(f.shell.pointerDown(f.controller, press(freshPoint)).hasValue());
+  CHECK(f.shell.pointerUp(f.controller, press(freshPoint)).hasValue());
+  CHECK(f.selectedBanks == std::vector<std::string>{"bank-3"});
 }
 
 TEST_CASE("the hint and transport fields are inline shell fields on the lyric field's input path") {

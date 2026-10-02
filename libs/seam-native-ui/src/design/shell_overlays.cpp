@@ -2038,6 +2038,21 @@ public:
   [[nodiscard]] std::string openerId(const NativeEditorController&,
                                      const EditorSceneState&) const override { return "shell.settings"; }
   void presented() const override { section_ = 0U; first_ = 0U; }
+  // The audio rows are projected through this settings card instead of the AudioSettingsOverlay's
+  // own sheet. Carry its live device-list identity together with the section and page so input is
+  // refused when those pixels still show the previous section or output list.
+  [[nodiscard]] std::optional<std::uint64_t> drawnContentForInput(
+      const NativeEditorController& controller, const EditorSceneState& state,
+      const SingLayout& layout, ui::Rect panel) const override {
+    static_cast<void>(layout);
+    static_cast<void>(panel);
+    IdentityHash hash;
+    hash.number(static_cast<std::uint64_t>(section_));
+    hash.number(static_cast<std::uint64_t>(first_));
+    if (const auto audio = audio_.drawnContent(controller, state); audio.has_value())
+      hash.number(*audio);
+    return hash.value();
+  }
   [[nodiscard]] std::vector<OverlayControl> controls(const NativeEditorController& controller,
                                                      const EditorSceneState& state,
                                                      const SingLayout& layout,
