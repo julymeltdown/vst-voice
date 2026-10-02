@@ -6,6 +6,7 @@
 #include "seam/phonemizer/pronunciation_resolver.hpp"
 #include "seam/synthesis/performance_compiler.hpp"
 #include <limits>
+#include <optional>
 
 TEST_CASE("lyric distribution preserves languages and assigns shared melisma tokens once") {
   using namespace seam;
@@ -100,6 +101,48 @@ TEST_CASE("duplicated melisma retains shared syllable and independent slur ident
   session.project().findNote(first.id)->slurGroup = std::numeric_limits<std::uint64_t>::max();
   session.selection().replace({first.id, second.id});
   CHECK(!model.duplicateSelection()); CHECK(session.project().noteCount() == 4U);
+}
+
+TEST_CASE("phrase duplication preserves authored lyric reading on a fresh token") {
+  using namespace seam;
+  application::ProjectFactory factory{12650U};
+  auto project = factory.createProject("Authored reading copy");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto regionId = factory.addRegion(project, track, "Phrase",
+      time::Tick{0}, time::Tick{3840});
+  auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{480}, 60U,
+      U"今日", domain::Language::Japanese);
+  lyric.readingHint = U"きょう";
+  project.findRegion(regionId)->lyrics = {lyric};
+  project.findRegion(regionId)->notes = {note};
+  CHECK(project.findRegion(regionId)->validate());
+
+  const auto before = project;
+  application::EditorSession session{std::move(project)};
+  ui::PianoRollModel model{session, factory, regionId};
+  session.selection().selectOnly(note.id);
+  const auto duplicate = model.duplicateSelection();
+  CHECK(duplicate);
+  const auto* original = session.project().findRegion(regionId)->findLyric(lyric.id);
+  const auto* copiedNote = session.project().findNote(duplicate.value());
+  CHECK(copiedNote != nullptr);
+  if (copiedNote == nullptr) return;
+  CHECK(copiedNote->lyricTokenId != lyric.id);
+  const auto* copied = session.project().findRegion(regionId)->findLyric(copiedNote->lyricTokenId);
+  CHECK(original != nullptr);
+  CHECK(copied != nullptr);
+  if (original == nullptr || copied == nullptr) return;
+  CHECK(original->surface == U"今日");
+  CHECK(original->readingHint == std::optional<std::u32string>{U"きょう"});
+  CHECK(copied->surface == original->surface);
+  CHECK(copied->language == original->language);
+  CHECK(copied->readingHint == original->readingHint);
+
+  const auto after = session.project();
+  CHECK(session.undo());
+  CHECK(session.project() == before);
+  CHECK(session.redo());
+  CHECK(session.project() == after);
 }
 
 TEST_CASE("shared lyric note insertion requires exact existing token and preserves its owner on undo") {

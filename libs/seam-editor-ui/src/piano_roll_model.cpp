@@ -619,6 +619,7 @@ core::Result<domain::NoteId> PianoRollModel::duplicateSelection() {
     auto [token, note] = factory_.makeNote(
         source->startTick + offset,
         source->durationTick, source->midiKey, lyric->surface, lyric->language);
+    token.readingHint = lyric->readingHint;
     const auto [copiedLyric, firstUse] = lyricCopies.emplace(source->lyricTokenId, token);
     token = copiedLyric->second;
     note.lyricTokenId = token.id;
