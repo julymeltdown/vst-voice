@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 
 #include "seam/application/note_commands.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/standalone/authoring_session.hpp"
 
 #include <algorithm>
@@ -155,7 +156,8 @@ TEST_CASE("standalone forwards native voicebank browser selection to its host") 
       .key = seam::native_ui::NativeKey::V, .modifiers = {}, .repeat = false}));
   session->controller().rebuildAccessibilityTree();
   CHECK(session->controller().dispatchAccessibility(
-      "voicebank.card.0", seam::native_ui::SemanticAction::Activate));
+      seam::native_ui::voicebankCardId(0U, browser.cards().front()),
+      seam::native_ui::SemanticAction::Activate));
   CHECK(selectedId == browser.cards().front().id);
 }
 

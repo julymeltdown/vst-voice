@@ -4,6 +4,7 @@
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/diagnostic_ids.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 
 #include <array>
 #include <charconv>
@@ -899,7 +900,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       const auto& item = support.items[index];
       const auto selectable = support.mode == RecoverySupportMode::Reports;
       panel.children.push_back(SemanticNode{
-          .id = "support.item." + std::to_string(index),
+          .id = supportItemId(index, item, selectable),
           .role = selectable ? SemanticRole::Button : SemanticRole::Status,
           .name = item.name,
           .value = item.detail,
@@ -950,7 +951,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
                             state.inspector.voicebank.version == card.version &&
                             state.inspector.voicebank.contentHash == card.contentHash;
       panel.children.push_back(SemanticNode{
-          .id = "voicebank.card." + std::to_string(index),
+          .id = voicebankCardId(index, card),
           .role = SemanticRole::Button,
           .name = card.displayName,
           .value = card.version + " / " + card.trustLabel +
@@ -1012,7 +1013,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       });
       if (bounds.width <= 0.0 || bounds.height <= 0.0) continue;
       panel.children.push_back(SemanticNode{
-          .id = "audio.device." + std::to_string(index),
+          .id = audioDeviceId(index, device),
           .role = SemanticRole::Button,
           .name = device.name.empty() ? device.id : device.name,
           .value = device.physical ? "Physical device" : "Fallback device",

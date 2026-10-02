@@ -7,6 +7,7 @@
 #include "test_support.hpp"
 
 #include "seam/native_ui/design/character_surface.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -207,8 +208,12 @@ TEST_CASE("sing shell journey: voice, phrase, save, reopen and export through re
     first.paint();
     // The browser is the shell's own sheet; its cards are the shell's nodes.
     CHECK(first.shellPresents());
-    CHECK(first.find("voicebank.card.0") != nullptr);
-    CHECK(first.app->dispatchAccessibility("voicebank.card.0", SemanticAction::Activate));
+    const auto& installedCards = first.app->authoring().controller().sceneState().voicebankCards;
+    CHECK(!installedCards.empty());
+    if (installedCards.empty()) return;
+    const auto firstCardId = seam::native_ui::voicebankCardId(0U, installedCards.front());
+    CHECK(first.find(firstCardId) != nullptr);
+    CHECK(first.app->dispatchAccessibility(firstCardId, SemanticAction::Activate));
     CHECK(!first.app->authoring().controller().voicebankBrowserVisible());
     first.paint();
     CHECK(first.shellPresents());

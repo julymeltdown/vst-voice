@@ -34,6 +34,7 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/native_ui/character_presentation.hpp"
 #include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
@@ -833,6 +834,13 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   });
   auto state = controller.sceneState();
   CHECK(state.recoverySupport.visible);
+  // The id of the entry that stands at an index of the support list now.
+  const auto itemId = [&controller](std::size_t index) {
+    const auto& support = controller.recoverySupportPanel().view();
+    return seam::native_ui::supportItemId(
+        index, support.items.at(index),
+        support.mode == seam::native_ui::RecoverySupportMode::Reports);
+  };
   CHECK(state.recoverySupport.mode ==
         seam::native_ui::RecoverySupportMode::Preview);
   CHECK(state.recoverySupport.items.size() == 2U);
@@ -865,7 +873,7 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
       controller.accessibilityTree().root(), "support.track.next"));
   CHECK(seam::native_ui::EditorSemanticTree::containsId(
-      controller.accessibilityTree().root(), "support.item.0"));
+      controller.accessibilityTree().root(), itemId(0U)));
 
   controller.setRecoverySupportView(seam::native_ui::RecoverySupportView{
       .visible = true,
@@ -910,12 +918,12 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   }
   controller.rebuildAccessibilityTree();
   CHECK(controller.dispatchAccessibility(
-      "support.item.1", seam::native_ui::SemanticAction::Activate));
+      itemId(1U), seam::native_ui::SemanticAction::Activate));
   CHECK(selectedReport == 1U);
 
   const auto supportState = controller.sceneState();
   CHECK(controller.dispatchAccessibility(
-      "support.item.0", seam::native_ui::SemanticAction::Activate));
+      itemId(0U), seam::native_ui::SemanticAction::Activate));
   CHECK(selectedReport == 0U);
   CHECK(supportState.recoverySupport.reportCount == 2U);
 
@@ -952,12 +960,12 @@ TEST_CASE("support panel exposes exact preview and selectable report list") {
   controller.setRecoverySupportView(std::move(compactView));
   controller.rebuildAccessibilityTree();
   CHECK(controller.dispatchAccessibility(
-      "support.item.3", seam::native_ui::SemanticAction::SetFocus));
+      itemId(3U), seam::native_ui::SemanticAction::SetFocus));
   CHECK(controller.recoverySupportPanel().view().firstVisibleItem == 3U);
   const auto* focusedSupportItem = controller.accessibilityTree().focusedNode();
   CHECK(focusedSupportItem != nullptr);
   if (focusedSupportItem != nullptr) {
-    CHECK(focusedSupportItem->id == "support.item.3");
+    CHECK(focusedSupportItem->id == itemId(3U));
     const auto expectedFocusedBounds = seam::native_ui::EditorSceneLayout{}.supportItemBounds(
         focusedSupportItem->bounds.x - seam::native_ui::EditorSceneLayout{}.supportPanelInsetX,
         480.0, 0U);
@@ -3720,6 +3728,100 @@ TEST_CASE("native controller takes no focus for a stale diagnostic id and leaves
   CHECK(focusIs(freshRow));
 }
 
+TEST_CASE("native controller refuses stale voicebank, support, and audio identities before focus or host actions") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  unsigned selectedBanks = 0U;
+  unsigned selectedReports = 0U;
+  unsigned appliedAudioSettings = 0U;
+  native_ui::EditorHostCallbacks callbacks;
+  callbacks.selectVoicebank = [&](std::string_view, std::string_view, std::string_view) {
+    ++selectedBanks;
+    return core::success();
+  };
+  callbacks.selectSupportReport = [&](std::size_t) {
+    ++selectedReports;
+    return core::success();
+  };
+  callbacks.applyAudioSettings = [&](authoring::AudioSettings) {
+    ++appliedAudioSettings;
+    return core::success();
+  };
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory,
+                                                fixture.regionId, std::move(callbacks)};
+  controller.resize(1280.0, 720.0);
+  const auto noteId = "note." + fixture.noteId.toString();
+  const auto focusNote = [&] {
+    controller.rebuildAccessibilityTree();
+    CHECK(controller.dispatchAccessibility(noteId, native_ui::SemanticAction::SetFocus));
+    CHECK(controller.sceneState().focusedNote == fixture.noteId);
+  };
+  const auto focusIsNote = [&] {
+    const auto* focused = controller.accessibilityTree().focusedNode();
+    return focused != nullptr && focused->id == noteId &&
+           controller.sceneState().focusedNote == fixture.noteId;
+  };
+  const auto rejectStaleId = [&](const std::string& id) {
+    for (const auto action : {native_ui::SemanticAction::SetFocus,
+                              native_ui::SemanticAction::Activate}) {
+      const auto stale = controller.dispatchAccessibility(id, action);
+      CHECK(!stale);
+      if (!stale) {
+        CHECK(stale.error().code == core::ErrorCode::Conflict);
+      }
+      CHECK(focusIsNote());
+    }
+  };
+
+  authoring::VoicebankCard originalCard;
+  originalCard.id = "bank-original";
+  originalCard.version = "1.0.0";
+  originalCard.contentHash = "digest-original";
+  originalCard.selectable = true;
+  controller.setVoicebankCards({originalCard});
+  controller.showVoicebankBrowser();
+  focusNote();
+  const auto staleCard = native_ui::voicebankCardId(0U, originalCard);
+  auto replacedCard = originalCard;
+  replacedCard.selectable = false;
+  controller.setVoicebankCards({replacedCard});
+  rejectStaleId(staleCard);
+  CHECK(selectedBanks == 0U);
+
+  native_ui::RecoverySupportView originalSupport;
+  originalSupport.visible = true;
+  originalSupport.mode = native_ui::RecoverySupportMode::Reports;
+  originalSupport.items = {{.name = "report-a.zip", .sha256 = "digest-a"}};
+  controller.setRecoverySupportView(originalSupport);
+  focusNote();
+  const auto staleReport = native_ui::supportItemId(0U, originalSupport.items.front(), true);
+  auto replacedSupport = originalSupport;
+  replacedSupport.mode = native_ui::RecoverySupportMode::Preview;
+  controller.setRecoverySupportView(replacedSupport);
+  rejectStaleId(staleReport);
+  CHECK(selectedReports == 0U);
+  originalSupport.visible = false;
+  controller.setRecoverySupportView(originalSupport);
+
+  const authoring::AudioSettings settings{.deviceId = "device-original",
+                                          .sampleRate = 48000U,
+                                          .blockFrames = 256U,
+                                          .outputChannels = 2U};
+  std::vector<native_ui::EditorSceneState::AudioDeviceOption> originalDevices{
+      {.id = "device-original", .name = "Original", .physical = true, .selected = true}};
+  controller.setAudioSettings(settings, originalDevices, 0U, 0U);
+  controller.showAudioSettings();
+  focusNote();
+  const auto staleDevice = native_ui::audioDeviceId(0U, originalDevices.front());
+  CHECK(native_ui::EditorSemanticTree::containsId(controller.accessibilityTree().root(), staleDevice));
+  auto replacedDevices = originalDevices;
+  replacedDevices.front().id = "device-replacement";
+  replacedDevices.front().name = "Replacement";
+  controller.setAudioSettings(settings, replacedDevices, 0U, 0U);
+  rejectStaleId(staleDevice);
+  CHECK(appliedAudioSettings == 0U);
+}
+
 TEST_CASE("native controller does not bring back an owner's diagnostic that the creator dismissed") {
   using namespace seam;
   NativeUiFixture fixture;
@@ -6020,10 +6122,15 @@ TEST_CASE("native scene exposes transactional audio settings controls") {
 
   controller.rebuildAccessibilityTree();
   const auto& tree = controller.accessibilityTree().root();
+  // The id of the device that stands at an index of the device list now.
+  const auto deviceId = [&controller](std::size_t index) {
+    return seam::native_ui::audioDeviceId(
+        index, controller.sceneState().audioSettings.devices.at(index));
+  };
   CHECK(seam::native_ui::EditorSemanticTree::containsId(tree,
                                                          "audio.settings"));
   CHECK(seam::native_ui::EditorSemanticTree::containsId(tree,
-                                                         "audio.device.0"));
+                                                         deviceId(0U)));
   CHECK(seam::native_ui::EditorSemanticTree::containsId(tree,
                                                          "audio.sample-rate"));
   CHECK(seam::native_ui::EditorSemanticTree::containsId(tree,
@@ -6036,7 +6143,7 @@ TEST_CASE("native scene exposes transactional audio settings controls") {
   CHECK(applied.has_value());
   CHECK(applied->sampleRate == 96000U);
   CHECK(controller.dispatchAccessibility(
-      "audio.device.1", seam::native_ui::SemanticAction::Activate));
+      deviceId(1U), seam::native_ui::SemanticAction::Activate));
   CHECK(applyCount == 2U);
   CHECK(applied->deviceId == "external-device");
 

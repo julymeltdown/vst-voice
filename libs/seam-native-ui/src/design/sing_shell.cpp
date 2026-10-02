@@ -4302,7 +4302,16 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
   // that control's own command; a press on the card itself is absorbed; a press outside closes it,
   // as the classic surfaces closed on Escape or their close button alone.
   cancelCoveredLyric(controller);
-  if (const auto* overlay = activeOverlay(controller); overlay != nullptr) {
+  const auto* overlay = activeOverlay(controller);
+  // A list-bearing sheet may disappear, or another sheet may replace it, after its last pixels were
+  // painted but before the next frame. The press still belongs to the modal surface the creator saw;
+  // do not route its coordinates into the newly exposed score or a different sheet.
+  if (overlayDrawn_.has_value() &&
+      (overlay == nullptr || overlayDrawn_->kind != overlay->kind())) {
+    repaint();
+    return core::failure(core::ErrorCode::Conflict, tr(Str::ThisElementIsNotOnScreen));
+  }
+  if (overlay != nullptr) {
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
     const auto panel = overlay->panel(controller, state, layout_, slot);

@@ -6,6 +6,7 @@
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/diagnostic_ids.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/native_ui/tempo_meter_model.hpp"
 
 #include <algorithm>
@@ -893,6 +894,21 @@ public:
     controller.setRecoverySupportView({});
     return core::success();
   }
+  // The reports in the order they are listed, which of them is the first shown, and whether they are
+  // choosable: what a press aimed at the frame on screen has to find still there before it acts (see
+  // ShellOverlay::drawnContent). A report is written or deleted while the sheet is open.
+  [[nodiscard]] std::optional<std::uint64_t> drawnContent(
+      const NativeEditorController&, const EditorSceneState& state) const override {
+    const auto& support = state.recoverySupport;
+    const auto selectable = support.mode == RecoverySupportMode::Reports;
+    IdentityHash hash;
+    hash.number(static_cast<std::uint64_t>(support.mode));
+    hash.number(static_cast<std::uint64_t>(support.firstVisibleItem));
+    hash.number(support.items.size());
+    for (const auto& item : support.items)
+      hash.number(supportItemIdentity(item, selectable));
+    return hash.value();
+  }
 };
 
 std::vector<OverlayControl> RecoverySupportOverlay::controls(const NativeEditorController&,
@@ -913,7 +929,7 @@ std::vector<OverlayControl> RecoverySupportOverlay::controls(const NativeEditorC
     const auto y = top + static_cast<double>(i - state.recoverySupport.firstVisibleItem) * kItem;
     if (y + kItem - 8.0 > panel.bottom() - 8.0) break;
     const auto& item = state.recoverySupport.items[i];
-    out.push_back({"support.item." + std::to_string(i),
+    out.push_back({supportItemId(i, item, selectable),
                    {panel.x + kPanelInset, y, std::max(1.0, panel.width - 2.0 * kPanelInset),
                     kItem - 10.0},
                    item.name, selectable ? SemanticRole::Button : SemanticRole::Status, true,
@@ -947,9 +963,11 @@ void RecoverySupportOverlay::paint(Canvas2D& c, const DesignTokens& t,
   if (const auto* next = findControl(controls, "support.track.next"))
     paintOverlayControl(c, t, *next, tr(Str::Next), SemanticRole::Button, true, false, false);
   for (std::size_t i = support.firstVisibleItem; i < support.items.size(); ++i) {
-    const auto* bounds = findControl(controls, "support.item." + std::to_string(i));
-    if (bounds == nullptr) continue;
     const auto& item = support.items[i];
+    const auto* bounds = findControl(controls,
+                                     supportItemId(i, item,
+                                                   support.mode == RecoverySupportMode::Reports));
+    if (bounds == nullptr) continue;
     const auto selectable = support.mode == RecoverySupportMode::Reports;
     c.fill(Path::roundedRect(*bounds, 6.0),
            item.selected ? withAlpha(t.color.accent, 0.22) : withAlpha(t.color.surfaceSunken, 0.85));
@@ -974,12 +992,13 @@ core::Result<void> RecoverySupportOverlay::perform(NativeEditorController& contr
                                                    std::string_view id, SemanticAction action) const {
   if (action != SemanticAction::Activate && action != SemanticAction::Toggle)
     return core::failure(core::ErrorCode::Unsupported, tr(Str::ThisControlOnlyActivates));
-  constexpr std::string_view kItem{"support.item."};
-  if (id.starts_with(kItem)) {
-    std::size_t index = 0U;
-    if (!parseIndex(id.substr(kItem.size()), index))
-      return core::failure(core::ErrorCode::InvalidArgument, tr(Str::InvalidSupportItem));
-    return controller.selectSupportReport(index);
+  if (id.starts_with(kSupportItemIdPrefix)) {
+    const auto named = parseListEntryId(kSupportItemIdPrefix, id);
+    if (!named) return core::failure(core::ErrorCode::InvalidArgument, tr(Str::InvalidSupportItem));
+    // The id names the report by its place and by what it is; a list that has changed since the frame
+    // the creator saw refuses it (a Conflict) and nothing is chosen.
+    if (const auto refusal = controller.listEntryRefusal(id)) return core::Result<void>{*refusal};
+    return controller.selectSupportReport(named.value().index);
   }
   return activateControllerNode(controller, id);
 }
@@ -1776,6 +1795,17 @@ public:
     return "shell.settings";
   }
   void presented() const override { firstDevice_ = 0U; }
+  // The devices in the order they are listed and which of them is the first shown: what a press aimed
+  // at the frame on screen has to find still there before it acts (see ShellOverlay::drawnContent). A
+  // device is plugged in or removed while the sheet is open.
+  [[nodiscard]] std::optional<std::uint64_t> drawnContent(
+      const NativeEditorController&, const EditorSceneState& state) const override {
+    IdentityHash hash;
+    hash.number(static_cast<std::uint64_t>(firstDevice_));
+    hash.number(state.audioSettings.devices.size());
+    for (const auto& device : state.audioSettings.devices) hash.number(audioDeviceIdentity(device));
+    return hash.value();
+  }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -1843,7 +1873,7 @@ std::vector<OverlayControl> AudioSettingsOverlay::controls(const NativeEditorCon
   }
   for (std::size_t i = first; i < audio.devices.size() && i < first + capacity; ++i) {
     const auto& device = audio.devices[i];
-    OverlayControl row{"audio.device." + std::to_string(i),
+    OverlayControl row{audioDeviceId(i, device),
                        {panel.x + kPanelInset, listTop + static_cast<double>(i - first) * stride,
                         inner, rowHeight},
                        device.name.empty() ? device.id : device.name, SemanticRole::Button, true,
@@ -1952,12 +1982,12 @@ core::Result<void> AudioSettingsOverlay::perform(NativeEditorController& control
     if (firstDevice_ < lastFirstDevice_) ++firstDevice_;
     return core::success();
   }
-  constexpr std::string_view kDevice{"audio.device."};
-  if (id.starts_with(kDevice)) {
-    std::size_t index = 0U;
-    if (!parseIndex(id.substr(kDevice.size()), index))
+  if (id.starts_with(kAudioDeviceIdPrefix)) {
+    const auto named = parseListEntryId(kAudioDeviceIdPrefix, id);
+    if (!named)
       return core::failure(core::ErrorCode::InvalidArgument, tr(Str::AudioDeviceAccessibilityIndexIsInvalid));
-    return controller.selectAudioDevice(index);
+    if (const auto refusal = controller.listEntryRefusal(id)) return core::Result<void>{*refusal};
+    return controller.selectAudioDevice(named.value().index);
   }
   return core::failure(core::ErrorCode::NotFound, tr(Str::UnknownAudioSettingsControl));
 }
@@ -2301,6 +2331,17 @@ public:
                                      const EditorSceneState&) const override {
     return "shell.change-voice";
   }
+  // The cards in the order they are listed and which of them is the first shown: what a press aimed
+  // at the frame on screen has to find still there before it acts (see ShellOverlay::drawnContent). A
+  // voicebank is installed or refreshed while the sheet is open.
+  [[nodiscard]] std::optional<std::uint64_t> drawnContent(
+      const NativeEditorController& controller, const EditorSceneState& state) const override {
+    IdentityHash hash;
+    hash.number(static_cast<std::uint64_t>(controller.voicebankBrowserFirstCard()));
+    hash.number(state.voicebankCards.size());
+    for (const auto& card : state.voicebankCards) hash.number(voicebankCardIdentity(card));
+    return hash.value();
+  }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController& controller,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
              const std::vector<OverlayControl>& controls) const override;
@@ -2341,7 +2382,7 @@ std::vector<OverlayControl> VoicebankBrowserOverlay::controls(const NativeEditor
     const auto i = g.first + k;
     const auto& card = cards[i];
     const auto selected = cardSelected(state, card);
-    OverlayControl control{"voicebank.card." + std::to_string(i), g.cards[k], card.displayName,
+    OverlayControl control{voicebankCardId(i, card), g.cards[k], card.displayName,
                            SemanticRole::Button, card.selectable, selected};
     control.value = trf(selected ? Str::VoiceCardValueSelected : Str::VoiceCardValue,
                         {card.version, card.trustLabel});
@@ -2390,9 +2431,10 @@ void VoicebankBrowserOverlay::paint(Canvas2D& c, const DesignTokens& t,
            t.color.textSecondary);
   }
   for (const auto& control : controls) {
-    if (!control.id.starts_with("voicebank.card.")) continue;
-    std::size_t index = 0U;
-    if (!parseIndex(std::string_view{control.id}.substr(15U), index) || index >= cards.size()) continue;
+    if (!control.id.starts_with(kVoicebankCardIdPrefix)) continue;
+    const auto parsed = parseListEntryId(kVoicebankCardIdPrefix, control.id);
+    if (!parsed || parsed.value().index >= cards.size()) continue;
+    const auto index = parsed.value().index;
     const auto& card = cards[index];
     const auto& r = control.bounds;
     const auto p = Path::roundedRect(r, t.shape.control + 2.0);
@@ -2453,12 +2495,12 @@ core::Result<void> VoicebankBrowserOverlay::perform(NativeEditorController& cont
     page(controller, last_, id.ends_with("next") ? 1 : -1);
     return core::success();
   }
-  constexpr std::string_view kCard{"voicebank.card."};
-  if (id.starts_with(kCard)) {
-    std::size_t index = 0U;
-    if (!parseIndex(id.substr(kCard.size()), index))
+  if (id.starts_with(kVoicebankCardIdPrefix)) {
+    const auto named = parseListEntryId(kVoicebankCardIdPrefix, id);
+    if (!named)
       return core::failure(core::ErrorCode::InvalidArgument, tr(Str::VoicebankAccessibilityIndexIsInvalid));
-    return controller.selectVoicebankCard(index);
+    if (const auto refusal = controller.listEntryRefusal(id)) return core::Result<void>{*refusal};
+    return controller.selectVoicebankCard(named.value().index);
   }
   return core::failure(core::ErrorCode::NotFound, tr(Str::UnknownVoiceBrowserControl));
 }

@@ -7,6 +7,7 @@
 #include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -445,7 +446,7 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
       [](const auto& child) { return child.id == "voicebank.panel"; });
   CHECK(browser != browserTree.children.end());
   CHECK(browser->children.size() == 1U);
-  CHECK(browser->children.front().id == "voicebank.card.0");
+  CHECK(browser->children.front().id == seam::native_ui::voicebankCardId(0U, card));
   CHECK(browser->children.front().bounds.width > 0.0);
   CHECK(browser->children.front().bounds.height > 0.0);
 
@@ -465,10 +466,113 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
       seam::native_ui::KeyEvent{.key = seam::native_ui::NativeKey::V}));
   browserController.rebuildAccessibilityTree();
   CHECK(browserController.dispatchAccessibility(
-      "voicebank.card.0", seam::native_ui::SemanticAction::Activate));
+      seam::native_ui::voicebankCardId(0U, card), seam::native_ui::SemanticAction::Activate));
   CHECK(selectedVoicebank == "demo.voice");
   CHECK(!browserController.voicebankBrowserVisible());
 }
+
+TEST_CASE("a list entry's id names its place and what it is, and the parser refuses what is not whole") {
+  using namespace seam;
+  using namespace seam::native_ui;
+  authoring::VoicebankCard card;
+  card.id = "bank";
+  card.version = "1.0.0";
+  card.contentHash = "hash";
+  card.selectable = true;
+  RecoverySupportItemView item;
+  item.name = "report.zip";
+  item.sha256 = "digest";
+  EditorSceneState::AudioDeviceOption device;
+  device.id = "usb";
+
+  // The format: the prefix, the place, an at sign and sixteen lowercase hexadecimal digits.
+  const auto cardId = voicebankCardId(7U, card);
+  CHECK(cardId.starts_with("voicebank.card.7@"));
+  CHECK(cardId.size() == std::string_view{"voicebank.card.7@"}.size() + 16U);
+  CHECK(supportItemId(0U, item, true).starts_with("support.item.0@"));
+  CHECK(audioDeviceId(12U, device).starts_with("audio.device.12@"));
+  const auto parsed = parseListEntryId(kVoicebankCardIdPrefix, cardId);
+  CHECK(parsed);
+  if (parsed) {
+    CHECK(parsed.value().index == 7U);
+    CHECK(parsed.value().identity == voicebankCardIdentity(card));
+  }
+  // An identity with leading zeros keeps all sixteen digits and reads back whole.
+  const auto padded = listEntryId(kAudioDeviceIdPrefix, 3U, 0x00000000000000abULL);
+  CHECK(padded == "audio.device.3@00000000000000ab");
+  const auto paddedBack = parseListEntryId(kAudioDeviceIdPrefix, padded);
+  CHECK(paddedBack);
+  if (paddedBack) CHECK(paddedBack.value().identity == 0xabULL);
+
+  // The entry's content and its selection capability move the identity, a field's boundary does
+  // not blur, and what only describes how the entry is presented does not.
+  const auto base = voicebankCardIdentity(card);
+  auto other = card;
+  other.id = "bank2";
+  CHECK(voicebankCardIdentity(other) != base);
+  other = card;
+  other.version = "1.0.1";
+  CHECK(voicebankCardIdentity(other) != base);
+  other = card;
+  other.contentHash = "hash2";
+  CHECK(voicebankCardIdentity(other) != base);
+  other = card;
+  other.selectable = false;
+  CHECK(voicebankCardIdentity(other) != base);
+  other = card;
+  other.id = "ban";
+  other.version = "k1.0.0";
+  CHECK(voicebankCardIdentity(other) != base);
+  other = card;
+  other.displayName = "Another name";
+  other.selectable = true;
+  other.trustLabel = "TRUSTED";
+  CHECK(voicebankCardIdentity(other) == base);
+  const auto itemBase = supportItemIdentity(item, true);
+  auto otherItem = item;
+  otherItem.name = "other.zip";
+  CHECK(supportItemIdentity(otherItem, true) != itemBase);
+  otherItem = item;
+  otherItem.sha256 = "digest2";
+  CHECK(supportItemIdentity(otherItem, true) != itemBase);
+  otherItem = item;
+  otherItem.name = "report.zi";
+  otherItem.sha256 = "pdigest";
+  CHECK(supportItemIdentity(otherItem, true) != itemBase);
+  CHECK(supportItemIdentity(item, false) != itemBase);
+  otherItem = item;
+  otherItem.selected = true;
+  otherItem.detail = "now";
+  otherItem.bytes = 99U;
+  CHECK(supportItemIdentity(otherItem, true) == itemBase);
+  auto otherDevice = device;
+  otherDevice.id = "usb2";
+  CHECK(audioDeviceIdentity(otherDevice) != audioDeviceIdentity(device));
+  otherDevice = device;
+  otherDevice.name = "Renamed";
+  otherDevice.selected = true;
+  CHECK(audioDeviceIdentity(otherDevice) == audioDeviceIdentity(device));
+
+  // What is not whole is malformed, as an InvalidArgument and not as a stale entry.
+  const auto malformed = [](std::string_view id) {
+    const auto result = parseListEntryId(kVoicebankCardIdPrefix, id);
+    return !result && result.error().code == core::ErrorCode::InvalidArgument;
+  };
+  CHECK(malformed("voicebank.card.7"));
+  CHECK(malformed("voicebank.card.@00000000000000ab"));
+  CHECK(malformed("voicebank.card.x@00000000000000ab"));
+  CHECK(malformed("voicebank.card.-1@00000000000000ab"));
+  CHECK(malformed("voicebank.card.7@00000000000000a"));
+  CHECK(malformed("voicebank.card.7@00000000000000abc"));
+  CHECK(malformed("voicebank.card.7@00000000000000ag"));
+  CHECK(malformed("voicebank.card.7@00000000000000aF"));
+  CHECK(malformed("voicebank.card.7@+0000000000000ab"));
+  CHECK(malformed("voicebank.card.7 @00000000000000ab"));
+  CHECK(malformed("voicebank.card.07@00000000000000ab"));
+  CHECK(malformed("audio.device.7@00000000000000ab"));
+  CHECK(malformed(""));
+}
+
 
 TEST_CASE("native export progress exposes an accessible cancellation action") {
   seam::application::ProjectFactory factory{760U};

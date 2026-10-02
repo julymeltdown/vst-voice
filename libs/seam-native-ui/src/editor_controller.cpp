@@ -4,6 +4,7 @@
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/diagnostic_ids.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
@@ -2124,6 +2125,38 @@ std::optional<core::Error> NativeEditorController::listEntryRefusal(std::string_
         entries[named.value().index].diagnostic.issueIdentity() != named.value().identity) {
       return core::Error{core::ErrorCode::Conflict, "That diagnostic is no longer in the list"};
     }
+    return std::nullopt;
+  }
+  if (element.starts_with(kVoicebankCardIdPrefix)) {
+    const auto named = parseListEntryId(kVoicebankCardIdPrefix, element);
+    if (!named) return named.error();
+    if (named.value().index >= voicebankCards_.size() ||
+        voicebankCardIdentity(voicebankCards_[named.value().index]) != named.value().identity) {
+      return core::Error{core::ErrorCode::Conflict, "That voicebank is no longer in the list"};
+    }
+    return std::nullopt;
+  }
+  if (element.starts_with(kSupportItemIdPrefix)) {
+    const auto named = parseListEntryId(kSupportItemIdPrefix, element);
+    if (!named) return named.error();
+    const auto& support = recoverySupportPanel_.view();
+    const auto selectable = support.mode == RecoverySupportMode::Reports;
+    const auto& items = support.items;
+    if (named.value().index >= items.size() ||
+        supportItemIdentity(items[named.value().index], selectable) != named.value().identity) {
+      return core::Error{core::ErrorCode::Conflict, "That report is no longer in the list"};
+    }
+    return std::nullopt;
+  }
+  if (element.starts_with(kAudioDeviceIdPrefix)) {
+    const auto named = parseListEntryId(kAudioDeviceIdPrefix, element);
+    if (!named) return named.error();
+    const auto& devices = audioSettings_.devices;
+    if (named.value().index >= devices.size() ||
+        audioDeviceIdentity(devices[named.value().index]) != named.value().identity) {
+      return core::Error{core::ErrorCode::Conflict, "That audio device is no longer in the list"};
+    }
+    return std::nullopt;
   }
   return std::nullopt;
 }
@@ -2345,11 +2378,21 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
           if (requested == SemanticAction::Activate || requested == SemanticAction::EditText)
             return beginMeterEdit();
         }
+        if (element.starts_with(kAudioDeviceIdPrefix)) {
+          // listEntryRefusal has shown the id to be whole and to name the device where it stands.
+          const auto named = parseListEntryId(kAudioDeviceIdPrefix, element);
+          if (!named) return core::Result<void>{named.error()};
+          if (requested == SemanticAction::SetFocus) return core::success();
+          if (requested != SemanticAction::Activate) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Accessibility action is not implemented");
+          }
+          return selectAudioDevice(named.value().index);
+        }
         if ((element == "audio.settings" || element == "audio.diagnostics" ||
              element == "audio.sample-rate" ||
              element == "audio.block-frames" ||
-             element == "audio.channels" ||
-             element.rfind("audio.device.", 0U) == 0U) &&
+             element == "audio.channels") &&
             requested == SemanticAction::SetFocus) {
           return core::success();
         }
@@ -2357,21 +2400,15 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
             requested == SemanticAction::SetFocus) {
           return core::success();
         }
-        constexpr auto supportItemPrefix = std::string_view{"support.item."};
-        if (element.starts_with(supportItemPrefix)) {
-          std::size_t index = 0U;
-          const auto suffix = element.substr(supportItemPrefix.size());
-          const auto parsed = std::from_chars(
-              suffix.data(), suffix.data() + suffix.size(), index);
-          if (parsed.ec != std::errc{} ||
-              parsed.ptr != suffix.data() + suffix.size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Support report accessibility index is invalid");
-          }
+        if (element.starts_with(kSupportItemIdPrefix)) {
+          // listEntryRefusal has shown the id to be whole and to name the report where it stands.
+          const auto named = parseListEntryId(kSupportItemIdPrefix, element);
+          if (!named) return core::Result<void>{named.error()};
+          const auto index = named.value().index;
           const auto& support = recoverySupportPanel_.view();
           if (index >= support.items.size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Support report accessibility index is unavailable");
+            return core::failure(core::ErrorCode::Conflict,
+                                 "That report is no longer in the list");
           }
           if (requested == SemanticAction::SetFocus) {
             auto view = support;
@@ -2396,19 +2433,6 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
           }
           return selectAdjacentVocalTrack(
               element == "support.track.next" ? 1 : -1);
-        }
-        if (element.rfind("audio.device.", 0U) == 0U &&
-            requested == SemanticAction::Activate) {
-          const auto indexStart = std::string_view{"audio.device."}.size();
-          std::size_t index = 0U;
-          const auto parsed = std::from_chars(
-              element.data() + indexStart, element.data() + element.size(), index);
-          if (parsed.ec != std::errc{} ||
-              parsed.ptr != element.data() + element.size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Audio device accessibility index is invalid");
-          }
-          return selectAudioDevice(index);
         }
         if (element == "audio.sample-rate" &&
             requested == SemanticAction::Activate) {
@@ -2467,23 +2491,16 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
         if (element == "arrangement.move-down") {
           return reorderSelectedTrackBy(1);
         }
-        if (element.rfind("voicebank.card.", 0U) == 0U &&
-            requested == SemanticAction::SetFocus) {
-          return core::success();
-        }
-        if (element.rfind("voicebank.card.", 0U) == 0U &&
-            requested == SemanticAction::Activate) {
-          const auto indexStart = std::string_view{"voicebank.card."}.size();
-          std::size_t index = 0U;
-          const auto parsed = std::from_chars(
-              element.data() + indexStart, element.data() + element.size(), index);
-          if (parsed.ec != std::errc{} ||
-              parsed.ptr != element.data() + element.size() ||
-              index >= voicebankCards_.size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Voicebank accessibility index is invalid");
+        if (element.starts_with(kVoicebankCardIdPrefix)) {
+          // listEntryRefusal has shown the id to be whole and to name the card where it stands.
+          const auto named = parseListEntryId(kVoicebankCardIdPrefix, element);
+          if (!named) return core::Result<void>{named.error()};
+          if (requested == SemanticAction::SetFocus) return core::success();
+          if (requested != SemanticAction::Activate) {
+            return core::failure(core::ErrorCode::Unsupported,
+                                 "Accessibility action is not implemented");
           }
-          return selectVoicebankCard(index);
+          return selectVoicebankCard(named.value().index);
         }
         if (element.rfind("arrangement.track.", 0U) == 0U) {
           if (requested == SemanticAction::SetFocus) return core::success();

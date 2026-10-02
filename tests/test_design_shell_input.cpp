@@ -13,6 +13,7 @@
 #include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
+#include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/ui/expression_lane.hpp"
 #include "seam/ui/phoneme_lane_model.hpp"
@@ -2779,6 +2780,20 @@ struct OverlayFixture final {
 // The overlays all share the same contract: the shell presents them, their nodes match their hit
 // rectangles, the score under them is neither published nor editable, Escape closes them and focus
 // returns, and they stay usable at the 480x320 minimum and at 1600x900.
+// The ids of the entries that stand in the lists now (see list_entry_ids.hpp): a list entry's id names
+// its place and what it is, so a test builds the id from the entry it means.
+std::string supportItemIdNow(OverlayFixture& f, std::size_t index) {
+  const auto& support = f.controller.recoverySupportPanel().view();
+  return native_ui::supportItemId(index, support.items.at(index),
+                                  support.mode == native_ui::RecoverySupportMode::Reports);
+}
+std::string voicebankCardIdNow(OverlayFixture& f, std::size_t index) {
+  return native_ui::voicebankCardId(index, f.controller.sceneState().voicebankCards.at(index));
+}
+std::string audioDeviceIdNow(OverlayFixture& f, std::size_t index) {
+  return native_ui::audioDeviceId(index, f.controller.sceneState().audioSettings.devices.at(index));
+}
+
 void checkOverlayContract(OverlayFixture& f, std::string_view panelPrefix,
                           std::vector<std::string> required, std::vector<std::string> optional,
                           std::string_view opener) {
@@ -3147,9 +3162,9 @@ TEST_CASE("every overlay control acts through the host's accessibility path") {
         .status = "Two owned reports",
     });
     CHECK(f.frame());
-    focusEach(f, {"support.track.previous", "support.track.next", "support.item.0",
-                  "support.item.1"});
-    activate(f, "support.item.1");
+    focusEach(f, {"support.track.previous", "support.track.next", supportItemIdNow(f, 0U),
+                  supportItemIdNow(f, 1U)});
+    activate(f, supportItemIdNow(f, 1U));
     CHECK(f.selectedReports == 1U);
   }
   {
@@ -3260,7 +3275,7 @@ TEST_CASE("the recovery support sheet lists the host's reports and selects one t
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::RecoverySupport);
   checkOverlayContract(f, "shell.overlay.support.", {"support.track.previous", "support.track.next"},
-                       {"support.item.0", "support.item.1"}, "shell.settings");
+                       {supportItemIdNow(f, 0U), supportItemIdNow(f, 1U)}, "shell.settings");
   // Selecting a report is the controller's own command, reported by the host callback.
   f.controller.setRecoverySupportView(native_ui::RecoverySupportView{
       .visible = true,
@@ -3271,7 +3286,7 @@ TEST_CASE("the recovery support sheet lists the host's reports and selects one t
       .status = "Two owned reports",
   });
   CHECK(f.frame());
-  const auto item = f.node("support.item.1")->bounds;
+  const auto item = f.node(supportItemIdNow(f, 1U))->bounds;
   CHECK(f.shell.pointerDown(f.controller, press({item.x + 4.0, item.y + 4.0})).hasValue());
   CHECK(f.shell.pointerUp(f.controller, press({item.x + 4.0, item.y + 4.0})).hasValue());
   CHECK(f.selectedReports == 1U);
@@ -4285,9 +4300,9 @@ TEST_CASE("the audio settings sheet lists the devices and applies every change t
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::AudioSettings);
   checkOverlayContract(f, "shell.overlay.audio.",
-                       {"shell.overlay.audio.close", "audio.device.0", "audio.sample-rate",
+                       {"shell.overlay.audio.close", audioDeviceIdNow(f, 0U), "audio.sample-rate",
                         "audio.block-frames", "audio.channels", "audio.diagnostics"},
-                       {"audio.device.1", "audio.device.2", "shell.overlay.audio.devices-up",
+                       {audioDeviceIdNow(f, 1U), audioDeviceIdNow(f, 2U), "shell.overlay.audio.devices-up",
                         "shell.overlay.audio.devices-down"},
                        "shell.settings");
   CHECK(!f.controller.audioSettingsVisible());
@@ -4296,9 +4311,9 @@ TEST_CASE("the audio settings sheet lists the devices and applies every change t
   CHECK(f.frame());
   focusEveryControl(f, "shell.overlay.audio.");
   // The device name is whole on the node however the row elides it; the counts are published.
-  const auto usb = nodeNow(f, "audio.device.1");
+  const auto usb = nodeNow(f, audioDeviceIdNow(f, 1U));
   CHECK(usb.has_value() && usb->name == longName);
-  const auto chosen = nodeNow(f, "audio.device.0");
+  const auto chosen = nodeNow(f, audioDeviceIdNow(f, 0U));
   CHECK(chosen.has_value() && chosen->selected);
   const auto counts = nodeNow(f, "audio.diagnostics");
   CHECK(counts.has_value() && counts->value.find("Underflow 12") != std::string::npos &&
@@ -4316,7 +4331,7 @@ TEST_CASE("the audio settings sheet lists the devices and applies every change t
   CHECK(f.appliedAudio.back().blockFrames == 512U);
   CHECK(f.shell.dispatchController(f.controller, "audio.channels", SemanticAction::Increment).hasValue());
   CHECK(f.appliedAudio.back().outputChannels == 4U);
-  CHECK(f.shell.dispatchController(f.controller, "audio.device.1", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.dispatchController(f.controller, audioDeviceIdNow(f, 1U), SemanticAction::Activate).hasValue());
   CHECK(f.appliedAudio.back().deviceId == "usb");
   // The pointer and the classic keys run the same commands.
   const auto applied = f.appliedAudio.size();
@@ -4391,9 +4406,9 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::VoicebankBrowser);
   std::vector<std::string> optional{"shell.overlay.voicebank.previous", "shell.overlay.voicebank.next"};
-  for (std::size_t i = 1U; i < cards.size(); ++i) optional.push_back("voicebank.card." + std::to_string(i));
+  for (std::size_t i = 1U; i < cards.size(); ++i) optional.push_back(voicebankCardIdNow(f, i));
   checkOverlayContract(f, "shell.overlay.voicebank.",
-                       {"voicebank.card.0", "shell.overlay.voicebank.refresh",
+                       {voicebankCardIdNow(f, 0U), "shell.overlay.voicebank.refresh",
                         "shell.overlay.voicebank.install", "shell.overlay.voicebank.close"},
                        optional, "shell.change-voice");
   CHECK(!f.controller.voicebankBrowserVisible());
@@ -4401,22 +4416,23 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
   // At the minimum window the cards page; the pager reaches every card.
   f.controller.showVoicebankBrowser();
   CHECK(f.frame(480.0, 320.0));
-  CHECK(f.node("voicebank.card.13", 480.0, 320.0) == nullptr);
-  for (int i = 0; i < 16 && f.node("voicebank.card.13", 480.0, 320.0) == nullptr; ++i)
+  CHECK(f.node(voicebankCardIdNow(f, 13U), 480.0, 320.0) == nullptr);
+  for (int i = 0; i < 16 && f.node(voicebankCardIdNow(f, 13U), 480.0, 320.0) == nullptr; ++i)
     CHECK(f.shell.dispatchController(f.controller, "shell.overlay.voicebank.next", SemanticAction::Activate).hasValue());
-  CHECK(f.node("voicebank.card.13", 480.0, 320.0) != nullptr);
-  CHECK(f.node("voicebank.card.0", 480.0, 320.0) == nullptr);
+  CHECK(f.node(voicebankCardIdNow(f, 13U), 480.0, 320.0) != nullptr);
+  CHECK(f.node(voicebankCardIdNow(f, 0U), 480.0, 320.0) == nullptr);
   // A resize keeps the sheet open, and every card is back on one page.
   CHECK(f.frame());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::VoicebankBrowser);
   focusEveryControl(f, "shell.overlay.voicebank.");
   // The whole name is on the node; the untrusted card says why it cannot be chosen.
-  const auto named = nodeNow(f, "voicebank.card.1");
+  const auto named = nodeNow(f, voicebankCardIdNow(f, 1U));
   CHECK(named.has_value() && named->name == longName);
-  const auto untrusted = nodeNow(f, "voicebank.card.2");
+  const auto untrustedId = voicebankCardIdNow(f, 2U);
+  const auto untrusted = nodeNow(f, untrustedId);
   CHECK(untrusted.has_value() && !untrusted->enabled &&
         untrusted->description.find("not trusted") != std::string::npos);
-  CHECK(!f.shell.dispatchController(f.controller, "voicebank.card.2", SemanticAction::Activate).hasValue());
+  CHECK(!f.shell.dispatchController(f.controller, untrustedId, SemanticAction::Activate).hasValue());
   CHECK(f.selectedBanks.empty());
   // Refresh by pointer, install by the classic key, refresh by R: the host's own commands.
   if (const auto refresh = nodeNow(f, "shell.overlay.voicebank.refresh"); refresh.has_value()) {
@@ -4430,7 +4446,7 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
   CHECK(f.shell.handleShellKey(f.controller, KeyEvent{.key = NativeKey::R}));
   CHECK(f.voicebankRefreshes == 2U);
   // Choosing a card asks the host to replace the track's voicebank and closes the browser.
-  CHECK(f.shell.dispatchController(f.controller, "voicebank.card.3", SemanticAction::Activate).hasValue());
+  CHECK(f.shell.dispatchController(f.controller, voicebankCardIdNow(f, 3U), SemanticAction::Activate).hasValue());
   CHECK(f.selectedBanks == std::vector<std::string>{"bank-3"});
   CHECK(!f.controller.voicebankBrowserVisible());
   CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
@@ -4457,6 +4473,133 @@ TEST_CASE("the voice browser is a large sheet that selects, refreshes and instal
   CHECK(findShellNode(f.shell.accessibilityTree().root(), "shell.overlay.voicebank.panel") == nullptr);
   const auto* focused = f.shell.accessibilityTree().focusedNode();
   CHECK(focused == nullptr || !focused->id.starts_with("voicebank."));
+}
+
+TEST_CASE("a list changed after paint refuses the old pointer press without taking focus or acting") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+
+  const auto shellFocus = [](OverlayFixture& f) {
+    const auto* focused = f.shell.accessibilityTree().focusedNode();
+    return focused == nullptr ? std::string{} : focused->id;
+  };
+  const auto isConflict = [](const auto& result) {
+    return !result && result.error().code == core::ErrorCode::Conflict;
+  };
+
+  {
+    OverlayFixture f;
+    authoring::VoicebankCard card;
+    card.id = "bank-old";
+    card.version = "1.0.0";
+    card.contentHash = "hash-old";
+    card.displayName = "Old bank";
+    card.selectable = true;
+    f.controller.setVoicebankCards({card});
+    f.controller.showVoicebankBrowser();
+    CHECK(f.frame());
+    const auto oldId = voicebankCardIdNow(f, 0U);
+    const auto* oldCard = f.node(oldId);
+    CHECK(oldCard != nullptr);
+    if (oldCard == nullptr) return;
+    const auto oldBounds = oldCard->bounds;
+    const auto oldFocus = shellFocus(f);
+    const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+    card.selectable = false;
+    f.controller.setVoicebankCards({card});
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflict(stalePress));
+    CHECK(f.selectedBanks.empty());
+    CHECK(shellFocus(f) == oldFocus);
+    CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+  }
+
+  {
+    OverlayFixture f;
+    native_ui::RecoverySupportView support;
+    support.visible = true;
+    support.mode = native_ui::RecoverySupportMode::Reports;
+    support.items = {{.name = "report-old.zip", .sha256 = "digest-old"}};
+    f.controller.setRecoverySupportView(support);
+    CHECK(f.frame());
+    const auto oldId = supportItemIdNow(f, 0U);
+    const auto* oldReport = f.node(oldId);
+    CHECK(oldReport != nullptr);
+    if (oldReport == nullptr) return;
+    const auto oldBounds = oldReport->bounds;
+    const auto oldFocus = shellFocus(f);
+    const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+    support.mode = native_ui::RecoverySupportMode::Preview;
+    f.controller.setRecoverySupportView(support);
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflict(stalePress));
+    CHECK(f.selectedReports == 0U);
+    CHECK(shellFocus(f) == oldFocus);
+    CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+  }
+
+  {
+    OverlayFixture f;
+    const auto noteId = f.session.project().findRegion(f.regionId)->notes.front().id;
+    f.session.selection().selectOnly(noteId);
+    native_ui::RecoverySupportView support;
+    support.visible = true;
+    support.mode = native_ui::RecoverySupportMode::Reports;
+    support.items = {{.name = "report-old.zip", .sha256 = "digest-old"}};
+    f.controller.setRecoverySupportView(support);
+    CHECK(f.frame());
+    const auto oldId = supportItemIdNow(f, 0U);
+    const auto* oldReport = f.node(oldId);
+    CHECK(oldReport != nullptr);
+    if (oldReport == nullptr) return;
+    const auto oldBounds = oldReport->bounds;
+    const auto oldFocus = shellFocus(f);
+    const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+    const auto oldSelection = f.session.selection().noteIds();
+    const auto oldRevision = f.session.revision();
+
+    // The creator still sees the old pixels, but the host removes the modal sheet before repaint.
+    f.controller.setRecoverySupportView({});
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflict(stalePress));
+    CHECK(f.selectedReports == 0U);
+    CHECK(shellFocus(f) == oldFocus);
+    CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+    CHECK(f.session.selection().noteIds() == oldSelection);
+    CHECK(f.session.revision() == oldRevision);
+  }
+
+  {
+    OverlayFixture f;
+    std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices{
+        {.id = "device-old", .name = "Old device", .physical = true, .selected = true}};
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "device-old",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  devices, 0U, 0U);
+    f.controller.showAudioSettings();
+    CHECK(f.frame());
+    const auto oldId = audioDeviceIdNow(f, 0U);
+    const auto* oldDevice = f.node(oldId);
+    CHECK(oldDevice != nullptr);
+    if (oldDevice == nullptr) return;
+    const auto oldBounds = oldDevice->bounds;
+    const auto oldFocus = shellFocus(f);
+    const auto oldEditorFocus = f.controller.sceneState().focusedNote;
+    devices.front().id = "device-new";
+    devices.front().name = "New device";
+    f.controller.setAudioSettings(authoring::AudioSettings{.deviceId = "device-new",
+                                                           .sampleRate = 48000U,
+                                                           .blockFrames = 256U,
+                                                           .outputChannels = 2U},
+                                  devices, 0U, 0U);
+    const auto stalePress = f.shell.pointerDown(f.controller, press(centre(oldBounds)));
+    CHECK(isConflict(stalePress));
+    CHECK(f.appliedAudio.empty());
+    CHECK(shellFocus(f) == oldFocus);
+    CHECK(f.controller.sceneState().focusedNote == oldEditorFocus);
+  }
 }
 
 TEST_CASE("the hint and transport fields are inline shell fields on the lyric field's input path") {
@@ -4796,7 +4939,7 @@ TEST_CASE("a disabled overlay control absorbs a press and pagers never count pas
   const auto firstShown = [&f] {
     std::size_t first = 99U;
     for (std::size_t i = 0U; i < 14U; ++i)
-      if (nodeNow(f, "audio.device." + std::to_string(i)).has_value()) {
+      if (nodeNow(f, audioDeviceIdNow(f, i)).has_value()) {
         first = i;
         break;
       }
@@ -4811,7 +4954,7 @@ TEST_CASE("a disabled overlay control absorbs a press and pagers never count pas
   };
   CHECK(firstShown() == 0U);
   // More than one row is shown, so a counter past the last full page would be hidden by the layout.
-  CHECK(nodeNow(f, "audio.device.1").has_value());
+  CHECK(nodeNow(f, audioDeviceIdNow(f, 1U)).has_value());
   for (int i = 0; i < 30; ++i) pressNode("shell.overlay.audio.devices-down");
   const auto last = firstShown();
   CHECK(last > 0U && last < 14U);
