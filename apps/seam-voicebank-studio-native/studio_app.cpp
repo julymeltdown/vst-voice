@@ -44,6 +44,15 @@
 namespace seam::voicebank_studio_native {
 namespace {
 
+// The Studio's own type scale for the rows a creator reads rather than scans. It is named here and
+// used for both the geometry that holds the text and the text itself, so a strip can never be sized
+// for one and filled with the other: the second developer found this window drawing 6-to-7 point text
+// at 720 by 520, and a strip sized to the old type is what kept it small.
+inline constexpr double kStudioHintHeight = 26.0;
+inline constexpr double kStudioHintBaseline = 52.0;
+inline constexpr double kStudioHintText = 12.0;
+inline constexpr double kStudioControlText = 12.0;
+
 class VoicebankStudioApp final : public IVoicebankStudioApp {
 public:
   VoicebankStudioApp(bool forceSyntheticInput, StudioPlatform platform)
@@ -2281,20 +2290,55 @@ public:
     }
     const bool importEnabled=controller_.productionProject() && controller_.selectedProductionAssignment() &&
         !controller_.proceduralImportBusy() && !recordingInput_.capturing() && !recordingInput_.pending() && !takeImportModal_;
-    canvas.fillRect({24.0,48.0,200.0,20.0},importEnabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
-    canvas.drawText({28.0,52.0,192.0,14.0}, "CMD/CTRL-D DESIGNER  CMD/CTRL-R IMPORT WAV",
-        importEnabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{150,145,153,255}, 6.0);
-    canvas.fillRect({230.0,48.0,120.0,20.0}, seam::native_ui::Color{72,52,76,255});
-    canvas.drawText({236.0,53.0,108.0,12.0}, "Q SAMPLE REVIEW", seam::native_ui::Color{239,233,241,255}, 7.0);
-    for (const auto& control : recordingControls()) {
+    // The shortcut hints and the recording labels are read, not decoration, so they are drawn at a
+    // size a person can read at a glance: the strips that hold them grew to fit the larger type and
+    // the row moved down by the same amount, so nothing below it moved onto it. The strips are laid
+    // out from these two constants, so the geometry and the text cannot drift apart again.
+    const auto hintHeight = kStudioHintHeight;
+    const auto hintText = kStudioHintText;
+    const auto hintBaseline = kStudioHintBaseline;
+    // Each strip is as wide as the hint it holds, measured at the size it is drawn: the earlier ones
+    // were sized for 6-to-7 point text, and raising the size without widening them only moved where
+    // the label was cut, which a source check cannot see and a person can. These labels are the
+    // creator's only route to the shortcut they name.
+    // The two hints are told apart by their keys rather than their full titles: the row has the width
+    // of the units rail beside it, and at a readable size a full title each no longer fits there. The
+    // keys are the part a creator looks for, and every one of these has its own accessible name and
+    // description in full.
+    const auto designerHint = std::string{"CMD-D DESIGNER"};
+    const auto reviewHint = std::string{"CMD-R IMPORT"};
+    const auto hintWidth = [&canvas](const std::string& text) {
+      return std::ceil(canvas.measureText(text, kStudioHintText)) + 12.0;
+    };
+    // Each strip is exactly as wide as its own hint, so neither truncates the other: the earlier pair
+    // shared one row sized for 6-point text and cut both labels off, which is what the second
+    // developer saw. The row ends at kStudioHintRowRight, where the column beside it begins, so a
+    // strip can never draw over that column's own heading.
+    const auto designerWidth = hintWidth(designerHint);
+    const auto reviewWidth = hintWidth(reviewHint);
+    canvas.fillRect({24.0,48.0,designerWidth,hintHeight},importEnabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
+    canvas.drawText({28.0,hintBaseline,designerWidth-8.0,hintHeight-4.0}, designerHint,
+        importEnabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{150,145,153,255}, hintText);
+    const auto reviewLeft = 24.0 + designerWidth + 6.0;
+    canvas.fillRect({reviewLeft,48.0,reviewWidth,hintHeight}, seam::native_ui::Color{72,52,76,255});
+    canvas.drawText({reviewLeft+4.0,hintBaseline,reviewWidth-8.0,hintHeight-4.0}, reviewHint, seam::native_ui::Color{239,233,241,255}, hintText);
+    const auto controlWidth = [&canvas](const std::string& label) {
+      return std::ceil(canvas.measureText(label, kStudioControlText)) + 14.0;
+    };
+    for (const auto& control : recordingControls(controlWidth("R STOP + PUBLISH"),
+                                                 controlWidth("X DISCARD"))) {
       canvas.fillRect(control.bounds, control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255});
-      canvas.drawText({control.bounds.x+6.0,control.bounds.y+6.0,control.bounds.width-12.0,12.0}, control.label,
-          control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{150,145,153,255}, 7.0);
+      canvas.drawText({control.bounds.x+6.0,control.bounds.y+5.0,control.bounds.width-12.0,16.0}, control.label,
+          control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{150,145,153,255}, kStudioControlText);
     }
-    canvas.drawText({canvas.logicalWidth() - 360.0, 56.0, 340.0, 12.0},
+    // The status takes what is left of the row to the right of the strips, which is what it is given:
+    // a fixed 340 points ran off a 720-point window and the creator saw the tail of a sentence.
+    const auto statusLeft = std::max(reviewLeft + reviewWidth + 8.0, canvas.logicalWidth() * 0.5);
+    const auto statusWidth = std::max(0.0, canvas.logicalWidth() - statusLeft - 8.0);
+    canvas.drawText({statusLeft, hintBaseline, statusWidth, hintHeight-4.0},
         !lastError_.empty() ? lastError_ : !recordingStatus_.empty() ? recordingStatus_ :
             (auditionStatus_.empty() ? "SPACE PLAY / ALT ARROWS START / ALT-SHIFT END / ALT +/- PAN" : auditionStatus_),
-        !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255}, 6.0);
+        !lastError_.empty() ? seam::native_ui::Color{169, 79, 119, 255} : seam::native_ui::Color{166, 154, 170, 255}, kStudioHintText);
     if (controller_.proceduralImportBusy() || pendingRecordingExportStarted_ ||
         audition_.active() || recordingInput_.capturing()) repaint();
   }
@@ -3085,11 +3129,16 @@ public:
   // Recording is reachable from the unit rail header by pointer and by accessibility, not only through
   // the R key: a screen-reader user has to be able to start, stop, retry and discard a take, and the
   // stop and discard actions stay available while every other target is locked by the capture.
-  std::vector<RecordingControl> recordingControls() const {
+  std::vector<RecordingControl> recordingControls(double primaryWidth = 94.0,
+                                                  double discardWidth = 94.0) const {
     if (designerView_ || sampleReviewView_ || generationQueueView_) return {};
     const bool capturing = recordingInput_.capturing(), pending = recordingInput_.pending();
     const bool publishing = pendingRecordingExportStarted_ || pendingRecordingImportStarted_;
-    const seam::ui::Rect primary{52.0,78.0,94.0,22.0}, secondary{150.0,78.0,94.0,22.0};
+    // The buttons are as wide as their labels at the size they are drawn (kStudioControlText), which
+    // they were not: at 7 point the longest label fitted 94 points and at 12 it does not, so the
+    // labels were cut off mid-word. The row sits below the hint strips above it either way.
+    const seam::ui::Rect primary{52.0,80.0,std::max(94.0,primaryWidth),24.0},
+        secondary{52.0 + std::max(94.0,primaryWidth) + 6.0,80.0,std::max(94.0,discardWidth),24.0};
     std::vector<RecordingControl> controls;
     if (capturing)
       controls.push_back({"record","R STOP + PUBLISH","Stop recording and publish the take",
