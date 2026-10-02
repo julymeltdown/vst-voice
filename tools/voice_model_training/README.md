@@ -1139,11 +1139,14 @@ their source/conditioning/target bytes through `iter_vocoder_batches`. Evaluatio
 uses CPU float32 Torch `eval`/`no_grad`, detaches output, and restores standard
 module modes and CPU RNG. Arbitrary forward-method mutations are not rolled back.
 The output must contain exactly `ceil(validSamples/256)*256` samples; only declared
-tail padding may be trimmed. Unknown pitch produces `UNRESOLVED`, not a successful
-pitch measurement. An existing `reconstruction_directory` retains per-item float
-WAVs, hashes, measurements and a final receipt. Partial output without that final
-receipt is an incomplete attempt. Pitch currently compares whole-phrase medians,
-not note-by-note melodic accuracy. No reconstruction receipt qualifies a singer.
+tail padding may be trimmed. When paired native F0 records are supplied, pitch is
+compared frame by frame at exact source-frame offsets. Without both records, legacy
+whole-phrase median values are diagnostic only and pitch status is `UNRESOLVED`, not
+a successful measurement. Track hashes are checked against the exact trimmed PCM
+WAVs, but caller-supplied records do not authenticate extractor provenance. An
+existing `reconstruction_directory` retains per-item float WAVs, hashes, measurements
+and a final receipt. Partial output without that final receipt is an incomplete
+attempt. No reconstruction receipt qualifies a singer.
 
 For a bounded real upstream forward check, use:
 

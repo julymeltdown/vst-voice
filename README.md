@@ -112,14 +112,18 @@ and the region contract is [`docs/design/ui-fidelity-contract-v1.json`](docs/des
   (the same settings the menu command uses), its progress, a failure reason and the last receipt,
   and runs the real Export Set command; it covers the score, so no hidden note can be edited from
   there. In the CLAP plug-in, EXPORT explains that the DAW renders and exports. **VOICE** opens the
-  existing voice browser (not yet re-homed). **TUNE** and **MIX** are drawn disabled.
+  existing voice browser (not yet re-homed). **TUNE** is an active initial workspace for expression
+  curves, selected-note vibrato, and pitch automation when the host provides pitch-edit callbacks.
+  **MIX** is an active initial workspace for track level/pan/mute/solo, routing, audio settings,
+  metering, and arrangement regions. Both are partial workflows, not yet complete or Beta-qualified
+  product surfaces.
 - `tests/test_sing_shell_journey.cpp` drives the standalone app headlessly through the shell:
   pick a voice, draw a note and type its lyric, Save As, reopen in a fresh app (voice identity and
   phrase kept), export from EXPORT, and decode a non-silent master. This is command/persistence/
   export evidence with the development fixture bank, not Finder, window, FL Studio or vocal-quality
   evidence.
-- Not done yet: TUNE and MIX workspaces; a re-homed voice browser; a measured output meter;
-  lyric-field re-anchoring while scrolling (the
+- Not done yet: complete and product-qualify TUNE and MIX; a re-homed voice browser; live-host
+  qualification of the measured output meter; lyric-field re-anchoring while scrolling (the
   field is cancelled on resize or a surface switch rather than left misplaced); FL Studio host
   captures. Character art in `assets/ui-design` is **development-only**; see its
   `PROVENANCE.md`.
