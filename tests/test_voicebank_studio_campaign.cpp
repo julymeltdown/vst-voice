@@ -792,6 +792,43 @@ TEST_CASE("wrapped text with a system engine breaks at words and keeps a long to
     CHECK(widths[index] >= 20U + 100U);
 }
 
+// The unit rail cuts a long name to fit its row, and it used to do that by resizing the string to 24
+// bytes. A UTF-8 character is more than one byte, so a name written in anything but ASCII lost its
+// last character to a cut through the middle of it, and the creator was shown a name that was not the
+// name of their unit. The cut is in display columns and says that it cut.
+TEST_CASE("a rail label cut to fit is cut by column and never through a character") {
+  constexpr std::size_t kColumns = 24U;
+  const auto painted = [](const std::string& label) {
+    const auto truncated = text::utf8DisplayWidth(label) > kColumns;
+    const auto kept = text::truncateUtf8ToDisplayWidth(
+        label, truncated ? kColumns - 1U : kColumns);
+    return truncated ? std::string{kept} + "…" : std::string{kept};
+  };
+  // A name whose 24th byte lands inside a multi byte character is the case that broke.
+  // Twenty two ASCII columns followed by three three-byte characters: the 24th byte of this string
+  // lands inside the first of them, which is exactly what a resize to 24 bytes did to it.
+  const std::string wide = "AAAAAAAAAAAAAAAAAAAAAA\xE3\x82\xBD\xE3\x82\x93\xE3\x82\x93";
+  const auto result = painted(wide);
+  CHECK(text::utf8DisplayWidth(result) <= kColumns);
+  // The cut says that it cut, with an ellipsis as its last three bytes.
+  CHECK(result.size() >= 3U &&
+        static_cast<unsigned char>(result[result.size() - 3U]) == 0xE2U &&
+        static_cast<unsigned char>(result[result.size() - 2U]) == 0x80U &&
+        static_cast<unsigned char>(result[result.size() - 1U]) == 0xA6U);
+  // Every byte of what is painted is a whole character: the result decodes without a partial one.
+  std::size_t index = 0U;
+  while (index < result.size()) {
+    const auto byte = static_cast<unsigned char>(result[index]);
+    const auto length = byte < 0x80U ? 1U : (byte & 0xE0U) == 0xC0U   ? 2U
+                        : (byte & 0xF0U) == 0xE0U ? 3U
+                                                 : 4U;
+    CHECK(index + length <= result.size());
+    index += length;
+  }
+  // A short name is left exactly as it is.
+  CHECK(painted("sustain:a") == "sustain:a");
+}
+
 TEST_CASE("the intake shortcut hint wraps at the minimum window instead of being cut") {
   Fixture fixture;
   namespace ui = seam::native_ui;

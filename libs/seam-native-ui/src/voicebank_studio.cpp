@@ -581,12 +581,16 @@ void VoicebankStudioScenePainter::paint(
                                      ? productionProject->projectId
                                      : std::string{"NO PROJECT"};
   canvas.drawText(ui::Rect{18.0, 34.0, std::max(0.0, width - 396.0), 16.0},
-                  displayName, theme_.secondaryText, 8.0);
+                  // The project name and the character line below it are read, not decoration, and
+                  // are at the same 8 point as the status they sit beside rather than 8 and 6. The
+                  // panel has room: the left column is title 16, project 34 and character 57, which
+                  // ends at 67 of the 72 point panel.
+                  displayName, theme_.secondaryText, 10.0);
   if (!controller.manifest().characterId.empty()) {
     canvas.drawText(ui::Point{18.0, 57.0},
                     "CHARACTER " + controller.manifest().characterId + " @ " +
                         controller.manifest().characterVersion,
-                    theme_.secondaryText, 6.0);
+                    theme_.secondaryText, 10.0);
   }
   // The top right is one status area rather than labels that have to share it. The status is a
   // sentence, so it wraps over the two lines the panel has for it instead of being clipped to one:
@@ -630,15 +634,28 @@ void VoicebankStudioScenePainter::paint(
     const auto first = controller.selectedIndex() > 8U ? controller.selectedIndex() - 8U : 0U;
     const auto last = std::min(
         units.size(), first + voicebankStudioUnitRailVisibleRows(height, false));
+    // A row is 28 points tall and holds one label. The label is drawn at the same 12 point as the
+    // rest of the window, so it is 20 points tall and the row has room for it. The rows used to be on
+    // a 32 point pitch with a 7 point label, and the label was cut to 24 bytes: a UTF-8 character is
+    // more than one byte, so a name written in anything but ASCII lost its last character to a cut
+    // through the middle of a character.
+    constexpr double kRailText = 12.0;
+    constexpr std::size_t kRailLabelColumns = 24U;
     for (std::size_t index = first; index < last; ++index) {
       const auto y = 108.0 + static_cast<double>(index - first) * 32.0;
       const ui::Rect row{8.0, y, 236.0, 28.0};
       canvas.fillRect(row, index == controller.selectedIndex() ? theme_.selected
                                                                : theme_.panelAlternate);
       if (index == controller.selectedIndex()) canvas.strokeRect(row, theme_.accent, 1.0);
-      auto label = units[index].alias.empty() ? units[index].id : units[index].alias;
-      if (label.size() > 24U) label.resize(24U);
-      canvas.drawText(ui::Point{16.0, y + 7.0}, label, theme_.primaryText, 7.0);
+      const auto& label = units[index].alias.empty() ? units[index].id : units[index].alias;
+      // The label is cut to a number of display columns rather than bytes, and an ellipsis says that
+      // it was cut, so the creator is not left with a name that looks complete and is not.
+      const auto truncated = text::utf8DisplayWidth(label) > kRailLabelColumns;
+      const auto painted = text::truncateUtf8ToDisplayWidth(
+          label, truncated ? kRailLabelColumns - 1U : kRailLabelColumns);
+      canvas.drawTextWrapped(ui::Rect{16.0, y + 4.0, 220.0, 20.0},
+                             truncated ? std::string{painted} + "…" : std::string{painted},
+                             theme_.primaryText, kRailText, 20.0);
     }
   }
 
@@ -709,23 +726,33 @@ void VoicebankStudioScenePainter::paint(
 
   const auto inspectorX = width - 238.0;
   canvas.fillRect(ui::Rect{inspectorX, 72.0, 238.0, height - 72.0}, theme_.panel);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 88.0}, "UNIT INSPECTOR",
-                  theme_.secondaryText, 8.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 114.0}, unit->id,
-                  theme_.primaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 138.0},
-                  "ROOT MIDI " + std::to_string(unit->rootMidi), theme_.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 157.0},
-                  "RENDER " + std::string{voicebank::rendererHintName(unit->renderer)},
-                  theme_.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 182.0}, "UP/DOWN UNIT",
-                  theme_.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 199.0}, "DRAG MARKERS",
-                  theme_.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 216.0}, "CTRL+S SAVE",
-                  theme_.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, 233.0}, "R RECORD TAKE",
-                  theme_.secondaryText, 7.0);
+  // These rows are read, not decoration, so they are at the same 12 point as the rest of the window
+  // rather than 7 and 8, and each one advances the block by the height it needs. The offsets they
+  // sat on (114, 138, 157, 182, 199, 216, 233) assumed one line each, so a unit id longer than the
+  // column was cut and a taller row would have landed on the one below it.
+  constexpr double kUnitInspectorText = 12.0;
+  constexpr double kUnitInspectorLine = 16.0;
+  constexpr double kUnitInspectorGap = 6.0;
+  auto inspectorTop = 86.0;
+  const auto unitRow = [&](const std::string& text, const Color& color) {
+    // The longest id is 242 points at this size in a 214 point column, so it takes two lines. The row
+    // is given both, and the rows below move down rather than being drawn over it.
+    const auto lines = static_cast<double>(
+        std::max<std::size_t>(1U, studioWrapWords(canvas, text, 214.0, kUnitInspectorText).size()));
+    canvas.drawTextWrapped(
+        ui::Rect{inspectorX + 12.0, inspectorTop, 214.0, lines * kUnitInspectorLine}, text, color,
+        kUnitInspectorText, kUnitInspectorLine);
+    inspectorTop += lines * kUnitInspectorLine + kUnitInspectorGap;
+  };
+  unitRow("UNIT INSPECTOR", theme_.secondaryText);
+  unitRow(unit->id, theme_.primaryText);
+  unitRow("ROOT MIDI " + std::to_string(unit->rootMidi), theme_.secondaryText);
+  unitRow("RENDER " + std::string{voicebank::rendererHintName(unit->renderer)},
+          theme_.secondaryText);
+  unitRow("UP/DOWN UNIT", theme_.secondaryText);
+  unitRow("DRAG MARKERS", theme_.secondaryText);
+  unitRow("CTRL+S SAVE", theme_.secondaryText);
+  unitRow("R RECORD TAKE", theme_.secondaryText);
   paintProductionInspector(canvas, controller, theme_, unit);
 }
 
