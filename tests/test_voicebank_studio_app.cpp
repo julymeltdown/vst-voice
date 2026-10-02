@@ -467,12 +467,21 @@ TEST_CASE("Voicebank Studio's own actions take a new voice from draft to a song 
   // Designer home: create the draft through the accessible entry, then set one numeric control the
   // way a screen reader sets a field value.
   CHECK(studio.node("new").has_value());
+  // The designer with no draft is the first thing a creator sees, so it is captured here as well as
+  // the drafted view below; no check depends on it.
+  studio.snapshot("voice-designer-empty-1100x720", 1100.0, 720.0);
+  studio.snapshot("voice-designer-empty-720x520", 720.0, 520.0);
   CHECK(studio.activate("new").hasValue());
   CHECK(studio.node("control.0").has_value());
   const auto initialOpenQuotient = studio.value("control.0");
   CHECK(studio.setValue("control.0", "0.55").hasValue());
   CHECK(studio.value("control.0") != initialOpenQuotient);
   CHECK(studio.value("status") == "Unsaved");
+
+  // The voice designer is a surface no snapshot in this file reaches, so its layout has never been
+  // read as a frame. Both widths are captured here; no check depends on it.
+  studio.snapshot("voice-designer-1100x720", 1100.0, 720.0);
+  studio.snapshot("voice-designer-720x520", 720.0, 520.0);
 
   // Save As is refused inside the installed-singer folder, then saves where the creator chose.
   const auto draft = root / "drafts" / "harness-voice.json";
