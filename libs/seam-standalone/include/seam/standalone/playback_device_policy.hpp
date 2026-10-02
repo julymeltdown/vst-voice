@@ -47,6 +47,12 @@ enum class DeviceAction { None, Start, Stop };
 // How long a Start that failed holds the next one back (see DeviceStartRetry).
 inline constexpr std::chrono::milliseconds kDeviceRetryDelay{250};
 
+// How long a transport report may stay unsettled before the frame that waits for it is asked for
+// again. A feeder applies a command on its own thread about a millisecond after it is sent, so this
+// is far longer than that; it bounds a window whose feeder has stopped rather than throttling the
+// ordinary case (see deviceNeedsFrame).
+inline constexpr std::chrono::milliseconds kTransportSettleWait{500};
+
 // The time that a Start which failed holds the next one back until. A window paints for many reasons
 // that have nothing to do with the device (an animation, a pointer, a worker that landed), and a frame
 // that finds a Play that no device has taken up asks the device to start. Without a hold, a backend that
@@ -100,6 +106,21 @@ public:
     return notBefore_;
   }
 
+  // The same, for a window whose transport report is unsettled at `now`: a hold whose deadline has
+  // already passed is offered one delay on from now instead of the instant it went by. A frame that is
+  // painted for a past deadline decides nothing about the device (decideDeviceAction ignores an
+  // unsettled report), so offering it on every turn of the loop would repaint a still window at the
+  // display's rate for a frame that cannot act; one delay on bounds that and costs nothing when the
+  // feeder is a moment behind, which is the ordinary case.
+  [[nodiscard]] constexpr std::optional<Clock::time_point> notBeforeFor(
+      Clock::time_point now, bool reportUnsettled) const noexcept {
+    // A settled report can act on the hold, so it is offered as it stands: a window whose feeder came
+    // back is woken for the retry its own Play is owed rather than for one the hold never reached.
+    if (!notBefore_.has_value() || !reportUnsettled) return notBefore_;
+    if (*notBefore_ > now) return notBefore_;
+    return now + kDeviceRetryDelay;
+  }
+
 private:
   std::optional<Clock::time_point> notBefore_;
 };
@@ -118,9 +139,21 @@ private:
 //    comes before that.
 // A Start that failed is not in this: it is asked again later, once its hold is over
 // (DeviceStartRetry). With no device there is nothing to ask for.
-[[nodiscard]] constexpr bool deviceNeedsFrame(const authoring::TransportState& transport,
-                                              bool deviceExists, bool deviceRunning) noexcept {
-  return deviceExists && (deviceRunning || !transport.settled);
+// A report that stays unsettled is a feeder that has stopped: the command it has not applied is one
+// it never will, and asking for the frame that would settle it at the display's rate spins a window
+// that nothing else asks for. `unsettledFor` is how long the report has been unsettled, so a feeder
+// that is a moment behind (the ordinary case, about a millisecond of its own thread) is still
+// answered at once. Past the wait the report is one no thread is going to settle, and the frame is
+// asked for once per wait instead (the caller re-bases, see NativeEditorApp::paint): a Play the feeder
+// has not acknowledged is still the creator's, so it is never given up on, and a still window is not
+// woken at the display's rate while nothing can settle what it waits for.
+[[nodiscard]] constexpr bool deviceNeedsFrame(
+    const authoring::TransportState& transport, bool deviceExists, bool deviceRunning,
+    std::chrono::nanoseconds unsettledFor) noexcept {
+  if (!deviceExists) return false;
+  if (deviceRunning) return true;
+  if (transport.settled) return false;
+  return unsettledFor < kTransportSettleWait;
 }
 
 }  // namespace seam::standalone

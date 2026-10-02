@@ -256,6 +256,9 @@ private:
   // The hold that a start of the audio device that failed puts on the next one: no frame asks the
   // device again before it is over, and nextFrameDue() wakes a still window for it.
   DeviceStartRetry deviceRetry_;
+  // When the transport report was last seen unsettled, so a window whose feeder has stopped is asked
+  // for its settling frame at a bound rather than at the display's rate (see kTransportSettleWait).
+  std::optional<std::chrono::steady_clock::time_point> unsettledSince_;
   // A notice that this project's recorded sound came from different renderer code than this build
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.

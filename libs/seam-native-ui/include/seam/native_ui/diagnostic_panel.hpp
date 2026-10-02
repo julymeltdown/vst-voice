@@ -13,6 +13,11 @@ namespace seam::native_ui {
 struct DiagnosticPanelEntry final {
   authoring::Diagnostic diagnostic;
   bool expanded{false};
+
+  // The whole entry, the occurrence count included: a panel that compares equal is one the creator
+  // cannot tell from the last, so a rebuild that produces it asks for no frame (see
+  // NativeEditorController::rebuildDiagnosticPanel).
+  friend bool operator==(const DiagnosticPanelEntry&, const DiagnosticPanelEntry&) = default;
 };
 
 class DiagnosticPanelModel final {

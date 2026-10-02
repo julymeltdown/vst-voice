@@ -2985,6 +2985,12 @@ void NativeEditorController::noteRefusal(const core::Error& error) {
 }
 
 void NativeEditorController::rebuildDiagnosticPanel() {
+  // The panel is rebuilt from the owner's diagnostics and this editor's notices, and it is drawn from
+  // that alone: a rebuild that produces the same panel asks for no frame, as setDiagnostics and
+  // setAudioState do not. A device that fails to start again and again raises the same notice, and a
+  // rebuild that asked for a frame each time would keep a window that paints only on request painting
+  // at the display's rate, for a panel that has not changed.
+  const auto before = diagnosticPanel_.entries();
   diagnosticPanel_.clear();
   // The owner's diagnostics keep the order the owner gave them: the first entry is the toast, and the
   // owner decides what leads. The editor's notices follow, so a refused key never hides a failure the
@@ -2992,7 +2998,7 @@ void NativeEditorController::rebuildDiagnosticPanel() {
   // first notice is the toast.
   for (const auto& diagnostic : ownerDiagnostics_) diagnosticPanel_.add(diagnostic);
   for (const auto& notice : notices_) diagnosticPanel_.add(notice);
-  repaint();
+  if (diagnosticPanel_.entries() != before) repaint();
 }
 
 void NativeEditorController::raiseNotice(authoring::Diagnostic notice) {

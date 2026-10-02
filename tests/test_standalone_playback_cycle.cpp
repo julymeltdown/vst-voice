@@ -751,28 +751,45 @@ TEST_CASE("standalone playback policy: with no device there is nothing to start 
 
 TEST_CASE("standalone playback policy: a frame asks for another at once while the device runs or the report is incomplete") {
   using seam::standalone::deviceNeedsFrame;
+  // A report the feeder is a moment behind applying: unsettled, but only just, so the frame that
+  // waits for it is asked at once (kTransportSettleWait bounds only a feeder that has stopped).
+  const auto justBehind = seam::standalone::kTransportSettleWait - 1ms;
   // A device that runs keeps the window painting: the playhead and the level are shown for as long as
   // it plays, whether or not a block has been measured yet, and a device that is to be stopped and does
   // not stop is asked again by the next frame.
-  CHECK(deviceNeedsFrame(reported(true, true), true, true));
-  CHECK(deviceNeedsFrame(reported(false, true), true, true));
-  CHECK(deviceNeedsFrame(reported(false, false), true, true));
+  CHECK(deviceNeedsFrame(reported(true, true), true, true, justBehind));
+  CHECK(deviceNeedsFrame(reported(false, true), true, true, justBehind));
+  CHECK(deviceNeedsFrame(reported(false, false), true, true, justBehind));
   // A report that does not yet include every command decides nothing (decideDeviceAction), so the
   // frame that meets one asks for another: the feeder applies the command a moment after it is sent.
-  CHECK(deviceNeedsFrame(reported(false, false), true, false));
-  CHECK(deviceNeedsFrame(reported(true, false), true, false));
+  CHECK(deviceNeedsFrame(reported(false, false), true, false, justBehind));
+  CHECK(deviceNeedsFrame(reported(true, false), true, false, justBehind));
   // A device that is stopped, and a report that is complete, leave nothing: the window may sleep,
   // whatever the transport is doing. A Start that failed is not in this, it has a hold of its own.
-  CHECK(!deviceNeedsFrame(reported(false, true), true, false));
-  CHECK(!deviceNeedsFrame(reported(true, true), true, false));
+  CHECK(!deviceNeedsFrame(reported(false, true), true, false, justBehind));
+  CHECK(!deviceNeedsFrame(reported(true, true), true, false, justBehind));
   // With no device there is nothing to ask for, whatever the report says.
   for (const bool playing : {false, true}) {
     for (const bool settled : {false, true}) {
       for (const bool running : {false, true}) {
-        CHECK(!deviceNeedsFrame(reported(playing, settled), false, running));
+        CHECK(!deviceNeedsFrame(reported(playing, settled), false, running, justBehind));
       }
     }
   }
+  // A report that has been unsettled for the whole wait, with a device that is not running, is a
+  // feeder that has stopped: the frame that would settle it is not asked for at the display's rate.
+  // It is not asked for not at all either, which would leave a recoverable Play unstarted: the app
+  // re-bases the wait and owes the frame once per wait (see NativeEditorApp::paint), and that case is
+  // the window journey's, which counts the frames a still window paints across a whole hold.
+  for (const bool playing : {false, true}) {
+    CHECK(deviceNeedsFrame(reported(playing, false), true, false, justBehind));
+    CHECK(!deviceNeedsFrame(reported(playing, false), true, false,
+                            seam::standalone::kTransportSettleWait));
+    CHECK(!deviceNeedsFrame(reported(playing, false), true, false, 60s));
+  }
+  // A running device keeps the window painting whatever the report says and however long it has been
+  // unsettled: the playhead and the meter move, so those frames are wanted.
+  CHECK(deviceNeedsFrame(reported(false, false), true, true, 60s));
 }
 
 TEST_CASE("standalone playback policy: a Start that failed holds the next one back until its delay is over") {
@@ -1785,6 +1802,59 @@ TEST_CASE("standalone playback window: a Play that cannot start the device is tr
     CHECK(rig.device->starts() == 1U);
     checkHeardIs(heard, expected, 0U, "a Play whose device could not start");
   }
+}
+
+TEST_CASE("standalone playback window: a feeder that stops leaving the report unsettled does not spin the window") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using seam::standalone::kDeviceRetryDelay;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-stalled-feeder");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+
+  // The device cannot start, so a hold is in place and the window is owed one frame for it.
+  rig.device->failStart = true;
+  CHECK(rig.menu(ApplicationCommand::TogglePlayback).hasValue());
+  std::vector<float> heard;
+  CHECK(runWindow(rig, heard, [&] { return rig.device->startAttempts() == 1U; }, 300));
+  CHECK(rig.transport().state().playAwaitsConsumer);
+
+  // The feeder's service stops, so the report never becomes settled again and the Play stays wanted:
+  // the state the app is waiting on is one no thread is going to produce.
+  rig.transport().shutdown();
+  // A seek the stopped feeder will never apply: the report is unsettled from here, and stays so.
+  static_cast<void>(rig.transport().seek(24000));
+  CHECK(!rig.transport().state().settled);
+
+  // The hold's deadline is now in the past, and the report is unsettled with no thread going to
+  // settle it. Nothing here needs a frame: the device is not asked for until its hold is over, and
+  // the frame that waits for the feeder is asked once per wait rather than at the display's rate.
+  // What a still window must never do is repaint for ever doing nothing, so the frame count below is
+  // the whole of the property; the deadline's own value is not what the creator can see.
+  *rig.clock += 1000ms;
+
+  // Reduce Motion is on and the character is at a held pose, so nothing asks for a frame of its own
+  // accord: what paints here is only what the app owes.
+  // The frames of the wait itself are wanted: until the wait is over the app cannot tell a feeder
+  // that is a moment behind from one that has stopped. Once it is, the window goes quiet, which is the
+  // whole of the property: 120 turns of 16 ms are nearly two seconds, and a window that still owed a
+  // frame at the display's rate would paint every one of them doing nothing.
+  rig.runTurns(40);
+  const auto afterTheWait = rig.framesPainted;
+  rig.runTurns(120);
+  CHECK(rig.framesPainted - afterTheWait <= 1U);
+
+  // The creator's Play is still theirs: nothing has cancelled it, and the transport still reports
+  // what it last did. Restarting the feeder's service settles the report, and the first settled frame
+  // asks for the device at once rather than waiting out another hold.
+  rig.device->failStart = false;
+  CHECK(rig.transport().start().hasValue());
+  const auto recoveredFrom = *rig.clock;
+  CHECK(runWindow(rig, heard, [&] { return rig.device->running(); }, 400));
+  CHECK(*rig.clock - recoveredFrom <= kDeviceRetryDelay + 64ms);
+  CHECK(rig.transport().state().playAwaitsConsumer == false);
+  CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 1500));
+  CHECK(rig.device->starts() == 1U);
 }
 
 TEST_CASE("standalone playback window: a frame that comes early neither asks a device that cannot start nor moves the deadline") {

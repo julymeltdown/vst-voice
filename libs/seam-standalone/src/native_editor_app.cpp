@@ -1737,9 +1737,34 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   // attempt, which can take a while.
   deviceRetry_.afterFrame(transport, audioDevice_ != nullptr, decidedAction, deviceAction,
                           deviceActionFailed, uiNow());
+  // A report that is unsettled is one the feeder has not applied the creator's last command to. It is
+  // ordinarily a millisecond behind, so the frame that waits for it is asked at once; a feeder that
+  // has stopped leaves it unsettled for ever, and asking at the display's rate would spin a window
+  // that nothing else asks for (see kTransportSettleWait).
+  const auto settledNow = uiNow();
+  if (transport.settled) unsettledSince_.reset();
+  else if (!unsettledSince_.has_value()) unsettledSince_ = settledNow;
+  // The report settled again (the feeder is back, or a command of its own has been applied): a hold
+  // whose deadline went by while the feeder was stopped is offered at once, because a frame painted
+  // for a settled report can act on it and the creator's Play should not wait out a hold that ended
+  // before the device ever saw it.
+  if (transport.settled && deviceRetry_.notBefore().has_value() &&
+      *deviceRetry_.notBefore() <= settledNow) {
+    deviceRetry_.clear();
+  }
+  const auto unsettledFor = unsettledSince_.has_value()
+                                ? settledNow - *unsettledSince_
+                                : std::chrono::steady_clock::duration::zero();
   if (deviceNeedsFrame(transport, audioDevice_ != nullptr,
-                       audioDevice_ != nullptr && audioDevice_->running())) {
+                       audioDevice_ != nullptr && audioDevice_->running(), unsettledFor)) {
     requestWindowRepaint();
+  } else if (unsettledSince_.has_value() &&
+             unsettledFor >= std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                  kTransportSettleWait)) {
+    // The wait is over and the report is still unsettled: the feeder has stopped. The frame is owed
+    // again one wait on rather than not at all (a Play the feeder never acknowledged is still the
+    // creator's), and re-basing here is what makes that a bounded rate instead of the display's.
+    unsettledSince_ = settledNow;
   }
   const auto progress = authoring_->runtime().renderer().progress();
   authoring_->controller().setPlaying(transport.playing);
@@ -2074,6 +2099,13 @@ std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameD
   // The shipping app injects no UI clock, so the shell reads the steady clock and its time is the
   // window's; only a test moves it by hand (NativeEditorAppConfig::uiClock).
   auto due = shell_.nextFrameDue();
+  // The transport report is read here as well, because this is what decides whether the retry hold is
+  // offered as it stands or one delay on: a feeder that has come back settles the report, and the
+  // window has to be woken for the retry rather than still waiting for a report that has arrived. The
+  // state itself is settled in paint(), which is what a frame reads it from.
+  const auto reportSettled = authoring_ != nullptr &&
+                             authoring_->runtime().transport().state().settled;
+  const auto reportUnsettled = !reportSettled && unsettledSince_.has_value();
   // paint() also does the owner thread's time-driven work, and a window that paints only on request
   // paints for it only if it is asked to. That work is the autosave tick and the next try at a start
   // of the audio device that failed: with nothing animating (Reduce Motion, a held pose) no frame
@@ -2084,7 +2116,8 @@ std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameD
     if (const auto autosave = applicationController_->autosaveDue(); autosave.has_value())
       due = due.has_value() ? std::min(*due, *autosave) : *autosave;
   }
-  if (const auto retry = deviceRetry_.notBefore(); retry.has_value())
+  if (const auto retry = deviceRetry_.notBeforeFor(uiNow(), reportUnsettled);
+      retry.has_value())
     due = due.has_value() ? std::min(*due, *retry) : *retry;
   return due;
 }
