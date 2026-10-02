@@ -1358,3 +1358,116 @@ TEST_CASE("Voicebank Studio names the audition that plays, and one that cannot r
   CHECK(playingA->destroyed);
   CHECK(outputs.back()->running);
 }
+
+namespace {
+
+// The first accessible element, in this frame, whose id contains idPart and whose name contains
+// namePart. The Designer's source controls carry a per-source suffix in their ids, so they cannot be
+// found by the id's end as the fixed ones are.
+std::optional<SemanticNode> findContaining(StudioHarness& studio, std::string_view idPart,
+                                           std::string_view namePart = {}) {
+  const auto search = [&](const SemanticNode& node, const auto& self) -> const SemanticNode* {
+    if (node.id.find(idPart) != std::string::npos && node.name.find(namePart) != std::string::npos)
+      return &node;
+    for (const auto& child : node.children)
+      if (const auto* found = self(child, self)) return found;
+    return nullptr;
+  };
+  const auto* found = search(studio.frame().root(), search);
+  if (found == nullptr) return std::nullopt;
+  return *found;
+}
+
+// One of the Designer's source auditions (a plosive burst, a frication noise, an articulation tail),
+// asked for through its accessible Play control while reference A plays on an output that will not
+// say that it has stopped. The source's start is refused, so the answer is the failure, A stays
+// named and running, and the output made for the source never opens. When the output lets go, the
+// same control plays the source.
+void checkSourceAuditionAfterRefusedStop(std::string_view tag, std::string_view controlName,
+                                         std::string_view renderPart, std::string_view playPart) {
+  const auto root = test::support::temporaryDirectory("studio-source-audition-" + std::string{tag});
+  std::vector<std::shared_ptr<OutputScript>> outputs;
+  StudioHarness studio{root, nullptr, [&] {
+    auto script = std::make_shared<OutputScript>();
+    outputs.push_back(script);
+    return std::make_unique<ScriptedOutput>(script);
+  }};
+  voicebank_studio_native::Options options;
+  options.startDesigner = true;
+  CHECK(studio.app->open(options).hasValue());
+  studio.resize(1100.0, 720.0);
+  CHECK(studio.activate("new").hasValue());
+  studio.key(NativeKey::Space, {});
+  CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+  CHECK(studio.activate("pin-reference").hasValue());
+
+  // Only the keyboard focus moves: the control's page is reached through the Designer's own Next
+  // control, and neither the recipe nor the audition pose changes.
+  auto control = findContaining(studio, ".control.", controlName);
+  for (int page = 0; !control && page < 100; ++page) {
+    const auto next = studio.node("next");
+    if (!next || !next->enabled) break;
+    CHECK(studio.activate("next").hasValue());
+    control = findContaining(studio, ".control.", controlName);
+  }
+  CHECK(control.has_value());
+  if (!control) return;
+  CHECK(studio.app->dispatchAccessibility(control->id, SemanticAction::SetFocus).hasValue());
+  const auto render = findContaining(studio, renderPart);
+  CHECK(render.has_value());
+  if (!render) return;
+  CHECK(render->enabled);
+  CHECK(studio.app->dispatchAccessibility(render->id, SemanticAction::Activate).hasValue());
+  CHECK(studio.settle([&] {
+    const auto play = findContaining(studio, playPart);
+    return play && play->enabled;
+  }));
+
+  // Reference A is retained on an output that refuses to stop.
+  CHECK(studio.activate("play-reference").hasValue());
+  CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  CHECK(!outputs.empty());
+  if (outputs.empty()) return;
+  const auto playingA = outputs.back();
+  playingA->failStop = true;
+  const auto source = findContaining(studio, playPart);
+  CHECK(source.has_value());
+  if (!source || !source->enabled) return;
+  const auto refused = studio.app->dispatchAccessibility(source->id, SemanticAction::Activate);
+  CHECK(!refused.hasValue());
+  if (!refused.hasValue()) CHECK(refused.error().message == "scripted audition output did not stop");
+  CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  CHECK(studio.app->lastError() == "scripted audition output did not stop");
+  CHECK(playingA->running);
+  CHECK(!playingA->destroyed);
+  CHECK(outputs.back()->opens == 0U);
+  CHECK(outputs.back()->destroyed);
+
+  // The output lets go: the same control plays the source, and A is gone.
+  playingA->failStop = false;
+  const auto retry = findContaining(studio, playPart);
+  CHECK(retry.has_value());
+  if (!retry || !retry->enabled) return;
+  CHECK(studio.app->dispatchAccessibility(retry->id, SemanticAction::Activate).hasValue());
+  CHECK(playingA->destroyed);
+  CHECK(outputs.back()->running);
+  CHECK(studio.value("audition-state") != "REFERENCE A / NOT APPROVED");
+  CHECK(studio.app->lastError().empty());
+}
+
+}  // namespace
+
+TEST_CASE("Voicebank Studio's frication audition keeps the retained audition when the output will not stop") {
+  checkSourceAuditionAfterRefusedStop("frication", "NOISE CENTER", ".render-frication.",
+                                      ".play-frication.");
+}
+
+TEST_CASE("Voicebank Studio's plosive audition keeps the retained audition when the output will not stop") {
+  checkSourceAuditionAfterRefusedStop("plosive", "BURST CENTER", ".render-plosive.",
+                                      ".play-plosive.");
+}
+
+TEST_CASE("Voicebank Studio's articulation audition keeps the retained audition when the output will not stop") {
+  checkSourceAuditionAfterRefusedStop("articulation", "TAIL CENTER", ".render-articulation.",
+                                      ".play-articulation.");
+}
