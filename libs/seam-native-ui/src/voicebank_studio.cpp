@@ -40,6 +40,15 @@ ui::Rect spectrogramRect(double width, double height) {
 std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
     std::span<const ui::AcousticMarkerVisual> markers,
     ui::Rect waveformBounds) {
+  // The labels sit in a band across the top of the waveform rather than on the trace. They were 6
+  // point on a 9 point row pitch with a width estimate of 3.8 points per column, all of which were
+  // tuned to that size; at 12 point the same numbers would put two labels on one row and the estimate
+  // would be short, so a label would be drawn narrower than the text in it. The band is the height the
+  // rows need and the estimate is the width of the text at this size, both measured rather than
+  // carried over.
+  constexpr double kMarkerLabelRow = 15.0;
+  constexpr double kMarkerLabelBand = 46.0;
+  constexpr double kMarkerLabelColumnWidth = 7.2;
   std::vector<ui::Rect> result;
   result.reserve(markers.size());
   std::vector<double> rowRights;
@@ -47,7 +56,7 @@ std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
     const auto displayWidth =
         static_cast<double>(text::utf8DisplayWidth(marker.label));
     const auto estimatedWidth = std::max(
-        12.0, displayWidth * 3.8 + 4.0);
+        12.0, displayWidth * kMarkerLabelColumnWidth + 6.0);
     const auto width = std::min(
         estimatedWidth, std::max(1.0, waveformBounds.width - 4.0));
     const auto leftLimit = waveformBounds.x + 2.0;
@@ -60,9 +69,14 @@ std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
     } else {
       rowRights[row] = x + width;
     }
-    result.push_back(ui::Rect{x, waveformBounds.y + 2.0 +
-                                      static_cast<double>(row) * 9.0,
-                              width, 7.0});
+    // A label that would fall below the band is not drawn inside the waveform; the caller decides
+    // what to do with a label that has no room, rather than the label being drawn on the trace.
+    const auto top = waveformBounds.y + 2.0 + static_cast<double>(row) * kMarkerLabelRow;
+    if (top + kMarkerLabelRow > waveformBounds.y + kMarkerLabelBand) {
+      result.push_back(ui::Rect{waveformBounds.x, waveformBounds.y - 1.0, 0.0, 0.0});
+      continue;
+    }
+    result.push_back(ui::Rect{x, top, width, kMarkerLabelRow});
   }
   return result;
 }
@@ -715,9 +729,15 @@ void VoicebankStudioScenePainter::paint(
     canvas.line(ui::Point{marker.x, wave.y}, ui::Point{marker.x, spec.bottom()},
                 marker.kind == ui::AcousticMarkerKind::VowelOnset ? theme_.accent
                                                                   : theme_.grid, 1.0);
-    canvas.drawText(ui::Point{labelBounds[index].x, labelBounds[index].y + 5.0},
-                    marker.label,
-                    theme_.secondaryText, 6.0);
+    // A marker whose label had no room in the band across the top of the waveform is given an empty
+    // rect, and its marker line is still drawn: the creator sees where the marker is and the label
+    // list below the waveform, rather than a label drawn on top of the trace.
+    if (labelBounds[index].width <= 0.0) continue;
+    canvas.drawTextWrapped(
+        ui::Rect{labelBounds[index].x, labelBounds[index].y,
+                 std::max(0.0, labelBounds[index].width - 4.0),
+                 labelBounds[index].height},
+        marker.label, theme_.secondaryText, 12.0, labelBounds[index].height);
   }
   for (const auto& mark : microscope.pitchMarks()) {
     canvas.line(ui::Point{mark.x, wave.y}, ui::Point{mark.x, wave.y + 18.0},

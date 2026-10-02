@@ -6425,13 +6425,16 @@ TEST_CASE("voicebank studio marker labels avoid overlap at minimum width") {
       markers, waveform);
   CHECK(labels.size() == markers.size());
   for (const auto& label : labels) {
+    if (label.width <= 0.0) continue;  // A label with no room in the band is not drawn.
     CHECK(label.x >= waveform.x);
     CHECK(label.right() <= waveform.right());
     CHECK(label.y >= waveform.y);
     CHECK(label.bottom() <= waveform.y + 70.0);
   }
   for (std::size_t left = 0U; left < labels.size(); ++left) {
+    if (labels[left].width <= 0.0) continue;
     for (std::size_t right = left + 1U; right < labels.size(); ++right) {
+      if (labels[right].width <= 0.0) continue;
       CHECK(!labels[left].intersects(labels[right]));
     }
   }
@@ -6446,10 +6449,12 @@ TEST_CASE("voicebank studio marker labels use Unicode display width") {
       markers, waveform);
   CHECK(labels.size() == 1U);
   const auto displayWidth = seam::text::utf8DisplayWidth(markers.front().label);
+  // The labels are 12 point now, so a label is 7.2 points per display column plus padding rather
+  // than the 3.8 the labels were laid out at when they were 6 point.
   CHECK(labels.front().width >=
-        static_cast<double>(displayWidth) * 3.8 + 4.0 - 1e-9);
+        static_cast<double>(displayWidth) * 7.2 - 1e-9);
   CHECK(labels.front().width <
-        static_cast<double>(markers.front().label.size()) * 3.8 + 4.0);
+        static_cast<double>(markers.front().label.size()) * 7.2 + 6.0);
 }
 
 TEST_CASE("a view without the design shell publishes one notice node and nothing to operate") {

@@ -796,6 +796,61 @@ TEST_CASE("wrapped text with a system engine breaks at words and keeps a long to
 // bytes. A UTF-8 character is more than one byte, so a name written in anything but ASCII lost its
 // last character to a cut through the middle of it, and the creator was shown a name that was not the
 // name of their unit. The cut is in display columns and says that it cut.
+// The marker labels sit in a band across the top of the waveform. They were 6 point on a 9 point row
+// with a width estimate of 3.8 points per column, all three numbers tuned to that size, so at 12 point
+// two labels shared a row and the estimate was narrower than the text in it. These pin the size the
+// labels are drawn at: the rows are tall enough for it, they do not overlap, they stay inside the
+// waveform, and a label that would fall below the band is given no room rather than drawn on the
+// trace. The case lives here rather than in test_native_ui because that file is only built with the
+// CLAP editor plugin and so is not run in this configuration.
+TEST_CASE("marker labels are rows tall enough for their type and stay inside the waveform") {
+  const std::vector<seam::ui::AcousticMarkerVisual> markers{
+      {seam::ui::AcousticMarkerKind::AudioOffset, "offset", 0, 272.0},
+      {seam::ui::AcousticMarkerKind::ConsonantEnd, "consonant", 1, 278.0},
+      {seam::ui::AcousticMarkerKind::VowelOnset, "vowel", 2, 284.0},
+      {seam::ui::AcousticMarkerKind::StableStart, "stable", 3, 290.0},
+      {seam::ui::AcousticMarkerKind::LoopStart, "loop-start", 4, 296.0},
+      {seam::ui::AcousticMarkerKind::LoopEnd, "loop-end", 5, 302.0},
+      {seam::ui::AcousticMarkerKind::ReleaseStart, "release", 6, 308.0},
+      {seam::ui::AcousticMarkerKind::AudioEnd, "end", 7, 314.0},
+  };
+  const seam::ui::Rect waveform{270.0, 100.0, 182.0, 147.0};
+  const auto labels = seam::native_ui::voicebankStudioMarkerLabelBounds(markers, waveform);
+  CHECK(labels.size() == markers.size());
+  std::size_t drawn = 0U;
+  for (const auto& label : labels) {
+    if (label.width <= 0.0) continue;  // A label with no room in the band.
+    ++drawn;
+    CHECK(label.x >= waveform.x);
+    CHECK(label.right() <= waveform.right());
+    CHECK(label.y >= waveform.y);
+    // A row is at least as tall as 12 point type needs, which is what the old 7 point row was not.
+    CHECK(label.height >= 14.0);
+    // Labels stay inside the band rather than running down over the trace.
+    CHECK(label.bottom() <= waveform.y + 46.0);
+  }
+  CHECK(drawn > 0U);
+  for (std::size_t left = 0U; left < labels.size(); ++left) {
+    if (labels[left].width <= 0.0) continue;
+    for (std::size_t right = left + 1U; right < labels.size(); ++right) {
+      if (labels[right].width <= 0.0) continue;
+      CHECK(!labels[left].intersects(labels[right]));
+    }
+  }
+  // A label is wide enough for its text at this size: the estimate is 7.2 points per display column
+  // plus padding, so a label is never narrower than the text drawn in it.
+  const std::vector<seam::ui::AcousticMarkerVisual> wide{
+      {seam::ui::AcousticMarkerKind::VowelOnset, "かな", 0, 100.0},
+  };
+  const seam::ui::Rect narrow{0.0, 0.0, 240.0, 80.0};
+  const auto one = seam::native_ui::voicebankStudioMarkerLabelBounds(wide, narrow);
+  CHECK(one.size() == 1U);
+  if (one.size() == 1U) {
+    const auto columns = static_cast<double>(seam::text::utf8DisplayWidth(wide.front().label));
+    CHECK(one.front().width >= columns * 7.2);
+  }
+}
+
 TEST_CASE("a rail label cut to fit is cut by column and never through a character") {
   constexpr std::size_t kColumns = 24U;
   const auto painted = [](const std::string& label) {
