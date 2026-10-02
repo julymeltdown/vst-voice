@@ -48,6 +48,10 @@ struct NativeEditorAppConfig final {
       systemAudioDeviceFactory;
   std::function<std::unique_ptr<platform::IAudioDevice>()>
       threadedAudioDeviceFactory;
+  // Optional host/test-owned device catalog. Without an override the app uses the system catalog,
+  // whose enumeration is a set of platform property queries per device.
+  std::function<std::unique_ptr<platform::IAudioDeviceCatalog>()>
+      audioDeviceCatalogFactory;
   std::function<core::Result<std::optional<authoring::NewProjectRequest>>()> requestNewProject;
   // Optional host/test-owned review. Without an override the app uses its
   // real native conversion-review dialog, not an automatic approval.
@@ -120,6 +124,10 @@ public:
   [[nodiscard]] platform::AudioDeviceInfo audioInfo() const;
   [[nodiscard]] core::Result<platform::AudioDeviceCatalogSnapshot>
   enumerateAudioDevices();
+  // The list the settings sheet shows, rebuilt only when the catalog or the settings have moved on
+  // (see publishedAudioDevices_).
+  [[nodiscard]] const std::vector<native_ui::EditorSceneState::AudioDeviceOption>&
+  audioDeviceList(const authoring::AudioSettings& settings);
   [[nodiscard]] core::Result<authoring::AudioSettings> audioSettings() const;
   [[nodiscard]] core::Result<authoring::AudioSettings> applyAudioSettings(
       authoring::AudioSettings requested);
@@ -216,6 +224,19 @@ private:
   std::unique_ptr<platform::MultichannelRingBufferAudioProcessor> processor_;
   std::unique_ptr<platform::IAudioDevice> audioDevice_;
   std::unique_ptr<platform::IAudioDeviceCatalog> audioDeviceCatalog_;
+  // What the last frame published for the voicebank cards and the audio device list. A window that
+  // paints at the display's rate while the device plays would otherwise rebuild both on every
+  // frame: the cards are copied field by field out of the browser model, and the device list is a
+  // fresh catalog enumeration whose HAL property queries are a quarter of the paint time in the
+  // measured profile. Both are rebuilt only when what they would publish differs from what the last
+  // frame published, which is the same rule setDiagnostics already uses for the notices.
+  std::optional<std::vector<authoring::VoicebankCard>> publishedVoicebankCards_;
+  std::optional<std::vector<native_ui::EditorSceneState::AudioDeviceOption>> publishedAudioDevices_;
+  // What publishedAudioDevices_ was built from: the settings that chose the row and the device the
+  // platform reported when it was built. A device the platform takes away changes the second, so
+  // the list is rebuilt and the fallback row that names it comes back.
+  authoring::AudioSettings audioDeviceListSettings_;
+  platform::AudioDeviceInfo audioDeviceListDevice_;
   std::unique_ptr<platform::CrashCapture> crashCapture_;
   std::optional<platform::CrashMarker> startupCrashMarker_;
   std::optional<platform::CrashRecoveryContext> crashRecoveryContext_;

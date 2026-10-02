@@ -890,7 +890,9 @@ core::Result<void> NativeEditorApp::initializeAudio() {
                           };
   authoring_->controller().setAudioState(
       audioDevice_ != nullptr && info.physical, info.backend);
-  audioDeviceCatalog_ = platform::createSystemAudioDeviceCatalog();
+  audioDeviceCatalog_ = config_.audioDeviceCatalogFactory
+                            ? config_.audioDeviceCatalogFactory()
+                            : platform::createSystemAudioDeviceCatalog();
   audioSettings_ = std::make_unique<authoring::AudioSettingsController>(
       authoring::AudioSettings{
           .deviceId = info.deviceId,
@@ -1812,39 +1814,21 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (applicationController_ != nullptr) {
     authoring_->controller().setExportProgress(
         applicationController_->exportProgress().progress());
-    authoring_->controller().setVoicebankCards(
-        applicationController_->voicebankCards());
+    // The cards are copied field by field out of the browser model, and a window that paints at the
+    // display's rate while the device plays pays for that on every one of those frames. The panel is
+    // made of the cards alone, so an equal list changes nothing drawn and nothing answered: the same
+    // rule setDiagnostics uses for the notices.
+    const auto& cards = applicationController_->voicebankCards();
+    if (!publishedVoicebankCards_.has_value() || *publishedVoicebankCards_ != cards) {
+      authoring_->controller().setVoicebankCards(cards);
+      publishedVoicebankCards_ = cards;
+    }
     authoring_->controller().setLastExport(
         applicationController_->lastExport());
   }
   if (const auto settings = audioSettings(); settings) {
-    std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
-    if (const auto catalog = enumerateAudioDevices(); catalog) {
-      devices.reserve(catalog.value().devices.size() + 1U);
-      for (const auto& device : catalog.value().devices) {
-        devices.push_back(native_ui::EditorSceneState::AudioDeviceOption{
-            .id = device.id,
-            .name = device.name,
-            .physical = device.physical,
-            .selected = device.id == settings.value().deviceId,
-        });
-      }
-    }
-    const auto activeDevice = std::find_if(
-        devices.begin(), devices.end(), [&settings](const auto& device) {
-          return device.id == settings.value().deviceId;
-        });
-    if (activeDevice == devices.end() && !settings.value().deviceId.empty()) {
-      const auto info = audioInfo();
-      devices.push_back(native_ui::EditorSceneState::AudioDeviceOption{
-          .id = settings.value().deviceId,
-          .name = settings.value().deviceId,
-          .physical = info.physical,
-          .selected = true,
-      });
-    }
     authoring_->controller().setAudioSettings(
-        settings.value(), std::move(devices), processorStats().underflowFrames,
+        settings.value(), audioDeviceList(settings.value()), processorStats().underflowFrames,
         audioStats().xruns);
   }
   // The output meter reads what the audio thread measured in the blocks the device received. A
@@ -2118,6 +2102,47 @@ NativeEditorApp::enumerateAudioDevices() {
         "Audio device catalog is unavailable before audio initialization");
   }
   return audioDeviceCatalog_->enumerate();
+}
+
+const std::vector<native_ui::EditorSceneState::AudioDeviceOption>&
+NativeEditorApp::audioDeviceList(const authoring::AudioSettings& settings) {
+  const auto info = audioInfo();
+  // The catalog is a set of HAL property queries per device, and a window that paints at the
+  // display's rate while the device plays asked for it on every one of those frames: about a quarter
+  // of the paint time in the measured profile. The list is built from the catalog, the settings that
+  // choose the row and the device the platform reports, so it is rebuilt only when one of those has
+  // moved on. A device that is taken away changes the third, so its fallback row comes back.
+  if (!publishedAudioDevices_.has_value() ||
+      !(audioDeviceListSettings_ == settings) || !(audioDeviceListDevice_ == info)) {
+    std::vector<native_ui::EditorSceneState::AudioDeviceOption> devices;
+    if (const auto catalog = enumerateAudioDevices(); catalog) {
+      devices.reserve(catalog.value().devices.size() + 1U);
+      for (const auto& device : catalog.value().devices) {
+        devices.push_back(native_ui::EditorSceneState::AudioDeviceOption{
+            .id = device.id,
+            .name = device.name,
+            .physical = device.physical,
+            .selected = device.id == settings.deviceId,
+        });
+      }
+    }
+    const auto activeDevice = std::find_if(
+        devices.begin(), devices.end(), [&chosen = settings.deviceId](const auto& device) {
+          return device.id == chosen;
+        });
+    if (activeDevice == devices.end() && !settings.deviceId.empty()) {
+      devices.push_back(native_ui::EditorSceneState::AudioDeviceOption{
+          .id = settings.deviceId,
+          .name = settings.deviceId,
+          .physical = info.physical,
+          .selected = true,
+      });
+    }
+    publishedAudioDevices_ = std::move(devices);
+    audioDeviceListSettings_ = settings;
+    audioDeviceListDevice_ = info;
+  }
+  return publishedAudioDevices_.value();
 }
 
 core::Result<authoring::AudioSettings> NativeEditorApp::audioSettings() const {

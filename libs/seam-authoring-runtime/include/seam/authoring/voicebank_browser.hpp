@@ -33,6 +33,12 @@ struct VoicebankCard final {
   bool hasRelease{false};
   bool hasBreath{false};
   std::vector<std::string> diagnostics;
+
+  // Every field the browser draws or answers from is compared, so a card list that compares equal
+  // is one the creator cannot tell from the last one. The browser's own entry identity
+  // (voicebankCardIdentity) is a subset of these fields and does not cover the counts, which is why
+  // the whole-card comparison is the one an owner uses to skip a republish.
+  friend bool operator==(const VoicebankCard&, const VoicebankCard&) = default;
 };
 
 class VoicebankBrowserModel final {

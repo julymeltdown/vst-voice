@@ -28,6 +28,8 @@ struct AudioDeviceInfo final {
   std::size_t blockFrames{0U};
   std::uint8_t outputChannels{0U};
   bool physical{false};
+
+  friend bool operator==(const AudioDeviceInfo&, const AudioDeviceInfo&) = default;
 };
 
 struct AudioDeviceStats final {

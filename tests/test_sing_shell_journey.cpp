@@ -10,11 +10,13 @@
 #include "seam/native_ui/list_entry_ids.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/platform/audio_device_catalog.hpp"
 #include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/native_editor_app.hpp"
 #include "seam/voicebank/wav.hpp"
 
 #include <chrono>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <filesystem>
@@ -80,6 +82,38 @@ public:
   std::atomic<std::uint64_t> requests{0U};
 };
 
+// A device catalog that counts its enumerations, so a case can say how often the app asked the
+// platform for the list rather than only what it drew with the answer. The app is given its own
+// instance and shares only the counter, because a catalog owns a counter and is not copyable.
+class CountingDeviceCatalog final : public seam::platform::IAudioDeviceCatalog {
+public:
+  explicit CountingDeviceCatalog(std::shared_ptr<std::atomic<std::uint64_t>> counter)
+      : enumerations_(std::move(counter)) {}
+  seam::core::Result<seam::platform::AudioDeviceCatalogSnapshot> enumerate() override {
+    ++*enumerations_;
+    seam::platform::AudioDeviceCatalogSnapshot snapshot;
+    snapshot.devices = devices;
+    return snapshot;
+  }
+
+  std::vector<seam::platform::AudioDeviceDescription> devices{
+      // The device the harness opens with, so the list the app builds has a row that names what
+      // actually plays and the settings it reports are ones the catalog can be asked to change.
+      {.id = "threaded-callback-clock", .name = "no physical output", .isDefault = true,
+       .physical = false, .supportedSampleRates = {48000U}, .minimumBlockFrames = 1U,
+       .maximumBlockFrames = 4096U, .minimumOutputChannels = 1U, .maximumOutputChannels = 2U},
+      {.id = "harness-a", .name = "Harness A", .isDefault = false, .physical = true,
+       .supportedSampleRates = {48000U}, .minimumBlockFrames = 1U, .maximumBlockFrames = 4096U,
+       .minimumOutputChannels = 1U, .maximumOutputChannels = 2U},
+      {.id = "harness-b", .name = "Harness B", .isDefault = false, .physical = false,
+       .supportedSampleRates = {48000U}, .minimumBlockFrames = 1U, .maximumBlockFrames = 4096U,
+       .minimumOutputChannels = 1U, .maximumOutputChannels = 2U},
+  };
+
+private:
+  std::shared_ptr<std::atomic<std::uint64_t>> enumerations_;
+};
+
 struct JourneyApp final {
   std::unique_ptr<seam::standalone::NativeEditorApp> app;
   JourneyDialog* dialog{nullptr};
@@ -88,7 +122,9 @@ struct JourneyApp final {
   // Reduce Motion and the clock that the animation reads are for the tests that count frames.
   JourneyApp(const std::filesystem::path& root, std::vector<std::filesystem::path> answers,
              bool reduceMotion = false,
-             std::function<std::chrono::steady_clock::time_point()> uiClock = {}) {
+             std::function<std::chrono::steady_clock::time_point()> uiClock = {},
+             std::function<std::unique_ptr<seam::platform::IAudioDeviceCatalog>()>
+                 audioCatalog = {}) {
     seam::standalone::NativeEditorAppConfig config;
     config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
     config.applicationSupportRoot = root;
@@ -105,6 +141,7 @@ struct JourneyApp final {
     config.designPreferences = seam::native_ui::design::DesignPreferences{
         .mode = seam::native_ui::design::DesignMode::Scene, .reduceMotion = reduceMotion};
     config.uiClock = std::move(uiClock);
+    config.audioDeviceCatalogFactory = std::move(audioCatalog);
     auto owned = std::make_unique<JourneyDialog>(std::move(answers));
     dialog = owned.get();
     auto shared = std::make_shared<std::unique_ptr<JourneyDialog>>(std::move(owned));
@@ -664,6 +701,53 @@ TEST_CASE("sing shell journey: an edited document is autosaved by a window that 
   CHECK(f.app->nextFrameDue() == tickedAt + 121s);
   *now = tickedAt + 120s;
   CHECK(pump() == 0);
+}
+
+TEST_CASE("sing shell journey: a frame asks the platform for its audio devices once, and a settings change asks again") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("journey-audio-device-list");
+  auto enumerations = std::make_shared<std::atomic<std::uint64_t>>(0U);
+  JourneyApp f{root, {}, false, {}, [enumerations] {
+    return std::make_unique<CountingDeviceCatalog>(enumerations);
+  }};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+
+  // The first frame has to ask: the app has never seen the catalog. Every later frame with nothing
+  // changed is answered from what the last one published, so a window that paints at the display's
+  // rate while the device plays does not ask the platform once per frame.
+  f.paint();
+  const auto afterFirst = enumerations->load();
+  CHECK(afterFirst >= 1U);
+  for (int frame = 0; frame < 30; ++frame) f.paint();
+  CHECK(enumerations->load() == afterFirst);
+
+  // A change of settings is a different list: the row that is selected moves, so the app asks again
+  // and publishes the answer. A cached list here would show the device the creator did not pick.
+  // The catalog offers two devices, so a change of the chosen device is a list the app must rebuild:
+  // the selected row moves to a row the creator can see. Only harness-b exists in the catalog and
+  // the app's own device, so the switch needs no capability negotiation and cannot fail for one.
+  const auto settings = f.app->applyAudioSettings(
+      {.deviceId = "harness-b", .sampleRate = 48000U, .blockFrames = 256U,
+       .outputChannels = 2U, .revision = 2U});
+  CHECK(settings.hasValue());
+  if (!settings.hasValue()) return;
+  f.paint();
+  CHECK(enumerations->load() > afterFirst);
+  const auto afterChange = enumerations->load();
+  for (int frame = 0; frame < 30; ++frame) f.paint();
+  CHECK(enumerations->load() == afterChange);
+
+  // The published list is what the catalog reported, with the chosen row selected.
+  const auto state = f.app->authoring().controller().sceneState();
+  const auto chosen = std::find_if(state.audioSettings.devices.begin(),
+                                   state.audioSettings.devices.end(), [](const auto& device) {
+                                     return device.selected;
+                                   });
+  CHECK(chosen != state.audioSettings.devices.end());
+  if (chosen != state.audioSettings.devices.end()) CHECK(chosen->id == "harness-b");
+  CHECK(state.audioSettings.devices.size() >= 2U);
+  f.app->shutdownAudio();
 }
 
 TEST_CASE("sing shell journey: saving takes the autosave deadline of a window that has nothing to animate away, and an edit brings it back") {
