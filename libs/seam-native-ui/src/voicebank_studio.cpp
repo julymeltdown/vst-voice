@@ -594,15 +594,19 @@ void VoicebankStudioScenePainter::paint(
   // has its own row under it, and both stop before the panel ends, so neither can grow into the row
   // below or off the window.
   constexpr double kHeaderStatusWidth = 344.0;
-  constexpr double kHeaderStatusTop = 12.0;
-  constexpr double kHeaderStatusHeight = 20.0;
-  constexpr double kHeaderMicTop = 34.0;
-  constexpr double kHeaderMicHeight = 12.0;
+  // The header panel is 72 points tall and the right column of it has 62 of them (8 to 70). The
+  // status takes two lines of 12 point and the microphone line one, which is 50 points between them,
+  // so both are drawn at a size a person can read at a glance rather than the 8 and 7 point they
+  // were. The left column of the panel (title, project, character) is unchanged and ends at 67.
+  constexpr double kHeaderStatusTop = 8.0;
+  constexpr double kHeaderStatusHeight = 33.0;
+  constexpr double kHeaderMicTop = 42.0;
+  constexpr double kHeaderMicHeight = 17.0;
   const auto headerStatusLeft = width - kHeaderStatusWidth - 16.0;
   canvas.drawTextWrapped(
       ui::Rect{headerStatusLeft, kHeaderStatusTop, kHeaderStatusWidth, kHeaderStatusHeight},
       recording ? "RECORDING" : controller.status(),
-      recording ? theme_.accent : theme_.secondaryText, 8.0, 10.0);
+      recording ? theme_.accent : theme_.secondaryText, 12.0, 16.0);
   constexpr std::size_t recordingLabelColumns = 44U;
   const bool recordingLabelTruncated =
       text::utf8DisplayWidth(recordingBackend) > recordingLabelColumns;
@@ -612,7 +616,10 @@ void VoicebankStudioScenePainter::paint(
                               : recordingLabelColumns);
   if (recordingLabelTruncated) recordingLabel += "…";
   canvas.drawText(ui::Rect{headerStatusLeft, kHeaderMicTop, kHeaderStatusWidth, kHeaderMicHeight},
-                  "MIC " + recordingLabel, theme_.secondaryText, 7.0);
+                  // The microphone line names the device the creator is recording from, so it is
+                  // read rather than decoration, and is drawn at the same 12 point as the status
+                  // above it rather than at the 7 point it was.
+                  "MIC " + recordingLabel, theme_.secondaryText, 12.0);
 
   canvas.fillRect(ui::Rect{0.0, 72.0, 252.0, height - 72.0}, theme_.panelAlternate);
   canvas.drawText(ui::Point{12.0, 86.0}, "UNITS", theme_.secondaryText, 8.0);

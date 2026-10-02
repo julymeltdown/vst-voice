@@ -308,16 +308,20 @@ void paintProductionAssignmentRail(
     if (index == controller.selectedIndex()) {
       canvas.strokeRect(row, theme.accent, 1.0);
     }
-    canvas.drawText(ui::Rect{16.0, y + 4.0, 150.0, 12.0},
-                    assignment.coverageKey, theme.primaryText, 7.0);
-    canvas.drawText(ui::Point{172.0, y + 7.0},
+    // Both lines of the row are read, so both are drawn at a size a person can read at a glance. The
+    // row is 32 points tall and the pitch is given the right of the key, so the key has 150 points,
+    // which at 12 point holds the longest coverage key whole; the state line is the same size as the
+    // key above it and is given the width the row has.
+    canvas.drawTextWrapped(ui::Rect{16.0, y + 2.0, 150.0, 16.0},
+                           assignment.coverageKey, theme.primaryText, 12.0, 16.0);
+    canvas.drawText(ui::Rect{172.0, y + 4.0, 68.0, 16.0},
                     "P" + std::to_string(assignment.pitchLayer),
-                    theme.secondaryText, 7.0);
-    canvas.drawText(ui::Rect{16.0, y + 18.0, 208.0, 10.0},
-                    voicebank_production::toString(assignment.state),
-                    assignment.state == voicebank_production::UnitQueueState::Approved
-                        ? theme.pitch : theme.secondaryText,
-                    6.0);
+                    theme.secondaryText, 12.0);
+    canvas.drawTextWrapped(ui::Rect{16.0, y + 17.0, 224.0, 14.0},
+                           voicebank_production::toString(assignment.state),
+                           assignment.state == voicebank_production::UnitQueueState::Approved
+                               ? theme.pitch : theme.secondaryText,
+                           12.0, 14.0);
   }
 }
 
@@ -750,9 +754,10 @@ void paintProductionEmptyCanvas(
   // narrowest window needed more height than the column had above the generation panel: the last two
   // were painted over and the creator could not see them at all. As one wrapped block they take the
   // lines they need, in the order they were read. They are reference rather than the value being
-  // worked on, and at the narrowest window the column has room for two lines of them at the body
-  // size and not for all six, so they are given the largest size that still fits whole. Every one of
-  // these shortcuts is also the accessible name and description of the control it belongs to.
+  // worked on, and at the narrowest window the column cannot hold them all at the body size, so they
+  // are given the largest size that still fits whole, which is 12 where there is room and 10 at 720.
+  // Every one of these shortcuts is also the accessible name and description of the control it
+  // belongs to, so nothing here is the only place the shortcut is written down.
   constexpr std::string_view kShortcutHints =
       "R REC / CMD/CTRL-I IMPORT / SHIFT-B BUILD / CMD/CTRL-SHIFT I JOB B BATCH / "
       "SHIFT-P PREPARE / P WAVE / N F0";
@@ -761,11 +766,14 @@ void paintProductionEmptyCanvas(
       return static_cast<double>(
           studioWrapWords(canvas, kShortcutHints, contentWidth, size).size());
     };
+    // The size is the largest at which every line of the block fits above the generation panel. A
+    // row is then given exactly the lines it needs, so a size that would need more lines than fit is
+    // not chosen and the wording is never cut.
     auto size = kBodyText;
+    const auto room = std::max(0.0, kProductionColumnBottom - intakeTop);
     while (size > 8.0) {
       const auto lines = std::max(1.0, linesAt(size));
-      const auto used = lines * size * 1.35 + kBodyGap;
-      if (used <= std::max(0.0, kProductionColumnBottom - intakeTop)) break;
+      if (lines * size * 1.35 + kBodyGap <= room) break;
       size -= 1.0;
     }
     wrappedRow(std::string{kShortcutHints}, theme.secondaryText, size);
@@ -876,48 +884,70 @@ void paintProductionInspector(
                              canvas.logicalHeight() - 72.0}, theme.panel);
   }
   const auto top = selectedUnit == nullptr ? 88.0 : 250.0;
+  // Every row here is read rather than decoration, so it is drawn at a size a person can read at a
+  // glance and laid out from that size rather than from fixed offsets. The column is 214 points wide
+  // at the narrowest window the app supports, which at 12 point holds the longest row here whole
+  // (SOURCE QUALIFICATION PENDING is 204). Each row advances by the height it needs, so a row that
+  // takes a second line moves the rows below it rather than landing on them.
+  constexpr double kInspectorText = 12.0;
+  constexpr double kInspectorLine = 16.0;
+  constexpr double kInspectorGap = 8.0;
+  constexpr double kInspectorLeft = 12.0;
+  constexpr double kInspectorWidth = 214.0;
   if (selectedUnit != nullptr) {
     const auto selectedState = controller.productionStateForUnit(*selectedUnit);
-    canvas.drawText(ui::Rect{inspectorX + 12.0, top, 214.0, 14.0},
+    canvas.drawTextWrapped(ui::Rect{inspectorX + kInspectorLeft, top, kInspectorWidth, 32.0},
                     selectedState.has_value()
                         ? "QUEUE " + voicebank_production::toString(*selectedState)
                         : "QUEUE NOT IN INVENTORY",
                     selectedState == voicebank_production::UnitQueueState::Approved
                         ? theme.pitch : theme.secondaryText,
-                    7.0);
+                    kInspectorText, kInspectorLine);
   }
   const auto projectTop = top + (selectedUnit == nullptr ? 0.0 : 28.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, projectTop},
-                  "PRODUCTION PROJECT", theme.secondaryText, 8.0);
-  canvas.drawText(ui::Rect{inspectorX + 12.0, projectTop + 14.0, 214.0, 16.0},
-                  production->projectId, theme.primaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, projectTop + 38.0},
-                  "GENERATION " + std::to_string(production->lastDurableGeneration),
-                  theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, projectTop + 56.0},
-                  sourceQualificationLabel(*production),
-                  voicebank_production::selectedStrategyReady(*production)
-                      ? theme.pitch : theme.accent,
-                  7.0);
-  canvas.drawText(ui::Point{inspectorX + 12.0, projectTop + 82.0},
-                  "PRODUCTION QUEUES", theme.secondaryText, 8.0);
+  auto rowTop = projectTop;
+  const auto advance = [&](double lines) { rowTop += lines * kInspectorLine + kInspectorGap; };
+  const auto row = [&](std::string_view text, const Color& color) {
+    // A row is as tall as the lines it needs, so a project id wider than one line pushes the rows
+    // below it down instead of being cut or drawn over them.
+    const auto lines = std::max<std::size_t>(
+        1U, studioWrapWords(canvas, text, kInspectorWidth, kInspectorText).size());
+    drawWrappedText(canvas,
+                    ui::Rect{inspectorX + kInspectorLeft, rowTop, kInspectorWidth,
+                             static_cast<double>(lines) * kInspectorLine},
+                    text, color, kInspectorText, kInspectorLine, lines);
+    advance(static_cast<double>(lines));
+  };
+  row("PRODUCTION PROJECT", theme.secondaryText);
+  row(production->projectId, theme.primaryText);
+  row("GENERATION " + std::to_string(production->lastDurableGeneration), theme.secondaryText);
+  row(sourceQualificationLabel(*production),
+      voicebank_production::selectedStrategyReady(*production) ? theme.pitch : theme.accent);
+  row("PRODUCTION QUEUES", theme.secondaryText);
   const auto queues = controller.productionQueues();
-  const auto left = inspectorX + 12.0;
+  const auto left = inspectorX + kInspectorLeft;
   const auto right = inspectorX + 122.0;
-  const auto rowOne = projectTop + 102.0;
-  canvas.drawText(ui::Point{left, rowOne}, "MISSING " + std::to_string(queues.missing), theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{right, rowOne}, "REJECTED " + std::to_string(queues.rejected), theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{left, rowOne + 18.0}, "RETAKE " + std::to_string(queues.retake), theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{right, rowOne + 18.0}, "MARKER " + std::to_string(queues.markerReview), theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{left, rowOne + 36.0}, "PITCH " + std::to_string(queues.pitchReview), theme.secondaryText, 7.0);
-  canvas.drawText(ui::Point{right, rowOne + 36.0}, "APPROVED " + std::to_string(queues.approved), theme.pitch, 7.0);
-  canvas.drawText(ui::Point{left, rowOne + 60.0},
-                  "STAGED RECOVERY " +
-                      std::to_string(controller.stagedRecoveryCandidateCount()),
-                  theme.secondaryText, 7.0);
+  const auto queueRow = [&](const std::string& leftText, const std::string& rightText,
+                            const Color& rightColor) {
+    canvas.drawTextWrapped(ui::Rect{left, rowTop, kInspectorWidth, kInspectorLine}, leftText,
+                           theme.secondaryText, kInspectorText, kInspectorLine);
+    if (!rightText.empty())
+      canvas.drawTextWrapped(ui::Rect{right, rowTop, kInspectorWidth, kInspectorLine}, rightText,
+                             rightColor, kInspectorText, kInspectorLine);
+    advance(1.0);
+  };
+  queueRow("MISSING " + std::to_string(queues.missing),
+           "REJECTED " + std::to_string(queues.rejected), theme.secondaryText);
+  queueRow("RETAKE " + std::to_string(queues.retake),
+           "MARKER " + std::to_string(queues.markerReview), theme.secondaryText);
+  queueRow("PITCH " + std::to_string(queues.pitchReview),
+           "APPROVED " + std::to_string(queues.approved), theme.pitch);
+  queueRow("STAGED RECOVERY " +
+               std::to_string(controller.stagedRecoveryCandidateCount()),
+           "", theme.secondaryText);
   const auto& waveform = controller.candidateWaveform();
   if (selectedUnit == nullptr && waveform) {
-    const auto topOfMeasurements = rowOne + 94.0;
+    const auto topOfMeasurements = rowTop;
     const auto format = [](double value) {
       std::ostringstream stream;
       stream << std::scientific << std::setprecision(3) << value;
