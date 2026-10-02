@@ -875,6 +875,60 @@ TEST_CASE("standalone_application_controller_blocks_close_when_pending_autosave_
   CHECK(session->runtime().document().dirty());
 }
 
+TEST_CASE("standalone autosave: the command count and the periodic tick read the controller's own clock") {
+  // A run of commands asks for a snapshot once a minimum delay has passed since the last request,
+  // and a tick takes one when the interval has passed. Both read the controller's clock, which is
+  // also the clock of autosaveDue(): a window that has nothing to animate is woken at that time, so a
+  // controller that read another clock for either would report a deadline that its ticks do not keep.
+  using Clock = std::chrono::steady_clock;
+  const auto root = seam::test::support::temporaryDirectory("standalone-autosave-clock");
+  auto session = makeSession(root);
+  const auto zero = Clock::time_point{};
+  const auto seconds = [](int count) { return std::chrono::seconds{count}; };
+  const auto now = std::make_shared<Clock::time_point>(zero + seconds(10));
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  config.clock = [now] { return *now; };
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), std::move(config));
+  CHECK(controller);
+  if (!controller) return;
+  auto& autosave = controller.value()->autosave();
+  const auto snapshots = [&] {
+    CHECK(autosave.flush());
+    const auto found = controller.value()->recoveryCandidates();
+    CHECK(found);
+    return found ? found.value().size() : std::size_t{0U};
+  };
+  addNote(*session);
+  CHECK(session->runtime().document().dirty());
+  // Nothing has been requested yet, so a snapshot is due one interval after the clock's zero.
+  CHECK(controller.value()->autosaveDue() == zero + seconds(60));
+
+  // Twenty-five commands at ten seconds: the count is met, but the last request was at zero and the
+  // minimum delay is fifteen seconds, so nothing is taken and the deadline stays where it was.
+  for (int command = 0; command < 25; ++command) CHECK(controller.value()->onDocumentChanged());
+  CHECK(snapshots() == 0U);
+  CHECK(controller.value()->autosaveDue() == zero + seconds(60));
+
+  // At twenty seconds the count is enough: a snapshot, and the deadline a whole interval on.
+  *now = zero + seconds(20);
+  CHECK(controller.value()->onDocumentChanged());
+  CHECK(snapshots() == 1U);
+  CHECK(controller.value()->autosaveDue() == zero + seconds(80));
+
+  // The tick takes a snapshot at the deadline and not before it.
+  *now = zero + seconds(79);
+  CHECK(controller.value()->tickAutosave());
+  CHECK(snapshots() == 1U);
+  CHECK(controller.value()->autosaveDue() == zero + seconds(80));
+  *now = zero + seconds(80);
+  CHECK(controller.value()->tickAutosave());
+  CHECK(snapshots() == 2U);
+  CHECK(controller.value()->autosaveDue() == zero + seconds(140));
+}
+
 TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") {
   const auto root = seam::test::support::temporaryDirectory("standalone-proposal");
   auto session = makeSession(root);

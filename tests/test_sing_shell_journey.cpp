@@ -660,3 +660,74 @@ TEST_CASE("sing shell journey: an edited document is autosaved by a window that 
   *now = tickedAt + 120s;
   CHECK(pump() == 0);
 }
+
+TEST_CASE("sing shell journey: saving takes the autosave deadline of a window that has nothing to animate away, and an edit brings it back") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  using Clock = std::chrono::steady_clock;
+  const auto root = seam::test::support::temporaryDirectory("journey-clean-deadline");
+  const auto path = root / "Saved.seam";
+  // The deadline is a document's unsaved changes waiting for their snapshot; a document that has none
+  // has nothing to wake a still window for, however long the window stays open. The clock stays
+  // under the first deadline, so no snapshot is ever requested here.
+  const auto now = std::make_shared<Clock::time_point>(Clock::time_point{} + 10s);
+  JourneyApp f{root / "app", {path}, true, [now] { return *now; }};
+  CHECK(f.app != nullptr);
+  if (f.app == nullptr) return;
+  FrameCounter window;
+  f.app->setWindow(window);
+  struct Detach final {
+    JourneyApp& journey;
+    ~Detach() {
+      journey.app->detachWindow();
+      journey.app->shutdownAudio();
+    }
+  } detach{f};
+  f.paint();
+  seam::native_ui::RasterCanvas canvas{f.surface, 1.0};
+  const auto settle = [&] {
+    for (int frame = 0; frame < 40; ++frame) {
+      *now += 25ms;
+      f.app->paint(canvas);
+      std::this_thread::sleep_for(10ms);
+    }
+  };
+  const auto dirty = [&f] { return f.app->authoring().runtime().document().dirty(); };
+  const auto* grid = f.find("timeline");
+  CHECK(grid != nullptr);
+  if (grid == nullptr) return;
+  const auto gridBounds = grid->bounds;
+  const auto edit = [&](double x) {
+    f.doubleClick({gridBounds.x + x, gridBounds.y + gridBounds.height * 0.5});
+    f.paint();
+  };
+
+  // An edit leaves unsaved changes: the first snapshot is due one interval after the clock's zero.
+  edit(240.0);
+  settle();
+  CHECK(dirty());
+  CHECK(f.app->nextFrameDue() == Clock::time_point{} + 60s);
+
+  // Save As (Command-Shift-S): nothing is unsaved, so a still window asks for nothing at all, and
+  // time passing does not bring one back.
+  f.app->keyDown(KeyEvent{.key = NativeKey::S, .modifiers = {.shift = true, .command = true}});
+  CHECK(std::filesystem::is_regular_file(path));
+  CHECK(!dirty());
+  settle();
+  CHECK(!f.app->nextFrameDue().has_value());
+  window.requests.store(0U);
+  for (int second = 0; second < 10; ++second) {
+    *now += 1s;
+    CHECK(!f.app->nextFrameDue().has_value());
+  }
+  CHECK(window.requests.load() == 0U);
+
+  // A further edit brings the deadline back, and Save (Command-S) takes it away again.
+  edit(600.0);
+  settle();
+  CHECK(dirty());
+  CHECK(f.app->nextFrameDue() == Clock::time_point{} + 60s);
+  f.app->keyDown(KeyEvent{.key = NativeKey::S, .modifiers = {.command = true}});
+  CHECK(!dirty());
+  settle();
+  CHECK(!f.app->nextFrameDue().has_value());
+}
