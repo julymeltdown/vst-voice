@@ -803,6 +803,89 @@ TEST_CASE("wrapped text with a system engine breaks at words and keeps a long to
 // waveform, and a label that would fall below the band is given no room rather than drawn on the
 // trace. The case lives here rather than in test_native_ui because that file is only built with the
 // CLAP editor plugin and so is not run in this configuration.
+// The marker labels over the waveform are the one surface the readability work left pinned by
+// geometry rather than by a rendered frame: no snapshot in the Studio app suite reaches the manifest
+// view with a microscope, because every point in that journey a capture could be taken at is in the
+// sample review view instead. This builds that view directly from a manifest with real markers and
+// keeps the frames when SEAM_STUDIO_CAPTURE_DIRECTORY names a directory, so the labels can be read at
+// both supported widths in the face the window uses. No check depends on it.
+TEST_CASE("the manifest view with a microscope renders its marker labels at both widths") {
+  const auto root = test::support::temporaryDirectory("studio-manifest-microscope");
+  // A unit audio path is stored relative to the manifest, so the WAV is written beside it and named
+  // relatively rather than by absolute path.
+  const auto audioName = std::filesystem::path{"unit.wav"};
+  const auto audio = root / audioName;
+  std::vector<float> samples(24000U * 2U, 0.0F);
+  for (std::size_t index = 0U; index < 24000U; ++index) {
+    const auto value = (index % 400U) < 200U ? 0.4F : -0.4F;
+    samples[index * 2U] = value;
+    samples[index * 2U + 1U] = value;
+  }
+  CHECK(voicebank::writeWav(
+      audio, voicebank::WavOutputFormat{.sampleRate = 48000U, .channels = 2U,
+                                       .sampleFormat = voicebank::WavSampleFormat::Float32},
+      samples).hasValue());
+  auto unit = test::support::makeUnit("ja.original.a3.a.01", {"a"}, audio, 57,
+                                     voicebank::UnitKind::Sustain, 24000U);
+  unit.audioPath = audioName;
+  unit.alias = "a";
+  const auto manifest = test::support::makeManifest({unit});
+  voicebank::ManifestJsonCodec codec;
+  const auto manifestPath = root / "manifest.json";
+  CHECK(codec.save(manifest, manifestPath));
+
+  auto engine = text::TextEngine::createSystem();
+  for (const auto& [width, height] : {std::pair{1100U, 720U}, std::pair{720U, 520U}}) {
+    seam::native_ui::PixelSurface surface{width, height};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0,
+                                        engine ? engine.value().get() : nullptr};
+    Controller controller;
+    CHECK(controller.openManifest(manifestPath, static_cast<double>(width),
+                                  static_cast<double>(height)));
+    CHECK(controller.selectedUnit() != nullptr);
+    CHECK(!controller.microscope().markers().empty());
+    seam::native_ui::VoicebankStudioScenePainter{}.paint(canvas, controller);
+    // A marker line runs through the label that names it, and the label is drawn on its own backing
+    // over the line. Removing that backing is invisible to every other check here: the frame still
+    // looks drawn, and only reading it shows a line through the word. So the backing is checked as a
+    // pixel: somewhere inside the first drawn label there is the backing colour and not the marker
+    // colour, which is only true when the fill is drawn after the lines.
+    const auto labels = seam::native_ui::voicebankStudioMarkerLabelBounds(
+        controller.microscope().markers(), controller.microscope().waveformBounds());
+    bool checked = false;
+    const auto markerColour = seam::native_ui::Color{169, 79, 119, 255}.bgra();
+    const auto gridColour = seam::native_ui::Color{58, 52, 64, 255}.bgra();
+    for (const auto& label : labels) {
+      if (label.width <= 0.0) continue;
+      // The line that crosses a label belongs to a neighbouring marker, so the whole box is scanned:
+      // a marker line crossing it is a line pixel, and with the backing drawn there is none.
+      bool lineInside = false;
+      for (std::uint32_t y = static_cast<std::uint32_t>(label.y);
+           y < static_cast<std::uint32_t>(label.bottom()) && !lineInside; ++y) {
+        for (std::uint32_t x = static_cast<std::uint32_t>(label.x);
+             x < static_cast<std::uint32_t>(label.right()); ++x) {
+          const auto pixel = surface.pixels()[static_cast<std::size_t>(y) * width + x];
+          if (pixel == markerColour || pixel == gridColour) {
+            lineInside = true;
+            break;
+          }
+        }
+      }
+      CHECK(!lineInside);
+      checked = true;
+      break;
+    }
+    CHECK(checked);
+    // The frames are kept only when a directory is named, so the case runs its checks either way.
+    const char* capture = std::getenv("SEAM_STUDIO_CAPTURE_DIRECTORY");
+    if (capture != nullptr && *capture != '\0') {
+      std::filesystem::create_directories(capture);
+      CHECK(surface.writePpm(std::filesystem::path{capture} /
+                             ("manifest-microscope-" + std::to_string(width) + ".ppm")));
+    }
+  }
+}
+
 TEST_CASE("marker labels are rows tall enough for their type and stay inside the waveform") {
   const std::vector<seam::ui::AcousticMarkerVisual> markers{
       {seam::ui::AcousticMarkerKind::AudioOffset, "offset", 0, 272.0},
@@ -826,8 +909,10 @@ TEST_CASE("marker labels are rows tall enough for their type and stay inside the
     CHECK(label.y >= waveform.y);
     // A row is at least as tall as 12 point type needs, which is what the old 7 point row was not.
     CHECK(label.height >= 14.0);
-    // Labels stay inside the band rather than running down over the trace.
-    CHECK(label.bottom() <= waveform.y + 46.0);
+    // Labels stay inside the band rather than running down over the trace. The band holds four rows
+    // at the 15 point pitch; a crowded waveform pushes a label onto a fourth row and it is still drawn
+    // whole rather than cut by the edge of the band, which is what the rendered frame showed.
+    CHECK(label.bottom() <= waveform.y + 62.0);
   }
   CHECK(drawn > 0U);
   for (std::size_t left = 0U; left < labels.size(); ++left) {

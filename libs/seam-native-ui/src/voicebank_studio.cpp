@@ -47,7 +47,7 @@ std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
   // rows need and the estimate is the width of the text at this size, both measured rather than
   // carried over.
   constexpr double kMarkerLabelRow = 15.0;
-  constexpr double kMarkerLabelBand = 46.0;
+  constexpr double kMarkerLabelBand = 62.0;
   constexpr double kMarkerLabelColumnWidth = 7.2;
   std::vector<ui::Rect> result;
   result.reserve(markers.size());
@@ -70,7 +70,9 @@ std::vector<ui::Rect> voicebankStudioMarkerLabelBounds(
       rowRights[row] = x + width;
     }
     // A label that would fall below the band is not drawn inside the waveform; the caller decides
-    // what to do with a label that has no room, rather than the label being drawn on the trace.
+    // what to do with a label that has no room, rather than the label being drawn on the trace. The
+    // band holds four rows at this pitch, so the second row a crowded waveform pushes a label onto is
+    // still inside it rather than being cut in half by the edge of the band.
     const auto top = waveformBounds.y + 2.0 + static_cast<double>(row) * kMarkerLabelRow;
     if (top + kMarkerLabelRow > waveformBounds.y + kMarkerLabelBand) {
       result.push_back(ui::Rect{waveformBounds.x, waveformBounds.y - 1.0, 0.0, 0.0});
@@ -724,15 +726,23 @@ void VoicebankStudioScenePainter::paint(
 
   const auto labelBounds = voicebankStudioMarkerLabelBounds(
       microscope.markers(), wave);
+  // Every marker line is drawn before any label. A label names a marker and sits over the line of
+  // one, so drawing them in one pass let the next marker line run through the label just drawn; the
+  // lines are one colour and the same length, so the two passes are indistinguishable where they do
+  // not meet a label.
   for (std::size_t index = 0U; index < microscope.markers().size(); ++index) {
     const auto& marker = microscope.markers()[index];
     canvas.line(ui::Point{marker.x, wave.y}, ui::Point{marker.x, spec.bottom()},
                 marker.kind == ui::AcousticMarkerKind::VowelOnset ? theme_.accent
                                                                   : theme_.grid, 1.0);
-    // A marker whose label had no room in the band across the top of the waveform is given an empty
-    // rect, and its marker line is still drawn: the creator sees where the marker is and the label
-    // list below the waveform, rather than a label drawn on top of the trace.
+  }
+  for (std::size_t index = 0U; index < microscope.markers().size(); ++index) {
+    const auto& marker = microscope.markers()[index];
+    // A marker whose label had no room in the band is given an empty rect and is not drawn: its line
+    // is above, so the creator still sees where the marker is.
     if (labelBounds[index].width <= 0.0) continue;
+    // The label is drawn on its own backing so that no marker line crosses the word.
+    canvas.fillRect(labelBounds[index], Color{17, 16, 20, 255});
     canvas.drawTextWrapped(
         ui::Rect{labelBounds[index].x, labelBounds[index].y,
                  std::max(0.0, labelBounds[index].width - 4.0),
