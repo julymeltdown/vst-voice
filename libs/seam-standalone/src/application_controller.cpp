@@ -1541,25 +1541,30 @@ core::Result<void> StandaloneApplicationController::dispatch(
     }
     case platform::ApplicationCommand::TogglePlayback: {
       const auto state = session_.runtime().transport().state();
-      return state.playing ? session_.runtime().transport().pause()
-                           : session_.runtime().transport().play();
+      auto result = state.playing ? session_.runtime().transport().pause()
+                                  : session_.runtime().transport().play();
+      if (result) notifyTransportChanged();
+      return result;
     }
-    case platform::ApplicationCommand::StopPlayback:
-      return session_.runtime().transport().stop();
+    case platform::ApplicationCommand::StopPlayback: {
+      auto result = session_.runtime().transport().stop();
+      if (result) notifyTransportChanged();
+      return result;
+    }
     case platform::ApplicationCommand::ToggleLoop: {
       const auto state = session_.runtime().transport().state();
-      if (state.loop.enabled) {
-        return session_.runtime().transport().setLoop(
-            rendering::PlaybackLoop{.enabled = false});
-      }
-      if (state.timelineEnd <= time::SampleFrame{0}) {
+      if (!state.loop.enabled && state.timelineEnd <= time::SampleFrame{0}) {
         return core::failure(core::ErrorCode::Conflict,
                              "Loop requires a published audio timeline");
       }
-      return session_.runtime().transport().setLoop(
-          rendering::PlaybackLoop{.enabled = true,
-                                  .startFrame = 0,
-                                  .endFrame = state.timelineEnd});
+      auto result = session_.runtime().transport().setLoop(
+          state.loop.enabled
+              ? rendering::PlaybackLoop{.enabled = false}
+              : rendering::PlaybackLoop{.enabled = true,
+                                        .startFrame = 0,
+                                        .endFrame = state.timelineEnd});
+      if (result) notifyTransportChanged();
+      return result;
     }
   }
   return core::failure(core::ErrorCode::Unsupported,
@@ -2631,6 +2636,10 @@ void StandaloneApplicationController::notifyStateChanged() const {
 
 void StandaloneApplicationController::notifyProgressChanged() const {
   if (config_.progressChanged) config_.progressChanged();
+}
+
+void StandaloneApplicationController::notifyTransportChanged() const {
+  if (config_.transportChanged) config_.transportChanged();
 }
 
 core::Result<bool> StandaloneApplicationController::requestClose() {

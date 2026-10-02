@@ -151,10 +151,14 @@ public:
       std::string_view id, native_ui::SemanticAction action) noexcept override;
   [[nodiscard]] core::Result<void> setAccessibilityValue(
       std::string_view id, std::string_view value) override;
+  // A command as the application menu sends it, through the same dispatch: for a host that has no
+  // menu in front of it, and for a test that drives the Transport menu's Play, Stop and Loop.
+  [[nodiscard]] core::Result<void> dispatchApplicationCommand(platform::ApplicationCommand command);
   [[nodiscard]] bool requestClose() noexcept override;
   [[nodiscard]] bool wantsClose() const noexcept override;
   // The shell's deadline (a waiting tooltip, the idle breath) and the owner thread's time-driven work
-  // that a frame does: the autosave tick of a document that has unsaved changes.
+  // that a frame does: the autosave tick of a document that has unsaved changes, and the next try at
+  // a start of the audio device that failed (see deviceFollowUp).
   [[nodiscard]] std::optional<std::chrono::steady_clock::time_point> nextFrameDue()
       const noexcept override;
 
@@ -182,6 +186,8 @@ private:
   // stopped on its own and a render that lands before the next frame still meet: the window is one
   // frame, and nothing here closes it.
   void reportConsumerToTransport() noexcept;
+  // The clock that the UI reads: the configured one, or the steady clock.
+  [[nodiscard]] std::chrono::steady_clock::time_point uiNow() const;
   void record(const core::Result<void>& result) noexcept;
   // Background threads (render completion, envelope workers) ask for a repaint only through here,
   // under windowMutex_, so detachWindow() is a real barrier.
@@ -225,6 +231,9 @@ private:
   // The audio notice above says that the device did not stop (see stopAudioForPlayback), and goes
   // when it has.
   bool audioStopFailed_{false};
+  // When a frame is to try the audio device's start again, after one that failed: what the last
+  // frame's follow-up asked for (see deviceFollowUp), reported by nextFrameDue().
+  std::optional<std::chrono::steady_clock::time_point> deviceRetryAt_;
   // A notice that this project's recorded sound came from different renderer code than this build
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.

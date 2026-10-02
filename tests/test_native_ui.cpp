@@ -3630,6 +3630,31 @@ TEST_CASE("native controller asks for a frame for the host's diagnostics only wh
   CHECK(entries.size() == 1U);
 }
 
+TEST_CASE("native controller asks for a frame for the host's audio state only when it changes") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  std::size_t repaints = 0U;
+  native_ui::NativeEditorController controller{
+      fixture.session, fixture.factory, fixture.regionId,
+      native_ui::EditorHostCallbacks{.requestRepaint = [&repaints] { ++repaints; }}};
+  controller.resize(1280.0, 720.0);
+  // A host whose audio device fails to start sets the same state every time it is asked again. Setting
+  // what was set asks for no frame, or the window that painted it would never idle.
+  controller.setAudioState(false, "unavailable");
+  repaints = 0U;
+  for (int attempt = 0; attempt < 5; ++attempt) controller.setAudioState(false, "unavailable");
+  CHECK(repaints == 0U);
+  // A change in either part of it is a change.
+  controller.setAudioState(true, "unavailable");
+  CHECK(repaints == 1U);
+  controller.setAudioState(true, "CoreAudio");
+  CHECK(repaints == 2U);
+  controller.setAudioState(true, "CoreAudio");
+  CHECK(repaints == 2U);
+  controller.setAudioState(false, "CoreAudio");
+  CHECK(repaints == 3U);
+}
+
 TEST_CASE("native controller gives the host a new count of tries when the creator presses Retry") {
   using namespace seam;
   NativeUiFixture fixture;

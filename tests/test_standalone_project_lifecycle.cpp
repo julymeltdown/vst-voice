@@ -929,6 +929,37 @@ TEST_CASE("standalone autosave: the command count and the periodic tick read the
   CHECK(controller.value()->autosaveDue() == zero + seconds(140));
 }
 
+TEST_CASE("standalone controller: a Transport-menu command tells the host that the transport changed") {
+  // The menu's Play, Pause, Stop and Loop change the transport and nothing else. A host that paints
+  // only on request has to be told, or it paints no frame in which to start the audio device or to
+  // show the new state.
+  using Command = seam::platform::ApplicationCommand;
+  const auto root = seam::test::support::temporaryDirectory("standalone-transport-changed");
+  auto session = makeSession(root);
+  int changes = 0;
+  seam::standalone::StandaloneApplicationControllerConfig config{};
+  config.autosaveRoot = root / "autosaves";
+  config.recentProjectsPath = root / "recent.json";
+  config.transportChanged = [&changes] { ++changes; };
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::make_unique<FakeDialog>(), std::make_unique<FakePrompt>(), std::move(config));
+  CHECK(controller);
+  if (!controller) return;
+  CHECK(controller.value()->dispatch(Command::TogglePlayback));
+  CHECK(changes == 1);
+  CHECK(controller.value()->dispatch(Command::TogglePlayback));
+  CHECK(changes == 2);
+  CHECK(controller.value()->dispatch(Command::StopPlayback));
+  CHECK(changes == 3);
+  // A loop needs a published timeline, and there is none: the command is refused, nothing changed,
+  // and no frame is asked for.
+  CHECK(!controller.value()->dispatch(Command::ToggleLoop));
+  CHECK(changes == 3);
+  // Commands that are not the transport's do not ask for one.
+  static_cast<void>(controller.value()->dispatch(Command::Undo));
+  CHECK(changes == 3);
+}
+
 TEST_CASE("standalone_controller_proposes_automatic_performance_as_a_proposal") {
   const auto root = seam::test::support::temporaryDirectory("standalone-proposal");
   auto session = makeSession(root);

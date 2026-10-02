@@ -59,6 +59,10 @@ struct StandaloneApplicationControllerConfig final {
   };
   std::function<void()> stateChanged;
   std::function<void()> progressChanged;
+  // The creator changed the transport from the menu (Play, Pause, Stop, Loop), which changes the
+  // transport and nothing else. The host asks for a frame: that is where it starts or stops its
+  // audio device and shows the new state, and a window that paints only on request would paint none.
+  std::function<void()> transportChanged;
   std::function<core::Result<void>()> openAudioSettings;
   std::function<core::Result<void>()> editPronunciationHint;
   std::function<core::Result<void>()> findReplaceLyrics;
@@ -415,6 +419,7 @@ private:
       std::string_view contentHash) const;
   void notifyStateChanged() const;
   void notifyProgressChanged() const;
+  void notifyTransportChanged() const;
   [[nodiscard]] authoring::NewProjectRequest defaultNewProject() const;
   // Adds the selected neural source for one track, replacing any resolved bank
   // source for the same track. A track whose saved selection cannot be selected

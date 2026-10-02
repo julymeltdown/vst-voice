@@ -17,11 +17,13 @@
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
 #include "seam/platform/audio_device.hpp"
+#include "seam/platform/file_dialog.hpp"
 #include "seam/standalone/native_editor_app.hpp"
 #include "seam/standalone/playback_device_policy.hpp"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -29,6 +31,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <thread>
@@ -86,6 +89,7 @@ public:
     return seam::core::success();
   }
   seam::core::Result<void> start() override {
+    ++startAttempts_;
     if (processor_ == nullptr) {
       return seam::core::failure(seam::core::ErrorCode::InvalidState, "pumped device is not open");
     }
@@ -129,6 +133,8 @@ public:
     return left_;
   }
   [[nodiscard]] std::size_t starts() const noexcept { return starts_; }
+  // Every ask to start, whether the device started or not.
+  [[nodiscard]] std::size_t startAttempts() const noexcept { return startAttempts_; }
   [[nodiscard]] std::size_t stopAttempts() const noexcept { return stopAttempts_; }
 
   static constexpr std::size_t kMaximumBlock = 1024U;
@@ -145,6 +151,7 @@ private:
   std::vector<float> right_;
   bool running_{false};
   std::size_t starts_{0U};
+  std::size_t startAttempts_{0U};
   std::size_t stopAttempts_{0U};
 };
 
@@ -158,15 +165,70 @@ bool waitUntil(const std::function<bool()>& predicate,
   return predicate();
 }
 
+// A window that paints nothing and remembers that the app asked it for a frame, so that a test can run
+// the loop of a native window that paints only on request (PlaybackRig::windowTurn).
+class RequestWindow final : public seam::native_ui::INativeWindow {
+public:
+  seam::core::Result<void> open(const seam::native_ui::NativeWindowConfig&,
+                                seam::native_ui::INativeWindowClient&) override {
+    return seam::core::success();
+  }
+  int run() override { return 0; }
+  void requestRepaint() noexcept override { requested.store(true, std::memory_order_release); }
+  void beginTextInput(const seam::native_ui::TextInputRequest&) override {}
+  void endTextInput() noexcept override {}
+  seam::native_ui::PixelSurface snapshot() const override {
+    return seam::native_ui::PixelSurface{1U, 1U};
+  }
+  std::string backendName() const override { return "request-window"; }
+  std::atomic<bool> requested{false};
+};
+
+// The creator's answer to every file dialog: one path, so that a document can be saved.
+class SavePathDialog final : public seam::platform::IFileDialog {
+public:
+  explicit SavePathDialog(std::filesystem::path path) : path_(std::move(path)) {}
+  seam::core::Result<std::optional<std::filesystem::path>> choose(
+      const seam::platform::FileDialogRequest&) override {
+    return std::optional<std::filesystem::path>{path_};
+  }
+
+private:
+  std::filesystem::path path_;
+};
+
+class KeepChangesPrompt final : public seam::platform::IUnsavedChangesPrompt {
+public:
+  seam::core::Result<seam::platform::UnsavedDecision> choose(std::string_view) override {
+    return seam::platform::UnsavedDecision::Cancel;
+  }
+};
+
+struct PlaybackRigOptions final {
+  // The rig runs the loop of a native window that paints only on request: the app's clock is the
+  // test's, its window is attached, and a frame is painted when one was asked for or the app's own
+  // deadline has passed (PlaybackRig::windowTurn). Without it a test paints whenever it says so.
+  bool windowLoop{false};
+  bool reduceMotion{false};
+};
+
 struct PlaybackRig final {
   // Declared before the app, so that it outlives every device the app drops.
   std::shared_ptr<PumpedDevices> devices = std::make_shared<PumpedDevices>();
+  // The clock and the window are the app's until it is gone, so they are declared before it too.
+  std::shared_ptr<std::chrono::steady_clock::time_point> clock =
+      std::make_shared<std::chrono::steady_clock::time_point>(
+          std::chrono::steady_clock::time_point{} + std::chrono::seconds{10});
+  RequestWindow window;
   std::unique_ptr<seam::standalone::NativeEditorApp> app;
   PumpedAudioDevice* device{nullptr};
   seam::native_ui::PixelSurface surface{1280U, 720U};
   std::shared_ptr<const seam::authoring::PublishedProjectAudio> published;
+  std::filesystem::path songPath;
+  std::size_t framesPainted{0U};
+  bool windowAttached{false};
 
-  explicit PlaybackRig(const std::filesystem::path& root) {
+  explicit PlaybackRig(const std::filesystem::path& root, PlaybackRigOptions options = {}) {
     seam::standalone::NativeEditorAppConfig config;
     config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
     config.applicationSupportRoot = root;
@@ -183,11 +245,29 @@ struct PlaybackRig final {
     config.threadedAudioDeviceFactory = [registry = devices] {
       return std::make_unique<PumpedAudioDevice>(*registry);
     };
+    if (options.windowLoop) {
+      config.designPreferences = seam::native_ui::design::DesignPreferences{
+          .mode = seam::native_ui::design::DesignMode::Scene, .reduceMotion = options.reduceMotion};
+      config.uiClock = [now = clock] { return *now; };
+      songPath = root / "Song.seam";
+      config.fileDialogFactory = [path = songPath]() -> std::unique_ptr<seam::platform::IFileDialog> {
+        return std::make_unique<SavePathDialog>(path);
+      };
+      config.unsavedChangesPromptFactory = [] { return std::make_unique<KeepChangesPrompt>(); };
+    }
     auto created = seam::standalone::NativeEditorApp::create(std::move(config));
     CHECK(created);
     app = std::move(created).value();
+    if (options.windowLoop) {
+      app->setWindow(window);
+      windowAttached = true;
+    }
     refreshDevice();
     CHECK(device != nullptr);
+  }
+  ~PlaybackRig() {
+    // Detaching waits for the workers that ask the window for frames.
+    if (windowAttached && app != nullptr) app->detachWindow();
   }
 
   seam::authoring::TransportController& transport() {
@@ -223,6 +303,66 @@ struct PlaybackRig final {
   void paint() {
     seam::native_ui::RasterCanvas canvas{surface, 1.0};
     app->paint(canvas);
+  }
+  // ---- The loop of a window that paints only on request ----
+  // One turn of the native window's loop (native_window_appkit.mm, run()): it waits up to a frame's
+  // time for an event, asks the app when its next frame is due, and paints if a repaint was
+  // requested, by an event, by the app, or by that deadline. Time is the test's clock, which the app
+  // reads too. Returns whether a frame was painted.
+  bool windowTurn(std::chrono::milliseconds waited = std::chrono::milliseconds{16}) {
+    *clock += waited;
+    if (const auto due = app->nextFrameDue(); due.has_value() && *clock >= *due)
+      window.requested.store(true, std::memory_order_release);
+    if (!window.requested.exchange(false, std::memory_order_acq_rel)) return false;
+    paint();
+    ++framesPainted;
+    return true;
+  }
+  // An event (a click, a key) asks for a frame as the window handles it.
+  void windowEvent() { window.requested.store(true, std::memory_order_release); }
+  // The command that the application menu sends, which is all that the Transport menu does.
+  seam::core::Result<void> menu(seam::platform::ApplicationCommand command) {
+    return app->dispatchApplicationCommand(command);
+  }
+  bool dirty() { return app->authoring().runtime().document().dirty(); }
+  // What the loop button shows: the last frame's, as the creator sees it.
+  bool loopShown() { return app->authoring().controller().sceneState().loopEnabled; }
+  // What the transport button shows: the last frame's, as the creator sees it.
+  bool playShown() { return app->authoring().controller().sceneState().playing; }
+  // Saves the document where it is (Save As the first time), so that nothing is unsaved.
+  void saveDocument() {
+    CHECK(menu(std::filesystem::exists(songPath) ? seam::platform::ApplicationCommand::SaveProject
+                                                  : seam::platform::ApplicationCommand::SaveProjectAs));
+    CHECK(!dirty());
+  }
+  // Turns of the loop, one after another, with a moment of real time between them for the threads
+  // that the app waits on (the feeder applies what the creator did a millisecond later).
+  void runTurns(int turns) {
+    for (int turn = 0; turn < turns; ++turn) {
+      windowTurn();
+      std::this_thread::sleep_for(2ms);
+    }
+  }
+  // Turns until none has painted for a stretch of them: the render, the envelope workers and the
+  // feeder all finish on their own threads and ask for a frame when they do.
+  void settleWindow() {
+    int quiet = 0;
+    for (int turn = 0; turn < 3000 && quiet < 150; ++turn) {
+      quiet = windowTurn() ? 0 : quiet + 1;
+      std::this_thread::sleep_for(2ms);
+    }
+    CHECK(quiet >= 150);
+    CHECK(transport().state().settled);
+  }
+  // The window as a creator leaves it: painted once, the document saved so that its autosave has
+  // nothing to wake a still window for, and everything that was in flight landed. When nothing
+  // animates, what asks for the next frame after this is what a test does.
+  void restWindow(bool nothingAnimates = true) {
+    windowEvent();
+    windowTurn(0ms);
+    saveDocument();
+    if (nothingAnimates) settleWindow();
+    else runTurns(150);
   }
   void addNote(std::int64_t startTick, std::int64_t lengthTicks, std::u32string lyric) {
     auto [token, note] = app->authoring().runtime().document().factory().makeNote(
@@ -602,6 +742,57 @@ TEST_CASE("standalone playback policy: with no device there is nothing to start 
                                    false) == DeviceAction::None);
         }
       }
+    }
+  }
+}
+
+TEST_CASE("standalone playback policy: a frame leaves the next one to be asked for while the device still needs it") {
+  using seam::standalone::DeviceAction;
+  using seam::standalone::deviceFollowUp;
+  using seam::standalone::kDeviceRetryDelay;
+  // A device that runs keeps the window painting: the playhead and the level are shown for as long as
+  // it plays, whether or not a block has been measured yet, and a device that is to be stopped and does
+  // not stop is asked again by the next frame.
+  for (const auto action : {DeviceAction::None, DeviceAction::Start, DeviceAction::Stop}) {
+    for (const bool failed : {false, true}) {
+      CHECK(deviceFollowUp(reported(true, true), true, action, failed, true).frameNow);
+      CHECK(deviceFollowUp(reported(false, true), true, action, failed, true).frameNow);
+    }
+  }
+  // A report that does not yet include every command decides nothing (decideDeviceAction), so the
+  // frame that meets one asks for another: the feeder applies the command a moment after it is sent.
+  CHECK(deviceFollowUp(reported(false, false), true, DeviceAction::None, false, false).frameNow);
+  CHECK(deviceFollowUp(reported(true, false), true, DeviceAction::None, false, false).frameNow);
+  // A device that is stopped, and a report that is complete, leave nothing: the window may sleep,
+  // whatever the transport is doing.
+  for (const bool playing : {false, true}) {
+    const auto idle = deviceFollowUp(reported(playing, true), true, DeviceAction::None, false, false);
+    CHECK(!idle.frameNow);
+    CHECK(!idle.retryAfter.has_value());
+  }
+  // A Start that failed leaves the device stopped, and is asked again later and not at once.
+  const auto failedStart =
+      deviceFollowUp(reported(true, true), true, DeviceAction::Start, true, false);
+  CHECK(!failedStart.frameNow);
+  CHECK(failedStart.retryAfter == kDeviceRetryDelay);
+  // A Start that worked has nothing to ask again, and the device that runs keeps the window painting.
+  const auto started = deviceFollowUp(reported(true, true), true, DeviceAction::Start, false, true);
+  CHECK(started.frameNow);
+  CHECK(!started.retryAfter.has_value());
+  // A Stop that was refused leaves the device running, and the next frame asks again.
+  const auto refused = deviceFollowUp(reported(false, true), true, DeviceAction::Stop, true, true);
+  CHECK(refused.frameNow);
+  CHECK(!refused.retryAfter.has_value());
+  // A Stop that worked leaves nothing.
+  const auto stopped = deviceFollowUp(reported(false, true), true, DeviceAction::Stop, false, false);
+  CHECK(!stopped.frameNow);
+  CHECK(!stopped.retryAfter.has_value());
+  // With no device there is nothing to follow up, whatever the report says.
+  for (const bool playing : {false, true}) {
+    for (const bool settled : {false, true}) {
+      const auto none = deviceFollowUp(reported(playing, settled), false, DeviceAction::None, false, false);
+      CHECK(!none.frameNow);
+      CHECK(!none.retryAfter.has_value());
     }
   }
 }
@@ -1332,4 +1523,262 @@ TEST_CASE("standalone playback: a Play that waited for a device that cannot star
   const auto heard = rig.playUntilTheAppStopsTheDevice();
   checkHeardIs(heard, expected, 0U, "a short song after a start that failed");
   CHECK(!rig.device->running());
+}
+
+// ---- The window loop ---------------------------------------------------------------------------
+//
+// The cases above paint a frame whenever they like, which is what a window did before it learned to
+// sleep: a frame at every turn of the loop, whatever the app had asked for. A window now paints when a
+// frame was requested or the app's own deadline has passed (nextFrameDue), so everything that a frame
+// does for the audio device has to be asked for by something. These cases run the loop of such a window
+// (PlaybackRig::windowTurn) with the document saved and every worker landed, so that nothing but what
+// the case does asks for a frame; under Reduce Motion the character asks for none either.
+//
+// This is deterministic-device evidence in a loop that the test runs, not the AppKit loop.
+
+namespace {
+
+using seam::platform::ApplicationCommand;
+
+// The loop of the window, a turn after a turn, with the device's callback once per turn as a running
+// device makes it. The window goes first, as it does in the loop: the frame that a Start asks for is
+// painted before the device's first block arrives. Returns whether the predicate held in time.
+bool runWindow(PlaybackRig& rig, std::vector<float>& heard, const std::function<bool()>& until,
+               int turns = 1500) {
+  for (int turn = 0; turn < turns; ++turn) {
+    rig.windowTurn();
+    rig.pump(768U, heard);
+    if (until()) return true;
+    std::this_thread::sleep_for(2ms);
+  }
+  return until();
+}
+
+// Whether the creator is shown that the audio is unavailable, as of the last frame that was painted.
+bool audioNoticeShown(PlaybackRig& rig) {
+  const auto& entries = rig.app->authoring().controller().diagnosticPanel().entries();
+  return std::any_of(entries.begin(), entries.end(), [](const auto& entry) {
+    return entry.diagnostic.code == "AUDIO_UNAVAILABLE";
+  });
+}
+
+}  // namespace
+
+TEST_CASE("standalone playback window: a Transport-menu command asks for the frame that shows it") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-menu-loop");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  // Nothing is unsaved and nothing animates: only the creator asks for another frame now.
+  CHECK(!rig.app->nextFrameDue().has_value());
+  CHECK(!rig.loopShown());
+  std::vector<float> heard;
+
+  // Toggle Loop changes the transport and nothing else. The loop button shows it in the next frame,
+  // if the command asks for one.
+  CHECK(rig.menu(ApplicationCommand::ToggleLoop));
+  CHECK(runWindow(rig, heard, [&] { return rig.loopShown(); }, 20));
+  CHECK(rig.transport().state().loop.enabled);
+  CHECK(rig.menu(ApplicationCommand::ToggleLoop));
+  CHECK(runWindow(rig, heard, [&] { return !rig.loopShown(); }, 20));
+  CHECK(!rig.transport().state().loop.enabled);
+
+  // And the window goes back to sleep.
+  rig.settleWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
+}
+
+TEST_CASE("standalone playback window: a Transport-menu Play and Stop show themselves when the device is not what changes") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-menu-play-stop-shown");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  // The device cannot start, so a running device does not keep the window painting, and what the
+  // transport button shows is up to the frames that the commands ask for.
+  rig.device->failStart = true;
+  std::vector<float> heard;
+  CHECK(!rig.playShown());
+  CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+  CHECK(runWindow(rig, heard, [&] { return rig.playShown(); }, 5));
+  // Stop takes the Play away, and the button shows that without waiting for the next try at the
+  // device, which comes a quarter of a second later.
+  CHECK(rig.menu(ApplicationCommand::StopPlayback));
+  CHECK(runWindow(rig, heard, [&] { return !rig.playShown(); }, 5));
+  CHECK(!rig.transport().state().playAwaitsConsumer);
+  // With the Play gone nothing is asked of the device, and the window sleeps.
+  rig.settleWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
+}
+
+TEST_CASE("standalone playback window: a frame that comes straight after a Transport-menu Play still starts the device") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-menu-play-trials");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
+  std::vector<float> heard;
+  for (std::size_t trial = 1U; trial <= 8U; ++trial) {
+    // The menu's action runs inside the window's loop, and the frame that the command asks for is
+    // painted in the same turn, before the feeder (which applies the creator's commands on its own
+    // thread, a millisecond later) has applied the Play. That frame cannot decide anything about the
+    // device yet, and has to ask for another.
+    CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+    rig.windowTurn(0ms);
+    const auto started =
+        runWindow(rig, heard, [&] { return rig.device->starts() == trial; }, 200);
+    CHECK(started);
+    if (!started) break;
+    CHECK(rig.menu(ApplicationCommand::StopPlayback));
+    rig.windowTurn(0ms);
+    CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 200));
+  }
+  CHECK(!heard.empty());
+}
+
+TEST_CASE("standalone playback window: a Play that waits for the render starts the device when the render lands") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-play-awaits-render");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  rig.restWindow();  // an empty song, saved
+  rig.addNote(0, 480, U"\u3053");
+  rig.windowEvent();  // the frame that an edit asks for
+  rig.saveDocument();  // nothing is unsaved: the render is the only work in flight
+  CHECK(!rig.transport().state().available);
+  // The Play is asked for before there is anything to play, and waits for the render.
+  CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+  std::vector<float> heard;
+  CHECK(runWindow(rig, heard, [&] { return rig.device->starts() == 1U; }, 3000));
+  CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 600));
+  const auto expected = rig.awaitTheRender();
+  checkHeardIs(heard, expected, 0U, "a Play that waited for the render");
+}
+
+TEST_CASE("standalone playback window: a change of audio settings while the device plays puts the new device to work") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-settings-change");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  std::vector<float> heard;
+  CHECK(rig.pressPlay());
+  CHECK(runWindow(rig, heard, [&] { return heard.size() >= 12000U; }, 200));
+  // The creator picks another buffer size: the editor stops its device, builds the transport and a new
+  // device, puts the Play back and starts the new device itself. The control that applied the settings
+  // asks for a frame (the callback in NativeEditorApp), which the public method called here does not,
+  // so the case asks for it, and it is painted before the feeder has applied that Play.
+  const auto changed = rig.changeBlockSize();
+  CHECK(changed);
+  rig.windowEvent();
+  rig.windowTurn(0ms);
+  CHECK(runWindow(rig, heard, [&] { return rig.device->running(); }, 300));
+  CHECK(rig.device->starts() == 1U);
+  CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 1500));
+}
+
+TEST_CASE("standalone playback window: a Play that cannot start the device is tried again, whether or not the character animates") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  for (const bool reduceMotion : {true, false}) {
+    const auto root = seam::test::support::temporaryDirectory(
+        reduceMotion ? "playback-window-start-retry-still" : "playback-window-start-retry-moving");
+    PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = reduceMotion}};
+    const auto expected = rig.writeTheSong();
+    rig.restWindow(reduceMotion);
+    rig.device->failStart = true;
+    CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+    std::vector<float> heard;
+    // The frame that the menu asks for finds a device that cannot start, and the creator is told. The
+    // Play is theirs still: no device took it up. The character is at a held pose now, so it asks for
+    // no frame of its own, with or without Reduce Motion.
+    CHECK(runWindow(rig, heard, [&] { return audioNoticeShown(rig); }, 300));
+    CHECK(!rig.device->running());
+    CHECK(rig.transport().state().playAwaitsConsumer);
+    // The device goes on failing for a while. It is asked again now and then. Under Reduce Motion no
+    // other frame is painted, so what asks is the one that the failure scheduled, a quarter of a
+    // second on, and not one at every turn of the loop; a window that animates paints more frames,
+    // and each of them asks.
+    const auto attemptsBefore = rig.device->startAttempts();
+    rig.runTurns(160);
+    const auto retries = rig.device->startAttempts() - attemptsBefore;
+    CHECK(retries >= 5U);
+    if (reduceMotion) CHECK(retries <= 20U);
+    // The device works again. Nothing else happens: the window asks for the frame itself.
+    rig.device->failStart = false;
+    CHECK(runWindow(rig, heard, [&] { return rig.device->running(); }, 300));
+    CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 1500));
+    CHECK(rig.device->starts() == 1U);
+    checkHeardIs(heard, expected, 0U, "a Play whose device could not start");
+  }
+}
+
+TEST_CASE("standalone playback window: the window goes on painting while the device plays, with nothing animating") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-frames-while-playing");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  const auto expected = rig.writeTheSong();
+  rig.restWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
+  // The creator presses the transport button: the editor starts the device itself, and the frame that
+  // it asks for is painted before the device has played a block, so nothing has been measured yet.
+  CHECK(rig.pressPlay());
+  CHECK(rig.device->running());
+  std::vector<float> heard;
+  auto lastFrame = *rig.clock;
+  std::chrono::milliseconds longest{0};
+  std::size_t frames = 0U;
+  for (int turn = 0; turn < 1200 && rig.device->running(); ++turn) {
+    if (rig.windowTurn()) {
+      ++frames;
+      lastFrame = *rig.clock;
+    }
+    rig.pump(768U, heard);
+    longest = std::max(
+        longest, std::chrono::duration_cast<std::chrono::milliseconds>(*rig.clock - lastFrame));
+    std::this_thread::sleep_for(2ms);
+  }
+  // The app stopped the device at the end of the song, and the playhead was never left standing.
+  CHECK(!rig.device->running());
+  CHECK(longest <= 100ms);
+  CHECK(frames >= 100U);
+  checkHeardIs(heard, expected, 0U, "playback in a window that paints only on request");
+  // The song is over: the window sleeps again.
+  rig.settleWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
+}
+
+TEST_CASE("standalone playback window: a device that will not stop is asked again though it delivers nothing to measure") {
+  if (!seam::native_ui::paint::vectorBackendAvailable()) return;
+  const auto root = seam::test::support::temporaryDirectory("playback-window-stalled-device");
+  PlaybackRig rig{root, {.windowLoop = true, .reduceMotion = true}};
+  static_cast<void>(rig.writeTheSong());
+  rig.restWindow();
+  CHECK(rig.pressPlay());
+  rig.device->failStop = true;
+  // The song plays out. The frame that finds the ring empty asks the device to stop, and it does not
+  // say that it has.
+  std::vector<float> heard;
+  CHECK(runWindow(rig, heard, [&] { return rig.device->stopAttempts() >= 1U; }, 1500));
+  CHECK(rig.device->running());
+
+  // From here the device stalls: its callback does not arrive, so nothing is measured, and the meter
+  // (which reads nothing once a block is half a second old, in real time) cannot keep the window
+  // awake. The device is still the consumer, and the window asks it again.
+  const auto framesBefore = rig.framesPainted;
+  const auto askedBefore = rig.device->stopAttempts();
+  for (int turn = 0; turn < 160; ++turn) {
+    rig.windowTurn();
+    std::this_thread::sleep_for(5ms);
+  }
+  CHECK(rig.device->running());
+  CHECK(rig.framesPainted - framesBefore >= 150U);
+  CHECK(rig.device->stopAttempts() - askedBefore >= 100U);
+
+  // It stops when it can, what the creator was told goes, and the window sleeps.
+  rig.device->failStop = false;
+  CHECK(runWindow(rig, heard, [&] { return !rig.device->running(); }, 20));
+  CHECK(!audioNoticeShown(rig));
+  rig.settleWindow();
+  CHECK(!rig.app->nextFrameDue().has_value());
 }

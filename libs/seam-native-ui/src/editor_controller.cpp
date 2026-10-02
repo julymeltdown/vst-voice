@@ -6431,6 +6431,10 @@ void NativeEditorController::cancelTextComposition() noexcept {
 }
 
 void NativeEditorController::setAudioState(bool online, std::string backend) {
+  // Setting what was set asks for no frame, as setDiagnostics does not: a start of the audio device
+  // that fails again and again sets the same state each time, and a frame that asked for the next one
+  // for nothing would keep a window that paints only on request painting at the display's rate.
+  if (audioOnline_ == online && audioBackend_ == backend) return;
   audioOnline_ = online;
   audioBackend_ = std::move(backend);
   repaint();

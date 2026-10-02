@@ -547,6 +547,11 @@ core::Result<void> NativeEditorApp::initialize() {
           .progressChanged = [this] {
             requestWindowRepaint();
           },
+          // A Transport-menu command changes only the transport. The frame it asks for is where this
+          // app starts or stops the device and shows the new state.
+          .transportChanged = [this] {
+            requestWindowRepaint();
+          },
           .openAudioSettings = [this] {
             authoring_->controller().showAudioSettings();
             requestWindowRepaint();
@@ -980,6 +985,10 @@ void NativeEditorApp::reportConsumerToTransport() noexcept {
   if (authoring_ == nullptr) return;
   authoring_->runtime().transport().setConsumerRunning(audioDevice_ != nullptr &&
                                                         audioDevice_->running());
+}
+
+std::chrono::steady_clock::time_point NativeEditorApp::uiNow() const {
+  return config_.uiClock ? config_.uiClock() : std::chrono::steady_clock::now();
 }
 
 core::Result<void> NativeEditorApp::restartAudio(
@@ -1692,22 +1701,38 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   // cannot see that, and is told once per frame, before it is asked what to do about the device.
   reportConsumerToTransport();
   const auto transport = authoring_->runtime().transport().state();
-  switch (decideDeviceAction(
+  const auto deviceAction = decideDeviceAction(
       transport, authoring_->runtime().transport().ringBuffer().availableReadFrames(),
-      audioDevice_ != nullptr, audioDevice_ != nullptr && audioDevice_->running())) {
+      audioDevice_ != nullptr, audioDevice_ != nullptr && audioDevice_->running());
+  auto deviceActionFailed = false;
+  switch (deviceAction) {
     case DeviceAction::Stop:
-      // A device that does not say that it has stopped is asked again by the next frame, and the
-      // creator has been told by the notice that asking raised.
-      static_cast<void>(stopAudioForPlayback());
+      // A device that does not say that it has stopped is asked again by the next frame (it runs on,
+      // and a running device keeps the window painting), and the creator has been told by the notice
+      // that asking raised.
+      deviceActionFailed = !stopAudioForPlayback();
       break;
     case DeviceAction::Start: {
       const auto started = startAudioForPlayback();
-      if (!started) record(started);
+      if (!started) {
+        record(started);
+        deviceActionFailed = true;
+      }
       break;
     }
     case DeviceAction::None:
       break;
   }
+  // A window that paints only on request runs no frame that nothing asked for, and what a frame does
+  // for the device goes on over frames: while there is more to do, this one asks for the next.
+  const auto followUp = deviceFollowUp(transport, audioDevice_ != nullptr, deviceAction,
+                                       deviceActionFailed,
+                                       audioDevice_ != nullptr && audioDevice_->running());
+  deviceRetryAt_ = followUp.retryAfter.has_value()
+                       ? std::optional<std::chrono::steady_clock::time_point>{
+                             uiNow() + *followUp.retryAfter}
+                       : std::nullopt;
+  if (followUp.frameNow) requestWindowRepaint();
   const auto progress = authoring_->runtime().renderer().progress();
   authoring_->controller().setPlaying(transport.playing);
   authoring_->controller().setLoopEnabled(transport.loop.enabled);
@@ -1728,10 +1753,13 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
       .activeRenderer = progress.activeRenderer,
   });
   const auto activeAudio = audioInfo();
-  const auto audioOnline = audioDevice_ != nullptr && activeAudio.physical;
-  const auto audioBackend = audioDevice_ != nullptr
-                                ? activeAudio.backend
-                                : std::string{"unavailable"};
+  // The notice that the audio is unavailable (a start that failed, a stop that was refused) says so
+  // here as well, as setAudioUnavailable gave it. A frame that put the device's own state back would
+  // be undone by the next failure and then set again by the next frame, and each change asks for a
+  // frame: a device that cannot start would keep a window that paints only on request painting.
+  const auto audioUp = audioDevice_ != nullptr && !audioDiagnostic_.has_value();
+  const auto audioOnline = audioUp && activeAudio.physical;
+  const auto audioBackend = audioUp ? activeAudio.backend : std::string{"unavailable"};
   const auto currentScene = authoring_->controller().sceneState();
   if (currentScene.audioDeviceOnline != audioOnline ||
       currentScene.audioBackend != audioBackend) {
@@ -1814,8 +1842,8 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         audioStats().xruns);
   }
   // The output meter reads what the audio thread measured in the blocks the device received. A
-  // stopped or missing device publishes nothing, so the meter shows its empty scale. While a level
-  // is shown the window keeps repainting so the hold and decay move.
+  // stopped or missing device publishes nothing, so the meter shows its empty scale. The window
+  // keeps repainting while the device runs (see deviceFollowUp), so the hold and decay move.
   if (auto reading = outputMeter_.read(audioDevice_ != nullptr && audioDevice_->running(),
                                        std::chrono::steady_clock::now())) {
     authoring_->controller().setOutputLevel(native_ui::EditorSceneState::OutputLevel{
@@ -1826,7 +1854,6 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
         .bus = "Master",
         .clipped = reading->clipped,
     });
-    requestWindowRepaint();
   } else {
     authoring_->controller().setOutputLevel(std::nullopt);
   }
@@ -2027,6 +2054,15 @@ core::Result<void> NativeEditorApp::setAccessibilityValue(
   return authoring_->controller().setAccessibilityValue(id, value);
 }
 
+core::Result<void> NativeEditorApp::dispatchApplicationCommand(
+    platform::ApplicationCommand command) {
+  if (applicationController_ == nullptr) {
+    return core::failure(core::ErrorCode::InvalidState,
+                         "Application commands are unavailable before initialization");
+  }
+  return applicationController_->dispatch(command);
+}
+
 bool NativeEditorApp::requestClose() noexcept {
   if (applicationController_ == nullptr) return true;
   auto requested = applicationController_->requestClose();
@@ -2049,14 +2085,17 @@ std::optional<std::chrono::steady_clock::time_point> NativeEditorApp::nextFrameD
   // window's; only a test moves it by hand (NativeEditorAppConfig::uiClock).
   auto due = shell_.nextFrameDue();
   // paint() also does the owner thread's time-driven work, and a window that paints only on request
-  // paints for it only if it is asked to. Today that work is the autosave tick: with nothing
-  // animating (Reduce Motion, a held pose) no frame would ever run it, and a document edited and then
-  // left alone would not be saved again however long it stayed open. Work that a worker finishes asks
-  // for its own frame when it has published (progressChanged, stateChanged).
+  // paints for it only if it is asked to. That work is the autosave tick and the next try at a start
+  // of the audio device that failed: with nothing animating (Reduce Motion, a held pose) no frame
+  // would ever run them, and a document edited and then left alone would not be saved again however
+  // long it stayed open. Work that a worker finishes asks for its own frame when it has published
+  // (progressChanged, stateChanged).
   if (applicationController_ != nullptr && authoring_ != nullptr) {
     if (const auto autosave = applicationController_->autosaveDue(); autosave.has_value())
       due = due.has_value() ? std::min(*due, *autosave) : *autosave;
   }
+  if (deviceRetryAt_.has_value())
+    due = due.has_value() ? std::min(*due, *deviceRetryAt_) : *deviceRetryAt_;
   return due;
 }
 
