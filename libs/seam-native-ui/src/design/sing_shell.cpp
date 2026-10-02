@@ -4306,13 +4306,17 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
     const auto panel = overlay->panel(controller, state, layout_, slot);
-    // The press was aimed at the frame on screen. When what that frame drew has changed since (the
-    // diagnostics popover's issues, after an eviction or a dismissal), the control under the pointer
-    // is no longer the one that was drawn there, and the press would act on whatever moved into its
-    // place. It does nothing, and the next frame shows what is there.
-    if (overlayDrawn_.has_value() && overlayDrawn_->kind == overlay->kind()) {
-      if (const auto now = overlay->drawnContent(controller, state);
-          now.has_value() && *now != overlayDrawn_->content) {
+    // The press was aimed at the frame on screen. An overlay whose controls name content that can
+    // change under the pointer (the diagnostics popover's issues) gives a number for what it draws,
+    // and the press is handled only if the last painted frame drew this overlay with the number it
+    // has now. Otherwise the control under the pointer is not the one the creator saw there: the
+    // content changed since that frame (an eviction, a dismissal), or no painted frame has shown this
+    // overlay at all (it was opened, or closed and opened again, since the last paint), and the press
+    // would act on whatever stands under it. It does nothing, and the next frame shows what is there.
+    if (const auto now = overlay->drawnContent(controller, state); now.has_value()) {
+      const auto seen = overlayDrawn_.has_value() && overlayDrawn_->kind == overlay->kind() &&
+                        overlayDrawn_->content == *now;
+      if (!seen) {
         repaint();
         return core::failure(core::ErrorCode::Conflict, tr(Str::ThisElementIsNotOnScreen));
       }
@@ -5598,7 +5602,6 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     presentedOverlay_ = OverlayKind::None;
     fieldOpenedOver_ = OverlayKind::None;
     overlayField_.clear();
-    overlayDrawn_.reset();
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.

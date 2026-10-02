@@ -656,11 +656,13 @@ private:
   // The surface an open inline field was opened over (a review, for its draft field), so the
   // surface it returns to is resumed where it was rather than presented anew.
   OverlayKind fieldOpenedOver_{OverlayKind::None};
-  // What the presented overlay drew in the last frame that painted one (see ShellOverlay::drawnContent),
-  // for an overlay that has a number for it; empty when that frame drew none, or drew one with nothing
-  // that moves, and again while a newly presented overlay waits for its first frame. A press is handled
-  // against the state as it is now, so one that arrives after the content changed was aimed at a frame
-  // that is no longer the state, and is refused. Written by paintOverlay, which is const.
+  // What the last painted frame showed of an overlay that has a number for what it draws (see
+  // ShellOverlay::drawnContent): the overlay and the number. Empty when that frame drew no overlay, or
+  // one with nothing that moves. It follows the pixels and nothing else: only a painted frame writes
+  // it, so a state change or a semantics refresh leaves it as it is. A press is handled against the
+  // state as it is now, so for an overlay that has a number it is handled only when this record names
+  // that overlay with the number it has now; a press aimed at a frame that is no longer the state, or
+  // at an overlay no painted frame has shown, is refused. Written by paintOverlay, which is const.
   struct DrawnOverlay final {
     OverlayKind kind{OverlayKind::None};
     std::uint64_t content{0U};

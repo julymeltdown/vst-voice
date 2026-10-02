@@ -132,9 +132,11 @@ public:
   }
   // What the overlay draws for this state, as one number, for an overlay whose controls name content
   // that can change under the pointer (the diagnostics popover's issues). The shell keeps the number
-  // of the frame it last drew. A press is handled against the state as it is now, so a press that was
-  // aimed at a frame drawn before the content changed would land on whatever has moved under the
-  // pointer; the shell refuses it when the numbers differ, and the next frame shows what is there.
+  // of the last frame it painted. A press is handled against the state as it is now, so a press that
+  // was aimed at a frame drawn before the content changed would land on whatever has moved under the
+  // pointer. For an overlay that has a number the shell therefore handles a press only when the last
+  // painted frame drew this overlay with the number it has now, and refuses it when the numbers differ
+  // or when no painted frame has shown the overlay at all; the next frame shows what is there.
   // None, the default, for an overlay whose controls do not move.
   [[nodiscard]] virtual std::optional<std::uint64_t> drawnContent(
       const NativeEditorController& controller, const EditorSceneState& state) const {

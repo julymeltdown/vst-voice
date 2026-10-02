@@ -3753,7 +3753,7 @@ TEST_CASE("a second press on the popover's pager before the frame that shows the
   CHECK(f.node(firstAction(2U)) != nullptr);
 }
 
-TEST_CASE("what the popover last drew belongs to that presentation: a press does not outlive it") {
+TEST_CASE("a press on the popover is handled only against a painted frame that showed it with what it holds now") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   const authoring::Diagnostic media{.code = "MEDIA_MISSING",
                                     .severity = authoring::DiagnosticSeverity::Warning,
@@ -3763,9 +3763,23 @@ TEST_CASE("what the popover last drew belongs to that presentation: a press does
                                    .severity = authoring::DiagnosticSeverity::Error,
                                    .messageKey = "bank.missing",
                                    .actions = {authoring::DiagnosticAction::RelinkVoicebank}};
-  // The popover is closed and opened again, and the closing is seen by a frame or by a semantics
-  // refresh. The list changed in between, and a press arrives before the frame that draws it again:
-  // it is handled against the list as it is, and not turned away for what the earlier presentation drew.
+  const auto centre = [](const SemanticNode& node) {
+    return ui::Point{node.bounds.x + node.bounds.width * 0.5, node.bounds.y + node.bounds.height * 0.5};
+  };
+  // What an assistive client's request for the tree does: the controller's ids and the shell's
+  // semantics are rebuilt and nothing is painted.
+  const auto refreshSemantics = [](auto& f) {
+    f.controller.rebuildAccessibilityTree();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+  };
+  const auto turnedAway = [](const core::Result<void>& result) {
+    return !result && result.error().code == core::ErrorCode::Conflict;
+  };
+
+  // The popover is closed and opened again with the list changed in between, and the closing is seen
+  // by a frame or by a semantics refresh alone. A press arrives before the frame that draws the
+  // popover again: no painted frame has shown it with this list, so the press is turned away and
+  // acts on nothing. The frame that draws it is what the next press is aimed at.
   for (const bool seenByFrame : {true, false}) {
     OverlayFixture f;
     CHECK(f.frame());
@@ -3773,24 +3787,171 @@ TEST_CASE("what the popover last drew belongs to that presentation: a press does
     f.shell.setDiagnosticsOpen(true);
     CHECK(f.frame());
     CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+    // The creator aims at the button that the last painted frame shows.
+    const auto* shown = f.node(native_ui::diagnosticActionId(
+        0U, media, authoring::DiagnosticAction::RelinkMedia));
+    CHECK(shown != nullptr);
+    if (shown == nullptr) return;
+    const auto aim = centre(*shown);
     f.shell.setDiagnosticsOpen(false);
     if (seenByFrame) {
       CHECK(f.frame());
     } else {
-      f.controller.rebuildAccessibilityTree();
-      f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+      refreshSemantics(f);
     }
     CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
     f.controller.setDiagnostics({media, bank});
+    f.shell.setDiagnosticsOpen(true);
+    refreshSemantics(f);
+    CHECK(turnedAway(f.shell.pointerDown(f.controller, press(aim))));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 1U);
+  }
+  // The second developer's first repro. Eight notices are drawn and the creator aims at the button
+  // that dismisses held-1, in row 1. The popover is closed and refreshed away with no paint, the ninth
+  // refusal evicts the oldest notice, and the popover is opened again and refreshed with no paint:
+  // held-2 is in row 1 now and the pixels still show held-1. The press is turned away and dismisses
+  // nothing; the frame that draws the list as it is is what the same press then acts on.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    const auto refuse = [&f](const std::string& what) {
+      f.controller.noteRefusal(core::Error{core::ErrorCode::Conflict, what});
+    };
+    for (int i = 0; i < 8; ++i) refuse("held-" + std::to_string(i));
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto& entries = f.controller.diagnosticPanel().entries();
+    const auto has = [&entries](std::string_view detail) {
+      return std::any_of(entries.begin(), entries.end(),
+                         [detail](const auto& entry) { return entry.diagnostic.detail == detail; });
+    };
+    CHECK(entries.size() == 8U);
+    if (entries.size() != 8U) return;
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        1U, entries[1U].diagnostic, authoring::DiagnosticAction::Dismiss));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    f.shell.setDiagnosticsOpen(false);
+    refreshSemantics(f);
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    refuse("held-8");
+    CHECK(entries.size() == 8U);
+    CHECK(entries[1U].diagnostic.detail == "held-2");
+    f.shell.setDiagnosticsOpen(true);
+    refreshSemantics(f);
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+    CHECK(turnedAway(f.shell.pointerDown(f.controller, press(aim))));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(entries.size() == 8U);
+    CHECK(has("held-1"));
+    CHECK(has("held-2"));
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(entries.size() == 7U);
+    CHECK(has("held-1"));
+    CHECK(!has("held-2"));
+  }
+  // The second repro. A recovery button for one piece of media is drawn; the list is emptied and
+  // refreshed away, a replacement is listed, and the popover is opened and refreshed with no paint.
+  // The press is turned away and the host is not asked to act on the replacement.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    auto oldMedia = media;
+    oldMedia.setDetail("old media");
+    auto replacement = media;
+    replacement.setDetail("replacement media");
+    f.controller.setDiagnostics({oldMedia});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        0U, oldMedia, authoring::DiagnosticAction::RelinkMedia));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    f.controller.setDiagnostics({});
+    refreshSemantics(f);
+    f.controller.setDiagnostics({replacement});
+    f.shell.setDiagnosticsOpen(true);
+    refreshSemantics(f);
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+    CHECK(turnedAway(f.shell.pointerDown(f.controller, press(aim))));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 1U);
+  }
+  // A popover that no painted frame has shown is not on screen, however it came to be open: a press
+  // that arrives before the first frame is turned away.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    f.controller.setDiagnostics({media});
     f.shell.setDiagnosticsOpen(true);
     const auto* button = f.node(native_ui::diagnosticActionId(
         0U, media, authoring::DiagnosticAction::RelinkMedia));
     CHECK(button != nullptr);
     if (button == nullptr) return;
-    const ui::Point aim{button->bounds.x + button->bounds.width * 0.5,
-                        button->bounds.y + button->bounds.height * 0.5};
-    const auto pressed = f.shell.pointerDown(f.controller, press(aim));
-    if (!pressed) throw test::Failure{"press refused before the first frame: " + pressed.error().message};
+    const auto aim = centre(*button);
+    CHECK(turnedAway(f.shell.pointerDown(f.controller, press(aim))));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 1U);
+  }
+  // What the shell holds is what the last painted frame showed, and a state change or a semantics
+  // refresh does not move it. The popover is closed and opened again with the list as it was, seen by
+  // a semantics refresh alone: the pixels still show it, and the press is handled.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    f.controller.setDiagnostics({media});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        0U, media, authoring::DiagnosticAction::RelinkMedia));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    f.shell.setDiagnosticsOpen(false);
+    refreshSemantics(f);
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    f.shell.setDiagnosticsOpen(true);
+    refreshSemantics(f);
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 1U);
+  }
+  // A frame that painted no popover ends what was shown. It is closed and a frame is painted without
+  // it; opened again with the same list, it is not on screen until a frame draws it.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    f.controller.setDiagnostics({media});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        0U, media, authoring::DiagnosticAction::RelinkMedia));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    f.shell.setDiagnosticsOpen(false);
+    CHECK(f.frame());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    f.shell.setDiagnosticsOpen(true);
+    refreshSemantics(f);
+    CHECK(turnedAway(f.shell.pointerDown(f.controller, press(aim))));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 0U);
+    CHECK(f.frame());
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
     CHECK(f.diagnosticActions == 1U);
   }
 }

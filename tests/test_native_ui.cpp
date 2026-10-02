@@ -3675,6 +3675,51 @@ TEST_CASE("native controller refuses a retained diagnostic id once the warning t
   CHECK(has("held-2"));
 }
 
+TEST_CASE("native controller takes no focus for a stale diagnostic id and leaves the focused note where it is") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.resize(1280.0, 720.0);
+  const auto& entries = controller.diagnosticPanel().entries();
+  const auto refuse = [&](const std::string& what) {
+    controller.noteRefusal(core::Error{core::ErrorCode::Conflict, what});
+  };
+  for (int i = 0; i < 8; ++i) refuse("held-" + std::to_string(i));
+  CHECK(entries.size() == 8U);
+  controller.rebuildAccessibilityTree();
+  // A real note holds the focus, in the tree and in the editor.
+  const auto noteId = "note." + fixture.noteId.toString();
+  CHECK(controller.dispatchAccessibility(noteId, native_ui::SemanticAction::SetFocus));
+  CHECK(controller.sceneState().focusedNote == fixture.noteId);
+  const auto focusIs = [&controller](const std::string& id) {
+    const auto* focused = controller.accessibilityTree().focusedNode();
+    return focused != nullptr && focused->id == id;
+  };
+  CHECK(focusIs(noteId));
+  // What an assistive client holds from this tree: the row of held-1 and the button that dismisses it.
+  const auto rowId = native_ui::diagnosticRowId(1U, entries[1U].diagnostic);
+  const auto buttonId = native_ui::diagnosticActionId(1U, entries[1U].diagnostic,
+                                                      authoring::DiagnosticAction::Dismiss);
+  // The ninth refusal evicts the oldest. The client's tree still lists both ids, and row 1 is held-2's.
+  refuse("held-8");
+  CHECK(entries.size() == 8U);
+  CHECK(entries[1U].diagnostic.detail == "held-2");
+  for (const auto& id : {rowId, buttonId}) {
+    const auto stale = controller.dispatchAccessibility(id, native_ui::SemanticAction::SetFocus);
+    CHECK(!stale);
+    if (!stale) CHECK(stale.error().code == core::ErrorCode::Conflict);
+    // Nothing took the focus for it: the tree's focus is the note's still, and so is the editor's.
+    CHECK(focusIs(noteId));
+    CHECK(controller.sceneState().focusedNote == fixture.noteId);
+  }
+  CHECK(entries.size() == 8U);
+  // The row as it stands now takes the focus, as any focusable id does.
+  controller.rebuildAccessibilityTree();
+  const auto freshRow = native_ui::diagnosticRowId(1U, entries[1U].diagnostic);
+  CHECK(controller.dispatchAccessibility(freshRow, native_ui::SemanticAction::SetFocus));
+  CHECK(focusIs(freshRow));
+}
+
 TEST_CASE("native controller does not bring back an owner's diagnostic that the creator dismissed") {
   using namespace seam;
   NativeUiFixture fixture;

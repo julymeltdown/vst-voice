@@ -719,6 +719,12 @@ public:
 private:
   [[nodiscard]] core::Result<void> dispatchAccessibilityAction(
       std::string_view id, SemanticAction action);
+  // The answer to an id that names an entry of a list that is rebuilt (the diagnostics, see
+  // diagnostic_ids.hpp) when the id is malformed (InvalidArgument) or the entry is no longer where
+  // the id says (Conflict); nothing when the id is not such an id, or still names its entry. It is
+  // asked first, before any action and before any request for focus takes the focus and clears the
+  // editor's own, so a stale id changes nothing at all.
+  [[nodiscard]] std::optional<core::Error> listEntryRefusal(std::string_view element) const;
   enum class DragMode {
     None,
     MoveNotes,

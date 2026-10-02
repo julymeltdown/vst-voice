@@ -2110,6 +2110,24 @@ void NativeEditorController::accessibilityFocusMoved(std::string_view id) noexce
   }
 }
 
+std::optional<core::Error> NativeEditorController::listEntryRefusal(std::string_view element) const {
+  // An id names an entry by where it stood in its list and by what it is. The list is rebuilt whenever
+  // its owner's data or the editor's notices change, and an entry can go (an eviction, a dismissal, a
+  // notice that clears) while the ones after it move up. So an id made for an earlier list is acted
+  // on, or given focus, only while it still names the entry at that place; otherwise the click or the
+  // key was meant for something that is no longer there, and nothing is touched.
+  if (isDiagnosticElementId(element)) {
+    const auto named = parseDiagnosticElementId(element);
+    if (!named) return named.error();
+    const auto& entries = diagnosticPanel_.entries();
+    if (named.value().index >= entries.size() ||
+        entries[named.value().index].diagnostic.issueIdentity() != named.value().identity) {
+      return core::Error{core::ErrorCode::Conflict, "That diagnostic is no longer in the list"};
+    }
+  }
+  return std::nullopt;
+}
+
 core::Result<void> NativeEditorController::dispatchAccessibilityAction(
     std::string_view id, SemanticAction action) {
   constexpr std::string_view vibratoPrefix{"editor.vibrato.handle."};
@@ -2221,6 +2239,10 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
   return accessibilityTree_.dispatch(
       id, action,
       [this](std::string_view element, SemanticAction requested) {
+        // Before anything acts, and before the generic request for focus below takes the focus for
+        // the id and clears the editor's own: an id that names an entry of a list that is rebuilt
+        // must still name the entry at its place.
+        if (const auto refusal = listEntryRefusal(element)) return core::Result<void>{*refusal};
         if (element == "toolbar.time-map") {
           if (requested == SemanticAction::Activate) return openTimeMapPanel();
         }
@@ -2621,18 +2643,13 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
           return core::success();
         }
         if (isDiagnosticElementId(element)) {
-          // An id names an issue by where it stood in the list and by what it is (see
-          // diagnostic_ids.hpp). The panel is rebuilt whenever the owner's list or the notices change,
-          // and an entry can go (an eviction, a dismissal, a notice that clears) while the ones after it
-          // move up. So an id made for an earlier list acts only while it still names the issue at that
-          // place; otherwise the click or the key was meant for something that is no longer there, and
-          // nothing else is touched.
+          // listEntryRefusal has shown the id to be whole and to name the issue where it stands (see
+          // diagnostic_ids.hpp), so what is left is to act on that issue.
           const auto parsed = parseDiagnosticElementId(element);
           if (!parsed) return core::Result<void>{parsed.error()};
           const auto& named = parsed.value();
           const auto& entries = diagnosticPanel_.entries();
-          if (named.index >= entries.size() ||
-              entries[named.index].diagnostic.issueIdentity() != named.identity) {
+          if (named.index >= entries.size()) {
             return core::failure(core::ErrorCode::Conflict,
                                  "That diagnostic is no longer in the list");
           }
