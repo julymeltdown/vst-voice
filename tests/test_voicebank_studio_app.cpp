@@ -1555,3 +1555,148 @@ TEST_CASE("Voicebank Studio names nothing when the audition that replaces the on
   CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
   CHECK(studio.app->lastError().empty());
 }
+
+// A source Play control that was published while its preview was ready, kept by the caller after the
+// preview has gone. Reference A is retained on an output that will not say that it has stopped, so the
+// stale control cannot play the source and must not disturb what plays either: it answers Conflict,
+// it asks that output to stop zero times, it opens no replacement, and A keeps running under its own
+// name. The id is the one the control really had, taken before the preview was invalidated, so this
+// is a retained id and not a lookup that happens to miss.
+TEST_CASE("Voicebank Studio's stale retained source Play is refused while reference A is retained") {
+  for (const auto source : {std::string_view{"frication"}, std::string_view{"plosive"},
+                            std::string_view{"articulation"}}) {
+    const auto controlName = source == "frication"     ? "NOISE CENTER"
+                             : source == "plosive"    ? "BURST CENTER"
+                                                       : "TAIL CENTER";
+    const auto renderPart = "." + std::string{"render-"} + std::string{source} + ".";
+    const auto playPart = "." + std::string{"play-"} + std::string{source} + ".";
+    const auto root = test::support::temporaryDirectory("studio-stale-retained-play-" + std::string{source});
+    std::vector<std::shared_ptr<OutputScript>> outputs;
+    StudioHarness studio{root, nullptr, [&] {
+      auto script = std::make_shared<OutputScript>();
+      outputs.push_back(script);
+      return std::make_unique<ScriptedOutput>(script);
+    }};
+    voicebank_studio_native::Options options;
+    options.startDesigner = true;
+    CHECK(studio.app->open(options).hasValue());
+    studio.resize(1100.0, 720.0);
+    CHECK(studio.activate("new").hasValue());
+    studio.key(NativeKey::Space, {});
+    CHECK(studio.settle([&] { return studio.value("audition-state") == "Vowel ready"; }));
+    CHECK(studio.activate("pin-reference").hasValue());
+
+    // The source is rendered, so its Play control is published and enabled, exactly as it is when the
+    // creator can use it.
+    auto control = findContaining(studio, ".control.", controlName);
+    for (int page = 0; !control && page < 100; ++page) {
+      const auto next = studio.node("next");
+      if (!next || !next->enabled) break;
+      CHECK(studio.activate("next").hasValue());
+      control = findContaining(studio, ".control.", controlName);
+    }
+    CHECK(control.has_value());
+    if (!control) continue;
+    CHECK(studio.app->dispatchAccessibility(control->id, SemanticAction::SetFocus).hasValue());
+    const auto render = findContaining(studio, renderPart);
+    CHECK(render.has_value());
+    if (!render) continue;
+    CHECK(render->enabled);
+    CHECK(studio.app->dispatchAccessibility(render->id, SemanticAction::Activate).hasValue());
+    CHECK(studio.settle([&] {
+      const auto play = findContaining(studio, playPart);
+      return play && play->enabled;
+    }));
+    const auto sourcePlay = findContaining(studio, playPart);
+    CHECK(sourcePlay.has_value());
+    if (!sourcePlay) continue;
+
+    // A is retained on an output that refuses to stop, so the session keeps the device that plays.
+    CHECK(studio.activate("play-reference").hasValue());
+    CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+    CHECK(!outputs.empty());
+    if (outputs.empty()) continue;
+    const auto playingA = outputs.back();
+    CHECK(playingA->running);
+    playingA->failStop = true;
+
+    // The preview goes away, and the id the creator kept names something else. A pitch change is the
+    // Designer's own action and it invalidates every preview it held without editing the recipe, so
+    // the epoch and the revision the id carries are unchanged and only its last part moves. That is
+    // what a retained id is: the same control as it was, kept across a change that made it stale.
+    // Its stop is asked once, is refused, and the creator is told, so A is still the audition that
+    // plays and still has its name.
+    auto pitch = findContaining(studio, ".control.", "AUDITION MIDI");
+    for (int page = 0; !pitch && page < 100; ++page) {
+      const auto previous = studio.node("previous");
+      if (!previous || !previous->enabled) break;
+      CHECK(studio.activate("previous").hasValue());
+      pitch = findContaining(studio, ".control.", "AUDITION MIDI");
+    }
+    CHECK(pitch.has_value());
+    if (!pitch) continue;
+    const auto midi = std::stoi(pitch->value);
+    const auto chosen = std::to_string(midi == 72 ? 71 : 72);
+    CHECK(studio.setValue("control.4", chosen).hasValue());
+    // The pitch change is the Designer's own file work and lands on its worker, so the retained id is
+    // only pressed once the Designer is answerable again: what is refused must be the stale preview,
+    // not a Designer that has not finished.
+    CHECK(studio.settle([&] {
+      const auto again = studio.setValue("control.4", chosen);
+      if (!again.hasValue() && again.error().message == "Designer value target is stale or busy") return false;
+      // Answerable again: the same value is accepted or refused as already set, never as busy.
+      return again.hasValue() || again.error().message != "Designer value target is stale or busy";
+    }));
+    CHECK(playingA->running);
+    CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+    // The pitch the id names is the one the creator just chose, so the id the control now has is not
+    // the id it had.
+    const auto changed = findContaining(studio, ".control.", "AUDITION MIDI");
+    CHECK(changed.has_value());
+    if (changed) {
+      // The id ends in the pitch the control now holds, and that is the one the creator chose.
+      const auto suffix = std::string{"AUDITION MIDI "} + std::to_string(midi == 72 ? 71 : 72);
+      CHECK(changed->name.ends_with(suffix));
+      CHECK(changed->id != sourcePlay->id);
+    }
+    // The source control is published one page at a time, so it is reached again the way the creator
+    // would reach it, and is now offered without anything to press.
+    for (int page = 0; !findContaining(studio, playPart).has_value() && page < 100; ++page) {
+      const auto next = studio.node("next");
+      if (!next || !next->enabled) break;
+      CHECK(studio.activate("next").hasValue());
+    }
+    const auto afterEdit = findContaining(studio, playPart);
+    CHECK(afterEdit.has_value());
+    if (!afterEdit) continue;
+    CHECK(afterEdit->id != sourcePlay->id);
+    // The epoch and the revision are what the two ids share, and they are unchanged by the pitch.
+    CHECK(afterEdit->id.substr(0U, afterEdit->id.find('.')) == sourcePlay->id.substr(0U, sourcePlay->id.find('.')));
+    // The control is still published but is no longer ready, so it offers nothing to press.
+    CHECK(!afterEdit->enabled);
+
+    // Asking through the id the control really had is refused before anything is touched.
+    const auto stopsBeforePress = playingA->stops;
+    const auto openedBeforePress = outputs.size();
+    const auto refused = studio.app->dispatchAccessibility(sourcePlay->id, SemanticAction::Activate);
+    CHECK(!refused.hasValue());
+    if (!refused.hasValue()) {
+      CHECK(refused.error().code == seam::core::ErrorCode::Conflict);
+      // Two layers refuse, and both must leave A alone. The id names a Designer context (epoch,
+      // revision, pose, pitch) that the pitch change has moved on from, so the shell answers
+      // "stale or busy" before the preview guard is even reached. The refusal is a refusal either
+      // way: what this case pins is that a retained control cannot disturb the audition that plays,
+      // and which layer answers is an implementation detail of the id format.
+      CHECK(refused.error().message == "Designer accessibility target is stale or busy");
+    }
+    // The refusal itself disturbs nothing: it asks A's device nothing beyond the one refused ask the
+    // pitch edit already made before the preview went stale, it opens no replacement, and the name A
+    // plays under stands.
+    CHECK(playingA->stops == stopsBeforePress);
+    CHECK(playingA->running);
+    CHECK(!playingA->destroyed);
+    CHECK(outputs.size() == openedBeforePress);
+    if (outputs.size() > openedBeforePress) CHECK(!outputs.back()->running);
+    CHECK(studio.value("audition-state") == "REFERENCE A / NOT APPROVED");
+  }
+}
