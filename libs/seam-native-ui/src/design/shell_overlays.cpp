@@ -5,6 +5,7 @@
 #include "seam/build/version.hpp"
 #include "seam/native_ui/design/character_surface.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/tempo_meter_model.hpp"
 
 #include <algorithm>
@@ -1179,6 +1180,22 @@ public:
     // the popover rather than to the read-only status bar.
     return "shell.diagnostics.open";
   }
+  // The issues in the order they are listed, and the page of them that is shown: what a press that
+  // was aimed at the frame on screen has to find still there before it acts (see drawnContent).
+  [[nodiscard]] std::optional<std::uint64_t> drawnContent(
+      const NativeEditorController&, const EditorSceneState& state) const override {
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](std::uint64_t value) {
+      for (unsigned shift = 0U; shift < 64U; shift += 8U) {
+        hash ^= (value >> shift) & 0xffU;
+        hash *= 1099511628211ULL;
+      }
+    };
+    mix(static_cast<std::uint64_t>(first_));
+    mix(static_cast<std::uint64_t>(state.diagnostics.size()));
+    for (const auto& diagnostic : state.diagnostics) mix(diagnostic.issueIdentity());
+    return hash;
+  }
   void presented() const override { first_ = 0U; }
   void paint(Canvas2D& c, const DesignTokens& t, const NativeEditorController&,
              const EditorSceneState& state, const SingLayout&, ui::Rect panel,
@@ -1233,15 +1250,14 @@ std::vector<OverlayControl> DiagnosticsOverlay::controls(const NativeEditorContr
     const auto presentation = presentDiagnostic(diagnostic);
     // The row keeps the controller's own diagnostic id, so its impact and technical detail are
     // published with it.
-    out.push_back({"diagnostic." + std::to_string(i) + "." + diagnostic.code,
+    out.push_back({diagnosticRowId(i, diagnostic),
                    {panel.x + kPanelInset, top, width, kDiagnosticRow},
                    presentation.title, SemanticRole::Status, true, false, false});
     const auto count = presentation.primaryActionKinds.size();
     if (count == 0U) continue;
     const auto cells = grid(panel, top + kDiagnosticRow + 4.0, kDiagnosticActions, count, count, 8.0);
     for (std::size_t a = 0U; a < cells.size(); ++a)
-      out.push_back({"diagnostic-action." + std::to_string(i) + "." +
-                         std::string{authoring::toString(presentation.primaryActionKinds[a])},
+      out.push_back({diagnosticActionId(i, diagnostic, presentation.primaryActionKinds[a]),
                      cells[a], diagnosticActionLabel(presentation.primaryActionKinds[a])});
   }
   if (paged(state, panel)) {
@@ -1265,12 +1281,9 @@ void DiagnosticsOverlay::paint(Canvas2D& c, const DesignTokens& t, const NativeE
   for (const auto& control : controls) {
     if (control.role == SemanticRole::Status) {
       // A block's row: the severity bar, the title and what it affects.
-      const auto dot = control.id.find('.', std::string_view{"diagnostic."}.size());
-      std::size_t index = 0U;
-      if (dot == std::string::npos ||
-          !parseIndex(std::string_view{control.id}.substr(11U, dot - 11U), index) ||
-          index >= state.diagnostics.size())
-        continue;
+      const auto parsed = parseDiagnosticElementId(control.id);
+      if (!parsed || parsed.value().index >= state.diagnostics.size()) continue;
+      const auto index = parsed.value().index;
       const auto& diagnostic = state.diagnostics[index];
       const auto presentation = presentDiagnostic(diagnostic);
       const auto color = diagnostic.severity == authoring::DiagnosticSeverity::Critical

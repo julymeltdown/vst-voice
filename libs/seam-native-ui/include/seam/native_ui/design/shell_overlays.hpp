@@ -19,6 +19,7 @@
 #include "seam/native_ui/paint/canvas2d.hpp"
 
 #include <memory>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -128,6 +129,18 @@ public:
     static_cast<void>(controller);
     static_cast<void>(state);
     return {};
+  }
+  // What the overlay draws for this state, as one number, for an overlay whose controls name content
+  // that can change under the pointer (the diagnostics popover's issues). The shell keeps the number
+  // of the frame it last drew. A press is handled against the state as it is now, so a press that was
+  // aimed at a frame drawn before the content changed would land on whatever has moved under the
+  // pointer; the shell refuses it when the numbers differ, and the next frame shows what is there.
+  // None, the default, for an overlay whose controls do not move.
+  [[nodiscard]] virtual std::optional<std::uint64_t> drawnContent(
+      const NativeEditorController& controller, const EditorSceneState& state) const {
+    static_cast<void>(controller);
+    static_cast<void>(state);
+    return std::nullopt;
   }
   // Paints the panel's content and its control chrome. The shell has already drawn the scrim, the
   // card and the title; every control in `controls` is drawn at its own rectangle.

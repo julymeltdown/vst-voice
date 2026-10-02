@@ -86,6 +86,66 @@ TEST_CASE("a diagnostic equals another only when every field it carries is the s
   }
 }
 
+TEST_CASE("a diagnostic's issue identity tells issues apart exactly as sameIssueAs does, and ignores the count") {
+  using namespace seam;
+  const authoring::Diagnostic base{
+      .code = "BANK_MISSING",
+      .severity = authoring::DiagnosticSeverity::Error,
+      .messageKey = "bank.missing",
+      .affectedIds = {"track-1", "track-2"},
+      .actions = {authoring::DiagnosticAction::RelinkVoicebank,
+                  authoring::DiagnosticAction::CopyDiagnostic},
+      .occurrenceCount = 1U,
+  };
+  CHECK(authoring::Diagnostic{base}.issueIdentity() == base.issueIdentity());
+  {
+    // How many times it came is not which issue it is: a repeat keeps its identity.
+    auto repeated = base;
+    repeated.addOccurrences(6U);
+    CHECK(repeated.sameIssueAs(base));
+    CHECK(repeated.issueIdentity() == base.issueIdentity());
+  }
+  // Every other field makes another issue, for sameIssueAs and for the identity alike.
+  const auto differs = [&base](const auto& change) {
+    auto other = base;
+    change(other);
+    return !other.sameIssueAs(base) && other.issueIdentity() != base.issueIdentity();
+  };
+  CHECK(differs([](auto& d) { d.code = "MEDIA_MISSING"; }));
+  CHECK(differs([](auto& d) { d.severity = authoring::DiagnosticSeverity::Warning; }));
+  CHECK(differs([](auto& d) { d.messageKey = "media.missing"; }));
+  CHECK(differs([](auto& d) { d.affectedIds = {"track-1", "track-3"}; }));
+  CHECK(differs([](auto& d) { d.affectedIds = {"track-2", "track-1"}; }));
+  CHECK(differs([](auto& d) { d.affectedIds = {"track-1"}; }));
+  CHECK(differs([](auto& d) {
+    d.actions = {authoring::DiagnosticAction::CopyDiagnostic,
+                 authoring::DiagnosticAction::RelinkVoicebank};
+  }));
+  CHECK(differs([](auto& d) { d.actions = {authoring::DiagnosticAction::RelinkVoicebank}; }));
+  CHECK(differs([](auto& d) { d.setDetail("the voicebank folder was moved"); }));
+  // The detail itself, not only the fingerprint that setDetail leaves beside it.
+  CHECK(differs([](auto& d) { d.detail = "the voicebank folder was moved"; }));
+  CHECK(differs([](auto& d) { d.detailTruncated = true; }));
+  CHECK(differs([](auto& d) { d.detailEscaped = true; }));
+  CHECK(differs([](auto& d) { d.detailSourceHash = "0123abcd"; }));
+  // Where one field ends and the next begins is part of the identity: the same letters split
+  // another way are another issue.
+  {
+    const authoring::Diagnostic joined{.code = "AB", .messageKey = "C"};
+    const authoring::Diagnostic split{.code = "A", .messageKey = "BC"};
+    CHECK(!joined.sameIssueAs(split));
+    CHECK(joined.issueIdentity() != split.issueIdentity());
+    const authoring::Diagnostic one{.code = "X", .affectedIds = {"ab"}};
+    const authoring::Diagnostic two{.code = "X", .affectedIds = {"a", "b"}};
+    CHECK(!one.sameIssueAs(two));
+    CHECK(one.issueIdentity() != two.issueIdentity());
+    const authoring::Diagnostic early{.code = "X", .detail = "d", .detailSourceHash = "h"};
+    const authoring::Diagnostic late{.code = "X", .detail = "dh"};
+    CHECK(!early.sameIssueAs(late));
+    CHECK(early.issueIdentity() != late.issueIdentity());
+  }
+}
+
 TEST_CASE("diagnostic registry validates registered codes and actions") {
   CHECK(seam::authoring::DiagnosticRegistry::isRegistered("BANK_UNTRUSTED"));
   const auto actions = seam::authoring::DiagnosticRegistry::actions("BANK_UNTRUSTED");

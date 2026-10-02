@@ -3,6 +3,7 @@
 
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
 
 #include <array>
 #include <charconv>
@@ -1361,7 +1362,7 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       const auto& diagnostic = state.diagnostics[index];
       const auto presentation = presentDiagnostic(diagnostic);
       diagnostics.children.push_back(SemanticNode{
-          .id = "diagnostic." + std::to_string(index) + "." + diagnostic.code,
+          .id = diagnosticRowId(index, diagnostic),
           .role = SemanticRole::Status,
           .name = presentation.title,
           .value = presentation.impact,
@@ -1376,10 +1377,8 @@ SemanticNode EditorSemanticTree::build(const EditorSceneState& state,
       const auto actionCount = presentation.primaryActionKinds.size();
       for (std::size_t actionIndex = 0U; actionIndex < actionCount; ++actionIndex) {
         const auto action = presentation.primaryActionKinds[actionIndex];
-        const auto actionName = std::string{authoring::toString(action)};
         diagnostics.children.push_back(SemanticNode{
-            .id = "diagnostic-action." + std::to_string(index) + "." +
-                 actionName,
+            .id = diagnosticActionId(index, diagnostic, action),
             .role = SemanticRole::Button,
             .name = diagnosticActionLabel(action),
             .value = diagnosticActionLabel(action),

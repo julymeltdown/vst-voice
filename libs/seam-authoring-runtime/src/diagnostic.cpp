@@ -141,6 +141,35 @@ bool Diagnostic::sameIssueAs(const Diagnostic& other) const noexcept {
       detailTruncated == other.detailTruncated && detailEscaped == other.detailEscaped && detailSourceHash == other.detailSourceHash;
 }
 
+std::uint64_t Diagnostic::issueIdentity() const noexcept {
+  // FNV-1a over the fields sameIssueAs compares, in a fixed order, with each variable-length field
+  // led by its length so that two different sets of fields cannot run together into the same bytes.
+  std::uint64_t hash = 14695981039346656037ULL;
+  const auto byte = [&hash](unsigned char value) noexcept {
+    hash ^= value;
+    hash *= 1099511628211ULL;
+  };
+  const auto number = [&byte](std::uint64_t value) noexcept {
+    for (unsigned shift = 0U; shift < 64U; shift += 8U) byte(static_cast<unsigned char>(value >> shift));
+  };
+  const auto text = [&byte, &number](std::string_view value) noexcept {
+    number(value.size());
+    for (const char c : value) byte(static_cast<unsigned char>(c));
+  };
+  text(code);
+  text(messageKey);
+  number(static_cast<std::uint64_t>(severity));
+  number(affectedIds.size());
+  for (const auto& id : affectedIds) text(id);
+  number(actions.size());
+  for (const auto action : actions) number(static_cast<std::uint64_t>(action));
+  text(detail);
+  number(detailTruncated ? 1U : 0U);
+  number(detailEscaped ? 1U : 0U);
+  text(detailSourceHash);
+  return hash;
+}
+
 namespace {
 std::size_t printableUtf8Sequence(std::string_view text, std::size_t i) {
   const auto c = static_cast<unsigned char>(text[i]);

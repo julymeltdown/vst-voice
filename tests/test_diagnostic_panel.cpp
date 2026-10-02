@@ -1,5 +1,6 @@
 #include "test_framework.hpp"
 
+#include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/diagnostic_panel.hpp"
 #include "seam/native_ui/diagnostic_search.hpp"
 #include "seam/native_ui/diagnostic_search_job.hpp"
@@ -25,6 +26,62 @@ TEST_CASE("long render failure details remain visible searchable and independent
   panel.clear(); first.setDetail(std::string(4096U, 'x') + "first-tail"); second.setDetail(std::string(4096U, 'x') + "second-tail");
   CHECK(first.detail == second.detail); CHECK(first.detailTruncated); CHECK(second.detailTruncated);
   CHECK(!first.sameIssueAs(second)); panel.add(first); panel.add(second); CHECK(panel.entries().size() == 2U);
+}
+
+TEST_CASE("diagnostic element ids carry the issue as well as its place, and come apart only when whole") {
+  using namespace seam;
+  const authoring::Diagnostic issue{.code = "MEDIA_MISSING",
+                                    .severity = authoring::DiagnosticSeverity::Warning,
+                                    .messageKey = "media.missing",
+                                    .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const auto suffix = native_ui::diagnosticIdentitySuffix(issue.issueIdentity());
+  CHECK(suffix.size() == 17U);
+  CHECK(suffix.front() == '@');
+  const auto row = native_ui::diagnosticRowId(3U, issue);
+  const auto button =
+      native_ui::diagnosticActionId(3U, issue, authoring::DiagnosticAction::RelinkMedia);
+  CHECK(row == "diagnostic.3.MEDIA_MISSING" + suffix);
+  CHECK(button == "diagnostic-action.3.RELINK_MEDIA" + suffix);
+  CHECK(native_ui::isDiagnosticElementId(row));
+  CHECK(native_ui::isDiagnosticElementId(button));
+  CHECK(!native_ui::isDiagnosticElementId("diagnostics.panel"));
+  CHECK(!native_ui::isDiagnosticElementId("shell.diagnostics.open"));
+  // Whole ids come apart into what they were made of.
+  const auto parsedRow = native_ui::parseDiagnosticElementId(row);
+  CHECK(parsedRow);
+  if (parsedRow) {
+    CHECK(!parsedRow.value().action);
+    CHECK(parsedRow.value().index == 3U);
+    CHECK(parsedRow.value().name == "MEDIA_MISSING");
+    CHECK(parsedRow.value().identity == issue.issueIdentity());
+  }
+  const auto parsedButton = native_ui::parseDiagnosticElementId(button);
+  CHECK(parsedButton);
+  if (parsedButton) {
+    CHECK(parsedButton.value().action);
+    CHECK(parsedButton.value().index == 3U);
+    CHECK(parsedButton.value().name == "RELINK_MEDIA");
+    CHECK(parsedButton.value().identity == issue.issueIdentity());
+  }
+  // Another issue at the same place, and the same issue at another place, are other ids.
+  auto other = issue;
+  other.setDetail("a different file");
+  CHECK(native_ui::diagnosticActionId(3U, other, authoring::DiagnosticAction::RelinkMedia) != button);
+  CHECK(native_ui::diagnosticActionId(4U, issue, authoring::DiagnosticAction::RelinkMedia) != button);
+  // An id that is not whole is refused, and says that it is malformed.
+  for (const std::string_view bad : {
+           "diagnostic.", "diagnostic.3", "diagnostic.3.", "diagnostic.3.MEDIA_MISSING",
+           "diagnostic.3.MEDIA_MISSING@", "diagnostic.3.MEDIA_MISSING@0123456789abcde",
+           "diagnostic.3.MEDIA_MISSING@0123456789abcdef0", "diagnostic.3.MEDIA_MISSING@0123456789abcdeg",
+           "diagnostic.3.MEDIA_MISSING@-123456789abcdef", "diagnostic.3.MEDIA_MISSING@0x23456789abcdef",
+           "diagnostic.x.MEDIA_MISSING@0123456789abcdef", "diagnostic..MEDIA_MISSING@0123456789abcdef",
+           "diagnostic.-1.MEDIA_MISSING@0123456789abcdef", "diagnostic.3.@0123456789abcdef",
+           "diagnostic-action.3.@0123456789abcdef", "diagnostic-action.3.RELINK_MEDIA",
+           "diagnostic-action.3RELINK_MEDIA@0123456789abcdef"}) {
+    const auto parsed = native_ui::parseDiagnosticElementId(bad);
+    CHECK(!parsed);
+    if (!parsed) CHECK(parsed.error().code == core::ErrorCode::InvalidArgument);
+  }
 }
 
 TEST_CASE("diagnostic search jobs guard document and diagnostic changes without invoking recovery") {

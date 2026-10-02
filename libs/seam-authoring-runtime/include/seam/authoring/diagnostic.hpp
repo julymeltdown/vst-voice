@@ -4,6 +4,7 @@
 #include "seam/core/result.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,12 @@ struct Diagnostic final {
   static constexpr std::size_t maximumDetailBytes = 4096U;
   void setDetail(std::string_view text);
   [[nodiscard]] bool sameIssueAs(const Diagnostic& other) const noexcept;
+  // What makes this the one issue, as a number: a fingerprint of exactly the fields sameIssueAs
+  // compares, and of nothing else (the count is left out, so a repeat of the issue keeps it). Two
+  // diagnostics are the same issue when their identities are equal. An id that carries it names the
+  // issue wherever it stands in a list, so a list that changed (an eviction, a dismissal, a rebuild)
+  // cannot let an id that was made for one issue act on another that has taken its place.
+  [[nodiscard]] std::uint64_t issueIdentity() const noexcept;
   void addOccurrences(std::size_t additional) noexcept;
   // Every field, how many times it came among them. sameIssueAs asks whether two are the one issue
   // and leaves the count out; this asks whether one says what the other already says, which is what

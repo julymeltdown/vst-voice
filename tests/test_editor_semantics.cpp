@@ -4,6 +4,7 @@
 #include "seam/application/editor_session.hpp"
 #include "seam/application/project_factory.hpp"
 #include "seam/native_ui/editor_controller.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 
@@ -395,8 +396,12 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
   CHECK(diagnostics->children.front().value.find("render.stale") == std::string::npos);
   CHECK(diagnostics->children.front().description.find("render.stale") !=
         std::string::npos);
-  CHECK(seam::native_ui::EditorSemanticTree::containsId(
-      *diagnostics, "diagnostic-action.0.RETRY"));
+  // The button's id names the issue as well as its place, so an id kept from an earlier list cannot act
+  // on whatever has taken that place since.
+  const auto retryId = seam::native_ui::diagnosticActionId(
+      0U, arrangementState.diagnostics.front(), seam::authoring::DiagnosticAction::Retry);
+  CHECK(retryId.starts_with("diagnostic-action.0.RETRY@"));
+  CHECK(seam::native_ui::EditorSemanticTree::containsId(*diagnostics, retryId));
 
   bool diagnosticActionInvoked = false;
   seam::native_ui::NativeEditorController actionController{
@@ -414,7 +419,7 @@ TEST_CASE("editor semantic tree exposes stable accessible controls") {
   actionController.setDiagnostics(arrangementState.diagnostics);
   actionController.rebuildAccessibilityTree();
   CHECK(actionController.dispatchAccessibility(
-      "diagnostic-action.0.RETRY",
+      retryId,
       seam::native_ui::SemanticAction::Activate));
   CHECK(diagnosticActionInvoked);
 

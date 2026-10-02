@@ -32,6 +32,8 @@ TEST_CASE("AppKit non-Latin shortcuts preserve controls without overriding ASCII
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/clap_editor/editor_runtime.hpp"
 #include "seam/native_ui/character_presentation.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
+#include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_interaction_state.hpp"
@@ -3534,6 +3536,143 @@ TEST_CASE("native controller bounds its refusal notices and never lets them push
   CHECK(!has("Refusal 0"));
   CHECK(has("Refusal 1"));
   CHECK(has("Refusal 8"));
+}
+
+TEST_CASE("native controller refuses a diagnostic id whose issue is no longer where the id says, and touches nothing") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId, {}};
+  controller.resize(1280.0, 720.0);
+  const auto& entries = controller.diagnosticPanel().entries();
+  const auto refuse = [&](const std::string& what) {
+    controller.noteRefusal(core::Error{core::ErrorCode::Conflict, what});
+  };
+  const auto has = [&](std::string_view detail) {
+    return std::any_of(entries.begin(), entries.end(),
+                       [detail](const auto& entry) { return entry.diagnostic.detail == detail; });
+  };
+  const auto buttonAt = [&](std::size_t index, authoring::DiagnosticAction action) {
+    return native_ui::diagnosticActionId(index, entries[index].diagnostic, action);
+  };
+  const auto activate = [&](const std::string& id) {
+    return controller.dispatchAccessibility(id, native_ui::SemanticAction::Activate);
+  };
+  // Eight refusals fill the notices. They carry one code, so only what they say tells them apart.
+  for (int i = 0; i < 8; ++i) refuse("held-" + std::to_string(i));
+  CHECK(entries.size() == 8U);
+  CHECK(entries[1U].diagnostic.detail == "held-1");
+  controller.rebuildAccessibilityTree();
+  // What an assistive client holds from this tree: the button that dismisses held-1, in row 1, and
+  // the row of held-2, in row 2.
+  const auto dismissHeldOne = buttonAt(1U, authoring::DiagnosticAction::Dismiss);
+  const auto rowOfHeldTwo = native_ui::diagnosticRowId(2U, entries[2U].diagnostic);
+  // The ninth refusal evicts the oldest: held-1 moves up to row 0 and held-2 takes row 1. The client's
+  // tree is the one it was given, and still lists those ids.
+  refuse("held-8");
+  CHECK(entries.size() == 8U);
+  CHECK(!has("held-0"));
+  CHECK(entries[0U].diagnostic.detail == "held-1");
+  CHECK(entries[1U].diagnostic.detail == "held-2");
+  // The id names held-1 at row 1, and row 1 is held-2's now. It is refused, as a conflict, and
+  // neither notice is dismissed. Moving focus to the stale button, or to the stale row of held-2
+  // (which is where held-3 stands), is refused the same way.
+  const auto stale = activate(dismissHeldOne);
+  CHECK(!stale);
+  if (!stale) CHECK(stale.error().code == core::ErrorCode::Conflict);
+  const auto staleRow =
+      controller.dispatchAccessibility(rowOfHeldTwo, native_ui::SemanticAction::SetFocus);
+  CHECK(!staleRow);
+  if (!staleRow) CHECK(staleRow.error().code == core::ErrorCode::Conflict);
+  CHECK(!controller.dispatchAccessibility(dismissHeldOne, native_ui::SemanticAction::SetFocus));
+  CHECK(entries.size() == 8U);
+  CHECK(has("held-1"));
+  CHECK(has("held-2"));
+  // Once the tree is rebuilt the old id is not in it at all.
+  controller.rebuildAccessibilityTree();
+  CHECK(!activate(dismissHeldOne));
+  CHECK(entries.size() == 8U);
+  // The button that dismisses held-1 where it stands now acts on held-1 and on nothing else.
+  const auto fresh = buttonAt(0U, authoring::DiagnosticAction::Dismiss);
+  CHECK(fresh != dismissHeldOne);
+  CHECK(activate(fresh));
+  CHECK(entries.size() == 7U);
+  CHECK(!has("held-1"));
+  CHECK(has("held-2"));
+  // A repeat of a notice changes its count and nothing about which issue it is: its ids still work.
+  controller.rebuildAccessibilityTree();
+  const auto dismissHeldFive = buttonAt(3U, authoring::DiagnosticAction::Dismiss);
+  CHECK(entries[3U].diagnostic.detail == "held-5");
+  refuse("held-5");
+  CHECK(entries[3U].diagnostic.occurrenceCount == 2U);
+  CHECK(activate(dismissHeldFive));
+  CHECK(!has("held-5"));
+  CHECK(entries.size() == 6U);
+  // An owner's list that changes under an id does the same: the issue that was in row 1 is gone and
+  // another with the same code is there. The editor has no host to ask, so an action that got through
+  // would not be a conflict.
+  const authoring::Diagnostic media{.code = "MEDIA_MISSING",
+                                    .severity = authoring::DiagnosticSeverity::Warning,
+                                    .messageKey = "media.missing",
+                                    .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const authoring::Diagnostic bank{.code = "BANK_MISSING",
+                                   .severity = authoring::DiagnosticSeverity::Error,
+                                   .messageKey = "bank.missing",
+                                   .actions = {authoring::DiagnosticAction::RelinkVoicebank}};
+  controller.setDiagnostics({media, bank});
+  controller.rebuildAccessibilityTree();
+  const auto primary = native_ui::presentDiagnostic(entries[1U].diagnostic).primaryActionKinds;
+  CHECK(!primary.empty());
+  if (primary.empty()) return;
+  const auto relinkBank = buttonAt(1U, primary.front());
+  auto otherBank = bank;
+  otherBank.setDetail("another bank");
+  controller.setDiagnostics({media, otherBank});
+  CHECK(entries[1U].diagnostic.detail == "another bank");
+  const auto replaced = activate(relinkBank);
+  CHECK(!replaced);
+  if (!replaced) CHECK(replaced.error().code == core::ErrorCode::Conflict);
+}
+
+TEST_CASE("native controller refuses a retained diagnostic id once the warning that stood above its issue is taken down") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  bool refuse = true;
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {.selectRegion = [&](domain::RegionId) -> core::Result<void> {
+         if (refuse) return core::failure(core::ErrorCode::Conflict, "The host is busy");
+         return core::success();
+       }}};
+  controller.resize(1280.0, 720.0);
+  const auto& entries = controller.diagnosticPanel().entries();
+  const auto has = [&](std::string_view detail) {
+    return std::any_of(entries.begin(), entries.end(),
+                       [detail](const auto& entry) { return entry.diagnostic.detail == detail; });
+  };
+  // The host will not follow a region the editor adds, so the selection warning stands in row 0, and
+  // two refused keys stand under it.
+  CHECK(controller.addVocalRegion("Second", time::Tick{7680}, time::Tick{3840}));
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "held-1"});
+  controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "held-2"});
+  CHECK(entries.size() == 3U);
+  CHECK(entries[0U].diagnostic.code == "SELECTION_SYNC_FAILED");
+  CHECK(entries[1U].diagnostic.detail == "held-1");
+  controller.rebuildAccessibilityTree();
+  const auto dismissHeldOne = native_ui::diagnosticActionId(
+      1U, entries[1U].diagnostic, authoring::DiagnosticAction::Dismiss);
+  // The host follows, the warning is taken down, and held-1 moves up to row 0 and held-2 to row 1.
+  refuse = false;
+  CHECK(controller.activateDiagnostic(0U, authoring::DiagnosticAction::Retry));
+  CHECK(entries.size() == 2U);
+  CHECK(entries[0U].diagnostic.detail == "held-1");
+  CHECK(entries[1U].diagnostic.detail == "held-2");
+  // The id still names held-1 at row 1, and row 1 is held-2's now: it is refused as a conflict and
+  // neither refusal is dismissed.
+  const auto stale = controller.dispatchAccessibility(dismissHeldOne, native_ui::SemanticAction::Activate);
+  CHECK(!stale);
+  if (!stale) CHECK(stale.error().code == core::ErrorCode::Conflict);
+  CHECK(entries.size() == 2U);
+  CHECK(has("held-1"));
+  CHECK(has("held-2"));
 }
 
 TEST_CASE("native controller does not bring back an owner's diagnostic that the creator dismissed") {

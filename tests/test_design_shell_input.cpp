@@ -10,6 +10,7 @@
 #include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/design/shell_evidence.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -3421,13 +3422,15 @@ TEST_CASE("the diagnostics toast and popover present the status diagnostics as a
   CHECK(f.shell.dispatchSemantic(f.controller, "shell.diagnostics.open", SemanticAction::Activate)
             .hasValue());
   CHECK(f.frame());
-  const auto* action = f.node("diagnostic-action.0.RELINK_MEDIA");
+  const auto relinkId =
+      native_ui::diagnosticActionId(0U, issue, authoring::DiagnosticAction::RelinkMedia);
+  const auto* action = f.node(relinkId);
   CHECK(action != nullptr);
   if (action != nullptr) {
     // The controller's own diagnostic node: the host dispatches it through the shell's controller
     // path, as a real assistive client would.
-    const auto performed = f.shell.dispatchController(
-        f.controller, "diagnostic-action.0.RELINK_MEDIA", SemanticAction::Activate);
+    const auto performed =
+        f.shell.dispatchController(f.controller, relinkId, SemanticAction::Activate);
     if (!performed) throw test::Failure{"diagnostic action refused: " + performed.error().message};
     CHECK(f.diagnosticActions == 1U);
   }
@@ -3477,8 +3480,7 @@ TEST_CASE("every diagnostic's recovery actions are reachable from the popover, n
   const auto actionIds = [&issues](std::size_t i) {
     std::vector<std::string> out;
     for (const auto kind : native_ui::presentDiagnostic(issues[i]).primaryActionKinds)
-      out.push_back("diagnostic-action." + std::to_string(i) + "." +
-                    std::string{authoring::toString(kind)});
+      out.push_back(native_ui::diagnosticActionId(i, issues[i], kind));
     return out;
   };
   // The popover's own contract, with the first block's row and actions, at every size.
@@ -3490,9 +3492,9 @@ TEST_CASE("every diagnostic's recovery actions are reachable from the popover, n
     f.shell.setDiagnosticsOpen(true);
     CHECK(f.frame());
     auto required = actionIds(0U);
-    required.push_back("diagnostic.0.MEDIA_MISSING");
+    required.push_back(native_ui::diagnosticRowId(0U, issues[0]));
     checkOverlayContract(f, "shell.overlay.diagnostics.", required,
-                         {"diagnostic.1.BANK_MISSING", "shell.overlay.diagnostics.previous",
+                         {native_ui::diagnosticRowId(1U, issues[1]), "shell.overlay.diagnostics.previous",
                           "shell.overlay.diagnostics.next"},
                          "shell.diagnostics.open");
   }
@@ -3544,25 +3546,253 @@ TEST_CASE("the editor's own notice is reachable from the popover and answered by
   f.shell.setDiagnosticsOpen(true);
   CHECK(f.frame());
   // The owner's diagnostic leads and the notice follows it, with the one action it offers.
-  CHECK(f.node("diagnostic.0.MEDIA_MISSING") != nullptr);
-  CHECK(f.node("diagnostic.1.EDIT_REFUSED") != nullptr);
-  CHECK(f.node("diagnostic-action.1.DISMISS") != nullptr);
-  CHECK(f.node("diagnostic-action.1.RETRY") == nullptr);
-  CHECK(f.shell.dispatchController(f.controller, "diagnostic-action.1.DISMISS",
-                                   SemanticAction::Activate)
-            .hasValue());
+  // (Their ids are made before the notice goes: the entries they come from are rebuilt when it does.)
+  const auto& entries = f.controller.diagnosticPanel().entries();
+  CHECK(entries.size() == 2U);
+  if (entries.size() != 2U) return;
+  const auto ownerRowId = native_ui::diagnosticRowId(0U, entries[0U].diagnostic);
+  const auto noticeRowId = native_ui::diagnosticRowId(1U, entries[1U].diagnostic);
+  const auto dismissId = native_ui::diagnosticActionId(1U, entries[1U].diagnostic,
+                                                       authoring::DiagnosticAction::Dismiss);
+  const auto noticeRetryId = native_ui::diagnosticActionId(1U, entries[1U].diagnostic,
+                                                           authoring::DiagnosticAction::Retry);
+  const auto relinkId = native_ui::diagnosticActionId(0U, entries[0U].diagnostic,
+                                                      authoring::DiagnosticAction::RelinkMedia);
+  CHECK(entries[1U].diagnostic.code == "EDIT_REFUSED");
+  CHECK(f.node(ownerRowId) != nullptr);
+  CHECK(f.node(noticeRowId) != nullptr);
+  CHECK(f.node(dismissId) != nullptr);
+  CHECK(f.node(noticeRetryId) == nullptr);
+  CHECK(f.shell.dispatchController(f.controller, dismissId, SemanticAction::Activate).hasValue());
   // The editor answered its own notice: the host's diagnostic action was never called, and only the
   // notice went.
   CHECK(f.diagnosticActions == 0U);
   CHECK(f.controller.diagnosticPanel().entries().size() == 1U);
   CHECK(f.controller.diagnosticPanel().entries().front().diagnostic.code == "MEDIA_MISSING");
   CHECK(f.frame());
-  CHECK(f.node("diagnostic.1.EDIT_REFUSED") == nullptr);
+  CHECK(f.node(noticeRowId) == nullptr);
   // The owner's own action still goes to the host.
-  CHECK(f.shell.dispatchController(f.controller, "diagnostic-action.0.RELINK_MEDIA",
-                                   SemanticAction::Activate)
-            .hasValue());
+  CHECK(f.shell.dispatchController(f.controller, relinkId, SemanticAction::Activate).hasValue());
   CHECK(f.diagnosticActions == 1U);
+}
+
+TEST_CASE("a press aimed at the frame on screen does nothing once the diagnostics it was aimed at have changed") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto centre = [](const SemanticNode& node) {
+    return ui::Point{node.bounds.x + node.bounds.width * 0.5, node.bounds.y + node.bounds.height * 0.5};
+  };
+  // A frame as the application paints it: the controller's tree is rebuilt before the shell paints,
+  // and the shell's semantics after.
+  const auto appFrame = [](auto& f) {
+    f.controller.rebuildAccessibilityTree();
+    const auto painted = f.frame();
+    f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    return painted;
+  };
+  // A run of refused keys is a run of notices with one code, so only what each says tells them apart.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    const auto refuse = [&f](const std::string& what) {
+      f.controller.noteRefusal(core::Error{core::ErrorCode::Conflict, what});
+    };
+    for (int i = 0; i < 8; ++i) refuse("held-" + std::to_string(i));
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+    const auto& entries = f.controller.diagnosticPanel().entries();
+    const auto has = [&entries](std::string_view detail) {
+      return std::any_of(entries.begin(), entries.end(),
+                         [detail](const auto& entry) { return entry.diagnostic.detail == detail; });
+    };
+    CHECK(entries.size() == 8U);
+    if (entries.size() != 8U) return;
+    // The creator sees the button that dismisses held-1 in row 1, and aims at it.
+    const auto dismissHeldOne = native_ui::diagnosticActionId(
+        1U, entries[1U].diagnostic, authoring::DiagnosticAction::Dismiss);
+    const auto* button = f.node(dismissHeldOne);
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    // Before the press is handled a ninth refusal evicts the oldest notice. The count is the same,
+    // so nothing is laid out differently, and held-2 is the notice in row 1 now.
+    refuse("held-8");
+    CHECK(entries.size() == 8U);
+    CHECK(entries[1U].diagnostic.detail == "held-2");
+    // An assistive client asks for the tree meanwhile, so the controller lists the ids of the list as
+    // it is now: the control under the pointer is held-2's, and the press would dismiss it. It is
+    // refused instead, and dismisses nothing; neither does the release, nor the id the frame
+    // published, which is no longer on screen.
+    f.controller.rebuildAccessibilityTree();
+    const auto refused = f.shell.pointerDown(f.controller, press(aim));
+    CHECK(!refused);
+    if (!refused) CHECK(refused.error().code == core::ErrorCode::Conflict);
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(!f.shell.dispatchController(f.controller, dismissHeldOne, SemanticAction::Activate));
+    CHECK(entries.size() == 8U);
+    CHECK(has("held-1"));
+    CHECK(has("held-2"));
+    // The next frame shows the list as it is, and the same press acts on what is drawn under it.
+    CHECK(appFrame(f));
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(entries.size() == 7U);
+    CHECK(has("held-1"));
+    CHECK(!has("held-2"));
+  }
+  // The owner's own list changing under the pointer is the same: the host is not asked to act on an
+  // issue that is not the one the creator pressed.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    const authoring::Diagnostic media{.code = "MEDIA_MISSING",
+                                      .severity = authoring::DiagnosticSeverity::Warning,
+                                      .messageKey = "media.missing",
+                                      .actions = {authoring::DiagnosticAction::RelinkMedia}};
+    const authoring::Diagnostic bank{.code = "BANK_MISSING",
+                                     .severity = authoring::DiagnosticSeverity::Error,
+                                     .messageKey = "bank.missing",
+                                     .actions = {authoring::DiagnosticAction::RelinkVoicebank}};
+    f.controller.setDiagnostics({media, bank});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto& entries = f.controller.diagnosticPanel().entries();
+    CHECK(entries.size() == 2U);
+    if (entries.size() != 2U) return;
+    const auto primary = native_ui::presentDiagnostic(bank).primaryActionKinds;
+    CHECK(!primary.empty());
+    if (primary.empty()) return;
+    const auto* button =
+        f.node(native_ui::diagnosticActionId(1U, entries[1U].diagnostic, primary.front()));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    auto otherBank = bank;
+    otherBank.setDetail("another bank");
+    f.controller.setDiagnostics({media, otherBank});
+    CHECK(entries.size() == 2U);
+    f.controller.rebuildAccessibilityTree();
+    CHECK(!f.shell.pointerDown(f.controller, press(aim)));
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 0U);
+    CHECK(appFrame(f));
+    const auto pressed = f.shell.pointerDown(f.controller, press(aim));
+    if (!pressed) throw test::Failure{"press refused after the frame: " + pressed.error().message};
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(f.diagnosticActions == 1U);
+  }
+  // A repeat of a notice that is already listed changes its count and nothing about which issue it
+  // is, so a press that was aimed at it is not turned away.
+  {
+    OverlayFixture f;
+    CHECK(f.frame());
+    for (const auto* what : {"held-0", "held-1", "held-2"})
+      f.controller.noteRefusal(core::Error{core::ErrorCode::Conflict, what});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    const auto& entries = f.controller.diagnosticPanel().entries();
+    CHECK(entries.size() == 3U);
+    if (entries.size() != 3U) return;
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        1U, entries[1U].diagnostic, authoring::DiagnosticAction::Dismiss));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const auto aim = centre(*button);
+    f.controller.noteRefusal(core::Error{core::ErrorCode::Conflict, "held-1"});
+    CHECK(entries[1U].diagnostic.occurrenceCount == 2U);
+    CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+    CHECK(f.shell.pointerUp(f.controller, press(aim)).hasValue());
+    CHECK(entries.size() == 2U);
+    CHECK(std::none_of(entries.begin(), entries.end(),
+                       [](const auto& entry) { return entry.diagnostic.detail == "held-1"; }));
+  }
+}
+
+TEST_CASE("a second press on the popover's pager before the frame that shows the first is turned away") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const auto issue = [](std::string code, authoring::DiagnosticSeverity severity,
+                        std::vector<authoring::DiagnosticAction> actions) {
+    return authoring::Diagnostic{.code = std::move(code), .severity = severity,
+                                 .messageKey = "test", .actions = std::move(actions)};
+  };
+  const std::vector<authoring::Diagnostic> issues{
+      issue("MEDIA_MISSING", authoring::DiagnosticSeverity::Warning,
+            {authoring::DiagnosticAction::RelinkMedia, authoring::DiagnosticAction::CopyDiagnostic}),
+      issue("BANK_MISSING", authoring::DiagnosticSeverity::Critical,
+            {authoring::DiagnosticAction::RelinkVoicebank,
+             authoring::DiagnosticAction::ChooseVoicebank}),
+      issue("RENDER_FAILED", authoring::DiagnosticSeverity::Warning,
+            {authoring::DiagnosticAction::Retry, authoring::DiagnosticAction::CopyDiagnostic})};
+  const auto firstAction = [&issues](std::size_t i) {
+    return native_ui::diagnosticActionId(
+        i, issues[i], native_ui::presentDiagnostic(issues[i]).primaryActionKinds.front());
+  };
+  OverlayFixture f;
+  // At the minimum window one block fits on a page, so the pager is how the others are reached.
+  CHECK(f.frame(480.0, 320.0));
+  f.controller.setDiagnostics(issues);
+  f.shell.setDiagnosticsOpen(true);
+  CHECK(f.frame(480.0, 320.0));
+  const auto* next = f.node("shell.overlay.diagnostics.next");
+  CHECK(next != nullptr);
+  if (next == nullptr) return;
+  const ui::Point aim{next->bounds.x + 4.0, next->bounds.y + 4.0};
+  CHECK(f.node(firstAction(0U)) != nullptr);
+  // The first press moves the page. A second one aimed at the same frame, before the frame that
+  // shows the page it moved to, is turned away and moves nothing.
+  CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+  const auto second = f.shell.pointerDown(f.controller, press(aim));
+  CHECK(!second);
+  if (!second) CHECK(second.error().code == core::ErrorCode::Conflict);
+  CHECK(f.frame(480.0, 320.0));
+  CHECK(f.node(firstAction(1U)) != nullptr);
+  CHECK(f.node(firstAction(2U)) == nullptr);
+  // That frame is what the next press is aimed at.
+  CHECK(f.shell.pointerDown(f.controller, press(aim)).hasValue());
+  CHECK(f.frame(480.0, 320.0));
+  CHECK(f.node(firstAction(2U)) != nullptr);
+}
+
+TEST_CASE("what the popover last drew belongs to that presentation: a press does not outlive it") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const authoring::Diagnostic media{.code = "MEDIA_MISSING",
+                                    .severity = authoring::DiagnosticSeverity::Warning,
+                                    .messageKey = "media.missing",
+                                    .actions = {authoring::DiagnosticAction::RelinkMedia}};
+  const authoring::Diagnostic bank{.code = "BANK_MISSING",
+                                   .severity = authoring::DiagnosticSeverity::Error,
+                                   .messageKey = "bank.missing",
+                                   .actions = {authoring::DiagnosticAction::RelinkVoicebank}};
+  // The popover is closed and opened again, and the closing is seen by a frame or by a semantics
+  // refresh. The list changed in between, and a press arrives before the frame that draws it again:
+  // it is handled against the list as it is, and not turned away for what the earlier presentation drew.
+  for (const bool seenByFrame : {true, false}) {
+    OverlayFixture f;
+    CHECK(f.frame());
+    f.controller.setDiagnostics({media});
+    f.shell.setDiagnosticsOpen(true);
+    CHECK(f.frame());
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::Diagnostics);
+    f.shell.setDiagnosticsOpen(false);
+    if (seenByFrame) {
+      CHECK(f.frame());
+    } else {
+      f.controller.rebuildAccessibilityTree();
+      f.shell.rebuildSemantics(f.controller, f.controller.sceneState());
+    }
+    CHECK(f.shell.overlayKind(f.controller) == OverlayKind::None);
+    f.controller.setDiagnostics({media, bank});
+    f.shell.setDiagnosticsOpen(true);
+    const auto* button = f.node(native_ui::diagnosticActionId(
+        0U, media, authoring::DiagnosticAction::RelinkMedia));
+    CHECK(button != nullptr);
+    if (button == nullptr) return;
+    const ui::Point aim{button->bounds.x + button->bounds.width * 0.5,
+                        button->bounds.y + button->bounds.height * 0.5};
+    const auto pressed = f.shell.pointerDown(f.controller, press(aim));
+    if (!pressed) throw test::Failure{"press refused before the first frame: " + pressed.error().message};
+    CHECK(f.diagnosticActions == 1U);
+  }
 }
 
 TEST_CASE("the export progress strip is a status-bar segment with the controller's own cancel") {

@@ -1596,6 +1596,8 @@ bool SingShell::paint(RasterCanvas& canvas, NativeEditorController& controller,
     stageShown_ = false;
     const paint::LayerScope overlayLayer{*c, paint::Layer::Dynamic, "overlay"};
     paintOverlay(*c, t, controller, state, *overlay);
+  } else {
+    overlayDrawn_.reset();
   }
   // The kit tooltip is the topmost item, over overlays and menus, and a dynamic item of its own:
   // showing, moving or hiding it damages only its card. Its candidates are read against this
@@ -3857,6 +3859,10 @@ void SingShell::paintOverlay(Canvas2D& c, const DesignTokens& t,
                              const EditorSceneState& state, const ShellOverlay& overlay) const {
   const auto slot = overlaySlot(controller, state);
   const auto panel = paintShellOverlay(overlay, c, t, controller, state, layout_, slot);
+  // What a press that comes next has to find still there (see ShellOverlay::drawnContent).
+  overlayDrawn_.reset();
+  if (const auto drawn = overlay.drawnContent(controller, state); drawn.has_value())
+    overlayDrawn_ = DrawnOverlay{overlay.kind(), *drawn};
   // The menu shows which item holds the keyboard, since arrows and Tab walk it.
   if (overlay.kind() != OverlayKind::SingerMenu || panel.width <= 0.0 || semanticFocus_.empty())
     return;
@@ -4300,6 +4306,17 @@ core::Result<void> SingShell::shellPointerDown(NativeEditorController& controlle
     const auto state = controller.sceneState();
     const auto slot = overlaySlot(controller, state);
     const auto panel = overlay->panel(controller, state, layout_, slot);
+    // The press was aimed at the frame on screen. When what that frame drew has changed since (the
+    // diagnostics popover's issues, after an eviction or a dismissal), the control under the pointer
+    // is no longer the one that was drawn there, and the press would act on whatever moved into its
+    // place. It does nothing, and the next frame shows what is there.
+    if (overlayDrawn_.has_value() && overlayDrawn_->kind == overlay->kind()) {
+      if (const auto now = overlay->drawnContent(controller, state);
+          now.has_value() && *now != overlayDrawn_->content) {
+        repaint();
+        return core::failure(core::ErrorCode::Conflict, tr(Str::ThisElementIsNotOnScreen));
+      }
+    }
     if (event.button == PointerButton::Left) {
       // A plot inside the card (the dynamics inspector's curve) takes the press itself, in the
       // controller's own geometry, and may keep the pointer for a drag.
@@ -5581,6 +5598,7 @@ void SingShell::rebuildSemantics(const NativeEditorController& controller,
     presentedOverlay_ = OverlayKind::None;
     fieldOpenedOver_ = OverlayKind::None;
     overlayField_.clear();
+    overlayDrawn_.reset();
   }
   // A shell control that is no longer published (a knob after the rack collapsed to a rail) gives
   // up focus, and with it the keys; the editor's own focus is reported instead.

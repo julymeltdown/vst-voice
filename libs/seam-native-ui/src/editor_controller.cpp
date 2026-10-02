@@ -3,6 +3,7 @@
 
 #include "seam/native_ui/editor_frame_layout.hpp"
 #include "seam/native_ui/diagnostic_presentation.hpp"
+#include "seam/native_ui/diagnostic_ids.hpp"
 
 #include "seam/application/lyric_commands.hpp"
 #include "seam/application/note_commands.hpp"
@@ -2619,68 +2620,48 @@ core::Result<void> NativeEditorController::dispatchAccessibilityAction(
           repaint();
           return core::success();
         }
-        constexpr auto diagnosticActionPrefix =
-            std::string_view{"diagnostic-action."};
-        if (element.starts_with(diagnosticActionPrefix)) {
-          const auto indexStart = diagnosticActionPrefix.size();
-          const auto indexEnd = element.find('.', indexStart);
-          if (indexEnd == std::string_view::npos) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Diagnostic action accessibility id is malformed");
-          }
-          std::size_t index = 0U;
-          const auto parsed = std::from_chars(
-              element.data() + indexStart, element.data() + indexEnd, index);
-          if (parsed.ec != std::errc{} ||
-              parsed.ptr != element.data() + indexEnd ||
-              index >= diagnosticPanel_.entries().size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Diagnostic action accessibility index is invalid");
+        if (isDiagnosticElementId(element)) {
+          // An id names an issue by where it stood in the list and by what it is (see
+          // diagnostic_ids.hpp). The panel is rebuilt whenever the owner's list or the notices change,
+          // and an entry can go (an eviction, a dismissal, a notice that clears) while the ones after it
+          // move up. So an id made for an earlier list acts only while it still names the issue at that
+          // place; otherwise the click or the key was meant for something that is no longer there, and
+          // nothing else is touched.
+          const auto parsed = parseDiagnosticElementId(element);
+          if (!parsed) return core::Result<void>{parsed.error()};
+          const auto& named = parsed.value();
+          const auto& entries = diagnosticPanel_.entries();
+          if (named.index >= entries.size() ||
+              entries[named.index].diagnostic.issueIdentity() != named.identity) {
+            return core::failure(core::ErrorCode::Conflict,
+                                 "That diagnostic is no longer in the list");
           }
           if (requested == SemanticAction::SetFocus) return core::success();
+          const auto& actions = entries[named.index].diagnostic.actions;
+          if (named.action) {
+            if (requested != SemanticAction::Activate) {
+              return core::failure(core::ErrorCode::Unsupported,
+                                   "Diagnostic action only supports activation");
+            }
+            const auto matchingAction = std::find_if(
+                actions.begin(), actions.end(), [&named](const auto candidate) {
+                  return authoring::toString(candidate) == named.name;
+                });
+            if (matchingAction == actions.end()) {
+              return core::failure(core::ErrorCode::InvalidArgument,
+                                   "Diagnostic action is not available");
+            }
+            return activateDiagnostic(named.index, *matchingAction);
+          }
           if (requested != SemanticAction::Activate) {
             return core::failure(core::ErrorCode::Unsupported,
-                                 "Diagnostic action only supports activation");
+                                 "Accessibility action is not implemented");
           }
-          const auto actionName = element.substr(indexEnd + 1U);
-          const auto& actions = diagnosticPanel_.entries()[index].diagnostic.actions;
-          const auto matchingAction = std::find_if(
-              actions.begin(), actions.end(), [actionName](const auto candidate) {
-                return authoring::toString(candidate) == actionName;
-              });
-          if (matchingAction == actions.end()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Diagnostic action is not available");
-          }
-          return activateDiagnostic(index, *matchingAction);
-        }
-        if (element.rfind("diagnostic.", 0U) == 0U &&
-            requested == SemanticAction::SetFocus) {
-          return core::success();
-        }
-        if (element.rfind("diagnostic.", 0U) == 0U &&
-            requested == SemanticAction::Activate) {
-          const auto indexStart = std::string_view{"diagnostic."}.size();
-          const auto indexEnd = element.find('.', indexStart);
-          if (indexEnd == std::string_view::npos) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Diagnostic accessibility id is malformed");
-          }
-          std::size_t index = 0U;
-          const auto parsed = std::from_chars(
-              element.data() + indexStart, element.data() + indexEnd, index);
-          if (parsed.ec != std::errc{} || parsed.ptr != element.data() + indexEnd ||
-              index >= diagnosticPanel_.entries().size()) {
-            return core::failure(core::ErrorCode::InvalidArgument,
-                                 "Diagnostic accessibility index is invalid");
-          }
-          const auto& actions =
-              diagnosticPanel_.entries()[index].diagnostic.actions;
           if (actions.empty()) {
             return core::failure(core::ErrorCode::Unsupported,
                                  "Diagnostic has no recovery action");
           }
-          return activateDiagnostic(index, actions.front());
+          return activateDiagnostic(named.index, actions.front());
         }
         if (requested == SemanticAction::SetFocus) {
           return core::success();
