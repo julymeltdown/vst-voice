@@ -8,6 +8,16 @@
 
 namespace seam::native_ui {
 namespace {
+// The review detail rows are read rather than decoration, so they are drawn at the same 12 point as
+// the rest of the window rather than 11, and their pitch follows the size they are drawn at. Every
+// detail line this view produces fits one line of the widest supported window at 12 point (the longest
+// measured here is 599 points in a 672 point row), so the pitch is one line plus a gap.
+constexpr double kSampleReviewText = 12.0;
+constexpr double kSampleReviewLine = 17.0;
+constexpr double kSampleReviewPitch = 22.0;
+// Where the first detail row is drawn, and the gap left below the last one for the status line.
+constexpr double kSampleReviewDetailTop = 302.0;
+constexpr double kSampleReviewStatusInset = 28.0;
 std::string_view sourceQualificationLabel(const voicebank_production::VoicebankProductionProject& project) {
   return voicebank_production::selectedStrategyReady(project)
       ? "SOURCE QUALIFICATION READY" : "SOURCE QUALIFICATION PENDING";
@@ -136,7 +146,15 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
 }
 
 std::size_t studioSampleReviewVisibleLines(double height) noexcept {
-  return static_cast<std::size_t>(std::max(1.0, (height - 344.0) / 18.0));
+  // The detail rows are drawn on a kSampleReviewLine pitch and start at kSampleReviewDetailTop; the
+  // count of rows that fit is taken in that pitch rather than in the 18 points the rows were on, so
+  // the number reported is the number drawn. The status line below them is the longest line in this
+  // view and is given two lines of its own, so the rows stop above both of them rather than the last
+  // one running into the status.
+  return static_cast<std::size_t>(
+      std::max(1.0, (height - kSampleReviewStatusInset - kSampleReviewLine * 2.0 -
+                     kSampleReviewDetailTop) /
+                      kSampleReviewPitch));
 }
 
 std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioController& controller, double width) {
@@ -243,15 +261,15 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
   canvas.fillRect({0.0, 0.0, width, height}, theme.background);
   canvas.drawText({24.0, 16.0, width - 406.0, 20.0}, "UNIT REVIEW / ENGINEERING ONLY", theme.primaryText, 14.0);
   canvas.drawText({24.0, 40.0, width - 406.0, 16.0},
-      "UNIT REVIEWER: " + (controller.sampleReviewerId().empty() ? std::string{"NONE SELECTED"} : controller.sampleReviewerId()), theme.accent, 11.0);
+      "UNIT REVIEWER: " + (controller.sampleReviewerId().empty() ? std::string{"NONE SELECTED"} : controller.sampleReviewerId()), theme.accent, kSampleReviewText);
   for (const auto& control : studioSampleReviewControls(controller, width)) {
     canvas.fillRect(control.bounds, control.enabled ? theme.selected : theme.panelAlternate);
     canvas.drawText({control.bounds.x + 4.0, control.bounds.y + 4.0, control.bounds.width - 8.0, control.bounds.height - 8.0},
-        control.label, control.enabled ? theme.primaryText : theme.secondaryText, 10.0);
+        control.label, control.enabled ? theme.primaryText : theme.secondaryText, kSampleReviewText);
   }
   canvas.drawText({24.0, 186.0, width - 48.0, 18.0},
       "UNIT " + std::to_string(controller.selectableUnitCount() == 0U ? 0U : controller.selectedIndex() + 1U) + " / " + std::to_string(controller.selectableUnitCount()) +
-      " | N DRAFT | O OPEN | C CAPTURE | R REVIEWER | A/X REVIEW | I/D SOURCE | E PUBLISH | B/P/Y BANK | SPACE PLAY", theme.secondaryText, 10.0);
+      " | N DRAFT | O OPEN | C CAPTURE | R REVIEWER | A/X REVIEW | I/D SOURCE | E PUBLISH | B/P/Y BANK | SPACE PLAY", theme.secondaryText, kSampleReviewText);
   const ui::Rect wave{24.0, 212.0, width - 48.0, 54.0};
   canvas.fillRect(wave, theme.panelAlternate);
   if (const auto& inspection = controller.sampleReviewInspection(); inspection && !inspection->peaks.empty()) {
@@ -282,10 +300,19 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
   const auto count = std::min(studioSampleReviewVisibleLines(height), lines.size() - first);
   canvas.drawText({24.0, 274.0, width - 48.0, 16.0},
       "REVIEW DATA " + std::to_string(first + 1U) + "-" + std::to_string(first + count) + " / " + std::to_string(lines.size()) +
-          " | LEFT/RIGHT PAGE | UP/DOWN UNIT", theme.secondaryText, 10.0);
+          " | LEFT/RIGHT PAGE | UP/DOWN UNIT", theme.secondaryText, kSampleReviewText);
   for (std::size_t i = 0U; i < count; ++i)
-    canvas.drawText({24.0, 302.0 + static_cast<double>(i) * 18.0, width - 48.0, 16.0}, lines[first + i], theme.primaryText, 11.0);
-  canvas.drawText({24.0, height - 28.0, width - 48.0, 18.0}, interactionStatus.empty() ? controller.sampleReviewStatus() : interactionStatus, theme.accent, 11.0);
+    canvas.drawTextWrapped(
+        {24.0, kSampleReviewDetailTop + static_cast<double>(i) * kSampleReviewPitch, width - 48.0,
+         kSampleReviewLine},
+        lines[first + i], theme.primaryText, kSampleReviewText, kSampleReviewLine);
+  canvas.drawTextWrapped(
+      // The status is the longest line in this view (a reviewer id and a qualification sentence), so
+      // it is given two lines of room above the bottom edge rather than the one its first line fits in.
+      {24.0, height - kSampleReviewStatusInset - kSampleReviewLine, width - 48.0,
+       kSampleReviewLine * 2.0},
+      interactionStatus.empty() ? controller.sampleReviewStatus() : interactionStatus, theme.accent,
+      kSampleReviewText, kSampleReviewLine);
 }
 
 void paintProductionAssignmentRail(
