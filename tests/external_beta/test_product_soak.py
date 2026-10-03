@@ -3,10 +3,17 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
+from tools.external_beta.soak_collector import (
+    _process_rss_bytes,
+    build_soak_record,
+    collect_soak_samples,
+    summarise,
+)
 from tools.external_beta.product_soak import DEFAULT_THRESHOLDS, REQUIRED_FAULT_IDS, validate_product_soak
 
 
@@ -85,6 +92,85 @@ def _record(root: Path, duration: int = 1800, platform: str = "macos") -> dict:
         "endedAt": "2026-08-21T12:00:00Z",
     }
 
+
+class ProductSoakCollectorTests(unittest.TestCase):
+    """The collector must produce a soak series the real validator accepts.
+
+    A soak record asserts memory and latency behaviour over time. Writing one by hand proves
+    nothing about a process, so this case samples a live process on a real clock and feeds the
+    result into validate_product_soak.
+    """
+
+    def test_measured_samples_satisfy_the_validator_they_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            template = _record(root)
+            samples = collect_soak_samples(os.getpid(), 0.2, 0.05)
+            self.assertGreaterEqual(len(samples), 2)
+            elapsed = [sample['elapsedSeconds'] for sample in samples]
+            self.assertEqual(elapsed, sorted(elapsed))
+            self.assertGreaterEqual(elapsed[-1], 0.2)
+            self.assertTrue(all(sample['rssBytes'] > 0 for sample in samples))
+            self.assertTrue(all(sample['threads'] >= 1 for sample in samples))
+            record = build_soak_record(
+                samples,
+                record_id=template['recordId'],
+                phase=template['phase'],
+                duration_seconds=template['durationSeconds'],
+                workload_id=template['workloadId'],
+                workload_sha256=template['workloadSha256'],
+                machine_profile_id=template['machineProfileId'],
+                machine_profile_sha256=template['machineProfileSha256'],
+                thresholds=template['thresholds'],
+                started_at=template['startedAt'],
+                ended_at=template['endedAt'],
+                faults=template['faults'],
+            )
+            record['status'] = 'PASS'
+            for key in ('appIdentity', 'bankIdentity', 'projectIdentity'):
+                record[key] = template[key]
+            result = validate_product_soak(record, root)
+            self.assertEqual([e for e in result.errors if 'samples' in e], [])
+            self.assertEqual([e for e in result.errors if 'summary' in e], [])
+
+    def test_rss_is_read_from_the_live_process_not_a_constant(self) -> None:
+        # A constant placeholder satisfies 'rssBytes > 0', so the value is compared against
+        # what the operating system reports for this very process instead.
+        measured = _process_rss_bytes(os.getpid())
+        self.assertGreater(measured, 1_000_000)
+        samples = collect_soak_samples(os.getpid(), 0.1, 0.05)
+        observed = {sample['rssBytes'] for sample in samples}
+        self.assertTrue(observed)
+        for value in observed:
+            # Within an order of magnitude of the live reading: the sampler and this
+            # assertion observe the same process moments apart.
+            self.assertGreater(value, measured // 4)
+            self.assertLess(value, measured * 4)
+
+    def test_a_growing_process_shows_growth(self) -> None:
+        # Holding real bytes across a reading must move the measured RSS, which a constant
+        # reading could never do. The ballast is retained between the two readings and every
+        # page is written, so the pages are resident rather than merely reserved.
+        ballast = [bytes(index % 251 for index in range(4096)) * 256 for _ in range(96)]
+        resident = sum(len(block) for block in ballast)
+        self.assertGreater(resident, 32 * 1024 * 1024)
+        before = _process_rss_bytes(os.getpid())
+        ballast.extend(bytes(index % 241 for index in range(4096)) * 256 for _ in range(96))
+        grown = sum(len(block) for block in ballast)
+        after = _process_rss_bytes(os.getpid())
+        self.assertGreater(grown, resident)
+        self.assertGreater(after, before)
+
+    def test_the_summary_is_derived_not_asserted(self) -> None:
+        samples = collect_soak_samples(os.getpid(), 0.1, 0.05)
+        summary = summarise(samples)
+        self.assertEqual(summary['maxRssBytes'], max(s['rssBytes'] for s in samples))
+        self.assertEqual(summary['rssGrowthBytes'], samples[-1]['rssBytes'] - samples[0]['rssBytes'])
+        self.assertEqual(summary['handleGrowth'], samples[-1]['handles'] - samples[0]['handles'])
+
+    def test_the_series_covers_the_declared_duration(self) -> None:
+        samples = collect_soak_samples(os.getpid(), 0.15, 0.05)
+        self.assertGreaterEqual(samples[-1]['elapsedSeconds'], 0.15)
 
 class ProductSoakTests(unittest.TestCase):
     def test_30_minute_and_120_minute_records_pass_on_each_target_os(self) -> None:

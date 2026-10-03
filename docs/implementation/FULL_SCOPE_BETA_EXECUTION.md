@@ -6463,3 +6463,42 @@ survives almost always means the assertion was decorative.
 consumes this collector's output. `tests/external_beta` 205 passed + 197 subtests. No install was
 performed, no product was driven, and no target-machine evidence exists. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — The second External Beta validator now has a collector: product soak evidence is
+sampled from a live process rather than written by hand. (SEAM-BETA-P1-06, second of five.)
+**Why this one matters more than the install collector.** `validate_product_soak` demands a
+strictly increasing series with fourteen fields per sample, a summary that must reconcile against
+that series, and coverage of the declared duration. It is a strong check on a document that
+described nothing: a hand-written "30 minute soak" is two invented samples. `soak_collector.py`
+samples a real process on a real clock.
+**What is measured, and by whom.** RSS, handle count, thread count and cumulative CPU seconds all
+come from the operating system for the **target** process (`ps`, `/proc`, `lsof`). CPU percent is
+derived across the sampling interval from that cumulative figure, with the first sample reporting
+zero because it has no interval rather than inventing a rate. Audio counters (xruns, underflows,
+queue depth, cache stalls) are read from the product's own statistics surface when one is supplied
+and reported as zero when it is not — inventing plausible audio numbers would be worse than
+admitting the channel was absent.
+**A real bug this caught, which a validator never would have.** The first implementation used
+`time.process_time()` for CPU. That measures the **collector's** own CPU while claiming to describe
+the soaked application — it reported 835% for an idle process. The correct target-process reading is
+2.2% at a realistic interval. This is exactly the class of defect the collector exists to make
+impossible: a number that is real, non-zero, and about the wrong thing.
+**The summary is derived, so it cannot flatter the series.** `summarise` recomputes every field the
+validator reconciles, including `dataLoss`, which is derived from measured underflow/xrun counts
+rather than asserted. A summary that disagreed with its own samples now fails the round trip.
+**The strongest test is the round trip**, as with the install collector: sample a live process, build
+the record, feed it to `validate_product_soak`, and assert no sample or summary errors.
+**Two mutations, and both exposed weak tests rather than strong ones.** Replacing measured RSS with a
+constant **survived** the first version, because `rssBytes > 0` is satisfied by 1024. The test now
+compares sampled RSS against what the OS reports for this very process, and separately asserts that
+holding 32 MB+ of written ballast across a reading moves the figure. That growth case was itself
+**flaky when first written** — it allocated nothing between the two readings, so it passed or failed
+by luck; five consecutive runs showed 4 failures. It was rewritten to allocate retained, page-written
+ballast between readings and is now stable across repeated runs. A flaky test that appears to pass is
+worse than no test, because it will be trusted.
+**Scope, stated plainly.** Two of five validators now collect. `host_evidence`,
+`standalone_evidence` and `cohort_gate` still produce nothing, and no gate yet consumes either
+collector's output. **No soak of the shipped product was run**: these cases sample the collector's
+own process over sub-second intervals, which proves the mechanism, not 30- or 120-minute product
+stability. `tests/external_beta` 210 passed + 197 subtests. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
