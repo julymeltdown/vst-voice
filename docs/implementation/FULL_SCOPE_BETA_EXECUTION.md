@@ -5069,6 +5069,56 @@ on a real recording session for the sample route, which this does not touch. No
 DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
 
+2026-10-03 — An authored Replace pitch curve measured suppressing the automatic
+melisma glide in the audio, which is the precedence rule between a creator's
+curve and an automatic transition (R3's M2.2 pitch/timing axis, closing the second
+limit the entry above named).
+**Why this case.** The entry above measures the automatic portamento the compiler
+applies at a shared-lyric join. That portamento is deliberately conditional: an
+authored pitch curve in Replace mode owns pitch outright, and keeping the glide
+would apply the base-note transition a second time on top of what the creator
+drew. The compiler states the reasoning at `performance_compiler.cpp:536` through
+539 and implements it as `if (!manualPitchReplaces && ...)`. A precedence rule
+between an authored curve and an automatic transition is exactly the kind of rule
+that can be right in the compiled schedule and wrong in the audio, and it had no
+acoustic evidence at all.
+**Evidence, measured not asserted.** Three legato notes sharing one lyric token at
+MIDI 60, 64 and 68, with an authored Pitch lane in Replace mode holding a constant
+0 cents over the region. Without the curve the automatic glide is plainly present:
+the first 10 ms after each join reads **+95 then +199, +315, +389** against a
+400-cent interval, and **+443 then +541, +663, +789** at the second join, climbing
+monotonically in both. With the curve the same score reads **+405, +409, +402,
++402** and **+761, +804, +812, +809**: flat from the very first window, with no ramp
+whatsoever. Both arms settle on their own pitch, so the difference is the ramp and
+not a note that failed to reach its target.
+**Mutation-checked in both directions, which the previous entry could not claim.**
+Removing `!manualPitchReplaces` from the guard, so the glide survives under an
+authored curve, fails at the first-window assertion. Suppressing the glide
+entirely, so the automatic arm never ramps, fails at the monotonicity assertion.
+The two mutations fail at different lines, so the case distinguishes "the curve
+is ignored" from "the glide never existed" rather than only detecting that
+something changed.
+**A parallel-run flake recorded rather than hidden.** One full Release CTest run
+reported `seam_tests` failing while the focused suite passed. `seam_tests` passes
+standalone and a clean full re-run is 224 of 224, so the failure is interference
+under `-j 8` on this machine rather than a regression from this unit, which
+touches only `tests/test_performance_snapshot.cpp`. It is recorded because a single
+green run would have hidden it and a reader auditing the suite should know it
+happened.
+Release `seam_performance_snapshot_tests` 65 of 65, full Release CTest 224 of 224
+on a clean run, and `tests/external_beta` plus `tests/production` 321 passed with
+315 subtests.
+**What this is and is not.** It shows an authored Replace pitch curve takes
+precedence over the automatic melisma glide in the rendered audio, which is the
+precedence the compiler documents. It is one constant curve over one region: it
+does not cover a drawn curve whose shape differs from the score, a PitchOffset
+curve, which the same guard deliberately lets the glide survive under, or what
+happens where an owned span covers only part of a melisma so the boundary between
+authored and automatic pitch falls mid-phrase. Those remain unmeasured. No
+listening evidence exists. U42 remains externally blocked on a real recording
+session for the sample route, which this does not touch. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.
+
 2026-10-03 — A melisma's carried vowel measured gliding from the previous note's
 pitch, which is the portamento a voiceoid needs at a note join and the one axis
 the melisma cases above leave open (R3's M2.2 melisma axis, closing the limit the

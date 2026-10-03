@@ -1086,6 +1086,137 @@ TEST_CASE("a melisma's carried vowel glides from the previous note's pitch") {
   // not claim otherwise.
 }
 
+// The melisma glide case above measures the automatic portamento the compiler applies at a
+// shared-lyric join. That portamento is deliberately conditional: an authored pitch curve in
+// Replace mode owns pitch outright, and keeping the glide would apply the base-note transition a
+// second time on top of what the creator drew (`performance_compiler.cpp:536` through 539). The
+// precedence between an authored curve and an automatic transition is exactly the kind of rule that
+// can be correct in the schedule and wrong in the audio, and it had no acoustic evidence.
+//
+// The claim is that Replace wins outright: with the curve present the note is on the authored pitch
+// in its FIRST window after the join, with no ramp at all, while the same score without the curve
+// glides. Written from a probe; the measured values are in the assertions below.
+TEST_CASE("an authored Replace pitch curve suppresses the automatic melisma glide") {
+  using namespace seam;
+  using namespace seam::domain;
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::int64_t kDuration = 960;
+  struct Join final {
+    bool replaced;
+    std::vector<double> window;
+    double settled{0.0};
+  };
+  std::vector<Join> joins;
+  for (const bool replace : {false, true}) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    auto [lyric, first] = f.factory.makeNote(time::Tick{480}, time::Tick{kDuration}, 60U,
+        U"a", domain::Language::Japanese);
+    first.articulation = NoteArticulation::Legato;
+    first.vibrato.enabled = false;
+    first.phoneticHint = std::optional<std::string>{"a"};
+    region->lyrics.push_back(lyric);
+    region->notes.push_back(first);
+    for (std::size_t index = 1U; index < 3U; ++index) {
+      auto [unused, note] = f.factory.makeNote(
+          time::Tick{480 + kDuration * static_cast<std::int64_t>(index)}, time::Tick{kDuration},
+          static_cast<std::uint8_t>(60U + index * 4U), U"a", domain::Language::Japanese);
+      (void)unused;
+      note.lyricTokenId = first.lyricTokenId;
+      note.articulation = NoteArticulation::Legato;
+      note.vibrato.enabled = false;
+      note.phoneticHint = std::optional<std::string>{"a"};
+      region->notes.push_back(note);
+    }
+    if (replace) {
+      // An authored pitch curve in Replace mode over the whole region. It holds a constant value, so
+      // a correct renderer sings every note at exactly that pitch and the automatic base-note glide
+      // must not also be applied on top of it.
+      region->performance.ownership = {
+          {PerformanceChannel::Pitch, PerformanceTimeRange{time::Tick{0}, time::Tick{9600}},
+           ManualPerformanceMode::Replace, {}}};
+      const auto pronunciation = phonemizer::resolveJapanesePronunciation(*region);
+      CHECK(pronunciation);
+      region->performance.takes = {{.id = "pitch", .sourceRegionId = region->id,
+          .capturedRevision = region->performance.revision,
+          .resource = {SingerResourceKind::Neural, "fixture", "1", std::string(64U, 'a')},
+          .pronunciation = pronunciation.value().identity,
+          .generatorId = "fixture", .generatorVersion = "1",
+          .range = {time::Tick{0}, time::Tick{9600}},
+          .lanes = {{PerformanceChannel::Pitch, {{time::Tick{0}, 0.0}}}}}};
+      CHECK(f.project.validate());
+      const auto session = application::EditorSession{f.project};
+      (void)session;
+    }
+    voice_design::VoiceRecipe recipe; recipe.id = "replace-pitch";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"replace snapshot: "} + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"replace render: "} + rendered.error().message};
+    const auto& audio = rendered.value().rendered.audio;
+    const auto cents = [&](std::size_t from, std::size_t count, double expectMidi) {
+      const auto frames = voicebank::analyzePitch(
+          std::span<const float>{audio.samples.data() + from, count}, kRate);
+      if (!frames || frames.value().empty()) return 9999.0;
+      const auto measured = voicebank::medianVoicedPitch(frames.value());
+      if (measured <= 0.0) return 9999.0;
+      return 1200.0 * std::log2(measured / (440.0 * std::pow(2.0, (expectMidi - 69.0) / 12.0)));
+    };
+    for (std::size_t index = 0U; index + 1U < rendered.value().proceduralMarkers.size(); ++index) {
+      const auto join = static_cast<std::size_t>(
+          rendered.value().proceduralMarkers[index + 1U].ownedSpan.start - audio.startFrame);
+      if (join < 9600U || join + 9600U > audio.samples.size()) continue;
+      Join record{.replaced = replace};
+      // The authored curve holds a constant 0 cents, so every note is measured against its own MIDI
+      // key: the Replace arm must read flat at each note's own pitch with no ramp at all.
+      const auto noteMidi = 60.0 + static_cast<double>(index + 1U) * 4.0;
+      for (int step = 0; step < 4; ++step)
+        record.window.push_back(cents(join + static_cast<std::size_t>(step) * 240U, 480U, noteMidi));
+      record.settled = cents(join + 9600U, 4800U, noteMidi);
+      joins.push_back(std::move(record));
+    }
+  }
+  const auto arm = [&](bool replaced) {
+    std::vector<const Join*> found;
+    for (const auto& join : joins) if (join.replaced == replaced) found.push_back(&join);
+    return found;
+  };
+  const auto automatic = arm(false);
+  const auto authored = arm(true);
+  CHECK(automatic.size() == 2U);
+  CHECK(authored.size() == 2U);
+  // 1. Without an authored curve the automatic glide is present: the first window is far below the
+  // note's own pitch and the reading climbs across the window toward it. Measured +95 then +199,
+  // +315, +389 against a 400-cent interval, and +443 then +541, +663, +789.
+  for (const auto* join : automatic) {
+    CHECK(join->window.size() == 4U);
+    CHECK(join->window.front() < 200.0);
+    for (std::size_t index = 1U; index < join->window.size(); ++index)
+      CHECK(join->window[index] > join->window[index - 1U]);
+  }
+  // 2. With an authored Replace curve there is no ramp at all: the note is on the authored pitch in
+  // the first window and stays there. Measured +405, +409, +402, +402 and +761, +804, +812, +809,
+  // each flat from the first sample. This is the precedence the rule states.
+  for (const auto* join : authored) {
+    CHECK(join->window.size() == 4U);
+    CHECK(std::abs(join->window.front()) < 100.0);
+    for (const auto reading : join->window) CHECK(std::abs(reading) < 100.0);
+    CHECK(std::abs(join->settled) < 100.0);
+  }
+  // 3. Every note still lands on its own pitch in both arms, so the difference is the ramp and not a
+  // note that failed to reach its target.
+  for (const auto* join : automatic) CHECK(std::abs(join->settled) < 100.0);
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;
