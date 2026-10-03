@@ -2308,7 +2308,9 @@ public:
         const auto fill = control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255};
         canvas.fillRect(control.bounds, fill);
         canvas.drawText({control.bounds.x+4.0,control.bounds.y+3.0,control.bounds.width-8.0,14.0},
-            control.label, control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{125,118,129,255},
+            seam::native_ui::studioControlPaintLabel(canvas, control,
+                seam::native_ui::voicebankStudioTypeScale().label),
+            control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{125,118,129,255},
             seam::native_ui::voicebankStudioTypeScale().label);
       }
       if (controller_.proceduralImportBusy()) repaint();

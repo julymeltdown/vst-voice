@@ -130,51 +130,64 @@ std::vector<StudioSampleReviewControl> studioSampleReviewControls(
   const bool captured = inspection && controller.validateSampleReviewContext(inspection->context);
   const auto buttonWidth = std::max(1.0, (width - 48.0) / 6.0);
   std::vector<StudioSampleReviewControl> controls;
-  const auto add = [&](const char* id, const char* label, bool enabled) {
+  // Every button below carries the wording a person reads and, where the button can be too narrow for
+  // it at the narrowest window, a shorter wording to paint instead. The "..." that several of these
+  // labels used to end in was not truncation: it was three literal characters in the label, painted
+  // into a button that had 71 to 80 points of unused width beside it, so the creator was shown an
+  // ellipsis on a button whose text was not shortened at all. The full wording is still the
+  // accessible name and the semantic tree, so nothing about what a control does changed here.
+  const auto add = [&](const char* id, const char* label, const char* compact, bool enabled) {
     const auto index = controls.size();
     controls.push_back({id, label, {24.0 + static_cast<double>(index % 6U) * buttonWidth,
-        66.0 + static_cast<double>(index / 6U) * 30.0, buttonWidth - 4.0, 24.0}, enabled});
+        66.0 + static_cast<double>(index / 6U) * 30.0, buttonWidth - 4.0, 24.0}, enabled, compact});
   };
-  add("capture", "CAPTURE UNIT", available && selected);
-  add("reviewer", "CHOOSE REVIEWER", available && captured && !inspection->reviewers.empty());
-  add("accept", "ACCEPT...", available && captured && !controller.sampleReviewerId().empty());
-  add("reject", "REJECT...", available && captured && !controller.sampleReviewerId().empty());
-  add("publish", "PUBLISH NEW...", available && selected);
-  add("back", "BACK TO EDITOR", available);
-  add("previous-unit", "PREVIOUS UNIT", available && controller.selectedIndex() > 0U);
-  add("next-unit", "NEXT UNIT", available && controller.selectedIndex() + 1U < controller.selectableUnitCount());
-  add("previous-page", "PREVIOUS DATA", true);
-  add("next-page", "MORE DATA", true);
-  add("play", "PLAY / STOP", available && captured && inspection->audio);
-  add("cancel", "CANCEL WORK", !available);
-  controls.push_back({"open-manifest", "OPEN MANIFEST...", {width - 190.0, 16.0, 166.0, 22.0}, available && controller.productionProject() && !controller.dirty()});
+  add("capture", "CAPTURE UNIT", "CAPTURE", available && selected);
+  add("reviewer", "CHOOSE REVIEWER", "REVIEWER", available && captured && !inspection->reviewers.empty());
+  add("accept", "ACCEPT", "OK", available && captured && !controller.sampleReviewerId().empty());
+  add("reject", "REJECT", "NO", available && captured && !controller.sampleReviewerId().empty());
+  add("publish", "PUBLISH NEW", "PUBLISH", available && selected);
+  add("back", "BACK TO EDITOR", "BACK", available);
+  add("previous-unit", "PREVIOUS UNIT", "PREV UNIT", available && controller.selectedIndex() > 0U);
+  add("next-unit", "NEXT UNIT", "NEXT", available && controller.selectedIndex() + 1U < controller.selectableUnitCount());
+  add("previous-page", "PREVIOUS DATA", "PREV DATA", true);
+  add("next-page", "MORE DATA", "MORE", true);
+  add("play", "PLAY / STOP", "PLAY", available && captured && inspection->audio);
+  add("cancel", "CANCEL WORK", "CANCEL", !available);
+  controls.push_back({"open-manifest", "OPEN MANIFEST", {width - 190.0, 16.0, 166.0, 22.0},
+      available && controller.productionProject() && !controller.dirty(), "OPEN BANK"});
   const auto* project = controller.productionProject();
   const bool hasTake = project && std::any_of(project->unitAssignments.begin(), project->unitAssignments.end(),
       [](const auto& assignment) { return !assignment.takeId.empty(); });
-  controls.push_back({"create-draft", "CREATE DRAFT...", {width - 366.0, 16.0, 168.0, 22.0}, available && hasTake && !controller.dirty()});
-  controls.push_back({"source-evidence", "SOURCE EVIDENCE...", {width - 366.0, 40.0, 168.0, 22.0}, available && hasTake});
+  controls.push_back({"create-draft", "CREATE DRAFT", {width - 366.0, 16.0, 168.0, 22.0},
+      available && hasTake && !controller.dirty(), "DRAFT"});
+  controls.push_back({"source-evidence", "SOURCE EVIDENCE", {width - 366.0, 40.0, 168.0, 22.0},
+      available && hasTake, "EVIDENCE"});
   const auto& source = controller.sourceQualityInspection();
   const bool sourceCaptured = source && controller.validateSampleReviewContext(source->context);
-  controls.push_back({"source-decision", "ASSESS SOURCE...", {width - 190.0, 40.0, 166.0, 22.0}, available && sourceCaptured && !source->reviewers.empty()});
+  controls.push_back({"source-decision", "ASSESS SOURCE", {width - 190.0, 40.0, 166.0, 22.0},
+      available && sourceCaptured && !source->reviewers.empty(), "ASSESS"});
   // Sources and the people who review them are declared on one row, before any unit review.
   const auto third = std::max(1.0, (width - 56.0) / 3.0);
-  controls.push_back({"source-license", "L CAPTURE SOURCE LICENSE...", {24.0,126.0,third,24.0}, available && project && project->schemaVersion>=2});
+  controls.push_back({"source-license", "L CAPTURE SOURCE LICENSE", {24.0,126.0,third,24.0},
+      available && project && project->schemaVersion>=2, "L LICENSE"});
   const auto& registration = controller.sourceRegistrationInspection();
-  controls.push_back({"source-register", "S REGISTER NEW SOURCE...", {28.0+third,126.0,third,24.0},
-      available && registration && controller.validateSampleReviewContext(registration->context)});
-  controls.push_back({"register-reviewer", "V REGISTER REVIEWER...", {32.0+2.0*third,126.0,third,24.0},
-      available && project != nullptr});
+  controls.push_back({"source-register", "S REGISTER NEW SOURCE", {28.0+third,126.0,third,24.0},
+      available && registration && controller.validateSampleReviewContext(registration->context),
+      "S SOURCE"});
+  controls.push_back({"register-reviewer", "V REGISTER REVIEWER", {32.0+2.0*third,126.0,third,24.0},
+      available && project != nullptr, "V REVIEWER"});
   // The signed-bank route is deliberately its own row: signing and installing reviewed material is a
   // separate decision from publishing it, so it is never implied by E PUBLISH alone.
   const auto* published = controller.publishedSampleCandidate() ? &*controller.publishedSampleCandidate() : nullptr;
   const auto* signedBank = controller.publishedSampleBank() ? &*controller.publishedSampleBank() : nullptr;
   const auto* installedBank = controller.installedSampleBank() ? &*controller.installedSampleBank() : nullptr;
   const auto quarter = std::max(1.0, (width - 60.0) / 4.0);
-  controls.push_back({"sign-bank", "B SIGN BANK...", {24.0,154.0,quarter,24.0}, available && published != nullptr});
-  controls.push_back({"install-bank", "P INSTALL BANK...", {28.0+quarter,154.0,quarter,24.0},
-      available && signedBank != nullptr && installedBank == nullptr});
-  controls.push_back({"open-bank-in-song-editor", "Y NEW SONG...", {32.0+2.0*quarter,154.0,quarter,24.0},
-      available && installedBank != nullptr});
+  controls.push_back({"sign-bank", "B SIGN BANK", {24.0,154.0,quarter,24.0},
+      available && published != nullptr, "B SIGN"});
+  controls.push_back({"install-bank", "P INSTALL BANK", {28.0+quarter,154.0,quarter,24.0},
+      available && signedBank != nullptr && installedBank == nullptr, "P INSTALL"});
+  controls.push_back({"open-bank-in-song-editor", "Y NEW SONG", {32.0+2.0*quarter,154.0,quarter,24.0},
+      available && installedBank != nullptr, "Y SONG"});
   return controls;
 }
 
@@ -298,7 +311,11 @@ void paintStudioSampleReview(RasterCanvas& canvas, const VoicebankStudioControll
   for (const auto& control : studioSampleReviewControls(controller, width)) {
     canvas.fillRect(control.bounds, control.enabled ? theme.selected : theme.panelAlternate);
     canvas.drawText({control.bounds.x + 4.0, control.bounds.y + 4.0, control.bounds.width - 8.0, control.bounds.height - 8.0},
-        control.label, control.enabled ? theme.primaryText : theme.secondaryText, kSampleReviewText);
+        // The painted wording is chosen against the width this button actually has, so a label too wide
+        // for it is shortened rather than clipped. This painter used `control.label` directly, which
+        // meant the compact wording every control carries was never consulted here at all.
+        studioControlPaintLabel(canvas, control, kSampleReviewText),
+        control.enabled ? theme.primaryText : theme.secondaryText, kSampleReviewText);
   }
   canvas.drawText({24.0, 186.0, width - 48.0, 18.0},
       "UNIT " + std::to_string(controller.selectableUnitCount() == 0U ? 0U : controller.selectedIndex() + 1U) + " / " + std::to_string(controller.selectableUnitCount()) +
@@ -541,8 +558,11 @@ std::vector<StudioSampleReviewControl> studioGenerationQueueControls(
     if (detail != records.end() && !detail->terminal) {
       controls.push_back({"request-detail-resume:" + detail->request.requestId, "Verify & resume",
           {44.0 + third, 80.0, third - 4.0, 22.0}, !busy});
-      controls.push_back({"request-detail-locate:" + detail->request.requestId, "Locate definition...",
-          {44.0 + 2.0 * third, 80.0, third - 4.0, 22.0}, !busy});
+      // Like the review buttons above, this label used to end in three literal characters rather than
+      // being shortened, so the creator saw an ellipsis on a button whose wording had not been cut. The
+      // compact wording is what the paint falls back to when the column is too narrow for the full one.
+      controls.push_back({"request-detail-locate:" + detail->request.requestId, "Locate definition",
+          {44.0 + 2.0 * third, 80.0, third - 4.0, 22.0}, !busy, "Locate"});
     }
     if (detail != records.end()) {
       const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);

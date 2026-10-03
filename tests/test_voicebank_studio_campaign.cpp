@@ -689,6 +689,81 @@ TEST_CASE("generation control wording fits its button at every supported window 
 // state read as one crowded pair rather than two. This case pins the two halves of the property: the
 // pitch leaves room for both lines plus the gap between them, and the pitch is what the row count and
 // the rail's hit test read rather than each keeping a copy.
+// Several of the sample review's buttons carried an ellipsis as three literal characters at the end of
+// their label, so the creator was shown "CREATE DRAFT..." and "OPEN MANIFEST..." on buttons whose text
+// was not shortened at all: measured on the frame, those two labels left 80 and 71 points of their
+// buttons unused. An ellipsis that is not truncation is a claim that something was cut when nothing was,
+// and it reads on a button as though the label continues past what the button can show.
+//
+// The mechanism for doing this properly already existed and was almost unused: a control carries a
+// `compactLabel` painted in place of `label` when the label does not fit, and `label` stays the
+// accessible name. This case pins both halves. No label ends in an ellipsis, so no button claims a
+// truncation that did not happen; every control that can be drawn at a narrow window has a compact
+// wording, so a label too wide for its button is genuinely shortened rather than clipped; and the
+// compact wording is strictly shorter than the full one, so choosing it is a reduction rather than a
+// substitution.
+TEST_CASE("a sample review button never claims a truncation it did not make") {
+  namespace ui = seam::native_ui;
+  ui::PixelSurface surface{8U, 8U};
+  const ui::RasterCanvas canvas{surface};
+
+  // A controller with nothing in it still yields the whole control set, because these are the buttons
+  // the review view offers and their wording does not depend on what has been captured yet.
+  Fixture fixture;
+  const auto controls = ui::studioSampleReviewControls(fixture.controller, 720.0);
+  CHECK(!controls.empty());
+
+  std::size_t withCompact = 0U;
+  for (const auto& control : controls) {
+    // No painted label ends in an ellipsis. This is the assertion the frame defect fails.
+    CHECK(control.label.find("...") == std::string::npos);
+    CHECK(control.compactLabel.find("...") == std::string::npos);
+    // A label is never left empty, which would draw nothing at all.
+    CHECK(!control.label.empty());
+    CHECK(control.bounds.width > 0.0);
+    // Every control that carries a compact wording shortens rather than replaces: the compact form is
+    // strictly shorter than the full one, so a button that could have shown the full wording but
+    // painted the short one would be a control that lost information it had room for.
+    if (!control.compactLabel.empty()) {
+      ++withCompact;
+      CHECK(control.compactLabel.size() < control.label.size());
+      // And it really is narrower at the size the buttons are drawn at, not shorter in characters
+      // alone, which is what the paint chooses on.
+      CHECK(canvas.measureText(control.compactLabel, 12.0) <=
+            canvas.measureText(control.label, 12.0));
+    }
+  }
+  // The whole set is covered: an ellipsis-free label with no compact wording behind it is a button
+  // whose label is simply clipped when the window is narrow, which is the thing this repairs.
+  CHECK(withCompact == controls.size());
+
+  // At the narrowest supported window the full wording fits every one of these buttons, so the frame
+  // shows the full label rather than the compact one. Measured from the rendered frames, the widest of
+  // them ("CHOOSE REVIEWER") leaves 10 points of its 100 point text area free; a system face wider
+  // than the one measured would be the case the compact wording exists for.
+  for (const auto& control : controls)
+    CHECK(canvas.measureText(control.label, 12.0) <= 100.0 ||
+          !control.compactLabel.empty());
+
+  // A compact wording that nothing consults is not a safety net, it is a comment. This is not
+  // hypothetical: the sample review painter and the Studio's own queue painter both drew
+  // `control.label` directly, so every compact wording in those two control sets was unreachable and a
+  // label too wide for its button would have been clipped with nothing to fall back to. Both now go
+  // through the same chooser, and it is checked here against a control whose compact form is what the
+  // paint must return.
+  const ui::StudioSampleReviewControl wide{
+      "test", "A VERY LONG BUTTON LABEL INDEED", {0.0, 0.0, 60.0, 22.0}, true, "SHORT"};
+  CHECK(ui::studioControlPaintLabel(canvas, wide, 12.0) == "SHORT");
+  // A control with room shows its full wording, and a control with no compact wording is drawn as it
+  // is rather than losing its label.
+  const ui::StudioSampleReviewControl roomy{
+      "test", "SHORT", {0.0, 0.0, 600.0, 22.0}, true, "OTHER"};
+  CHECK(ui::studioControlPaintLabel(canvas, roomy, 12.0) == "SHORT");
+  const ui::StudioSampleReviewControl noCompact{
+      "test", "NO COMPACT", {0.0, 0.0, 600.0, 22.0}, true, ""};
+  CHECK(ui::studioControlPaintLabel(canvas, noCompact, 12.0) == "NO COMPACT");
+}
+
 TEST_CASE("the assignment rail leaves a gap between its two lines and one pitch for three readers") {
   const auto type = seam::native_ui::voicebankStudioTypeScale();
   const auto geometry = seam::native_ui::voicebankStudioRailRowGeometry();
