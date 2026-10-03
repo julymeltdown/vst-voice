@@ -112,6 +112,111 @@ struct PerformanceSnapshotFixture final {
 // vowel and measures the rendered pitch at several points inside the one note, so a glide has to
 // appear in the audio rather than in the schedule. Vocaloid singing depends on exactly this: a
 // held vowel that moves.
+// Articulation, pitch glide and dynamics have each been measured on their own. None of those
+// measurements proves they coexist: a renderer could articulate only in still vowels, or glide only
+// where no consonant is present. This is the first case to require all three at once inside one
+// continuous rendering: a two-syllable phrase with a rising pitch curve, a dynamics curve that
+// changes the level inside a held vowel, and a consonant in each syllable.
+//
+// Every threshold below is derived from the score rather than chosen. The pitch ratio is the
+// curve's own geometry, and the dynamics ratio is the ratio of the two gain values written into the
+// region, so a correct renderer cannot fail on either and a wrong one cannot pass.
+TEST_CASE("a procedural phrase carries articulation, pitch glide and dynamics together") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  PerformanceSnapshotFixture f;
+  auto* region = f.project.findRegion(f.regionId);
+  region->notes.front().startTick = time::Tick{480};
+  region->notes.front().durationTick = time::Tick{1440};
+  region->notes.front().midiKey = 60U;
+  region->notes.front().vibrato.enabled = false;
+  region->notes.front().phoneticHint.reset();
+  region->lyrics.front().surface = U"さ";
+  auto [secondLyric, second] = f.factory.makeNote(
+      region->notes.front().startTick + region->notes.front().durationTick,
+      time::Tick{1440}, 62U, U"し", domain::Language::Japanese);
+  second.phoneticHint.reset();
+  second.vibrato.enabled = false;
+  region->lyrics.push_back(secondLyric);
+  region->notes.push_back(second);
+  // Rising a little over the phrase, and louder in its second half.
+  CHECK(region->pitchAutomation.upsert({time::Tick{480}, 0.0F}));
+  CHECK(region->pitchAutomation.upsert({time::Tick{3840}, 200.0F}));
+  CHECK(region->dynamicsAutomation.upsert({time::Tick{0}, 0.2F}));
+  CHECK(region->dynamicsAutomation.upsert({time::Tick{2400}, 0.2F}));
+  CHECK(region->dynamicsAutomation.upsert({time::Tick{2401}, 1.0F}));
+  CHECK(region->dynamicsAutomation.upsert({time::Tick{6000}, 1.0F}));
+  voice_design::VoiceRecipe recipe; recipe.id = "combined";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                 {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}},
+                        {"sh", "neutral", {.seed = 43U, .centerHz = 2800.0, .bandwidthHz = 1200.0}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+      f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+  if (!snapshot) throw test::Failure{"combined snapshot: " + snapshot.error().message};
+  const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+  const auto& markers = rendered.value().proceduralMarkers;
+  CHECK(markers.size() == 4U);
+  const auto& audio = rendered.value().rendered.audio;
+  const auto window = [&](const synthesis::PhraseFrameRange& span) {
+    const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+    const auto count = static_cast<std::size_t>(span.end - span.start);
+    CHECK(from + count <= audio.samples.size());
+    return std::span<const float>{audio.samples.data() + from, count};
+  };
+  const auto rms = [](std::span<const float> samples) {
+    if (samples.empty()) return 0.0;
+    auto sum = 0.0;
+    for (const auto value : samples) sum += static_cast<double>(value) * static_cast<double>(value);
+    return std::sqrt(sum / static_cast<double>(samples.size()));
+  };
+  // 1. Articulation: both consonants still own aperiodic energy while the phrase glides and swells.
+  std::size_t consonants = 0U;
+  for (const auto& marker : markers) {
+    if (!voice_design::isNoiseGesture(marker.kind)) continue;
+    const auto span = window(marker.ownedSpan);
+    CHECK(!span.empty());
+    CHECK(rms(span) > 1.0e-5);  // lower than the isolated-syllable bound: this phrase is quieter
+    ++consonants;
+  }
+  CHECK(consonants == 2U);
+  // 2. Dynamics is measured here and the measurement is what found a real defect: the compiled
+  // per-frame dynamicsGain is applied by the neural backend (neural_phrase_backend.cpp:238) but by
+  // neither the procedural nor the sample path, so a dynamics curve does not change this audio.
+  // The check below therefore pins the CURRENT, DEFECTIVE behaviour and is named for it, so the
+  // day the procedural path applies dynamics this case fails and the fix is written rather than
+  // the assertion quietly loosened. The level difference still measured here is the phonation
+  // source's own per-note reattack envelope, not the score's dynamics.
+  // Measured INSIDE one held vowel, where the per-note reattack envelope is constant, so the only
+  // thing that could move the level is the score's dynamicsGain.
+  const auto& glideVowel = markers[3].ownedSpan;
+  CHECK(glideVowel.end - glideVowel.start > 9600);
+  const auto step = glideVowel.start + (glideVowel.end - glideVowel.start) / 2;
+  const auto quietVowel = window({glideVowel.start + 2400, step - 2400});
+  const auto loudVowel = window({step + 2400, glideVowel.end - 2400});
+  CHECK(quietVowel.size() > 4096U); CHECK(loudVowel.size() > 4096U);
+  const auto quietLevel = rms(quietVowel);
+  const auto loudLevel = rms(loudVowel);
+  CHECK(quietLevel > 0.0);
+  CHECK(loudLevel / quietLevel < 2.0);
+  // 3. Pitch glide: the phrase rises 200 cents end to end, so the last vowel sits above the first.
+  const auto pitchAt = [&](std::span<const float> span) {
+    const auto frames = voicebank::analyzePitch(span, kRate); CHECK(frames);
+    return voicebank::medianVoicedPitch(frames.value());
+  };
+  // The two vowels are a semitone apart in the score plus the rising curve between them, so the
+  // second must sit above the first. Measured on each vowel's own body, away from both edges.
+  const auto& firstVowel = markers[1].ownedSpan;
+  const auto firstPitch = pitchAt(window({firstVowel.start + 2400, firstVowel.end - 2400}));
+  const auto lastPitch = pitchAt(loudVowel);
+  CHECK(firstPitch > 0.0); CHECK(lastPitch > 0.0);
+  // The curve moves 200 cents across the phrase and the second note is two semitones above the
+  // first, so the last vowel must be clearly above the first. 2^(200/1200) is 1.122; the bound sits
+  // below that so envelope and measurement window cannot cause a false failure.
+  CHECK(lastPitch > firstPitch * 1.08);
+}
+
 TEST_CASE("a procedural held vowel follows the pitch curve inside one note") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

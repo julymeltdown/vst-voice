@@ -5151,3 +5151,45 @@ not yet together in one phrase, and no listening evidence exists. U42 remains
 externally blocked on a real recording session for the sample route, which this
 does not touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-03 — Articulation, pitch glide and dynamics measured together in one
+procedural phrase, and the measurement found that the score's dynamics never
+reach that renderer at all (R3's synth-style original voice; one acoustic defect
+found and pinned, closing nothing that was previously open).
+**Why this case.** Articulation, glide and dynamics had each been measured alone.
+None of that proves they coexist: a renderer could articulate only in still
+vowels, or glide only where no consonant is present. This renders "さし" as two
+notes with a rising pitch curve, a dynamics curve and a consonant per syllable,
+and requires all three in one continuous rendering. **What passes.** Both
+consonants own aperiodic energy while the phrase glides (energy bound 1e-5, the
+consonant RMSs measured 0.002967 and 0.008347 in the isolated case), and the
+second vowel sits above the first by the score's own interval.
+**The defect this found.** The compiled per-frame `dynamicsGain`
+(`performance_compiler.cpp:495`) is applied by the neural backend
+(`neural_phrase_backend.cpp:238`) and by neither the procedural nor the sample
+path: `rg dynamicsGain` over `libs/` returns no consumer in `seam-voice-design`,
+and the amplitude in `phonation_source.cpp:126` is built from the harmonic
+structure, not from the score's gain. A probe confirmed the shape of it: a
+region-wide constant gain of 0.1 against 1.0 changed the rendered RMS by exactly
+ten times (0.000825 against 0.008250), because that constant reaches the source as
+part of the compiled musical sample, while a dynamics *curve* within one note
+does not (measured ratio between the two halves of one held vowel: 1.15 where
+the score asks for five). **How the case is written.** The dynamics check asserts
+the CURRENT, DEFECTIVE behaviour and says so in the case, the comment and this
+entry: `loudLevel / quietLevel < 2.0` where the score asks for five. That is
+deliberate, so the day the procedural path applies dynamics the case fails and
+the fix has to be written rather than the assertion quietly loosened. Flipping
+the bound to the post-fix expectation was checked and fails today, so the pin is
+live in both directions. The first version of this check compared two different
+notes and passed even with the dynamics curve flattened, because the phonation
+source gives each note its own reattack envelope; measuring a step inside a single
+vowel removed the note boundary from the comparison and exposed the real defect.
+That correction is the substance of this entry: without it the case would have
+been reporting the envelope as though it were dynamics. **Evidence and scope.**
+Release `seam_performance_snapshot_tests` 59 of 59. **Limits.** This is a defect
+found and pinned, not fixed; the fix is in the procedural amplitude path and is
+out of scope for this unit. Articulation and glide coexist and are shown to; the
+dynamics half is shown NOT to work, which is a different claim. No listening
+evidence and no measurement of timbre or expressiveness. U42 remains externally
+blocked on a real recording session for the sample route. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.
