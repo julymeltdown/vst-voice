@@ -55,6 +55,22 @@ def validate_beta_lock(
         errors.append("lock candidateSha256 does not match candidate bytes")
     if lock.get("inventorySha256") != inventory.get("inventorySha256"):
         errors.append("lock inventorySha256 does not match inventory")
+    # The recorded tree hash is the lock's own statement about which source and derived
+    # assets it covers. Comparing the candidate's bytes against candidateSha256 already catches
+    # a changed asset, but it does not catch an altered record of that coverage: a lock whose
+    # sourceDerivedTreeSha256 was rewritten validated clean while describing something the
+    # current candidate no longer matched. It is compared here for the same reason every
+    # other bound identity is.
+    expected_tree = sha256_json(
+        {
+            "sourceAssets": candidate.get("sourceAssets", []),
+            "derivedAssets": candidate.get("derivedAssets", []),
+        }
+    )
+    if lock.get("sourceDerivedTreeSha256") != expected_tree:
+        errors.append(
+            "lock sourceDerivedTreeSha256 does not match the candidate source and derived tree"
+        )
     song = lock.get("canonicalSong")
     if (
         not isinstance(song, dict)

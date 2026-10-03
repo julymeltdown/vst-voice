@@ -2664,10 +2664,13 @@ if(SEAM_BUILD_TESTS)
     add_test(NAME seam_voice_source_admission_tests
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests/production/test_voice_source_admission.py)
+    add_test(NAME seam_beta_voicebank_lock_tests
+      COMMAND ${Python3_EXECUTABLE} -m unittest
+        tests/production/test_beta_voicebank_lock.py)
     set_tests_properties(
       seam_tracked_source_closure_unit seam_tracked_source_closure
       seam_engineering_remediation_evidence_unit seam_external_beta_python_contract_tests
-      seam_voice_source_admission_tests
+      seam_voice_source_admission_tests seam_beta_voicebank_lock_tests
       PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
 

@@ -4827,3 +4827,52 @@ machine: this says a kind string means what the contract says it means, not
 that any resource of that kind exists. U42 and U47 stay externally blocked on
 real assets, signed builds and host sessions. No DAW, listening, VoiceOver,
 signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-03 — The beta voicebank lock now refuses a lock whose own record of
+its source and derived trees has been altered, and the module has tests at
+all (the untested release-lock identity the typed-manifest entry named; R5 and
+R18 both depend on this file, and it had no test). **What was wrong.**
+`create_beta_lock` writes `sourceDerivedTreeSha256` over the candidate's
+source and derived assets, and `validate_beta_lock` listed that field as
+required, but nothing ever compared it. The comparison against
+`candidateSha256` did catch a changed asset, so the gap was narrower than a
+missing check: the lock detected the change but would accept a rewritten
+record of what it had covered. A lock whose `sourceDerivedTreeSha256` had
+been changed to any other value validated clean while every other field still
+matched. **Evidence for the gap before the fix.** A probe against the shipped
+module: a fresh lock validates, and changing the candidate's `sourceAssets`
+is refused, but rewriting the recorded `sourceDerivedTreeSha256` to sixty-four
+zeros passes. **What changed.** `validate_beta_lock` recomputes the tree hash
+from the candidate and compares it, with the reason stated in the code: a
+bound identity that is recorded and never compared is not a bound identity.
+`tests/production/test_beta_voicebank_lock.py` is new and covers the whole
+contract rather than the one field, because the module had none: a fresh lock
+validates, a tampered tree hash is refused by name, a changed source or
+derived asset is refused, each of the five other bound identities
+(`candidateSha256`, `packageSha256`, `entryManifestSha256`,
+`inventorySha256`, `canonicalSong`) is checked by subtest, and a missing
+field, a non-timestamp `generatedAt` and an unlocked `status` are refused.
+Registered as ctest `seam_beta_voicebank_lock_tests` so it runs in the suite
+rather than only under a direct pytest invocation. That registration in turn
+made `seam_tracked_source_closure` fail until the new file was tracked: the
+closure check requires every test CMake references to be indexed by git, and
+it named the file exactly (`referenced by CMakeLists.txt`). A test wired into
+the build but untracked is the same shape of defect as one wired in but never
+registered, so both ends are now closed. **Verification.** The new
+file 5 of 5 with 5 subtests; mutation-checked by deleting the comparison, which
+fails exactly `test_a_tampered_source_derived_tree_hash_is_refused` and
+leaves the other four green, so the test is holding the fix and not the
+fixture. `tests/external_beta/` and `tests/production/` 314 passed with 304
+subtests; full Release `ctest` passes; `git diff --check` passes. **Limits.**
+This is a pure-Python release lock over four inputs; nothing here verifies
+that those inputs are themselves correct, that a candidate was really
+published, or that a package installs. `tools/external_beta/_production_candidate.py`
+still describes a different, older sample-only schema whose status vocabulary
+(`READY`) does not match the C++ descriptor's (`REVIEWED_CANDIDATE`), so the
+candidate this lock hashes is not demonstrably the candidate the C++
+publisher writes; converging the two is not attempted here. Headless
+evidence on one machine: a release lock now rejects a tampered record of its
+own coverage. This says nothing about whether any voicebank, package or song
+exists to lock. U42 and U47 stay externally blocked on real assets, signed
+builds and host sessions. No DAW, listening, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
