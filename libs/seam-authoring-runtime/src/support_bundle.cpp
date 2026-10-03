@@ -34,6 +34,39 @@ std::string_view toString(SupportBundleEntryKind value) noexcept {
   return "Generated";
 }
 
+std::string_view toString(SupportLifecycleState value) noexcept {
+  switch (value) {
+    case SupportLifecycleState::NotSubmitted:
+      return "NOT_SUBMITTED";
+    case SupportLifecycleState::Intake:
+      return "INTAKE";
+    case SupportLifecycleState::Acknowledged:
+      return "ACKNOWLEDGED";
+    case SupportLifecycleState::Triaged:
+      return "TRIAGED";
+    case SupportLifecycleState::Reproduced:
+      return "REPRODUCED";
+    case SupportLifecycleState::Resolved:
+      return "RESOLVED";
+    case SupportLifecycleState::Withdrawn:
+      return "WITHDRAWN";
+  }
+  return "NOT_SUBMITTED";
+}
+
+namespace {
+
+SupportLifecycleState lifecycleFromString(std::string_view value) noexcept {
+  if (value == "INTAKE") return SupportLifecycleState::Intake;
+  if (value == "ACKNOWLEDGED") return SupportLifecycleState::Acknowledged;
+  if (value == "TRIAGED") return SupportLifecycleState::Triaged;
+  if (value == "REPRODUCED") return SupportLifecycleState::Reproduced;
+  if (value == "RESOLVED") return SupportLifecycleState::Resolved;
+  if (value == "WITHDRAWN") return SupportLifecycleState::Withdrawn;
+  return SupportLifecycleState::NotSubmitted;
+}
+
+}  // namespace
 std::string_view toString(SupportBundlePrivacyClass value) noexcept {
   switch (value) {
     case SupportBundlePrivacyClass::PublicTechnical:
@@ -577,6 +610,63 @@ core::Result<void> SupportBundleService::deleteExport(
   return core::success();
 }
 
+namespace {
+
+std::string stringField(const formats::JsonValue& value, std::string_view key) {
+  const auto* field = value.find(key);
+  return field != nullptr && field->isString() ? field->asString() : std::string{};
+}
+
+bool isDigestText(std::string_view value) noexcept {
+  if (value.size() != 64U) return false;
+  return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+  });
+}
+
+core::Result<SupportIntakeRecord> parseIntakeRecord(std::string_view text) {
+  auto parsed = formats::parseJson(text, formats::JsonParseLimits{
+      .maximumInputBytes = 256U * 1024U,
+      .maximumDepth = 8U,
+      .maximumNodes = 64U,
+      .maximumStringBytes = 4096U,
+      .maximumCollectionEntries = 16U});
+  if (!parsed || !parsed.value().isObject()) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::ParseError,
+                                            "Support intake record is malformed");
+  }
+  const auto& value = parsed.value();
+  SupportIntakeRecord record;
+  record.submissionId = stringField(value, "submissionId");
+  record.bundleSha256 = stringField(value, "bundleSha256");
+  record.destinationId = stringField(value, "destinationId");
+  record.submittedAt = stringField(value, "submittedAt");
+  record.state = lifecycleFromString(stringField(value, "state"));
+  record.acknowledgementId = stringField(value, "acknowledgementId");
+  record.acknowledgedBundleSha256 = stringField(value, "acknowledgedBundleSha256");
+  if (record.submissionId.empty() || !isDigestText(record.bundleSha256) ||
+      record.destinationId.empty() || record.submittedAt.empty()) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::ParseError,
+                                            "Support intake record is incomplete");
+  }
+  return core::success(record);
+}
+
+formats::JsonValue intakeJson(const SupportIntakeRecord& record) {
+  formats::JsonValue::Object object;
+  object.emplace("schemaVersion", formats::JsonValue{std::int64_t{1}});
+  object.emplace("submissionId", formats::JsonValue{record.submissionId});
+  object.emplace("bundleSha256", formats::JsonValue{record.bundleSha256});
+  object.emplace("destinationId", formats::JsonValue{record.destinationId});
+  object.emplace("submittedAt", formats::JsonValue{record.submittedAt});
+  object.emplace("state", formats::JsonValue{std::string{toString(record.state)}});
+  object.emplace("acknowledgementId", formats::JsonValue{record.acknowledgementId});
+  object.emplace("acknowledgedBundleSha256", formats::JsonValue{record.acknowledgedBundleSha256});
+  return formats::JsonValue{std::move(object)};
+}
+
+}  // namespace
+
 core::Result<std::filesystem::path> SupportBundleService::writePrivateReport(
     std::string_view reportId, std::string_view payload) const {
   auto root = ensurePrivateRoot(privateRoot_);
@@ -643,4 +733,125 @@ core::Result<void> SupportBundleService::deletePrivateReport(
   return core::success();
 }
 
+core::Result<SupportIntakeRecord> SupportBundleService::recordIntake(
+    const SupportBundleRecord& bundle, std::string_view destinationId,
+    std::string_view submittedAt) const {
+  auto root = ensurePrivateRoot(privateRoot_);
+  if (!root) return core::Result<SupportIntakeRecord>{root.error()};
+  if (!safeIdentifier(destinationId) || submittedAt.empty() ||
+      submittedAt.size() > 64U || !isDigestText(bundle.sha256)) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::InvalidArgument,
+                                           "Support intake submission is invalid");
+  }
+  // The submission id is derived from the bundle bytes, so re-submitting the same bundle is
+  // idempotent rather than producing a second lifecycle record for one bundle.
+  const auto submissionId = bundle.sha256.substr(0U, 32U);
+  const auto path = privateRoot_ / (submissionId + ".intake.json");
+  std::error_code error;
+  if (std::filesystem::exists(path, error)) {
+    const auto text = core::readTextFileLimited(path, 256U * 1024U);
+    if (!text) return core::Result<SupportIntakeRecord>{text.error()};
+    auto existing = parseIntakeRecord(text.value());
+    if (existing && existing.value().destinationId != destinationId) {
+      return core::failure<SupportIntakeRecord>(core::ErrorCode::Conflict,
+                                         "Bundle was already submitted to another destination");
+    }
+    return existing;
+  }
+  SupportIntakeRecord record{
+      .submissionId = submissionId,
+      .bundleSha256 = bundle.sha256,
+      .destinationId = std::string{destinationId},
+      .submittedAt = std::string{submittedAt},
+      .state = SupportLifecycleState::Intake};
+  const auto written = core::durableAtomicWriteText(
+      path, formats::stringifyJson(intakeJson(record)));
+  if (!written) return core::Result<SupportIntakeRecord>{written.error()};
+  return core::success(record);
 }
+
+core::Result<SupportIntakeRecord> SupportBundleService::recordAcknowledgement(
+    std::string_view submissionId, std::string_view acknowledgementId,
+    std::string_view acknowledgedBundleSha256) const {
+  auto root = ensurePrivateRoot(privateRoot_);
+  if (!root) return core::Result<SupportIntakeRecord>{root.error()};
+  if (!safeIdentifier(submissionId) || !safeIdentifier(acknowledgementId) ||
+      !isDigestText(acknowledgedBundleSha256)) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::InvalidArgument,
+                                           "Support acknowledgement is invalid");
+  }
+  const auto path = privateRoot_ / (std::string{submissionId} + ".intake.json");
+  const auto text = core::readTextFileLimited(path, 256U * 1024U);
+  if (!text) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::NotFound,
+                                         "No support submission exists for this acknowledgement");
+  }
+  auto existing = parseIntakeRecord(text.value());
+  if (!existing) return core::Result<SupportIntakeRecord>{existing.error()};
+  // The receipt must name the exact bundle that was submitted. A receipt for another candidate
+  // cannot advance this one, which is what stops a captured acknowledgement being replayed.
+  if (existing.value().bundleSha256 != acknowledgedBundleSha256) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::Conflict,
+                                         "Acknowledgement names a different bundle");
+  }
+  if (existing.value().acknowledgementId == acknowledgementId &&
+      existing.value().state == SupportLifecycleState::Acknowledged) {
+    return existing;  // idempotent
+  }
+  if (existing.value().state == SupportLifecycleState::Withdrawn ||
+      existing.value().state == SupportLifecycleState::Resolved) {
+    return core::failure<SupportIntakeRecord>(core::ErrorCode::Conflict,
+                                         "A closed submission cannot be acknowledged");
+  }
+  auto record = existing.value();
+  record.acknowledgementId = std::string{acknowledgementId};
+  record.acknowledgedBundleSha256 = std::string{acknowledgedBundleSha256};
+  record.state = SupportLifecycleState::Acknowledged;
+  const auto written = core::durableAtomicWriteText(
+      path, formats::stringifyJson(intakeJson(record)));
+  if (!written) return core::Result<SupportIntakeRecord>{written.error()};
+  return core::success(record);
+}
+
+core::Result<std::optional<SupportIntakeRecord>> SupportBundleService::findIntake(
+    std::string_view submissionId) const {
+  auto root = ensurePrivateRoot(privateRoot_);
+  if (!root) return core::Result<std::optional<SupportIntakeRecord>>{root.error()};
+  if (!safeIdentifier(submissionId)) {
+    return core::failure<std::optional<SupportIntakeRecord>>(
+        core::ErrorCode::InvalidArgument, "Support submission identifier is invalid");
+  }
+  const auto path = privateRoot_ / (std::string{submissionId} + ".intake.json");
+  std::error_code error;
+  if (!std::filesystem::exists(path, error)) {
+    return core::success(std::optional<SupportIntakeRecord>{});
+  }
+  const auto text = core::readTextFileLimited(path, 256U * 1024U);
+  if (!text) return core::Result<std::optional<SupportIntakeRecord>>{text.error()};
+  auto record = parseIntakeRecord(text.value());
+  if (!record) return core::Result<std::optional<SupportIntakeRecord>>{record.error()};
+  return core::success(std::optional<SupportIntakeRecord>{record.value()});
+}
+
+core::Result<std::vector<SupportIntakeRecord>> SupportBundleService::listIntakes() const {
+  auto root = ensurePrivateRoot(privateRoot_);
+  if (!root) return core::Result<std::vector<SupportIntakeRecord>>{root.error()};
+  std::vector<SupportIntakeRecord> records;
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(privateRoot_, error)) {
+    if (error) break;
+    if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
+    const auto text = core::readTextFileLimited(entry.path(), 256U * 1024U);
+    if (!text) continue;
+    auto record = parseIntakeRecord(text.value());
+    // A private report shares this directory and is not an intake record; a malformed one is
+    // skipped rather than failing the whole listing, so one bad file cannot hide the rest.
+    if (record) records.push_back(std::move(record).value());
+  }
+  std::sort(records.begin(), records.end(), [](const auto& left, const auto& right) {
+    return left.submissionId < right.submissionId;
+  });
+  return core::success(std::move(records));
+}
+
+}  // namespace seam::authoring

@@ -6189,6 +6189,39 @@ neither is claimed here.
 Release `seam_tests` 1454 of 1454; full Release CTest 224 of 224. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
 
+2026-10-04 — The app could export a support bundle and then had no way to record submitting it, so
+the first lifecycle state could never be produced. (SEAM-BETA-P1-07, first half.)
+**The gap.** `docs/public/SUPPORT.md` defines a seven-state lifecycle beginning at `INTAKE`, and
+PR-010 validates `acknowledgementId`, stage ownership, retention windows and withdrawal/deletion
+proof. But the application could only `exportPrepared` a ZIP and list local reports. There was no
+`INTAKE` record anywhere, so the lifecycle had no first transition, and PR-010's `acknowledgementId`
+could only ever be a fixture string.
+**The repair.** `SupportBundleService` gains `recordIntake`, `recordAcknowledgement`, `findIntake`
+and `listIntakes`, over a `SupportIntakeRecord` carrying the seven lifecycle states.
+**The property that matters is that a creator cannot acknowledge their own bundle.** Submission and
+acknowledgement are deliberately **separate operations**: `recordIntake` creates the record at state
+`INTAKE` with **no** acknowledgement, and only `recordAcknowledgement` — which requires an identifier
+from the intake endpoint — advances it. Collapsing them into one "submit" call would let anyone mark
+a bundle received without anyone receiving it, which is the exact claim PR-010 asks for.
+**A captured receipt cannot be replayed onto another candidate.** `recordAcknowledgement` refuses a
+receipt whose `acknowledgedBundleSha256` differs from the bundle that was actually submitted, and
+refuses a withdrawn or resolved submission. An acknowledgement for a submission that does not exist
+is `NotFound` rather than an invented record. Re-submitting the same bundle is idempotent: the
+submission id is derived from the bundle digest, so one bundle has one lifecycle record rather than
+one per click.
+**Mutation-checked in both halves.** Accepting a receipt that names a different bundle fails the
+replay case. Replacing the acknowledgement id with the submission id — making a submission
+acknowledge itself — also fails. Neither the replay guard nor the split between the two operations is
+decorative.
+Release `seam_tests` 1462 of 1462 (1460 before); full Release CTest 224 of 224.
+**What is not claimed, stated plainly.** `docs/public/SUPPORT.md` remains `DRAFT / NOT APPROVED FOR
+DISTRIBUTION` and **no intake endpoint exists**: `destinationId` is still checked against the literal
+string `project-seam.public.support-intake` and nothing submits anywhere. This entry gives the
+application the ability to *record* a submission honestly; it does not provision, operate or
+acknowledge a support destination. The remaining states past `ACKNOWLEDGED` belong to the operated
+path. No bundle was submitted and no support ticket exists. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
+
 2026-10-04 — An export driven past full scale committed a clipped master and reported success,
 with nothing in the result or the receipt to say so (MEDIUM-HIGH).
 **The defect, as a chain.** `kMaximumDynamicsGain` is +12 dB (`dynamics_automation.hpp:11`) and the

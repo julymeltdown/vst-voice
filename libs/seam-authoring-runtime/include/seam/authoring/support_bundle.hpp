@@ -85,6 +85,28 @@ struct SupportBundleRecord final {
   std::string sha256;
 };
 
+// Where a bundle stands in the published support lifecycle. The states mirror
+// docs/public/SUPPORT.md; the app records only what it can observe locally, and a state it cannot
+// reach is never assumed. INTAKE is the first state a creator can produce, because submitting the
+// bundle is the act that creates it; every later state belongs to the operated support path.
+enum class SupportLifecycleState { NotSubmitted, Intake, Acknowledged, Triaged, Reproduced, Resolved, Withdrawn };
+
+[[nodiscard]] std::string_view toString(SupportLifecycleState value) noexcept;
+
+// A record of one submission attempt. The acknowledgement is the intake endpoint's signed receipt
+// and is empty until one arrives, because a creator cannot acknowledge their own bundle.
+struct SupportIntakeRecord final {
+  std::string submissionId;
+  std::string bundleSha256;
+  std::string destinationId;
+  std::string submittedAt;
+  SupportLifecycleState state{SupportLifecycleState::NotSubmitted};
+  std::string acknowledgementId;
+  std::string acknowledgedBundleSha256;
+};
+
+
+
 class SupportBundleService final {
 public:
   explicit SupportBundleService(std::filesystem::path privateRoot)
@@ -100,6 +122,20 @@ public:
   [[nodiscard]] core::Result<void> deleteExport(
       const SupportBundleRecord& record,
       const std::filesystem::path& directory) const;
+  // Record that a bundle was submitted to a named destination. This is the act that creates the
+  // lifecycle record; the acknowledgement arrives later and is a separate call, so a creator can
+  // never mark their own bundle acknowledged.
+  [[nodiscard]] core::Result<SupportIntakeRecord> recordIntake(
+      const SupportBundleRecord& bundle, std::string_view destinationId,
+      std::string_view submittedAt) const;
+  // Apply the intake endpoint's signed receipt. The acknowledgement must name the exact bundle
+  // that was submitted, so a receipt for another candidate cannot advance this one.
+  [[nodiscard]] core::Result<SupportIntakeRecord> recordAcknowledgement(
+      std::string_view submissionId, std::string_view acknowledgementId,
+      std::string_view acknowledgedBundleSha256) const;
+  [[nodiscard]] core::Result<std::optional<SupportIntakeRecord>> findIntake(
+      std::string_view submissionId) const;
+  [[nodiscard]] core::Result<std::vector<SupportIntakeRecord>> listIntakes() const;
   [[nodiscard]] core::Result<std::filesystem::path> writePrivateReport(
       std::string_view reportId, std::string_view payload) const;
   [[nodiscard]] core::Result<void> deletePrivateReport(

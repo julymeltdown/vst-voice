@@ -36,6 +36,96 @@ seam::core::LogEvent safeEvent() {
 
 }
 
+TEST_CASE("support intake records a submission a creator cannot acknowledge themselves") {
+  // The bundle is the creator's; the acknowledgement is the intake endpoint's. Splitting the
+  // two is what stops a submission record being marked received without anyone receiving it.
+  const auto root = seam::test::support::temporaryDirectory("support-intake");
+  seam::authoring::SupportBundleService service(root / "PrivateReports");
+  const seam::authoring::SupportBundleRequest request{
+      .events = {safeEvent()},
+      .attachments = {},
+      .candidateId = "candidate-build-1",
+      .createdAt = "2026-08-22T00:00:00Z"};
+  auto prepared = service.prepare(request);
+  CHECK(prepared);
+  const auto exportRoot = root / "Exports";
+  auto exported = service.exportPrepared(prepared.value(), exportRoot);
+  CHECK(exported);
+  const seam::authoring::SupportBundleRecord record{
+      .path = exported.value().destination,
+      .bytes = exported.value().preview.archiveBytes,
+      .sha256 = exported.value().preview.archiveSha256};
+
+  const auto submitted = service.recordIntake(record, "project-seam.public.support-intake",
+                                                  "2026-08-22T12:00:00Z");
+  CHECK(submitted);
+  CHECK(submitted.value().state == seam::authoring::SupportLifecycleState::Intake);
+  CHECK(submitted.value().bundleSha256 == record.sha256);
+  // No acknowledgement exists yet: the creator cannot grant their own.
+  CHECK(submitted.value().acknowledgementId.empty());
+  CHECK(submitted.value().acknowledgedBundleSha256.empty());
+
+  // Re-submitting the same bundle is idempotent rather than a second lifecycle record.
+  const auto again = service.recordIntake(record, "project-seam.public.support-intake",
+                                                  "2026-08-22T12:05:00Z");
+  CHECK(again);
+  CHECK(again.value().submissionId == submitted.value().submissionId);
+  CHECK(again.value().submittedAt == submitted.value().submittedAt);
+
+  const auto listed = service.listIntakes();
+  CHECK(listed);
+  CHECK(listed.value().size() == 1U);
+
+  const auto acknowledged = service.recordAcknowledgement(
+      submitted.value().submissionId, "support-ack-001", record.sha256);
+  CHECK(acknowledged);
+  CHECK(acknowledged.value().state == seam::authoring::SupportLifecycleState::Acknowledged);
+  CHECK(acknowledged.value().acknowledgementId == "support-ack-001");
+  CHECK(acknowledged.value().acknowledgedBundleSha256 == record.sha256);
+
+  const auto found = service.findIntake(submitted.value().submissionId);
+  CHECK(found);
+  CHECK(found.value().has_value());
+  CHECK(found.value()->state == seam::authoring::SupportLifecycleState::Acknowledged);
+}
+
+TEST_CASE("an acknowledgement for another bundle cannot advance this submission") {
+  const auto root = seam::test::support::temporaryDirectory("support-intake-replay");
+  seam::authoring::SupportBundleService service(root / "PrivateReports");
+  const seam::authoring::SupportBundleRequest request{
+      .events = {safeEvent()},
+      .attachments = {},
+      .candidateId = "candidate-build-1",
+      .createdAt = "2026-08-22T00:00:00Z"};
+  auto prepared = service.prepare(request);
+  CHECK(prepared);
+  const auto exportRoot = root / "Exports";
+  auto exported = service.exportPrepared(prepared.value(), exportRoot);
+  CHECK(exported);
+  const seam::authoring::SupportBundleRecord record{
+      .path = exported.value().destination,
+      .bytes = exported.value().preview.archiveBytes,
+      .sha256 = exported.value().preview.archiveSha256};
+  const auto submitted = service.recordIntake(record, "project-seam.public.support-intake",
+                                                  "2026-08-22T12:00:00Z");
+  CHECK(submitted);
+
+  // A captured receipt naming a different candidate must not advance this submission.
+  const auto replayed = service.recordAcknowledgement(submitted.value().submissionId,
+                                                  "support-ack-other", std::string(64U, 'c'));
+  CHECK(!replayed);
+  CHECK(replayed.error().code == seam::core::ErrorCode::Conflict);
+  const auto unchanged = service.findIntake(submitted.value().submissionId);
+  CHECK(unchanged);
+  CHECK(unchanged.value()->state == seam::authoring::SupportLifecycleState::Intake);
+  CHECK(unchanged.value()->acknowledgementId.empty());
+
+  // An acknowledgement for a submission that does not exist is not invented either.
+  const auto orphan = service.recordAcknowledgement("0000", "support-ack-001", record.sha256);
+  CHECK(!orphan);
+  CHECK(orphan.error().code == seam::core::ErrorCode::NotFound);
+}
+
 TEST_CASE("support bundle preview matches export and excludes private diagnostics") {
   const auto root = seam::test::support::temporaryDirectory("support-bundle");
   seam::authoring::SupportBundleService service(root / "PrivateReports");
