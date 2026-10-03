@@ -296,6 +296,10 @@ JsonValue manifestJson(const UpdateManifest& manifest, bool includeSignature) {
   root.emplace("readRanges", rangesJson(manifest.readRanges));
   root.emplace("writeRanges", rangesJson(manifest.writeRanges));
   root.emplace("downgradePolicy", manifest.downgradePolicy);
+  // Distribution authority travels inside the signed envelope. A pause or revocation that lives
+  // only in an operations database cannot reach an installed client that never reads it.
+  if (manifest.distributionPaused) root.emplace("distributionPaused", true);
+  if (!manifest.minimumBuild.empty()) root.emplace("minimumBuild", manifest.minimumBuild);
   JsonValue::Object package;
   package.emplace("fileName", manifest.package.fileName);
   package.emplace("url", manifest.package.url);
@@ -436,7 +440,8 @@ core::Result<UpdateManifest> parseManifestRoot(const JsonValue& root) {
       root, {"schemaVersion", "purpose", "channel", "manifestId", "manifestEpoch",
              "platform", "targetBuild", "targetVersion", "minimumVersion", "issuedAt",
              "expiresAt", "readRanges", "writeRanges", "downgradePolicy", "package",
-             "releaseNotesSha256", "recoveryAuthorization", "signature"},
+             "releaseNotesSha256", "recoveryAuthorization", "distributionPaused",
+             "minimumBuild", "signature"},
       "manifest");
   if (!keys) return core::Result<UpdateManifest>{keys.error()};
   auto schemaVersion = requiredInteger(root, "schemaVersion");
@@ -452,6 +457,18 @@ core::Result<UpdateManifest> parseManifestRoot(const JsonValue& root) {
   auto expiresAt = requiredString(root, "expiresAt");
   auto downgradePolicy = requiredString(root, "downgradePolicy");
   auto releaseNotesSha256 = requiredString(root, "releaseNotesSha256");
+  // Distribution authority is optional so an older signed manifest still verifies; when present
+  // it is bound by the same signature as everything else in the envelope.
+  std::optional<bool> paused;
+  if (const auto* value = root.find("distributionPaused"); value != nullptr) {
+    if (!value->isBool()) return core::failure<UpdateManifest>(core::ErrorCode::ParseError, "manifest distributionPaused must be a boolean");
+    paused = value->asBool();
+  }
+  std::optional<std::string> minimumBuild;
+  if (const auto* value = root.find("minimumBuild"); value != nullptr) {
+    if (!value->isString() || value->asString().empty() || value->asString().size() > 256U) return core::failure<UpdateManifest>(core::ErrorCode::ParseError, "manifest minimumBuild must be a bounded build string");
+    minimumBuild = value->asString();
+  }
   if (!schemaVersion) return core::Result<UpdateManifest>{schemaVersion.error()};
   if (!purpose) return core::Result<UpdateManifest>{purpose.error()};
   if (!channel) return core::Result<UpdateManifest>{channel.error()};
@@ -547,6 +564,8 @@ core::Result<UpdateManifest> parseManifestRoot(const JsonValue& root) {
           .sha256 = std::move(sha256).value()},
       .releaseNotesSha256 = std::move(releaseNotesSha256).value(),
       .recoveryAuthorization = std::move(recovery),
+      .distributionPaused = paused.value_or(false),
+      .minimumBuild = minimumBuild.value_or(std::string{}),
       .signature = parsedSignature.value()};
 }
 

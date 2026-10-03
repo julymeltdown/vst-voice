@@ -130,6 +130,13 @@ core::Result<UpdateCheckResult> UpdateController::check(
                              .manifest = manifest.value(),
                              .diagnostic = verified.error().message};
   }
+  // The pause is inside the verified envelope, so it is only read after the signature holds. This
+  // is the point where a pause reaches an installed client: there is no separate channel to trust.
+  if (manifest.value().distributionPaused) {
+    return UpdateCheckResult{.status = UpdateCheckStatus::Blocked,
+                             .manifest = manifest.value(),
+                             .diagnostic = "Distribution is paused for this channel"};
+  }
   return UpdateCheckResult{.status = UpdateCheckStatus::Available,
                            .manifest = manifest.value(),
                            .diagnostic = {}};

@@ -6355,3 +6355,42 @@ every digest. It adds no signature to the chain itself and no external timestamp
 check over the recorded history, not an authority over it. `tests/production` 125 passed + 124
 subtests; `tests/external_beta` 202 passed + 197 subtests. No C++ changed. No DAW, VoiceOver,
 signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — A signed pause can now reach an installed client, because it travels inside the
+manifest the client already fetches and verifies (SEAM-BETA-P1-04, first half).
+**The gap.** `rg -n 'distributionState|pausedAt|revocationEpoch|mandatoryUpdate|killSwitch'` across
+`libs/`, `tools/` and `scripts/` returned **zero hits**. The operations model has
+`DISTRIBUTION_PAUSED` and `REVOKED` and its state machine is correct and fail-closed, but a decision
+recorded there cannot reach a client that never reads that store. The only revocation-adjacent
+mechanism in the codebase was delegated **key** revocation inside the update trust policy
+(`trust_policy.cpp:497-510`), which revokes a signing key, not a distribution. So `PAUSE` and
+`REVOKE` were real decisions with no wire.
+**The design choice, stated because it is the whole point.** Rather than build a new
+always-on channel that a client must poll, trust and authenticate, the authority rides **inside the
+existing signed update envelope**. `UpdateManifest` gains `distributionPaused` and `minimumBuild`,
+so they are covered by the signature the client already verifies. A pause therefore arrives on the
+next manifest fetch the client was going to make anyway, with no new transport, no new trust root and
+no new failure mode — and a manifest whose authority fields were tampered with fails verification
+before the fields are ever read.
+**Enforcement, after verification and before offering.** `UpdateController::check` reads
+`distributionPaused` **only after** `verifyUpdateManifest` succeeds, and returns `Blocked` with
+"Distribution is paused for this channel". `stage` already refuses anything that is not `Available`
+and propagates the diagnostic, so a paused channel offers nothing to install. Both fields are
+optional when decoding, so an **older signed manifest still verifies** — the change is additive to
+the wire format rather than a new schema version.
+**One test correction worth recording.** The first version set `distributionPaused = true` on a
+manifest returned by `manifestFor`, which signs internally. The manifest was then paused but no
+longer validly signed, so the controller correctly refused it — for the wrong reason, and the case
+failed on its diagnostic assertion while appearing to pass its status assertion. The helper `resign`
+was added so authority fields are set **before** signing, which is also the order any real issuer
+must use.
+**Mutation-checked in both halves, separately.** Disabling the `distributionPaused` check in `check`
+fails at `paused.value().status == Blocked`. Removing the encode of the field fails earlier, at
+`reparsed.value().distributionPaused`. Neither the channel nor the enforcement is decorative.
+**What is not claimed.** `minimumBuild` is carried and round-tripped but **not yet enforced**; making
+it a sticky floor is a caller-side decision about this build's identity that is not made here. The
+controller is still not constructed by the application shell, so no shipped UI reads this yet. This
+builds and tests the channel; it does not prove a pause reaches a running install, because no
+installed build has been driven. Release `seam_update_controller_tests` 3 of 3; full Release CTest
+224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.

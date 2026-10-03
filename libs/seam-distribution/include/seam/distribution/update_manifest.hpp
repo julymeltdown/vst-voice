@@ -57,6 +57,16 @@ struct UpdateManifest final {
   UpdatePackage package;
   std::string releaseNotesSha256;
   std::optional<UpdateRecoveryAuthorization> recoveryAuthorization;
+  // Distribution authority, carried by the same signed manifest as the update itself. A pause or a
+  // revocation that lives only in an operations database cannot reach an installed client, because
+  // the client never reads that database. Binding it here means the client enforces it on the next
+  // manifest it already fetches and verifies, with no new channel to build or trust.
+  //
+  // `distributionPaused` stops new distribution without ending support for what is already
+  // installed. `minimumBuild` is a sticky floor: a build below it must not keep running. Both are
+  // advisory here and enforced by the caller, because only the caller knows its own build.
+  bool distributionPaused{false};
+  std::string minimumBuild;
   UpdateSignature signature;
 
   friend bool operator==(const UpdateManifest&, const UpdateManifest&) = default;

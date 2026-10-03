@@ -95,6 +95,18 @@ UpdateManifest manifestFor(const seam::distribution::SigningKeyPair& update,
 
 }
 
+void resign(UpdateManifest& manifest, const seam::distribution::SigningKeyPair& update) {
+  const auto payload = seam::distribution::canonicalUpdateManifestPayload(manifest);
+  auto signedPayload = seam::distribution::signEd25519(
+      std::as_bytes(std::span{payload.data(), payload.size()}), update.privateKey);
+  if (!signedPayload) throw std::runtime_error(signedPayload.error().message);
+  manifest.signature = UpdateSignature{
+      .algorithm = "Ed25519",
+      .keyId = "update-key",
+      .payloadSha256 = seam::core::sha256Hex(payload),
+      .value = signedPayload.value()};
+}
+
 TEST_CASE("update controller verifies, stages, and persists accepted epochs") {
   const auto root = seam::test::support::temporaryDirectory("update-controller");
   const std::array<std::byte, 4U> bytes{
@@ -131,6 +143,55 @@ TEST_CASE("update controller verifies, stages, and persists accepted epochs") {
   auto replay = controller.value()->check(policyPath, manifestPath);
   CHECK(replay);
   CHECK(replay.value().status == seam::standalone::UpdateCheckStatus::Blocked);
+}
+
+TEST_CASE("a signed distribution pause reaches the installed client and blocks the update") {
+  // A pause recorded only in an operations database cannot reach a client that never reads it.
+  // Carrying it inside the signed manifest means the existing verified fetch is the channel.
+  const auto root = seam::test::support::temporaryDirectory("update-pause");
+  const std::array<std::byte, 4U> bytes{
+      std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+  const auto package = root / "update.pkg";
+  CHECK(seam::core::durableAtomicWrite(package, bytes));
+  auto rootKey = seam::distribution::generateSigningKeyPair();
+  auto updateKey = seam::distribution::generateSigningKeyPair();
+  CHECK(rootKey);
+  CHECK(updateKey);
+  const auto policy = policyFor(rootKey.value(), updateKey.value());
+  // manifestFor signs, so authority fields must be set and the manifest re-signed. Setting them
+  // after signing would leave a manifest that is paused but no longer validly signed, and the
+  // controller would correctly refuse it for the wrong reason.
+  auto manifest = manifestFor(updateKey.value(), bytes);
+  manifest.distributionPaused = true;
+  manifest.minimumBuild = "0.14.0";
+  resign(manifest, updateKey.value());
+  const auto policyPath = root / "policy.json";
+  const auto manifestPath = root / "manifest.json";
+  CHECK(seam::core::durableAtomicWriteText(
+      policyPath, seam::distribution::serializeUpdateTrustPolicy(policy)));
+  CHECK(seam::core::durableAtomicWriteText(
+      manifestPath, seam::distribution::serializeUpdateManifest(manifest)));
+  // The pause must survive the signed round trip, or the channel carries nothing.
+  const auto reparsed = seam::distribution::parseUpdateManifest(
+      seam::distribution::serializeUpdateManifest(manifest));
+  CHECK(reparsed);
+  CHECK(reparsed.value().distributionPaused);
+  CHECK(reparsed.value().minimumBuild == "0.14.0");
+  auto controller = seam::standalone::UpdateController::create(
+      seam::standalone::UpdateControllerConfig{
+          .statePath = root / "state.json",
+          .stagingRoot = root / "staging",
+          .expectedPlatform = "macos-arm64",
+          .installedVersion = "0.13.0",
+          .verificationTime = kTime,
+          .trustedRoot = rootKey.value().publicKey});
+  CHECK(controller);
+  const auto paused = controller.value()->check(policyPath, manifestPath);
+  CHECK(paused);
+  CHECK(paused.value().status == seam::standalone::UpdateCheckStatus::Blocked);
+  CHECK(paused.value().diagnostic.find("paused") != std::string::npos);
+  // A paused channel offers nothing to stage.
+  CHECK(!controller.value()->stage(policyPath, manifestPath, package));
 }
 
 TEST_CASE("update panel exposes explicit confirmation state") {
