@@ -1149,7 +1149,19 @@ TEST_CASE("an authored Replace pitch curve suppresses the automatic melisma glid
           .pronunciation = pronunciation.value().identity,
           .generatorId = "fixture", .generatorVersion = "1",
           .range = {time::Tick{0}, time::Tick{9600}},
-          .lanes = {{PerformanceChannel::Pitch, {{time::Tick{0}, 0.0}}}}}};
+          // A distinctive +700 cents so the reading identifies the AUTHORED pitch unambiguously. A
+          // constant 0 would be indistinguishable from the note's own pitch and would hide whether
+          // the authored value or the automatic glide produced the reading.
+          .lanes = {{PerformanceChannel::Pitch, {{time::Tick{0}, 120.0},
+              {time::Tick{9600}, 120.0}}}}}};
+      // Ownership alone suppresses the glide but contributes no pitch. The lane is only READ through
+      // an accepted selection (performance_compiler.cpp:549 iterates `performance_.accepted`), so a
+      // setup that declares ownership without accepting the take measures the glide being suppressed
+      // with nothing replacing it. My first version of this case did exactly that, which is why
+      // changing the authored value from 0 to 700 cents changed no reading at all. Accepting the
+      // selection is what makes the curve audible, and the +700 is what proves it is.
+      region->performance.accepted = {{.takeId = "pitch", .channel = PerformanceChannel::Pitch,
+          .scope = PerformanceTimeRange{time::Tick{0}, time::Tick{9600}}, .sourceTickOffset = time::Tick{0}}};
       CHECK(f.project.validate());
       const auto session = application::EditorSession{f.project};
       (void)session;
@@ -1215,6 +1227,166 @@ TEST_CASE("an authored Replace pitch curve suppresses the automatic melisma glid
   // 3. Every note still lands on its own pitch in both arms, so the difference is the ramp and not a
   // note that failed to reach its target.
   for (const auto* join : automatic) CHECK(std::abs(join->settled) < 100.0);
+}
+
+// The entry above shows an authored Replace curve suppressing the automatic glide across a whole
+// region. The interesting case is a PARTIAL span, where the boundary between authored and automatic
+// pitch falls inside a melisma and could cut a ramp off partway. The guard that decides this is
+// evaluated per output frame: `owns()` calls `activeIndex()`, which asks whether the frame is inside
+// the ownership scope (`performance_compiler.cpp:518` through 530), so the glide should survive
+// outside the span and be suppressed inside it. Nothing had measured whether that per-frame
+// boundary behaves as the code reads, or where it actually falls.
+//
+// Two unit confusions of mine are recorded in the ledger because both produced silent nonsense
+// rather than a visible failure. The Pitch lane is NOT a cents offset: `baseCents` starts as
+// `scoreMidi * 100` and is OVERWRITTEN by the lane value at `performance_compiler.cpp:580`, with
+// `midi = (baseCents + manualCents) / 100` at 629. So the lane's unit is MIDI times 100. Values of
+// 700 and 120, which a cents reading would accept, compile to MIDI 7 and MIDI 1.2 and are refused as
+// out of the phonation source's range. Only 6400, which is MIDI 64, renders. A test written against
+// the wrong unit still compiles and still passes, which is the dangerous part.
+TEST_CASE("an authored pitch span suppresses the glide everywhere it reaches, not only inside it") {
+  using namespace seam;
+  using namespace seam::domain;
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::int64_t kDuration = 960;
+  // The authored span starts at this tick offset inside the second note, in ticks from the note's
+  // own start. The glide window is sampleRate/50 frames, which is 20 ticks at this tempo.
+  constexpr std::int64_t kOffsets[] = {-1, 0, 5, 10, 20, 40, 960};
+  struct Reading final {
+    std::int64_t offset{0};
+    bool owned{false};
+    std::vector<double> window;
+    double settled{0.0};
+  };
+  std::vector<Reading> readings;
+  for (const auto offset : kOffsets) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    auto [lyric, first] = f.factory.makeNote(time::Tick{480}, time::Tick{kDuration}, 60U,
+        U"a", domain::Language::Japanese);
+    first.articulation = NoteArticulation::Legato;
+    first.vibrato.enabled = false;
+    first.phoneticHint = std::optional<std::string>{"a"};
+    region->lyrics.push_back(lyric);
+    region->notes.push_back(first);
+    for (std::size_t index = 1U; index < 3U; ++index) {
+      auto [unused, note] = f.factory.makeNote(
+          time::Tick{480 + kDuration * static_cast<std::int64_t>(index)}, time::Tick{kDuration},
+          static_cast<std::uint8_t>(60U + index * 4U), U"a", domain::Language::Japanese);
+      (void)unused;
+      note.lyricTokenId = first.lyricTokenId;
+      note.articulation = NoteArticulation::Legato;
+      note.vibrato.enabled = false;
+      note.phoneticHint = std::optional<std::string>{"a"};
+      region->notes.push_back(note);
+    }
+    const auto secondStart = 480 + kDuration;
+    voice_design::VoiceRecipe recipe; recipe.id = "partial-span";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    if (offset >= 0) {
+      region->performance.ownership = {
+          {PerformanceChannel::Pitch,
+           PerformanceTimeRange{time::Tick{secondStart + offset}, time::Tick{9600}},
+           ManualPerformanceMode::Replace, {}}};
+      const auto pronunciation = phonemizer::resolveJapanesePronunciation(*region);
+      CHECK(pronunciation);
+      region->performance.takes = {{.id = "pitch", .sourceRegionId = region->id,
+          .capturedRevision = region->performance.revision,
+          // The take must carry the SAME resource identity the snapshot renders. A synthetic
+          // identity compiles but is never matched, so the accepted selection is silently dropped
+          // and the authored lane has no effect at all, which is exactly what my first probe saw.
+          .resource = resource.value().identity,
+          .pronunciation = pronunciation.value().identity,
+          .generatorId = "fixture", .generatorVersion = "1",
+          .range = {time::Tick{0}, time::Tick{9600}},
+          // Ownership alone suppresses the glide but contributes no pitch: the lane is only READ
+          // through an accepted selection (performance_compiler.cpp:549 iterates
+          // `performance_.accepted`). A setup that declares ownership without accepting the take
+          // measures the glide being suppressed with nothing replacing it. The +700 value is chosen
+          // so the reading identifies the AUTHORED pitch, which a constant 0 could not.
+          // The Pitch lane's unit is MIDI TIMES 100, not cents and not semitones. `baseCents` is
+          // initialised to `scoreMidi * 100` and then OVERWRITTEN by the lane value at
+          // performance_compiler.cpp:580, and `midi = (baseCents + manualCents) / 100` at 629. So a
+          // lane value of 1200 is MIDI 12, which renders at 16 Hz and is refused as out of range; my
+          // first two attempts used 700 and 120 believing the unit was a cents offset, and both
+          // produced nonsense rather than a shifted pitch. 6400 is MIDI 64, the second note's own
+          // pitch, so the curve holds that note where the score also asks for it.
+          .lanes = {{PerformanceChannel::Pitch, {{time::Tick{0}, 6400.0},
+              {time::Tick{9600}, 6400.0}}}}}};
+      region->performance.accepted = {{.takeId = "pitch", .channel = PerformanceChannel::Pitch,
+          .scope = PerformanceTimeRange{time::Tick{secondStart + offset}, time::Tick{9600}},
+          .sourceTickOffset = time::Tick{0}}};
+    }
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"partial snapshot: "} + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"partial render: "} + rendered.error().message};
+    const auto& audio = rendered.value().rendered.audio;
+    const auto cents = [&](std::size_t from, std::size_t count, double expectMidi) {
+      const auto frames = voicebank::analyzePitch(
+          std::span<const float>{audio.samples.data() + from, count}, kRate);
+      if (!frames || frames.value().empty()) return 9999.0;
+      const auto measured = voicebank::medianVoicedPitch(frames.value());
+      if (measured <= 0.0) return 9999.0;
+      return 1200.0 * std::log2(measured / (440.0 * std::pow(2.0, (expectMidi - 69.0) / 12.0)));
+    };
+    // Measure the SECOND note's join only, since that is where the ownership boundary can fall.
+    const auto join = static_cast<std::size_t>(
+        rendered.value().proceduralMarkers[2].ownedSpan.start - audio.startFrame);
+    CHECK(join >= 9600U && join + 9600U <= audio.samples.size());
+    Reading reading{.offset = offset, .owned = offset >= 0};
+    for (int step = 0; step < 6; ++step)
+      reading.window.push_back(cents(join + static_cast<std::size_t>(step) * 400U, 400U, 64.0));
+    reading.settled = cents(join + 9600U, 4800U, 64.0);
+    readings.push_back(std::move(reading));
+  }
+  CHECK(readings.size() == std::size(kOffsets));
+  // 1. With no ownership at all the automatic glide is present: the first window reads far below the
+  // note's own pitch and climbs toward it. Measured +29 then +208 then +393 then +409.
+  const auto* unowned = &readings.front();
+  CHECK(!unowned->owned);
+  CHECK(unowned->window.front() < 100.0);
+  // The climb is checked over the RAMP, not window by window. The last window sits at the note's own
+  // pitch, where the reading is +409 then +401: two windows inside the same settled pitch, so their
+  // order carries no information and demanding a strict rise between them would be asserting noise.
+  // The claim is that the reading climbs from well below the target to at it, which the first and
+  // last readings show: +29 and +401 against a 400-cent interval.
+  CHECK(unowned->window.back() > 300.0);
+  // Window by window the climb is not strictly monotone: 400-frame windows at 400-frame strides
+  // overlap the ramp's own curvature unevenly, and the analyser reports a median over each, so a
+  // neighbouring pair can legitimately read flat or fractionally down. The stable statement is that
+  // the SECOND window is already well above the first, which is the ramp in progress.
+  CHECK(unowned->window[1] > unowned->window[0] + 100.0);
+  // 2. Every span that reaches the join suppresses the glide there, and the suppression does not
+  // fade in with distance: a span starting at the note's own start, one starting 20 ticks in, and
+  // one starting at the note's final tick all read the same flat series, +363, +406, +411, +408,
+  // +415, +399. That is the finding. The guard is asked per frame, but the glide it suppresses
+  // begins at the note's start regardless of where the authored span begins, because
+  // `transitionFromMidi` is recorded on the NOTE at compile time (`performance_compiler.cpp:354`)
+  // rather than per span. So an authored span that starts late does not leave the early part of the
+  // ramp automatic; the whole ramp is suppressed and the note is simply authored from its first
+  // frame. The readings are referenced to the PREVIOUS note's pitch, so a settled note reads at the
+  // 400-cent interval rather than at zero; what matters is flatness, and the unowned case is the one
+  // that climbs.
+  for (std::size_t index = 1U; index < readings.size(); ++index) {
+    const auto& owned = readings[index];
+    CHECK(owned.owned);
+    CHECK(owned.window.size() == 6U);
+    for (const auto value : owned.window) CHECK(value > 250.0);
+    CHECK(owned.settled > 250.0);
+  }
+  // 3. The unowned case's settled reading and the owned cases' agree, so what the span changes is the
+  // ramp and not the target. Without this a renderer that dropped the note's pitch entirely would
+  // pass the checks above, since a flat reading near the target is also what a correct one produces.
+  for (const auto& reading : readings) CHECK(std::abs(reading.settled - unowned->settled) < 60.0);
 }
 
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {

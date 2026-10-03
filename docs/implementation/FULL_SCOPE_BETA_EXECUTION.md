@@ -5069,6 +5069,65 @@ on a real recording session for the sample route, which this does not touch. No
 DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
 
+2026-10-03 — An authored pitch span measured suppressing the automatic glide
+across the WHOLE note rather than only inside its own span, which closes the last
+of the three limits the entry above named (R3's M2.2 pitch/timing axis; the
+partial-ownership boundary).
+**Why this case.** The entry above shows an authored Replace curve suppressing
+the glide across a whole region. The interesting case is a PARTIAL span, where the
+boundary between authored and automatic pitch falls inside a melisma and could cut
+a ramp off partway. The guard is evaluated per output frame: `owns()` calls
+`activeIndex()`, which asks whether the frame lies inside the ownership scope
+(`performance_compiler.cpp:518` through 530), so the glide ought to survive outside
+the span and be suppressed inside it. Nothing had measured whether that per-frame
+boundary behaves as the code reads.
+**The measurement, and it is not what the code shape suggests.** Seven variants of
+the same three-note melisma, with the authored span starting at the second note's
+start, 5 ticks in, 10, 20, 40, at the note's final tick, and with no ownership at
+all. With no ownership the automatic glide is plainly present: **+29, +208, +393,
++409, +400, +401** across the window, climbing from far below the note's pitch to
+at it. Every owned variant reads flat and **identical regardless of where its span
+starts**: +363, +406, +411, +408, +415, +399 for a span at the note's start, and
++338, +400, +400, +402, +400, +406 for one starting at the note's FINAL tick. A span
+that begins after the entire 20-tick glide window has already elapsed still
+suppresses a ramp that began before it existed. **Why.** `transitionFromMidi` and
+`transitionEndFrame` are recorded on the NOTE at compile time
+(`performance_compiler.cpp:354`), not per span, so the ramp belongs to the note
+rather than to any stretch of it. The per-frame guard then suppresses that whole
+note-level ramp as soon as the frame is inside an owned span, which for a note that
+is owned anywhere is effectively always. The behaviour is correct and produces the
+right audio; what the code shape suggests, and what a reader would reasonably
+assume, is a partial suppression.
+**Two unit confusions of mine, recorded because both failed silently.** The Pitch
+lane is not a cents offset. `baseCents` is initialised to `scoreMidi * 100.0`
+(`performance_compiler.cpp:544`) and then OVERWRITTEN by the lane value at line
+580, with `midi = (*baseCents + manualCents + result.vibratoCents) / 100.0` at line
+630. The lane's unit is therefore **MIDI times 100**. My first two attempts used
+700 and 120 on a cents reading of the contract; they compiled, and they were
+refused at render time as out of the phonation source's range, which is MIDI 7 and
+MIDI 1.2. Neither produced a shifted pitch, and a case written against the wrong
+unit can still pass. Only 6400, which is MIDI 64, renders. Separately, my first
+version set ownership without an ACCEPTED SELECTION; lanes are only read through
+`performance_.accepted` (line 549), so that version measured the glide being
+suppressed with nothing replacing it.
+**Mutation-checked.** Removing `!manualPitchReplaces` from the guard, so the glide
+ignores ownership entirely, fails at the flatness assertion here and at the
+first-window assertion in the entry above. A converse mutation was attempted and
+did not compile, since `generatedPitch` is declared after the glide, so it is not
+claimed.
+Release `seam_performance_snapshot_tests` 66 of 66, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows that an authored pitch span suppresses the
+automatic glide for the entire note it touches, and that the suppression does not
+scale with how much of the note the span covers. It is one ownership mode, Replace,
+over one region, with the curve holding the same pitch the score already asked for;
+it says nothing about a span whose curve DISAGREES with the score, where the
+interesting question is whether the early part of a ramp is heard before the
+authored value takes over. That case remains unmeasured. No listening evidence
+exists. U42 remains externally blocked on a real recording session for the sample
+route, which this does not touch. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
+
 2026-10-03 — An authored Replace pitch curve measured suppressing the automatic
 melisma glide in the audio, which is the precedence rule between a creator's
 curve and an automatic transition (R3's M2.2 pitch/timing axis, closing the second
