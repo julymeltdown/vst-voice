@@ -314,6 +314,65 @@ TEST_CASE("graph inspection refuses bytes no admitted export family produces") {
   CHECK(!inspectNeuralGraph(std::as_bytes(std::span{oversized.data(),oversized.size()}),tiny));
 }
 
+// A diffusion graph that generates its own noise renders differently on every request, because the
+// shipped worker opens a fresh ONNX session per process and the session is the only thing that was
+// ever seeded. That contradicts reproducibility-tolerances/*/neural/pcm-error and hides pitch
+// adherence behind a determinism failure. The seed is already in the file as AttributeProto field 5;
+// it used to be skipped like every other attribute, so a seeded export and a stochastic one were
+// admitted identically. This pins that the attribute is read, and that a draw without one is
+// refused at admission rather than executed.
+TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its seed recorded") {
+  using namespace seam::neural_synthesis;
+  using namespace seam::test::onnx;
+  const auto inspect=[&](const std::string& bytes) {
+    return inspectNeuralGraph(std::as_bytes(std::span{bytes.data(),bytes.size()}));
+  };
+  const auto draw=[&](std::optional<std::int64_t> seed) {
+    std::string node;
+    protoBytesField(node,1U,"shape");
+    protoBytesField(node,2U,"noise");
+    protoBytesField(node,4U,"RandomNormalLike");
+    if (seed) {
+      std::string attribute;
+      protoBytesField(attribute,1U,"seed");
+      protoVarintField(attribute,5U,static_cast<std::uint64_t>(*seed));
+      protoBytesField(node,5U,attribute);
+    }
+    return onnxModel(onnxGraph({onnxValueInfo("shape",7U,{"1","80"})},
+        {onnxValueInfo("noise",1U,{"1","80"})},{node}));
+  };
+
+  // Refused, and refused by NAME so the message says which operator has to change.
+  const auto stochastic=inspect(draw(std::nullopt));
+  CHECK(!stochastic);
+  if (!stochastic) {
+    CHECK(stochastic.error().message.find("RandomNormalLike")!=std::string::npos);
+    CHECK(stochastic.error().message.find("seed")!=std::string::npos);
+  }
+
+  // Seeded: admitted, and the seed is carried into the contract rather than discarded.
+  const auto seeded=inspect(draw(1234));
+  CHECK(seeded);
+  if (!seeded) return;
+  const auto random=std::find_if(seeded.value().nodes.begin(),seeded.value().nodes.end(),
+      [](const auto& node){ return node.seed.has_value(); });
+  CHECK(random!=seeded.value().nodes.end());
+  if (random!=seeded.value().nodes.end()) {
+    CHECK(random->seed.has_value());
+    if (random->seed) CHECK(*random->seed==1234);
+  }
+
+  // Seed zero is a real seed, not an absent one: refusing it would make 0 unusable while every
+  // other value worked, which is exactly the kind of quiet asymmetry this check must not have.
+  const auto zero=inspect(draw(0));
+  CHECK(zero);
+  if (zero) {
+    const auto zeroed=std::find_if(zero.value().nodes.begin(),zero.value().nodes.end(),
+        [](const auto& node){ return node.seed.has_value(); });
+    CHECK(zeroed!=zero.value().nodes.end());
+  }
+}
+
 TEST_CASE("admission refuses a pair of individually valid graphs that disagree") {
   using namespace seam::neural_synthesis;
   const auto refused=[&](const std::string& acoustic,const std::string& vocoder) {

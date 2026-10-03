@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -53,6 +54,9 @@ struct ConditioningControlContract final {
 struct GraphNodeContract final {
   std::vector<std::string> inputs;
   std::vector<std::string> outputs;
+  // The seed an operator declared, for the one admitted operator that takes one. A stochastic
+  // operator with no seed is refused at admission, so this is always set where it can be read.
+  std::optional<std::int64_t> seed;
   friend bool operator==(const GraphNodeContract&, const GraphNodeContract&) = default;
 };
 

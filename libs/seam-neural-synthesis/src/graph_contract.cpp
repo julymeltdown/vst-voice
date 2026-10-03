@@ -380,7 +380,17 @@ core::Result<void> parseAttribute(Reader& reader, GraphNodeContract& node, Graph
       if (!reader.text(ignored, limits.maximumBytes)) return truncated("ONNX operator attribute");
       continue;
     }
-    if (field == 2U || field == 3U || field == 5U || field == 7U || field == 8U ||
+    // AttributeProto field 5 is `seed`, the one attribute whose value changes what the graph
+    // DOES rather than how it is shaped. It used to be skipped with the rest, which is why a
+    // stochastic export and a seeded one were admitted identically. It is read here so the
+    // operator check below can refuse a stochastic draw rather than merely describing one.
+    if (field == 5U && wire == 0U) {
+      std::uint64_t raw = 0U;
+      if (!reader.varint(raw)) return truncated("ONNX operator attribute seed");
+      node.seed = static_cast<std::int64_t>(raw);
+      continue;
+    }
+    if (field == 2U || field == 3U || field == 7U || field == 8U ||
         field == 9U || field == 10U || field == 14U || field == 15U || field == 20U ||
         field == 22U || field == 23U) {
       if (!reader.skip(wire)) return truncated("ONNX operator attribute");
@@ -444,6 +454,15 @@ core::Result<void> parseNode(Reader& reader, GraphContract& contract, Budget& bu
   if (!admits(opType))
     return refused("ONNX operator " + std::string{opType}, "is not in the admitted operator set");
   if (node.outputs.empty()) return refused("ONNX operator", "declares no output");
+  // A draw the graph does not seed cannot be reproduced: the worker opens a fresh session per
+  // request, so a graph that generates its own noise renders differently on every export. That
+  // contradicts reproducibility-tolerances/*/neural/pcm-error, and it also hides pitch-adherence
+  // evidence behind a determinism failure. Refusing the graph at admission is the point where the
+  // defect is still cheap to fix, because the alternative is shipping audio nobody can re-derive.
+  if (opType == "RandomNormalLike" && !node.seed)
+    return refused("ONNX operator RandomNormalLike",
+        "draws without a declared seed, so its output is not reproducible across requests; export "
+        "the graph with a fixed seed attribute or bind the noise as a graph input");
   if (std::find(contract.operators.begin(), contract.operators.end(), opType) == contract.operators.end())
     contract.operators.push_back(opType);
   contract.nodes.push_back(std::move(node));

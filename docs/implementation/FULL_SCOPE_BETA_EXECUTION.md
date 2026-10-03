@@ -4085,6 +4085,46 @@ audible listening quality, physical recording, producer import, or the full
 U22 creator journey. U22 and Beta GO remain open. GitHub CI remains deferred;
 `.github` was not touched.
 
+2026-10-03 — The neural determinism defect FIXED at admission: the contract now reads
+the seed an exported graph already carries and refuses a stochastic draw rather than
+executing it (R3's M3 input path; the fix recommended by the previous entry, now
+implemented).
+**The change, two small parts.** `GraphNodeContract` gained an optional `seed`
+(`graph_contract.hpp:54`), and the attribute parser now READS AttributeProto field 5
+instead of skipping it with the other attributes (`graph_contract.cpp:390`) — the one
+attribute whose value changes what a graph DOES rather than how it is shaped, which is
+why it was the one worth keeping. `parseNode` then refuses any `RandomNormalLike`
+with no declared seed, naming the operator and both repairs in the message
+(`graph_contract.cpp:462`). Refusing at admission is the point where the defect is
+still cheap to fix, since the alternative is shipping audio nobody can re-derive. Seed
+`0` counts as a real seed rather than an absent one: refusing it would make it
+unusable while every other value worked, which is exactly the quiet asymmetry this
+check must not have.
+**Mutation-checked in both halves, because a contract check that cannot fail is
+decoration.** Disabling the refusal fails the new case at the refusal assertion;
+parsing the seed and then discarding it fails at the admission assertion. Both halves
+are load-bearing and neither was shown by writing the test alone.
+**An assertion of mine was wrong and the test caught it.** The first version located
+the seeded node by searching for an input named `noise`, which does not survive the
+contract's own normalisation, and the case failed on a node lookup; locating it by
+`seed.has_value()` is the correct predicate. Recorded because a test that passes the
+first time has usually not been tested hard enough.
+**Existing evidence is unaffected.** No checked-in test graph declares an unseeded
+`RandomNormalLike`, so this closes a real gap rather than invalidating prior work: all
+17 pre-existing neural tests passed unchanged before the new case was added.
+**What is still not claimed.** **No neural render was run**, because there is still no
+model: `find . -name '*.onnx'` outside test datasets returns zero files and
+`DiffSinger-source/checkpoints` holds only a `.gitkeep`. **This does not unblock M3**:
+determinism was a prerequisite for trustworthy neural pitch evidence, not a substitute
+for having a model, and only one of the two is now done. **The exporter is unchanged**,
+so whoever produces the first bundle must export a fixed seed or bind the noise as a
+graph input; that work is outside this repository.
+Production code changed this time: `graph_contract.hpp`, `graph_contract.cpp` and one
+new case in `tests/test_neural_model_bundle.cpp`. `seam_neural_worker_protocol_tests`
+32 of 32; full Release CTest 224 of 224; `tests/external_beta` plus `tests/production`
+321 passed with 315 subtests. No DAW, VoiceOver, signing, Windows or external-review
+evidence. `.github` was not touched.
+
 2026-09-25 — U22-to-song procedural singer install handoff. Standalone now has
 File → “Install Procedural Singer…” for signed `.seamsinger` packages, separate
 from sample-bank installation and from the subsequent explicit track-selection
