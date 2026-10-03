@@ -27,7 +27,25 @@
         "acceptanceContract": {"$ref": "#/$defs/reference"},
         "releaseAudit": {"$ref": "#/$defs/audit"},
         "closedAt": {"type": "string", "format": "date-time"},
-        "archiveVerified": {"type": "boolean", "deprecated": true}
+        "archiveVerified": {"type": "boolean", "deprecated": true},
+        "measuredEvidence": {"$ref": "#/$defs/measuredEvidence"}
+      }
+    },
+    "measuredEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["install", "soak", "host"],
+      "properties": {
+        "install": {"$ref": "#/$defs/collectorRecord"},
+        "soak": {"$ref": "#/$defs/collectorRecord"},
+        "host": {"$ref": "#/$defs/collectorRecord"}
+      }
+    },
+    "collectorRecord": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "collectorTool"],
+      "properties": {
+        "status": {"enum": ["PASS", "FAIL", "NOT_RUN"]},
+        "collectorTool": {"type": "string", "minLength": 1}
       }
     },
     "decision": {

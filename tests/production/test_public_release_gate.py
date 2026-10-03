@@ -17,6 +17,7 @@ from tests.production.public_release_fixtures import (
 )
 from tools.public_release.evidence_validation import operation_surface_findings
 from tools.public_release.surface_validation import product_surface_findings
+from tools.public_release.candidate_validation import external_beta_findings
 from tools.public_release.surface_validation import matrix_findings
 
 
@@ -136,6 +137,53 @@ class PublicReleaseGateTests(unittest.TestCase):
         findings = [
             finding for finding in matrix_findings(value)
             if finding.requirement_id == 'PR-008-target-matrices'
+        ]
+        self.assertEqual(findings, [])
+
+    def test_a_closed_external_beta_requires_measured_evidence(self) -> None:
+        # EXTERNAL_BETA_CLOSED asserts real testers ran this candidate. Before this, typing the
+        # state was the entire claim.
+        contract = acceptance_contract()
+        for mutation in ('no-evidence', 'no-soak', 'no-host', 'no-install', 'wrong-collector', 'unnamed'):
+            with self.subTest(mutation=mutation):
+                value = candidate(contract)
+                beta = value['externalBeta']
+                evidence = beta.get('measuredEvidence')
+                if mutation == 'no-evidence':
+                    beta.pop('measuredEvidence')
+                elif mutation == 'no-soak':
+                    evidence.pop('soak')
+                elif mutation == 'no-host':
+                    evidence.pop('host')
+                elif mutation == 'no-install':
+                    evidence.pop('install')
+                elif mutation == 'wrong-collector':
+                    evidence['soak']['collectorTool'] = 'tools/external_beta/cohort_gate.py'
+                else:
+                    evidence['host'].pop('collectorTool')
+                findings = external_beta_findings(value)
+                # The requirement id alone is not enough: the fixture already carries other
+                # PR-003 findings, so asserting on the id would pass whatever this check did.
+                messages = [finding.message for finding in findings]
+                self.assertTrue(
+                    any(
+                        'measured evidence' in message
+                        or 'its collector' in message
+                        or 'was not produced by' in message
+                        for message in messages
+                    ),
+                    f'{mutation} was accepted: {messages}',
+                )
+
+    def test_an_open_external_beta_is_not_yet_required_to_carry_evidence(self) -> None:
+        # READY means the beta has not finished, so it is not asked for finished-run evidence.
+        contract = acceptance_contract()
+        value = candidate(contract)
+        value['externalBeta']['state'] = 'EXTERNAL_BETA_READY'
+        value['externalBeta'].pop('measuredEvidence')
+        findings = [
+            finding for finding in external_beta_findings(value)
+            if 'measured evidence' in finding.message or 'collector' in finding.message
         ]
         self.assertEqual(findings, [])
 

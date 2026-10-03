@@ -87,7 +87,14 @@ def public_replay_fixture(root: Path, *, state: str = "PUBLIC_ACTIVE", closed: b
     value["externalBeta"] = {"state": beta["gate"], "candidateLineageId": value["candidateLineageId"],
         "candidateRootId": beta["candidateRoot"]["id"], "candidateRootSha256": beta["candidateRoot"]["sha256"],
         "acceptanceContract": prefixed(policy_ref),
-        "releaseAudit": {"candidate": prefixed(beta_ref), "archiveManifest": prefixed(manifest_ref), "archiveRoot": "beta"}}
+        "releaseAudit": {"candidate": prefixed(beta_ref), "archiveManifest": prefixed(manifest_ref), "archiveRoot": "beta"},
+        # A closed External Beta asserts real testers ran this candidate, so the records naming
+        # the collectors that measured it are part of the object being hashed.
+        "measuredEvidence": {
+            "install": {"status": "PASS", "collectorTool": "tools/external_beta/install_collector.py"},
+            "soak": {"status": "PASS", "collectorTool": "tools/external_beta/soak_collector.py"},
+            "host": {"status": "PASS", "collectorTool": "tools/external_beta/host_collector.py"},
+        }}
     predecessor_hash = sha256_json(value["externalBeta"])
     value["rootChain"]["evidenceRoot"]["externalBetaSha256"] = predecessor_hash
     next(record for record in value["evidence"] if record["requirementId"] == "PR-003-external-beta-closed")["externalBetaSha256"] = predecessor_hash

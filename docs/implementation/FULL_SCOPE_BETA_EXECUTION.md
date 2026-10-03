@@ -6661,3 +6661,33 @@ the gate now refuses an unmeasured claim for install and target-matrix status. T
 `tests/external_beta` 219 passed + 197 subtests; `tests/production` 129 passed + 134 subtests. No
 install, soak, DAW session or journey was performed on a target machine. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — PR-003 now requires measured evidence for a CLOSED External Beta, completing the gate
+wiring the previous four entries built toward.
+**The gap.** `external_beta_findings` checked that the beta state was right, the lineage matched, the
+candidate root was a digest, and that restored audit and contract references existed. It never asked
+whether **anybody ran the beta**. `EXTERNAL_BETA_CLOSED` asserts that real external testers used this
+candidate; before this change, typing that state was the entire claim.
+**The repair.** A CLOSED beta must carry `measuredEvidence` with `install`, `soak` and `host` records,
+each naming the specific collector that produced it. An **open** (`EXTERNAL_BETA_READY`) beta is not
+asked for them, because it has not finished running; the distinction is covered by its own case.
+**A test that could not fail, found by mutation rather than by reading.** The new case asserted
+`any('PR-003' in finding.requirement_id ...)`. The fixture already produces a **different** PR-003
+finding on a healthy candidate ("External Beta requires restored audit and contract references"), so
+that assertion passed no matter what the new check did — disabling the whole branch left all six
+subtests green. The assertion now matches on the **message** ("measured evidence", "its collector",
+"was not produced by") rather than the requirement id, and the branch mutation now fails. Recorded
+because this is the second time in this work that an id-level assertion passed while testing nothing:
+an existing finding for the same requirement is enough to satisfy it.
+**The schema is part of the contract, and it caught the change.** `public-release-replay.schema.json`
+declares `predecessor` with `additionalProperties: false`, so the new field was correctly rejected by
+`test_signed_activation_and_resume_replay_exact_inputs_on_every_call`. The schema gained
+`measuredEvidence` and a shared `collectorRecord` definition. The first attempt rewrote the file with
+`json.dumps(indent=2)`, producing a 277-line reformat of a deliberately compact document; that was
+**reverted** and replaced with a surgical 19-line edit in the file's existing style.
+**Six subtests** cover absent evidence, a missing install/soak/host record, the wrong collector, an
+unnamed collector, and the READY exemption.
+`tests/production` 131 passed + 140 subtests. **Not claimed:** no External Beta has been run, no
+participant consented, no install or soak or host session exists on a target machine. What is proven
+is that a candidate can no longer assert a CLOSED beta without naming measured evidence.
+`.github` was not touched.

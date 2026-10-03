@@ -137,6 +137,22 @@ def _candidate_template(contract_json: str) -> JsonObject:
             "candidateRootSha256": "f" * 64,
             "closedAt": "2026-08-30T23:00:00Z",
             "archiveVerified": True,
+            # A closed External Beta asserts real testers ran this candidate. The records below
+            # name the collectors that measured the install, soak and host sessions.
+            "measuredEvidence": {
+                "install": {
+                    "status": "PASS",
+                    "collectorTool": "tools/external_beta/install_collector.py",
+                },
+                "soak": {
+                    "status": "PASS",
+                    "collectorTool": "tools/external_beta/soak_collector.py",
+                },
+                "host": {
+                    "status": "PASS",
+                    "collectorTool": "tools/external_beta/host_collector.py",
+                },
+            },
         },
         "publicDocuments": [
             {

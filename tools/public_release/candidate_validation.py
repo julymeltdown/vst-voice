@@ -189,6 +189,23 @@ def external_beta_findings(candidate: JsonObject) -> tuple[ValidationFinding, ..
         errors.append(_finding(requirement_id, "External Beta candidate root is required"))
     if not isinstance(value.get("releaseAudit"), dict) or not isinstance(value.get("acceptanceContract"), dict):
         errors.append(_finding(requirement_id, "External Beta requires restored audit and contract references"))
+    # EXTERNAL_BETA_CLOSED asserts that real external testers ran this candidate. Typing the state
+    # asserts nothing, so a closed beta must present the soak and host records a collector measured.
+    # An open (READY) beta has not finished, so it is not asked for them yet.
+    if value.get("state") == "EXTERNAL_BETA_CLOSED":
+        evidence = value.get("measuredEvidence")
+        if not isinstance(evidence, dict):
+            errors.append(_finding(requirement_id, "a closed External Beta requires measured evidence"))
+        else:
+            for kind, collector in (("soak", "soak_collector.py"), ("host", "host_collector.py"),
+                                    ("install", "install_collector.py")):
+                record = evidence.get(kind)
+                if not isinstance(record, dict) or not record.get("collectorTool"):
+                    errors.append(_finding(
+                        requirement_id, f"closed External Beta {kind} evidence must name its collector"))
+                elif not str(record.get("collectorTool", "")).endswith(collector):
+                    errors.append(_finding(
+                        requirement_id, f"closed External Beta {kind} evidence was not produced by {collector}"))
     return tuple(errors)
 
 
