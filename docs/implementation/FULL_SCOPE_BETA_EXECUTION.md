@@ -6625,3 +6625,39 @@ performed by a person. **No journey was performed and no audio was rendered on a
 this session**; what is proven is that the device block is measured rather than typed.
 `tests/external_beta` 219 passed + 197 subtests. No DAW, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-04 — SEAM-BETA-P1-06 status after four collectors: four of five validators now produce
+measured evidence, and the fifth has no measurable content at all.
+**What was done.** `install_evidence`, `product_soak`, `host_evidence` and `standalone_evidence` each
+have a collector that measures real bytes, a live process, a host validator run, or real audio
+hardware. PR-006 and PR-008 now consume the install, soak and host collectors, so a candidate cannot
+claim a clean install or a passing target matrix without naming evidence a specific collector
+produced.
+**The fifth validator is `cohort_gate`, and it is a different kind of object.** Every field it
+requires describes a **human act**: pseudonymous participants who consented to a registry
+(`consent.version/scope/retention/registrySha256`), assignments with terminal statuses and written
+reasons, external sessions completing flows F1/F2/F5 on each platform, four timed check-ins
+(INITIAL, PLUS_1_HOUR, PLUS_24_HOURS, CLOSURE), incident triage, and A3 plus A4-or-A6 approvals. It
+additionally **refuses PII** (`_contains_pii` over `email`, `name`, `fullName`, `realName`, `phone`,
+`address`, `contact`) and requires participant ids to match `^participant-[a-z0-9-]+$`.
+**Why no collector is built for it, stated rather than left as a gap.** A collector for this record
+would have to invent participants, consent, check-in times and incident triage, or collect nothing.
+The first fabricates the exact evidence the PII and pseudonymity rules exist to prevent; the second
+adds a module that measures nothing while appearing to close the item. `BETA_READINESS_ISSUES.md:466`
+asks for "candidate-bound collectors for installation, DAW hosts, accessibility, physical soak, and
+cohort sessions". The first four are now collectors. **The fifth requires real people**, and this
+repository cannot manufacture them — the same category as U42's rights-cleared voicebank and U47's
+host sessions. Writing a collector here would convert an honest external blocker into a false
+internal closure, which is precisely the failure this ledger exists to prevent.
+**What a cohort record therefore still needs.** A consented participant registry whose
+`registrySha256` is measured from that registry's own bytes, per-session flow completion recorded by
+the person running the session, and check-in times taken from the real clock at each interval. Those
+are collector-shaped and could be built the moment participants exist; **no such collector is claimed
+here**.
+**The honest summary of P1-06.** Four of five validators converted from assertion to measurement, and
+the gate now refuses an unmeasured claim for install and target-matrix status. The remaining work is
+(a) wiring PR-003's external-beta surface to the soak/host collectors the same way PR-008 now is, and
+(b) the cohort collector, which is blocked on people rather than code.
+`tests/external_beta` 219 passed + 197 subtests; `tests/production` 129 passed + 134 subtests. No
+install, soak, DAW session or journey was performed on a target machine. No DAW, VoiceOver, signing,
+Windows or external-review evidence. `.github` was not touched.
