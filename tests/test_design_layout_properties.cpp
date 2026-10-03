@@ -18,11 +18,13 @@
 #include "seam/domain/project.hpp"
 #include "seam/native_ui/design/shell_overlays.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
+#include "seam/native_ui/design/sing_layout.hpp"
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/editor_controller.hpp"
 #include "seam/native_ui/editor_semantics.hpp"
 #include "seam/native_ui/paint/canvas2d.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/text/text_engine.hpp"
 
 #include <algorithm>
 #include <array>
@@ -148,6 +150,43 @@ struct Frame final {
   std::vector<TextRecord> text;
   std::vector<SemanticNode> nodes;  // flattened, children removed
 };
+
+// The system face the shipping AppKit window loads, named by SEAM_DESIGN_SYSTEM_FONT pointing at a
+// directory of font files. With nothing named the shell paints through the null engine as before and
+// no check depends on it.
+seam::text::TextEngine* designSystemFont() {
+  static std::unique_ptr<seam::text::TextEngine> engine = [] {
+    const char* directory = std::getenv("SEAM_DESIGN_SYSTEM_FONT");
+    if (directory == nullptr || *directory == '\0') return std::unique_ptr<seam::text::TextEngine>{};
+    seam::text::FontSearchOptions options;
+    for (const auto& entry : std::filesystem::directory_iterator{directory}) {
+      if (entry.is_regular_file()) options.additionalCandidates.push_back(entry.path());
+    }
+    if (options.additionalCandidates.empty()) return std::unique_ptr<seam::text::TextEngine>{};
+    auto loaded = seam::text::TextEngine::createFromTrustedFiles(options);
+    return loaded ? std::move(loaded).value() : std::unique_ptr<seam::text::TextEngine>{};
+  }();
+  return engine.get();
+}
+
+// The design layer is painted here with a null text engine, so every geometry assertion in this file
+// is about the layout the shell computes rather than about what a person would see drawn from it: the
+// shell's own type scale is a set of point sizes, and a point size is only a claim until a face has
+// turned it into ink. That is the same gap the Studio surfaces had, and it is why this helper gained a
+// capture: with a real engine the same shell can be written out as a frame and read.
+void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, double height,
+                        const std::filesystem::path& path, DesignMode mode = DesignMode::Emo) {
+  const auto surface = static_cast<std::uint32_t>(std::lround(width));
+  const auto high = static_cast<std::uint32_t>(std::lround(height));
+  native_ui::PixelSurface frame{surface, high};
+  native_ui::RasterCanvas canvas{frame, 1.0, designSystemFont()};
+  f.shell.setWorkspace(f.controller, workspace);
+  if (!f.shell.prepareFrame(f.controller, width, height)) return;
+  if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick())) return;
+  static_cast<void>(mode);
+  std::filesystem::create_directories(path.parent_path());
+  CHECK(frame.writePpm(path));
+}
 
 bool paintFrame(LayoutFixture& f, double width, double height, double scale, Frame& out) {
   if (!f.shell.prepareFrame(f.controller, width, height)) return false;
@@ -534,6 +573,104 @@ void sweepWorkspace(Checker& checker, Workspace workspace, std::string_view name
 // read: shrinking a type token to 4 point leaves every geometric property true and every case green.
 // This is the case that says so, and it is here because the token scale is the only thing holding a
 // floor for the editor and shell, and nothing was holding it to one.
+// Every workspace in the design layer has a layout-property case and none of them has ever written a
+// frame: `paintFrame` hands the shell a null text engine and returns the text records the capture saw,
+// which measures the shell's intent rather than its rendering. The shell's type scale says body 13,
+// label 12, smallLabel 11, rulerMicro 10, and an earlier entry established that no call site goes
+// below it, but that is a claim about numbers passed to a draw. This case renders each workspace with
+// a real face at two window sizes and writes the frames, so the shell can be read rather than inferred.
+TEST_CASE("every design workspace is capturable in a system face at both window sizes") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  // The frames are the point of this case and are only written when a directory is named, so nothing
+  // here depends on a capture existing; with no directory the frames go to a temporary path and are
+  // discarded when the case ends.
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-frames")};
+  LayoutFixture fixture;
+  const std::pair<Workspace, std::string_view> workspaces[] = {
+      {Workspace::Sing, "sing"}, {Workspace::Voice, "voice"}, {Workspace::Tune, "tune"},
+      {Workspace::Mix, "mix"}, {Workspace::Export, "export"}};
+  for (const auto& [workspace, name] : workspaces) {
+    for (const auto& size : {std::pair{1440.0, 900.0}, std::pair{1100.0, 700.0}}) {
+      writeCapturedFrame(fixture, workspace, size.first, size.second,
+                         root / (std::string{name} + "-" +
+                                 std::to_string(static_cast<int>(size.first)) + "x" +
+                                 std::to_string(static_cast<int>(size.second)) + ".ppm"));
+    }
+  }
+}
+
+// The SING workspace changes presentation with the window: a full three-card rack, a narrow rail, or a
+// 44-point portrait drawer. The thresholds live in sing_layout.cpp, so the frame alone cannot say
+// whether a window is showing the presentation it should. This case asks the layout directly, so a
+// frame that looks like a drawer at a width that should be full is caught as a layout fact rather than
+// argued about from pixels.
+// The shell string table has two kinds of wording that both used to end in an ellipsis, and they mean
+// opposite things. A label the canvas has genuinely shortened says so: the canvas ellipsizes any string
+// that does not fit the box it was given, and that is the correct use of the mark. A label that was never
+// shortened says nothing by carrying one, and on a button with room it is worse than nothing: it claims
+// the button continues past what it can show. The MIX settings button is the case that settles it, and
+// the frame is what settles that: its capsule is 112 points wide and the label measures about 57, so the
+// three characters were drawn into 55 points of empty capsule.
+//
+// So the two are kept apart by construction rather than by inspection. Progress wording keeps its
+// ellipsis, because "Saving…" is announcing that something is happening right now and the mark is
+// what says so; a button or menu label does not, because the canvas will add a mark if the label really
+// is too long for its box. Restoring an ellipsis to any of the button labels fails the case below.
+TEST_CASE("a shell label carries an ellipsis only when it is progress wording") {
+  using seam::native_ui::design::Str;
+  // The labels that name a control a person presses. None of them may end in the mark.
+  const std::string_view controlLabels[] = {
+      "Export set", "Install", "Open recipe", "Save As", "Voice seed", "Duplicate pose",
+      "Add frication", "Frication seed", "Open", "Settings", "{0} · Settings", "New starter voice"};
+  for (const auto key : {Str::ExportSet2, Str::Install, Str::OpenRecipe, Str::SaveAs,
+                         Str::VoiceSeed, Str::DuplicatePose, Str::AddFrication,
+                         Str::FricationSeed, Str::Open2, Str::Settings2, Str::NamedSettings,
+                         Str::NewStarterVoice}) {
+    const auto text = seam::native_ui::design::englishShellString(key);
+    CHECK(text.find("…") == std::string::npos);
+  }
+  // And the wording that really does announce work in progress keeps its mark, because there is nothing
+  // else in it to say so.
+  for (const auto key : {Str::Exporting, Str::Saving, Str::RenderingTheAudition,
+                         Str::RenderingB, Str::OpeningFile, Str::SavingFile}) {
+    const auto text = seam::native_ui::design::englishShellString(key);
+    CHECK(text.find("…") != std::string::npos);
+  }
+  // The list above is the whole claim: every control label is named, so a new control label carrying a
+  // mark has to be added here deliberately rather than arriving with one.
+  CHECK(std::size(controlLabels) == 12U);
+  for (const auto label : controlLabels) CHECK(label.find("…") == std::string_view::npos);
+}
+
+TEST_CASE("the SING rack presentation follows the window it is given") {
+  const auto presentation = [](double width, double height) {
+    return seam::native_ui::design::solveSingLayout(width, height, false);
+  };
+  // The canonical 1440x900 window carries all three cards, which is the frame the approved design was
+  // drawn at.
+  const auto full = presentation(1440.0, 900.0);
+  CHECK(full.rack == native_ui::design::RackPresentation::Full);
+  CHECK(full.portraitRing.width >= 120.0);
+  // A window above the drawer width but too short for all three cards falls back to the rail rather
+  // than clipping the cards under the status bar. 1100x700 is that window, and the frame rendered at
+  // it shows the rail: a 56-point column, not the drawer and not the full rack.
+  const auto rail = presentation(1100.0, 700.0);
+  CHECK(rail.rack != native_ui::design::RackPresentation::Drawer);
+  CHECK(rail.rackArea.width <= 56.0);
+  // Below the drawer width it is the 44-point portrait.
+  const auto drawer = presentation(700.0, 700.0);
+  CHECK(drawer.rack == native_ui::design::RackPresentation::Drawer);
+  CHECK(drawer.rackArea.width == 44.0);
+  // Whatever the presentation, the rack column is inside the window and clear of the musical area.
+  for (const auto& layout : {full, rail, drawer}) {
+    CHECK(layout.rackArea.right() <= 1440.0);
+    CHECK(layout.rackArea.x >= 0.0);
+  }
+}
+
 TEST_CASE("no drawn line in any workspace is smaller than the readable floor") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   // The floor is derived rather than written down. A line draws its ascent plus its descent, which
