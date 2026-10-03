@@ -135,6 +135,24 @@ double voicebankStudioAssignmentRailPitch() noexcept {
   return voicebankStudioRailRowGeometry().pitch;
 }
 
+std::string studioRailLabelForWidth(std::string_view label, std::size_t columns) {
+  // The label is cut to a number of display columns rather than bytes, and an ellipsis says that it was
+  // cut, so the creator is not left with a name that looks complete and is not. A UTF-8 character is
+  // more than one byte, so a byte cut would take the last character of a name written in anything but
+  // ASCII and leave a broken one on screen; this was the bug that first moved the cut onto columns.
+  //
+  // The ellipsis is part of the contract, not a nicety: the rail's row is one line tall, so a name too
+  // wide for it is shortened here rather than wrapped, and the only thing that tells the creator the
+  // name continues is the mark at the end. Without it the row shows a shorter name that looks complete.
+  if (columns == 0U) return {};
+  const auto truncated = text::utf8DisplayWidth(label) > columns;
+  const auto painted = text::truncateUtf8ToDisplayWidth(
+      label, truncated ? columns - 1U : columns);
+  std::string result{painted};
+  if (truncated) result += "…";  // U+2026 HORIZONTAL ELLIPSIS
+  return result;
+}
+
 VoicebankStudioRailRowGeometry voicebankStudioRailRowGeometry() noexcept {
   // The line height is what the two lines are drawn at, which is the readable label size rather than
   // the small type the row used to be drawn at. The gap is the room between them. The defect this
@@ -711,13 +729,10 @@ void VoicebankStudioScenePainter::paint(
                                                                : theme_.panelAlternate);
       if (index == controller.selectedIndex()) canvas.strokeRect(row, theme_.accent, 1.0);
       const auto& label = units[index].alias.empty() ? units[index].id : units[index].alias;
-      // The label is cut to a number of display columns rather than bytes, and an ellipsis says that
-      // it was cut, so the creator is not left with a name that looks complete and is not.
-      const auto truncated = text::utf8DisplayWidth(label) > kRailLabelColumns;
-      const auto painted = text::truncateUtf8ToDisplayWidth(
-          label, truncated ? kRailLabelColumns - 1U : kRailLabelColumns);
-      canvas.drawTextWrapped(ui::Rect{16.0, y + 4.0, 220.0, 20.0},
-                             truncated ? std::string{painted} + "…" : std::string{painted},
+      // The cut, and the ellipsis that announces it, are one decision in studioRailLabelForWidth, so a
+      // case can check that a name too wide for this row says so without reading the draw back out.
+      const auto painted = studioRailLabelForWidth(label, kRailLabelColumns);
+      canvas.drawTextWrapped(ui::Rect{16.0, y + 4.0, 220.0, 20.0}, painted,
                              theme_.primaryText, kRailText, 20.0);
     }
   }

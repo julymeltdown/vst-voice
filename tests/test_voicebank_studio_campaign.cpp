@@ -1116,6 +1116,114 @@ TEST_CASE("the manifest view with a microscope renders its marker labels at both
   }
 }
 
+// The Studio paints BGRA, so a lit pixel is one whose colour channels add up well above the dark
+// background. This is the same threshold the frame measurements used, kept here so the case and the
+// measurement that produced the conclusion agree on what "ink" means.
+[[nodiscard]] std::uint32_t inkSum(std::uint32_t bgra) noexcept {
+  return (bgra & 0xFFU) + ((bgra >> 8U) & 0xFFU) + ((bgra >> 16U) & 0xFFU);
+}
+
+// The manifest (non-production) rail is the one Studio rail that was never captured in a frame. Its
+// rows draw one label with `drawTextWrapped` into a 20 point box on a 32 point pitch, which is the same
+// shape of assumption the production rail had, and the production rail's two lines were touching in
+// the frame. A wrapping draw in a box one line tall either fits or is clipped, so this case puts a
+// label that does not fit on screen, captures the frame, and leaves the answer to the pixels rather
+// than to the offsets, because the offsets are the thing under test.
+TEST_CASE("the manifest rail is captured with a label wider than one line") {
+  const auto root = test::support::temporaryDirectory("studio-manifest-rail");
+  const auto audioName = std::filesystem::path{"unit.wav"};
+  const auto audio = root / audioName;
+  std::vector<float> samples(24000U, 0.0F);
+  CHECK(voicebank::writeWav(
+      audio, voicebank::WavOutputFormat{.sampleRate = 48000U, .channels = 1U,
+                                       .sampleFormat = voicebank::WavSampleFormat::Float32},
+      samples).hasValue());
+  // An alias long enough that it cannot fit the rail's 220 point label box at 12 point on one line,
+  // which is the case the one-line box has to answer for.
+  auto unit = test::support::makeUnit("ja.original.a3.a.01", {"a"}, audio, 57,
+                                     voicebank::UnitKind::Sustain, 12000U);
+  unit.audioPath = audioName;
+  unit.alias = "a very long unit alias that will not fit on one line";
+  const auto manifest = test::support::makeManifest({unit});
+  const auto manifestPath = root / "manifest.json";
+  CHECK(voicebank::ManifestJsonCodec{}.save(manifest, manifestPath));
+
+  auto engine = text::TextEngine::createSystem();
+  for (const auto& [width, height] : {std::pair{1100U, 720U}, std::pair{720U, 520U}}) {
+    seam::native_ui::PixelSurface surface{width, height};
+    seam::native_ui::RasterCanvas canvas{surface, 1.0,
+                                        engine ? engine.value().get() : nullptr};
+    Controller controller;
+    CHECK(controller.openManifest(manifestPath, static_cast<double>(width),
+                                 static_cast<double>(height)));
+    CHECK(controller.selectedUnit() != nullptr);
+    seam::native_ui::VoicebankStudioScenePainter{}.paint(canvas, controller);
+    CHECK(surface.checksum() != 0U);
+
+    // What the frame showed, measured rather than asserted from the offsets. This rail draws one
+    // label per row into a box one line tall, so the two things that could go wrong are that a label
+    // too wide for the box spills into the row below, and that it is cut through a character rather
+    // than at one. Neither happens: the ink of the label stays inside its own row's band, and the row
+    // below it carries none of this row's text. The label is truncated by display column with an
+    // ellipsis, which is what a creator can read as "this was cut" rather than as the whole name.
+    //
+    // The rail was audited and found correct in this pass. It is recorded here because the same
+    // shape of assumption (a box sized for one line, text drawn into it) was a real defect in the
+    // production rail, so "the manifest rail is the other one and it is fine" is a claim that now
+    // rests on a rendered frame and on these measurements rather than on reading the offsets.
+    const auto rowTop = 108.0;
+    const auto rowHeight = seam::native_ui::voicebankStudioUnitRailPitch(false);
+    const auto inkTop = static_cast<std::size_t>(rowTop + 4.0);
+    const auto inkBottom = static_cast<std::size_t>(rowTop + rowHeight - 4.0);
+    std::size_t inkInside = 0U;
+    for (std::size_t y = inkTop; y < inkBottom && y < height; ++y)
+      for (std::uint32_t x = 16U; x < 236U && x < width; ++x)
+        if (inkSum(surface.pixels()[static_cast<std::size_t>(y) * width + x]) > 300U) {
+          ++inkInside;
+          break;
+        }
+    // The label is drawn, and it stays inside its own row.
+    CHECK(inkInside > 0U);
+
+    // The property the surviving mutations actually turned on, stated on the contract rather than on
+    // the pixels. Two mutations rendered identically to HEAD: a two-line box, and a wider column cut.
+    // A third, a narrow box, silently drops the rest of the name with no ellipsis at all, and the
+    // pixel-shape detector I tried first could not tell that from a real tail, because a word ending
+    // in separated marks looks the same. So the cut is checked where it happens: on the string the
+    // rail decided to draw.
+    const auto painted = seam::native_ui::studioRailLabelForWidth(unit.alias, 24U);
+    CHECK(painted != unit.alias);
+    CHECK(painted.find("…") != std::string::npos);
+    // And what it drops is the tail, not the head, so the creator is still shown where the name
+    // starts and is told that it does not end there.
+    CHECK(unit.alias.rfind(painted.substr(0, painted.size() - 3U), 0U) == 0U);
+    bool belowRow = false;
+    const auto accent = seam::native_ui::Color{169, 79, 119, 255}.bgra();
+    const auto fill = seam::native_ui::Color{72, 52, 76, 255}.bgra();
+    for (std::size_t y = inkBottom; y < inkBottom + 8U && y < height; ++y)
+      for (std::uint32_t x = 16U; x < 236U && x < width; ++x) {
+        const auto pixel = surface.pixels()[static_cast<std::size_t>(y) * width + x];
+        if (pixel != accent && pixel != fill && inkSum(pixel) > 300U) belowRow = true;
+      }
+    CHECK(!belowRow);
+
+    // And, the property two surviving mutations led to: a label that does not fit is cut where the cut
+    // says it is. Narrowing the row's label box from 220 points to 60 renders "a very long" and drops
+    // the rest of the name with nothing at the end of it, so the creator is shown a name that looks
+    // complete and is not. The rail guards this by truncating the label to a column count before the
+    // draw and appending an ellipsis when it did, so the check is that the drawn label ends in an
+    // ellipsis whenever the source alias is longer than what fits: the alias here is far longer than
+    // any single line, so the drawn form must announce that it was cut.
+
+    const char* capture = std::getenv("SEAM_STUDIO_CAPTURE_DIRECTORY");
+    if (capture != nullptr && *capture != '\0') {
+      std::filesystem::create_directories(capture);
+      CHECK(surface.writePpm(std::filesystem::path{capture} /
+                             ("manifest-rail-long-alias-" + std::to_string(width) + ".ppm")));
+    }
+  }
+}
+
 TEST_CASE("marker labels are rows tall enough for their type and stay inside the waveform") {
   const std::vector<seam::ui::AcousticMarkerVisual> markers{
       {seam::ui::AcousticMarkerKind::AudioOffset, "offset", 0, 272.0},
@@ -1168,11 +1276,12 @@ TEST_CASE("marker labels are rows tall enough for their type and stay inside the
 
 TEST_CASE("a rail label cut to fit is cut by column and never through a character") {
   constexpr std::size_t kColumns = 24U;
+  // The cut is the one the rail painter actually uses, not a copy of it written out here. This case
+  // used to reimplement the cut inline, which meant it passed while the real cut could be anything:
+  // a byte cut in studioRailLabelForWidth, or one that dropped the ellipsis, left this case green,
+  // because it was never calling it.
   const auto painted = [](const std::string& label) {
-    const auto truncated = text::utf8DisplayWidth(label) > kColumns;
-    const auto kept = text::truncateUtf8ToDisplayWidth(
-        label, truncated ? kColumns - 1U : kColumns);
-    return truncated ? std::string{kept} + "…" : std::string{kept};
+    return seam::native_ui::studioRailLabelForWidth(label, kColumns);
   };
   // A name whose 24th byte lands inside a multi byte character is the case that broke.
   // Twenty two ASCII columns followed by three three-byte characters: the 24th byte of this string

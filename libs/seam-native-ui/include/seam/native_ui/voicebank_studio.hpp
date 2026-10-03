@@ -82,6 +82,14 @@ struct VoicebankStudioRailRowGeometry final {
   double pitch{0.0};
 };
 [[nodiscard]] VoicebankStudioRailRowGeometry voicebankStudioRailRowGeometry() noexcept;
+// The label the manifest rail paints for a unit: the alias, or the id when the alias is empty, cut to
+// `columns` display columns with a horizontal ellipsis when it was cut. Exposed because the rail's
+// whole contract for a label too wide for its row is this one decision, and a case can only check that
+// the decision says so when it happens by asking the decision itself rather than by reading pixels back
+// out of a draw: a rail that quietly dropped the tail would render a shorter name and a pixel check
+// cannot tell that from a name that was always that short.
+[[nodiscard]] std::string studioRailLabelForWidth(std::string_view label,
+                                                 std::size_t columns);
 
 [[nodiscard]] core::Result<std::filesystem::path> nextVoicebankRecordingPath(
     const std::filesystem::path& directory, std::string_view unitId);
