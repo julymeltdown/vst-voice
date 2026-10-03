@@ -5820,15 +5820,28 @@ phrase" (`phonation_source.cpp:101`), and the periodic sum is normalized. A
 pitch-dependent 21 dB level swing is the same class of surprise those lines exist to
 prevent, which is why this is recorded as unintended behaviour rather than as a
 character choice someone made.
+**The control already exists, so this is a recipe value rather than a code defect.**
+The mechanism predicts that widening the first formant must compress the swing,
+because more of the harmonic series then falls inside the passband at every pitch.
+Rendering the same vowel at the same pitches with only `bandwidthHz` changed
+confirms it monotonically: the peak-to-minimum spread is **21.01 dB at the shipped
+90 Hz**, 14.03 at 150, 10.58 at 200, 7.39 at 300, 5.56 at 400 and **3.39 dB at
+600 Hz**, while the MIDI 79 peak barely moves (0.05327 to 0.05553) and the
+surrounding pitches rise to meet it, which is a resonance being filled in rather
+than a gain being applied. `bandwidthHz` is already a per-band recipe field bounded
+to 10 through 5000 Hz (`voice_recipe.cpp:141`), so **no code change is proposed and
+none is needed to make this adjustable.** What is missing is a decision about where
+in that range the shipped vowel should sit.
 **What this is and is not.** It is a deterministic, reproducible measured behaviour
 with a located mechanism, and the code's own comments indicate it is unintended.
-**It is not a defect claim, because the correct repair is a design choice.** Real
-voices DO get louder on vowels whose formants align with the pitch, which is part of
-why a note can seem to jump. But 21 dB is far beyond the resonance anyone would hear
-as expression, and a melody wandering across the range would carry a 21 dB level
-contour nobody scored. Whether to correct it with a gain compensation, a wider
-first-formant bandwidth, or by accepting the resonance needs an ear and a reference,
-so **no code is changed by this entry and no listening observation is claimed**.
+**It is not a defect claim, and no code change is proposed.** Real voices DO get
+louder on vowels whose formants align with the pitch, which is part of why a note can
+seem to jump. But 21 dB is far beyond the resonance anyone would hear as expression,
+and a melody wandering across the range would carry a 21 dB level contour nobody
+scored. The renderer already exposes the parameter that governs it; the shipped
+value sits at the narrow end of its own legal range. **Choosing where it should sit
+is a voice-design decision that needs an ear**, so **no recipe value is changed by
+this entry and no listening observation is claimed**.
 M2.2's "voice character or expression" row is where this belongs, and it now has its
 first acoustic evidence rather than none.
 No production code was modified. Release `seam_performance_snapshot_tests`

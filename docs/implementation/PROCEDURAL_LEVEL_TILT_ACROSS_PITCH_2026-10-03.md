@@ -144,6 +144,42 @@ It does not assert the renderer is broken, does not propose a specific loudness
 curve, and does not change any code. Whether to compensate, and by how much, is a
 voice-design decision that needs an ear and a reference.
 
+## The control that already exists: this is a recipe parameter, not a code defect
+
+The mechanism above makes a specific prediction. If the level swing is the
+fundamental landing inside a narrow first formant, then **widening that formant's
+bandwidth must compress the swing**, because more of the harmonic series falls
+inside the passband at every pitch. The schema already exposes this:
+`bandwidthHz` is a per-band recipe field bounded to 10 through 5000 Hz
+(`voice_recipe.cpp:141`), and the pilot's `あ` pose ships it at 90 Hz.
+
+Rendering the same vowel at the same pitches with only that one number changed:
+
+| F1 bandwidth | MIDI 72 | MIDI 79 | MIDI 84 | peak-to-min spread |
+| --- | --- | --- | --- | --- |
+| 90 Hz (shipped) | 0.00899 | 0.05327 | 0.00474 | **21.01 dB** |
+| 120 Hz | 0.01126 | 0.05433 | 0.00760 | 17.08 dB |
+| 150 Hz | 0.01350 | 0.05480 | 0.01090 | 14.03 dB |
+| 200 Hz | 0.01710 | 0.05515 | 0.01631 | 10.58 dB |
+| 250 Hz | 0.02049 | 0.05530 | 0.02126 | 8.62 dB |
+| 300 Hz | 0.02365 | 0.05537 | 0.02563 | 7.39 dB |
+| 400 Hz | 0.02923 | 0.05545 | 0.03272 | 5.56 dB |
+| 600 Hz | 0.03758 | 0.05553 | 0.04180 | 3.39 dB |
+
+The prediction holds and the relationship is monotonic: the swing falls from
+**21.0 dB to 3.4 dB** purely by widening one recipe field. The peak at MIDI 79
+barely moves (0.05327 to 0.05553) while the surrounding pitches rise to meet it,
+which is what a resonance being filled in looks like rather than a gain being
+applied.
+
+**Why this changes the disposition of the finding.** An earlier revision of this
+entry ended by saying the fix needed an ear. That is true of the final tuning
+value, but not of the existence of a control: the renderer already exposes exactly
+the parameter that governs this, and its shipped value sits at the narrow end of its
+own legal range. **No code change is proposed and none is needed to make the
+behaviour adjustable.** What is missing is a decision about where in the 90 to
+600 Hz range the shipped vowel should sit, and that decision needs a listener.
+
 ## Why it matters for the plan
 
 Every acoustic unit added over the past several entries measured pitch, timing,
