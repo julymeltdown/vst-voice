@@ -16,6 +16,7 @@ from tests.production.public_release_fixtures import (
     sign_operation,
 )
 from tools.public_release.evidence_validation import operation_surface_findings
+from tools.public_release.surface_validation import product_surface_findings
 
 
 class PublicReleaseGateTests(unittest.TestCase):
@@ -68,6 +69,38 @@ class PublicReleaseGateTests(unittest.TestCase):
         self.assertFalse(result.passed)
         self.assertIn("PR-004-public-documents", result.blocked_ids)
         self.assertIn("PR-009-update-channel", result.blocked_ids)
+
+    def test_install_evidence_requires_a_collector_that_measured_the_tree(self) -> None:
+        # Two documents agreeing on a digest proves nothing about an install. Before this, a
+        # candidate satisfied PR-006 by writing the same tree hash twice; the record must now
+        # name the collector that measured it.
+        contract = acceptance_contract()
+        for mutation in ('missing-record', 'missing-collector', 'unmeasured-digest', 'mismatched-tree'):
+            with self.subTest(mutation=mutation):
+                value = candidate(contract)
+                installations = value['installations']
+                if mutation == 'missing-record':
+                    installations.pop('record')
+                elif mutation == 'missing-collector':
+                    installations['record'].pop('collector')
+                elif mutation == 'unmeasured-digest':
+                    installations['record']['collector']['measuredDigests'] = ['deliverableSha256']
+                else:
+                    installations['record']['installedTreeSha256'] = 'f' * 64
+                findings = product_surface_findings(value)
+                self.assertTrue(
+                    any('PR-006' in finding.requirement_id for finding in findings),
+                    f'{mutation} was accepted: {findings}',
+                )
+
+    def test_a_collector_measured_install_record_satisfies_the_requirement(self) -> None:
+        contract = acceptance_contract()
+        value = candidate(contract)
+        findings = [
+            finding for finding in product_surface_findings(value)
+            if finding.requirement_id == 'PR-006-clean-installed'
+        ]
+        self.assertEqual(findings, [])
 
     def test_support_intake_requires_bundle_hash_bound_disposition(self) -> None:
         gate = self._gate()

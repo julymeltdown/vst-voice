@@ -6534,3 +6534,33 @@ builder rather than invoking `auval`, because no installed candidate bundle exis
 The runner path is implemented and reports `tool-missing` honestly when the tool is absent.
 `tests/external_beta` 214 passed + 197 subtests. No VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
+
+2026-10-04 — PR-006 could be satisfied by writing the same digest twice. It now requires the
+install record to name a collector that measured the tree, which closes the loop between the
+collectors and the gate.
+**The gap.** `product_surface_findings` checked only that `installations.macosInstalledTreeSha256`
+equalled `evidenceRoot.macosInstalledTreeSha256` (`surface_validation.py:85-90`). That proves two
+documents agree with each other. It says nothing about whether anyone measured an installed tree —
+and the installed tree digests are precisely the values the new collector measures from bytes on a
+target machine.
+**The repair.** PR-006 now additionally requires `installations.record` to be present, to name a
+`collector.tool`, to declare that `installedTreeSha256` was among the digests it **measured**, and to
+carry a tree digest equal to the one the candidate declares. A hand-authored record cannot satisfy
+any of those, because it cannot measure anything.
+**This is the consumer the collectors were missing.** The previous three entries built producers;
+nothing consumed them. Without this change they would have been three unused modules. Now a candidate
+that wants PR-006 must present a record in the shape `install_collector.py` emits, including the
+`collector` block and `measuredDigests` list added for exactly this purpose.
+**Seven existing tests broke when this landed, and that was the correct signal.** Every public
+fixture asserted a passing candidate using an `installations` block with no record in it. The
+fixture was updated to carry a collector-produced record rather than the check being relaxed — the
+alternative would have been to weaken the requirement until the old fixtures passed, which is the
+failure mode this project keeps having to undo.
+**Mutation-checked in two places.** Letting any object stand in for the record fails the positive
+case; removing the collector requirement fails the `missing-collector` subtest. Four subtests cover a
+missing record, a missing collector, a collector that did not measure the tree, and a record whose
+tree disagrees with the declared one.
+`tests/production` 127 passed + 128 subtests; `tests/external_beta` 214 passed + 197 subtests. **No
+install was performed and no target-machine evidence exists**: what is proven is that a candidate
+without measured provenance is now refused, not that any install has been measured. No DAW,
+VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.

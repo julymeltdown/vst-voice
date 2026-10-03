@@ -159,6 +159,20 @@ def _candidate_template(contract_json: str) -> JsonObject:
             "macosInstalledTreeSha256": evidence_root["macosInstalledTreeSha256"],
             "windowsInstalledTreeSha256": evidence_root["windowsInstalledTreeSha256"],
             "evidenceRecordIds": references["PR-006-clean-installed"],
+            # The installed tree digest is measured from bytes on a target machine, so the record
+            # must name the collector that produced it. Without this the requirement is satisfied by
+            # writing the same digest twice, which proves nothing about an install.
+            "record": {
+                "recordType": "external-beta-install-lifecycle",
+                "installedTreeSha256": evidence_root["macosInstalledTreeSha256"],
+                "collector": {
+                    "tool": "tools/external_beta/install_collector.py",
+                    "collectorVersion": 1,
+                    "measuredDigests": [
+                        "deliverableSha256", "installerSha256", "installedTreeSha256",
+                    ],
+                },
+            },
         },
         "bank": {
             "status": "PASS",

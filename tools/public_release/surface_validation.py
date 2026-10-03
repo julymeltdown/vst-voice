@@ -88,6 +88,23 @@ def product_surface_findings(candidate: JsonObject) -> tuple[ValidationFinding, 
         for key in ("macosInstalledTreeSha256", "windowsInstalledTreeSha256"):
             if installed.get(key) != evidence.get(key):
                 findings.append(_finding("PR-006-clean-installed", f"installed {key} differs from evidence root"))
+        # A declared digest matching the evidence root proves only that two documents agree. The
+        # install record must additionally carry a collector, because the tree digests are measured
+        # from bytes on a target machine and a hand-authored record cannot measure anything. This is
+        # what stops a candidate satisfying PR-006 by writing the same digest twice.
+        record = installed.get("record")
+        if not isinstance(record, dict):
+            findings.append(_finding("PR-006-clean-installed", "installations.record is required"))
+        else:
+            collector = record.get("collector")
+            if not isinstance(collector, dict) or not collector.get("tool"):
+                findings.append(_finding("PR-006-clean-installed", "install record must name the collector that produced it"))
+            else:
+                measured = collector.get("measuredDigests")
+                if not isinstance(measured, list) or "installedTreeSha256" not in measured:
+                    findings.append(_finding("PR-006-clean-installed", "collector must record that it measured the installed tree"))
+            if record.get("installedTreeSha256") != installed.get("macosInstalledTreeSha256"):
+                findings.append(_finding("PR-006-clean-installed", "install record installed tree differs from the declared installed tree"))
     bank, bank_errors = _required_object(candidate, "bank", "PR-007-bank-ready")
     findings.extend(bank_errors)
     if bank is not None:
