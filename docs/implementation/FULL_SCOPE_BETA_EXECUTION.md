@@ -6502,3 +6502,35 @@ collector's output. **No soak of the shipped product was run**: these cases samp
 own process over sub-second intervals, which proves the mechanism, not 30- or 120-minute product
 stability. `tests/external_beta` 210 passed + 197 subtests. No DAW, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-04 — The third External Beta validator has a collector, and it is built to report what it
+did NOT do. (SEAM-BETA-P1-06, third of five.)
+**Why this one is shaped differently from the other two.** `validate_host_record` demands a PASS
+for each of **twenty-three** named checks: scan, installDiscovery, instantiate, guiLifecycle,
+stateSave, stateRestore, transport, liveInput, bounceInspection, `activeSession30m`, and more. A
+collector that simply wrote PASS twenty-three times would be a machine for manufacturing exactly the
+false evidence this project exists to prevent. **So it cannot.**
+**What is automated and what is not, stated in the code.** `AUTOMATED_CHECKS` names the three checks a
+host validator can settle unattended — scan, installDiscovery, instantiate. The other twenty are
+behaviour inside a running DAW and require a person driving it. They are recorded **`NOT_RUN`**.
+`collect_manual_checks` in the record names exactly which ones, so a reviewer can see the boundary
+rather than infer it.
+**It reuses the host runners that already exist** rather than reimplementing discovery:
+`scripts/run_auval.py` and `scripts/run_vst3_test_host.py` already own component discovery and tool
+hashing. A missing tool is reported `NOT_RUN` with `reason: tool-missing`, never as a pass. Host
+version and build are read from the installed bundle's `Info.plist` via `defaults read`; when the
+application is absent the field is `"unreported"` rather than a plausible guess. On this machine
+Logic Pro is not installed, so both are `"unreported"` and the OS build reads the real `27.2`.
+**Two mutations, both landing on the property that matters.** Forcing `validator_passed = True`
+fails two cases; making the manual checks inherit the validator's verdict fails two more, because
+`NOT_RUN` silently becomes `PASS`. That second mutation is the exact failure mode the design exists
+to prevent, and it is now covered by a case that asserts no check carries `PASS` when the validator
+did not run.
+**Scope, stated plainly.** Three of five validators now collect. `standalone_evidence` and
+`cohort_gate` still produce nothing, and **no gate consumes any collector's output yet** — these are
+producers awaiting a consumer, not a closed loop. **No DAW was driven and no host validator was
+executed against the product** in this session; the cases feed recorded validator outcomes into the
+builder rather than invoking `auval`, because no installed candidate bundle exists on this machine.
+The runner path is implemented and reports `tool-missing` honestly when the tool is absent.
+`tests/external_beta` 214 passed + 197 subtests. No VoiceOver, signing, Windows or external-review
+evidence. `.github` was not touched.

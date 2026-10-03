@@ -9,6 +9,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tools.external_beta.host_collector import (
+    AUTOMATED_CHECKS,
+    build_host_record,
+    installed_tree_digest,
+    observe_host,
+)
 from tools.external_beta.host_evidence import HOST_CHECK_NAMES, validate_host_matrix, validate_host_record
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +65,72 @@ def _record(root: Path, target_id: str = "HOST-001") -> dict:
         "evidence": evidence,
     }
 
+
+class HostCollectorTests(unittest.TestCase):
+    """The collector must report what a host validator actually did, and nothing more.
+
+    The failure this guards against is a host record claiming twenty-three PASSes for checks
+    nobody performed, which is exactly what a hand-written record does.
+    """
+
+    def test_a_missing_validator_never_produces_pass_checks(self) -> None:
+        result = {'status': 'NOT_RUN', 'reason': 'tool-missing'}
+        record = self._record_for(result)
+        self.assertEqual(record['status'], 'FAIL')
+        for name in AUTOMATED_CHECKS:
+            self.assertEqual(record['checks'][name], 'FAIL')
+        manual = [name for name in HOST_CHECK_NAMES if name not in AUTOMATED_CHECKS]
+        self.assertTrue(manual)
+        for name in manual:
+            self.assertEqual(record['checks'][name], 'NOT_RUN')
+        self.assertNotIn('PASS', set(record['checks'].values()))
+
+    def test_a_failed_validator_marks_only_the_automated_checks_failed(self) -> None:
+        result = {'status': 'FAIL', 'failureClass': 'auval-nonzero'}
+        record = self._record_for(result)
+        self.assertEqual(record['status'], 'FAIL')
+        self.assertEqual(record['checks']['instantiate'], 'FAIL')
+        self.assertEqual(record['hostValidator']['failureClass'], 'auval-nonzero')
+
+    def test_every_canonical_check_is_present_exactly_once(self) -> None:
+        record = self._record_for({'status': 'PASS'})
+        self.assertEqual(set(record['checks']), set(HOST_CHECK_NAMES))
+        self.assertEqual(len(record['checks']), len(HOST_CHECK_NAMES))
+        automated = [n for n in HOST_CHECK_NAMES if n in AUTOMATED_CHECKS]
+        for name in automated:
+            self.assertEqual(record['checks'][name], 'PASS')
+        manual = [n for n in HOST_CHECK_NAMES if n not in AUTOMATED_CHECKS]
+        for name in manual:
+            self.assertEqual(record['checks'][name], 'NOT_RUN')
+
+    def test_collector_reports_the_running_machine(self) -> None:
+        observed = observe_host()
+        self.assertIn(observed['platform'], {'macos', 'windows', 'linux'})
+        self.assertIn(observed['architecture'], {'arm64', 'x86_64'})
+        self.assertTrue(observed['osBuild'])
+
+    def _record_for(self, validator_result: dict) -> dict:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            template = _record(root)
+            artifact = root / 'installed' / 'ProjectSEAMEditor.clap'
+            target = next(row for row in MATRIX['targets'] if row['id'] == 'HOST-001')
+            return build_host_record(
+                record_id=template['recordId'],
+                target=target,
+                candidate_root_id=template['candidateRootId'],
+                artifact_path=str(artifact),
+                operator=template['operator'],
+                verifier=template['verifier'],
+                workload_sha256=template['workloadSha256'],
+                machine_profile_sha256=template['machineProfileSha256'],
+                bank_identity=template['bankIdentity'],
+                project_identity=template['projectIdentity'],
+                validator_result=validator_result,
+                started_at=template['startedAt'],
+                ended_at=template['endedAt'],
+                artifact_digest=installed_tree_digest(artifact),
+            )
 
 class HostMatrixTests(unittest.TestCase):
     def test_matrix_declares_the_nine_required_host_tuples(self) -> None:
