@@ -6564,3 +6564,31 @@ tree disagrees with the declared one.
 install was performed and no target-machine evidence exists**: what is proven is that a candidate
 without measured provenance is now refused, not that any install has been measured. No DAW,
 VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — A target matrix marked PASS asserted that every declared row was exercised, with
+nothing behind it. PR-008 now requires collector-backed soak and host evidence for that status.
+**The gap.** `matrix_findings` checked the matrix's shape (namespace, platform, architecture, the
+exact twenty row ids) and then `value.get("status") != "PASS"` (`surface_validation.py:135-138`).
+A PASS therefore meant "someone typed PASS". The twenty rows are usability and accessibility
+journeys; asserting they were exercised on macOS and Windows is exactly the claim the soak and host
+collectors exist to support, and nothing connected them.
+**The repair.** A PASS matrix must now carry `measuredEvidence` with a `soak` and a `host` record.
+Each must name a `collectorTool`, that tool must be the expected one for its kind
+(`soak_collector.py` / `host_collector.py`), and each must itself be `PASS`. Naming the *specific*
+collector matters: accepting any tool name would let a candidate point the soak slot at
+`cohort_gate.py` and satisfy the requirement with an unrelated document, which is why the
+`wrong-collector` mutation is one of the six covered subtests.
+**This closes the loop opened two entries ago.** PR-006 now consumes the install collector's output;
+this makes PR-008 consume the soak and host collectors. All three collectors are now reachable from
+a gate rather than sitting unused.
+**Mutation-checked in both halves.** Letting the matrix object itself stand in for the evidence fails
+the positive case. Accepting any `collectorTool` fails the `wrong-collector` subtest with
+"wrong-collector was accepted". Six subtests cover absent evidence, a missing soak, a missing host,
+an unnamed collector, the wrong collector, and evidence that is not PASS.
+**What is and is not established.** Established: a matrix can no longer claim PASS without naming
+measured soak and host evidence produced by the two collectors, and the fixture now carries such a
+record. **Not established, and explicitly not claimed:** no soak has been run on a target machine,
+no DAW has been driven, and no real row of either matrix has been exercised. The fixture's evidence
+block is a **shape**, and what is proven is that an unmeasured PASS is now refused. `tests/production`
+129 passed + 134 subtests; `tests/external_beta` 214 passed + 197 subtests. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.

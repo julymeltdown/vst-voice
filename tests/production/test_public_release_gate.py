@@ -17,6 +17,7 @@ from tests.production.public_release_fixtures import (
 )
 from tools.public_release.evidence_validation import operation_surface_findings
 from tools.public_release.surface_validation import product_surface_findings
+from tools.public_release.surface_validation import matrix_findings
 
 
 class PublicReleaseGateTests(unittest.TestCase):
@@ -99,6 +100,42 @@ class PublicReleaseGateTests(unittest.TestCase):
         findings = [
             finding for finding in product_surface_findings(value)
             if finding.requirement_id == 'PR-006-clean-installed'
+        ]
+        self.assertEqual(findings, [])
+
+    def test_a_pass_target_matrix_requires_measured_soak_and_host_evidence(self) -> None:
+        # A matrix marked PASS asserts every declared row was exercised on that platform. Without
+        # evidence behind it, that status is a claim nobody measured.
+        contract = acceptance_contract()
+        for mutation in ('no-evidence', 'no-soak', 'no-host', 'unnamed-collector', 'wrong-collector', 'not-pass'):
+            with self.subTest(mutation=mutation):
+                value = candidate(contract)
+                matrix = value['targetMatrices']['macos']
+                evidence = matrix.get('measuredEvidence')
+                if mutation == 'no-evidence':
+                    matrix.pop('measuredEvidence')
+                elif mutation == 'no-soak':
+                    evidence.pop('soak')
+                elif mutation == 'no-host':
+                    evidence.pop('host')
+                elif mutation == 'unnamed-collector':
+                    evidence['soak'].pop('collectorTool')
+                elif mutation == 'wrong-collector':
+                    evidence['host']['collectorTool'] = 'tools/external_beta/cohort_gate.py'
+                else:
+                    evidence['soak']['status'] = 'NOT_RUN'
+                findings = matrix_findings(value)
+                self.assertTrue(
+                    any('PR-008' in finding.requirement_id for finding in findings),
+                    f'{mutation} was accepted: {findings}',
+                )
+
+    def test_collector_backed_matrix_evidence_satisfies_the_requirement(self) -> None:
+        contract = acceptance_contract()
+        value = candidate(contract)
+        findings = [
+            finding for finding in matrix_findings(value)
+            if finding.requirement_id == 'PR-008-target-matrices'
         ]
         self.assertEqual(findings, [])
 

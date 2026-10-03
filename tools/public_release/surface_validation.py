@@ -140,4 +140,21 @@ def matrix_findings(candidate: JsonObject) -> tuple[ValidationFinding, ...]:
             errors.append(_finding(requirement_id, f"{key} target identity differs"))
         if value.get("status") != "PASS":
             errors.append(_finding(requirement_id, f"{key} target matrix is not PASS"))
+        # A PASS here means every declared row was exercised on this platform. The soak and
+        # host records are what make that claim checkable rather than asserted, so a PASS
+        # without them is a status nobody measured.
+        evidence = value.get("measuredEvidence")
+        if not isinstance(evidence, dict):
+            errors.append(_finding(requirement_id, f"{key} matrix PASS requires measured evidence"))
+        else:
+            for kind, collector in (("soak", "soak_collector.py"), ("host", "host_collector.py")):
+                record = evidence.get(kind)
+                if not isinstance(record, dict) or not record.get("collectorTool"):
+                    errors.append(_finding(
+                        requirement_id, f"{key} {kind} evidence must name the collector that produced it"))
+                elif not str(record.get("collectorTool", "")).endswith(collector):
+                    errors.append(_finding(
+                        requirement_id, f"{key} {kind} evidence was not produced by {collector}"))
+                elif record.get("status") != "PASS":
+                    errors.append(_finding(requirement_id, f"{key} {kind} evidence is not PASS"))
     return tuple(errors)

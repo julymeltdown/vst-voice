@@ -191,6 +191,21 @@ def _candidate_template(contract_json: str) -> JsonObject:
                 "architecture": "arm64",
                 "status": "PASS",
                 "rowIds": [f"UA-{index:03d}" for index in range(1, 21)],
+                # A PASS matrix asserts every row was exercised. The soak and host records are
+                # what make that checkable rather than asserted, so the fixture carries collector
+                # provenance for both.
+                "measuredEvidence": {
+                    "soak": {
+                        "status": "PASS",
+                        "collectorTool": "tools/external_beta/soak_collector.py",
+                        "sampleCount": 2,
+                    },
+                    "host": {
+                        "status": "PASS",
+                        "collectorTool": "tools/external_beta/host_collector.py",
+                        "automatedChecks": ["scan", "installDiscovery", "instantiate"],
+                    },
+                },
             },
             "windows": {
                 "namespace": "PW",
@@ -198,6 +213,21 @@ def _candidate_template(contract_json: str) -> JsonObject:
                 "architecture": "x86_64",
                 "status": "PASS",
                 "rowIds": [f"PW-{index:03d}" for index in range(1, 21)],
+                # A PASS matrix asserts every row was exercised. The soak and host records are
+                # what make that checkable rather than asserted, so the fixture carries collector
+                # provenance for both.
+                "measuredEvidence": {
+                    "soak": {
+                        "status": "PASS",
+                        "collectorTool": "tools/external_beta/soak_collector.py",
+                        "sampleCount": 2,
+                    },
+                    "host": {
+                        "status": "PASS",
+                        "collectorTool": "tools/external_beta/host_collector.py",
+                        "automatedChecks": ["scan", "installDiscovery", "instantiate"],
+                    },
+                },
             },
             "evidenceRecordIds": references["PR-008-target-matrices"],
         },
