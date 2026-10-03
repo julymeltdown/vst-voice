@@ -89,8 +89,12 @@ std::optional<std::size_t> voicebankStudioUnitRailIndexAt(
     double y, std::size_t firstVisibleIndex, std::size_t unitCount,
     double viewportHeight, bool productionLayout) noexcept {
   constexpr auto top = 108.0;
-  const auto stride = productionLayout ? 36.0 : 32.0;
-  const auto rowHeight = productionLayout ? 32.0 : 28.0;
+  // The stride and the row height are read from the same place the painter reads them from. They were
+  // 36 and 32 here while the production rail's rows were drawn 36 apart on a 32 point row, and the
+  // pitch changed when those rows were given the room their two lines need; a hit test left at the old
+  // numbers is a row the creator cannot click where they can see one.
+  const auto stride = voicebankStudioUnitRailPitch(productionLayout);
+  const auto rowHeight = stride - 4.0;
   if (!std::isfinite(y) || y < top || firstVisibleIndex >= unitCount) {
     return std::nullopt;
   }
@@ -108,8 +112,12 @@ std::optional<std::size_t> voicebankStudioUnitRailIndexAt(
 std::size_t voicebankStudioUnitRailVisibleRows(
     double viewportHeight, bool productionLayout) noexcept {
   constexpr auto top = 108.0;
-  const auto stride = productionLayout ? 36.0 : 32.0;
-  const auto rowHeight = productionLayout ? 32.0 : 28.0;
+  // The stride and the row height are the pitch the rows are actually drawn at, read from the same
+  // place the painter reads it from. They used to be 36 and 32 for the production rail and 32 and 28
+  // for the unit rail, and the production rail's pitch changed when its two lines were given the room
+  // they need, so a count left at 36 would have reported and drawn rows that overlap.
+  const auto stride = voicebankStudioUnitRailPitch(productionLayout);
+  const auto rowHeight = stride - 4.0;
   const std::size_t maximumRows = productionLayout ? 12U : 18U;
   if (!std::isfinite(viewportHeight) || viewportHeight < top + rowHeight) {
     return 0U;
@@ -117,6 +125,42 @@ std::size_t voicebankStudioUnitRailVisibleRows(
   const auto fittingRows = static_cast<std::size_t>(
       std::floor((viewportHeight - top - rowHeight) / stride)) + 1U;
   return std::min(maximumRows, fittingRows);
+}
+
+double voicebankStudioAssignmentRailPitch() noexcept {
+  // Derived from the row geometry rather than written out again, because these were two independent
+  // sets of numbers: the painter laid the two lines out from one pair and the row count, the hit test
+  // and the pitch this function returns counted rows in another, so the count and the rows could
+  // disagree while both looked right in the source.
+  return voicebankStudioRailRowGeometry().pitch;
+}
+
+VoicebankStudioRailRowGeometry voicebankStudioRailRowGeometry() noexcept {
+  // The line height is what the two lines are drawn at, which is the readable label size rather than
+  // the small type the row used to be drawn at. The gap is the room between them. The defect this
+  // records was a gap of zero against a line height of 16, so the two lines' ascenders and descenders
+  // met: the key and the queue state read as one crowded pair instead of two rows of information.
+  const auto lineHeight = voicebankStudioTypeScale().label;
+  constexpr double gap = 4.0;
+  constexpr double insetTop = 4.0;
+  constexpr double insetBottom = 4.0;
+  return VoicebankStudioRailRowGeometry{
+      .lineHeight = lineHeight,
+      .gap = gap,
+      .insetTop = insetTop,
+      .insetBottom = insetBottom,
+      // The geometry carries the sum of its own four parts, so the pitch is defined here and nowhere
+      // else; a case can check that these parts really are what the painter and the count use.
+      .pitch = insetTop + lineHeight + gap + lineHeight + insetBottom,
+  };
+}
+
+double voicebankStudioUnitRailPitch(bool productionLayout) noexcept {
+  // The production rail draws two lines of readable text and the unit rail draws one, so the two
+  // pitches differ; each is derived from the line heights it draws rather than chosen for the type it
+  // used to be drawn at, which is what made the production rail's two lines touch.
+  if (productionLayout) return voicebankStudioAssignmentRailPitch();
+  return 4.0 + 20.0 + 4.0;
 }
 
 core::Result<std::filesystem::path> nextVoicebankRecordingPath(
@@ -766,15 +810,18 @@ void VoicebankStudioScenePainter::paint(
   constexpr double kUnitInspectorText = 12.0;
   constexpr double kUnitInspectorLine = 16.0;
   constexpr double kUnitInspectorGap = 6.0;
+  constexpr double kUnitInspectorLeft = 12.0;
+  constexpr double kUnitInspectorWidth = 214.0;
   auto inspectorTop = 86.0;
   const auto unitRow = [&](const std::string& text, const Color& color) {
     // The longest id is 242 points at this size in a 214 point column, so it takes two lines. The row
     // is given both, and the rows below move down rather than being drawn over it.
     const auto lines = static_cast<double>(
-        std::max<std::size_t>(1U, studioWrapWords(canvas, text, 214.0, kUnitInspectorText).size()));
+        std::max<std::size_t>(
+            1U, studioWrapWords(canvas, text, kUnitInspectorWidth, kUnitInspectorText).size()));
     canvas.drawTextWrapped(
-        ui::Rect{inspectorX + 12.0, inspectorTop, 214.0, lines * kUnitInspectorLine}, text, color,
-        kUnitInspectorText, kUnitInspectorLine);
+        ui::Rect{inspectorX + kUnitInspectorLeft, inspectorTop, kUnitInspectorWidth,
+                 lines * kUnitInspectorLine}, text, color, kUnitInspectorText, kUnitInspectorLine);
     inspectorTop += lines * kUnitInspectorLine + kUnitInspectorGap;
   };
   unitRow("UNIT INSPECTOR", theme_.secondaryText);

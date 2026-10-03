@@ -63,6 +63,25 @@ struct VoicebankStudioTheme final {
     double viewportHeight, bool productionLayout) noexcept;
 [[nodiscard]] std::size_t voicebankStudioUnitRailVisibleRows(
     double viewportHeight, bool productionLayout) noexcept;
+// The vertical pitch of one row in the unit rail, for the two layouts it has. Both are derived from
+// the two lines a row draws rather than chosen for the sizes it used to draw them at, and both are
+// exposed because the row count above and the rail's own hit test are counted in them: a count or a
+// hit test left behind at an older pitch is a row that overlaps the one below it, or a row the
+// creator cannot click.
+[[nodiscard]] double voicebankStudioUnitRailPitch(bool productionLayout) noexcept;
+[[nodiscard]] double voicebankStudioAssignmentRailPitch() noexcept;
+// The vertical geometry of one production rail row, exposed for the same reason the pitch is: the
+// defect this closed was two lines 15 points apart while each line is 16 points tall, and a case can
+// only check that if it knows the height the lines are drawn at and the gap between them, which are
+// the numbers the painter uses rather than ones a test remembers.
+struct VoicebankStudioRailRowGeometry final {
+  double lineHeight{0.0};
+  double gap{0.0};
+  double insetTop{0.0};
+  double insetBottom{0.0};
+  double pitch{0.0};
+};
+[[nodiscard]] VoicebankStudioRailRowGeometry voicebankStudioRailRowGeometry() noexcept;
 
 [[nodiscard]] core::Result<std::filesystem::path> nextVoicebankRecordingPath(
     const std::filesystem::path& directory, std::string_view unitId);

@@ -37,6 +37,7 @@ constexpr double kJobCardInsetBottom = 5.0;
 // Where the first job card is drawn, and the gap kept below the last one for the footer line.
 constexpr double kJobCardFirstTop = 282.0;
 constexpr double kJobCardFooterInset = 42.0;
+
 // The review detail rows are read rather than decoration, so they are drawn at the same 12 point as
 // the rest of the window rather than 11, and their pitch follows the size they are drawn at. Every
 // detail line this view produces fits one line of the widest supported window at 12 point (the longest
@@ -352,6 +353,11 @@ void paintProductionAssignmentRail(
     const VoicebankStudioTheme& theme) noexcept {
   const auto* project = controller.productionProject();
   if (project == nullptr) return;
+  // The row's geometry is read from the one place it is defined rather than restated here, so the
+  // painter, the row count and the rail's hit test cannot hold three different pitches.
+  const auto geometry = voicebankStudioRailRowGeometry();
+  const auto lineHeight = geometry.lineHeight;
+  const auto pitch = geometry.pitch;
   const auto first = controller.selectedIndex() > 8U
                          ? controller.selectedIndex() - 8U : 0U;
   const auto last = std::min(
@@ -360,27 +366,33 @@ void paintProductionAssignmentRail(
                   canvas.logicalHeight(), true));
   for (std::size_t index = first; index < last; ++index) {
     const auto& assignment = project->unitAssignments[index];
-    const auto y = 108.0 + static_cast<double>(index - first) * 36.0;
-    const ui::Rect row{8.0, y, 236.0, 32.0};
+    const auto y = 108.0 + static_cast<double>(index - first) * pitch;
+    const ui::Rect row{8.0, y, 236.0, pitch - geometry.insetBottom};
     canvas.fillRect(row, index == controller.selectedIndex()
                              ? theme.selected : theme.panelAlternate);
     if (index == controller.selectedIndex()) {
       canvas.strokeRect(row, theme.accent, 1.0);
     }
-    // Both lines of the row are read, so both are drawn at a size a person can read at a glance. The
-    // row is 32 points tall and the pitch is given the right of the key, so the key has 150 points,
-    // which at 12 point holds the longest coverage key whole; the state line is the same size as the
-    // key above it and is given the width the row has.
-    canvas.drawTextWrapped(ui::Rect{16.0, y + 2.0, 150.0, 16.0},
-                           assignment.coverageKey, theme.primaryText, 12.0, 16.0);
-    canvas.drawText(ui::Rect{172.0, y + 4.0, 68.0, 16.0},
+    // Both lines of the row are read, so both are drawn at a size a person can read at a glance, and
+    // the row is laid out from the height each line needs rather than from offsets chosen for the
+    // sizes the row used to be drawn at. The coverage key and the state line were at y+2 and y+17,
+    // 15 points apart, while each line is 16 points tall at the size they are now drawn, so their
+    // descenders and ascenders touched: in the frame the key and the state read as one crowded line
+    // pair rather than two. The pitch is now the inset, both line heights, the gap between them and
+    // the inset below, and the state line starts below the key line has finished.
+    const auto keyTop = y + geometry.insetTop;
+    const auto stateTop = keyTop + lineHeight + geometry.gap;
+    canvas.drawTextWrapped(ui::Rect{16.0, keyTop, 150.0, lineHeight},
+                           assignment.coverageKey, theme.primaryText, kType.label,
+                           lineHeight);
+    canvas.drawText(ui::Rect{172.0, keyTop, 68.0, lineHeight},
                     "P" + std::to_string(assignment.pitchLayer),
-                    theme.secondaryText, 12.0);
-    canvas.drawTextWrapped(ui::Rect{16.0, y + 17.0, 224.0, 14.0},
+                    theme.secondaryText, kType.label);
+    canvas.drawTextWrapped(ui::Rect{16.0, stateTop, 224.0, lineHeight},
                            voicebank_production::toString(assignment.state),
                            assignment.state == voicebank_production::UnitQueueState::Approved
                                ? theme.pitch : theme.secondaryText,
-                           12.0, 14.0);
+                           kType.label, lineHeight);
   }
 }
 

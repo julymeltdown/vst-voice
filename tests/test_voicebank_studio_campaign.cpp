@@ -682,6 +682,59 @@ TEST_CASE("generation control wording fits its button at every supported window 
 // insets and gaps, so its pitch is larger than the 42 points it was when its lines were 8, 7 and 6.5.
 // The visible-row count is derived from that pitch, so a count left behind at the old pitch would
 // report and draw cards over the footer. Restoring the old pitch fails both checks here.
+// The production assignment rail draws two lines per row: the coverage key and the queue state. They
+// were 15 points apart, from y+2 and y+17, while each line is 16 points tall at the size the type scale
+// now gives them, so the two lines touched. Nothing in the source showed that and nothing in the
+// existing cases showed it either; it was visible only in a rendered frame, where the key and the
+// state read as one crowded pair rather than two. This case pins the two halves of the property: the
+// pitch leaves room for both lines plus the gap between them, and the pitch is what the row count and
+// the rail's hit test read rather than each keeping a copy.
+TEST_CASE("the assignment rail leaves a gap between its two lines and one pitch for three readers") {
+  const auto type = seam::native_ui::voicebankStudioTypeScale();
+  const auto geometry = seam::native_ui::voicebankStudioRailRowGeometry();
+  const auto pitch = seam::native_ui::voicebankStudioUnitRailPitch(true);
+  const auto manifestPitch = seam::native_ui::voicebankStudioUnitRailPitch(false);
+
+  // The line height is the readable label size, which is the type this unit gave the rail's text. It
+  // was 16 at the readable size and the two lines were 15 points apart, so a line's descenders met the
+  // next line's ascenders and the key and the state read as one crowded pair. The gap has to be real:
+  // at a pitch of 36 with these same lines there would be room for two lines but no gap, which is the
+  // defect itself, so a check that only asked for two lines to fit would pass on the broken geometry.
+  CHECK(geometry.lineHeight >= type.label);
+  CHECK(geometry.gap > 0.0);
+  CHECK(geometry.insetTop > 0.0);
+  CHECK(geometry.insetBottom > 0.0);
+  // Two lines, the gap between them, and the two insets are the pitch, and the pitch the painter and
+  // the count use is that number rather than a copy of it.
+  CHECK(pitch == geometry.insetTop + geometry.lineHeight + geometry.gap + geometry.lineHeight +
+                    geometry.insetBottom);
+  // The second line starts below where the first has finished, by the gap. This is the assertion that
+  // fails at the old geometry: there the two tops were 15 apart with 16 point lines.
+  const auto secondLineOffset = geometry.insetTop + geometry.lineHeight + geometry.gap;
+  CHECK(secondLineOffset >= geometry.lineHeight);
+  CHECK(secondLineOffset - geometry.lineHeight >= geometry.gap);
+  // The manifest rail draws one line, so its pitch is the smaller of the two and is sized for one
+  // line rather than two; if the two ever became equal the manifest rail would carry a gap it does
+  // not need and the two layouts would no longer be distinguishable.
+  CHECK(manifestPitch < pitch);
+  CHECK(manifestPitch >= type.label);
+
+  // The pitch the painter uses and the pitch the count and the hit test use must be one number. This
+  // is checked through the count: the rows it reports at a height, drawn at the pitch, must cover the
+  // viewport and must not claim a row that does not fit.
+  for (const double height : {520.0, 720.0, 900.0}) {
+    const auto rows = seam::native_ui::voicebankStudioUnitRailVisibleRows(height, true);
+    CHECK(rows > 0U);
+    CHECK(108.0 + static_cast<double>(rows) * pitch <= height + pitch);
+    const auto manifestRows = seam::native_ui::voicebankStudioUnitRailVisibleRows(height, false);
+    CHECK(manifestRows > 0U);
+    CHECK(108.0 + static_cast<double>(manifestRows) * manifestPitch <= height + manifestPitch);
+    // The manifest rail packs more rows into the same height precisely because its rows are shorter;
+    // if that stopped being true the two rails would have been given the same row for the same text.
+    CHECK(manifestRows >= rows);
+  }
+}
+
 TEST_CASE("the Studio type scale holds a readable floor and the job card is sized from its lines") {
   const auto type = seam::native_ui::voicebankStudioTypeScale();
   const auto floor = seam::native_ui::design::TypeScale{}.smallLabel;

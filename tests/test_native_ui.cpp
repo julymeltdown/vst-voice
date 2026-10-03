@@ -543,25 +543,58 @@ TEST_CASE("native window screenshots honor the requested capture dimensions") {
 }
 
 TEST_CASE("voicebank production rail hit testing follows painted row spacing") {
+  // This case exists because the rail's pitch and its hit test drifted apart once already, and the
+  // drift is invisible in the source: the painter used one stride, the hit test another, and the rows
+  // a creator could click were not the rows they could see. Both now read the same pitch, and the
+  // assertions below are that the hit test agrees with the painted pitch rather than a copy of the
+  // stride, so the next change to the row cannot leave one of the two behind.
+  const auto productionPitch = seam::native_ui::voicebankStudioUnitRailPitch(true);
+  const auto manifestPitch = seam::native_ui::voicebankStudioUnitRailPitch(false);
+  CHECK(productionPitch > 0.0);
+  CHECK(manifestPitch > 0.0);
+  // The production rail draws two lines of readable text and the manifest rail draws one, so the two
+  // pitches are not the same number and must not be made so by accident.
+  CHECK(productionPitch > manifestPitch);
+
   const auto production = seam::native_ui::voicebankStudioUnitRailIndexAt(
       397.0, 0U, 144U, 520.0, true);
   CHECK(production.has_value());
-  CHECK(*production == 8U);
+  if (production) {
+    // The row a click at y lands in is the one whose painted band contains y, counted in the pitch.
+    const auto expected = static_cast<std::size_t>(std::floor((397.0 - 108.0) / productionPitch));
+    CHECK(*production == expected);
+    // And y really is inside that row's band rather than in the gap beside it.
+    const auto rowTop = 108.0 + static_cast<double>(*production) * productionPitch;
+    CHECK(397.0 >= rowTop);
+    CHECK(397.0 < rowTop + productionPitch);
+  }
   CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
-      141.0, 0U, 144U, 520.0, true));
+      108.0 + productionPitch - 4.0, 0U, 144U, 520.0, true));
+  // A point just past the last painted row is not a row, which is the property the fixed 11.0 * 36.0
+  // expression used to state about a stride that the painter no longer used.
   CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
-      108.0 + 11.0 * 36.0, 0U, 144U, 520.0, true));
-  CHECK(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, true) ==
-        11U);
+      108.0 + static_cast<double>(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, true)) *
+                  productionPitch,
+      0U, 144U, 520.0, true));
+  // Every row the count reports has to fit inside the viewport at the pitch the rows are drawn at.
+  const auto productionRows = seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, true);
+  CHECK(productionRows > 0U);
+  CHECK(108.0 + static_cast<double>(productionRows) * productionPitch <= 520.0 + productionPitch);
 
   const auto manifest = seam::native_ui::voicebankStudioUnitRailIndexAt(
       397.0, 0U, 144U, 520.0, false);
   CHECK(manifest.has_value());
-  CHECK(*manifest == 9U);
+  if (manifest) {
+    const auto expected = static_cast<std::size_t>(std::floor((397.0 - 108.0) / manifestPitch));
+    CHECK(*manifest == expected);
+  }
   CHECK(!seam::native_ui::voicebankStudioUnitRailIndexAt(
-      108.0 + 13.0 * 32.0, 0U, 144U, 520.0, false));
-  CHECK(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, false) ==
-        13U);
+      108.0 + static_cast<double>(seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, false)) *
+                  manifestPitch,
+      0U, 144U, 520.0, false));
+  const auto manifestRows = seam::native_ui::voicebankStudioUnitRailVisibleRows(520.0, false);
+  CHECK(manifestRows > 0U);
+  CHECK(108.0 + static_cast<double>(manifestRows) * manifestPitch <= 520.0 + manifestPitch);
 }
 
 TEST_CASE("voicebank recording names stay portable direct children") {

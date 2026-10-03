@@ -18,6 +18,7 @@
 #include "seam/distribution/signing.hpp"
 #include "seam/native_ui/accessibility_tree.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
+#include "seam/text/text_engine.hpp"
 #include "seam/platform/application_menu.hpp"
 #include "seam/platform/audio_device.hpp"
 #include "seam/standalone/application_controller.hpp"
@@ -31,6 +32,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -181,9 +183,30 @@ public:
   const native_ui::AccessibilityTree& frame() {
     surface_ = native_ui::PixelSurface{static_cast<std::uint32_t>(width_),
                                        static_cast<std::uint32_t>(height_)};
-    native_ui::RasterCanvas canvas{surface_, 1.0};
+    native_ui::RasterCanvas canvas{surface_, 1.0, systemFont()};
     app->paint(canvas);
     return *app->accessibilityTree();
+  }
+
+  // This harness otherwise paints through the built-in bitmap face, which is a fixed 5x7 cell: every
+  // point size renders at nearly the same cell width, so a frame taken through it cannot show
+  // whether a label fits its button or whether two lines collide. The shipping AppKit window loads a
+  // system face, so a capture that is meant to show what a creator reads has to load one too. Named
+  // by SEAM_STUDIO_APP_SYSTEM_FONT pointing at a directory of font files; with nothing named the
+  // built-in face is used and no check depends on it either way.
+  static seam::text::TextEngine* systemFont() {
+    static std::unique_ptr<seam::text::TextEngine> engine = [] {
+      const char* directory = std::getenv("SEAM_STUDIO_APP_SYSTEM_FONT");
+      if (directory == nullptr || *directory == '\0') return std::unique_ptr<seam::text::TextEngine>{};
+      seam::text::FontSearchOptions options;
+      for (const auto& entry : std::filesystem::directory_iterator{directory}) {
+        if (entry.is_regular_file()) options.additionalCandidates.push_back(entry.path());
+      }
+      if (options.additionalCandidates.empty()) return std::unique_ptr<seam::text::TextEngine>{};
+      auto loaded = seam::text::TextEngine::createFromTrustedFiles(options);
+      return loaded ? std::move(loaded).value() : std::unique_ptr<seam::text::TextEngine>{};
+    }();
+    return engine.get();
   }
 
   std::optional<SemanticNode> node(std::string_view suffix) {

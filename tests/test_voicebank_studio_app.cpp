@@ -1184,6 +1184,13 @@ TEST_CASE("Voicebank Studio records and imports takes through its own actions; r
   }
   CHECK(!studio.value("status").empty());
   studio.snapshot("producer-publication-retry-720x520", 720.0, 520.0);
+  // The narrowest supported window is the one the readability entries were written against, and it is
+  // also the one where the inspector column beside the intake column has the least room. Neither the
+  // 720x520 nor the 1100x720 capture above reaches the height the producer view draws its queue rows
+  // at, so the tall narrow case is captured here: it is where a value wider than its column, or two
+  // columns laid out for a wider window, would show.
+  studio.snapshot("producer-queue-tall-720x900", 720.0, 900.0);
+  studio.snapshot("producer-queue-tall-1100x900", 1100.0, 900.0);
   const auto recorded = studio.app->lastRecording();
   CHECK(!recorded.empty() && std::filesystem::is_regular_file(recorded));
   CHECK(studio.app->lastRecordedFrames() == 24000U);
