@@ -652,6 +652,144 @@ TEST_CASE("each procedural consonant class renders its own distinct sound, not o
   }
 }
 
+// Every consonant measured so far sat in a phrase of at most two syllables, and none of those
+// measurements contained a melisma at all. Vocaloid singing depends on one vowel carrying across
+// several notes, so the question here is whether a shared-lyric melisma actually joins without a
+// rearticulation. The compiler's contract is explicit: at a shared-lyric join it clears
+// `reattack` (performance_compiler.cpp:354) and both procedural consumers treat `reattack` as the
+// signal to apply an amplitude fade at a note boundary
+// (articulated_stream.cpp:189, procedural_renderer.cpp:154). So the claim is that the melisma's
+// join is measurably smoother than the same two notes sung separately, and that the difference is
+// audible in the envelope rather than only in the compiled schedule.
+//
+// The measurement resolution is not a free choice. The reattack fade is `sampleRate / 200` frames,
+// about 5 ms, so a 50 ms window either side of the join sees both notes at their steady level and
+// reports them identical. The first version of this probe did exactly that and found nothing. The
+// envelope has to be read in 5 ms steps across the join to see the thing being claimed, which is
+// why the steps below are 240 frames rather than 4800.
+TEST_CASE("a shared-lyric melisma joins without the rearticulation a separate note takes") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::size_t kStep = 240U;  // 5 ms at 48 kHz, the scale the reattack fade lives on
+  constexpr std::int64_t kSteps = 6;   // 30 ms either side, so steady level frames the join
+  struct Join final {
+    bool melisma;
+    std::vector<double> envelope;
+    std::size_t markerCount{0U};
+    std::string firstPhone;
+    std::string secondPhone;
+  };
+  std::vector<Join> joins;
+  for (const bool melisma : {false, true}) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    auto [lyric, note] = f.factory.makeNote(time::Tick{480}, time::Tick{1920}, 60U,
+        U"あ", domain::Language::Japanese);
+    note.vibrato.enabled = false;
+    note.phoneticHint.reset();
+    if (melisma) note.articulation = domain::NoteArticulation::Legato;
+    auto second = note;
+    second.id = domain::NoteId{};
+    region->lyrics.push_back(std::move(lyric));
+    region->notes.push_back(note);
+    // The second note is minted by the factory so it owns a valid ID, then adopts the first
+    // note's lyric token: a shared token plus Legato on both is what continuesSharedLyric means,
+    // and the join has to be exactly contiguous for the contract to hold.
+    auto [ignoredLyric, secondNote] = f.factory.makeNote(time::Tick{2400}, time::Tick{1920}, 67U,
+        U"あ", domain::Language::Japanese);
+    (void)ignoredLyric;
+    secondNote.articulation = melisma ? domain::NoteArticulation::Legato : domain::NoteArticulation::Normal;
+    secondNote.vibrato.enabled = false;
+    secondNote.phoneticHint.reset();
+    if (melisma) {
+      secondNote.lyricTokenId = region->notes.front().lyricTokenId;
+      region->notes.front().articulation = domain::NoteArticulation::Legato;
+      region->notes.push_back(secondNote);
+    } else {
+      // The control needs its own lyric token, otherwise both notes share one and the melisma
+      // contract applies to the control as well.
+      region->lyrics.push_back(std::move(ignoredLyric));
+      region->notes.push_back(secondNote);
+    }
+    voice_design::VoiceRecipe recipe; recipe.id = "melisma-probe";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) { std::printf("[mel] melisma=%d snapshot: %s\n", static_cast<int>(melisma), snapshot.error().message.c_str()); continue; }
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) { std::printf("[mel] melisma=%d render: %s\n", static_cast<int>(melisma), rendered.error().message.c_str()); continue; }
+    const auto& audio = rendered.value().rendered.audio;
+    // Measure the amplitude either side of the join tick 2400 to see whether the second note
+    // reattacks. The join frame is derived from the score rather than guessed.
+    // The join is where the two vowel spans meet, read from the markers rather than computed from
+    // the score, so the measurement cannot sit somewhere the audio is not.
+    Join join{.melisma = melisma, .markerCount = rendered.value().proceduralMarkers.size()};
+    join.firstPhone = rendered.value().proceduralMarkers.front().phone;
+    join.secondPhone = rendered.value().proceduralMarkers.at(1).phone;
+    const auto joinFrame = static_cast<std::size_t>(
+        rendered.value().proceduralMarkers.at(1).ownedSpan.start - audio.startFrame);
+    if (joinFrame > static_cast<std::size_t>(kStep * kSteps) &&
+        joinFrame + static_cast<std::size_t>(kStep * kSteps) <= audio.samples.size()) {
+      const auto level = [&](std::size_t from, std::size_t count) {
+        auto sum = 0.0;
+        for (std::size_t i = 0U; i < count; ++i) {
+          const auto v = static_cast<double>(audio.samples[from + i]);
+          sum += v * v;
+        }
+        return std::sqrt(sum / static_cast<double>(count));
+      };
+      for (std::int64_t step = -kSteps; step <= kSteps; ++step) {
+        const auto from = static_cast<std::size_t>(static_cast<long long>(joinFrame) + step * static_cast<long long>(kStep));
+        join.envelope.push_back(level(from, kStep));
+      }
+    }
+    joins.push_back(std::move(join));
+  }
+  CHECK(joins.size() == 2U);
+  // The dip is measured against the FIRST note's own steady level, not against the level on the far
+  // side of the join. My first metric used the larger of the two ends as its reference, which is
+  // wrong for this pair: the two notes are a whole tone apart at MIDI 60 and 67, so the second note
+  // is simply louder, and a reference that climbs with it hides the very dip being measured. Both
+  // notes therefore have to be compared to the level the first note actually sustains, which is the
+  // mean of its own first three steps, every step of which is inside the first note.
+  const auto dip = [](const std::vector<double>& envelope) {
+    const auto steps = static_cast<double>(envelope.size());
+    const auto firstNoteSteps = (steps - 1.0) / 2.0;
+    auto sum = 0.0;
+    for (std::size_t i = 0U; i < static_cast<std::size_t>(firstNoteSteps); ++i) sum += envelope[i];
+    const auto steady = sum / firstNoteSteps;
+    const auto lowest = *std::min_element(envelope.begin(), envelope.end());
+    return steady > 0.0 ? 1.0 - lowest / steady : 1.0;
+  };
+  for (const auto& join : joins) {
+    // 1. Both cases are two adjacent vowels with no consonant between them: a melisma continues
+    // one syllable's vowel, so re-articulating a consonant here would be the defect. The control
+    // carries its own lyric token and is still two vowels, which is what makes the comparison fair.
+    CHECK(join.markerCount == 2U);
+    CHECK(join.firstPhone == "a");
+    CHECK(join.secondPhone == "a");
+    CHECK(join.envelope.size() == static_cast<std::size_t>(kSteps * 2 + 1));
+  }
+  const auto controlDip = dip(joins[0].envelope);
+  const auto melismaDip = dip(joins[1].envelope);
+  // 2. The control reattacks, so it dips. Measured dips are 0.239 for the two separate notes and
+  // 0.071 for the melisma. The bounds sit between the two values with margin on each side, so the
+  // melisma cannot pass while still rearticulating and the control cannot pass by being as smooth
+  // as the melisma.
+  CHECK(controlDip > 0.18);
+  CHECK(melismaDip < 0.12);
+  // 3. The two are genuinely different shapes rather than the same envelope twice: the melisma's
+  // dip is a small fraction of the control's, which is the claim the case exists to make.
+  CHECK(melismaDip * 2.5 < controlDip);
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

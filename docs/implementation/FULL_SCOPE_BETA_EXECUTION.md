@@ -5069,6 +5069,72 @@ on a real recording session for the sample route, which this does not touch. No
 DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
 
+2026-10-03 — A shared-lyric melisma measured to cross its note join without the
+reatticulation a separate note takes, which is the substrate Vocaloid-style
+singing rests on (R3's synth-style original voice; the melisma/slur axis of
+M2.2's "wrong F0, timing, melisma or boundaries" row, and the connected axis of
+the consonant row).
+**Why this case.** Nothing measured so far contained a melisma at all. Every
+consonant and vowel case so far is a phrase of at most two syllables, each on its
+own note with its own lyric token, and the one two-syllable case deliberately puts
+a pitch and a dynamics curve across the boundary. Vocaloid singing depends on one
+vowel carrying across several notes, so the question here is narrow and testable:
+does a melisma actually join smoothly in the audio, or does the renderer reattack
+the second note as though it were a new syllable? **The contract is explicit.**
+`domain::continuesSharedLyric` (note.cpp:7) is true only when two notes share a
+lyric token, both are Legato, and the second starts exactly where the first ends.
+When it holds, the compiler clears `reattack` on the second note
+(`performance_compiler.cpp:353`), and both procedural consumers treat `reattack`
+as the signal to apply an amplitude fade at a note boundary
+(`articulated_stream.cpp:189`, `procedural_renderer.cpp:154`). So the claim is
+measurable in the envelope at the join.
+**A measurement resolution of mine that was wrong twice, recorded because both
+errors hid a real difference.** The reattack fade is `sampleRate / 200` frames,
+about 5 ms. The first version of this probe measured the level in 50 ms windows
+either side of the join and reported the melisma and the control as identical
+(0.004257 against 0.004340 before, 0.007517 against 0.007428 after). They were
+identical because both windows sat entirely inside each note's steady level and
+neither could contain a 5 ms event. The envelope has to be read in 5 ms steps
+across the join, and it is now: 240-frame steps, 30 ms either side. **The second
+error was in the dip metric, and it is the more interesting one.** With the
+envelope visible, the two cases clearly differ, but my dip measure reported 0.590
+against 0.460 and the assertion failed. The metric was wrong, not the renderer: it
+referenced the dip to the larger of the two envelope ends, and the two notes are a
+whole tone apart at MIDI 60 and 67, so the second note is simply louder and a
+reference that climbs with it hides the dip. Referencing the dip to the FIRST
+note's own sustained level instead, the mean of its first three steps, gives
+**0.239 for two separate notes and 0.071 for the melisma**. Read by hand against
+note one's floor the envelopes say the same thing: the control falls from 0.00407
+to **0.00307** below its own level and recovers, while the melisma never drops
+below that floor at all.
+**Evidence, measured not asserted.** Both cases render as exactly two adjacent
+`a` vowels with no consonant between them, which is itself part of the claim: a
+melisma continues one syllable's vowel, so re-articulating a consonant at the
+join would be the defect, and neither case does it. The control carries its own
+lyric token and is still two vowels, which is what makes the comparison fair
+rather than a difference in what was asked for. The control dips more than 0.18
+and the melisma less than 0.12, with the melisma's dip less than 2.5 times the
+control's; the bounds sit between the two measured values with margin on each
+side.
+**Mutation-checked in both directions, which is the part that makes this more
+than a measurement.** Suppressing the `reattack` clearing so the melisma keeps
+its own reattack fails at line 787 on the melisma bound. Making the compiler skip
+the continuation branch entirely, so the control never reattacks either, fails at
+the same line. The case therefore fails whether the melisma rearticulates or the
+control stops doing so, which is the property a two-sided claim needs and which a
+one-sided check would not have.
+Release `seam_performance_snapshot_tests` 62 of 62, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows a two-note melisma crosses its join without
+a rearticulation that two separately sung notes take, measured in the amplitude
+envelope rather than in the compiled schedule. It is a two-note melisma on one
+vowel: it is not a longer melisma, not a melisma across a consonant change, and
+it says nothing about whether the sustained vowel stays intelligible over a long
+phrase, which is the thing a listener would judge. No listening evidence exists.
+U42 remains externally blocked on a real recording session for the sample route,
+which this does not touch. No DAW, VoiceOver, signing, Windows or external-review
+evidence. `.github` was not touched.
+
 2026-10-03 — The synthetic singer now renders a phrase, not just a note: two
 syllables, two phonemes, two notes, each measured independently (R3's
 synth-style original voice; acoustic evidence about the renderer, not a singer
