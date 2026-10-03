@@ -36,6 +36,35 @@ def _fail(message: str) -> ReleaseGateInputError:
     return ReleaseGateInputError(message)
 
 
+# The chain head before any decision exists. Every first decision chains to this, so the log is a
+# chain from a fixed origin rather than a list whose order is taken on trust.
+GENESIS_CHAIN_SHA256: Final[str] = sha256_json({"genesis": "seam.public-release.decision-chain.v1"})
+
+
+def _chain_digest(decision: JsonObject) -> str:
+    """The running chain head: this decision's content bound to the one before it."""
+    return sha256_json(
+        {
+            "previousDecisionSha256": decision.get("previousDecisionSha256"),
+            "decision": {
+                key: value for key, value in decision.items() if key != "chainSha256"
+            },
+        }
+    )
+
+
+def _chain_head(log: list[JsonObject]) -> str:
+    """The head an appended decision must chain to: genesis, or the last recorded chain."""
+    if not log:
+        return GENESIS_CHAIN_SHA256
+    last = log[-1]
+    assert isinstance(last, dict)
+    head = last.get("chainSha256")
+    if not is_sha256(head):
+        raise _fail("operation decision log does not end in a valid chain digest")
+    return head
+
+
 def _validate_snapshot(snapshot: JsonObject) -> None:
     if snapshot.get("schemaVersion") != 1:
         raise _fail("operation snapshot schemaVersion must be 1")
@@ -50,7 +79,8 @@ def _validate_snapshot(snapshot: JsonObject) -> None:
     if not isinstance(log, list):
         raise _fail("operation snapshot decisionLog must be an array")
     decision_ids: set[str] = set()
-    for item in log:
+    expected_previous = GENESIS_CHAIN_SHA256
+    for index, item in enumerate(log):
         if not isinstance(item, dict):
             raise _fail("operation decision log item must be an object")
         decision_id = item.get("decisionId")
@@ -59,6 +89,18 @@ def _validate_snapshot(snapshot: JsonObject) -> None:
         if decision_id in decision_ids:
             raise _fail("operation decisionId must be unique")
         decision_ids.add(decision_id)
+        # A flat log only proves uniqueness. Binding each decision to the one before it means an
+        # omitted or reordered decision cannot be presented as the same history.
+        if item.get("previousDecisionSha256") != expected_previous:
+            raise _fail(
+                f"operation decision {decision_id} does not chain to the decision before it"
+            )
+        chain = item.get("chainSha256")
+        if not is_sha256(chain):
+            raise _fail(f"operation decision {decision_id} chainSha256 is invalid")
+        if chain != _chain_digest(item):
+            raise _fail(f"operation decision {decision_id} chainSha256 differs from its content")
+        expected_previous = chain
 
 
 def _validate_decision(
@@ -172,7 +214,12 @@ def transition(
     updated["state"] = next_state
     log = updated["decisionLog"]
     assert isinstance(log, list)
-    log.append(copy.deepcopy(decision))
+    recorded = copy.deepcopy(decision)
+    # Chain the decision to the log as it stands, after validation has already proved that log is
+    # itself an unbroken chain. A caller cannot supply these: both are recomputed here.
+    recorded["previousDecisionSha256"] = _chain_head(log)
+    recorded["chainSha256"] = _chain_digest(recorded)
+    log.append(recorded)
     if receipt is not None:
         updated["lastReproducedAudit"] = receipt
     return updated

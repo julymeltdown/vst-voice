@@ -6320,3 +6320,38 @@ exercised the rule.
 not add a decision hash chain. Release `seam_tests` unchanged at 1456 of 1456 (no C++ changed).
 `tests/external_beta` 202 passed + 197 subtests; `tests/production` 124 passed + 124 subtests. No
 DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — The public release decision log was a flat array, so a decision could be omitted or
+reordered and still present as the same history (SEAM-BETA-P1-03, the chain half).
+**The gap.** `_validate_snapshot` checked that `decisionLog` was an array and that `decisionId`s
+were unique (`operations.py:49-61`), and `transition` appended blindly (`:173-175`). Nothing bound
+decision *n* to decision *n-1*. A repository-wide search for `previousDecision`, `chainSha256` or
+`decisionChain` across `tools/`, `scripts/`, `libs/` and `tests/` returned nothing. Uniqueness proves
+no two entries share an id; it does not prove the entries are the ones that were actually recorded,
+in the order they were recorded. "Append-only" was a convention, not an enforced property.
+**The repair.** Each decision now carries `previousDecisionSha256` and `chainSha256`. The chain head
+is `GENESIS_CHAIN_SHA256`, a digest of a fixed origin string, so the log is a chain from a known
+start rather than a list whose order is taken on trust. `_chain_digest` binds a decision's content
+to the digest of the one before it; `_chain_head` reads the head an appended decision must chain to.
+Both fields are **recomputed** at append time and are never accepted from a caller. Verification runs
+inside `_validate_snapshot`, which is the **first** thing `transition` calls — before the terminal-state
+guard and before any action rule — so a broken chain is refused for being a broken chain rather than
+incidentally tripping a later rule.
+**The test needed two corrections before it proved anything, and both are worth recording.**
+(1) The first version asserted against a `REVOKED` snapshot. With the chain check mutated off, the
+terminal-state guard fired first and the case still failed — for the wrong reason. A test that passes
+under a mutation it was never sensitive to is decoration. The snapshot is now non-terminal
+(`DISTRIBUTION_PAUSED`) and the probe action is `SUPERSEDE`, which is legal from that state, so the
+only thing that can reject the tampered log is the chain. (2) `RESUME` was tried as the second
+decision and needs restored replay evidence; `SUPERSEDE` needs only a reason.
+**What the mutation now proves.** Disabling the `previousDecisionSha256` linkage check lets the
+tampered snapshots past validation and execution reaches the action guard — visible as the error
+changing from a chain refusal to an action refusal. Under the real code all three forgeries are
+refused by name: a **dropped** first decision, an **edited** decision body, and a **relinked** second
+decision whose `previousDecisionSha256` was rewritten to genesis.
+**What this is not.** It does not make the log non-rewritable by anyone holding the file — a chain
+detects tampering, it does not prevent an attacker who can rewrite the whole document and recompute
+every digest. It adds no signature to the chain itself and no external timestamp. It is an integrity
+check over the recorded history, not an authority over it. `tests/production` 125 passed + 124
+subtests; `tests/external_beta` 202 passed + 197 subtests. No C++ changed. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.

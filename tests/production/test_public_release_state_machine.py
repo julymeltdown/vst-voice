@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import unittest
 
 from tests.production.public_release_contract_fixtures import (
@@ -12,6 +13,8 @@ from tests.production.public_release_contract_fixtures import (
 )
 from tests.production.public_release_fixtures import candidate
 from tools.public_release import release_gate
+from tools.public_release.operations import GENESIS_CHAIN_SHA256
+from tools.public_release.release_gate import ReleaseGateInputError
 
 
 def _decision(
@@ -56,7 +59,69 @@ class PublicReleaseStateMachineTests(unittest.TestCase):
             release_gate.PUBLIC_STATES,
         )
 
+    def test_decision_log_chain_detects_removal_reorder_and_edit(self) -> None:
+        # A flat log with only a uniqueness check lets a decision be dropped, reordered or edited
+        # and still present as the same history. Each decision now chains to the one before it.
+        contract = acceptance_contract()
+        active: JsonObject = {
+            "schemaVersion": 1,
+            "candidateLineageId": "public-lineage-001",
+            "evidenceRootSha256": "a" * 64,
+            "state": "PUBLIC_ACTIVE",
+            "decisionLog": [],
+        }
+        first = release_gate.transition(
+            active, _decision("PAUSE", "pause-001", "2026-08-31T02:00:00Z"), contract
+        )
+        paused = release_gate.transition(
+            first,
+            _decision(
+                "REVOKE", "revoke-001", "2026-08-31T04:00:00Z",
+                approvals=[
+                    approval(role, index, "a" * 64, "2026-08-31T03:30:00Z")
+                    for index, role in enumerate(APPROVAL_ROLES, start=1)
+                ],
+            ),
+            contract,
+        )
+        self.assertEqual("REVOKED", paused["state"])
+        # A two-decision log on a NON-terminal state. Testing the chain against a REVOKED snapshot
+        # would let the terminal-state guard fire first, so a broken chain could pass unnoticed.
+        second = release_gate.transition(
+            first,
+            _decision(
+                "SUPERSEDE", "supersede-002", "2026-08-31T03:00:00Z", reason="replacement",
+                approvals=[
+                    approval(role, index, "a" * 64, "2026-08-31T02:30:00Z")
+                    for index, role in enumerate(APPROVAL_ROLES, start=1)
+                ],
+            ),
+            contract,
+        )
+        log = second["decisionLog"]
+        assert isinstance(log, list) and len(log) == 2
+        self.assertEqual(GENESIS_CHAIN_SHA256, log[0]["previousDecisionSha256"])
+        self.assertEqual(log[0]["chainSha256"], log[1]["previousDecisionSha256"])
+
+
+
+        dropped = copy.deepcopy(second)
+        del dropped["decisionLog"][0]
+        with self.assertRaisesRegex(ReleaseGateInputError, "chain"):
+            release_gate.transition(dropped, _decision("SUPERSEDE", "again", "2026-08-31T05:00:00Z", reason="replacement"), contract)
+
+        edited = copy.deepcopy(second)
+        edited["decisionLog"][0]["actorRole"] = "A6"
+        with self.assertRaisesRegex(ReleaseGateInputError, "chainSha256"):
+            release_gate.transition(edited, _decision("SUPERSEDE", "again", "2026-08-31T05:00:00Z", reason="replacement"), contract)
+
+        relinked = copy.deepcopy(second)
+        relinked["decisionLog"][1]["previousDecisionSha256"] = GENESIS_CHAIN_SHA256
+        with self.assertRaisesRegex(ReleaseGateInputError, "chain"):
+            release_gate.transition(relinked, _decision("SUPERSEDE", "again", "2026-08-31T05:00:00Z", reason="replacement"), contract)
+
     def test_pause_resume_needs_a_fresh_quorum_and_revoke_is_terminal(self) -> None:
+
         contract = acceptance_contract()
         active: JsonObject = {
             "schemaVersion": 1,
