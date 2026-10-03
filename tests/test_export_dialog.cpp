@@ -5,6 +5,9 @@
 #include "seam/native_ui/export_dialog.hpp"
 #include "seam/native_ui/export_progress_panel.hpp"
 
+#include <algorithm>
+#include <string_view>
+
 TEST_CASE("export dialog preflight blocks invalid combinations") {
   seam::application::ProjectFactory factory{40000U};
   auto project = factory.createProject("Export dialog");
@@ -25,6 +28,23 @@ TEST_CASE("export dialog preflight blocks invalid combinations") {
   });
   CHECK(dialog.preflight(project));
   CHECK(dialog.canExport());
+
+  // A device rate is not a project rate. The set export used to follow the audio hardware, which
+  // made the set master a different recording from the one Export Audio produces for the same
+  // project and revision; the preflight must refuse it rather than render it.
+  dialog.setSettings(seam::authoring::ExportSettings{
+      .sampleRate = 44100U,
+      .channels = 2U,
+      .format = seam::voicebank::WavSampleFormat::Pcm24,
+      .includeMaster = true,
+      .includeStems = false,
+      .replaceExisting = false,
+  });
+  CHECK(!dialog.preflight(project));
+  CHECK(!dialog.canExport());
+  CHECK(std::any_of(dialog.issues().begin(), dialog.issues().end(), [](const auto& issue) {
+    return std::string_view{issue.code} == "SAMPLE_RATE_MISMATCH";
+  }));
 }
 
 TEST_CASE("export progress panel exposes bounded progress and cancellation") {

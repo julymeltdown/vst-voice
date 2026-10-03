@@ -27,6 +27,13 @@ core::Result<void> ExportDialogModel::preflight(
         true, "CHANNEL_MISMATCH",
         "Export channels must match the project output routing"});
   }
+  // The set export renders at the requested rate, and a master that does not match the project's
+  // own rate is not the project. The device rate is not a substitute: it follows the hardware.
+  if (settings_.sampleRate != static_cast<std::uint32_t>(project.settings().sampleRate)) {
+    issues_.push_back(ExportPreflightIssue{
+        true, "SAMPLE_RATE_MISMATCH",
+        "Export sample rate must match the project sample rate"});
+  }
   const auto validation = project.validate();
   if (!validation) {
     issues_.push_back(ExportPreflightIssue{true, "PROJECT_INVALID",

@@ -6132,3 +6132,29 @@ the layer choice fails the old rule, and the round-trip fails if the declared se
 **What this is not.** It does not widen what a voicebank may claim, does not create a voicebank,
 and grants no qualification. Release `seam_voicebank_production_tests` 59 of 59 (58 before).
 No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — The two user-facing export paths rendered the same project at different sample
+rates, and the project's own provenance could not detect it (HIGH).
+**The defect, located.** "Export Audio" renders at `project.settings().sampleRate`
+(`export_service.cpp:386-388`). "Export Set" — the master plus stems plus package path — set
+its rate from `session_.runtime().transport().sampleRate()` (`application_controller.cpp:1870`,
+before this change). The transport rate follows the **audio hardware**, not the project: the
+settings controller is seeded from the opened device's own rate (`native_editor_app.cpp:884-899`)
+and nothing ever reconciles it with the project rate. A user on a 44.1 kHz interface with a 48 kHz
+project therefore received two different masters for the same project and revision.
+**Why it is worse than a nuisance.** `RecordRendererProvenanceCommand`
+(`render_commands.hpp:355-375`) carries the ABI id and the compiler revision but **not** the render
+rate, so after both exports the project reports identical provenance and
+`compareRendererProvenance` (`domain/project.cpp:20-29`) cannot tell the two masters apart. This
+undercuts exactly the reproducibility property the release-evidence strategy depends on: a frozen
+project cannot re-derive a master whose rate was never recorded.
+**The repair, on both sides.** `exportSetSettings` now takes the project rate. The preflight —
+which already refused a channel/routing mismatch — now also refuses a sample-rate mismatch, as
+`SAMPLE_RATE_MISMATCH`, because a set export is a statement about *this project* and the device
+rate is not a substitute for it. Both halves are needed: the source fix stops the wrong render, and
+the preflight stops any other caller from asking for one.
+**Mutation-checked.** Disabling the preflight check makes the new case fail at
+`!dialog.preflight(project)`; the fix makes it pass. The case is not decorative.
+**What is not claimed.** This does not add sample-rate conversion, does not resample anything, and
+does not claim the two paths were ever compared on a target machine. Release `seam_tests` 1453 of
+1453. No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.

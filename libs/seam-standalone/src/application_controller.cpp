@@ -1867,7 +1867,10 @@ authoring::ExportSettings StandaloneApplicationController::exportSetSettings(
   const auto& document = session_.runtime().document();
   const auto& project = document.session().project();
   return authoring::ExportSettings{
-      .sampleRate = session_.runtime().transport().sampleRate(),
+      // The transport rate follows the audio device, which is not the project's rate. Exporting
+      // at it would make the set master a different recording from the one Export Audio produces
+      // for the same project and revision.
+      .sampleRate = static_cast<std::uint32_t>(project.settings().sampleRate),
       .channels = project.routing().deviceOutputChannels,
       .format = voicebank::WavSampleFormat::Pcm24,
       .includeMaster = !bakeCandidates,
