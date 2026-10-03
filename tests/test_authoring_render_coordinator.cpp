@@ -318,6 +318,23 @@ TEST_CASE("authoring_render_coordinator_matches_direct_production_renderer") {
   CHECK(published->result.activeUnitPlan == direct.value().activeUnitPlan);
 }
 
+TEST_CASE("an out-of-range preview rate is refused rather than silently clamped") {
+  auto fixture = makeRenderFixture();
+  const auto cache = uniqueTempRoot("render-coordinator-rate-refusal");
+  seam::authoring::AuthoringRenderCoordinator coordinator{cache};
+  constexpr std::uint32_t kDomainAdmittedRate{384000U};
+  CHECK(fixture.project.validate());
+  coordinator.submit(fixture.project, {fixture.source}, fixture.trackId, fixture.regionId, 91U, kDomainAdmittedRate, seam::rendering::RenderQuality::Preview);
+  const auto failed = waitForTerminal(coordinator, 91U);
+  CHECK(failed.state == seam::authoring::RenderState::Failed);
+  CHECK(failed.failure == seam::authoring::RenderFailureKind::RenderFailed);
+  CHECK(failed.diagnostic.find("192000") != std::string::npos);
+  const auto published = coordinator.acquire();
+  CHECK(published);
+  CHECK(published->result.sampleRate == kDomainAdmittedRate);
+  CHECK(published->result.interleaved.empty());
+}
+
 TEST_CASE("successful preview carries a classical edge-mark warning to render status") {
   auto fixture = makeRenderFixture();
   const auto unit = std::find_if(fixture.source.manifest.units.begin(),

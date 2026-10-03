@@ -6158,3 +6158,33 @@ the preflight stops any other caller from asking for one.
 **What is not claimed.** This does not add sample-rate conversion, does not resample anything, and
 does not claim the two paths were ever compared on a target machine. Release `seam_tests` 1453 of
 1453. No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — A valid project silently previewed at a rate it never declared, because the render
+coordinator substituted its own bound instead of refusing (HIGH).
+**The defect, located.** `Project::validate()` accepts any sample rate the domain admits, and that
+admission is 8000..384000 (`domain/project.cpp:426-427`). The renderers bound their own work more
+narrowly at 192000 (`project_renderer.cpp:128`, `region_renderer.cpp:94`), and the authoring
+runtime says so in words — "Preview sample rate must be between 8000 and 192000 Hz"
+(`authoring_runtime.cpp:572-585`). Between those two facts sat one line:
+`sampleRate = std::clamp(sampleRate, 8000U, 192000U)` at the top of
+`AuthoringRenderCoordinator::submitWithSources` (`render_coordinator.cpp:252`).
+**Why that one line is a defect and not a convenience.** A project at 192 kHz–384 kHz opens,
+validates, and saves — the domain says it is a legal project. The coordinator then rendered its
+preview at 192000 and reported **success**, so the screen showed a preview the project does not
+describe. Meanwhile Export Audio refused the same project outright with "Project render sample rate
+is unsupported", a message naming no bound and no fix. The two halves of the product disagreed
+about the same legal file, and the disagreeing half was the one that lied rather than refused.
+**The repair.** The clamp is removed and the refusal is made where it can be reported:
+`preflight` now rejects the rate and names the range, so the request completes as a
+`RenderFailed` with a diagnostic instead of quietly rendering at a different rate. The refused
+request still reports **the rate it was asked for**, so the failure is legible rather than hidden
+behind the very substitution that caused it.
+**What was deliberately not changed.** The domain's 384000 admission was left alone. Widening the
+renderers to match it is a larger claim about what the DSP can do at that rate, and the plugin host
+contract caps the session rate at 192000 anyway (`clap/session.hpp:16`). Narrowing the domain to
+192000 instead is a separate decision about which projects may exist; neither is this repair, and
+neither is claimed here.
+**Mutation-checked.** Restoring the clamp makes the new case render instead of refusing, failing at
+`failed.state == RenderState::Failed`. The refusal is load-bearing.
+Release `seam_tests` 1454 of 1454; full Release CTest 224 of 224. No DAW, VoiceOver, signing,
+Windows or external-review evidence. `.github` was not touched.

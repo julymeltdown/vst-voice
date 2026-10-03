@@ -249,7 +249,6 @@ void AuthoringRenderCoordinator::submitWithSources(
     std::uint32_t sampleRate, rendering::RenderQuality quality, bool immediate,
     application::CommandImpact impact) {
   if (shutdown_.load(std::memory_order_acquire)) return;
-  sampleRate = std::clamp(sampleRate, 8000U, 192000U);
   std::string activeVoicebankId;
   std::string activeVoicebankVersion;
   if (const auto* source = sourceFor(voicebanks, activeTrack);
@@ -721,6 +720,16 @@ AuthoringRenderCoordinator::preflight(const Request& request) {
                             ? validation.error().message
                             : validation.error().message + ": " +
                                   validation.error().context;
+    return result;
+  }
+
+  // The project accepts any rate the domain admits, but the renderers bound their own work by the
+  // rate and this coordinator used to quietly clamp to that bound. A project the domain calls valid
+  // then previewed at a different rate than it declares, with nothing reported. Refusing here names
+  // the rate instead of substituting one.
+  if (request.sampleRate < 8000U || request.sampleRate > 192000U) {
+    result.failure = RenderFailureKind::RenderFailed;
+    result.diagnostic = "Preview sample rate must be between 8000 and 192000 Hz";
     return result;
   }
 
