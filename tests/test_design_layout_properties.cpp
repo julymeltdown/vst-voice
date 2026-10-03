@@ -30,6 +30,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -184,9 +185,9 @@ void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, dou
   // surface opened before the capture was written was gone by the time the frame was drawn.
   // A caller that wants a particular workspace sets it before opening its surface.
   static_cast<void>(workspace);
+  if (f.shell.mode() != mode) f.shell.setMode(mode, false);
   if (!f.shell.prepareFrame(f.controller, width, height)) return;
   if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick())) return;
-  if (f.shell.mode() != mode) f.shell.setMode(mode, false);
   std::filesystem::create_directories(path.parent_path());
   CHECK(frame.writePpm(path));
 }
@@ -611,6 +612,116 @@ TEST_CASE("the export workspace says why it cannot export once, not twice") {
     return record.text.find(tr(Str::ChooseANewFolderAnExisting)) != std::string_view::npos;
   });
   CHECK(note);
+}
+
+// Contrast is the other half of the look and it has never been rendered either. It is a control in the
+// header beside the mode switch, and the one case that touched it painted through a null text engine
+// into a pixel vector it compared against another, so it proved the cached background is repainted and
+// nothing about what high contrast looks like on screen. It is the variant a person turns on to read a
+// label in a bright room, so it is the one where a label that was hard to read at standard contrast is
+// the thing being tested, and it has never been looked at.
+//
+// The mode argument had the same shape of fault and it was fixed in the previous entry: the capture
+// applied the look after painting, so a caller whose fixture was already in the other look would have
+// received a frame in the look it was not named for. Both are now applied before the frame is prepared,
+// and this case writes both contrasts of both looks so the halves are on screen together and can be
+// compared against each other rather than asserted apart.
+TEST_CASE("every workspace is capturable in both contrasts of both looks") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != 0
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-contrast")};
+  const std::array<std::pair<Workspace, std::string_view>, 5U> workspaces{{
+      {Workspace::Sing, "sing"}, {Workspace::Voice, "voice"},
+      {Workspace::Tune, "tune"}, {Workspace::Mix, "mix"},
+      {Workspace::Export, "export"}}};
+  std::size_t written = 0U;
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene})
+    for (const auto contrast : {Contrast::Standard, Contrast::High}) {
+      for (const auto& [workspace, name] : workspaces) {
+        LayoutFixture fixture{mode, contrast};
+        fixture.shell.setWorkspace(fixture.controller, workspace);
+        writeCapturedFrame(fixture, workspace, 1440.0, 900.0,
+                           root / (std::string{name} + "-" +
+                                   (mode == DesignMode::Emo ? "emo" : "scene") + "-" +
+                                   (contrast == Contrast::Standard ? "standard" : "high") + ".ppm"),
+                           mode);
+        ++written;
+      }
+    }
+  CHECK(written == 20U);
+}
+
+// A captured frame is in the look it was named for. This is the check for the fault above: the capture
+// applied the mode after painting, so the mode argument did nothing for a fixture that was not already
+// in that mode, and every frame it wrote was in the look its fixture happened to be in rather than the
+// one its file name claimed. Asking for SCENE from an EMO fixture and finding the shell still in EMO
+// after the capture is exactly that failure.
+TEST_CASE("a captured frame is painted in the look it was asked for, not the one the fixture had") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != 0
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-look-order")};
+  // The fixture starts in EMO and the capture is asked for SCENE. If the look is applied after the
+  // paint the shell is still in EMO here and the frame named "scene" is an EMO frame.
+  LayoutFixture fixture{DesignMode::Emo};
+  fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+  CHECK(fixture.shell.mode() == DesignMode::Emo);
+  writeCapturedFrame(fixture, Workspace::Sing, 1440.0, 900.0,
+                     root / "look-order-scene-requested.ppm", DesignMode::Scene);
+  CHECK(fixture.shell.mode() == DesignMode::Scene);
+
+
+  // The shell's own state after the capture is not the evidence: a capture that applies the look after
+  // painting also leaves the shell in the look it was asked for, and it wrote the frame in the other
+  // one. The frame itself is the evidence, and the two looks are a different palette rather than a
+  // tint, so two captures of the same window in the two looks differ in a measurable share of its
+  // pixels and two captures painted in the same look differ in none. The two are captured through the
+  // same helper the sweep uses, because a case with its own painter would not be checking the helper.
+  const auto emoPath = root / "look-order-emo.ppm";
+  const auto scenePath = root / "look-order-scene.ppm";
+  for (const auto& [requested, path] : std::array{
+           std::pair{DesignMode::Emo, emoPath}, std::pair{DesignMode::Scene, scenePath}}) {
+    LayoutFixture f{DesignMode::Emo};
+    f.shell.setWorkspace(f.controller, Workspace::Sing);
+    writeCapturedFrame(f, Workspace::Sing, 1440.0, 900.0, path, requested);
+  }
+  // The two frames are written by the same helper from the same fixture, so the only thing that can
+  // make them different is the look being applied before the paint rather than after it.
+  const auto readPpm = [](const std::filesystem::path& path, std::vector<std::uint32_t>& out) {
+    std::ifstream in{path, std::ios::binary};
+    if (!in) return false;
+    std::string header;
+    std::getline(in, header);
+    if (header.rfind("P6", 0U) != 0U) return false;
+    int w = 0, h = 0, maxValue = 0;
+    in >> w >> h >> maxValue;
+    in.get();
+    out.resize(static_cast<std::size_t>(w) * static_cast<std::uint32_t>(h));
+    for (std::size_t i = 0U; i < out.size(); ++i) {
+      unsigned char rgb[3]{};
+      in.read(reinterpret_cast<char*>(rgb), 3);
+      out[i] = static_cast<std::uint32_t>(rgb[2]) << 16U |
+               static_cast<std::uint32_t>(rgb[1]) << 8U | static_cast<std::uint32_t>(rgb[0]);
+    }
+    return static_cast<bool>(in);
+  };
+  std::vector<std::uint32_t> emoPixels;
+  std::vector<std::uint32_t> scenePixels;
+  CHECK(readPpm(emoPath, emoPixels));
+  CHECK(readPpm(scenePath, scenePixels));
+  CHECK(emoPixels.size() == scenePixels.size());
+  CHECK(!emoPixels.empty());
+  std::size_t differing = 0U;
+  for (std::size_t i = 0U; i < std::min(emoPixels.size(), scenePixels.size()); ++i)
+    if (emoPixels[i] != scenePixels[i]) ++differing;
+  // Measured at a few percent of the frame: the two looks differ in the wash and the panel fills
+  // rather than in every label, because much of the window is one background. The property is that
+  // the two frames are not the same frame, and the figure behind the threshold is measured rather
+  // than guessed.
+  CHECK(differing > emoPixels.size() / 100U);
 }
 
 // A frame in the look it claims. The capture used to take a mode and discard it, so every frame in
