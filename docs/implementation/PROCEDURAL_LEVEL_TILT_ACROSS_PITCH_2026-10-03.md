@@ -1,5 +1,5 @@
-# The procedural voice gets louder as it climbs, by about 5 dB across an octave
-and a third
+# The procedural voice's level depends on where a note sits relative to the
+voice's formants, with a 21 dB resonant peak inside the usable range
 
 Date: 2026-10-03.
 
@@ -66,20 +66,78 @@ weight across the same pitches gives 1.3407, 1.3385, 1.3356 and 1.3299, a spread
 under one percent, so the `voiced /= weight` line at `phonation_source.cpp:96` moves
 too little to explain a 5.4 dB difference.
 
+## Correction: the first version of this entry understated the effect
+
+This entry originally reported "about 5.4 dB across an octave and a third" and
+called it a gradual tilt. That was measured only over MIDI 60 to 72, and it is
+wrong as a description of the behaviour. Widening the sweep to a realistic
+singing range shows the effect is not gradual and not monotonic:
+
+```
+midi 48   rms 0.00225
+midi 55   rms 0.00421
+midi 60   rms 0.00499
+midi 65   rms 0.00594
+midi 72   rms 0.00900
+midi 74   rms 0.01228
+midi 76   rms 0.01847
+midi 77   rms 0.02406
+midi 78   rms 0.03505
+midi 79   rms 0.05327   <- peak, the fundamental sits on the first formant
+midi 80   rms 0.04360
+midi 81   rms 0.02386
+midi 84   rms 0.00474
+```
+
+That is **21.2 dB** between MIDI 48 and MIDI 79 and back down, on one vowel with no
+authored dynamics. The earlier 5.4 dB figure is real but local: it describes the
+monotonic part below the resonance, not the behaviour.
+
+## The mechanism, which the wider sweep identifies exactly
+
+The tract runs parallel bandpass filters and sums `band.weight * value` across
+them (`vocal_tract.cpp:253`), with band gains normalized across the pose
+(`vocal_tract.cpp:164`). The output therefore depends on how much excitation energy
+lands inside a formant at all, and the excitation is a harmonic series whose
+partials sit at exact multiples of f0. The `あ` pose's first formant is 800 Hz with
+a 90 Hz bandwidth. Computing what fraction of source energy falls inside it:
+
+```
+midi 60 (f0 261.6)   4.9 percent inside the 800 Hz formant
+midi 72 (f0 523.3)   0.0 percent
+midi 79 (f0 784.0)  72.0 percent   <- f0 has landed on the formant
+midi 84 (f0 1046.5)  0.0 percent
+```
+
+At MIDI 79 the fundamental is 35 cents below the formant centre, so nearly all the
+source energy is resonant. One semitone away on either side almost none of it is.
+The measured peak sits exactly there, and rises and falls smoothly around it
+(0.02405, 0.03507, 0.05329, 0.04360, 0.02386 for MIDI 77 through 81). This is a
+formant resonance spike in level, not a spectral-balance effect.
+
+The code's stated intent argues this is unintended. The breathiness channel is
+documented as "a balance, not an addition, so a breathy phrase is not a louder
+phrase" (`phonation_source.cpp:101`), and the source's own `voiced /= weight`
+(`phonation_source.cpp:96`) normalizes the periodic sum. A pitch-dependent 21 dB
+level swing is the same class of surprise those lines exist to prevent.
+
 ## What this is
 
-**Established.** The procedural voice is measurably louder at higher pitches, by
-about 5.4 dB from MIDI 60 to 68 on a single sustained vowel with no authored
-dynamics. The effect is deterministic, reproduces note-by-note and
-pitch-by-pitch, and is explained by the source's fixed spectral tilt meeting a
-formant filter normalized across bands rather than across excitation.
+**Established.** The procedural voice's level depends on where a note sits
+relative to the voice's formants. On one sustained vowel with no authored
+dynamics it swings **21.2 dB** across MIDI 48 to 79 and back, peaking where the
+fundamental lands on the first formant. The effect is deterministic, reproduces
+pitch-by-pitch, and is explained by a harmonic source whose partials sit at exact
+multiples of f0 meeting a parallel formant filter that sums band energy.
 
-**Not established.** Whether this is wrong. It may be defensible: real voices are
-loudest in their low register, so a synth that brightens and lifts with pitch is
-not automatically wrong. But a 5.4 dB rise across a phrase is large enough that a
-singer will hear it as the character changing as the melody goes up, and nothing
-in the recipe asked for it. That judgement belongs to a listener, not to a
-measurement, and **no listening observation exists**.
+**Not established.** Whether the correct repair is a gain compensation, a wider
+first-formant bandwidth, or accepting a real singer's formant resonance. Real
+voices DO get louder on vowels whose formants align with the pitch, which is part
+of why a singer's note can seem to jump. But 21 dB is far beyond the resonance a
+singer would hear as expression, and a melody that wanders across the range would
+carry a 21 dB level contour nobody scored. **How much to correct, and in what
+direction, is a voice-design decision that needs an ear**, and **no listening
+observation exists**.
 
 **Not a defect claim.** This entry records a measured behaviour and its mechanism.
 It does not assert the renderer is broken, does not propose a specific loudness

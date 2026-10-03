@@ -5766,10 +5766,20 @@ No production code was modified. Release `seam_performance_snapshot_tests`
 unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
 
-2026-10-03 — The procedural voice measured getting about 5.4 dB louder as it
-climbs, on identical input with no authored dynamics (R3's M2.2 "voice character
-or expression is ineffective" row, first acoustic evidence for it; full detail in
-`docs/implementation/PROCEDURAL_LEVEL_TILT_ACROSS_PITCH_2026-10-03.md`).
+2026-10-03 — The procedural voice's level measured depending on where a note sits
+relative to the voice's formants, with a **21.2 dB** resonant peak inside the
+usable range, on identical input with no authored dynamics (R3's M2.2 "voice
+character or expression is ineffective" row, first acoustic evidence for it; full
+detail in `docs/implementation/PROCEDURAL_LEVEL_TILT_ACROSS_PITCH_2026-10-03.md`).
+**A correction to this entry's own first claim, made immediately.** The first
+version reported "about 5.4 dB across an octave and a third" and called it a gradual
+tilt. That was measured only over MIDI 60 to 72 and it is wrong as a description of
+the behaviour. Widening the sweep to a realistic singing range shows the effect is
+neither gradual nor monotonic: RMS runs 0.00225 at MIDI 48, 0.00900 at 72, 0.05327
+at **79**, back down to 0.00474 at 84. That is **21.2 dB** up and back down, on one
+vowel. The 5.4 dB figure is real but local, describing only the monotonic part below
+the resonance. Recorded rather than edited away, because a reader checking only the
+headline would take a 4x underestimate at face value.
 **How it was found, which is the part worth keeping.** Rendering the listening
 material above produced two phrases recorded minutes apart with the same tool, and
 their peaks differed by 4.5 times: 0.022 for the four-note melisma against 0.101 for
@@ -5788,27 +5798,39 @@ Four notes at the SAME pitch and SAME vowel render flat, 0.00499, 0.00506, 0.005
 0.00504, under one percent spread. Single notes at four pitches reproduce the tilt
 alone: MIDI 55 gives 0.00421, MIDI 60 gives 0.00499, MIDI 65 gives 0.00594, MIDI 72
 gives 0.00900.
-**The mechanism.** The excitation is a harmonic series with a fixed spectral tilt
-whose partial count is `floor(0.45 * rate / f0)` (`phonation_source.cpp:80`), so as
-f0 rises the share of excitation below 1 kHz falls from **91.3 percent at MIDI 55 to
-71.5 percent at MIDI 72**. The tract's band gains are normalized across the pose's
-formants (`vocal_tract.cpp:164`), presenting a roughly fixed peak gain rather than
-compensating for how much excitation lands inside it, so more of the source passing
-means more output. The zero-crossing rate falls alongside the rising level, which is
-the signature of the output brightening: the same vowel with progressively more of
-its energy above 1 kHz, and progressively louder. The source's own normalization is
-NOT the cause: its summed harmonic weight moves only from 1.3407 to 1.3299 across
-the same pitches, so the `voiced /= weight` line at `phonation_source.cpp:96` moves
-too little to explain 5.4 dB.
+**The mechanism, which the wider sweep identifies exactly.** The tract runs
+parallel bandpass filters and sums `band.weight * value` across them
+(`vocal_tract.cpp:253`), with band gains normalized across the pose
+(`vocal_tract.cpp:164`), so output level depends on how much excitation energy lands
+inside a formant at all. The excitation is a harmonic series whose partials sit at
+exact multiples of f0 and whose count is `floor(0.45 * rate / f0)`
+(`phonation_source.cpp:80`). The `あ` pose's first formant is 800 Hz with a 90 Hz
+bandwidth, and the fraction of source energy inside it is **4.9 percent at MIDI 60,
+0.0 percent at MIDI 72, 72.0 percent at MIDI 79, and 0.0 percent at MIDI 84**. At
+MIDI 79 the fundamental sits 35 cents below the formant centre, so nearly the whole
+source is resonant; a semitone either side almost none of it is. The measured peak
+is exactly there and rises and falls smoothly around it (0.02405, 0.03507, 0.05329,
+0.04360, 0.02386 for MIDI 77 through 81). This is a formant resonance spike in
+level. The source's own `voiced /= weight` (`phonation_source.cpp:96`) is NOT the
+cause: its summed harmonic weight moves only from 1.3407 to 1.3299 across the same
+pitches.
+**The code's own stated intent argues this is unintended.** The breathiness channel
+is documented as "a balance, not an addition, so a breathy phrase is not a louder
+phrase" (`phonation_source.cpp:101`), and the periodic sum is normalized. A
+pitch-dependent 21 dB level swing is the same class of surprise those lines exist to
+prevent, which is why this is recorded as unintended behaviour rather than as a
+character choice someone made.
 **What this is and is not.** It is a deterministic, reproducible measured behaviour
-with a located mechanism. **It is not a defect claim.** Real voices are loudest in
-their low register, so a synth that brightens and lifts with pitch is not
-automatically wrong; but 5.4 dB across a phrase is large enough that a singer will
-hear the character changing as the melody rises, and nothing in the recipe asked for
-it. Whether to compensate, and by how much, is a voice-design decision needing an
-ear and a reference, so **no code is changed by this entry and no listening
-observation is claimed**. M2.2's "voice character or expression" row is where this
-belongs, and it now has its first acoustic evidence rather than none.
+with a located mechanism, and the code's own comments indicate it is unintended.
+**It is not a defect claim, because the correct repair is a design choice.** Real
+voices DO get louder on vowels whose formants align with the pitch, which is part of
+why a note can seem to jump. But 21 dB is far beyond the resonance anyone would hear
+as expression, and a melody wandering across the range would carry a 21 dB level
+contour nobody scored. Whether to correct it with a gain compensation, a wider
+first-formant bandwidth, or by accepting the resonance needs an ear and a reference,
+so **no code is changed by this entry and no listening observation is claimed**.
+M2.2's "voice character or expression" row is where this belongs, and it now has its
+first acoustic evidence rather than none.
 No production code was modified. Release `seam_performance_snapshot_tests`
 unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
