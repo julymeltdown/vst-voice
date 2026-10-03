@@ -96,6 +96,72 @@ struct PerformanceSnapshotFixture final {
 // *phrase*: several syllables, each at its own note, with the formant target changing between
 // them while the pitch follows the score. This measures both syllables independently, so a
 // renderer that sang one note correctly and then ignored the rest could not pass it.
+// Two sung vowels prove pitch. A voiceoid also has to place a consonant in front of the vowel,
+// and the previous phrase case was vowels only. This renders one CV syllable ("s" then "a") and
+// checks both halves of the same syllable in the audio itself: the fricative's own marker span
+// must carry aperiodic energy rather than silence, and the vowel span next to it must be voiced at
+// the score's pitch. A renderer that emitted a vowel alone, or a silent span labelled a
+// consonant, fails here.
+TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  PerformanceSnapshotFixture f;
+  auto* region = f.project.findRegion(f.regionId);
+  region->notes.front().startTick = time::Tick{480};
+  region->notes.front().durationTick = time::Tick{1920};
+  region->notes.front().midiKey = 60U;
+  region->notes.front().vibrato.enabled = false;
+  region->notes.front().phoneticHint.reset();
+  region->lyrics.front().surface = U"さ";  // s + a
+  region->phonemeOverrides = {
+      {.key = {f.noteId, 0U}, .timing = {.startOffset = 0, .endOffset = 200000}, .locked = true},
+      {.key = {f.noteId, 1U}, .timing = {.startOffset = 200000}, .locked = true}};
+  voice_design::VoiceRecipe recipe; recipe.id = "cv-articulation";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+      f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+  if (!snapshot) throw test::Failure{"CV snapshot: " + snapshot.error().message};
+  const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+  const auto& markers = rendered.value().proceduralMarkers;
+  CHECK(markers.size() == 2U);
+  CHECK(markers[0].phone == "s");
+  CHECK(markers[1].phone == "a");
+  const auto& audio = rendered.value().rendered.audio;
+  CHECK(audio.samples.size() > 0U);
+  const auto window = [&](const synthesis::PhraseFrameRange& span) {
+    const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+    const auto count = static_cast<std::size_t>(span.end - span.start);
+    CHECK(from + count <= audio.samples.size());
+    return std::span<const float>{audio.samples.data() + from, count};
+  };
+  const auto noiseRms = [](std::span<const float> samples) {
+    if (samples.empty()) return 0.0;
+    auto sum = 0.0;
+    for (const auto value : samples) sum += static_cast<double>(value) * static_cast<double>(value);
+    return std::sqrt(sum / static_cast<double>(samples.size()));
+  };
+  // The fricative owns its span, and that span must actually contain the noise it is named for.
+  CHECK(markers[0].kind == voice_design::ArticulationGestureKind::Frication);
+  const auto consonant = window(markers[0].ownedSpan);
+  CHECK(!consonant.empty());
+  CHECK(noiseRms(consonant) > 1.0e-4);
+  // The vowel owns the rest, is voiced, and carries the score's pitch.
+  CHECK(markers[1].kind == voice_design::ArticulationGestureKind::OralVowel);
+  const auto vowelSpan = markers[1].ownedSpan;
+  CHECK(vowelSpan.end > markers[0].ownedSpan.end);
+  auto vowel = window(synthesis::PhraseFrameRange{vowelSpan.start, vowelSpan.end});
+  CHECK(vowel.size() > 4096U);
+  const auto frames = voicebank::analyzePitch(vowel, kRate); CHECK(frames);
+  const auto measured = voicebank::medianVoicedPitch(frames.value());
+  const auto expected = 440.0 * std::pow(2.0, (60.0 - 69.0) / 12.0);
+  CHECK(measured > 0.0);
+  CHECK(std::abs(1200.0 * std::log2(measured / expected)) < 50.0);
+  // The consonant and the vowel are different sounds, not the same span twice.
+  CHECK(noiseRms(consonant) != noiseRms(vowel));
+}
+
 TEST_CASE("a procedural phrase sings every syllable at its own note") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

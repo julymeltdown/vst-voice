@@ -5044,3 +5044,39 @@ of the two. U42 stays externally blocked on a real recording session for the
 sample route, which this does not touch. No listening evidence, no DAW,
 VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
+
+2026-10-03 — The synthetic singer now places a consonant in front of the vowel
+inside one syllable, and the consonant is measured in the audio rather than
+asserted from a marker (R3's synth-style original voice; acoustic evidence about
+the renderer, not a singer qualification). **Why this follows the phrase case.**
+The previous two entries measured one vowel and then two vowels, both at the
+right pitch. Both were vowels only: a voiceoid has to produce consonants too,
+and a renderer that emitted a vowel and labelled a silent span a consonant would
+have passed everything so far. **Evidence.** A new case renders one CV syllable
+("さ", s then a) with a frication binding and a vowel pose in the recipe, through
+`createProcedural` and the real `PhraseRenderPipeline`, then uses the
+`ProceduralPhoneMarker` spans the renderer publishes to measure each half of the
+same syllable in the audio. Measured, not asserted: **the fricative "s" owns
+9600 frames at RMS 0.003466; the vowel "a" owns 38400 frames at RMS 0.001452,
+and measures 261.56 Hz against a 261.63 Hz target (-0.3 cents).** The consonant
+is about 2.4 times louder than the vowel over its quarter-length span, which is
+what aperiodic noise in a syllable's onset looks like, and the two spans carry
+different RMS because they are different sounds rather than one span twice. **Why
+the marker spans are the right thing to measure.** They are the renderer's own
+account of which phone owns which audio; measuring inside them is what makes
+this a statement about the sound rather than about the schedule. A renderer that
+published a marker for a phone whose samples were silent, or voiced, would fail
+the energy check. **Mutation-checked.** Requiring an impossible consonant level
+fails the case at the RMS comparison, so the consonant is demonstrably
+load-bearing rather than a scheduling claim. Release
+`seam_performance_snapshot_tests` 56 of 56. **What this is and is not.** It
+shows the procedural path emits a real fricative and then a real sung vowel in
+one syllable, with the consonant's energy and the vowel's pitch both measured
+from the rendered samples. It is still not a song: one syllable, one consonant,
+no phrase-level timing or phrasing evidence, and no measurement of timbre,
+breathiness or expressiveness. Plosive closure and burst, voiced frication,
+nasals and affricates are component-tested upstream but are not yet measured in
+a rendered phrase, and no listening evidence exists. U42 remains externally
+blocked on a real recording session for the sample route, which this does not
+touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.
