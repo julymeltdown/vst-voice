@@ -15,6 +15,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <iterator>
 #include <memory>
 #include <system_error>
@@ -447,6 +448,13 @@ core::Result<ExportResult> ExportService::commitRendered(
                                        error.message());
   }
   result.state = ExportState::Staging;
+  // Measure before writing. The encoder clamps to the quantizer range without reporting, so a
+  // master driven past full scale would otherwise be indistinguishable from one that fit.
+  for (const auto sample : rendered.interleaved) {
+    const auto magnitude = std::isfinite(sample) ? std::abs(sample) : 1.0F;
+    if (magnitude > result.masterPeakAbs) result.masterPeakAbs = magnitude;
+  }
+  result.masterClipped = result.masterPeakAbs >= 1.0F;
   const auto stagedMaster = staging / "master.wav";
   auto writer = voicebank::WavStreamWriter::create(
       stagedMaster,
@@ -498,6 +506,8 @@ core::Result<ExportResult> ExportService::commitRendered(
           {"applicationBuildSha", formats::JsonValue{std::string{build::kSourceCommit}}},
           {"executionDateUnixMs", formats::JsonValue{executionDateUnixMs()}},
           {"masterSha256", formats::JsonValue{result.masterSha256}},
+          {"masterPeakAbs", formats::JsonValue{static_cast<double>(result.masterPeakAbs)}},
+          {"masterClipped", formats::JsonValue{result.masterClipped}},
           {"masterFile", formats::JsonValue{"master.wav"}},
       }},
       true);

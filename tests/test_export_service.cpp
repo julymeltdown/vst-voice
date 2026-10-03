@@ -2956,6 +2956,37 @@ TEST_CASE("export service publishes a committed master and receipt atomically") 
   CHECK(decoded.value().frameCount() == 3U);
 }
 
+TEST_CASE("an export that reaches full scale reports its peak and the clipping") {
+  // A dynamics curve is a legal authoring action and can drive the mix past 0 dBFS. The WAV
+  // encoder clamps to the quantizer range without saying so, so without a measurement the only
+  // trace of a clipped master was that it sounded wrong.
+  const auto root = seam::test::support::temporaryDirectory("export-clip-report");
+  seam::authoring::ExportService service;
+  seam::rendering::ProjectRenderResult headroom{
+      .sampleRate = 48000U, .channelCount = 1U, .interleaved = {0.25F, -0.5F, 0.125F}};
+  const auto quiet = service.commitRendered(
+      headroom, 1U, root / "quiet.wav", seam::voicebank::WavSampleFormat::Pcm24);
+  CHECK(quiet);
+  CHECK_NEAR(quiet.value().masterPeakAbs, 0.5, 1e-6);
+  CHECK(!quiet.value().masterClipped);
+
+  // +12 dB of authored dynamics on a normalised voice reaches here over 1.0.
+  seam::rendering::ProjectRenderResult driven{
+      .sampleRate = 48000U, .channelCount = 1U, .interleaved = {0.9F, -1.25F, 0.4F}};
+  const auto loud = service.commitRendered(
+      driven, 2U, root / "loud.wav", seam::voicebank::WavSampleFormat::Pcm24);
+  CHECK(loud);
+  CHECK_NEAR(loud.value().masterPeakAbs, 1.25, 1e-6);
+  CHECK(loud.value().masterClipped);
+  // The export still commits: the peak is a report, not a refusal. Clipping is the author's
+  // decision to make, and hiding the master would be a worse answer than naming the peak.
+  CHECK(loud.value().state == seam::authoring::ExportState::Committed);
+  const auto receipt = seam::core::readTextFileLimited(loud.value().receiptPath, 4U * 1024U * 1024U);
+  CHECK(receipt);
+  CHECK(receipt.value().find("masterClipped") != std::string::npos);
+  CHECK(receipt.value().find("masterPeakAbs") != std::string::npos);
+}
+
 TEST_CASE("single-file export removes rollback backups after a successful replacement") {
   const auto root = seam::test::support::temporaryDirectory("export-repeat");
   const auto destination = root / "master.wav";

@@ -6188,3 +6188,32 @@ neither is claimed here.
 `failed.state == RenderState::Failed`. The refusal is load-bearing.
 Release `seam_tests` 1454 of 1454; full Release CTest 224 of 224. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — An export driven past full scale committed a clipped master and reported success,
+with nothing in the result or the receipt to say so (MEDIUM-HIGH).
+**The defect, as a chain.** `kMaximumDynamicsGain` is +12 dB (`dynamics_automation.hpp:11`) and the
+expression lane offers that range, so drawing the curve is a legal authoring action.
+`applyCompiledPerformanceGain` multiplies by `dynamicsGain * articulationGain` and rejects only
+non-finite or `> FLT_MAX` output (`performance_compiler.cpp:221-224`) — it is the last operation
+in every renderer (`raw_renderer.cpp:225`, `classic_psola.cpp:388`, `stretch_renderer.cpp:332`,
+`spectral_classic.cpp:681`). The mix clamps to +/-4.0 and silently substitutes 0.0 for non-finite
+(`multichannel_routing.cpp:338-339`). Then `writeSample` does `std::clamp(finite, -1.0F, 1.0F)`
+before quantising (`wav.cpp:401-402`), **with no peak, no clip flag and no diagnostic**. The export
+receipt reported `masterSha256` and `COMMITTED`. So a creator who drew a +12 dB curve received a
+hard-clipped master and a success message, and could not tell from the product that any clipping
+had occurred.
+**The repair is measurement, not refusal.** `ExportResult` gains `masterPeakAbs` and
+`masterClipped`, measured in `commitRendered` **before** anything is written, and both are recorded
+in the receipt as `masterPeakAbs` / `masterClipped`. A non-finite sample counts as full scale rather
+than being skipped, so a NaN cannot hide below a peak of zero.
+**Why it reports instead of refusing.** Clipping is the author's decision, not the exporter's. The
+authoring range deliberately admits +12 dB, and a refusal would either contradict that range or
+invent a limiter nobody asked for. The defect was not that clipping was possible; it was that it
+was **invisible**. The export still commits, and now says what it did.
+**Mutation-checked in both halves, separately.** Forcing `masterClipped` false fails the case at
+`loud.value().masterClipped`. Neutering the peak loop fails it earlier, at
+`quiet.value().masterPeakAbs ~= 0.5`. Neither the measurement nor the flag is decorative.
+**What this is not.** It is not a limiter, not a normalisation pass, and not a change to the legal
+dynamics range. It does not claim how a clipped master sounds. Release `seam_tests` 1455 of 1455;
+full Release CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.

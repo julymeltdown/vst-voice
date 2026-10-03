@@ -74,6 +74,12 @@ struct ExportResult final {
   std::string diagnostic;
   std::vector<ExportFileReceipt> files;
   std::filesystem::path setPath;
+  // The loudest absolute sample in the rendered master, and whether it was at or beyond full
+  // scale. A dynamics curve is a legal authoring action and can drive the mix past 0 dBFS; the
+  // WAV encoder clamps to the quantizer range without reporting, so without this the only trace
+  // of a clipped master was that it sounded wrong.
+  float masterPeakAbs{0.0F};
+  bool masterClipped{false};
 };
 
 enum class ExportSetInspectionState {
