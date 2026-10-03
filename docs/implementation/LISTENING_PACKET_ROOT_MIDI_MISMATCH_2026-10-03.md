@@ -55,22 +55,28 @@ The analyzer reported a median of 996.7 Hz for a note whose target is 392 Hz,
 and the audio contains nothing at 996.7 Hz. Whatever is misreporting, it is not
 the audio.
 
-**The bank is mislabeled.** `assets/demo-human-voicebank-public-domain/production-bank/manifest.json`
-declares the single unit at `"rootMidi": 67`, which is 392.0 Hz. The recording
-that unit points at, `audio/human-vowel-demo.wav`, is PCM16 at 44100 Hz and its
-strongest partial across the declared loop span (frames 5292 to 21609) is:
+**The bank is mislabeled.** The packet renders from
+`assets/demo-human-voicebank-public-domain/production-bank/manifest.json`, which
+declares **eight** units, every one of them at `"rootMidi": 67` (392.0 Hz) and every
+one of them pointing at the same recording. That recording,
+`audio/human-vowel-demo.wav`, is a 0.55-second PCM16 file at 44100 Hz. Measured
+with the repository's own extractor (`seam_voicebank_cli extract-pitch`, the same
+`fft-autocorrelation-v1` analyzer the packet itself uses), across its declared loop
+span of frames 5292 to 21609:
 
 ```
-strongest partials: [(146, 231.2), (144, 207.5), (148, 204.2), (116, 202.1)]
-peak partial 146 Hz -> MIDI 49.90
-cents from the declared 392 Hz: -1710
+voiced frames inside the loop span: 63
+loop-span median: 695.4 Hz
+cents from the declared 392 Hz: +992
 ```
 
-The declared root is **1710 cents** away from the audio it names. The provenance
-record explains why: the file is `talking.wav` from the upstream `sonic`
-repository, described as "the repository author's father talking", a 0.55-second
-spoken recording reused under several phoneme labels. A spoken recording is not a
-sustained sung vowel, and its pitch is not the pitch the manifest claims.
+The declared root is **992 cents** away from the audio it names, and the audio has
+no single pitch to declare: across the whole 0.55 seconds the voiced frames scatter
+from 50 to 1250 Hz, with clusters near 100, 700 and 1000 Hz and 22 of 95 frames at
+or above the 1200 Hz analyzer ceiling. The provenance record explains why: the file
+is `talking.wav` from the upstream `sonic` repository, described as "the
+repository author's father talking", a spoken recording reused under several
+phoneme labels. A spoken recording is not a sustained sung vowel.
 
 ## Why this matters beyond the fixture
 
@@ -91,7 +97,7 @@ sustained sung vowel, and its pitch is not the pitch the manifest claims.
 
 **Established.** A real, reproducible listening packet renders on this machine
 from `master`, with real audio and full provenance. The demo bank's declared
-`rootMidi` does not match its recording, by 1710 cents. Intonation figures taken
+`rootMidi` does not match its recording, by 992 cents. Intonation figures taken
 from this corpus describe that mismatch, not the renderer.
 
 **Not established, and explicitly not claimed.**

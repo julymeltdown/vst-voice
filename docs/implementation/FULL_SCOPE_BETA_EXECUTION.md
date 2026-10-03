@@ -5676,13 +5676,26 @@ Goertzel scan of the rendered `dry.wav` across note one's steady span finds
 essentially no energy where the analyzer claimed the pitch was: the analyzer
 reported 996.7 Hz for a 392 Hz target and the audio holds **E=0.0000** at 996.7 Hz
 while 196 Hz measures 0.0020. Whatever misreports is not the audio.
-**The bank is mislabeled.** `manifest.json` declares the single unit at
-`rootMidi: 67`, which is 392.0 Hz. The recording it names, `human-vowel-demo.wav`,
-peaks across its declared loop span at **146 Hz, MIDI 49.9**, which is **1710
-cents** from the declared root. The provenance record explains it: the file is
-upstream `sonic`'s `talking.wav`, a 0.55-second SPOKEN recording reused under
-several phoneme labels. A spoken recording is not a sustained sung vowel and its
-pitch is not the pitch the manifest claims.
+**The bank is mislabeled.** The manifest the packet renders from declares **eight**
+units, every one at `rootMidi: 67` (392.0 Hz) and every one pointing at the same
+recording. Measured with the repository's own extractor across that recording's
+declared loop span, its median voiced pitch is **695.4 Hz**, which is **992 cents
+above** the declared root, and its voiced frames scatter from 50 to 1250 Hz across
+the 0.55 seconds. The provenance record explains it: the file is upstream `sonic`'s
+`talking.wav`, a SPOKEN recording reused under several phoneme labels. A spoken
+recording is not a sustained sung vowel and has no single pitch to declare.
+**A second wrong measurement of mine, retracted here rather than edited away.** The
+first version of this entry reported the recording as peaking at **146 Hz**, 1710
+cents BELOW the declared root, from a hand-rolled Goertzel scan. That was wrong, and
+wrong in the direction that made the story tidier. The repository's own
+`seam_voicebank_cli extract-pitch` reports a median of 989 Hz over the whole file
+and 695 Hz inside the declared loop span, both ABOVE the declared root. The Goertzel
+scan failed because it treated a 0.55-second spoken utterance with a moving pitch as
+if it had one, and its 2 Hz scan step aliased against the FFT-based extractor the
+packet actually uses. The corrected figure is 992 cents high, not 1710 low. The
+conclusion survives the correction and the mechanism is unchanged, but the sign and
+the magnitude were wrong, and a reader checking only the headline number would have
+been misled.
 **A wrong reading of my own, recorded because the correction is the finding.** My
 first measurement script filtered nothing and reported medians of 1537 to 1621
 cents, which I first read as a severe renderer defect. It was not. The project's
@@ -5693,7 +5706,7 @@ gave the table above, and the direct spectral scan then showed the audio and the
 analyzer disagreeing. Chasing the renderer would have produced a confident and
 completely wrong defect report against code that is behaving correctly.
 **What this does and does not establish.** A real listening packet renders on
-this machine, and the demo bank's declared root is wrong by 1710 cents, which
+this machine, and the demo bank's declared root is wrong by 992 cents, which
 makes any intonation figure from this corpus a property of the mislabeled fixture
 rather than of SEAM. **No listening judgment is claimed** and **no correctness claim
 about the renderer is made**: the evidence says the measurement was invalid, not
