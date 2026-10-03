@@ -139,13 +139,16 @@ TEST_CASE("a procedural phrase carries articulation, pitch glide and dynamics to
   second.vibrato.enabled = false;
   region->lyrics.push_back(secondLyric);
   region->notes.push_back(second);
-  // Rising a little over the phrase, and louder in its second half.
   CHECK(region->pitchAutomation.upsert({time::Tick{480}, 0.0F}));
   CHECK(region->pitchAutomation.upsert({time::Tick{3840}, 200.0F}));
-  CHECK(region->dynamicsAutomation.upsert({time::Tick{0}, 0.2F}));
-  CHECK(region->dynamicsAutomation.upsert({time::Tick{2400}, 0.2F}));
-  CHECK(region->dynamicsAutomation.upsert({time::Tick{2401}, 1.0F}));
-  CHECK(region->dynamicsAutomation.upsert({time::Tick{6000}, 1.0F}));
+  // Replace, not upsert: the shared fixture already installs a dynamics curve and upserting over it
+  // leaves those points in place, so the step measured below would never be the only one. The second
+  // note spans ticks 1920 to 3360, so the step sits at its midpoint rather than at a guessed tick.
+  CHECK(region->dynamicsAutomation.replacePoints({
+      {.tick = time::Tick{0}, .linearGain = 0.2F},
+      {.tick = time::Tick{2640}, .linearGain = 0.2F},
+      {.tick = time::Tick{2641}, .linearGain = 1.0F},
+      {.tick = time::Tick{6000}, .linearGain = 1.0F}}));
   voice_design::VoiceRecipe recipe; recipe.id = "combined";
   recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
                  {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
@@ -177,19 +180,13 @@ TEST_CASE("a procedural phrase carries articulation, pitch glide and dynamics to
     if (!voice_design::isNoiseGesture(marker.kind)) continue;
     const auto span = window(marker.ownedSpan);
     CHECK(!span.empty());
-    CHECK(rms(span) > 1.0e-5);  // lower than the isolated-syllable bound: this phrase is quieter
+    CHECK(rms(span) > 1.0e-5);
     ++consonants;
   }
   CHECK(consonants == 2U);
-  // 2. Dynamics is measured here and the measurement is what found a real defect: the compiled
-  // per-frame dynamicsGain is applied by the neural backend (neural_phrase_backend.cpp:238) but by
-  // neither the procedural nor the sample path, so a dynamics curve does not change this audio.
-  // The check below therefore pins the CURRENT, DEFECTIVE behaviour and is named for it, so the
-  // day the procedural path applies dynamics this case fails and the fix is written rather than
-  // the assertion quietly loosened. The level difference still measured here is the phonation
-  // source's own per-note reattack envelope, not the score's dynamics.
-  // Measured INSIDE one held vowel, where the per-note reattack envelope is constant, so the only
-  // thing that could move the level is the score's dynamicsGain.
+  // 2. Dynamics, measured as a step INSIDE one held vowel, so the per-note reattack envelope cannot
+  // explain the difference. Comparing two notes instead would measure that envelope, not the
+  // score's gain, which is how the first version of this case went wrong.
   const auto& glideVowel = markers[3].ownedSpan;
   CHECK(glideVowel.end - glideVowel.start > 9600);
   const auto step = glideVowel.start + (glideVowel.end - glideVowel.start) / 2;
@@ -199,21 +196,22 @@ TEST_CASE("a procedural phrase carries articulation, pitch glide and dynamics to
   const auto quietLevel = rms(quietVowel);
   const auto loudLevel = rms(loudVowel);
   CHECK(quietLevel > 0.0);
-  CHECK(loudLevel / quietLevel < 2.0);
+  // The score steps this vowel from 0.2 to 1.0. Measured 4.54 against a requested five, the shortfall
+  // being the vowel envelope's own shape across the window. The bound sits below the request so the
+  // envelope cannot cause a false failure, and far above the 1.15 an unapplied gain would give.
+  CHECK(loudLevel / quietLevel > 3.0);
   // 3. Pitch glide: the phrase rises 200 cents end to end, so the last vowel sits above the first.
   const auto pitchAt = [&](std::span<const float> span) {
     const auto frames = voicebank::analyzePitch(span, kRate); CHECK(frames);
     return voicebank::medianVoicedPitch(frames.value());
   };
-  // The two vowels are a semitone apart in the score plus the rising curve between them, so the
-  // second must sit above the first. Measured on each vowel's own body, away from both edges.
   const auto& firstVowel = markers[1].ownedSpan;
   const auto firstPitch = pitchAt(window({firstVowel.start + 2400, firstVowel.end - 2400}));
   const auto lastPitch = pitchAt(loudVowel);
   CHECK(firstPitch > 0.0); CHECK(lastPitch > 0.0);
-  // The curve moves 200 cents across the phrase and the second note is two semitones above the
-  // first, so the last vowel must be clearly above the first. 2^(200/1200) is 1.122; the bound sits
-  // below that so envelope and measurement window cannot cause a false failure.
+  // The two notes are a semitone apart and the curve rises between them, so 2^(200/1200) = 1.122 is
+  // the shape of the expectation; the bound sits below it so measurement window cannot fail a
+  // correct renderer.
   CHECK(lastPitch > firstPitch * 1.08);
 }
 

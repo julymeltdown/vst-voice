@@ -5153,9 +5153,10 @@ does not touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
 
 2026-10-03 — Articulation, pitch glide and dynamics measured together in one
-procedural phrase, and the measurement found that the score's dynamics never
-reach that renderer at all (R3's synth-style original voice; one acoustic defect
-found and pinned, closing nothing that was previously open).
+procedural phrase (R3's synth-style original voice). **The original entry in this
+place claimed a defect that does not exist and has been retracted; the corrected
+reading is below, and a dated correction recording the retraction is appended at
+the end of this ledger.**
 **Why this case.** Articulation, glide and dynamics had each been measured alone.
 None of that proves they coexist: a renderer could articulate only in still
 vowels, or glide only where no consonant is present. This renders "さし" as two
@@ -5164,32 +5165,81 @@ and requires all three in one continuous rendering. **What passes.** Both
 consonants own aperiodic energy while the phrase glides (energy bound 1e-5, the
 consonant RMSs measured 0.002967 and 0.008347 in the isolated case), and the
 second vowel sits above the first by the score's own interval.
-**The defect this found.** The compiled per-frame `dynamicsGain`
-(`performance_compiler.cpp:495`) is applied by the neural backend
-(`neural_phrase_backend.cpp:238`) and by neither the procedural nor the sample
-path: `rg dynamicsGain` over `libs/` returns no consumer in `seam-voice-design`,
-and the amplitude in `phonation_source.cpp:126` is built from the harmonic
-structure, not from the score's gain. A probe confirmed the shape of it: a
-region-wide constant gain of 0.1 against 1.0 changed the rendered RMS by exactly
-ten times (0.000825 against 0.008250), because that constant reaches the source as
-part of the compiled musical sample, while a dynamics *curve* within one note
-does not (measured ratio between the two halves of one held vowel: 1.15 where
-the score asks for five). **How the case is written.** The dynamics check asserts
-the CURRENT, DEFECTIVE behaviour and says so in the case, the comment and this
-entry: `loudLevel / quietLevel < 2.0` where the score asks for five. That is
-deliberate, so the day the procedural path applies dynamics the case fails and
-the fix has to be written rather than the assertion quietly loosened. Flipping
-the bound to the post-fix expectation was checked and fails today, so the pin is
-live in both directions. The first version of this check compared two different
-notes and passed even with the dynamics curve flattened, because the phonation
-source gives each note its own reattack envelope; measuring a step inside a single
-vowel removed the note boundary from the comparison and exposed the real defect.
-That correction is the substance of this entry: without it the case would have
-been reporting the envelope as though it were dynamics. **Evidence and scope.**
-Release `seam_performance_snapshot_tests` 59 of 59. **Limits.** This is a defect
-found and pinned, not fixed; the fix is in the procedural amplitude path and is
-out of scope for this unit. Articulation and glide coexist and are shown to; the
-dynamics half is shown NOT to work, which is a different claim. No listening
-evidence and no measurement of timbre or expressiveness. U42 remains externally
-blocked on a real recording session for the sample route. No DAW, VoiceOver,
-signing, Windows or external-review evidence. `.github` was not touched.
+**Dynamics, corrected.** The score's per-frame gain reaches the procedural path
+after all, and this entry's earlier "defect" was a false positive produced by the
+test rather than by the renderer. `applyCompiledPerformanceGain`
+(`libs/seam-synthesis/src/performance_compiler.cpp:210`) multiplies each frame by
+`value.dynamicsGain * value.articulationGain`, and the two procedural entry points
+call it: `libs/seam-voice-design/src/procedural_renderer.cpp:219` (sustained poses)
+and `libs/seam-voice-design/src/articulated_stream.cpp:328` (the articulated
+syllable stream the phrase case renders through). The earlier claim rested on a
+`rg dynamicsGain` search that found no consumer in `seam-voice-design`, which is
+true of the identifier but not of the behaviour: the gain is applied by a shared
+helper that multiplies both lanes, so a search for the field name alone could not
+see it. **Why the measurement was wrong, which is the substance of this
+correction.** Two test-construction errors, both mine, produced a renderer bug
+that was never there. First, the check compared two different notes; the
+phonation source gives every note its own reattack envelope, so that comparison
+was measuring the envelope rather than the score's dynamics, and it passed even
+with the dynamics curve flattened. Second, the dynamics step was written at ticks
+1874 and 1875, but the second note of the phrase does not begin until tick 1920,
+so the step sat entirely before the vowel that the test then measured. Two
+independent faults in one measurement, and I read the result as a defect in the
+renderer. **What the corrected case does.** It replaces the fixture's dynamics
+curve with `replacePoints` (the shared fixture already installs one, so `upsert`
+would have left the old points in place), places the step at the second note's
+true midpoint, ticks 2640 and 2641 for a note spanning 1920 to 3360, and measures
+both halves inside that single held vowel so the reattack envelope cannot
+contribute. Read from the compiled performance the gain inside note two is
+**0.200 then 1.000**, and the rendered RMS ratio is **4.54** against a requested
+factor of five, the shortfall being the vowel envelope's own shape across the
+measurement window. The assertion is `loudLevel / quietLevel > 3.0`, chosen below
+the requested five so the envelope cannot cause a false failure and far above the
+1.15 an unapplied gain produces. **Mutation-checked.** Removing the step fails at
+that assertion, so the pin is load-bearing in the direction that matters: this
+time the case proves dynamics WORK rather than pinning a defect that was an
+artefact of the test. **Evidence and scope.** Release
+`seam_performance_snapshot_tests` 59 of 59. **Limits.** Articulation, glide and
+dynamics are now shown to coexist in one rendered phrase, which is a real step
+over the three isolated cases, but it is still two syllables with no phrase-level
+timing, no repeated or slurred syllables, and no measurement of timbre,
+breathiness or expressiveness. No listening evidence exists. U42 remains
+externally blocked on a real recording session for the sample route, which this
+does not touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.
+
+2026-10-03 — Correction: the procedural dynamics "defect" recorded above was a
+false positive in the test, and is retracted (no renderer code changed; the
+`loudLevel / quietLevel < 2.0` pin that encoded it has been removed).
+**What was claimed.** That the compiled per-frame `dynamicsGain` was applied by
+the neural backend but by neither the procedural nor the sample path, evidenced
+by a `rg dynamicsGain` search returning no consumer in `seam-voice-design`, and
+that a region-wide constant gain changed rendered RMS by ten times while a
+dynamics curve within one note did not (ratio 1.15 where the score asked for
+five). **What is actually true.** `applyCompiledPerformanceGain`
+(`performance_compiler.cpp:210`) applies `dynamicsGain * articulationGain` per
+frame and is called by both procedural entry points,
+`procedural_renderer.cpp:219` and `articulated_stream.cpp:328`. The gain is
+reached through a shared helper that multiplies both lanes rather than through a
+named `dynamicsGain` reference in `seam-voice-design`, which is why the original
+search missed it. **Why the original measurement failed.** It compared two
+different notes, so it measured the phonation source's per-note reattack
+envelope; and its step at tick 1875 fell before the second note's start at tick
+1920, so the step was outside the measured vowel entirely. Two independent test
+faults, and a renderer bug inferred from them. **Corrected evidence.** With
+`replacePoints` and the step at the second note's true midpoint, ticks 2640 and
+2641, the compiled gain inside note two is **0.200 then 1.000** and the rendered
+RMS ratio is **4.54** against a requested five. The case now asserts
+`> 3.0`; removing the step fails that assertion, so the pin is load-bearing in the
+direction that shows dynamics work. **Why this is recorded rather than quietly
+edited away.** The previous entry in this ledger asserted a defect in shipping
+code that did not exist. A reader auditing the procedural amplitude path would
+have chased a bug that was never there, and the retracted pin would have made the
+renderer fail loudly the day someone implemented the behaviour correctly. The
+claim, the evidence for it, and the reason it was wrong are all kept so the error
+is auditable and not repeated. **Verification.** Release
+`seam_performance_snapshot_tests` 59 of 59, full Release CTest 224 of 224, and
+`tests/external_beta` plus `tests/production` 321 passed with 315 subtests. Only
+`tests/test_performance_snapshot.cpp` and this ledger changed; no renderer source
+was modified, which is the point. No listening, DAW, VoiceOver, signing, Windows
+or external-review evidence. `.github` was not touched.
