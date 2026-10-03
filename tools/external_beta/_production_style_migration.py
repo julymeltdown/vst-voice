@@ -53,6 +53,8 @@ def prepare_style_migration(workspace: Path, inventory: dict) -> dict:
         if row["state"] in ("APPROVED", "PITCH_REVIEW"):
             row["state"] = "MARKER_REVIEW"
             takes[row["takeId"]]["state"] = "MARKER_REVIEW"
+    # A migrated project declares the layers it uses, like any other style-owned workspace.
+    proposed["declaredPitchLayers"] = sorted({row["pitchLayer"] for row in proposed["unitAssignments"]})
     # The planner does not increment generation: only the durable writer may
     # choose and commit it. Old review/assessment records remain historical.
     errors = []

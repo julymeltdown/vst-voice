@@ -34,6 +34,7 @@ struct Fixture final {
         .permissions = {true, true, qualified, qualified}, .licenseLocator = license.string(), .licenseSha256 = hash.value(), .evidenceState = "SYNTHETIC_TEST_ONLY"}};
     project.operators = {{"producer", "PRODUCER"}, {"reviewer", "REVIEWER"}};
     if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
+    if (styleOwned) project.declaredPitchLayers = {69};
     project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "a", .plannedTakeId = "take-a"}};
     if (styleOwned) project.unitAssignments.front().style = "original";
     CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId, .operatorId = "producer", .occurredAtUtc = "2026-09-09T10:00:00Z"}));

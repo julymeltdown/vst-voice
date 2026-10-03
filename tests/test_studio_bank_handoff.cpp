@@ -59,6 +59,7 @@ PublishedCandidate publishReviewedCandidate() {
       .immutableAssetRoot = "assets"};
   project.schemaVersion = production::kProductionStyleSchemaVersion;
   project.language = "ja";
+  project.declaredPitchLayers = {69};
   project.sourceStrategies.push_back({
       .id = "fixture-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,

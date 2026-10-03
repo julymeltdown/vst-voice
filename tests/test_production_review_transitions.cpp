@@ -203,6 +203,7 @@ TEST_CASE("the indexed review basis is byte-identical to the basis review decisi
   auto styleOwned = fixture.project;
   styleOwned.schemaVersion = production::kProductionStyleSchemaVersion;
   styleOwned.language = "ja";
+  styleOwned.declaredPitchLayers = {69};
   for (auto& take : styleOwned.takes) take.style = "neutral";
   for (auto& assignment : styleOwned.unitAssignments) assignment.style = "neutral";
   for (const auto* project : {&fixture.project, &multiSource, &unbound, &schemaOne, &styleOwned}) {

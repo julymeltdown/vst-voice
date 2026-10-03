@@ -22,6 +22,13 @@ VoicebankProductionProject migratedProject(const VoicebankProductionProject& pro
   draft.schemaVersion = kProductionStyleSchemaVersion;
   draft.language = language;
   draft.lifecycle = project.takes.empty() ? ProductionLifecycle::Draft : ProductionLifecycle::Experimental;
+  // A migrated project declares the layers it uses, like any other style-owned workspace.
+  draft.declaredPitchLayers.clear();
+  for (const auto& assignment : draft.unitAssignments)
+    draft.declaredPitchLayers.push_back(assignment.pitchLayer);
+  std::sort(draft.declaredPitchLayers.begin(), draft.declaredPitchLayers.end());
+  draft.declaredPitchLayers.erase(std::unique(draft.declaredPitchLayers.begin(), draft.declaredPitchLayers.end()),
+                            draft.declaredPitchLayers.end());
   for (auto& take : draft.takes) take.style = style;
   for (auto& assignment : draft.unitAssignments) {
     // The review basis changes with the identity, so an approval under the legacy style-free

@@ -198,6 +198,10 @@ struct VoicebankProductionProject final {
   std::vector<SourceQualityAssessment> sourceQualityAssessments;
   // Explicit only in schema 4. Empty legacy ownership is never inferred.
   std::string language;
+  // The pitch layers this project's inventory declared. Schema 4 admits a unit assignment only on
+  // a declared layer, because that is the rule the producer that wrote the project already
+  // applied; a fixed window here would refuse projects the producer considers valid.
+  std::vector<std::int32_t> declaredPitchLayers;
 };
 
 struct ProductionQueueSummary final {

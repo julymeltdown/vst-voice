@@ -130,6 +130,17 @@ std::string reviewBasis(const VoicebankProductionProject& project, std::string_v
     assignment.markerReviewed = false;
     assignment.pitchReviewed = false;
   }
+  // The basis describes one take, so it keeps only the declared layers that take's own
+  // assignment uses. Carrying the whole project-wide list would move the digest whenever
+  // an unrelated assignment was added, and ReviewBasisIndex rebuilds this basis row by
+  // row, so both constructions have to narrow the list identically or one would refuse a
+  // decision the other accepts.
+  {
+    std::set<std::int32_t> used;
+    for (const auto& assignment : basis.unitAssignments) used.insert(assignment.pitchLayer);
+    std::erase_if(basis.declaredPitchLayers,
+                  [&](const std::int32_t layer) { return !used.contains(layer); });
+  }
   return core::sha256Hex("sample-candidate-review-basis-v2\n" + encodeProductionProject(basis));
 }
 
@@ -218,6 +229,14 @@ std::string ReviewBasisIndex::basis(std::string_view takeId) const {
     assignment.state = assignment.takeId.empty() ? UnitQueueState::Missing : UnitQueueState::MarkerReview;
     assignment.markerReviewed = false;
     assignment.pitchReviewed = false;
+  }
+  // The same narrowing reviewBasis applies, kept in declaration order so both constructions
+  // encode identical bytes.
+  {
+    std::set<std::int32_t> used;
+    for (const auto& assignment : basis.unitAssignments) used.insert(assignment.pitchLayer);
+    for (const auto layer : project.declaredPitchLayers)
+      if (used.contains(layer)) basis.declaredPitchLayers.push_back(layer);
   }
   return core::sha256Hex("sample-candidate-review-basis-v2\n" + encodeProductionProject(basis));
 }

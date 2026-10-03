@@ -337,10 +337,17 @@ core::Result<void> validateProductionProject(
     }
   }
   std::set<ProductionUnitIdentity> assignments;
+  // A style-owned project admits only the pitch layers its inventory declared. The producer that
+  // wrote the project applied that same rule, so validating against a fixed window instead would
+  // reject projects the producer considers valid, and accept layers the inventory never offered.
+  const std::set<std::int32_t> declaredLayers{project.declaredPitchLayers.begin(),
+                                              project.declaredPitchLayers.end()};
+  if (styleOwned && declaredLayers.empty())
+    return invalid("Style-owned workspace declares no pitch layers");
   for (const auto& assignment : project.unitAssignments) {
     if (assignment.coverageKey.empty() || assignment.promptId.empty() ||
-        !validStyle(assignment.style) || (styleOwned && (assignment.pitchLayer < 24 || assignment.pitchLayer > 96)) ||
-        assignment.plannedTakeId.empty() ||
+        !validStyle(assignment.style) || assignment.plannedTakeId.empty() ||
+        (styleOwned && declaredLayers.count(assignment.pitchLayer) == 0U) ||
         !assignments.insert({project.language, assignment.style, assignment.coverageKey, assignment.pitchLayer}).second) {
       return invalid("Unit assignment is missing or duplicated");
     }

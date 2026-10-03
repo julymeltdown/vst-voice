@@ -146,7 +146,13 @@ std::string encodeProductionProject(
       {"reviews", std::move(reviews)},
       {"lastDurableGeneration", static_cast<std::int64_t>(project.lastDurableGeneration)},
   };
-  if (project.schemaVersion >= kProductionStyleSchemaVersion) object.emplace("language", project.language);
+  if (project.schemaVersion >= kProductionStyleSchemaVersion) {
+    object.emplace("language", project.language);
+    Array layers;
+    layers.reserve(project.declaredPitchLayers.size());
+    for (const auto layer : project.declaredPitchLayers) layers.push_back(static_cast<std::int64_t>(layer));
+    object.emplace("declaredPitchLayers", std::move(layers));
+  }
   if (project.schemaVersion >= 2) {
     object.emplace("lifecycle", toString(project.lifecycle));
     object.emplace("sourceBindings", encodeArray(project.sourceBindings, encodeSourceBinding));

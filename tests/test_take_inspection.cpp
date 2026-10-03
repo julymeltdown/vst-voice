@@ -68,6 +68,7 @@ struct AdmissionFixture final {
     project.schemaVersion = production::kProductionStyleSchemaVersion;
     project.projectId = "take-qc";
     project.language = "ja";
+    project.declaredPitchLayers = {60, 62};
     project.inventoryId = "take-qc-inventory";
     project.inventorySha256 = std::string(64U, 'a');
     project.operators = {{"producer", "PRODUCER"}};

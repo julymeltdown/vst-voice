@@ -630,11 +630,21 @@ def _project(root: Path, project: dict[str, Any], label: str, errors: list[str])
         errors.append(f"{label} assignments require an inventory identity")
     seen: set[tuple] = set()
     active: set[str] = set()
+    # A style-owned workspace admits an assignment only on a layer it declares. This used to be a
+    # hard-coded 24..96 window on both sides, which refused projects the producer considered valid
+    # and accepted layers the inventory never offered.
+    declared_layers = project.get("declaredPitchLayers")
+    if schema == 4:
+        if not isinstance(declared_layers, list) or not declared_layers or any(
+                not _integer(layer, 0, 127) for layer in declared_layers):
+            errors.append(f"{label}.declaredPitchLayers must be a non-empty list of MIDI notes")
+            declared_layers = []
     for assignment in assignments:
         if not isinstance(assignment, dict) or not isinstance(assignment.get("coverageKey"), str) or not _integer(assignment.get("pitchLayer"), -(1 << 31), (1 << 31) - 1):
             errors.append(f"{label} assignment identity is invalid")
             continue
-        if not valid_style(assignment) or (schema == 4 and not _integer(assignment.get("pitchLayer"), 24, 96)):
+        if (not valid_style(assignment)
+                or (schema == 4 and assignment.get("pitchLayer") not in declared_layers)):
             errors.append(f"{label} assignment style/pitch ownership is invalid")
             continue
         if any(not isinstance(assignment.get(field), str) or not assignment[field] for field in ("coverageKey", "promptId", "plannedTakeId")) or not isinstance(assignment.get("takeId"), str) or not isinstance(assignment.get("state"), str) or assignment["state"] not in QUEUE_STATES or any(type(assignment.get(field)) is not bool for field in ("markerReviewed", "pitchReviewed")):

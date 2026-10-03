@@ -123,6 +123,7 @@ Producer makeProducer(const std::filesystem::path& root, std::string_view style)
       .immutableAssetRoot = "assets"};
   result.project.schemaVersion = production::kProductionStyleSchemaVersion;
   result.project.language = "ja";
+  result.project.declaredPitchLayers = {69};
   result.project.sourceStrategies.push_back({.id = "synthetic",
       .kind = production::SourceStrategyKind::ProceduralSynthesis,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::NotAssessed,

@@ -69,6 +69,7 @@ struct Fixture final {
         .licenseSha256 = licenseHash.value(), .immutableAssetRoot = "assets"};
     project.schemaVersion = production::kProductionStyleSchemaVersion;
     project.language = "ja";
+    for (const auto layer : layers) project.declaredPitchLayers.push_back(layer);
     project.sourceStrategies = {{.id = "fixture", .kind = production::SourceStrategyKind::ProceduralSynthesis,
         .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,
         .listening = production::Feasibility::Pass, .permissions = {true, true, true, true},

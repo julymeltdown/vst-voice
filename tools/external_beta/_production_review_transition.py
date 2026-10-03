@@ -69,6 +69,12 @@ def review_basis(project: dict[str, Any], take_id: str) -> str:
         take["state"] = "MARKER_REVIEW"
     for row in basis["unitAssignments"]:
         row.update(state="MARKER_REVIEW" if row["takeId"] else "MISSING", markerReviewed=False, pitchReviewed=False)
+    # Only the declared layers this take's own assignment uses, so the basis does not move when an
+    # unrelated assignment is added. reviewBasis in C++ applies the same narrowing; the two digests
+    # have to agree or a decision the library accepts would be refused by the producer.
+    if take_id and "declaredPitchLayers" in basis:
+        used = {row["pitchLayer"] for row in basis["unitAssignments"]}
+        basis["declaredPitchLayers"] = [layer for layer in basis["declaredPitchLayers"] if layer in used]
     return hashlib.sha256((REVIEW_BASIS_PREFIX + production_project_json(basis)).encode()).hexdigest()
 
 

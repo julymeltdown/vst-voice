@@ -47,7 +47,8 @@ CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::strin
       .licenseLocator = license.string(), .licenseSha256 = digest.value(), .immutableAssetRoot = "assets",
   };
   auto& project = fixture.project;
-  if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
+ if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
+  if (styleOwned) project.declaredPitchLayers = {69};
   project.sourceStrategies.push_back({
       .id = "test-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,

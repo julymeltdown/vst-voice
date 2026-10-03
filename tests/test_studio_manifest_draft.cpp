@@ -49,6 +49,7 @@ struct Fixture final {
     if (missing) project.unitAssignments.push_back({.coverageKey = "sustain:i", .pitchLayer = 69, .promptId = "i", .plannedTakeId = "take-i"});
     if (styleOwned) {
       project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ko";
+      project.declaredPitchLayers = {69};
       for (auto& row : project.unitAssignments) row.style = "warm";
       project.unitAssignments.push_back({.coverageKey = "sustain:a", .pitchLayer = 69, .promptId = "soft-a", .plannedTakeId = "soft-a", .style = "soft"});
     }

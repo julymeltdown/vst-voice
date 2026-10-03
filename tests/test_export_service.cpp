@@ -824,6 +824,7 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   styleProducer.projectId = "style-owned-generation";
   styleProducer.schemaVersion = production::kProductionStyleSchemaVersion;
   styleProducer.language = "ja";
+  styleProducer.declaredPitchLayers = {69, 70};
   styleProducer.lastDurableGeneration = 0U;
   for (auto& row : styleProducer.unitAssignments) row.style = "neutral";
   auto inventoryProducer = styleProducer;

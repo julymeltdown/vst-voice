@@ -4659,3 +4659,58 @@ what the sweeps paint, so a surface outside these five workspaces and both desig
 modes is not covered by it. No DAW,
 listening, VoiceOver, signing, Windows or external-review evidence, and nothing
 here advances a Beta gate or Windows support. `.github` was not touched.
+
+2026-10-03 — The producer and the library now agree on which pitch layers a
+voicebank may use, instead of each guessing a range of its own (U10's
+cross-validator agreement, which an audit of U9, U10, U11, U14, U42 and U47 found
+to be the one place where the two implementations disagreed by construction
+rather than merely lacking coverage; it advances U10 and closes a defect, not a
+gap). **The disagreement, proved rather than asserted.** Both sides enforced a
+hard-coded 24 to 96 window on a style-owned unit assignment's pitch layer: the
+C++ validator in `project_codec_validation.cpp`, and the Python draft validator
+in `_production_draft_validation.py`. Neither matched the other. The rule the
+producer actually applies is "a layer the inventory declared", which is what
+`_production_candidate.py` and `_production_workspace.py` enforce and what the
+inventory generator derives from `profile.pitchLayers`; the parity fixture's own
+custom profile declares 64 and 57, and a profile may name any MIDI values a
+singer can actually record. So a project built from a profile declaring a layer
+outside 24 to 96 was accepted by the producer that wrote it and then refused by
+the library that stores it. **What changed.** `VoicebankProductionProject`
+carries `declaredPitchLayers` in schema 4 beside `language`. A style-owned
+project must declare at least one, each must be a MIDI note, and an assignment
+is admitted only on a declared layer. The window is gone from both validators.
+All three producer paths emit the declaration: the C++ draft-inventory producer
+from the profile's own layers in ascending order, and the Python workspace
+definition from the layers its assignments actually use. **A second defect found
+while doing it.** `reviewBasis` and its incremental mirror `ReviewBasisIndex`
+must encode identical bytes, and the mirror copies project-wide scalar fields
+one by one; a new project-wide field that only one of them knew about silently
+desynchronised the two digests, which surfaced as "Review material does not
+describe this take's current audio and review basis" when a second style
+assignment was reviewed. Both constructions now narrow the declared list to the
+layers the reviewed take's own assignment uses, and the Python mirror of
+`review_basis` applies the same narrowing, so the basis does not move when an
+unrelated assignment is added. **Evidence.** Release
+`seam_voicebank_production_tests` 55 of 55, including a new case that pins the
+declaration rule directly: a declared layer outside the old window is admitted,
+an undeclared one is refused, an empty declaration is refused, and the field
+survives an encode and decode round trip byte for byte.
+`tests/production/test_draft_producer_workspace.py` 4 of 4, the cross-language
+parity suite that pins the C++ CLI and the Python definition against each other;
+`tests/external_beta/` and `tests/production/` 309 passed with 299 subtests;
+full Release `ctest` 223 of 223; `git diff --check` passes. Making the declaration
+required moved every other style-owned producer with it: the C++ style migration
+and the Python migration planner now declare the layers they migrate to, and the
+fourteen test fixtures that build a style-owned producer by hand declare the
+layers their own assignments use, each read from that fixture rather than assumed,
+which is what surfaced the runtime-layer fixture whose declared set had to follow
+its parameter. **Limits.** Headless
+schema and cross-language evidence on one machine: this says the producer and
+the library agree on layer admission, not that any reviewed take exists, that a
+singer can hit these layers, or that anything here is musically qualified. The
+same audit found U9's per-take recipe and model dependency, U14's typed
+resource manifest and U10's paired-style relationships still absent, and U42 and
+U47 externally blocked on a real recording session, trained model and vocoder
+bytes, signed builds and real host sessions; none of that is advanced here. No
+DAW, listening, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.

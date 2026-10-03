@@ -111,6 +111,7 @@ TEST_CASE("a collected generation campaign take becomes the installed bank of a 
       .immutableAssetRoot = "assets"};
   project.schemaVersion = production::kProductionStyleSchemaVersion;
   project.language = "ja";
+  project.declaredPitchLayers = {69};
   project.sourceStrategies.push_back({
       .id = "test-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,

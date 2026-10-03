@@ -89,6 +89,16 @@ core::Result<VoicebankProductionProject> decodeProductionProject(
   if (project.schemaVersion >= kProductionStyleSchemaVersion) {
     if (!codec_internal::readString(parsed.value(), "language", project.language))
       return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Style-owned workspace requires language");
+    const auto* declared = parsed.value().find("declaredPitchLayers");
+    if (declared == nullptr || !declared->isArray())
+      return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError,
+                                                      "Style-owned workspace requires declared pitch layers");
+    for (const auto& layer : declared->asArray()) {
+      if (!layer.isNumber() || layer.asInt64() < 0 || layer.asInt64() > 127)
+        return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError,
+                                                        "Declared pitch layer is not a MIDI note");
+      project.declaredPitchLayers.push_back(static_cast<std::int32_t>(layer.asInt64()));
+    }
   } else if (parsed.value().find("language"))
     return core::failure<VoicebankProductionProject>(core::ErrorCode::ParseError, "Legacy workspace cannot carry language ownership");
   if (project.schemaVersion == 1) {

@@ -19,8 +19,9 @@ production::VoicebankProductionProject styleDraft() {
   project.language = "ja";
   project.inventoryId = "style-inventory-test";
   project.inventorySha256 = std::string(64U, 'a');
-  project.operators = {{"producer", "PRODUCER"}};
-  project.unitAssignments = {
+ project.operators = {{"producer", "PRODUCER"}};
+  project.declaredPitchLayers = {60};
+ project.unitAssignments = {
       {.coverageKey = "sustain:a", .pitchLayer = 60, .promptId = "neutral-prompt", .plannedTakeId = "neutral-take", .style = "neutral"},
       {.coverageKey = "sustain:a", .pitchLayer = 60, .promptId = "soft-prompt", .plannedTakeId = "soft-take", .style = "soft"}};
   return project;
@@ -50,6 +51,35 @@ TEST_CASE("schema four round trips distinct styles without silently upgrading le
   CHECK(version != std::string::npos);
   legacyBytes.replace(version, std::string{"\"schemaVersion\": 4"}.size(), "\"schemaVersion\": 3");
   CHECK(!production::decodeProductionProject(legacyBytes));
+}
+
+// The Python producer accepts a pitch layer whenever the inventory declares it, and the inventory
+// generator derives layers from the profile rather than from a fixed range. The C++ validator used
+// to hard-code 24..96 instead, so a project built from a profile declaring a layer outside that
+// window was accepted by the producer that wrote it and rejected by the library that stores it.
+// That is the disagreement this case pins: the layer must be one the project declares, and a
+// layer the project does not declare must still be refused.
+TEST_CASE("a style-owned pitch layer is admitted by declaration, not by a hard-coded window") {
+  auto declared = styleDraft();
+  declared.declaredPitchLayers = {60, 72};
+  CHECK(production::validateProductionProject(declared));
+  auto undeclared = declared;
+  undeclared.unitAssignments[0].pitchLayer = 61;
+  undeclared.unitAssignments[1].pitchLayer = 61;
+  CHECK(!production::validateProductionProject(undeclared));
+  auto outsideWindow = declared;
+  outsideWindow.declaredPitchLayers = {12, 108};
+  outsideWindow.unitAssignments[0].pitchLayer = 12;
+  outsideWindow.unitAssignments[1].pitchLayer = 108;
+  CHECK(production::validateProductionProject(outsideWindow));
+  auto noDeclaration = declared;
+  noDeclaration.declaredPitchLayers.clear();
+  CHECK(!production::validateProductionProject(noDeclaration));
+  const auto encoded = production::encodeProductionProject(declared);
+  const auto decoded = production::decodeProductionProject(encoded);
+  CHECK(decoded);
+  CHECK(decoded.value().declaredPitchLayers == declared.declaredPitchLayers);
+  CHECK(production::encodeProductionProject(decoded.value()) == encoded);
 }
 
 TEST_CASE("style-owned raw takes persist independently even when they share identical PCM") {

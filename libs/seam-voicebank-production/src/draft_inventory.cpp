@@ -13,6 +13,7 @@
 #include <map>
 #include <random>
 #include <set>
+#include <algorithm>
 #include <utility>
 
 namespace seam::voicebank_production {
@@ -518,6 +519,12 @@ core::Result<VoicebankProductionProject> makeDraftProducerProject(
   project.language = inventory.profile.language;
   project.operators = {{std::move(producerId), "PRODUCER"}};
   std::set<std::string, std::less<>> assignments;
+  // The inventory's own pitch layers are what this producer declares. The library
+  // admits an assignment only on a declared layer, so a profile may name any MIDI
+  // values it can sing rather than a window this code would have to guess.
+  for (const auto layer : inventory.profile.pitchLayers)
+    project.declaredPitchLayers.push_back(static_cast<std::int32_t>(layer));
+  std::sort(project.declaredPitchLayers.begin(), project.declaredPitchLayers.end());
   for (const auto& unit : inventory.units) {
     // Language belongs to the immutable producer, not each row; the first
     // alternate names the planned take, as the external generator does.

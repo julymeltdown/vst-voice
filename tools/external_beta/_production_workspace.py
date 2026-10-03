@@ -80,7 +80,11 @@ def prepare_production_draft_definition(
         "operators": [{"operatorId": operator_id, "role": "PRODUCER"}], "lastDurableGeneration": 0,
     }
     if style_owned(inventory):
-        result.update(language=inventory["language"], sourceQualityAssessments=[])
+        # The C++ library admits a style-owned assignment only on a layer this project declares, so
+        # the producer states the inventory's own layers here rather than leaving the library to
+        # guess a range the producer never applied.
+        result.update(language=inventory["language"], sourceQualityAssessments=[],
+                      declaredPitchLayers=sorted({row["pitchLayer"] for row in producer_assignments(inventory)}))
     return result
 
 

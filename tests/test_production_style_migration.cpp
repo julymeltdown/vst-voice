@@ -71,6 +71,7 @@ struct MigrationFixture final {
     auto expected = project;
     expected.schemaVersion = production::kProductionStyleSchemaVersion;
     expected.language = language;
+    expected.declaredPitchLayers = {69};
     expected.lifecycle = expected.takes.empty() ? production::ProductionLifecycle::Draft
                                                  : production::ProductionLifecycle::Experimental;
     for (auto& take : expected.takes) take.style = style;
