@@ -5118,3 +5118,36 @@ but unmeasured in a rendered phrase, and no listening evidence exists. U42
 remains externally blocked on a real recording session for the sample route,
 which this does not touch. No DAW, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-03 — A held procedural vowel follows the pitch curve inside one note, so
+the synth can glide rather than only step between notes (R3's synth-style original
+voice; acoustic evidence about the renderer, not a singer qualification).
+**Why this follows the phrase case.** Every syllable measured so far sat at one
+pitch, which a renderer that ignored the pitch curve entirely would also produce.
+Vocaloid singing depends on a held vowel that moves, so this drives a pitch
+automation ramp across a single sustained vowel and reads the pitch at two points
+inside that one note. **Evidence, measured not asserted.** A linear 0-to-400-cent
+ramp across one note at MIDI 60 reads **269.11 Hz early (+49 cents)** and
+**316.47 Hz late (+329 cents)** against a 261.63 Hz base. The glide is in the
+audio, not only in the schedule. **A wrong guard of mine, second time, recorded
+deliberately.** The case first asserted the late reading exceeded 1.2 times the
+early one and failed. The measurement showed a ratio of 1.176, and the two
+readings sit at 5 and 75 percent of a linear ramp, so the expected ratio is
+2^(400 * 0.70 / 1200) = **1.1755**. The renderer produced 1.1760, within 0.04
+percent of the curve's own geometry. As in the previous entry the renderer was
+right and the assertion was wrong; the bound is now 1.15 with the derivation in a
+comment, and a separate cents check pins each end of the ramp independently
+(+49 and +329 cents, within 50 and 60 of the +20 and +300 the curve specifies at
+those positions). **Mutation-checked.** Flattening the curve to zero cents
+fails at the ratio comparison, so the glide is demonstrably produced by the curve
+rather than by the note's base pitch. Release `seam_performance_snapshot_tests`
+58 of 58. **What this is and is not.** It shows the procedural path renders a
+continuous pitch change inside a single held vowel, sampled per frame from the
+score's pitch automation, which is the portamento and vibrato substrate R3 needs
+and needs no performer. It is still not a song: one held vowel, no phrase, no
+articulation in this case, no dynamics or phrasing evidence, and no measurement of
+timbre or expressiveness. Glide and articulation have each been shown alone but
+not yet together in one phrase, and no listening evidence exists. U42 remains
+externally blocked on a real recording session for the sample route, which this
+does not touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.

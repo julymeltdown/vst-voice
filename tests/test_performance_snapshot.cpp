@@ -107,6 +107,66 @@ struct PerformanceSnapshotFixture final {
 // renderer that only articulates in isolation would fail. This renders "さし" (s+a, sh+i) as two
 // notes at different pitches and checks every phone of every syllable in the audio: each
 // consonant owns a span with aperiodic energy, each vowel owns a span voiced at its own note.
+// Every syllable measured so far sat at one pitch, which a renderer that ignored the pitch curve
+// entirely would also produce. This drives a pitch automation curve across a single sustained
+// vowel and measures the rendered pitch at several points inside the one note, so a glide has to
+// appear in the audio rather than in the schedule. Vocaloid singing depends on exactly this: a
+// held vowel that moves.
+TEST_CASE("a procedural held vowel follows the pitch curve inside one note") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  PerformanceSnapshotFixture f;
+  auto* region = f.project.findRegion(f.regionId);
+  region->notes.front().startTick = time::Tick{480};
+  region->notes.front().durationTick = time::Tick{2880};
+  region->notes.front().midiKey = 60U;
+  region->notes.front().vibrato.enabled = false;
+  region->notes.front().phoneticHint.reset();
+  region->lyrics.front().surface = U"あ";
+  // A rising major third across the note: 0 cents at the start, 400 at the end.
+  CHECK(region->pitchAutomation.upsert({time::Tick{480}, 0.0F}));
+  CHECK(region->pitchAutomation.upsert({time::Tick{3360}, 400.0F}));
+  voice_design::VoiceRecipe recipe; recipe.id = "pitch-glide";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+      f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+  if (!snapshot) throw test::Failure{"glide snapshot: " + snapshot.error().message};
+  const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+  const auto& audio = rendered.value().rendered.audio;
+  const auto& markers = rendered.value().proceduralMarkers;
+  CHECK(markers.size() == 1U);
+  const auto span = markers.front().ownedSpan;
+  const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+  const auto count = static_cast<std::size_t>(span.end - span.start);
+  CHECK(from + count <= audio.samples.size());
+  CHECK(count > static_cast<std::size_t>(kRate));
+  // Four readings along one held vowel. The curve rises linearly, so the measured pitch has to
+  // rise with it: a renderer that ignored the curve would return the same value at all four.
+  const auto measureAt = [&](double position) {
+    const auto window = static_cast<std::size_t>(static_cast<double>(count) * position);
+    const auto length = static_cast<std::size_t>(static_cast<double>(count) * 0.15);
+    CHECK(length > 8192U);
+    const auto frames = voicebank::analyzePitch(
+        std::span<const float>{audio.samples.data() + from + window, length}, kRate);
+    CHECK(frames);
+    return voicebank::medianVoicedPitch(frames.value());
+  };
+  const auto early = measureAt(0.05);
+  const auto late = measureAt(0.75);
+  CHECK(early > 0.0); CHECK(late > 0.0);
+  const auto base = 440.0 * std::pow(2.0, (60.0 - 69.0) / 12.0);
+  CHECK(std::abs(1200.0 * std::log2(early / base)) < 50.0);
+  // At three quarters through the note the curve is near +300 cents, so the sung pitch has to be
+  // about a major third above the note it started on.
+  // The bound is the curve's own geometry, not a round number: the readings sit at 5 and 75
+  // percent of a linear 0-to-400-cent ramp, so the pitch ratio between them is
+  // 2^(400 * 0.70 / 1200) = 1.1755. Asking for more would demand a curve the score does not
+  // contain. A tighter check is the cents reading below, which pins each end separately.
+  CHECK(late > early * 1.15);
+  CHECK(std::abs(1200.0 * std::log2(late / (base * std::pow(2.0, 300.0 / 1200.0)))) < 60.0);
+}
+
 TEST_CASE("a procedural phrase articulates every syllable at its own pitch") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;
