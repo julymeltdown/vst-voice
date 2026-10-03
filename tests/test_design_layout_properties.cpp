@@ -180,7 +180,10 @@ void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, dou
   const auto high = static_cast<std::uint32_t>(std::lround(height));
   native_ui::PixelSurface frame{surface, high};
   native_ui::RasterCanvas canvas{frame, 1.0, designSystemFont()};
-  f.shell.setWorkspace(f.controller, workspace);
+  // The workspace is not set here: setWorkspace closes whatever the shell had open, so a
+  // surface opened before the capture was written was gone by the time the frame was drawn.
+  // A caller that wants a particular workspace sets it before opening its surface.
+  static_cast<void>(workspace);
   if (!f.shell.prepareFrame(f.controller, width, height)) return;
   if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick())) return;
   static_cast<void>(mode);
@@ -925,6 +928,94 @@ TEST_CASE("Settings sections retain accessible targets through compact and Korea
       }
   }
   checker.finish("settings");
+}
+
+// A capture that writes a frame of the window without the surface in it is worse than no capture: it
+// looks like evidence and is a picture of something else. The capture helper used to call
+// setWorkspace before painting, and setWorkspace closes whatever the shell had open, so the first
+// version of the compact capture wrote eleven frames of an editor with no workspace menu in it and one
+// reader would not have known. The case below is the check that a captured frame really is the surface:
+// the shell's published controls for it are in the frame's semantic tree.
+TEST_CASE("a captured frame carries the surface it was opened for") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  LayoutFixture fixture;
+  Frame frame;
+  CHECK(paintFrame(fixture, 720.0, 480.0, 1.0, frame));
+  CHECK(fixture.shell.layout().workspaceMenuButton.width > 0.0);
+  CHECK(fixture.shell.dispatchSemantic(fixture.controller, "shell.workspace-menu",
+                                       SemanticAction::Activate).hasValue());
+  // The capture path itself, not paintFrame: the defect was in the capture helper, and a case
+  // written against paintFrame passed whether or not the helper kept what the caller opened.
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-capture-check")};
+  writeCapturedFrame(fixture, Workspace::Sing, 720.0, 480.0,
+                     root / "capture-keeps-the-open-surface.ppm");
+  Frame open;
+  CHECK(paintFrame(fixture, 720.0, 480.0, 1.0, open));
+  // The menu's own rows are in the tree the shell published while it was open.
+  const auto menuItem = std::any_of(open.nodes.begin(), open.nodes.end(), [](const auto& node) {
+    return node.id.starts_with("shell.workspace.") && node.role == SemanticRole::Button;
+  });
+  CHECK(menuItem);
+  // And it was not there before, so the two frames are different surfaces rather than the same one
+  // twice.
+  const auto menuItemBefore = std::any_of(frame.nodes.begin(), frame.nodes.end(),
+                                           [](const auto& node) {
+                                             return node.id.starts_with("shell.workspace.") &&
+                                                    node.role == SemanticRole::Button;
+                                           });
+  CHECK(!menuItemBefore);
+}
+
+// The two surfaces that exist only at compact widths have had their layout measured at every size and
+// never been drawn. They are the last places in the editor with no rendered frame, and they are the two
+// most worth having one of: the compact inspector is the drawer that carries the SINGER card on the
+// narrowest windows, and the workspace menu is the only way to reach another workspace from a window
+// too narrow for the tab row. Both open by a semantic action rather than by a click, so they are as
+// reachable as anything else in the shell and as invisible in a capture.
+TEST_CASE("the compact inspector and the workspace menu are capturable in a system face") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-compact")};
+  std::size_t inspectors = 0U;
+  std::size_t menus = 0U;
+  for (const auto& size : kSizes) {
+    {
+      LayoutFixture fixture;
+      Frame frame;
+      if (!paintFrame(fixture, size[0], size[1], 1.0, frame)) continue;
+      // The inspector drawer exists only where the full rack does not, which is the whole reason it
+      // is here: at a width where the cards fit there is nothing to open.
+      if (fixture.shell.layout().rack == RackPresentation::Full) continue;
+      if (!fixture.shell.dispatchSemantic(fixture.controller, "shell.inspector",
+                                          SemanticAction::Activate).hasValue()) continue;
+      writeCapturedFrame(fixture, Workspace::Sing, size[0], size[1],
+                         root / ("compact-inspector-" + std::to_string(static_cast<int>(size[0])) +
+                                 "x" + std::to_string(static_cast<int>(size[1])) + ".ppm"),
+                         fixture.shell.layout().rack == RackPresentation::Full ? DesignMode::Emo
+                                                                               : DesignMode::Emo);
+      ++inspectors;
+    }
+    {
+      LayoutFixture fixture;
+      Frame frame;
+      if (!paintFrame(fixture, size[0], size[1], 1.0, frame)) continue;
+      if (fixture.shell.layout().workspaceMenuButton.width <= 0.0) continue;
+      if (!fixture.shell.dispatchSemantic(fixture.controller, "shell.workspace-menu",
+                                          SemanticAction::Activate).hasValue()) continue;
+      writeCapturedFrame(fixture, Workspace::Sing, size[0], size[1],
+                         root / ("workspace-menu-" + std::to_string(static_cast<int>(size[0])) +
+                                 "x" + std::to_string(static_cast<int>(size[1])) + ".ppm"));
+      ++menus;
+    }
+  }
+  // Both exist somewhere in the supported size range, so neither capture is vacuous.
+  CHECK(inspectors > 0U);
+  CHECK(menus > 0U);
 }
 
 TEST_CASE("the compact inspector and the workspace menu keep their layout properties") {
