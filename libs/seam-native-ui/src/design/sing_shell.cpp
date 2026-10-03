@@ -4226,8 +4226,12 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   }
   if (p.note.width > 0.0)
     c.text(p.note,
-           hostActions_.exportSet ? std::string{tr(Str::ChooseANewFolderAnExisting)}
-                                  : hostActions_.exportUnavailable,
+           // The note under the button says what to do when the export can happen. When it cannot,
+           // the row above the button has already said why, in the same words: the frame showed the
+           // sentence twice, 200 points apart, which reads as the window repeating itself rather
+           // than as two pieces of information. So the note is left empty when there is nothing to
+           // choose, and the reason stays where it was first said.
+           hostActions_.exportSet ? std::string{tr(Str::ChooseANewFolderAnExisting)} : std::string{},
            style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
 
   // Current attempt and the last written set.

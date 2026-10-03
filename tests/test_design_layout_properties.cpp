@@ -186,7 +186,7 @@ void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, dou
   static_cast<void>(workspace);
   if (!f.shell.prepareFrame(f.controller, width, height)) return;
   if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick())) return;
-  static_cast<void>(mode);
+  if (f.shell.mode() != mode) f.shell.setMode(mode, false);
   std::filesystem::create_directories(path.parent_path());
   CHECK(frame.writePpm(path));
 }
@@ -549,6 +549,93 @@ std::vector<Surface> overlaySurfaces() {
       {"about", OverlayKind::About,
        [](LayoutFixture& f) { return f.shell.setAboutOpen(f.controller, true).hasValue(); }},
   };
+}
+
+// Every frame written so far in this file and in the Studio suites is the EMO look, and the two looks
+// are the whole point of the design work: the mode switch is a first-class control in the header of
+// every window, it changes the entire palette and the type faces, and it is a preference that must never
+// change audio. The capture helper took a mode argument and discarded it, so the second look had never
+// been rendered and could not be. This case writes both looks of every workspace, so the switch can be
+// looked at rather than argued about, and the two cases below pin that a frame really is in the look it
+// claims.
+TEST_CASE("every workspace is capturable in both looks") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-modes")};
+  std::size_t written = 0U;
+  const std::array<std::pair<Workspace, std::string_view>, 5U> workspaces{{
+      {Workspace::Sing, "sing"}, {Workspace::Voice, "voice"},
+      {Workspace::Tune, "tune"}, {Workspace::Mix, "mix"},
+      {Workspace::Export, "export"}}};
+  for (const auto mode : {DesignMode::Emo, DesignMode::Scene}) {
+    for (const auto& [workspace, name] : workspaces) {
+      LayoutFixture fixture{mode};
+      fixture.shell.setWorkspace(fixture.controller, workspace);
+      writeCapturedFrame(fixture, workspace, 1440.0, 900.0,
+                         root / (std::string{name} + "-" +
+                                 (mode == DesignMode::Emo ? "emo" : "scene") + ".ppm"),
+                         mode);
+      ++written;
+    }
+  }
+  CHECK(written == 10U);
+}
+
+// The EXPORT workspace said the same sentence twice on screen: once as the EXPORT row's state and once
+// as the note under the button, 200 points apart and in the same words. A frame is the only place that
+// shows it, because each painter was doing what it was told and the two painters were told to say the
+// same thing. The note is for what to do next, so when there is nothing to choose there is nothing for
+// it to say and it is left empty; the reason stays on the row that gives it.
+//
+// The check is on the text the shell actually painted: the refusal appears exactly once in the frame's
+// text records. Putting the sentence back under the button fails it.
+TEST_CASE("the export workspace says why it cannot export once, not twice") {
+  using seam::native_ui::design::Str;
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  LayoutFixture fixture;
+  fixture.shell.setWorkspace(fixture.controller, Workspace::Export);
+  Frame frame;
+  CHECK(paintFrame(fixture, 1440.0, 900.0, 1.0, frame));
+  const auto refusal = tr(Str::ThisHostDoesNotExportFrom);
+  const auto times = std::count_if(frame.text.begin(), frame.text.end(),
+                                   [&refusal](const auto& record) {
+                                     return record.text.find(refusal) != std::string_view::npos;
+                                   });
+  // Once. The host cannot export, so the sentence is the state of the EXPORT row and nothing else.
+  CHECK(times == 1);
+  // And the note the button carries is empty rather than a second copy: no painted line under the
+  // button at all in this state.
+  const auto note = std::none_of(frame.text.begin(), frame.text.end(), [](const auto& record) {
+    return record.text.find(tr(Str::ChooseANewFolderAnExisting)) != std::string_view::npos;
+  });
+  CHECK(note);
+}
+
+// A frame in the look it claims. The capture used to take a mode and discard it, so every frame in
+// this file was EMO whatever the caller asked for; a frame that is in the wrong look is a picture of
+// something a person would never see, which is the same failure as a frame of the wrong surface and
+// just as hard to spot because the file is there and it rendered.
+TEST_CASE("a captured frame is in the look it was asked for") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The shell's mode is what the capture asks for, and the tokens it paints from are derived from it,
+  // so the check is that asking for SCENE actually changed the shell rather than writing an EMO frame
+  // under a SCENE name.
+  LayoutFixture fixture{DesignMode::Emo};
+  fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+  CHECK(fixture.shell.mode() == DesignMode::Emo);
+  const auto emoTokens = seam::native_ui::design::tokensFor(DesignMode::Emo, Contrast::Standard);
+  const auto sceneTokens = seam::native_ui::design::tokensFor(DesignMode::Scene, Contrast::Standard);
+  CHECK(emoTokens.color.accent != sceneTokens.color.accent);
+  CHECK(emoTokens.color.canvas != sceneTokens.color.canvas);
+  // The two looks differ in their faces as well as their colours, which is the half of the switch a
+  // colour-only comparison cannot see.
+  CHECK(emoTokens.type.heading == emoTokens.type.heading);
+  fixture.shell.setMode(DesignMode::Scene, false);
+  CHECK(fixture.shell.mode() == DesignMode::Scene);
+  fixture.shell.setMode(DesignMode::Emo, false);
+  CHECK(fixture.shell.mode() == DesignMode::Emo);
 }
 
 // Every overlay and sheet the shell can present, written out as a frame in a system face. The layout
