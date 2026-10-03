@@ -6280,3 +6280,43 @@ exported peak measurement that now reports the ungated case. Not established: ho
 and no listening observation is claimed. Release `seam_performance_snapshot_tests` unchanged;
 full Release CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-04 — The External Beta operations path authorized promotion, resume, pause and revoke with
+a self-asserted list of role strings, while the public release path beside it already required
+signatures (SEAM-BETA-P1-03, the beta half).
+**The defect, in one line.** `_approved` was
+`isinstance(roles, list) and "A3" in roles and bool({"A4", "A6"} & set(roles))`
+(`operations.py:71-72`, before this change). There was no `signature`, `ed25519`, `signer` or
+`keyId` anywhere in the file. A role list is an assertion the author of the snapshot makes about
+themselves, so **anyone who could write the snapshot could promote a candidate, resume a paused
+one, pause a live cohort, or revoke it.** PAUSE and REVOKE were the worst of these: neither even
+consulted the list, requiring only `actorRole` in a set of four strings plus a `reason`.
+**Why this was left open while its sibling was fixed.** `tools/public_release/crypto_validation.py`
+already solved exactly this problem — Ed25519 over the record's own canonical payload, verified
+against a role-bound trusted key whose `signerId` must equal the claimed approver, with
+`signatureVerified` explicitly refused as an authority field. The two paths had drifted apart.
+**The repair reuses the proven scheme rather than inventing a second one.** `crypto_validation`
+depends only on `public_release.contracts`, and the existing dependency runs public_release ->
+external_beta, so importing upward introduces no cycle (verified by import before wiring).
+`approval_errors` requires every approval to carry its own verified signature for its own role,
+rejects duplicate roles and duplicate signers, and requires each quorum role to be present.
+`PROMOTE_READY` and `RESUME` route through it; `PAUSE` and `REVOKE` now require the **decision
+itself** to be signed by its claimed actor's role-bound key, because a terminal or
+availability-ending act must never rest on a typed role.
+**The old tests encoded the old contract and were rewritten, not deleted.** They asserted the old
+*error messages*, so they legitimately broke. They now build real Ed25519 signatures from a
+role-bound policy — the same construction the public-release suite uses — and the five new cases
+assert the forgeries are refused: role lists alone, a bit-forged signature, a valid key claiming
+another actor's identity, a quorum padded with an unsigned role, and a quorum missing its required
+role.
+**Two mutation checks, and one of them caught a gap in my own tests.** Disabling the PAUSE/REVOKE
+signature check fails five cases. Disabling the required-role check initially **survived**: every
+existing promotion case supplies A3, so deleting the requirement changed nothing observable. That
+was a hole in the tests, not in the code, and it is fixed by the quorum-missing-A3 case, which now
+fails under that mutation. Recorded because a mutation that survives usually means the test never
+exercised the rule.
+**What this is not.** It does not create a pause/revoke propagation channel to installed clients
+(SEAM-BETA-P1-04, still open and not started), does not wire an intake endpoint (P1-07), and does
+not add a decision hash chain. Release `seam_tests` unchanged at 1456 of 1456 (no C++ changed).
+`tests/external_beta` 202 passed + 197 subtests; `tests/production` 124 passed + 124 subtests. No
+DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.
