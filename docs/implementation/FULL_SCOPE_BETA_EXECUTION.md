@@ -5765,3 +5765,50 @@ bank whose units are actually at their declared pitch.
 No production code was modified. Release `seam_performance_snapshot_tests`
 unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
+
+2026-10-03 — The procedural voice measured getting about 5.4 dB louder as it
+climbs, on identical input with no authored dynamics (R3's M2.2 "voice character
+or expression is ineffective" row, first acoustic evidence for it; full detail in
+`docs/implementation/PROCEDURAL_LEVEL_TILT_ACROSS_PITCH_2026-10-03.md`).
+**How it was found, which is the part worth keeping.** Rendering the listening
+material above produced two phrases recorded minutes apart with the same tool, and
+their peaks differed by 4.5 times: 0.022 for the four-note melisma against 0.101 for
+the five-syllable rise. Nothing in the targeted acoustic units of the preceding
+entries asked what the voice's LEVEL does as a function of PITCH, because each of
+them used a single pitch or measured level only against an authored dynamics curve.
+Producing the audio and simply measuring it found in a minute what those tests were
+not asking about.
+**The measurement.** The melisma shares one lyric across four notes, so the vowel
+is identical, and the saved project confirms `dynamicsAutomation` and
+`pitchAutomation` are empty arrays with vibrato disabled on every note. Per-note
+RMS over the middle 60 percent of each note: **0.00501, 0.00534, 0.00930, 0.00900**,
+a **5.41 dB** rise from note 1 to note 3.
+**It is not the phrase and not the level automation, both established by control.**
+Four notes at the SAME pitch and SAME vowel render flat, 0.00499, 0.00506, 0.00502,
+0.00504, under one percent spread. Single notes at four pitches reproduce the tilt
+alone: MIDI 55 gives 0.00421, MIDI 60 gives 0.00499, MIDI 65 gives 0.00594, MIDI 72
+gives 0.00900.
+**The mechanism.** The excitation is a harmonic series with a fixed spectral tilt
+whose partial count is `floor(0.45 * rate / f0)` (`phonation_source.cpp:80`), so as
+f0 rises the share of excitation below 1 kHz falls from **91.3 percent at MIDI 55 to
+71.5 percent at MIDI 72**. The tract's band gains are normalized across the pose's
+formants (`vocal_tract.cpp:164`), presenting a roughly fixed peak gain rather than
+compensating for how much excitation lands inside it, so more of the source passing
+means more output. The zero-crossing rate falls alongside the rising level, which is
+the signature of the output brightening: the same vowel with progressively more of
+its energy above 1 kHz, and progressively louder. The source's own normalization is
+NOT the cause: its summed harmonic weight moves only from 1.3407 to 1.3299 across
+the same pitches, so the `voiced /= weight` line at `phonation_source.cpp:96` moves
+too little to explain 5.4 dB.
+**What this is and is not.** It is a deterministic, reproducible measured behaviour
+with a located mechanism. **It is not a defect claim.** Real voices are loudest in
+their low register, so a synth that brightens and lifts with pitch is not
+automatically wrong; but 5.4 dB across a phrase is large enough that a singer will
+hear the character changing as the melody rises, and nothing in the recipe asked for
+it. Whether to compensate, and by how much, is a voice-design decision needing an
+ear and a reference, so **no code is changed by this entry and no listening
+observation is claimed**. M2.2's "voice character or expression" row is where this
+belongs, and it now has its first acoustic evidence rather than none.
+No production code was modified. Release `seam_performance_snapshot_tests`
+unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
+evidence. `.github` was not touched.
