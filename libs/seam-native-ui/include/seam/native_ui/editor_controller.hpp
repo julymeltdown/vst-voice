@@ -211,6 +211,17 @@ struct EditorHostCallbacks final {
   std::function<void()> resetOutputClip;
 };
 
+// Whether the signed update manifest currently authorises distribution, and whether this build
+// is still supported. A pause arrives inside the manifest the client already verifies, so the
+// standalone app surfaces it here rather than through a channel nobody reads.
+struct DistributionAuthorityView final {
+  bool known{false};
+  bool paused{false};
+  bool supportedBuild{true};
+  std::string minimumBuild;
+  std::string diagnostic;
+};
+
 class NativeEditorController final {
 public:
   enum class SeamPreset { Clean, Character, PhaseAligned };
@@ -281,6 +292,12 @@ public:
       std::size_t index, authoring::DiagnosticAction action) const;
   void dismissDiagnostic(std::size_t index);
   void setRecoverySupportView(RecoverySupportView view);
+  void setDistributionAuthorityView(DistributionAuthorityView view) {
+    distributionAuthority_ = std::move(view);
+  }
+  [[nodiscard]] const DistributionAuthorityView& distributionAuthority() const noexcept {
+    return distributionAuthority_;
+  }
   [[nodiscard]] const RecoverySupportPanelModel& recoverySupportPanel()
       const noexcept {
     return recoverySupportPanel_;
@@ -1051,6 +1068,7 @@ private:
   bool hostSelectionRefused_{false};
   unsigned hostSelectionTries_{0U};
   RecoverySupportPanelModel recoverySupportPanel_;
+  DistributionAuthorityView distributionAuthority_;
   std::optional<voicebank::Unit> microscopeUnit_;
   voicebank::AudioBuffer microscopeAudio_;
   ui::SampleMicroscopeModel microscope_;

@@ -1,6 +1,8 @@
 #include "test_framework.hpp"
 #include "seam/application/note_commands.hpp"
 #include "seam/core/file_io.hpp"
+#include "seam/distribution/update_manifest.hpp"
+#include "seam/core/sha256.hpp"
 
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/application_paths.hpp"
@@ -252,6 +254,115 @@ TEST_CASE("system audio adapter reports an explicit bounded open result") {
   } else {
     CHECK(!opened.error().message.empty());
   }
+}
+
+TEST_CASE("a signed distribution pause is visible in the running standalone app") {
+  // The pause arrives inside the update manifest the client already verifies. Before this, the
+  // controller existed but nothing constructed it, so a verified pause reached no shipped UI.
+  const auto root = seam::test::support::temporaryDirectory("native-distribution-authority");
+  auto rootKey = seam::distribution::generateSigningKeyPair();
+  auto updateKey = seam::distribution::generateSigningKeyPair();
+  CHECK(rootKey);
+  CHECK(updateKey);
+  const std::array<std::byte, 4U> bytes{
+      std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+  CHECK(seam::core::durableAtomicWrite(root / "update.pkg", bytes));
+
+  // Build a real signed manifest that carries the pause, then point the app at it.
+  seam::distribution::UpdateManifest manifest{
+      .schemaVersion = 1,
+      .purpose = "update-manifest",
+      .channel = "external-beta",
+      .manifestId = "candidate-paused",
+      .manifestEpoch = 1,
+      .platform = "macos-arm64",
+      .targetBuild = "beta-1",
+      .targetVersion = "0.99.0",
+      .minimumVersion = "0.1.0",
+      .issuedAt = "2026-01-01T00:00:00Z",
+      .expiresAt = "2099-01-01T00:00:00Z",
+      .readRanges = {{"project", seam::distribution::UpdateRange{.min = 1, .max = 4}}},
+      .writeRanges = {{"project", seam::distribution::UpdateRange{.min = 4, .max = 4}}},
+      .downgradePolicy = "REJECT",
+      .package = seam::distribution::UpdatePackage{
+          .fileName = "update.pkg", .url = "https://updates.invalid/update.pkg",
+          .size = bytes.size(), .sha256 = seam::core::sha256Hex(bytes)},
+      .releaseNotesSha256 = seam::core::sha256Hex("notes"),
+      .distributionPaused = true,
+      .signature = {}};
+  const auto payload = seam::distribution::canonicalUpdateManifestPayload(manifest);
+  auto signedPayload = seam::distribution::signEd25519(
+      std::as_bytes(std::span{payload.data(), payload.size()}), updateKey.value().privateKey);
+  CHECK(signedPayload);
+  manifest.signature = seam::distribution::UpdateSignature{
+      .algorithm = "Ed25519", .keyId = "update-key",
+      .payloadSha256 = seam::core::sha256Hex(payload), .value = signedPayload.value()};
+
+  // The trust policy must also be signed by the root the app is configured to trust.
+  seam::distribution::UpdateTrustPolicy policy{
+      .schemaVersion = 1,
+      .purpose = "update-trust-policy",
+      .channel = "external-beta",
+      .policyEpoch = 1,
+      .rootKeyId = "root-key",
+      .rootPublicKey = rootKey.value().publicKey,
+      .allowedPlatforms = {"macos-arm64"},
+      .issuedAt = "2026-01-01T00:00:00Z",
+      .notBefore = "2026-01-01T00:00:00Z",
+      .expiresAt = "2099-01-01T00:00:00Z",
+      .compromiseCutoff = "2099-01-01T00:00:00Z",
+      .delegatedKeys = {seam::distribution::DelegatedUpdateKey{
+          .keyId = "update-key",
+          .purpose = "update",
+          .publicKey = updateKey.value().publicKey,
+          .notBefore = "2026-01-01T00:00:00Z",
+          .expiresAt = "2099-01-01T00:00:00Z",
+          .revokedAt = ""}},
+      .signature = {}};
+  const auto policyPayload = seam::distribution::canonicalUpdateTrustPolicyPayload(policy);
+  auto signedPolicy = seam::distribution::signEd25519(
+      std::as_bytes(std::span{policyPayload.data(), policyPayload.size()}), rootKey.value().privateKey);
+  CHECK(signedPolicy);
+  policy.signature = seam::distribution::UpdateSignature{
+      .algorithm = "Ed25519", .keyId = "root-key",
+      .payloadSha256 = seam::core::sha256Hex(policyPayload), .value = signedPolicy.value()};
+  CHECK(seam::core::durableAtomicWriteText(
+      root / "policy.json", seam::distribution::serializeUpdateTrustPolicy(policy)));
+  CHECK(seam::core::durableAtomicWriteText(
+      root / "manifest.json", seam::distribution::serializeUpdateManifest(manifest)));
+
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  config.updatePolicyPath = root / "policy.json";
+  config.updateManifestPath = root / "manifest.json";
+  config.trustedUpdateRoot = rootKey.value().publicKey;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+
+  // The pause is inside a manifest the app verified, so it must be visible in the running app
+  // rather than living only in a file nothing reads.
+  const auto& authority = app.value()->authoring().controller().distributionAuthority();
+  CHECK(authority.known);
+  CHECK(authority.paused);
+  CHECK(!authority.diagnostic.empty());
+  CHECK(authority.diagnostic.find("paused") != std::string::npos);
+}
+
+TEST_CASE("a build with no configured update channel reports its authority as unknown") {
+  // Claiming a verified pause from nothing would be the same error in the opposite direction.
+  const auto root = seam::test::support::temporaryDirectory("native-no-update-channel");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  const auto& authority = app.value()->authoring().controller().distributionAuthority();
+  CHECK(!authority.known);
+  CHECK(!authority.paused);
+  CHECK(authority.supportedBuild);
 }
 
 TEST_CASE("native editor audio settings restart the live deterministic transport transactionally") {

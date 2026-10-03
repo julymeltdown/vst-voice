@@ -40,6 +40,11 @@ struct NativeEditorAppConfig final {
   std::filesystem::path applicationSupportRoot;
   std::vector<distribution::Ed25519PublicKey> trustedVoicebankKeys;
   std::optional<distribution::Ed25519PublicKey> developmentTrustRoot;
+  // The signed update channel, when this build is configured with one. Absent means no channel,
+  // and the app reports its distribution authority as unknown rather than assumed good.
+  std::filesystem::path updatePolicyPath;
+  std::filesystem::path updateManifestPath;
+  std::optional<distribution::Ed25519PublicKey> trustedUpdateRoot;
   bool allowDevelopmentVoicebanks{false};
   std::size_t audioBlockFrames{256U};
   bool forceThreadedAudio{false};
@@ -184,6 +189,7 @@ private:
   [[nodiscard]] core::Result<void> refreshSupportReports(
       const std::optional<std::filesystem::path>& preferred = std::nullopt);
   [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
+  void refreshDistributionAuthority();
   void refreshCrashRecoveryContext();
   void setAudioUnavailable(const core::Error& error) noexcept;
   // A device that would not say that it stopped is a different fact from one that could not be opened:
@@ -251,6 +257,9 @@ private:
   std::vector<authoring::SupportBundleRecord> supportReports_;
   std::size_t selectedSupportReportIndex_{0U};
   std::filesystem::path supportExportRoot_;
+  std::filesystem::path updatePolicyPath_;
+  std::filesystem::path updateManifestPath_;
+  std::optional<distribution::Ed25519PublicKey> trustedUpdateRoot_;
   std::unique_ptr<authoring::AudioSettingsController> audioSettings_;
   std::unique_ptr<authoring::AudioSettingsStore> audioSettingsStore_;
   std::filesystem::path recoveryRoot_;

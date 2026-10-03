@@ -1,6 +1,7 @@
 #include "seam/standalone/native_editor_app.hpp"
 
 #include "seam/build/version.hpp"
+#include "seam/standalone/update_controller.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/platform/accessibility_preferences.hpp"
@@ -323,6 +324,9 @@ core::Result<void> NativeEditorApp::initialize() {
                            ? paths.value().userDataRoot / "Support"
                            : config_.applicationSupportRoot / "Support";
 
+  updatePolicyPath_ = config_.updatePolicyPath;
+  updateManifestPath_ = config_.updateManifestPath;
+  trustedUpdateRoot_ = config_.trustedUpdateRoot;
   audioSettingsStore_ = std::make_unique<authoring::AudioSettingsStore>(
       config_.applicationSupportRoot / "Settings" / "audio-settings.json");
   const auto persistedSettings = audioSettingsStore_->load();
@@ -454,6 +458,11 @@ core::Result<void> NativeEditorApp::initialize() {
     return core::Result<void>{created.error()};
   }
   authoring_ = std::move(created).value();
+  // Read the signed update manifest once the controller exists so a pause or an unsupported
+  // build is visible in the running app. This reads the same envelope the client already
+  // verifies, so a pause needs no new channel and a tampered manifest fails verification before
+  // these fields are read.
+  refreshDistributionAuthority();
   if (startupCrashMarker_.has_value()) {
     authoring_->controller().setDiagnostics({authoring::Diagnostic{
         .code = "CRASH_RECOVERY_AVAILABLE",
@@ -1284,6 +1293,53 @@ core::Result<void> NativeEditorApp::selectSupportReport(std::size_t index) {
       supportReports_, selectedSupportReportIndex_,
       startupCrashMarker_.has_value()));
   return core::success();
+}
+
+// The platform token the update manifest vocabulary uses. Kept as a named constant rather than a
+// literal at the call site so the expected value and the shipped manifest cannot drift apart.
+constexpr std::string_view kExpectedUpdatePlatform{"macos-arm64"};
+
+void NativeEditorApp::refreshDistributionAuthority() {
+  // A missing or unverifiable manifest leaves the authority unknown rather than assumed good:
+  // this build ships without a configured update channel, and claiming a verified pause from
+  // nothing would be the same error in the opposite direction.
+  native_ui::DistributionAuthorityView view;
+  if (updatePolicyPath_.empty() || updateManifestPath_.empty() || !trustedUpdateRoot_.has_value()) {
+    view.known = false;
+    view.diagnostic = "No update channel is configured for this build";
+    authoring_->controller().setDistributionAuthorityView(std::move(view));
+    return;
+  }
+  auto controller = standalone::UpdateController::create(standalone::UpdateControllerConfig{
+      .statePath = supportExportRoot_ / "update-state.json",
+      .stagingRoot = supportExportRoot_ / "UpdateStaging",
+      .expectedPlatform = std::string{kExpectedUpdatePlatform},
+      .installedVersion = std::string{build::kApplicationVersion},
+      .verificationTime = {},
+      .trustedRoot = trustedUpdateRoot_});
+  if (!controller) {
+    view.known = false;
+    view.diagnostic = controller.error().message;
+    authoring_->controller().setDistributionAuthorityView(std::move(view));
+    return;
+  }
+  const auto checked = controller.value()->check(updatePolicyPath_, updateManifestPath_);
+  if (!checked) {
+    view.known = false;
+    view.diagnostic = checked.error().message;
+    authoring_->controller().setDistributionAuthorityView(std::move(view));
+    return;
+  }
+  view.known = true;
+  view.diagnostic = checked.value().diagnostic;
+  if (checked.value().manifest.has_value())
+    view.minimumBuild = checked.value().manifest->minimumBuild;
+  // A pause is reported as a pause rather than a generic failure, so a creator can tell an
+  // operator decision apart from a corrupt or unsigned manifest. Both strings are the controller's
+  // own diagnostics, so this classification cannot drift from the rule that produced it.
+  view.paused = view.diagnostic.find("paused") != std::string::npos;
+  view.supportedBuild = view.diagnostic.find("minimum supported build") == std::string::npos;
+  authoring_->controller().setDistributionAuthorityView(std::move(view));
 }
 
 void NativeEditorApp::refreshCrashRecoveryContext() {

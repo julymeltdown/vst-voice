@@ -6691,3 +6691,34 @@ unnamed collector, and the READY exemption.
 participant consented, no install or soak or host session exists on a target machine. What is proven
 is that a candidate can no longer assert a CLOSED beta without naming measured evidence.
 `.github` was not touched.
+
+2026-10-04 — The signed distribution pause had a channel and no reader. The standalone app now
+verifies the update manifest at startup and surfaces the authority in the running editor.
+(SEAM-BETA-P1-04, consumer half.)
+**What was inert.** The two previous entries put `distributionPaused` and `minimumBuild` inside the
+signed update manifest and enforced them in `UpdateController::check`. But
+`rg -n 'UpdateController' libs/ apps/ --glob '!update_controller.cpp'` returned **zero** callers
+outside its own file and its test: **nothing in the shipped application constructed it**. A verified
+pause therefore reached no user, which is the same defect as never having built the channel.
+**The repair.** `NativeEditorApp` now constructs the controller at startup, once the editor session
+exists, and publishes the result as a `DistributionAuthorityView` on the editor controller. The view
+distinguishes three states rather than collapsing them: **unknown** (no update channel configured,
+or the manifest could not be verified), **paused**, and **not a supported build**. That separation
+matters — a pause is an operator decision and must read differently from a corrupt or unsigned
+manifest, and both must read differently from "this build ships without a channel".
+**A null-dereference crash this introduced and the tests caught.** The first placement of the call
+was beside the support-bundle setup at line ~333, while `authoring_` is only created at line ~461.
+`seam_tests` died with **exit 139** in "native editor audio settings restart the live deterministic
+transport transactionally". The call was moved to immediately after `authoring_ = std::move(
+created).value();`. Recorded because a startup path that dereferences a not-yet-constructed member
+compiles cleanly and fails only in the tests that construct the app.
+**The end-to-end case signs real material.** The test builds a real Ed25519 root and update key, a
+real signed trust policy, and a real signed manifest carrying `distributionPaused = true`, writes
+both to disk, configures the app with them, and asserts the running editor reports `known` and
+`paused`. A second case asserts a build with no configured channel reports `known == false` —
+claiming a verified pause from nothing would be the same error in the opposite direction.
+**Mutation-checked.** Forcing `view.paused = false` fails the end-to-end case.
+Release `seam_tests` 1460 of 1460 (1458 before); full Release CTest 224 of 224. **Not claimed:** no
+pause has been issued and no operator decision exists, so what is proven is that a **signed** pause
+reaches the running app when one is configured, not that any has been. No DAW, VoiceOver, signing,
+Windows or external-review evidence. `.github` was not touched.
