@@ -6249,3 +6249,34 @@ message cannot quietly swallow the narrower one.
 `cycleUnitVariant` together fails the case at `selected.error().code == Unsupported`.
 Release `seam_tests` 1456 of 1456; full Release CTest 224 of 224. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — A correction to the previous entry's framing, and to one audit finding about the
+formant headroom check.
+**What the audit claimed.** That the `|value| > 1.0F` headroom refusal in `spectral_classic.cpp`
+gating on `formants.value()` was an inconsistency, because `finishUnit` applies unit gain with no
+ceiling and a formant-free render could therefore exceed full scale unchecked.
+**The first half is right, and it is already covered.** A voicebank unit's `gainDb` is bounded at
+load to -96..+24 dB (`voicebank.cpp:71-73`), which is about 15.8x linear. A normalised unit at
++24 dB really does drive the Spectral Classic path past full scale with no formant plan and no
+check. That is a real path, and it is now **reported** by the export peak measurement recorded
+above: `ExportResult::masterPeakAbs` / `masterClipped`, measured in `commitRendered` before
+anything is written. The defect the audit identified — an over-full-scale render that nothing
+reports — is the defect that entry fixed, and it is fixed at the layer where the decision belongs.
+**The second half is a deliberate decision, and this entry declines to change it.** `U39_SPECTRAL_FORMANT_CONTROL_2026-09-22.md:60-63` states it directly: an active shifted output
+exceeding unit headroom "is rejected with a source/unit-gain diagnostic; **it is not clipped,
+normalized or sent to a Raw fallback**. Neutral/no-op audio retains the legacy behavior." The
+gate on `formants.value()` is therefore scoped on purpose — it protects the formant path, which is
+the path that can newly exceed headroom because a formant shift is a resonance move rather than a
+gain move, and it deliberately leaves the legacy gain policy alone.
+**Why widening the refusal would have been wrong.** Applying the same refusal to the non-formant
+case would convert a documented gain-policy decision into a render failure across every
+high-gain unit in every bank. A unit at +24 dB is *legal*, and the product's own
+`U39` design says a legal over-headroom render is reported, not refused. Changing that is a voice
+and mastering decision, not a defect repair, and **no recipe value and no gain bound is changed by
+this entry**.
+**What is and is not established.** Established by reading the current source: the +24 dB load
+bound, the absence of any ceiling in `finishUnit`, the deliberate scoping of the refusal, and the
+exported peak measurement that now reports the ungated case. Not established: how any of it sounds,
+and no listening observation is claimed. Release `seam_performance_snapshot_tests` unchanged;
+full Release CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.
