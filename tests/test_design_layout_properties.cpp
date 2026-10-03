@@ -529,6 +529,70 @@ void sweepWorkspace(Checker& checker, Workspace workspace, std::string_view name
 
 }  // namespace
 
+// The property sweeps above check that widgets stay apart, that targets are 24 points and that text is
+// either whole or elided with its full text on a node. None of that says the text is big enough to
+// read: shrinking a type token to 4 point leaves every geometric property true and every case green.
+// This is the case that says so, and it is here because the token scale is the only thing holding a
+// floor for the editor and shell, and nothing was holding it to one.
+TEST_CASE("no drawn line in any workspace is smaller than the readable floor") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The floor is derived rather than written down. A line draws its ascent plus its descent, which
+  // for these faces is about 55 to 66 percent of the size asked for, so the smallest role in
+  // TypeScale (rulerMicro, 10 point) lands at an ink of about 6.6 and smallLabel (11) at about 6.0.
+  // The floor is that measured ratio applied to the smallest role, so a token that shrinks below it
+  // is caught and a token that grows is not penalised. The ratio was measured from the frames this
+  // case paints, not assumed.
+  constexpr double kInkFloor = 6.0;
+  // Ink is measured from the renderer and then divided by the paint scale, so a line whose nominal
+  // ink is exactly the floor arrives a few ULPs under it. The slack is a thousandth of a point,
+  // two orders of magnitude below the smallest real step in the type scale, so it forgives that
+  // arithmetic and nothing else.
+  constexpr double kInkEpsilon = 0.001;
+  double smallest = 0.0;
+  std::string smallestWhere;
+  std::size_t measured = 0U;
+  std::vector<std::pair<std::string, double>> perLine;
+  const auto measureAll = [&](Workspace workspace, std::string_view name,
+                             DesignMode mode = DesignMode::Emo) {
+    LayoutFixture f{mode};
+    f.shell.setWorkspace(f.controller, workspace);
+    Frame frame;
+    for (const auto& size : kSizes)
+      for (const auto scale : kScales) {
+        if (!paintFrame(f, size[0], size[1], scale, frame)) continue;
+        for (const auto& line : frame.text) {
+          if (line.text.empty()) continue;
+          const auto height = line.ink.height / (scale > 0.0 ? scale : 1.0);
+          ++measured;
+          if (measured == 1U || height < smallest) {
+            smallest = height;
+            smallestWhere = std::string{name} + ": " + line.text;
+          }
+          perLine.emplace_back(line.text, height);
+        }
+      }
+  };
+  measureAll(Workspace::Sing, "sing");
+  measureAll(Workspace::Voice, "voice");
+  measureAll(Workspace::Tune, "tune");
+  measureAll(Workspace::Mix, "mix");
+  measureAll(Workspace::Export, "export");
+  measureAll(Workspace::Sing, "sing-scene", DesignMode::Scene);
+  CHECK(measured > 0U);
+  if (smallest < kInkFloor - kInkEpsilon)
+    throw seam::test::Failure{"smallest ink " + std::to_string(smallest) + " on \"" +
+                             smallestWhere + "\"; distinct line heights: " + [&] {
+                               std::string out;
+                               std::vector<double> seen;
+                               for (const auto& [text, height] : perLine)
+                                 if (std::find(seen.begin(), seen.end(), height) == seen.end()) {
+                                   seen.push_back(height);
+                                   out += std::to_string(height) + "(" + text.substr(0, 10) + ") ";
+                                 }
+                               return out;
+                             }()};
+}
+
 TEST_CASE("every workspace keeps widgets apart, targets at 24 points and text whole or elided") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   Checker checker;

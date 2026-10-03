@@ -4612,3 +4612,48 @@ and passes 1/1; regressions cover all five states, cancellation, tamper
 rejection, and journal persistence. The Debug build directory is not configured.
 No Studio request-detail UI is wired yet; output verification is not collection
 or human review, and U22/full-scope Beta GO remain open.
+
+2026-10-03 — A type token can no longer be shrunk past legibility without a
+test noticing, and the floor it is held to was measured rather than assumed (the
+gap the Studio 6-to-7-point text item exposed: that item repaired the sizes it
+found, but nothing would have caught the next shrink; a cross-cutting repair
+that completes and advances no plan unit). **The gap, proved rather than
+asserted.** The design layout property suite asserts three things about every
+painted frame: widgets do not overlap unless nested, every interactive target is
+at least 24 points, and every line of text either fits its box and clip or is
+elided with an ellipsis and carries its full text on an accessibility node at that
+place. None of those properties says the text is big enough to read, and the
+suite showed it. With `TypeScale::smallLabel` mutated from 11 point to 4 point,
+13 of the 14 cases still passed, including the widget-separation, 24-point and
+whole-or-elided cases; only the new ink-floor case failed. **What was added.**
+`no drawn line in any workspace is smaller than the readable floor` sweeps SING,
+VOICE, TUNE, MIX, EXPORT and SING in Scene mode, at every window size and 1x,
+1.5x and 2x paint scale, and reads `TextRecord::ink.height` off every text draw
+the real renderer emits, normalised by scale so a zoomed frame is not mistaken
+for large type. **The floor.** Ink is ascent plus descent, about 55 to 66 percent
+of the size asked for on these faces, so the smallest role in the type scale is
+the one that sets it. Measured on the real renderer: `Dynamics` 5.999985 and
+`Time map` 6.599983 at 1x, against nominal `smallLabel` 11 and `rulerMicro` 10. The
+floor is 6.0 with a 0.001 slack, because a line whose nominal ink is exactly the
+floor arrives a few ULPs under it once measured ink is divided by the paint
+scale; the slack is two orders of magnitude below the smallest real step in the
+type scale, so it forgives that arithmetic and nothing else. The floor was first
+written at 7.0, which rejected text the design has always shipped, and was lowered
+to the measured value rather than the round one. **Evidence.** Release
+`ctest -R seam_design_layout_property` 10 of 10, Debug the same 10 of 10.
+Mutation-checked end to end, not only in the binary: with `smallLabel` at 4
+point the new case fails at `smallest ink 2.399994 on "sing: Sing"`, and the
+registered ctest entry `seam_design_layout_property_tests_inkfloor` reports
+Failed, so the gate that runs in the suite is the gate that fails. The token file
+was restored byte for byte and shows no diff against its parent commit. The case
+was also registered in CMakeLists.txt in this unit: it matched none of the nine
+existing sweep filters, so without that entry it would have been compiled into
+the binary and never run by ctest, which is the same defect this project has
+already had to correct once. `git diff --check` passes. **Limits.** Headless
+measured-ink evidence on one machine and one renderer: ink height is a geometric
+proxy for legibility and not a legibility study, no person other than the
+implementing agent has read any of these lines, and the floor constrains only
+what the sweeps paint, so a surface outside these five workspaces and both design
+modes is not covered by it. No DAW,
+listening, VoiceOver, signing, Windows or external-review evidence, and nothing
+here advances a Beta gate or Windows support. `.github` was not touched.
