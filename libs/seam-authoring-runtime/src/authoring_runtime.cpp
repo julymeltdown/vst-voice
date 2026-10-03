@@ -841,6 +841,26 @@ TechnicalRenderView AuthoringRuntime::currentTechnicalRenderView() const {
           .diagnostic = {},
       });
     }
+    // A procedural or neural carrier produces no unit plan at all. Saying so here is what keeps the
+    // editor from reporting a phoneme problem when the phoneme was never the issue.
+    if (view.units.empty()) {
+      const auto& project = document().session().project();
+      const auto* track = selectedTrack_.valid() ? project.findVocalTrack(selectedTrack_) : nullptr;
+      if (track != nullptr) {
+        switch (synthesis::rendererCarrierFor(*track)) {
+          case synthesis::RendererCarrier::SourceFilter:
+            view.unavailableReason =
+                "Sample unit/seam edits cannot be applied to a procedural phrase";
+            break;
+          case synthesis::RendererCarrier::Neural:
+            view.unavailableReason =
+                "Sample unit/seam edits cannot be applied to a neural phrase";
+            break;
+          case synthesis::RendererCarrier::SampleBank:
+            break;
+        }
+      }
+    }
     return view;
   }
 

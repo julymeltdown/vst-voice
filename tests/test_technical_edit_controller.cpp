@@ -402,6 +402,48 @@ TEST_CASE("technical_edit_controller_rejects_invalid_targets_without_render") {
   CHECK(fixture.renderRequests == 0U);
 }
 
+TEST_CASE("a carrier that cannot carry unit edits says so instead of blaming the phoneme") {
+  // The main character is a procedural recipe, so the Unit lane is offered on a carrier that has
+  // no unit plan at all. Reporting "unavailable for this phoneme" there is a statement about the
+  // phoneme when the truth is about the carrier, and the correct diagnostic already existed in
+  // the procedural renderer; it simply never reached this surface.
+  auto regionId = seam::domain::RegionId{1U};
+  seam::authoring::ProjectDocument document{TechnicalFixture::makeDocument(regionId)};
+  seam::authoring::TechnicalEditController controller{
+      document, regionId,
+      [] {
+        seam::authoring::TechnicalRenderView view;
+        view.unavailableReason =
+            "Sample unit/seam edits cannot be applied to a procedural phrase";
+        return view;
+      },
+      [] {}};
+  const auto key = seam::domain::PhonemeKey{
+      .noteId = document.session().project().findRegion(regionId)
+                    ->notes.front().id,
+      .ordinal = 0U};
+  const auto selected = controller.selectUnitVariant(
+      key, "unit-a", seam::domain::UnitRendererKind::Raw);
+  CHECK(!selected);
+  CHECK(selected.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(selected.error().message.find("procedural") != std::string::npos);
+  const auto cycled = controller.cycleUnitVariant(key);
+  CHECK(!cycled);
+  CHECK(cycled.error().code == seam::core::ErrorCode::Unsupported);
+  CHECK(cycled.error().message.find("procedural") != std::string::npos);
+  // The phoneme-level message is still correct when the carrier really is a sample bank and the
+  // entry simply is not there; the new reason must not swallow it.
+  seam::authoring::TechnicalEditController plain{
+      document, regionId, [] {
+        seam::authoring::TechnicalRenderView view;
+        return view;
+      }, [] {}};
+  const auto absent = plain.selectUnitVariant(
+      key, "unit-a", seam::domain::UnitRendererKind::Raw);
+  CHECK(!absent);
+  CHECK(absent.error().code == seam::core::ErrorCode::NotFound);
+}
+
 TEST_CASE("technical_edit_controller locks and resets phoneme overrides") {
   TechnicalFixture fixture;
   CHECK(fixture.controller.movePhonemeBoundary(

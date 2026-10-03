@@ -6217,3 +6217,35 @@ was **invisible**. The export still commits, and now says what it did.
 dynamics range. It does not claim how a clipped master sounds. Release `seam_tests` 1455 of 1455;
 full Release CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-04 — Unit/Seam edits on a procedural or neural track blamed the phoneme, when the
+carrier was the reason (MEDIUM).
+**Why this one matters more than its size.** The main character this project is built around is a
+procedural recipe, so the Unit lane is offered on a carrier that has no unit plan at all. The Unit
+lane is gated purely on whether the callback is wired (`editor_controller.cpp:315-321`), with no
+carrier check, so a user selects the character, clicks a phoneme in the Unit band, presses S, and
+is told **"Unit plan entry is unavailable for this phoneme"** — a claim about the phoneme that is
+simply false. The phoneme is fine. The carrier cannot carry the edit.
+**The correct diagnostic already existed and was never plumbed through.**
+`validateProceduralPhrase` refuses exactly this with "Sample unit/seam edits cannot be applied to a
+procedural phrase" (`procedural_renderer.cpp:53`). What was missing was the route from there to the
+surface that shows the message.
+**The chain that hid it.** `currentTechnicalRenderView()` returns a Ready render's
+`activeUnitPlan` and **returns early even when that plan is empty**
+(`authoring_runtime.cpp:832-840`), never reaching the `lastTechnicalUnits_` fallback below. For
+procedural and neural the project renderer never assigns `activeUnitPlan` at all
+(`project_renderer.cpp:254`, `:334` — only the sample-bank branch at `:421` does), so the view is
+empty, `unitView()` yields nullopt, and both `selectUnitVariant` (`:483-486`) and `cycleUnitVariant`
+(`:519-522`) answer the phoneme-level message.
+**The repair.** `TechnicalRenderView` carries an `unavailableReason`. When a Ready render produces
+no unit entries, the runtime asks `rendererCarrierFor` — which already computes this
+(`renderer_capabilities.cpp:92-97`) — and sets the carrier's own reason. Both call sites prefer that
+reason and answer `Unsupported` instead of `NotFound`.
+**The fallback is deliberately preserved.** When the carrier really is a sample bank and the entry
+simply is not there, the phoneme-level `NotFound` is still correct and still returned. The new reason
+only speaks when the carrier is genuinely the cause; the test asserts both halves so the broader
+message cannot quietly swallow the narrower one.
+**Mutation-checked across both call sites at once.** Disabling the reason in `selectUnitVariant` and
+`cycleUnitVariant` together fails the case at `selected.error().code == Unsupported`.
+Release `seam_tests` 1456 of 1456; full Release CTest 224 of 224. No DAW, VoiceOver, signing,
+Windows or external-review evidence. `.github` was not touched.

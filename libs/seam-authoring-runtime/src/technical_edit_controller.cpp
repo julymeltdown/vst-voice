@@ -481,6 +481,10 @@ core::Result<void> TechnicalEditController::selectUnitVariant(
   }
   auto selectedView = unitView(key);
   if (!selectedView.has_value()) {
+    if (renderViewProvider_) {
+      const auto reason = renderViewProvider_().unavailableReason;
+      if (!reason.empty()) return core::failure(core::ErrorCode::Unsupported, reason);
+    }
     return core::failure(core::ErrorCode::NotFound,
                          "Unit plan entry is unavailable for this phoneme");
   }
@@ -517,6 +521,10 @@ core::Result<void> TechnicalEditController::cycleUnitVariant(
     domain::PhonemeKey key) {
   auto selectedView = unitView(key);
   if (!selectedView.has_value()) {
+    if (renderViewProvider_) {
+      const auto reason = renderViewProvider_().unavailableReason;
+      if (!reason.empty()) return core::failure(core::ErrorCode::Unsupported, reason);
+    }
     return core::failure(core::ErrorCode::NotFound,
                          "Unit plan entry is unavailable for this phoneme");
   }

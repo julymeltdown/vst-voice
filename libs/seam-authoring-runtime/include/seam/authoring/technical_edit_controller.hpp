@@ -21,6 +21,10 @@ struct TechnicalUnitView final {
 
 struct TechnicalRenderView final {
   std::vector<TechnicalUnitView> units;
+  // Why there are no unit entries, when the carrier cannot produce them. A procedural or neural
+  // track has no sample unit plan at all, and "no entry for this phoneme" is a statement about
+  // the phoneme when the truth is about the carrier.
+  std::string unavailableReason;
 };
 
 struct PhonemeBindingReview final {
