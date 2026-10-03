@@ -349,6 +349,133 @@ TEST_CASE("a procedural phrase articulates every syllable at its own pitch") {
   CHECK(vowelPitches[1] > vowelPitches[0] * 1.2);
 }
 
+// M2.2's table routes a "correct isolated sound but bad short/connected consonant" observation to
+// the articulation plan, and names the required countercheck: isolated/connected, slow/short, and
+// low/mid/high. Every consonant measured before this case was one C-vowel, at one pitch, at one
+// duration, in one context, so none of those three axes was varied and a defect that only appears
+// on a short fast note in the low register would have passed unnoticed. This renders a matrix over
+// all three axes and measures the audio for each cell, so the coverage the plan requires is pinned
+// rather than assumed.
+TEST_CASE("a procedural consonant survives the isolated slow/short low/mid/high matrix") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  struct Cell final {
+    const char* name;
+    std::u32string_view surface;
+    std::uint8_t midiKey;
+    std::uint32_t durationTick;
+  };
+  // The three axes M2.2 names. Pitch spans a tenth either side of middle C, duration spans a slow
+  // minim to a short quaver, and the surface alternates between an isolated syllable and one that
+  // follows another syllable so the consonant is both onset-only and connected.
+  constexpr std::array<Cell, 6U> kCells{{
+      {"low-slow-isolated", U"さ", 55U, 1920U},
+      {"low-short-isolated", U"さ", 55U, 720U},
+      {"mid-slow-isolated", U"さ", 60U, 1920U},
+      {"mid-short-connected", U"さし", 60U, 720U},
+      {"high-slow-isolated", U"さ", 67U, 1920U},
+      {"high-short-connected", U"さし", 67U, 720U},
+  }};
+  for (const auto& cell : kCells) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    // Place the cell's syllable (or syllable pair) on its own note(s) from the region start.
+    const auto& syllables = cell.surface;
+    auto tick = time::Tick{480};
+    std::vector<domain::NoteId> ids;
+    for (const auto ch : syllables) {
+      auto [lyric, note] = f.factory.makeNote(tick, time::Tick{cell.durationTick}, cell.midiKey,
+          std::u32string(1U, static_cast<char32_t>(ch)), domain::Language::Japanese);
+      note.vibrato.enabled = false;
+      note.phoneticHint.reset();
+      ids.push_back(note.id);
+      region->lyrics.push_back(std::move(lyric));
+      region->notes.push_back(std::move(note));
+      tick = time::Tick{static_cast<std::int64_t>(tick.value()) + static_cast<std::int64_t>(cell.durationTick)};
+    }
+    // The score's own gain, held constant so the measurement below sees articulation, not dynamics.
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    // The consonant ends and the vowel begins at 20 percent of its own note, so the consonant is a
+    // proportion of the note rather than a fixed span. This matters: a fixed 200 ms consonant is
+    // harmless on the slow note (a fifth of it) but swallows more than half of the short one, so a
+    // fixed span would test the override rather than whether articulation fits a short note.
+    std::vector<domain::PhonemeOverride> overrides;
+    for (const auto id : ids) {
+      const auto consonantEnd = static_cast<std::int64_t>(static_cast<double>(cell.durationTick) * 0.2);
+      for (std::uint32_t index = 0U; index < 2U; ++index) {
+        overrides.push_back({.key = {id, static_cast<std::uint16_t>(index)}, .timing = index == 0U
+            ? domain::PhonemeTiming{.startOffset = 0,
+                .endOffset = time::Microseconds{consonantEnd * static_cast<std::int64_t>(1000000) / 4800}}
+            : domain::PhonemeTiming{.startOffset =
+                time::Microseconds{consonantEnd * static_cast<std::int64_t>(1000000) / 4800}}, .locked = true});
+      }
+    }
+    region->phonemeOverrides = std::move(overrides);
+    voice_design::VoiceRecipe recipe; recipe.id = "matrix-articulation";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                   {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+    recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}},
+                         {"sh", "neutral", {.seed = 43U, .centerHz = 2200.0, .bandwidthHz = 1200.0}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"matrix snapshot ("} + cell.name + "): " + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"matrix render ("} + cell.name + "): " + rendered.error().message};
+    const auto& markers = rendered.value().proceduralMarkers;
+    const auto& audio = rendered.value().rendered.audio;
+    CHECK(audio.samples.size() > 0U);
+    const auto window = [&](const synthesis::PhraseFrameRange& span) {
+      const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+      const auto count = static_cast<std::size_t>(span.end - span.start);
+      CHECK(from + count <= audio.samples.size());
+      return std::span<const float>{audio.samples.data() + from, count};
+    };
+    const auto rms = [](std::span<const float> samples) {
+      if (samples.empty()) return 0.0;
+      auto sum = 0.0;
+      for (const auto value : samples) sum += static_cast<double>(value) * static_cast<double>(value);
+      return std::sqrt(sum / static_cast<double>(samples.size()));
+    };
+    // Every syllable in the cell must have produced a consonant gesture followed by a vowel, in
+    // order, so a cell cannot pass by rendering its first syllable and dropping the rest.
+    CHECK(markers.size() == syllables.size() * 2U);
+    for (std::size_t syllable = 0U; syllable < syllables.size(); ++syllable) {
+      const auto& consonant = markers[syllable * 2U];
+      const auto& vowel = markers[syllable * 2U + 1U];
+      // 1. The consonant is a real noise gesture with audible energy in its own span. A silent
+      // span labelled a consonant, or a dropped short note, fails here.
+      CHECK(voice_design::isNoiseGesture(consonant.kind));
+      const auto noise = window(consonant.ownedSpan);
+      CHECK(!noise.empty());
+      const auto noiseLevel = rms(noise);
+      CHECK(noiseLevel > 1.0e-4);
+      // 2. The vowel follows it, is voiced, and is longer than the consonant in the same syllable:
+      // the consonant must not swallow the note. This is the short-note axis, where a plan that
+      // gave the consonant the whole span would leave no vowel at all.
+      CHECK(!voice_design::isNoiseGesture(vowel.kind));
+      CHECK(vowel.ownedSpan.start >= consonant.ownedSpan.end);
+      const auto sung = window(vowel.ownedSpan);
+      CHECK(sung.size() > 2048U);
+      CHECK(rms(sung) > 1.0e-5);
+      // 3. The vowel is at the note's own pitch, which is the low/mid/high axis: the same bound
+      // the single-syllable case uses, and it must hold at every octave the matrix spans.
+      const auto frames = voicebank::analyzePitch(sung, kRate); CHECK(frames);
+      const auto measured = voicebank::medianVoicedPitch(frames.value());
+      const auto expected = 440.0 * std::pow(2.0, (static_cast<double>(cell.midiKey) - 69.0) / 12.0);
+      CHECK(measured > 0.0);
+      CHECK(std::abs(1200.0 * std::log2(measured / expected)) < 50.0);
+      // 4. Consonant and vowel are different sounds, not one span counted twice.
+      CHECK(noiseLevel != rms(sung));
+    }
+  }
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

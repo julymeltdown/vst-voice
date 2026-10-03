@@ -5243,3 +5243,59 @@ is auditable and not repeated. **Verification.** Release
 `tests/test_performance_snapshot.cpp` and this ledger changed; no renderer source
 was modified, which is the point. No listening, DAW, VoiceOver, signing, Windows
 or external-review evidence. `.github` was not touched.
+
+2026-10-03 — The procedural consonant measured across the isolated/connected,
+slow/short and low/mid/high matrix M2.2 requires, closing a coverage gap in the
+articulation countercheck (R3's M2.2 "correct isolated sound but bad
+short/connected consonant" row; advances M2.2's countercheck, still opens no
+gate and qualifies no voice).
+**Why this case.** M2.2's table routes a consonant-quality observation to
+`articulation_plan.cpp` and `articulated_stream.cpp` and names the required
+countercheck explicitly: "isolated/connected, slow/short and at least low/mid/high
+cases". Every consonant measured before this was one CV syllable, at one pitch
+(MIDI 60), at one duration, in one context. None of the three axes was varied, so
+a defect that appears only on a short fast note in the low register would have
+passed unnoticed, and the countercheck the plan asks for was not actually covered
+by anything. This renders a six-cell matrix over all three axes and measures the
+audio in each cell.
+**The matrix.** Six cells: pitch at MIDI 55, 60 and 67 (a tenth either side of
+middle C); duration at 1920 ticks (slow) and 720 ticks (short); context alternating
+isolated "さ" and connected "さし", so every consonant is measured both as an
+onset alone and immediately after another syllable's vowel.
+**A wrong guard of mine, third time, and the reason the matrix is written this
+way.** The first draft gave every note the same absolute 200 ms consonant by
+copying the isolated case's override. Measuring the spans showed the consequence
+immediately: the consonant came out at exactly 9600 frames on both the slow and
+the short note, which is a fifth of the slow note but **53 percent** of the short
+one. The draft was therefore not testing whether articulation fits a short note
+at all; it was testing its own hardcoded override. The override now makes the
+consonant a fixed 20 percent of each note, and the measured spans are **3840
+frames on the slow note and 1440 on the short one**, proportional as intended.
+This is the same failure shape as the two entries above it: a plausible-looking
+constant that measures something other than what the case claims to measure.
+**Evidence, measured not asserted.** In all six cells, and for both syllables of
+both connected cells, the consonant owns a noise gesture with RMS above 1e-4 in
+its own span; the vowel follows it without overlap, is voiced, spans more than
+2048 frames, carries RMS above 1e-5, and sits within 50 cents of the note's own
+pitch at every octave in the matrix; and the consonant's level differs from the
+vowel's, so neither is the other relabelled. On the short notes the vowel still
+receives 16560 frames after a 1440-frame consonant, so a plan that gave the
+consonant the whole note would fail the cell rather than pass it quietly.
+**Mutation-checked, and checked independently.** Mutating the renderer rather
+than the test, scaling the consonant noise source to zero in
+`articulated_stream.cpp:325`, fails this case on its own energy check at line 457
+independently of the two existing articulation cases, which also fail. The matrix
+is therefore load-bearing and is not riding on coverage that was already there.
+Release `seam_performance_snapshot_tests` 60 of 60, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows the procedural articulation path places a
+proportionate consonant before a sung vowel across pitch, duration and context,
+which is the coverage M2.2 asks its repairs to be judged against. It is not a
+perceptual result: the cells prove the sounds are present, voiced and correctly
+pitched, not that they are intelligible or pleasant, and the consonant is the
+same /s/ throughout rather than the plosive, nasal and affricate classes M2.2
+also names, which remain component-tested upstream but unmeasured in a rendered
+phrase. No listening evidence exists. U42 remains externally blocked on a real
+recording session for the sample route, which this does not touch. No DAW,
+VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.
