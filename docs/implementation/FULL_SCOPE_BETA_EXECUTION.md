@@ -5766,6 +5766,46 @@ No production code was modified. Release `seam_performance_snapshot_tests`
 unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
 
+2026-10-03 — The demo bank's wrong-root finding generalized into a guard that
+classifies EVERY shipped voicebank manifest, so the defect cannot spread to a new
+bank (cross-cutting maintenance, closing no plan unit).
+**What changed.** `tests/singing_quality/test_bank_root_pitch.py` previously
+covered one manifest. It now covers every voicebank manifest the repository ships,
+classified in one table with each bank's known offset, tolerance and the reason it
+is that way. Three cases: every shipped manifest carrying `rootMidi` must appear in
+the table; each listed bank's measured offset must match its recorded class; and a
+positive control must measurably PASS, so the classification cannot hold vacuously.
+The suite goes from 71 to 72 cases.
+**The positive control is generated, not borrowed.** Every bank this repository ships
+has the wrong root, so there was no shipped example of a correct one, and the only
+correct bank on the machine lives in `out/`, which is gitignored. The control is
+therefore a 440 Hz PCM tone written by the test itself and measured through the same
+`seam_voicebank_cli extract-pitch` path, which makes the case hermetic rather than
+dependent on what the machine happens to have built. A generated tone is also what
+separates the two cases cleanly: it matches within 50 cents AND spans under 1.5
+octaves, where the spoken demo bank spans several.
+**A guard that did not guard, found by trying to break it rather than trusting it.**
+The first version of the generalization globbed for files named exactly
+`manifest.json`. I dropped a deliberately unlisted probe bank into `assets/` under a
+different filename and the suite **passed**, which is the failure this case exists to
+prevent. The search is now by content over every `.json` under `assets/`, `tests/` and
+`out/`, and the same probe is caught. A guard written to pass is worth nothing; the
+only evidence it works is that it was made to fail on purpose.
+**Tolerances set from measurement rather than round numbers.** The single-unit demo
+manifest reads **+998 cents** over its whole file, because it declares no loop span,
+and the eight-unit production bank reads **+992 cents** inside its declared span. The
+bound is 500 cents for both, below the measured value so a fixture that moved most of
+the way to correct would fail rather than pass. Manifests copied into `out/` are
+excluded from the coverage requirement, because `out/` is a gitignored artifact tree
+and a copy of an already-listed bank would otherwise make the case depend on local
+build state.
+**No claim beyond this.** The guard says which banks have a wrong declared root. It
+does not fix any of them, does not make sample-route intonation measurable, and does
+not touch U42's external asset requirement. Release `seam_performance_snapshot_tests`
+unchanged at 66 of 66; full Release CTest 224 of 224; `tests/external_beta` plus
+`tests/production` 321 passed with 315 subtests. No DAW, VoiceOver, signing, Windows
+or external-review evidence. `.github` was not touched.
+
 2026-10-03 — The procedural voice's level measured depending on where a note sits
 relative to the voice's formants, with a **21.2 dB** resonant peak inside the
 usable range, on identical input with no authored dynamics (R3's M2.2 "voice
