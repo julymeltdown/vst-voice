@@ -4923,3 +4923,45 @@ here, and no gate was pointed at either document. U42 and U47 stay
 externally blocked on real assets, signed builds and host sessions. No DAW,
 listening, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-03 — The refusal half of the contract's capability matrix is now a
+derived, citation-checked artifact, and the positive half is explicitly refused
+rather than quietly absent (the contract's `scope.matrixStatus`, `UNRESOLVED`,
+owned by U14, U19, U20, U35, U36 and U42; this advances that decision without
+resolving it). **What the contract asks for, and why it was not simply written.**
+`scope.resourceCoverage` permits language subsets and backend incompatibilities
+only inside a frozen matrix carrying "a supported tested combination for every
+mandatory feature", and that rule turns on a **positive** claim. Nothing here can
+support one: `find . -name '*.onnx'` is empty, `scope.releasedResources` is `[]`,
+the only voicebank is an eight-unit public-domain fixture whose manifest declares
+`official: false` and whose README calls it unsuitable for release-quality
+singing, and the one COMPLETE coverage report carries a hardcoded
+`releaseEligible: false`. Writing a positive cell would mean asserting
+qualification no artifact supports. **What is factual, and now captured.** The
+negative half is read out of refusal paths that already exist: six expression
+channels refused on neural, StyleBlend refused on neural and procedural and
+conditional on sample, a scheduler with no backend for a singer resource, and
+the raw renderer refusing formant control. `tools/external_beta/capability_matrix.py`
+holds those eleven rows and states that an absent cell means only "no refusal
+path found", never "supported". **Evidence and its guard.** Each row cites the
+line that raises `ErrorCode::Unsupported` *and* the line where the message text
+is defined, because the neural channels raise helpers whose text lives about 150
+lines from the raise. `test_capability_matrix.py` opens each cited file and
+asserts both. Mutation-checked by deleting the growl refusal from
+`render_snapshot.cpp`: the case fails, landing on a downstream citation because
+the deletion shifts the file, which is the point, since any edit that moves or
+removes a cited refusal breaks the report rather than leaving it quietly wrong.
+The module also keeps `dictionary-original` and `character-original` visible as
+contract kinds with no C++ representation, so the contract's six are not quietly
+reduced to the three the code models. Covered by the existing
+`seam_external_beta_python_contract_tests` discovery glob;
+`seam_tracked_source_closure` passes. **Limits.** `matrixStatus` stays
+`UNRESOLVED`; this is a seed, not a matrix. Only refusals with a single
+unambiguous site are enumerated; the phone-level articulation constraints,
+recipe schema bounds and raw-renderer onset rules still need the same treatment.
+Deciding which resource is authoritative for which requirement is an authority
+decision for the named owner units. Full detail, table and limits in
+[CAPABILITY_MATRIX_REFUSALS_2026-10-03.md](CAPABILITY_MATRIX_REFUSALS_2026-10-03.md).
+Headless evidence on one machine: the report cannot drift from the code it
+describes, and it claims nothing about quality. No DAW, listening, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.
