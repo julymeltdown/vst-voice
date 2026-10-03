@@ -5720,3 +5720,48 @@ has heard this audio.
 Release `seam_performance_snapshot_tests` unchanged at 66 of 66; no production
 code was modified by this unit. No DAW, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-03 — The procedural singer rendered to WAV through the production export
+path for the first time, so the acoustic units of the last several entries can
+finally be LISTENED to rather than only measured (no plan unit closed; full guide
+in `docs/implementation/PROCEDURAL_LISTENING_MATERIAL_2026-10-03.md`).
+**What was done.** `seam_singer_pilot` already existed and renders through
+`authoring::ExportService::exportSetWithSources` with `includeProceduralCandidates`,
+which is the production export route rather than a test shortcut, and it had never
+been run for this purpose. It is now. Seven listening items were produced, each
+with its project, recipe and analyzer pitch record beside the audio: a vowel
+ladder, a 14-syllable articulation ladder, nasals, stops, affricates, glides, a
+four-note melisma and a five-syllable rise, in three recipe variants each
+(`baseline`, `higher-formants` with every formant frequency scaled by 1.15, and
+`breathier` with aspiration 0.20 and a -15 dB/octave tilt). All carry real signal;
+measured peaks run 0.022 to 0.157 with RMS 0.0056 to 0.0585.
+**The exported audio independently confirms the harness measurements.** The
+four-note melisma was rendered through export and then measured with
+`seam_voicebank_cli extract-pitch`, outside the test that motivated it. The four
+notes read **-0.2, -0.1, -0.0 and +0.2 cents** against MIDI 60, 64, 68 and 72. The
+conclusions the unit tests reached inside the harness hold on the bytes a user
+would actually receive, which is the first confirmation of the procedural path
+outside its own tests and is stronger evidence than another harness case would
+have been.
+**A tooling failure that was mine and is documented rather than left as folklore.**
+The custom-phrase mode takes `LYRIC:MIDI[:TICKS]`, and my first attempts passed the
+ASCII letter `a`. That is not a kana spelling, so it resolved to `pau` and the
+pilot refused with "Phone 'pau' has no explicit frication or released-stop source".
+The correct input is the kana `あ`. The refusal is the contract working; the guide
+now states the requirement, because an English letter silently producing a
+rest rather than an error at the call site is a sharp edge for anyone using the
+tool.
+**What this enables and what it does not.** It enables the M2.1 listening
+judgements no measurement can make: whether the articulation is intelligible,
+whether the pitch contour reads as a phrase, whether the four consonant classes
+sound distinct, and whether the three recipe variants are audibly different. It
+does NOT advance M2.1, because **nobody has listened yet** and this entry records
+only that the material now exists and how to produce it. It says nothing about
+release quality: the recipe is experimental formant and source data and the tool's
+own help calls its output unqualified. These renders are the procedural route
+only; the sample route's intonation is still unmeasurable for the reason recorded
+in the listening-packet entry, and U42 stays externally blocked on a rights-cleared
+bank whose units are actually at their declared pitch.
+No production code was modified. Release `seam_performance_snapshot_tests`
+unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
+evidence. `.github` was not touched.
