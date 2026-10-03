@@ -6108,3 +6108,27 @@ item on it that genuinely cannot be advanced here at all. No production code was
 modified. Release `seam_performance_snapshot_tests` unchanged at 66 of 66; full Release
 CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-04 — A style-owned take was judged by a pitch-layer rule that contradicted the one
+its own assignments are judged by (U10 Scenario 3's "accepted by all producer validators
+consistently"). **The defect, located.** A style-owned workspace declares the pitch layers it
+offers in `declaredPitchLayers`, and its assignments were already validated against that
+declared set. Its takes were not: `project_codec_validation.cpp` tested
+`take.pitchLayer >= 24 && take.pitchLayer <= 96`, a hardcoded window carried over from before
+style ownership existed. One field, two rules, in the same validator, for the same workspace.
+**Why it matters beyond tidiness.** The decode path accepts any MIDI note in 0..127
+(`project_codec_decode.cpp:96-99`), so a workspace may legally declare a layer outside the
+window. Such a workspace admitted its assignments and then refused every take bound to one,
+at import, naming a rule the workspace never agreed to. A producer following the inventory
+would hit this with no way to tell it apart from a real binding error.
+**The repair.** The take check now uses the same declared set as the assignment check, and the
+set is built once and shared by both. The window was not merely widened; it was removed,
+because the workspace is the authority on its own range and the assignment path already said so.
+**Mutation-checked rather than asserted.** The case builds a style-owned workspace at layer 12
+and again at 108 — both outside the old window, both legal MIDI notes — imports a take at each,
+and round-trips the project. Restoring the hardcoded window makes it fail at the import with
+`Take binding is invalid`; the fix makes it pass. Neither half of the new test is decorative:
+the layer choice fails the old rule, and the round-trip fails if the declared set is not honoured.
+**What this is not.** It does not widen what a voicebank may claim, does not create a voicebank,
+and grants no qualification. Release `seam_voicebank_production_tests` 59 of 59 (58 before).
+No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not touched.

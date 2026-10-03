@@ -176,9 +176,15 @@ core::Result<void> validateProductionProject(
     revisions.insert(revision.revisionId);
   }
   std::set<std::string, std::less<>> ownedRevisions;
+  // A style-owned workspace is the authority on the pitch layers it offers. Judging its takes by a
+  // hardcoded window instead would refuse a take the workspace declared, which is the same rule
+  // its assignments are judged by below; the two must not disagree about one field.
+  const std::set<std::int32_t> declaredLayers{project.declaredPitchLayers.begin(),
+                                              project.declaredPitchLayers.end()};
   for (const auto& take : project.takes) {
     if (take.promptId.empty() || take.coverageKey.empty() ||
-        !validStyle(take.style) || (styleOwned && (take.pitchLayer < 24 || take.pitchLayer > 96)) ||
+        !validStyle(take.style) ||
+        (styleOwned && declaredLayers.count(take.pitchLayer) == 0U) ||
         assetDigests.find(take.rawAssetSha256) == assetDigests.end()) {
       return invalid("Take binding is invalid");
     }
@@ -340,8 +346,6 @@ core::Result<void> validateProductionProject(
   // A style-owned project admits only the pitch layers its inventory declared. The producer that
   // wrote the project applied that same rule, so validating against a fixed window instead would
   // reject projects the producer considers valid, and accept layers the inventory never offered.
-  const std::set<std::int32_t> declaredLayers{project.declaredPitchLayers.begin(),
-                                              project.declaredPitchLayers.end()};
   if (styleOwned && declaredLayers.empty())
     return invalid("Style-owned workspace declares no pitch layers");
   for (const auto& assignment : project.unitAssignments) {

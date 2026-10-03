@@ -954,6 +954,58 @@ TEST_CASE("the C++ resource kinds are exactly the contract's resource kinds") {
   CHECK(contractKinds == declared);
 }
 
+TEST_CASE("a take is judged by the same pitch layer rule as its assignment") {
+  // A style-owned workspace declares the pitch layers it offers. The assignment check and the take
+  // check must agree on what a legal layer is: a take inside the declared set is legal however high
+  // or low that set is, because the workspace is the authority on its own range.
+  namespace production = seam::voicebank_production;
+  for (const std::int32_t layer : {12, 108}) {
+    const auto root = seam::test::support::temporaryDirectory("declared-pitch-layer");
+    const auto license = root / "source-notice.txt";
+    CHECK(seam::core::durableAtomicWriteText(license, "GENERATED_TEST_FIXTURE_ONLY: no production singer qualification"));
+    const auto licenseDigest = seam::core::sha256File(license);
+    CHECK(licenseDigest);
+    production::VoicebankProductionProject project{
+        .schemaVersion = production::kProductionStyleSchemaVersion,
+        .projectId = "declared-layer-test", .inventoryId = "test-inventory",
+        .inventorySha256 = std::string(64U, 'b'), .selectedSourceStrategyId = "test-synthesis",
+        .licenseLocator = license.string(), .licenseSha256 = licenseDigest.value(),
+        .immutableAssetRoot = "assets",
+        .language = "ja", .declaredPitchLayers = {layer}};
+    project.sourceStrategies.push_back({
+        .id = "test-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
+        .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,
+        .listening = production::Feasibility::Pass,
+        .permissions = {.sourceUse = true, .transformation = true,
+                       .singingBankRedistribution = true, .commercialRenders = true},
+        .licenseLocator = license.string(), .licenseSha256 = licenseDigest.value(),
+        .evidenceState = "SYNTHETIC_TEST_ONLY"});
+    project.operators = {{.operatorId = "producer", .role = "PRODUCER"}};
+    project.unitAssignments = {{.coverageKey = "sustain:a", .pitchLayer = layer,
+        .promptId = "prompt-a", .plannedTakeId = "take-a", .style = "original"}};
+    production::ProductionProjectRepository repository{root / "workspace"};
+    CHECK(repository.initialize(project, {.action = "create", .subjectId = project.projectId,
+        .operatorId = "producer", .occurredAtUtc = "2026-10-04T00:00:00Z"}));
+    const auto source = root / "raw.wav";
+    CHECK(seam::voicebank::writeWav(source, {.sampleRate = 48000U, .channels = 1U,
+        .sampleFormat = seam::voicebank::WavSampleFormat::Pcm24},
+        seam::test::support::sineWave(48000U, 440.0, 0.12, 0.25F)));
+    const auto imported = repository.importRaw(project, source,
+        {.takeId = "take-a", .promptId = "prompt-a", .coverageKey = "sustain:a", .pitchLayer = layer,
+         .style = "original"},
+        {.action = "import", .subjectId = "take-a", .operatorId = "producer",
+         .occurredAtUtc = "2026-10-04T00:01:00Z"});
+    ::seam::test::check(static_cast<bool>(imported), imported ? "import" : imported.error().message,
+                        __FILE__, __LINE__);
+    if (!imported) continue;
+    const auto encoded = production::encodeProductionProject(project);
+    const auto decoded = production::decodeProductionProject(encoded); CHECK(decoded);
+    CHECK(decoded.value().declaredPitchLayers == std::vector<std::int32_t>{layer});
+    CHECK(decoded.value().takes.size() == 1U);
+    CHECK(decoded.value().takes.front().pitchLayer == layer);
+  }
+}
+
 TEST_CASE("certified aborted journal recovery preserves source origins through explicit review and publication") {
   namespace production = seam::voicebank_production;
   for (const bool completeJournal : {false, true}) {
