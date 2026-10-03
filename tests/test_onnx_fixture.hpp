@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <cctype>
 #include <cstdint>
 #include <string>
@@ -35,6 +36,18 @@ inline void protoBytesField(std::string& out, std::uint32_t field, std::string_v
   protoTag(out, field, 2U);
   protoVarint(out, value.size());
   out.append(value.data(), value.size());
+}
+
+// A 32-bit protobuf scalar, little-endian. `float f = 2` in AttributeProto is one of these, and it
+// is the field this repository's own exporter writes a sampling seed into, so a fixture that only
+// offers the varint fields cannot describe a graph the exporter produces.
+inline void protoFixed32Field(std::string& out, std::uint32_t field, float value) {
+  static_assert(sizeof(float) == 4U, "a fixed32 is four bytes");
+  std::uint32_t bits = 0U;
+  std::memcpy(&bits, &value, sizeof(bits));
+  protoTag(out, field, 5U);
+  for (unsigned shift = 0U; shift < 32U; shift += 8U)
+    out.push_back(static_cast<char>((bits >> shift) & 0xFFU));
 }
 
 // Each dimension is a decimal size or a symbolic name; "?" declares the dimension without a size.

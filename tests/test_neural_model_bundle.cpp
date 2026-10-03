@@ -327,7 +327,7 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
   const auto inspect=[&](const std::string& bytes) {
     return inspectNeuralGraph(std::as_bytes(std::span{bytes.data(),bytes.size()}));
   };
-  const auto draw=[&](std::string_view op,std::optional<std::int64_t> seed) {
+  const auto draw=[&](std::string_view op,std::optional<std::int64_t> seed,bool asFloat=false) {
     std::string node;
     protoBytesField(node,1U,"shape");
     protoBytesField(node,2U,"noise");
@@ -335,10 +335,13 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
     if (seed) {
       std::string attribute;
       protoBytesField(attribute,1U,"seed");
-      // An attribute's VALUE is AttributeProto field 3 (optional int64 i = 3), not a per-operator
-      // field number. Writing the seed at field 5 encodes nothing this parser can read, which is
-      // exactly the mistake a first version of this case made and which the case then caught.
+      // An attribute's VALUE is carried in whichever field matches its type, and this fixture writes
+      // both of the ones a writer can use: `optional int64 i = 3` (field 3, varint) and
+      // `optional float f = 2` (field 2, fixed32). The float one is not hypothetical: this repository's
+      // own exporter pins sampling with `helper.make_attribute("seed", float(seed))`, so a parser that
+      // reads only the integer field refuses the graph the exporter produces. The case pins both.
       protoVarintField(attribute,3U,static_cast<std::uint64_t>(*seed));
+      if (asFloat) protoFixed32Field(attribute,2U,static_cast<float>(*seed));
       protoBytesField(node,5U,attribute);
     }
     return onnxModel(onnxGraph({onnxValueInfo("shape",7U,{"1","80"})},
@@ -377,6 +380,25 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
 
   // Dropout is admitted in the same operator set and is the same defect the moment an export
   // declares it, so it is refused on the same terms rather than left as an open sibling.
+  // The same graph with the seed written the way this repository's own exporter writes it: as a
+  // FLOAT in AttributeProto field 2, not as an integer in field 3. The case above pins the integer
+  // form because that is what a first version of the parser read; this pins the float form because
+  // that is what pin_sampling_seed in tools/voice_model_training/onnx_acoustic.py actually emits,
+  // and a parser that reads only one of the two refuses a graph the exporter produces while admitting
+  // one it does not. Both must be admitted and both must carry the same seed into the contract.
+  const auto floatSeeded = inspect(draw("RandomNormalLike", 2026091, true));
+  CHECK(floatSeeded);
+  if (floatSeeded) {
+    const auto byFloat = std::find_if(floatSeeded.value().nodes.begin(), floatSeeded.value().nodes.end(),
+        [](const auto& entry) { return entry.seed.has_value(); });
+    CHECK(byFloat != floatSeeded.value().nodes.end());
+    if (byFloat != floatSeeded.value().nodes.end()) CHECK(*byFloat->seed == 2026091);
+  }
+  // And the float form is refused when it says nothing a build can represent: a negative seed, and
+  // one past the 2^24 where a float stops being exactly an integer.
+  CHECK(!inspect(draw("RandomNormalLike", -1, true)));
+  CHECK(!inspect(draw("RandomNormalLike", static_cast<std::int64_t>(16777216), true)));
+
   const auto unseededDropout=inspect(draw("Dropout",std::nullopt));
   CHECK(!unseededDropout);
   if (!unseededDropout)

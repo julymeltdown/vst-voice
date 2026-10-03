@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 #include <optional>
 #include <set>
@@ -104,6 +105,19 @@ struct Reader final {
     number = static_cast<std::uint32_t>(key >> 3U);
     wire = static_cast<std::uint32_t>(key & 0x7U);
     return number != 0U && number <= 0x1FFFFFFFU;
+  }
+
+  // A 32-bit protobuf scalar, little-endian on the wire. `float f = 2` in AttributeProto is one of
+  // these, and it is where this repository's own exporter writes a sampling seed, so reading an
+  // attribute value without it means refusing a graph the exporter produces.
+  bool fixed32(std::uint32_t& value) noexcept {
+    if (remaining() < 4U) return false;
+    value = static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[position])) |
+            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[position + 1U])) << 8U) |
+            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[position + 2U])) << 16U) |
+            (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[position + 3U])) << 24U);
+    position += 4U;
+    return true;
   }
 
   bool submessage(std::span<const std::byte>& value) noexcept {
@@ -391,12 +405,27 @@ core::Result<void> parseAttribute(Reader& reader, GraphNodeContract& node, Graph
       if (!reader.text(ignored, limits.maximumBytes)) return truncated("ONNX operator attribute");
       continue;
     }
-    // An attribute's VALUE lives in AttributeProto field 3 (optional int64 i = 3), whatever the
-    // attribute is called; the NAME in field 1 is what says which one this is. A seed is by
-    // definition an integer, so any operator declaring one arrives here as field 3. That value used
-    // to be skipped with the rest, which is why a stochastic export and a seeded one were admitted
-    // identically. Reading it by VALUE rather than by a guessed field number also means an
-    // operator this build does not know takes a seed is covered without naming it.
+    // An attribute's VALUE is carried in whichever field matches its type, and the NAME in field 1 is
+    // what says which attribute this is. The seed arrives as a FLOAT, in `optional float f = 2`,
+    // because this repository's own exporter pins it with
+    // `helper.make_attribute("seed", float(seed))`. Reading only the integer field
+    // (`optional int64 i = 3`) admitted a graph this exporter cannot produce and refused the one it
+    // does, which is the opposite of what the check is for. Both are read here and the value is kept
+    // whichever field the writer used. A float seed is exactly representable below 2^24, the range
+    // the exporter itself bounds, so this conversion is exact rather than rounded.
+    if (field == 2U && wire == 5U) {
+      std::uint32_t bits = 0U;
+      if (!reader.fixed32(bits)) return truncated("ONNX operator attribute seed");
+      float value = 0.0F;
+      static_assert(sizeof(value) == sizeof(bits), "a float and its bit pattern must agree");
+      std::memcpy(&value, &bits, sizeof(value));
+      if (!(value >= 0.0F) || value >= 16777216.0F) {
+        return refused("ONNX operator attribute seed",
+                       "is negative or too large for this build to represent exactly as an integer");
+      }
+      node.seed = static_cast<std::int64_t>(value);
+      continue;
+    }
     if (field == 3U && wire == 0U) {
       std::uint64_t raw = 0U;
       if (!reader.varint(raw)) return truncated("ONNX operator attribute value");
