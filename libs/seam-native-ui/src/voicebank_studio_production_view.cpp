@@ -1,5 +1,7 @@
 #include "voicebank_studio_production_view.hpp"
 
+#include "seam/native_ui/voicebank_studio_type_scale.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -8,6 +10,33 @@
 
 namespace seam::native_ui {
 namespace {
+// The Studio draws through this scale rather than through literal point sizes, so the floor the
+// readability repairs established is held in one place instead of in every painter. See
+// voicebank_studio_type_scale.hpp for why these roles exist and what each one may carry.
+constexpr auto kType = voicebankStudioTypeScale();
+
+// A job card in the generation-request detail carries three lines of text: the job identity, the
+// campaign lifecycle line, and the read-only output-evidence line. The card's pitch was 42 points
+// because its three lines were drawn at 8, 7 and 6.5, and 42 was never re-derived when the type scale
+// brought those lines up to readable sizes: at 12 and 11 the three lines no longer fit the card they
+// are drawn inside, they overlap each other and the card clips them, so a creator reading the job id
+// saw a line cut through the middle of its glyphs. The pitch is now derived from the line height
+// each of the three lines actually needs, plus the inset above the first and the gap below the last,
+// and the row count is derived from that same pitch, so the two cannot drift apart again.
+constexpr double kJobCardIdentity = 16.0;
+constexpr double kJobCardState = 15.0;
+constexpr double kJobCardEvidence = 15.0;
+constexpr double kJobCardInsetTop = 5.0;
+constexpr double kJobCardGap = 3.0;
+constexpr double kJobCardInsetBottom = 5.0;
+[[nodiscard]] constexpr double studioJobCardPitch() noexcept {
+  return kJobCardInsetTop + kJobCardIdentity + kJobCardGap + kJobCardState +
+         kJobCardGap + kJobCardEvidence + kJobCardInsetBottom;
+}
+
+// Where the first job card is drawn, and the gap kept below the last one for the footer line.
+constexpr double kJobCardFirstTop = 282.0;
+constexpr double kJobCardFooterInset = 42.0;
 // The review detail rows are read rather than decoration, so they are drawn at the same 12 point as
 // the rest of the window rather than 11, and their pitch follows the size they are drawn at. Every
 // detail line this view produces fits one line of the widest supported window at 12 point (the longest
@@ -45,6 +74,9 @@ void drawWrappedText(RasterCanvas& canvas, ui::Rect bounds, std::string_view tex
   }
 }
 } // namespace
+
+double studioGenerationJobCardPitch() noexcept { return studioJobCardPitch(); }
+double studioGenerationJobCardTop() noexcept { return kJobCardFirstTop; }
 
 std::vector<std::string_view> studioWrapWords(const RasterCanvas& canvas, std::string_view text,
                                               double width, double size) {
@@ -393,11 +425,13 @@ std::size_t studioGenerationQueueVisibleRows(double height) noexcept {
 }
 
 std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept {
-  // Detail cards reserve three lines: job identity, campaign lifecycle, and
-  // read-only output evidence. The two action rows occupy the panel header;
-  // keep both the request metadata and footer clear at compact window heights.
+  // Detail cards reserve three lines: job identity, campaign lifecycle, and read-only output
+  // evidence. The rows that fit are counted in the card pitch the cards are actually drawn at, not in
+  // a constant: when the type scale raised the three lines the pitch grew with them, and a count left
+  // behind at the old pitch reported and drew rows that ran into the footer below.
   if (!std::isfinite(height) || height < 388.0) return 0U;
-  const auto rows = static_cast<std::size_t>(std::floor((height - 388.0) / 42.0) + 1.0);
+  const auto rows = static_cast<std::size_t>(
+      std::floor((height - (kJobCardFirstTop + kJobCardFooterInset)) / studioJobCardPitch()) + 1.0);
   return std::min<std::size_t>(rows, 8U);
 }
 
@@ -554,42 +588,42 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
     if (detail == records.end()) {
       canvas.drawText({44.0, 170.0, std::max(0.0, width - 88.0), 18.0},
           "REQUEST IS NOT IN THE CURRENT VERIFIED SNAPSHOT · RETURN AND REFRESH",
-          Color{224, 155, 114, 255}, 9.0);
+          Color{224, 155, 114, 255}, kType.secondary);
       return;
     }
     const auto& request = detail->request;
     canvas.drawText({44.0, 154.0, std::max(0.0, width - 88.0), 14.0},
         "ID " + request.requestId + " · " + request.language + " · " + request.recipeId + " " + request.recipeVersion,
-        Color{101, 187, 184, 255}, 8.0);
+        Color{101, 187, 184, 255}, kType.label);
     canvas.drawText({44.0, 172.0, std::max(0.0, width - 88.0), 14.0},
         "PRODUCER GEN " + std::to_string(request.expectedGeneration) + " · PROJECT SHA256 " + request.expectedProjectSha256,
-        Color{166, 154, 170, 255}, 8.0);
+        Color{166, 154, 170, 255}, kType.label);
     canvas.drawText({44.0, 190.0, std::max(0.0, width - 88.0), 14.0},
         "RECIPE SHA256 " + request.recipeHash + " · SUBMITTED BY " + request.submittedBy + " · " + request.submittedAtUtc,
-        Color{166, 154, 170, 255}, 8.0);
+        Color{166, 154, 170, 255}, kType.label);
     canvas.drawText({44.0, 208.0, std::max(0.0, width - 88.0), 14.0},
         "BUDGET " + std::to_string(request.budget.maximumJobs) + " JOBS · " +
             std::to_string(request.budget.maximumFrames) + " FRAMES · " +
             std::to_string(request.budget.maximumBytes) + " BYTES · BATCH " +
             std::to_string(request.budget.batchMaximumJobs) + " JOBS / " +
             std::to_string(request.budget.batchMaximumFrames) + " FRAMES",
-        Color{166, 154, 170, 255}, 8.0);
+        Color{166, 154, 170, 255}, kType.label);
     const auto locator = request.definitionLocator.empty()
         ? std::string{"DEFINITION LOCATOR NOT RETAINED · USE OPEN / RESUME FALLBACK"}
         : "DEFINITION LOCATOR · " + request.definitionLocator;
     canvas.drawText({44.0, 226.0, std::max(0.0, width - 88.0), 14.0}, locator,
-        Color{166, 154, 170, 255}, 8.0);
+        Color{166, 154, 170, 255}, kType.label);
     if (detail->terminal) {
       const auto& terminal = *detail->terminal;
       canvas.drawText({44.0, 244.0, std::max(0.0, width - 88.0), 14.0},
           "TERMINAL " + voicebank_production::toString(terminal.outcome) + " · " +
               std::to_string(terminal.completedBatches) + "/" + std::to_string(detail->batchCount()) +
               " BATCHES · " + terminal.detail,
-          Color{224, 155, 114, 255}, 8.0);
+          Color{224, 155, 114, 255}, kType.label);
     } else {
       canvas.drawText({44.0, 244.0, std::max(0.0, width - 88.0), 14.0},
           "PENDING · DEFINITION BYTES MUST STILL MATCH THE REQUEST ID BEFORE RESUME",
-          Color{224, 155, 114, 255}, 8.0);
+          Color{224, 155, 114, 255}, kType.label);
     }
     const auto visibleJobs = studioGenerationRequestDetailVisibleRows(height);
     const auto lastJob = std::min(request.jobs.size(), firstJob + visibleJobs);
@@ -609,28 +643,36 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
       outputSummaryColor = Color{101, 187, 184, 255};
     }
     canvas.drawText({44.0, 262.0, std::max(0.0, width - 88.0), 12.0},
-        outputSummary, outputSummaryColor, 7.0);
+        outputSummary, outputSummaryColor, kType.secondary);
     if (request.jobs.empty()) {
       canvas.drawText({44.0, 286.0, std::max(0.0, width - 88.0), 16.0},
-          "NO JOBS IN VERIFIED REQUEST", Color{166, 154, 170, 255}, 8.0);
+          "NO JOBS IN VERIFIED REQUEST", Color{166, 154, 170, 255}, kType.secondary);
     }
     for (std::size_t index = firstJob; index < lastJob; ++index) {
       const auto& job = request.jobs[index];
       const auto state = studioGenerationJobState(*detail, index, activeRequestId, progress);
-      const auto y = 282.0 + static_cast<double>(index - firstJob) * 42.0;
-      canvas.fillRect({44.0, y, std::max(0.0, width - 88.0), 40.0}, Color{35, 30, 40, 255});
-      canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0), 40.0}, Color{73, 63, 81, 255}, 1.0);
-      canvas.drawText({52.0, y + 3.0, std::max(0.0, width - 104.0), 11.0},
+      const auto y = kJobCardFirstTop + static_cast<double>(index - firstJob) * studioJobCardPitch();
+      const auto jobWidth = std::max(0.0, width - 104.0);
+      canvas.fillRect({44.0, y, std::max(0.0, width - 88.0),
+                       studioJobCardPitch() - 2.0}, Color{35, 30, 40, 255});
+      canvas.strokeRect({44.0, y, std::max(0.0, width - 88.0),
+                         studioJobCardPitch() - 2.0}, Color{73, 63, 81, 255}, 1.0);
+      // Each line is given the height it is drawn at and the next one starts below that, so a line
+      // that is longer than the card is clipped by the card rather than drawn over the line beneath it.
+      const auto identityTop = y + kJobCardInsetTop;
+      const auto stateTop = identityTop + kJobCardIdentity + kJobCardGap;
+      const auto evidenceTop = stateTop + kJobCardState + kJobCardGap;
+      canvas.drawText({52.0, identityTop, jobWidth, kJobCardIdentity},
           std::to_string(index + 1U) + ". " + job.jobId + "  →  " + job.takeId + "  ·  " + job.coverageKey,
-          Color{239, 233, 241, 255}, 8.0);
-      canvas.drawText({52.0, y + 16.0, std::max(0.0, width - 104.0), 10.0},
+          Color{239, 233, 241, 255}, kType.label);
+      canvas.drawText({52.0, stateTop, jobWidth, kJobCardState},
           std::string{studioGenerationJobStateLabel(state)} + " · STYLE " + job.style +
               " · MIDI " + std::to_string(job.pitchLayer) + " · " +
               std::to_string(job.frameCount) + " FRAMES · BATCH " + std::to_string(job.batchIndex + 1),
           state == StudioGenerationJobState::Collected ? Color{101, 187, 184, 255}
               : state == StudioGenerationJobState::Processing ? Color{224, 155, 114, 255}
               : state == StudioGenerationJobState::Interrupted || state == StudioGenerationJobState::NotCollected
-                  ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255}, 7.0);
+                  ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255}, kType.secondary);
       const auto* outputEvidence = controller.generationRequestJobOutputInspection(request.requestId, index);
       const auto evidenceState = outputEvidence
           ? studioGenerationOutputEvidenceStateLabel(outputEvidence->state) : std::string_view{"NOT INSPECTED"};
@@ -640,18 +682,18 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
           : outputEvidence && (outputEvidence->state == authoring::GenerationJobInspectionState::Incomplete ||
                                outputEvidence->state == authoring::GenerationJobInspectionState::NeedsRecovery)
               ? Color{224, 125, 112, 255} : Color{166, 154, 170, 255};
-      canvas.drawText({52.0, y + 27.0, std::max(0.0, width - 104.0), 10.0},
+      canvas.drawText({52.0, evidenceTop, jobWidth, kJobCardEvidence},
           "OUTPUT EVIDENCE · " + std::string{evidenceState} +
               (outputEvidence && outputEvidence->state == authoring::GenerationJobInspectionState::OutputVerified
                   ? " · COLLECTION / REVIEW SEPARATE" : ""),
-          evidenceColor, 6.5);
+          evidenceColor, kType.secondary);
     }
     if (visibleJobs != 0U && !request.jobs.empty()) {
       canvas.drawText({44.0, height - 54.0, std::max(0.0, width - 88.0), 12.0},
           "JOBS " + std::to_string(std::min(request.jobs.size(), firstJob + 1U)) + "–" +
               std::to_string(lastJob) + " OF " + std::to_string(request.jobs.size()) +
               " · COVERAGE ENTRIES ARE REQUEST DATA, NOT COMPLETION OR REVIEW",
-          Color{101, 187, 184, 255}, 7.0);
+          Color{101, 187, 184, 255}, kType.secondary);
     }
     return;
   }
@@ -663,7 +705,7 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
   const auto& records = controller.generationRequests();
   if (records.empty()) {
     canvas.drawText(ui::Rect{294.0, 126.0, std::max(0.0, width - 574.0), 14.0},
-        controller.generationRequestQueueStatus(), Color{166, 154, 170, 255}, 8.0);
+        controller.generationRequestQueueStatus(), Color{166, 154, 170, 255}, kType.secondary);
     const auto status = controller.generationRequestQueueStatus();
     const std::string_view emptyMessage = controller.generationRequestQueueLoading()
         ? "READING REQUESTS..."
@@ -672,7 +714,7 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
             ? "QUEUE COULD NOT BE VERIFIED · REFRESH OR CHECK THE ERROR"
             : "PRESS REFRESH TO LOAD RETAINED REQUESTS";
     canvas.drawText(ui::Rect{294.0, 154.0, std::max(0.0, width - 574.0), 18.0},
-        emptyMessage, Color{166, 154, 170, 255}, 8.0);
+        emptyMessage, Color{166, 154, 170, 255}, kType.secondary);
     return;
   }
   const auto visibleRows = studioGenerationQueueVisibleRows(height);
@@ -682,7 +724,7 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
           " OF " + std::to_string(records.size());
   canvas.drawText(ui::Rect{294.0, 126.0, std::max(0.0, width - 574.0), 14.0},
       std::string{controller.generationRequestQueueStatus()} + " · " + range +
-          " · HASH VERIFIED BEFORE RESUME", Color{101, 187, 184, 255}, 6.0);
+          " · HASH VERIFIED BEFORE RESUME", Color{101, 187, 184, 255}, kType.secondary);
   for (std::size_t index = firstRequest; index < lastRequest; ++index) {
     const auto& record = records[index];
     const auto y = 150.0 + static_cast<double>(index - firstRequest) * 30.0;
@@ -705,10 +747,10 @@ void paintStudioGenerationRequestQueue(RasterCanvas& canvas,
             std::to_string(record.request.expectedGeneration);
     canvas.drawText(ui::Rect{302.0, y + 3.0, detailsWidth, 10.0},
         shortId + " · " + record.request.language + " · " + state,
-        pending ? Color{239, 233, 241, 255} : Color{166, 154, 170, 255}, 7.0);
+        pending ? Color{239, 233, 241, 255} : Color{166, 154, 170, 255}, kType.label);
     canvas.drawText(ui::Rect{302.0, y + 14.0, detailsWidth, 9.0},
         pending ? "DEFINITION HASH IS RECHECKED BEFORE RESUME" : "TERMINAL · NOT RESUMABLE",
-        Color{166, 154, 170, 255}, 6.0);
+        Color{166, 154, 170, 255}, kType.secondary);
   }
 }
 
@@ -1014,7 +1056,8 @@ void paintProductionInspector(
     };
     const auto line = [&](double offset, const std::string& value, Color color) {
       if (topOfMeasurements + offset + 14.0 <= canvas.logicalHeight() - 12.0)
-        canvas.drawText(ui::Rect{left, topOfMeasurements + offset, 214.0, 14.0}, value, color, 7.0);
+        canvas.drawText(ui::Rect{left, topOfMeasurements + offset, 214.0, 14.0}, value, color,
+                        kType.secondary);
     };
     line(0.0, "MEASURED RAW SIGNAL", theme.primaryText);
     line(18.0, "WHOLE TAKE / NOT APPROVAL", theme.accent);

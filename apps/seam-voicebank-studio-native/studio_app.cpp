@@ -4,6 +4,7 @@
 
 #include "seam/native_ui/native_window.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
+#include "seam/native_ui/voicebank_studio_type_scale.hpp"
 #include "seam/native_ui/voice_designer_session.hpp"
 #include "seam/native_ui/voice_designer_layout.hpp"
 #include "seam/native_ui/voice_designer_source_selection.hpp"
@@ -1502,7 +1503,8 @@ public:
     }
     line(112.0, model->recipe().id + (model->dirty() ? " / UNSAVED" : " / SAVED"));
     canvas.drawText({canvas.logicalWidth()*0.55,24.0,canvas.logicalWidth()*0.45-24.0,24.0},
-        "SEED " + std::to_string(model->recipe().seed) + " / CMD/CTRL-R", Color{220,212,224,255}, 10.0);
+        "SEED " + std::to_string(model->recipe().seed) + " / CMD/CTRL-R", Color{220,212,224,255},
+        seam::native_ui::voicebankStudioTypeScale().label);
     line(136.0, "ARROWS OR DRAG ADJUST / SHIFT FINE / ESC CANCEL / CMD-Z UNDO");
     std::vector<std::string> values{"OPEN QUOTIENT " + std::to_string(model->recipe().phonation.openQuotient),
         "SPECTRAL TILT " + std::to_string(model->recipe().phonation.spectralTiltDbPerOctave) + " dB/OCT",
@@ -2291,8 +2293,9 @@ public:
       for (const auto& control:generationControls) {
         canvas.fillRect(control.bounds,control.enabled?seam::native_ui::Color{72,52,76,255}:seam::native_ui::Color{34,31,38,255});
         canvas.drawText({control.bounds.x+4.0,control.bounds.y+2.0,control.bounds.width-8.0,14.0},
-            seam::native_ui::studioControlPaintLabel(canvas,control,10.0,4.0),
-            control.enabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{125,118,129,255},10.0);
+            seam::native_ui::studioControlPaintLabel(canvas,control,seam::native_ui::voicebankStudioTypeScale().label,4.0),
+            control.enabled?seam::native_ui::Color{239,233,241,255}:seam::native_ui::Color{125,118,129,255},
+            seam::native_ui::voicebankStudioTypeScale().label);
       }
     }
     if (generationQueueView_) {
@@ -2305,7 +2308,8 @@ public:
         const auto fill = control.enabled ? seam::native_ui::Color{72,52,76,255} : seam::native_ui::Color{34,31,38,255};
         canvas.fillRect(control.bounds, fill);
         canvas.drawText({control.bounds.x+4.0,control.bounds.y+3.0,control.bounds.width-8.0,14.0},
-            control.label, control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{125,118,129,255}, 8.0);
+            control.label, control.enabled ? seam::native_ui::Color{239,233,241,255} : seam::native_ui::Color{125,118,129,255},
+            seam::native_ui::voicebankStudioTypeScale().label);
       }
       if (controller_.proceduralImportBusy()) repaint();
       return;

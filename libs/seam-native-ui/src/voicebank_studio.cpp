@@ -2,6 +2,8 @@
 
 #include "voicebank_studio_production_view.hpp"
 
+#include "seam/native_ui/voicebank_studio_type_scale.hpp"
+
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
 #include "seam/platform/file_dialog.hpp"
@@ -589,7 +591,7 @@ void VoicebankStudioScenePainter::paint(
   canvas.clear(theme_.background);
   canvas.fillRect(ui::Rect{0.0, 0.0, width, 72.0}, theme_.panel);
   canvas.drawText(ui::Point{18.0, 16.0}, "SEAM VOICEBANK STUDIO",
-                  theme_.primaryText, 14.0);
+                  theme_.primaryText, voicebankStudioTypeScale().heading);
   const auto* productionProject = controller.productionProject();
   const auto displayName = !controller.manifest().displayName.empty()
                                ? controller.manifest().displayName
@@ -601,12 +603,12 @@ void VoicebankStudioScenePainter::paint(
                   // are at the same 8 point as the status they sit beside rather than 8 and 6. The
                   // panel has room: the left column is title 16, project 34 and character 57, which
                   // ends at 67 of the 72 point panel.
-                  displayName, theme_.secondaryText, 10.0);
+                  displayName, theme_.secondaryText, voicebankStudioTypeScale().label);
   if (!controller.manifest().characterId.empty()) {
     canvas.drawText(ui::Point{18.0, 57.0},
                     "CHARACTER " + controller.manifest().characterId + " @ " +
                         controller.manifest().characterVersion,
-                    theme_.secondaryText, 10.0);
+                    theme_.secondaryText, voicebankStudioTypeScale().label);
   }
   // The top right is one status area rather than labels that have to share it. The status is a
   // sentence, so it wraps over the two lines the panel has for it instead of being clipped to one:
@@ -642,7 +644,8 @@ void VoicebankStudioScenePainter::paint(
                   "MIC " + recordingLabel, theme_.secondaryText, 12.0);
 
   canvas.fillRect(ui::Rect{0.0, 72.0, 252.0, height - 72.0}, theme_.panelAlternate);
-  canvas.drawText(ui::Point{12.0, 86.0}, "UNITS", theme_.secondaryText, 8.0);
+  canvas.drawText(ui::Point{12.0, 86.0}, "UNITS", theme_.secondaryText,
+                  voicebankStudioTypeScale().secondary);
   const auto& units = controller.manifest().units;
   if (units.empty()) {
     paintProductionAssignmentRail(canvas, controller, theme_);

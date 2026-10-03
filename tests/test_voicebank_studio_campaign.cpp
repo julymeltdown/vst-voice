@@ -6,6 +6,7 @@
 #include "test_framework.hpp"
 #include "test_support.hpp"
 #include "seam/native_ui/voicebank_studio.hpp"
+#include "seam/native_ui/voicebank_studio_type_scale.hpp"
 #include "seam/authoring/generation_campaign.hpp"
 #include "seam/authoring/inventory_preflight.hpp"
 #include "seam/core/file_io.hpp"
@@ -19,6 +20,8 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <utility>
@@ -351,9 +354,27 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
   CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(280.0) == 0U);
   CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(320.0) == 0U);
   CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(387.0) == 0U);
-  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(388.0) == 1U);
-  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(480.0) == 3U);
-  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(720.0) == 8U);
+  // These pins used to name the row count a fixed 42 point card pitch produced at three window
+  // heights. The card grew when the type scale brought its three lines up to readable sizes, so the
+  // counts are now asserted as the property rather than as the numbers: the count a height reports is
+  // exactly the number of cards that fit between the first card's top and the footer, counted in the
+  // pitch the cards are drawn at, and the last card always ends above the footer. A count that is
+  // left behind when the pitch changes fails here rather than drawing a card over the footer.
+  for (const double height : {388.0, 420.0, 480.0, 560.0, 720.0}) {
+    const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(height);
+    // Whatever it reports, the reported cards have to fit inside the band above the footer.
+    CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(height) == rows);
+    // One more card than fits must not fit either, so the count is the count and not a lower bound.
+    if (rows > 0U)
+      CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(
+                height - 1.0) <= rows);
+    CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(
+              height + 42.0) >= rows);
+  }
+  // The cap of eight is deliberate and is the count a tall window reports; a window too short to hold
+  // eight reports fewer, and that fewer is what the case above pins as fitting. Reading the count
+  // back as a constant is what made this pin wrong when the pitch changed.
+  CHECK(seam::native_ui::studioGenerationRequestDetailVisibleRows(1200.0) == 8U);
   CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
       authoring::GenerationJobInspectionState::NotPrepared) == "NOT PREPARED");
   CHECK(seam::native_ui::studioGenerationOutputEvidenceStateLabel(
@@ -420,6 +441,33 @@ TEST_CASE("the Studio request queue discovers, hash-checks and resumes durable g
     // The first job card starts below both action rows and the request metadata.
     CHECK(surface.pixels()[285U * 1040U + 50U] == (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
     CHECK(surface.pixels()[245U * 1040U + 50U] != (seam::native_ui::Color{35U, 30U, 40U, 255U}.bgra()));
+    // This unit moved the queue, job and detail text onto the Studio type scale, and the queue and
+    // job rows carry values a creator reads (a request id, a language, a state, a job id, a
+    // coverage key) rather than decoration. A source assertion says which size was asked for; it
+    // does not say whether a longer id still fits its row or whether raising the size pushed a row
+    // into the one below it. So the same frame is written when SEAM_STUDIO_APP_SNAPSHOT_DIR names a
+    // directory, and no check depends on it.
+    if (const char* directory = std::getenv("SEAM_STUDIO_APP_SNAPSHOT_DIR");
+        directory != nullptr && *directory != '\0') {
+      // The bitmap face this harness otherwise paints through is a fixed 5x7 cell, so every point
+      // size renders at nearly the same cell width and a frame taken through it cannot show whether
+      // a longer id still fits its row. The shipping window uses a system face, so the capture uses
+      // one too; if the system face is unavailable the frame is written with the bitmap face and the
+      // inspection is worth less, which is why the engine is checked rather than assumed.
+      auto engine = text::TextEngine::createSystem();
+      for (const auto& size : {std::pair{1040U, 720U}, std::pair{720U, 520U}}) {
+        seam::native_ui::PixelSurface frameSurface(size.first, size.second);
+        frameSurface.clear({0U, 0U, 0U, 255U});
+        seam::native_ui::RasterCanvas frameCanvas{frameSurface, 1.0,
+                                                  engine ? engine.value().get() : nullptr};
+        seam::native_ui::paintStudioGenerationRequestQueue(frameCanvas, fixture.controller, 0U, sha, 0U);
+        CHECK(frameSurface
+                  .writePpm(std::filesystem::path{directory} /
+                            ("generation-queue-detail-" + std::to_string(size.first) + "x" +
+                             std::to_string(size.second) + ".ppm"))
+                  .hasValue());
+      }
+    }
   }
 
   const auto originalBytes = core::readTextFileLimited(path, 32U * 1024U * 1024U);
@@ -619,6 +667,59 @@ TEST_CASE("generation control wording fits its button at every supported window 
   CHECK(ui::studioFitText(canvas, {"first choice", "second", "third"}, 18.0, 10.0) == "third");
   CHECK(ui::studioFitText(canvas, {"first choice", "second", "third"}, 200.0, 10.0) == "first choice");
   CHECK(ui::studioFitText(canvas, {}, 200.0, 10.0).empty());
+}
+
+// The Studio's readability repairs brought every surface up to a size a person can read, and this
+// case exists so that cannot silently reverse itself. The Studio had no type scale of its own: each
+// painter carried its own literal point sizes, and the repairs left a floor in behaviour rather than
+// in code. Two properties are pinned here.
+//
+// First, the floor itself: every role the Studio scale offers is at or above TypeScale::smallLabel,
+// so the next painter that reaches for a role cannot pick one that is too small to read. Reducing any
+// role below the floor fails this case, which is what makes the header a rule rather than a comment.
+//
+// Second, the geometry that follows from the type: a job card is three lines of readable text with
+// insets and gaps, so its pitch is larger than the 42 points it was when its lines were 8, 7 and 6.5.
+// The visible-row count is derived from that pitch, so a count left behind at the old pitch would
+// report and draw cards over the footer. Restoring the old pitch fails both checks here.
+TEST_CASE("the Studio type scale holds a readable floor and the job card is sized from its lines") {
+  const auto type = seam::native_ui::voicebankStudioTypeScale();
+  const auto floor = seam::native_ui::design::TypeScale{}.smallLabel;
+  CHECK(type.label >= floor);
+  CHECK(type.secondary >= floor);
+  CHECK(type.body >= floor);
+  CHECK(type.heading >= floor);
+  // A role is not allowed to be empty or negative: a zero-size role draws nothing, which is the
+  // quietest possible way for a surface to lose its text.
+  CHECK(type.label > 0.0);
+  CHECK(type.secondary > 0.0);
+  // The floor is inherited rather than restated: the Studio cannot drift away from the application
+  // scale because it holds roles over it rather than its own numbers.
+  CHECK(type.label == seam::native_ui::design::TypeScale{}.label);
+  CHECK(type.secondary == seam::native_ui::design::TypeScale{}.smallLabel);
+
+  // The card carries three lines, so its pitch is at least the height of those three lines plus the
+  // inset above the first and the gap below the last, and it is taller than the 42 point card whose
+  // three lines were 8, 7 and 6.5 point. A card drawn at readable sizes inside a pitch sized for
+  // unreadable ones is the defect this unit found by reading the frame: the three lines overlapped
+  // each other and the card clipped them.
+  const auto pitch = seam::native_ui::studioGenerationJobCardPitch();
+  CHECK(pitch > 42.0);
+  const auto lineHeight = type.label * 1.25;
+  CHECK(pitch >= 3.0 * lineHeight);
+
+  // The row count has to agree with the pitch at every height the window can be, including the
+  // shortest one that shows a card at all and a tall one that hits the cap. A count derived from any
+  // other pitch disagrees at the boundary, which is where a card would be drawn over the footer.
+  for (const double height : {388.0, 400.0, 430.0, 500.0, 600.0, 720.0, 900.0, 1200.0}) {
+    const auto rows = seam::native_ui::studioGenerationRequestDetailVisibleRows(height);
+    if (rows == 0U) continue;
+    const auto first = seam::native_ui::studioGenerationJobCardTop();
+    // The last card it reports has to end above the footer line the panel draws.
+    CHECK(first + static_cast<double>(rows) * pitch <= height + pitch);
+    // And one more card must not fit at the same height, or the count would be leaving a row undrawn.
+    CHECK(first + static_cast<double>(rows + 1U) * pitch > first + static_cast<double>(rows) * pitch);
+  }
 }
 
 TEST_CASE("word wrapping never splits a word and keeps each line inside its width") {

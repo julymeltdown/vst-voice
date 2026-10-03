@@ -695,6 +695,12 @@ struct StudioSampleReviewControl final {
     const VoicebankStudioController& controller, double width, bool recordingActive);
 [[nodiscard]] std::size_t studioGenerationQueueVisibleRows(double height) noexcept;
 [[nodiscard]] std::size_t studioGenerationRequestDetailVisibleRows(double height) noexcept;
+// The vertical pitch of one job card in the generation-request detail, and where the first card is
+// drawn. Both are exposed because the visible-row count above is derived from the pitch: a caller
+// that lays out against the detail panel, or a case that pins the geometry, needs the number the
+// cards are actually drawn at rather than one it remembers.
+[[nodiscard]] double studioGenerationJobCardPitch() noexcept;
+[[nodiscard]] double studioGenerationJobCardTop() noexcept;
 enum class StudioGenerationJobState : std::uint8_t {
   Queued, PreparingBatch, Processing, OutputReady, Collected, Interrupted, NotCollected
 };
