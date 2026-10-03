@@ -686,6 +686,41 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   if (firstSource == project.sourceBindings.end())
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate has no captured source evidence");
   const auto primaryLicenseSha256 = firstSource->strategy.licenseSha256;
+  // A candidate states which kind of resource it is, and the kind is derived from the source
+  // strategy each take was actually admitted under rather than asserted. Recording and synthesis
+  // are different products with different rights and different evidence, so a candidate that mixed
+  // them could claim one kind while holding material of another; that is refused here instead of
+  // published under a single label.
+  const auto sampleKind = [](const SourceStrategyKind kind) -> std::string_view {
+    switch (kind) {
+      case SourceStrategyKind::HumanRecording: return "sample-real";
+      case SourceStrategyKind::ProceduralSynthesis:
+      case SourceStrategyKind::TtsDerived: return "sample-procedural";
+    }
+    return {};
+  };
+  std::map<std::string, std::string, std::less<>> sourceKindByTake;
+  for (const auto& binding : request.units) {
+    const auto take = selectedTake(project, binding);
+    if (!take) return core::Result<Output>{take.error()};
+    const auto source = std::find_if(project.sourceBindings.begin(), project.sourceBindings.end(),
+        [&](const auto& value) { return value.id == take.value()->sourceBindingId; });
+    if (source == project.sourceBindings.end())
+      return core::failure<Output>(core::ErrorCode::Conflict,
+                                   "Candidate unit has no captured source evidence", binding.unitId);
+    const auto kind = sampleKind(source->strategy.kind);
+    if (kind.empty())
+      return core::failure<Output>(core::ErrorCode::Conflict,
+                                   "Candidate unit source strategy names no sample resource kind", binding.unitId);
+    sourceKindByTake[binding.takeId] = std::string{kind};
+  }
+  const auto firstKind = sourceKindByTake.at(request.units.front().takeId);
+  for (const auto& [takeId, kind] : sourceKindByTake) {
+    static_cast<void>(takeId);
+    if (kind != firstKind)
+      return core::failure<Output>(core::ErrorCode::Conflict,
+                                   "Candidate mixes recorded and synthesized sources and cannot claim one resource kind");
+  }
   const auto license = core::readFileBytesLimited(workspace.value() / firstSource->licenseSnapshotPath, 4ULL * 1024ULL * 1024ULL);
   if (!license) return core::Result<Output>{license.error()};
   if (core::sha256Hex(license.value()) != primaryLicenseSha256)
@@ -818,16 +853,30 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
         retained->second.generation != original.generation || retained->second.journalSha256 != original.journalSha256)
       return core::failure<Output>(core::ErrorCode::Conflict, "Retained origin history does not reproduce original attribution", takeId);
   }
+  // The manifest names one language; a candidate states it in the registry's vocabulary so a
+  // reader does not have to infer it from the absence of other evidence. An unspecified
+  // language is named as such rather than dropped, because an unlabelled resource is exactly
+  // what the typed manifest exists to prevent.
+  J::Array languages;
+  {
+    const auto language = request.manifest.language == domain::Language::Japanese ? "ja" :
+        request.manifest.language == domain::Language::English ? "en" :
+        request.manifest.language == domain::Language::Korean ? "ko" : "und";
+    languages.emplace_back(language);
+  }
   J::Array bindings;
   for (const auto& binding : request.units) bindings.emplace_back(J::Object{
       {"unitId", binding.unitId}, {"takeId", binding.takeId}, {"audioSha256", binding.audioSha256},
       {"reviewId", binding.reviewId}, {"reviewMetadataRevisionId", binding.reviewMetadataRevisionId},
+      {"sourceKind", sourceKindByTake.at(binding.takeId)},
       {"originOperatorId", origins.value().at(binding.takeId).actor},
       {"originGeneration", static_cast<std::int64_t>(origins.value().at(binding.takeId).generation)},
       {"originJournalSha256", origins.value().at(binding.takeId).journalSha256}});
   const auto descriptor = formats::stringifyJson(J{J::Object{
-      {"format", "com.project-seam.resource-candidate"}, {"schemaVersion", std::int64_t{1}},
-      {"resourceKind", "sample"}, {"status", "REVIEWED_CANDIDATE"}, {"releaseEligible", false}, {"evidenceScope", "engineering"},
+      {"format", "com.project-seam.resource-candidate"}, {"schemaVersion", std::int64_t{2}},
+      {"resourceKind", firstKind}, {"languages", std::move(languages)},
+      {"characterId", request.manifest.characterId}, {"characterVersion", request.manifest.characterVersion},
+      {"status", "REVIEWED_CANDIDATE"}, {"releaseEligible", false}, {"evidenceScope", "engineering"},
       {"sourceProjectSha256", request.expectedProjectSha256},
       {"sourceGeneration", static_cast<std::int64_t>(project.lastDurableGeneration)},
       {"inventorySha256", project.inventorySha256}, {"licenseSha256", primaryLicenseSha256},

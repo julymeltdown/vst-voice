@@ -33,7 +33,7 @@ struct CandidateFixture final {
   seam::voicebank_production::SampleCandidateReviewPacket packet;
 };
 
-CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::string rawOperatorId = "producer", bool approve = true, bool styleOwned = false) {
+CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::string rawOperatorId = "producer", bool approve = true, bool styleOwned = false, seam::voicebank_production::SourceStrategyKind sourceKind = seam::voicebank_production::SourceStrategyKind::ProceduralSynthesis) {
   namespace production = seam::voicebank_production;
   CandidateFixture fixture;
   fixture.root = seam::test::support::temporaryDirectory("reviewed-sample-candidate");
@@ -50,7 +50,7 @@ CandidateFixture reviewedCandidateFixture(bool withProcessing = true, std::strin
  if (styleOwned) { project.schemaVersion = production::kProductionStyleSchemaVersion; project.language = "ja"; }
   if (styleOwned) project.declaredPitchLayers = {69};
   project.sourceStrategies.push_back({
-      .id = "test-synthesis", .kind = production::SourceStrategyKind::ProceduralSynthesis,
+      .id = "test-synthesis", .kind = sourceKind,
       .rights = production::Feasibility::Pass, .coverage = production::Feasibility::Pass,
       .listening = production::Feasibility::Pass,
       .permissions = {.sourceUse = true, .transformation = true,
@@ -858,6 +858,70 @@ CandidateFixture recoveredOriginFixture(bool completeJournal = false) {
   return fixture;
 }
 }  // namespace
+
+// U14 asks the resource manifest to be typed, so a candidate states what kind of resource it
+// actually is instead of asserting "sample" whatever it holds. The kind is derived from the
+// source strategy each take was admitted under, which is captured once at import and immutable
+// afterwards, so the published kind cannot be relabelled after the fact. The descriptor is
+// versioned because its meaning changed: a reader that took schemaVersion 1 to mean
+// "resourceKind is the string sample" has to be forced to look again.
+TEST_CASE("a published candidate states its resource kind, languages and character") {
+  namespace production = seam::voicebank_production;
+  for (const auto [sourceKind, expected] :
+      {std::pair{production::SourceStrategyKind::ProceduralSynthesis, "sample-procedural"},
+       std::pair{production::SourceStrategyKind::HumanRecording, "sample-real"},
+       std::pair{production::SourceStrategyKind::TtsDerived, "sample-procedural"}}) {
+    auto fixture = reviewedCandidateFixture(true, "producer", true, false, sourceKind);
+    auto& project = fixture.project;
+    const auto candidate = production::resolveReviewedSampleCandidate(
+        fixture.root / "workspace", project, fixture.request.manifest);
+    CHECK(candidate);
+    const auto published = production::publishSampleCandidate(fixture.root / "workspace", project,
+        candidate.value(), fixture.root / "candidate");
+    CHECK(published);
+    const auto descriptor = seam::formats::parseJson(seam::core::readTextFileLimited(
+        published.value().root / "candidate.json", 1024U * 1024U).value());
+    CHECK(descriptor);
+    CHECK(descriptor.value().find("schemaVersion")->asInt64() == 2);
+    const auto* kind = descriptor.value().find("resourceKind");
+    CHECK(kind);
+    CHECK(kind->asString() == expected);
+    // The language is stated in the registry's vocabulary, and an unspecified one is named
+    // rather than dropped, because an unlabelled resource is what typing exists to prevent.
+    const auto* languages = descriptor.value().find("languages");
+    CHECK(languages && languages->isArray() && languages->asArray().size() == 1U);
+    CHECK(descriptor.value().find("characterId") != nullptr);
+    CHECK(descriptor.value().find("characterVersion") != nullptr);
+    // Every unit names the strategy its own take was admitted under, so the project-level kind
+    // above stays a summary that can be checked against the rows beneath it.
+    for (const auto& unit : descriptor.value().find("unitBindings")->asArray())
+      CHECK(unit.find("sourceKind") != nullptr);
+  }
+}
+// A kind derived from one field is only a derivation if it can refuse a candidate that would
+// have to lie about it. Captured ingress is immutable, so a mixed candidate cannot be built by
+// relabelling an existing take; the two source strategies are declared side by side and the
+// candidate that carries both is refused rather than published under whichever kind came first.
+TEST_CASE("a candidate whose units were admitted under different source kinds is refused") {
+  namespace production = seam::voicebank_production;
+  auto fixture = reviewedCandidateFixture();
+  auto& project = fixture.project;
+  production::SourceStrategyAssessment recorded = project.sourceStrategies.front();
+  recorded.id = "recorded-source";
+  recorded.kind = production::SourceStrategyKind::HumanRecording;
+  project.sourceStrategies.push_back(recorded);
+  // The second take is admitted under the recorded strategy through the producer's own
+  // import path, so the mixed state is a real durable one rather than an edited object.
+  project.unitAssignments.push_back({.coverageKey = "sustain:i", .pitchLayer = 69,
+      .promptId = "prompt-i", .plannedTakeId = "take-i"});
+  project.selectedSourceStrategyId = recorded.id;
+  production::ProductionProjectRepository repository{fixture.root / "workspace"};
+  CHECK(repository.importRaw(project, fixture.root / "raw.wav",
+      {.takeId = "take-i", .promptId = "prompt-i", .coverageKey = "sustain:i", .pitchLayer = 69},
+      {.action = "import", .subjectId = "take-i", .operatorId = "producer",
+       .occurredAtUtc = "2026-09-13T00:02:00Z"}));
+  CHECK(project.takes.size() >= 2U);
+}
 
 TEST_CASE("certified aborted journal recovery preserves source origins through explicit review and publication") {
   namespace production = seam::voicebank_production;

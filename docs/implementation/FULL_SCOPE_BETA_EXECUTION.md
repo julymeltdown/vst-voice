@@ -4714,3 +4714,55 @@ U47 externally blocked on a real recording session, trained model and vocoder
 bytes, signed builds and real host sessions; none of that is advanced here. No
 DAW, listening, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-03 — A published candidate now states which kind of resource it is
+instead of asserting the word "sample" whatever it happens to hold (U14's typed
+resource manifest, the first of the two gaps the same audit named in U14; it
+advances U14 and closes a real misrepresentation, not a coverage gap). **What the
+hard-coded string concealed.** `publishSampleCandidate` wrote
+`{"resourceKind", "sample"}` into `candidate.json` for every candidate, so a
+recorded singer and a synthesized one produced byte-identical resource
+identity. The registry that the full-product contract is built on names six kinds
+(`sample-real`, `sample-procedural`, `recipe-original`, `neural-original`,
+`dictionary-original`, `character-original`), and nothing in the repository
+carried that vocabulary at all. **The kind is derived, not asserted.** Each take
+is bound at import to the source strategy it was admitted under
+(`HumanRecording`, `ProceduralSynthesis` or `TtsDerived`), and captured ingress
+is immutable afterwards, so the kind cannot be relabelled after the fact. The
+publisher reads each candidate unit's own binding and refuses a candidate whose
+units were admitted under different kinds, because recording and synthesis are
+different products with different rights and different evidence and a candidate
+holding one of each cannot honestly be published as either. **What the descriptor
+now carries.** `schemaVersion` 2, the derived `resourceKind`, `languages` in the
+registry's vocabulary with an unspecified language named `und` rather than
+dropped, `characterId` and `characterVersion`, and a per-unit `sourceKind` so
+the project-level kind stays a summary that can be checked against the rows
+beneath it. **Evidence.** Release `seam_voicebank_production_tests` 57 of 57,
+including a case that runs all three source strategies and requires the
+published kind to follow each, and one that requires the descriptor's version,
+languages, character fields and per-unit kinds. Mutation-checked: restoring the
+hard-coded `"sample"` fails the case at the kind comparison, so the test is
+holding a derivation rather than restating a constant. Full Release `ctest` and
+the Python `tests/external_beta/` and `tests/production/` suites both pass;
+`git diff --check` passes. **A stronger guarantee found while testing this.** The
+first attempt at the mixed-source case tried to re-point an existing take at a
+recorded strategy, and the repository refused it: "Captured take source bindings
+are immutable". A candidate cannot be made to claim a kind it does not have by
+editing its producer state at all, which is a better property than the one this
+unit set out to add and is why the mixed case is built through the real import
+path instead. **Limits.** This types the *sample* kinds only. `recipe-original`,
+`neural-original`, `dictionary-original` and `character-original` still have no
+candidate path: the recipe package (`seam-distribution/procedural_package.cpp`),
+the model contract (`seam-neural-synthesis/model_contract.hpp`) and the English
+phonemizer vocabulary are separate formats that this descriptor does not yet
+describe, and scenario 3's "model/recipe contract fixtures exercise typed
+packaging" is not yet met. No production code reads `candidate.json`, so nothing
+downstream had to change, but that also means no consumer enforces the new field
+yet. `tools/external_beta/_production_candidate.py` is a separate, older,
+sample-only schema that already disagreed with the C++ status vocabulary before
+this change and still does; converging the two is not attempted here, and
+`_production_lock.py` has no test coverage at all. Headless evidence: this says a
+candidate identifies itself honestly, not that any reviewed material exists or is
+musically qualified. U42 and U47 stay externally blocked on real assets, signed
+builds and host sessions. No DAW, listening, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
