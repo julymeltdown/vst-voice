@@ -5652,3 +5652,58 @@ phrase. No listening evidence exists. U42 remains externally blocked on a real
 recording session for the sample route, which this does not touch. No DAW,
 VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
+
+2026-10-03 — The first M2.1 listening packet was collected and measured, and it
+exposed a defect that makes every intonation number from this corpus invalid: the
+demo voicebank's declared root pitch does not match its own recording
+(cross-cutting evidence, closing no unit; full detail in
+`docs/implementation/LISTENING_PACKET_ROOT_MIDI_MISMATCH_2026-10-03.md`).
+**What was done.** The repository's own packet tooling was run for the first time
+on this machine against the Release binaries, producing a complete packet: a
+41-second original melody and a 9.1-second unequal-note/rest case, each through
+the bank's declared renderer and forced raw rendering, as float32 mono dry audio
+with full provenance and command records. The audio is real, not silent: peak
+0.5026 with no clipped samples, RMS 0.069 on the melody.
+**The finding.** Measuring each note against the score's `target_midi` under the
+project's own frozen criteria gives a median error of **1411.7 cents** on the
+melody, with **3124 of 3318** scored frames landing a multiple of 1200 cents from
+target and only **4.2 percent** within 50 cents. The same shape appears in all
+four cases. Errors that are near-exact octaves are the signature of an
+octave-tracking failure, not of poor singing, so the renderer was not assumed to
+be at fault and was checked directly.
+**The renderer is not the cause, and this is measured rather than argued.** A
+Goertzel scan of the rendered `dry.wav` across note one's steady span finds
+essentially no energy where the analyzer claimed the pitch was: the analyzer
+reported 996.7 Hz for a 392 Hz target and the audio holds **E=0.0000** at 996.7 Hz
+while 196 Hz measures 0.0020. Whatever misreports is not the audio.
+**The bank is mislabeled.** `manifest.json` declares the single unit at
+`rootMidi: 67`, which is 392.0 Hz. The recording it names, `human-vowel-demo.wav`,
+peaks across its declared loop span at **146 Hz, MIDI 49.9**, which is **1710
+cents** from the declared root. The provenance record explains it: the file is
+upstream `sonic`'s `talking.wav`, a 0.55-second SPOKEN recording reused under
+several phoneme labels. A spoken recording is not a sustained sung vowel and its
+pitch is not the pitch the manifest claims.
+**A wrong reading of my own, recorded because the correction is the finding.** My
+first measurement script filtered nothing and reported medians of 1537 to 1621
+cents, which I first read as a severe renderer defect. It was not. The project's
+own `acoustic_metrics.py` already documents an `ANALYZER_CEILING_HZ` of 1200 and
+counts frames at or above it as saturated rather than as pitch, precisely because
+an octave-tracking misread had been seen before. Re-measuring under those criteria
+gave the table above, and the direct spectral scan then showed the audio and the
+analyzer disagreeing. Chasing the renderer would have produced a confident and
+completely wrong defect report against code that is behaving correctly.
+**What this does and does not establish.** A real listening packet renders on
+this machine, and the demo bank's declared root is wrong by 1710 cents, which
+makes any intonation figure from this corpus a property of the mislabeled fixture
+rather than of SEAM. **No listening judgment is claimed** and **no correctness claim
+about the renderer is made**: the evidence says the measurement was invalid, not
+that the audio is right, so the renderer's sample-route intonation remains
+unmeasured. No manifest, corpus or source file was changed. Correcting the
+fixture's `rootMidi` would make a diagnostic corpus agree with itself by rewriting
+the target, which is the wrong direction; the honest repair is a voicebank whose
+units are actually at their declared pitch, which is the external asset U42 already
+blocks on. **M2.1's listening requirement is not advanced by this entry.** Nobody
+has heard this audio.
+Release `seam_performance_snapshot_tests` unchanged at 66 of 66; no production
+code was modified by this unit. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
