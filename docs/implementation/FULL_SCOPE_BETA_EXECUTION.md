@@ -4965,3 +4965,45 @@ decision for the named owner units. Full detail, table and limits in
 Headless evidence on one machine: the report cannot drift from the code it
 describes, and it claims nothing about quality. No DAW, listening, VoiceOver,
 signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-03 — The synthetic singer was measured against its own score, and it
+sings the right note (R3's synth-style original female voice, the one production
+route that needs no recording session; this is acoustic evidence about the
+renderer, not a singer qualification). **Why this, after five units of gate
+hygiene.** Every recent unit closed a way the product could misrepresent itself.
+None of them made the product sing. The procedural path is the only route to a
+voiceoid that needs no performer, no session and no model bytes, so it is where
+evidence of actual singing can still be produced. **The gap, stated precisely.**
+The procedural renderer was tested structurally everywhere and musically
+nowhere. `ProceduralSnapshotStream` cases assert frame coverage, chunk-resume
+byte equality, PCM caching and refusal boundaries; the expression tests assert
+that a channel is honoured. What no test asked is whether the rendered audio
+carries the pitch the score requested. The nearest pitch measurement,
+`voicebank::analyzePitch` in `test_export_service.cpp` and
+`test_performance_snapshot.cpp:2214`, is applied to a *sample* snapshot
+(`snapshot.sample().unitPlan`), never to procedural output.
+**Evidence.** A new case renders one procedural note at MIDI 57, 60 and 64
+through `createProcedural` and the real `PhraseRenderPipeline`, measures the
+steady middle of the note with `analyzePitch`, and requires the median voiced
+pitch within 50 cents of the score, which is the contract's own pitch tolerance
+(R1, `pitch-within-50`). Measured, not asserted: **A3 expected 220.00 Hz
+measured 220.00 Hz (+0.0 cents); C4 expected 261.63 Hz measured 261.56 Hz
+(-0.4 cents); E4 expected 329.63 Hz measured 329.63 Hz (-0.0 cents).** The
+reading is taken a quarter of the way into the note so it measures the sustained
+body rather than the pickup and release the renderer deliberately shapes.
+**Mutation-checked.** Transposing the expected target by five semitones fails the
+case at the cents comparison, so the test is measuring the rendered pitch and
+not restating a constant. Release `seam_performance_snapshot_tests` 54 of 54.
+**What this is and is not.** It shows the procedural renderer produces the
+intended pitch from a recipe, which is the acoustic half of R3 and the part
+that could be established without a performer. It does not show the result
+sounds like a singer: timbre, breathiness, formant transitions, fricatives,
+plosives and phrasing quality are untouched by a pitch measurement, and one
+sustained vowel at three pitches is not a song. No listening evidence, no
+phoneme-level pitch tracking across a phrase, and no fixed-corpus run. The
+recipe in this case declares a single vowel pose, so this is the narrowest
+musical case that could be measured at all. U42 remains externally blocked on a
+real recording session for the *sample* route, which this does not touch. Full
+Release `ctest` and the Python suites pass; `git diff --check` passes. No DAW,
+VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.

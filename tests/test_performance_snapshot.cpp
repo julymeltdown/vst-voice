@@ -88,6 +88,54 @@ struct PerformanceSnapshotFixture final {
 
 }
 
+// The procedural path is tested structurally everywhere: frame coverage, chunk-resume byte
+// equality, caching, and refusal boundaries. What no test established is whether its output
+// carries the pitch the score asked for. This measures it, which is the difference between a
+// renderer that produces audio and one that produces the intended note.
+TEST_CASE("procedural singing renders the pitch the score asked for") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  for (const std::uint8_t midiKey : {std::uint8_t{57}, std::uint8_t{60}, std::uint8_t{64}}) {
+    PerformanceSnapshotFixture fixture;
+    auto* region = fixture.project.findRegion(fixture.regionId);
+    region->notes.front().midiKey = midiKey;
+    region->notes.front().startTick = time::Tick{480};
+    region->notes.front().durationTick = time::Tick{960};
+    region->notes.front().vibrato.enabled = false;
+    region->lyrics.front().surface = U"a";
+    region->phonemeOverrides = {{.key = {fixture.noteId, 0U},
+        .timing = {.startOffset = -30000}, .locked = true}};
+    voice_design::VoiceRecipe recipe; recipe.id = "pitch-target";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(fixture.project, resource.value(),
+        fixture.trackId, fixture.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{"procedural snapshot: " + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+    CHECK(rendered.value().resourceKind == domain::SingerResourceKind::Procedural);
+    const auto& audio = rendered.value().rendered.audio;
+    // Measure the steady middle of the note, away from the pickup and release the procedural
+    // renderer deliberately shapes, so the reading is of the sustained body rather than a window.
+    const auto& spans = snapshot.value().compiledPerformance->notes();
+    const auto start = static_cast<std::size_t>(spans.front().startFrame - audio.startFrame);
+    const auto length = static_cast<std::size_t>(spans.front().endFrame - spans.front().startFrame);
+    CHECK(start < audio.samples.size());
+    CHECK(length > 0U);
+    const auto from = start + length / 4U;
+    const auto count = std::min<std::size_t>(length / 2U, audio.samples.size() - from);
+    CHECK(count > 4096U);
+    const auto frames = voicebank::analyzePitch(
+        std::span<const float>{audio.samples.data() + from, count}, kRate);
+    CHECK(frames);
+    const auto measured = voicebank::medianVoicedPitch(frames.value());
+    const auto expected = 440.0 * std::pow(2.0, (static_cast<double>(midiKey) - 69.0) / 12.0);
+    CHECK(measured > 0.0);
+    // Within 50 cents, which is the contract's own pitch tolerance (R1, pitch-within-50).
+    const auto cents = 1200.0 * std::log2(measured / expected);
+    CHECK(std::abs(cents) < 50.0);
+  }
+}
+
 TEST_CASE("procedural production preserves region-contained phonetic pickup and release windows") {
   using namespace seam;
   for (const bool articulated : {false, true}) {
