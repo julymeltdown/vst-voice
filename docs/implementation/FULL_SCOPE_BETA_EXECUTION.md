@@ -5135,6 +5135,57 @@ U42 remains externally blocked on a real recording session for the sample route,
 which this does not touch. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
 
+2026-10-03 — A multi-note melisma measured carrying its vowels across notes while
+its consonants do not repeat, which is the most characteristic thing a voiceoid
+does that a plain synth does not (R3's M2.2 melisma axis, extending the
+two-note case above).
+**Why this case.** The melisma measured above is two notes on one vowel. Real
+singing needs the harder form: a multi-syllable word spread over several notes,
+where vowels carry and consonants do not repeat. A synth that re-articulates its
+onset on every note audibly stutters, and nothing in the audio had measured the
+difference. It is measurable because the phonemizer's distribution is explicit:
+an English shared-lyric group distributes the word's own syllables across its
+notes (`english_phonemizer.cpp:545`), while giving every note its own lyric token
+makes each one sing the whole word again. That is the control, and it is the same
+word on the same notes, so the two arms differ only in whether the melisma was
+asked for.
+**Measured first, and the measurement is the finding.** Two-syllable "singing"
+across four legato notes at MIDI 60 to 63. The control renders **20 gestures**,
+`s ih1 ng ih0 ng` four times over, because each note re-sings the entire word and
+re-articulates the /s/ on every one. The shared-lyric melisma renders **7**: the
+/s/ appears **once** at the head and never again, the two /ng/ codas close two
+syllables rather than four, and the vowels carry across note boundaries with
+`ih1` at 18240 frames and `ih0` at 24000, against a longest control vowel span of
+9120. The consonants are not dropped to achieve this: the melisma still contains
+a frication, a nasal and a vowel, so the vowel carries because the word was
+distributed, not because the phrase was reduced.
+**Evidence, measured not asserted.** The control articulates /s/ exactly four
+times and /ng/ eight times over four notes; the melisma articulates /s/ exactly
+once and /ng/ twice. The melisma's longest vowel span exceeds the control's and
+exceeds 20000 frames. All three gesture classes survive in the melisma.
+**Mutation-checked in the direction that matters, and one honest negative.**
+Pointing every note of a shared-lyric group at the group's first slice, so each
+note re-sings the whole word, fails at line 889 on the /s/ count. The converse
+mutation does not give a usable result and is recorded as such: shrinking
+`distributeReading` to one slice makes the caller index `group->slices[3]` out of
+bounds and the suite segfaults. That is my mutation violating
+`distributeReading`'s contract, not a defect in it, so the converse arm is not
+claimed as mutation-checked and the control's counts are not described as being
+pinned from both sides the way the two-note melisma's are.
+Release `seam_performance_snapshot_tests` 63 of 63, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows a two-syllable English word spread across
+four notes distributes its phones rather than repeating them, and that the
+resulting audio carries vowels across note boundaries instead of restating the
+word. It is one word in one language with a synthetic recipe: it says nothing
+about whether the result is intelligible to a listener, which is the judgement
+that matters and the one no measurement here can make. It also does not cover a
+melisma whose syllable count exceeds its note count, or pitch continuity across
+the carried vowel. No listening evidence exists. U42 remains externally blocked
+on a real recording session for the sample route, which this does not touch. No
+DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.
+
 2026-10-03 — The synthetic singer now renders a phrase, not just a note: two
 syllables, two phonemes, two notes, each measured independently (R3's
 synth-style original voice; acoustic evidence about the renderer, not a singer

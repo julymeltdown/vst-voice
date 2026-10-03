@@ -28,6 +28,7 @@
 #include <cmath>
 #include <filesystem>
 #include <numbers>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -722,9 +723,9 @@ TEST_CASE("a shared-lyric melisma joins without the rearticulation a separate no
     const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
     const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
         f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
-    if (!snapshot) { std::printf("[mel] melisma=%d snapshot: %s\n", static_cast<int>(melisma), snapshot.error().message.c_str()); continue; }
+    if (!snapshot) throw test::Failure{std::string{"melisma snapshot: "} + snapshot.error().message};
     const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
-    if (!rendered) { std::printf("[mel] melisma=%d render: %s\n", static_cast<int>(melisma), rendered.error().message.c_str()); continue; }
+    if (!rendered) throw test::Failure{std::string{"melisma render: "} + rendered.error().message};
     const auto& audio = rendered.value().rendered.audio;
     // Measure the amplitude either side of the join tick 2400 to see whether the second note
     // reattacks. The join frame is derived from the score rather than guessed.
@@ -788,6 +789,128 @@ TEST_CASE("a shared-lyric melisma joins without the rearticulation a separate no
   // 3. The two are genuinely different shapes rather than the same envelope twice: the melisma's
   // dip is a small fraction of the control's, which is the claim the case exists to make.
   CHECK(melismaDip * 2.5 < controlDip);
+}
+
+// The melisma case above is two notes on one vowel. Vocaloid singing needs the harder form: a
+// multi-syllable word spread across several notes, where the vowels carry while the consonants do
+// not repeat. This is the single most characteristic thing a voiceoid does that a plain synth does
+// not, and nothing in the audio had measured it. It is measurable because the phonemizer's
+// distribution is explicit: an English shared-lyric group distributes the word's own syllables
+// across its notes (english_phonemizer.cpp:545), so a two-syllable word over four notes gives each
+// note its own phones, while giving every note its own lyric token makes each one sing the whole
+// word again. That is the control.
+TEST_CASE("a shared-lyric melisma carries its vowels across notes instead of re-singing the word") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  struct Shape final {
+    bool shared;
+    std::vector<std::pair<std::string, voice_design::ArticulationGestureKind>> gestures;
+    std::vector<std::size_t> lengths;
+  };
+  std::vector<Shape> shapes;
+  for (const bool shared : {false, true}) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    // A two-syllable English word spread across four legato notes. The phonemizer distributes the
+    // word's own syllables across the group, so consonants land inside what is one melisma.
+    constexpr std::int64_t kDuration = 960;
+    auto [lyric, first] = f.factory.makeNote(time::Tick{480}, time::Tick{kDuration}, 60U,
+        U"singing", domain::Language::English);
+    first.articulation = domain::NoteArticulation::Legato;
+    first.vibrato.enabled = false;
+    first.phoneticHint.reset();
+    region->lyrics.push_back(lyric);
+    region->notes.push_back(first);
+    for (std::size_t index = 1U; index < 4U; ++index) {
+      // The control gives each note its own lyric token so the melisma contract does not apply to
+      // it; otherwise the two arms would differ only in whether the test asked for the feature.
+      auto [ownLyric, note] = f.factory.makeNote(
+          time::Tick{480 + kDuration * static_cast<std::int64_t>(index)}, time::Tick{kDuration},
+          static_cast<std::uint8_t>(60U + index), U"singing", domain::Language::English);
+      if (shared) {
+        note.lyricTokenId = first.lyricTokenId;
+      } else {
+        region->lyrics.push_back(std::move(ownLyric));
+      }
+      note.articulation = domain::NoteArticulation::Legato;
+      note.vibrato.enabled = false;
+      note.phoneticHint.reset();
+      region->notes.push_back(note);
+    }
+    voice_design::VoiceRecipe recipe; recipe.id = "long-melisma-probe";
+    // English phones carry lexical stress as a trailing digit, and the recipe is keyed on the full
+    // symbol rather than the vowel class, so both forms of each vowel this word uses are declared.
+    // isVowelSymbol strips the digit; the pose lookup does not.
+    recipe.poses = {{"ih", "neutral", 0.0, {{400.0, 70.0, 0.0}, {1900.0, 100.0, -5.0}, {2700.0, 120.0, -6.0}}},
+                   {"ih1", "neutral", 0.0, {{400.0, 70.0, 0.0}, {1900.0, 100.0, -5.0}, {2700.0, 120.0, -6.0}}},
+                   {"ih0", "neutral", 0.0, {{400.0, 70.0, 0.0}, {1900.0, 100.0, -5.0}, {2700.0, 120.0, -6.0}}},
+                   {"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                   {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+    recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 5500.0, .bandwidthHz = 1800.0}}};
+    // The word's coda is a velar nasal, which the plan requires be declared as a nasal pose rather
+    // than approximated with an unvoiced noise source. Declaring it is the documented contract.
+    recipe.poses.push_back({"ng", "neutral", 0.8,
+        {{250.0, 80.0, 0.0}, {1000.0, 90.0, -6.0}, {2100.0, 110.0, -8.0}},
+        voice_design::NasalResonance{.resonanceHz = 250.0, .resonanceBandwidthHz = 90.0,
+            .antiresonanceHz = 1000.0, .antiresonanceBandwidthHz = 120.0}});
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"melisma snapshot: "} + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"melisma render: "} + rendered.error().message};
+    Shape shape{.shared = shared};
+    for (const auto& m : rendered.value().proceduralMarkers) {
+      shape.gestures.emplace_back(m.phone, m.kind);
+      shape.lengths.push_back(static_cast<std::size_t>(m.ownedSpan.end - m.ownedSpan.start));
+    }
+    shapes.push_back(std::move(shape));
+  }
+  CHECK(shapes.size() == 2U);
+  const auto& control = shapes[0];
+  const auto& melisma = shapes[1];
+  const auto count = [](const Shape& shape, const std::string& phone) {
+    return static_cast<std::size_t>(std::count_if(shape.gestures.begin(), shape.gestures.end(),
+        [&](const auto& gesture) { return gesture.first == phone; }));
+  };
+  // 1. The control re-sings the whole word on every note, so it articulates the /s/ once per note.
+  // Four notes means four /s/; this is the behaviour the melisma exists to avoid.
+  CHECK(count(control, "s") == 4U);
+  CHECK(control.gestures.size() == 20U);
+  // 2. The melisma distributes the word's syllables across its notes: the /s/ appears once, at the
+  // head, and is never re-articulated. A melisma that sang the onset on every note would be the
+  // defect this case exists to catch.
+  CHECK(count(melisma, "s") == 1U);
+  // 3. Every consonant in the word is spoken a bounded number of times regardless of note count:
+  // two /ng/ codas close two syllables, not four.
+  CHECK(count(melisma, "ng") == 2U);
+  CHECK(count(control, "ng") == 8U);
+  // 4. The vowels are what carry. The melisma's spans are far longer than the control's because a
+  // vowel is sustained across several notes rather than restarted on each one. Measured, the
+  // melisma's longest vowel span is 24000 frames against the control's 9120.
+  const auto longest = [](const Shape& shape) {
+    std::size_t best = 0U;
+    for (std::size_t i = 0U; i < shape.gestures.size() && i < shape.lengths.size(); ++i)
+      if (shape.gestures[i].second == voice_design::ArticulationGestureKind::OralVowel)
+        best = std::max(best, shape.lengths[i]);
+    return best;
+  };
+  CHECK(longest(melisma) > longest(control));
+  CHECK(longest(melisma) > 20000U);
+  // 5. The melisma is still a sung phrase, not silence: it carries vowels and both consonant
+  // classes, so carrying the vowel did not come from dropping the consonants entirely.
+  CHECK(melisma.gestures.size() == 7U);
+  auto distinct = std::set<voice_design::ArticulationGestureKind>{};
+  for (const auto& gesture : melisma.gestures) distinct.insert(gesture.second);
+  CHECK(distinct.contains(voice_design::ArticulationGestureKind::Frication));
+  CHECK(distinct.contains(voice_design::ArticulationGestureKind::Nasal));
+  CHECK(distinct.contains(voice_design::ArticulationGestureKind::OralVowel));
 }
 
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
