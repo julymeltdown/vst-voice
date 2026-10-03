@@ -6592,3 +6592,36 @@ no DAW has been driven, and no real row of either matrix has been exercised. The
 block is a **shape**, and what is proven is that an unmeasured PASS is now refused. `tests/production`
 129 passed + 134 subtests; `tests/external_beta` 214 passed + 197 subtests. No DAW, VoiceOver,
 signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — The standalone-journey record's device block was entirely typed. It is now read from
+the machine's actual audio hardware. (SEAM-BETA-P1-06, fourth of five.)
+**What was assertable and should not have been.** `validate_standalone_record` demands a `device`
+object with `deviceId`, `sampleRate`, `blockSize`, `channels` and `authority: physical`
+(`standalone_evidence.py:196-208`), and separately requires a physical-device clock. **Every one of
+those fields was written by the record's author.** A record could therefore claim a 48 kHz physical
+device on a machine whose only output runs at 44.1 kHz, and the validator would have no way to
+notice, because it has nothing to compare against.
+**What is measured.** `standalone_collector.py` reads the real device topology through
+`system_profiler SPAudioDataType -json` and reports each device's identity, manufacturer, transport,
+sample rate and whether it is the system default output. On this machine it finds three real devices
+(MacBook Pro Microphone, MacBook Pro Speakers, Microsoft Teams Audio), all reporting 48000, and
+selects the default output. When the query fails or no device carries a sample rate, the record is
+marked **`NOT_RUN`** and carries a `deviceObservation.reason` instead of a `device` block. A journey
+on unidentified hardware cannot claim a physical device authority, and the collector refuses to let
+it.
+**Two mutations. The first exposed a test that could not fail on this machine.** Marking the record
+PASS regardless of whether a device was observed fails the NOT_RUN case. But hardcoding the sample
+rate to 48000 **survived**, because every device on this host genuinely reports 48000 — a measured
+value and a fabricated one were indistinguishable. The test now reads the OS device rates
+independently of the collector and compares them per device, so a fabricated rate diverges. The
+hardcoded-44100 mutation now fails with "44100 != 48000".
+**This is the general trap worth naming.** A test that pins a measurement to the value this machine
+happens to produce will silently accept a hardcoded version of that same value. The fix is never to
+assert the literal, but to compare against an independent source.
+**Scope, stated plainly.** Four of five validators now collect. `cohort_gate` still produces nothing.
+The twenty UA journey rows remain **manual** and the record lists them under
+`collector.manualRows`, because creating, editing, saving, recovering and exporting in the app is
+performed by a person. **No journey was performed and no audio was rendered on a physical device in
+this session**; what is proven is that the device block is measured rather than typed.
+`tests/external_beta` 219 passed + 197 subtests. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.
