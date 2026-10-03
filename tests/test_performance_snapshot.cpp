@@ -913,6 +913,179 @@ TEST_CASE("a shared-lyric melisma carries its vowels across notes instead of re-
   CHECK(distinct.contains(voice_design::ArticulationGestureKind::OralVowel));
 }
 
+// The melisma cases above establish that a carried vowel survives its note joins. They say nothing
+// about pitch there, and pitch is where a melisma most obviously goes wrong: a voiceoid that
+// re-articulates or resets at each note boundary sounds like a sequence of detached syllables even
+// when every consonant and duration is correct. The compiler's contract is explicit. At a
+// shared-lyric join it records `transitionFromMidi` and a `transitionEndFrame` of
+// `sampleRate / 50` frames past the note's start (`performance_compiler.cpp:354`), and the
+// per-frame evaluator slides from the previous note's pitch to this one across that window on a
+// smoothstep (`performance_compiler.cpp:539`).
+//
+// The condition the compiler attaches that glide to is narrow and the case is built around it
+// exactly: the join must be a continuation carrying ONE phoneme whose symbol equals the previous
+// note's vowel, with the join contiguous and neither note staccato (`performance_compiler.cpp:340`
+// through 352). The control therefore has to be the same single vowel on a separate note, NOT a
+// second rendering of a multi-syllable word. My first attempt used the word control from the case
+// above and found no difference between the arms; the probe showed why, and the mistake is recorded
+// in the ledger rather than quietly replaced: a control whose notes carry five phonemes each never
+// satisfies `count == 1U`, so it has no glide to compare against and its pitch readings are syllable
+// onsets rather than glides. Both arms here sing one vowel; they differ only in whether the two notes
+// share a lyric token.
+TEST_CASE("a melisma's carried vowel glides from the previous note's pitch") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  constexpr std::int64_t kDuration = 960;
+  struct Join final {
+    bool shared;
+    // Cents above the PREVIOUS note's pitch: the first window of this note, then three more across
+    // the glide window.
+    double atJoin{0.0};
+    std::vector<double> glide;
+    // Signed cents from the previous note's pitch to this note's own, which is what the glide is
+    // measured against: a reading of `interval` means the glide has arrived, and 0 means it has not
+    // started.
+    double interval{0.0};
+    // Cents above this note's own pitch, measured well after the glide window has passed.
+    double settled{0.0};
+    bool measured{false};
+  };
+  std::vector<Join> joins;
+  for (const bool shared : {false, true}) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    auto [lyric, first] = f.factory.makeNote(time::Tick{480}, time::Tick{kDuration}, 60U,
+        U"a", domain::Language::Japanese);
+    first.articulation = domain::NoteArticulation::Legato;
+    first.vibrato.enabled = false;
+    first.phoneticHint = std::optional<std::string>{"a"};
+    region->lyrics.push_back(lyric);
+    region->notes.push_back(first);
+    for (std::size_t index = 1U; index < 4U; ++index) {
+      // The control's notes must sing a DIFFERENT vowel from the first note, not merely sit on their
+      // own lyric token. The compiler attaches the glide only when the join carries one phoneme
+      // whose symbol equals the previous note's vowel (performance_compiler.cpp:350), so a control
+      // that sang the same vowel would satisfy that condition and glide too. My first control sang
+      // "a" on every note and therefore could not fail the case from either direction; the ledger
+      // records this. "i" is a different nucleus, so the same-lyric arm still glides while the
+      // separate-token arm does not, which is the contrast the case is about.
+      auto [ownLyric, note] = f.factory.makeNote(
+          time::Tick{480 + kDuration * static_cast<std::int64_t>(index)}, time::Tick{kDuration},
+          static_cast<std::uint8_t>(60U + index * 4U), shared ? U"a" : U"i", domain::Language::Japanese);
+      if (shared) note.lyricTokenId = first.lyricTokenId;
+      else region->lyrics.push_back(std::move(ownLyric));
+      note.articulation = domain::NoteArticulation::Legato;
+      note.vibrato.enabled = false;
+      note.phoneticHint = std::optional<std::string>{shared ? "a" : "i"};
+      region->notes.push_back(note);
+    }
+    voice_design::VoiceRecipe recipe; recipe.id = "melisma-pitch";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                   {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"melisma pitch snapshot: "} + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"melisma pitch render: "} + rendered.error().message};
+    const auto& audio = rendered.value().rendered.audio;
+    // Read pitch in 20 ms steps across each note boundary and report cents against the score.
+    const auto cents = [&](std::size_t from, std::size_t count, double expectMidi) {
+      const auto frames = voicebank::analyzePitch(
+          std::span<const float>{audio.samples.data() + from, count}, kRate);
+      if (!frames || frames.value().empty()) return 9999.0;
+      const auto measured = voicebank::medianVoicedPitch(frames.value());
+      if (measured <= 0.0) return 9999.0;
+      return 1200.0 * std::log2(measured / (440.0 * std::pow(2.0, (expectMidi - 69.0) / 12.0)));
+    };
+    for (std::size_t index = 0U; index + 1U < rendered.value().proceduralMarkers.size(); ++index) {
+      const auto& next = rendered.value().proceduralMarkers[index + 1U];
+      if (next.kind != voice_design::ArticulationGestureKind::OralVowel) continue;
+      const auto join = static_cast<std::size_t>(next.ownedSpan.start - audio.startFrame);
+      if (join < 4800U || join + 4800U > audio.samples.size()) continue;
+      // Every note in this case carries exactly one vowel, so marker index IS note index and no
+      // tempo arithmetic is needed. The join at markers[index + 1] belongs to note index + 1, which
+      // is the off-by-one my first two versions had: mapping by frame position used `kRate / 480`
+      // frames per tick when the tempo map gives 25, and then using `index` rather than `index + 1`
+      // both shifted every join onto the wrong note and dropped the first real one. Both faults
+      // showed up the same way, as settled readings exactly one note interval away from zero.
+      const auto noteIndex = index + 1U;
+      if (noteIndex >= region->notes.size()) continue;
+      const auto noteMidi = static_cast<double>(region->notes[noteIndex].midiKey);
+      const auto previousMidi = static_cast<double>(region->notes[noteIndex - 1U].midiKey);
+      Join record{.shared = shared};
+      // Sample the glide window itself rather than only its first frame: the claim is that the
+      // pitch travels toward this note's own pitch across it, so both ends and the direction are
+      // needed. Four 480-frame windows cover the 960-frame glide window at 48 kHz.
+      record.atJoin = cents(join, 480U, previousMidi);
+      record.settled = cents(join + 4800U, 4800U, noteMidi);
+      record.interval = 100.0 * (noteMidi - previousMidi);
+      for (int step = 1; step < 4; ++step) {
+        const auto from = static_cast<std::size_t>(static_cast<long long>(join) + step * 240);
+        record.glide.push_back(cents(from, 480U, previousMidi));
+      }
+      record.measured = true;
+      joins.push_back(record);
+    }
+  }
+  const auto arm = [&](bool shared) {
+    std::vector<const Join*> found;
+    for (const auto& join : joins) if (join.measured && join.shared == shared) found.push_back(&join);
+    return found;
+  };
+  const auto control = arm(false);
+  const auto melisma = arm(true);
+  // Four notes give three joins. The first note has no predecessor to glide from, so each arm
+  // contributes the three joins between notes one and two, two and three, and three and four.
+  CHECK(control.size() == 3U);
+  CHECK(melisma.size() == 3U);
+  // 1. Every note in both arms settles on its own pitch. This is the claim a wrong
+  // `transitionFromMidi` would break: a note left displaced by the glide would read hundreds of
+  // cents away from its own MIDI key, and a note that never glidded would still read correct here,
+  // so this is the floor the glide claim stands on rather than the glide claim itself.
+  for (const auto* join : control) CHECK(std::abs(join->settled) < 100.0);
+  for (const auto* join : melisma) CHECK(std::abs(join->settled) < 100.0);
+  // 2. The control has no glide, so each of its notes is already AT its own pitch one window after
+  // the join: measured +388, +385, +406 and +353, +408, +410 and +370, +403, +406, flat at the
+  // interval. The melisma begins gliding at the join, so the same window is still well below the
+  // interval and rises toward it: measured +199 then +315 then +389. The difference in that window
+  // is the whole claim, and it is the portamento the contract describes.
+  // The FIRST window alone is not a safe discriminator and the measurements show why: the control's
+  // third join reads -767 there, an octave below, because a different vowel's onset has not settled
+  // and the analyser locks onto a sub-harmonic. The rendering is fully deterministic, so that reading
+  // is reproducible rather than noise, and a threshold tuned to exclude it would be tuning to an
+  // artefact. The second window is stable in both arms and is what the case uses instead.
+  for (const auto* join : control) CHECK(join->glide.front() > 0.80 * join->interval);
+  for (const auto* join : melisma) CHECK(join->glide.front() < 0.70 * join->interval);
+  // 3. The melisma's displacement is a glide and not a constant offset: it rises monotonically
+  // across the window toward the interval rather than sitting at one value, and it does not overshoot
+  // past the target before settling. Measured first to last: +95 to +389, +43 to +389 and +74 to
+  // +399, each approaching an interval of 400 from below. The control is flat by contrast, so the
+  // monotonic rise is a property of the melisma and not of the measurement.
+  for (const auto* join : melisma) {
+    CHECK(join->interval > 0.0);
+    CHECK(join->glide.size() == 3U);
+    for (std::size_t index = 1U; index < join->glide.size(); ++index)
+      CHECK(join->glide[index] > join->glide[index - 1U]);
+    for (const auto reading : join->glide) CHECK(reading < join->interval + 50.0);
+  }
+  // 4. Mutation-checked in the direction that matters, and the limit of that checked honestly.
+  // Pointing `transitionFromMidi` at the note's own pitch, so the melisma no longer glides from
+  // its predecessor, fails at the second-window bound above. The converse is NOT established:
+  // forcing the glide onto every join by clearing the `continuation` guard leaves this control's
+  // readings unchanged, because the control's notes sing a different vowel and are still refused by
+  // the same-vowel condition further down (`performance_compiler.cpp:350`). So the control's
+  // flatness is pinned, but it is not shown to be what would catch a stray glide; that guard is
+  // pinned by the unit tests on `distributeReading` and the compiler instead, and this case does
+  // not claim otherwise.
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

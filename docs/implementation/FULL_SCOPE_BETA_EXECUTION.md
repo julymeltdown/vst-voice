@@ -5069,6 +5069,72 @@ on a real recording session for the sample route, which this does not touch. No
 DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
 
+2026-10-03 — A melisma's carried vowel measured gliding from the previous note's
+pitch, which is the portamento a voiceoid needs at a note join and the one axis
+the melisma cases above leave open (R3's M2.2 melisma axis, closing the limit the
+entry above named).
+**Why this case.** The two melisma cases above establish that a carried vowel
+survives its joins and that a multi-syllable word distributes across its notes.
+Neither says anything about pitch there, and pitch is where a melisma most
+obviously goes wrong: a voiceoid that resets pitch at each note boundary sounds
+like detached syllables even when every consonant and duration is correct. The
+contract is explicit. At a shared-lyric join the compiler records
+`transitionFromMidi` and a `transitionEndFrame` of `sampleRate / 50` frames past
+the note's start (`performance_compiler.cpp:354`), and the per-frame evaluator
+slides from the previous note's pitch to this one across that window on a
+smoothstep (`performance_compiler.cpp:539`).
+**The condition the glide hangs on is narrow, and building the right control took
+three attempts.** The compiler attaches the glide only when the join carries ONE
+phoneme whose symbol equals the previous note's vowel, with the join contiguous
+and neither note staccato (`performance_compiler.cpp:350`). Three faults of mine
+are recorded rather than tidied away. First, I reused the multi-syllable word
+control from the entry above and found no difference between the arms at all; the
+probe showed why, since a control whose notes carry five phonemes each never
+satisfies the one-phoneme condition and so has no glide to compare against. Second,
+after rebuilding both arms from a single vowel, I found the converse mutation
+passed — and the reason was that a control singing the SAME vowel also satisfies
+the condition, so it glided too and could not fail from either direction. The
+control now sings a different vowel, which is what actually distinguishes the two
+arms. Third, a 160-frame measurement window was too short for the pitch analyser
+to return a voiced reading, and mapping a join to its note by frame position used
+`kRate / 480` frames per tick when the tempo map gives 25, which put every settled
+reading exactly one note interval from where it belonged.
+**Evidence, measured not asserted.** Four legato notes at MIDI 60, 64, 68 and 72,
+480 frames per 20 ms window. The control's notes read flat at the target interval
+across the glide window: +388, +385, +406 and +353, +408, +410 and +370, +403,
++406. The melisma's notes read as a ramp from below: +199 then +315 then +389,
++141 then +263 then +389, and +204 then +354 then +399, each rising monotonically
+toward an interval of 400 and arriving within one cent of it once the window has
+passed. Every note in both arms settles on its own pitch, so the displacement is a
+glide and not a mistuned note.
+**The first window is not a safe discriminator, and saying so matters.** The
+control's third join reads **-767** in the first 10 ms, an octave below, because the
+different vowel's onset has not settled and the analyser locks onto a sub-harmonic.
+The rendering is byte-identical across three consecutive runs, so that reading is
+reproducible rather than noise, and a threshold chosen to exclude it would be
+tuning to an artefact. The case therefore discriminates on the second window,
+which is stable in both arms.
+**Mutation-checked in one direction, with the limit stated.** Pointing
+`transitionFromMidi` at the note's own pitch, so the melisma no longer glides from
+its predecessor, fails at the second-window bound. The converse is NOT established:
+forcing the glide onto every join leaves the control's readings unchanged, because
+the control's different vowel is still refused by the same-vowel condition. The
+control's flatness is pinned, but it is not shown to be what would catch a stray
+glide; that guard is pinned by the compiler and `distributeReading` unit tests
+instead, and this entry does not claim otherwise.
+Release `seam_performance_snapshot_tests` 64 of 64, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows a melisma's carried vowel reaches its target
+pitch by sliding from the previous note's pitch across a bounded window, measured in
+the audio, while a differently-vowelled note on its own token arrives at its pitch
+immediately. It is one vowel across three joins at one tempo with a synthetic
+recipe: it says nothing about whether the glide sounds musical, whether 20 ms is
+the right length for a real phrase, or how the glide behaves under a manual pitch
+curve, which the compiler deliberately suppresses (`performance_compiler.cpp:538`).
+No listening evidence exists. U42 remains externally blocked on a real recording
+session for the sample route, which this does not touch. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.
+
 2026-10-03 — A shared-lyric melisma measured to cross its note join without the
 reatticulation a separate note takes, which is the substrate Vocaloid-style
 singing rests on (R3's synth-style original voice; the melisma/slur axis of
