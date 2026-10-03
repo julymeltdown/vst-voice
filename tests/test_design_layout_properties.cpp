@@ -770,13 +770,17 @@ TEST_CASE("a captured frame is in the look it was asked for") {
 // the diagnostics popover carries a refusal worded as long as a refusal can be, so the surfaces where a
 // row has to shorten its own text are already in this list and are the reason to look.
 void writeCapturedOverlay(LayoutFixture& f, const Surface& surface, double width, double height,
-                          const std::filesystem::path& path) {
+                          const std::filesystem::path& path, DesignMode mode = DesignMode::Emo) {
   Frame frame;
   // The baseline is painted first so the surface opens on a window that already has its content, which
   // is how a creator meets it: over the SING workspace, not over an empty frame.
   if (!paintFrame(f, width, height, 1.0, frame)) return;
   if (surface.prepare && surface.prepare(f) && !paintFrame(f, width, height, 1.0, frame)) return;
   if (!surface.open(f)) return;
+  // The look is applied before the frame is prepared, for the same reason the workspace capture does:
+  // applied after, the argument does nothing for a caller whose fixture is in another look and the
+  // frame is in the look its name does not claim.
+  if (f.shell.mode() != mode) f.shell.setMode(mode, false);
   native_ui::PixelSurface pixels{static_cast<std::uint32_t>(std::lround(width)),
                                  static_cast<std::uint32_t>(std::lround(height))};
   native_ui::RasterCanvas canvas{pixels, 1.0, designSystemFont()};
@@ -922,24 +926,41 @@ TEST_CASE("the recovery support overlay paints its summary clear of its own butt
 // to shorten its own text (recovery support carries a report name longer than any row can show, and the
 // diagnostic notices carry a refusal worded as long as a refusal can be), which is exactly where a
 // rendered frame says something a layout property does not.
-TEST_CASE("every overlay and sheet is capturable in a system face") {
+TEST_CASE("every overlay and sheet is capturable in a system face, in every variant") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
   const std::filesystem::path root = directory != nullptr && *directory != '\0'
       ? std::filesystem::path{directory}
       : std::filesystem::path{test::support::temporaryDirectory("design-overlays")};
+  // The four variants, for the same reason the workspaces write all four: the mode and the contrast
+  // are preferences that change every pixel and neither can change audio, so a surface checked in one
+  // of them says nothing about the other three. This is the gap the coverage audit at the end of the
+  // file names, and closing it is this loop rather than a claim in a document.
+  struct Variant final {
+    DesignMode mode;
+    Contrast contrast;
+    std::string_view suffix;
+  };
+  const std::array<Variant, 4U> variants{{
+      {DesignMode::Emo, Contrast::Standard, "-emo-standard"},
+      {DesignMode::Emo, Contrast::High, "-emo-high"},
+      {DesignMode::Scene, Contrast::Standard, "-scene-standard"},
+      {DesignMode::Scene, Contrast::High, "-scene-high"}}};
   std::size_t written = 0U;
-  for (const auto& surface : overlaySurfaces()) {
-    LayoutFixture fixture;
-    fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
-    writeCapturedOverlay(fixture, surface, 1440.0, 900.0,
-                         root / (std::string{surface.name} + "-1440x900.ppm"));
-    // A surface that could be opened at the canonical window has produced a frame with content in it;
-    // one that cannot (the compact inspector exists only at compact widths) is not a failure.
-    if (std::filesystem::exists(root / (std::string{surface.name} + "-1440x900.ppm"))) ++written;
-  }
-  // The list is the whole claim: every surface the shell can present was offered a frame.
-  CHECK(written == overlaySurfaces().size());
+  for (const auto& variant : variants)
+    for (const auto& surface : overlaySurfaces()) {
+      LayoutFixture fixture{variant.mode, variant.contrast};
+      fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+      const auto path = root / (std::string{surface.name} + std::string{variant.suffix} +
+                                "-1440x900.ppm");
+      writeCapturedOverlay(fixture, surface, 1440.0, 900.0, path, variant.mode);
+      // A surface that could be opened at the canonical window has produced a frame with content in
+      // it; one that cannot (the compact inspector exists only at compact widths) is not a failure.
+      if (std::filesystem::exists(path)) ++written;
+    }
+  // The list and the variants are the whole claim: every surface the shell can present was offered a
+  // frame in every variant, so the gap the audit names is closed rather than described.
+  CHECK(written == overlaySurfaces().size() * variants.size());
 }
 
 TEST_CASE("a shell label carries an ellipsis only when it is progress wording") {
@@ -1188,6 +1209,67 @@ TEST_CASE("a captured frame carries the surface it was opened for") {
 // narrowest windows, and the workspace menu is the only way to reach another workspace from a window
 // too narrow for the tab row. Both open by a semantic action rather than by a click, so they are as
 // reachable as anything else in the shell and as invisible in a capture.
+// The compact surfaces in every variant, for the same reason the overlays are: a surface whose
+// appearance has been checked in one look has not been checked in the other three. They exist only at
+// compact widths, so the sizes below are the ones where they do, and the frame name carries the variant
+// so the audit can require the combinations rather than the surfaces.
+TEST_CASE("the compact inspector and the workspace menu are capturable in every variant") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-compact")};
+  struct Variant final {
+    DesignMode mode;
+    Contrast contrast;
+    std::string_view suffix;
+  };
+  const std::array<Variant, 4U> variants{{
+      {DesignMode::Emo, Contrast::Standard, "-emo-standard"},
+      {DesignMode::Emo, Contrast::High, "-emo-high"},
+      {DesignMode::Scene, Contrast::Standard, "-scene-standard"},
+      {DesignMode::Scene, Contrast::High, "-scene-high"}}};
+  std::size_t inspectors = 0U;
+  std::size_t menus = 0U;
+  for (const auto& variant : variants) {
+    for (const auto& size : kSizes) {
+      const auto label = std::to_string(static_cast<int>(size[0])) + "x" +
+                         std::to_string(static_cast<int>(size[1]));
+      {
+        LayoutFixture fixture{variant.mode, variant.contrast};
+        Frame frame;
+        if (!paintFrame(fixture, size[0], size[1], 1.0, frame)) continue;
+        // The inspector drawer exists only where the full rack does not, which is the whole reason it
+        // is here: at a width where the cards fit there is nothing to open.
+        if (fixture.shell.layout().rack == RackPresentation::Full) continue;
+        if (!fixture.shell.dispatchSemantic(fixture.controller, "shell.inspector",
+                                            SemanticAction::Activate).hasValue()) continue;
+        writeCapturedFrame(fixture, Workspace::Sing, size[0], size[1],
+                           root / ("compact-inspector-" + label +
+                                   std::string{variant.suffix} + ".ppm"), variant.mode);
+        ++inspectors;
+      }
+      {
+        LayoutFixture fixture{variant.mode, variant.contrast};
+        Frame frame;
+        if (!paintFrame(fixture, size[0], size[1], 1.0, frame)) continue;
+        if (fixture.shell.layout().workspaceMenuButton.width <= 0.0) continue;
+        if (!fixture.shell.dispatchSemantic(fixture.controller, "shell.workspace-menu",
+                                            SemanticAction::Activate).hasValue()) continue;
+        writeCapturedFrame(fixture, Workspace::Sing, size[0], size[1],
+                           root / ("workspace-menu-" + label +
+                                   std::string{variant.suffix} + ".ppm"), variant.mode);
+        ++menus;
+      }
+    }
+  }
+  // Both exist somewhere in the supported size range, in every variant, so neither capture is vacuous.
+  CHECK(inspectors > 0U);
+  CHECK(menus > 0U);
+  CHECK(inspectors == 5U * variants.size());
+  CHECK(menus == 2U * variants.size());
+}
+
 TEST_CASE("the compact inspector and the workspace menu are capturable in a system face") {
   if (!native_ui::paint::vectorBackendAvailable()) return;
   const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
@@ -1815,35 +1897,47 @@ TEST_CASE("the frame coverage is what it says, and the gap is counted") {
   CHECK(workspaceCombinations == 20U);
   CHECK(workspaceCaptured == workspaceCombinations);
 
-  // The overlays, each in the one variant they were captured in. They are not required to be in all
-  // four, and saying so here is the point: the requirement is written where it can be compared against
-  // the next entry rather than left in a paragraph of prose.
+  // The overlays, in every variant. This is the requirement that was a count of one per surface and a
+  // named gap, and closing the gap raised it: the requirement lives here rather than in the paragraph
+  // that used to describe it, so raising it is a line in a case and not a new claim in a document.
+  std::size_t overlayCombinations = 0U;
   std::size_t overlayCaptured = 0U;
   for (const auto& surface : overlaySurfaces())
-    if (captured.count(std::string{surface.name} + "-1440x900") != 0U) ++overlayCaptured;
-  CHECK(overlayCaptured == overlaySurfaces().size());
+    for (const auto& variant : variants) {
+      ++overlayCombinations;
+      if (captured.count(std::string{surface.name} + std::string{variant.suffix} + "-1440x900") != 0U)
+        ++overlayCaptured;
+    }
+  CHECK(overlayCombinations == overlaySurfaces().size() * variants.size());
+  CHECK(overlayCaptured == overlayCombinations);
 
   // The compact surfaces, at the sizes where they exist rather than at the canonical window, because at
-  // the canonical window they do not exist at all. Five inspector sizes and two menu sizes.
+  // the canonical window they do not exist at all, and in every variant like everything else. Five
+  // inspector sizes and two menu sizes, four times over.
   std::size_t compactCaptured = 0U;
-  for (const auto& size : kSizes) {
-    const auto label = std::to_string(static_cast<int>(size[0])) + "x" +
-                       std::to_string(static_cast<int>(size[1]));
-    if (captured.count("compact-inspector-" + label) != 0U) ++compactCaptured;
-    if (captured.count("workspace-menu-" + label) != 0U) ++compactCaptured;
-  }
-  CHECK(compactCaptured == 7U);
+  for (const auto& variant : variants)
+    for (const auto& size : kSizes) {
+      const auto label = std::to_string(static_cast<int>(size[0])) + "x" +
+                         std::to_string(static_cast<int>(size[1]));
+      if (captured.count("compact-inspector-" + label + std::string{variant.suffix}) != 0U)
+        ++compactCaptured;
+      if (captured.count("workspace-menu-" + label + std::string{variant.suffix}) != 0U)
+        ++compactCaptured;
+    }
+  CHECK(compactCaptured == 7U * variants.size());
 
   // The totals, as numbers a reader sees rather than a promise: nineteen surfaces a creator can reach,
-  // forty-one frames written across them, all four variants of the five workspaces and one variant each
-  // of the fourteen overlays and the seven compact frames. The gap is the three other variants of the
-  // overlays and the compact surfaces, and it is stated here so that closing it is a change to this case
-  // rather than a new claim in a document.
+  // and every one of them in all four variants. The gap the previous entry named is closed, and the
+  // number that says so is here where a change to it is visible rather than in a document nobody reads.
   const auto surfacesCovered = workspaces.size() + overlaySurfaces().size();
   const auto framesWritten = workspaceCaptured + overlayCaptured + compactCaptured;
   CHECK(surfacesCovered == 19U);
-  CHECK(framesWritten == 41U);
-  CHECK(overlayCaptured + compactCaptured == overlaySurfaces().size() + 7U);
+  CHECK(framesWritten == workspaceCombinations + overlayCombinations +
+                              7U * variants.size());
+  // Every surface in every variant, which is the claim the whole run of units was reaching for.
+  CHECK(workspaceCaptured + overlayCaptured + compactCaptured ==
+        (workspaces.size() + overlaySurfaces().size()) * variants.size() +
+            7U * variants.size());
   std::printf("frame coverage: %zu surfaces, %zu frames across %d variants\n", surfacesCovered,
               framesWritten, static_cast<int>(variants.size()));
 }
