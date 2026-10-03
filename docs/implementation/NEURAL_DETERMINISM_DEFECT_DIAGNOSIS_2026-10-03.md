@@ -83,6 +83,29 @@ Seed `0` is treated as a real seed rather than an absent one. That is deliberate
 refusing zero would make it unusable while every other value worked, which is exactly
 the kind of quiet asymmetry this check must not have.
 
+**Two corrections made after the first version of this fix was already committed.**
+
+**The seed is AttributeProto field 3, not field 5.** The first implementation read
+field 5 on the reasoning that `seed` is the fifth attribute. Reading the ONNX proto
+that ships in this repository's own runtime environment
+(`onnx.proto`, `message AttributeProto`) shows an attribute's VALUE lives in
+`optional int64 i = 3` whatever the attribute is called, and the NAME in field 1 is
+what says which attribute it is. Field 5 is `t`, a tensor value. The committed fix
+therefore read a field no exported graph puts a seed in; the existing case caught it
+the moment the parser changed, because the seeded fixture stopped being admitted.
+The parser now reads the value by VALUE rather than by a guessed field number, which
+also means an operator this build does not know takes a seed is covered without
+naming it.
+
+**`Dropout` was the same defect left open.** `Dropout` is admitted in the same
+operator set, is stochastic for the same reason, and takes a seed of the same shape
+(confirmed against the same ONNX schema: `seed` is Dropout's only attribute at every
+opset from 12 up). Refusing only `RandomNormalLike` would have fixed the operator the
+current export happens to use and left its sibling waiting for the first model that
+declares it. Both are now refused together, and the case covers both. Dropping
+`Dropout` from that set fails the case, so the sibling coverage is load-bearing rather
+than decorative.
+
 **Mutation-checked in both halves, because a contract check that cannot fail is
 decoration.** Disabling the refusal fails the case at the refusal assertion; parsing
 the seed and then discarding it fails at the admission assertion. Both halves are

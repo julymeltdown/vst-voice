@@ -38,6 +38,17 @@ core::Error unknownField(std::string_view what, std::uint32_t field) {
       std::string{what} + " field " + std::to_string(field) + " is not admitted"};
 }
 
+// The admitted operators whose output depends on a random draw. Both take an optional integer
+// seed, and both are a way for an otherwise deterministic graph to stop being one: the worker opens
+// a fresh ONNX session per request, so an unseeded draw differs on every export and no release
+// evidence can be re-derived from a frozen project. RandomNormalLike is the one the shipped
+// diffusion export actually uses; Dropout is admitted in the same set and would be the same defect
+// the moment an export declared it, so both are refused together rather than one being fixed and
+// the sibling left open.
+[[nodiscard]] bool stochasticOperator(std::string_view opType) noexcept {
+  return opType == "RandomNormalLike" || opType == "Dropout";
+}
+
 core::Error refused(std::string_view what, std::string_view detail) {
   return {core::ErrorCode::Unsupported, std::string{what} + " " + std::string{detail}};
 }
@@ -380,17 +391,19 @@ core::Result<void> parseAttribute(Reader& reader, GraphNodeContract& node, Graph
       if (!reader.text(ignored, limits.maximumBytes)) return truncated("ONNX operator attribute");
       continue;
     }
-    // AttributeProto field 5 is `seed`, the one attribute whose value changes what the graph
-    // DOES rather than how it is shaped. It used to be skipped with the rest, which is why a
-    // stochastic export and a seeded one were admitted identically. It is read here so the
-    // operator check below can refuse a stochastic draw rather than merely describing one.
-    if (field == 5U && wire == 0U) {
+    // An attribute's VALUE lives in AttributeProto field 3 (optional int64 i = 3), whatever the
+    // attribute is called; the NAME in field 1 is what says which one this is. A seed is by
+    // definition an integer, so any operator declaring one arrives here as field 3. That value used
+    // to be skipped with the rest, which is why a stochastic export and a seeded one were admitted
+    // identically. Reading it by VALUE rather than by a guessed field number also means an
+    // operator this build does not know takes a seed is covered without naming it.
+    if (field == 3U && wire == 0U) {
       std::uint64_t raw = 0U;
-      if (!reader.varint(raw)) return truncated("ONNX operator attribute seed");
+      if (!reader.varint(raw)) return truncated("ONNX operator attribute value");
       node.seed = static_cast<std::int64_t>(raw);
       continue;
     }
-    if (field == 2U || field == 3U || field == 7U || field == 8U ||
+    if (field == 2U || field == 7U || field == 8U ||
         field == 9U || field == 10U || field == 14U || field == 15U || field == 20U ||
         field == 22U || field == 23U) {
       if (!reader.skip(wire)) return truncated("ONNX operator attribute");
@@ -459,8 +472,8 @@ core::Result<void> parseNode(Reader& reader, GraphContract& contract, Budget& bu
   // contradicts reproducibility-tolerances/*/neural/pcm-error, and it also hides pitch-adherence
   // evidence behind a determinism failure. Refusing the graph at admission is the point where the
   // defect is still cheap to fix, because the alternative is shipping audio nobody can re-derive.
-  if (opType == "RandomNormalLike" && !node.seed)
-    return refused("ONNX operator RandomNormalLike",
+  if (stochasticOperator(opType) && !node.seed)
+    return refused("ONNX operator " + std::string{opType},
         "draws without a declared seed, so its output is not reproducible across requests; export "
         "the graph with a fixed seed attribute or bind the noise as a graph input");
   if (std::find(contract.operators.begin(), contract.operators.end(), opType) == contract.operators.end())

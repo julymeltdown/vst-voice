@@ -4125,6 +4125,40 @@ new case in `tests/test_neural_model_bundle.cpp`. `seam_neural_worker_protocol_t
 321 passed with 315 subtests. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
 
+2026-10-03 — The determinism refusal corrected to read the seed from the right
+AttributeProto field and extended to `Dropout`, the sibling operator the first fix left
+open (same defect, same M3 input path).
+**Correction 1: the seed is field 3, not field 5.** The previous commit read
+AttributeProto field 5, reasoning that `seed` is the fifth attribute. Reading the ONNX
+proto that ships in this repository's own runtime environment (`onnx.proto`,
+`message AttributeProto`) shows an attribute's VALUE lives in `optional int64 i = 3`
+whatever the attribute is called, and the NAME in field 1 is what says which one it
+is; field 5 is `t`, a tensor value. **The committed fix read a field no exported graph
+puts a seed in**, so it would not actually have admitted a correctly seeded export.
+The existing case caught this the moment the parser changed, because the seeded
+fixture stopped being admitted. The parser now reads the value by VALUE rather than by
+a guessed field number, which also covers an operator this build does not know takes a
+seed.
+**Correction 2: `Dropout` was the same defect left open.** `Dropout` is admitted in
+the same operator set, is stochastic for the same reason, and takes a seed of the same
+shape (confirmed against the same ONNX schema, where `seed` is Dropout's only
+attribute at every opset from 12 up). Refusing only `RandomNormalLike` would have fixed
+the operator the current export happens to use and left its sibling waiting for the
+first model that declares it. Both are refused together through one
+`stochasticOperator` predicate, and the case covers both; dropping `Dropout` from that
+predicate fails the case at the Dropout refusal, so the sibling coverage is
+load-bearing rather than decorative.
+**A fixture of mine encoded the same wrong field, which is why the case caught the
+parser.** The test wrote its seed at field 5 to match the implementation, so the two
+agreed with each other and disagreed with ONNX. That is the failure mode a test written
+alongside its bug always has, and it is the reason the value was checked against the
+shipped proto rather than against recollection.
+Production code changed: `graph_contract.cpp` only this time.
+`seam_neural_worker_protocol_tests` 32 of 32; full Release CTest 224 of 224;
+`tests/external_beta` plus `tests/production` 321 passed with 315 subtests. No neural
+render was run and M3 remains blocked on a model. No DAW, VoiceOver, signing, Windows
+or external-review evidence. `.github` was not touched.
+
 2026-09-25 — U22-to-song procedural singer install handoff. Standalone now has
 File → “Install Procedural Singer…” for signed `.seamsinger` packages, separate
 from sample-bank installation and from the subsequent explicit track-selection

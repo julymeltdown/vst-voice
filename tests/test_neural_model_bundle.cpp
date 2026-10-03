@@ -327,15 +327,18 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
   const auto inspect=[&](const std::string& bytes) {
     return inspectNeuralGraph(std::as_bytes(std::span{bytes.data(),bytes.size()}));
   };
-  const auto draw=[&](std::optional<std::int64_t> seed) {
+  const auto draw=[&](std::string_view op,std::optional<std::int64_t> seed) {
     std::string node;
     protoBytesField(node,1U,"shape");
     protoBytesField(node,2U,"noise");
-    protoBytesField(node,4U,"RandomNormalLike");
+    protoBytesField(node,4U,op);
     if (seed) {
       std::string attribute;
       protoBytesField(attribute,1U,"seed");
-      protoVarintField(attribute,5U,static_cast<std::uint64_t>(*seed));
+      // An attribute's VALUE is AttributeProto field 3 (optional int64 i = 3), not a per-operator
+      // field number. Writing the seed at field 5 encodes nothing this parser can read, which is
+      // exactly the mistake a first version of this case made and which the case then caught.
+      protoVarintField(attribute,3U,static_cast<std::uint64_t>(*seed));
       protoBytesField(node,5U,attribute);
     }
     return onnxModel(onnxGraph({onnxValueInfo("shape",7U,{"1","80"})},
@@ -343,7 +346,7 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
   };
 
   // Refused, and refused by NAME so the message says which operator has to change.
-  const auto stochastic=inspect(draw(std::nullopt));
+  const auto stochastic=inspect(draw("RandomNormalLike",std::nullopt));
   CHECK(!stochastic);
   if (!stochastic) {
     CHECK(stochastic.error().message.find("RandomNormalLike")!=std::string::npos);
@@ -351,7 +354,7 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
   }
 
   // Seeded: admitted, and the seed is carried into the contract rather than discarded.
-  const auto seeded=inspect(draw(1234));
+  const auto seeded=inspect(draw("RandomNormalLike",1234));
   CHECK(seeded);
   if (!seeded) return;
   const auto random=std::find_if(seeded.value().nodes.begin(),seeded.value().nodes.end(),
@@ -364,13 +367,22 @@ TEST_CASE("a stochastic draw is refused and a seeded one is admitted with its se
 
   // Seed zero is a real seed, not an absent one: refusing it would make 0 unusable while every
   // other value worked, which is exactly the kind of quiet asymmetry this check must not have.
-  const auto zero=inspect(draw(0));
+  const auto zero=inspect(draw("RandomNormalLike",0));
   CHECK(zero);
   if (zero) {
     const auto zeroed=std::find_if(zero.value().nodes.begin(),zero.value().nodes.end(),
         [](const auto& node){ return node.seed.has_value(); });
     CHECK(zeroed!=zero.value().nodes.end());
   }
+
+  // Dropout is admitted in the same operator set and is the same defect the moment an export
+  // declares it, so it is refused on the same terms rather than left as an open sibling.
+  const auto unseededDropout=inspect(draw("Dropout",std::nullopt));
+  CHECK(!unseededDropout);
+  if (!unseededDropout)
+    CHECK(unseededDropout.error().message.find("Dropout")!=std::string::npos);
+  const auto seededDropout=inspect(draw("Dropout",7));
+  CHECK(seededDropout);
 }
 
 TEST_CASE("admission refuses a pair of individually valid graphs that disagree") {
