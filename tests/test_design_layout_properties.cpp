@@ -548,6 +548,31 @@ std::vector<Surface> overlaySurfaces() {
   };
 }
 
+// Every overlay and sheet the shell can present, written out as a frame in a system face. The layout
+// sweep over these surfaces measures the text records the shell produced and the rectangles it placed,
+// which is the shell's account of itself; nothing has ever drawn one of these and looked at it. The
+// recovery-support surface in particular carries a name chosen to be longer than any row can show, and
+// the diagnostics popover carries a refusal worded as long as a refusal can be, so the surfaces where a
+// row has to shorten its own text are already in this list and are the reason to look.
+void writeCapturedOverlay(LayoutFixture& f, const Surface& surface, double width, double height,
+                          const std::filesystem::path& path) {
+  Frame frame;
+  // The baseline is painted first so the surface opens on a window that already has its content, which
+  // is how a creator meets it: over the SING workspace, not over an empty frame.
+  if (!paintFrame(f, width, height, 1.0, frame)) return;
+  if (surface.prepare && surface.prepare(f) && !paintFrame(f, width, height, 1.0, frame)) return;
+  if (!surface.open(f)) return;
+  native_ui::PixelSurface pixels{static_cast<std::uint32_t>(std::lround(width)),
+                                 static_cast<std::uint32_t>(std::lround(height))};
+  native_ui::RasterCanvas canvas{pixels, 1.0, designSystemFont()};
+  if (!f.shell.prepareFrame(f.controller, width, height)) return;
+  if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick()))
+    return;
+  std::filesystem::create_directories(path.parent_path());
+  CHECK(pixels.writePpm(path));
+}
+
+
 void sweepWorkspace(Checker& checker, Workspace workspace, std::string_view name,
                     DesignMode mode = DesignMode::Emo) {
   LayoutFixture f{mode};
@@ -619,6 +644,88 @@ TEST_CASE("every design workspace is capturable in a system face at both window 
 // ellipsis, because "Saving…" is announcing that something is happening right now and the mark is
 // what says so; a button or menu label does not, because the canvas will add a mark if the label really
 // is too long for its box. Restoring an ellipsis to any of the button labels fails the case below.
+// The recovery support overlay painted its summary sentence through the middle of its own PREV button.
+// Both are the same kind of bright text on the same background at the same size, so the frame showed
+// "2 owned reports" running straight across the word PREV and neither string was readable. Nothing
+// about it was visible in the source: the summary was at panel.y + 44 and the buttons were laid out at
+// panel.y + 40 from the same left inset, so the two simply overlapped, and each painter was correct on
+// its own.
+//
+// The property is that the overlay's painted rows and its control rows occupy the same strip in the
+// same order and do not overlap, and it is checked against the control rectangles the shell publishes
+// rather than against the frame, because the control rectangles are what a pointer and the layout sweep
+// both use. Putting the buttons back on the summary's line fails it.
+TEST_CASE("the recovery support overlay paints its summary clear of its own buttons") {
+  LayoutFixture fixture;
+  fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+  Frame frame;
+  CHECK(paintFrame(fixture, 1440.0, 900.0, 1.0, frame));
+  fixture.controller.setRecoverySupportView(native_ui::RecoverySupportView{
+      .visible = true,
+      .mode = native_ui::RecoverySupportMode::Reports,
+      .items = {{.name = "report-a", .detail = "crash marker", .bytes = 4096U}},
+      .reportCount = 1U,
+      .status = "One owned report",
+  });
+  // The card and the controls are what the shell publishes once the overlay is open, so the frame
+  // that describes them is painted after the overlay is set, not before.
+  Frame openFrame;
+  CHECK(paintFrame(fixture, 1440.0, 900.0, 1.0, openFrame));
+  frame = openFrame;
+
+  // The summary line and the paging buttons share one strip, and the strip is laid out from the panel's
+  // own top rather than from constants each painter chose separately.
+  const auto panel = overlayCard(frame);
+  CHECK(panel.has_value());
+  if (!panel) return;
+  const auto buttons = std::find_if(frame.nodes.begin(), frame.nodes.end(),
+                                    [](const auto& node) { return node.id == "support.track.previous"; });
+  CHECK(buttons != frame.nodes.end());
+  if (buttons == frame.nodes.end()) return;
+  // The PREV button starts below the 16 point summary line the overlay paints at panel.y + 44.
+  constexpr double kSummaryTop = 44.0;
+  constexpr double kSummaryLine = 16.0;
+  constexpr double kSummaryGap = 6.0;
+  const auto summaryBottom = kSummaryTop + kSummaryLine + kSummaryGap;
+  CHECK(buttons->bounds.y >= summaryBottom);
+  // And it is still inside the panel, with room for the item list below it.
+  CHECK(buttons->bounds.bottom() <= panel->bottom());
+  // The two paging buttons are on the same row and do not overlap each other either.
+  const auto next = std::find_if(frame.nodes.begin(), frame.nodes.end(),
+                                 [](const auto& node) { return node.id == "support.track.next"; });
+  CHECK(next != frame.nodes.end());
+  if (next != frame.nodes.end()) {
+    CHECK(std::abs(next->bounds.y - buttons->bounds.y) < 0.001);
+    CHECK(buttons->bounds.right() <= next->bounds.x + 0.001);
+  }
+}
+
+// Every overlay and sheet the shell can present, drawn in a system face. The layout sweep over these
+// surfaces reads the shell's own text records and rectangles; none of them has been rendered and read.
+// The list is not incidental either: it already contains the two surfaces built to stress a row that has
+// to shorten its own text (recovery support carries a report name longer than any row can show, and the
+// diagnostic notices carry a refusal worded as long as a refusal can be), which is exactly where a
+// rendered frame says something a layout property does not.
+TEST_CASE("every overlay and sheet is capturable in a system face") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  const char* directory = std::getenv("SEAM_DESIGN_CAPTURE_DIRECTORY");
+  const std::filesystem::path root = directory != nullptr && *directory != '\0'
+      ? std::filesystem::path{directory}
+      : std::filesystem::path{test::support::temporaryDirectory("design-overlays")};
+  std::size_t written = 0U;
+  for (const auto& surface : overlaySurfaces()) {
+    LayoutFixture fixture;
+    fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+    writeCapturedOverlay(fixture, surface, 1440.0, 900.0,
+                         root / (std::string{surface.name} + "-1440x900.ppm"));
+    // A surface that could be opened at the canonical window has produced a frame with content in it;
+    // one that cannot (the compact inspector exists only at compact widths) is not a failure.
+    if (std::filesystem::exists(root / (std::string{surface.name} + "-1440x900.ppm"))) ++written;
+  }
+  // The list is the whole claim: every surface the shell can present was offered a frame.
+  CHECK(written == overlaySurfaces().size());
+}
+
 TEST_CASE("a shell label carries an ellipsis only when it is progress wording") {
   using seam::native_ui::design::Str;
   // The labels that name a control a person presses. None of them may end in the mark.

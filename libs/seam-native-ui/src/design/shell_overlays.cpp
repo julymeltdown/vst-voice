@@ -917,12 +917,24 @@ std::vector<OverlayControl> RecoverySupportOverlay::controls(const NativeEditorC
                                                              ui::Rect panel) const {
   std::vector<OverlayControl> out;
   if (panel.width <= 0.0) return out;
-  out.push_back({"support.track.previous", {panel.x + kPanelInset, panel.y + 40.0, 68.0, 24.0},
+  // The rows below the summary. The summary is painted by paint() at panel.y + 44 and is a 16 point
+  // line, so the paging buttons start below the line it ends on rather than on top of it, and the
+  // preview's second line pushes them further down because it is on screen too. The positions are
+  // named so paint() and controls() agree: they are the same strip, and when they disagreed the summary
+  // was drawn through the PREV button.
+  constexpr double kSummaryTop = 44.0;
+  constexpr double kSummaryLine = 16.0;
+  constexpr double kSummaryGap = 6.0;
+  const auto summaryBottom = kSummaryTop + kSummaryLine +
+                             (state.recoverySupport.mode == RecoverySupportMode::Preview
+                                  ? kSummaryGap + 14.0
+                                  : kSummaryGap);
+  out.push_back({"support.track.previous", {panel.x + kPanelInset, panel.y + summaryBottom, 68.0, 24.0},
                  tr(Str::PreviousVocalTrack)});
-  out.push_back({"support.track.next", {panel.x + 106.0, panel.y + 40.0, 68.0, 24.0},
+  out.push_back({"support.track.next", {panel.x + kPanelInset + 86.0, panel.y + summaryBottom, 68.0, 24.0},
                  tr(Str::NextVocalTrack)});
   constexpr double kItem = 60.0;
-  const auto top = panel.y + 72.0;
+  const auto top = panel.y + summaryBottom + 24.0 + 8.0;
   const auto selectable = state.recoverySupport.mode == RecoverySupportMode::Reports;
   for (std::size_t i = state.recoverySupport.firstVisibleItem;
        i < state.recoverySupport.items.size(); ++i) {
@@ -949,12 +961,21 @@ void RecoverySupportOverlay::paint(Canvas2D& c, const DesignTokens& t,
   const auto summary = preview ? trf(Str::CandidateId, {support.candidateId})
                                : trf(support.reportCount == 1U ? Str::OwnedReportCountOne : Str::OwnedReportCount,
                                      {std::to_string(support.reportCount)});
-  c.text({panel.x + kPanelInset, panel.y + 44.0, std::max(1.0, panel.width - 2.0 * kPanelInset), 16.0}, summary,
+  // The summary is above the paging buttons, not behind them. It was drawn at panel.y + 44 and the
+  // buttons are laid out at panel.y + 40 from the same left inset, so the sentence was painted through
+  // the middle of the PREV button: in the frame "2 owned reports" reads straight across the word
+  // PREV, and the two are the same kind of bright text on the same background, so neither is legible.
+  // The summary takes the panel's own top strip and the buttons start below it, and the second line in
+  // preview mode moves with it.
+  constexpr double kSummaryTop = 44.0;
+  constexpr double kSummaryLine = 16.0;
+  constexpr double kSummaryGap = 6.0;
+  c.text({panel.x + kPanelInset, panel.y + kSummaryTop, std::max(1.0, panel.width - 2.0 * kPanelInset), kSummaryLine}, summary,
          style(FontRole::Ui, t.type.smallLabel), t.color.textPrimary);
   if (preview) {
     const auto sha = support.archiveSha256.substr(
         0U, std::min<std::size_t>(12U, support.archiveSha256.size()));
-    c.text({panel.x + kPanelInset, panel.y + 60.0, std::max(1.0, panel.width - 2.0 * kPanelInset), 14.0},
+    c.text({panel.x + kPanelInset, panel.y + kSummaryTop + kSummaryLine + kSummaryGap, std::max(1.0, panel.width - 2.0 * kPanelInset), 14.0},
            trf(Str::ZipBytesSha256, {std::to_string(support.archiveBytes), sha}),
            style(FontRole::Mono, t.type.rulerMicro), t.color.textSecondary);
   }
