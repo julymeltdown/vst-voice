@@ -620,6 +620,16 @@ std::string updateManifestIdentity(const UpdateManifest& manifest) {
   return core::sha256Hex(serializeUpdateManifest(manifest));
 }
 
+bool buildMeetsMinimum(std::string_view installed, std::string_view minimum) noexcept {
+  if (minimum.empty()) return true;
+  const auto installedVersion = parseSemver(installed);
+  const auto minimumVersion = parseSemver(minimum);
+  // A value that cannot be parsed cannot be shown to meet the floor, so it fails closed rather
+  // than silently passing. Guessing either way would make the floor advisory.
+  if (!installedVersion || !minimumVersion) return false;
+  return compareSemver(*installedVersion, *minimumVersion) >= 0;
+}
+
 core::Result<UpdateManifest> parseUpdateManifest(std::string_view json) {
   auto parsed = formats::parseJson(json, formats::JsonParseLimits{
       .maximumInputBytes = kMaximumMetadataBytes,

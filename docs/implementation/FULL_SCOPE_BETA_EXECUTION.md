@@ -6394,3 +6394,32 @@ builds and tests the channel; it does not prove a pause reaches a running instal
 installed build has been driven. Release `seam_update_controller_tests` 3 of 3; full Release CTest
 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
+
+2026-10-04 — `minimumBuild` is now enforced, completing the sticky half of the signed distribution
+authority added in the previous entry.
+**What was left open, stated plainly.** The previous entry carried `minimumBuild` and round-tripped
+it but did not enforce it, and said so. This closes that gap rather than widening scope.
+**The rule.** `buildMeetsMinimum` compares the caller's installed version against the signed floor
+using the same `parseSemver`/`compareSemver` the manifest verifier already uses, so there is one
+version grammar in the product rather than two. It **fails closed**: an unparseable installed
+version returns false rather than passing, because a value that cannot be parsed cannot be shown to
+meet a floor, and guessing either way would make the floor advisory. An empty minimum means no floor
+is declared and returns true.
+**Why it lives in the controller and not the verifier.** Only the caller knows which build is
+actually running. `verifyUpdateManifest` already takes `installedVersion` for its own
+same-version-update rejection, but the authority floor is a distribution decision about *this*
+install, so it is applied where the install's identity is configured.
+**The three sides are tested separately, not just the refusal.** 0.13.0 against a 0.14.0 floor is
+`Blocked` with the minimum-build diagnostic; 0.14.0 and 0.15.1 against the same floor are
+`Available`. A floor that refused everything would pass only the first assertion, so the passing
+cases are what make the comparison a comparison.
+**One existing rule had to be accommodated, not worked around.** The at-floor case initially failed
+because `verifyUpdateManifest` rejects a **same-version update** (`update_manifest.cpp:700-702`,
+"Normal downgrade or same-version update is rejected") — correct behaviour. The fixture therefore
+targets 0.16.0 so the installed versions under test sit below the target while straddling the floor.
+The floor and the anti-downgrade rule are separate concerns and both are exercised.
+**Mutation-checked in both halves.** Disabling the floor check in `check` fails the case; making
+`buildMeetsMinimum` always return true fails it too, which is what proves the comparison is real
+rather than a hardcoded refusal.
+Release `seam_update_controller_tests` 4 of 4; full Release CTest 224 of 224. No DAW, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.

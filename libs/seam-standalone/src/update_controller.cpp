@@ -137,6 +137,15 @@ core::Result<UpdateCheckResult> UpdateController::check(
                              .manifest = manifest.value(),
                              .diagnostic = "Distribution is paused for this channel"};
   }
+  // A sticky floor: once an issuer names a minimum build, an install below it is no longer
+  // supported. Enforced here rather than in the manifest verifier because only the caller knows
+  // which build is actually running.
+  if (!manifest.value().minimumBuild.empty() &&
+      !distribution::buildMeetsMinimum(config_.installedVersion, manifest.value().minimumBuild)) {
+    return UpdateCheckResult{.status = UpdateCheckStatus::Blocked,
+                             .manifest = manifest.value(),
+                             .diagnostic = "This build is below the minimum supported build and must be updated before distribution continues"};
+  }
   return UpdateCheckResult{.status = UpdateCheckStatus::Available,
                            .manifest = manifest.value(),
                            .diagnostic = {}};

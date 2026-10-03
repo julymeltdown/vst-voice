@@ -194,6 +194,60 @@ TEST_CASE("a signed distribution pause reaches the installed client and blocks t
   CHECK(!controller.value()->stage(policyPath, manifestPath, package));
 }
 
+TEST_CASE("a signed minimum build floors an install that is below it") {
+  // minimumBuild is the sticky half of distribution authority: a pause stops distribution, a floor
+  // ends support for a build. It is enforced against the caller's own version, so the two sides of
+  // the comparison are exercised separately.
+  const auto root = seam::test::support::temporaryDirectory("update-minimum-build");
+  const std::array<std::byte, 4U> bytes{
+      std::byte{1}, std::byte{2}, std::byte{3}, std::byte{4}};
+  CHECK(seam::core::durableAtomicWrite(root / "update.pkg", bytes));
+  auto rootKey = seam::distribution::generateSigningKeyPair();
+  auto updateKey = seam::distribution::generateSigningKeyPair();
+  CHECK(rootKey);
+  CHECK(updateKey);
+  const auto policy = policyFor(rootKey.value(), updateKey.value());
+  const auto policyPath = root / "policy.json";
+  const auto manifestPath = root / "manifest.json";
+  CHECK(seam::core::durableAtomicWriteText(
+      policyPath, seam::distribution::serializeUpdateTrustPolicy(policy)));
+  auto manifest = manifestFor(updateKey.value(), bytes);
+  manifest.distributionPaused = false;
+  manifest.minimumBuild = "0.14.0";
+  // targetVersion must stay above the installed version or the manifest verifier's own
+  // same-version-update rejection fires first, which would mask what this case is testing.
+  manifest.targetVersion = "0.16.0";
+  resign(manifest, updateKey.value());
+  CHECK(seam::core::durableAtomicWriteText(
+      manifestPath, seam::distribution::serializeUpdateManifest(manifest)));
+  const auto controllerFor = [&](std::string installed) {
+    return seam::standalone::UpdateController::create(seam::standalone::UpdateControllerConfig{
+        .statePath = root / ("state-" + installed + ".json"),
+        .stagingRoot = root / ("staging-" + installed),
+        .expectedPlatform = "macos-arm64",
+        .installedVersion = std::move(installed),
+        .verificationTime = kTime,
+        .trustedRoot = rootKey.value().publicKey});
+  };
+  auto below = controllerFor("0.13.0");
+  CHECK(below);
+  const auto refused = below.value()->check(policyPath, manifestPath);
+  CHECK(refused);
+  CHECK(refused.value().status == seam::standalone::UpdateCheckStatus::Blocked);
+  CHECK(refused.value().diagnostic.find("minimum supported build") != std::string::npos);
+  auto atFloor = controllerFor("0.14.0");
+  CHECK(atFloor);
+  CHECK(atFloor.value()->check(policyPath, manifestPath).value().status ==
+        seam::standalone::UpdateCheckStatus::Available);
+  auto above = controllerFor("0.15.1");
+  CHECK(above);
+  CHECK(above.value()->check(policyPath, manifestPath).value().status ==
+        seam::standalone::UpdateCheckStatus::Available);
+  // An unparseable installed version cannot be shown to meet a floor, so it fails closed.
+  CHECK(!seam::distribution::buildMeetsMinimum("not-a-version", "0.14.0"));
+  CHECK(seam::distribution::buildMeetsMinimum("0.13.0", ""));
+}
+
 TEST_CASE("update panel exposes explicit confirmation state") {
   seam::native_ui::UpdatePanelModel panel;
   panel.update(seam::native_ui::UpdatePanelView{

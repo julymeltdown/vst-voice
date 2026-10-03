@@ -81,6 +81,13 @@ struct UpdateManifestVerificationOptions final {
   const Ed25519PublicKey* trustedRoot{nullptr};
 };
 
+// Whether `installed` is at or above `minimum`. An empty minimum means no floor is declared, and an
+// unparseable value on either side means the floor cannot be shown to be met, so this returns false
+// rather than assuming. Callers own their own build identity, so this is exposed rather than folded
+// into manifest verification.
+[[nodiscard]] bool buildMeetsMinimum(std::string_view installed,
+                                     std::string_view minimum) noexcept;
+
 struct SealedUpdatePackage final {
   std::string fileName;
   std::string relativePath;
