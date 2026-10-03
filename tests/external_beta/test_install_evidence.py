@@ -3,12 +3,18 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import platform
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from tools.external_beta.install_collector import (
+    collect_install_record,
+    measure_installed_tree,
+    observe_environment,
+)
 from tools.external_beta.install_evidence import INSTALL_ROW_IDS, _tree_digest, validate_install_matrix, validate_install_record
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +75,80 @@ def _record(root: Path, platform: str = "macos") -> dict:
         "rows": rows,
     }
 
+
+class InstallCollectorTests(unittest.TestCase):
+    """The collector must produce a record the real validator accepts, from real bytes.
+
+    Until now nothing in the repository produced install evidence: every validator consumed a
+    record somebody else wrote. These cases run the collector over a real temporary tree and
+    feed its output straight into validate_install_record, so a drift between the two is a
+    failure rather than something nobody notices.
+    """
+
+    def test_collected_record_satisfies_the_validator_it_feeds(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            template = _record(root)
+            # The installed path must be a real directory tree, because that is what the
+            # collector hashes using the same routine the validator uses.
+            installed = root / "installed-tree"
+            # The template creates this path as a file; the collector hashes a directory tree.
+            installed.unlink()
+            installed.mkdir()
+            (installed / "Contents").mkdir(exist_ok=True)
+            (installed / "Contents" / "app.bin").write_bytes(b"seam-installed-bytes")
+            record = collect_install_record(
+                root,
+                record_id=template["recordId"],
+                candidate_root_id=template["candidateRootId"],
+                operator=template["operator"],
+                verifier=template["verifier"],
+                deliverable_path="deliverable.pkg",
+                installer_path="installer.pkg",
+                installed_path="installed-tree",
+                bank_identity=template["bankIdentity"],
+                acquisition=template["acquisition"],
+                inventory=template["inventory"],
+                rows=template["rows"],
+            )
+            record["status"] = "PASS"
+            # The digests are measured, not asserted, so they differ from the template.
+            self.assertNotEqual(record["installedTreeSha256"], template["installedTreeSha256"])
+            self.assertEqual(record["installedEntryCount"], 1)
+            result = validate_install_record(record, MATRIX, root)
+            self.assertEqual(result.errors, ())
+            self.assertTrue(result.passed)
+
+    def test_the_collector_reports_the_running_machine_not_a_supplied_one(self) -> None:
+        observed = observe_environment()
+        self.assertIn(observed["platform"], {"macos", "windows", "linux"})
+        self.assertIn(observed["architecture"], {"arm64", "x86_64"})
+        # The image identifier is read from the running system, so a hardcoded placeholder
+        # cannot satisfy this. Asserting equality against the same source would be circular,
+        # so instead the test pins the two facts a placeholder could not fake.
+        self.assertEqual(observed["hostPython"], platform.python_version())
+        if sys.platform == "darwin":
+            completed = subprocess.run(
+                ["sw_vers", "-buildVersion"], capture_output=True, text=True, check=False
+            )
+            self.assertEqual(observed["imageId"], completed.stdout.strip())
+            self.assertNotEqual(observed["imageId"], "clean-snapshot-001")
+
+    def test_a_changed_installed_tree_changes_the_measured_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _record(root)
+            installed = root / "installed-tree"
+            # The template creates this path as a file; the collector hashes a directory tree.
+            installed.unlink()
+            installed.mkdir()
+            target = installed / "app.bin"
+            target.write_bytes(b"before")
+            before = measure_installed_tree(root, "installed-tree")
+            target.write_bytes(b"after-the-installer-ran")
+            after = measure_installed_tree(root, "installed-tree")
+            self.assertNotEqual(before["installedTreeSha256"], after["installedTreeSha256"])
+            self.assertEqual(after["errors"], [])
 
 class InstallEvidenceTests(unittest.TestCase):
     def test_matrix_declares_both_target_platforms_and_canonical_rows(self) -> None:

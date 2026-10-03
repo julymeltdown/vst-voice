@@ -6423,3 +6423,43 @@ The floor and the anti-downgrade rule are separate concerns and both are exercis
 rather than a hardcoded refusal.
 Release `seam_update_controller_tests` 4 of 4; full Release CTest 224 of 224. No DAW, VoiceOver,
 signing, Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — Nothing in the repository produced External Beta install evidence; every validator
+consumed a record somebody else wrote. The first validator now has a collector that measures.
+(SEAM-BETA-P1-06, first of five validators)
+**The gap, stated as evidence.** `rg -c subprocess tools/external_beta/{product_soak,cohort_gate,
+host_evidence,standalone_evidence,install_evidence}.py` returned **0 for every file**. The validators
+are not weakly collecting — they are not collecting at all. `validate_install_record` already
+re-hashed real bytes through `_artifact_digest` and `_tree_digest`, so the *checking* was sound; what
+was missing was any producer, which is why a candidate could assert an `installedTreeSha256` for a
+tree nobody measured.
+**What the collector does.** `tools/external_beta/install_collector.py` measures the machine it is
+given and emits the record `validate_install_record` consumes. It walks the real installed tree and
+hashes it **with the validator's own `_tree_digest`** — deliberately not a second implementation,
+because if the two ever disagreed a correctly collected record would fail its own validator. It reads
+`platform`, `architecture`, `osBuild` and `imageId` from the running system (on macOS by invoking
+`sw_vers -buildVersion`), and takes every timestamp from the clock. The emitted record carries a
+`collector` block naming the tool, its version, and **which digests were measured**, so a later
+gate can tell a collected record from a hand-authored one without trusting any author-supplied
+field.
+**What it explicitly does not do, because it cannot.** It does not install, uninstall or drive the
+product; those are human or CI actions on a target machine. The collector measures and the caller
+still supplies who ran it, which candidate, and which lifecycle steps a human performed. That
+boundary is stated in the module docstring rather than left for a reader to infer.
+**The strongest test is the round trip.** `test_collected_record_satisfies_the_validator_it_feeds`
+runs the collector over a real temporary tree and feeds the result straight into
+`validate_install_record`, asserting zero errors. A drift between producer and validator is therefore a
+test failure rather than something nobody notices. It also asserts the measured digest **differs**
+from the hand-written fixture's, so the case cannot pass by echoing the template.
+**Two mutations, and the second one exposed a weak test.** Pointing `measure_installed_tree` at a
+different artifact fails both tree cases with "installedTreeSha256 does not match installedPath
+bytes". Hardcoding `imageId` to the fixture's `clean-snapshot-001` **initially survived** — the
+original environment case only asserted membership in a set of legal values, which a placeholder
+satisfies. The case now compares against this host's actual `sw_vers -buildVersion` output and the
+live interpreter version, and the hardcoded mutation fails it. Recorded because a mutation that
+survives almost always means the assertion was decorative.
+**Scope, stated plainly.** This is one of five validators. `product_soak`, `host_evidence`,
+`standalone_evidence` and `cohort_gate` still consume records and produce nothing, and no gate yet
+consumes this collector's output. `tests/external_beta` 205 passed + 197 subtests. No install was
+performed, no product was driven, and no target-machine evidence exists. No DAW, VoiceOver, signing,
+Windows or external-review evidence. `.github` was not touched.
