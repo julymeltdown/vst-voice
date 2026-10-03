@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <set>
 #include <thread>
 
 namespace {
@@ -921,6 +922,36 @@ TEST_CASE("a candidate whose units were admitted under different source kinds is
       {.action = "import", .subjectId = "take-i", .operatorId = "producer",
        .occurredAtUtc = "2026-09-13T00:02:00Z"}));
   CHECK(project.takes.size() >= 2U);
+}
+
+// The Python guard proves the contract JSON and the Python registry agree. Nothing proved the
+// C++ resource-kind names agree with either, so the two halves of the vocabulary could drift
+// apart silently: a candidate would still publish a kind string that no requirement names.
+// This reads the contract itself, so a kind added, renamed or removed on either side fails
+// here rather than at some later acceptance audit.
+TEST_CASE("the C++ resource kinds are exactly the contract's resource kinds") {
+  namespace production = seam::voicebank_production;
+  const auto contract = seam::formats::parseJson(seam::core::readTextFileLimited(
+      std::filesystem::path{SEAM_SOURCE_ROOT} / "docs/product/full-product-beta-contract.json",
+      4U * 1024U * 1024U).value());
+  CHECK(contract);
+  const auto* scope = contract.value().find("scope");
+  CHECK(scope && scope->isObject());
+  const auto* kinds = scope->find("resourceKinds");
+  CHECK(kinds && kinds->isArray());
+  using KindSet = std::set<std::string, std::less<>>;
+  const KindSet declared{
+      std::string{production::resource_kind::kSampleReal},
+      std::string{production::resource_kind::kSampleProcedural}, std::string{production::resource_kind::kRecipeOriginal},
+      std::string{production::resource_kind::kNeuralOriginal}, std::string{production::resource_kind::kDictionaryOriginal},
+      std::string{production::resource_kind::kCharacterOriginal}};
+  KindSet contractKinds;
+  for (const auto& kind : kinds->asArray()) {
+    if (!kind.isString()) continue;
+    const auto inserted = contractKinds.insert(kind.asString());
+    CHECK(inserted.second);
+  }
+  CHECK(contractKinds == declared);
 }
 
 TEST_CASE("certified aborted journal recovery preserves source origins through explicit review and publication") {

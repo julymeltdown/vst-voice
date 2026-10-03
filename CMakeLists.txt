@@ -2816,6 +2816,9 @@ if(SEAM_BUILD_TESTS)
   endif()
   target_link_libraries(seam_tests PRIVATE seam_live_voice)
   seam_apply_compiler_options(seam_tests)
+  # seam_tests also compiles the production candidate tests, which read the full-product contract.
+  target_compile_definitions(seam_tests PRIVATE
+    SEAM_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   add_dependencies(seam_tests seam_crash_capture_probe)
   add_test(NAME seam_tests COMMAND seam_tests)
   set_tests_properties(seam_tests PROPERTIES
@@ -2827,6 +2830,10 @@ if(SEAM_BUILD_TESTS)
     tests/test_production_style_identity.cpp
     tests/test_production_edit_ownership.cpp
     tests/test_production_draft.cpp)
+  # The published candidate's resource kinds are named in C++ and defined by the full-product
+  # contract, so this target reads the contract to prove the two agree.
+  target_compile_definitions(seam_voicebank_production_tests PRIVATE
+    SEAM_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
   add_executable(seam_production_draft_tests tests/test_main.cpp tests/test_production_draft.cpp
     tests/test_draft_inventory.cpp)
   target_include_directories(seam_production_draft_tests PRIVATE tests)

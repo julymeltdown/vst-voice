@@ -4750,13 +4750,22 @@ recorded strategy, and the repository refused it: "Captured take source bindings
 are immutable". A candidate cannot be made to claim a kind it does not have by
 editing its producer state at all, which is a better property than the one this
 unit set out to add and is why the mixed case is built through the real import
-path instead. **Limits.** This types the *sample* kinds only. `recipe-original`,
-`neural-original`, `dictionary-original` and `character-original` still have no
-candidate path: the recipe package (`seam-distribution/procedural_package.cpp`),
-the model contract (`seam-neural-synthesis/model_contract.hpp`) and the English
-phonemizer vocabulary are separate formats that this descriptor does not yet
-describe, and scenario 3's "model/recipe contract fixtures exercise typed
-packaging" is not yet met. No production code reads `candidate.json`, so nothing
+path instead. **Limits.** This types the *sample* kinds only, because it is the
+sample candidate builder. `recipe-original` is **not** missing: the procedural
+singer path is complete and tested independently in `seam-distribution`
+(`ProceduralSingerManifest`, `publishProceduralSingerFromRecipe`,
+`packProceduralPackage`, `verifyProceduralPackage`, transactional install),
+driven by the Designer session and the standalone controller, and its 14 cases
+all pass; an earlier draft of this entry wrongly listed it as absent. What is
+true is narrower and worth stating plainly: these are two separate families
+that do not yet share one vocabulary. The recipe manifest is keyed by its own
+`formatId` and carries a single `language` with no character identity, while
+the candidate descriptor now names a `resourceKind` from the contract's six;
+nothing joins them, and no single artifact states which contract kind a given
+installed singer satisfies. `neural-original` and `dictionary-original` have
+no installable typed package at all, so scenario 3's "model/recipe contract
+fixtures exercise typed packaging" is met for neither. No production code reads
+`candidate.json`, so nothing
 downstream had to change, but that also means no consumer enforces the new field
 yet. `tools/external_beta/_production_candidate.py` is a separate, older,
 sample-only schema that already disagreed with the C++ status vocabulary before
@@ -4766,3 +4775,55 @@ candidate identifies itself honestly, not that any reviewed material exists or i
 musically qualified. U42 and U47 stay externally blocked on real assets, signed
 builds and host sessions. No DAW, listening, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-03 — The resource-kind vocabulary now has one C++ definition and is
+proven against the contract that defines it, so the two halves can no longer
+drift apart silently (the gap the typed-manifest entry above left open: it
+introduced the strings but nothing anchored them; this closes that, and it
+corrects an overstatement in the entry above about recipe-original being
+absent). **The gap.** The canonical six kinds live in
+`docs/product/full-product-beta-contract.json` at `scope.resourceKinds`.
+`tests/external_beta/test_full_product_gate.py` proves the JSON and the Python
+registry `RESOURCE_KINDS` agree, and that guard is live: mutating the contract
+in memory produces "missing or unknown IDs", and duplicating an entry is
+rejected. But nothing anywhere compared either of those to C++. The two kind
+strings the candidate publisher emitted were literals in one function body, so
+a kind could be renamed on the contract side, or mistyped on the C++ side, and
+a candidate would keep publishing a name no requirement recognises until some
+much later acceptance audit noticed. **What changed.** The six kinds are named
+once in `candidate_publication.hpp` under `resource_kind`, the publisher uses
+those names instead of literals, and a new case reads
+`docs/product/full-product-beta-contract.json` through a `SEAM_SOURCE_ROOT`
+compile definition and requires the C++ set and the contract's set to be
+equal, with a duplicate in the contract rejected rather than silently folded.
+That target mechanism is the project's existing one, used by
+`seam_performance_contract_tests`, `seam_schema8_tests` and
+`seam_song_source_tests`; `seam_tests` compiles the same test file and needed
+the definition too, which the first build caught. **Evidence, mutation-checked
+in both directions.** Renaming the C++ `kSampleReal` to `sample-live` fails the
+case at the set comparison; adding `sample-imaginary` to the contract fails it
+the same way. Restoring both leaves the contract byte-identical to its parent
+commit and `seam_voicebank_production_tests` 58 of 58. Full Release `ctest` and
+the Python `tests/external_beta/` and `tests/production/` suites pass;
+`git diff --check` passes. **Correction to the previous entry.** That entry
+stated `recipe-original` had no candidate path. It does: `seam-distribution`
+has `ProceduralSingerManifest` with its own typed `formatId`, and
+`publishProceduralSingerFromRecipe`, `packProceduralPackage`,
+`verifyProceduralPackage` and a transactional install, wired to the Designer
+session and the standalone controller, with 14 passing cases. The accurate
+statement is that the sample candidate builder and the procedural singer
+package are two separate families that do not share one vocabulary: nothing
+states which of the contract's kinds a given installed singer satisfies, and
+the recipe manifest carries a single `language` with no character identity.
+`neural-original` and `dictionary-original` have no installable typed package
+at all, so U14 scenario 3 remains unmet for both. **Limits.** This anchors the
+names only. The contract's `scope.resourceKinds` is a flat array with no
+per-kind metadata, so the kind-to-backend pairing still lives only in the
+Python registry's per-requirement tables, and `scope.matrixStatus` is
+`UNRESOLVED`, so no released resource can yet be checked against a frozen
+matrix. The candidate descriptor's `evidenceScope: "engineering"` is still a
+C++ literal with no contract-side counterpart. Headless evidence on one
+machine: this says a kind string means what the contract says it means, not
+that any resource of that kind exists. U42 and U47 stay externally blocked on
+real assets, signed builds and host sessions. No DAW, listening, VoiceOver,
+signing, Windows or external-review evidence. `.github` was not touched.

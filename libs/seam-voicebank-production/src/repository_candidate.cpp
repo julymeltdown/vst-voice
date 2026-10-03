@@ -691,12 +691,12 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   // are different products with different rights and different evidence, so a candidate that mixed
   // them could claim one kind while holding material of another; that is refused here instead of
   // published under a single label.
-  const auto sampleKind = [](const SourceStrategyKind kind) -> std::string_view {
-    switch (kind) {
-      case SourceStrategyKind::HumanRecording: return "sample-real";
-      case SourceStrategyKind::ProceduralSynthesis:
-      case SourceStrategyKind::TtsDerived: return "sample-procedural";
-    }
+ const auto sampleKind = [](const SourceStrategyKind kind) -> std::string_view {
+   switch (kind) {
+      case SourceStrategyKind::HumanRecording: return resource_kind::kSampleReal;
+     case SourceStrategyKind::ProceduralSynthesis:
+      case SourceStrategyKind::TtsDerived: return resource_kind::kSampleProcedural;
+   }
     return {};
   };
   std::map<std::string, std::string, std::less<>> sourceKindByTake;

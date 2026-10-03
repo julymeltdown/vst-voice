@@ -13,6 +13,19 @@ namespace seam::voicebank_production {
 
 inline constexpr std::string_view kSampleCandidateReviewKind = "sample-candidate-review-v2";
 
+// The full-product contract's resource kinds (docs/product/full-product-beta-contract.json,
+// scope.resourceKinds). These are named here so the vocabulary has exactly one C++ definition:
+// a published candidate's resourceKind is compared against the contract, not against a literal
+// repeated at each use, and a test reads the contract itself to prove the two agree.
+namespace resource_kind {
+inline constexpr std::string_view kSampleReal{"sample-real"};
+inline constexpr std::string_view kSampleProcedural{"sample-procedural"};
+inline constexpr std::string_view kRecipeOriginal{"recipe-original"};
+inline constexpr std::string_view kNeuralOriginal{"neural-original"};
+inline constexpr std::string_view kDictionaryOriginal{"dictionary-original"};
+inline constexpr std::string_view kCharacterOriginal{"character-original"};
+}  // namespace resource_kind
+
 struct SampleCandidateUnitBinding final {
   std::string unitId;
   std::string takeId;
