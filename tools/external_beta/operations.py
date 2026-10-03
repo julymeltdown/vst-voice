@@ -12,6 +12,8 @@ from typing import Any
 from .full_product_report import _parse_json, _read_regular_reference
 from .release_audit import audit_release
 from .release_gate_validation import HEX64
+from tools.public_release.contracts import sha256_json
+from tools.public_release.crypto_validation import signed_record_errors
 
 
 STATES = {"FROZEN", "READY", "COHORT_ACTIVE", "DISTRIBUTION_PAUSED", "REVOKED", "CLOSED"}
@@ -68,8 +70,51 @@ def _decision_base(snapshot: dict[str, Any], decision: dict[str, Any]) -> None:
         raise ValueError("operation decisionId has already been recorded")
 
 
-def _approved(roles: Any) -> bool:
-    return isinstance(roles, list) and "A3" in roles and bool({"A4", "A6"} & set(roles))
+def approval_errors(
+    decision: dict[str, Any], policy: dict[str, Any], required: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Verify each quorum approval as a signature, not as a self-asserted role string.
+
+    A role list is an assertion the author of the snapshot makes about themselves. The public
+    release path already proved the alternative: an Ed25519 signature over the approval's own
+    canonical payload, verified against a role-bound trusted key whose signerId must equal the
+    claimed approver. This reuses that policy rather than inventing a second scheme.
+
+    Every approval must independently carry a valid signature for its own role, so a quorum
+    cannot be assembled by listing roles nobody signed for.
+    """
+    approvals = decision.get("approvals")
+    if not isinstance(approvals, list) or not approvals:
+        return ("operation decision requires signed approvals",)
+    errors: list[str] = []
+    seen_roles: set[str] = set()
+    seen_signers: set[str] = set()
+    for index, approval in enumerate(approvals):
+        if not isinstance(approval, dict):
+            errors.append(f"approvals[{index}] must be an object")
+            continue
+        role = approval.get("role")
+        if role not in APPROVAL_ROLES:
+            errors.append(f"approvals[{index}].role is invalid")
+            continue
+        if approval.get("decision") != "GO":
+            errors.append(f"approvals[{index}] must be a GO decision")
+        record_errors = signed_record_errors(
+            approval, policy, role, "approvalSha256", "approverId"
+        )
+        errors.extend(f"approvals[{index}]: {item}" for item in record_errors)
+        if role in seen_roles:
+            errors.append(f"approval role {role} must appear once")
+        seen_roles.add(role)
+        signer = approval.get("approverId")
+        if isinstance(signer, str):
+            if signer in seen_signers:
+                errors.append("approval signers must be distinct")
+            seen_signers.add(signer)
+    for role in required:
+        if role not in seen_roles:
+            errors.append(f"{role} approval is required")
+    return tuple(errors)
 
 
 def _reproduce_audit(snapshot: dict[str, Any], decision: dict[str, Any], base: Path, state: str) -> dict[str, Any]:
@@ -117,8 +162,11 @@ def transition(snapshot: dict[str, Any], decision: dict[str, Any], *, base: Path
     next_state: str
     audit_receipt = None
     if action == "PROMOTE_READY":
-        if current != "FROZEN" or not _approved(decision.get("approvals")):
-            raise ValueError("PROMOTE_READY requires a passing audit and A3 plus A4/A6 approval")
+        if current != "FROZEN":
+            raise ValueError("PROMOTE_READY requires a passing audit and signed A3 plus A4/A6 approval")
+        quorum = approval_errors(decision, decision.get("operationPolicy") or {}, ("A3",))
+        if quorum:
+            raise ValueError("PROMOTE_READY approvals are not authoritative: " + "; ".join(quorum[:8]))
         audit_receipt = _reproduce_audit(snapshot, decision, base or Path.cwd(), "READY")
         next_state = "READY"
     elif action == "START_COHORT":
@@ -129,15 +177,31 @@ def transition(snapshot: dict[str, Any], decision: dict[str, Any], *, base: Path
     elif action == "PAUSE":
         if current not in {"READY", "COHORT_ACTIVE"} or not decision.get("reason"):
             raise ValueError("PAUSE requires a distributable state and reason")
+        # Pausing a live cohort is an operational act, not a note. It was previously authorized by
+        # an actorRole string that anyone could type, which made the kill switch forgeable.
+        signer = signed_record_errors(
+            decision, decision.get("operationPolicy") or {}, decision["actorRole"], "decisionSha256", "actorId"
+        )
+        if signer:
+            raise ValueError("PAUSE is not signed by a role-bound trusted key: " + "; ".join(signer[:8]))
         next_state = "DISTRIBUTION_PAUSED"
     elif action == "RESUME":
-        if current != "DISTRIBUTION_PAUSED" or not _approved(decision.get("approvals")):
-            raise ValueError("RESUME requires fresh GO and A3 plus A4/A6 approval")
+        if current != "DISTRIBUTION_PAUSED":
+            raise ValueError("RESUME requires fresh GO and signed A3 plus A4/A6 approval")
+        quorum = approval_errors(decision, decision.get("operationPolicy") or {}, ("A3",))
+        if quorum:
+            raise ValueError("RESUME approvals are not authoritative: " + "; ".join(quorum[:8]))
         audit_receipt = _reproduce_audit(snapshot, decision, base or Path.cwd(), "READY")
         next_state = "COHORT_ACTIVE"
     elif action == "REVOKE":
         if not decision.get("reason"):
             raise ValueError("REVOKE requires a reason")
+        # Revocation is terminal. It must never rest on a self-asserted identity.
+        signer = signed_record_errors(
+            decision, decision.get("operationPolicy") or {}, decision["actorRole"], "decisionSha256", "actorId"
+        )
+        if signer:
+            raise ValueError("REVOKE is not signed by a role-bound trusted key: " + "; ".join(signer[:8]))
         next_state = "REVOKED"
     elif action == "CLOSE":
         if current != "COHORT_ACTIVE":
