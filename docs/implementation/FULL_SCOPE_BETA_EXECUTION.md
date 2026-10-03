@@ -4870,9 +4870,56 @@ published, or that a package installs. `tools/external_beta/_production_candidat
 still describes a different, older sample-only schema whose status vocabulary
 (`READY`) does not match the C++ descriptor's (`REVIEWED_CANDIDATE`), so the
 candidate this lock hashes is not demonstrably the candidate the C++
-publisher writes; converging the two is not attempted here. Headless
+publisher writes; converging the two is not attempted here. That claim is
+narrower than it looked, and the next entry corrects it. Headless
 evidence on one machine: a release lock now rejects a tampered record of its
 own coverage. This says nothing about whether any voicebank, package or song
 exists to lock. U42 and U47 stay externally blocked on real assets, signed
 builds and host sessions. No DAW, listening, VoiceOver, signing, Windows or
 external-review evidence. `.github` was not touched.
+
+2026-10-03 — The divergence between the September export schema and the C++
+published descriptor is now proven, documented and pinned by a test, and a
+claim made in the two previous entries is corrected (R5/R18 tooling hygiene;
+it advances no roadmap unit). **The claim, and the correction.** The
+beta-voicebank-lock entry said the lock hashes a document that is not
+demonstrably the one the C++ publisher writes, leaving open the possibility
+that a release lock covered the wrong thing. That was overstated, and the
+evidence says so. `_production_cli.py` registers no candidate or lock
+subcommand; `validate_candidate_export` and `create_beta_lock` are re-exported
+from `voicebank_production` and called by nothing but tests. Neither is
+reachable at runtime, so no lock is currently built over the wrong document,
+because no lock is currently built at all. **The divergence is still real.
+Running the C++ descriptor's exact top-level shape through
+`validate_candidate_export` refuses it on three counts, the first two of which
+no amount of correct data can fix: "candidate schemaVersion must be 1"
+against the publisher's version 2, and "candidate export status must be
+READY" against the publisher's `REVIEWED_CANDIDATE`. The per-unit
+vocabularies are disjoint as well: the export schema requires `coverageKey`,
+`pitchLayer`, `alias`, `markers`, `pitchMarks` and `validator` per binding,
+while the descriptor publishes `unitId`, `audioSha256`, review identity,
+`sourceKind` and captured origin history. The two documents share exactly two
+field names: `unitBindings` and `takeId`. **Why that is correct rather than a
+bug to smooth over.** They describe different things. The export schema
+describes a recording session exported for review, with a validator verdict
+per unit; the descriptor describes a candidate actually published from one
+approved generation, with the review identities and origin history that
+proves it. Merging them would mean a session export could be presented as a
+published candidate, which is the misrepresentation this project has been
+closing one unit at a time. **What changed.** The module docstring states the
+divergence, the reason, and that nothing calls it at runtime, so the next
+reader does not have to rediscover it or mistake it for an oversight. A new
+`CandidateSchemaDivergenceTests` pins the refusal and the disjointness.
+**Evidence, mutation-checked.** The new tests pass; widening the validator to
+accept version 2 and `REVIEWED_CANDIDATE` fails the refusal case, and the
+failure output shows the only remaining complaint is the empty binding list,
+which is the point: the version and status were the only things refusing it.
+The original 7 cases still pass. `tests/external_beta/` and
+`tests/production/` and full Release `ctest` pass; `git diff --check`
+passes. **Limits.** This makes a real divergence explicit and unmissable; it
+does not resolve it. Which document is authoritative for a given gate is a
+scope decision rather than a refactor, so nothing was converged or retired
+here, and no gate was pointed at either document. U42 and U47 stay
+externally blocked on real assets, signed builds and host sessions. No DAW,
+listening, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.

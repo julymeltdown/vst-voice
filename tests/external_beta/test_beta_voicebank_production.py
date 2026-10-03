@@ -222,5 +222,61 @@ class BetaVoicebankProductionTests(unittest.TestCase):
         self.assertTrue(any("singingBankRedistribution" in error for error in result.errors))
 
 
+class CandidateSchemaDivergenceTests(unittest.TestCase):
+    """The September export schema and the C++ published descriptor are different documents.
+
+    They share only the names unitBindings and takeId. This pins the refusal in both
+    directions so neither can quietly start accepting the other: a validator that accepted a
+    descriptor it does not understand would report readiness it never established.
+    """
+
+    #: The exact top-level shape publishSampleCandidate writes (repository_candidate.cpp),
+    #: schemaVersion 2, status REVIEWED_CANDIDATE, a derived resourceKind and origin history.
+    CPP_DESCRIPTOR = {
+        "format": "com.project-seam.resource-candidate",
+        "schemaVersion": 2,
+        "resourceKind": "sample-procedural",
+        "languages": ["ja"],
+        "characterId": "",
+        "characterVersion": "",
+        "status": "REVIEWED_CANDIDATE",
+        "releaseEligible": False,
+        "evidenceScope": "engineering",
+        "sourceProjectSha256": "a" * 64,
+        "sourceGeneration": 3,
+        "inventorySha256": "d" * 64,
+        "licenseSha256": "e" * 64,
+        "manifestSha256": "b" * 64,
+        "contentSha256": "c" * 64,
+        "originHistory": [],
+        "unitBindings": [],
+    }
+
+    @staticmethod
+    def closure() -> dict:
+        return {"schemaVersion": 1, "inventorySha256": "d" * 64, "status": "PASS",
+                "openRetakes": [], "closedRetakes": []}
+
+    def test_the_cpp_descriptor_is_refused_on_version_and_status_alone(self) -> None:
+        result = validate_candidate_export(
+            self.CPP_DESCRIPTOR, {"inventorySha256": "d" * 64}, [], self.closure())
+        self.assertFalse(result.passed)
+        self.assertTrue(any("schemaVersion must be 1" in error for error in result.errors), result.errors)
+        self.assertTrue(any("status must be READY" in error for error in result.errors), result.errors)
+        # It is blocked, not merely malformed: this document is not an export result.
+        self.assertIn("candidate-export", result.blocked)
+
+    def test_binding_fields_do_not_overlap(self) -> None:
+        # The per-unit vocabularies are disjoint apart from takeId. If a future change made
+        # them agree, one of the two validators would be validating a document it was not
+        # written for, and this would stop being two schemas and become one by accident.
+        export_binding = {"coverageKey", "pitchLayer", "takeId", "alias", "markers",
+                          "pitchMarks", "validator"}
+        descriptor_binding = {"unitId", "takeId", "audioSha256", "reviewId",
+                              "reviewMetadataRevisionId", "sourceKind", "originOperatorId",
+                              "originGeneration", "originJournalSha256"}
+        self.assertEqual(export_binding & descriptor_binding, {"takeId"})
+        self.assertFalse(descriptor_binding & export_binding - {"takeId"})
+
 if __name__ == "__main__":
     unittest.main()

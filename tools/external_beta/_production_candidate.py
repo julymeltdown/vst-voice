@@ -1,3 +1,27 @@
+"""The September (U56) producer candidate export schema. NOT the candidate.json the C++
+publisher writes.
+
+This module validates a recording-session export document: schemaVersion 1, status READY, and
+per-unit bindings carrying coverageKey, pitchLayer, takeId, alias, markers, pitchMarks and a
+validator verdict. The C++ `publishSampleCandidate` writes a different document entirely
+(`libs/seam-voicebank-production/src/repository_candidate.cpp`): schemaVersion 2, status
+REVIEWED_CANDIDATE, a derived resourceKind, languages, character identity, and per-unit
+bindings carrying unitId, takeId, audioSha256, review identity and captured origin history.
+The two share only the names `unitBindings` and `takeId`.
+
+Neither document validates the other. `validate_candidate_export` refuses the C++ descriptor on
+its version and status alone, before any content is compared. That refusal is correct and
+deliberate, not a bug to be smoothed over: this schema describes a recording session that was
+exported for review, while the C++ descriptor describes a candidate that was actually
+published from an approved generation.
+
+Nothing calls this module at runtime. `_production_cli.py` registers no candidate or lock
+subcommand, and no script or release gate invokes `validate_candidate_export` or
+`create_beta_lock`; both are exercised only by tests. The live candidate path is the C++ one.
+Converging the two schemas, or retiring this one, is outstanding work and is deliberately not
+attempted by a drive-by edit: which document is authoritative for a given gate is a scope
+decision, not a refactor."""
+
 from __future__ import annotations
 
 from typing import Any, Iterable
