@@ -175,6 +175,15 @@ seam::text::TextEngine* designSystemFont() {
 // shell's own type scale is a set of point sizes, and a point size is only a claim until a face has
 // turned it into ink. That is the same gap the Studio surfaces had, and it is why this helper gained a
 // capture: with a real engine the same shell can be written out as a frame and read.
+// The name of every frame this file has written since the process started, so the coverage audit is a
+// fact about the run rather than a claim about it. A case that renders a frame nobody can see is the
+// failure mode this run of units has hit twice; this is where the record of what was written lives, and
+// the audit at the end of the file reads it.
+std::set<std::string>& capturedFrameNames() {
+  static std::set<std::string> names;
+  return names;
+}
+
 void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, double height,
                         const std::filesystem::path& path, DesignMode mode = DesignMode::Emo) {
   const auto surface = static_cast<std::uint32_t>(std::lround(width));
@@ -190,6 +199,10 @@ void writeCapturedFrame(LayoutFixture& f, Workspace workspace, double width, dou
   if (!f.shell.paint(canvas, f.controller, f.controller.sceneState(), f.controller.playheadTick())) return;
   std::filesystem::create_directories(path.parent_path());
   CHECK(frame.writePpm(path));
+  // Record the frame's name so the coverage audit below is about what was actually written rather
+  // than about what a case says it wrote. A capture nobody can see is the failure this whole run of
+  // units has been about, twice over.
+  capturedFrameNames().insert(path.stem().string());
 }
 
 bool paintFrame(LayoutFixture& f, double width, double height, double scale, Frame& out) {
@@ -724,6 +737,7 @@ TEST_CASE("a captured frame is painted in the look it was asked for, not the one
   CHECK(differing > emoPixels.size() / 100U);
 }
 
+
 // A frame in the look it claims. The capture used to take a mode and discard it, so every frame in
 // this file was EMO whatever the caller asked for; a frame that is in the wrong look is a picture of
 // something a person would never see, which is the same failure as a frame of the wrong surface and
@@ -771,6 +785,7 @@ void writeCapturedOverlay(LayoutFixture& f, const Surface& surface, double width
     return;
   std::filesystem::create_directories(path.parent_path());
   CHECK(pixels.writePpm(path));
+  capturedFrameNames().insert(path.stem().string());
 }
 
 
@@ -1752,4 +1767,83 @@ TEST_CASE("the Korean shell keeps widgets apart and its text whole or elided") {
   std::printf("Korean lines painted: %zu, elided: %zu\n", hangulLines, elided);
   CHECK(hangulLines > 200U);
   checker.finish("korean");
+}
+
+// What the frame coverage is, stated rather than implied, and made to fail when it stops being true.
+// Every entry in this file that renders a surface picks a look and a contrast and each has been read at
+// least once by hand; what no entry checked was which combinations exist at all. After ten units of
+// rendering the five workspaces have all four variants and the eleven overlays and two compact surfaces
+// have one each, and that was written down only in a ledger entry, which is not something that fails
+// when it stops being true.
+//
+// This case is that list, and it reads the frames the capture helpers actually wrote rather than the
+// names a case claims for them. Every surface a creator can reach is enumerated; a combination required
+// of a surface must have a frame, and the numbers are printed so a reader sees the gap rather than
+// being told there is one.
+TEST_CASE("the frame coverage is what it says, and the gap is counted") {
+  if (!native_ui::paint::vectorBackendAvailable()) return;
+  // The four variants the shell can be painted in. The mode and the contrast are both application
+  // preferences that change every pixel and neither can change audio, which is why all four exist and
+  // why a frame in one says nothing about the other three.
+  struct Variant final {
+    DesignMode mode;
+    Contrast contrast;
+    std::string_view suffix;
+  };
+  const std::array<Variant, 4U> variants{{
+      {DesignMode::Emo, Contrast::Standard, "-emo-standard"},
+      {DesignMode::Emo, Contrast::High, "-emo-high"},
+      {DesignMode::Scene, Contrast::Standard, "-scene-standard"},
+      {DesignMode::Scene, Contrast::High, "-scene-high"}}};
+  const std::array<std::pair<std::string_view, Workspace>, 5U> workspaces{{
+      {"sing", Workspace::Sing}, {"voice", Workspace::Voice}, {"tune", Workspace::Tune},
+      {"mix", Workspace::Mix}, {"export", Workspace::Export}}};
+  const auto& captured = capturedFrameNames();
+
+  // Every workspace in every variant. The capture case above loops over exactly these twenty
+  // combinations, so this is twenty required pairs and the frames that exist for them, which is what
+  // makes it a check rather than a claim about what some other case does.
+  std::size_t workspaceCombinations = 0U;
+  std::size_t workspaceCaptured = 0U;
+  for (const auto& [name, workspace] : workspaces)
+    for (const auto& variant : variants) {
+      static_cast<void>(workspace);
+      ++workspaceCombinations;
+      if (captured.count(std::string{name} + std::string{variant.suffix}) != 0U)
+        ++workspaceCaptured;
+    }
+  CHECK(workspaceCombinations == 20U);
+  CHECK(workspaceCaptured == workspaceCombinations);
+
+  // The overlays, each in the one variant they were captured in. They are not required to be in all
+  // four, and saying so here is the point: the requirement is written where it can be compared against
+  // the next entry rather than left in a paragraph of prose.
+  std::size_t overlayCaptured = 0U;
+  for (const auto& surface : overlaySurfaces())
+    if (captured.count(std::string{surface.name} + "-1440x900") != 0U) ++overlayCaptured;
+  CHECK(overlayCaptured == overlaySurfaces().size());
+
+  // The compact surfaces, at the sizes where they exist rather than at the canonical window, because at
+  // the canonical window they do not exist at all. Five inspector sizes and two menu sizes.
+  std::size_t compactCaptured = 0U;
+  for (const auto& size : kSizes) {
+    const auto label = std::to_string(static_cast<int>(size[0])) + "x" +
+                       std::to_string(static_cast<int>(size[1]));
+    if (captured.count("compact-inspector-" + label) != 0U) ++compactCaptured;
+    if (captured.count("workspace-menu-" + label) != 0U) ++compactCaptured;
+  }
+  CHECK(compactCaptured == 7U);
+
+  // The totals, as numbers a reader sees rather than a promise: nineteen surfaces a creator can reach,
+  // forty-one frames written across them, all four variants of the five workspaces and one variant each
+  // of the fourteen overlays and the seven compact frames. The gap is the three other variants of the
+  // overlays and the compact surfaces, and it is stated here so that closing it is a change to this case
+  // rather than a new claim in a document.
+  const auto surfacesCovered = workspaces.size() + overlaySurfaces().size();
+  const auto framesWritten = workspaceCaptured + overlayCaptured + compactCaptured;
+  CHECK(surfacesCovered == 19U);
+  CHECK(framesWritten == 41U);
+  CHECK(overlayCaptured + compactCaptured == overlaySurfaces().size() + 7U);
+  std::printf("frame coverage: %zu surfaces, %zu frames across %d variants\n", surfacesCovered,
+              framesWritten, static_cast<int>(variants.size()));
 }
