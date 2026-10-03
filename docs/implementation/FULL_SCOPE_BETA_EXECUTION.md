@@ -4640,7 +4640,9 @@ scale; the slack is two orders of magnitude below the smallest real step in the
 type scale, so it forgives that arithmetic and nothing else. The floor was first
 written at 7.0, which rejected text the design has always shipped, and was lowered
 to the measured value rather than the round one. **Evidence.** Release
-`ctest -R seam_design_layout_property` 10 of 10, Debug the same 10 of 10.
+`ctest -R seam_design_layout_property` 10 of 10 in 78 s, and Debug the same 10
+of 10 in 1208 s, the unoptimized build spending 409 s on the 3840x2160 overlay
+sweep and 128 s on this case.
 Mutation-checked end to end, not only in the binary: with `smallLabel` at 4
 point the new case fails at `smallest ink 2.399994 on "sing: Sing"`, and the
 registered ctest entry `seam_design_layout_property_tests_inkfloor` reports
