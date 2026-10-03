@@ -5080,3 +5080,41 @@ a rendered phrase, and no listening evidence exists. U42 remains externally
 blocked on a real recording session for the sample route, which this does not
 touch. No DAW, VoiceOver, signing, Windows or external-review evidence.
 `.github` was not touched.
+
+2026-10-03 — The synthetic singer articulates every syllable of a two-note phrase,
+at its own pitch, with the consonants measured in the audio (R3's synth-style
+original voice; acoustic evidence about the renderer, not a singer qualification).
+**Why this follows the CV case.** The previous entry proved one syllable can
+carry a consonant and a sung vowel. Articulating in isolation is easier than
+sustaining articulation across a note boundary, which is where a renderer that
+only handles one syllable at a time would fail, so this renders "さし" (s+a,
+sh+i) as two notes at MIDI 60 and 64 and checks every phone of both syllables.
+**Evidence, measured not asserted.** Four markers, each measured inside the span
+the renderer publishes for that phone: **consonant "s" RMS 0.002967 over 2880
+frames; vowel "a" RMS 0.001114 at 261.55 Hz over 33120 frames; consonant "sh"
+RMS 0.008347 over 2880 frames; vowel "i" RMS 0.026049 at 329.62 Hz over 33120
+frames.** Both consonants own real aperiodic energy rather than a silent span
+labelled as a phone, and both vowels sit within 50 cents of their own note
+(261.63 Hz and 329.63 Hz targets). Articulation survives the note boundary.
+**A wrong guard of mine, corrected against the score.** The case first asserted
+that the second vowel was more than 1.4 times the first. It failed, and the
+measurement showed why: the actual ratio is 1.260, and MIDI 60 to 64 is exactly
+2^(4/12) = 1.2599. The renderer was right and the assertion was wrong: a 1.4
+bound would have required a tritone the score never asks for. The guard now uses
+1.2 with the score's own interval recorded beside it. Recording this because the
+first draft of a test asserting a musical property is usually wrong about the
+music, and the failure mode is a false positive that looks like a renderer bug.
+**Mutation-checked.** Requiring five consonants instead of two fails at the
+count, so both syllables' consonants are demonstrably load-bearing rather than
+one being carried by the other. Release `seam_performance_snapshot_tests` 57 of
+57. **What this is and is not.** It shows the procedural path produces a
+two-syllable phrase in which both consonants are audible aperiodic energy and
+both vowels are voiced at their own score pitch, which is the articulation and
+intonation core of R3 and needs no performer. It is still not a song: two
+syllables, no phrase-level timing, dynamics or phrasing evidence, no repeated or
+slurred syllables, and no measurement of timbre, breathiness or expressiveness.
+Plosive closure and burst, nasals and affricates remain component-tested upstream
+but unmeasured in a rendered phrase, and no listening evidence exists. U42
+remains externally blocked on a real recording session for the sample route,
+which this does not touch. No DAW, VoiceOver, signing, Windows or
+external-review evidence. `.github` was not touched.

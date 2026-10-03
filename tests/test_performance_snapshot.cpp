@@ -102,6 +102,90 @@ struct PerformanceSnapshotFixture final {
 // must carry aperiodic energy rather than silence, and the vowel span next to it must be voiced at
 // the score's pitch. A renderer that emitted a vowel alone, or a silent span labelled a
 // consonant, fails here.
+// One CV syllable proves a consonant can be produced. A sung phrase is harder: articulation has
+// to survive across note boundaries while each note carries its own pitch, which is where a
+// renderer that only articulates in isolation would fail. This renders "さし" (s+a, sh+i) as two
+// notes at different pitches and checks every phone of every syllable in the audio: each
+// consonant owns a span with aperiodic energy, each vowel owns a span voiced at its own note.
+TEST_CASE("a procedural phrase articulates every syllable at its own pitch") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  PerformanceSnapshotFixture f;
+  auto* region = f.project.findRegion(f.regionId);
+  region->notes.front().startTick = time::Tick{480};
+  region->notes.front().durationTick = time::Tick{1440};
+  region->notes.front().midiKey = 60U;
+  region->notes.front().vibrato.enabled = false;
+  region->notes.front().phoneticHint.reset();
+  region->lyrics.front().surface = U"さ";
+  auto [secondLyric, second] = f.factory.makeNote(
+      region->notes.front().startTick + region->notes.front().durationTick,
+      time::Tick{1440}, 64U, U"し", domain::Language::Japanese);
+  second.phoneticHint.reset();
+  second.vibrato.enabled = false;
+  region->lyrics.push_back(secondLyric);
+  region->notes.push_back(second);
+  voice_design::VoiceRecipe recipe; recipe.id = "multi-cv-phrase";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                 {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+  recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}},
+                        {"sh", "neutral", {.seed = 43U, .centerHz = 2800.0, .bandwidthHz = 1200.0}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+      f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+  if (!snapshot) throw test::Failure{"multi-CV snapshot: " + snapshot.error().message};
+  const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+  const auto& markers = rendered.value().proceduralMarkers;
+  const auto& score = *snapshot.value().compiledPerformance;
+  CHECK(score.notes().size() == 2U);
+  // Two syllables of a consonant and a vowel each.
+  CHECK(markers.size() == 4U);
+  const auto& audio = rendered.value().rendered.audio;
+  const auto window = [&](const synthesis::PhraseFrameRange& span) {
+    const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+    const auto count = static_cast<std::size_t>(span.end - span.start);
+    CHECK(from + count <= audio.samples.size());
+    return std::span<const float>{audio.samples.data() + from, count};
+  };
+  const auto rms = [](std::span<const float> samples) {
+    if (samples.empty()) return 0.0;
+    auto sum = 0.0;
+    for (const auto value : samples) sum += static_cast<double>(value) * static_cast<double>(value);
+    return std::sqrt(sum / static_cast<double>(samples.size()));
+  };
+  const std::array<std::uint8_t, 2U> keys{60U, 64U};
+  std::size_t consonants = 0U;
+  std::vector<double> vowelPitches;
+  for (const auto& marker : markers) {
+    const auto span = window(marker.ownedSpan);
+    CHECK(!span.empty());
+    if (voice_design::isNoiseGesture(marker.kind)) {
+      // Every consonant in the phrase owns real aperiodic energy, not a silent labelled span.
+      CHECK(rms(span) > 1.0e-4);
+      ++consonants;
+      continue;
+    }
+    if (marker.kind != voice_design::ArticulationGestureKind::OralVowel) continue;
+    CHECK(span.size() > 4096U);
+    const auto frames = voicebank::analyzePitch(span, kRate); CHECK(frames);
+    const auto measured = voicebank::medianVoicedPitch(frames.value());
+    CHECK(measured > 0.0);
+    vowelPitches.push_back(measured);
+  }
+  CHECK(consonants == 2U);
+  CHECK(vowelPitches.size() == 2U);
+  // Each vowel carries its own note, not a repeated pitch: measure against the score.
+  for (std::size_t index = 0U; index < vowelPitches.size(); ++index) {
+    const auto expected = 440.0 * std::pow(2.0, (static_cast<double>(keys[index]) - 69.0) / 12.0);
+    CHECK(std::abs(1200.0 * std::log2(vowelPitches[index] / expected)) < 50.0);
+  }
+  // And the two vowels are genuinely different notes, so the case cannot pass on one held
+  // pitch. The bound is the score's own major third (MIDI 60 to 64 is a ratio of 1.2599)
+  // with a small margin below it, not an arbitrary figure: demanding more would require a
+  // tritone the score never asks for and would fail a correct renderer.
+  CHECK(vowelPitches[1] > vowelPitches[0] * 1.2);
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;
