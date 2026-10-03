@@ -92,6 +92,71 @@ struct PerformanceSnapshotFixture final {
 // equality, caching, and refusal boundaries. What no test established is whether its output
 // carries the pitch the score asked for. This measures it, which is the difference between a
 // renderer that produces audio and one that produces the intended note.
+// One sustained vowel proves the renderer can produce a pitch. A voiceoid has to produce a
+// *phrase*: several syllables, each at its own note, with the formant target changing between
+// them while the pitch follows the score. This measures both syllables independently, so a
+// renderer that sang one note correctly and then ignored the rest could not pass it.
+TEST_CASE("a procedural phrase sings every syllable at its own note") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  PerformanceSnapshotFixture f;
+  auto* region = f.project.findRegion(f.regionId);
+  region->notes.front().vibrato.enabled = false;
+  region->notes.front().midiKey = 57U;  // A3
+  auto [lyric, second] = f.factory.makeNote(region->notes.front().startTick + region->notes.front().durationTick,
+      time::Tick{960}, 64U, U"い", domain::Language::Japanese);
+  second.phoneticHint = "i";
+  second.vibrato.enabled = false;
+  region->lyrics.push_back(lyric);
+  region->notes.push_back(second);
+  voice_design::VoiceRecipe recipe; recipe.id = "phrase-pitch";
+  recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                 {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+  const auto resource = voice_design::freezeVoiceRecipeResource(recipe); CHECK(resource);
+  const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+      f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+  CHECK(snapshot);
+  const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value()); CHECK(rendered);
+  CHECK(rendered.value().resourceKind == domain::SingerResourceKind::Procedural);
+  const auto& score = *snapshot.value().compiledPerformance;
+  CHECK(score.notes().size() == 2U);
+  const auto& audio = rendered.value().rendered.audio;
+  // Each syllable is measured on its own, away from the pose transition the renderer places
+  // between them, so a wrong second note cannot hide inside the first note's window.
+  const std::array<std::uint8_t, 2U> expectedKeys{57U, 64U};
+  for (std::size_t index = 0U; index < score.notes().size(); ++index) {
+    const auto& note = score.notes()[index];
+    const auto start = static_cast<std::size_t>(note.startFrame - audio.startFrame);
+    const auto length = static_cast<std::size_t>(note.endFrame - note.startFrame);
+    CHECK(start < audio.samples.size());
+    CHECK(length > 0U);
+    const auto from = start + length / 3U;
+    const auto count = std::min<std::size_t>(length / 2U, audio.samples.size() - from);
+    CHECK(count > 4096U);
+    const auto frames = voicebank::analyzePitch(std::span<const float>{audio.samples.data() + from, count}, kRate);
+    CHECK(frames);
+    const auto measured = voicebank::medianVoicedPitch(frames.value());
+    const auto expected = 440.0 * std::pow(2.0, (static_cast<double>(expectedKeys[index]) - 69.0) / 12.0);
+    CHECK(measured > 0.0);
+    const auto cents = 1200.0 * std::log2(measured / expected);
+    CHECK(std::abs(cents) < 50.0);
+  }
+  // The two syllables must actually differ in pitch, or the case above would also pass on a
+  // renderer that ignored the second note and held the first.
+  const auto measureAt = [&](std::size_t index) {
+    const auto& note = score.notes()[index];
+    const auto start = static_cast<std::size_t>(note.startFrame - audio.startFrame) +
+        static_cast<std::size_t>(note.endFrame - note.startFrame) / 3U;
+    const auto count = static_cast<std::size_t>(note.endFrame - note.startFrame) / 2U;
+    const auto frames = voicebank::analyzePitch(std::span<const float>{audio.samples.data() + start, count}, kRate);
+    CHECK(frames);
+    return voicebank::medianVoicedPitch(frames.value());
+  };
+  const auto first = measureAt(0U);
+  const auto secondPitch = measureAt(1U);
+  CHECK(secondPitch > first * 1.4);  // a major third above, comfortably outside any tolerance
+}
+
 TEST_CASE("procedural singing renders the pitch the score asked for") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;

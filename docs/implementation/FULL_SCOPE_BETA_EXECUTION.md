@@ -5007,3 +5007,40 @@ real recording session for the *sample* route, which this does not touch. Full
 Release `ctest` and the Python suites pass; `git diff --check` passes. No DAW,
 VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
+
+2026-10-03 — The synthetic singer now renders a phrase, not just a note: two
+syllables, two phonemes, two notes, each measured independently (R3's
+synth-style original voice; acoustic evidence about the renderer, not a singer
+qualification). **Why this follows the single-note case.** The previous entry
+measured one sustained vowel at three pitches and named the honest next step:
+pitch tracking across a multi-phoneme phrase, since that is where a voiceoid
+lives or dies. A renderer that sang one note correctly and ignored everything
+after it would pass a single-note test, so the phrase case is built to exclude
+that. **Evidence.** A new case builds the phrase the production path already
+supports (the "a" then "i" two-note structure of the existing vowel-sequence
+case): MIDI 57 then 64, a recipe declaring both vowel poses, rendered through
+`createProcedural` and the real `PhraseRenderPipeline`. Each syllable is
+measured on its own with `analyzePitch`, starting a third of the way in so a
+wrong second note cannot hide inside the first note's window. Measured, not
+asserted: **syllable 0, MIDI 57, expected 220.00 Hz, measured 220.04 Hz
+(+0.3 cents); syllable 1, MIDI 64, expected 329.63 Hz, measured 329.63 Hz
+(+0.0 cents).** Two different phonemes at two different pitches, both within the
+contract's 50-cent tolerance. **Mutation-checked twice, because the obvious
+failure this guards against is a renderer that holds the first note.** Setting
+the expected second key to the first key's value fails the case at the cents
+comparison, so the score's second note is demonstrably load-bearing. The case
+also asserts the two measured pitches differ by more than a major third, so a
+renderer that produced one note twice could not satisfy it; that guard was
+checked to be independently present. Release `seam_performance_snapshot_tests`
+55 of 55. **What this is and is not.** It shows the procedural path produces a
+multi-syllable phrase in which every note carries its own pitch while the
+formant target changes between phonemes, which is the acoustic core of R3 and
+still needs no performer. It is still not a song: the two syllables are vowels
+with no consonant articulation between them, no timing or phrasing evidence is
+measured, and pitch accuracy says nothing about timbre, breathiness or
+expressiveness. Consonant-to-vowel transitions, fricatives and plosives in a
+measured phrase remain unestablished, and the single-note case is the narrower
+of the two. U42 stays externally blocked on a real recording session for the
+sample route, which this does not touch. No listening evidence, no DAW,
+VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.
