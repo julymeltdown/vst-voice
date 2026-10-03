@@ -5008,6 +5008,67 @@ Release `ctest` and the Python suites pass; `git diff --check` passes. No DAW,
 VoiceOver, signing, Windows or external-review evidence. `.github` was not
 touched.
 
+2026-10-03 — Each procedural consonant class measured against its own acoustic
+contract, so plosive, nasal and affricate stop being assumed (R3's M2.2
+"correct isolated sound but bad short/connected consonant" row; the classes that
+entry names as component-tested upstream but unmeasured in a rendered phrase).
+**Why this case.** The consonant matrix above varies pitch, duration and context
+but holds the consonant class fixed at /s/. That leaves the other three classes
+M2.2 names unmeasured in a rendered phrase, and they cannot borrow the /s/
+assertion, because each class has a genuinely different contract: a frication is
+noise across its whole span, a plosive is a mostly silent closure followed by one
+burst, a nasal is voiced rather than noisy, and an affricate is a closure, a
+burst and a tail in one gesture. A single "the consonant made a noise" check
+would pass a renderer that sang every consonant as /s/, which is precisely the
+defect the row is about. This renders all four classes plus a palatalized stop and
+measures each against its own claim.
+**Measured first, asserted second.** The case was written from a probe rather
+than from the assumed contract, and the probe changed what the case says. At a
+19200-frame onset: /s/ is noise for 19198 of its samples at RMS 0.0206; /k/ has
+**478 non-silent samples in 19200**, RMS 0.0017, so its span is overwhelmingly
+the silence a closure is defined to be; /n/ is voiced and nearly continuous at
+RMS 0.0920; /ts/ has 9836 non-silent samples, neither all-silent like a stop nor
+all-noise like a fricative; and palatalized /ky/ carries its own resonance rather
+than the base /k/'s. The probe also refused two recipes before they rendered, and
+both refusals were correct rather than defects: an affricate whose vowel had no
+declared pose, and a voiced `y` with no approximant opt-in, which the plan refuses
+instead of substituting an unvoiced noise source. That refusal is the documented
+contract working, and the case now supplies the missing declarations so the
+render is measured rather than skipped.
+**Evidence, measured not asserted.** Per class, in the audio: the onset resolves
+its own gesture kind, the span is over 4096 frames, the syllable's vowel follows
+without overlapping and is voiced at the note's pitch within 50 cents, and the
+vowel's level differs from the onset's so neither is the other relabelled. Then
+the per-class claim: /s/ carries RMS above 1e-4 with under 5 percent silence; /k/
+carries RMS above 1e-5 with over 90 percent silence, which is what separates a
+stop from a fricative acoustically and not merely by name; /n/ carries RMS above
+1e-4, under 5 percent silence, and holds a voiced pitch above a quarter of the
+vowel's, so it is measured as voiced rather than assumed voiced from its label;
+/ts/ carries RMS above 1e-5 with under 95 percent silence, so it cannot pass as
+either a silent stop or a pure fricative.
+**Mutation-checked, and one limit of it recorded honestly.** Making the nasal
+unvoiced in `articulated_stream.cpp:180` fails this case at line 616 on the nasal's
+own energy check, independently of every other case in the file, so the nasal arm
+is load-bearing. The plosive arm is weaker than the other four and the ledger
+should say so: swapping a plosive's closure and burst frame counts is caught
+earlier by `PlosiveSource`'s own clock invariant ("Plosive burst clock differs
+from its gesture"), so the plosive's acoustic assertion is never reached by that
+mutation. Its silence ratio is therefore pinned but not yet shown to be the thing
+that would catch a wrong closure; the upstream invariant is what catches it. That
+is defence in depth rather than a gap, but it is not the same claim, and it is
+recorded so the plosive arm is not later described as stronger than it is.
+Release `seam_performance_snapshot_tests` 61 of 61, full Release CTest 224 of 224,
+and `tests/external_beta` plus `tests/production` 321 passed with 315 subtests.
+**What this is and is not.** It shows the four consonant classes reach the audio
+as acoustically different sounds with the vowel's pitch intact behind them, which
+is the coverage M2.2 asks its repairs to be judged against. It is still not a
+perceptual result: nothing here says any of it is intelligible or pleasant, and
+the classes are measured one phone each rather than across a phoneme inventory or
+in connected speech. No listening evidence exists. U42 remains externally blocked
+on a real recording session for the sample route, which this does not touch. No
+DAW, VoiceOver, signing, Windows or external-review evidence. `.github` was not
+touched.
+
 2026-10-03 — The synthetic singer now renders a phrase, not just a note: two
 syllables, two phonemes, two notes, each measured independently (R3's
 synth-style original voice; acoustic evidence about the renderer, not a singer

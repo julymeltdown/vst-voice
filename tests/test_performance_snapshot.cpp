@@ -476,6 +476,182 @@ TEST_CASE("a procedural consonant survives the isolated slow/short low/mid/high 
   }
 }
 
+// PROBE: measures how each consonant class actually renders, so the assertions that follow are
+// derived from observed behaviour rather than from the assumed contract.
+TEST_CASE("each procedural consonant class renders its own distinct sound, not one noise source") {
+  using namespace seam;
+  constexpr std::uint32_t kRate = 48000U;
+  struct Shape final {
+    const char* name;
+    std::u32string_view surface;
+    voice_design::ArticulationGestureKind consonantKind;
+    // What the class must prove about its own span, which is a different claim per class: a
+    // frication is noise throughout, a plosive is mostly a silent closure with one burst, a
+    // nasal is voiced rather than noisy, and an affricate is both a closure and a tail.
+    enum class Expectation { Noise, MostlySilentClosure, Voiced, ClosureThenTail };
+    Expectation expectation;
+  };
+  constexpr std::array<Shape, 5U> kShapes{{
+      {"frication", U"さ", voice_design::ArticulationGestureKind::Frication, Shape::Expectation::Noise},
+      {"plosive", U"か", voice_design::ArticulationGestureKind::Plosive, Shape::Expectation::MostlySilentClosure},
+      {"nasal", U"な", voice_design::ArticulationGestureKind::Nasal, Shape::Expectation::Voiced},
+      {"affricate", U"つ", voice_design::ArticulationGestureKind::Affricate, Shape::Expectation::ClosureThenTail},
+      {"palatalized", U"きゃ", voice_design::ArticulationGestureKind::Plosive, Shape::Expectation::MostlySilentClosure},
+  }};
+  for (const auto& shape : kShapes) {
+    PerformanceSnapshotFixture f;
+    auto* region = f.project.findRegion(f.regionId);
+    region->notes.clear();
+    region->lyrics.clear();
+    region->phonemeOverrides.clear();
+    CHECK(region->dynamicsAutomation.replacePoints({
+        {.tick = time::Tick{0}, .linearGain = 1.0F},
+        {.tick = time::Tick{9600}, .linearGain = 1.0F}}));
+    auto tick = time::Tick{480};
+    std::vector<domain::NoteId> ids;
+    const auto syllables = std::u32string{shape.surface};
+    for (const auto ch : syllables) {
+      auto [lyric, note] = f.factory.makeNote(tick, time::Tick{1920}, 60U,
+          std::u32string(1U, static_cast<char32_t>(ch)), domain::Language::Japanese);
+      note.vibrato.enabled = false;
+      note.phoneticHint.reset();
+      ids.push_back(note.id);
+      region->lyrics.push_back(std::move(lyric));
+      region->notes.push_back(std::move(note));
+      tick = time::Tick{static_cast<std::int64_t>(tick.value()) + 1920};
+    }
+    std::vector<domain::PhonemeOverride> overrides;
+    for (const auto id : ids) {
+      for (std::uint32_t index = 0U; index < 2U; ++index) {
+        overrides.push_back({.key = {id, static_cast<std::uint16_t>(index)}, .timing = index == 0U
+            ? domain::PhonemeTiming{.startOffset = 0, .endOffset = time::Microseconds{400000}}
+            : domain::PhonemeTiming{.startOffset = time::Microseconds{400000}}, .locked = true});
+      }
+    }
+    region->phonemeOverrides = std::move(overrides);
+    voice_design::VoiceRecipe recipe; recipe.id = "probe";
+    recipe.poses = {{"a", "neutral", 0.0, {{700.0, 80.0, 0.0}, {1200.0, 100.0, -3.0}, {2600.0, 140.0, -6.0}}},
+                   {"i", "neutral", 0.0, {{300.0, 60.0, 0.0}, {2200.0, 90.0, -3.0}, {3000.0, 120.0, -6.0}}}};
+    recipe.frications = {{"s", "neutral", {.seed = 42U, .centerHz = 2500.0, .bandwidthHz = 1000.0}},
+                         {"sh", "neutral", {.seed = 43U, .centerHz = 2200.0, .bandwidthHz = 1200.0}},
+                         {"ts_tail", "neutral", {.seed = 44U, .centerHz = 5000.0, .bandwidthHz = 1500.0}}};
+    recipe.plosives = {{"k", "neutral", {.seed = 45U, .centerHz = 2000.0, .bandwidthHz = 1200.0}}};
+    recipe.affricates = {{"ts", "neutral", {.seed = 46U, .centerHz = 4500.0, .bandwidthHz = 1500.0},
+                          {.seed = 47U, .centerHz = 5500.0, .bandwidthHz = 1800.0}}};
+    recipe.palatalized = {{"ky", "neutral", "k"}};
+    // 'y' is a voiced approximant: it needs the explicit approximant opt-in and its own resonance
+    // pose. Without them the plan correctly refuses rather than singing it as an unvoiced noise
+    // source, which is the refusal this probe was built to observe.
+    recipe.approximants = {{"y", "neutral"}};
+    // A palatalized phone is coloured by its own resonance pose, not the base consonant's, so the
+    // recipe has to declare one under the palatalized name itself.
+    recipe.poses.push_back({"ky", "neutral", 0.0,
+        {{300.0, 70.0, 0.0}, {2100.0, 100.0, -4.0}, {2900.0, 130.0, -6.0}}});
+    recipe.poses.push_back({"y", "neutral", 0.0,
+        {{300.0, 70.0, 0.0}, {2200.0, 100.0, -4.0}, {3000.0, 130.0, -6.0}}});
+    recipe.poses.push_back({"u", "neutral", 0.0,
+        {{350.0, 70.0, 0.0}, {1200.0, 90.0, -5.0}, {2400.0, 120.0, -8.0}}});
+    recipe.poses.push_back({"n", "neutral", 0.8, {{250.0, 80.0, 0.0}, {1100.0, 90.0, -6.0}, {2200.0, 120.0, -8.0}},
+                            voice_design::NasalResonance{.resonanceHz = 250.0, .resonanceBandwidthHz = 90.0,
+                                .antiresonanceHz = 1000.0, .antiresonanceBandwidthHz = 120.0}});
+    const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+    if (!resource) throw test::Failure{std::string{"class recipe ("} + shape.name + "): " + resource.error().message};
+    const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(f.project, resource.value(),
+        f.trackId, f.regionId, 1U, rendering::RenderQuality::Final, kRate);
+    if (!snapshot) throw test::Failure{std::string{"class snapshot ("} + shape.name + "): " + snapshot.error().message};
+    const auto rendered = rendering::PhraseRenderPipeline{}.render(snapshot.value());
+    if (!rendered) throw test::Failure{std::string{"class render ("} + shape.name + "): " + rendered.error().message};
+    const auto& audio = rendered.value().rendered.audio;
+    const auto rmsOf = [&](const synthesis::PhraseFrameRange& span) {
+      const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+      const auto count = static_cast<std::size_t>(span.end - span.start);
+      if (from + count > audio.samples.size() || count == 0U) return 0.0;
+      auto sum = 0.0;
+      for (std::size_t i = 0U; i < count; ++i) {
+        const auto v = static_cast<double>(audio.samples[from + i]);
+        sum += v * v;
+      }
+      return std::sqrt(sum / static_cast<double>(count));
+    };
+    const auto silenceRatio = [&](const synthesis::PhraseFrameRange& span) {
+      const auto from = static_cast<std::size_t>(span.start - audio.startFrame);
+      const auto count = static_cast<std::size_t>(span.end - span.start);
+      if (from + count > audio.samples.size() || count == 0U) return 1.0;
+      std::size_t silent = 0U;
+      for (std::size_t i = 0U; i < count; ++i) if (audio.samples[from + i] == 0.0F) ++silent;
+      return static_cast<double>(silent) / static_cast<double>(count);
+    };
+    // Every class resolves its own gesture kind for the onset phone. A renderer that funnelled all
+    // consonants through one noise source would satisfy an energy check but fail here.
+    const auto& markers = rendered.value().proceduralMarkers;
+    CHECK(markers.size() >= 2U);
+    const auto& onset = markers.front();
+    CHECK(onset.kind == shape.consonantKind);
+    const auto spanLength = onset.ownedSpan.end - onset.ownedSpan.start;
+    CHECK(spanLength > 4096);
+    const auto consonantRms = rmsOf(onset.ownedSpan);
+    const auto quiet = silenceRatio(onset.ownedSpan);
+    // The onset is followed by the syllable's vowel, so a class that swallowed the note fails.
+    const auto& vowel = markers[1];
+    CHECK(vowel.kind == voice_design::ArticulationGestureKind::OralVowel);
+    CHECK(vowel.ownedSpan.start >= onset.ownedSpan.end);
+    const auto vowelRms = rmsOf(vowel.ownedSpan);
+    CHECK(vowelRms > 1.0e-5);
+    switch (shape.expectation) {
+      case Shape::Expectation::Noise:
+        // A frication is noise for essentially its whole span: energy throughout, nothing silent.
+        CHECK(consonantRms > 1.0e-4);
+        CHECK(quiet < 0.05);
+        break;
+      case Shape::Expectation::MostlySilentClosure:
+        // A plosive is a closure and a burst. Measured 478 non-silent samples in 19200, so almost
+        // the whole span is the silence the closure is defined to be, and a frication-shaped span
+        // would fail the silence ratio here rather than pass on energy alone.
+        CHECK(consonantRms > 1.0e-5);
+        CHECK(quiet > 0.90);
+        break;
+      case Shape::Expectation::Voiced:
+        // A nasal is voiced, not noisy: it is the one class whose onset is neither silent nor an
+        // unvoiced burst, so it must carry a pitch the way the vowel does.
+        CHECK(consonantRms > 1.0e-4);
+        CHECK(quiet < 0.05);
+        {
+          const auto from = static_cast<std::size_t>(onset.ownedSpan.start - audio.startFrame);
+          const auto count = static_cast<std::size_t>(onset.ownedSpan.end - onset.ownedSpan.start);
+          const auto frames = voicebank::analyzePitch(
+              std::span<const float>{audio.samples.data() + from, count}, kRate);
+          CHECK(frames);
+          const auto measured = voicebank::medianVoicedPitch(frames.value());
+          const auto expected = 440.0 * std::pow(2.0, (60.0 - 69.0) / 12.0);
+          CHECK(measured > 0.0);
+          // A nasal murmur sits well below the vowel's formant pitch, so this checks that the span
+          // is voiced at all rather than that it matches the vowel to the cent.
+          CHECK(measured > expected * 0.25);
+        }
+        break;
+      case Shape::Expectation::ClosureThenTail:
+        // An affricate is a closure, a burst and a tail in one gesture, so its span is neither all
+        // silent like a stop nor all noise like a frication: both must appear inside it.
+        CHECK(consonantRms > 1.0e-5);
+        CHECK(quiet < 0.95);
+        break;
+    }
+    // The vowel is its own sound, not the onset relabelled, and it carries the note's pitch.
+    CHECK(vowelRms != consonantRms);
+    {
+      const auto from = static_cast<std::size_t>(vowel.ownedSpan.start - audio.startFrame);
+      const auto count = static_cast<std::size_t>(vowel.ownedSpan.end - vowel.ownedSpan.start);
+      const auto frames = voicebank::analyzePitch(
+          std::span<const float>{audio.samples.data() + from, count}, kRate);
+      CHECK(frames);
+      const auto measured = voicebank::medianVoicedPitch(frames.value());
+      const auto expected = 440.0 * std::pow(2.0, (60.0 - 69.0) / 12.0);
+      CHECK(measured > 0.0);
+      CHECK(std::abs(1200.0 * std::log2(measured / expected)) < 50.0);
+    }
+  }
+}
+
 TEST_CASE("a procedural CV syllable puts a consonant and a sung vowel in the audio") {
   using namespace seam;
   constexpr std::uint32_t kRate = 48000U;
