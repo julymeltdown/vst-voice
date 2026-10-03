@@ -5887,3 +5887,56 @@ first acoustic evidence rather than none.
 No production code was modified. Release `seam_performance_snapshot_tests`
 unchanged at 66 of 66. No DAW, VoiceOver, signing, Windows or external-review
 evidence. `.github` was not touched.
+
+2026-10-03 — The neural determinism defect located to three exact sites, correcting
+the claim that every remaining open item needs the user (R3's M3 input path; full
+detail in `docs/implementation/NEURAL_DETERMINISM_DEFECT_DIAGNOSIS_2026-10-03.md`).
+**A wrong claim of mine, corrected.** The previous three entries each closed by
+saying everything still open requires the user: an ear for the bandwidth, a listening
+judgement for M2.1, and a rights-cleared bank for U42. That list was incomplete.
+`BETA_READINESS_ISSUES.md` also records a **neural per-request determinism defect with
+concrete closure criteria that is fixable inside this repository**, and it is the
+reason the neural pitch criterion reads `UNRESOLVED` instead of a measured result.
+**The defect, located.** The same project renders differently on every neural export:
+four separate `seam_neural_worker` processes given byte-identical requests returned
+four different audio digests. The generator is seeded per SESSION and the shipped
+worker completes one request per process, so per-request determinism is absent even
+though a single call is reproducible.
+**Three sites, each read in the current source.** (1) The exported acoustic graph
+contains a `RandomNormalLike` node whose only input is its own
+`ConstantOfShape_output_0`; the graph's declared inputs are exactly `tokens`,
+`durations`, `f0` and `steps`, so there is nothing to bind a seed to and no
+worker-side seeding can make the draw reproducible. `RandomNormalLike` is admitted at
+`graph_contract.cpp:28`. (2) **The information needed to enforce determinism is
+present in the model file and is discarded on the way in**: ONNX's `RandomNormalLike`
+carries an optional `seed` attribute at AttributeProto field 5, and the contract's
+attribute parser SKIPS field 5 rather than reading it (`graph_contract.cpp:383`), so a
+graph exported with a fixed seed is admitted exactly like a stochastic one. (3) The
+worker opens its session with no seed at all: `Ort::SessionOptions` at
+`apps/seam-neural-worker/main.cpp:156` sets only thread counts and execution mode, and
+there is no `seed` identifier anywhere in `libs/seam-neural-synthesis/src/`. ONNX
+Runtime 1.30 exposes no session-level seed configuration key, which is why the fix
+belongs at the graph or request level rather than the session level.
+**Why this gates M3's acoustic evidence rather than sitting beside it.**
+`qualification.py` judges pitch LAST on purpose, so a determinism failure returns
+before pitch is measured and the criterion is set to `UNRESOLVED` with the reason
+"not measured: determinism failed on this item" (`qualification.py:413` through 419).
+**No neural pitch evidence exists at all** until determinism is fixed, so this is a
+prerequisite for M3 rather than a side issue.
+**What is not claimed.** **The fix is not implemented here.** Two designs are
+possible, requiring a fixed seed attribute on every admitted `RandomNormalLike` with
+graphs lacking one rejected, or a bindable noise input; both change what the exporter
+must produce, which is a contract change to the model family rather than a local
+patch, and that decision is not mine to make unilaterally. **No neural render was run
+this session**: there is still no model, since `find . -name '*.onnx'` outside test
+datasets returns zero files and `DiffSinger-source/checkpoints` holds only a
+`.gitkeep`, so the four differing digests are quoted from the readiness register
+rather than reproduced. **This does not unblock M3**, which needs both determinism and
+a model.
+**Why it is recorded separately from U42.** U42 needs an asset nobody here can
+manufacture. This needs a decision and a code change, both inside the repository's own
+boundary. Keeping them apart keeps the externally-blocked list honest: U42 is the only
+item on it that genuinely cannot be advanced here at all. No production code was
+modified. Release `seam_performance_snapshot_tests` unchanged at 66 of 66; full Release
+CTest 224 of 224. No DAW, VoiceOver, signing, Windows or external-review evidence.
+`.github` was not touched.
