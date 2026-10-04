@@ -142,7 +142,7 @@ with the source and the hop-rate artifact is effectively absent (187.5 Hz band s
 **Closure condition 2 now has the control it asked for, and the answer is that the conjunct is
 unsatisfiable.** Comparing a held-out render against itself returns
 `UNRESOLVED | measurable 958 | within 958 | outside 0 | voicingMismatch 0 | unmeasurable 45`. Bit-identical
-audio cannot satisfy `comparisonSatisfied`, because `pitch_comparison.py:155` requires
+audio cannot satisfy `comparisonSatisfied`, because `tools/voice_model_training/pitch_comparison.py:155` requires
 `MATCH_ON_MEASURABLE_FRAMES` and any unmeasurable interior span holds the status at `UNRESOLVED`. The
 canonical contract's own `pitch-within-50` criterion asks for "minimum 90 percent" and this epoch measures
 93.35%.
@@ -231,6 +231,7 @@ statuses still report `MISMATCH`. Per-song results and hashes are appended to th
 validation campaign report; this is measurable progress, not closure of P0-08.
 
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
+**Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
 **Evidence**
 
@@ -255,6 +256,7 @@ External musicians cannot evaluate the product's core singing journey using a ba
 - The bank passes four-renderer listening QA, hostile-package validation, signed package verification, clean installation, and a canonical reference-song render.
 
 ### SEAM-BETA-P0-02: Release candidate identity is stale and not immutable
+**Status: OPEN.** Requires signed/archived candidate bytes; not closable by a source change.
 
 **Evidence**
 
@@ -273,6 +275,7 @@ Screenshots, test output, binaries, plug-ins, installers, SBOMs, and evidence re
 - App, CLAP, VST3, AUv2, installer, SBOM, and all evidence records report the same immutable candidate identity.
 
 ### SEAM-BETA-P0-03: No distributable, trusted installer candidate
+**Status: OPEN.** Requires Developer ID signing and notarization credentials held outside this repository.
 
 **Evidence**
 
@@ -292,6 +295,7 @@ The repository has build outputs, but not a release artifact a beta tester can s
 - Installed bytes resolve to the exact candidate root from P0-02.
 
 ### SEAM-BETA-P0-04: Canonical standalone musician journey is 0/20 PASS
+**Status: OPEN.** All 20 canonical rows are NOT_RUN with no evidence; needs installed candidate bytes and a person.
 
 **Evidence**
 
@@ -308,6 +312,7 @@ Unit/controller success does not prove native dialogs, device negotiation, permi
 - Evidence is timestamped, reviewer-attributed, hash-bound, and retained under the canonical evidence root.
 
 ### SEAM-BETA-P0-05: Target OS and DAW compatibility matrix is incomplete
+**Status: OPEN.** Four of the nine required tuples are Windows and cannot be run on this macOS machine.
 
 **Evidence**
 
@@ -324,6 +329,7 @@ Host-specific crashes, state corruption, scan rejection, GUI lifecycle defects, 
 - Every in-scope OS/format/DAW tuple passes scan, instantiate, edit, save/reload, playback, offline bounce, close/reopen, and uninstall/rescan scenarios using installed candidate bytes.
 
 ### SEAM-BETA-P0-06: Physical audio, accessibility, soak, and human acceptance are unproven
+**Status: OPEN.** Requires physical hardware, assistive technology, long sessions and real people.
 
 **Evidence**
 
@@ -343,6 +349,7 @@ The product can pass deterministic and visual checks while failing on real audio
 - Multiple external musicians complete the reference journey with Blocker/Critical count at zero.
 
 ### SEAM-BETA-P0-07: No governed release authorization or immutable archive
+**Status: OPEN.** Requires independent release roles and an externally anchored archive.
 
 **Evidence**
 
@@ -435,11 +442,30 @@ training updates on 1303 frames and is tracked as remaining work, not as a deter
 
 **Required change:** use a timestamp/candidate-bound filename or an explicit preview plus atomic replace/save-as flow.
 
+**Status: CLOSED — the description above is stale.** The fixed name is gone.
+`SupportBundleService::exportPrepared` builds
+`project-seam-support-<candidate>-<createdAt>-<sha256[:12]>.zip` (`libs/seam-authoring-runtime/src/support_bundle.cpp:476`) and,
+on `ErrorCode::Conflict`, advances a bounded sequence suffix and retries up to 1000 times rather
+than failing (`libs/seam-authoring-runtime/src/support_bundle.cpp:508`). Verified by running three consecutive exports of the
+*same* prepared bundle against one directory: all three succeeded with distinct names
+(`...aa68952ebcc7.zip`, `...aa68952ebcc7-2.zip`, `...aa68952ebcc7-3.zip`). This is the
+"timestamp/candidate-bound filename" repair the entry asked for.
+
 ### SEAM-BETA-P1-02: User attachments are assigned an unsafe privacy class
 
 Generated diagnostics are allowlisted and filtered, but consented attachments are copied after only basic regular-file, name, and size checks. The enclosing manifest can still label the entire bundle `ExportSafe` even when a project, lyric, raw log, secret, or audio file was attached.
 
 **Required change:** separate generated-diagnostic and user-attachment privacy classes; preview every attachment and require explicit per-file consent without claiming the attachment itself is export-safe.
+
+**Status: CLOSED — the description above is stale.** Generated diagnostics and user attachments now
+carry different privacy classes: a consented attachment is `RestrictedSupportAttachment`, never
+`ExportSafe`, and the enclosing manifest is stamped `RestrictedSupportData` whenever any
+restricted attachment is present (`libs/seam-authoring-runtime/src/support_bundle.cpp:401`). Per-file consent is honoured twice
+over: an unconsented attachment is previewed (hashed and listed) but not copied into the archive,
+and the archived bytes are the ones bound at preview time, so a file changed after preview cannot
+enter the bundle. The existing case "support bundle binds per-file consent and prepared attachment
+bytes" asserts all of this, including that `"privacyClass":"ExportSafe"` appears nowhere in a
+bundle carrying an attachment.
 
 ### SEAM-BETA-P1-03: Operational approvals are not cryptographically authoritative
 
@@ -447,7 +473,16 @@ The release operations path changes state from actor role strings, booleans, and
 
 **Required change:** bind every approval to candidate root, previous decision digest, signer identity, signature, and append-only authority.
 
+**Status: CLOSED — the description above is stale.** `tools/external_beta/operations.py` verifies
+each quorum approval as an Ed25519 signature over the approval's own canonical payload, against a
+role-bound trusted key whose `signerId` must equal the role's signer, and rejects duplicate signers
+so one identity cannot fill two seats of a quorum (`tools/external_beta/operations.py:76`). PAUSE and REVOKE are
+additionally refused unless signed by a role-bound trusted key (`tools/external_beta/operations.py:182` and
+`tools/external_beta/operations.py:200`). The entry's premise — that state moved on role strings and booleans alone —
+no longer holds.
+
 ### SEAM-BETA-P1-04: Pause and revoke are not proven to reach installed clients
+**Status: OPEN.** The operations model and its signature checks exist, but no installed client is shown enforcing a propagated pause or revoke.
 
 The operations model can represent `DISTRIBUTION_PAUSED` and `REVOKED`, but there is no end-to-end evidence that an installed updater/client consumes and enforces that authority.
 
@@ -459,13 +494,34 @@ The Phase 12C soak runner selects 7,200 seconds only for the exact `full` profil
 
 **Required change:** parse a closed enum, reject unknown profiles, bind the selected duration into the receipt, and require heartbeat/watchdog evidence for the full run.
 
+**Status: the silent five-second fallthrough is CLOSED; the heartbeat half is not.**
+`tools/external_beta/product_soak.py` no longer selects a duration by string match. It validates
+`durationSeconds` against the closed set `{1800, 7200}`, binds each to exactly one phase
+(`usable-alpha-30m` and `external-beta-120m` respectively), and rejects anything else
+(`tools/external_beta/product_soak.py:207`–`212`). The sample series is separately required to be strictly increasing
+and to reach the declared duration (`tools/external_beta/product_soak.py:261`), so a run cannot claim a two-hour soak
+from a series that stops early. **Still open:** there is no independent heartbeat or watchdog
+source in the record, so "the process was alive for the declared duration" is still inferred from
+the collector's own samples rather than attested by something outside the measured process.
+
 ### SEAM-BETA-P1-06: Validators are ahead of evidence collectors
 
 Several release tools validate supplied JSON records but do not drive the installed product, collect metric series, capture the environment, or preserve raw evidence themselves.
 
 **Required change:** add candidate-bound collectors for installation, DAW hosts, accessibility, physical soak, and cohort sessions; validators should consume collector-produced records.
 
+**Status: PARTIALLY closed.** Four candidate-bound collectors now exist and drive the product
+rather than merely validating supplied JSON: `install_collector.py` (measures the machine it is
+given and refuses to invent what it cannot observe), `host_collector.py` (reads the host and its
+DAW, then runs the existing validators), `standalone_collector.py`, and
+`soak_collector.py` (`collect_soak_samples`). Each stamps a `collector` block naming its own
+tool and version into the record it produces. **Still open:** there is no accessibility collector
+and no cohort-session collector, so VoiceOver/Inspect runs and external-musician sessions are
+still hand-authored records rather than collected ones. The entry's five families are four done,
+two missing — accessibility and cohort.
+
 ### SEAM-BETA-P1-07: No verified field support loop
+**Status: OPEN, and the code half is now done.** The application can record an honest submission to a configured destination (`de76483e`), but no intake endpoint exists and no tester-to-triage exercise has been run.
 
 The application can create a local support ZIP, but there is no verified intake destination, ticket handoff, acknowledgement, triage owner, escalation path, or pause/revoke service-level rehearsal.
 
@@ -474,12 +530,14 @@ The application can create a local support ZIP, but there is no verified intake 
 ## P2: Structural and maintenance risks
 
 ### SEAM-BETA-P2-01: Native UI complexity is concentrated in very large files
+**Status: OPEN.** `editor_controller.cpp` is 7458 lines; the boundary extraction has not been done.
 
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 
 **Required change:** before broad beta iteration, extract only stable boundaries: input mode, selection/edit commands, accessibility dispatch, and overlay/panel coordination. Preserve behavior with state-machine tests and visual evidence.
 
 ### SEAM-BETA-P2-02: Cross-version migration is not verified as an installed product journey
+**Status: OPEN.** The validator and schema exist, but the tests use synthetic fixtures; no real N-to-N+1 installed artifact has been produced.
 
 Schema migrations and future-version rejection exist, but there is no predecessor-to-current fixture that jointly verifies projects, autosaves, media, voicebank catalog, CLAP state, plug-in rescan, and updater behavior.
 
