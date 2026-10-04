@@ -6942,3 +6942,24 @@ syllables sounding alike is the **fixture bank**, not a DSP bug, so it is not mi
 **This does not move a gate.** A packet exists and is unreviewed; nobody has listened. What changed is
 that the listening task is now a concrete, bounded, 199-second job with named files instead of an
 open-ended request, and that the tool which produces it provably works.
+
+**The installer trust chain is now proven with real signatures, and the binary is still not.**
+`tests/test_installer_verifier.cpp` previously built manifests whose `signature.value` and
+`payloadSha256` were placeholders, so it proved the handoff rules while never proving that a real
+signature verifies against a real root. Two tests now generate genuine Ed25519 key pairs, sign the
+canonical trust-policy and manifest payloads, and round-trip both through the real serializers and
+parsers before verifying. The accept path is proven **and shown to be load-bearing**: flipping one
+signature byte makes verification fail, and a manifest signed by an untrusted publisher is rejected.
+A second test proves a real signed handoff is consumed exactly once and refuses the identical replay.
+Both load-bearing assertions were mutation-checked by inverting them, which fails the suite.
+**Two schema rules the fixtures had to respect, found by letting the parser complain rather than by
+guessing.** `compromiseCutoff` is a required non-empty string, and a delegated update key's purpose
+must be `"update"` or `"update-recovery"` — not `"update-manifest"`, which is the *manifest's*
+purpose and reads like the right answer until the parser rejects it.
+**What this does not reach, stated plainly.** `seam_installer_verifier` embeds its root public key
+at **configure time** from `packaging/trust/update-root-public-key.json`, and the repository holds
+only the public key. The binary's accept path therefore cannot be exercised from any test without
+shipping the matching private key, and shipping it would be wrong. What *is* proven by running the
+binary is that it **fails closed**: exit 2 on missing or incomplete arguments, exit 4 on a malformed
+manifest, and nothing written in either case. The accept path of the shipped binary remains
+unverified and is recorded as such rather than inferred from the library tests.
