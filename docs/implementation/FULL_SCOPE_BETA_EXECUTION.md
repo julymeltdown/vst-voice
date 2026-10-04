@@ -7709,7 +7709,8 @@ than either is to its own target.
 **What survives from these entries, and what does not.**
 
 - **Withdrawn**: the 19.3 ms median, the ten-value per-unit distribution, the "33 of 33 notes start early"
-  claim, and the reading that `timing_solver.cpp:108` explains those specific numbers. The code line is
+  claim, and the reading that `libs/seam-synthesis/src/timing_solver.cpp:108` explains those specific
+  numbers. The code line is
   real and does place a unit so its vowel lands on the written start, but **nothing measured here
   establishes how far that placement actually leads the audio.**
 - **Still standing**: 85 octave frames, of which **34 are the analyser misreading a note the audio contains
@@ -7760,7 +7761,8 @@ preutterance is a documented, bounded, intended placement, and the 50 frames are
 
 **What this settles.** The onset question is now closed on measurement rather than inference: the lead
 exists, it is under 17 ms, it depends on interval direction, it agrees with the recipe's declared
-preutterance, and it fully accounts for the 50 frames. `timing_solver.cpp:108` places the unit so its vowel
+preutterance, and it fully accounts for the 50 frames. `libs/seam-synthesis/src/timing_solver.cpp:108`
+places the unit so its vowel
 lands on the written start, and the resulting lead is the unit's own preutterance, which is the model
 working as designed.
 

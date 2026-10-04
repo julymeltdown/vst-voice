@@ -671,7 +671,8 @@ reports the louder of the two notes across 43 ms. Scanning backwards for the nex
 finds whichever note is loudest behind the boundary, not where the pitch changed.
 
 **What is withdrawn and what stands.** Withdrawn: the 19.3 ms median, the ten-value distribution, "33 of 33
-notes start early", and the claim that `timing_solver.cpp:108` explains those figures. **Still standing:**
+notes start early", and the claim that `libs/seam-synthesis/src/timing_solver.cpp:108` explains those
+figures. **Still standing:**
 85 octave frames; **34 are the analyser misreading a note the audio contains correctly**; and **50 frames
 carry the next written note within 2 to 8 cents**. Both of those rest on comparing reported pitch with an
 independent spectral reading of the same window, which does not depend on onset detection. **Now
@@ -904,7 +905,8 @@ case the leaked pitch is the phrase's first note, five notes back, so **the leak
 phrase rather than being neighbour-local**. The exact 2x and 4x ratios are what doubling or quadrupling a
 stale oscillator produces, so the multiplier is a harmonic of a pitch that was correct earlier.
 
-**This points at state that should reset per note and does not.** `procedural_renderer.cpp:136` skips the
+**This points at state that should reset per note and does not.**
+`libs/seam-voice-design/src/procedural_renderer.cpp:136` skips the
 pose event when a vowel phone repeats the previous one, leaving an earlier pose in force. **That rule was
 tested and refuted**: it explains only 2 of the 6 isolated failures, and several correct notes are also
 repeats. **The cause is not identified in source and is not claimed here.**
