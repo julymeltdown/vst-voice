@@ -7373,6 +7373,63 @@ new defect; it does not close the blocker.** The next step is to find out what t
 which is a rendering or score-alignment question and has not been investigated. Nothing has been listened
 to, this is still one singer family, and `combinedModelHoldoutVerified` is still false.
 
+## The 2 per cent residual is the scoring window: 84 of 85 octave frames are now accounted for
+
+The entry above left 51 frames unexplained and called them a possible renderer defect. Comparing each of
+them against **both neighbouring written notes**, instead of only the note whose window contains them,
+settles it in one step.
+
+| Test | Result |
+| --- | ---: |
+| Frames whose audio contains the **next** written note | **50 of 51** |
+| Frames whose audio contains the **previous** written note | 0 |
+| Frames matching neither | 1 |
+| Frames still inside the note's written span | **51 of 51** |
+
+**The next note is already sounding while the previous note's written window is still open.** The renderer
+places each note's onset before its predecessor's written end; the scorer uses non-overlapping note spans,
+so the last frames of an affected note are scored against a note that has already stopped. The audio is
+right and the measurement is wrong.
+
+**Measured, not inferred.** The onset overlap in samples and in share of the note, over the fifteen affected
+note pairs across all five songs:
+
+| Song | Note pair | Frames | ms before written end | Share of note |
+| --- | --- | ---: | ---: | ---: |
+| 00420 | 74 into 72 | 2 | **35.7** | **14.3 %** |
+| 00005 | 69 into 60 | 5 | 25.3 | 10.1 % |
+| 00402 | 79 into 72 | 5 | 25.0 | 10.0 % |
+| 00420 | 79 into 67 | 4 | 20.7 | 8.3 % |
+| 00024 | 64 into 79 | 2 | 19.7 | 7.9 % |
+| 00024 | 72 into 62 | 4 | 19.0 | 7.6 % |
+| 00003 | 79 into 69 | 3 | 14.0 | 3.7 % |
+| 00005 | 60 into 71 | 4 | 18.7 | 3.7 % |
+| 00003 | 74 into 62 | 4 | 17.3 | 3.5 % |
+
+Every case is **early by a few tens of milliseconds and never late**, which is the signature of a deliberate
+legato or pre-onset transition rather than a timing fault. The largest is 35.7 ms or 14.3 per cent of a
+note; the typical case is one to five analysis frames.
+
+**The accounting.** Of the 85 octave frames: **34 are the analyser misreading a note the audio contains
+correctly**, **50 are the scoring window measuring a note the audio has already left**, and **1 is
+uncharacterised**. 84 of 85 are explained, and not one is the renderer singing a wrong pitch.
+
+**Why this is the same effect as the single-song finding, at ten times the rate.** The HEAD single song showed
+2 octave frames in 7344 (0.041 per cent) at a note boundary. These five songs show 85 in 4232 (2 per cent)
+because they are built from shorter notes with faster legato, so more note ends carry the next pitch. Same
+mechanism, different density, and in both cases the audio is correct.
+
+**What this means for the work.** The right fix is to the **measurement**, not the renderer. The project's
+own placement records already carry `vowel_onset_frame` and `destination_end_frame`, which is what a scorer
+needs to resolve the same overlap the renderer produces; the note-span scorer written for this measurement
+does not use them, because it reads written notes rather than placements. Adopting the placement records
+would remove the 50 frames that are not errors at all, leaving the 34 genuine analyser blind spot and the
+1 uncharacterised frame.
+
+**What is not claimed.** P0-08 stays **OPEN**. Correcting the scorer is not the same as reaching the
+project's acceptance bar: this is one singer family, nothing has been listened to, the corrected scorer has
+not been written or run yet, and `combinedModelHoldoutVerified` is still false.
+
 ## Corpus level: the five-song campaign's pitch figures are the analyser artefact, not the singer
 
 The entry above measured one song on one singer and named the multi-song corpus as the remaining gap. That
