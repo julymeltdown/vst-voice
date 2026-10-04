@@ -6891,3 +6891,26 @@ so the ability to *produce* a bundle is evidenced; the artifact itself does not 
 repository, which is expected for model weights and is exactly why the neural render path can only
 prove plumbing. Turning this into singing requires rights-cleared training material and a trained
 candidate, not more code on the render side.
+
+**The singing-quality packet recorded a verdict that nothing read.** Every retained
+`measurement.json` carries `pitch.within_frozen_limits`, and the U16 packet reports it as **false in
+all four cases**. `rg -n 'within_frozen_limits' --glob '!**/build/**'` returns hits in
+`acoustic_metrics.py` only: the field is *written* and *read by nothing*. `python -m
+tools.singing_quality` returned **0** on the U16 run in which every case missed its own criteria,
+because `__main__.py` returned success whenever a packet was produced. A quality gate that cannot
+fail is not a gate, and the packet's own numbers said `within_frozen_limits: false` while the process
+reported success.
+**The default is deliberately unchanged.** A packet is diagnostic evidence, and refusing to produce
+one because it reads badly would destroy the evidence, so the run still succeeds and still retains
+everything. The fix is an opt-in `--require-limits` that re-reads each case's verdict after the
+packet is written and exits **1**, naming every failing case. Verified on the real corpus: default
+exit **0**, `--require-limits` exit **1** with `original-melody-bank`, `original-melody-raw`,
+`unequal-rests-bank` and `unequal-rests-raw` each named, and the packet still written.
+**Two defects in the gate itself, caught by its own tests.** It first globbed
+`*/measurement.json`, so a case whose measurement *errored* was invisible and therefore read as a
+pass — the gate would have been weakest on exactly the runs that produced least evidence; it now
+iterates case directories and treats a missing verdict as missing, not as success. It then read the
+verdict from the top level of the JSON, where it does not live, and reported all four real cases as
+"missing" instead of "failing"; it reads `pitch.within_frozen_limits`, confirmed against the real
+packet. Five unit tests added. `tests/singing_quality` runs 77 tests pass (4 skipped);
+`seam_singing_quality_contract_tests` and `seam_singing_quality_workflow` pass.

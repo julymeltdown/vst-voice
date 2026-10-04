@@ -25,6 +25,56 @@ class RunSettings:
     source_evidence: Path
 
 
+@dataclass(frozen=True, slots=True)
+class LimitVerdict:
+    """Which retained cases missed their own frozen acoustic limits.
+
+    A packet records `within_frozen_limits` per case, but nothing consumed it:
+    `singing-quality` returned success whenever the packet was produced, so a
+    corpus in which every case missed its criteria still exited zero. The
+    diagnostic default stays unchanged -- a packet is evidence, and refusing to
+    produce one because it reads badly would destroy the evidence -- so this is
+    reported and, with --require-limits, enforced.
+    """
+
+    failing: tuple[str, ...]
+    missing: tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failing and not self.missing
+
+
+def check_frozen_limits(packet: Path) -> LimitVerdict:
+    failing: list[str] = []
+    missing: list[str] = []
+    # Iterate the case directories, not the measurement files. Globbing only for
+    # measurement.json would make a case whose measurement errored out invisible,
+    # and an invisible case would read as a pass -- the gate would then be
+    # silently weaker on exactly the runs that produced least evidence.
+    for case_directory in sorted(path for path in packet.iterdir() if path.is_dir()):
+        case = case_directory.name
+        measurement = case_directory / "measurement.json"
+        if not measurement.is_file():
+            if any(case_directory.glob("measurement-error.json")) or \
+                    any(case_directory.glob("dry.wav")):
+                missing.append(case)
+            continue
+        try:
+            summary = json.loads(measurement.read_bytes())
+        except (OSError, ValueError) as error:
+            raise CorpusError("limit_check",
+                              f"Unreadable measurement for {case}: {error}") from error
+        # The verdict is nested under "pitch"; timing and duration carry their own
+        # within_frozen_limit keys and are reported separately by the packet.
+        verdict = summary.get("pitch", {}).get("within_frozen_limits")
+        if verdict is None:
+            missing.append(case)
+        elif not verdict:
+            failing.append(case)
+    return LimitVerdict(tuple(failing), tuple(missing))
+
+
 def run_corpus(settings: RunSettings) -> Path:
     verified = verify_corpus(settings.root, settings.corpus)
     driver = ExecutableIdentity.capture(settings.driver)
