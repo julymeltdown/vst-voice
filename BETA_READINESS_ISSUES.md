@@ -530,7 +530,23 @@ The application can create a local support ZIP, but there is no verified intake 
 ## P2: Structural and maintenance risks
 
 ### SEAM-BETA-P2-01: Native UI complexity is concentrated in very large files
-**Status: OPEN.** `editor_controller.cpp` is 7458 lines; the boundary extraction has not been done.
+**Status: PARTIALLY closed — the accessibility boundary is extracted; three named boundaries remain.**
+`libs/seam-native-ui/src/editor_accessibility.cpp` now holds the six methods that make up the
+accessibility cluster: `rebuildAccessibilityTree`, `dispatchAccessibility`,
+`accessibilityFocusMoved`, `listEntryRefusal`, `dispatchAccessibilityAction` and
+`setAccessibilityValue`. The move was a pure deletion from `editor_controller.cpp` (841 lines
+removed, none added) and the moved block was verified byte-identical against `HEAD` before it was
+committed, so nothing about the behaviour changed with the location. The two file-local helpers the
+block used (`exportCancellable`, `technicalLaneForId`) each had exactly one use inside it and
+moved with it.
+
+**Still open.** `editor_controller.cpp` is 6632 lines, down from 7458. The plan names four
+boundaries — input mode, selection/edit commands, accessibility dispatch, and overlay/panel
+coordination — and exactly one has been taken. `editor_semantics.cpp` (1484 lines) is the other
+half of accessibility and is untouched; input mode, selection/edit commands and overlay
+coordination are all still in the controller. A boundary that had to drag the whole controller
+behind it would not be a boundary, so these are taken one at a time and each is proved by the
+tests that already exercise it.
 
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 
