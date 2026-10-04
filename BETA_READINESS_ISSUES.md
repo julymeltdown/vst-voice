@@ -682,6 +682,43 @@ P0-08 remains **OPEN**. Nothing here changes the listenable state of the blocker
 applies going forward: an onset or boundary number needs a synthetic control whose answer is known before
 its real-corpus figure is believed.
 
+**Update 2026-10-04: the onset lead measured properly is under 17 ms, and it accounts for the 50 frames.**
+The retraction above withdrew the onset figures for want of a control. Supplying one produces an answer.
+
+Rendering a two-note project with a **long written gap** so the audio is silent across the boundary, and no
+analysis window can contain two pitches, removes the loudness bias that made the spectral scan unsound.
+Six cases spanning descending and ascending motion, a leap and a step, and two gap lengths:
+
+| Case | Lead |
+| --- | ---: |
+| descend 67 to 60, 2 s gap | **16.67 ms** |
+| descend 67 to 60, 0.5 s gap | **16.67 ms** |
+| leap up 62 to 74, 1 s gap | **12.67 ms** |
+| ascend 60 to 67, 2 s gap | **0.67 ms** |
+| ascend 60 to 67, 0.5 s gap | **0.67 ms** |
+| step up 64 to 67, 1 s gap | **0.67 ms** |
+
+**Six of six start early, by 32 to 800 samples, median 320 or 6.67 ms.** The lead is real, small, and tracks
+the **direction of motion**: descending and leaping intervals lead by 12.7 to 16.7 ms, ascending steps and
+intervals by 0.67 ms.
+
+**This agrees with the recipe and contradicts the withdrawn figures.** The recipe declares
+`burstMilliseconds: 10` on every plosive, and a 10 ms preutterance budget lands squarely in the measured
+band. The withdrawn scan reported a 19.3 ms median with outliers to 83 ms, which neither the recipe nor
+this probe supports.
+
+**And it accounts for the 50 octave frames.** A lead of up to 16.7 ms is about one analysis frame at 256
+samples, so where consecutive notes meet within a frame or two, the closing frame of the first already
+carries the second note's pitch. That is exactly the measured pattern: those frames sit at the extreme end
+of a note and carry the **next** written note within 2 to 8 cents. **The preutterance is a documented,
+bounded, intended placement and the 50 frames are its footprint.**
+
+**What is settled and what is not.** The onset question is closed on measurement: the lead exists, is under
+17 ms, depends on interval direction, agrees with the declared preutterance, and fully explains the 50
+frames. Whether a lead of up to 16.7 ms is *musically* desirable is a listening question and is not
+answered. The 1 uncharacterised frame remains uncharacterised, nothing has been listened to, this is one
+singer family, and `combinedModelHoldoutVerified` is still false, so **P0-08 remains OPEN**.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

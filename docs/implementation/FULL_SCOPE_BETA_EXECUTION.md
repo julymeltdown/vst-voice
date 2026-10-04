@@ -7621,3 +7621,47 @@ than either is to its own target.
 synthetic control whose answer is known before its real-corpus number is believed. The pitch measurements
 in this document have one, which is why they are usable; the onset measurements did not, and three entries
 of numbers followed before anyone checked.
+
+## The onset lead, measured where there is no boundary ambiguity: 0.67 to 16.67 ms
+
+The entry above withdrew the onset figures for want of a control. This supplies one, and gets an answer.
+
+**The method.** Render a two-note project with a long written gap between the notes, so the audio is silent
+across the boundary and no analysis window ever contains two pitches. Whatever lead exists then shows up
+without the loudness bias that made the spectral scan unsound. Six cases, covering descending and ascending
+motion, a leap and a step, and two gap lengths:
+
+| Case | Written start | Audio onset | Lead |
+| --- | ---: | ---: | ---: |
+| descend 67 to 60, 2 s gap | 144000 | 143200 | **16.67 ms** |
+| descend 67 to 60, 0.5 s gap | 72000 | 71200 | **16.67 ms** |
+| ascend 60 to 67, 2 s gap | 144000 | 143968 | **0.67 ms** |
+| ascend 60 to 67, 0.5 s gap | 72000 | 71968 | **0.67 ms** |
+| leap up 62 to 74, 1 s gap | 96000 | 95392 | **12.67 ms** |
+| step up 64 to 67, 1 s gap | 96000 | 95968 | **0.67 ms** |
+
+**Six of six start early, by 32 to 800 samples: median 320, 6.67 ms.** The lead is real but small, and it
+tracks the **direction of motion**: descending and leaping intervals lead by 12.7 to 16.7 ms, while
+ascending steps and intervals lead by 0.67 ms.
+
+**This is consistent with the recipe and with the withdrawn figures being wrong.** The project recipe
+declares `burstMilliseconds: 10` on every plosive, and a 10 ms preutterance budget lands squarely in the
+measured 0.67 to 16.67 ms band. The withdrawn scan reported a 19.3 ms median with outliers to 83 ms, which
+neither the recipe nor this probe supports.
+
+**And it explains the 50 octave frames correctly.** A lead of up to 16.7 ms is about one analysis frame at
+256 samples. Where a note ends and its successor begins within one or two frames, the closing frame of the
+first note already carries the second note's pitch. That is precisely the pattern measured: the frames sit
+at the extreme end of a note and carry the **next** written note within 2 to 8 cents. **The renderer's
+preutterance is a documented, bounded, intended placement, and the 50 frames are its footprint.**
+
+**What this settles.** The onset question is now closed on measurement rather than inference: the lead
+exists, it is under 17 ms, it depends on interval direction, it agrees with the recipe's declared
+preutterance, and it fully accounts for the 50 frames. `timing_solver.cpp:108` places the unit so its vowel
+lands on the written start, and the resulting lead is the unit's own preutterance, which is the model
+working as designed.
+
+**What remains.** Whether a lead of up to 16.7 ms is *musically* desirable is a listening question and is
+not answered here. The 1 uncharacterised frame of the 85 is still uncharacterised. Nothing has been
+listened to, this is one singer family, and `combinedModelHoldoutVerified` is still false, so **P0-08
+remains OPEN**.
