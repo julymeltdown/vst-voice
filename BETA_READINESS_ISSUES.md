@@ -623,7 +623,28 @@ exclusivity is a property of the callers rather than of this function; that is n
 says, instead of a claim the mutation had just disproved. The new case pins what is genuinely
 pinnable — that each mode reaches its own builder — and says plainly that it does not pin the order.
 
-`keyDown` remains at roughly 480 lines and is untouched.
+**Update: `keyDown` is split too — the controller is 4117 lines.**
+`editor_keyboard.cpp` holds the two halves. `keyDownForOpenSurface` (340 lines) asks what surface
+has focus — the replacement panel, the time map, the phoneme review, the sample microscope, the
+recovery sheet, an active composition, the voicebank browser, the audio settings, the expression lane
+— and each returns as soon as it handles a key, because an open surface owns the keyboard.
+`keyDownGlobalShortcut` (144 lines) asks what the key means to the editor: undo, redo, play, save,
+nudge, delete. `keyDown` is now a 12-line dispatcher.
+
+The one design decision worth naming: the modal half returns **nothing** when no surface took the
+key, rather than a failure. A failure would reach the host as a refused key press, so every key the
+editor does not bind would read as an error instead of as unhandled. The first attempt used a
+sentinel failure and was replaced before it was ever run.
+
+Unlike the replacement-view split, **this one passed on the first run** — 466 of 466 original
+statements verified present across the three files before building, and 1467 of 1467 after. The
+mutation evidence is the stronger part: making the modal half claim every key fails 18 of the 1467,
+and making undo/redo refuse fails 3, so both halves and the boundary between them are load-bearing.
+
+**Still open.** Nothing structural remains in this file: it is 4117 lines with no method over 480.
+The entry's own claim that the concentration was the risk is now addressed; what remains is that the
+remaining 4117 lines are still one file, which is a smaller version of the same concern rather than
+a resolved one.
 
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 

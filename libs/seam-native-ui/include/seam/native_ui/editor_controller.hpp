@@ -593,6 +593,11 @@ public:
   [[nodiscard]] core::Result<void> pointerMove(const PointerEvent& event);
   [[nodiscard]] core::Result<void> pointerUp(const PointerEvent& event);
   [[nodiscard]] core::Result<void> keyDown(const KeyEvent& event);
+  // The two halves of keyDown. An open surface owns the keyboard until it lets go of it, so the
+  // modal half is asked first and returns nothing when it did not take the key -- reporting that as
+  // a failure would make every unbound key read to the host as a refused press.
+  [[nodiscard]] std::optional<core::Result<void>> keyDownForOpenSurface(const KeyEvent& event);
+  [[nodiscard]] core::Result<void> keyDownGlobalShortcut(const KeyEvent& event);
   void scroll(double deltaX, double deltaY, ui::Point anchor,
               InputModifiers modifiers) noexcept;
 

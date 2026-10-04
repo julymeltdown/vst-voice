@@ -758,6 +758,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-native-ui/src/editor_accessibility.cpp
     libs/seam-native-ui/src/editor_controller.cpp
     libs/seam-native-ui/src/editor_edit_commands.cpp
+    libs/seam-native-ui/src/editor_keyboard.cpp
     libs/seam-native-ui/src/editor_overlays.cpp
     libs/seam-native-ui/src/editor_review_views.cpp
     libs/seam-native-ui/src/editor_text_input.cpp
