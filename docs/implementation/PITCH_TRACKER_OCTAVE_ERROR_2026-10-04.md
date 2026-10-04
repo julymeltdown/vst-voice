@@ -497,3 +497,63 @@ render path: instrument the synth stages to find which one emits energy on the 2
 re-render. A fix there would remove the defect at its source and would leave the tracker's honest
 limitation, that it cannot distinguish a real 187.5 Hz note from a 256-sample impulse train, as a
 documented property rather than a silent failure.
+
+## Re-measured 2026-10-04: the defect does not reproduce at HEAD
+
+The section above ends by asking whether a re-render still shows the impulse train. It does not, and that
+is the most important result in this document, because it changes what the remaining work is.
+
+**How it was measured.** `tests/test_original_singer_song_journey.cpp` renders an installed procedural
+singer singing an authored Japanese lyric end to end through the real authoring and export stack. Run at
+HEAD with `SEAM_SONG_ARTIFACT_ROOT` set, it retains the masters, and it passed all 7 cases. The retained
+`baseline-master.wav` is 41.0 s of real audio at 48 kHz: peak 0.0918, RMS 0.0152, no clipped samples, DC
+offset 1.0e-06. Downmixed to float32 mono and cut into 17 segments under the extractor's 64 MiB input cap,
+then analyzed with the shipped extractor:
+
+| Render | Frames | Voiced | Frames with a lag-exact period | Share | Frames below 150 Hz |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **HEAD** (`9c2f892e`) | 7692 | 7456 | **0** | **0.000 %** | 3 (0.040 %) |
+| Retained comparison candidate (build `741ae2f2`) | 586 | 541 | **46** | **8.503 %** | 11 (2.033 %) |
+
+Per-segment medians sit at 293.6 to 392.1 Hz, which is the written melody, so this is a populated track
+and not a silent file being counted as clean. Re-tested at hops of 128, 256 and 512 the HEAD render has
+**zero** lag-exact frames at every hop, so it is not merely displaced onto a different grid.
+
+**The strongest candidate cause is a committed fix.** `1c6d57c6` ("fix: refine spectral hop for retimed
+voiced re-entry") halves the spectral analysis hop to 128 when a retimed source map crosses a
+voiced-to-unvoiced-to-voiced transition, and applies that same hop to formant planning and reconstruction.
+All ten bad frames in the retained render fall inside authored sung notes immediately after such a
+transition. The commit is dated 2026-09-28, after the `741ae2f2` build that produced the retained audio.
+**This is a strong correlation, not a proven cause**: the retained project cannot be re-rendered, so the
+specific render that showed the defect was never run against the fixed code.
+
+**Why the retained project cannot be re-rendered, precisely.** Its track `16379` carries no voicebank and
+no `proceduralRecipe`; it resolves its voice through `neuralResource` `seam.pause-experiment` version 3
+with content hash `d4dd7737eedd54638dd66c09b25f0024cceb052daca447be75ac525e2c750f3d`. A filesystem search
+for that hash and for the resource id found nothing. `receipt.json` agrees: `voicebanks: []`,
+`proceduralRecipes: []`, `includesProceduralCandidates: false`. **The resource that produced the retained
+audio is not on disk, so that exact render is not reproducible and the comparison is against a different
+score and a different voice.**
+
+**What this establishes.** The 256-sample impulse train is **not present in current output**. The
+render path that produces it still runs at a 256-sample hop
+(`SpectralRenderParameters::hopSize`, `spectral_classic.hpp:20`) and is still reached, so this is not the
+path having been removed. The defect is bounded to audio produced before `1c6d57c6`.
+
+**What this does not establish, and is not claimed.**
+
+- **`1c6d57c6` is not proven to be the fix.** A different song, a different voice and a different region
+  were rendered. It is the best-evidenced candidate and nothing more.
+- **This is not a pitch-accuracy pass.** Zero hop-locked frames means the *specific* artefact is gone. It
+  says nothing about cent-level accuracy, and the HEAD render's medians were not scored against its score.
+- **SEAM-BETA-P0-08 is not closed.** It asks for a pitch-accuracy verdict on an application render. What
+  exists now is: a located defect, a bounded-to-old-build negative result, and one clean end-to-end
+  render that nobody has listened to.
+- **The tracker's blind spot is still real.** It cannot distinguish a genuine 187.5 Hz note from a
+  256-sample impulse train, and every in-frame repair tested here breaks that case. Whether that matters
+  depends on whether any future render can produce such a train.
+
+**The measurement that would close this properly** is to re-render the *retained project* with HEAD, which
+requires recovering neural resource `d4dd7737...`, and to score cent-level error against the written score
+on both the old and new audio. Until that resource exists, the honest statement is: **the defect is real,
+located, and does not reproduce in current output on a different song.**
