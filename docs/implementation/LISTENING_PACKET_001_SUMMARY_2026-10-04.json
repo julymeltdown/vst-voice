@@ -1,0 +1,145 @@
+{
+  "formatId": "com.project-seam.listening-packet",
+  "schemaVersion": 1,
+  "packetId": "packet-2026-10-04-r1",
+  "createdAt": "2026-10-04T05:42:42.244709+00:00",
+  "status": "RENDERED_UNREVIEWED",
+  "sourceCommit": "9307bbf5cd8d92077f20cb9b0f83fbaea4fa00b5",
+  "binarySha256": "58e612a9c4218014b66d0facaa3715d768593be41841b771cacf4fcace4a28f1",
+  "system": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "listeningStatus": "NOT_REVIEWED",
+  "releaseEligible": false,
+  "bankComparison": "NOT_RUN: candidates are generated audio, not installed sample-bank renders",
+  "artifactCount": 335,
+  "retainedMiB": 67.1,
+  "totalAudioSeconds": 199.5,
+  "cases": [
+    {
+      "id": "vowels",
+      "arguments": [],
+      "outputs": 6,
+      "audioSeconds": 9.0
+    },
+    {
+      "id": "articulation",
+      "arguments": [
+        "articulation"
+      ],
+      "outputs": 6,
+      "audioSeconds": 21.0
+    },
+    {
+      "id": "stops",
+      "arguments": [
+        "stops"
+      ],
+      "outputs": 6,
+      "audioSeconds": 9.0
+    },
+    {
+      "id": "affricates",
+      "arguments": [
+        "affricates"
+      ],
+      "outputs": 6,
+      "audioSeconds": 6.0
+    },
+    {
+      "id": "glides",
+      "arguments": [
+        "glides"
+      ],
+      "outputs": 6,
+      "audioSeconds": 6.0
+    },
+    {
+      "id": "nasals",
+      "arguments": [
+        "nasals"
+      ],
+      "outputs": 6,
+      "audioSeconds": 9.0
+    },
+    {
+      "id": "melisma",
+      "arguments": [
+        "boundaries"
+      ],
+      "outputs": 6,
+      "audioSeconds": 12.0
+    },
+    {
+      "id": "events",
+      "arguments": [
+        "events"
+      ],
+      "outputs": 6,
+      "audioSeconds": 9.0
+    },
+    {
+      "id": "range",
+      "arguments": [
+        "phrase",
+        "\u307e:60:960",
+        "\u307f:66:960",
+        "\u3080:72:960",
+        "\u3081:66:960",
+        "\u3082:60:960"
+      ],
+      "outputs": 6,
+      "audioSeconds": 15.0
+    },
+    {
+      "id": "rhythm",
+      "arguments": [
+        "phrase",
+        "\u3070:60:960",
+        "\u30fc:64:240",
+        "\u3093:65:720",
+        "\u3042:60:480"
+      ],
+      "outputs": 6,
+      "audioSeconds": 7.5
+    },
+    {
+      "id": "unfamiliar-song",
+      "arguments": [
+        "phrase",
+        "\u3042:60:960",
+        "\u3055:62:960",
+        "\u306e:64:960",
+        "\u305d:67:480",
+        "\u3089:64:1440",
+        "\u3042:65:960",
+        "\u304a:64:960",
+        "\u3044:62:960",
+        "\u304b:60:480",
+        "\u305c:62:1440",
+        "\u3053:64:960",
+        "\u3048:67:960",
+        "\u304c:69:960",
+        "\u3072:67:480",
+        "\u3073:65:480",
+        "\u304f:64:960",
+        "\u304d:62:960",
+        "\u307f:64:960",
+        "\u3068:65:960",
+        "\u3046:67:480",
+        "\u305f:69:480",
+        "\u3046:67:960",
+        "\u3042:72:960",
+        "\u3055:69:960",
+        "\u306e:67:960",
+        "\u305d:65:480",
+        "\u3089:64:1440",
+        "\u3053:62:1920",
+        "\u3048:60:1920",
+        "\u30fc:60:2880"
+      ],
+      "outputs": 6,
+      "audioSeconds": 96.0
+    }
+  ],
+  "note": "Audio is retained locally under out/listening/packet-2026-10-04-r1 and is gitignored. All 335 artifact digests re-hash correctly against the local manifest. Review guide: docs/implementation/LISTENING_PACKET_REVIEW_GUIDE_2026-10-04.md"
+}

@@ -6914,3 +6914,31 @@ verdict from the top level of the JSON, where it does not live, and reported all
 "missing" instead of "failing"; it reads `pitch.within_frozen_limits`, confirmed against the real
 packet. Five unit tests added. `tests/singing_quality` runs 77 tests pass (4 skipped);
 `seam_singing_quality_contract_tests` and `seam_singing_quality_workflow` pass.
+
+**The listening packet has been generated for the first time, and it needed a bug fix to run at
+all.** `tools/singing_quality/listening_packet.py` had never been executed. Its first run failed on
+its own safety check: `ValueError: '/private/tmp/.../master.wav' is not in the subpath of
+'/tmp/...'`. The cause was that `binary` and `repo` were `.resolve(strict=True)` while `output` was
+only `.absolute()` — and on macOS `/tmp` is a symlink to `/private/tmp`, so the containment guard was
+comparing a resolved audio path against an unresolved packet root and raised on a path that had in
+fact stayed inside the packet. `output` is now `.resolve()`d; the strict form is kept so a symlinked
+output cannot silently redirect a packet elsewhere. The tool's other guard then did its job: it
+refused to retain a packet from a dirty runtime tree, which is why the fix landed as its own commit
+before the packet was generated.
+**What the packet contains.** `packet-001` from commit `9307bbf5`: **11 cases, 66 WAV outputs, 199.50
+seconds of audio, 68 MiB across 335 artifacts, and all 335 artifacts re-hash to their recorded
+SHA-256.** Signal is present everywhere — minimum peak 0.0087, median 0.0777, zero near-silent
+outputs. The manifest keeps its own honesty: `status: RENDERED_UNREVIEWED`,
+`listeningStatus: NOT_REVIEWED`, `releaseEligible: false`, and
+`bankComparison: NOT_RUN: candidates are generated audio, not installed sample-bank renders`.
+**The reviewer guide is the deliverable.**
+`docs/implementation/LISTENING_PACKET_REVIEW_GUIDE_2026-10-04.md` names the exact files to play in
+priority order and, for the pitch question that three code repairs could not settle, asks the one
+question that decides it: after a rest, does **the audio itself** jump an octave, or does the ear hear
+a continuous note while only the tracker reports otherwise. It records the three answers and what each
+unblocks — **B** makes the tracker fix safe to attempt on real audio, **A** moves the defect to the
+renderer, **C** means make no change. C is explicitly a valid answer. It also warns the reviewer that
+syllables sounding alike is the **fixture bank**, not a DSP bug, so it is not misattributed.
+**This does not move a gate.** A packet exists and is unreviewed; nobody has listened. What changed is
+that the listening task is now a concrete, bounded, 199-second job with named files instead of an
+open-ended request, and that the tool which produces it provably works.
