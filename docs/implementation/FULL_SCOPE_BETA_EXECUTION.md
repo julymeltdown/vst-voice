@@ -6861,3 +6861,33 @@ accessibility cases pass. That is a meaningful correction to the default posture
 smoke tests: the AX assertions were real, they were green, and nothing about them required a human
 reviewer. It still does not substitute for VoiceOver evidence — an AX-tree assertion is not a spoken
 announcement — but the coverage should not have been behind a flag by default.
+
+**The neural render path is real, and the model inside it is not.** Both neural tests run in the
+default suite (`seam_neural_production_render` 3.97 s, `..._moraic_nasal` 3.66 s,
+`seam_neural_worker_relocatability` 0.09 s) and all pass. Running them verbosely shows genuine
+execution rather than a stub: `production worker rendered 96000 interleaved samples through
+seam.neural-worker.v1 with 96000 nonzero samples`, and `otool -L build/release/seam_neural_worker`
+links `@rpath/libonnxruntime.1.dylib` at version **1.30.0**. The worker really loads ONNX Runtime and
+really infers.
+**What the inference is worth is a different question, and the answer is bounded.**
+`check_production_render.py` states it in its own docstring: *"By default the bundle carries arithmetic
+fixture graphs... A pass proves execution and export, never singer qualification or musical
+quality."* Reading `graphs()` in `check_paired_runtime.py` confirms it: the graph is literally named
+**`"paired-arithmetic"`** and consists of `Mul`, `Cast`, `ReduceSum`, `Add`, `Unsqueeze`, `Shape`,
+`Concat` and `Expand` over the f0/tokens/durations inputs. There is no learned acoustic model and no
+trained vocoder anywhere in this path. `seam_voicebank_cli prepare-neural-bundle` will only build a
+real bundle from a candidate argument set, and none is checked in — the fixture is generated in a
+temp directory at test time.
+So the correct reading is narrow and worth stating plainly: **the packaging, transport, vocabulary,
+inference-loop, and export chain around a neural voice is verified end to end on this host, and the
+voice itself is not.** The tests also print `singerQualified=false`, which is the suite agreeing with
+this reading. Any claim that SEAM "renders with a neural voicebank" today would be false; what is
+true is that the moment a learned bundle is supplied, this path will execute it. That is the single
+largest gap between what the code proves and what a listener would need.
+**Confirmed by counting the tree, not inferred.** `find . -name '*.onnx' -not -path './build/*'`
+returns **0**, and the same search for `*.pt`, `*.pth`, `*.ckpt`, `*.safetensors` returns **0**. The
+training pipeline itself is real and exercised — `seam_voice_model_training_tests` passes in 38.54 s —
+so the ability to *produce* a bundle is evidenced; the artifact itself does not exist in the
+repository, which is expected for model weights and is exactly why the neural render path can only
+prove plumbing. Turning this into singing requires rights-cleared training material and a trained
+candidate, not more code on the render side.
