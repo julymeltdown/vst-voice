@@ -230,6 +230,17 @@ the retained candidate track itself there are two post-gap octave jumps, and re-
 `master.wav` as float32 gives none. The rule still has no continuity term and remains a plausible
 contributor, but these 23 errors are not attributed to it. The full correction, including that a
 repair attempt was measured against the wrong file and is therefore untested rather than refuted,
+**Read from the two stored pitch tracks, the anomaly is on the candidate side.** Both tracks have
+the same median F0 (335.7 Hz against 333.3 Hz), so they are singing the same note. The candidate
+has 231 distinct voiced pitch values to the reference 121, and **14 frames sitting at exactly
+187.5 Hz -- a lag of 256, which is this analysis hop size, so those frames report the frame period
+as its own pitch.** Five of them sit where the reference reports *unvoiced*, and the candidate
+confidence rises from 0.61 to 0.92 across that stretch. Three probes through the shipped extractor
+rule out a general failure: a plain 300 Hz tone reads 300.0 Hz on all 375 frames, a tone followed by
+digital silence gives 0 voiced frames in the silence, and a tone followed by low-level noise gives
+0 voiced frames in the noise. Confirming the hop-locked frames needs the candidate audio itself,
+which the comparison records only by SHA-256.
+
 is in [the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). Nothing is
 fixed, no threshold is proposed, and this does not qualify a singer or close this blocker.
 

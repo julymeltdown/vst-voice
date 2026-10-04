@@ -168,3 +168,48 @@ term -- but this document no longer claims it is the cause of these 23.
 **And the rejected repair stands as rejected**, for a reason that is now clearer: it was evaluated
 against an artefact. It is recorded as untested against the real candidate rather than as refuted,
 because the audio it was measured on was the wrong one. The code is unchanged either way.
+
+
+## What the stored comparison does establish, read from the pitch frames themselves
+
+This section reads the two pitch tracks the comparison stored, and does not depend on any file
+chosen here. Both tracks are in the comparison at `pitch.candidateTrack.pitchFrames` and
+`pitch.referenceTrack.pitchFrames`.
+
+| Measure | Candidate | Reference |
+| --- | ---: | ---: |
+| Voiced frames | 541 | 528 |
+| Median voiced F0 | 335.7 Hz | 333.3 Hz |
+| Distinct voiced F0 values | 231 | 121 |
+| Frames at exactly 187.5 Hz (lag 256, the hop size) | 14 | 0 |
+| Frames at exactly 1200.0 Hz (the search ceiling) | 1 | 0 |
+
+The medians agree, so both tracks are singing the same note for most of the phrase. What differs
+is the candidate has roughly twice as many distinct pitch values, and has 14 frames sitting at
+exactly the hop size as a lag while the reference has none.
+
+**The 14 frames are the sharpest thing in the data.** 187.5 Hz at 48 kHz is a lag of exactly 256,
+which is this analysis hop size, so those frames report the frame period as its own pitch. Five
+of them (frames 305 to 311) sit where the reference reports **unvoiced** -- the source has no
+note there -- and the candidate confidence *rises* across that stretch, from 0.61 to 0.92. A
+tracker growing more confident where the audio has stopped singing is not measuring pitch.
+
+**What was tested against that.** Three probes were run through the shipped extractor:
+
+- A plain 300 Hz tone: reads 300.0 Hz on all 375 frames. Correct.
+- A 300 Hz tone followed by a second of digital silence: **0** voiced frames in the silence. Correct.
+- A 300 Hz tone followed by a second of low-level noise: **0** voiced frames in the noise. Correct.
+
+So the tracker does not invent pitch from silence or from noise in isolation, and the hop-locked
+frames are not a general failure of the estimator. They need the candidate audio itself, which is
+not retained: the comparison stores its SHA-256, and the file beside it is a different render.
+
+**One earlier probe in this session was malformed and is withdrawn rather than reported.** It read
+1200 Hz everywhere, which looked like the search ceiling latching. The generator was wrong -- it
+never produced a real tone -- and the two clean probes above are the result that stands.
+
+**What this does and does not change.** The concentration finding is unchanged: 23 of 586 frames
+carry 93.4 per cent of the absolute error, and removing them drops the mean from 102.93 to 7.17.
+What is new is that the candidate side is where the anomaly is, and that it has a specific shape --
+14 frames locked to the hop size, five of them where the source is silent, with rising confidence.
+Confirming it needs the candidate audio, which is not in this repository.
