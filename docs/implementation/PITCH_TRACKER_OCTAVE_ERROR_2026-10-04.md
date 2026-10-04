@@ -213,3 +213,45 @@ carry 93.4 per cent of the absolute error, and removing them drops the mean from
 What is new is that the candidate side is where the anomaly is, and that it has a specific shape --
 14 frames locked to the hop size, five of them where the source is silent, with rising confidence.
 Confirming it needs the candidate audio, which is not in this repository.
+
+
+## U16 corpus render: the measured pitch of the dry vocal mostly sits above the written notes
+
+The U16 quality tooling was run end to end for the first time in this session, on the checked-in
+corpus, and the render is real audio:
+
+| Case | Duration | Peak | RMS | Clipped | DC offset |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| original-melody, bank renderers | 41.00 s | 0.5026 | 0.0691 | 0 | -6.0e-05 |
+| original-melody, forced raw | 41.00 s | 0.5026 | 0.1056 | 0 | -2.0e-04 |
+| unequal-rests, bank renderers | 9.12 s | 0.4925 | 0.0803 | 0 | -4.1e-04 |
+| unequal-rests, forced raw | 9.12 s | 0.4933 | 0.1087 | 0 | -2.4e-04 |
+
+No silent file, no clipping, negligible DC offset. This is listenable material.
+
+**What measuring it found.** The project writes MIDI 62 to 72, which is 293.7 to 523.3 Hz. Running the
+shipped extractor over the rendered dry vocal:
+
+| Render | Voiced frames | Inside the written range | Median F0 |
+| --- | ---: | ---: | ---: |
+| bank renderers | 5745 | 200 (3.5 %) | 751.1 Hz |
+| forced raw | 5719 | 260 (4.5 %) | 958.3 Hz |
+
+Only about one frame in twenty falls inside the notes the project actually writes. In the bank
+render 59 per cent of voiced frames are above the highest written note and 37 per cent are below the
+lowest. Both renderers show it, so it is not the bank selection: it is in the shared path.
+
+**Two claims of mine that were wrong on checking, recorded because both were stated with
+confidence.** I first read the 1200 Hz readings as the search ceiling latching on silence. They are
+not: a plain tone followed by digital silence gives zero voiced frames, and the lag search range is
+correctly 60 to 1200 Hz for this frame size. I then claimed `maximumLag` was capped below the
+declared minimum pitch. It is not: the cap is frameSize/2 = 1024, and 60 Hz needs lag 800. Both were
+assertions from reading rather than from computing, and both were wrong.
+
+**What this is not.** It is not a musical judgement: nobody has listened to these renders, and the
+bank gives eight phoneme labels the same 0.55-second spoken recording by design, so the packet
+cannot demonstrate intelligible singing. It is a measurement discrepancy between what the score
+writes and what the analyser reads from the render, on a corpus whose own notice says it exists to
+exercise timing and fallback rather than musical quality. It may be the analyser, the renderer, or
+the fixture. Locating which needs the packet to be listened to and the per-phrase reports read
+alongside the pitch track, neither of which has happened.

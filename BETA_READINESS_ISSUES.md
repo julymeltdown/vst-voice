@@ -241,6 +241,17 @@ digital silence gives 0 voiced frames in the silence, and a tone followed by low
 0 voiced frames in the noise. Confirming the hop-locked frames needs the candidate audio itself,
 which the comparison records only by SHA-256.
 
+**A first U16 corpus render is now measured, and it disagrees with its own score.** The U16 quality
+tooling was run end to end on the checked-in corpus for the first time. All four dry vocals carry real
+signal with no clipping: the 41-second melody at peak 0.5026 and RMS 0.0691, the 9.12-second case at
+peak 0.4925. The project writes MIDI 62 to 72, which is 293.7 to 523.3 Hz, but the shipped
+extractor reads only 3.5 per cent of voiced frames inside that range for the bank render and 4.5 per
+cent for the forced raw render. In the bank render 59 per cent of voiced frames are above the highest
+written note. Both renderers show it, so it is not the bank selection. Nobody has listened to these
+renders, and the corpus notice states the bank gives eight phoneme labels the same spoken recording
+by design, so this is a measurement discrepancy to investigate, not a musical finding. Details and
+two claims of mine that checking disproved are in the diagnosis.
+
 is in [the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). Nothing is
 fixed, no threshold is proposed, and this does not qualify a singer or close this blocker.
 
