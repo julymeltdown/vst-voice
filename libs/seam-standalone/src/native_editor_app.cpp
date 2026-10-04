@@ -323,6 +323,7 @@ core::Result<void> NativeEditorApp::initialize() {
   supportExportRoot_ = config_.applicationSupportRoot.empty()
                            ? paths.value().userDataRoot / "Support"
                            : config_.applicationSupportRoot / "Support";
+  supportIntakeDestination_ = config_.supportIntakeDestination;
 
   updatePolicyPath_ = config_.updatePolicyPath;
   updateManifestPath_ = config_.updateManifestPath;
@@ -1295,6 +1296,20 @@ core::Result<void> NativeEditorApp::selectSupportReport(std::size_t index) {
   return core::success();
 }
 
+std::vector<authoring::DiagnosticAction> NativeEditorApp::exportedSupportActions() const {
+  const auto registered = authoring::DiagnosticRegistry::actions("SUPPORT_BUNDLE_EXPORTED");
+  if (!supportIntakeDestination_.empty()) return registered;
+  // With no intake destination configured there is nowhere to submit to, so the button is withheld
+  // instead of being shown as something that can only ever refuse.
+  std::vector<authoring::DiagnosticAction> actions;
+  for (const auto action : registered) {
+    if (action != authoring::DiagnosticAction::SubmitSupportBundle) {
+      actions.push_back(action);
+    }
+  }
+  return actions;
+}
+
 // The platform token the update manifest vocabulary uses. Kept as a named constant rather than a
 // literal at the call site so the expected value and the shipped manifest cannot drift apart.
 constexpr std::string_view kExpectedUpdatePlatform{"macos-arm64"};
@@ -1523,8 +1538,7 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
           .severity = authoring::DiagnosticSeverity::Info,
           .messageKey = "support.exported-local-only",
           .affectedIds = {},
-          .actions = authoring::DiagnosticRegistry::actions(
-              "SUPPORT_BUNDLE_EXPORTED"),
+          .actions = exportedSupportActions(),
           .occurrenceCount = 1U}});
       requestWindowRepaint();
       return core::success();
@@ -1535,6 +1549,38 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
                              "Support export folder is unavailable");
       }
       return platform::openExternalPath(supportExportRoot_);
+    case authoring::DiagnosticAction::SubmitSupportBundle: {
+      if (supportBundle_ == nullptr || supportReports_.empty() ||
+          selectedSupportReportIndex_ >= supportReports_.size()) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "No exported support report is available to submit");
+      }
+      // Defence in depth behind exportedSupportActions(), which withholds this action from a build
+      // with no destination. Reached directly, it refuses rather than recording a submission to
+      // somewhere that does not exist.
+      if (supportIntakeDestination_.empty()) {
+        return core::failure(core::ErrorCode::InvalidState,
+                             "This build has no configured support intake destination");
+      }
+      // Submitting records that the bundle was handed to a named destination. It does NOT mark the
+      // bundle received: that is the intake endpoint's acknowledgement, applied separately.
+      const auto submitted = supportBundle_->recordIntake(
+          supportReports_[selectedSupportReportIndex_], supportIntakeDestination_,
+          timestampNow());
+      if (!submitted) return core::Result<void>{submitted.error()};
+      lastError_ = "Support report submitted for acknowledgement: " +
+                   submitted.value().submissionId;
+      authoring_->controller().setDiagnostics({authoring::Diagnostic{
+          .code = "SUPPORT_BUNDLE_SUBMITTED",
+          .severity = authoring::DiagnosticSeverity::Info,
+          .messageKey = "support.submitted-awaiting-acknowledgement",
+          .affectedIds = {},
+          .actions = authoring::DiagnosticRegistry::actions(
+              "SUPPORT_BUNDLE_SUBMITTED"),
+          .occurrenceCount = 1U}});
+      requestWindowRepaint();
+      return core::success();
+    }
     case authoring::DiagnosticAction::DeleteSupportBundle:
       if (supportBundle_ == nullptr || supportReports_.empty() ||
           selectedSupportReportIndex_ >= supportReports_.size()) {

@@ -58,6 +58,7 @@ constexpr DiagnosticAction kSupportPreview[]{
     DiagnosticAction::Dismiss};
 constexpr DiagnosticAction kSupportExported[]{
     DiagnosticAction::OpenSupportFolder,
+    DiagnosticAction::SubmitSupportBundle,
     DiagnosticAction::DeleteSupportBundle,
     DiagnosticAction::Dismiss};
 // A notice the editor raises about what it did not do, or could not tell its host: there is nothing to
@@ -92,6 +93,10 @@ constexpr std::array definitions{
                kSupportPreview},
     Definition{"SUPPORT_BUNDLE_EXPORTED", DiagnosticSeverity::Info,
                kSupportExported},
+    // A submission is a completed act, not a fault: the bundle has been handed to a configured
+    // destination and there is nothing left for the creator to repair. Only the intake endpoint can
+    // move this bundle forward, and it does so through an acknowledgement the creator never applies.
+    Definition{"SUPPORT_BUNDLE_SUBMITTED", DiagnosticSeverity::Info, kNotice},
     Definition{"EDIT_REFUSED", DiagnosticSeverity::Warning, kNotice},
     Definition{"SELECTION_SYNC_FAILED", DiagnosticSeverity::Warning, kRetryNotice},
 };
@@ -132,6 +137,7 @@ std::string_view toString(DiagnosticAction action) noexcept {
     case DiagnosticAction::ExportSupportBundle: return "EXPORT_SUPPORT_BUNDLE";
     case DiagnosticAction::OpenSupportFolder: return "OPEN_SUPPORT_FOLDER";
     case DiagnosticAction::DeleteSupportBundle: return "DELETE_SUPPORT_BUNDLE";
+    case DiagnosticAction::SubmitSupportBundle: return "SUBMIT_SUPPORT_BUNDLE";
   }
   return "UNKNOWN";
 }

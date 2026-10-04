@@ -21,6 +21,7 @@ std::string actionLabel(authoring::DiagnosticAction action) {
     case authoring::DiagnosticAction::ExportSupportBundle: return "Export";
     case authoring::DiagnosticAction::OpenSupportFolder: return "Reveal";
     case authoring::DiagnosticAction::DeleteSupportBundle: return "Delete";
+    case authoring::DiagnosticAction::SubmitSupportBundle: return "Submit to support";
     case authoring::DiagnosticAction::Dismiss: return "Dismiss";
     case authoring::DiagnosticAction::CopyDiagnostic: return "Copy details";
   }
@@ -66,6 +67,11 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
   } else if (diagnostic.code == "SUPPORT_BUNDLE_EXPORTED") {
     result.title = "Support report exported";
     result.impact = "Local only. Reveal or delete this report.";
+  } else if (diagnostic.code == "SUPPORT_BUNDLE_SUBMITTED") {
+    result.title = "Support report submitted";
+    // Submission is not receipt. The bundle has been handed to a named destination; only the
+    // intake endpoint's acknowledgement moves it forward, and the creator never applies that.
+    result.impact = "Sent for acknowledgement. Not yet received or triaged.";
   } else {
     result.title = "Project needs attention";
     result.impact = diagnostic.messageKey.empty() ? "Review the available recovery action."
@@ -83,6 +89,7 @@ DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic
       authoring::DiagnosticAction::OpenRecoveryFolder,
       authoring::DiagnosticAction::ExportSupportBundle,
       authoring::DiagnosticAction::OpenSupportFolder,
+      authoring::DiagnosticAction::SubmitSupportBundle,
       authoring::DiagnosticAction::DeleteSupportBundle,
       authoring::DiagnosticAction::OpenSupport,
       authoring::DiagnosticAction::Dismiss,

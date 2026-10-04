@@ -89,6 +89,32 @@ TEST_CASE("support intake records a submission a creator cannot acknowledge them
   CHECK(found.value()->state == seam::authoring::SupportLifecycleState::Acknowledged);
 }
 
+TEST_CASE("a submission to no destination is refused and leaves no lifecycle record") {
+  // The destination is the whole content of a submission, so an empty one is not a submission to a
+  // default: it is a submission to nowhere, and it is refused rather than filed.
+  const auto root = seam::test::support::temporaryDirectory("support-intake-no-destination");
+  seam::authoring::SupportBundleService service(root / "PrivateReports");
+  const seam::authoring::SupportBundleRequest request{
+      .events = {safeEvent()},
+      .attachments = {},
+      .candidateId = "candidate-build-1",
+      .createdAt = "2026-08-22T00:00:00Z"};
+  auto prepared = service.prepare(request);
+  CHECK(prepared);
+  auto exported = service.exportPrepared(prepared.value(), root / "Exports");
+  CHECK(exported);
+  const seam::authoring::SupportBundleRecord record{
+      .path = exported.value().destination,
+      .bytes = exported.value().preview.archiveBytes,
+      .sha256 = exported.value().preview.archiveSha256};
+
+  const auto refused = service.recordIntake(record, "", "2026-08-22T12:00:00Z");
+  CHECK(!refused);
+  const auto listed = service.listIntakes();
+  CHECK(listed);
+  CHECK(listed.value().empty());
+}
+
 TEST_CASE("an acknowledgement for another bundle cannot advance this submission") {
   const auto root = seam::test::support::temporaryDirectory("support-intake-replay");
   seam::authoring::SupportBundleService service(root / "PrivateReports");

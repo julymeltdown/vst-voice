@@ -29,6 +29,7 @@ enum class DiagnosticAction {
   ExportSupportBundle,
   OpenSupportFolder,
   DeleteSupportBundle,
+  SubmitSupportBundle,
 };
 
 struct Diagnostic final {

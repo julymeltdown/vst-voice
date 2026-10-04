@@ -6,6 +6,7 @@
 
 #include "seam/platform/audio_device.hpp"
 #include "seam/platform/application_paths.hpp"
+#include "seam/authoring/support_bundle.hpp"
 #include "seam/platform/crash_capture.hpp"
 #include "seam/platform/ring_buffer_processor.hpp"
 #include "seam/native_ui/pixel_surface.hpp"
@@ -775,6 +776,120 @@ TEST_CASE("native support flow previews exports and deletes exact prepared bytes
              .recoverySupportPanel()
              .view()
              .visible);
+}
+
+// Drives the app's own support flow to an exported bundle and returns the private intake store the
+// app records submissions into, so a test can read the lifecycle the app actually wrote.
+std::filesystem::path exportBundleThroughApp(const std::filesystem::path& root,
+                                             const std::string& destination) {
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  config.supportIntakeDestination = destination;
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions("PROJECT_NOT_FOUND"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+  const auto entries =
+      app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(entries.size() == 1U);
+  CHECK(entries.front().diagnostic.code == "SUPPORT_BUNDLE_EXPORTED");
+  // The app offers submission only when it has somewhere to submit to.
+  const auto& offered = entries.front().diagnostic.actions;
+  CHECK(std::find(offered.begin(), offered.end(),
+                  seam::authoring::DiagnosticAction::SubmitSupportBundle) !=
+        offered.end());
+  const auto accepted = app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::SubmitSupportBundle);
+  CHECK(accepted);
+  const auto after = app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(after.size() == 1U);
+  CHECK(after.front().diagnostic.code == "SUPPORT_BUNDLE_SUBMITTED");
+  return root / "Data" / "State" / "Recovery" / "SupportReports";
+}
+
+TEST_CASE("a configured build submits a bundle and records intake without acknowledging it") {
+  const auto root =
+      seam::test::support::temporaryDirectory("native-support-submit");
+  const auto privateRoot = exportBundleThroughApp(root, "seam.test.intake");
+
+  seam::authoring::SupportBundleService service(privateRoot);
+  const auto intakes = service.listIntakes();
+  CHECK(intakes);
+  if (!intakes || intakes.value().size() != 1U) return;
+  const auto& record = intakes.value().front();
+  // Submission is the act that creates the lifecycle record.
+  CHECK(record.state == seam::authoring::SupportLifecycleState::Intake);
+  CHECK(record.destinationId == "seam.test.intake");
+  // Submission is not receipt: the acknowledgement is the intake endpoint's, so a creator-side
+  // submit must leave every acknowledgement field empty.
+  CHECK(record.acknowledgementId.empty());
+  CHECK(record.acknowledgedBundleSha256.empty());
+  CHECK(record.state != seam::authoring::SupportLifecycleState::Acknowledged);
+  CHECK(record.submittedAt.size() == 20U);
+  CHECK(record.submittedAt.back() == 'Z');
+
+  // Submitting twice is idempotent rather than a second lifecycle record.
+  const auto again = exportBundleThroughApp(root, "seam.test.intake");
+  CHECK(again == privateRoot);
+}
+
+TEST_CASE("a build with no intake destination refuses to submit and records nothing") {
+  const auto root =
+      seam::test::support::temporaryDirectory("native-support-submit-unconfigured");
+  seam::standalone::NativeEditorAppConfig config;
+  config.runtimeMode = seam::standalone::ProductionRuntimeMode::DeterministicTest;
+  config.applicationSupportRoot = root;
+  config.forceThreadedAudio = true;
+  // Shipped default: no endpoint is provisioned or operated by this project.
+  CHECK(config.supportIntakeDestination.empty());
+  auto app = seam::standalone::NativeEditorApp::create(std::move(config));
+  CHECK(app);
+  app.value()->authoring().controller().setDiagnostics({seam::authoring::Diagnostic{
+      .code = "PROJECT_NOT_FOUND",
+      .severity = seam::authoring::DiagnosticSeverity::Error,
+      .messageKey = "project.not-found",
+      .affectedIds = {},
+      .actions = seam::authoring::DiagnosticRegistry::actions("PROJECT_NOT_FOUND"),
+      .occurrenceCount = 1U}});
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::OpenSupport));
+  CHECK(app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::ExportSupportBundle));
+  const auto entries =
+      app.value()->authoring().controller().diagnosticPanel().entries();
+  if (entries.size() != 1U) return;
+  CHECK(entries.front().diagnostic.code == "SUPPORT_BUNDLE_EXPORTED");
+  // The button is withheld rather than offered as something that can only refuse.
+  const auto& offered = entries.front().diagnostic.actions;
+  CHECK(std::find(offered.begin(), offered.end(),
+                  seam::authoring::DiagnosticAction::SubmitSupportBundle) ==
+        offered.end());
+
+  // And if it is dispatched anyway, the handler refuses and no lifecycle record is created.
+  const auto refused = app.value()->authoring().controller().activateDiagnostic(
+      0U, seam::authoring::DiagnosticAction::SubmitSupportBundle);
+  CHECK(!refused);
+  const auto after =
+      app.value()->authoring().controller().diagnosticPanel().entries();
+  CHECK(after.size() == 1U);
+  CHECK(after.front().diagnostic.code == "SUPPORT_BUNDLE_EXPORTED");
+
+  seam::authoring::SupportBundleService service(
+      root / "Data" / "State" / "Recovery" / "SupportReports");
+  const auto intakes = service.listIntakes();
+  CHECK(intakes);
+  CHECK(intakes.value().empty());
 }
 
 TEST_CASE("native support keeps a committed export when directory refresh fails") {

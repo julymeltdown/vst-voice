@@ -45,6 +45,10 @@ struct NativeEditorAppConfig final {
   std::filesystem::path updatePolicyPath;
   std::filesystem::path updateManifestPath;
   std::optional<distribution::Ed25519PublicKey> trustedUpdateRoot;
+  // The support intake destination this build may submit bundles to. Empty by default and shipped
+  // empty: this project neither provisions nor operates an intake endpoint, so an unconfigured
+  // build refuses to submit rather than recording a submission to an address that does not exist.
+  std::string supportIntakeDestination;
   bool allowDevelopmentVoicebanks{false};
   std::size_t audioBlockFrames{256U};
   bool forceThreadedAudio{false};
@@ -189,6 +193,9 @@ private:
   [[nodiscard]] core::Result<void> refreshSupportReports(
       const std::optional<std::filesystem::path>& preferred = std::nullopt);
   [[nodiscard]] core::Result<void> selectSupportReport(std::size_t index);
+  // The recovery actions offered for an exported bundle, which depends on this build: submitting
+  // needs an intake destination, so the action is withheld when the build has none.
+  [[nodiscard]] std::vector<authoring::DiagnosticAction> exportedSupportActions() const;
   void refreshDistributionAuthority();
   void refreshCrashRecoveryContext();
   void setAudioUnavailable(const core::Error& error) noexcept;
@@ -257,6 +264,7 @@ private:
   std::vector<authoring::SupportBundleRecord> supportReports_;
   std::size_t selectedSupportReportIndex_{0U};
   std::filesystem::path supportExportRoot_;
+  std::string supportIntakeDestination_;
   std::filesystem::path updatePolicyPath_;
   std::filesystem::path updateManifestPath_;
   std::optional<distribution::Ed25519PublicKey> trustedUpdateRoot_;
