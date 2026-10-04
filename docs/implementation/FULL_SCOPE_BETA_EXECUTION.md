@@ -7534,3 +7534,37 @@ remains **OPEN**: `withinLimits` is false, no one has listened, and the model-ho
 `tools/singing_quality/score_against_written_score.py` and the five-song driver over the retained campaign;
 all five `export/master.wav` files read successfully; Release CTest 230/230 at `882855be`;
 `git diff --check` clean. No product code changed.
+
+## The lead is the timing model's intended placement rule, located in source
+
+The entries above left the onset unexplained and framed it as a choice between a musical decision and a
+timing fault. The mechanism turned out to be neither guesswork nor mystery: it is in the source, and it is
+deliberate.
+
+`libs/seam-synthesis/src/timing_solver.cpp:108`:
+
+```cpp
+auto destinationStart = noteOn - vowelOffset;
+```
+
+`vowelOffset` comes from line 96, `unit->markers.vowelOnset - unit->markers.audioOffset`, resampled to the
+output rate. A unit is placed so that its **vowel** lands on the note's written start, which necessarily
+puts its **preutterance** before that start. Leading by the unit's own preutterance is what this model is
+built to do.
+
+**The measured distribution matches that prediction.** Ten distinct advance values across 33 measured
+onsets, each recurring rather than scattered: 544 samples (11.33 ms, 6 notes), 1184 (24.67 ms, 5), 672
+(14.00 ms, 4), 928 (19.33 ms, 4), 1056 (22.00 ms, 4), 4000 (83.33 ms, 4), 800 (16.67 ms, 3), 416 (8.67 ms,
+1), 1312 (27.33 ms, 1), 1696 (35.33 ms, 1). A single constant would have implied one shared offset; ten
+recurring values are what per-unit declared preutterances produce.
+
+**One discrepancy is recorded rather than smoothed.** The recipe declares `burstMilliseconds: 10` on every
+plosive, while measured advances run 8.7 to 83.3 ms. The smallest are consistent with a 10 ms burst. The
+four at exactly 83.3 ms sit on the ceiling of the 4000-sample backward search and **may be a search
+artefact**, so they are not claimed as real advances here.
+
+**What this settles and what it leaves.** The 50 frames are the tail of an intentional per-unit placement
+rule rather than a renderer fault or a scoring error. Whether preutterance of 8 to 35 ms is *desirable*
+legato is a different question from whether it is *intended*: it is intended, and nobody has decided
+whether it is right. P0-08 stays **OPEN**, the 83.3 ms cases remain unexplained, the 1 uncharacterised frame
+remains uncharacterised, nothing has been listened to, and `combinedModelHoldoutVerified` is still false.

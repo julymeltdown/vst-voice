@@ -597,6 +597,52 @@ the 1 remaining frame is not characterised, nothing has been listened to, this i
 solver and the 50 frames become a true pass; if it is judged intentional, the written score is what needs
 correcting. **That decision is a listener's and it has not been made.**
 
+**Update 2026-10-04: the advance is in the timing model by design, but its magnitude does not match the
+recipe.** The mechanism was located in source rather than inferred from audio.
+
+`libs/seam-synthesis/src/timing_solver.cpp:108` sets `destinationStart = noteOn - vowelOffset`, where
+`vowelOffset` is derived at line 96 from the unit's own markers, `unit->markers.vowelOnset -
+unit->markers.audioOffset`, resampled to the output rate. **A unit is therefore placed so that its vowel
+lands on the note's written start, which necessarily puts its preutterance before that start.** Leading the
+note by the unit's own preutterance is the intended behaviour of this model, not an accident of the render.
+
+**The measured advances are discrete and per-unit, which is what that model predicts.** Across the 33
+measured onsets there are only ten distinct values, each recurring:
+
+| Advance | ms | Notes |
+| ---: | ---: | ---: |
+| 544 | 11.33 | 6 |
+| 1184 | 24.67 | 5 |
+| 672 | 14.00 | 4 |
+| 928 | 19.33 | 4 |
+| 1056 | 22.00 | 4 |
+| 4000 | 83.33 | 4 |
+| 800 | 16.67 | 3 |
+| 416 | 8.67 | 1 |
+| 1312 | 27.33 | 1 |
+| 1696 | 35.33 | 1 |
+
+A single constant would have meant one shared offset; ten recurring values are consistent with different
+units carrying different declared preutterances, which is exactly what `vowelOnset - audioOffset` is per
+unit. **This supports the intended-placement reading over a timing fault.**
+
+**And one thing does not line up, stated rather than smoothed over.** The recipe's per-phone bursts are
+10 ms, with `burstMilliseconds: 10` on every plosive in the project recipe, while the measured advances
+run 8.7 to 83.3 ms. The small advances near 8.7 ms are consistent with a 10 ms burst; the large ones are
+not. Four onsets show the maximum 83.3 ms, which is also the ceiling of the 4000-sample search window and
+therefore **may be a search artefact rather than a real onset**. This entry does not claim those four are
+real advances.
+
+**What this changes.** The 50 frames are explained by a documented, intentional placement rule with a
+measured per-unit distribution, which is materially different from an unexplained early onset that could
+have been a defect. The remaining uncertainty is narrower: whether the largest advances are real, and
+whether preutterance of this length is musically intended.
+
+**What this does not change, and is not claimed.** P0-08 stays **OPEN**. The 83.3 ms cases are not
+explained and may be a measurement ceiling. Nobody has listened, so whether a per-unit lead of 8 to 35 ms is
+desirable legato or an audible timing defect remains undecided. The 1 uncharacterised frame from the
+previous accounting is still uncharacterised, and `combinedModelHoldoutVerified` is still false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
