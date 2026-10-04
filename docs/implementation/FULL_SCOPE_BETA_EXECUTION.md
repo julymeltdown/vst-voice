@@ -8257,3 +8257,52 @@ seam_voicebank_cli import-score SONG.mid out.seam "My Song" --recipe recipes/pil
 **What this does not change.** P0-08 stays **OPEN**, and this is still codec- and CLI-level evidence. No FL
 Studio, DAW or OpenUtau session has been driven; the DAW-shaped fixture is a MIDI file this repository wrote, not
 one FL Studio produced.
+
+## The Japanese DAW path verified end to end, and a sixth false finding refused
+
+The previous entry's fixture used romaji, which cannot exercise the path a Japanese vocal score actually takes.
+This one imports a two-track MIDI file with kana lyrics throughout — `あ/い/う/え` and `か/き/く/け` — and drives
+it through import, render and USTX export.
+
+**What the pipeline does now.** `import-score … --language ja --recipe …` returns `issues=0`; both tracks carry
+their lyrics on the correct notes; `bake-project` renders two separate 96000-frame candidates with no clipping; and
+USTX export succeeds. Nothing needed repair on this path. That is a real result, and it is worth stating plainly
+rather than manufacturing another fix.
+
+**The pitch check nearly produced the sixth retraction in this ledger.** Measuring each note with a hand-written
+FFT probe reported notes 0 and 3 at **+1902, +2400 and +1200 cents** — exact octaves and a double octave, on a
+renderer that had already been cleared three times. Those numbers are wrong, and the reason is the same as every
+previous false finding: the instrument, not the question.
+
+Two attempts failed before the right one. A 50 ms energy profile showed the audio does not begin where tick math
+said it did, so the first window was mostly silence and a neighbour's tail. An energy-threshold onset detector then
+merged all four notes into one span, because the notes are legato and there is no silence between them to split
+on. The actual error was arithmetic: frames-per-tick is `sampleRate / (ppq * bpm/60)` = **25**, and I had computed
+its reciprocal, making every window half a hop wide — one or two frames, which is not a measurement.
+
+**Measured with the shipped extractor, at note centres, on windows derived from the score rather than assumed:**
+
+| track | note | written | measured | error |
+| --- | ---: | ---: | ---: | ---: |
+| lead | 0 (MIDI 60) | 261.63 Hz | 261.64 Hz | +0.07 c |
+| lead | 1 (MIDI 61) | 277.18 Hz | 277.18 Hz | -0.00 c |
+| lead | 2 (MIDI 62) | 293.66 Hz | 293.66 Hz | -0.03 c |
+| lead | 3 (MIDI 63) | 311.13 Hz | 311.15 Hz | +0.14 c |
+| harmony | 0 (MIDI 55) | 196.00 Hz | 196.01 Hz | +0.12 c |
+| harmony | 1 (MIDI 56) | 207.65 Hz | 207.67 Hz | +0.15 c |
+| harmony | 2 (MIDI 57) | 220.00 Hz | 220.00 Hz | -0.02 c |
+| harmony | 3 (MIDI 58) | 233.08 Hz | 233.10 Hz | +0.12 c |
+
+**0.119-centre median, 0.148-centre maximum, 8 of 8 within 50 cents.** An exact 1200-cent error is the signature of
+an analysis window landing on the wrong audio, not of a synthesis fault — a real octave defect does not arrive on
+an exact semitone boundary. That is now the standing heuristic: **an exact octave is evidence about the
+analyser until proven otherwise.**
+
+**Also verified this entry: pitch automation over a rest.** A rest carrying real pitch points exports as `lyric:
+"R"` with the points omitted and the omission disclosed (*a pitch point on an authored rest is not representable
+as an OpenUtau rest and was omitted*) — the correct outcome, since OpenUtau does not phonemize a rest and cannot
+carry a contour on one.
+
+**What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to, and no FL Studio, DAW or
+OpenUtau session has been driven — the fixture is still a MIDI file this repository wrote, though it now matches
+the shape of a Japanese vocal score rather than an ASCII one.
