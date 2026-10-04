@@ -563,11 +563,28 @@ split three translation units needed it. Copying it three times would have been 
 the sentinel to drift and quietly stop matching, so it now lives once in
 `include/seam/native_ui/editor_text_target.hpp`.
 
-**Still open.** `editor_controller.cpp` is 6253 lines, down from 7458. Two of the four named
-boundaries remain (input mode, selection/edit commands), and the largest single method in the file
+**Update: selection/edit commands are now extracted too — three of four boundaries taken.**
+`editor_edit_commands.cpp` holds the fifty-two methods that move the selection (track, adjacent
+track, region), the structural edits (add / remove / rename / reorder a track or region, split,
+duplicate, copy to track, delete, move, resize), the per-track and per-note parameter commands (mix,
+route, voicebank, seam and unit overrides, quantize, slur, melisma, lyric distribution), and the
+selection-to-host reconciliation that follows an edit.
+
+This extraction needed two shared helpers rather than none, which is the honest difference from the
+first two. `kHostSelectionTries` moved with its only caller. `makeNotice` and
+`kSelectionSyncFailedCode` were needed by three translation units at once and now live in
+`include/seam/native_ui/editor_notices.hpp`; because that made the builder shared it was renamed
+`makeEditorNotice` to say what it is. The moved block is byte-identical to the original except for
+that one rename, which was verified by diffing against `HEAD` and undoing the rename in the
+comparison — so the only behavioural question is whether the shared builder behaves as the local one
+did, and it is the same function body with `inline` linkage. Breaking `deleteSelectedRegion`
+fails 5 of the 1466.
+
+**Still open.** `editor_controller.cpp` is 5259 lines, down from 7458 — a 29% reduction with three
+of the four named boundaries taken. One remains (input mode). The largest single method in the file
 is still `replacementReviewView` at 434 lines, which builds the replacement, distribution, style
 coverage, vibrato-clear, note-cleanup, clear-dynamics and Japanese-reading views in one body.
-Splitting it is a change rather than a move and is separate work.
+Splitting it is a change rather than a move, and is separate work.
 
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 

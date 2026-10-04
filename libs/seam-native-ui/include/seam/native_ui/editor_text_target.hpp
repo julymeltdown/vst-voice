@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 namespace seam::native_ui {
 
@@ -21,5 +22,10 @@ namespace seam::native_ui {
 [[nodiscard]] inline domain::LyricTokenId externalTextTarget() noexcept {
   return domain::LyricTokenId{std::numeric_limits<std::uint64_t>::max()};
 }
+
+// The diagnostic the editor raises when the host would not accept the editor's selection. Both the
+// controller and the edit-command unit need it: the controller decides whether a notice it is
+// looking at is one of its own, and the edit commands raise it when a host selection does not take.
+inline constexpr std::string_view kSelectionSyncFailedCode = "SELECTION_SYNC_FAILED";
 
 }  // namespace seam::native_ui
