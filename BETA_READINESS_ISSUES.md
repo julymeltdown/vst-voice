@@ -580,11 +580,26 @@ comparison — so the only behavioural question is whether the shared builder be
 did, and it is the same function body with `inline` linkage. Breaking `deleteSelectedRegion`
 fails 5 of the 1466.
 
-**Still open.** `editor_controller.cpp` is 5259 lines, down from 7458 — a 29% reduction with three
-of the four named boundaries taken. One remains (input mode). The largest single method in the file
-is still `replacementReviewView` at 434 lines, which builds the replacement, distribution, style
-coverage, vibrato-clear, note-cleanup, clear-dynamics and Japanese-reading views in one body.
-Splitting it is a change rather than a move, and is separate work.
+**Update: input mode is extracted — all four named boundaries are now taken.**
+`editor_text_input.cpp` holds the seven methods that carry text into the project: beginning a
+phone-hint or lyric edit, the composition updates and commits, moving between lyric notes, and
+cancelling a composition back to whatever opened it. Pure deletion again (316 lines, none added)
+and byte-identical to the original. Making `beginLyricEdit` refuse fails 12 of the 1466, the
+heaviest coverage of the four extractions, which is what one expects of the path a creator types
+through.
+
+`keyDown` itself did **not** move. It is input too, but it is input to the *editor* rather than
+input to a *field*, and it reaches into so much of the controller that moving it would have meant
+moving the controller. Pointer gestures, scroll and zoom, and the audio-settings commands stayed for
+the same reason. That is the honest edge of this boundary, and it is why the controller is 4943
+lines rather than something much smaller.
+
+**Still open.** `editor_controller.cpp` is 4943 lines, down from 7458 — a 34% reduction with all
+four named boundaries extracted, each proved by the tests that already exercised it. What remains
+is not a missing boundary but two oversized methods: `replacementReviewView` is 434 lines and builds
+the replacement, distribution, style coverage, vibrato-clear, note-cleanup, clear-dynamics and
+Japanese-reading views in one body, and `keyDown` is about 480 lines on its own. Splitting either
+is a change rather than a move and is separate work.
 
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 
