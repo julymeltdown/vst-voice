@@ -7315,3 +7315,54 @@ same rule, or a recorded decision from a listener that a 0.04 per cent boundary 
 Release CTest 230/230 passed at `17301814`; scoring artifacts written to
 `out/fullscope-beta/pitch-score-2026-10-04/` (gitignored, retained locally);
 `git diff --check` clean. No product code changed.
+
+## Corpus level: the five-song campaign's pitch figures are the analyser artefact, not the singer
+
+The entry above measured one song on one singer and named the multi-song corpus as the remaining gap. That
+gap has now been closed as a **re-analysis**, which is a weaker thing than a re-render and is labelled as
+such: all five songs of the retained campaign `campaign-e37-v512-e2-r4` were scored against their own
+written scores, read from each song's `input.seam`, under the same rule. Those renders are from the older
+build `741ae2f2`.
+
+**Scored naively, the campaign looks bad.** Median 2.1 to 4.0 cents per song, 73 to 81 per cent within 50
+cents, and **734 octave frames out of 3551 scored (20.7 per cent)**. Taken at face value that would be the
+worst headline in this register.
+
+**It is not a measurement of the singer, and the data says so in one line.** 661 of the 3551 scored frames
+report a period that is an exact multiple of the 256-sample hop. That is the impulse-train signature this
+ledger already characterised from the retained comparison, and those 661 frames have a median error of
+**1976 cents, are 93.2 per cent octave errors, and have 0.00 per cent inside 50 cents**. They are not noisy
+measurements; they are a known failure mode, occurring wholesale.
+
+| Song | Scored | Hop-locked | Median, all | Median excluding artefact | Within 50 c excluding artefact |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 00003 | 1011 | 187 | 3.596 | **2.482** | 94.2 % |
+| 00005 | 880 | 183 | 3.077 | **1.889** | 94.6 % |
+| 00024 | 789 | 165 | 3.944 | **2.306** | 92.6 % |
+| 00402 | 463 | 68 | 2.106 | **1.540** | 96.2 % |
+| 00420 | 408 | 58 | 3.966 | **3.137** | 91.4 % |
+| **pooled** | **3551** | **661 (18.6 %)** | 3.596 | **2.221** | **93.36 %** |
+
+Removing exactly the frames carrying the known signature leaves **2890 frames at a 2.22-centre median with
+93.4 per cent inside 50 cents**, and the figure is stable across all five songs, which is what makes it a
+property of the renderer rather than of one unlucky song.
+
+**The audio is confirmed correct independently.** An FFT estimator finds the written note within 100 cents
+at **89 per cent** of the scored frames. This matters because it is the third independent confirmation of
+the same conclusion: on the retained comparison, on the HEAD boundary frames, and now across a five-song
+corpus, the singer produces the written note and the autocorrelation estimator misreads it.
+
+**What this means for the two figures now on the table.** Old build `741ae2f2`, five songs: **2.22 cents
+median, 93.4 per cent within 50 cents**. HEAD `882855be`, one song: **0.18 cents median, 98.05 per cent
+within 50 cents**. Both are far inside the tolerance, and the older build is worse by an order of magnitude
+on the median, which is consistent with `1c6d57c6` having addressed part of the problem.
+
+**What this does not establish.** The five songs **have not been re-rendered at HEAD**, so this is not a
+five-song HEAD result and must not be read as one. It is one singer family, not a corpus of voices. The
+campaign's own `combinedModelHoldoutVerified` is `false`, a separate open question untouched here. P0-08
+remains **OPEN**: `withinLimits` is false, no one has listened, and the model-holdout flag is false.
+
+**Verification for this entry.** Scoring run with
+`tools/singing_quality/score_against_written_score.py` and the five-song driver over the retained campaign;
+all five `export/master.wav` files read successfully; Release CTest 230/230 at `882855be`;
+`git diff --check` clean. No product code changed.

@@ -401,6 +401,48 @@ five-song validation campaign's own figures are the corpus-level number. Closing
 boundary artefact repaired and a multi-song corpus scored under this same rule, or an explicit, recorded
 decision that a 0.04 per cent note-boundary artefact is below the bar, made by someone who has listened.
 
+**Update 2026-10-04, corpus level: the five-song campaign's poor pitch figures are the impulse artefact,
+not the singer.** The multi-song corpus requirement was met by scoring all five songs of the retained
+campaign `campaign-e37-v512-e2-r4` against their own written scores, read from each song's `input.seam`
+under the same rule. Those renders are from the **older build `741ae2f2`**, not HEAD.
+
+Scored as-is, the five songs look poor: median 2.1 to 4.0 cents, 73 to 81 per cent within 50 cents, and
+734 octave frames out of 3551 scored, which is 20.7 per cent. **That number is an artefact of the
+analyser, and the data says so unambiguously.**
+
+| Song | Scored | Hop-locked | Median, all frames | Median excluding artefact | Within 50 c excluding artefact |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 00003 | 1011 | 187 | 3.596 | **2.482** | 94.2 % |
+| 00005 | 880 | 183 | 3.077 | **1.889** | 94.6 % |
+| 00024 | 789 | 165 | 3.944 | **2.306** | 92.6 % |
+| 00402 | 463 | 68 | 2.106 | **1.540** | 96.2 % |
+| 00420 | 408 | 58 | 3.966 | **3.137** | 91.4 % |
+| **pooled** | **3551** | **661 (18.6 %)** | 3.596 | **2.221** | **93.36 %** |
+
+The split is not a judgement call. **661 of the 3551 scored frames report a period that is an exact
+multiple of the 256-sample hop**, which is the impulse-train signature already characterised from the
+retained comparison in this register. Those frames have a median error of **1976 cents and are 93.2 per
+cent octave errors, with 0.00 per cent inside 50 cents**: they are the artefact, wholesale and
+unambiguously. Excluding exactly those frames leaves 2890 frames at a **2.22-centre median with 93.4 per
+cent inside 50 cents**, consistent across all five songs.
+
+**An independent oracle confirms the audio is right.** An FFT estimator was run over the same frames and
+finds the written note within 100 cents at **89 per cent** of them, on audio this analysis did not
+produce. The campaign's own `combinedModelHoldoutVerified` is `false`, which is a separate and still-open
+question about those models and is untouched by this measurement.
+
+**What this changes.** The campaign's headline pitch figures are not a measurement of the singer. They are
+the known analyser blind spot applied to five songs' worth of audio, and once it is separated the residual
+accuracy is **2.2 cents median, 93.4 per cent within 50 cents** on the old build, against **0.18 cents
+and 98.05 per cent** on HEAD. Both are far inside the 50-cent tolerance; the old build is simply worse by an
+order of magnitude on the median.
+
+**What this does not change, and is not claimed.** This is a re-analysis of retained evidence, not a new
+render: the five songs were produced by `741ae2f2` and **have not been re-rendered at HEAD**, so this says
+nothing about how the current build performs on a five-song corpus. It is still one singer family. It does
+not close P0-08, which remains **OPEN** for the reasons already recorded: `withinLimits` is false, nobody
+has listened, and `combinedModelHoldoutVerified` is false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
