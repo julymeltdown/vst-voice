@@ -6827,3 +6827,37 @@ The tool also has no argument parser, so `--help` was interpreted as an **output
 wrote a full pilot packet there; that directory was deleted. Two lessons: an unenumerated CLI must
 still be probed before being called unrun, and `seam_singer_pilot` should grow a real `--help`
 rather than treating any first argument as a path.
+
+**The two native GUI apps had never been executed at all, and enabling them exposed why.**
+`SEAM_RUN_NATIVE_GUI_TESTS` is `OFF` by default, and it gates not just the two smoke tests but the
+**executable targets themselves** — `Project SEAM.app` and `SEAM Voicebank Studio.app` were simply
+absent from `build/release`, so the impression that they "build" rested on targets this build never
+contained. Reconfiguring with `-DSEAM_RUN_NATIVE_GUI_TESTS=ON` produced both bundles (13.5 MB and
+11.2 MB binaries) and both smoke tests pass: `seam_native_editor_platform_smoke` and
+`seam_voicebank_studio_platform_smoke`, 100 per cent of two, in 2.94 s total.
+**The captures were inspected, not just counted.** Both screenshots are 15,552,017-byte PPMs, and
+converting them shows real rendered UI rather than a blank or placeholder frame. The editor shows the
+scene-kid design mode with the character portrait in the grid, a populated SINGER panel with the
+character avatar, and the voicebank-unavailable state reported honestly rather than hidden. The
+studio shows a **real recorded take**: a waveform with visible consonant/vowel/stable/loop-start/
+loop-end/release segmentation, the matching spectrogram underneath, and a unit inspector naming the
+take. This is the first direct visual evidence that the shipped desktop surfaces draw real content on
+this host.
+**What it does not prove.** Both runs used `--force-threaded-audio` / `--force-synthetic-input` and
+`--auto-close-ms`, so this is a headless smoke of first paint and recording, not an interactive
+session: no human saw these windows, no pointer or keyboard input was exercised, and the editor
+reported **no voicebank loaded**, so the singer path is still unproven here. The default stays `OFF`
+because turning GUI launches into everyone's default build is a test-suite policy decision rather than
+a defect fix; the finding is that the flag exists, it passes, and the previous "it builds" impression
+was resting on targets this build never contained. Enabling the flag also promotes two further tests
+that were previously unregistered, so the suite goes from **224 to 228**, and all 228 pass. The
+first draft of this entry predicted "226 of 226" from the two GUI tests alone; the measured number
+is 228 because two more tests appear once the targets exist.
+**The flag also brings real accessibility coverage that was never compiled by default.**
+`CMakeLists.txt:2191` adds `tests/test_accessibility_appkit.mm` to `SEAM_TEST_SOURCES` only under
+`if(APPLE AND SEAM_RUN_NATIVE_GUI_TESTS)`, so the three AppKit AX cases were silently absent from the
+default test binary. With the flag on, `seam_tests` goes from **1472 to 1475** and all three
+accessibility cases pass. That is a meaningful correction to the default posture, not just two extra
+smoke tests: the AX assertions were real, they were green, and nothing about them required a human
+reviewer. It still does not substitute for VoiceOver evidence — an AX-tree assertion is not a spoken
+announcement — but the coverage should not have been behind a flag by default.
