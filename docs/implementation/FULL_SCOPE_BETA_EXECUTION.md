@@ -6963,3 +6963,25 @@ shipping the matching private key, and shipping it would be wrong. What *is* pro
 binary is that it **fails closed**: exit 2 on missing or incomplete arguments, exit 4 on a malformed
 manifest, and nothing written in either case. The accept path of the shipped binary remains
 unverified and is recorded as such rather than inferred from the library tests.
+
+**The same "verdict nothing reads" pattern was swept for, and one more instance was real.** A scan
+collected every JSON key emitted across `tools/` and checked each against every reader in `tools/`,
+`libs/`, `apps/` and `tests/`: **128 keys are written and read by no one**. Most are schema field
+names (`scenarios`, `temperature`, `retakeGroups`) and are inert by design. Filtering to gate-shaped
+names — pass, valid, eligible, satisfied, closed — left six candidates, and one is a genuine repeat of
+the singing-quality defect.
+**`allReconstructionsSatisfied` in `tools/voice_model_training/vocoder_reconstruction.py`** is computed
+from each item's spectral, pitch and energy checks, written into the receipt summary, and read by
+nothing. `check_vocoder_reconstruction.py` then returned **0 regardless**, so a run in which no item
+reconstructed correctly still reported success. The criterion itself is well formed —
+`reconstruction_satisfied = spec_ok and pitch_ok and energy_ok` — so this is purely a missing
+enforcement point, not a weak test.
+The fix follows the same shape as the singing-quality gate and for the same reason: the receipt is a
+measurement and must still be written when it reads badly, so the default is unchanged and
+`--require-reconstruction` opts into a non-zero exit naming each unsatisfied item by its
+`measurementPath`. The decision lives in a small `unsatisfied_reconstruction_items()` function so it is
+directly testable; three tests added, including one asserting that an item missing its path is still
+reported rather than silently skipped — a skipped item would make an unsatisfied reconstruction look
+satisfied, which is the exact failure the gate exists to prevent.
+`tools/voice_model_training` runs **406 tests pass (90 skipped)**. This tool is not registered in
+CTest, so it is exercised by that suite rather than as its own gate entry.

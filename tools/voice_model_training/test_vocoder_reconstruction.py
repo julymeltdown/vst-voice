@@ -394,5 +394,43 @@ class VocoderReconstructionTests(unittest.TestCase):
                 train_reviewed_vocoder_epoch(mock_gen, [], None, None, **options, cancelled=lambda: True)
 
 
+class ReconstructionReceiptGateTests(unittest.TestCase):
+    """The receipt's verdict was computed and then read by nothing.
+
+    evaluate_held_out_reconstruction sums per-item reconstructionSatisfied into
+    summary.allReconstructionsSatisfied, and the check entry point returned 0
+    whatever that said. These tests pin the opt-in gate that makes it enforceable
+    without changing the default measurement behaviour.
+    """
+
+    def test_unsatisfied_items_are_named_by_their_measurement_path(self) -> None:
+        from tools.voice_model_training.check_vocoder_reconstruction import (
+            unsatisfied_reconstruction_items)
+        receipt = {
+            "summary": {"allReconstructionsSatisfied": False},
+            "items": [{"measurementPath": "crop-a.json", "reconstructionSatisfied": False},
+                      {"measurementPath": "crop-b.json", "reconstructionSatisfied": True}],
+        }
+        self.assertEqual(unsatisfied_reconstruction_items(receipt), ["crop-a.json"])
+
+    def test_a_fully_satisfied_receipt_names_nothing(self) -> None:
+        from tools.voice_model_training.check_vocoder_reconstruction import (
+            unsatisfied_reconstruction_items)
+        receipt = {
+            "summary": {"allReconstructionsSatisfied": True},
+            "items": [{"measurementPath": "crop-a.json", "reconstructionSatisfied": True}],
+        }
+        self.assertEqual(unsatisfied_reconstruction_items(receipt), [])
+
+    def test_an_item_missing_its_path_is_still_reported(self) -> None:
+        # A silently skipped item would make an unsatisfied reconstruction look
+        # satisfied, which is the exact failure the gate exists to prevent.
+        from tools.voice_model_training.check_vocoder_reconstruction import (
+            unsatisfied_reconstruction_items)
+        receipt = {"summary": {"allReconstructionsSatisfied": False},
+                   "items": [{"reconstructionSatisfied": False}]}
+        self.assertEqual(unsatisfied_reconstruction_items(receipt), ["<unnamed>"])
+
+
 if __name__ == "__main__":
     unittest.main()

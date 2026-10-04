@@ -32,6 +32,20 @@ def _write_json(path, value):
         stream.write("\n")
 
 
+def unsatisfied_reconstruction_items(receipt):
+    """Measurement paths whose spectral, pitch or energy check did not hold.
+
+    The receipt already carries summary.allReconstructionsSatisfied, computed from
+    the per-item checks, but nothing read it: the entry point returned 0 whatever
+    it said. Keeping the decision in one function makes it directly testable and
+    lets the caller opt into enforcing it without changing the default, which stays
+    a measurement.
+    """
+    return [item.get("measurementPath", "<unnamed>")
+            for item in receipt.get("items", [])
+            if not item.get("reconstructionSatisfied")]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("source", "trusted-checkout", "pitch-extractor", "output"):
@@ -39,6 +53,11 @@ def main():
     parser.add_argument("--source-sha256", required=True)
     parser.add_argument("--offset-samples", type=int, default=48000)
     parser.add_argument("--sample-count", type=int, default=48037)
+    parser.add_argument("--require-reconstruction", action="store_true",
+                        help=("Exit non-zero when the reconstruction receipt reports that not "
+                              "every item satisfied its spectral, pitch and energy criteria. "
+                              "Off by default: the receipt is a measurement and is retained "
+                              "even when it reads badly."))
     args = parser.parse_args()
     try:
         if not 512 <= args.sample_count <= 96000 or args.offset_samples < 0:
@@ -126,6 +145,15 @@ def main():
             singerQualified=False, releaseEligible=False)
         _write_json(args.output / "check.json", report)
         print(json.dumps(report, sort_keys=True))
+        # The receipt already carries allReconstructionsSatisfied, computed from the
+        # per-item spectral, pitch and energy checks. Nothing read it, so a run in
+        # which no item reconstructed correctly still exited 0. The default stays a
+        # measurement; this makes the verdict enforceable when a caller wants a gate.
+        if args.require_reconstruction and not receipt["summary"]["allReconstructionsSatisfied"]:
+            print("vocoder-reconstruction: unsatisfied items: "
+                  + ", ".join(unsatisfied_reconstruction_items(receipt)),
+                  file=sys.stderr)
+            return 1
         return 0
     except (OSError, ValueError, RuntimeError, ImportError, wave.Error) as error:
         print(str(error)[:512], file=sys.stderr)
