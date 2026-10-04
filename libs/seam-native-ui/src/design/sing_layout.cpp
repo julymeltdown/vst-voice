@@ -35,7 +35,11 @@ void layoutInspector(SingLayout& l, double bodyTop, double bodyBottom) {
                               height - 2.0 * kPad};
   l.singer = {inner.x, inner.y, inner.width, kSingerRow};
   l.portraitRing = {l.singer.x, l.singer.y + 6.0, 44.0, 44.0};
-  l.singerChange = {l.singer.right() - 100.0, l.singer.y + 6.0, 100.0, 24.0};
+  // The button was a fixed 100 points, which is wider than its own label needs and
+  // cost the voice identity the room it needs to be read: the name below the portrait is
+  // what tells a creator which bank is loaded. 86 points fits "CHANGE VOICE" at its own
+  // small-label size with its capsule padding, and hands the difference back to the name.
+  l.singerChange = {l.singer.right() - 86.0, l.singer.y + 6.0, 86.0, 24.0};
   l.singerMenu = {l.singerChange.x - 6.0 - 32.0, l.singerChange.y, 32.0, 24.0};
   l.style = {l.portraitRing.right() + 12.0, l.singer.y + 34.0,
              l.singer.right() - l.portraitRing.right() - 12.0, 18.0};

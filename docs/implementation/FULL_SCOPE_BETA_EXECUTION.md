@@ -7117,3 +7117,20 @@ long song does not build a giant static tree, and both real bridges materialize 
 `native_window_appkit.mm:410` for VoiceOver, `accessibility_win32.cpp:553` for the Windows bridge, and
 `shell_evidence.cpp:115` for this evidence file, under its own `notes` key. The absence from `nodes` is
 the virtualization working as designed, not a gap.
+**A fourth truncation, found by capturing the states the fidelity contract names rather than only the
+project I happened to have open.** `scripts/capture_sing_fidelity_packet.py` renders the contract's six
+states across both looks; running it over `empty`, `ready` and `dense-overlap` produced six captures with
+zero errors, and the dense state is genuinely well-built — `×2` and `×3` overlap badges, real
+waveforms, and the singer card showing the loaded bank. It also showed the singer card's name truncated
+to **`Public-domain Human Production Pipeline...`** — the same fixed-box-and-tail-truncate defect the
+track chip had, in the one field that names the bank a creator is editing with.
+Both footer lines now go through `midEllipsis`, and the `CHANGE VOICE` button dropped from a fixed
+**100** points to **86**, which fits its own label with capsule padding and hands the difference back to
+the name. Before and after, cropped from the same capture: **`Public-domain Human Production Pipeline...`
+becomes `Public-domain Human …ion Pipeline Fixture`**.
+The tail is what makes this worth fixing rather than tidying: **"Fixture"** is the honest identity of
+this bank, and the old truncation showed only "Production Pipeline", which read like a shippable voice.
+The identity line beneath it already read in full — `demo.public-domain.human.production 0.12.0` — and
+now keeps both ends too if a bank name is longer still.
+Verified at 1280 and 1600 wide: the singer card is 396 and 440 points, and `Voicebank unavailable`
+renders untruncated at both. Design tests 22 of 22.

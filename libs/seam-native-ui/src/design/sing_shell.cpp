@@ -3211,13 +3211,22 @@ void SingShell::paintRack(Canvas2D& c, const DesignTokens& t, const EditorSceneS
   const auto name = !identity.name.empty() ? identity.name
                     : !state.characterName.empty() ? state.characterName
                                                    : std::string{tr(Str::NoVoiceSelected)};
-  c.text({l.singer.x + 18.0, footerY - 2.0, l.singerMenu.x - l.singer.x - 28.0, 16.0}, name,
-         style(FontRole::UiSemibold, t.type.label, 0.4), t.color.textPrimary);
+  // The name was drawn into a fixed box and truncated to "Public-domain Human Production
+  // Pipeline...", which is the name a creator chooses and the one thing in this card they most
+  // need to read. midEllipsis keeps both ends of it rather than only the leading words.
+  const auto identityBox = ui::Rect{l.singer.x + 18.0, footerY - 2.0,
+                                    l.singerMenu.x - l.singer.x - 28.0, 16.0};
+  const auto identityStyle = style(FontRole::UiSemibold, t.type.label, 0.4);
+  c.text(identityBox, midEllipsis(c, name, identityStyle, identityBox.width), identityStyle,
+         t.color.textPrimary);
   const auto detail = identity.state == VoiceIdentityState::Missing && !identity.recovery.empty()
                           ? identity.recovery
                           : identity.identity;
-  c.text({l.singer.x + 18.0, footerY + 13.0, l.singerMenu.x - l.singer.x - 28.0, 14.0}, detail,
-         style(FontRole::Ui, t.type.smallLabel), t.color.textSecondary);
+  const auto detailBox = ui::Rect{l.singer.x + 18.0, footerY + 13.0,
+                                   l.singerMenu.x - l.singer.x - 28.0, 14.0};
+  const auto detailStyle = style(FontRole::Ui, t.type.smallLabel);
+  c.text(detailBox, midEllipsis(c, detail, detailStyle, detailBox.width), detailStyle,
+         t.color.textSecondary);
   c.fill(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.14));
   c.stroke(Path::capsule(l.singerChange), withAlpha(t.color.accent, 0.8), StrokeStyle{1.0});
   c.text(l.singerChange, tr(Str::ChangeVoice),
