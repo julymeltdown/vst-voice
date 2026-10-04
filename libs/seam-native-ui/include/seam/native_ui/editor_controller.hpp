@@ -440,6 +440,16 @@ public:
   // prefix its accessibility ids carry. The prefix changes with every interaction, page and
   // revision, so an id captured from an earlier review can never act on this one.
   [[nodiscard]] ReplacementReviewView replacementReviewView() const;
+  // One builder per overlay the replacement panel can show. Each takes the view the dispatcher has
+  // already started and fills in what its own overlay needs; the dispatcher decides which one runs.
+  [[nodiscard]] ReplacementReviewView japaneseReadingReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView styleCoverageReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView dynamicsDraftReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView vibratoDraftReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView findReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView clearDynamicsReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView noteCleanupReviewView(ReplacementReviewView view) const;
+  [[nodiscard]] ReplacementReviewView clearVibratoReviewView(ReplacementReviewView view) const;
   [[nodiscard]] std::string replacementReviewSemanticPrefix() const {
     return replacementSemanticPrefix();
   }

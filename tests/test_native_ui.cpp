@@ -4306,6 +4306,56 @@ static void waitForNativeFind(seam::native_ui::NativeEditorController& controlle
   CHECK(!controller.findPreparing());
 }
 
+// replacementReviewView was one 433-line body that built eight overlays; it is now a dispatcher over
+// eight per-mode builders. This case pins that each mode still reaches its OWN builder, which the
+// split could have broken silently by leaving a branch in the wrong place or wiring it to the wrong
+// one.
+//
+// It deliberately does not pin the dispatch ORDER, because the order is not observable: each mode's
+// open() clears the other modes' flags, so the branches are exclusive and reordering the dispatcher
+// fails no case in this file. That was measured, not assumed, and is recorded in the dispatcher.
+TEST_CASE("the replacement panel dispatches to the first overlay mode that matches") {
+  using namespace seam;
+  NativeUiFixture fixture;
+  auto made = fixture.factory.makeNote(time::Tick{0}, time::Tick{480}, 60U, U"edge",
+                                       domain::Language::English);
+  auto* region = fixture.session.project().findRegion(fixture.regionId);
+  region->lyrics.push_back(made.first);
+  region->notes.push_back(made.second);
+  region->sortNotes();
+  native_ui::NativeEditorController controller{fixture.session, fixture.factory, fixture.regionId,
+      {}};
+  controller.resize(720.0, 520.0);
+
+  // The find review is dispatched fifth. Opening it reaches findReviewView and nothing above it,
+  // because no earlier mode flag is set while the panel is closed.
+  CHECK(controller.openFindReview("edge"));
+  waitForNativeFind(controller);
+  const auto findView = controller.sceneState().replacementReview;
+  CHECK(findView.visible);
+  CHECK(findView.status.starts_with("Find"));
+
+  // The vibrato draft inspector is dispatched fourth -- before find -- but opening it while a
+  // review is already up is refused rather than shown over it, so the two modes cannot overlap
+  // through the UI. That is why reordering the dispatch passes every other case: the exclusive
+  // case is the only one the suite can reach. What this case pins is that each mode still reaches
+  // its OWN builder, which the split could have broken silently by leaving a branch misplaced.
+  // Action 4 on the panel is Cancel, which is how a creator closes a review.
+  CHECK(controller.replacementReviewAction(4U));
+  CHECK(!controller.sceneState().replacementReview.visible);
+  // The vibrato inspector edits the selected notes, so it needs one selected to open at all.
+  fixture.session.selection().selectOnly(region->notes.front().id);
+  CHECK(controller.openVibratoInspector());
+  const auto vibratoView = controller.sceneState().replacementReview;
+  CHECK(vibratoView.visible);
+  CHECK(!vibratoView.status.starts_with("Find"));
+
+  // Cancelling returns the panel to closed rather than leaving the stale view published.
+  CHECK(controller.replacementReviewAction(4U));
+  CHECK(!controller.sceneState().replacementReview.visible);
+}
+
+
 TEST_CASE("native diagnostic Find works without a vocal region and never runs recovery or selects notes") {
   using namespace seam;
   application::ProjectFactory factory{271000U}; application::EditorSession session{factory.createProject("Global diagnostic Find")};

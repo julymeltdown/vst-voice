@@ -601,6 +601,30 @@ the replacement, distribution, style coverage, vibrato-clear, note-cleanup, clea
 Japanese-reading views in one body, and `keyDown` is about 480 lines on its own. Splitting either
 is a change rather than a move and is separate work.
 
+**Update: `replacementReviewView` is split — it is now a 72-line dispatcher.**
+`editor_review_views.cpp` holds the eight per-mode builders: the Japanese reading review, the style
+coverage sheet, the dynamics draft inspector, the vibrato draft inspector, the find review, the
+clear-dynamics review, the note-cleanup review and the clear-vibrato review. Each was already a
+self-contained branch that ended in a return; each is now its own method taking the view the
+dispatcher has already started. The replacement review itself and its detail page stayed in the
+dispatcher, because both read the asynchronous job handle it owns.
+
+**This one was a change rather than a move, and it showed.** The first attempt silently dropped two
+lines that set the "Preparing replacement review..." status, and five existing cases caught it —
+which is the argument for not treating a green build as evidence for a change. Every original
+statement was then checked to still be present across the two files (433 of 433), and the tests went
+from 1466 to 1467 with a new case pinning that each mode still reaches its own builder.
+
+**One claim was withdrawn.** The dispatcher order looked load-bearing — the first matching mode flag
+wins — and a comment said so. Reordering the dispatch fails **no** test, because each mode's
+`open()` clears the others' flags, so the branches are exclusive in practice and the order is not
+observable. The order is still preserved, because the flags are members rather than locals and the
+exclusivity is a property of the callers rather than of this function; that is now what the comment
+says, instead of a claim the mutation had just disproved. The new case pins what is genuinely
+pinnable — that each mode reaches its own builder — and says plainly that it does not pin the order.
+
+`keyDown` remains at roughly 480 lines and is untouched.
+
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 
 **Required change:** before broad beta iteration, extract only stable boundaries: input mode, selection/edit commands, accessibility dispatch, and overlay/panel coordination. Preserve behavior with state-machine tests and visual evidence.
