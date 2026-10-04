@@ -1941,3 +1941,35 @@ TEST_CASE("the frame coverage is what it says, and the gap is counted") {
   std::printf("frame coverage: %zu surfaces, %zu frames across %d variants\n", surfacesCovered,
               framesWritten, static_cast<int>(variants.size()));
 }
+
+TEST_CASE("the track chip takes the strip's width instead of a fixed 132 points") {
+  // The chip used to be a hardcoded 132pt, which truncated a real bank name to
+  // "DIAGNOSTIC DRY..." and left the project label fighting for the remainder.
+  // It now shares the tool strip: a floor wide enough for a short name, a third
+  // of the strip when there is room, and a ceiling so it cannot crowd the
+  // project label on a very wide window.
+  // The strip is narrower than the window by the editor's own insets, so these
+  // three windows are what actually reach each regime: 492 points of strip at
+  // 600 wide, 652 at 760, and 980 at the canonical 1440. Measured, not assumed --
+  // two earlier attempts guessed the strip widths and asserted against numbers
+  // the layout never produced.
+  const auto narrow = seam::native_ui::design::solveSingLayout(600.0, 700.0, false);
+  const auto middle = seam::native_ui::design::solveSingLayout(760.0, 700.0, false);
+  const auto wide = seam::native_ui::design::solveSingLayout(1440.0, 900.0, false);
+  // The share, except where the ceiling binds.
+  CHECK_NEAR(narrow.trackLabel.width, narrow.tools.width * 0.34, 0.01);
+  CHECK_NEAR(middle.trackLabel.width, middle.tools.width * 0.34, 0.01);
+  CHECK(wide.trackLabel.width == 260.0);
+  // Never below the floor that a short name needs, never above the ceiling.
+  CHECK(narrow.trackLabel.width >= 132.0);
+  CHECK(wide.trackLabel.width <= 260.0);
+  // Monotonic: a wider window never narrows the chip.
+  CHECK(middle.trackLabel.width > narrow.trackLabel.width);
+  CHECK(wide.trackLabel.width >= middle.trackLabel.width);
+  // The chip and the project label share the strip without overlapping: the
+  // project label starts clear of the chip and stops before the grid label.
+  CHECK(narrow.gridLabel.x > narrow.trackLabel.right());
+  CHECK(middle.gridLabel.x > middle.trackLabel.right());
+  CHECK(wide.gridLabel.x > wide.trackLabel.right());
+  CHECK(narrow.trackLabel.height == wide.trackLabel.height);
+}

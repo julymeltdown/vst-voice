@@ -239,7 +239,13 @@ SingLayout solveSingLayout(double width, double height, bool inspectorOpen) noex
   l.tempoReadout = {l.positionReadout.right(), readoutTop, inner * 0.30, 36.0};
   l.meterReadout = {l.tempoReadout.right(), readoutTop, inner * 0.20, 36.0};
 
-  l.trackLabel = {l.tools.x + 4.0, l.tools.y + 2.0, 132.0, 24.0};
+  // The strip is wide but the track name used to be a fixed 132pt chip, which
+  // truncated a real bank name to "DIAGNOSTIC DRY..." and left the project name
+  // to fight for whatever remained. Share the strip instead: the track keeps a
+  // floor wide enough for a short name, and takes up to a third of the strip when
+  // there is room, leaving the project label the middle span between the two.
+  const auto trackWidth = std::clamp(l.tools.width * 0.34, 132.0, 260.0);
+  l.trackLabel = {l.tools.x + 4.0, l.tools.y + 2.0, trackWidth, 24.0};
   l.gridLabel = {l.tools.right() - 100.0, l.tools.y + 2.0, 96.0, 24.0};
 
   // The overlays' openers sit at the right end of strips the shell already paints, so they cover

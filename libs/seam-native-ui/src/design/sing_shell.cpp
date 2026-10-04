@@ -203,6 +203,43 @@ TextStyle fitted(Canvas2D& c, std::string_view text, TextStyle s, double width) 
   return s;
 }
 
+// fitted() only shrinks to a 10pt floor and then lets the canvas truncate, which
+// is how a track named "Diagnostic dry render..." became "DIAGNOSTIC DRY...".
+// Truncating the tail throws away the part that identifies the track: the leading
+// words are usually shared by every row in a bank, and the distinguishing part is
+// at the end. This trims the middle instead, so both the family and the specific
+// name stay readable inside a fixed 24pt chip.
+std::string midEllipsis(Canvas2D& c, std::string_view text, const TextStyle& s,
+                        double width) {
+  if (width <= 0.0 || text.empty() || c.measure(text, s) <= width) return std::string{text};
+  static constexpr std::string_view kMarker = "\xE2\x80\xA6";  // U+2026
+  if (c.measure(kMarker, s) > width) return {};
+  // Grow both ends together so the result stays balanced, keeping a character of
+  // the tail whenever one fits: the tail is the part that distinguishes tracks.
+  std::size_t head = 0;
+  std::size_t tail = 0;
+  while (head + tail < text.size()) {
+    const std::size_t nextHead = head + 1U;
+    const std::size_t nextTail = tail + 1U;
+    const std::string candidate =
+        std::string{text.substr(0, nextHead)} + std::string{kMarker} +
+        std::string{text.substr(text.size() - nextTail)};
+    if (c.measure(candidate, s) > width) break;
+    head = nextHead;
+    tail = nextTail;
+  }
+  if (head == 0U || tail == 0U) {
+    std::size_t kept = 0;
+    while (kept < text.size() &&
+           c.measure(std::string{text.substr(0, kept + 1U)} + std::string{kMarker}, s) <= width) {
+      ++kept;
+    }
+    return kept == 0U ? std::string{} : std::string{text.substr(0, kept)} + std::string{kMarker};
+  }
+  return std::string{text.substr(0, head)} + std::string{kMarker} +
+         std::string{text.substr(text.size() - tail)};
+}
+
 // A glass panel's border and top highlight, drawn over its translucent fill.
 void glassPanelEdges(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius) {
   if (r.width <= 0.0 || r.height <= 0.0) return;
@@ -2069,12 +2106,16 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   const auto trackName = state.inspector.valid && !state.inspector.name.empty()
                              ? state.inspector.name
                              : std::string{tr(Str::NoTrack)};
-  c.text({chip.x + 10, chip.y, chip.width - 20, chip.height}, trackName,
-         style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Left, true), t.color.textPrimary);
+  const auto trackStyle = style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Left, true);
+  c.text({chip.x + 10, chip.y, chip.width - 20, chip.height},
+         midEllipsis(c, trackName, trackStyle, chip.width - 20.0), trackStyle,
+         t.color.textPrimary);
   const auto name = state.projectName.empty() ? std::string{tr(Str::Untitled)} : state.projectName;
   const auto project = state.dirty ? trf(Str::Edited, {name}) : name;
-  c.text({chip.right() + 14.0, chip.y, l.gridLabel.x - chip.right() - 24.0, chip.height}, project,
-         style(FontRole::Ui, t.type.label), t.color.textSecondary);
+  const auto projectStyle = style(FontRole::Ui, t.type.label);
+  c.text({chip.right() + 14.0, chip.y, l.gridLabel.x - chip.right() - 24.0, chip.height},
+         midEllipsis(c, project, projectStyle, l.gridLabel.x - chip.right() - 24.0),
+         projectStyle, t.color.textSecondary);
   // Whether the notes carry the current render's waveform, and if not, the short reason (the full
   // reason is published to accessibility).
   if (l.gridLabel.width > 0.0 && l.gridLabel.x > chip.right() + 24.0 && !waveform_.caption.empty()) {

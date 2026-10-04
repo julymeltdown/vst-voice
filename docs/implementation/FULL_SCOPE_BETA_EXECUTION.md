@@ -6998,3 +6998,33 @@ which is the correct state for a declarative contract field. The two other gate-
 `comparisonMetric` and `totalValidSamples`, are metric identifiers and counters.
 **Sweep closed: two real defects found and fixed** — the singing-quality frozen-limit verdict
 (`3ef19ce2`) and the vocoder reconstruction verdict (`71a310c4`) — **and no third.**
+
+**The first design defect found by looking at the product instead of the tests: a fixed 132-point
+track chip truncated real bank names to nothing useful.** The editor already had a `fitted()` helper
+that shrinks text to fit, applied to the tempo, the meter, the lane tabs and the waveform caption —
+but **not** to the track name or the project name. Those two fell through to raw canvas truncation
+inside a chip hardcoded at `{x, y, 132.0, 24.0}`.
+Captured on the canonical 1440x900 frame with the U16 corpus project loaded, the chip read
+**`DIAGNOSTIC DRY...`**. That is the worst possible truncation: the leading words are shared by every
+row of a bank, and the word identifying *which* row was thrown away. The project name beside it had
+the same defect in a narrower box.
+**The repair has two parts, because the width was the deeper cause.** A new `midEllipsis()` trims the
+**middle** rather than the tail, so the family and the specific name both survive; it falls back to a
+head-only trim when one character cannot fit at each end, and returns empty rather than overflowing
+when even the ellipsis is too wide. And `trackLabel` now takes
+`clamp(tools.width * 0.34, 132.0, 260.0)` instead of a constant, so a short name still fits and a long
+one has room without crowding the project label on a wide window. Measured at the three windows that
+reach each regime: a 492-point strip gives 167.28, 652 gives 221.68, 980 gives 260.
+**The capture is the evidence.** The same frame now reads **`DIAGNOSTIC DRY VOCAL`** in full.
+Recaptured from the rebuilt app, not read off the source.
+**Two wrong test attempts, recorded because the first nearly shipped.** The obvious assertion — "the
+chip is wider at 1440 than at 900" — proves nothing: at a 34 per cent share **both** windows land on
+the 260 ceiling and compare equal. The first version of the test was also not registered in any CTest
+sweep, so reverting the layout to `132.0` still left the suite green. Both were caught by
+mutation-checking rather than by re-reading the test. The suite is now
+`foreach(sweep IN ITEMS ... tracklabel)` with filter `"track chip"`, registered as
+`seam_design_layout_property_tests_tracklabel`; reverting the layout fails it with
+`narrow.trackLabel.width ~= narrow.tools.width * 0.34 (132 vs 167.28)`. A third attempt guessed strip
+widths the layout never produces; the numbers above are measured, not assumed.
+The accessibility tree was checked and is **not** the cause: every control including `shell.track`
+carries a full accessible name, so this was a purely visual truncation.
