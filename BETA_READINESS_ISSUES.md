@@ -911,6 +911,53 @@ pose event when a vowel phone repeats the previous one, leaving an earlier pose 
 tested and refuted**: it explains only 2 of the 6 isolated failures, and several correct notes are also
 repeats. **The cause is not identified in source and is not claimed here.**
 
+**Correction to the entry above: there is no stale-pitch leak, and that experiment was confounded.** In
+every sequence where a note failed, the note immediately before it was an octave above it: MIDI 60 followed
+MIDI 72, MIDI 55 followed MIDI 79. So "leaked the previous note" and "sang one octave up" predicted
+identical audio and the experiment could not separate them. The ratios were always exactly **2x, 3x or 4x**,
+all integers, which is also what a missing fundamental produces.
+
+**The score requests every pitch correctly.** Compiling the same performance the render path compiles, the
+requested frequency at every note's centre, start and end has ratio **1.000** for every note tested, from
+MIDI 55 at 195.998 Hz to MIDI 85 at 1108.73 Hz. There is no stale value reaching the source, so the leak
+theory has no mechanism.
+
+**The real cause is a weak fundamental.** Measuring the amplitude of each harmonic of the written pitch
+across the whole note, at window sizes 2048 and 8192, over 78 to 90 frames:
+
+| Note | h1 | h2 | h3 | h4 | Strongest |
+| --- | ---: | ---: | ---: | ---: | --- |
+| MIDI 60 in sequence | 13.480 | **14.731** | 1.079 | 0.387 | **h2, +1200 cents** |
+| MIDI 67 in sequence | 10.794 | **16.692** | 2.558 | 1.303 | **h2, +1200 cents** |
+
+**The second harmonic is genuinely stronger than the fundamental, consistently, at every window length.** An
+analysis taking the strongest partial reports the note an octave high, which is exactly the 2x ratio
+measured. The audio contains the correct fundamental; it is simply not the loudest partial.
+
+**This is a property of the recipe, not of the phrase.** The h1-to-h2 ratio for the same MIDI values alone
+and in sequence:
+
+| MIDI | alone | in sequence |
+| ---: | ---: | ---: |
+| 55 | 2.711, h1 dominates | 4.343, h1 dominates |
+| 60 | 2.247, h1 dominates | 0.916, **h2 dominates** |
+| **67** | **0.644, h2 dominates** | 0.649, **h2 dominates** |
+| 72 | 12.561, h1 dominates | 3.305, h1 dominates |
+| 79 | 33.524, h1 dominates | 10.345, h1 dominates |
+
+**MIDI 67 has a weaker fundamental than second harmonic even rendered entirely alone.** That is why every
+strongest-partial analysis in this register called it an octave error. MIDI 60 crosses over between
+contexts, which is why it alternated.
+
+**What survives.** The renderer delivers the requested pitch at every note of every sequence tested. The
+defect is **not** a stale-pitch leak and **not** a wrong-pitch render. What exists is a spectral-balance
+property of the recipe at particular pitches, where the second harmonic exceeds the fundamental, so naive
+strongest-partial pitch analysis reports an octave error. Whether that balance is musically correct for a
+voice is **not** something this measurement can say and is not claimed.
+
+P0-08 stays **OPEN**. Nothing has been listened to, one recipe family has been rendered, and
+`combinedModelHoldoutVerified` is still false.
+
 **What is established is a different claim from the previous entry's.** Not "six low notes render wrong"
 but: **under some phrase contexts the renderer reuses a pitch the phrase sang earlier instead of the
 requested one, producing a harmonic of a stale note.** Deterministic, reproducible, and dependent on melodic

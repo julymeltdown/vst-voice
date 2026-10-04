@@ -7940,3 +7940,70 @@ depends on melodic context rather than on any individual note.
 does not claim it. How often it occurs across real material is unmeasured, and its audible severity is a
 listening question. Nothing has been listened to, one recipe family has been rendered, and
 `combinedModelHoldoutVerified` is still false, so **P0-08 stays OPEN**.
+
+## Retraction: there is no stale-pitch leak. The failures were a weak fundamental, and the leak was a
+coincidence of my own test sequences
+
+The entry above reports a stale-pitch leak: notes singing a pitch the phrase sang earlier. **That is wrong**,
+and it was wrong because of a confound in the test design, not because the renderer misbehaved.
+
+**The confound.** In every sequence where a note failed, the note immediately before it was an octave above
+it. MIDI 60 followed MIDI 72; MIDI 55 followed MIDI 79. So "leaked the previous note" and "sang one octave
+up" predicted identical audio, and the experiment could not tell them apart. The ratios were always exactly
+**2x, 3x or 4x**, all integers, which is also what a missing fundamental produces.
+
+**What the score actually asks for.** Compiling the same performance the render path compiles and reading
+the requested frequency at every note's centre, start and end:
+
+| Note | Written | Requested at centre | at start | at end | Ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| MIDI 64 | 329.63 | 329.63 | 329.63 | 329.63 | 1.000 |
+| MIDI 55 | 196.00 | 195.998 | 195.998 | 195.998 | 1.000 |
+| MIDI 60 | 261.63 | 261.626 | 261.626 | 261.626 | 1.000 |
+| MIDI 67 | 392.00 | 391.995 | 391.995 | 391.995 | 1.000 |
+| MIDI 85 | 1108.73 | 1108.73 | 1108.73 | 1108.73 | 1.000 |
+
+**The score requests every pitch correctly at every point of every note.** There is no stale value reaching
+the source; the leak theory has no mechanism to attach to.
+
+**The real cause is a weak fundamental.** Measuring the amplitude of each harmonic of the written pitch
+across the whole note, at window sizes 2048 and 8192, over 78 to 90 frames:
+
+| Note | h1 | h2 | h3 | h4 | Strongest |
+| --- | ---: | ---: | ---: | ---: | --- |
+| MIDI 60 in sequence | 13.480 | **14.731** | 1.079 | 0.387 | **h2, +1200 cents** |
+| MIDI 67 in sequence | 10.794 | **16.692** | 2.558 | 1.303 | **h2, +1200 cents** |
+
+**The second harmonic is genuinely stronger than the fundamental, consistently, at every window length.** An
+analysis that takes the strongest partial therefore reports the note an octave high, which is exactly the
+2x ratio measured. The audio contains the correct fundamental; it is simply not the loudest partial.
+
+**This is a property of the recipe, not of the phrase.** The h1-to-h2 amplitude ratio for the same MIDI
+values, rendered alone and in the sequence:
+
+| MIDI | alone | in sequence |
+| ---: | ---: | ---: |
+| 55 | 2.711, h1 dominates | 4.343, h1 dominates |
+| 60 | 2.247, h1 dominates | 0.916, **h2 dominates** |
+| **67** | **0.644, h2 dominates** | 0.649, **h2 dominates** |
+| 72 | 12.561, h1 dominates | 3.305, h1 dominates |
+| 79 | 33.524, h1 dominates | 10.345, h1 dominates |
+
+**MIDI 67 has a weaker fundamental than second harmonic even when rendered entirely alone.** That is a
+property of what this recipe generates for that pitch, and it is why every analysis in this document that
+took a strongest-partial reading called 67 an octave error. MIDI 60 crosses over between contexts, which is
+why it alternated.
+
+**The earlier single-note march was wrong in the opposite direction**, reporting these notes correct,
+because it read a different spectral peak than the harmonic analysis does. Both measurements were of the
+same audio with the same window; the difference is which peak was reported, and the harmonic analysis with
+per-harmonic amplitudes is the one that resolves the question.
+
+**What survives.** The renderer delivers the requested pitch at every note of every sequence tested. The
+defect is **not** a stale-pitch leak and **not** a wrong-pitch render. What exists is a spectral-balance
+property of the recipe at particular pitches, where the second harmonic exceeds the fundamental, which
+makes naive strongest-partial pitch analysis report an octave error. Whether that balance is musically
+correct for a voice is **not** something this measurement can say, and it is not claimed.
+
+**What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to, one recipe family has been
+rendered, and `combinedModelHoldoutVerified` is still false.
