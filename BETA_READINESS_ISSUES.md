@@ -332,6 +332,35 @@ reopen, with exact zero audio in their explicit score rests. All strict pitch
 statuses still report `MISMATCH`. Per-song results and hashes are appended to the
 validation campaign report; this is measurable progress, not closure of P0-08.
 
+**Update 2026-10-04: the residual pitch artefact is located, and it is absent from current output.**
+The remaining pitch blocker above was the octave defect in the retained application render. It has now
+been measured to its cause. Full evidence is in
+[PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md);
+three claims in that report were wrong and are corrected there in place.
+
+The defect is **46 of 541 voiced frames (8.5 per cent), not the ten previously recorded**. Every one of
+them reports a period that is an exact multiple of the 256-sample analysis hop; the reference track has
+**zero** such frames, and the separation is perfect at a tolerance of 0.001 hops. The errors **are**
+octave errors, not the non-octave readings previously claimed. The cause is an impulse train spaced one
+hop apart inside the rendered audio, confirmed by three independent checks: it survives every change to
+the analysis hop from 128 to 1024, so it is not an analysis artefact; a spectral estimator validated at
+97.1 per cent on correctly tracked frames finds the correct note at 83.3 per cent of the disputed frames,
+so the singer is singing and the tracker reads an octave low; and six candidate repairs were measured,
+none shippable, because the hop-parity rule that removes the defect also silences a genuine 187.5 Hz
+note.
+
+**It does not reproduce at HEAD.** An end-to-end render of an installed procedural singer through the
+real authoring and export stack gives 7692 frames, 7456 voiced and **0** lag-exact frames, against the
+retained build's 46. The render is populated, not silent: 41.0 s, peak 0.0918, RMS 0.0152, medians
+293.6-392.1 Hz. The best-evidenced cause is `1c6d57c6`, which halves the spectral analysis hop across a
+voiced-to-unvoiced-to-voiced transition and postdates the build that produced the retained audio. It is
+not proven: the retained project cannot be re-rendered, because its track resolves through neural
+resource `seam.pause-experiment` v3 with content hash `d4dd7737...`, which is not on disk anywhere.
+
+**P0-08 therefore remains OPEN.** No cent-level pitch-accuracy verdict has been produced on a current
+application render, and no qualification follows from a defect being absent. Release CTest 230/230 passed
+at `17301814`.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

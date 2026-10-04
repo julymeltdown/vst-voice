@@ -7190,3 +7190,71 @@ SING-specific wrapper (`fittedToTen`), because the two workspaces genuinely diff
 together silently moved one workspace's typography. Renaming rather than shadowing also mattered:
 argument-dependent lookup found both the local wrapper and `design::fitted`, making the bare name
 ambiguous at all sixteen call sites. `seam_design_shell_input_tests` 106 of 106.
+
+## The pitch defect is located, and it does not reproduce in current output
+
+`SEAM-BETA-P0-08` has been the longest-standing blocker in this register. The remaining question was
+whether the octave defect in the retained application render still exists. It was investigated end to
+end and the answer is now evidence-backed in both directions.
+
+**What was wrong with the earlier diagnosis.** The pitch report had accumulated three errors, all now
+corrected in place in `docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md`: the errors were
+declared "not multiples of 1200 cents" when the stored cents column gives -2.98, -2.81, -2.07, -3.08
+and -2.05 octaves; the count was declared "ten frames" when the true figure is 46, because the ten came
+from the comparison's measurable subset and the same artefact had made the rest unmeasurable; and the
+conclusion that "no property available inside the frame separates them" was wrong.
+
+**What separates them.** The candidate track has **46 voiced frames whose reported period is an exact
+multiple of the 256-sample analysis hop**; the reference track has **zero**. At a tolerance of 0.001 hops
+the separation is perfect: all 20 frames carrying more than 200 cents of error are hop-locked and none of
+the 424 correctly tracked frames are. The cause is visible in the audio: those windows hold an impulse
+train spaced one hop apart rather than periodic voicing, and frame 23 concentrates 86 per cent of its
+energy in six 32-sample cells exactly 256 samples apart.
+
+**Three findings that changed the conclusion.**
+
+1. **It is in the audio, not the analysis.** Re-running the estimator over identical audio with the hop
+   changed from 128 to 1024 leaves every bad reading unchanged, and the sub-150 Hz rate holds at 1.4 to
+   2.6 per cent throughout.
+2. **The audio is singing the right note.** An independent spectral estimator agrees with the reference
+   on **97.1 per cent of correctly tracked frames** (its control group, so the oracle is trustworthy) and
+   on **83.3 per cent of the disputed ones**. The tracker reads an octave low because the impulse train
+   out-votes the note.
+3. **Every in-frame repair is unsafe.** The hop-parity rule cuts errors 46 to 10 with every good frame
+   preserved, and it also reports a genuine 187.5 Hz note as unvoiced on every frame, because the defect
+   and a real pitch are geometrically identical. Peak sharpness and cycles-in-window both appeared to
+   separate and then did not, for reasons recorded. Six repairs measured, none shippable.
+
+**And it does not reproduce at HEAD.** Rendering an installed procedural singer end to end through the
+real authoring and export stack, then analyzing the master with the shipped extractor:
+
+| Render | Frames | Voiced | Lag-exact period | Share | Below 150 Hz |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **HEAD** `17301814` | 7692 | 7456 | **0** | **0.000 %** | 3 (0.040 %) |
+| Retained candidate, build `741ae2f2` | 586 | 541 | **46** | **8.503 %** | 11 (2.033 %) |
+
+The HEAD render is real audio, not a clean bill for a silent file: 41.0 s, peak 0.0918, RMS 0.0152, no
+clipped samples, per-segment medians 293.6 to 392.1 Hz. Zero lag-exact frames at hops of 128, 256 and
+512, so it is not displaced onto another grid. The best-evidenced cause is `1c6d57c6`, which halves the
+spectral analysis hop across a voiced-to-unvoiced-to-voiced transition in a retimed source map, and
+which postdates the build that produced the retained audio.
+
+**Why the retained project cannot simply be re-rendered.** Its track carries no voicebank and no
+`proceduralRecipe`; it resolves through `neuralResource` `seam.pause-experiment` v3, content hash
+`d4dd7737eedd54638dd66c09b25f0024cceb052daca447be75ac525e2c750f3d`, which is **not on disk anywhere**.
+`receipt.json` agrees: `voicebanks` and `proceduralRecipes` are both empty. So the before/after comparison
+is against a different song and a different voice, and `1c6d57c6` is a strong correlation rather than a
+proven cause.
+
+**What this changes, and what it does not.** P0-08 stays **OPEN**. A pitch-accuracy verdict needs
+cent-level scoring on a real application render, and this establishes neither that nor a qualification.
+What it does establish is that a defect previously described as a bounded 1.8 per cent anomaly is a
+located 8.5 per cent artefact of pre-`1c6d57c6` audio, that it has an identified physical cause, and that
+it is absent from current output. The tracker's inability to distinguish a real 187.5 Hz note from a
+256-sample impulse train remains a documented limitation, and every repair that would paper over it
+breaks a legitimate case.
+
+**Verification run for this entry.** Release CTest **230/230 passed, 0 failed** at `17301814`
+(`seam_tests` 97.3 s, `seam_public_release_python_tests` 120.2 s, total 197.9 s);
+`seam_original_singer_song_journey_tests` 7 passed, 0 failed; tracked-source closure passed;
+`git diff --check` clean. No product code changed in this entry.
