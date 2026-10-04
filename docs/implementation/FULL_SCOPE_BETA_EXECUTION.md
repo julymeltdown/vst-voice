@@ -7067,3 +7067,20 @@ top falls within its own note. It asserts **`inside == 1` and `steppedOut == 1`*
 fixture actually produces: note `i` occupies 515-531 and its label paints at 515, while note `a` is
 only 8 points tall, below the allocator's 15-point floor, so it legitimately steps out. Reverting the
 slot order fails it. Registered as `seam_design_layout_property_tests_lyricplacement`.
+**Checked at three window sizes, because "inside" could degrade into a second defect.** The concern
+after the swap was that a syllable would now overflow a note that had been sized to hold a label
+floating above it. It does not, and the evidence is measured rather than argued: a note row is
+**18.75** points, the `lyric` token is **13**, and the engine's own recorded ink — `ascent + descent`
+from the CoreGraphics line, which is the real font metric rather than the nominal point size — comes
+out at **15.6** points, which fits a 16-point note. The one note measured at 8 points is not a type
+problem at all: `note_visual_layout.cpp:87` splits the band when notes overlap, so that note is a
+density casualty and its label correctly steps out under the allocator's 15-point floor.
+Captured at **1440x900**, **1024x700** and **760x520** from the rebuilt app. At 1024 the rack
+collapses to a 56-point portrait rail and at 760 the toolbar collapses to a `SEAM` workspace menu;
+the syllables stay inside their notes at all three, and nothing overlaps, clips or leaves the grid.
+**The apparent "cramped" look was a measurement artifact, not a defect.** A 2x zoomed crop makes a
+13-point glyph fill its note and look jammed; at true size the same note reads with correct padding.
+The type scale was deliberately **not** changed: the report said the text was small, and the cause of
+the small-looking text was that it was sitting in the wrong place, not that it was set too small.
+Raising the token would have made the glyphs overflow the note to fix a problem the slot swap
+already solved.
