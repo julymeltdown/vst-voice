@@ -20,6 +20,10 @@ core::Result<void> PluginSession::validate() const {
     return core::failure(core::ErrorCode::InvalidArgument,
                          "CLAP session channel count must be between one and eight");
   }
+  if (!isKnownClapSampleFormat(static_cast<std::uint32_t>(sampleFormat))) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+                         "CLAP session sample format is not supported");
+  }
   if (!std::isfinite(masterGainDb) || masterGainDb < kMinimumMasterGainDb ||
       masterGainDb > kMaximumMasterGainDb) {
     return core::failure(core::ErrorCode::InvalidArgument,

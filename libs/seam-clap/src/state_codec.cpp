@@ -62,7 +62,11 @@ core::Result<std::vector<std::byte>> encodeState(const PluginSession& session) {
   appendU32(out, kStateFormatVersion);
   appendU32(out, session.sampleRate);
   appendU32(out, session.channelCount);
-  appendU32(out, 0U);
+  // This slot was a reserved field that every writer has always left at zero,
+  // so carrying the source sample encoding here keeps existing SEAMCLP1 files
+  // readable: a state written before this change still decodes as PCM16, which
+  // is exactly what extract used to emit unconditionally.
+  appendU32(out, static_cast<std::uint32_t>(session.sampleFormat));
   appendU64(out, session.frameCount());
   appendU64(out, std::bit_cast<std::uint64_t>(session.masterGainDb));
   appendU32(out, static_cast<std::uint32_t>(session.title.size()));
@@ -98,16 +102,19 @@ core::Result<PluginSession> decodeState(std::span<const std::byte> bytes) {
   const auto version = readU32(bytes, offset);
   const auto sampleRate = readU32(bytes, offset);
   const auto channels = readU32(bytes, offset);
-  const auto reserved = readU32(bytes, offset);
+  const auto sampleFormatId = readU32(bytes, offset);
   const auto frames = readU64(bytes, offset);
   const auto gainBits = readU64(bytes, offset);
   const auto titleBytes = readU32(bytes, offset);
   const auto payloadBytes = readU64(bytes, offset);
-  if (!version || !sampleRate || !channels || !reserved || !frames ||
-      !gainBits || !titleBytes || !payloadBytes)
+  // The sample format slot is deliberately absent from this truncation check:
+  // zero is the legacy value, not a missing field.
+  if (!version || !sampleRate || !channels || !frames || !gainBits ||
+      !titleBytes || !payloadBytes)
     return core::failure<PluginSession>(core::ErrorCode::ParseError,
                                         "CLAP state header is truncated");
-  if (version.value() != kStateFormatVersion || reserved.value() != 0U ||
+  const auto sampleFormat = clapSampleFormatFromStoredId(sampleFormatId.value());
+  if (version.value() != kStateFormatVersion || !sampleFormat ||
       channels.value() == 0U || channels.value() > kMaximumChannels ||
       titleBytes.value() > 4096U || payloadBytes.value() % 4U != 0U ||
       payloadBytes.value() > kMaximumStateBytes ||
@@ -124,6 +131,7 @@ core::Result<PluginSession> decodeState(std::span<const std::byte> bytes) {
   PluginSession session;
   session.sampleRate = sampleRate.value();
   session.channelCount = static_cast<std::uint8_t>(channels.value());
+  session.sampleFormat = *sampleFormat;
   session.masterGainDb = std::bit_cast<double>(gainBits.value());
   session.title.assign(reinterpret_cast<const char*>(bytes.data() + offset),
                        titleBytes.value());

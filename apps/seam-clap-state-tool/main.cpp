@@ -25,6 +25,28 @@ void printError(const seam::core::Error& error) {
   std::cerr << '\n';
 }
 
+// AudioBuffer reports the bit depth it decoded, but not whether that depth came
+// from integer PCM or IEEE float. Format code 3 is the only float WAV the
+// reader accepts, so the decoded depth identifies the encoding unambiguously.
+seam::clap::ClapSampleFormat sourceSampleFormat(
+    const seam::voicebank::AudioBuffer& audio) {
+  if (audio.bitsPerSample == 32U) return seam::clap::ClapSampleFormat::Float32;
+  if (audio.bitsPerSample == 24U) return seam::clap::ClapSampleFormat::Pcm24;
+  return seam::clap::ClapSampleFormat::Pcm16;
+}
+
+seam::voicebank::WavSampleFormat wavFormat(seam::clap::ClapSampleFormat format) {
+  switch (format) {
+    case seam::clap::ClapSampleFormat::Float32:
+      return seam::voicebank::WavSampleFormat::Float32;
+    case seam::clap::ClapSampleFormat::Pcm24:
+      return seam::voicebank::WavSampleFormat::Pcm24;
+    case seam::clap::ClapSampleFormat::Pcm16:
+      break;
+  }
+  return seam::voicebank::WavSampleFormat::Pcm16;
+}
+
 int packState(int argc, char** argv) {
   if (argc < 4) {
     usage();
@@ -57,6 +79,7 @@ int packState(int argc, char** argv) {
   seam::clap::PluginSession session;
   session.sampleRate = audio.value().sampleRate;
   session.channelCount = static_cast<std::uint8_t>(audio.value().channels);
+  session.sampleFormat = sourceSampleFormat(audio.value());
   session.masterGainDb = gainDb;
   session.title = std::move(title);
   session.interleavedSamples = audio.value().interleaved;
@@ -68,6 +91,8 @@ int packState(int argc, char** argv) {
   std::cout << "state=" << std::filesystem::path{argv[3]}.string() << '\n'
             << "sampleRate=" << session.sampleRate << '\n'
             << "channels=" << static_cast<unsigned>(session.channelCount) << '\n'
+            << "sampleFormat="
+            << seam::clap::clapSampleFormatName(session.sampleFormat) << '\n'
             << "frames=" << session.frameCount() << '\n'
             << "masterGainDb=" << session.masterGainDb << '\n'
             << "title=" << session.title << '\n';
@@ -89,6 +114,8 @@ int inspectState(int argc, char** argv) {
             << "  \"format\": \"SEAMCLP1\",\n"
             << "  \"sampleRate\": " << session.value().sampleRate << ",\n"
             << "  \"channels\": " << static_cast<unsigned>(session.value().channelCount) << ",\n"
+            << "  \"sampleFormat\": \""
+            << seam::clap::clapSampleFormatName(session.value().sampleFormat) << "\",\n"
             << "  \"frames\": " << session.value().frameCount() << ",\n"
             << "  \"masterGainDb\": " << session.value().masterGainDb << ",\n"
             << "  \"titleBytes\": " << session.value().title.size() << ",\n"
@@ -107,8 +134,16 @@ int extractState(int argc, char** argv) {
     printError(session.error());
     return 3;
   }
-  const auto written = seam::voicebank::writePcm16Wav(
-      argv[3], session.value().sampleRate, session.value().channelCount,
+  // Write back in the format the state was packed from. Writing 16-bit here
+  // silently discarded 24 bits of every sample when a float32 or 24-bit render
+  // was extracted, which is the difference between a faithful state round trip
+  // and a lossy one that still reported success.
+  const auto written = seam::voicebank::writeWav(
+      argv[3],
+      seam::voicebank::WavOutputFormat{
+          .sampleRate = session.value().sampleRate,
+          .channels = session.value().channelCount,
+          .sampleFormat = wavFormat(session.value().sampleFormat)},
       session.value().interleavedSamples);
   if (!written) {
     printError(written.error());
@@ -117,6 +152,8 @@ int extractState(int argc, char** argv) {
   std::cout << "wav=" << std::filesystem::path{argv[3]}.string() << '\n'
             << "sampleRate=" << session.value().sampleRate << '\n'
             << "channels=" << static_cast<unsigned>(session.value().channelCount) << '\n'
+            << "sampleFormat="
+            << seam::clap::clapSampleFormatName(session.value().sampleFormat) << '\n'
             << "frames=" << session.value().frameCount() << '\n';
   return 0;
 }

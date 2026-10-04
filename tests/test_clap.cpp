@@ -88,3 +88,72 @@ TEST_CASE("CLAP state rejects overflowed declared frame counts before allocation
   std::copy(digest.begin(), digest.end(), encoded.value().end() - 32);
   CHECK(!seam::clap::decodeState(encoded.value()));
 }
+
+TEST_CASE("CLAP state codec preserves the source sample format") {
+  for (const auto format : {seam::clap::ClapSampleFormat::Pcm16,
+                            seam::clap::ClapSampleFormat::Pcm24,
+                            seam::clap::ClapSampleFormat::Float32}) {
+    auto session = seam::clap::makeDiagnosticSession(48000U, 2U, 0.02);
+    CHECK(session);
+    session.value().sampleFormat = format;
+    const auto encoded = seam::clap::encodeState(session.value());
+    CHECK(encoded);
+    const auto decoded = seam::clap::decodeState(encoded.value());
+    CHECK(decoded);
+    CHECK(decoded.value().sampleFormat == format);
+    CHECK(decoded.value() == session.value());
+  }
+}
+
+TEST_CASE("CLAP state header stores the sample format in the reserved slot") {
+  auto session = seam::clap::makeDiagnosticSession(48000U, 1U, 0.01);
+  CHECK(session);
+  session.value().sampleFormat = seam::clap::ClapSampleFormat::Float32;
+  const auto encoded = seam::clap::encodeState(session.value());
+  CHECK(encoded);
+  // The slot sat at offset 20: magic, version, sample rate, channel count.
+  CHECK(encoded.value()[20] == std::byte{3});
+  CHECK(encoded.value()[21] == std::byte{0});
+  CHECK(encoded.value()[22] == std::byte{0});
+  CHECK(encoded.value()[23] == std::byte{0});
+}
+
+TEST_CASE("CLAP state treats a legacy zero format slot as PCM16") {
+  auto session = seam::clap::makeDiagnosticSession(48000U, 2U, 0.01);
+  CHECK(session);
+  auto encoded = seam::clap::encodeState(session.value());
+  CHECK(encoded);
+  // Reproduce a file written before the sample format was recorded by clearing
+  // the slot, then repair the digest so the test exercises the format rule and
+  // not the checksum rule.
+  for (std::size_t index = 20U; index < 24U; ++index) encoded.value()[index] = std::byte{0};
+  seam::core::Sha256 hash;
+  hash.update(std::span<const std::byte>{encoded.value()}.first(encoded.value().size() - 32U));
+  const auto digest = hash.digest();
+  std::copy(digest.begin(), digest.end(), encoded.value().end() - 32);
+  const auto decoded = seam::clap::decodeState(encoded.value());
+  CHECK(decoded);
+  CHECK(decoded.value().sampleFormat == seam::clap::ClapSampleFormat::Pcm16);
+}
+
+TEST_CASE("CLAP state rejects an unknown stored sample format") {
+  auto session = seam::clap::makeDiagnosticSession(48000U, 2U, 0.01);
+  CHECK(session);
+  auto encoded = seam::clap::encodeState(session.value());
+  CHECK(encoded);
+  encoded.value()[20] = std::byte{4};
+  seam::core::Sha256 hash;
+  hash.update(std::span<const std::byte>{encoded.value()}.first(encoded.value().size() - 32U));
+  const auto digest = hash.digest();
+  std::copy(digest.begin(), digest.end(), encoded.value().end() - 32);
+  CHECK(!seam::clap::decodeState(encoded.value()));
+}
+
+TEST_CASE("CLAP sample format names round trip through the reported label") {
+  CHECK(seam::clap::clapSampleFormatName(seam::clap::ClapSampleFormat::Pcm16) ==
+        "pcm16");
+  CHECK(seam::clap::clapSampleFormatName(seam::clap::ClapSampleFormat::Pcm24) ==
+        "pcm24");
+  CHECK(seam::clap::clapSampleFormatName(seam::clap::ClapSampleFormat::Float32) ==
+        "float32");
+}

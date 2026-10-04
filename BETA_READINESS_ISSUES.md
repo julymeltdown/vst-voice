@@ -255,6 +255,22 @@ two claims of mine that checking disproved are in the diagnosis.
 is in [the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). Nothing is
 fixed, no threshold is proposed, and this does not qualify a singer or close this blocker.
 
+**A never-run tool was silently discarding 24 bits per sample.** `seam_clap_state_tool` was referenced
+by zero files and had never been executed, so its path carried no evidence at all. Run end to end it
+reported success while writing every extracted render as PCM16: a float32 WAV round-tripped through
+`pack`/`extract` came back with every mantissa bit truncated, and a 24-bit render came back at half
+depth. The state format itself was never lossy -- it stores normalized float PCM -- so the loss was
+entirely at the write boundary, which is why frame counts, RMS and byte-identical framing all looked
+correct while the payload was not. `PluginSession` now records the source encoding
+(`ClapSampleFormat`), the codec carries it in the SEAMCLP1 header slot that every writer previously
+left at zero, and `extract` writes the format it was packed from and reports it. Existing state files
+stay readable: the zero slot decodes as `pcm16`, which is exactly what `extract` always emitted, and
+an unknown nonzero id is rejected rather than guessed at. Measured float32 and 24-bit round trips are
+now bit-identical. This closes the defect, not the larger gap: the other never-run tools
+(`seam_singer_pilot`, `seam_neural_production_render`, `seam_editor_native`, `seam_neural_worker`,
+`seam_installer_verifier`, `seam_voicebank_studio_native`, and the CLAP hosts) have not been given
+the same treatment yet.
+
 The subsequent fixed five-song validation campaign measures **3090/3649 (84.68%)**
 within 50 cents on measurable voiced pairs, with every strict comparison still
 `MISMATCH`. It also exposed and repaired a separate application blocker: standalone

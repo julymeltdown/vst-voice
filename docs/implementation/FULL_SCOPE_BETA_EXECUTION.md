@@ -6775,3 +6775,45 @@ Release `seam_tests` 1460 of 1460 (1458 before); full Release CTest 224 of 224. 
 pause has been issued and no operator decision exists, so what is proven is that a **signed** pause
 reaches the running app when one is configured, not that any has been. No DAW, VoiceOver, signing,
 Windows or external-review evidence. `.github` was not touched.
+
+2026-10-04 — A tool that had never been run turned out to be lossy, and the loss was silent.
+`seam_clap_state_tool` was referenced by zero files and had never been exercised, so its entire path
+was unverified. Running it end to end (`pack` a float32 WAV, then `extract` it back) returned
+**192,044 bytes in, 192,044 bytes out** with an identical frame count and RMS — but the restored file
+was **PCM16**, because `extractState` called `writePcm16Wav` unconditionally. The state itself stores
+normalized float PCM, so nothing was lost inside the state; **24 bits per sample were discarded at
+the write boundary while the tool still reported success.** A float32 render came back with every
+mantissa bit truncated, and a 24-bit render came back at half its depth.
+**The contract.** `PluginSession` now carries `ClapSampleFormat{Pcm16, Pcm24, Float32}`. The codec
+writes it into the SEAMCLP1 header slot that was a **reserved field every writer has always left at
+zero**, which keeps existing files readable at the byte level: `out/phase10/
+phase10-diagnostic.seamclapstate` still decodes, and its zero slot reads as `pcm16` — precisely what
+`extract` emitted before. Any **nonzero unrecognized** value is rejected rather than guessed at, and
+the slot is deliberately excluded from the header-truncation check, because zero there is the legacy
+value and not a missing field. That distinction is the entire backward-compatibility argument;
+treating zero as "truncated" would have rejected every state file already on disk. That mistake was
+made and caught: the first version of the decode rejected zero, and the legacy-compat test failed.
+**The tool.** `pack` derives the format from what the WAV decoder actually read (format code 3 is the
+only float encoding accepted, so the decoded bit depth identifies the encoding unambiguously);
+`extract` writes that format through `writeWav`; and both `pack` and `extract` now **report** the
+format instead of implying 16-bit. `inspect` surfaces it as JSON.
+**Verified by measurement, not by construction.** float32 192,044 bytes in and out with
+**bit-identical samples** across all 48,000; 24-bit 36,044 bytes in and out, also bit-identical across
+12,000; the legacy fixture decodes as `pcm16`; an unknown stored id is rejected.
+Release `seam_tests` 1472 of 1472 (1467 before, 5 added); full Release CTest 224 of 224; tracked
+source closure PASS. **Not claimed:** nothing here is human listening evidence, and there is no DAW,
+VoiceOver, signing, Windows or external-review evidence. Separately, the earlier finding that
+`seam_bank_tool` was never run is resolved — its keygen/pack/verify/install/tamper-reject/
+untrusted-signer-reject pipeline works as built and is now evidence rather than a defect. `.github`
+was not touched.
+
+**The first full CTest run failed, and the failure was not the code.** `seam_clap_plugin_host_smoke`
+reported `Unable to read CLAP state` and exited 1 against a state file this change had itself written
+minutes earlier. The cause was build hygiene, not the codec: the focused build covered only
+`seam_clap_state_tool` and `seam_tests`, so `seam_clap_host` was still the **12:33** binary linked
+against the pre-change codec while the state on disk carried the new format id. Relinking the host
+and plug-in targets made the same command pass with `stateRoundTrip: true`, and the rerun was 224 of
+224. Recorded because a stale binary produces a failure that points straight at the newest change,
+and the honest response is to check the timestamps before believing it. **Consequence for the build
+recipe:** a change to a library under `libs/` must rebuild every dependent target before CTest is
+trusted, not only the targets named on the command line.
