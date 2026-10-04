@@ -719,6 +719,40 @@ frames. Whether a lead of up to 16.7 ms is *musically* desirable is a listening 
 answered. The 1 uncharacterised frame remains uncharacterised, nothing has been listened to, this is one
 singer family, and `combinedModelHoldoutVerified` is still false, so **P0-08 remains OPEN**.
 
+**Update 2026-10-04: the result is voice-specific. Breathiness breaks high-note pitch tracking.** Every
+measurement above used one voice, which made "five songs" five melodies on a single recipe. Scoring the
+same written song under **four distinct voices** answers the different question of whether the pitch result
+depends on which voice is singing. The four differ in declared phonation, formants and modulation, and
+each renders through the production export path. They are measurably different, with RMS spanning 1.3x.
+
+| Voice | Scored | Median, cents | Within 50 c | Octave frames |
+| --- | ---: | ---: | ---: | ---: |
+| original | 505 | **0.162** | 93.66 % | 11 |
+| brighter | 506 | **0.194** | 93.28 % | 11 |
+| darker | 509 | **0.162** | 92.53 % | 11 |
+| **breathy** | 503 | **4.656** | 91.25 % | **24** |
+
+**Three voices are equivalent and one is 29 times worse.** The pooled figure hid this completely.
+
+**The cause is localized to the top of the range.** Note 74 goes from 145.6 cents, already the original
+voice's worst note, to **1324.2 cents** under breathiness, while notes 62 to 72 stay between 0.0 and 15.8
+cents. The mechanism shows in the spectra: the breathy voice's energy above 2 kHz is **0.2047 against
+0.0527 to 0.0615** for the other three, a 3.5x increase, and confidence falls to 0.9531 against 0.998 and
+above. **Aspiration is broadband noise and it masks the highest pitches first**, because a high note has
+less harmonic energy standing above the noise floor to be found.
+
+**This is a real defect that would affect any breathy designed singer, and only a multi-voice corpus could
+have found it.** Every single-voice measurement in this register would have missed it.
+
+**What this changes.** The 0.176-centre five-song figure is voice-specific, not general. Breathiness costs
+0.16 to 4.66 cents of median accuracy and roughly doubles the octave frames, concentrated on the highest
+note in the score.
+
+**What this does not change, and is not claimed.** P0-08 stays **OPEN**. The breathy high-note interaction
+needs a repair, and note 74 is octave-heavy even in the original voice at 145.6 cents, so that is a second
+open item. This is one recipe family with four timbral variants, not four designed singers. Nothing has
+been listened to, and `combinedModelHoldoutVerified` is still false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

@@ -7569,6 +7569,60 @@ legato is a different question from whether it is *intended*: it is intended, an
 whether it is right. P0-08 stays **OPEN**, the 83.3 ms cases remain unexplained, the 1 uncharacterised frame
 remains uncharacterised, nothing has been listened to, and `combinedModelHoldoutVerified` is still false.
 
+## Voice dependence found: breathiness breaks pitch tracking on high notes only
+
+Every measurement so far used one voice, which made "five songs" really five melodies on a single recipe.
+This asks the different question: does the pitch result depend on **which voice** is singing? Same written
+score, same rule, same extractor, four recipes differing in declared phonation, formants and modulation:
+original, breathy (`aspiration` 0.30, tilt -14 dB/oct), brighter (formants x1.18), darker (formants x0.85,
+jitter x4, open quotient 0.45). Each renders through the production export path.
+
+The four are measurably different voices, not four labels: RMS spans 0.01584 to 0.02097, a 1.3x spread.
+
+| Voice | Scored | Median, cents | Within 50 c | Octave frames |
+| --- | ---: | ---: | ---: | ---: |
+| original | 505 | **0.162** | 93.66 % | 11 |
+| brighter | 506 | **0.194** | 93.28 % | 11 |
+| darker | 509 | **0.162** | 92.53 % | 11 |
+| **breathy** | 503 | **4.656** | 91.25 % | **24** |
+
+**Three voices are equivalent and one is 29 times worse.** That is a voice-dependent defect rather than a
+corpus-wide property, and the pooled figure hides it entirely.
+
+**The cause is localized to the top of the range.** Per-note medians for the original and breathy voices:
+
+| Note MIDI | original | breathy |
+| ---: | ---: | ---: |
+| 79 | 0.3 | 5.5 |
+| 67 | 0.1 | 0.7 |
+| 71 | 0.0 | 0.4 |
+| 64 | 0.1 | 0.7 |
+| **74** | **145.6** | **1324.2** |
+| 72 | 0.2 | 13.7 |
+| 62 | 0.2 | 4.0 |
+| 64 | 0.4 | 15.8 |
+
+**Note 74 alone accounts for the difference**, going from 145.6 cents, already the original voice's worst
+note, to 1324.2 cents under breathiness. The mechanism is visible in the spectra: the breathy voice's
+energy above 2 kHz is **0.2047 against 0.0527 to 0.0615** for the other three, a 3.5x increase, and its
+confidence drops to 0.9531 against 0.998 and above.
+
+**Aspiration is broadband noise, and it masks the highest pitches first.** A 587 Hz note has its harmonics
+already inside the band the breath noise occupies; a higher note has less harmonic energy above the noise
+floor to be found. **This is a real defect that would affect any breathy designed singer**, and it is the
+kind that only a multi-voice corpus can find: every single-voice measurement in this document would have
+missed it entirely.
+
+**What this changes.** The 0.176-centre corpus figure is now known to be voice-specific rather than
+general, and a new defect is identified with a measured mechanism. Breathiness costs 0.16 to 4.66 cents
+of median accuracy and roughly doubles the octave frames, concentrated on the highest note in the score.
+
+**What this does not change, and is not claimed.** P0-08 stays **OPEN**, and its remaining work is now
+clearer: the breathy and high-note interaction needs a repair, and the octave-heavy note 74 is unexplained
+even in the original voice at 145.6 cents. Nothing has been listened to, this is still one recipe family
+with four timbral variants rather than four designed singers, and `combinedModelHoldoutVerified` is still
+false.
+
 ## Retraction: the onset-advance measurement was unsound, and the 19.3 ms figure is withdrawn
 
 The three entries above report a measured onset advance with a median of 19.3 ms and a distribution of
