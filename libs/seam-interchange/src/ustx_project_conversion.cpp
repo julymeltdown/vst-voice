@@ -100,10 +100,32 @@ struct ImportedLyric final {
   std::optional<std::string> hint;
 };
 
+// OpenUtau spells a rest as the one-character lyric "R" and excludes it from the
+// playable note list, so it is never phonemized or sung. A SEAM note authored as a
+// pause carries the same intent, and emitting it as its literal lyric instead would
+// hand the host a syllable to sing at a real MIDI pitch -- a rest would leave SEAM
+// as an audible note. Both the typed hint and the visible surface are accepted as
+// evidence of intent because either one alone is how a pause is authored.
+bool isAuthoredRest(const domain::Note& note, const domain::LyricToken& lyric) {
+  if (note.phoneticHint.has_value() && *note.phoneticHint == "pau") return true;
+  return domain::toUtf8(lyric.surface) == "pau";
+}
+
 ImportedLyric importLyricHint(std::string_view raw, domain::Language language,
                              std::string_view path, std::vector<UstxIssue>& issues,
                              const UstxLimits& limits) {
   ImportedLyric result{std::string{raw}, std::nullopt};
+  // OpenUtau spells a rest as the single character "R". Importing it as an
+  // ordinary lyric would make SEAM treat a rest as a syllable to sing, which is
+  // the same defect in reverse: a rest would re-enter SEAM as an audible note.
+  // Map it back onto SEAM's own authored pause so the round trip is stable.
+  if (raw == "R") {
+    result.visible = "pau";
+    result.hint = std::string{"pau"};
+    addIssue(issues, UstxIssueSeverity::Warning, std::string(path) + ".lyric",
+             "an OpenUtau rest was imported as a SEAM authored pause; rest markers are not phonemized, so audio equivalence is unverified", limits);
+    return result;
+  }
   const auto open = raw.find('[');
   const auto close = raw.rfind(']');
   if (open == std::string_view::npos || close == std::string_view::npos || close <= open)
@@ -764,6 +786,25 @@ core::Result<UstxExportResult> exportUstxProject(const domain::Project& project,
         auto notePosition = scaleTick(note.startTick.value(), project.ppq(), kUstxPpq, "project.note.startTick", issues, limits); if (!notePosition) return core::Result<Output>{notePosition.error()};
         auto noteDuration = scaleTick(note.durationTick.value(), project.ppq(), kUstxPpq, "project.note.durationTick", issues, limits); if (!noteDuration) return core::Result<Output>{noteDuration.error()};
         UstxNote exported{time::Tick{notePosition.value()}, time::Tick{noteDuration.value()}, note.midiKey, domain::toUtf8(lyric->second->surface), 0.0, {}, false, {}, false};
+        // A rest keeps its position and duration so the host preserves the gap,
+        // but is spelled "R" and carries no phonetic hint, because OpenUtau does
+        // not phonemize a rest. Emitting the authored "pau" surface instead would
+        // turn silence into a sung syllable on import into any other host.
+        if (isAuthoredRest(note, *lyric->second)) {
+          exported.lyric = "R";
+          if (note.phoneticHint.has_value())
+            addIssue(issues, UstxIssueSeverity::Warning, notePath + ".phoneticHint",
+                     "an authored rest was exported as an OpenUtau rest; its pause phonetic hint is implied by the rest marker and was not written separately", limits);
+          for (std::size_t pointIndex = 0U; pointIndex < pitchPoints.size(); ++pointIndex) {
+            if (pitchPoints[pointIndex].tick > note.endTick() ||
+                (pitchPoints[pointIndex].tick < note.startTick && pickupOwners[pointIndex] != noteNumber)) continue;
+            addIssue(issues, UstxIssueSeverity::Loss, notePath + ".pitch",
+                     "a pitch point on an authored rest is not representable as an OpenUtau rest and was omitted", limits);
+            break;
+          }
+          part.notes.push_back(exported);
+          continue;
+        }
         if (lyric->second->readingHint &&
             reportedReadingHints.insert(lyric->second->id).second) {
           addIssue(issues, UstxIssueSeverity::Loss, notePath + ".lyric.readingHint",

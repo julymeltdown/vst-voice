@@ -8111,3 +8111,53 @@ a test rather than waiting to be noticed in a waveform.
 harmonic-balance questions in LISTENING_PACKET_002 remain open, and `combinedModelHoldoutVerified` is still
 false. What this removes is a phantom defect: the ledger was carrying a "renderer sings the wrong pitch in the
 upper register" bug that does not exist, and it was distorting how the remaining pitch evidence was read.
+
+## A rest that leaves SEAM as a sung note: score export turned authored silence into a pitch
+
+Resolving note 74 as an authored rest exposed a second defect underneath it, and this one is real. SEAM renders
+the rest correctly and silently, but **neither score exporter knew what a rest is.**
+
+**Reproduced on the real project, not a fixture.** Exporting song-004 to USTX emitted, for the rest note:
+
+```yaml
+- position: 1320
+  duration: 240
+  tone: 74
+  lyric: "pau[pau]"
+```
+
+`tone: 74` is a real, playable MIDI pitch. OpenUtau excludes a note from singing only when its lyric is exactly
+`R`; anything else is phonemized as a syllable. So the rest left SEAM as a sung note at D5. The SMF path was the
+same defect in a different shape — it wrote `note_on note=74 vel=100` at tick 2640, because SMF has no rest
+symbol and the exporter had no gap rule either. A project with a breath in it would silently gain a phantom
+note in every DAW and in OpenUtau.
+
+**The repair, in both directions and both formats.**
+
+- **USTX export** writes the authored pause as `lyric: "R"`, keeping its position and duration so the host
+  preserves the gap, and dropping the pause phonetic hint because OpenUtau never phonemizes a rest. A pitch
+  point landing on a rest is disclosed as a loss rather than written into a marker that cannot carry it.
+- **USTX import** maps `R` back onto SEAM's authored pause, so a rest entering from OpenUtau does not become a
+  syllable to sing. That direction was the same bug reversed and would have corrupted any imported score.
+- **SMF export** leaves the rest as a genuine gap in the note track, withholds its lyric text event, and
+  reports the omission in its own loss family — a rest that leaves a gap is a different musical outcome from a
+  dropped expression control, and the report must let a reader tell those apart.
+
+The whole-score SMF overload was a second copy of the loop and needed the same rule; fixing only the
+track/region overload would have left the CLI's default `export-score` path unchanged, which is how the first
+attempt appeared to do nothing.
+
+**Verified both ways on the real project.** USTX export now emits `lyric: "R"` and re-imports to a `pau`
+surface with a `pau` hint at MIDI 74, with all seven sung notes unchanged. SMF export now emits seven notes
+with a gap at tick 2640, no note at pitch 74, and no stray `pau` text event. Locked by
+`tests/test_ustx_interchange.cpp` ("an authored pau rest exports as an OpenUtau rest, never as a sung note")
+and `tests/test_smf_interchange.cpp` ("SMF export leaves an authored rest as a gap instead of striking a
+note"). `seam_ustx_interchange_tests` 50/50 and `seam_smf_interchange_tests` 36/36.
+
+**Why this matters more than its size.** USTX interchange is the path to the user's stated goal of authoring
+in OpenUtau. A rest that becomes a sung D5 on export is not a cosmetic label problem — it is the difference
+between a score that round-trips and one that gains phantom notes every time it leaves the editor.
+
+**What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to and no DAW or OpenUtau
+session has been driven; these are codec-level results proven by tests and by round-tripping the real project,
+not by opening the result in a host.

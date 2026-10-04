@@ -417,6 +417,22 @@ core::Result<SmfScore> exportSmfProject(
     std::optional<std::string> surface;
     if (found != lyrics.end() && !found->second->surface.empty())
       surface = domain::toUtf8(found->second->surface);
+    // SMF has no rest symbol: a rest is the absence of a note. Writing one would
+    // turn authored silence into a struck note at a real pitch, so an authored
+    // pause is left as a gap in the exported track instead. The lyric text event
+    // is still withheld, because a "pau" syllable on a note-free onset is not a
+    // rest in any host and would read as a stray marker.
+    const bool authoredRest =
+        (note.phoneticHint.has_value() && *note.phoneticHint == "pau") ||
+        (surface.has_value() && *surface == "pau");
+    if (authoredRest) {
+      if (score.issues.size() >= limits.maximumEvents)
+        return core::failure<Output>(core::ErrorCode::Unsupported,
+            "SMF conversion diagnostic report exceeds event bounds");
+      score.issues.push_back({SmfIssueSeverity::Loss, note.startTick,
+          "an authored rest has no SMF representation and was exported as a gap in the note track; its lyric surface was omitted"});
+      continue;
+    }
     const auto [existing, inserted] = lyricsAtOnset.emplace(note.startTick, surface);
     if (!inserted && existing->second != surface)
       return core::failure<Output>(core::ErrorCode::Unsupported,
@@ -504,6 +520,7 @@ core::Result<SmfScore> exportSmfProject(
   std::vector<ImportLossCount> nulLyrics(project.vocalTracks().size());
   std::vector<ImportLossCount> overBudgetLyrics(project.vocalTracks().size());
   std::vector<ImportLossCount> unsupportedTrackData(project.vocalTracks().size());
+  std::vector<ImportLossCount> authoredRests(project.vocalTracks().size());
   std::size_t textBytes = 0U;
   const auto optionalTextEventSlots =
       limits.maximumSerializedEvents - mandatoryEvents.value();
@@ -535,6 +552,19 @@ core::Result<SmfScore> exportSmfProject(
         std::optional<std::string> surface;
         if (lyric != lyricsById.end() && !lyric->second->surface.empty())
           surface = domain::toUtf8(lyric->second->surface);
+        // SMF has no rest symbol, so an authored pause must leave a gap rather
+        // than become a struck note. Its lyric surface is withheld too, because a
+        // bare text event on a note-free onset is not a rest in any host.
+        const bool authoredRest =
+            (note.phoneticHint.has_value() && *note.phoneticHint == "pau") ||
+            (surface.has_value() && *surface == "pau");
+        if (authoredRest) {
+          // Counted separately from generic unsupported data: a rest that leaves a
+          // gap is a different musical outcome from a control that was dropped, and
+          // a reader of the report must be able to tell those apart.
+          authoredRests[trackIndex].observe(start);
+          continue;
+        }
         const auto [existingLyric, firstAtOnset] = lyricsAtOnset.emplace(start, surface);
         if (!firstAtOnset && existingLyric->second != surface)
           return core::failure<Output>(core::ErrorCode::Unsupported,
@@ -614,6 +644,17 @@ core::Result<SmfScore> exportSmfProject(
           std::to_string(loss.count) +
           " SEAM-only track, region, note, or performance settings on source track " +
           trackNumber + " were not represented in SMF; affected project ticks " +
+          std::to_string(loss.first.value()) + ".." +
+          std::to_string(loss.last.value()));
+      if (!recorded) return core::Result<Output>{recorded.error()};
+    }
+    if (authoredRests[index].count != 0U) {
+      const auto& loss = authoredRests[index];
+      const auto recorded = addLoss(loss.first,
+          std::to_string(loss.count) +
+          " authored rest(s) on source track " + trackNumber +
+          " have no SMF representation and were exported as a gap in the note track; "
+          "their lyric surfaces were omitted; affected project ticks " +
           std::to_string(loss.first.value()) + ".." +
           std::to_string(loss.last.value()));
       if (!recorded) return core::Result<Output>{recorded.error()};

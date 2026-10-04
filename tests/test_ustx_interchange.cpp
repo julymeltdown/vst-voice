@@ -391,6 +391,47 @@ TEST_CASE("USTX Japanese bracketed phone hints preserve visible lyric and typed 
                   "project.vocalTracks[0].regions[0].notes[0].lyric"));
 }
 
+TEST_CASE("an authored pau rest exports as an OpenUtau rest, never as a sung note") {
+  using namespace seam;
+  application::ProjectFactory factory{915000U};
+  auto project = factory.createProject("Rest export");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto regionId = factory.addRegion(project, track, "Verse",
+                                          time::Tick{0}, time::Tick{1440});
+  auto* region = project.findRegion(regionId); CHECK(region != nullptr);
+
+  auto [firstLyric, firstNote] = factory.makeNote(time::Tick{0}, time::Tick{480}, 64U, U"\u3044");
+  auto [restLyric, restNote] = factory.makeNote(time::Tick{480}, time::Tick{480}, 74U, U"pau");
+  auto [lastLyric, lastNote] = factory.makeNote(time::Tick{960}, time::Tick{480}, 72U, U"\u308f");
+  // The note is a rest because it is authored as one: an explicit pause hint and
+  // a pause lyric surface. Nothing else distinguishes it from a sung note.
+  restNote.phoneticHint = std::optional<std::string>{"pau"};
+  region->lyrics.push_back(firstLyric);
+  region->notes.push_back(firstNote);
+  region->lyrics.push_back(restLyric);
+  region->notes.push_back(restNote);
+  region->lyrics.push_back(lastLyric);
+  region->notes.push_back(lastNote);
+
+  const auto exported = interchange::exportUstxProject(project);
+  CHECK(exported);
+  const auto text = std::string{exported.value().bytes.begin(), exported.value().bytes.end()};
+
+  // A USTX rest is the note whose lyric is exactly R. It is excluded from
+  // OpenUtau's playable notes, so an authored rest must never leave SEAM as a
+  // sung syllable at a real MIDI pitch.
+  CHECK(text.find("lyric: \"R\"") != std::string::npos);
+  CHECK(text.find("pau[pau]") == std::string::npos);
+
+  // And it must survive the round trip as a rest rather than decaying into a
+  // note with garbage lyrics.
+  const auto reopened = interchange::importUstxProject(exported.value().bytes, factory);
+  CHECK(reopened);
+  const auto& reopenedRegion = reopened.value().project.vocalTracks().front().regions.front();
+  CHECK(reopenedRegion.notes.size() == 3U);
+  CHECK(domain::toUtf8(reopenedRegion.lyrics[1].surface) == "pau");
+}
+
 TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   const auto decoded = seam::interchange::decodeUstx(bytes(fixture()));
   CHECK(decoded);

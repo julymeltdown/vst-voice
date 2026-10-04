@@ -73,6 +73,46 @@ TEST_CASE("SMF codec round-trips deterministic PPQ notes, tempo, meter and lyric
   CHECK(decoded.value().issues.empty());
 }
 
+TEST_CASE("SMF export leaves an authored rest as a gap instead of striking a note") {
+  using namespace seam;
+  application::ProjectFactory factory{916000U};
+  auto project = factory.createProject("Rest to SMF");
+  const auto track = factory.addVocalTrack(project, "Lead");
+  const auto regionId = factory.addRegion(project, track, "Verse",
+                                          time::Tick{0}, time::Tick{1440});
+  auto* region = project.findRegion(regionId); CHECK(region != nullptr);
+
+  auto [firstLyric, firstNote] = factory.makeNote(time::Tick{0}, time::Tick{480}, 64U, U"\u3044");
+  auto [restLyric, restNote] = factory.makeNote(time::Tick{480}, time::Tick{480}, 74U, U"pau");
+  auto [lastLyric, lastNote] = factory.makeNote(time::Tick{960}, time::Tick{480}, 72U, U"\u308f");
+  restNote.phoneticHint = std::optional<std::string>{"pau"};
+  region->lyrics.push_back(firstLyric);
+  region->notes.push_back(firstNote);
+  region->lyrics.push_back(restLyric);
+  region->notes.push_back(restNote);
+  region->lyrics.push_back(lastLyric);
+  region->notes.push_back(lastNote);
+
+  const auto exported = interchange::exportSmfProject(project, interchange::SmfLimits{});
+  CHECK(exported);
+  // SMF cannot spell a rest, so the pause must leave a gap: three notes become
+  // two, and no note is written at the rest's pitch or onset.
+  CHECK(exported.value().notes.size() == 2U);
+  CHECK(std::none_of(exported.value().notes.begin(), exported.value().notes.end(),
+                      [](const auto& note) { return note.midi == 74U; }));
+  CHECK(std::none_of(exported.value().notes.begin(), exported.value().notes.end(),
+                      [](const auto& note) { return note.start == time::Tick{480}; }));
+  // The rest's own lyric must not survive as a stray text event either.
+  CHECK(std::none_of(exported.value().texts.begin(), exported.value().texts.end(),
+                      [](const auto& text) { return text.text == "pau"; }));
+  // The loss is disclosed rather than silent.
+  CHECK(std::any_of(exported.value().issues.begin(), exported.value().issues.end(),
+                    [](const auto& issue) {
+                      return issue.tick == time::Tick{480} &&
+                             issue.message.find("authored rest") != std::string::npos;
+                    }));
+}
+
 TEST_CASE("SMF decoder handles running status and reports missing note-offs") {
   using namespace seam;
   const std::vector<std::uint8_t> running{
