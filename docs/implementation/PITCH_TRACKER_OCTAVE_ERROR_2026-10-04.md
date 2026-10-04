@@ -130,3 +130,41 @@ sees. The code is left exactly as it was.
 **The measurement that would settle it** is a listening packet over these specific frames, naming
 each one and asking whether the tracker or the source has the note right. That packet is the input
 the register already names for M2.1, and no one has listened to it.
+
+
+## Correction, 2026-10-04: the reproduction above used the wrong file
+
+The reproduction in this document was run against master.wav in the same directory, downmixed
+to 16-bit. **That is not the audio the comparison measured.** The comparison records
+candidate.audioSha256 as b452273c... and the retained master.wav hashes to 015f386a....
+They are different files, and the 16-bit conversion additionally clipped 232 samples.
+
+What the retained candidate track itself contains, measured directly from the pitch frames the
+comparison stored:
+
+- **2** post-gap octave jumps, not 7: frame 297 (379.2 Hz to 1200.0 Hz) and frame 494
+  (374.4 Hz to 93.8 Hz).
+- Re-extracting master.wav as float32 -- the encoding the comparison used -- gives 150000 frames
+  and **zero** post-gap octave jumps. The frame count matches the stored comparison exactly, and
+  the voiced count is 542 against the stored candidate track 541.
+
+**And the 23 large errors are not what I said they were.** Every one of the 23 has frameStatus
+"compared" *and* is voiced on both sides at that frame: the reference track reports a note at
+494.0 Hz where the candidate reads an octave away, at 812.8 Hz where the candidate reads lower,
+and so on. These are octave disagreements about notes both signals agree are sung, not frames that
+follow a voicing gap. The pattern I described -- a burst beginning after unmeasurable frames --
+was a property of the 16-bit artefact, not of the audio under test.
+
+**What survives.** The distribution is unchanged and does not depend on any file I chose: 23 of
+586 frames carry 93.4 per cent of the absolute error, 20 of those 23 are exact negative multiples
+of 1200 cents, the median frame is within 3.54 cents, and removing those 23 drops the mean from
+102.93 to 7.17. All of that is read from the stored comparison and stands.
+
+**What does not survive.** The claim that the errors begin after a voicing gap, the count of seven
+reproduced jumps, and the attribution to the earliest-peak rule at pitch.cpp:159-170. The
+mechanism remains a plausible cause of *some* octave error -- the rule still has no continuity
+term -- but this document no longer claims it is the cause of these 23.
+
+**And the rejected repair stands as rejected**, for a reason that is now clearer: it was evaluated
+against an artefact. It is recorded as untested against the real candidate rather than as refuted,
+because the audio it was measured on was the wrong one. The code is unchanged either way.

@@ -216,13 +216,22 @@ steps. These results improve the engineering candidate; P0-08 remains open.
 **Where most of that error is, measured 2026-10-04.** Reading the retained application
 comparison as a distribution rather than a mean: the median frame is within 3.54 cents, but 23 of
 its 586 frames carry 93.4% of the total absolute error, and 20 of those 23 are exact negative
-multiples of 1200 cents. All 23 are marked as confident comparisons, not as low-confidence frames.
-Every one begins after a voicing gap. The shipped extractor reproduces the same pattern on the
-same audio: seven post-gap octave jumps in 1172 frames. The cause is the earliest-qualifying-peak
-refinement in `libs/seam-voicebank/src/pitch.cpp` having no continuity term against the previously
-accepted frame. Nothing is fixed and no threshold is proposed; the measurement and its limits are in
-[the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). This narrows where the
-pitch error comes from. It does not qualify a singer, and it does not close this blocker.
+multiples of 1200 cents. All 23 are marked as confident comparisons, not as low-confidence frames,
+and every one is voiced on *both* sides -- these are octave disagreements about notes both signals
+agree are sung. Removing those 23 frames would drop the mean from 102.93 to 7.17 cents, which says
+the aggregate failure is concentrated rather than diffuse, and does not by itself say the rest passes.
+
+An earlier version of this entry attributed the errors to the earliest-qualifying-peak rule in
+`libs/seam-voicebank/src/pitch.cpp` having no continuity term, and reported seven reproduced octave
+jumps. **That attribution was withdrawn on the same day:** the reproduction had been run against
+`master.wav`, which is not the audio the comparison measured (the stored candidate hashes to
+`b452273c...`, `master.wav` to `015f386a...`), and the 16-bit downmix clipped samples. Measured on
+the retained candidate track itself there are two post-gap octave jumps, and re-extracting
+`master.wav` as float32 gives none. The rule still has no continuity term and remains a plausible
+contributor, but these 23 errors are not attributed to it. The full correction, including that a
+repair attempt was measured against the wrong file and is therefore untested rather than refuted,
+is in [the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). Nothing is
+fixed, no threshold is proposed, and this does not qualify a singer or close this blocker.
 
 The subsequent fixed five-song validation campaign measures **3090/3649 (84.68%)**
 within 50 cents on measurable voiced pairs, with every strict comparison still
