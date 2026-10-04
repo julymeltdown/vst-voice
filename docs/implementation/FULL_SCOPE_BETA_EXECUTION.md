@@ -7430,6 +7430,60 @@ would remove the 50 frames that are not errors at all, leaving the 34 genuine an
 project's acceptance bar: this is one singer family, nothing has been listened to, the corrected scorer has
 not been written or run yet, and `combinedModelHoldoutVerified` is still false.
 
+## Correction: the cue-span remedy does not work, and the early onset is a real renderer property
+
+The entry above concluded the fix belonged to the scorer, because the renderer's own placement records
+already carry the overlap information. **That remedy was implemented and measured, and it does not work.**
+It is corrected here rather than left standing as advice.
+
+`ProductionProjectRenderer::renderWithSources` was used to emit the render's own vowel spans, and all five
+songs were re-scored inside them: **83 octave frames in 3753 scored, against 85 in 4232** from the
+written-note scorer. The count did not fall.
+
+**Why, from comparing the two window sets over all 60 spans:**
+
+| Cue span versus its written note | Result |
+| --- | ---: |
+| Ends after its written end | **0 of 60** |
+| Begins before its written start | **0 of 60** |
+| Begins after its written start | up to **2880 samples, 60.0 ms** |
+
+The cue spans end exactly at the written end and begin up to 60 ms after the written start. They describe
+where the vowel body is placed, not where the audio begins moving to that note, so scoring inside them
+still includes frames where the next note is already sounding. The original finding stands; the proposed
+remedy was wrong.
+
+**What the onset actually is, measured from the waveform.** Walking back from each previous note's written
+end to the first frame already carrying the next note's pitch, judged by an independent spectral reading:
+
+| Measure | Value |
+| --- | ---: |
+| Notes measured | 33 |
+| Audio begins **early** | **33 of 33, 100 per cent** |
+| Audio begins late | **0** |
+| Median advance | **928 samples, 19.3 ms** |
+| Range | 416 to 4000 samples, 8.7 to 83.3 ms |
+
+**Every note in the corpus starts sounding before its written start, by a median of 19 ms, and never late.**
+That is a systematic renderer timing property. The 50 octave frames are its tail, landing in the closing
+frames of the preceding note's written window.
+
+**Two readings remain open and this entry does not choose.** Either the renderer leads each note for legato,
+which is a musical choice meaning the written score understates the phrasing; or the timing solver places
+onsets early by a fixed amount, which is a timing defect against what the score asked for. **A 19 ms lead
+is inaudible on an isolated note and clearly audible as portamento across a run of notes, so only a
+listener can settle it, and nobody has listened to any of these renders.**
+
+**The final accounting.** Of 85 octave frames: **34** are the analyser misreading a note the audio contains
+correctly, **50** are frames where the next note has already begun inside the previous note's written
+window, **1** is uncharacterised. None is the renderer singing a wrong pitch, and the 50 are a timing
+property awaiting a decision rather than noise.
+
+**Where this leaves the work.** If the advance is judged a defect, the fix belongs in the timing solver and
+those 50 frames become a true pass; if it is judged intentional, the written score is what misstates the
+render. P0-08 stays **OPEN** either way. The next action is a listening decision on legato versus early
+onset, and that is a person, not a measurement.
+
 ## Corpus level: the five-song campaign's pitch figures are the analyser artefact, not the singer
 
 The entry above measured one song on one singer and named the multi-song corpus as the remaining gap. That
