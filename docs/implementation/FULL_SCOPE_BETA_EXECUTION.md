@@ -7623,6 +7623,55 @@ even in the original voice at 145.6 cents. Nothing has been listened to, this is
 with four timbral variants rather than four designed singers, and `combinedModelHoldoutVerified` is still
 false.
 
+## Note 74 is a renderer defect, not analyser noise: the audio is an octave and a fifth out
+
+Every previous finding in this document resolved in the analyser's favour, so the same question was asked
+of the breathy high-note failure: is the renderer singing the wrong note, or is the analyser failing to hear
+the right one? **This time the answer is the renderer.**
+
+The independent spectral oracle reads **148.5 cents of error at note 74 under both voices**, where the
+autocorrelation tracker reads 145.6 cents for the original and 1324.2 for the breathy. Two independent
+estimators agreeing that the audio is wrong is the same test that cleared the renderer three times in this
+document, and this time it convicts it.
+
+**The audio contains no 587 Hz partial at all.** Checking a narrow band around the written pitch across the
+whole note, in both voices:
+
+| Frequency | original, mag vs local | breathy, mag vs local |
+| ---: | ---: | ---: |
+| 523.25 Hz | 0.9x | 0.9x |
+| **587.33 Hz (the written note)** | **1.0x** | **1.0x** |
+| 1174.66 Hz (its octave) | 1.3x | 1.2x |
+
+A ratio of 1.0x means the partial is indistinguishable from the surrounding noise floor. **The renderer
+never produces the written pitch for this note.**
+
+**What it produces instead is about 330 Hz**, an octave and a fifth below the written note:
+
+| Voice | Strongest partials across note 74 |
+| --- | --- |
+| original | 331.1, 334.0, 336.9 Hz, **-992 to -962 cents** |
+| breathy | 322.3, 325.2, 328.1, 331.1, 334.0, 336.9 Hz, **-1039 to -962 cents** |
+
+The ratio of written to rendered is about 587/330 = 1.78, close to a ninth, and -992 cents is very nearly
+an exact octave down. **The renderer is emitting note 74 roughly an octave and a fifth low, and breathiness
+only changes how badly the tracker reports it, not what is played.**
+
+**This reframes the finding above.** The breathy voice's 4.656-centre median is not a breath-noise
+interaction. Both voices sing the wrong note; breathiness pushes the tracker's reading from 145.6 cents to
+1324.2 because the noise floor additionally corrupts the estimate. **The real defect is present in every
+voice and predates the breathiness comparison.**
+
+**What is now open, stated precisely.** For this note the renderer does not produce the pitch the score
+asks for, in any of the four voices tested, and no analyser change can fix that because the information is
+absent from the audio. That is a synthesis-side defect. Locating it means finding the stage that maps a
+target MIDI to a delivered frequency for a note in this register, which this entry has not done and does
+not claim.
+
+**What this does not change, and is not claimed.** P0-08 stays **OPEN** with a sharper scope: there is a
+renderer-side pitch defect in the upper register, independent of breathiness, that no amount of analysis
+repair will address. Nothing has been listened to, and `combinedModelHoldoutVerified` is still false.
+
 ## Retraction: the onset-advance measurement was unsound, and the 19.3 ms figure is withdrawn
 
 The three entries above report a measured onset advance with a median of 19.3 ms and a distribution of

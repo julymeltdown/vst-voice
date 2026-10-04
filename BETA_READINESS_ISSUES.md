@@ -753,6 +753,43 @@ needs a repair, and note 74 is octave-heavy even in the original voice at 145.6 
 open item. This is one recipe family with four timbral variants, not four designed singers. Nothing has
 been listened to, and `combinedModelHoldoutVerified` is still false.
 
+**Update 2026-10-04: note 74 is a renderer defect. The audio never contains the written pitch.** Every
+finding above resolved in the analyser's favour, so the same test was applied here: is the renderer singing
+the wrong note, or is the analyser failing to hear the right one? **This time the renderer is.**
+
+The independent spectral oracle reads **148.5 cents of error at note 74 under both voices**, where the
+tracker reads 145.6 cents for the original and 1324.2 for the breathy. Two independent estimators agreeing
+that the audio is wrong is the same test that cleared the renderer three times in this register; this time
+it convicts it.
+
+**The audio contains no 587 Hz partial at all.** In a narrow band around the written pitch, across the whole
+note, in both voices:
+
+| Frequency | original, mag vs local floor | breathy |
+| ---: | ---: | ---: |
+| 523.25 Hz | 0.9x | 0.9x |
+| **587.33 Hz, the written note** | **1.0x** | **1.0x** |
+| 1174.66 Hz, its octave | 1.3x | 1.2x |
+
+A ratio of 1.0x means the partial is indistinguishable from the surrounding noise floor. **The renderer
+never produces the written pitch for this note.**
+
+**What it produces instead is about 330 Hz**, an octave and a fifth low: the strongest partials across
+note 74 run 322.3 to 336.9 Hz in both voices, or **-1039 to -962 cents** against the written pitch.
+
+**This reframes the previous entry.** The breathy voice's 4.656-centre median is not a breath-noise
+interaction. Both voices sing the wrong note; breathiness only changes how badly the tracker reports it.
+**The real defect is present in every voice tested and predates the breathiness comparison.**
+
+**Now open, precisely stated.** For this note the renderer does not produce the pitch the score asks for,
+in any of the four voices, and **no analyser change can fix it because the information is absent from the
+audio**. That is a synthesis-side defect. Locating it means finding the stage that maps a target MIDI to a
+delivered frequency in this register, which this entry has not done and does not claim.
+
+P0-08 stays **OPEN** with a sharper scope: there is a renderer-side pitch defect in the upper register,
+independent of breathiness, that no amount of analysis repair will address. Nothing has been listened to,
+and `combinedModelHoldoutVerified` is still false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
