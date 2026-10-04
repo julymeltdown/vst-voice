@@ -7316,6 +7316,63 @@ Release CTest 230/230 passed at `17301814`; scoring artifacts written to
 `out/fullscope-beta/pitch-score-2026-10-04/` (gitignored, retained locally);
 `git diff --check` clean. No product code changed.
 
+## The five songs re-rendered at HEAD: artefact eliminated, a new 2 per cent residual exposed
+
+The entry above re-analysed retained audio from the old build and said plainly that a five-song HEAD result
+did not exist. It exists now. All five campaign songs were **re-rendered with current HEAD code** and
+scored against their own written scores under the identical rule.
+
+**How the render was produced.** Each project's own `proceduralRecipe` was handed to
+`ExportService::exportSetWithSources` as a `TrackRecipeFileSource` with the project directory, which is
+the production export path: the recipe is read from disk and checked against the content hash the project
+declares, exactly as the editor reads it. No check was relaxed. The campaign evidence directories kept each
+project but not its `recipes/` directory, so the recipe was restored from the source corpus where it is
+preserved; the renderer's own identity check is what makes that safe.
+
+| Song | Scored | Median, cents | Within 50 c | Octave frames | Hop-locked |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 00003 | 1197 | **0.176** | 96.07 % | 20 | 0 |
+| 00005 | 1075 | **0.217** | 96.28 % | 19 | 0 |
+| 00024 | 931 | **0.172** | 94.31 % | 28 | 0 |
+| 00402 | 524 | **0.258** | 94.85 % | 7 | 0 |
+| 00420 | 505 | **0.162** | 93.66 % | 11 | 0 |
+| **pooled** | **4232** | **0.176** | — | **85 (2.01 %)** | **0** |
+
+**The impulse-train artefact is eliminated rather than reduced: 661 hop-locked frames at the old build,
+zero at HEAD**, across the same five songs. Median accuracy improves from 2.221 to 0.176 cents and all
+five songs clear 90 per cent within 50 cents. This is the corpus-level HEAD result the previous two
+entries said was missing.
+
+**And it exposed a defect that the old build's numbers had hidden.** 85 octave frames remain, and the
+independent FFT oracle splits them in a way that is not favourable:
+
+| Population | Frames | Oracle reads the written note | Where they sit |
+| --- | ---: | ---: | --- |
+| Analyser wrong | 34 (40 %) | yes, median oracle error **-4 cents** | median 42 frames into a 94-frame note |
+| Renderer suspect | **51 (60 %)** | **no, median oracle error -839 cents** | median 69 frames into a 70-frame note |
+
+The 34 are the known analyser failure with the audio correct. The **51 are new**: both estimators miss the
+written note, so the audio there does not contain it. They cluster at the extreme end of a note, 46 of 51
+within 4 analysis frames of its end.
+
+**A hypothesis tested and refuted.** The natural reading is a release tail, since a decaying voice has no
+note left to measure. Window energy relative to each note's own loudest window does not support it:
+frames within 4 hops of a note edge have a median relative energy of **0.623** against **0.645** for the
+note's middle quarter, and the octave frames themselves sit at **0.751**, louder than average rather than
+quieter. These are not quiet decays. Recorded so the reading is not retried as if it were new.
+
+**A bug in my own analysis, recorded because it produced a wrong intermediate claim.** The first pass
+reported frames "224.9 into a 46.9-frame note", which is impossible, and printed an energy conclusion from
+the same broken span arithmetic. The cause was dividing a sample offset by an already-frame-scaled
+quantity. Fixed and re-run; every figure above comes from the corrected pass.
+
+**Where this leaves P0-08.** The dominant artefact is gone and cent-level accuracy at HEAD is 0.176 cents
+median over 4232 frames and five songs. But `withinLimits` is still **false** on 85 octave frames, and 51 of
+them are a genuine open question about what the renderer emits near note ends. **This entry identifies a
+new defect; it does not close the blocker.** The next step is to find out what those 51 frames contain,
+which is a rendering or score-alignment question and has not been investigated. Nothing has been listened
+to, this is still one singer family, and `combinedModelHoldoutVerified` is still false.
+
 ## Corpus level: the five-song campaign's pitch figures are the analyser artefact, not the singer
 
 The entry above measured one song on one singer and named the multi-song corpus as the remaining gap. That

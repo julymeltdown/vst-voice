@@ -443,6 +443,57 @@ nothing about how the current build performs on a five-song corpus. It is still 
 not close P0-08, which remains **OPEN** for the reasons already recorded: `withinLimits` is false, nobody
 has listened, and `combinedModelHoldoutVerified` is false.
 
+**Update 2026-10-04: the five songs re-rendered at HEAD. The impulse artefact is gone; a different
+2 per cent octave residual remains and is not yet explained.** The previous entry re-analysed retained
+audio. The five songs have now been **re-rendered with current HEAD code** and scored under the same rule.
+Each project's own `proceduralRecipe` was used through `ExportService::exportSetWithSources` with
+`TrackRecipeFileSource`, which is the production export path, so the recipe is read and identity-checked
+exactly as the editor reads it.
+
+| Song | Scored | Median, cents | Within 50 c | Octave frames | Hop-locked |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 00003 | 1197 | **0.176** | 96.07 % | 20 | 0 |
+| 00005 | 1075 | **0.217** | 96.28 % | 19 | 0 |
+| 00024 | 931 | **0.172** | 94.31 % | 28 | 0 |
+| 00402 | 524 | **0.258** | 94.85 % | 7 | 0 |
+| 00420 | 505 | **0.162** | 93.66 % | 11 | 0 |
+| **pooled** | **4232** | **0.176** | — | **85 (2.01 %)** | **0** |
+
+**The impulse-train artefact is eliminated, not merely reduced: 661 hop-locked frames across these five
+songs at the old build, 0 at HEAD.** Median accuracy is 0.176 cents, an order of magnitude better than the
+2.221 cents measured on the old build's audio, and all five songs exceed 90 per cent within 50 cents.
+
+**But 85 octave frames remain, and they are not the same defect.** Applying the independent FFT oracle
+that resolved every earlier finding splits them cleanly, and the split is not favourable:
+
+| Population | Frames | Oracle reads the written note | Position in note |
+| --- | ---: | ---: | --- |
+| Analyser wrong | 34 (40 %) | yes, median oracle error **-4 cents** | median 42 frames into a 94-frame note |
+| Renderer suspect | **51 (60 %)** | **no, median oracle error -839 cents** | median 69 frames into a 70-frame note |
+
+For 34 frames the audio is right and the estimator is wrong, exactly as before. For **51 frames both
+estimators miss the written note**, so the audio at those instants does not contain it. Those frames
+cluster at the very end of a note: 46 of them sit within 4 analysis frames of the note's end ("93 into 94",
+"46 into 47"), where the score's target changes or the voice releases.
+
+**One hypothesis was tested and refuted, and is recorded so it is not retried.** The obvious reading is a
+release tail, since a decaying voice has no note left to measure. Measuring window energy relative to each
+note's own loudest window does not support it: frames within 4 hops of a note edge have a median relative
+energy of **0.623** against **0.645** for frames in the note's middle quarter, and the octave-error frames
+specifically sit at a median of **0.751**, i.e. **louder than average, not quieter**. Whatever these 51
+frames are, they are not a quiet decay.
+
+**What this changes.** P0-08 now has a genuine HEAD five-song result, and it is strong on the metric that
+mattered most: the previously dominant artefact is completely absent and cent-level accuracy is 0.176
+cents median across 4232 frames and five songs.
+
+**What this does not change, and is not claimed.** `withinLimits` remains **false** on 85 octave frames, and
+51 of them are now a genuine unexplained renderer-or-score question rather than an analyser artefact.
+**This is a newly identified open defect, not a closure.** Nothing here has been listened to, it is still
+one singer family, and `combinedModelHoldoutVerified` is still false. The next step is to determine why 51
+frames near note ends contain neither the written note nor anything the estimators recognise; that is a
+rendering or score-alignment question and has not been investigated.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
