@@ -544,6 +544,15 @@ core::Result<UstxProjectDraft> importUstxProject(
     if (!track) return core::failure<Output>(core::ErrorCode::InvariantViolation, "USTX import track was not created");
     track->voicebank = {request.voicebankId, request.voicebankVersion, request.voicebankContentHash};
     track->character = {request.characterId, request.characterVersion};
+    // USTX has no field for a singer executable, so the track arrives with no
+    // material. Binding the caller's recipe here is what keeps an imported
+    // project renderable; otherwise importing a SEAM-authored score produced a
+    // track that SEAM itself refused to play back.
+    if (request.proceduralRecipe.has_value()) {
+      const auto validRecipe = request.proceduralRecipe->validate();
+      if (!validRecipe) return core::Result<Output>{validRecipe.error()};
+      track->proceduralRecipe = *request.proceduralRecipe;
+    }
     track->gainDb = static_cast<float>(source.volume);
     track->pan = static_cast<float>(source.pan);
     track->muted = source.mute;

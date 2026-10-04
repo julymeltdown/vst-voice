@@ -15,6 +15,16 @@ renderer.
 - Overlapping notes with the same channel/key are paired FIFO, so note identity
   is deterministic even when a file contains repeated overlapping keys.
 
+SMF has no rest symbol: a rest is the absence of a note. A SEAM note authored
+as a pause (phonetic hint `pau`, or a lyric surface of `pau`) therefore exports
+as a genuine gap in the note track rather than a struck note, and its lyric
+surface is withheld, because a bare text event on a note-free onset is not a
+rest in any host. Each omitted rest is reported in its own loss family, since a
+rest that leaves a gap is a different musical outcome from a dropped expression
+control and a reader of the report must be able to tell those apart. Import
+cannot recover these gaps; re-importing an exported score yields fewer notes
+than the source, which the loss record discloses.
+
 SMPTE divisions, malformed status/data bytes, invalid VLQs, truncated chunks,
 zero tempo, invalid meter and trailing bytes are rejected. Unsupported channel,
 system, SysEx and meta events are skipped only with a bounded `SmfIssue` loss

@@ -35,6 +35,24 @@ codec and conversion path, not the earlier creator-study Python bridge.
   five-tick render grid, retaining the default unity gain outside the curve.
   Custom `dyn` descriptors, duplicate/unsupported curves and curves outside
   the part are omitted with explicit losses.
+- A rest is the note whose lyric is exactly `R`; OpenUtau excludes it from the
+  playable note list and never phonemizes it. A SEAM note authored as a pause
+  (phonetic hint `pau`, or a lyric surface of `pau`) exports as that marker,
+  keeping its position and duration so the host preserves the gap. Its pause
+  phonetic hint is not written separately, because the rest marker already
+  implies it, and a pitch point landing on a rest is disclosed as a loss rather
+  than written into a marker that cannot carry it. On import, `R` maps back to
+  an authored pause with a warning. Exporting the literal `pau` surface instead
+  would hand the host a syllable to sing at a real MIDI pitch, so a rest would
+  leave SEAM as an audible note; this was observed on song-004 note 74 before
+  the mapping existed.
+- USTX carries no singer executable, so an imported track has no material on its
+  own. `UstxImportRequest::proceduralRecipe` binds a caller-supplied recipe so
+  the imported project stays renderable; without it an import of a SEAM-authored
+  score produced a track SEAM refused to play back, which `bake-project` rejects
+  outright. An invalid reference is refused at import rather than left to fail
+  at render time. The CLI exposes this as `import-score SOURCE.ustx PROJECT.seam
+  NAME --recipe PATH`.
 
 Plain scalars such as OpenUtau's `+~` and `+*` extenders, `E4`, `1-2`,
 `2024-01-01`, `2nd`, `Chorus!` and `a*b` are accepted. A whole-token decimal

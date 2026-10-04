@@ -637,8 +637,9 @@ int exportScoreCommand(int argc, char** argv) {
 // inbound half of the exchange the OpenUtau oracle exercises: a file another tool wrote must become a
 // project SEAM can hold, with every conversion loss named rather than dropped.
 int importScoreCommand(int argc, char** argv) {
-  if (argc != 4 && argc != 5) {
-    std::cerr << "usage: seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n";
+  if (argc != 4 && argc != 5 && argc != 7) {
+    std::cerr << "usage: seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n"
+                 "       seam_voicebank_cli import-score SOURCE.ustx PROJECT.seam PROJECT_NAME --recipe PATH\n";
     return 1;
   }
   const std::filesystem::path source{argv[2]};
@@ -653,6 +654,30 @@ int importScoreCommand(int argc, char** argv) {
     return 3;
   }
   request.projectName = argc == 5 ? std::string{argv[4]} : source.stem().string();
+  // A score format cannot carry a singer executable, so an imported project is
+  // unplayable in SEAM unless the caller names the recipe to render it with.
+  // Passing --recipe explicitly keeps that a visible choice instead of a silent
+  // dead end.
+  if (argc == 7) {
+    const std::string_view flag{argv[5]};
+    if (flag != "--recipe") {
+      std::cerr << "error: unknown import option " << flag << '\n';
+      return 3;
+    }
+    const std::filesystem::path recipePath{argv[6]};
+    const auto recipe = seam::voice_design::loadVoiceRecipeResource(recipePath);
+    if (!recipe) {
+      std::cerr << "error: cannot load recipe " << recipePath << ": " << recipe.error().message << '\n';
+      return 4;
+    }
+    request.proceduralRecipe = seam::domain::ProceduralRecipeReference{
+        recipe.value().identity, recipePath.generic_string(), "neutral"};
+    const auto validRecipe = request.proceduralRecipe->validate();
+    if (!validRecipe) {
+      std::cerr << "error: recipe reference is invalid: " << validRecipe.error().message << '\n';
+      return 4;
+    }
+  }
   seam::application::ProjectFactory factory;
   const auto imported = seam::authoring::InterchangeService{}.importFile(source, factory, request);
   if (!imported) {

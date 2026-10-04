@@ -4,6 +4,7 @@
 #include "seam/interchange/ustx_codec.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -17,6 +18,11 @@ struct UstxImportRequest final {
   std::string characterId{"ustx.unresolved.character"};
   std::string characterVersion{"0.0.0-ustx"};
   domain::Language language{domain::Language::Japanese};
+  // USTX carries no singer executable, so an imported track has no material until
+  // the caller names some. Attaching the caller's procedural recipe keeps the
+  // imported project renderable in SEAM; without it an import of a SEAM-authored
+  // score silently produced a track that could not be played back at all.
+  std::optional<domain::ProceduralRecipeReference> proceduralRecipe;
 };
 
 struct UstxProjectDraft final {

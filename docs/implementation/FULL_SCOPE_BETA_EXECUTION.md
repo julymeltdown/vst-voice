@@ -8161,3 +8161,47 @@ between a score that round-trips and one that gains phantom notes every time it 
 **What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to and no DAW or OpenUtau
 session has been driven; these are codec-level results proven by tests and by round-tripping the real project,
 not by opening the result in a host.
+
+## A round-tripped score came back unplayable in SEAM
+
+Having fixed the rest marker, the next question was the obvious one: what else does a full export/import cycle of
+the real project lose? Answering it by running the cycle found a hard dead end rather than a cosmetic drift.
+
+**The defect.** `song-004` is a procedurally voiced project. Exporting it to USTX and importing it back produced a
+project whose track had **no procedural recipe**:
+
+| | source | after USTX round trip |
+| --- | --- | --- |
+| `proceduralRecipe` | `seam-pilot-01-voiced-stop-diagnostic` v11 | **absent** |
+| renderable by SEAM | yes | **no** |
+
+`bake-project` refuses it outright: *"every nonempty vocal track must have a saved procedural recipe"*. So the
+round trip a user performs to hand a score to OpenUtau and get it back produced a file SEAM itself would not
+play. This is worse than a lossy conversion — the project looks intact and is silently unplayable, and nothing
+in the import report said so.
+
+**Why it happened.** USTX 0.9 has no field for a singer executable, and `UstxImportRequest` only ever carried a
+voicebank/character *identity*. There was no way for a caller to say which material should render the imported
+track, so the track arrived with none.
+
+**The repair.** `UstxImportRequest::proceduralRecipe` (threaded through `InterchangeImportRequest`) binds a
+caller-supplied recipe, validated at import so a bad reference is refused there rather than failing later at
+render time. The CLI exposes it as `import-score SOURCE.ustx PROJECT.seam NAME --recipe PATH`. Verified on the
+real project: the imported project now renders, and generation-2 output is **bit-identical** to generation-1
+(max sample difference 0.0000000000 over 144000 frames).
+
+**A second question answered by measurement rather than inspection.** Generation 2 is not byte-identical to
+generation 1 as *text*: import turns an empty pitch curve into a flat zero-deviation one
+(`[{x:0,y:0},{x:N,y:0}]`, `snap_first: false`), plus it renames the singer to an inert placeholder. The obvious
+suspicion is that a flat pitch contour subtly detunes every note on every round trip. Rendering both generations
+and comparing samples says otherwise — the audio is bit-identical, so that drift is cosmetic and was left
+alone. Recording this matters because the alternative reading, "every OpenUtau round trip adds a pitch contour
+that changes the note", would have been a serious and entirely false defect.
+
+**Verified.** `seam_ustx_interchange_tests` 51/51 (new case: "USTX import binds a caller recipe so the imported
+project stays renderable", which also asserts the no-recipe case is unrenderable and an invalid reference is
+refused). Full Release ctest 230/230. Format contract updated in
+`docs/formats/USTX_INTERCHANGE_V1.md`.
+
+**What this does not change.** P0-08 stays **OPEN**. No OpenUtau session has been driven; the round trip was
+exercised through SEAM's own codecs on the real project, not by loading the result into OpenUtau or a DAW.

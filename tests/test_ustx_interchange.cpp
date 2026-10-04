@@ -432,6 +432,43 @@ TEST_CASE("an authored pau rest exports as an OpenUtau rest, never as a sung not
   CHECK(domain::toUtf8(reopenedRegion.lyrics[1].surface) == "pau");
 }
 
+TEST_CASE("USTX import binds a caller recipe so the imported project stays renderable") {
+  using namespace seam;
+  application::ProjectFactory factory{917000U};
+  std::string source{fixture()};
+
+  // Without a recipe the imported track carries no singer material, so SEAM
+  // itself refuses to render it. USTX has no field for one, so the caller must
+  // supply it; this is the path that keeps an imported score playable.
+  application::ProjectFactory bare{917001U};
+  const auto withoutRecipe = interchange::importUstxProject(bytes(source), bare);
+  CHECK(withoutRecipe);
+  CHECK(!withoutRecipe.value().project.vocalTracks().front().proceduralRecipe.has_value());
+
+  interchange::UstxImportRequest request;
+  request.projectName = "Imported with recipe";
+  request.proceduralRecipe = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "seam-pilot-01-voiced-stop-diagnostic", "11", std::string(64U, 'a')},
+      "recipes/pilot.json", "neutral"};
+  CHECK(request.proceduralRecipe->validate());
+
+  const auto withRecipe = interchange::importUstxProject(bytes(source), factory, request);
+  CHECK(withRecipe);
+  const auto& track = withRecipe.value().project.vocalTracks().front();
+  CHECK(track.proceduralRecipe.has_value());
+  CHECK(track.proceduralRecipe->resource.id == "seam-pilot-01-voiced-stop-diagnostic");
+  CHECK(track.proceduralRecipe->path == "recipes/pilot.json");
+
+  // An invalid reference is refused outright rather than attached and left to
+  // fail later at render time.
+  interchange::UstxImportRequest invalid;
+  invalid.proceduralRecipe = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "", "", ""}, "", ""};
+  application::ProjectFactory reject{917002U};
+  const auto refused = interchange::importUstxProject(bytes(source), reject, invalid);
+  CHECK(!refused);
+}
+
 TEST_CASE("native USTX decoder parses bounded flow and block YAML") {
   const auto decoded = seam::interchange::decodeUstx(bytes(fixture()));
   CHECK(decoded);

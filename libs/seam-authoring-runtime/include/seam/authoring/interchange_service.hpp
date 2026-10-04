@@ -34,6 +34,10 @@ struct InterchangeImportRequest final {
   std::string voicebankContentHash;
   std::string characterId{"interchange.unresolved.character"};
   std::string characterVersion{"0.0.0-interchange"};
+  // A score format carries no singer executable, so an imported track has no
+  // material until the caller names some. Supplying the recipe keeps the
+  // imported project renderable instead of silently unplayable.
+  std::optional<domain::ProceduralRecipeReference> proceduralRecipe;
 };
 
 struct InterchangeImportDraft final {

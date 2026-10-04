@@ -105,7 +105,7 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
   if (request.format == InterchangeFormat::Ustx) {
     const auto view = std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(sourceBytes.value().data()), sourceBytes.value().size()};
     auto imported = interchange::importUstxProject(view, factory,
-        interchange::UstxImportRequest{.projectName = std::move(request.projectName), .voicebankId = std::move(request.voicebankId), .voicebankVersion = std::move(request.voicebankVersion), .voicebankContentHash = std::move(request.voicebankContentHash), .characterId = std::move(request.characterId), .characterVersion = std::move(request.characterVersion), .language = request.language}, ustxLimits);
+        interchange::UstxImportRequest{.projectName = std::move(request.projectName), .voicebankId = std::move(request.voicebankId), .voicebankVersion = std::move(request.voicebankVersion), .voicebankContentHash = std::move(request.voicebankContentHash), .characterId = std::move(request.characterId), .characterVersion = std::move(request.characterVersion), .language = request.language, .proceduralRecipe = std::move(request.proceduralRecipe)}, ustxLimits);
     if (!imported) return core::Result<Output>{imported.error()};
     auto importedValue = std::move(imported).value();
     Output result{std::move(importedValue.project), InterchangeFormat::Ustx,
