@@ -827,6 +827,56 @@ Both need a source-level investigation of the synthesis path.
 apart before either is diagnosed. P0-08 stays **OPEN**, nothing has been listened to, and
 `combinedModelHoldoutVerified` is still false.
 
+**Update 2026-10-04: six low notes render at an exact multiple of their written pitch, deterministically.**
+The wrong notes named above have been **reproduced twice each, independently, with identical results**, and
+a control confirms the measurement is sound.
+
+**The control**, because a probe reporting two different written pitches arriving at the identical frequency
+deserves suspicion. The same reader on synthetic material:
+
+| Case | Written | Reader reports |
+| --- | ---: | ---: |
+| tone at MIDI 55 | 196.00 | 193.36, ratio 0.987 |
+| tone at MIDI 67 | 392.00 | 392.58, ratio 1.001 |
+| tone at MIDI 74 | 587.33 | 585.94, ratio 0.998 |
+| **silent window, other note sounding elsewhere** | 392.00 | **0.00** |
+| silent window in pure silence | — | **0.00** |
+
+The reader is accurate on tones and reports nothing on silence even when another note sounds elsewhere. **It
+cannot be returning a fixed frequency or reading the wrong window.**
+
+**The reproduction, each note rendered twice through the production export path:**
+
+| MIDI | Written | Run A | Run B | Ratio |
+| ---: | ---: | ---: | ---: | ---: |
+| 55 | 196.00 | **785.16** | **785.16** | 4.006 |
+| 56 | 207.65 | **832.03** | **832.03** | 4.007 |
+| 60 | 261.63 | **785.16** | **785.16** | 3.001 |
+| 66 | 369.99 | **738.28** | **738.28** | 1.995 |
+| 67 | 392.00 | **785.16** | **785.16** | 2.003 |
+| 68 | 415.30 | **832.03** | **832.03** | 2.003 |
+
+**Bit-identical across runs.** Six specific notes deliver an exact 2x, 3x or 4x multiple of what the score
+asked for, every time. The neighbouring notes are correct: 57 at 1.012, 64 at 0.995, 72 at 0.997, 79 at
+1.001, 85 at 0.999.
+
+**The failures are MIDI 55, 56, 60, 66, 67 and 68, spanning 196 to 415 Hz**, with 57 to 59, 61 to 65 correct
+between and around them. That is not a register threshold; it is specific notes failing.
+
+**A lead in source, stated as a lead and not a conclusion.** `libs/seam-synthesis/src/raw_renderer.cpp:77`
+computes `pow(2, (targetMidi - unit.rootMidi) / 12)`, correct in form. The delivered frequencies 785.16
+and 832.03 Hz are MIDI 79 and 80, and **every wrong delivery lands on one of those two**, which is what
+would happen if `targetMidi` were replaced by a fixed value rather than shifted. The procedural unit
+construction that sets `rootMidi` has not been read and **the cause is not claimed**.
+
+**What this is: a real, deterministic, reproducible synthesis defect**, repairable, now reproducible from a
+stated procedure, and the first defect in this register with a test that can fail. No analyser change can
+affect it, because the audio genuinely does not contain the written note.
+
+**What this does not change.** P0-08 stays **OPEN**. Whether other recipes are affected is unmeasured, since
+one recipe family has been rendered. Nothing has been listened to, and `combinedModelHoldoutVerified` is
+still false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

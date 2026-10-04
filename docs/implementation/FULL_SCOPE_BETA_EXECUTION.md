@@ -7826,3 +7826,66 @@ times in this document also produced a confident false accusation here, because 
 pitch is absent" cannot distinguish "rendered at the wrong pitch" from "never rendered". **A missing
 signal and a wrong signal must be told apart before either is diagnosed**, and this document did not do
 that until a single-note isolation render forced the distinction.
+
+## Confirmed defect: six low notes render at an exact multiple of their written pitch, deterministically
+
+The six wrong notes from the entry above have now been **reproduced twice each, independently, with
+identical results**, and a control confirms the measurement itself is sound.
+
+**The control first**, because a probe reporting two different written pitches arriving at the identical
+frequency deserves suspicion. The same reader applied to synthetic material:
+
+| Case | Written | Reader reports |
+| --- | ---: | ---: |
+| tone at MIDI 55 | 196.00 | 193.36, ratio 0.987 |
+| tone at MIDI 67 | 392.00 | 392.58, ratio 1.001 |
+| tone at MIDI 74 | 587.33 | 585.94, ratio 0.998 |
+| **silent window, other note sounding elsewhere** | 392.00 | **0.00** |
+| silent window in pure silence | — | **0.00** |
+
+The reader is accurate on tones and correctly reports nothing on silence, including when a different note
+is sounding elsewhere in the file. **It cannot be returning a fixed frequency or reading the wrong window.**
+
+**The reproduction.** Each note rendered twice, through the production export path:
+
+| MIDI | Written | Run A | Run B | Ratio |
+| ---: | ---: | ---: | ---: | ---: |
+| 55 | 196.00 | **785.16** | **785.16** | 4.006 |
+| 56 | 207.65 | **832.03** | **832.03** | 4.007 |
+| 60 | 261.63 | **785.16** | **785.16** | 3.001 |
+| 66 | 369.99 | **738.28** | **738.28** | 1.995 |
+| 67 | 392.00 | **785.16** | **785.16** | 2.003 |
+| 68 | 415.30 | **832.03** | **832.03** | 2.003 |
+
+**Bit-identical across runs.** These are not measurement noise and not a marginal failure: six specific
+notes deliver a frequency that is an exact 2x, 3x or 4x multiple of what the score asked for, every time.
+
+**The neighbouring notes still work**, so this is a discrete set of failures rather than a range problem:
+
+| MIDI | Written | Delivered | Ratio |
+| ---: | ---: | ---: | ---: |
+| 57 | 220.00 | 222.66 | 1.012 |
+| 64 | 329.63 | 328.12 | 0.995 |
+| 72 | 523.25 | 521.48 | 0.997 |
+| 79 | 783.99 | 785.16 | 1.001 |
+| 85 | 1108.73 | 1107.42 | 0.999 |
+
+**The six failures are MIDI 55, 56, 60, 66, 67 and 68, spanning 196 to 415 Hz, with 57, 58, 59, 61, 62,
+63, 64 and 65 correct between and around them.** That is not a register threshold; it is specific notes
+failing.
+
+**A lead in source, stated as a lead and not a conclusion.** `libs/seam-synthesis/src/raw_renderer.cpp:77`
+computes the shift as `pow(2, (targetMidi - unit.rootMidi) / 12)`, which is correct in form. The delivered
+frequencies 785.16 and 832.03 Hz are MIDI 79 and 80, and **every wrong delivery lands on one of those two**,
+which is what would happen if `targetMidi` were being replaced by a fixed value rather than shifted.
+**This entry has not read the procedural unit construction that sets `rootMidi` and does not claim the
+cause.**
+
+**What this is.** A real, deterministic, reproducible synthesis defect affecting six notes in the low
+register of one recipe, each singing an exact multiple of its written pitch, with no analyser change able
+to affect it because the audio genuinely does not contain the written note. It is repairable, it is now
+reproducible from a stated procedure, and it is the first defect in this document with a test that can fail.
+
+**What this does not change, and is not claimed.** P0-08 stays **OPEN**. Whether this recipe is the only
+one affected is unknown, since one recipe family has been rendered and the defect's scope across singers is
+unmeasured. Nothing has been listened to, and `combinedModelHoldoutVerified` is still false.
