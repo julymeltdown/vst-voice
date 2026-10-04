@@ -1,4 +1,5 @@
 #include "seam/native_ui/design/shell_workspace.hpp"
+#include "seam/native_ui/design/text_fit.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
 
 #include <algorithm>
@@ -107,12 +108,8 @@ double brightness(Color c) noexcept {
 
 // Tightens tracking, then steps the size down to the 11-point floor for essential text; anything
 // still too long is ellipsized by the canvas inside its box.
-TextStyle fitted(Canvas2D& c, std::string_view text, TextStyle s, double width) {
-  if (width <= 0.0 || c.measure(text, s) <= width) return s;
-  s.tracking = std::min(s.tracking, 0.4);
-  while (s.size > 11.0 && c.measure(text, s) > width) s.size = std::max(11.0, s.size - 0.5);
-  return s;
-}
+using design::fitted;
+using design::midEllipsis;
 
 // The SING rack card material: raised gradient, hairline border, top highlight.
 void card(Canvas2D& c, const DesignTokens& t, ui::Rect r, double radius, double alpha = 0.92) {
@@ -1383,7 +1380,7 @@ private:
     c.fill(Path::capsule(g.colorBar), withAlpha(trackColor, audible ? 1.0 : 0.4));
     c.restore();
     const auto nameStyle = style(FontRole::UiSemibold, t.type.label);
-    c.text(g.name, s.name, fitted(c, s.name, nameStyle, g.name.width),
+    c.text(g.name, midEllipsis(c, s.name, nameStyle, g.name.width), nameStyle,
            audible ? t.color.textPrimary : t.color.textSecondary);
     if (!compact)
       c.text(g.kind, s.vocal ? tr(Str::Vocal) : tr(Str::Audio2),

@@ -7160,3 +7160,33 @@ was re-checked at **760x520**, where the rack collapses to a portrait rail, the 
 `SEAM` workspace menu, and the grid shows **"Double-click the grid to write the first note"** with the
 character above it. Six of the contract's six states are now accounted for: five captured and sound,
 one (`stale`) refused with a stated reason.
+**The other four workspaces were rendered by the design tests and one of them had the same defect.**
+`SEAM_DESIGN_CAPTURE_DIRECTORY` makes `seam_design_layout_property_tests` write a real frame per
+workspace per look, which reaches the four workspaces the CLI and the fidelity script cannot: there is
+no `--workspace` flag and the capture script drives only SING. Ten frames were written and inspected.
+**MIX is fully built** — two track strips with colour bars, pan knobs, faders, M/S, a master meter with
+its CLIP indicator and an audio-device card — and its track name was truncating exactly like the singer
+card: **`Lead singer tra...`** through `fitted()`, which shrinks and then loses the tail. It now goes
+through `midEllipsis` and reads **`Lead s...g name`**, keeping the leading word and the distinguishing
+one. Its timeline region labels already used `fitted()` and were left alone, because a region name is
+read in place and does not need its ending.
+**VOICE looked empty and is not.** The capture shows a nearly blank panel reading *"Voice design runs in
+the standalone Project SEAM app"* with an `Open voice browser` button. That is the workspace's own
+contract: `ShellVoiceHost` takes a `designer` the **host** supplies, the test fixture supplies none, and
+the header states the rule — *"a host without one (the CLAP plug-in) leaves designer empty and VOICE
+says so and offers the browser"*. The standalone app **does** supply one
+(`native_editor_app.cpp:2364`, creating a `VoiceDesignerSession` with protected roots on first use), and
+`seam_design_voice_workspace_tests` proves the populated path: *"VOICE opens from its tab and shows the
+three modules and the envelope editor"*, plus knob drags, formant handles, pose chips and undo — 11 of
+11 pass. **So this is a fixture limitation with the same shape as `stale`: no product defect, and no
+visual evidence of the populated workspace from this route.**
+**One real regression, caught by a test that had already earned its keep.** Sharing the text helpers
+through a new `design/text_fit.hpp` is the right shape — three copies of one rule would drift — but the
+first merge changed SING's shrink floor from **10** to MIX's **11**, and that broke
+`seam_design_shell_input_tests`: *"tooltips: an elided label shows its whole text, which a published
+node carries"* failed on `shell.lane.review`, because a label that elides at a slightly different size
+no longer matches the full text its accessibility node carries. The floor is now a parameter with a
+SING-specific wrapper (`fittedToTen`), because the two workspaces genuinely differed and folding them
+together silently moved one workspace's typography. Renaming rather than shadowing also mattered:
+argument-dependent lookup found both the local wrapper and `design::fitted`, making the bare name
+ambiguous at all sixteen call sites. `seam_design_shell_input_tests` 106 of 106.

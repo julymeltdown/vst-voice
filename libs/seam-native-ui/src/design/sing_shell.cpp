@@ -1,6 +1,7 @@
 #include "seam/native_ui/design/sing_shell.hpp"
 #include "seam/native_ui/design/background_wash.hpp"
 #include "seam/native_ui/design/shell_strings.hpp"
+#include "seam/native_ui/design/text_fit.hpp"
 
 #include "seam/native_ui/diagnostic_presentation.hpp"
 #include "seam/native_ui/render_status_panel.hpp"
@@ -196,48 +197,15 @@ TextStyle style(FontRole role, double size, double tracking = 0.0,
 
 // Fits a label to a width by first tightening tracking, then stepping the size down to the 10pt
 // floor. Anything still too long is ellipsized by the canvas, never drawn past its box.
-TextStyle fitted(Canvas2D& c, std::string_view text, TextStyle s, double width) {
-  if (width <= 0.0 || c.measure(text, s) <= width) return s;
-  s.tracking = std::min(s.tracking, 0.4);
-  while (s.size > 10.0 && c.measure(text, s) > width) s.size = std::max(10.0, s.size - 0.5);
-  return s;
-}
+using design::midEllipsis;
 
-// fitted() only shrinks to a 10pt floor and then lets the canvas truncate, which
-// is how a track named "Diagnostic dry render..." became "DIAGNOSTIC DRY...".
-// Truncating the tail throws away the part that identifies the track: the leading
-// words are usually shared by every row in a bank, and the distinguishing part is
-// at the end. This trims the middle instead, so both the family and the specific
-// name stay readable inside a fixed 24pt chip.
-std::string midEllipsis(Canvas2D& c, std::string_view text, const TextStyle& s,
-                        double width) {
-  if (width <= 0.0 || text.empty() || c.measure(text, s) <= width) return std::string{text};
-  static constexpr std::string_view kMarker = "\xE2\x80\xA6";  // U+2026
-  if (c.measure(kMarker, s) > width) return {};
-  // Grow both ends together so the result stays balanced, keeping a character of
-  // the tail whenever one fits: the tail is the part that distinguishes tracks.
-  std::size_t head = 0;
-  std::size_t tail = 0;
-  while (head + tail < text.size()) {
-    const std::size_t nextHead = head + 1U;
-    const std::size_t nextTail = tail + 1U;
-    const std::string candidate =
-        std::string{text.substr(0, nextHead)} + std::string{kMarker} +
-        std::string{text.substr(text.size() - nextTail)};
-    if (c.measure(candidate, s) > width) break;
-    head = nextHead;
-    tail = nextTail;
-  }
-  if (head == 0U || tail == 0U) {
-    std::size_t kept = 0;
-    while (kept < text.size() &&
-           c.measure(std::string{text.substr(0, kept + 1U)} + std::string{kMarker}, s) <= width) {
-      ++kept;
-    }
-    return kept == 0U ? std::string{} : std::string{text.substr(0, kept)} + std::string{kMarker};
-  }
-  return std::string{text.substr(0, head)} + std::string{kMarker} +
-         std::string{text.substr(text.size() - tail)};
+// SING's own shrink floor was 10, not MIX's 11. Kept as a wrapper so the shared
+// helper can serve both without moving this workspace's typography. Named
+// distinctly rather than shadowing: argument-dependent lookup finds both the
+// local wrapper and design::fitted, and the bare name is then ambiguous at every
+// call site rather than only here.
+TextStyle fittedToTen(Canvas2D& c, std::string_view text, TextStyle s, double width) {
+  return seam::native_ui::design::fitted(c, text, s, width, 10.0);
 }
 
 // A glass panel's border and top highlight, drawn over its translucent fill.
@@ -1866,9 +1834,9 @@ void SingShell::paintHeader(Canvas2D& c, const DesignTokens& t, const EditorScen
   const auto tempoText = format("%.0f BPM", state.tempoBpm);
   const auto meterText =
       std::to_string(state.meter.numerator) + "/" + std::to_string(state.meter.denominator);
-  c.text(l.tempoReadout, tempoText, fitted(c, tempoText, small, l.tempoReadout.width - 8.0),
+  c.text(l.tempoReadout, tempoText, fittedToTen(c, tempoText, small, l.tempoReadout.width - 8.0),
          tempoColor);
-  c.text(l.meterReadout, meterText, fitted(c, meterText, small, l.meterReadout.width - 6.0),
+  c.text(l.meterReadout, meterText, fittedToTen(c, meterText, small, l.meterReadout.width - 6.0),
          tempoColor);
 
   // Output meter: segments on a -60..0 dBFS scale per channel of the measured bus, a peak-hold
@@ -2121,7 +2089,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
   if (l.gridLabel.width > 0.0 && l.gridLabel.x > chip.right() + 24.0 && !waveform_.caption.empty()) {
     const auto captionStyle = style(FontRole::UiSemibold, t.type.smallLabel, 0.6, TextAlign::Right, true);
     c.text(l.gridLabel, waveform_.caption,
-           fitted(c, waveform_.caption, captionStyle, l.gridLabel.width),
+           fittedToTen(c, waveform_.caption, captionStyle, l.gridLabel.width),
            waveform_.shown() ? t.color.waveInNote : t.color.textSecondary);
   }
 
@@ -2186,7 +2154,7 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     c.fill(Path::roundedRect(b, 6.0), withAlpha(t.color.surfaceSunken, 0.9));
     c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
     c.text(b, tr(Str::TimeMap),
-           fitted(c, tr(Str::TimeMap),
+           fittedToTen(c, tr(Str::TimeMap),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   b.width - 10.0),
            t.color.textSecondary);
@@ -2682,7 +2650,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
       c.stroke(Path::roundedRect(tab, 6.0), withAlpha(t.color.border, 0.9), StrokeStyle{1.0});
     }
     c.text(tab, tr(kTabs[i]),
-           fitted(c, tr(kTabs[i]),
+           fittedToTen(c, tr(kTabs[i]),
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   tab.width - 8.0),
            active ? t.color.accent : t.color.textSecondary);
@@ -2701,7 +2669,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
     c.stroke(Path::roundedRect(b, 6.0), withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
     const std::string_view label{tr(Str::Review)};
     c.text(b, label,
-           fitted(c, label,
+           fittedToTen(c, label,
                   style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                   b.width - 10.0),
            t.color.textSecondary);
@@ -2716,7 +2684,7 @@ void SingShell::paintLane(Canvas2D& c, const DesignTokens& t, const ui::PianoRol
                                                    : std::string{tr(Str::SeamHintBasePreview)};
     if (info.width > 24.0)
       c.text(info, hint,
-             fitted(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
+             fittedToTen(c, hint, style(FontRole::Ui, t.type.smallLabel, 0.0, TextAlign::Right),
                     info.width),
              t.color.textSecondary);
     paintTechnicalLanes(c, t, model, state);
@@ -2969,7 +2937,7 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
     if (toggle.width > 12.0 && toggle.height >= 10.0) {
       const std::string label = std::string{tr(kTechnicalBandNames[i])} + (bands.collapsed[i] ? " +" : "");
       c.text({toggle.x, toggle.y, toggle.width, std::min(toggle.height, 16.0)}, label,
-             fitted(c, label, labelStyle, toggle.width), t.color.textSecondary);
+             fittedToTen(c, label, labelStyle, toggle.width), t.color.textSecondary);
     }
     if (i > 0U) {
       Path divider;
@@ -3000,7 +2968,7 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
       const auto text = std::string{marker} + visual.symbol;
       const ui::Rect textBox{r.x + 3.0, r.y, std::max(0.0, r.width - 6.0), r.height};
       if (textBox.width >= 8.0)
-        c.text(textBox, text, fitted(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+        c.text(textBox, text, fittedToTen(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
                t.color.phonemeText);
     }
     if (visuals.empty())
@@ -3034,7 +3002,7 @@ void SingShell::paintTechnicalLanes(Canvas2D& c, const DesignTokens& t,
       const auto text = unit.unitId + "  " + unitRendererLabel(unit.renderer);
       const ui::Rect textBox{card.x + 4.0, card.y, std::max(0.0, card.width - 8.0), card.height};
       if (textBox.width >= 12.0)
-        c.text(textBox, text, fitted(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
+        c.text(textBox, text, fittedToTen(c, text, style(FontRole::Mono, t.type.smallLabel), textBox.width),
                t.color.textPrimary);
     }
   }
@@ -3446,7 +3414,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
       c.stroke(Path::roundedRect(open, 8.0),
                diagnosticsOpen_ ? t.color.accent : withAlpha(t.color.border, 0.95), StrokeStyle{1.0});
       c.text(open, tr(Str::Diagnostics),
-             fitted(c, tr(Str::Diagnostics),
+             fittedToTen(c, tr(Str::Diagnostics),
                     style(FontRole::UiSemibold, t.type.smallLabel, 1.0, TextAlign::Center, true),
                     open.width - 10.0),
              diagnosticsOpen_ ? t.color.accent : t.color.textSecondary);
@@ -3525,7 +3493,7 @@ void SingShell::paintStatus(Canvas2D& c, const DesignTokens& t, const EditorScen
         progress.state != authoring::ExportState::Recovered && !progress.currentOutput.empty())
       text += " / " + progress.currentOutput;
     c.text({segment.x + 8.0, segment.y, std::max(1.0, segment.width - 16.0), segment.height}, text,
-           fitted(c, text, style(FontRole::UiSemibold, t.type.smallLabel),
+           fittedToTen(c, text, style(FontRole::UiSemibold, t.type.smallLabel),
                   std::max(1.0, segment.width - 16.0)),
            progress.state == authoring::ExportState::Failed ? t.color.error
                                                            : t.color.textPrimary);
@@ -4230,14 +4198,14 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
   const auto row = [&](double x, double y, double width, std::string_view label,
                        const std::string& value, Color valueColor) {
     c.text({x, y, width, 16.0}, label, labelStyle, t.color.textSecondary);
-    c.text({x, y + 18.0, width, 20.0}, value, fitted(c, value, valueStyle, width), valueColor);
+    c.text({x, y + 18.0, width, 20.0}, value, fittedToTen(c, value, valueStyle, width), valueColor);
   };
 
   // What an Export Set writes, as the host computed it for this document.
   const auto plan = hostActions_.exportPlan ? hostActions_.exportPlan() : std::nullopt;
   if (p.compact) {
     const auto summary = exportPlanSummary(plan, hostActions_.exportUnavailable);
-    c.text(p.summary, summary, fitted(c, summary, style(FontRole::Ui, t.type.smallLabel), p.summary.width),
+    c.text(p.summary, summary, fittedToTen(c, summary, style(FontRole::Ui, t.type.smallLabel), p.summary.width),
            plan ? t.color.textPrimary : t.color.warning);
   } else if (plan) {
     const auto y = area.y + 64.0;
@@ -4278,7 +4246,7 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
     c.stroke(Path::capsule(p.bounce), state.bounceFollowHost ? t.color.accentTime : t.color.border,
              StrokeStyle{1.0});
     c.text(p.bounce, label,
-           fitted(c, label, style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Center),
+           fittedToTen(c, label, style(FontRole::UiSemibold, t.type.label, 0.6, TextAlign::Center),
                   p.bounce.width - 16.0),
            t.color.textPrimary);
   }
@@ -4346,7 +4314,7 @@ void SingShell::paintExport(Canvas2D& c, const DesignTokens& t, const EditorScen
       if (y + 16.0 > p.status.bottom() + 1.0) break;
       const auto text = line.label + ": " + line.value;
       c.text({p.status.x, y, p.status.width, 16.0}, text,
-             fitted(c, text, style(FontRole::Ui, t.type.smallLabel), p.status.width), line.color);
+             fittedToTen(c, text, style(FontRole::Ui, t.type.smallLabel), p.status.width), line.color);
       y += 18.0;
     } else {
       if (y + 38.0 > p.status.bottom() + 1.0) break;
