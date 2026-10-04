@@ -78,3 +78,48 @@ No DAW has been driven. `seam_clap_host` is SEAM's own harness, not FL Studio,
 Reaper or Bitwig. Nothing here is listening evidence, screen-reader evidence or
 host-matrix evidence, and none of it substitutes for the human sessions the Beta
 gate requires. P0-08 stays **OPEN**.
+
+## The whole journey, run as one chain
+
+Verifying each stage separately can hide a break *between* stages, so the full
+path was run end to end with no manual step: a DAW MIDI carrying kana lyrics,
+imported, rendered, packed into plug-in state, loaded into the real bundle,
+processed, and extracted back out.
+
+```
+STEP 1  import    issues=0, two vocal tracks, lyrics on the correct notes
+STEP 2  render    two candidates, 96000 frames each, no clipping
+STEP 3  pack      SEAMCLP1, 48000 Hz, mono, float32, 96000 frames, finitePcm true
+STEP 4  plug-in   CLAP smoke PASS, automationRatio 0.501187,
+                 stateRoundTrip true, transportPauseSilence true
+STEP 5  extract   rendered vs extracted: max sample difference 0.0000000000,
+                 bit-identical true
+```
+
+**The chain is intact, and the audio survives the plug-in round trip bit-exactly.**
+
+## The one gap this exposed
+
+Running the chain on the *romaji* fixture failed at STEP 2 — and that failure is
+the point. The import warns that four lyrics will not phonemize, and then writes
+the project anyway. The warning is truthful, but the operator is left holding a
+file that looks like a successful import and fails minutes later with a message
+about phone starts. **A diagnostic that names the cause is not the same as
+refusing the dead end**, and only the second one prevents lost work.
+
+The fix is deliberately narrow and lives in the CLI, not the codec. The codec
+keeps warning, because a caller may want the draft in order to fix the lyrics. The
+command refuses **only when `--recipe` was passed** — asking for a recipe means
+intending to render, so a project that provably cannot render is not written.
+Omit `--recipe` and the same import still produces an editable draft, which is a
+legitimate request.
+
+```
+with --recipe:   exit 6, "the imported project would not render…", nothing written
+without:         exit 0, draft written and editable
+kana + --recipe: exit 0, project written, recipe travels inside recipes/
+```
+
+Locked by `tests/singing_quality/test_import_refuses_unrenderable.py` (3 cases,
+all skipped when no CLI or recipe is present so the unit suite still runs without
+a build tree).

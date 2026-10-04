@@ -55,6 +55,24 @@ The recipe is copied beside the written project rather than referenced where it
 happened to live, so the project stays portable; an absolute or outward-pointing
 path renders only on the machine that created it.
 
+### Refusing an import that would not render
+
+The codec only **warns** about unreadable lyrics, because a caller may
+deliberately want the draft so the text can be corrected in the editor. The
+command line is where that choice is expressed, so the command refuses instead —
+and only when `--recipe` was passed, because asking for a recipe means intending
+to render:
+
+```
+error: the imported project would not render because some lyrics cannot be
+phonemized in the selected language; nothing was written. Re-run with
+--language matching the file, or omit --recipe to keep a draft for editing.
+```
+
+Without `--recipe` the same import still writes an editable draft. Without this
+split, a successful-looking import left a project on disk that failed minutes
+later with *Phonetic context requires resolved phone starts*.
+
 SMPTE divisions, malformed status/data bytes, invalid VLQs, truncated chunks,
 zero tempo, invalid meter and trailing bytes are rejected. Unsupported channel,
 system, SysEx and meta events are skipped only with a bounded `SmfIssue` loss

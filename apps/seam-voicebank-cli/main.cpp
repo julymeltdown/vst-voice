@@ -729,6 +729,23 @@ int importScoreCommand(int argc, char** argv) {
   for (const auto& issue : imported.value().issues) {
     std::cerr << (issue.loss ? "loss: " : "warning: ") << issue.path << ": " << issue.message << '\n';
   }
+  // A file whose lyrics the selected language cannot read imports cleanly and
+  // then fails at render with "Phonetic context requires resolved phone
+  // starts". Writing that project leaves a dead end on disk that looks like a
+  // successful import. When the caller explicitly asked for a recipe -- meaning
+  // they intend to render this -- refuse instead, and say what to change. A
+  // draft without a recipe is still written, because that is a legitimate
+  // request: the lyrics can be corrected in the editor before rendering.
+  const auto unrenderable = std::find_if(imported.value().issues.begin(),
+      imported.value().issues.end(), [](const auto& issue) {
+        return !issue.loss && issue.message.find("will not phonemize") != std::string::npos;
+      });
+  if (unrenderable != imported.value().issues.end() && request.proceduralRecipe.has_value()) {
+    std::cerr << "error: the imported project would not render because some lyrics cannot be "
+                 "phonemized in the selected language; nothing was written. Re-run with "
+                 "--language matching the file, or omit --recipe to keep a draft for editing.\n";
+    return 6;
+  }
   // The draft is only written once every issue has been reported, so a refused conversion leaves no
   // half-imported project behind for a later caller to mistake for a successful one.
   // When the caller named a recipe, copy it beside the project so the relative
