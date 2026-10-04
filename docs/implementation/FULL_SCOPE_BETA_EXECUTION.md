@@ -7099,3 +7099,21 @@ running — that needs two notes on an identical row, which this fixture does no
 capture did not attempt. That path is exercised by
 `seam_design_layout_property_tests_workspaces`, whose fixture deliberately includes an overlap group,
 but a test fixture is not a rendered app frame and is not claimed as visual evidence.
+**That same-pitch path is now observed running, so the limit above is closed.** Reading the grouping
+rule first: `note_visual_layout.cpp` groups by **same `midiKey` with overlapping time**, which is why a
+chord was never an overlap. A second project was written with two notes on the **identical pitch** —
+`ど` and `る`, both MIDI 72, both at tick 240 for 1920 ticks — and rendered from the rebuilt app.
+**The overlap handling is correct and complete.** The two notes paint as one capsule carrying a green
+**`×2`** badge, and the accessibility tree carries `shell.note.overlap.7` as a `button` named
+**"Overlapping notes"** with value **"2 overlapping notes"**, the description *"Opens the overlap
+detail beside the note"*, and two actions. So the badge is not decoration: it is reachable and named.
+**Both members stay individually addressable.** The evidence file reports
+`virtualizedNoteCount: 82` and materializes all 82, named `Note ど` and `Note る`, each with its own
+**8-point band** — the vertical split that `note_visual_layout.cpp:87` performs when notes land on one
+row. Nothing is merged away or made unreachable.
+**One reading correction worth recording.** The tree's flat `nodes` array contains **zero** note nodes,
+which looks like notes are inaccessible. They are not: notes are deliberately **virtualized** so a
+long song does not build a giant static tree, and both real bridges materialize them on demand —
+`native_window_appkit.mm:410` for VoiceOver, `accessibility_win32.cpp:553` for the Windows bridge, and
+`shell_evidence.cpp:115` for this evidence file, under its own `notes` key. The absence from `nodes` is
+the virtualization working as designed, not a gap.
