@@ -7568,3 +7568,56 @@ rule rather than a renderer fault or a scoring error. Whether preutterance of 8 
 legato is a different question from whether it is *intended*: it is intended, and nobody has decided
 whether it is right. P0-08 stays **OPEN**, the 83.3 ms cases remain unexplained, the 1 uncharacterised frame
 remains uncharacterised, nothing has been listened to, and `combinedModelHoldoutVerified` is still false.
+
+## Retraction: the onset-advance measurement was unsound, and the 19.3 ms figure is withdrawn
+
+The three entries above report a measured onset advance with a median of 19.3 ms and a distribution of
+per-unit values, and treat it as the explanation for 50 of the 85 octave frames. **The method that produced
+those numbers does not pass a control, and the figures are withdrawn.**
+
+**How it was caught.** The entry above flagged four onsets at exactly 83.3 ms as possibly a search-window
+artefact. Widening the search from 4000 to 20000 samples confirmed the suspicion and went further: **7 of 30
+onsets moved**, and four of them ran to exactly 20000 samples, or 417 ms, which is longer than most notes in
+these songs. A detector that reports an onset 417 ms before a note is not finding that note's onset.
+
+**The control, which the earlier runs never had.** A synthetic signal was built where every note's onset is
+exact by construction: tones at known MIDI notes, silence between them, three cases including a shared
+pitch between consecutive notes and an ascending run. The detector was pointed at it:
+
+| Case | Note | True advance | Detector reported |
+| --- | ---: | ---: | ---: |
+| distinct pitches | 64 | 0 | **6160** |
+| distinct pitches | 60 | 0 | **not found** |
+| two notes share a pitch | 64 | 0 | **6160** |
+| two notes share a pitch | 64 | 0 | **26000** |
+| ascending run | 62, 64, 67 | 0 | **not found, three times** |
+
+**The method fails on a signal where the answer is known.** A second attempt, using a 1024-sample window and
+requiring three consecutive agreeing frames so a single transitional frame could not trigger a match, also
+failed the same control, reporting `not found` on five of seven known onsets and 7024 samples on a sixth.
+
+**Why it fails, which explains the earlier result.** The analysis window is 2048 samples, so at a note
+boundary the spectral peak reports the louder of the two notes across a 43 ms span. Walking backwards and
+asking "does this frame match the next note's pitch" therefore finds whichever note is *loudest* somewhere
+behind the boundary, not where the pitch changed. Shortening the window and requiring sustained agreement
+does not fix it, because a decaying previous note and a rising next note are frequently closer in pitch
+than either is to its own target.
+
+**What survives from these entries, and what does not.**
+
+- **Withdrawn**: the 19.3 ms median, the ten-value per-unit distribution, the "33 of 33 notes start early"
+  claim, and the reading that `timing_solver.cpp:108` explains those specific numbers. The code line is
+  real and does place a unit so its vowel lands on the written start, but **nothing measured here
+  establishes how far that placement actually leads the audio.**
+- **Still standing**: 85 octave frames, of which **34 are the analyser misreading a note the audio contains
+  correctly**, because that rests on comparing the reported pitch with an independent spectral reading of
+  the same window, not on onset detection. And **50 frames contain the next written note within 2 to 8
+  cents**, which is the same kind of comparison and does not depend on where the onset is.
+- **Now unmeasured**: how early the audio actually begins. The 50 frames prove the next note is sounding
+  inside the previous note's written window; they do not say by how much, and the attempts to say have
+  failed their controls.
+
+**The lesson recorded so it is not repeated.** Every onset or boundary measurement in this project needs a
+synthetic control whose answer is known before its real-corpus number is believed. The pitch measurements
+in this document have one, which is why they are usable; the onset measurements did not, and three entries
+of numbers followed before anyone checked.

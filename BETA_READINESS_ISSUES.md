@@ -643,6 +643,45 @@ explained and may be a measurement ceiling. Nobody has listened, so whether a pe
 desirable legato or an audible timing defect remains undecided. The 1 uncharacterised frame from the
 previous accounting is still uncharacterised, and `combinedModelHoldoutVerified` is still false.
 
+**Update 2026-10-04: the onset-advance figures above are withdrawn. The method failed a control.** The three
+entries above report a 19.3 ms median advance and a per-unit distribution, and treat them as the explanation
+for 50 of the 85 octave frames. **Those numbers came from a detector that does not recover known onsets,
+and they are withdrawn.**
+
+The suspicion that four onsets at exactly 83.3 ms were a search-window artefact was correct. Widening the
+search from 4000 to 20000 samples moved **7 of 30 onsets**, four of them running to exactly 20000 samples,
+or 417 ms, which is longer than most notes in these songs.
+
+**The control that should have been run first.** On a synthetic signal where every onset is exact by
+construction, the detector reported:
+
+| Case | True advance | Reported |
+| --- | ---: | ---: |
+| distinct pitches, note 64 | 0 | **6160** |
+| distinct pitches, note 60 | 0 | **not found** |
+| shared pitch, first 64 | 0 | **6160** |
+| shared pitch, second 64 | 0 | **26000** |
+| ascending run, three notes | 0 | **not found, three times** |
+
+A second attempt, with a shorter window and a sustained-match requirement, failed the same control on five
+of seven known onsets.
+
+**The cause is structural.** The analysis window is 2048 samples, so at a boundary its spectral peak
+reports the louder of the two notes across 43 ms. Scanning backwards for the next note's pitch therefore
+finds whichever note is loudest behind the boundary, not where the pitch changed.
+
+**What is withdrawn and what stands.** Withdrawn: the 19.3 ms median, the ten-value distribution, "33 of 33
+notes start early", and the claim that `timing_solver.cpp:108` explains those figures. **Still standing:**
+85 octave frames; **34 are the analyser misreading a note the audio contains correctly**; and **50 frames
+carry the next written note within 2 to 8 cents**. Both of those rest on comparing reported pitch with an
+independent spectral reading of the same window, which does not depend on onset detection. **Now
+unmeasured:** by how much the audio leads. The 50 frames prove the next note sounds inside the previous
+note's written window; they do not quantify it, and three attempts to quantify it have now failed.
+
+P0-08 remains **OPEN**. Nothing here changes the listenable state of the blocker, and the same discipline
+applies going forward: an onset or boundary number needs a synthetic control whose answer is known before
+its real-corpus figure is believed.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
