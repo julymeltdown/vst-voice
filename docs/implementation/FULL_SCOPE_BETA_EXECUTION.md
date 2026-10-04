@@ -6817,3 +6817,13 @@ and plug-in targets made the same command pass with `stateRoundTrip: true`, and 
 and the honest response is to check the timestamps before believing it. **Consequence for the build
 recipe:** a change to a library under `libs/` must rebuild every dependent target before CTest is
 trusted, not only the targets named on the command line.
+
+**The never-run list was itself wrong, and checking it cost one directory.** The handoff treated
+`seam_singer_pilot` as never executed. It is not: `tests/test_singer_pilot_cli.py` drives **every**
+mode (`articulation`, `boundaries`, `nasals`, `stops`, `affricates`, `glides`, `events`, and
+authored `phrase`), asserts **determinism** by running each twice and comparing SHA-256 sets, and
+asserts **rejection** for malformed phrase tokens. `seam_singer_pilot_cli` passed in the run above.
+The tool also has no argument parser, so `--help` was interpreted as an **output directory** and it
+wrote a full pilot packet there; that directory was deleted. Two lessons: an unenumerated CLI must
+still be probed before being called unrun, and `seam_singer_pilot` should grow a real `--help`
+rather than treating any first argument as a path.

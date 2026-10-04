@@ -271,6 +271,15 @@ now bit-identical. This closes the defect, not the larger gap: the other never-r
 `seam_installer_verifier`, `seam_voicebank_studio_native`, and the CLAP hosts) have not been given
 the same treatment yet.
 
+**Correction to that list: `seam_singer_pilot` is not among the unverified tools.**
+`tests/test_singer_pilot_cli.py` drives every mode it supports -- `articulation`, `boundaries`,
+`nasals`, `stops`, `affricates`, `glides`, `events`, and authored `phrase` -- runs each twice to
+assert the rendered bytes are identical, and asserts that malformed phrase input is rejected. The
+`seam_singer_pilot_cli` test passes. Two real observations remain: the binary has **no argument
+parser**, so `--help` is taken as an output directory and the tool writes a complete pilot packet
+into a directory named `--help`, and the remaining tools on that list have not been re-probed yet. A
+CLI that creates output for an unrecognized flag is a defect in its own right.
+
 The subsequent fixed five-song validation campaign measures **3090/3649 (84.68%)**
 within 50 cents on measurable voiced pairs, with every strict comparison still
 `MISMATCH`. It also exposed and repaired a separate application blocker: standalone
