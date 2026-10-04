@@ -160,7 +160,13 @@ def wav_measurements(path: Path) -> dict:
 def run(binary: Path, output: Path, repo: Path) -> None:
     binary = binary.resolve(strict=True)
     repo = repo.resolve(strict=True)
-    output = output.absolute()
+    # Resolve, do not merely absolutise. The containment checks below compare a
+    # resolved audio path against this one, and on macOS /tmp is a symlink to
+    # /private/tmp, so an unresolved output made every relative_to() raise even
+    # though nothing had escaped the packet. Resolve here so the guard checks the
+    # path it is actually comparing, and keep the strict form so a symlinked
+    # output cannot quietly redirect the packet somewhere else.
+    output = output.resolve()
     # All runtime source must already belong to a named checkpoint. Documentation may be dirty.
     changed = subprocess.check_output(
         ["git", "diff", "HEAD", "--name-only", "--", "apps", "libs", "tools", "tests", "CMakeLists.txt"],
