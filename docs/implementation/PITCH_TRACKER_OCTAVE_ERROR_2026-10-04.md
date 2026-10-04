@@ -97,3 +97,36 @@ earliest-peak rule at `pitch.cpp:159-170` has no continuity term.
 - This does not move SEAM-BETA-P0-08. That blocker is a pitch-accuracy verdict on an application
   render; a measurement explaining most of one number in it is progress toward diagnosis, not a
   qualification.
+
+## A first repair attempt, measured and rejected
+
+The obvious repair is a continuity term: score each candidate peak by its distance from the last
+accepted frame rather than taking the earliest qualifying one. It was implemented and measured on
+the retained audio, and **it did not work**. Three variants, all rejected:
+
+| Attempt | Result on the retained audio |
+| --- | --- |
+| Anchor scored by distance, gap clears the anchor | post-gap octave jumps 7 -> 8 |
+| Anchor survives a 3-frame gap | 7 -> 8 (unchanged) |
+| Anchor survives an 8-frame gap, no in-window peak means unvoiced | jumps 8, but voiced frames fell 518 -> 432 |
+
+The first two did nothing because the octave error begins at the first voiced frame *after* a gap,
+which is exactly the frame whose anchor has just been cleared. Carrying the anchor across the gap
+did fix frames whose gap was short -- frame 23 moved from 981.8 Hz to 497.3 Hz, the true note --
+but not the ones measured here, whose gaps are four frames or longer.
+
+The third variant is the honest failure. Discarding a frame with no peak near the anchor does
+remove the octave reading, but it costs 86 real voiced frames to do it: 17 per cent of the voiced
+track discarded to remove seven wrong readings. A tracker that marks a sixth of a sung note
+unvoiced is worse for every downstream consumer than one that is occasionally an octave out,
+because pitch marks, vibrato and unit selection all treat unvoiced as absent rather than wrong.
+
+**What this means.** The defect is real, located and reproduced, and the obvious fix for it is
+not correct. The remaining approaches all need evidence this repository does not have: whether a
+listener would call the two readings the same note across a voicing boundary is a listening
+judgement, and choosing between an octave low and unvoiced changes what every downstream stage
+sees. The code is left exactly as it was.
+
+**The measurement that would settle it** is a listening packet over these specific frames, naming
+each one and asking whether the tracker or the source has the note right. That packet is the input
+the register already names for M2.1, and no one has listened to it.
