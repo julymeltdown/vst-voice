@@ -491,6 +491,34 @@ Several documents mix contract validity, source implementation, target-machine p
 
 **Required change:** maintain one current release status page with four separate states: `CONTRACT_VALID`, `IMPLEMENTED`, `TARGET_PASS`, and `BETA_READY`.
 
+**Status: the required page now exists; the register is the thing that was overstated.**
+`tools/external_beta/release_status.py` reports the four states in order, weakest first, and
+every row names the evidence for its own state plus what blocks it from rising. The page reads its
+numbers from the documents it summarises rather than restating them, so it cannot drift: the
+canonical journey row is computed from `docs/product/usable-alpha-acceptance.json`, which records
+20 requirements, all `NOT_RUN`, none carrying evidence, gate `BLOCKED` — so the page says 0 of 20.
+Current counts are 4 `CONTRACT_VALID`, 3 `IMPLEMENTED`, 0 `TARGET_PASS`, 0 `BETA_READY`, and
+`betaReady` is `false`.
+
+Two design points are what keep it honest rather than merely present. A row may not be constructed
+without evidence, and one below its ceiling may not be constructed without naming its blocker, so
+a claim cannot quietly read as further along than it is. And a citation that names a file is
+checked to exist — the first draft of this page cited `tools/external_beta/host_matrix.py`, which
+does not exist, and the citation-existence case caught it.
+
+Mutation-checked, including a defect the mutation found. Raising any row to `BETA_READY`, and
+removing the blocker requirement, both fail. A third mutation exposed a real weakness in the first
+version of the journey case: it compared the page against a second implementation of the same
+reading rule, so hardcoding `20 of 20` satisfied both sides. Rewritten to pin the matrix's own
+recorded state, it then failed on a substring match, because `"20 of 20"` contains `"0 of 20"` —
+the case passed a page claiming every row was complete while the matrix records none. It now
+matches the phrase with a digit boundary on both sides.
+
+**What this does not do.** It reports status; it does not change any gate, close any P0, or create
+evidence. Nothing here is `TARGET_PASS` or `BETA_READY`, and no row may claim those states while
+the page reports `betaReady: false`. The four P0 gates that need physical runs, installed
+candidate bytes, real reviewers, or rights-cleared assets are exactly as blocked as before.
+
 ## Beta Voicebank sourcing decision
 
 ### Decision
