@@ -19,6 +19,21 @@
 
 ## Project constraints
 
+## Verification hygiene
+
+- Before trusting a CTest result, confirm every dependent target is rebuilt. A focused
+  `cmake --build ... --target a b` leaves other binaries linked against the old library, and a stale
+  binary fails in a way that points straight at the newest change. When a `libs/` header or source
+  changes, prefer a full `cmake --build build/release -j6` before the CTest run.
+- Confirm a failure is real by checking artifact timestamps before changing code. This happened on
+  2026-10-04: `seam_clap_plugin_host_smoke` failed against a state file written minutes earlier, and
+  the cause was a stale `seam_clap_host`, not the codec under test.
+- Do not assume a tool is unverified because a handoff says so. Re-probe it: on 2026-10-04 the
+  claimed-unrun `seam_singer_pilot` turned out to be covered mode-by-mode by
+  `tests/test_singer_pilot_cli.py`, including determinism repeats.
+- Probe unfamiliar CLIs carefully. `seam_singer_pilot` has no argument parser, so `--help` was read
+  as an output directory and it wrote a pilot packet into a directory named `--help`.
+
 - Do not modify `.github`; the user deferred GitHub CI work.
 - Keep Windows support marked as TODO in `README.md`; the user is developing on macOS.
 - Never claim human listening, DAW, screen-reader, signing, Windows, or external reviewer acceptance without the corresponding evidence.
