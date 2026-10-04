@@ -7084,3 +7084,18 @@ The type scale was deliberately **not** changed: the report said the text was sm
 the small-looking text was that it was sitting in the wrong place, not that it was set too small.
 Raising the token would have made the glyphs overflow the note to fix a problem the slot swap
 already solved.
+**The third reported symptom, note overlap, does not reproduce — and the check was constructed, not
+assumed.** None of the earlier captures contained overlapping notes, so a clean frame would have proved
+nothing on its own. A project was written with a three-note chord — `か` at MIDI 60, `き` at 64 and
+`く` at 67, all at tick 240 for 1440 ticks, so identical start and duration — and rendered from the
+rebuilt app. All three appear at their own pitches as three distinct capsules with their own kana.
+**Notes sharing a time slot but differing in pitch are different rows, which is correct notation
+rather than overlap.** The overlap machinery exists for the genuine case:
+`note_visual_layout.cpp:87` splits the vertical band when notes do land on the same row, and
+`layoutSingOverlapBadges` adds a `×N` badge so a stack stays inspectable through a detail popover.
+**What this settles and what it does not.** It settles that a chord is not an overlap bug and that the
+earlier captures were not concealing one. It does **not** claim the same-pitch overlap path was seen
+running — that needs two notes on an identical row, which this fixture does not contain and this
+capture did not attempt. That path is exercised by
+`seam_design_layout_property_tests_workspaces`, whose fixture deliberately includes an overlap group,
+but a test fixture is not a rendered app frame and is not claimed as visual evidence.
