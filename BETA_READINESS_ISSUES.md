@@ -223,13 +223,35 @@ the aggregate failure is concentrated rather than diffuse, and does not by itsel
 
 An earlier version of this entry attributed the errors to the earliest-qualifying-peak rule in
 `libs/seam-voicebank/src/pitch.cpp` having no continuity term, and reported seven reproduced octave
-jumps. **That attribution was withdrawn on the same day:** the reproduction had been run against
+jumps. **SUPERSEDED — see the third correction below; the premise of this paragraph is wrong.** The
+attribution was withdrawn on the same day on the belief that the reproduction had been run against
 `master.wav`, which is not the audio the comparison measured (the stored candidate hashes to
 `b452273c...`, `master.wav` to `015f386a...`), and the 16-bit downmix clipped samples. Measured on
 the retained candidate track itself there are two post-gap octave jumps, and re-extracting
 `master.wav` as float32 gives none. The rule still has no continuity term and remains a plausible
 contributor, but these 23 errors are not attributed to it. The full correction, including that a
 repair attempt was measured against the wrong file and is therefore untested rather than refuted,
+**A third correction, 2026-10-04: the premise of the paragraph above is itself wrong.** The claim that
+`master.wav` is not the audio the comparison measured does not hold. `comparison.json` records
+`candidateSha256` as **`015f386a59f826904e58b0f09b065185b50428cc5effc9aca0ff5c635c0e05a3`**, which is
+the digest of `master.wav` in the same directory. There is no `b452273c...` file there. The corpus is
+24-bit stereo, so any reproduction must downmix before the bounded extractor will accept it — that, not
+a file mismatch, is why naive re-runs failed.
+Re-measured from that audio, **the errors are not octaves.** Against the stored reference the ten
+misreported frames are **−2478 to −3692 cents**, i.e. **−2.05 to −3.08 octaves**, at lags 512 and 768.
+Against each frame's true period those lags are **2.8 to 12.7 times** — not harmonic multiples. So the
+"earliest qualifying peak picks the double period" mechanism does not describe this audio.
+**What they are:** ten frames of **541** voiced (1.8 per cent) locked to the bottom of the 60–1200 Hz
+range, with a clean histogram gap between 100 and 125 Hz. **Four repairs were measured and rejected:**
+preferring the strongest peak made it worse (10 → 29, reverted); adjacency to a voicing gap applies to
+1 of 10 bad frames against 7 of 531 good ones, so the post-gap theory is unsupported; an RMS floor that
+catches all ten drops **87.6 per cent** of good frames; and confidence does not separate them (bad
+0.41–0.88 against good 0.33–1.00). No property inside the frame distinguishes them.
+**The stakes are lower than the earlier text implied, and the question has changed.** At 1.8 per cent of
+voiced frames, outside the sung range, this is bounded. The listening packet's question is no longer "is
+this an octave?" but **"is the audio at those ten frames a note at all, or a breath or silence?"** — if it
+is not singing, the right answer is to report those frames unvoiced, which is a judgement about the
+audio rather than the code. Nothing in the product changed; the one attempted code change was reverted.
 **Read from the two stored pitch tracks, the anomaly is on the candidate side.** Both tracks have
 the same median F0 (335.7 Hz against 333.3 Hz), so they are singing the same note. The candidate
 has 231 distinct voiced pitch values to the reference 121, and **14 frames sitting at exactly

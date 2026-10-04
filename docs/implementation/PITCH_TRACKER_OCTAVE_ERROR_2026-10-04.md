@@ -297,3 +297,61 @@ extractor defect measured on the retained application comparison earlier in this
 audio is a real sung render and still carries post-gap octave jumps. Two separate things, now
 separated. **The fixture is not a pitch-accuracy test; the real-render octave bug remains open**, and
 closing it still needs the listening judgement described above.
+
+## Re-measured 2026-10-04: the defect is real, but it is not an octave error, and four repairs are now ruled out
+
+The retained evidence is still on disk, so this was re-measured from it rather than from the summary
+above. Two of the earlier conclusions did not survive contact with it.
+
+**The candidate is `master.wav`.** `comparison.json` records `candidateSha256` as
+`015f386a59f826904e58b0f09b065185b50428cc5effc9aca0ff5c635c0e05a3`, which is exactly the digest of
+`master.wav` beside it. The earlier claim that the candidate was `b452273c...` and that `master.wav` was
+therefore the wrong file **was itself wrong** — the two are the same file. The whole corpus is 24-bit
+stereo at 48 kHz, so the reproduction requires a downmix before the bounded extractor will accept it.
+
+**The errors are not octaves.** Extracting the pitch track and comparing against the stored reference at
+the same frames:
+
+| Frame | Candidate | Reference | Error |
+| ---: | ---: | ---: | ---: |
+| 5632 | 93.8 Hz | 493.9 Hz | **−2876 cents (−2.40 octaves)** |
+| 6144 | 62.5 Hz | 493.8 Hz | **−3578 cents (−2.98 octaves)** |
+| 15872 | 93.8 Hz | 659.2 Hz | **−3376 cents (−2.81 octaves)** |
+| 24064 | 62.5 Hz | 261.5 Hz | **−2478 cents (−2.06 octaves)** |
+| 100608 | 93.8 Hz | 791.5 Hz | **−3692 cents (−3.08 octaves)** |
+| 100864 | 93.8 Hz | 389.0 Hz | **−2463 cents (−2.05 octaves)** |
+
+These are **not** multiples of 1200 cents. The chosen lags are 512 and 768 samples; against each frame's
+true period those are ratios of **2.8 to 12.7**, which is not a harmonic relationship at all. So the
+"the earliest qualifying peak picks the double period" story in the sections above **does not describe
+this audio**, and a fix built on it would have been built on a misreading.
+
+**What the errors actually are.** Ten of **541** voiced frames (1.8 per cent) report 62.5 or 93.75 Hz —
+lag 768 or 512, at the very bottom of the 60–1200 Hz search range. The voiced histogram has a clean gap:
+ten frames below 100 Hz, **nothing** between 100 and 125 Hz, then the real content from 175 Hz up. They
+are a separate low-frequency cluster, not wrong readings inside the melody.
+
+**Four candidate repairs, all measured and all rejected.**
+
+| Attempt | Result |
+| --- | --- |
+| Prefer the **strongest** qualifying peak instead of the earliest (the change this section seemed to call for) | **Made it worse**: misreported frames 10 → 29, because the strongest peak is more often the low-frequency one. Reverted rather than kept. |
+| Frames adjacent to a voicing gap | **Does not apply**: only **1 of 10** bad frames touches an unvoiced frame, against **7 of 531** good ones — the base rate is higher for good frames. The post-gap theory is unsupported here. |
+| An RMS floor to reject quiet frames | **Unusable**: every bad frame is quiet, but the threshold that catches all ten drops **465 of 531** good frames — **87.6 per cent**. |
+| A confidence threshold | **Does not separate**: bad frames run 0.41–0.88 against good frames at 0.33–1.00, with the bad median *below* the good median but heavily overlapping. |
+
+**What this establishes.** The defect is **10 frames out of 541**, confined to the lowest lag range, and
+**no property available inside the frame separates them from correct readings.** Energy and confidence
+both overlap almost completely, and the one structural signal that seemed to explain them — adjacency to
+a gap — is a base-rate artefact. This is now the fourth and fifth repair ruled out by measurement, after
+the three in the section above.
+
+**It also lowers the stakes honestly.** At 1.8 per cent of voiced frames, concentrated outside the sung
+range, this is a bounded defect rather than the dominant error term the earlier section described. The
+listening packet named above is still the right input, but the question for it has changed: it is no
+longer "is this an octave?" but **"is the audio at these ten frames a note at all, or a breath, a room
+tone, or silence?"** — because if those frames are not singing, the correct answer is not a better
+period estimate but to report them unvoiced, and that is a judgement about the audio, not the code.
+
+**Nothing in the product was changed by this measurement.** The one code change attempted was reverted
+and the tree is clean.
