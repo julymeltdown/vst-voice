@@ -3,6 +3,8 @@
 #include "seam/application/project_factory.hpp"
 #include "seam/interchange/smf_codec.hpp"
 
+#include <optional>
+
 namespace seam::interchange {
 
 struct SmfImportRequest final {
@@ -10,6 +12,11 @@ struct SmfImportRequest final {
   std::string trackName{"MIDI Track"};
   std::string regionName{"MIDI Phrase"};
   domain::Language language{domain::Language::Unspecified};
+  // SMF carries no singer executable, so an imported track has no material until
+  // the caller names some. Binding the caller's recipe is what keeps the imported
+  // project renderable; without it an import reported success while producing a
+  // project SEAM refused to play back.
+  std::optional<domain::ProceduralRecipeReference> proceduralRecipe;
 };
 
 struct SmfProjectDraft final {

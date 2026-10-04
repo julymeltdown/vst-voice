@@ -25,6 +25,36 @@ control and a reader of the report must be able to tell those apart. Import
 cannot recover these gaps; re-importing an exported score yields fewer notes
 than the source, which the loss record discloses.
 
+## Importing a DAW-authored file
+
+`SmfImportRequest::proceduralRecipe` binds a caller-supplied recipe so the
+imported project stays renderable. Without it an import reported success while
+producing a project SEAM refused to play back, because SMF carries no singer
+executable and the track arrived with no material at all.
+
+Two further conditions are reported at import rather than left to surface as a
+render failure:
+
+- A note with **no lyric event** is ordinary MIDI — an instrumental part, or an
+  unfilled lyric track. It receives a neutral vowel instead of an empty token;
+  an empty token has no phone reading and made the whole project unrenderable.
+- Lyrics are phonemized per language, and the import default is Japanese. A file
+  carrying romazi or another language's syllables is reported as unreadable for
+  the selected language, naming `--language` as the remedy. Without this the
+  import looked clean and rendering later failed with *Phonetic context requires
+  resolved phone starts*, which points at the phonemizer rather than the cause.
+
+The CLI accepts both explicitly:
+
+```sh
+seam_voicebank_cli import-score SONG.mid out.seam "My Song" \
+  --recipe recipes/pilot.json --language ja
+```
+
+The recipe is copied beside the written project rather than referenced where it
+happened to live, so the project stays portable; an absolute or outward-pointing
+path renders only on the machine that created it.
+
 SMPTE divisions, malformed status/data bytes, invalid VLQs, truncated chunks,
 zero tempo, invalid meter and trailing bytes are rejected. Unsupported channel,
 system, SysEx and meta events are skipped only with a bounded `SmfIssue` loss

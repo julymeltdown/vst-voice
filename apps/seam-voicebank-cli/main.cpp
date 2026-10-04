@@ -637,9 +637,10 @@ int exportScoreCommand(int argc, char** argv) {
 // inbound half of the exchange the OpenUtau oracle exercises: a file another tool wrote must become a
 // project SEAM can hold, with every conversion loss named rather than dropped.
 int importScoreCommand(int argc, char** argv) {
-  if (argc != 4 && argc != 5 && argc != 7) {
+  if (argc < 4 || argc > 9) {
     std::cerr << "usage: seam_voicebank_cli import-score SOURCE.ustx|.mid|.midi PROJECT.seam [PROJECT_NAME]\n"
-                 "       seam_voicebank_cli import-score SOURCE.ustx PROJECT.seam PROJECT_NAME --recipe PATH\n";
+                 "       seam_voicebank_cli import-score SOURCE.ustx PROJECT.seam PROJECT_NAME --recipe PATH\n"
+                 "       seam_voicebank_cli import-score SOURCE PROJECT.seam [PROJECT_NAME] --language ja|en|ko\n";
     return 1;
   }
   const std::filesystem::path source{argv[2]};
@@ -654,24 +655,63 @@ int importScoreCommand(int argc, char** argv) {
     return 3;
   }
   request.projectName = argc == 5 ? std::string{argv[4]} : source.stem().string();
+  // Lyrics are phonemized per language, and the import default is Japanese.
+  // A MIDI file carrying English or Korean syllables therefore imported
+  // successfully and then failed at render time with "Phonetic context requires
+  // resolved phone starts", because no caller could state the real language.
+  std::optional<std::filesystem::path> namedRecipe;
+  // Trailing options are parsed in pairs. A bare final argument is the project
+  // name and has no value, so an odd-length tail is handled explicitly rather
+  // than by stepping two at a time.
+  for (int index = 4; index < argc; ++index) {
+    const std::string_view flag{argv[index]};
+    if (flag == "--language") {
+      if (index + 1 >= argc) {
+        std::cerr << "error: --language needs a value\n";
+        return 3;
+      }
+      const std::string_view requested{argv[index + 1]};
+      if (requested == "ja") request.language = seam::domain::Language::Japanese;
+      else if (requested == "en") request.language = seam::domain::Language::English;
+      else if (requested == "ko") request.language = seam::domain::Language::Korean;
+      else {
+        std::cerr << "error: --language must be ja, en or ko\n";
+        return 3;
+      }
+      ++index;
+      continue;
+    }
+    if (flag == "--recipe") {
+      if (index + 1 >= argc) {
+        std::cerr << "error: --recipe needs a path\n";
+        return 3;
+      }
+      namedRecipe = std::filesystem::path{argv[index + 1]};
+      ++index;
+      continue;
+    }
+    // A bare final argument is the project name.
+    request.projectName = std::string{flag};
+  }
   // A score format cannot carry a singer executable, so an imported project is
   // unplayable in SEAM unless the caller names the recipe to render it with.
   // Passing --recipe explicitly keeps that a visible choice instead of a silent
   // dead end.
-  if (argc == 7) {
-    const std::string_view flag{argv[5]};
-    if (flag != "--recipe") {
-      std::cerr << "error: unknown import option " << flag << '\n';
-      return 3;
-    }
-    const std::filesystem::path recipePath{argv[6]};
+  if (namedRecipe.has_value()) {
+    const std::filesystem::path recipePath{*namedRecipe};
     const auto recipe = seam::voice_design::loadVoiceRecipeResource(recipePath);
     if (!recipe) {
       std::cerr << "error: cannot load recipe " << recipePath << ": " << recipe.error().message << '\n';
       return 4;
     }
+    // The recipe is copied into the project rather than referenced where it
+    // happens to live. A relative path pointing outside the project (or an
+    // absolute one) produces a project that renders only on the machine that
+    // created it, and fails with "A saved recipe is absent from the package
+    // sources" anywhere else.
     request.proceduralRecipe = seam::domain::ProceduralRecipeReference{
-        recipe.value().identity, recipePath.generic_string(), "neutral"};
+        recipe.value().identity, (std::filesystem::path{"recipes"} / recipePath.filename()).generic_string(),
+        "neutral"};
     const auto validRecipe = request.proceduralRecipe->validate();
     if (!validRecipe) {
       std::cerr << "error: recipe reference is invalid: " << validRecipe.error().message << '\n';
@@ -691,6 +731,25 @@ int importScoreCommand(int argc, char** argv) {
   }
   // The draft is only written once every issue has been reported, so a refused conversion leaves no
   // half-imported project behind for a later caller to mistake for a successful one.
+  // When the caller named a recipe, copy it beside the project so the relative
+  // reference resolves. A project that points at a recipe living somewhere else
+  // is not portable, which is the same dead end as having no recipe at all.
+  if (request.proceduralRecipe.has_value() && namedRecipe.has_value()) {
+    const std::filesystem::path recipeSource{*namedRecipe};
+    const auto recipeTarget = destination.parent_path() / request.proceduralRecipe->path;
+    std::error_code copyError;
+    std::filesystem::create_directories(recipeTarget.parent_path(), copyError);
+    if (copyError) {
+      std::cerr << "error: cannot create recipe directory: " << copyError.message() << '\n';
+      return 5;
+    }
+    if (!std::filesystem::exists(recipeTarget)) {
+      if (!std::filesystem::copy_file(recipeSource, recipeTarget, copyError) || copyError) {
+        std::cerr << "error: cannot copy recipe beside the project: " << copyError.message() << '\n';
+        return 5;
+      }
+    }
+  }
   const auto codec = seam::formats::ProjectJsonCodec{};
   const auto encoded = codec.encode(imported.value().project);
   if (!encoded) {

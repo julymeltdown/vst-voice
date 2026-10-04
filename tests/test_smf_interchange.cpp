@@ -113,6 +113,45 @@ TEST_CASE("SMF export leaves an authored rest as a gap instead of striking a not
                     }));
 }
 
+TEST_CASE("SMF import binds a caller recipe so the imported project stays renderable") {
+  using namespace seam;
+  interchange::SmfScore score;
+  score.ppq = 480U;
+  score.tempos = {{time::Tick{0}, 120.0}};
+  score.meters = {{time::Tick{0}, 4U, 2U}};
+  score.notes = {{time::Tick{0}, time::Tick{480}, 60U, 100U, 0U}};
+  const auto bytes = interchange::encodeSmf(score); CHECK(bytes);
+
+  // SMF carries no singer executable. Without a caller-supplied recipe the
+  // imported track has no material, so SEAM refuses to render it -- the import
+  // still reported success, which is what made the dead end silent.
+  application::ProjectFactory bare{918000U};
+  const auto withoutRecipe = interchange::importSmfProject(bytes.value(), bare); CHECK(withoutRecipe);
+  CHECK(!withoutRecipe.value().project.vocalTracks().front().proceduralRecipe.has_value());
+
+  interchange::SmfImportRequest request;
+  request.projectName = "Imported with recipe";
+  request.proceduralRecipe = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "seam-pilot-01-voiced-stop-diagnostic", "11", std::string(64U, 'b')},
+      "recipes/pilot.json", "neutral"};
+  CHECK(request.proceduralRecipe->validate());
+
+  application::ProjectFactory factory{918001U};
+  const auto withRecipe = interchange::importSmfProject(bytes.value(), factory, request); CHECK(withRecipe);
+  const auto& track = withRecipe.value().project.vocalTracks().front();
+  CHECK(track.proceduralRecipe.has_value());
+  CHECK(track.proceduralRecipe->resource.id == "seam-pilot-01-voiced-stop-diagnostic");
+  CHECK(track.proceduralRecipe->path == "recipes/pilot.json");
+
+  // An invalid reference is refused at import rather than left to fail later.
+  interchange::SmfImportRequest invalid;
+  invalid.proceduralRecipe = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "", "", ""}, "", ""};
+  application::ProjectFactory reject{918002U};
+  const auto refused = interchange::importSmfProject(bytes.value(), reject, invalid);
+  CHECK(!refused);
+}
+
 TEST_CASE("SMF decoder handles running status and reports missing note-offs") {
   using namespace seam;
   const std::vector<std::uint8_t> running{
@@ -813,7 +852,12 @@ TEST_CASE("SMF text compatibility losses preserve notes and strip lyric terminat
   CHECK(imported);
   CHECK(imported.value().project.vocalTracks().front().regions.front().notes.size() == 1U);
   CHECK(imported.value().project.vocalTracks().front().regions.front().lyrics.size() == 1U);
-  CHECK(imported.value().project.vocalTracks().front().regions.front().lyrics.front().surface.empty());
+  // A note with no lyric event gets the neutral vowel rather than an empty
+  // token. An empty surface has no phone reading, so the whole imported project
+  // was refused at render time with "Phonetic context requires resolved phone
+  // starts" -- a real defect this test previously pinned in place.
+  CHECK(domain::toUtf8(imported.value().project.vocalTracks().front().regions.front()
+                           .lyrics.front().surface) == "\u3042");
   CHECK(std::any_of(imported.value().score.issues.begin(), imported.value().score.issues.end(),
       [](const auto& issue) {
         return issue.message.find("no matched lyric events") != std::string::npos;

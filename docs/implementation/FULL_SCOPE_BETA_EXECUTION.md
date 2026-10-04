@@ -8205,3 +8205,55 @@ refused). Full Release ctest 230/230. Format contract updated in
 
 **What this does not change.** P0-08 stays **OPEN**. No OpenUtau session has been driven; the round trip was
 exercised through SEAM's own codecs on the real project, not by loading the result into OpenUtau or a DAW.
+
+## Importing a DAW file: three dead ends behind one reported success
+
+The USTX recipe gap had a twin on the MIDI path, which matters more here because MIDI is what a DAW exports.
+Driving a realistic three-track DAW export through `import-score` and then `bake-project` found three separate
+failures, all of which the import reported as clean.
+
+**1. No singer material.** `SmfImportRequest` had no recipe field at all, so an imported MIDI produced a project
+SEAM refused to render — the identical dead end fixed for USTX one commit earlier. Repaired the same way, with
+`SmfImportRequest::proceduralRecipe` validated at import.
+
+**2. The recipe did not travel with the project.** The first CLI version stored the recipe path verbatim. An
+absolute path renders only on the machine that created it; a path made relative to the project escaped the
+project directory (`../../seam_head5/...`) and was no better. Both fail with *A saved recipe is absent from the
+package sources*. The recipe is now **copied into** the project's `recipes/` directory, so the project is
+portable.
+
+**3. Lyrics the language cannot read, and no way to say which language.** The import defaulted to Japanese and
+there was no flag to change it. A file carrying `la`/`ti`/`do` imported successfully — `issues=0` — and then
+failed at render with *Phonetic context requires resolved phone starts*, a message that points at the
+phonemizer rather than at the real cause. Isolating each track confirmed it exactly: the track with neutral
+vowels rendered, the romaji track did not, and retagging the same lyrics `en` failed differently (*Phone 'l'*),
+proving the language was the variable and not the notes.
+
+Two repairs here. A note with **no lyric event** — ordinary MIDI, an instrumental part or an unfilled lyric
+track — now gets the neutral vowel the loss message already promised, instead of an empty token that no
+phonemizer can resolve and that made the whole project unrenderable. And a lyric containing no kana under a
+Japanese import is now disclosed at import, naming `--language` as the remedy, under the same capacity bound as
+every other disclosure.
+
+**The result on the same three-track DAW file:** two vocal tracks, eight notes, lyrics aligned to the correct
+notes, both tracks carrying a portable recipe, all notes rendering audibly with a correct gap where the rest was.
+The only remaining warning is the true one — track 3 genuinely had no lyric events.
+
+**Three existing tests encoded the old behaviour and were corrected, not worked around.** One pinned an empty
+lyric surface as expected; it now asserts the neutral vowel, because that empty surface was the defect. One used
+an ASCII lyric in a capacity-bound fixture, which now legitimately raises a second disclosure; its lyric became
+kana so the fixture still measures meta-event capacity alone. Two asserted `issues.empty()` for a romaji import;
+they now assert the disclosure is present and carries no loss. Changing behaviour required changing the tests
+that described the behaviour being fixed, and each change is recorded at the assertion.
+
+**Verified.** `seam_smf_interchange_tests` 37/37 (new case: "SMF import binds a caller recipe so the imported
+project stays renderable"), `seam_interchange_service_tests` 20/20, full Release ctest 230/230. Format contract
+updated in `docs/formats/MIDI_INTERCHANGE_V1.md`, including the CLI form:
+
+```sh
+seam_voicebank_cli import-score SONG.mid out.seam "My Song" --recipe recipes/pilot.json --language ja
+```
+
+**What this does not change.** P0-08 stays **OPEN**, and this is still codec- and CLI-level evidence. No FL
+Studio, DAW or OpenUtau session has been driven; the DAW-shaped fixture is a MIDI file this repository wrote, not
+one FL Studio produced.

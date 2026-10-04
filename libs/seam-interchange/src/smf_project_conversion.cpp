@@ -1,10 +1,12 @@
 #include "seam/interchange/smf_project_conversion.hpp"
 
 #include "seam/domain/note.hpp"
+#include "seam/phonemizer/japanese_phonemizer.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <ranges>
 #include <limits>
 #include <map>
 #include <optional>
@@ -14,6 +16,19 @@
 
 namespace seam::interchange {
 namespace {
+
+// True when a lyric contains kana, which is what the Japanese phonemizer reads.
+// Romaji such as "la" or "do" is perfectly legible to a DAW operator but has no
+// kana reading, so the Japanese phonemizer cannot resolve it and the note fails
+// at render time. Warning at import names the real cause instead.
+bool containsJapaneseScript(const std::u32string& text) {
+  return std::ranges::any_of(text, [](char32_t symbol) {
+    const auto code = static_cast<std::uint32_t>(symbol);
+    return (code >= 0x3040U && code <= 0x30FFU) ||
+           (code >= 0x4E00U && code <= 0x9FFFU) ||
+           (code >= 0x3400U && code <= 0x4DBFU);
+  });
+}
 
 std::uint8_t denominatorPower(std::uint8_t denominator) noexcept {
   std::uint8_t power = 0U;
@@ -356,6 +371,17 @@ core::Result<SmfProjectDraft> importSmfProject(
   for (std::size_t sourceTrack = 0U; sourceTrack < sourceTrackHasNotes.size(); ++sourceTrack) {
     if (!sourceTrackHasNotes[sourceTrack]) continue;
     const auto track = factory.addVocalTrack(project, importedTrackNames[sourceTrack]);
+    // SMF has no field for a singer executable, so the track arrives with no
+    // material. Binding the caller's recipe here is what keeps an imported
+    // project renderable; otherwise importing a MIDI file reported success while
+    // producing a project SEAM refused to play back.
+    if (request.proceduralRecipe.has_value()) {
+      const auto validRecipe = request.proceduralRecipe->validate();
+      if (!validRecipe) return core::Result<Output>{validRecipe.error()};
+      auto* target = project.findVocalTrack(track);
+      if (target == nullptr) return core::failure<Output>(core::ErrorCode::InvariantViolation, "SMF import track was not created");
+      target->proceduralRecipe = *request.proceduralRecipe;
+    }
     const auto region = factory.addRegion(project, track,
         sourceTrackHasNotes.size() == 1U ? request.regionName : request.regionName + " " + std::to_string(sourceTrack + 1U),
         time::Tick{0}, end);
@@ -372,6 +398,7 @@ core::Result<SmfProjectDraft> importSmfProject(
     const auto added = project.meterMap().addOrReplace(position(meter.tick), meter.numerator, denominator);
     if (!added) return core::Result<Output>{added.error()};
   }
+  ImportLossCount unresolvableLyrics;
   for (const auto& note : decoded.value().notes) {
     std::u32string text;
     const auto found = lyrics.value().find({note.track, note.start});
@@ -380,6 +407,21 @@ core::Result<SmfProjectDraft> importSmfProject(
       if (!decodedText) return core::Result<Output>{decodedText.error()};
       text = decodedText.value();
     }
+    // A note with no lyric event is ordinary MIDI -- an instrumental part, or a
+    // DAW export whose lyric track was never filled in. Leaving its lyric empty
+    // produced a token no phonemizer can resolve, so the imported project was
+    // refused at render time with "Phonetic context requires resolved phone
+    // starts" even though the import itself reported success. The neutral vowel
+    // is the same default the loss message already promised, and it keeps the
+    // note singable so the pitch still renders and can be re-lyriced later.
+    if (text.empty()) text = U"\u3042";
+    // Lyrics are phonemized per language, and a syllable the selected language
+    // cannot resolve produces a note that fails at render time with "Phonetic
+    // context requires resolved phone starts" -- long after the import reported
+    // success. Naming it here points the operator at the actual cause, which is
+    // almost always that the file was authored in another language.
+    if (request.language == domain::Language::Japanese && !containsJapaneseScript(text))
+      unresolvableLyrics.observe(note.start);
     const auto start = position(note.start);
     const auto duration = position(note.start + note.duration) - start;
     auto [lyric, scoreNote] = factory.makeNote(start, duration, note.midi,
@@ -387,6 +429,22 @@ core::Result<SmfProjectDraft> importSmfProject(
     auto* target = targetBySourceTrack.at(note.track);
     target->lyrics.push_back(std::move(lyric));
     target->notes.push_back(std::move(scoreNote));
+  }
+  if (unresolvableLyrics.count != 0U) {
+    // Without this, a file whose lyrics are not Japanese reported a clean
+    // import and then failed at render time with a message about phone starts,
+    // which points at the phonemizer rather than at the real cause.
+    // Bounded like every other disclosure: a report already at capacity must
+    // refuse the whole conversion rather than silently truncate, so the caller
+    // never receives a partial loss account.
+    if (decoded.value().issues.size() >= limits.maximumEvents)
+      return core::failure<Output>(core::ErrorCode::Unsupported,
+          "SMF conversion diagnostic report exceeds event bounds");
+    decoded.value().issues.push_back({SmfIssueSeverity::Warning, unresolvableLyrics.first,
+        std::to_string(unresolvableLyrics.count) +
+            " lyric(s) are not readable as Japanese and will not phonemize; import with --language en or --language ko if the file is not Japanese; affected source ticks " +
+            std::to_string(unresolvableLyrics.first.value()) + ".." +
+            std::to_string(unresolvableLyrics.last.value())});
   }
   for (auto& track : project.vocalTracks())
     for (auto& region : track.regions) region.sortNotes();

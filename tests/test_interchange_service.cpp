@@ -18,8 +18,11 @@ TEST_CASE("interchange service refuses an incomplete MIDI loss report") {
     std::vector<std::uint8_t> track;
     for (std::size_t index = 0; index < losses; ++index)
       track.insert(track.end(), {0U, 0xffU, 0x7fU, 0U});
+    // The lyric is kana so this fixture measures the meta-event capacity alone.
+    // An ASCII lyric would also raise the "not readable as Japanese" warning,
+    // which is a separate disclosure with its own bound.
     track.insert(track.end(), {0U, 0x90U, 60U, 100U,
-        0U, 0xffU, 0x05U, 1U, 'a',
+        0U, 0xffU, 0x05U, 3U, 0xE3U, 0x81U, 0x82U,
         0x83U, 0x60U, 0x80U, 60U, 0U, 0U, 0xffU, 0x2fU, 0U});
     std::vector<std::uint8_t> bytes{'M', 'T', 'h', 'd', 0U, 0U, 0U, 6U, 0U, 0U, 0U, 1U, 1U, 0xe0U,
                                     'M', 'T', 'r', 'k'};
@@ -330,7 +333,18 @@ TEST_CASE("interchange service imports Type-1 tracks as distinct vocal drafts") 
   CHECK(harmonyBoundLyric != nullptr);
   CHECK(leadBoundLyric->surface == U"la");
   CHECK(harmonyBoundLyric->surface == U"do");
-  CHECK(imported.value().issues.empty());
+  // The lyrics are romaji, so the Japanese default cannot phonemize them. The
+  // import discloses that here rather than letting the render fail later with a
+  // message about phone starts that points nowhere near the real cause.
+  CHECK(std::all_of(imported.value().issues.begin(), imported.value().issues.end(),
+                    [](const auto& issue) {
+                      return !issue.loss &&
+                             issue.message.find("not readable as Japanese") != std::string::npos;
+                    }));
+  CHECK(std::any_of(imported.value().issues.begin(), imported.value().issues.end(),
+                    [](const auto& issue) {
+                      return issue.message.find("--language") != std::string::npos;
+                    }));
 
   // An unqualified score export must preserve the complete multi-track song,
   // not silently narrow it to the first selected/default region.
@@ -365,7 +379,14 @@ TEST_CASE("interchange service imports Type-1 tracks as distinct vocal drafts") 
   CHECK(roundHarmonyLyric != nullptr);
   CHECK(roundLeadLyric->surface == U"la");
   CHECK(roundHarmonyLyric->surface == U"do");
-  CHECK(roundTrip.value().issues.empty());
+  // The round trip carries the same romaji disclosure, because the lyrics are
+  // still romaji and still not Japanese.
+  CHECK(std::none_of(roundTrip.value().issues.begin(), roundTrip.value().issues.end(),
+                     [](const auto& issue) { return issue.loss; }));
+  CHECK(std::any_of(roundTrip.value().issues.begin(), roundTrip.value().issues.end(),
+                    [](const auto& issue) {
+                      return issue.message.find("not readable as Japanese") != std::string::npos;
+                    }));
   CHECK(roundTrip.value().project.tempoMap().events().size() == 2U);
   CHECK(roundTrip.value().project.tempoMap().events()[0].bpm == 100.0);
   CHECK(roundTrip.value().project.tempoMap().events()[1].bpm == 150.0);

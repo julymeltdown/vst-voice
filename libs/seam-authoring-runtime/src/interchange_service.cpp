@@ -116,7 +116,7 @@ core::Result<InterchangeImportDraft> InterchangeService::importFile(
   }
   const auto view = std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(sourceBytes.value().data()), sourceBytes.value().size()};
   auto imported = interchange::importSmfProject(view, factory,
-      interchange::SmfImportRequest{.projectName = std::move(request.projectName), .trackName = "MIDI Track", .regionName = "MIDI Phrase", .language = request.language}, smfLimits);
+      interchange::SmfImportRequest{.projectName = std::move(request.projectName), .trackName = "MIDI Track", .regionName = "MIDI Phrase", .language = request.language, .proceduralRecipe = request.proceduralRecipe}, smfLimits);
   if (!imported) return core::Result<Output>{imported.error()};
   auto importedValue = std::move(imported).value();
   Output result{std::move(importedValue.project), InterchangeFormat::Smf,
