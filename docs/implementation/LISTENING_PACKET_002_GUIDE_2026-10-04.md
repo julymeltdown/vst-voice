@@ -100,7 +100,7 @@ change between the two files read as a fault or as ordinary phrasing?
 
 ---
 
-## Question 3 — Is the missing note audible?
+## Question 3 — Is the rest audible?
 
 **The measurement.** In `q3-phrase-with-missing-note.wav`, the fifth written note (MIDI 74, between MIDI 64
 and MIDI 72) renders **completely silent**:
@@ -116,22 +116,29 @@ and MIDI 72) renders **completely silent**:
 | 6 | 62 | 0.00797 |
 | 7 | 64 | 0.01905 |
 
-This is the **one genuinely unexplained item** left after the whole measurement campaign. Nothing else in
-the audio is wrong; this note simply is not there.
+**Why it is silent is now known, and it is not a defect.** That note carries the phonetic hint `pau` with a
+lyric whose surface is literally `"pau"`. `pau` maps to `PhonemeRole::Silence`, so the note is an **authored
+rest** and is supposed to render as zero amplitude. A two-variant control confirms the renderer is correct
+here: with the hint changed to a vowel and *everything else identical* — same pitch, timing, region, recipe —
+MIDI 74 sounds at 587.40 Hz against a written 587.33 Hz, **+0.2 cents** (see the note-74 entry in
+FULL_SCOPE_BETA_EXECUTION.md and `tools/singing_quality/verify_rest_note_is_authored.py`).
+
+The question is therefore no longer "is this a bug" but "does an authored rest read convincingly". That is a
+real question about the singer, not about the analyser, and it is the only part a listener can settle.
 
 **Play, in this order:**
 
 1. `q3-phrase-with-missing-note.wav` — the phrase as rendered, 3 seconds, with the silent note.
 2. `q3-phrase-control.wav` — the same seven pitches **without** MIDI 74, for comparison.
 
-**The question.** Can you hear that a note is missing? Does the hole read as a dropped note or as a phrase
-break?
+**The question.** Can you hear that a note is missing? Does the hole read as a deliberate rest or as a dropped
+note?
 
 | Verdict | Meaning | What happens next |
 | --- | --- | --- |
-| **A** | Audible as a dropped note | A real renderer defect. MIDI 74 fails to sound in this phrase and the cause is a unit-coverage or phone-binding gap. That is a source-level investigation with a failing case already written. |
-| **B** | Reads as a phrase break or breath | Musically acceptable, but still unexplained. Recorded as a known limitation rather than a defect. |
-| **C** | Cannot hear anything missing | The note's absence is inaudible in context. It should be documented and not treated as blocking. |
+| **A** | Reads as a deliberate rest or breath | The rest is convincing in context. The silence is authored and correctly rendered, so there is nothing further to fix. |
+| **B** | Reads as an unintended dropped note | Not a pitch or synthesis defect, but an **authoring/ergonomics** problem: a rest is indistinguishable from a failed note. The fix is at the authoring level (making rests explicit in the UI and in score export), not in the renderer. |
+| **C** | Cannot hear anything missing | The rest is inaudible in context. Documented, not blocking. |
 
 **Record:** `case: q3-missing-note / verdict: A / confidence: high / notes: ...`
 

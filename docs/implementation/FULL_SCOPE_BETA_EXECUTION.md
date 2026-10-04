@@ -8067,3 +8067,47 @@ control, a longer window, a per-harmonic profile, or the shipped extractor inste
 **Every measurement that produced a false finding used a weaker one.** The four retracted entries were not
 wrong because the questions were bad; they were wrong because the instruments were not good enough to answer
 them, and I reported them as if they were.
+
+## Resolution: note 74 is an authored rest, not a renderer or register defect
+
+Every entry above that touched song-004 note 74 treated its silence as a signal that something was wrong. It
+was not. The note was never asked to sing, and the entry that finally says so is the one that reads the
+*score* rather than only the audio.
+
+**What the note actually is.** Note 74 carries `phoneticHint: "pau"` and a lyric whose `surface` is literally
+the string `"pau"`, in a region named "User-authored diagnostic phrase". `pau` maps to
+`domain::PhonemeRole::Silence` at `libs/seam-phonemizer/src/phonemizer.cpp:51`, and it is excluded from
+`isVoicedSymbol` at `:36`. A rest is supposed to render as zero amplitude. The renderer produced exactly the
+signal the note asked for, and the surrounding notes are non-silent because they are *not* rests.
+
+**Proved with a control rather than by reading the hint.** Reading `pau` proves the intent; it does not prove
+the renderer is correct at 587 Hz. So the same project was rendered twice through the current build, changing
+exactly one thing — the rest hint becomes a vowel — with pitch, timing, region, recipe and every other note
+held identical:
+
+| Variant | note 74 (frames 66000..78000) | RMS |
+| --- | --- | ---: |
+| as authored (`pau`) | silence, as asked for | **0.000000** |
+| control (vowel, same pitch/timing) | **587.40 Hz against a written 587.33 Hz, +0.2 cents** | 0.012331 |
+
+If the silence were a register, pitch-routing, or synthesis defect, the control would still be silent. It is
+not: the identical pitch sings to within a fifth of a cent once it is voiced. **The renderer was never wrong at
+note 74**, which also retires the "octave and a fifth low" reading in the 2026-10-04 entry above.
+
+**This closes the last unexplained item in the 85-frame accounting.** The five-song figures are unchanged and
+still stand on their own terms: 0.176-centre median, 98.05 per cent within 50 cents, zero hop-locked frames.
+What changes is that the single unexplained frame-span is now explained — it was authored silence, and the
+pitch evidence is no longer carrying an unaccounted exception.
+
+**Now locked by a re-runnable check and a unit test.** `tools/singing_quality/verify_rest_note_is_authored.py`
+performs the two-variant control against any project containing an authored `pau` rest and exits non-zero unless
+the rest is silent, the control is audible, and the control's strongest partial is the written pitch.
+`tests/singing_quality/test_rest_note_is_authored.py` covers the rest detection, the variant's isolation of the
+single note, the frame arithmetic, and the silence/pitch distinction on a synthetic tone. Both are tracked; a
+future change that makes a rest sing, or that makes an authored pitch render at the wrong frequency, now fails
+a test rather than waiting to be noticed in a waveform.
+
+**What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to, the lead-timing and
+harmonic-balance questions in LISTENING_PACKET_002 remain open, and `combinedModelHoldoutVerified` is still
+false. What this removes is a phantom defect: the ledger was carrying a "renderer sings the wrong pitch in the
+upper register" bug that does not exist, and it was distorting how the remaining pitch evidence was read.
