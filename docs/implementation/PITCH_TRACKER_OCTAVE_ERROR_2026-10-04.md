@@ -321,12 +321,18 @@ the same frames:
 | 100608 | 93.8 Hz | 791.5 Hz | **−3692 cents (−3.08 octaves)** |
 | 100864 | 93.8 Hz | 389.0 Hz | **−2463 cents (−2.05 octaves)** |
 
-These are **not** multiples of 1200 cents. The chosen lags are 512 and 768 samples; against each frame's
-true period those are ratios of **2.8 to 12.7**, which is not a harmonic relationship at all. So the
+These are octave errors: divided by 1200 they are -2.98, -2.81, -2.07, -3.08 and -2.05 octaves, which is
+within a fraction of an octave of exact -3, -3, -2, -3 and -2 multiples. The chosen lags are 512 and 768
+samples; against each frame's true period those are ratios of roughly **2 to 3**, which is the harmonic
+relationship an octave-down reading consists of. **This paragraph's original claim that they are "not
+multiples of 1200 cents" was an arithmetic error and is corrected by the section at the end of this
+document.** So the
 "the earliest qualifying peak picks the double period" story in the sections above **does not describe
 this audio**, and a fix built on it would have been built on a misreading.
 
 **What the errors actually are.** Ten of **541** voiced frames (1.8 per cent) report 62.5 or 93.75 Hz —
+**(counted within the comparison's measurable subset only; the true figure is 46 frames, see the final
+section of this document)** —
 lag 768 or 512, at the very bottom of the 60–1200 Hz search range. The voiced histogram has a clean gap:
 ten frames below 100 Hz, **nothing** between 100 and 125 Hz, then the real content from 175 Hz up. They
 are a separate low-frequency cluster, not wrong readings inside the melody.
@@ -346,7 +352,9 @@ both overlap almost completely, and the one structural signal that seemed to exp
 a gap — is a base-rate artefact. This is now the fourth and fifth repair ruled out by measurement, after
 the three in the section above.
 
-**It also lowers the stakes honestly.** At 1.8 per cent of voiced frames, concentrated outside the sung
+**It also lowers the stakes honestly.** *(Superseded: the real figure is 8.5 per cent of voiced frames, not
+1.8 per cent, and the frames are inside sung notes rather than outside them. See the final section.)* At
+1.8 per cent of voiced frames, concentrated outside the sung
 range, this is a bounded defect rather than the dominant error term the earlier section described. The
 listening packet named above is still the right input, but the question for it has changed: it is no
 longer "is this an octave?" but **"is the audio at these ten frames a note at all, or a breath, a room
@@ -355,3 +363,137 @@ period estimate but to report them unvoiced, and that is a judgement about the a
 
 **Nothing in the product was changed by this measurement.** The one code change attempted was reverted
 and the tree is clean.
+
+## Root cause found 2026-10-04: the audio itself contains 256-sample-period energy, and it is real
+
+The section above concluded that "no property available inside the frame separates them from correct
+readings". **That conclusion was wrong, and so were two claims in the sections above it.** This section
+supersedes them. The defect was located, its cause identified, and six repairs measured.
+
+### The claim that the errors are not octaves was an arithmetic error
+
+The re-measurement section printed six rows and read "-2.05 to -3.08 octaves, not exact multiples of
+1200 cents". Recomputing from the stored `frameErrorsCents`:
+
+| Frame offset | Candidate | Reference | Error | In octaves | Nearest 1200 multiple | Residual |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6144 | 62.5 Hz | 493.8 Hz | -3578.4 | -2.982 | -3600 | 22 c |
+| 15872 | 93.8 Hz | 659.2 Hz | -3376.6 | -2.814 | -3600 | 223 c |
+| 24320 | 62.5 Hz | 261.4 Hz | -2477.5 | -2.065 | -2400 | 78 c |
+| 100608 | 93.8 Hz | 791.5 Hz | -3693.2 | -3.078 | -3600 | 93 c |
+| 100864 | 93.8 Hz | 389.0 Hz | -2463.3 | -2.053 | -2400 | 63 c |
+
+These are octave errors to within a fraction of an octave. The section read the ratio of candidate to
+reference frequency instead of the cents column it had already computed, which is why a lag of 512 and
+768 against true periods of 97 and 183 was described as ratios of "2.8 to 12.7, not a harmonic
+relationship". **A 2x or 3x lag IS the harmonic relationship an octave error consists of**; the
+arithmetic that dismissed it was the mistake.
+
+### The second false claim: the errors are not confined to ten frames
+
+"Ten of 541 voiced frames (1.8 per cent)" counted only the frames the comparison marked measurable. The
+full picture from the stored comparison:
+
+| Measure | Value |
+| --- | ---: |
+| Voiced candidate frames | 541 |
+| Frames whose reported period is an exact multiple of the 256-sample hop | **46** |
+| Same test applied to the reference track | **0** |
+| Frames carrying more than 200 cents of error | 23 |
+| Of those 23, hop-locked | **20** |
+| Correctly tracked frames that are hop-locked | **0 of 424** |
+
+At a threshold of 0.001 hops the separation is **perfect**: every large-error frame is hop-locked, and
+not one correctly tracked frame is. The defect is 46 frames, 8.5 per cent of the voiced track, not ten.
+The "ten frames" figure came from intersecting with the comparison's measurable subset, which silently
+discarded the frames the same artefact had made unmeasurable.
+
+### The cause: isolated impulses spaced exactly one hop apart
+
+Per-window energy maps of the defective frames show the signal is not periodic but **impulsive**. Frame
+23 (offset 5888) carries 45 per cent of its energy in one 32-sample cell at position 1824, 18 per cent in
+another at 800, and 11 per cent at 1568: six cells holding 86 per cent of the energy, at positions 544,
+800, 1056, 1312, 1568 and 1824, which are exactly **256 apart**. Correctly tracked frames are flat: the
+top six cells hold 14 per cent and are not evenly spaced.
+
+Those isolated spikes produce the needle-sharp correlation peaks seen in the profile. At frame 23 the
+normalized correlation reads -0.367 at lag 252, **+0.634 at 256**, and -0.239 at 260: a spike three
+samples wide. Autocorrelation of a periodic waveform is smooth, so a genuine period cannot make a peak
+that sharp, and a spike that narrow cannot be one.
+
+### The readings are real audio, not an artefact of the analysis grid
+
+The analyser and the renderer share a 256-sample grid: `kProducerHopSize` in
+`libs/seam-voicebank/include/seam/voicebank/acoustic_analysis.hpp:56` is 256, and
+`SpectralRenderParameters::hopSize` in `libs/seam-synthesis/include/seam/synthesis/spectral_classic.hpp:20`
+is 256. That raised the possibility that the analysis grid was manufacturing these readings. **It is
+not.** Re-running the estimator over the identical audio with only the hop changed:
+
+| Analysis hop | 5632 | 6144 | 15872 | 24320 | 24576 | 80128 | 100608 | 100864 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 128 | 93.8 | 62.5 | 93.8 | 62.5 | 62.5 | 187.5 | 93.8 | 93.8 |
+| 256 (shipped) | 93.8 | 62.5 | 93.8 | 62.5 | 62.5 | 187.5 | 93.8 | 93.8 |
+| 512 | 93.8 | 62.5 | 93.8 | 62.5 | 62.5 | 187.5 | 93.8 | 93.8 |
+| 1024 | 93.8 | 62.5 | 93.8 | 62.5 | 62.5 | 187.5 | 93.8 | 93.8 |
+
+The readings do not move. The 256-sample periodicity is in the rendered audio, and it survives any change
+to the analysis grid. The sub-150 Hz defect rate is stable at 1.4 to 2.6 per cent across every hop from
+128 to 1024, so it is a property of the signal rather than of the windowing.
+
+### The audio really is singing at those frames
+
+The listening question raised above, "is the audio at these frames a note at all, or a breath?", is
+answerable without a listener. An independent spectral estimator was run over every voiced frame and
+checked against the stored reference:
+
+| Group | Frames | Spectral peak agrees with reference within 100 cents |
+| --- | ---: | ---: |
+| Correctly tracked (control) | 488 | **474 (97.1 %)** |
+| Hop-locked (disputed) | 36 | **30 (83.3 %)** |
+
+The oracle is trustworthy because it is accurate on the control group it was not tuned for. On the
+disputed frames it finds a genuine note within a quarter octave of the reference at 30 of 36 frames,
+including near-exact matches such as frame 96 (263.7 Hz against a 261.6 Hz reference, +14 cents) and
+frame 436 (328.1 Hz against 329.7 Hz, -8 cents). **The singer is producing the right note and the tracker
+is reporting an octave below it, because the impulse train out-votes the note.**
+
+### Six repairs measured, none shippable
+
+| Repair | Result on the retained audio | Why it was rejected |
+| --- | --- | --- |
+| Reject a frame when every qualifying peak is a hop multiple | errors **46 to 10**, all 464 good frames preserved | **Destroys real notes.** A true 187.5 Hz tone (MIDI ~55.7) has period 256 and is reported unvoiced on every frame. The defect and a genuine pitch are geometrically identical. |
+| Prefer the strongest peak instead of the earliest | misreported frames 46 to 107 here | The strongest peak is more often the impulse. |
+| Reject a peak whose lag cannot repeat inside the window | errors 46 to 8 at a limit of 384, but 524 paired frames fall to 486 | Rejects 196 Hz and MIDI 36, which have 10.4 and 31 cycles. Cycles-in-window **overlaps**: the defect reaches 8.00, correct frames go as low as 5.61. |
+| Reject on peak sharpness | errors 46 to 46 at any margin below 0.10 | A true 187.5 Hz tone also gets a needle peak, because the earliest-peak rule selects lag 768 where the correlation is flat at exactly 1.000. Sharpness appeared to separate only because it was measured at the estimator's arbitrary choice. |
+| Continuity anchor across gaps | 7 to 8 post-gap jumps; carrying it across an 8-frame gap cost 86 of 518 voiced frames | Measured against a 16-bit artefact in an earlier session, and re-tested here it does not separate either. |
+| RMS floor, confidence threshold, gap adjacency | no separation; the threshold catching all bad frames drops 87.6 per cent of good ones | Already recorded above. |
+
+### What this establishes, and what it does not
+
+**Established by the runs named above.** The defect is **46 of 541 voiced frames (8.5 per cent)**, all
+with a period that is an exact multiple of 256 samples, against **zero** such frames in the reference. The
+audio at those frames genuinely contains the correct note. The cause is an impulse train spaced one hop
+apart, present in the rendered audio and not created by the analysis. The errors are octave errors. The
+earliest-peak rule at `pitch.cpp:159-170` has no continuity term, no parity term and no sharpness term,
+and none of the six available in-frame signals separates the defect from a legitimate pitch.
+
+**Not established, and not claimed.**
+
+- **Nothing is fixed.** No product code changed. Every candidate above was measured outside the tree and
+  rejected there; the working tree is clean.
+- **The upstream cause is not yet located in code.** That the rendered audio contains these impulses is a
+  measurement about a render produced by build `741ae2f2`. Which synthesis stage introduces them is not
+  yet identified, and the impulse spacing matching the shared 256-sample analysis grid makes the render
+  and analysis paths the place to look, not the tracker.
+- **This is not a singer-qualification result.** SEAM-BETA-P0-08 asks for a pitch-accuracy verdict on an
+  application render. A located defect with six rejected repairs is progress toward that, not the verdict.
+- The six earlier rejected repairs are now partly re-characterised: the strongest-peak and continuity
+  results were measured against a 16-bit artefact and stand as untested rather than refuted, and the
+  "no property separates them" conclusion is withdrawn in favour of the perfect hop-parity separation
+  above, which separates the defect from good frames but not from a genuine hop-multiple pitch.
+
+**The measurement that would settle the remaining question** is the location of the impulse train in the
+render path: instrument the synth stages to find which one emits energy on the 256-sample grid, and
+re-render. A fix there would remove the defect at its source and would leave the tracker's honest
+limitation, that it cannot distinguish a real 187.5 Hz note from a 256-sample impulse train, as a
+documented property rather than a silent failure.
