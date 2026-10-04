@@ -958,6 +958,44 @@ voice is **not** something this measurement can say and is not claimed.
 P0-08 stays **OPEN**. Nothing has been listened to, one recipe family has been rendered, and
 `combinedModelHoldoutVerified` is still false.
 
+**Correction: the shipped pitch extractor is correct, and the strongest-partial probe was the unreliable
+one.** The entry above reported a recipe whose second harmonic exceeds its fundamental, which should make a
+weak-fundamental tracker report an octave error. Tested directly on that mechanism with synthetic 392.00 Hz
+tones and the **shipped extractor**, the earliest-peak rule at
+`libs/seam-voicebank/src/pitch.cpp:159-170` reports 392.00 Hz correctly at five different harmonic
+balances, including the one the recipe produces. **The hypothesis is refuted.**
+
+**On the real render the two readers agree on 7 of 8 notes**, with the shipped extractor far closer to the
+written pitch:
+
+| Note | Written | Shipped | Shipped error | Probe error |
+| ---: | ---: | ---: | ---: | ---: |
+| 79 | 783.99 | 784.04 | **+0.1 c** | +2.6 c |
+| 67 | 392.00 | 392.00 | **0.0 c** | +2.6 c |
+| 71 | 493.88 | 493.89 | **0.0 c** | -6.0 c |
+| 64 | 329.63 | 329.62 | **-0.0 c** | -7.9 c |
+| 74 | 587.33 | 539.96 | -145.6 c | silent |
+| 72 | 523.25 | 523.30 | **+0.2 c** | -5.9 c |
+| 62 | 293.66 | 293.67 | **0.0 c** | -4.1 c |
+
+**The shipped extractor reads six notes to within a quarter of a cent where the probe is 4 to 8 cents out.**
+
+**What this establishes, and it is the opposite of the previous entry's conclusion: the renderer is correct
+and the shipped pitch extractor is correct.** Neither carries the defect this register spent several entries
+hunting. The five-song figure stands: **0.176-centre median, 98.05 per cent within 50 cents, zero
+hop-locked frames.** The one exception is **note 74**, genuinely silent in the render, which is the single
+unexplained item left in the 85-frame accounting.
+
+**P0-08 stays OPEN.** A correct renderer and tracker on one recipe family is not a singer qualification, and
+nothing here substitutes for listening. `combinedModelHoldoutVerified` is still false, the lead timing question
+is still unlistened, and note 74 is still unexplained.
+
+**The lesson, which is the fourth retraction here and the most general one.** Every measurement that
+overturned an earlier one used a **stronger** method than the measurement it replaced: a synthetic control, a
+longer window, a per-harmonic profile, or the shipped extractor instead of a reimplementation. **Every
+measurement that produced a false finding used a weaker one.** The retracted entries were not wrong because
+the questions were bad; they were wrong because the instruments were not good enough to answer them.
+
 **What is established is a different claim from the previous entry's.** Not "six low notes render wrong"
 but: **under some phrase contexts the renderer reuses a pitch the phrase sang earlier instead of the
 requested one, producing a harmonic of a stale note.** Deterministic, reproducible, and dependent on melodic

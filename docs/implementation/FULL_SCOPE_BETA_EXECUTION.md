@@ -8007,3 +8007,63 @@ correct for a voice is **not** something this measurement can say, and it is not
 
 **What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to, one recipe family has been
 rendered, and `combinedModelHoldoutVerified` is still false.
+
+## Reconciliation: the shipped tracker is right and the strongest-partial probe was wrong
+
+The entry above leaves a real tension: the recipe's audio has a stronger second harmonic than fundamental at
+some pitches, yet the shipped extractor reports those notes correctly. Two measurements of the same audio
+disagreeing means one reader is wrong, and the previous three entries were all wrong in the same direction.
+
+**Tested directly on the mechanism.** The rule at `libs/seam-voicebank/src/pitch.cpp:159-170` takes the
+earliest correlation peak clearing 92 per cent of the best, which should pick a half-period when the second
+harmonic is strong. Synthetic 392.00 Hz tones at five harmonic balances, read with the **shipped extractor**
+rather than a reimplementation:
+
+| Harmonic balance | Measured | Verdict |
+| --- | ---: | --- |
+| fundamental strongest | 392.00 | correct |
+| fundamental = second | 392.00 | correct |
+| **second stronger, as the recipe produces** | **392.00** | **correct** |
+| second much stronger | 392.00 | correct |
+| third strongest | 392.00 | correct |
+
+**The earliest-peak rule does not produce an octave error under any of these conditions.** That hypothesis,
+which this document carried for several entries, is refuted.
+
+**And on the real render, the two readers agree on 7 of 8 notes**, with the shipped extractor far closer to
+the written pitch than the probe:
+
+| Note | Written | Shipped | Shipped error | Probe | Probe error |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 79 | 783.99 | 784.04 | **+0.1 c** | 785.16 | +2.6 c |
+| 67 | 392.00 | 392.00 | **0.0 c** | 392.58 | +2.6 c |
+| 71 | 493.88 | 493.89 | **0.0 c** | 492.19 | -6.0 c |
+| 64 | 329.63 | 329.62 | **-0.0 c** | 328.12 | -7.9 c |
+| 74 | 587.33 | 539.96 | -145.6 c | silent | — |
+| 72 | 523.25 | 523.30 | **+0.2 c** | 521.48 | -5.9 c |
+| 62 | 293.66 | 293.67 | **0.0 c** | 292.97 | -4.1 c |
+| 64 | 329.63 | 329.61 | **-0.1 c** | 328.12 | -7.9 c |
+
+**The shipped extractor reads six notes to within a quarter of a cent where the probe is 4 to 8 cents out.**
+The two readers never disagree by more than 100 cents on any note that has audio, so the probe was not
+reporting something the tracker missed; it was measuring less accurately.
+
+**What this establishes, and it is the opposite of the previous entry's conclusion.** The renderer is correct,
+**and the shipped pitch extractor is correct**. Neither carries the defect this document spent several
+entries hunting. The five-song figure stands: **0.176-centre median, 98.05 per cent within 50 cents, zero
+hop-locked frames.**
+
+**The one exception is note 74**, where the shipped tracker reads -145.6 cents and the probe finds silence.
+That note is genuinely silent in the render, an observation from the entry above that still holds, and it is
+the single unexplained item left in the 85-frame accounting.
+
+**What this does not change.** P0-08 stays **OPEN**. A correct renderer and a correct tracker on one recipe
+family is not a singer qualification, and nothing here substitutes for listening. `combinedModelHoldoutVerified`
+is still false, the lead timing question is still unlistened, and note 74 is still unexplained.
+
+**The lesson, which is the fourth retraction in this document and the most general one.** Every measurement
+that overturned an earlier one used a **stronger** method than the measurement it replaced: a synthetic
+control, a longer window, a per-harmonic profile, or the shipped extractor instead of a reimplementation.
+**Every measurement that produced a false finding used a weaker one.** The four retracted entries were not
+wrong because the questions were bad; they were wrong because the instruments were not good enough to answer
+them, and I reported them as if they were.
