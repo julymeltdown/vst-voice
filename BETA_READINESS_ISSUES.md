@@ -790,6 +790,43 @@ P0-08 stays **OPEN** with a sharper scope: there is a renderer-side pitch defect
 independent of breathiness, that no amount of analysis repair will address. Nothing has been listened to,
 and `combinedModelHoldoutVerified` is still false.
 
+**Correction to the two entries above: note 74 is rendered correctly, and those entries scored silence as
+a note.** Rendering each note **alone, with silence on both sides**, across MIDI 55 to 85 gives a
+delivered-versus-written curve. Note 74 comes out at **585.94 Hz against a written 587.33 Hz, -4.1 cents:
+correct.** 25 of 31 notes land within 20 cents.
+
+Reading the song render directly across note 74's own written span, frames 66000 to 78000, the strongest
+partial in the whole window is **64.45 Hz**, which is the noise floor. **The note is silent in that render.**
+A silent note scored as though it were singing produced the "octave and a fifth low" reading, and both
+estimators agreed on it because both were reporting the absence of sound.
+
+**The defect is real but it is a missing note, not a wrong note**, and the isolated-note march shows the
+pitch path itself is sound. The loss happens between "this note alone" and "this note in this song".
+
+**The march also found six genuinely wrong notes, and they are exact multiples:**
+
+| MIDI | written | delivered | ratio |
+| ---: | ---: | ---: | ---: |
+| 55 | 196.00 | 785.16 | **4.006** |
+| 56 | 207.65 | 832.03 | **4.007** |
+| 60 | 261.63 | 785.16 | **3.001** |
+| 66 | 369.99 | 738.28 | **2.003** |
+| 67 | 392.00 | 785.16 | **2.003** |
+| 68 | 415.30 | 832.03 | **2.003** |
+
+**Every wrong delivery is an exact 2x, 3x or 4x multiple of the written pitch, and all of them land on
+785.16 or 832.03 Hz**, the top of this recipe's declared phone inventory. That is deterministic, not noise,
+and not the analyser's blind spot.
+
+**Two synthesis-side defects are now open**, neither addressable by any analyser change: **note 74 is not
+rendered at all in this song**, and **six low notes render at an exact multiple of their written pitch**.
+Both need a source-level investigation of the synthesis path.
+
+**The lesson recorded so it generalises.** "The estimators agree the pitch is absent" cannot distinguish
+"rendered at the wrong pitch" from "never rendered". A missing signal and a wrong signal must be told
+apart before either is diagnosed. P0-08 stays **OPEN**, nothing has been listened to, and
+`combinedModelHoldoutVerified` is still false.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

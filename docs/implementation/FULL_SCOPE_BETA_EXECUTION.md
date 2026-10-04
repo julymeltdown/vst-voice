@@ -7768,3 +7768,61 @@ working as designed.
 not answered here. The 1 uncharacterised frame of the 85 is still uncharacterised. Nothing has been
 listened to, this is one singer family, and `combinedModelHoldoutVerified` is still false, so **P0-08
 remains OPEN**.
+
+## Retraction: note 74 is rendered correctly, and an earlier entry scored silence as a note
+
+An entry above convicts the renderer of an octave-and-a-fifth error at note 74, on the evidence that two
+independent estimators agreed the written pitch was absent. **That accusation is wrong, and the way it was
+wrong matters more than the conclusion.**
+
+**Rendering each note alone, with silence on both sides, gives a delivered-versus-written curve over MIDI
+55 to 85.** Note 74 comes out at **585.94 Hz against a written 587.33 Hz: -4.1 cents, correct.**
+
+| MIDI | written | delivered | cents | ratio |
+| ---: | ---: | ---: | ---: | ---: |
+| 57 | 220.00 | 222.66 | +20.8 | 1.012 |
+| 64 | 329.63 | 328.12 | -7.9 | 0.995 |
+| **74** | **587.33** | **585.94** | **-4.1** | **0.998** |
+| 79 | 783.99 | 785.16 | +2.6 | 1.001 |
+| 85 | 1108.73 | 1107.42 | -2.0 | 0.999 |
+
+Twenty-five of 31 notes land within 20 cents. **The renderer delivers the written pitch accurately across the
+range, note 74 included.**
+
+**So what did the earlier entry measure?** Reading the song render directly across note 74's own written
+span, frames 66000 to 78000, the strongest partial in the entire window is **64.45 Hz**, which is 3825
+cents below the target and is the noise floor rather than a pitch. **The note is silent in that render.** A
+silent note scored as though it were singing produced the "octave and a fifth low" reading, and both
+estimators agreed on it because both were reporting the absence of sound.
+
+**Two things follow, and neither is a reprieve for the renderer.** The analyser is right that the pitch is
+absent, so the defect is real, but it is a note that was **not rendered at all** rather than one rendered at
+the wrong pitch. And the isolated-note march shows the pitch path itself is sound, so the loss happens
+somewhere between "this note alone" and "this note in this song".
+
+**The march also found six genuinely wrong notes**, and they are exact multiples rather than arbitrary:
+
+| MIDI | written | delivered | ratio |
+| ---: | ---: | ---: | ---: |
+| 55 | 196.00 | 785.16 | **4.006** |
+| 56 | 207.65 | 832.03 | **4.007** |
+| 60 | 261.63 | 785.16 | **3.001** |
+| 66 | 369.99 | 738.28 | **2.003** |
+| 67 | 392.00 | 785.16 | **2.003** |
+| 68 | 415.30 | 832.03 | **2.003** |
+
+**Delivered pitch is an exact 2x, 3x or 4x multiple of the written pitch, and every wrong delivery lands on
+785.16 or 832.03 Hz.** This is deterministic, not noise, and not the analyser's blind spot. Those two
+delivered values are at the top of this recipe's declared phone inventory, which suggests the sung note is
+being taken from somewhere other than the score.
+
+**What is now open, stated precisely.** Two separate synthesis-side defects, neither of which any analyser
+change can address: **note 74 is not rendered at all in this song**, and **six low notes render at an exact
+2x to 4x multiple of their written pitch**. Both need a source-level investigation of the synthesis path,
+which this entry has not begun and does not claim.
+
+**The methodological lesson, which is the more valuable half.** The oracle that cleared the renderer three
+times in this document also produced a confident false accusation here, because "the estimators agree the
+pitch is absent" cannot distinguish "rendered at the wrong pitch" from "never rendered". **A missing
+signal and a wrong signal must be told apart before either is diagnosed**, and this document did not do
+that until a single-note isolation render forced the distinction.
