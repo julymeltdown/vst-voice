@@ -252,6 +252,19 @@ renders, and the corpus notice states the bank gives eight phoneme labels the sa
 by design, so this is a measurement discrepancy to investigate, not a musical finding. Details and
 two claims of mine that checking disproved are in the diagnosis.
 
+**The U16 pitch discrepancy is the fixture, and both suspects are now cleared.** The extractor reads
+four synthetic tones at MIDI 60/64/72 to within 0.001 Hz at confidence 0.9998, so the earliest-peak
+rule does not misreport clean audio. The bank is the cause: `production-bank/manifest.json` names
+itself a *Public-domain Human Production Pipeline Fixture*, and all **8 units** reference the single
+file `audio/human-vowel-demo.wav` at **rootMidi 67** — every phrase's `resources` list carries the same
+`audio_sha256 caf8ceb0...`. That recording measures at a **median 990.07 Hz (MIDI 83)** against a
+score asking MIDI 62-72, so a correct renderer cannot produce an in-range fundamental and the
+extractor reports the harmonics that really exist. An independent re-run matches the packet:
+5745 voiced frames, 196 in range (3.4 per cent). **The U16 corpus is not a pitch-accuracy test and
+never was** — its own notice says it exercises timing and fallback. This does not reopen the separate
+extractor defect measured on the retained real-sung-render comparison, which remains open pending a
+listening judgement.
+
 is in [the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). Nothing is
 fixed, no threshold is proposed, and this does not qualify a singer or close this blocker.
 

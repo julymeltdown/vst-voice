@@ -255,3 +255,45 @@ writes and what the analyser reads from the render, on a corpus whose own notice
 exercise timing and fallback rather than musical quality. It may be the analyser, the renderer, or
 the fixture. Locating which needs the packet to be listened to and the per-phrase reports read
 alongside the pitch track, neither of which has happened.
+
+## Resolved 2026-10-04: it is the fixture. Neither the renderer nor the extractor is at fault.
+
+The entry above correctly refused to attribute the U16 discrepancy. It is now explained, and both of
+the suspects named there are cleared by measurement.
+
+**The extractor is accurate.** Running the shipped `seam_voicebank_cli extract-pitch` over synthetic
+float32 tones at exactly the pitches this project writes:
+
+| Written | Expected | Reported | Confidence |
+| --- | ---: | ---: | ---: |
+| MIDI 60 | 261.626 Hz | 261.6255 Hz | 0.99987 |
+| MIDI 64 | 329.628 Hz | 329.6269 Hz | 0.99986 |
+| MIDI 72 | 523.251 Hz | 523.2503 Hz | 0.99984 |
+
+Sub-millicent across the whole written range. The earliest-peak rule at `pitch.cpp:159-170` does not
+misreport clean periodic audio.
+
+**The bank declares itself a fixture.** `production-bank/manifest.json` sets `displayName: "Public-
+domain Human Production Pipeline Fixture"`, and all **8 units** reference **one** file,
+`audio/human-vowel-demo.wav`, all at **rootMidi 67**. The run proves it: every phrase's `resources`
+list carries the same `audio_sha256` of `caf8ceb04b864c7501371a2adae46697495e617b9ade178560ba2ea1aa6b8cb9`
+for all eight units. The README states it outright — *"It is deliberately labelled `official=false`
+and `contractedSinger=false`. It is not a complete phoneme bank"* — and the notice traces the audio
+to a single public-domain spoken recording rather than sung syllables.
+
+**The consequence is arithmetic, not mysterious.** That source recording measures at a **median
+990.07 Hz (MIDI 83.0)**, while the manifest declares **rootMidi 67 (392 Hz)** and the score asks for
+MIDI 62-72. A renderer asked to move one sustained ~990 Hz voice down into 293-523 Hz cannot present
+a clean single-cycle autocorrelation peak in range; the extractor then reports the harmonic
+structure that genuinely exists. An independent re-run reproduces the packet's figures almost
+exactly: **5745 voiced frames, 196 inside the written range (3.4 %), 3410 above it**, against the
+packet's 5745 and 200 (3.5 %).
+
+**What this settles, and what it does not.** It settles the question the earlier entry declined to
+answer: the U16 corpus **cannot** demonstrate pitch accuracy, because its bank is one spoken
+recording re-labelled eight ways and scored against a written melody. `analyzer_ceiling_hz: 1200.0`
+and the packet's own `singerQualified=false` agree with that reading. It does **not** clear the
+extractor defect measured on the retained application comparison earlier in this document: that
+audio is a real sung render and still carries post-gap octave jumps. Two separate things, now
+separated. **The fixture is not a pitch-accuracy test; the real-render octave bug remains open**, and
+closing it still needs the listening judgement described above.
