@@ -1973,3 +1973,82 @@ TEST_CASE("the track chip takes the strip's width instead of a fixed 132 points"
   CHECK(wide.gridLabel.x > wide.trackLabel.right());
   CHECK(narrow.trackLabel.height == wide.trackLabel.height);
 }
+
+TEST_CASE("a note's lyric is drawn inside its note, not floating above it") {
+  // The label allocator tried the above-note slot first and the inside slot
+  // second, and because the above-note slot almost always succeeds every kana
+  // floated above its note. That also produced the vertical jitter: the slot is
+  // anchored to the note's top edge, so the label rose and fell with each note's
+  // pitch. Notation reads the other way round, and so does this now.
+  LayoutFixture fixture;
+  fixture.controller.resize(1600.0, 900.0);
+  fixture.shell.activate({}, DesignPreferences{.mode = DesignMode::Scene});
+  fixture.shell.setWorkspace(fixture.controller, Workspace::Sing);
+  Frame frame;
+  CHECK(paintFrame(fixture, 1600.0, 900.0, 1.0, frame));
+  // The fixture's own lyrics are a, i, a long one, and a Korean syllable. The long
+  // one is wider than its note and must still step out; the short ones must not.
+  // The grid's own band, read from the octave labels the shell paints down its
+  // left edge.
+  double gridTop = 0.0;
+  double gridBottom = 0.0;
+  std::size_t octaveLabels = 0;
+  for (const auto& record : frame.text) {
+    if (record.text.size() != 2 || record.text[0] != 'C' || record.text[1] < '1' ||
+        record.text[1] > '8')
+      continue;
+    ++octaveLabels;
+    if (gridTop <= 0.0) gridTop = record.bounds.y;
+    gridBottom = std::max(gridBottom, record.bounds.y + record.bounds.height);
+  }
+  CHECK(octaveLabels >= 2);
+  CHECK(gridTop > 0.0);
+  CHECK(gridBottom > gridTop);
+  // A note is one semitone tall, so the shortest span a label can legitimately
+  // occupy is that row. Asserting only that the label is somewhere in the grid
+  // is not enough: a label floating above a low note is *still* inside the grid,
+  // which is exactly the defect. The inside slot spans a note's own height, so
+  // the label's height is bounded by the row it was given rather than by the grid.
+  const auto rowHeight = (gridBottom - gridTop) / 24.0;
+  CHECK(rowHeight > 0.0);
+  // The real note rectangles, from the same model the shell lays out, so the
+  // assertion is about a label sitting inside the note that owns it rather than
+  // about an inferred row line. Two earlier versions of this test failed to be
+  // load-bearing: one compared label heights (both slots are about the same
+  // height) and one snapped to a uniform row pitch (the grid is 18.75 points per
+  // row, and the labels sit mid-note, not on a boundary). Both passed with the
+  // defect restored, which is why this version reads the note boxes directly.
+  const auto& roll = fixture.controller.pianoRoll();
+  const auto notes = roll.visibleNotes();
+  // Note bounds arrive in the roll's own space and the shell lifts them by the
+  // grid's top before drawing, so the comparison has to lift them the same way.
+  // The grid rectangle comes from the layout solver rather than from any label,
+  // because solving the offset from the label under test would make the
+  // assertion true by construction.
+  const auto solved = seam::native_ui::design::solveSingLayout(1600.0, 900.0, false);
+  const auto gridOffset = solved.grid.y;
+  CHECK(gridOffset > 0.0);
+  // Measured at 1600x900: the grid offset is 172, note 'i' occupies 515-531 and
+  // its label paints at exactly 515, while note 'a' is only 8 points tall (a
+  // neighbouring semitone collision in this fixture narrows it) and is below the
+  // 15-point floor the allocator requires, so it legitimately steps out. Only the
+  // roomy note can prove the placement rule.
+  std::size_t inside = 0;
+  std::size_t steppedOut = 0;
+  for (const auto& record : frame.text) {
+    if (record.text != "a" && record.text != "i") continue;
+    const auto sitsInsideOwnNote = std::any_of(
+        notes.begin(), notes.end(), [&](const ui::NoteVisual& note) {
+          if (note.lyric != record.text) return false;
+          const auto top = note.bounds.y + gridOffset;
+          return record.bounds.y >= top - 1.0 &&
+                 record.bounds.y <= top + note.bounds.height + 1.0;
+        });
+    if (sitsInsideOwnNote) ++inside;
+    else ++steppedOut;
+  }
+  // The roomy note's lyric sits inside it. The narrow one may step out, which is
+  // the documented behaviour when a note is too small to hold its label.
+  CHECK(inside == 1);
+  CHECK(steppedOut == 1);
+}

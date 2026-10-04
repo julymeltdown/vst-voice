@@ -2519,12 +2519,20 @@ void SingShell::paintEditor(Canvas2D& c, const DesignTokens& t, ui::PianoRollMod
     for (const auto& candidate : candidates) {
       const auto width = c.measure(candidate.note->lyric, lyricStyle) + 8.0;
       const auto b = candidate.bounds;
+      // Inside the note first, above it only as a fallback. This used to be the
+      // other way round, and because the above-note slot almost always succeeds
+      // every kana floated above its note instead of sitting in it. That also made
+      // the label ride up and down with each note's pitch, because the slot is
+      // anchored to the note's top edge -- which is the vertical jitter this
+      // arrangement caused. Notation reads the other way: the syllable belongs to
+      // the note, and a label only steps out when the note is too small or too
+      // crowded to hold it.
       const std::array<ui::Rect, 2U> slots{
-          ui::Rect{b.x - 2.0, b.y - 19.0, width, 18.0},
-          ui::Rect{b.x + 4.0, b.y, width, b.height}};
+          ui::Rect{b.x + 4.0, b.y, width, b.height},
+          ui::Rect{b.x - 2.0, b.y - 19.0, width, 18.0}};
       for (std::size_t s = 0U; s < slots.size(); ++s) {
         const auto slot = slots[s];
-        const auto inside = s == 1U;
+        const auto inside = s == 0U;
         if (inside && (b.height < 15.0 || width > b.width - 6.0)) continue;
         if (!inside && (slot.y < l.grid.y || slot.right() > l.grid.right())) continue;
         bool free = std::none_of(placed.begin(), placed.end(),

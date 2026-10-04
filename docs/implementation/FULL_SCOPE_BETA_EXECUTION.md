@@ -7028,3 +7028,42 @@ mutation-checking rather than by re-reading the test. The suite is now
 widths the layout never produces; the numbers above are measured, not assumed.
 The accessibility tree was checked and is **not** the cause: every control including `shell.track`
 carries a full accessible name, so this was a purely visual truncation.
+
+**The second design defect, and the one the report actually described: note lyrics floated above
+their notes and rode up and down with the melody.** The report said the note text was too small and
+that it moved vertically. Both symptoms have one cause. `paintEditor` allocates each lyric into one of
+two slots, and it tried them in this order:
+
+```cpp
+const std::array<ui::Rect, 2U> slots{
+    ui::Rect{b.x - 2.0, b.y - 19.0, width, 18.0},   // above the note
+    ui::Rect{b.x + 4.0, b.y, width, b.height}};    // inside the note
+const auto inside = s == 1U;
+```
+
+The above-note slot almost always succeeds — it only needs clear space 19 points higher — so **every
+kana rendered above its note**. And because that slot is anchored to `b.y - 19.0`, the label's height
+tracked its note's pitch: the higher the note, the higher the syllable. That is precisely the vertical
+jitter reported, and it is why the melody looked like it had text scattered above a staircase.
+Swapping the two slots puts the syllable **inside** its note, as notation and every vocal editor do,
+with the above-note slot kept as the fallback for a note too short or too narrow to hold its label.
+The overlap allocator is unchanged, so labels still never collide with each other, another note, a
+badge or a capsule, and none leaves the grid.
+**The capture is the evidence.** Before: kana float above the notes and step up and down the staff.
+After, recaptured from the rebuilt app: every syllable sits inside its note at a constant height, and
+the one short note in the phrase still correctly steps out above itself.
+**Four test versions were not load-bearing before this one, and that is the honest record.** The first
+three passed with the defect restored:
+
+1. *Height comparison* — both slots are about the same height, so this cannot separate them.
+2. *Snapped to a uniform row pitch* — the grid is **18.75** points per row and the labels sit
+   mid-note, not on a boundary, so nothing ever snapped.
+3. *Derived the grid offset from the label under test* — true by construction, and it would have
+   passed with any paint at all.
+
+The committed version reads the real note rectangles from `pianoRoll().visibleNotes()`, lifts them by
+`solveSingLayout().grid.y` — the same offset the shell uses — and asks whether each label's painted
+top falls within its own note. It asserts **`inside == 1` and `steppedOut == 1`**, which is what the
+fixture actually produces: note `i` occupies 515-531 and its label paints at 515, while note `a` is
+only 8 points tall, below the allocator's 15-point floor, so it legitimately steps out. Reverting the
+slot order fails it. Registered as `seam_design_layout_property_tests_lyricplacement`.
