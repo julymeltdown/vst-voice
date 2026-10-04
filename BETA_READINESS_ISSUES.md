@@ -877,6 +877,47 @@ affect it, because the audio genuinely does not contain the written note.
 one recipe family has been rendered. Nothing has been listened to, and `combinedModelHoldoutVerified` is
 still false.
 
+**Update 2026-10-04: the defect is a stale-pitch leak, and it is not a property of any note.** The six
+failing MIDI values above were measured with isolated single-note renders. **Rendering sequences instead
+shows the same MIDI value both correct and wrong depending only on its neighbours:**
+
+| Sequence | Result |
+| --- | --- |
+| 55, 56, 60, 66, 67, 68 | 55 wrong, **56, 60, 66, 67 correct**, 68 wrong |
+| 57, 67, 72, 85 | **all correct**, including 67 |
+| 64, 55, 72, 60, 79, 67, 85, 68 | **60 and 67 wrong**, the rest correct |
+| 79, 72, 67, 64, 60, 55 | correct until **55 wrong** at the end |
+
+**MIDI 67 is correct in two sequences and wrong in two others with no change to the note.**
+
+**The wrong deliveries are pitches the phrase already sang.** Each wrong delivery compared against every
+earlier note in its own sequence:
+
+| Position | Written | Delivered | Equals an earlier note |
+| ---: | ---: | ---: | --- |
+| 3 of 64,55,72,60,79,67,85,68 | MIDI 60, 261.63 | 521.48 | **MIDI 72, two notes earlier, within 5.9 cents** |
+| 5 of the same | MIDI 67, 392.00 | 785.16 | **MIDI 79, one note earlier, within 2.6 cents** |
+| 5 of 79,72,67,64,60,55 | MIDI 55, 196.00 | 785.16 | **MIDI 79, at the START, within 2.6 cents** |
+
+**Three of five wrong deliveries reproduce an earlier note's pitch to within a few cents**, and in the last
+case the leaked pitch is the phrase's first note, five notes back, so **the leak reaches the start of the
+phrase rather than being neighbour-local**. The exact 2x and 4x ratios are what doubling or quadrupling a
+stale oscillator produces, so the multiplier is a harmonic of a pitch that was correct earlier.
+
+**This points at state that should reset per note and does not.** `procedural_renderer.cpp:136` skips the
+pose event when a vowel phone repeats the previous one, leaving an earlier pose in force. **That rule was
+tested and refuted**: it explains only 2 of the 6 isolated failures, and several correct notes are also
+repeats. **The cause is not identified in source and is not claimed here.**
+
+**What is established is a different claim from the previous entry's.** Not "six low notes render wrong"
+but: **under some phrase contexts the renderer reuses a pitch the phrase sang earlier instead of the
+requested one, producing a harmonic of a stale note.** Deterministic, reproducible, and dependent on melodic
+context rather than on any individual note.
+
+**What this does not change.** The cause is not located. How often this occurs across real material is
+unmeasured, and its audible severity is a listening question. Nothing has been listened to, one recipe
+family has been rendered, and `combinedModelHoldoutVerified` is still false, so **P0-08 stays OPEN**.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 

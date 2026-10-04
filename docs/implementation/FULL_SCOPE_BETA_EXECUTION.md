@@ -7889,3 +7889,52 @@ reproducible from a stated procedure, and it is the first defect in this documen
 **What this does not change, and is not claimed.** P0-08 stays **OPEN**. Whether this recipe is the only
 one affected is unknown, since one recipe family has been rendered and the defect's scope across singers is
 unmeasured. Nothing has been listened to, and `combinedModelHoldoutVerified` is still false.
+
+## The defect is a stale-pitch leak: a note sometimes sings a pitch the phrase sang earlier
+
+The entry above identified six failing MIDI values and correctly declined to name a cause. **The failure is
+not a property of the note at all.** Rendering sequences instead of isolated notes shows the same MIDI value
+both correct and wrong depending only on what precedes it:
+
+| Sequence | Result |
+| --- | --- |
+| 55, 56, 60, 66, 67, 68 | 55 wrong (4x), **56, 60, 66, 67 correct**, 68 wrong (2x) |
+| 57, 67, 72, 85 | **all correct**, including 67 |
+| 64, 55, 72, 60, 79, 67, 85, 68 | 64, 55, 72 correct, **60 wrong (2x)**, 79 correct, **67 wrong (2x)**, 85, 68 correct |
+| 79, 72, 67, 64, 60, 55 | all correct until **55 wrong (4x)** at the end |
+
+**MIDI 67 is correct in two sequences and wrong in two others, with no change to the note itself.** The
+single-note probe was measuring a note in isolation, which is why it disagreed with the songs.
+
+**And the wrong deliveries are pitches the phrase already sang.** Comparing each wrong delivery against every
+earlier note in its own sequence:
+
+| Sequence position | Written | Delivered | Equals an earlier note |
+| ---: | ---: | ---: | --- |
+| 3 of 64,55,72,60,79,67,85,68 | MIDI 60, 261.63 | 521.48 | **MIDI 72 at 523.25, two notes earlier, within 5.9 cents** |
+| 5 of the same | MIDI 67, 392.00 | 785.16 | **MIDI 79 at 783.99, one note earlier, within 2.6 cents** |
+| 5 of 79,72,67,64,60,55 | MIDI 55, 196.00 | 785.16 | **MIDI 79 at 783.99, at the START of the phrase, within 2.6 cents** |
+
+**Three of five wrong deliveries reproduce an earlier note's pitch to within a few cents.** In the last case
+the leaked pitch is the phrase's first note, sung five notes earlier, so **the leak reaches back to the start
+of the phrase and is not a neighbour-local effect**.
+
+**The ratio view is the same defect seen from another angle.** Wrong deliveries are exact 2x and 4x multiples
+of the written pitch, which is what doubling and quadrupling a *stale* oscillator gives. The multiplier is
+not random: it is a harmonic of a pitch that was correct earlier and is now being reused.
+
+**Where this points.** A pose or phase state that should be reset per note is surviving into the next note.
+`libs/seam-voice-design/src/procedural_renderer.cpp:136` skips the pose event when a vowel phone repeats the
+previous one, which would leave an earlier pose in force. **That specific rule was tested and refuted**: it
+explains only 2 of the 6 isolated-note failures, and several correctly-rendering notes are also repeats. So
+the repeated-vowel rule is not this defect, and the cause remains unlocated in source.
+
+**What is now established, and it is a different claim from the previous entry's.** Not "six low notes
+render wrong" but: **under some phrase contexts the renderer reuses a pitch the phrase sang earlier instead
+of the requested one, producing a harmonic of a stale note.** It is deterministic, reproducible, and it
+depends on melodic context rather than on any individual note.
+
+**What this does not change, and is not claimed.** The cause is **not** identified in source and this entry
+does not claim it. How often it occurs across real material is unmeasured, and its audible severity is a
+listening question. Nothing has been listened to, one recipe family has been rendered, and
+`combinedModelHoldoutVerified` is still false, so **P0-08 stays OPEN**.
