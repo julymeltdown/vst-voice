@@ -6985,3 +6985,16 @@ reported rather than silently skipped — a skipped item would make an unsatisfi
 satisfied, which is the exact failure the gate exists to prevent.
 `tools/voice_model_training` runs **406 tests pass (90 skipped)**. This tool is not registered in
 CTest, so it is exercised by that suite rather than as its own gate entry.
+**The remaining gate-shaped candidates were checked and are declarations, not defects.**
+`readyImpliesClosed` in `full_product_contract_protocols.py` is written and read by no code, and that
+looks like the same pattern. It is not: the flag declares that `EXTERNAL_BETA_READY` must not imply
+`EXTERNAL_BETA_CLOSED`, and the gate enforces that **structurally** rather than by reading the flag.
+`evaluate_ready` requires the verified restored archive audit plus `READY_REQUIREMENT_IDS`, while
+`evaluate_closed` layers cohort evidence and `validate_cohort(candidate, "CLOSED")` on top of the READY
+result. The states are separate evaluations with different requirement sets, so a candidate cannot reach
+CLOSED by satisfying READY. The flag documents the invariant; the code is what guarantees it.
+`tests/external_beta` runs **230 tests pass**, and no C++, shell, CMake or test file mentions the flag —
+which is the correct state for a declarative contract field. The two other gate-shaped names,
+`comparisonMetric` and `totalValidSamples`, are metric identifiers and counters.
+**Sweep closed: two real defects found and fixed** — the singing-quality frozen-limit verdict
+(`3ef19ce2`) and the vocoder reconstruction verdict (`71a310c4`) — **and no third.**
