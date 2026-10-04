@@ -43,6 +43,24 @@
 
 namespace {
 
+// A genuine schema-1 project document, written as bytes rather than derived by rewriting a
+// current one. SEAM-BETA-P2-02 asks for an N-to-N+1 installed journey; the existing schema tests
+// take a project this build just encoded and rewrite its version field, which proves the decoder
+// tolerates a missing member but never proves that a file an older build actually wrote opens,
+// saves and reopens. This is that file, in the shape schema 1 had.
+constexpr auto kSchemaOneProject = R"({
+  "formatId":"com.project-seam.project","schemaVersion":1,
+  "projectId":"1","name":"Predecessor Fixture","ppq":960,
+  "tempoMap":[{"tick":0,"bpm":120}],
+  "meterMap":[{"tick":0,"numerator":4,"denominator":4}],
+  "settings":{"sampleRate":48000,"characterDisplay":"minimal","snapEnabled":true,"snapGrid":240},
+  "vocalTracks":[{"id":"2","name":"Legacy Track","voicebank":{"id":"","version":"","contentHash":""},
+    "character":{"id":"","version":""},"gainDb":0,"muted":false,
+    "regions":[{"id":"3","name":"Legacy Region","startTick":0,"durationTick":15360,
+      "lyrics":[{"id":"4","surface":"あ","language":"ja"}],
+      "notes":[{"id":"5","startTick":0,"durationTick":960,"midiKey":60,"lyricId":"4","articulation":"normal"}]}]}],
+  "audioTracks":[]})";
+
 class FakeDialog final : public seam::platform::IFileDialog {
 public:
   seam::core::Result<std::optional<std::filesystem::path>> choose(
@@ -227,6 +245,80 @@ TEST_CASE("New Project preserves installed singers that are not currently select
   CHECK(choices.unavailable[3].label.find("Catalogue scan incomplete") !=
         std::string::npos);
   CHECK(choices.unavailable[3].detail.find("8192") != std::string::npos);
+}
+
+TEST_CASE("a schema one predecessor project opens migrates saves and reopens as current") {
+  // SEAM-BETA-P2-02. The predecessor record validator exists, but nothing proved that a file an
+  // older build actually wrote survives the installed journey. This walks one end to end:
+  // open the predecessor bytes, check the migration produced current semantics rather than
+  // merely decoding, save, and reopen the saved file.
+  const auto root =
+      seam::test::support::temporaryDirectory("standalone-predecessor-migration");
+  const auto predecessorPath = root / "predecessor.seam";
+  {
+    std::ofstream out(predecessorPath, std::ios::binary);
+    out << kSchemaOneProject;
+  }
+  CHECK(std::filesystem::exists(predecessorPath));
+  const auto predecessorBytes = seam::core::readFileBytesLimited(predecessorPath, 4U * 1024U * 1024U);
+  CHECK(predecessorBytes);
+  const auto predecessorSha = seam::core::sha256Hex(std::string_view{
+      reinterpret_cast<const char*>(predecessorBytes.value().data()),
+      predecessorBytes.value().size()});
+
+  auto session = makeSession(root);
+  auto dialog = std::make_unique<FakeDialog>();
+  auto* dialogPtr = dialog.get();
+  auto prompt = std::make_unique<FakePrompt>();
+  auto* promptPtr = prompt.get();
+  // A fresh session holds an unsaved provisional document, so opening asks before discarding it.
+  // FakePrompt answers Cancel when nothing is queued, which would silently skip the open.
+  promptPtr->decisions = {seam::platform::UnsavedDecision::Discard};
+  dialogPtr->responses = {predecessorPath};
+  auto controller = seam::standalone::StandaloneApplicationController::create(
+      *session, std::move(dialog), std::move(prompt),
+      seam::standalone::StandaloneApplicationControllerConfig{
+          .autosaveRoot = root / "autosaves",
+          .recentProjectsPath = root / "recent.json",
+          .defaultNewProject = {},
+          .stateChanged = {},
+      });
+  CHECK(controller);
+
+  // Open the predecessor through the same command a creator would use.
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::OpenProject));
+  const auto& project = session->runtime().document().session().project();
+  CHECK(project.name() == "Predecessor Fixture");
+  if (project.vocalTracks().size() != 1U) return;
+  const auto& region = project.vocalTracks().front().regions.front();
+  if (region.notes.empty()) return;
+  CHECK(region.notes.front().midiKey == 60);
+  // A schema-1 document predates the bounce-authority choice, so it reads as Fixed Audio rather
+  // than inheriting whatever this build would default to.
+  CHECK(project.settings().bounceTimingAuthority ==
+        seam::domain::BounceTimingAuthority::FixedAudio);
+
+  // Save over the predecessor and reopen: the round trip is the part a schema test cannot show.
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::SaveProject));
+  const auto savedBytes =
+      seam::core::readFileBytesLimited(predecessorPath, 4U * 1024U * 1024U);
+  CHECK(savedBytes);
+  const std::string savedText(
+      reinterpret_cast<const char*>(savedBytes.value().data()),
+      savedBytes.value().size());
+  // The saved file is this build's schema, not the predecessor's, and the bytes changed.
+  CHECK(savedText.find("\"schemaVersion\": 20") != std::string::npos);
+  CHECK(seam::core::sha256Hex(savedText) != predecessorSha);
+  // A legacy lyric survives; it is not dropped by the version bump.
+  CHECK(savedText.find("あ") != std::string::npos);
+
+  promptPtr->decisions = {seam::platform::UnsavedDecision::Discard};
+  dialogPtr->responses = {predecessorPath};
+  CHECK(controller.value()->dispatch(seam::platform::ApplicationCommand::OpenProject));
+  const auto& reopened = session->runtime().document().session().project();
+  CHECK(reopened.name() == "Predecessor Fixture");
+  if (reopened.vocalTracks().size() != 1U) return;
+  CHECK(reopened.vocalTracks().front().regions.front().notes.front().midiKey == 60);
 }
 
 TEST_CASE("standalone_application_controller_executes_new_open_save_and_save_as_without_cli") {

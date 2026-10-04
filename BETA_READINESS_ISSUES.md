@@ -537,7 +537,25 @@ The editor controller, native UI test file, editor scene, AppKit window implemen
 **Required change:** before broad beta iteration, extract only stable boundaries: input mode, selection/edit commands, accessibility dispatch, and overlay/panel coordination. Preserve behavior with state-machine tests and visual evidence.
 
 ### SEAM-BETA-P2-02: Cross-version migration is not verified as an installed product journey
-**Status: OPEN.** The validator and schema exist, but the tests use synthetic fixtures; no real N-to-N+1 installed artifact has been produced.
+**Status: PARTIALLY closed — the project family now has a real N-to-N+1 journey; the other six
+families still use synthetic fixtures.**
+`predecessor_release.py` requires seven state families (project, media, settings, autosave,
+catalog, clap, host) and its own tests build all seven synthetically in a temporary directory, so
+they prove the validator's shape and nothing about migration. The **project** family is now covered
+by a genuine journey: a real schema-1 document (the oldest schema this build reads) is written to
+disk, opened through `StandaloneApplicationController`'s real OpenProject command, checked for
+current semantics rather than mere decoding — a schema-1 document predates the bounce-timing
+choice and must read as `FixedAudio`, not inherit this build's default — then saved and reopened,
+with the saved bytes asserted to be schema 20, to differ from the predecessor's digest, and to
+retain the legacy Japanese lyric.
+
+That journey is load-bearing: refusing legacy schemas in `project_json.cpp` fails it at the open
+itself, independently of the three schema tests that also fail.
+
+**Still open.** The remaining six families are covered only by synthetic fixtures, and the project
+journey runs in-process rather than from installed candidate bytes. `editor_controller.cpp` is
+also still 7458 lines (P2-01), which is the other reason broad beta iteration is risky. Nothing here
+produces a signed predecessor record, because that needs a signed installed candidate.
 
 Schema migrations and future-version rejection exist, but there is no predecessor-to-current fixture that jointly verifies projects, autosaves, media, voicebank catalog, CLAP state, plug-in rescan, and updater behavior.
 
