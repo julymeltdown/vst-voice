@@ -7134,3 +7134,29 @@ The identity line beneath it already read in full — `demo.public-domain.human.
 now keeps both ends too if a bank name is longer still.
 Verified at 1280 and 1600 wide: the singer card is 396 and 440 points, and `Voicebank unavailable`
 renders untruncated at both. Design tests 22 of 22.
+**The remaining three contract states are captured and sound.** `rendering` and `failed` are
+scriptable; `stale` is **not**, and the tool refuses it for a correct reason — *"stale audio exists
+only after an edit follows a published render; the standalone command line cannot script an edit, so
+this state is covered by the shell tests, not by a capture"*. That is a limitation stated at the point of
+refusal rather than papered over with a substitute frame, and it means `stale` has **no** visual
+evidence here.
+**A capture-timing limit worth recording, because it looked like a defect and was not.** The first
+`rendering` run reported `scene-rendering` as `failed_or_unreached`, with `stateReached: false` and
+`observedRenderState: ready`. The app was not broken: this fixture renders faster than the tool's
+1300 ms rendering window, so the frame was captured after the render had already finished. Re-running
+with `--rendering-close-ms 250` gives `stateReached: true` and `observedRenderState: rendering` in both
+looks. **The distinction matters** — an unreached state is a fact about the capture, not about the app,
+and reading it as a UI failure would have sent me looking in the wrong place.
+What the states show is honest and worth stating as evidence. **`rendering`** reports `RENDERING` in
+three independent places — the track header, the singer chip, and a determinate footer reading
+**`RENDERING 0/137 · 0%`** — with the portrait ring visibly dimmed, so nothing claims progress that has
+not happened. **`failed`** is the best-communicated surface in the app: **"RENDER DID NOT COMPLETE"**
+with the specific cause (*"Project has no audible rendered tracks: No voicebank unit covers the sound
+"'r' of the lyric 'ら' at bar 1, beat 4"*), the character's expression changed to distress, an `ERROR`
+chip, and `FAILED 0%`. The reason names the unit, the lyric and the exact position, and it is repeated
+untruncated in the status bar — which is the field a user would read while waiting.
+`semanticCheck` PASS with no failures and `geometryCheck` PASS for the failed state. The empty state
+was re-checked at **760x520**, where the rack collapses to a portrait rail, the toolbar collapses to a
+`SEAM` workspace menu, and the grid shows **"Double-click the grid to write the first note"** with the
+character above it. Six of the contract's six states are now accounted for: five captured and sound,
+one (`stale`) refused with a stated reason.
