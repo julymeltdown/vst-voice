@@ -213,6 +213,17 @@ report `MISMATCH`. See [stage comparison](docs/implementation/SINGER_STAGE_COMPA
 for fixed inputs, graph/audio hashes, G5 diagnosis, test-set limitations and next
 steps. These results improve the engineering candidate; P0-08 remains open.
 
+**Where most of that error is, measured 2026-10-04.** Reading the retained application
+comparison as a distribution rather than a mean: the median frame is within 3.54 cents, but 23 of
+its 586 frames carry 93.4% of the total absolute error, and 20 of those 23 are exact negative
+multiples of 1200 cents. All 23 are marked as confident comparisons, not as low-confidence frames.
+Every one begins after a voicing gap. The shipped extractor reproduces the same pattern on the
+same audio: seven post-gap octave jumps in 1172 frames. The cause is the earliest-qualifying-peak
+refinement in `libs/seam-voicebank/src/pitch.cpp` having no continuity term against the previously
+accepted frame. Nothing is fixed and no threshold is proposed; the measurement and its limits are in
+[the diagnosis](docs/implementation/PITCH_TRACKER_OCTAVE_ERROR_2026-10-04.md). This narrows where the
+pitch error comes from. It does not qualify a singer, and it does not close this blocker.
+
 The subsequent fixed five-song validation campaign measures **3090/3649 (84.68%)**
 within 50 cents on measurable voiced pairs, with every strict comparison still
 `MISMATCH`. It also exposed and repaired a separate application blocker: standalone
