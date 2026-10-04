@@ -548,6 +548,27 @@ coordination are all still in the controller. A boundary that had to drag the wh
 behind it would not be a boundary, so these are taken one at a time and each is proved by the
 tests that already exercise it.
 
+**Update: the overlay/panel boundary is now taken too.** `editor_overlays.cpp` holds the
+twenty-five methods that decide which overlay is open, what it shows and when it refreshes: the
+vibrato inspector, style coverage sheet, Japanese reading review, dynamics inspector, find and
+diagnostic-find reviews, the clear-dynamics / note-cleanup / clear-vibrato reviews, and the lyric
+replacement and distribution reviews. The move was again a pure deletion (368 lines) plus one
+added `#include`, and the block was diffed byte-for-byte. Breaking one of them (making the style
+coverage sheet refuse to open) fails 7 tests, so the moved behaviour is covered, not merely
+relocated.
+
+One helper had to be shared rather than copied. `externalTextTarget` — the sentinel lyric id a
+free-text field commits to — was a function in the controller's anonymous namespace, and after the
+split three translation units needed it. Copying it three times would have been three chances for
+the sentinel to drift and quietly stop matching, so it now lives once in
+`include/seam/native_ui/editor_text_target.hpp`.
+
+**Still open.** `editor_controller.cpp` is 6253 lines, down from 7458. Two of the four named
+boundaries remain (input mode, selection/edit commands), and the largest single method in the file
+is still `replacementReviewView` at 434 lines, which builds the replacement, distribution, style
+coverage, vibrato-clear, note-cleanup, clear-dynamics and Japanese-reading views in one body.
+Splitting it is a change rather than a move and is separate work.
+
 The editor controller, native UI test file, editor scene, AppKit window implementation, and application controller each concentrate several unrelated state machines. This raises merge conflict, regression, and field-fix cost.
 
 **Required change:** before broad beta iteration, extract only stable boundaries: input mode, selection/edit commands, accessibility dispatch, and overlay/panel coordination. Preserve behavior with state-machine tests and visual evidence.
