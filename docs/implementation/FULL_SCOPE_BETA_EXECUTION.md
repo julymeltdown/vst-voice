@@ -7258,3 +7258,60 @@ breaks a legitimate case.
 (`seam_tests` 97.3 s, `seam_public_release_python_tests` 120.2 s, total 197.9 s);
 `seam_original_singer_song_journey_tests` 7 passed, 0 failed; tracked-source closure passed;
 `git diff --check` clean. No product code changed in this entry.
+
+## P0-08 substance measured: the HEAD render tracks its written score to a 0.18-centre median
+
+The entry above established that the pitch defect does not reproduce at HEAD but explicitly did **not**
+produce the cent-level verdict P0-08 asks for. That verdict now exists, and it was produced the only way
+it can be trusted: by scoring the render against the **written score** rather than against another
+analyser reading.
+
+**What was rendered and scored.** `tests/test_original_singer_song_journey.cpp` installs a procedural
+singer and renders it singing an authored 48-note Japanese lyric through the real authoring and export
+stack. The score is read from the same C++ note literal the test renders from: PPQ 960, 120 BPM, 41.0 s,
+MIDI 60-69. Every frame is scored against the note that contains it.
+
+**The scoring rule is the project's own**, taken from `tools/singing_quality/acoustic_metrics.py` rather
+than invented here: score only the steady span of each note, which is the half-open range from 25 per cent
+into the note to its end, so the consonant transition that is expected to carry pitch movement is excluded;
+count frames below the 0.60 confidence floor separately instead of scoring them as correct; and exclude the
+1200 Hz analyzer ceiling instead of counting it as an error.
+
+| Render | Scored | Median abs cents | Mean abs cents | Within 50 c | Within 200 c | 200 c or worse | Octave | withinLimits |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| `baseline-master.wav` | 7344 | **0.180** | 4.396 | **98.05 %** | 99.77 % | 17 (0.231 %) | 3 (0.041 %) | **false** |
+| `tuned-master.wav` | 7334 | **0.208** | 4.908 | **98.32 %** | 99.66 % | 25 (0.341 %) | 4 (0.055 %) | **false** |
+
+All 48 notes produced scored frames in both renders, so no note was silently skipped. Steady-span medians
+are 0.166 and 0.194 cents.
+
+**And withinLimits is false, which is the honest headline.** The project's rule requires zero octave
+errors. There are three and four, all inside one note, and the baseline case is fully characterised: at
+t = 7.471 s and 7.477 s inside note `を` (MIDI 64, target 329.63 Hz), two adjacent frames report 164.41 Hz
+and 109.01 Hz at confidence 0.724 and 0.685, bracketed by correct neighbours at 329.50 and 329.88 Hz. An
+independent spectral estimator reads **328.12 Hz at both frames, within 7.9 cents of target**. The singer
+is producing the right note and the tracker misreads it at the note boundary, the same failure mode as the
+retained-render defect and with the same independent-oracle confirmation.
+
+**This is a different fault from the one already characterised, and a much smaller one.** The chosen lags
+are 292 and 440 samples, neither an exact multiple of the 256-sample hop, so this is not the impulse-train
+artefact. At 3 frames in 7344 it is 0.041 per cent.
+
+**A measurement bug of my own, recorded because it produced a wrong number first.** The scoring harness
+initially decoded 24-bit PCM by sign-masking each byte, which is not how 24-bit PCM is stored, and returned
+a median of 2104 cents on a render that is accurate to 0.18. The tell was that the same file had measured
+97 per cent voiced in the previous entry and 3 per cent here. Reading the top byte as signed fixed it, and
+the decode was then checked to be bit-identical to the verified one before any figure was recorded.
+
+**What this changes, and what it does not.** The substance of P0-08 is now measured: a current application
+render tracks its written score to a 0.18-centre median, with 98 per cent of frames inside 50 cents. That
+is the number the blocker has been waiting on, and it was not available before this entry. P0-08 stays
+**OPEN** because withinLimits is false on the project's own rule, because nobody has listened to this
+render, and because one song on one singer is not the five-song corpus the validation campaign reports
+against. Closing it needs either the boundary artefact repaired and a multi-song corpus scored under this
+same rule, or a recorded decision from a listener that a 0.04 per cent boundary artefact is below the bar.
+
+**Verification for this entry.** `seam_original_singer_song_journey_tests` 7 passed, 0 failed;
+Release CTest 230/230 passed at `17301814`; scoring artifacts written to
+`out/fullscope-beta/pitch-score-2026-10-04/` (gitignored, retained locally);
+`git diff --check` clean. No product code changed.

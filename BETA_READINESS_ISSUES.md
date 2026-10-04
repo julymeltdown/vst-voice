@@ -361,6 +361,46 @@ resource `seam.pause-experiment` v3 with content hash `d4dd7737...`, which is no
 application render, and no qualification follows from a defect being absent. Release CTest 230/230 passed
 at `17301814`.
 
+**Update 2026-10-04: the cent-level verdict the previous entry said was missing now exists.** It was
+produced by scoring the HEAD render's measured pitch against the **written score**, so the target for
+every frame is the note the composer asked for rather than a second analyser reading.
+
+Method: an installed procedural singer is rendered end to end through the real authoring and export
+stack, the 48 authored notes are read from the same C++ literal the test renders from (41.0 s at PPQ 960,
+120 BPM, MIDI 60-69), and each frame is scored against its own note. The rule is the project's own, from
+`tools/singing_quality/acoustic_metrics.py`: only the steady span of each note is scored (from 25 per cent
+in, so the consonant transition is excluded), frames under the 0.60 confidence floor are counted rather
+than scored as correct, and the 1200 Hz analyzer ceiling is excluded rather than counted as an error.
+
+| Render | Scored frames | Median \|cents\| | Mean \|cents\| | Within 50 c | Within 200 c | >=200 c | Octave (>=600 c) | `withinLimits` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| `baseline-master.wav` | 7344 | **0.180** | 4.396 | **98.05 %** | 99.77 % | 17 (0.231 %) | 3 (0.041 %) | **false** |
+| `tuned-master.wav` | 7334 | **0.208** | 4.908 | **98.32 %** | 99.66 % | 25 (0.341 %) | 4 (0.055 %) | **false** |
+
+**Sub-centre median accuracy on a real sung render.** 0.18 cents is roughly a thousandth of a semitone.
+All 48 notes produced scored frames; none was empty. Steady-span medians are 0.166 and 0.194 cents.
+
+**And `withinLimits` is still false**, which is the honest result and the reason P0-08 stays open. The
+project's rule requires zero octave errors, and there are 3 and 4. Every one is inside a single note, and
+the baseline case is fully characterised: at t = 7.471 s and 7.477 s, inside note `を` (MIDI 64, target
+329.63 Hz), two adjacent frames report 164.41 Hz and 109.01 Hz at confidence 0.724 and 0.685, bracketed
+by correct neighbours at 329.50 and 329.88 Hz. **An independent spectral estimator reads 328.12 Hz at both
+frames, within 7.9 cents of target** — so as with the retained-render defect, the singer is producing the
+right note and the tracker misreads it at the note boundary. The chosen lags are 292 and 440 samples,
+neither on the 256-sample grid, so this is a different failure from the impulse train already characterised,
+and much smaller: 3 frames in 7344.
+
+**What this changes.** P0-08's substance is now measured rather than assumed. A current application render
+tracks its written score to a 0.18-centre median with 98 per cent of frames inside 50 cents, which is the
+figure the blocker has been waiting on. What remains is a **0.04 per cent boundary artefact**, correctly
+characterised, with an independent oracle proving the audio is right and the analyser wrong.
+
+**What this does not change, and is not claimed.** No qualification follows. `withinLimits` is false on the
+project's own rule, nobody has listened to this render, one song on one singer is not a corpus, and the
+five-song validation campaign's own figures are the corpus-level number. Closing P0-08 needs either the
+boundary artefact repaired and a multi-song corpus scored under this same rule, or an explicit, recorded
+decision that a 0.04 per cent note-boundary artefact is below the bar, made by someone who has listened.
+
 ### SEAM-BETA-P0-01: No rights-cleared, usable Beta Voicebank
 **Status: OPEN.** No bank exists that this project may transform and redistribute; the dossier is a blocked contract template.
 
