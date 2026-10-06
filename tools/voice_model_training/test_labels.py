@@ -4,6 +4,32 @@ from tools.voice_model_training.labels import label_report, score_report
 
 
 class LabelTests(unittest.TestCase):
+    def test_rest_only_score_requires_explicit_complete_silence_ownership(self):
+        score = dict(language="ja", silencePhones=[0, 1], syllables=[], notes=[
+            dict(startFrame=0, endFrame=200, midi=None, syllable=None, slur=False),
+            dict(startFrame=200, endFrame=500, midi=None, syllable=None, slur=False)])
+        original = copy.deepcopy(score)
+        report = score_report(score, frame_count=500, phoneme_count=2, explicit_silence=True)
+        self.assertEqual(report["syllableCount"], 0)
+        self.assertEqual(report["silencePhoneCount"], 2)
+        self.assertEqual(report["noteCount"], 2)
+        self.assertEqual(score, original)
+        for indices in ([], [0]):
+            with self.assertRaises(ValueError):
+                score_report(dict(score, silencePhones=indices), frame_count=500,
+                             phoneme_count=2, explicit_silence=True)
+        for change in (dict(midi=60, syllable=0), dict(syllable=0), dict(slur=True)):
+            broken = copy.deepcopy(score)
+            broken["notes"][0].update(change)
+            with self.assertRaises(ValueError):
+                score_report(broken, frame_count=500, phoneme_count=2, explicit_silence=True)
+        with self.assertRaises(ValueError):
+            score_report(dict(score, silencePhones=[]), frame_count=500,
+                         phoneme_count=0, explicit_silence=True)
+        with self.assertRaises(ValueError):
+            score_report({k: v for k, v in score.items() if k != "silencePhones"},
+                         frame_count=500, phoneme_count=2)
+
     def test_explicit_silence_ownership(self):
         score = dict(language="ko", silencePhones=[0, 2, 4], syllables=[
             dict(lyric="아", phoneStart=1, phoneEnd=2), dict(lyric="오", phoneStart=3, phoneEnd=4)],

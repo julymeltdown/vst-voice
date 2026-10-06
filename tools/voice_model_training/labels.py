@@ -23,7 +23,10 @@ def score_report(score: dict, *, frame_count: int, phoneme_count: int, explicit_
     if score["language"] not in ("ja", "en", "ko"):
         raise ValueError("Unsupported score language")
     syllables, notes = score["syllables"], score["notes"]
-    if not isinstance(syllables, list) or not 1 <= len(syllables) <= 4096:
+    # Rest-only supervision is meaningful only when the explicit-silence
+    # contract owns every acoustic phone. Legacy score contracts remain sung.
+    minimum_syllables = 0 if explicit_silence and silence and len(silence) == phoneme_count else 1
+    if not isinstance(syllables, list) or not minimum_syllables <= len(syllables) <= 4096:
         raise ValueError("Invalid syllable count")
     next_phone = 0
     for syllable in syllables:

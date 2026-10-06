@@ -78,6 +78,20 @@ class CliTests(unittest.TestCase):
             self.assertEqual(run("scored").returncode, 0)
             scored = json.loads((root / "scored/segment.json").read_bytes())
             self.assertEqual(scored["label"]["score"]["notes"][0]["endFrame"], 17)
+            value.update(vocabulary=["sil"], parentScore=dict(language="en", silencePhones=[0],
+                syllables=[], notes=[dict(startFrame=0, endFrame=32, midi=None, syllable=None, slur=False)]))
+            value["parentLabel"]["label"].update(
+                phonemes=[dict(symbol="sil", startFrame=0, endFrame=32, confidence=1)],
+                f0Hz=[0] * 4, voiced=[False] * 4)
+            self.assertEqual(run("rest-only").returncode, 0)
+            rest = json.loads((root / "rest-only/segment.json").read_bytes())
+            self.assertEqual(rest["label"]["score"]["syllables"], [])
+            self.assertEqual(rest["label"]["score"]["silencePhones"], [0])
+            self.assertEqual(rest["label"]["score"]["notes"], [
+                dict(startFrame=0, endFrame=17, midi=None, syllable=None, slur=False)])
+            self.assertIsNone(rest["label"]["label"]["reviewRevision"])
+            self.assertFalse(rest["trainingAdmitted"])
+            self.assertEqual(original.read_bytes(), audio)
             value["parentLabel"]["audioSha256"] = "0" * 64
             self.assertEqual(run("wrong-label").returncode, 2)
             self.assertFalse((root / "wrong-label").exists())

@@ -1,5 +1,12 @@
 # Original voice model production
 
+Explicit-silence score supervision permits rest-only segments with no sung
+syllables only when silence indices own every acoustic phone. Rest notes must
+still partition the full sample clock without pitch, syllable or slur claims.
+The `segment` command clips and rebases that supervision, invalidates the parent
+review, and retains `trainingAdmitted=false`. Older score contracts retain their
+requirement for sung syllables. This does not authorize sources or qualify audio.
+
 Vocoder runs with `excitationNoiseId` now support the same verified partial
 checkpoint resume as other segmented GAN runs. A schema-2 partial cursor stores
 domain-separated raw-draw and realized-noise digest chains through its exact

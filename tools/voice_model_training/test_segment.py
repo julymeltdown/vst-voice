@@ -40,7 +40,12 @@ class SegmentTests(unittest.TestCase):
         self.assertFalse(child["notes"][0]["slur"])
         self.assertEqual(child["notes"][0]["endFrame"], 150)
         self.assertEqual(score, before)
-        with self.assertRaises(ValueError): crop_score(score, label, start_frame=500, end_frame=600)
+        rest = crop_score(score, label, start_frame=500, end_frame=600)
+        self.assertEqual(rest["syllables"], [])
+        self.assertEqual(rest["silencePhones"], [0])
+        self.assertEqual(rest["notes"], [dict(startFrame=0, endFrame=100,
+                                            midi=None, syllable=None, slur=False)])
+        self.assertEqual(score, before)
 
     def test_label_crop_rebases_and_invalidates_review(self):
         label = dict(sourceId="parent", frameCount=1000, hopSize=100, phonemes=[

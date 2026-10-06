@@ -5,6 +5,21 @@ from tools.voice_model_training.conditioning import build_conditioning
 
 
 class ConditioningTests(unittest.TestCase):
+    def test_rest_only_conditioning_preserves_unvoiced_frames(self):
+        label = dict(sourceId="rest", frameCount=5, hopSize=2,
+                     phonemes=[dict(symbol="sil", startFrame=0, endFrame=5, confidence=1)],
+                     f0Hz=[0, 0, 0], voiced=[False] * 3, reviewRevision=None)
+        score = dict(language="ja", silencePhones=[0], syllables=[], notes=[
+            dict(startFrame=0, endFrame=5, midi=None, syllable=None, slur=False)])
+        original = copy.deepcopy((label, score))
+        result = build_conditioning(label, score, vocabulary=["sil"], minimum_confidence=.8)
+        self.assertEqual([r["validSamples"] for r in result["frames"]], [2, 2, 1])
+        self.assertTrue(all(r["rest"] and r["midi"] is None and r["syllable"] is None
+                            and not r["voiced"] and r["f0Hz"] == 0 for r in result["frames"]))
+        self.assertFalse(result["trainingAdmitted"])
+        self.assertFalse(result["releaseEligible"])
+        self.assertEqual((label, score), original)
+
     def test_boundaries_rests_slurs_and_partial_tail(self):
         label = dict(sourceId="phrase", frameCount=9, hopSize=2,
                      phonemes=[dict(symbol="sil", startFrame=0, endFrame=2, confidence=1),
