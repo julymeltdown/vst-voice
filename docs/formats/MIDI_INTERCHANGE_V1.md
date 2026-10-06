@@ -55,6 +55,13 @@ The recipe is copied beside the written project rather than referenced where it
 happened to live, so the project stays portable; an absolute or outward-pointing
 path renders only on the machine that created it.
 
+New recipe files are atomically published from the validated, frozen singer
+resource. If the recipe filename already exists, import reuses it only when it
+decodes to the selected singer identity; equivalent JSON whitespace is allowed.
+A different recipe, malformed file, directory or symbolic link is refused before
+the new project is written, preserving the existing material. This policy also
+applies to USTX imports through the same CLI command.
+
 ### Refusing an import that would not render
 
 The codec only **warns** about unreadable lyrics, because a caller may

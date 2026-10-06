@@ -3113,6 +3113,14 @@ if(SEAM_BUILD_TESTS)
   set_tests_properties(seam_score_export_interop PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 180)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME seam_import_recipe_cli
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_import_recipe_cli.py
+              $<TARGET_FILE:seam_voicebank_cli>)
+    set_tests_properties(seam_import_recipe_cli PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 60)
+  endif()
   add_test(NAME seam_voicebank_cli_help COMMAND seam_voicebank_cli --help)
   add_test(NAME seam_voicebank_cli_validate
     COMMAND seam_voicebank_cli validate

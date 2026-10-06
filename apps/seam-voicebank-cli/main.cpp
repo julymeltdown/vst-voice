@@ -660,6 +660,7 @@ int importScoreCommand(int argc, char** argv) {
   // successfully and then failed at render time with "Phonetic context requires
   // resolved phone starts", because no caller could state the real language.
   std::optional<std::filesystem::path> namedRecipe;
+  std::optional<seam::synthesis::ProceduralSingerResource> selectedRecipe;
   // Trailing options are parsed in pairs. A bare final argument is the project
   // name and has no value, so an odd-length tail is handled explicitly rather
   // than by stepping two at a time.
@@ -717,6 +718,7 @@ int importScoreCommand(int argc, char** argv) {
       std::cerr << "error: recipe reference is invalid: " << validRecipe.error().message << '\n';
       return 4;
     }
+    selectedRecipe = recipe.value();
   }
   seam::application::ProjectFactory factory;
   const auto imported = seam::authoring::InterchangeService{}.importFile(source, factory, request);
@@ -751,8 +753,7 @@ int importScoreCommand(int argc, char** argv) {
   // When the caller named a recipe, copy it beside the project so the relative
   // reference resolves. A project that points at a recipe living somewhere else
   // is not portable, which is the same dead end as having no recipe at all.
-  if (request.proceduralRecipe.has_value() && namedRecipe.has_value()) {
-    const std::filesystem::path recipeSource{*namedRecipe};
+  if (request.proceduralRecipe.has_value() && selectedRecipe.has_value()) {
     const auto recipeTarget = destination.parent_path() / request.proceduralRecipe->path;
     std::error_code copyError;
     std::filesystem::create_directories(recipeTarget.parent_path(), copyError);
@@ -760,9 +761,29 @@ int importScoreCommand(int argc, char** argv) {
       std::cerr << "error: cannot create recipe directory: " << copyError.message() << '\n';
       return 5;
     }
-    if (!std::filesystem::exists(recipeTarget)) {
-      if (!std::filesystem::copy_file(recipeSource, recipeTarget, copyError) || copyError) {
-        std::cerr << "error: cannot copy recipe beside the project: " << copyError.message() << '\n';
+    const auto status = std::filesystem::symlink_status(recipeTarget, copyError);
+    if (copyError && copyError != std::errc::no_such_file_or_directory) {
+      std::cerr << "error: cannot inspect saved recipe: " << copyError.message() << '\n';
+      return 5;
+    }
+    if (std::filesystem::exists(status)) {
+      // A filename is not a singer identity. Reuse only a regular recipe that
+      // decodes to the selected resource; never overwrite another user's recipe.
+      const auto existing = seam::voice_design::loadVoiceRecipeResource(
+          recipeTarget, selectedRecipe->identity);
+      if (!existing) {
+        std::cerr << "error: saved recipe conflicts with selected singer: "
+                  << existing.error().message << '\n';
+        return 5;
+      }
+    } else {
+      // Publish the exact immutable recipe used to bind the project, not a
+      // second read of a source file that may have changed since validation.
+      const auto written = seam::core::durableAtomicWriteNew(
+          recipeTarget, selectedRecipe->patch->bytes());
+      if (!written) {
+        std::cerr << "error: cannot publish recipe beside the project: "
+                  << written.error().message << '\n';
         return 5;
       }
     }
