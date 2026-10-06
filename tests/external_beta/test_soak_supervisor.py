@@ -1,0 +1,243 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+import unittest
+from unittest import mock
+
+from tools.external_beta.soak_supervisor import SupervisionError, supervise_soak
+
+
+class Child:
+    def __init__(self, pid: int):
+        self.pid = pid
+        self.returncode = None
+        self.terminated = False
+        self.killed = False
+        self.waits = []
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -15
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
+
+    def wait(self, timeout):
+        self.waits.append(timeout)
+        return self.returncode
+
+
+class SoakSupervisorTests(unittest.TestCase):
+    def setUp(self):
+        self.reader, self.writer = os.pipe()
+        self.product = Child(123)
+        self.collector = Child(456)
+        self.now = 100.0
+        self.sequence = 0
+        self.heartbeat = lambda: self.send()
+
+    def tearDown(self):
+        for descriptor in (self.reader, self.writer):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+    def send(self, value=None):
+        self.sequence += 1
+        os.write(self.writer, f"{self.sequence if value is None else value}\n".encode())
+
+    def sleep(self, seconds):
+        self.now += seconds
+        self.heartbeat()
+
+    def run_supervisor(self, **overrides):
+        options = dict(record_id="fixture-soak", installed_tree_sha256="a" * 64,
+                       workload_sha256="b" * 64, duration_seconds=1800,
+                       clock=lambda: self.now, sleep=self.sleep)
+        options.update(overrides)
+        with mock.patch("tools.external_beta.soak_supervisor.os.getpid", return_value=789):
+            return supervise_soak(self.product, self.collector, self.reader, **options)
+
+    def failure(self, message, **overrides):
+        with self.assertRaisesRegex(SupervisionError, message) as caught:
+            self.run_supervisor(**overrides)
+        receipt = caught.exception.receipt
+        self.assertEqual(receipt["status"], "FAILED")
+        self.assertFalse(receipt["releaseEligible"])
+        self.assertIsNotNone(self.product.returncode)
+        self.assertIsNotNone(self.collector.returncode)
+        self.assertTrue(self.product.waits)
+        self.assertTrue(self.collector.waits)
+        return receipt
+
+    def test_complete_durations_require_independent_observations_and_cleanup(self):
+        self.send()
+        receipt = self.run_supervisor()
+        self.assertEqual(receipt["status"], "COMPLETE")
+        self.assertEqual(receipt["requiredSeconds"], 1800)
+        self.assertEqual(receipt["observations"][0]["elapsedSeconds"], 0)
+        self.assertEqual(receipt["observations"][-1]["elapsedSeconds"], 1800)
+        self.assertEqual(len(receipt["observations"]), 1801)
+        self.assertEqual(receipt["observations"][-1]["heartbeatSequence"], 1801)
+        self.assertEqual(receipt["installedTreeSha256"], "a" * 64)
+        self.assertEqual(receipt["workloadSha256"], "b" * 64)
+        self.assertEqual(receipt["evidenceScope"], "engineering")
+        self.assertEqual(receipt["clockAuthority"], "supervisor-monotonic")
+        self.assertFalse(receipt["releaseEligible"])
+        self.assertTrue(self.product.terminated and self.collector.terminated)
+        self.assertTrue(self.product.waits and self.collector.waits)
+
+    def test_two_hour_fixture_covers_the_full_declared_endpoint(self):
+        self.send()
+        receipt = self.run_supervisor(duration_seconds=7200)
+        self.assertEqual(receipt["observations"][-1]["elapsedSeconds"], 7200)
+        self.assertEqual(len(receipt["observations"]), 7201)
+
+    def test_missing_and_stale_heartbeat_fail_while_children_are_alive(self):
+        self.heartbeat = lambda: None
+        self.failure("heartbeat unavailable or stale")
+
+    def test_initial_heartbeat_does_not_hide_a_stalled_collector(self):
+        self.send()
+        self.heartbeat = lambda: None
+        receipt = self.failure("heartbeat unavailable or stale")
+        self.assertLess(receipt["observations"][-1]["elapsedSeconds"], 1800)
+
+    def test_product_exit_is_failure_even_with_fresh_heartbeat(self):
+        self.send()
+        def exit_product():
+            self.send()
+            self.product.returncode = 0
+        self.heartbeat = exit_product
+        self.failure("product exited")
+
+    def test_collector_exit_is_failure(self):
+        self.collector.returncode = 0
+        with self.assertRaisesRegex(SupervisionError, "collector exited"):
+            self.run_supervisor()
+        self.assertTrue(self.product.terminated)
+        self.assertTrue(self.collector.waits)
+
+    def test_closed_heartbeat_pipe_is_not_a_successful_end_of_collection(self):
+        os.close(self.writer)
+        self.writer = -1
+        self.failure("heartbeat pipe closed")
+
+    def test_malformed_duplicate_skipped_and_fast_heartbeats_fail(self):
+        os.close(self.reader)
+        for payload in (b"invalid\n", b"0\n", b"-1\n", b"1.5\n", b"1\n1\n",
+                        b"2\n", b"1\n2\n3\n", b"1" * 21):
+            with self.subTest(payload=payload):
+                reader, writer = os.pipe()
+                self.reader = reader
+                self.product, self.collector = Child(123), Child(456)
+                os.write(writer, payload)
+                try:
+                    self.failure("heartbeat")
+                finally:
+                    os.close(writer)
+
+    def test_clock_reversal_and_supervisor_observation_gap_fail(self):
+        self.send()
+        self.heartbeat = lambda: setattr(self, "now", self.now - 2)
+        self.failure("clock must advance")
+
+    def test_clock_jump_cannot_turn_a_short_run_into_completion(self):
+        self.send()
+        self.heartbeat = lambda: setattr(self, "now", self.now + 1800)
+        self.failure("supervisor observation gap")
+
+    def test_delayed_first_observation_cannot_replace_the_full_observed_span(self):
+        self.send()
+        readings = iter((100.0, 1900.0))
+        self.failure("initial observation", clock=lambda: next(readings))
+
+    def test_fast_polling_cannot_accumulate_unbounded_observations(self):
+        self.send()
+        self.failure("declared cadence", sleep=lambda seconds: setattr(self, "now", self.now + .001))
+
+    def test_invalid_profiles_budgets_identities_and_pids_do_not_touch_children(self):
+        for field, values in {
+            "duration_seconds": (True, 5, 1799, 7200.0, float("nan")),
+            "poll_interval_seconds": (0, 0.01, 2, True, float("inf")),
+            "max_gap_seconds": (0, 6, True, float("nan")),
+            "record_id": ("", None),
+            "installed_tree_sha256": ("bad", None),
+            "workload_sha256": ("bad", None),
+        }.items():
+            for value in values:
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    self.run_supervisor(**{field: value})
+        for pid in (0, -1, True, 456, 789):
+            self.product.pid = pid
+            with self.subTest(pid=pid), self.assertRaises(ValueError):
+                self.run_supervisor()
+        self.assertFalse(self.product.terminated or self.collector.terminated)
+        self.assertEqual(self.product.waits + self.collector.waits, [])
+
+    def test_observation_failure_keeps_reason_and_cleans_up(self):
+        with mock.patch("tools.external_beta.soak_supervisor.os.read", side_effect=PermissionError("denied")):
+            self.failure("denied")
+
+    def test_unresponsive_child_is_killed_and_reaped_after_bounded_wait(self):
+        original_wait = self.product.wait
+        def wait(timeout):
+            if not self.product.killed:
+                raise subprocess.TimeoutExpired("fixture", timeout)
+            return original_wait(timeout)
+        self.product.wait = wait
+        self.heartbeat = lambda: None
+        self.failure("heartbeat unavailable or stale")
+        self.assertTrue(self.product.killed)
+        self.assertTrue(all(timeout <= 2 for timeout in self.product.waits))
+
+    def test_cleanup_failure_prevents_a_complete_receipt(self):
+        self.send()
+        self.product.wait = mock.Mock(side_effect=OSError("cannot reap"))
+        with self.assertRaisesRegex(SupervisionError, "cleanup failed") as caught:
+            self.run_supervisor()
+        self.assertTrue(caught.exception.receipt["cleanupErrors"])
+        self.assertEqual(caught.exception.receipt["status"], "FAILED")
+
+    def test_cleanup_permission_denial_does_not_attempt_another_signal_route(self):
+        self.product.terminate = mock.Mock(side_effect=PermissionError("denied"))
+        self.product.kill = mock.Mock()
+        self.product.wait = mock.Mock()
+        self.heartbeat = lambda: None
+        with self.assertRaisesRegex(SupervisionError, "cleanup failed") as caught:
+            self.run_supervisor()
+        self.product.kill.assert_not_called()
+        self.product.wait.assert_not_called()
+        self.assertIn("permission denied", caught.exception.receipt["cleanupErrors"][0])
+        self.assertTrue(self.collector.terminated)
+
+    def test_missing_heartbeat_stops_and_reaps_real_controlled_children(self):
+        command = [sys.executable, "-c", "import time; time.sleep(30)"]
+        children = []
+        try:
+            for _ in range(2):
+                children.append(subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+            with self.assertRaisesRegex(SupervisionError, "heartbeat unavailable or stale") as caught:
+                supervise_soak(*children, self.reader, record_id="controlled-timeout",
+                               installed_tree_sha256="a" * 64, workload_sha256="b" * 64,
+                               duration_seconds=1800, poll_interval_seconds=.1, max_gap_seconds=1)
+            self.assertTrue(all(child.poll() is not None for child in children))
+            self.assertLess(caught.exception.receipt["observations"][-1]["elapsedSeconds"], 2)
+            self.assertFalse(caught.exception.receipt["releaseEligible"])
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=2)
+
+
+if __name__ == "__main__":
+    unittest.main()
