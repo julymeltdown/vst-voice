@@ -210,6 +210,33 @@ class SoakEndpointTests(unittest.TestCase):
         self.assertEqual(receipt["status"], "COMPLETE")
         self.assertFalse(receipt["releaseEligible"])
 
+    def late_finished_data_is_rejected(self, data):
+        frame = None
+        def heartbeat():
+            nonlocal frame
+            elapsed = self.now - 100
+            if elapsed < 1800:
+                self.send()
+            elif elapsed == 1800:
+                self.sequence += 1
+                frame = self.capture_commit()
+                self.frame(frame)
+            elif elapsed == 1801:
+                os.write(self.finished_writer, data(frame))
+                os.write(self.writer, f"{self.sequence}\n".encode())
+        self.heartbeat = heartbeat
+        self.send()
+        receipt = self.failure("FINISHED requires exactly one frame")
+        self.assertEqual(receipt["finishedAcknowledgement"]["receivedElapsedSeconds"], 1800)
+        self.assertEqual(receipt["finishedAcknowledgement"]["frame"], frame)
+        self.assert_readers_closed()
+
+    def test_later_duplicate_finished_frame_fails_while_final_heartbeat_is_pending(self):
+        self.late_finished_data_is_rejected(lambda frame: (json.dumps(frame) + "\n").encode())
+
+    def test_later_trailing_data_fails_while_final_heartbeat_is_pending(self):
+        self.late_finished_data_is_rejected(lambda frame: b"trailing garbage")
+
     def test_fsync_failure_emits_no_finished_and_preserves_partial_file(self):
         self.now = 1900
         self.sequence = 1801
@@ -289,6 +316,55 @@ class SoakEndpointTests(unittest.TestCase):
         self.assertEqual(receipt["observations"][-1]["elapsedSeconds"], 1800.5)
         self.assertEqual(receipt["endpointAckSeconds"], 1)
         self.assertEqual(receipt["status"], "COMPLETE")
+
+    def non_divisor_cadence_completes(self, duration, *, interval=.7, initial_jitter=0,
+                                     finish_delay=0):
+        final_sequence = duration + finish_delay + 1
+        def heartbeat():
+            elapsed = self.now - 100
+            target = min(int(elapsed) + 1, final_sequence)
+            while self.sequence < target:
+                if elapsed >= duration + finish_delay and self.sequence == final_sequence - 1:
+                    self.sequence += 1
+                    self.commit()
+                    os.write(self.writer, f"{self.sequence}\n".encode())
+                else:
+                    self.send()
+        self.heartbeat = heartbeat
+        self.send()
+        first_sleep = True
+        def sleep(seconds):
+            nonlocal first_sleep
+            self.now += seconds + (initial_jitter if first_sleep else 0)
+            first_sleep = False
+            heartbeat()
+        try:
+            receipt = self.run_supervisor(duration_seconds=duration, poll_interval_seconds=interval,
+                                          sleep=sleep)
+        except supervisor.SupervisionError as exc:
+            self.fail(f"valid non-divisor cadence refused: {exc}")
+        observations = receipt["observations"]
+        self.assertEqual(receipt["status"], "COMPLETE")
+        self.assertEqual(receipt["requiredSeconds"], duration)
+        self.assertEqual(observations[0]["elapsedSeconds"], 0)
+        self.assertEqual(observations[-1]["elapsedSeconds"], duration + finish_delay)
+        self.assertLess(duration + finish_delay - observations[-2]["elapsedSeconds"], interval)
+        self.assertEqual(receipt["finishedAcknowledgement"]["frame"]["durationSeconds"], duration)
+        self.assertEqual(receipt["finishedAcknowledgement"]["finalSample"]["sample"]["elapsedSeconds"], duration + finish_delay)
+        self.assertFalse(receipt["releaseEligible"])
+        self.assert_readers_closed()
+
+    def test_non_divisor_cadence_completes_thirty_minute_endpoint(self):
+        self.non_divisor_cadence_completes(1800)
+
+    def test_non_divisor_cadence_completes_two_hour_endpoint(self):
+        self.non_divisor_cadence_completes(7200)
+
+    def test_default_cadence_with_scheduling_drift_reaches_shortened_endpoint(self):
+        self.non_divisor_cadence_completes(1800, interval=1, initial_jitter=.9)
+
+    def test_non_divisor_cadence_reaches_shortened_finished_deadline(self):
+        self.non_divisor_cadence_completes(1800, finish_delay=1)
 
     def test_final_sample_mutation_while_waiting_for_heartbeat_fails(self):
         def heartbeat():

@@ -40,7 +40,9 @@ The helper retains caller ownership of its write descriptors.
 
 FINISHED may arrive before the corresponding heartbeat has been read on the other
 pipe. The supervisor joins the exact sequence, reads/hashes/parses the retained file,
-and rechecks its bytes immediately before completion. Missing, partial, replayed,
+and rechecks its bytes immediately before completion. It continues bounded FINISHED
+reads until completion and rejects later duplicate/trailing data or EOF, including
+while the final heartbeat is pending. Missing, partial, replayed,
 oversized, early, wrong-session, wrong-duration or wrong-sequence acknowledgement,
 missing/substituted/short final sample, or EOF prevents completion. Both children
 and the heartbeat pipe must stay alive during the bounded endpoint exchange.
@@ -50,6 +52,9 @@ Completion requires the full independent clock span and the committed endpoint.
 One additional second is available solely for the final exchange; the declared
 1800/7200 duration and existing heartbeat/observation budgets remain recorded and
 enforced. Completion is refused at the endpoint deadline if the exchange is incomplete.
+Sleep and cadence validation share one next-wake target, shortened at the declared
+duration and final deadline; a valid non-divisor cadence or scheduling drift must
+not turn those shortened boundary steps into early-polling errors.
 Receipt schema version 2 records the protocol, budget, parsed frame, receipt time
 and parsed final sample. Old version-1 receipts remain unchanged and do not gain
 endpoint evidence. Missing new API descriptors is an input error, with no ownership

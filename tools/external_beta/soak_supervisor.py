@@ -275,6 +275,7 @@ def supervise_soak(
         if not _number(started, 0, float("inf")):
             raise ValueError("supervisor clock must be finite and nonnegative")
         previous_elapsed = None
+        next_poll = None
         last_heartbeat = 0.0
         sequence = 0
         pending = b""
@@ -294,7 +295,6 @@ def supervise_soak(
             if previous_elapsed is not None:
                 if elapsed <= previous_elapsed:
                     raise ValueError("supervisor clock must advance monotonically")
-                next_poll = min(previous_elapsed + poll_interval_seconds, endpoint_deadline)
                 if elapsed + 1e-6 < next_poll:
                     raise ValueError("supervisor poll completed before its declared cadence")
                 if elapsed - previous_elapsed > max_gap_seconds:
@@ -333,14 +333,16 @@ def supervise_soak(
                                    + 1 - HEARTBEAT_LATENESS_SECONDS)
             if sequence < minimum_sequence:
                 raise ValueError("heartbeat unavailable or stale: sequence behind its one-second cadence")
-            if finished is None:
-                try:
-                    chunk = os.read(finished_fd, MAXIMUM_FINISHED_BYTES + 1)
-                except BlockingIOError:
-                    chunk = None
-                if chunk == b"":
-                    raise ValueError("FINISHED pipe closed before acknowledgement")
-                if chunk is not None:
+            try:
+                chunk = os.read(finished_fd, MAXIMUM_FINISHED_BYTES + 1)
+            except BlockingIOError:
+                chunk = None
+            if chunk == b"":
+                raise ValueError("FINISHED pipe closed before completion")
+            if chunk is not None:
+                if finished is not None:
+                    raise ValueError("FINISHED requires exactly one frame")
+                else:
                     finished_pending += chunk
                     if len(finished_pending) > MAXIMUM_FINISHED_BYTES:
                         raise ValueError("FINISHED frame exceeds its byte limit")
@@ -371,8 +373,9 @@ def supervise_soak(
                 if elapsed >= endpoint_deadline:
                     raise ValueError("FINISHED acknowledgement unavailable or incomplete at declared endpoint")
             previous_elapsed = elapsed
-            sleep(min(poll_interval_seconds, endpoint_deadline - elapsed,
-                      duration_seconds - elapsed if elapsed < duration_seconds else ENDPOINT_ACK_SECONDS))
+            next_poll = min(elapsed + poll_interval_seconds,
+                            duration_seconds if elapsed < duration_seconds else endpoint_deadline)
+            sleep(next_poll - elapsed)
     except BaseException as exc:
         failure, cause = str(exc) or type(exc).__name__, exc
         if not isinstance(exc, Exception):
