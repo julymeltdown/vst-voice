@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
-from tools.external_beta.soak_supervisor import SupervisionError, supervise_soak
+from tools.external_beta.soak_supervisor import SupervisionError, commit_final_sample, supervise_soak
 
 
 class Child:
@@ -36,14 +37,23 @@ class Child:
 class SoakSupervisorTests(unittest.TestCase):
     def setUp(self):
         self.reader, self.writer = os.pipe()
+        self.finished_reader, self.finished_writer = os.pipe()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.final_sample_reader = os.open(os.path.join(directory.name, "final.json"), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        self.final_sample_writer = os.dup(self.final_sample_reader)
         self.product = Child(123)
         self.collector = Child(456)
         self.now = 100.0
         self.sequence = 0
+        self.duration = 1800
+        self.final_committed = False
+        self.auto_commit = True
         self.heartbeat = lambda: self.send()
 
     def tearDown(self):
-        for descriptor in (self.reader, self.writer):
+        for descriptor in (self.reader, self.writer, self.finished_reader, self.finished_writer,
+                           self.final_sample_reader, self.final_sample_writer):
             try:
                 os.close(descriptor)
             except OSError:
@@ -51,6 +61,12 @@ class SoakSupervisorTests(unittest.TestCase):
 
     def send(self, value=None):
         self.sequence += 1
+        if self.auto_commit and self.now - 100 >= self.duration and not self.final_committed:
+            commit_final_sample(self.final_sample_writer, self.finished_writer,
+                                record_id="fixture-soak", duration_seconds=self.duration,
+                                heartbeat_sequence=self.sequence,
+                                sample={"elapsedSeconds": self.now - 100, "rssBytes": 1234})
+            self.final_committed = True
         os.write(self.writer, f"{self.sequence if value is None else value}\n".encode())
 
     def sleep(self, seconds):
@@ -60,8 +76,10 @@ class SoakSupervisorTests(unittest.TestCase):
     def run_supervisor(self, **overrides):
         options = dict(record_id="fixture-soak", installed_tree_sha256="a" * 64,
                        workload_sha256="b" * 64, duration_seconds=1800,
+                       finished_fd=self.finished_reader, final_sample_fd=self.final_sample_reader,
                        clock=lambda: self.now, sleep=self.sleep)
         options.update(overrides)
+        self.duration = options["duration_seconds"]
         with mock.patch("tools.external_beta.soak_supervisor.os.getpid", return_value=789):
             return supervise_soak(self.product, self.collector, self.reader, **options)
 
@@ -146,6 +164,18 @@ class SoakSupervisorTests(unittest.TestCase):
         for payload in (b"invalid\n", b"0\n", b"-1\n", b"1.5\n", b"1\n1\n",
                         b"2\n", b"1\n2\n3\n", b"1" * 21):
             with self.subTest(payload=payload):
+                for descriptor in (self.finished_reader, self.finished_writer,
+                                   self.final_sample_reader, self.final_sample_writer):
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                self.finished_reader, self.finished_writer = os.pipe()
+                directory = tempfile.TemporaryDirectory()
+                self.addCleanup(directory.cleanup)
+                self.final_sample_reader = os.open(os.path.join(directory.name, "final.json"),
+                                                   os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                self.final_sample_writer = os.dup(self.final_sample_reader)
                 reader, writer = os.pipe()
                 self.reader = reader
                 self.product, self.collector = Child(123), Child(456)
@@ -239,7 +269,8 @@ class SoakSupervisorTests(unittest.TestCase):
             with self.assertRaisesRegex(SupervisionError, "heartbeat unavailable or stale") as caught:
                 supervise_soak(*children, self.reader, record_id="controlled-timeout",
                                installed_tree_sha256="a" * 64, workload_sha256="b" * 64,
-                               duration_seconds=1800, poll_interval_seconds=.1, max_gap_seconds=1)
+                               duration_seconds=1800, poll_interval_seconds=.1, max_gap_seconds=1,
+                               finished_fd=self.finished_reader, final_sample_fd=self.final_sample_reader)
             self.assertTrue(all(child.poll() is not None for child in children))
             self.assertLess(caught.exception.receipt["observations"][-1]["elapsedSeconds"], 2)
             self.assertFalse(caught.exception.receipt["releaseEligible"])
@@ -253,6 +284,8 @@ class SoakSupervisorTests(unittest.TestCase):
 class SoakSupervisorInterruptTests(unittest.TestCase):
     def cleanup_interrupt(self, stage):
         reader, writer = os.pipe()
+        finished_reader, finished_writer = os.pipe()
+        final_sample, sample_path = tempfile.mkstemp()
         product, collector = Child(123), Child(456)
         interruption = KeyboardInterrupt(stage)
         now = [100.0]
@@ -283,12 +316,16 @@ class SoakSupervisorInterruptTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt) as caught:
                 supervise_soak(product, collector, reader, record_id="interrupt-fixture",
                                installed_tree_sha256="a" * 64, workload_sha256="b" * 64,
-                               duration_seconds=1800, clock=lambda: now[0], sleep=sleep)
+                               duration_seconds=1800, clock=lambda: now[0], sleep=sleep,
+                               finished_fd=finished_reader, final_sample_fd=final_sample)
             self.assertIs(caught.exception, interruption)
             self.assertTrue(collector.terminated)
             self.assertTrue(collector.waits)
             with self.assertRaises(OSError):
                 os.fstat(reader)
+            for descriptor in (finished_reader, final_sample):
+                with self.assertRaises(OSError):
+                    os.fstat(descriptor)
             self.assertEqual(caught.exception.receipt["status"], "FAILED")
             self.assertFalse(caught.exception.receipt["releaseEligible"])
             expected_failure = "observation" if stage == "observation" else "heartbeat unavailable or stale"
@@ -296,11 +333,12 @@ class SoakSupervisorInterruptTests(unittest.TestCase):
             if stage in ("wait", "kill", "reap", "observation"):
                 self.assertEqual(product.wait.call_count, 2)
         finally:
-            for descriptor in (reader, writer):
+            for descriptor in (reader, writer, finished_reader, finished_writer, final_sample):
                 try:
                     os.close(descriptor)
                 except OSError:
                     pass
+            os.unlink(sample_path)
 
     def test_terminate_interrupt_still_cleans_second_child_and_reader(self):
         self.cleanup_interrupt("terminate")
