@@ -16,6 +16,11 @@ import time
 from typing import Any, Callable, Protocol
 
 
+HEARTBEAT_INTERVAL_SECONDS = 1
+# One canonical sampling interval permits startup/receipt scheduling lateness.
+HEARTBEAT_LATENESS_SECONDS = 1
+
+
 class ChildProcess(Protocol):
     pid: int
 
@@ -36,8 +41,16 @@ def _number(value: Any, low: float, high: float) -> bool:
             and low <= value <= high and math.isfinite(value))
 
 
-def _stop_children(children: tuple[ChildProcess, ...]) -> list[str]:
+def _stop_children(children: tuple[ChildProcess, ...]) -> tuple[list[str], BaseException | None]:
     errors = []
+    interruption = None
+
+    def remember(child: ChildProcess, stage: str, exc: BaseException) -> None:
+        nonlocal interruption
+        errors.append(f"process {child.pid} {stage} failed: {type(exc).__name__}: {exc}")
+        if not isinstance(exc, Exception) and interruption is None:
+            interruption = exc
+
     for child in children:
         try:
             if child.poll() is None:
@@ -45,19 +58,32 @@ def _stop_children(children: tuple[ChildProcess, ...]) -> list[str]:
         except PermissionError as exc:
             errors.append(f"process {child.pid} cleanup permission denied: {exc}")
             continue
-        except Exception as exc:
-            errors.append(f"process {child.pid} termination failed: {exc}")
+        except BaseException as exc:
+            remember(child, "termination", exc)
+        needs_kill = False
         try:
             child.wait(timeout=2)
         except subprocess.TimeoutExpired:
+            needs_kill = True
+        except PermissionError as exc:
+            errors.append(f"process {child.pid} cleanup permission denied: {exc}")
+            continue
+        except BaseException as exc:
+            remember(child, "reap", exc)
+            needs_kill = not isinstance(exc, Exception)
+        if needs_kill:
             try:
                 child.kill()
+            except PermissionError as exc:
+                errors.append(f"process {child.pid} cleanup permission denied: {exc}")
+                continue
+            except BaseException as exc:
+                remember(child, "kill", exc)
+            try:
                 child.wait(timeout=2)
-            except Exception as exc:
-                errors.append(f"process {child.pid} kill/reap failed: {exc}")
-        except Exception as exc:
-            errors.append(f"process {child.pid} reap failed: {exc}")
-    return errors
+            except BaseException as exc:
+                remember(child, "reap after kill", exc)
+    return errors, interruption
 
 
 def supervise_soak(
@@ -103,9 +129,12 @@ def supervise_soak(
         "supervisorPid": supervisor_pid, "productPid": product.pid, "collectorPid": collector.pid,
         "clockAuthority": "supervisor-monotonic", "pollIntervalSeconds": poll_interval_seconds,
         "maxGapSeconds": max_gap_seconds, "observations": [], "cleanupErrors": [],
+        "heartbeatIntervalSeconds": HEARTBEAT_INTERVAL_SECONDS,
+        "heartbeatLatenessSeconds": HEARTBEAT_LATENESS_SECONDS,
     }
     failure = None
     cause = None
+    interruption = None
     try:
         os.set_blocking(heartbeat_fd, False)
         started = clock()
@@ -161,6 +190,10 @@ def supervise_soak(
                     raise ValueError("heartbeat frame exceeds its bounded size")
             if elapsed - last_heartbeat > max_gap_seconds:
                 raise ValueError("heartbeat unavailable or stale")
+            minimum_sequence = max(0, int(elapsed / HEARTBEAT_INTERVAL_SECONDS)
+                                   + 1 - HEARTBEAT_LATENESS_SECONDS)
+            if sequence < minimum_sequence:
+                raise ValueError("heartbeat unavailable or stale: sequence behind its one-second cadence")
             receipt["observations"].append({
                 "elapsedSeconds": elapsed, "heartbeatSequence": sequence,
                 "heartbeatAgeSeconds": elapsed - last_heartbeat,
@@ -172,17 +205,35 @@ def supervise_soak(
                 break
             previous_elapsed = elapsed
             sleep(min(poll_interval_seconds, duration_seconds - elapsed))
-    except Exception as exc:
-        failure, cause = str(exc), exc
+    except BaseException as exc:
+        failure, cause = str(exc) or type(exc).__name__, exc
+        if not isinstance(exc, Exception):
+            interruption = exc
     finally:
-        receipt["cleanupErrors"] = _stop_children((product, collector))
         try:
-            os.close(heartbeat_fd)
-        except OSError as exc:
-            receipt["cleanupErrors"].append(f"heartbeat reader close failed: {exc}")
+            for child in (product, collector):
+                try:
+                    errors, child_interruption = _stop_children((child,))
+                    receipt["cleanupErrors"].extend(errors)
+                    if interruption is None:
+                        interruption = child_interruption
+                except BaseException as exc:
+                    receipt["cleanupErrors"].append(f"process {child.pid} cleanup failed: {exc}")
+                    if not isinstance(exc, Exception) and interruption is None:
+                        interruption = exc
+        finally:
+            try:
+                os.close(heartbeat_fd)
+            except BaseException as exc:
+                receipt["cleanupErrors"].append(f"heartbeat reader close failed: {exc}")
+                if not isinstance(exc, Exception) and interruption is None:
+                    interruption = exc
     if receipt["cleanupErrors"]:
         failure = (failure + "; " if failure else "") + "supervisor cleanup failed"
     if failure is not None:
         receipt["status"], receipt["failure"] = "FAILED", failure
+        if interruption is not None:
+            interruption.receipt = receipt
+            raise interruption
         raise SupervisionError(failure, receipt) from cause
     return receipt

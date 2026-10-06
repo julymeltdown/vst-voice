@@ -9,6 +9,9 @@ Call `supervise_soak` from a process distinct from both caller-owned product and
 collector children. Pass their child handles and a dedicated heartbeat pipe reader;
 it does not attach to arbitrary PIDs or query RSS. The collector protocol is one
 newline-delimited positive integer per second, starting at one without gaps or replay.
+Sequence progress is also checked against supervisor elapsed time, with exactly one
+second of startup/receipt lateness allowed: one canonical sampling interval. This
+tolerance is recorded in the receipt; five-second heartbeat cadence is refused.
 Receipt timestamps come from the supervisor's monotonic clock. Required duration is
 exactly 1800 or 7200 seconds, poll cadence 0.1-1 second, and maximum heartbeat or
 observation gap 1-5 seconds. Frame size, read size and observation count are bounded.
@@ -22,6 +25,9 @@ supervisor: it terminates and reaps both children on success or failure, uses at
 two seconds for each terminate/kill wait, and closes the reader. Cleanup failure also
 refuses completion. Permission-denied cleanup is reported without another signal route.
 Invalid configuration leaves ownership with the caller.
+Interruptions are retained while bounded cleanup stages for both children and the
+reader are attempted independently. The original interruption is then propagated
+with a failed receipt, rather than masking cancellation or skipping later cleanup.
 
 Receipts bind the declared record ID, installed-app tree digest and workload digest,
 and always carry `evidenceScope: engineering` and `releaseEligible: false`. Caller-supplied

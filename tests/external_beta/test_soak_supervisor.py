@@ -110,6 +110,17 @@ class SoakSupervisorTests(unittest.TestCase):
         receipt = self.failure("heartbeat unavailable or stale")
         self.assertLess(receipt["observations"][-1]["elapsedSeconds"], 1800)
 
+    def test_five_second_heartbeats_do_not_satisfy_the_one_second_contract(self):
+        self.send()
+        self.heartbeat = lambda: self.send() if (self.now - 100) % 5 == 0 else None
+        self.failure("one-second cadence")
+
+    def test_one_interval_startup_lateness_still_requires_full_cadence(self):
+        receipt = self.run_supervisor()
+        self.assertEqual(receipt["observations"][-1]["heartbeatSequence"], 1800)
+        self.assertEqual(receipt["heartbeatIntervalSeconds"], 1)
+        self.assertEqual(receipt["heartbeatLatenessSeconds"], 1)
+
     def test_product_exit_is_failure_even_with_fresh_heartbeat(self):
         self.send()
         def exit_product():
@@ -237,6 +248,74 @@ class SoakSupervisorTests(unittest.TestCase):
                 if child.poll() is None:
                     child.kill()
                 child.wait(timeout=2)
+
+
+class SoakSupervisorInterruptTests(unittest.TestCase):
+    def cleanup_interrupt(self, stage):
+        reader, writer = os.pipe()
+        product, collector = Child(123), Child(456)
+        interruption = KeyboardInterrupt(stage)
+        now = [100.0]
+        def sleep(seconds):
+            now[0] += seconds
+        if stage == "terminate":
+            terminate = product.terminate
+            def interrupted_terminate():
+                terminate()
+                raise interruption
+            product.terminate = interrupted_terminate
+        elif stage in ("wait", "observation"):
+            cleanup_interruption = KeyboardInterrupt("cleanup wait") if stage == "observation" else interruption
+            product.wait = mock.Mock(side_effect=[cleanup_interruption, -9])
+            if stage == "observation":
+                def sleep(seconds):
+                    raise interruption
+        else:
+            product.wait = mock.Mock(side_effect=[subprocess.TimeoutExpired("fixture", 2),
+                                                interruption if stage == "reap" else -9])
+            if stage == "kill":
+                kill = product.kill
+                def interrupted_kill():
+                    kill()
+                    raise interruption
+                product.kill = interrupted_kill
+        try:
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                supervise_soak(product, collector, reader, record_id="interrupt-fixture",
+                               installed_tree_sha256="a" * 64, workload_sha256="b" * 64,
+                               duration_seconds=1800, clock=lambda: now[0], sleep=sleep)
+            self.assertIs(caught.exception, interruption)
+            self.assertTrue(collector.terminated)
+            self.assertTrue(collector.waits)
+            with self.assertRaises(OSError):
+                os.fstat(reader)
+            self.assertEqual(caught.exception.receipt["status"], "FAILED")
+            self.assertFalse(caught.exception.receipt["releaseEligible"])
+            expected_failure = "observation" if stage == "observation" else "heartbeat unavailable or stale"
+            self.assertIn(expected_failure, caught.exception.receipt["failure"])
+            if stage in ("wait", "kill", "reap", "observation"):
+                self.assertEqual(product.wait.call_count, 2)
+        finally:
+            for descriptor in (reader, writer):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+
+    def test_terminate_interrupt_still_cleans_second_child_and_reader(self):
+        self.cleanup_interrupt("terminate")
+
+    def test_wait_interrupt_still_cleans_second_child_and_reader(self):
+        self.cleanup_interrupt("wait")
+
+    def test_kill_interrupt_still_attempts_reap_and_cleans_second_child_and_reader(self):
+        self.cleanup_interrupt("kill")
+
+    def test_reap_interrupt_still_cleans_second_child_and_reader(self):
+        self.cleanup_interrupt("reap")
+
+    def test_observation_interrupt_is_not_replaced_by_a_later_cleanup_interrupt(self):
+        self.cleanup_interrupt("observation")
 
 
 if __name__ == "__main__":
