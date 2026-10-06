@@ -74,6 +74,8 @@ def parse_json(data):
 class SoakReplayContext:
     # Successful bytes and failed reads are reused across all consumers in one call.
     reads: dict = field(default_factory=dict)
+    guarded: dict = field(default_factory=dict)
+    base_aliases: dict = field(default_factory=dict)
     sessions: dict = field(default_factory=dict)
     claims: dict = field(default_factory=dict)
     coverage: dict = field(default_factory=dict)
@@ -113,6 +115,17 @@ def _reference_parts(reference):
     return parts, digest
 
 
+def _guard_reference(reference, root, maximum_bytes, context):
+    # Announced targets stay bounded even if shape, locator or digest validation fails.
+    locator = reference.get("locator") if isinstance(reference, dict) else None
+    if isinstance(locator, str) and locator:
+        key = (root, locator)
+        context.guarded[key] = min(context.guarded.get(key, maximum_bytes), maximum_bytes)
+        if root not in context.base_aliases.values():
+            # Resolve the trusted root only; never resolve or reopen the announced artifact.
+            context.base_aliases.setdefault(os.path.realpath(root), root)
+
+
 @contextmanager
 def _opened(root, parts):
     descriptors = []
@@ -145,8 +158,10 @@ def _stamp(info):
 def read_reference(reference, *, evidence_root, maximum_bytes, replay_context):
     """The only content reader for new soak references, including terminal denials."""
     root = _root_key(evidence_root)
+    _guard_reference(reference, root, maximum_bytes, replay_context)
     parts, digest = _reference_parts(reference)
     key = (root, reference["locator"])
+    maximum_bytes = replay_context.guarded[key]
     cached = replay_context.reads.get(key)
     if cached is None:
         try:
@@ -189,19 +204,26 @@ def _recheck(reference, root, context):
 
 def reuse_reference(reference, *, base, maximum_bytes, replay_context):
     """Return already guarded bytes for aliases; None means unrelated legacy evidence."""
-    if replay_context is None:
+    if replay_context is None or not isinstance(reference, dict) or not isinstance(reference.get("locator"), str):
         return None
-    _reference_parts(reference)
+    # Lexical normalization classifies the target only; it never authorizes a guarded alias.
     target = os.path.abspath(os.path.join(os.fspath(base), reference["locator"]))
-    for root, locator in replay_context.reads:
-        if os.path.abspath(os.path.join(root, locator)) == target:
+    targets = {target}
+    for resolved_base, lexical_base in replay_context.base_aliases.items():
+        prefix = resolved_base.rstrip(os.sep) + os.sep
+        if target.startswith(prefix):
+            targets.add(os.path.abspath(os.path.join(lexical_base, target[len(prefix):])))
+    for (root, locator), guarded_limit in replay_context.guarded.items():
+        if os.path.abspath(os.path.join(root, locator)) in targets:
+            _reference_parts(reference)
             return read_reference({"locator": locator, "sha256": reference.get("sha256")},
-                evidence_root=root, maximum_bytes=maximum_bytes, replay_context=replay_context)
+                evidence_root=root, maximum_bytes=min(maximum_bytes, guarded_limit), replay_context=replay_context)
     return None
 
 
 def _failure_file_absent(locator, root, context):
     root, parts = _root_key(root), _parts(locator)
+    _guard_reference({"locator": locator}, root, METADATA_LIMIT, context)
     key = (root, locator)
     cached = context.reads.get(key)
     if cached is None:
@@ -279,6 +301,8 @@ def _validate_packet(reference, root, context):
     files = index["files"]
     _require(isinstance(files, dict) and set(files) == set(limits), "required packet artifacts differ or contain failure files")
     parent = reference["locator"].rsplit("/", 1)[0] + "/" if "/" in reference["locator"] else ""
+    for name, limit in limits.items():
+        _guard_reference({"locator": parent + name}, _root_key(root), limit, context)
     data = {}
     for name, limit in limits.items():
         item = files[name]
@@ -369,6 +393,7 @@ def validate_soak_session_reference(reference, *, evidence_root, expected_bindin
     context = replay_context if replay_context is not None else SoakReplayContext()
     try:
         root = _root_key(evidence_root)
+        _guard_reference(reference, root, INDEX_LIMIT, context)
         _reference_parts(reference)
         key = (root, reference.get("locator"), reference.get("sha256"))
         result = context.sessions.get(key)

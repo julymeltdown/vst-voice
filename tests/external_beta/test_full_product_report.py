@@ -13,6 +13,7 @@ from tests.external_beta.full_product_report_fixture import complete_report
 from tests.external_beta.release_gate_fixtures import candidate
 from tools.external_beta import full_product_report as full_product_report_module
 from tools.external_beta import release_gate
+from tools.external_beta import soak_session_validation
 from tools.external_beta.full_product_report import (
     FullProductReportError,
     REFERENCE_READ_CHUNK_BYTES,
@@ -178,6 +179,61 @@ class FullProductSemanticTests(unittest.TestCase):
         canonical_errors = validate_full_product_report(self.report, full_product_contract=FULL_CONTRACT,
             report_path=self.root / "report.json", evidence_root=self.root)
         self.assertTrue(any("not frozen" in error for error in canonical_errors), canonical_errors)
+
+    def test_unrelated_absolute_and_normalized_legacy_archives_retain_existing_policy(self):
+        archive = dict(self.report["rawArchive"])
+        copy_path = self.root / "unrelated-legacy.json"
+        copy_path.write_bytes((self.root / archive["locator"]).read_bytes())
+        original_reader = full_product_report_module._read_regular_reference
+        for locator in (str(copy_path), "unused/../unrelated-legacy.json"):
+            with self.subTest(locator=locator):
+                self.report["rawArchive"] = {**archive, "locator": locator}
+                with mock.patch.object(full_product_report_module, "_read_regular_reference", wraps=original_reader) as reader:
+                    self.assertEqual(SOAK_ADMISSION_ERRORS, self.errors())
+                self.assertTrue(any(call.kwargs.get("label") == "full-product rawArchive" for call in reader.call_args_list))
+
+    def test_matching_guarded_archive_aliases_reject_literal_path_bypass_before_legacy_reads(self):
+        archive = dict(self.report["rawArchive"])
+        original_reader = full_product_report_module._read_regular_reference
+        def reject_legacy_archive(reference, **options):
+            if options.get("label") == "full-product rawArchive":
+                raise AssertionError("guarded alias must not reach the legacy content reader")
+            return original_reader(reference, **options)
+        for locator in (str(self.root / archive["locator"]), "unused/../" + archive["locator"]):
+            with self.subTest(locator=locator):
+                self.report["rawArchive"] = {**archive, "locator": locator}
+                with mock.patch.object(full_product_report_module, "_read_regular_reference", side_effect=reject_legacy_archive):
+                    self.assertEqual(("reference requires a safe relative locator", *SOAK_ADMISSION_ERRORS), self.errors())
+
+    def test_guarded_read_denial_is_retained_across_trusted_root_spellings(self):
+        archive = self.report["rawArchive"]
+        # A trusted-root ancestor alias makes lexical/resolved spellings differ on every platform.
+        parent_alias = self.root / "trusted-parent-alias"
+        parent_alias.symlink_to(self.root.parent, target_is_directory=True)
+        evidence_root = parent_alias / self.root.name
+        opened, read_bytes = soak_session_validation.os.open, Path.read_bytes
+        original_reader = full_product_report_module._read_regular_reference
+        denied = []
+        def deny(path, *args, **kwargs):
+            if path == archive["locator"]:
+                denied.append(path)
+                raise PermissionError("controlled full-report guarded denial")
+            return opened(path, *args, **kwargs)
+        def reject_legacy_bytes(path):
+            if path.name == archive["locator"]:
+                raise AssertionError("denied guarded target must not use legacy read_bytes")
+            return read_bytes(path)
+        def reject_legacy_reader(reference, **options):
+            if reference.get("locator") == archive["locator"]:
+                raise AssertionError("denied guarded target must not use the legacy content reader")
+            return original_reader(reference, **options)
+        with mock.patch.object(soak_session_validation.os, "open", side_effect=deny), \
+             mock.patch.object(Path, "read_bytes", reject_legacy_bytes), \
+             mock.patch.object(full_product_report_module, "_read_regular_reference", side_effect=reject_legacy_reader):
+            errors = validate_full_product_report(self.report, full_product_contract=self.contract,
+                report_path=evidence_root / "report.json", evidence_root=evidence_root)
+        self.assertIn("PermissionError: controlled full-report guarded denial", errors[0])
+        self.assertEqual([archive["locator"]], denied)
 
     def test_corrupted_raw_audio_is_rejected_by_the_same_full_success_fixture(self):
         (self.root / "synthetic-tone.wav").write_bytes(b"changed")

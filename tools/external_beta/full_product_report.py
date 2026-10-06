@@ -506,6 +506,9 @@ def validate_full_product_report(
     soak_context = soak_replay_context if soak_replay_context is not None else SoakReplayContext()
     report_base = (report_path.parent if report_path is not None else ROOT).resolve()
     lexical_base = report_path.parent if report_path is not None else (Path(evidence_root) if evidence_root is not None else ROOT)
+    if report_path is not None:
+        # Pair the already-resolved legacy base with its lexical spelling for guard classification only.
+        soak_context.base_aliases[os.path.abspath(report_base)] = os.path.abspath(lexical_base)
     soak_errors = {}
     soak_bindings = {key: report.get(key) for key in ("candidateRootId", "candidateRootSha256", "acceptanceContractSha256", "fullProductContractSha256", "resourceMatrixSha256")}
     # Dispatch every new typed soak reference before any generic report artifact read.

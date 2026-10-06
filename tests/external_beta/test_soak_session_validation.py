@@ -335,6 +335,10 @@ class PacketSemanticTests(unittest.TestCase):
         for locator in ("packet/../packet/packet-index.json", "packet/./packet-index.json",
                         "packet//packet-index.json", str(self.packet.directory / "packet-index.json"),
                         "packet\\packet-index.json"):
+            # Even an invalid announced locator remains classified as soak data.
+            announced = validation.validate_soak_session_reference({**self.packet.reference, "locator": locator},
+                evidence_root=self.root, replay_context=context)
+            self.assertIn("safe relative locator", " ".join(announced.errors))
             with self.subTest(locator=locator), \
                  mock.patch.object(validation, "read_reference", side_effect=AssertionError("invalid alias must not use cached bytes")):
                 with self.assertRaisesRegex(ValueError, "safe relative locator"):
@@ -390,6 +394,68 @@ class PacketSemanticTests(unittest.TestCase):
         self.assertIn("exceeds its byte limit", " ".join(result.errors))
         self.assertTrue(all(call.args[0].name != "packet-index.json" for call in legacy_reads.call_args_list))
         self.assertTrue(all(call.args[1].get("kind") != "ordinary-alias" for call in legacy.call_args_list))
+
+    def test_invalid_announced_hash_cannot_send_oversized_index_alias_to_legacy_reader(self):
+        contents = b" " * (validation.INDEX_LIMIT + 1)
+        (self.packet.directory / "packet-index.json").write_bytes(contents)
+        read_bytes, opened = Path.read_bytes, validation.os.open
+        for invalid_hash in (None, "malformed"):
+            with self.subTest(sha256=invalid_hash):
+                record, context = copy.deepcopy(self.packet.record), validation.SoakReplayContext()
+                item = record["evidence"][-1]
+                if invalid_hash is None:
+                    item.pop("sha256")
+                else:
+                    item["sha256"] = invalid_hash
+                record["evidence"].append({**item, "kind": "ordinary-alias", "sha256": digest(contents)})
+                with mock.patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes) as legacy_reads, \
+                     mock.patch.object(validation.os, "open", wraps=opened) as opens, \
+                     mock.patch.object(product_soak, "_evidence", wraps=product_soak._evidence) as legacy:
+                    for _ in range(2):
+                        result = validate_product_soak(record, self.root, soak_replay_context=context)
+                        self.assertIn("reference SHA-256 is invalid", " ".join(result.errors))
+                        self.assertIn("exceeds its byte limit", " ".join(result.errors))
+                self.assertEqual(1, sum(call.args[0] == "packet-index.json" for call in opens.call_args_list))
+                self.assertTrue(all(call.args[0].name != "packet-index.json" for call in legacy_reads.call_args_list))
+                self.assertTrue(all(call.args[1].get("kind") != "ordinary-alias" for call in legacy.call_args_list))
+
+    def test_invalid_indexed_metadata_still_guards_the_announced_artifact(self):
+        contents = b" " * (validation.METADATA_LIMIT + 1)
+        (self.packet.directory / "session.json").write_bytes(contents)
+        self.packet.index["files"]["session.json"] = {"sha256": digest(contents), "bytes": "invalid"}
+        self.packet.refresh_index()
+        self.packet.record["evidence"][-1]["sha256"] = self.packet.reference["sha256"]
+        self.packet.record["evidence"].append({"kind": "ordinary-alias", "path": "packet/session.json",
+            "sha256": digest(contents), "capturedAt": "2026-10-06T00:00:00Z", "reviewer": "controlled"})
+        read_bytes = Path.read_bytes
+        with mock.patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes) as legacy_reads:
+            result = validate_product_soak(self.packet.record, self.root)
+        self.assertIn("indexed artifact metadata differs", " ".join(result.errors))
+        self.assertIn("exceeds its byte limit", " ".join(result.errors))
+        self.assertTrue(all(call.args[0].name != "session.json" for call in legacy_reads.call_args_list))
+
+    def test_public_report_reference_preserves_denial_across_trusted_root_spellings(self):
+        parent_alias = self.root / "trusted-parent-alias"
+        parent_alias.symlink_to(self.root.parent, target_is_directory=True)
+        evidence_root, context = parent_alias / self.root.name, validation.SoakReplayContext()
+        reference, opened, denied = self.packet.typed_reference(), validation.os.open, []
+        def deny(path, *args, **kwargs):
+            if path == reference["locator"]:
+                denied.append(path)
+                raise PermissionError("controlled public-reference denial")
+            return opened(path, *args, **kwargs)
+        with mock.patch.object(validation.os, "open", side_effect=deny), \
+             mock.patch.object(full_product_report, "_safe_reference_path", side_effect=AssertionError("guarded target must precede legacy resolution")):
+            result = product_soak.validate_product_soak_reference(reference, evidence_root, soak_replay_context=context)
+            self.assertIn("PermissionError", " ".join(result.errors))
+            absolute = {**reference, "locator": str((self.root / reference["locator"]).resolve())}
+            errors = full_product_report.validate_full_product_report_reference(absolute, candidate={},
+                acceptance_contract={}, evidence_root=self.root.resolve(), soak_replay_context=context)
+            self.assertIn("safe relative locator", " ".join(errors))
+            errors = full_product_report.validate_full_product_report_reference(reference, candidate={},
+                acceptance_contract={}, evidence_root=self.root.resolve(), soak_replay_context=context)
+            self.assertIn("PermissionError: controlled public-reference denial", " ".join(errors))
+        self.assertEqual([reference["locator"]], denied)
 
 
 class ConsumerOrderingTests(unittest.TestCase):
