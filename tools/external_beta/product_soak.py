@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -44,6 +45,15 @@ DEFAULT_THRESHOLDS = {
     "maxMediaBudgetHighWaterBytes": 512 * 1024 * 1024,
     "maxCacheEvictionStallMs": 250.0,
 }
+SAMPLE_INTEGER_FIELDS = frozenset((
+    "rssBytes", "handles", "threads", "queueDepth", "mediaBudgetHighWaterBytes",
+    "underflows", "xruns", "controlQueueOverflow",
+))
+SUMMARY_GROWTH_FIELDS = ("rssGrowthBytes", "handleGrowth", "threadGrowth")
+SUMMARY_INTEGER_FIELDS = frozenset(SUMMARY_GROWTH_FIELDS) | frozenset((
+    "maxRssBytes", "maxQueueDepth", "maxMediaBudgetHighWaterBytes", "underflowCount",
+    "xrunCount", "controlQueueOverflowCount", "restartCount",
+))
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +68,15 @@ class ProductSoakResult:
 
 def _hex(value: Any) -> bool:
     return isinstance(value, str) and HEX64.fullmatch(value) is not None
+
+
+def _metric_number(value: Any, *, integer: bool = False, nonnegative: bool = True) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    # Integers are finite without converting potentially large values to float.
+    if isinstance(value, float) and (integer or not math.isfinite(value)):
+        return False
+    return not nonnegative or value >= 0
 
 
 def _time(value: Any) -> bool:
@@ -163,6 +182,13 @@ def _summary_errors(record: dict[str, Any], samples: list[dict[str, Any]], thres
         "xrunCount": max(sample.get("xruns", 0) for sample in samples),
         "controlQueueOverflowCount": max(sample.get("controlQueueOverflow", 0) for sample in samples),
     }
+    for key in (*SUMMARY_GROWTH_FIELDS, *numeric_checks, "restartCount"):
+        integer = key in SUMMARY_INTEGER_FIELDS
+        nonnegative = key not in SUMMARY_GROWTH_FIELDS
+        if not _metric_number(summary.get(key), integer=integer, nonnegative=nonnegative):
+            kind = "integer" if integer else "number"
+            bounds = "non-negative " if nonnegative else ""
+            errors.append(f"summary.{key} must be a finite {bounds}{kind}")
     for key, value in numeric_checks.items():
         if summary.get(key) != value:
             errors.append(f"summary.{key} does not match sample series")
@@ -185,7 +211,7 @@ def _summary_errors(record: dict[str, Any], samples: list[dict[str, Any]], thres
     )
     for key, maximum in comparisons:
         value = summary.get(key)
-        if isinstance(value, (int, float)) and value > maximum:
+        if _metric_number(value, nonnegative=False) and value > maximum:
             errors.append(f"{key} exceeds declared threshold")
     for key in ("underflowCount", "xrunCount", "controlQueueOverflowCount"):
         if summary.get(key) != 0:
@@ -204,12 +230,12 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
         errors.append("record.recordType is invalid")
     duration = record.get("durationSeconds")
     phase = record.get("phase")
-    if duration == 1800 and phase != "usable-alpha-30m":
+    if not _metric_number(duration, integer=True) or duration not in {1800, 7200}:
+        errors.append("durationSeconds must be an integer equal to 1800 or 7200")
+    elif duration == 1800 and phase != "usable-alpha-30m":
         errors.append("1800-second soak must be phase usable-alpha-30m")
     elif duration == 7200 and phase != "external-beta-120m":
         errors.append("7200-second soak must be phase external-beta-120m")
-    elif duration not in {1800, 7200}:
-        errors.append("durationSeconds must be 1800 or 7200")
     platform = record.get("platform")
     if PLATFORMS.get(platform) != record.get("architecture"):
         errors.append("platform/architecture is outside the target matrix")
@@ -232,35 +258,39 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
             if thresholds_record.get(key) != value:
                 errors.append(f"thresholds.{key} must equal the declared product threshold")
     samples = record.get("samples")
-    if not isinstance(samples, list) or not samples:
-        errors.append("samples must be a non-empty time series")
+    if not isinstance(samples, list) or len(samples) < 2:
+        errors.append("samples must be a time series with at least two samples")
         samples = []
     last_elapsed = -1.0
+    sample_values_valid = True
     sample_fields = ("elapsedSeconds", "rssBytes", "handles", "threads", "cpuPercent", "renderLatencyMs", "callbackLatencyUs", "queueDepth", "queueAgeMs", "cacheEvictionStallMs", "mediaBudgetHighWaterBytes", "underflows", "xruns", "controlQueueOverflow")
     for index, sample in enumerate(samples):
         label = f"samples[{index}]"
         if not isinstance(sample, dict):
             errors.append(f"{label} must be an object")
+            sample_values_valid = False
             continue
         for key in sample_fields:
             if key not in sample:
                 errors.append(f"{label}.{key} is required")
+                sample_values_valid = False
+                continue
+            integer = key in SAMPLE_INTEGER_FIELDS
+            if not _metric_number(sample[key], integer=integer):
+                kind = "integer" if integer else "number"
+                errors.append(f"{label}.{key} must be a finite non-negative {kind}")
+                sample_values_valid = False
         elapsed = sample.get("elapsedSeconds")
-        if not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool):
-            errors.append(f"{label}.elapsedSeconds must be numeric")
-        elif elapsed <= last_elapsed:
-            errors.append("sample elapsedSeconds must be strictly increasing")
-        elif elapsed < 0:
-            errors.append(f"{label}.elapsedSeconds cannot be negative")
-        else:
-            last_elapsed = elapsed
-        for key in sample_fields[1:]:
-            value = sample.get(key)
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-                errors.append(f"{label}.{key} must be a non-negative number")
+        if _metric_number(elapsed):
+            if elapsed <= last_elapsed:
+                errors.append("sample elapsedSeconds must be strictly increasing")
+            else:
+                last_elapsed = elapsed
     if samples and isinstance(duration, int) and last_elapsed < duration:
         errors.append("sample series does not cover the declared soak duration")
-    _summary_errors(record, samples, thresholds, errors)
+    # Do not perform subtraction/max on malformed samples after recording their errors.
+    if sample_values_valid:
+        _summary_errors(record, samples, thresholds, errors)
     faults = record.get("faults")
     if not isinstance(faults, list):
         errors.append("faults must be an array")

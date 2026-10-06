@@ -4,6 +4,8 @@ import copy
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -173,6 +175,128 @@ class ProductSoakCollectorTests(unittest.TestCase):
         self.assertGreaterEqual(samples[-1]['elapsedSeconds'], 0.15)
 
 class ProductSoakTests(unittest.TestCase):
+    def test_nonfinite_sample_values_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for field in baseline["samples"][-1]:
+                for value in (float("nan"), float("inf"), float("-inf")):
+                    with self.subTest(field=field, value=value):
+                        record = copy.deepcopy(baseline)
+                        record["samples"][-1][field] = value
+                        result = validate_product_soak(record, root)
+                        self.assertFalse(result.passed)
+                        self.assertTrue(any(f"samples[1].{field}" in error for error in result.errors))
+
+    def test_malformed_samples_return_failure_without_summary_arithmetic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for index in (0, 1):
+                for value in (None, "invalid", [], {}):
+                    with self.subTest(index=index, sample=value):
+                        record = copy.deepcopy(baseline)
+                        record["samples"][index] = value
+                        result = validate_product_soak(record, root)
+                        self.assertFalse(result.passed)
+                for field in baseline["samples"][index]:
+                    for value in (None, "invalid", [], {}, True, False):
+                        with self.subTest(index=index, field=field, value=value):
+                            record = copy.deepcopy(baseline)
+                            record["samples"][index][field] = value
+                            result = validate_product_soak(record, root)
+                            self.assertFalse(result.passed)
+                            self.assertTrue(any(f"samples[{index}].{field}" in error for error in result.errors))
+
+    def test_negative_and_fractional_count_samples_fail_closed(self) -> None:
+        count_fields = ("rssBytes", "handles", "threads", "queueDepth", "mediaBudgetHighWaterBytes",
+                        "underflows", "xruns", "controlQueueOverflow")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for field in baseline["samples"][-1]:
+                values = (-1, 0.5) if field in count_fields else (-1,)
+                for value in values:
+                    with self.subTest(field=field, value=value):
+                        record = copy.deepcopy(baseline)
+                        record["samples"][-1][field] = value
+                        record["summary"] = summarise(record["samples"])
+                        result = validate_product_soak(record, root)
+                        self.assertFalse(result.passed)
+                        self.assertTrue(any(f"samples[1].{field}" in error for error in result.errors))
+
+    def test_summary_metric_types_and_nonfinite_values_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for field in baseline["summary"]:
+                if field == "dataLoss":
+                    continue
+                for value in (None, "invalid", [], {}, True, False, float("nan"), float("inf"), float("-inf")):
+                    with self.subTest(field=field, value=value):
+                        record = copy.deepcopy(baseline)
+                        record["summary"][field] = value
+                        result = validate_product_soak(record, root)
+                        self.assertFalse(result.passed)
+                        self.assertTrue(any(field in error for error in result.errors))
+
+    def test_duration_type_and_single_sample_cannot_bypass_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for value in (1800.0, True, None, "1800", [], {}, float("nan"), float("inf")):
+                with self.subTest(duration=value):
+                    record = copy.deepcopy(baseline)
+                    record["durationSeconds"] = value
+                    record["samples"][-1]["elapsedSeconds"] = 1
+                    self.assertFalse(validate_product_soak(record, root).passed)
+            record = copy.deepcopy(baseline)
+            record["samples"] = [record["samples"][-1]]
+            self.assertFalse(validate_product_soak(record, root).passed)
+
+    def test_negative_growth_and_finite_fractional_latencies_remain_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            record["samples"][-1].update(rssBytes=90_000_000, handles=99, threads=9,
+                                         cpuPercent=40.25, renderLatencyMs=120.25, callbackLatencyUs=800.25)
+            record["summary"] = summarise(record["samples"])
+            result = validate_product_soak(record, root)
+            self.assertTrue(result.passed, result.errors)
+
+    def test_large_integer_metrics_fail_budget_without_float_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            record["samples"][-1]["rssBytes"] = 1 << 4096
+            record["summary"] = summarise(record["samples"])
+            result = validate_product_soak(record, root)
+            self.assertFalse(result.passed)
+            self.assertTrue(any("maxRssBytes exceeds" in error for error in result.errors))
+
+    def test_cli_reports_nonfinite_and_malformed_metrics_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            baseline = _record(root)
+            for field, value in (("elapsedSeconds", float("nan")), ("elapsedSeconds", float("inf")),
+                                 ("rssBytes", "invalid")):
+                with self.subTest(field=field, value=value):
+                    record = copy.deepcopy(baseline)
+                    record["samples"][-1][field] = value
+                    path = root / "record.json"
+                    path.write_text(json.dumps(record), encoding="utf-8")
+                    completed = subprocess.run([
+                        sys.executable, str(Path(__file__).resolve().parents[2] / "scripts/run_external_beta_product_soak.py"),
+                        "--record", str(path), "--evidence-root", str(root),
+                        "--output", str(root / "result.json"),
+                    ], capture_output=True, text=True, timeout=10, check=False)
+                    self.assertEqual(completed.returncode, 3, completed.stderr)
+                    self.assertEqual(completed.stderr, "")
+                    result = json.loads(completed.stdout)
+                    self.assertFalse(result["passed"])
+                    self.assertTrue(any(f"samples[1].{field}" in error for error in result["errors"]))
+                    self.assertEqual(result, json.loads((root / "result.json").read_text()))
+
     def test_30_minute_and_120_minute_records_pass_on_each_target_os(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
