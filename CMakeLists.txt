@@ -2594,6 +2594,17 @@ if(SEAM_BUILD_TESTS)
     set_tests_properties(seam_singing_quality_contract_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+    # Discovery remains usable without native artifacts; this dedicated entry
+    # must execute all three import cases with an owned procedural recipe.
+    add_test(NAME seam_import_refuses_unrenderable
+      COMMAND ${CMAKE_COMMAND} -E env
+        "PYTHONDONTWRITEBYTECODE=1"
+        "SEAM_VOICEBANK_CLI=$<TARGET_FILE:seam_voicebank_cli>"
+        "SEAM_TEST_RECIPE_GLOB=${CMAKE_CURRENT_SOURCE_DIR}/assets/pilots/seam-song-01/recipe.json"
+        ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/tests/singing_quality/test_import_refuses_unrenderable.py)
+    set_tests_properties(seam_import_refuses_unrenderable PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 60)
     add_test(NAME seam_singing_quality_workflow
       COMMAND ${CMAKE_COMMAND} -E env
         "PYTHONDONTWRITEBYTECODE=1"

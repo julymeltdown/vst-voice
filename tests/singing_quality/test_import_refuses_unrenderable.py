@@ -5,8 +5,9 @@ lyrics can be corrected in the editor. The command line is where that choice is
 made, so the command is where the refusal belongs -- and only when the caller
 asked for a recipe, because asking for one means intending to render.
 
-Skipped when the CLI or a recipe is unavailable, so the unit suite stays usable
-without a build tree.
+Discovery skips when the CLI or a recipe is unavailable, so the unit suite stays
+usable without a build tree. Direct execution is the dedicated CTest entry point
+and requires all three cases to execute with zero skips.
 """
 
 import json
@@ -15,6 +16,7 @@ import pathlib
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -128,4 +130,9 @@ def project_recipe_path(project_path):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    result = unittest.main(verbosity=2, exit=False).result
+    complete = result.testsRun == 3 and not result.skipped
+    if not complete:
+        print("Import regression coverage requires three tests and zero skips.",
+              file=sys.stderr)
+    raise SystemExit(0 if result.wasSuccessful() and complete else 1)
