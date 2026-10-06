@@ -63,6 +63,8 @@ the new project is written, preserving the existing material. This policy also
 applies to USTX imports through the same CLI command.
 An occupied project destination is refused before any companion recipe directory
 or file is created. The final project write also uses atomic create-new semantics.
+Unknown CLI options and multiple project names are rejected before publication;
+the single optional project name may precede or follow the known option pairs.
 
 ### Refusing an import that would not render
 

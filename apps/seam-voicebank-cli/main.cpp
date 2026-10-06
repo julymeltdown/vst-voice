@@ -654,13 +654,14 @@ int importScoreCommand(int argc, char** argv) {
     std::cerr << "error: score import requires a .ustx, .mid or .midi source\n";
     return 3;
   }
-  request.projectName = argc == 5 ? std::string{argv[4]} : source.stem().string();
+  request.projectName = source.stem().string();
   // Lyrics are phonemized per language, and the import default is Japanese.
   // A MIDI file carrying English or Korean syllables therefore imported
   // successfully and then failed at render time with "Phonetic context requires
   // resolved phone starts", because no caller could state the real language.
   std::optional<std::filesystem::path> namedRecipe;
   std::optional<seam::synthesis::ProceduralSingerResource> selectedRecipe;
+  bool hasProjectName = false;
   // Trailing options are parsed in pairs. A bare final argument is the project
   // name and has no value, so an odd-length tail is handled explicitly rather
   // than by stepping two at a time.
@@ -691,8 +692,17 @@ int importScoreCommand(int argc, char** argv) {
       ++index;
       continue;
     }
-    // A bare final argument is the project name.
+    if (flag.starts_with("--")) {
+      std::cerr << "error: unknown import-score option " << flag << '\n';
+      return 3;
+    }
+    if (hasProjectName) {
+      std::cerr << "error: import-score accepts only one project name\n";
+      return 3;
+    }
+    // The optional name may precede or follow the known option/value pairs.
     request.projectName = std::string{flag};
+    hasProjectName = true;
   }
   // A score format cannot carry a singer executable, so an imported project is
   // unplayable in SEAM unless the caller names the recipe to render it with.

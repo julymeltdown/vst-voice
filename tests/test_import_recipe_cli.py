@@ -144,6 +144,31 @@ class ImportRecipeCliTests(unittest.TestCase):
                 self.assertFalse(saved_recipe.parent.exists())
                 self.assertFalse(target.with_suffix(".seam.bak").exists())
 
+    def test_unknown_options_and_multiple_names_are_refused_without_writes(self):
+        tails = (["--languge", "ja"], ["--recpie", str(self.selected)],
+                 ["First", "Second"], ["--unknown"])
+        for source, target, saved_recipe in self.destinations(create_recipe_directory=False):
+            for index, tail in enumerate(tails):
+                with self.subTest(format=source.suffix, arguments=tail):
+                    output = target.parent / f"invalid-{index}.seam"
+                    result = subprocess.run(
+                        [CLI, "import-score", str(source), str(output), *tail],
+                        capture_output=True, text=True, timeout=15, check=False)
+                    self.assertEqual(3, result.returncode, result.stderr)
+                    self.assertTrue(result.stderr.strip())
+                    self.assertFalse(output.exists())
+                    self.assertFalse(saved_recipe.parent.exists())
+
+    def test_project_name_may_follow_known_options(self):
+        for source, target, _saved_recipe in self.destinations():
+            with self.subTest(format=source.suffix):
+                result = subprocess.run(
+                    [CLI, "import-score", str(source), str(target),
+                     "--language", "ja", "--recipe", str(self.selected), "Named after flags"],
+                    capture_output=True, text=True, timeout=15, check=False)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("Named after flags", json.loads(target.read_text())["name"])
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
