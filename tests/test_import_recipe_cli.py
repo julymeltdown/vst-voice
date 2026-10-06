@@ -122,6 +122,29 @@ class ImportRecipeCliTests(unittest.TestCase):
                 self.assertTrue(saved_recipe.is_symlink())
                 self.assertEqual(original, self.selected.read_bytes())
 
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation requires separate platform admission")
+    def test_recipe_directory_symlink_is_refused_without_external_writes(self):
+        for source in (self.midi, self.ustx):
+            for existing_recipe in (False, True):
+                with self.subTest(format=source.suffix, existing_recipe=existing_recipe):
+                    name = f"{source.suffix[1:]}-{existing_recipe}"
+                    parent, external = self.root / name, self.root / f"external-{name}"
+                    parent.mkdir()
+                    external.mkdir()
+                    saved_recipe = external / self.selected.name
+                    if existing_recipe:
+                        saved_recipe.write_bytes(self.selected.read_bytes())
+                    before = {p.name: p.read_bytes() for p in external.iterdir()}
+                    recipe_directory = parent / "recipes"
+                    recipe_directory.symlink_to(external, target_is_directory=True)
+                    target = parent / "out.seam"
+                    result = self.import_score(source, target)
+                    self.assertEqual(5, result.returncode, result.stderr)
+                    self.assertIn("recipe directory", result.stderr.lower())
+                    self.assertFalse(target.exists())
+                    self.assertTrue(recipe_directory.is_symlink())
+                    self.assertEqual(before, {p.name: p.read_bytes() for p in external.iterdir()})
+
     def test_new_recipe_bytes_match_the_frozen_project_identity(self):
         for source, target, saved_recipe in self.destinations():
             with self.subTest(format=source.suffix):

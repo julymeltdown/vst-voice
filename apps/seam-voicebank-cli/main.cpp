@@ -784,6 +784,17 @@ int importScoreCommand(int argc, char** argv) {
   if (request.proceduralRecipe.has_value() && selectedRecipe.has_value()) {
     const auto recipeTarget = destination.parent_path() / request.proceduralRecipe->path;
     std::error_code copyError;
+    // The companion directory is part of the portable project. Following a
+    // symlink here would publish or reuse material outside that project.
+    const auto directoryStatus = std::filesystem::symlink_status(recipeTarget.parent_path(), copyError);
+    if (copyError && copyError != std::errc::no_such_file_or_directory) {
+      std::cerr << "error: cannot inspect recipe directory: " << copyError.message() << '\n';
+      return 5;
+    }
+    if (std::filesystem::exists(directoryStatus) && !std::filesystem::is_directory(directoryStatus)) {
+      std::cerr << "error: recipe directory must be a directory, not a symbolic link or other file\n";
+      return 5;
+    }
     std::filesystem::create_directories(recipeTarget.parent_path(), copyError);
     if (copyError) {
       std::cerr << "error: cannot create recipe directory: " << copyError.message() << '\n';

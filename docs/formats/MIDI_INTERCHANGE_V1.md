@@ -61,6 +61,8 @@ decodes to the selected singer identity; equivalent JSON whitespace is allowed.
 A different recipe, malformed file, directory or symbolic link is refused before
 the new project is written, preserving the existing material. This policy also
 applies to USTX imports through the same CLI command.
+The companion `recipes` directory must also be a directory rather than a symbolic
+link, so import cannot publish or reuse recipe material outside the project.
 An occupied project destination is refused before any companion recipe directory
 or file is created. The final project write also uses atomic create-new semantics.
 Unknown CLI options and multiple project names are rejected before publication;
