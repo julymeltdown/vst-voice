@@ -175,6 +175,70 @@ class ProductSoakCollectorTests(unittest.TestCase):
         self.assertGreaterEqual(samples[-1]['elapsedSeconds'], 0.15)
 
 class ProductSoakTests(unittest.TestCase):
+    def test_sample_series_must_cover_the_duration_from_near_start(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for duration in (1800, 7200):
+                for first, last in ((duration - 1, duration), (2, duration + 2),
+                                    (1 << 4096, (1 << 4096) + duration)):
+                    with self.subTest(duration=duration, first=first, last=last):
+                        record = _record(root, duration)
+                        record["samples"][0]["elapsedSeconds"] = first
+                        record["samples"][-1]["elapsedSeconds"] = last
+                        result = validate_product_soak(record, root)
+                        self.assertFalse(result.passed)
+                        self.assertTrue(any("sample series must start" in error for error in result.errors))
+                        if last - first == 1:
+                            self.assertTrue(any("sample series span" in error for error in result.errors))
+
+    def test_canonical_one_second_start_tolerance_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for duration in (1800, 7200):
+                for first in (0, 0.5, 1):
+                    with self.subTest(duration=duration, first=first):
+                        record = _record(root, duration)
+                        record["samples"][0]["elapsedSeconds"] = first
+                        result = validate_product_soak(record, root)
+                        self.assertTrue(result.passed, result.errors)
+                with self.subTest(duration=duration, first=1.001):
+                    record = _record(root, duration)
+                    record["samples"][0]["elapsedSeconds"] = 1.001
+                    record["samples"][-1]["elapsedSeconds"] = duration + 1.001
+                    result = validate_product_soak(record, root)
+                    self.assertFalse(result.passed)
+                    self.assertTrue(any("sample series must start" in error for error in result.errors))
+
+    def test_sample_span_and_final_endpoint_cannot_stop_short(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for duration in (1800, 7200):
+                with self.subTest(duration=duration):
+                    record = _record(root, duration)
+                    record["samples"][0]["elapsedSeconds"] = 1
+                    record["samples"][-1]["elapsedSeconds"] = duration - 0.001
+                    result = validate_product_soak(record, root)
+                    self.assertFalse(result.passed)
+                    self.assertTrue(any("sample series span" in error for error in result.errors))
+                    self.assertIn("sample series does not cover the declared soak duration", result.errors)
+
+    def test_cli_rejects_a_late_one_second_sample_span(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = _record(root)
+            record["samples"][0]["elapsedSeconds"] = 1799
+            path = root / "record.json"
+            path.write_text(json.dumps(record), encoding="utf-8")
+            completed = subprocess.run([
+                sys.executable, str(Path(__file__).resolve().parents[2] / "scripts/run_external_beta_product_soak.py"),
+                "--record", str(path), "--evidence-root", str(root),
+            ], capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(completed.returncode, 3, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            result = json.loads(completed.stdout)
+            self.assertFalse(result["passed"])
+            self.assertTrue(any("sample series span" in error for error in result["errors"]))
+
     def test_nonfinite_sample_values_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -54,6 +54,9 @@ SUMMARY_INTEGER_FIELDS = frozenset(SUMMARY_GROWTH_FIELDS) | frozenset((
     "maxRssBytes", "maxQueueDepth", "maxMediaBudgetHighWaterBytes", "underflowCount",
     "xrunCount", "controlQueueOverflowCount", "restartCount",
 ))
+# The canonical soak uses a one-second performance time series. Allow one initial
+# sampling interval, but do not shorten the required final elapsed time.
+SAMPLE_START_TOLERANCE_SECONDS = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,7 +233,8 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
         errors.append("record.recordType is invalid")
     duration = record.get("durationSeconds")
     phase = record.get("phase")
-    if not _metric_number(duration, integer=True) or duration not in {1800, 7200}:
+    duration_valid = _metric_number(duration, integer=True) and duration in {1800, 7200}
+    if not duration_valid:
         errors.append("durationSeconds must be an integer equal to 1800 or 7200")
     elif duration == 1800 and phase != "usable-alpha-30m":
         errors.append("1800-second soak must be phase usable-alpha-30m")
@@ -286,8 +290,16 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
                 errors.append("sample elapsedSeconds must be strictly increasing")
             else:
                 last_elapsed = elapsed
-    if samples and isinstance(duration, int) and last_elapsed < duration:
-        errors.append("sample series does not cover the declared soak duration")
+    if samples and sample_values_valid and duration_valid:
+        first_elapsed = samples[0]["elapsedSeconds"]
+        final_elapsed = samples[-1]["elapsedSeconds"]
+        if first_elapsed > SAMPLE_START_TOLERANCE_SECONDS:
+            errors.append("sample series must start within one second of soak start")
+        if final_elapsed < duration:
+            errors.append("sample series does not cover the declared soak duration")
+        # Compare endpoints without subtracting mixed floats/large integers.
+        if final_elapsed < first_elapsed + duration - SAMPLE_START_TOLERANCE_SECONDS:
+            errors.append("sample series span does not cover the declared soak duration within one-second sampling tolerance")
     # Do not perform subtraction/max on malformed samples after recording their errors.
     if sample_values_valid:
         _summary_errors(record, samples, thresholds, errors)
