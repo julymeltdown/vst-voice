@@ -10,6 +10,9 @@ depth, cache stalls) are read from the product own statistics surface when one i
 are reported as zero when the process exposes none -- because inventing plausible audio numbers
 would be worse than admitting the channel was absent. The record marks which source each family
 came from so a reviewer can tell measured from unobserved.
+
+Unavailable RSS is an explicit error and stops collection; a missing process measurement
+cannot be published as a zero-byte observation.
 """
 
 from __future__ import annotations
@@ -25,31 +28,52 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+class ProcessMeasurementError(RuntimeError):
+    """A required process observation could not be obtained."""
+
+    def __init__(self, pid: int, reason: str) -> None:
+        super().__init__(f"RSS measurement unavailable for process {pid}: {reason}")
+
+
 def _process_rss_bytes(pid: int) -> int:
     """Resident size of a live process, read from the operating system."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        raise ProcessMeasurementError(pid, "PID must be a positive integer")
     if sys.platform == "darwin":
-        try:
-            output = _ps_output(pid, "rss")
-        except (OSError, subprocess.SubprocessError):
-            return 0
-        return int(output * 1024) if output else 0
+        return _ps_output(pid, "rss") * 1024
+    if sys.platform != "linux":
+        raise ProcessMeasurementError(pid, f"unsupported platform {sys.platform}")
     try:
         with open(f"/proc/{pid}/statm", "r", encoding="ascii") as stream:
             pages = int(stream.read().split()[1])
-        return pages * os.sysconf("SC_PAGE_SIZE")
-    except (OSError, IndexError, ValueError):
-        return 0
+        page_size = os.sysconf("SC_PAGE_SIZE")
+    except (OSError, IndexError, ValueError) as exc:
+        raise ProcessMeasurementError(pid, f"cannot read resident pages: {exc}") from exc
+    if pages <= 0 or not isinstance(page_size, int) or page_size <= 0:
+        raise ProcessMeasurementError(pid, "resident pages and page size must be positive integers")
+    return pages * page_size
 
 
-def _ps_output(pid: int, field: str) -> float:
-    completed = subprocess.run(
-        ["ps", "-o", field, "-p", str(pid)],
-        capture_output=True, text=True, timeout=30, check=False,
-    )
+def _ps_output(pid: int, field: str) -> int:
+    try:
+        completed = subprocess.run(
+            ["ps", "-o", field, "-p", str(pid)],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ProcessMeasurementError(pid, f"cannot run ps: {exc}") from exc
     if completed.returncode != 0:
-        return 0.0
+        raise ProcessMeasurementError(pid, f"ps exited {completed.returncode}: {completed.stderr.strip()}")
     lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    return float(lines[-1]) if len(lines) > 1 else 0.0
+    if len(lines) != 2:
+        raise ProcessMeasurementError(pid, "ps did not return a single RSS observation")
+    try:
+        resident_kib = int(lines[1])
+    except ValueError as exc:
+        raise ProcessMeasurementError(pid, "ps RSS must be an integer number of KiB") from exc
+    if resident_kib <= 0:
+        raise ProcessMeasurementError(pid, "ps RSS must be positive for a live process")
+    return resident_kib
 
 AUDIO_COUNTER_FIELDS = (
     "renderLatencyMs", "callbackLatencyUs", "queueDepth", "queueAgeMs",

@@ -9,7 +9,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from tools.external_beta import soak_collector
 from tools.external_beta.soak_collector import (
     _process_rss_bytes,
     build_soak_record,
@@ -93,6 +95,85 @@ def _record(root: Path, duration: int = 1800, platform: str = "macos") -> dict:
         "startedAt": "2026-08-21T10:00:00Z",
         "endedAt": "2026-08-21T12:00:00Z",
     }
+
+
+class ProductSoakRssMeasurementTests(unittest.TestCase):
+    def test_darwin_unavailable_rss_is_an_error_instead_of_zero(self) -> None:
+        failures = (
+            PermissionError(1, "Operation not permitted", "ps"),
+            FileNotFoundError(2, "No such file", "ps"),
+            subprocess.TimeoutExpired(["ps"], 30),
+        )
+        with mock.patch.object(soak_collector.sys, "platform", "darwin"):
+            for failure in failures:
+                with self.subTest(failure=type(failure).__name__):
+                    with mock.patch.object(soak_collector.subprocess, "run", side_effect=failure):
+                        with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                            _process_rss_bytes(123)
+            for returncode, stdout in ((1, "RSS\n1234\n"), (0, ""), (0, "RSS\n"),
+                                       (0, "RSS\ninvalid\n"), (0, "RSS\n0\n"),
+                                       (0, "RSS\n-1\n"), (0, "RSS\n1.5\n"),
+                                       (0, "RSS\nnan\n"), (0, "RSS\ninf\n")):
+                with self.subTest(returncode=returncode, stdout=stdout):
+                    result = subprocess.CompletedProcess(["ps"], returncode, stdout, "unavailable")
+                    with mock.patch.object(soak_collector.subprocess, "run", return_value=result):
+                        with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                            _process_rss_bytes(123)
+
+    def test_darwin_valid_rss_and_growth_use_observed_integer_kib(self) -> None:
+        observations = [subprocess.CompletedProcess(["ps"], 0, f"RSS\n{value}\n", "")
+                        for value in (8192, 16384)]
+        with mock.patch.object(soak_collector.sys, "platform", "darwin"), \
+             mock.patch.object(soak_collector.subprocess, "run", side_effect=observations) as run:
+            before = _process_rss_bytes(123)
+            after = _process_rss_bytes(123)
+            self.assertEqual(before, 8192 * 1024)
+            self.assertEqual(after, 16384 * 1024)
+            self.assertGreater(after, before)
+            self.assertEqual(run.call_args.args[0], ["ps", "-o", "rss", "-p", "123"])
+
+    def test_linux_unavailable_or_malformed_rss_is_an_error(self) -> None:
+        with mock.patch.object(soak_collector.sys, "platform", "linux"):
+            for failure in (PermissionError("denied"), FileNotFoundError("missing")):
+                with self.subTest(failure=type(failure).__name__):
+                    with mock.patch("builtins.open", side_effect=failure):
+                        with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                            _process_rss_bytes(123)
+            for content in ("", "1", "1 invalid", "1 0", "1 -1", "1 1.5"):
+                with self.subTest(content=content):
+                    with mock.patch("builtins.open", mock.mock_open(read_data=content)):
+                        with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                            _process_rss_bytes(123)
+
+    def test_linux_valid_rss_uses_resident_pages_and_page_size(self) -> None:
+        with mock.patch.object(soak_collector.sys, "platform", "linux"), \
+             mock.patch("builtins.open", mock.mock_open(read_data="100 5 3 2 1")), \
+             mock.patch.object(soak_collector.os, "sysconf", return_value=4096):
+            self.assertEqual(_process_rss_bytes(123), 5 * 4096)
+
+    def test_unsupported_platform_and_invalid_pid_do_not_attempt_sampling(self) -> None:
+        with mock.patch.object(soak_collector.subprocess, "run") as run, \
+             mock.patch("builtins.open") as opened:
+            for platform in ("win32", "freebsd"):
+                with self.subTest(platform=platform), \
+                     mock.patch.object(soak_collector.sys, "platform", platform):
+                    with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                        _process_rss_bytes(123)
+            for pid in (0, -1, True, None, "123", 123.0):
+                with self.subTest(pid=pid):
+                    with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                        _process_rss_bytes(pid)
+            run.assert_not_called()
+            opened.assert_not_called()
+
+    def test_missing_rss_aborts_collection_without_publishing_zero(self) -> None:
+        with mock.patch.object(soak_collector, "_process_rss_bytes", side_effect=RuntimeError("RSS measurement unavailable")), \
+             mock.patch.object(soak_collector, "_handle_count") as handles, \
+             mock.patch.object(soak_collector, "_thread_count") as threads:
+            with self.assertRaisesRegex(RuntimeError, "RSS measurement unavailable"):
+                collect_soak_samples(123, 0.1, 0.05, cpu_clock=lambda pid: 0.0)
+            handles.assert_not_called()
+            threads.assert_not_called()
 
 
 class ProductSoakCollectorTests(unittest.TestCase):
