@@ -748,6 +748,24 @@ int importScoreCommand(int argc, char** argv) {
                  "--language matching the file, or omit --recipe to keep a draft for editing.\n";
     return 6;
   }
+  const auto codec = seam::formats::ProjectJsonCodec{};
+  const auto encoded = codec.encode(imported.value().project);
+  if (!encoded) {
+    std::cerr << "error: " << encoded.error().message << '\n';
+    return 5;
+  }
+  // Refuse occupied or uninspectable project destinations before publishing
+  // companion material. The final create-new write still handles races.
+  std::error_code destinationError;
+  const auto destinationStatus = std::filesystem::symlink_status(destination, destinationError);
+  if (destinationError && destinationError != std::errc::no_such_file_or_directory) {
+    std::cerr << "error: cannot inspect project destination: " << destinationError.message() << '\n';
+    return 6;
+  }
+  if (std::filesystem::exists(destinationStatus)) {
+    std::cerr << "error: project destination already exists; nothing was written\n";
+    return 6;
+  }
   // The draft is only written once every issue has been reported, so a refused conversion leaves no
   // half-imported project behind for a later caller to mistake for a successful one.
   // When the caller named a recipe, copy it beside the project so the relative
@@ -787,12 +805,6 @@ int importScoreCommand(int argc, char** argv) {
         return 5;
       }
     }
-  }
-  const auto codec = seam::formats::ProjectJsonCodec{};
-  const auto encoded = codec.encode(imported.value().project);
-  if (!encoded) {
-    std::cerr << "error: " << encoded.error().message << '\n';
-    return 5;
   }
   // Create-new rather than save. Codec::save writes atomically but replaces the destination and moves
   // the previous file to .bak, which would let one mistyped path silently overwrite an existing

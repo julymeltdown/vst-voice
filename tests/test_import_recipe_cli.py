@@ -43,10 +43,12 @@ class ImportRecipeCliTests(unittest.TestCase):
             '        tone: 60\n        lyric: "あ"\n'
             '        pitch: {data: [{x: 0, y: 0, shape: l}], snap_first: false}\n')
 
-    def destinations(self):
+    def destinations(self, create_recipe_directory=True):
         for source in (self.midi, self.ustx):
             parent = self.root / source.suffix.lstrip(".")
-            (parent / "recipes").mkdir(parents=True)
+            parent.mkdir()
+            if create_recipe_directory:
+                (parent / "recipes").mkdir()
             yield source, parent / "out.seam", parent / "recipes" / self.selected.name
 
     def import_score(self, source, target):
@@ -130,6 +132,17 @@ class ImportRecipeCliTests(unittest.TestCase):
                 self.assertEqual(self.recipe, json.loads(published))
                 self.assertEqual(hashlib.sha256(published).hexdigest(), reference["contentHash"])
                 self.assertEqual([], list(saved_recipe.parent.glob("*.tmp.*")))
+
+    def test_existing_project_is_refused_before_recipe_publication(self):
+        for source, target, saved_recipe in self.destinations(create_recipe_directory=False):
+            with self.subTest(format=source.suffix):
+                original = b"ORIGINAL USER PROJECT\n"
+                target.write_bytes(original)
+                result = self.import_score(source, target)
+                self.assertEqual(6, result.returncode, result.stderr)
+                self.assertEqual(original, target.read_bytes())
+                self.assertFalse(saved_recipe.parent.exists())
+                self.assertFalse(target.with_suffix(".seam.bak").exists())
 
 
 if __name__ == "__main__":
