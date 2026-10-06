@@ -1,5 +1,6 @@
 #include "seam/rendering/singer_route.hpp"
 #include "seam/synthesis/renderer_dispatcher.hpp"
+#include "seam/synthesis/singer_resource.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +21,46 @@ std::string engineDiagnostic(const SingerRouteDeclaration& declaration,
 }
 
 }  // namespace
+
+core::Result<std::vector<voicebank::RendererHint>> selectedSampleRenderers(
+    const synthesis::SampleSingerResource& resource) {
+  if (!resource.voicebank || !resource.unitPlan)
+    return core::failure<std::vector<voicebank::RendererHint>>(core::ErrorCode::InvalidArgument,
+        "Selected sample renderer plan is absent");
+  std::vector<voicebank::RendererHint> renderers;
+  const auto append = [&](const synthesis::UnitPlan& plan) -> core::Result<void> {
+    if (plan.entries.empty()) return core::failure(core::ErrorCode::NotFound,
+        "Selected sample renderer plan is empty");
+    for (const auto& entry : plan.entries) {
+      const auto* unit = resource.voicebank->findUnit(entry.unitId);
+      if (!unit || !unit->enabled) return core::failure(core::ErrorCode::NotFound,
+          "Selected sample unit is absent or disabled", entry.unitId);
+      const auto renderer = synthesis::resolveRequestedRenderer(
+          *unit, resource.renderOptions.renderer.policy, entry.renderer);
+      if (std::find(renderers.begin(), renderers.end(), renderer) == renderers.end())
+        renderers.push_back(renderer);
+    }
+    return core::success();
+  };
+  const auto primary = append(*resource.unitPlan);
+  if (!primary) return core::Result<std::vector<voicebank::RendererHint>>{primary.error()};
+  if (resource.blendStyle) {
+    if (!resource.blendStyle->unitPlan) return core::failure<std::vector<voicebank::RendererHint>>(
+        core::ErrorCode::InvalidArgument, "Selected secondary sample renderer plan is absent");
+    const auto secondary = append(*resource.blendStyle->unitPlan);
+    if (!secondary) return core::Result<std::vector<voicebank::RendererHint>>{secondary.error()};
+  }
+  return renderers;
+}
+
+SingerRouteEnvironment sampleSingerRouteEnvironment(
+    std::span<const voicebank::RendererHint> selectedRenderers) {
+  SingerRouteEnvironment result;
+  result.sampleRenderers.assign(selectedRenderers.begin(), selectedRenderers.end());
+  result.available = !selectedRenderers.empty();
+  if (!result.available) result.unavailableReason = "No selected sample renderer plan is available";
+  return result;
+}
 
 SingerRouteEnvironment sampleSingerRouteEnvironment(
     const domain::VocalTrack& track, const voicebank::Manifest& manifest) {

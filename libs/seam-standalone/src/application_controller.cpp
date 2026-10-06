@@ -299,11 +299,9 @@ core::Result<void> StandaloneApplicationController::validateSingerControl(
   if (!track->neuralResource) {
     rendering::SingerRouteEnvironment environment;
     if (!track->proceduralRecipe && control == synthesis::RendererControl::Formant) {
-      const auto bank = session_.runtime().voicebanks().resolveTrackSnapshot(project, trackId);
-      const auto& resolved = bank->resolution();
-      if (!resolved.resolved()) return core::failure(core::ErrorCode::Unsupported,
-          "Cannot resolve sample formant route: " + resolved.diagnostic);
-      environment = rendering::sampleSingerRouteEnvironment(*track, resolved.candidate->manifest);
+      const auto selected = session_.runtime().sampleSingerRouteEnvironment(trackId);
+      if (!selected) return core::Result<void>{selected.error()};
+      environment = selected.value();
     }
     const auto route = rendering::resolveSingerRoute(project, trackId, environment);
     if (!route) return core::Result<void>{route.error()};

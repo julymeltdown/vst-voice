@@ -75,6 +75,10 @@ public:
   [[nodiscard]] const VoicebankSession& voicebanks() const noexcept {
     return voicebanks_;
   }
+  // Current prepared selection only. Pending, stale or incomplete publications
+  // retain the conservative metadata check; no selection is rerun on the UI thread.
+  [[nodiscard]] core::Result<rendering::SingerRouteEnvironment> sampleSingerRouteEnvironment(
+      domain::TrackId trackId) const;
   [[nodiscard]] AuthoringRenderCoordinator& renderer() noexcept {
     return renderer_;
   }

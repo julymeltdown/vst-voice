@@ -198,6 +198,7 @@ void AuthoringSession::configureController() {
         return core::success();
       },
       .documentChanged = [this] { onDocumentChanged(); },
+      .validateSingerControl = externalCallbacks_.validateSingerControl,
       .stopPlaying = [this] {
         const auto result = runtime_->transport().stop();
         if (externalCallbacks_.requestRepaint) {

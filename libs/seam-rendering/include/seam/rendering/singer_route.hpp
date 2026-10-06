@@ -6,8 +6,11 @@
 #include "seam/synthesis/renderer_capabilities.hpp"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
+
+namespace seam::synthesis { struct SampleSingerResource; }
 
 namespace seam::rendering {
 
@@ -89,6 +92,19 @@ struct SingerRouteEnvironment final {
   // The route exposes only the intersection, never a capability family union.
   std::vector<voicebank::RendererHint> sampleRenderers;
 };
+
+// Renderer choices of one prepared region, including both style arms and all
+// polyphonic voices. Publication freshness is owned by the authoring runtime.
+struct SelectedSampleRendererPlan final {
+  domain::TrackId trackId{};
+  domain::RegionId regionId{};
+  std::vector<voicebank::RendererHint> renderers;
+};
+
+[[nodiscard]] core::Result<std::vector<voicebank::RendererHint>> selectedSampleRenderers(
+    const synthesis::SampleSingerResource& resource);
+[[nodiscard]] SingerRouteEnvironment sampleSingerRouteEnvironment(
+    std::span<const voicebank::RendererHint> selectedRenderers);
 
 // Cheap metadata-only authoring check: all enabled units in the selected style
 // pair and active overrides must support the control. Mixed inventories remain

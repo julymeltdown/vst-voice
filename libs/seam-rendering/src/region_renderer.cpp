@@ -137,6 +137,10 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
       }
       mixed.phrases.insert(mixed.phrases.end(), audio.phrases.begin(), audio.phrases.end());
       mixed.unitPlan.insert(mixed.unitPlan.end(), audio.unitPlan.begin(), audio.unitPlan.end());
+      for (const auto renderer : audio.selectedSampleRenderers) {
+        if (std::find(mixed.selectedSampleRenderers.begin(), mixed.selectedSampleRenderers.end(), renderer) ==
+            mixed.selectedSampleRenderers.end()) mixed.selectedSampleRenderers.push_back(renderer);
+      }
       mixed.failures.insert(mixed.failures.end(), audio.failures.begin(), audio.failures.end());
       mixed.unitCount += audio.unitCount;
       mixed.fallbackCount += audio.fallbackCount;
@@ -185,6 +189,12 @@ core::Result<RegionRenderResult> ProductionRegionRenderer::render(
     }
 
     output.resolvedStyle = snapshot.value().style;
+    const auto selectedRenderers = selectedSampleRenderers(snapshot.value().sample());
+    if (!selectedRenderers) return core::Result<RegionRenderResult>{selectedRenderers.error()};
+    for (const auto renderer : selectedRenderers.value()) {
+      if (std::find(output.selectedSampleRenderers.begin(), output.selectedSampleRenderers.end(), renderer) ==
+          output.selectedSampleRenderers.end()) output.selectedSampleRenderers.push_back(renderer);
+    }
     // The cue partition comes from the prepared snapshot itself, before the cache branch decides
     // whether this phrase is rendered or reused, so a cache hit publishes the same presentation data
     // as a fresh render instead of silently having none.

@@ -5,6 +5,7 @@
 #include "seam/rendering/pcm_cache.hpp"
 #include "seam/rendering/render_snapshot.hpp"
 #include "seam/rendering/render_performance.hpp"
+#include "seam/rendering/singer_route.hpp"
 #include "seam/synthesis/phrase_renderer.hpp"
 #include "seam/voicebank/voicebank.hpp"
 
@@ -51,6 +52,7 @@ struct RegionRenderResult final {
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};
   std::size_t cacheHits{0U};
+  std::vector<voicebank::RendererHint> selectedSampleRenderers;
 };
 
 class ProductionRegionRenderer final {

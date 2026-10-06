@@ -81,11 +81,14 @@ complete maximum-project performance qualification.
 - Spectral algorithm revision advances from 7 to 8. Existing render identities
   include that revision, the project controls, accepted/manual ownership, source
   hashes, renderer choices and required controls.
-- Authoring capability discovery is deliberately conservative: it intersects
-  enabled units in the selected styles and active overrides. A heterogeneous
-  inventory may therefore withhold the UI edit even where an explicitly forced
-  Spectral plan can render. Exact selected-plan UI capability refinement remains
-  open; no global claim that all sample banks support formants is made.
+- Authoring capability discovery uses the current prepared region's effective
+  renderers, including both style arms and all polyphonic voices. The publication
+  must match the project revision, selected region and resolved bank identity.
+  Without that current complete plan, discovery retains the conservative
+  intersection of enabled inventory units and active overrides. See the
+  [2026-10-06 selected-plan increment](U39_SELECTED_PLAN_CAPABILITIES_2026-10-06.md)
+  for the refinement and its focused verification; sample banks as a family do
+  not gain Formant support.
 
 ## Verification
 

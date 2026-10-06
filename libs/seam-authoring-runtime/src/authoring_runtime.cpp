@@ -282,6 +282,30 @@ void AuthoringRuntime::shutdown() noexcept {
   initialized_ = false;
 }
 
+core::Result<rendering::SingerRouteEnvironment> AuthoringRuntime::sampleSingerRouteEnvironment(
+    domain::TrackId trackId) const {
+  const auto& project = document_->session().project();
+  const auto* track = project.findVocalTrack(trackId);
+  if (!track) return core::failure<rendering::SingerRouteEnvironment>(core::ErrorCode::NotFound,
+      "Singer control has no vocal track");
+  const auto bank = voicebanks_.resolveTrackSnapshot(project, trackId);
+  const auto& resolved = bank->resolution();
+  if (!resolved.resolved()) return core::failure<rendering::SingerRouteEnvironment>(core::ErrorCode::Unsupported,
+      "Cannot resolve sample formant route: " + resolved.diagnostic);
+  const auto current = renderer_.acquireCurrent();
+  if (current && current->projectId == project.id() &&
+      current->projectRevision == document_->session().revision() && current->result.diagnostics.empty() &&
+      current->activeVoicebankId == resolved.candidate->manifest.id &&
+      current->activeVoicebankVersion == resolved.candidate->manifest.version &&
+      current->activeVoicebankContentHash == resolved.candidate->contentHash) {
+    const auto& plan = current->result.activeSampleRendererPlan;
+    if (plan && plan->trackId == trackId && plan->regionId == selectedRegion_ &&
+        track->findRegion(plan->regionId) != nullptr && !plan->renderers.empty())
+      return rendering::sampleSingerRouteEnvironment(plan->renderers);
+  }
+  return rendering::sampleSingerRouteEnvironment(*track, resolved.candidate->manifest);
+}
+
 core::Result<void> AuthoringRuntime::selectTrack(domain::TrackId trackId) {
   const auto* track = document_->session().project().findVocalTrack(trackId);
   if (track == nullptr) {

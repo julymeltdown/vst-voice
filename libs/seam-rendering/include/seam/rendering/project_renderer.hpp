@@ -106,6 +106,7 @@ struct ProjectRenderResult final {
   std::size_t unitCount{0U};
   std::size_t fallbackCount{0U};
   std::size_t cacheHits{0U};
+  std::optional<SelectedSampleRendererPlan> activeSampleRendererPlan;
 };
 
 // Shared publication boundary for Final rendering and direct PCM export.

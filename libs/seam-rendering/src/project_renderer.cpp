@@ -419,6 +419,9 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
       }
       if (track.id == activeTrack && region.id == activeRegion) {
         output.activeUnitPlan = rendered.value().unitPlan;
+        output.activeSampleRendererPlan = SelectedSampleRendererPlan{
+            .trackId = track.id, .regionId = region.id,
+            .renderers = rendered.value().selectedSampleRenderers};
       }
     }
   }

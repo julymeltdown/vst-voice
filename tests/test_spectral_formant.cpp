@@ -14,6 +14,10 @@
 #include "seam/synthesis/spectral_classic.hpp"
 #include "seam/voicebank/pitch.hpp"
 #include "seam/voicebank/manifest_json.hpp"
+#ifdef SEAM_FORMANT_STANDALONE
+#include "seam/standalone/application_controller.hpp"
+#include "seam/standalone/authoring_session.hpp"
+#endif
 #ifdef SEAM_FORMANT_CLAP
 #include "seam/clap_editor/editor_runtime.hpp"
 #endif
@@ -87,7 +91,38 @@ struct SampleFormantFixture : FormantFixture {
     if (!result) throw test::Failure{result.error().message + ": " + result.error().context};
     return result.value();
   }
+  void addUnusedRawUnitAndSelectSpectral() {
+    auto unused = unit;
+    unused.id = "unused-raw-a";
+    unused.renderer = voicebank::RendererHint::Raw;
+    bank.units.push_back(unused);
+    const auto frozen = snapshot(project); CHECK(frozen);
+    project.findRegion(region)->unitSelectionOverrides.push_back({
+        .startKey = frozen.value().phonemes->tokens.front().key,
+        .unitId = unit.id, .renderer = domain::UnitRendererKind::SpectralClassic});
+  }
+  domain::RegionId addRawRegion() {
+    const auto other = factory.addRegion(project, track, "Raw phrase", time::Tick{2400}, time::Tick{1920});
+    auto [lyric, note] = factory.makeNote(time::Tick{0}, time::Tick{1920}, 45U, U"あ", domain::Language::Japanese);
+    note.phoneticHint = "a";
+    auto* target = project.findRegion(other);
+    target->unitSelectionOverrides.push_back({.startKey = {note.id, 0U}, .unitId = "unused-raw-a",
+                                             .renderer = domain::UnitRendererKind::Raw});
+    target->lyrics = {lyric}; target->notes = {note};
+    return other;
+  }
 };
+#if defined(SEAM_FORMANT_CLAP) || defined(SEAM_FORMANT_STANDALONE)
+bool formantOffered(const native_ui::NativeEditorController& controller) {
+  const auto state = controller.sceneState();
+  const auto found = std::find_if(state.inspector.expressionCapabilities.begin(),
+      state.inspector.expressionCapabilities.end(), [](const auto& capability) {
+        return capability.channel == ui::ExpressionChannel::Formant;
+      });
+  CHECK(found != state.inspector.expressionCapabilities.end());
+  return found->refusal.empty();
+}
+#endif
 double magnitude(std::span<const float> pcm, double frequency) {
   double real = 0, imaginary = 0;
   for (std::size_t i = 0; i < pcm.size(); ++i) {
@@ -362,6 +397,77 @@ TEST_CASE("native formant editing uses resolved sample capabilities and stays un
   CHECK(!validate(f.track, synthesis::RendererControl::Formant));
 }
 
+TEST_CASE("selected sample renderer capabilities retain overrides and both style arms") {
+  SampleFormantFixture f;
+  f.addUnusedRawUnitAndSelectSpectral();
+  f.bank.units.front().renderer = voicebank::RendererHint::ClassicPsola;
+  f.bank.units.front().pitchMarks = {{8000, 1.0F}, {8436, 1.0F}, {8873, 1.0F}};
+  const auto forced = f.snapshot(f.project); CHECK(forced);
+  const auto selected = rendering::selectedSampleRenderers(forced.value().sample()); CHECK(selected);
+  CHECK(selected.value() == std::vector{voicebank::RendererHint::SpectralClassic});
+  const auto route = rendering::resolveSingerRoute(f.project, f.track,
+      rendering::sampleSingerRouteEnvironment(selected.value())); CHECK(route);
+  CHECK(route.value().supportsControl(synthesis::RendererControl::Formant));
+  auto rawOverride = f.project;
+  rawOverride.findRegion(f.region)->unitSelectionOverrides.front().renderer = domain::UnitRendererKind::Raw;
+  const auto raw = f.snapshot(rawOverride); CHECK(raw);
+  const auto rawSelected = rendering::selectedSampleRenderers(raw.value().sample()); CHECK(rawSelected);
+  CHECK(!rendering::resolveSingerRoute(rawOverride, f.track,
+      rendering::sampleSingerRouteEnvironment(rawSelected.value())).value().supportsControl(synthesis::RendererControl::Formant));
+  auto malformed = forced.value().sample();
+  malformed.unitPlan.reset(); CHECK(!rendering::selectedSampleRenderers(malformed));
+  malformed = forced.value().sample();
+  malformed.unitPlan = std::make_shared<const synthesis::UnitPlan>();
+  CHECK(!rendering::selectedSampleRenderers(malformed));
+  auto disabled = f.bank; disabled.units.front().enabled = false;
+  malformed = forced.value().sample();
+  malformed.voicebank = std::make_shared<const voicebank::Manifest>(disabled);
+  CHECK(!rendering::selectedSampleRenderers(malformed));
+  f.bank.units.front().renderer = voicebank::RendererHint::SpectralClassic;
+  auto second = f.unit; second.id = "soft-a"; second.style = "soft"; second.renderer = voicebank::RendererHint::Raw;
+  f.bank.units.push_back(second); f.bank.styles.push_back("soft");
+  auto pair = f.project;
+  pair.findRegion(f.region)->unitSelectionOverrides.clear();
+  pair.findVocalTrack(f.track)->styleSelection.blend = domain::VoiceStyleBlend{"soft", 0.5F};
+  const auto blended = f.snapshot(pair); CHECK(blended); CHECK(blended.value().sample().blendStyle);
+  const auto mixed = rendering::selectedSampleRenderers(blended.value().sample()); CHECK(mixed);
+  CHECK(std::find(mixed.value().begin(), mixed.value().end(), voicebank::RendererHint::Raw) != mixed.value().end());
+  CHECK(std::find(mixed.value().begin(), mixed.value().end(), voicebank::RendererHint::SpectralClassic) != mixed.value().end());
+  const auto mixedRoute = rendering::resolveSingerRoute(pair, f.track,
+      rendering::sampleSingerRouteEnvironment(mixed.value())); CHECK(mixedRoute);
+  CHECK(!mixedRoute.value().supportsControl(synthesis::RendererControl::Formant));
+  auto shifted = pair;
+  CHECK(shifted.findRegion(f.region)->formantAutomation.upsert({time::Tick{0}, 1.0F}));
+  CHECK(!f.snapshot(shifted));
+}
+
+TEST_CASE("selected sample renderer plans cover mixed voices and survive cache hits") {
+  SampleFormantFixture f;
+  auto raw = f.unit; raw.id = "raw-i"; raw.phones = {"i"}; raw.renderer = voicebank::RendererHint::Raw;
+  f.bank.units.push_back(raw);
+  auto [lyric, note] = f.factory.makeNote(time::Tick{960}, time::Tick{960}, 45U, U"い", domain::Language::Japanese);
+  note.phoneticHint = "i";
+  f.project.findRegion(f.region)->lyrics.push_back(lyric); f.project.findRegion(f.region)->notes.push_back(note);
+  f.project.findRegion(f.region)->sortNotes();
+  const std::vector<rendering::TrackVoicebankSource> sources{{.trackId = f.track, .manifest = f.bank,
+      .bankRoot = f.root, .contentHash = std::string(64U, 'a'), .trust = voicebank::VoicebankTrust::DevelopmentFixture}};
+  rendering::PcmCache cache{f.root / "selected-plan-cache"};
+  const auto render = [&] { return rendering::ProductionProjectRenderer{}.render(f.project, sources,
+      f.track, f.region, 1U, 48000U, rendering::RenderQuality::Preview, {}, &cache); };
+  const auto fresh = render(); CHECK(fresh); CHECK(fresh.value().diagnostics.empty());
+  CHECK(fresh.value().activeSampleRendererPlan);
+  const auto& plan = *fresh.value().activeSampleRendererPlan;
+  CHECK(plan.trackId == f.track); CHECK(plan.regionId == f.region);
+  CHECK(plan.renderers.size() == 2U);
+  const auto route = rendering::resolveSingerRoute(f.project, f.track,
+      rendering::sampleSingerRouteEnvironment(plan.renderers)); CHECK(route);
+  CHECK(!route.value().supportsControl(synthesis::RendererControl::Formant));
+  const auto cached = render(); CHECK(cached); CHECK(cached.value().cacheHits > 0U);
+  CHECK(cached.value().activeSampleRendererPlan);
+  CHECK(cached.value().activeSampleRendererPlan->renderers == plan.renderers);
+  CHECK(cached.value().interleaved == fresh.value().interleaved);
+}
+
 TEST_CASE("spectral formant gain is applied once and bounded geometry remains finite") {
   FormantFixture f;
   auto score = f.shifted(7.5F);
@@ -394,6 +500,66 @@ TEST_CASE("spectral formant gain is applied once and bounded geometry remains fi
 }
 
 #ifdef SEAM_FORMANT_CLAP
+namespace {
+void waitForClapUnit(clap_editor::EditorRuntime& runtime, std::string_view unitId) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto preview = runtime.renderedPreview();
+    if (preview && preview->revision == runtime.revision() && preview->status == clap_editor::PreviewStatus::Ready &&
+        preview->unitPlan.size() == 1U && preview->unitPlan.front().unitId == unitId) return;
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  throw test::Failure{"CLAP did not publish the selected sample unit"};
+}
+}
+TEST_CASE("CLAP selected sample plan ignores unused unsupported inventory units") {
+  SampleFormantFixture f;
+  f.addUnusedRawUnitAndSelectSpectral();
+  CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
+  const std::vector<voicebank::VoicebankSearchRoot> roots{{f.root, voicebank::VoicebankRootKind::Development}};
+  const auto scanned = voicebank::VoicebankCatalog{}.scan(roots); CHECK(scanned); CHECK(scanned.value().size() == 1U);
+  f.project.findVocalTrack(f.track)->voicebank.contentHash = scanned.value().front().contentHash;
+  clap_editor::EditorRuntime runtime{f.project, {}, roots};
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto preview = runtime.renderedPreview();
+    if (preview && preview->revision == runtime.revision() && preview->status == clap_editor::PreviewStatus::Ready)
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  const auto before = runtime.renderedPreview(); CHECK(before);
+  CHECK(before->revision == runtime.revision()); CHECK(before->status == clap_editor::PreviewStatus::Ready);
+  CHECK(before->unitPlan.size() == 1U); CHECK(before->unitPlan.front().unitId == f.unit.id);
+  CHECK(formantOffered(runtime.controller()));
+  runtime.controller().setPlayheadTick(time::Tick{137});
+  const auto edited = runtime.controller().nudgeFormantShift(7);
+  if (!edited) throw test::Failure{edited.error().message};
+}
+
+TEST_CASE("CLAP region selection cannot reuse another region's sample capabilities") {
+  SampleFormantFixture f;
+  f.addUnusedRawUnitAndSelectSpectral();
+  const auto rawRegion = f.addRawRegion();
+  CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
+  const std::vector<voicebank::VoicebankSearchRoot> roots{{f.root, voicebank::VoicebankRootKind::Development}};
+  const auto scanned = voicebank::VoicebankCatalog{}.scan(roots); CHECK(scanned); CHECK(scanned.value().size() == 1U);
+  f.project.findVocalTrack(f.track)->voicebank.contentHash = scanned.value().front().contentHash;
+  clap_editor::EditorRuntime runtime{f.project, {}, roots};
+  waitForClapUnit(runtime, "a"); CHECK(formantOffered(runtime.controller()));
+  const auto revision = runtime.revision();
+  CHECK(runtime.selectRegion(rawRegion)); CHECK(runtime.revision() == revision);
+  runtime.controller().setPlayheadTick(time::Tick{2400});
+  CHECK(!formantOffered(runtime.controller()));
+  const auto score = runtime.projectCopy();
+  CHECK(!runtime.controller().nudgeFormantShift(1)); CHECK(runtime.projectCopy() == score);
+  waitForClapUnit(runtime, "unused-raw-a");
+  CHECK(!formantOffered(runtime.controller()));
+  CHECK(!runtime.controller().nudgeFormantShift(1)); CHECK(runtime.projectCopy() == score);
+  CHECK(runtime.selectRegion(f.region));
+  waitForClapUnit(runtime, "a"); CHECK(formantOffered(runtime.controller()));
+  runtime.controller().setPlayheadTick(time::Tick{137}); CHECK(runtime.controller().nudgeFormantShift(1));
+}
+
 TEST_CASE("CLAP sample formant edit reaches a current preview and fixed-audio offline bounce") {
   SampleFormantFixture f;
   CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
@@ -423,5 +589,100 @@ TEST_CASE("CLAP sample formant edit reaches a current preview and fixed-audio of
   CHECK(runtime.offlineRenderReady());
   const auto bounced = runtime.acquireOfflineRenderedPreview(); CHECK(bounced);
   CHECK(bounced->interleaved == changed->interleaved);
+}
+#endif
+
+#ifdef SEAM_FORMANT_STANDALONE
+namespace {
+class FormantDialog final : public seam::platform::IFileDialog {
+public:
+  seam::core::Result<std::optional<std::filesystem::path>> choose(
+      const seam::platform::FileDialogRequest&) override {
+    return std::optional<std::filesystem::path>{};
+  }
+};
+class FormantPrompt final : public seam::platform::IUnsavedChangesPrompt {
+public:
+  seam::core::Result<seam::platform::UnsavedDecision> choose(std::string_view) override {
+    return seam::platform::UnsavedDecision::Discard;
+  }
+};
+}
+TEST_CASE("standalone selected sample plan ignores unused unsupported inventory units") {
+  SampleFormantFixture f;
+  f.addUnusedRawUnitAndSelectSpectral();
+  CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
+  const std::vector<voicebank::VoicebankSearchRoot> roots{{f.root, voicebank::VoicebankRootKind::Development}};
+  const auto scanned = voicebank::VoicebankCatalog{}.scan(roots); CHECK(scanned); CHECK(scanned.value().size() == 1U);
+  f.project.findVocalTrack(f.track)->voicebank.contentHash = scanned.value().front().contentHash;
+  CHECK(formats::ProjectJsonCodec{}.save(f.project, f.root / "song.seam"));
+  standalone::StandaloneApplicationController* application = nullptr;
+  native_ui::EditorHostCallbacks callbacks;
+  callbacks.validateSingerControl = [&](domain::TrackId trackId, synthesis::RendererControl control) {
+    return application ? application->validateSingerControl(trackId, control)
+                       : core::failure(core::ErrorCode::NotFound, "Application not attached");
+  };
+  auto session = standalone::AuthoringSession::create({.cacheRoot = f.root / "standalone-cache",
+      .voicebankRoots = roots, .allowDevelopmentVoicebanks = true}, callbacks); CHECK(session);
+  auto owner = standalone::StandaloneApplicationController::create(*session.value(),
+      std::make_unique<FormantDialog>(), std::make_unique<FormantPrompt>(),
+      {.autosaveRoot = f.root / "autosaves", .recentProjectsPath = f.root / "recent.json",
+       .allowDevelopmentVoicebanks = true}); CHECK(owner);
+  application = owner.value().get();
+  CHECK(session.value()->openProject(f.root / "song.seam"));
+  auto& runtime = session.value()->runtime();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  {
+    const auto before = runtime.renderer().acquireCurrent(); CHECK(before);
+    CHECK(before->result.activeUnitPlan.size() == 1U); CHECK(before->result.activeUnitPlan.front().unitId == f.unit.id);
+  }
+  CHECK(application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
+  CHECK(formantOffered(session.value()->controller()));
+  const auto rawRegion = f.addRawRegion();
+  // Replace through the document lifecycle, then return to the first region so
+  // both regions exist in the same prepared publication and project revision.
+  CHECK(formats::ProjectJsonCodec{}.save(f.project, f.root / "two-regions.seam"));
+  CHECK(session.value()->openProject(f.root / "two-regions.seam"));
+  const auto deadline2 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline2)
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  const auto selectedRequest = [&] {
+    const auto selected = runtime.renderer().acquireCurrent(); CHECK(selected);
+    CHECK(selected->result.activeSampleRendererPlan); CHECK(selected->result.activeSampleRendererPlan->regionId == f.region);
+    return selected->requestId;
+  }();
+  CHECK(session.value()->controller().selectRegion(rawRegion));
+  // Session view selection leaves the publication readable. It must no longer
+  // grant the new region the old region's Spectral capability.
+  {
+    const auto retained = runtime.renderer().acquireCurrent(); CHECK(retained);
+    CHECK(retained->requestId == selectedRequest);
+  }
+  CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
+  CHECK(!formantOffered(session.value()->controller()));
+  session.value()->controller().setPlayheadTick(time::Tick{2400});
+  const auto score = runtime.document().session().project();
+  CHECK(!session.value()->controller().nudgeFormantShift(1)); CHECK(runtime.document().session().project() == score);
+  runtime.requestPreview(true);
+  const auto deadline3 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline3)
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  {
+    const auto raw = runtime.renderer().acquireCurrent(); CHECK(raw);
+    CHECK(raw->result.activeSampleRendererPlan); CHECK(raw->result.activeSampleRendererPlan->regionId == rawRegion);
+  }
+  CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
+  CHECK(session.value()->controller().selectRegion(f.region));
+  runtime.requestPreview(true);
+  const auto deadline4 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline4)
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  CHECK(runtime.renderer().acquireCurrent());
+  CHECK(formantOffered(session.value()->controller()));
+  session.value()->controller().setPlayheadTick(time::Tick{137});
+  const auto edited = session.value()->controller().nudgeFormantShift(7);
+  if (!edited) throw test::Failure{edited.error().message};
 }
 #endif
