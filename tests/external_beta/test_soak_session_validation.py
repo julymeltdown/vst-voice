@@ -176,6 +176,13 @@ class PacketSemanticTests(unittest.TestCase):
         self.packet.change("supervision.json", lambda value: value.update(cleanupErrors=["controlled failure"]))
         self.invalid("supervisor cleanup is unclean")
 
+    def test_rehashed_complete_receipt_cannot_retain_failure_or_unknown_fields(self):
+        for field in ("failure", "unknownProducerField"):
+            with self.subTest(field=field):
+                self.packet.change("supervision.json", lambda value: value.update({field: "contradictory retained state"}))
+                self.invalid("receipt COMPLETE fields differ")
+                self.packet.change("supervision.json", lambda value: value.pop(field))
+
     def test_omitted_worker_error_still_prevents_completion(self):
         (self.packet.directory / "worker-error.json").write_bytes(b"{}\n")
         self.invalid("retained worker/session failure")
@@ -309,6 +316,80 @@ class PacketSemanticTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly locator and sha256"):
             validation.reuse_reference({**self.packet.reference, "extra": True}, base=self.root,
                 maximum_bytes=validation.INDEX_LIMIT, replay_context=context)
+
+    def test_primed_session_cache_cannot_accept_extra_reference_fields(self):
+        context = validation.SoakReplayContext()
+        self.assertTrue(self.result(replay_context=context).valid)
+        sessions = mock.Mock(wraps=context.sessions)
+        context.sessions = sessions
+        with mock.patch.object(validation.os, "open", side_effect=AssertionError("malformed reference must not open files")):
+            result = validation.validate_soak_session_reference({**self.packet.reference, "extra": True},
+                evidence_root=self.root, replay_context=context)
+        self.assertFalse(result.valid)
+        self.assertIn("exactly locator and sha256", " ".join(result.errors))
+        sessions.get.assert_not_called()
+
+    def test_primed_alias_cache_cannot_normalize_an_unsafe_original_locator(self):
+        context = validation.SoakReplayContext()
+        self.assertTrue(self.result(replay_context=context).valid)
+        for locator in ("packet/../packet/packet-index.json", "packet/./packet-index.json",
+                        "packet//packet-index.json", str(self.packet.directory / "packet-index.json"),
+                        "packet\\packet-index.json"):
+            with self.subTest(locator=locator), \
+                 mock.patch.object(validation, "read_reference", side_effect=AssertionError("invalid alias must not use cached bytes")):
+                with self.assertRaisesRegex(ValueError, "safe relative locator"):
+                    validation.reuse_reference({**self.packet.reference, "locator": locator}, base=self.root,
+                        maximum_bytes=validation.INDEX_LIMIT, replay_context=context)
+
+    def test_failure_probe_denial_is_terminal_for_product_and_report_aliases(self):
+        opened, read_bytes = validation.os.open, Path.read_bytes
+        for name in ("worker-error.json", "session-error.json"):
+            with self.subTest(name=name):
+                context, denied = validation.SoakReplayContext(), []
+                packet = Packet(self.root, name="probe-" + name[:-5], session_id="probe-" + name)
+                (packet.directory / name).write_bytes(b"{}\n")
+                alias = {"locator": packet.directory.name + "/" + name, "sha256": digest(b"{}\n")}
+                record = copy.deepcopy(packet.record)
+                record["evidence"].append({"kind": "ordinary-alias", "path": alias["locator"],
+                    "sha256": alias["sha256"], "capturedAt": "2026-10-06T00:00:00Z", "reviewer": "controlled"})
+                def deny(path, *args, **kwargs):
+                    if path == name:
+                        denied.append(path)
+                        raise PermissionError("controlled failure-probe denial: " + name)
+                    return opened(path, *args, **kwargs)
+                def no_legacy(path):
+                    if path.name == name:
+                        raise AssertionError("denied failure probe must not use legacy read_bytes")
+                    return read_bytes(path)
+                with mock.patch.object(validation.os, "open", side_effect=deny), \
+                     mock.patch.object(Path, "read_bytes", no_legacy), \
+                     mock.patch.object(product_soak, "_evidence", wraps=product_soak._evidence) as legacy:
+                    for _ in range(2):
+                        result = validate_product_soak(record, self.root, soak_replay_context=context)
+                        self.assertIn("controlled failure-probe denial", " ".join(result.errors))
+                    errors = full_product_report._reference_errors(alias, base=self.root, label="failure alias",
+                        verify=True, soak_context=context)
+                    self.assertIn("PermissionError", " ".join(errors))
+                    errors = full_product_report.validate_full_product_report_reference(alias, candidate={},
+                        acceptance_contract={}, evidence_root=self.root, soak_replay_context=context)
+                    self.assertIn("PermissionError", " ".join(errors))
+                self.assertEqual([name], denied)
+                self.assertTrue(all(call.args[1].get("kind") != "ordinary-alias" for call in legacy.call_args_list))
+
+    def test_duplicate_session_references_still_guard_oversized_index_alias(self):
+        contents = b" " * (validation.INDEX_LIMIT + 1)
+        (self.packet.directory / "packet-index.json").write_bytes(contents)
+        item = self.packet.record["evidence"][-1]
+        item["sha256"] = digest(contents)
+        self.packet.record["evidence"].extend([dict(item), {**item, "kind": "ordinary-alias"}])
+        read_bytes = Path.read_bytes
+        with mock.patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes) as legacy_reads, \
+             mock.patch.object(product_soak, "_evidence", wraps=product_soak._evidence) as legacy:
+            result = validate_product_soak(self.packet.record, self.root)
+        self.assertIn(validation.SESSION_REQUIRED, result.errors)
+        self.assertIn("exceeds its byte limit", " ".join(result.errors))
+        self.assertTrue(all(call.args[0].name != "packet-index.json" for call in legacy_reads.call_args_list))
+        self.assertTrue(all(call.args[1].get("kind") != "ordinary-alias" for call in legacy.call_args_list))
 
 
 class ConsumerOrderingTests(unittest.TestCase):

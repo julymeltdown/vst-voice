@@ -349,8 +349,8 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
     if len(session_items) != 1:
         errors.append(SESSION_REQUIRED)
         blocked.append("soak-session")
-    else:
-        item = session_items[0]
+    # Every announced session path remains guarded even when multiplicity blocks admission.
+    for item in session_items:
         for key in ("path", "sha256", "capturedAt", "reviewer"):
             if not item.get(key):
                 errors.append(f"soak-session-index.{key} is required")

@@ -105,6 +105,14 @@ def _root_key(root):
     return os.path.abspath(os.fspath(root))
 
 
+def _reference_parts(reference):
+    _require(isinstance(reference, dict) and set(reference) == {"locator", "sha256"},
+             "reference requires exactly locator and sha256")
+    parts, digest = _parts(reference["locator"]), reference["sha256"]
+    _require(isinstance(digest, str) and HEX64.fullmatch(digest), "reference SHA-256 is invalid")
+    return parts, digest
+
+
 @contextmanager
 def _opened(root, parts):
     descriptors = []
@@ -137,10 +145,7 @@ def _stamp(info):
 def read_reference(reference, *, evidence_root, maximum_bytes, replay_context):
     """The only content reader for new soak references, including terminal denials."""
     root = _root_key(evidence_root)
-    _require(isinstance(reference, dict) and set(reference) == {"locator", "sha256"},
-             "reference requires exactly locator and sha256")
-    parts, digest = _parts(reference["locator"]), reference["sha256"]
-    _require(isinstance(digest, str) and HEX64.fullmatch(digest), "reference SHA-256 is invalid")
+    parts, digest = _reference_parts(reference)
     key = (root, reference["locator"])
     cached = replay_context.reads.get(key)
     if cached is None:
@@ -171,10 +176,11 @@ def read_reference(reference, *, evidence_root, maximum_bytes, replay_context):
 
 
 def _recheck(reference, root, context):
+    parts, _ = _reference_parts(reference)
     key = (_root_key(root), reference["locator"])
     _, stamp = context.reads[key]
     try:
-        with _opened(key[0], _parts(key[1])) as descriptor:
+        with _opened(key[0], parts) as descriptor:
             _require(_stamp(os.fstat(descriptor)) == stamp, "committed index changed during validation")
     except (OSError, ValueError) as exc:
         context.reads[key] = exc  # never reopen this failed reference through another consumer
@@ -183,15 +189,33 @@ def _recheck(reference, root, context):
 
 def reuse_reference(reference, *, base, maximum_bytes, replay_context):
     """Return already guarded bytes for aliases; None means unrelated legacy evidence."""
-    if replay_context is None or not isinstance(reference, dict) or not isinstance(reference.get("locator"), str):
+    if replay_context is None:
         return None
+    _reference_parts(reference)
     target = os.path.abspath(os.path.join(os.fspath(base), reference["locator"]))
     for root, locator in replay_context.reads:
         if os.path.abspath(os.path.join(root, locator)) == target:
-            _require(set(reference) == {"locator", "sha256"}, "reference requires exactly locator and sha256")
             return read_reference({"locator": locator, "sha256": reference.get("sha256")},
                 evidence_root=root, maximum_bytes=maximum_bytes, replay_context=replay_context)
     return None
+
+
+def _failure_file_absent(locator, root, context):
+    root, parts = _root_key(root), _parts(locator)
+    key = (root, locator)
+    cached = context.reads.get(key)
+    if cached is None:
+        try:
+            with _opened(root, parts):
+                cached = ValueError("retained worker/session failure prevents completion")
+        except (OSError, ValueError) as exc:
+            cached = exc
+        context.reads[key] = cached
+    if isinstance(cached, FileNotFoundError):
+        return
+    if isinstance(cached, Exception):
+        raise ValueError(f"failure artifact cannot be inspected: {type(cached).__name__}: {cached}") from cached
+    raise ValueError("retained worker/session failure prevents completion")
 
 
 @dataclass(frozen=True)
@@ -266,11 +290,7 @@ def _validate_packet(reference, root, context):
         data[name] = contents
     # Failure files omitted from an index still invalidate completion; use no-follow inspection.
     for name in ("worker-error.json", "session-error.json"):
-        try:
-            with _opened(_root_key(root), _parts(parent + name)):
-                raise ValueError("retained worker/session failure prevents completion")
-        except FileNotFoundError:
-            pass
+        _failure_file_absent(parent + name, root, context)
     manifest = parse_json(data["session.json"])
     _require(isinstance(manifest, dict) and data["session.json"] == (canonical(manifest) + "\n").encode(), "manifest bytes are not canonical")
     _require(_digest(data["session.json"]) == index["manifestSha256"], "manifest digest binding differs")
@@ -286,6 +306,12 @@ def _validate_packet(reference, root, context):
         _require(isinstance(manifest.get(key), str) and HEX64.fullmatch(manifest[key]), "manifest digest is invalid")
     _require(isinstance(manifest.get("machineProfileId"), str) and bool(manifest["machineProfileId"].strip()), "machine profile ID is missing")
     receipt = parse_json(data["supervision.json"])
+    _require(isinstance(receipt, dict) and set(receipt) == {
+        "schemaVersion", "recordType", "status", "recordId", "evidenceScope", "releaseEligible", "requiredSeconds",
+        "installedTreeSha256", "workloadSha256", "productPid", "collectorPid", "supervisorPid", "clockAuthority",
+        "pollIntervalSeconds", "maxGapSeconds", "heartbeatIntervalSeconds", "heartbeatLatenessSeconds",
+        "endpointAckSeconds", "endpointProtocol", "cleanupErrors", "observations", "finishedAcknowledgement"},
+        "receipt COMPLETE fields differ or contain failure state")
     _require(isinstance(receipt, dict) and type(receipt.get("schemaVersion")) is int and receipt["schemaVersion"] == 2
              and receipt.get("recordType") == "external-beta-soak-supervision" and receipt.get("status") == "COMPLETE"
              and receipt.get("evidenceScope") == "engineering" and receipt.get("releaseEligible") is False
@@ -343,7 +369,7 @@ def validate_soak_session_reference(reference, *, evidence_root, expected_bindin
     context = replay_context if replay_context is not None else SoakReplayContext()
     try:
         root = _root_key(evidence_root)
-        _require(isinstance(reference, dict), "session reference must be an object")
+        _reference_parts(reference)
         key = (root, reference.get("locator"), reference.get("sha256"))
         result = context.sessions.get(key)
         if result is None:
