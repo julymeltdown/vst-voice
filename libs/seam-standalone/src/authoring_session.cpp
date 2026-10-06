@@ -167,8 +167,11 @@ void AuthoringSession::configureController() {
       .selectTrack = [this](domain::TrackId trackId) {
         const auto selected = runtime_->selectTrack(trackId);
         if (!selected) return selected;
+        const auto selectionChanged = trackId_ != runtime_->selectedTrack() ||
+                                      regionId_ != runtime_->selectedRegion();
         trackId_ = runtime_->selectedTrack();
         regionId_ = runtime_->selectedRegion();
+        if (selectionChanged) runtime_->requestPreview(true);
         if (externalCallbacks_.requestRepaint) {
           externalCallbacks_.requestRepaint();
         }
@@ -178,8 +181,11 @@ void AuthoringSession::configureController() {
       .selectRegion = [this](domain::RegionId regionId) {
         const auto selected = runtime_->selectRegion(regionId);
         if (!selected) return selected;
+        const auto selectionChanged = trackId_ != runtime_->selectedTrack() ||
+                                      regionId_ != runtime_->selectedRegion();
         trackId_ = runtime_->selectedTrack();
         regionId_ = runtime_->selectedRegion();
+        if (selectionChanged) runtime_->requestPreview(true);
         if (externalCallbacks_.requestRepaint) {
           externalCallbacks_.requestRepaint();
         }

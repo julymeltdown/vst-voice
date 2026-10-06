@@ -607,8 +607,19 @@ public:
     return seam::platform::UnsavedDecision::Discard;
   }
 };
+void waitForStandaloneRegion(authoring::AuthoringRuntime& runtime, domain::RegionId regionId) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto current = runtime.renderer().acquireCurrent();
+    if (current && current->projectRevision == runtime.document().session().revision() &&
+        current->result.activeSampleRendererPlan &&
+        current->result.activeSampleRendererPlan->regionId == regionId) return;
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  throw test::Failure{"Standalone controller selection did not publish the selected region"};
 }
-TEST_CASE("standalone selected sample plan ignores unused unsupported inventory units") {
+}
+TEST_CASE("standalone selected sample plan ignores unused unsupported inventory units and follows controller selection") {
   SampleFormantFixture f;
   f.addUnusedRawUnitAndSelectSpectral();
   CHECK(voicebank::ManifestJsonCodec{}.save(f.bank, f.root / "manifest.json"));
@@ -641,45 +652,60 @@ TEST_CASE("standalone selected sample plan ignores unused unsupported inventory 
   CHECK(application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
   CHECK(formantOffered(session.value()->controller()));
   const auto rawRegion = f.addRawRegion();
-  // Replace through the document lifecycle, then return to the first region so
-  // both regions exist in the same prepared publication and project revision.
+  // Start the reopened document on Raw, then reach Spectral using only the
+  // controller's production selection path, without a manual preview request.
+  auto& regions = f.project.findVocalTrack(f.track)->regions;
+  std::swap(regions.front(), regions.back());
+  const auto otherTrack = f.factory.addVocalTrack(f.project, "Other Spectral singer");
+  const auto otherRegion = f.factory.addRegion(f.project, otherTrack, "Other Spectral phrase",
+                                              time::Tick{0}, time::Tick{1920});
+  auto* otherSinger = f.project.findVocalTrack(otherTrack);
+  otherSinger->voicebank = f.project.findVocalTrack(f.track)->voicebank;
+  otherSinger->styleSelection = f.project.findVocalTrack(f.track)->styleSelection;
+  auto [otherLyric, otherNote] = f.factory.makeNote(time::Tick{0}, time::Tick{1920}, 45U, U"あ", domain::Language::Japanese);
+  otherNote.phoneticHint = "a";
+  auto* otherPhrase = f.project.findRegion(otherRegion);
+  otherPhrase->lyrics = {otherLyric}; otherPhrase->notes = {otherNote};
+  otherPhrase->unitSelectionOverrides.push_back({.startKey = {otherNote.id, 0U}, .unitId = "a",
+                                                .renderer = domain::UnitRendererKind::SpectralClassic});
   CHECK(formats::ProjectJsonCodec{}.save(f.project, f.root / "two-regions.seam"));
   CHECK(session.value()->openProject(f.root / "two-regions.seam"));
-  const auto deadline2 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
-  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline2)
-    std::this_thread::sleep_for(std::chrono::milliseconds{5});
-  const auto selectedRequest = [&] {
+  waitForStandaloneRegion(runtime, rawRegion);
+  CHECK(!formantOffered(session.value()->controller()));
+  const auto revision = runtime.document().session().revision();
+  CHECK(session.value()->controller().selectRegion(f.region));
+  CHECK(runtime.document().session().revision() == revision);
+  waitForStandaloneRegion(runtime, f.region);
+  CHECK(formantOffered(session.value()->controller()));
+  {
     const auto selected = runtime.renderer().acquireCurrent(); CHECK(selected);
     CHECK(selected->result.activeSampleRendererPlan); CHECK(selected->result.activeSampleRendererPlan->regionId == f.region);
-    return selected->requestId;
-  }();
-  CHECK(session.value()->controller().selectRegion(rawRegion));
-  // Session view selection leaves the publication readable. It must no longer
-  // grant the new region the old region's Spectral capability.
-  {
-    const auto retained = runtime.renderer().acquireCurrent(); CHECK(retained);
-    CHECK(retained->requestId == selectedRequest);
-  }
-  CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
-  CHECK(!formantOffered(session.value()->controller()));
-  session.value()->controller().setPlayheadTick(time::Tick{2400});
-  const auto score = runtime.document().session().project();
-  CHECK(!session.value()->controller().nudgeFormantShift(1)); CHECK(runtime.document().session().project() == score);
-  runtime.requestPreview(true);
-  const auto deadline3 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
-  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline3)
-    std::this_thread::sleep_for(std::chrono::milliseconds{5});
-  {
+    CHECK(session.value()->controller().selectRegion(f.region));
+    const auto unchanged = runtime.renderer().acquireCurrent(); CHECK(unchanged);
+    CHECK(unchanged->requestId == selected->requestId);
+    CHECK(session.value()->controller().selectRegion(rawRegion));
+    CHECK(runtime.document().session().revision() == revision);
+    // A reader can still hold the old Spectral publication while selection and
+    // the current request move on. It must never grant Formant to Raw.
+    CHECK(selected->result.activeSampleRendererPlan->regionId == f.region);
+    CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
+    CHECK(!formantOffered(session.value()->controller()));
+    session.value()->controller().setPlayheadTick(time::Tick{2400});
+    const auto score = runtime.document().session().project();
+    CHECK(!session.value()->controller().nudgeFormantShift(1)); CHECK(runtime.document().session().project() == score);
+    waitForStandaloneRegion(runtime, rawRegion);
     const auto raw = runtime.renderer().acquireCurrent(); CHECK(raw);
     CHECK(raw->result.activeSampleRendererPlan); CHECK(raw->result.activeSampleRendererPlan->regionId == rawRegion);
+    CHECK(raw->requestId > selected->requestId);
+    CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
   }
-  CHECK(!application->validateSingerControl(f.track, synthesis::RendererControl::Formant));
+  CHECK(session.value()->controller().selectTrack(otherTrack));
+  CHECK(runtime.document().session().revision() == revision);
+  waitForStandaloneRegion(runtime, otherRegion);
+  CHECK(runtime.selectedTrack() == otherTrack);
+  CHECK(formantOffered(session.value()->controller()));
   CHECK(session.value()->controller().selectRegion(f.region));
-  runtime.requestPreview(true);
-  const auto deadline4 = std::chrono::steady_clock::now() + std::chrono::seconds{15};
-  while (!runtime.renderer().acquireCurrent() && std::chrono::steady_clock::now() < deadline4)
-    std::this_thread::sleep_for(std::chrono::milliseconds{5});
-  CHECK(runtime.renderer().acquireCurrent());
+  waitForStandaloneRegion(runtime, f.region);
   CHECK(formantOffered(session.value()->controller()));
   session.value()->controller().setPlayheadTick(time::Tick{137});
   const auto edited = session.value()->controller().nudgeFormantShift(7);
