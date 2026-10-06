@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.external_beta import soak_collector
+from tools.external_beta.soak_session_validation import SESSION_REQUIRED
 from tools.external_beta.soak_collector import (
     _process_rss_bytes,
     build_soak_record,
@@ -256,6 +257,11 @@ class ProductSoakCollectorTests(unittest.TestCase):
         self.assertGreaterEqual(samples[-1]['elapsedSeconds'], 0.15)
 
 class ProductSoakTests(unittest.TestCase):
+    def assert_only_missing_session(self, result):
+        self.assertFalse(result.passed)
+        self.assertEqual((SESSION_REQUIRED,), result.errors)
+        self.assertEqual(("soak-session",), result.blocked)
+
     def test_sample_series_must_cover_the_duration_from_near_start(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -281,7 +287,7 @@ class ProductSoakTests(unittest.TestCase):
                         record = _record(root, duration)
                         record["samples"][0]["elapsedSeconds"] = first
                         result = validate_product_soak(record, root)
-                        self.assertTrue(result.passed, result.errors)
+                        self.assert_only_missing_session(result)
                 with self.subTest(duration=duration, first=1.001):
                     record = _record(root, duration)
                     record["samples"][0]["elapsedSeconds"] = 1.001
@@ -407,7 +413,7 @@ class ProductSoakTests(unittest.TestCase):
                                          cpuPercent=40.25, renderLatencyMs=120.25, callbackLatencyUs=800.25)
             record["summary"] = summarise(record["samples"])
             result = validate_product_soak(record, root)
-            self.assertTrue(result.passed, result.errors)
+            self.assert_only_missing_session(result)
 
     def test_large_integer_metrics_fail_budget_without_float_conversion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -442,12 +448,12 @@ class ProductSoakTests(unittest.TestCase):
                     self.assertTrue(any(f"samples[1].{field}" in error for error in result["errors"]))
                     self.assertEqual(result, json.loads((root / "result.json").read_text()))
 
-    def test_30_minute_and_120_minute_records_pass_on_each_target_os(self) -> None:
+    def test_30_minute_and_120_minute_metrics_require_sessions_on_each_target_os(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for duration, platform in ((1800, "macos"), (7200, "macos"), (7200, "windows")):
                 result = validate_product_soak(_record(root, duration, platform), root)
-                self.assertTrue(result.passed, (duration, platform, result.errors))
+                self.assert_only_missing_session(result)
 
     def test_threshold_violation_and_nonzero_realtime_counter_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

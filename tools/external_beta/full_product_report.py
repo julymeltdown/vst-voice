@@ -30,6 +30,8 @@ try:
     from .full_product_contract_profile import FIXED_CRITERIA
     from .full_product_contract_empirical import empirical_result_errors
     from .release_gate_validation import HEX64, JsonObject, JsonValue
+    from .product_soak import validate_product_soak_reference
+    from .soak_session_validation import SoakReplayContext, reuse_reference, ENGINEERING_ONLY
 except ImportError:  # pragma: no cover - direct script import compatibility
     from full_product_contract_registry import (  # type: ignore
         ARTIFACT_KINDS,
@@ -44,6 +46,8 @@ except ImportError:  # pragma: no cover - direct script import compatibility
     from full_product_contract_profile import FIXED_CRITERIA  # type: ignore
     from full_product_contract_empirical import empirical_result_errors  # type: ignore
     from release_gate_validation import HEX64, JsonObject, JsonValue  # type: ignore
+    from product_soak import validate_product_soak_reference
+    from soak_session_validation import SoakReplayContext, reuse_reference, ENGINEERING_ONLY
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -149,12 +153,19 @@ def _read_regular_reference(
     base: Path,
     label: str,
     maximum_bytes: int = MAXIMUM_REFERENCE_BYTES,
+    soak_context: SoakReplayContext | None = None,
 ) -> bytes:
     if not isinstance(reference, dict) or set(reference) != {"locator", "sha256"}:
         raise FullProductReportError(f"{label} requires exactly locator and sha256")
     digest = reference.get("sha256")
     if not isinstance(digest, str) or HEX64.fullmatch(digest) is None:
         raise FullProductReportError(f"{label}.sha256 must be a lowercase SHA-256 digest")
+    try:
+        reused = reuse_reference(reference, base=base, maximum_bytes=maximum_bytes, replay_context=soak_context)
+        if reused is not None:
+            return reused
+    except ValueError as error:
+        raise FullProductReportError(f"{label}: {error}") from error
     path = _safe_reference_path(reference.get("locator"), base, label)
     try:
         before = path.lstat()
@@ -255,8 +266,11 @@ def _exact_ids(value: JsonValue, expected: tuple[str, ...], label: str) -> list[
     return errors
 
 
-def _reference_errors(reference: JsonValue, *, base: Path, label: str, verify: bool) -> list[str]:
+def _reference_errors(reference: JsonValue, *, base: Path, label: str, verify: bool, soak_context=None) -> list[str]:
     try:
+        reused = reuse_reference(reference, base=base, maximum_bytes=MAXIMUM_REFERENCE_BYTES, replay_context=soak_context)
+        if reused is not None:
+            return []
         if isinstance(reference, dict):
             path = _safe_reference_path(reference.get("locator"), base, label)
             try:
@@ -267,23 +281,60 @@ def _reference_errors(reference: JsonValue, *, base: Path, label: str, verify: b
             _read_regular_reference(reference, base=base, label=label)
         elif not isinstance(reference, dict) or set(reference) != {"locator", "sha256"}:
             raise FullProductReportError(f"{label} requires exactly locator and sha256")
-    except FullProductReportError as error:
+    except (FullProductReportError, ValueError) as error:
         return [str(error)]
     return []
 
 
-def _bound_raw_record(reference: JsonValue, claim: JsonObject, *, base: Path, label: str) -> list[str]:
+def _bound_raw_record(reference: JsonValue, claim: JsonObject, *, base: Path, label: str, soak_context=None) -> list[str]:
     """Compare typed claims with retained raw JSON; this is not acoustic reanalysis."""
-    admission = _reference_errors(reference, base=base, label=label, verify=False)
+    admission = _reference_errors(reference, base=base, label=label, verify=False, soak_context=soak_context)
     if admission:
         return admission
     try:
-        raw = _parse_json(_read_regular_reference(reference, base=base, label=label))
+        raw = _parse_json(_read_regular_reference(reference, base=base, label=label, soak_context=soak_context))
         if not isinstance(raw, dict) or _canonical({key: raw.get(key) for key in claim}) != _canonical(claim):
             return [f"{label}: typed claim differs from retained raw record"]
-    except FullProductReportError as error:
+    except (FullProductReportError, ValueError) as error:
         return [str(error)]
     return []
+
+
+def _soak_observation_errors(observation, *, label, soak_root, soak_context, soak_bindings, soak_reference_base):
+    errors = []
+    soak_artifacts = []
+    artifacts_value = observation.get("artifacts")
+    if isinstance(artifacts_value, list):
+        soak_artifacts = [item for item in artifacts_value if isinstance(item, dict) and item.get("kind") == "soak-log"]
+        durations = set()
+        if soak_root is None:
+            errors.append(f"{label}: explicit evidence root is required for soak references")
+        else:
+            for artifact in soak_artifacts:
+                try:
+                    prefix = Path(os.path.abspath(soak_reference_base)).relative_to(Path(os.path.abspath(soak_root)))
+                    locator = artifact.get("locator")
+                    if not isinstance(locator, str) or Path(locator).is_absolute():
+                        raise ValueError("soak reference requires a safe relative locator")
+                    relative = locator if prefix == Path(".") else prefix.as_posix() + "/" + locator
+                    bindings = {**soak_bindings, **{key: observation.get(key) for key in (
+                        "sourceCommit", "buildId", "platform", "host", "installedTreeSha256", "signedDeliverableSha256",
+                        "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256")},
+                        "resourceIds": observation.get("resourceIds"), "bindings": observation.get("bindings"),
+                        "surface": "standalone" if observation.get("host") == "standalone" else "host"}
+                    result = validate_product_soak_reference({"locator": relative, "sha256": artifact.get("sha256")},
+                        soak_root, expected_session_bindings=bindings, soak_replay_context=soak_context)
+                    errors.extend(f"{label}: {error}" for error in result.errors)
+                    if result.session is not None and result.session.valid and all(error == ENGINEERING_ONLY for error in result.errors):
+                        duration = result.session.duration_seconds
+                        cell = (observation.get("platform"), observation.get("host"), observation.get("workloadSha256"), duration)
+                        soak_context.consume("R17", cell, result.session.session_id)
+                        durations.add(duration)
+                except (ValueError, OSError, TypeError) as exc:
+                    errors.append(f"{label}: {exc}")
+            if durations != {1800, 7200}:
+                errors.append(f"{label}: distinct 1800/7200 supervised sessions are required")
+    return errors
 
 
 def _observation_errors(
@@ -296,8 +347,10 @@ def _observation_errors(
     report_base: Path,
     verify_references: bool,
     criterion_definitions: dict[str, JsonObject],
+    soak_errors: list[str],
+    soak_context: SoakReplayContext,
 ) -> list[str]:
-    errors: list[str] = []
+    errors: list[str] = list(soak_errors)
     label = f"full-product observation {case_id}"
     dimensions = _case_dimensions(case_id)
     for key, allowed in dimensions.items():
@@ -328,8 +381,10 @@ def _observation_errors(
             errors.append(f"{label}: required raw artifact kinds are missing")
         for index, artifact in enumerate(artifacts):
             if isinstance(artifact, dict):
+                if case_id == "R17.soak-hosts" and artifact.get("kind") == "soak-log":
+                    continue  # already dispatched through the bounded typed reader
                 reference = {key: artifact.get(key) for key in ("locator", "sha256")}
-                errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.artifacts[{index}]", verify=verify_references))
+                errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.artifacts[{index}]", verify=verify_references, soak_context=soak_context))
     reviews = observation.get("reviews")
     if isinstance(reviews, list):
         roles = {review.get("role") for review in reviews if isinstance(review, dict)}
@@ -343,10 +398,10 @@ def _observation_errors(
                 errors.append(f"{label}.reviews[{index}]: accepted review is required")
             if review.get("producerId") == review.get("reviewerId"):
                 errors.append(f"{label}.reviews[{index}]: producer and reviewer must be distinct")
-            errors.extend(_reference_errors(review.get("rawEvidence"), base=report_base, label=f"{label}.reviews[{index}].rawEvidence", verify=verify_references))
+            errors.extend(_reference_errors(review.get("rawEvidence"), base=report_base, label=f"{label}.reviews[{index}].rawEvidence", verify=verify_references, soak_context=soak_context))
             if verify_references:
                 errors.extend(_bound_raw_record(review.get("rawEvidence"), {key: value for key, value in review.items() if key != "rawEvidence"},
-                    base=report_base, label=f"{label}.reviews[{index}]"))
+                    base=report_base, label=f"{label}.reviews[{index}]", soak_context=soak_context))
     measurements = observation.get("measurements")
     if isinstance(measurements, list):
         criteria = set(CRITERIA_BY_REQUIREMENT[case_id.split(".", 1)[0]])
@@ -371,10 +426,10 @@ def _observation_errors(
             definition = criterion_definitions.get(criterion) if isinstance(criterion, str) else None
             if definition is not None and measurement.get("methodSha256") != _sha256_json(definition):
                 errors.append(f"{label}.measurements[{index}]: method digest differs from the frozen criterion definition")
-            errors.extend(_reference_errors(measurement.get("rawEvidence"), base=report_base, label=f"{label}.measurements[{index}].rawEvidence", verify=verify_references))
+            errors.extend(_reference_errors(measurement.get("rawEvidence"), base=report_base, label=f"{label}.measurements[{index}].rawEvidence", verify=verify_references, soak_context=soak_context))
             if verify_references:
                 errors.extend(_bound_raw_record(measurement.get("rawEvidence"), {key: value for key, value in measurement.items() if key != "rawEvidence"},
-                    base=report_base, label=f"{label}.measurements[{index}]"))
+                    base=report_base, label=f"{label}.measurements[{index}]", soak_context=soak_context))
         if not observed_criteria.intersection(criteria):
             errors.append(f"{label}: at least one declared criterion measurement is required")
     checks = observation.get("checkResults")
@@ -408,17 +463,17 @@ def _observation_errors(
                         refs = operation.get(key)
                         if isinstance(refs, list):
                             for ref_index, reference in enumerate(refs):
-                                errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.{key}[{ref_index}]", verify=verify_references))
+                                errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.{key}[{ref_index}]", verify=verify_references, soak_context=soak_context))
             elif definition.get("requiredOperations"):
                 errors.append(f"{label}.{check_id}: operation observations are required")
             raw = check.get("rawEvidence")
             if isinstance(raw, list):
                 for raw_index, reference in enumerate(raw):
-                    errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.rawEvidence[{raw_index}]", verify=verify_references))
+                    errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.rawEvidence[{raw_index}]", verify=verify_references, soak_context=soak_context))
             continuity = check.get("continuity")
             if isinstance(continuity, dict):
                 for key, reference in continuity.items():
-                    errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.continuity.{key}", verify=verify_references))
+                    errors.extend(_reference_errors(reference, base=report_base, label=f"{label}.{check_id}.continuity.{key}", verify=verify_references, soak_context=soak_context))
         expected_checks = set(required_check_ids(case_id))
         if not expected_checks.issubset(seen):
             errors.append(f"{label}: required checks are missing")
@@ -433,6 +488,8 @@ def validate_full_product_report(
     full_product_contract: JsonObject | None = None,
     report_path: Path | None = None,
     verify_references: bool = True,
+    evidence_root: Path | None = None,
+    soak_replay_context: SoakReplayContext | None = None,
 ) -> tuple[str, ...]:
     """Return semantic errors for one decoded full-product report.
 
@@ -446,7 +503,19 @@ def validate_full_product_report(
     if errors:
         return tuple(errors)
     assert isinstance(report, dict)
+    soak_context = soak_replay_context if soak_replay_context is not None else SoakReplayContext()
     report_base = (report_path.parent if report_path is not None else ROOT).resolve()
+    lexical_base = report_path.parent if report_path is not None else (Path(evidence_root) if evidence_root is not None else ROOT)
+    soak_errors = {}
+    soak_bindings = {key: report.get(key) for key in ("candidateRootId", "candidateRootSha256", "acceptanceContractSha256", "fullProductContractSha256", "resourceMatrixSha256")}
+    # Dispatch every new typed soak reference before any generic report artifact read.
+    for case in report.get("cases", []):
+        if isinstance(case, dict) and case.get("id") == "R17.soak-hosts":
+            for observation in case.get("observations", []):
+                if isinstance(observation, dict):
+                    soak_errors[id(observation)] = _soak_observation_errors(observation,
+                        label="full-product observation R17.soak-hosts", soak_root=evidence_root,
+                        soak_context=soak_context, soak_bindings=soak_bindings, soak_reference_base=lexical_base)
     if report.get("status") != "PASS":
         errors.append("full-product report status must be PASS for EB-009")
 
@@ -485,7 +554,7 @@ def validate_full_product_report(
             errors.append("full-product evaluation profile is not frozen")
 
     archive = report.get("rawArchive")
-    errors.extend(_reference_errors(archive, base=report_base, label="full-product rawArchive", verify=verify_references))
+    errors.extend(_reference_errors(archive, base=report_base, label="full-product rawArchive", verify=verify_references, soak_context=soak_context))
 
     requirements = report.get("requirements")
     requirement_rows: dict[str, JsonObject] = {}
@@ -552,7 +621,8 @@ def validate_full_product_report(
                 checks = observation.get("checkResults")
                 if isinstance(checks, list):
                     observed_checks.update(item.get("id") for item in checks if isinstance(item, dict) and isinstance(item.get("id"), str))
-                errors.extend(_observation_errors(observation, case_id=case_id, source_commit=source_commit, build_id=build_id, resource_ids=scope_resources, report_base=report_base, verify_references=verify_references, criterion_definitions=criterion_definitions))
+                errors.extend(_observation_errors(observation, case_id=case_id, source_commit=source_commit, build_id=build_id, resource_ids=scope_resources, report_base=report_base, verify_references=verify_references, criterion_definitions=criterion_definitions,
+                    soak_errors=soak_errors.get(id(observation), []), soak_context=soak_context))
             expected_checks = set(required_check_ids(case_id))
             if observed_checks != expected_checks:
                 errors.append(f"full-product case {case_id}: check coverage differs from canonical workload")
@@ -606,10 +676,10 @@ def validate_full_product_report(
                     bindings = cell.get("bindings")
                     if isinstance(bindings, dict):
                         for key in ("machineProfile", "workload", "resourceMatrix"):
-                            errors.extend(_reference_errors(bindings.get(key), base=report_base, label=f"full-product empirical {cell.get('id')}.{key}", verify=verify_references))
+                            errors.extend(_reference_errors(bindings.get(key), base=report_base, label=f"full-product empirical {cell.get('id')}.{key}", verify=verify_references, soak_context=soak_context))
                 if verify_references:
-                    errors.extend(_bound_raw_record(criterion.get("measurement"), frozen, base=report_base, label=f"frozen qualification {identifier}"))
-                    errors.extend(_reference_errors(criterion.get("independentReview"), base=report_base, label=f"frozen qualification {identifier}.independentReview", verify=True))
+                    errors.extend(_bound_raw_record(criterion.get("measurement"), frozen, base=report_base, label=f"frozen qualification {identifier}", soak_context=soak_context))
+                    errors.extend(_reference_errors(criterion.get("independentReview"), base=report_base, label=f"frozen qualification {identifier}.independentReview", verify=True, soak_context=soak_context))
 
     return tuple(dict.fromkeys(errors))
 
@@ -621,19 +691,21 @@ def validate_full_product_report_reference(
     acceptance_contract: JsonObject,
     full_product_contract: JsonObject | None = None,
     evidence_root: Path | None = None,
+    soak_replay_context: SoakReplayContext | None = None,
 ) -> tuple[str, ...]:
     """Read, hash-check, parse, and semantically validate a report reference."""
 
     locator = reference.get("locator")
     try:
         base = evidence_root if evidence_root is not None else ROOT
+        reused = reuse_reference(reference, base=base, maximum_bytes=MAXIMUM_REPORT_BYTES, replay_context=soak_replay_context)
         path = _safe_reference_path(locator, base, "fullProductReport")
         if evidence_root is not None:
             try:
                 path.resolve().relative_to(base.resolve())
             except ValueError:
                 return ("fullProductReport escapes the restored archive root",)
-        contents = _read_regular_reference(reference, base=base, label="fullProductReport", maximum_bytes=MAXIMUM_REPORT_BYTES)
+        contents = reused if reused is not None else _read_regular_reference(reference, base=base, label="fullProductReport", maximum_bytes=MAXIMUM_REPORT_BYTES)
         report = _parse_json(contents)
         if not isinstance(report, dict):
             return ("fullProductReport root must be an object",)
@@ -644,6 +716,8 @@ def validate_full_product_report_reference(
             full_product_contract=full_product_contract,
             report_path=path,
             verify_references=True,
+            evidence_root=evidence_root,
+            soak_replay_context=soak_replay_context,
         )
-    except (FullProductReportError, OSError, UnicodeError, json.JSONDecodeError) as error:
+    except (FullProductReportError, ValueError, OSError, UnicodeError, json.JSONDecodeError) as error:
         return (str(error),)

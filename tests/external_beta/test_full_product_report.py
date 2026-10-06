@@ -26,6 +26,10 @@ from tools.external_beta.full_product_report import (
 ROOT = Path(__file__).resolve().parents[2]
 ACCEPTANCE = release_gate.load_candidate(ROOT / "docs/product/external-beta-acceptance.json")
 FULL_CONTRACT = release_gate.load_candidate(ROOT / "docs/product/full-product-beta-contract.json")
+SOAK_ADMISSION_ERRORS = (
+    "full-product observation R17.soak-hosts: product soak reference must contain a typed external-beta-product-soak record",
+    "full-product observation R17.soak-hosts: distinct 1800/7200 supervised sessions are required",
+)
 
 
 class FullProductReportReaderTests(unittest.TestCase):
@@ -163,16 +167,16 @@ class FullProductSemanticTests(unittest.TestCase):
 
     def errors(self):
         return validate_full_product_report(self.report, full_product_contract=self.contract,
-            report_path=self.root / "report.json")
+            report_path=self.root / "report.json", evidence_root=self.root)
 
-    def test_complete_83_case_synthetic_report_has_a_real_success_path(self):
+    def test_otherwise_complete_83_case_report_has_only_the_new_soak_admission_blockers(self):
         before = (ROOT / "docs/product/full-product-beta-contract.json").read_bytes()
         self.assertEqual(83, len(self.report["cases"]))
         self.assertEqual(175, sum(len(value["cells"]) for value in self.report["empiricalResults"].values()))
-        self.assertEqual((), self.errors())
+        self.assertEqual(SOAK_ADMISSION_ERRORS, self.errors())
         self.assertEqual(before, (ROOT / "docs/product/full-product-beta-contract.json").read_bytes())
         canonical_errors = validate_full_product_report(self.report, full_product_contract=FULL_CONTRACT,
-            report_path=self.root / "report.json")
+            report_path=self.root / "report.json", evidence_root=self.root)
         self.assertTrue(any("not frozen" in error for error in canonical_errors), canonical_errors)
 
     def test_corrupted_raw_audio_is_rejected_by_the_same_full_success_fixture(self):
@@ -224,7 +228,7 @@ class FullProductSemanticTests(unittest.TestCase):
         acceptance = {"fullProductContract": {"locator": "synthetic-contract", "sha256": self.report["fullProductContractSha256"]}}
         errors = validate_full_product_report_reference(reference, candidate=candidate_value,
             acceptance_contract=acceptance, full_product_contract=self.contract, evidence_root=self.root)
-        self.assertEqual((), errors)
+        self.assertEqual(SOAK_ADMISSION_ERRORS, errors)
         reference["locator"] = str(ROOT / "docs/product/full-product-beta-contract.json")
         errors = validate_full_product_report_reference(reference, candidate=candidate_value,
             acceptance_contract=acceptance, full_product_contract=self.contract, evidence_root=self.root)

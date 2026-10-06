@@ -28,6 +28,8 @@ try:
     from .release_gate_policy import requirement_policy_errors
     from .full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
     from .full_product_report import validate_full_product_report_reference
+    from .product_soak import validate_product_soak_reference
+    from .soak_session_validation import SoakReplayContext, ENGINEERING_ONLY
 except ImportError:
     from cohort_gate import validate_cohort
     from release_gate_validation import (
@@ -49,6 +51,8 @@ except ImportError:
     from release_gate_policy import requirement_policy_errors
     from full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
     from full_product_report import validate_full_product_report_reference
+    from product_soak import validate_product_soak_reference
+    from soak_session_validation import SoakReplayContext, ENGINEERING_ONLY
 
 READY_REQUIREMENT_IDS = (
     "EB-001-contract",
@@ -155,6 +159,35 @@ def evaluate_ready(
     requirement_errors, blocked = _requirement_errors(candidate, READY_REQUIREMENT_IDS)
     errors.extend(requirement_errors)
     errors.extend(full_product_report_reference_errors(candidate))
+    soak_context = SoakReplayContext()
+    selected = candidate.get("requirements", {}).get("EB-005-standalone-soak", {}) if isinstance(candidate.get("requirements"), dict) else {}
+    identifiers = selected.get("evidenceRecordIds", []) if isinstance(selected, dict) else []
+    records = candidate.get("evidence", [])
+    if isinstance(identifiers, list) and isinstance(records, list):
+        root_binding = candidate.get("candidateRoot", {})
+        identity = candidate.get("releaseIdentity", {})
+        for record in records:
+            if not isinstance(record, dict) or record.get("recordId") not in identifiers or record.get("requirementId") != "EB-005-standalone-soak":
+                continue
+            bindings = {key: record.get(key) for key in ("sourceCommit", "stageNodeId", "parentEdgeId", "platform", "architecture", "installedTreeSha256", "workloadId", "workloadSha256", "machineProfileId", "machineProfileSha256")}
+            bindings.update({"candidateRootId": root_binding.get("id") if isinstance(root_binding, dict) else None,
+                "candidateRootSha256": root_binding.get("sha256") if isinstance(root_binding, dict) else None,
+                "acceptanceContractSha256": candidate.get("acceptanceContractSha256"),
+                "buildId": identity.get("buildId") if isinstance(identity, dict) else None,
+                "version": identity.get("version") if isinstance(identity, dict) else None,
+                "signedDeliverableSha256": record.get("finalDeliverableSha256"), "host": "standalone", "surface": "standalone"})
+            soak_result = validate_product_soak_reference(record.get("rawArchive"), evidence_root,
+                expected_session_bindings=bindings, soak_replay_context=soak_context)
+            semantic_errors = list(soak_result.errors)
+            if soak_result.session is not None and soak_result.session.valid and all(error == ENGINEERING_ONLY for error in soak_result.errors):
+                try:
+                    cell = (record.get("platform"), record.get("architecture"), soak_result.session.duration_seconds)
+                    soak_context.consume("EB-005", cell, soak_result.session.session_id)
+                except ValueError as exc:
+                    semantic_errors.append(str(exc))
+            errors.extend(f"{record.get('recordId')}: product soak reference: {error}" for error in semantic_errors)
+            if semantic_errors or not soak_result.passed:
+                blocked = tuple(sorted(set(blocked) | {"EB-005-standalone-soak"}))
     full_product_reference = _full_product_report_reference(candidate)
     if full_product_reference is None:
         # Keep the legacy diagnostic precise for candidates that do not even
@@ -170,6 +203,7 @@ def evaluate_ready(
             acceptance_contract=contract,
             full_product_contract=full_product_contract,
             evidence_root=evidence_root,
+            soak_replay_context=soak_context,
         )
         errors.extend(semantic_errors)
         if semantic_errors:

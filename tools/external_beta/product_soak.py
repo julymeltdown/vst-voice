@@ -9,6 +9,17 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from .soak_session_validation import (
+        ENGINEERING_ONLY, SESSION_REQUIRED, PRODUCT_LIMIT, SoakReplayContext,
+        parse_json, read_reference, reuse_reference, validate_soak_session_reference,
+    )
+except ImportError:
+    from soak_session_validation import (
+        ENGINEERING_ONLY, SESSION_REQUIRED, PRODUCT_LIMIT, SoakReplayContext,
+        parse_json, read_reference, reuse_reference, validate_soak_session_reference,
+    )
+
 
 try:
     from tools.platform_identity import host_platforms
@@ -64,6 +75,7 @@ class ProductSoakResult:
     passed: bool
     errors: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
+    session: Any = None
 
     def as_dict(self) -> dict[str, Any]:
         return {"passed": self.passed, "errors": list(self.errors), "blocked": list(self.blocked)}
@@ -221,12 +233,18 @@ def _summary_errors(record: dict[str, Any], samples: list[dict[str, Any]], thres
             errors.append(f"{key} must remain zero")
 
 
-def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[str, Any] | None = None) -> ProductSoakResult:
+def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[str, Any] | None = None,
+                          *, expected_session_bindings: dict | None = None,
+                          soak_replay_context: SoakReplayContext | None = None) -> ProductSoakResult:
     errors: list[str] = []
     blocked: list[str] = []
     thresholds = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    context = soak_replay_context if soak_replay_context is not None else SoakReplayContext()
+    session = None
     if not isinstance(record, dict):
         return ProductSoakResult(False, ("product soak record must be an object",), ())
+    if root is None:
+        return ProductSoakResult(False, ("explicit evidence root is required",), ("soak-session",))
     if record.get("schemaVersion") != 1:
         errors.append("record.schemaVersion must be 1")
     if record.get("recordType") != "external-beta-product-soak":
@@ -327,15 +345,70 @@ def validate_product_soak(record: dict[str, Any], root: Path, thresholds: dict[s
     errors.extend(f"fault matrix row is missing: {fault_id}" for fault_id in missing_faults)
     blocked.extend(missing_faults)
     evidence = record.get("evidence")
+    session_items = [item for item in evidence if isinstance(item, dict) and item.get("kind") == "soak-session-index"] if isinstance(evidence, list) else []
+    if len(session_items) != 1:
+        errors.append(SESSION_REQUIRED)
+        blocked.append("soak-session")
+    else:
+        item = session_items[0]
+        for key in ("path", "sha256", "capturedAt", "reviewer"):
+            if not item.get(key):
+                errors.append(f"soak-session-index.{key} is required")
+        bindings = {"sessionId": record.get("recordId"), "durationSeconds": duration,
+                    "installedTreeSha256": record.get("appIdentity", {}).get("installedTreeSha256") if isinstance(record.get("appIdentity"), dict) else None,
+                    "workloadId": record.get("workloadId"), "workloadSha256": record.get("workloadSha256"),
+                    "machineProfileId": record.get("machineProfileId"),
+                    "machineProfileSha256": record.get("machineProfileSha256"), "platform": platform,
+                    "architecture": record.get("architecture"),
+                    **{key: record.get(key) for key in ("appIdentity", "bankIdentity", "projectIdentity")}}
+        for key, value in (expected_session_bindings or {}).items():
+            if key in bindings and bindings[key] != value:
+                errors.append(f"outer product soak binding {key} differs")
+            if key in ("buildId", "version") and (not isinstance(record.get("appIdentity"), dict)
+                    or record["appIdentity"].get(key) != value):
+                errors.append(f"outer product soak appIdentity.{key} differs")
+            bindings[key] = value
+        session = validate_soak_session_reference({"locator": item.get("path"), "sha256": item.get("sha256")},
+            evidence_root=root, expected_bindings=bindings, expected_samples=samples, replay_context=context)
+        errors.extend(session.errors)
+        # Engineering authority cannot be overridden by status or physical wrapper labels.
+        errors.append(ENGINEERING_ONLY)
+        blocked.append("soak-session")
     if not isinstance(evidence, list) or not evidence:
         errors.append("soak evidence must be non-empty")
     else:
         for index, item in enumerate(evidence):
-            _evidence(root, item, f"evidence[{index}]", errors)
+            if not isinstance(item, dict) or item.get("kind") != "soak-session-index":
+                try:
+                    reused = reuse_reference({"locator": item.get("path"), "sha256": item.get("sha256")},
+                        base=root, maximum_bytes=PRODUCT_LIMIT, replay_context=context) if isinstance(item, dict) else None
+                    if reused is None:
+                        _evidence(root, item, f"evidence[{index}]", errors)
+                    else:
+                        for key in ("kind", "path", "sha256", "capturedAt", "reviewer"):
+                            if not item.get(key):
+                                errors.append(f"evidence[{index}].{key} is required")
+                except (OSError, ValueError) as exc:
+                    errors.append(f"evidence[{index}]: {exc}")
     if record.get("status") != "PASS":
         errors.append("record.status must be PASS")
         blocked.append("record")
-    return ProductSoakResult(not errors and not blocked, tuple(errors), tuple(sorted(set(blocked))))
+    return ProductSoakResult(not errors and not blocked, tuple(errors), tuple(sorted(set(blocked))), session)
+
+
+def validate_product_soak_reference(reference: dict, root: Path | None, *,
+                                    expected_session_bindings: dict | None = None,
+                                    soak_replay_context: SoakReplayContext | None = None) -> ProductSoakResult:
+    context = soak_replay_context if soak_replay_context is not None else SoakReplayContext()
+    try:
+        contents = read_reference(reference, evidence_root=root, maximum_bytes=PRODUCT_LIMIT, replay_context=context)
+        record = parse_json(contents)
+        if not isinstance(record, dict) or record.get("recordType") != "external-beta-product-soak":
+            return ProductSoakResult(False, ("product soak reference must contain a typed external-beta-product-soak record",), ("soak-session",))
+        return validate_product_soak(record, root, expected_session_bindings=expected_session_bindings,
+                                     soak_replay_context=context)
+    except (OSError, ValueError, TypeError) as exc:
+        return ProductSoakResult(False, (f"product soak reference: {exc}",), ("soak-session",))
 
 
 def load_json(path: Path) -> dict[str, Any]:

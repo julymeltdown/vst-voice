@@ -152,3 +152,42 @@ temporary-file test exercises actual raw-file writes/fsync. Neither is physical 
 or live RSS acceptance. The installed workload driver and existing saved-record
 product-soak gate are unchanged. Physical/release gate integration requires a later
 independent review. SEAM-BETA-P1-05 remains open.
+
+`soak_session_validation.py` reads persisted engineering packets without launching,
+attaching to or measuring processes. `validate_soak_session_reference` separates
+valid engineering semantics from authority: even a valid packet returns engineering
+scope and false release eligibility. It checks the committed index, bounded regular
+files, hashes/lengths, manifest/worker/raw/supervision bindings, contiguous absolute
+sample targets, the approved observation/heartbeat timing rules and the exact
+acknowledged endpoint. The pending index alone, failed/unclean artifacts, version-1
+receipts, missing rows, early completion and substituted bytes are refused.
+
+A product-soak record must contain exactly one existing evidence item with
+`kind: soak-session-index`; its path/hash reference `packet-index.json`. Its identities
+and entire sample series must match the session. EB-005's selected `rawArchive`
+references now contain typed `external-beta-product-soak` records. R17.soak-hosts
+`soak-log` artifacts contain that same format and must cover distinct 1800/7200
+sessions for the observation. These contracts use existing schema reference fields.
+No shape-only status, physical wrapper label or authority flag can qualify the
+current engineering packets for product, READY/CLOSED or full-product acceptance.
+
+New soak references are dispatched through the bounded reader before legacy artifact
+loops. Consumers reuse its verified bytes/results, including later generic aliases;
+a caught read denial is retained and never retried through a legacy reader or another
+consumer. An explicit evidence root is required even with verify_references=False.
+New references require relative locators and reject traversal, symlinked directory
+components, symlink files and nonregular/oversized artifacts. The committed index
+receives a bounded metadata stability check after its files are validated.
+
+One replay context spans EB-005 and EB-009/R17 within evaluate_ready. Standalone
+product/report entry points use one context per call. Identical citations of a
+verified claim gain no extra coverage; conflicting session bytes/claims and reused
+sessions for another cell are refused. This is aggregate consistency, not a replay
+database or proof of freshness across runs.
+
+Otherwise-valid synthetic metric and 83-case report regressions now assert the
+precise new session/admission blockers and no unrelated errors. Controlled packet
+fixtures can pass engineering semantics; they never establish live-worker, RSS,
+physical-clock, fsync authenticity, complete metric-channel or release acceptance.
+Unknown physical packet protocols remain unsupported until a separately reviewed
+producer and admission contract exist. U47 and SEAM-BETA-P1-05 remain open.
