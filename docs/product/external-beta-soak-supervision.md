@@ -35,7 +35,7 @@ file writes, verifies final size and successfully calls `os.fsync` before emitti
 FINISHED. This defines the commit boundary; an in-memory callback or a Python
 buffer flush alone is insufficient. It leaves partial bytes on failure and sends
 no successful acknowledgement after a failed write/fsync. Emit the final heartbeat
-only after that helper succeeds. There is no post-sample callback in this unit.
+only after that helper succeeds.
 The helper retains caller ownership of its write descriptors.
 
 FINISHED may arrive before the corresponding heartbeat has been read on the other
@@ -79,14 +79,76 @@ The endpoint checks enforce the writer's fsync-before-FINISHED source contract a
 retained-byte binding. They do not authenticate an untrusted writer's fsync claim,
 prove power-loss survival, validate the full metric series, or establish physical authority.
 
+`tools/external_beta/soak_session.py` adds the owned engineering adapter:
+`run_engineering_soak_session(product_argv, identity_manifest, output_dir)`. It
+launches one product child from an argument list and one private collector worker;
+it has no shell or attach-to-PID mode. The manifest requires exact 1800/7200 duration,
+declared installed-tree/workload/machine-profile SHA-256 digests and a machine-profile
+ID. Existing source/build/bank/project identities can be retained when supplied.
+The adapter creates a fresh session ID, exclusively creates the output directory and
+freezes canonical manifest bytes before launching either child. Caller-supplied
+session or authority fields are refused. Existing packet directories remain untouched.
+
+Bounded READY/GO frames bind the session ID, manifest digest and product PID. Each
+startup wait is at most five seconds, with frames at most 1024 bytes. The adapter
+owns both child handles and all descriptors until the supervisor enters observation;
+its first clock call sends GO with that same monotonic epoch and transfers the three
+read descriptors. Invalid supervisor inputs and earlier startup failures retain
+adapter ownership. The approved stop/reap rules apply in either case. The adapter
+closes its remaining writer/control descriptors independently; denied cleanup has
+no retry or alternate signal route and prevents a sealed packet.
+
+The collector's optional keyword-only `on_sample` callback receives a copy of each
+formed sample. A callback exception aborts collection. `start_monotonic` supplies
+the fixed GO epoch and `maximum_lateness_seconds` bounds the work budget; existing
+return and measurement shapes are retained. Sampling targets are absolute
+`GO + k * interval`, including zero and the exact endpoint. Sleep covers only the
+remaining time to the next target. Actual monotonic sample timestamps are retained;
+delayed wakes do not rebase targets or backdate samples. The session uses one-second
+targets and rejects a missed target or measurement/persistence overrun. No catch-up
+burst, skipped sequence or timer heartbeat is allowed.
+
+Each bounded raw row binds session ID, manifest hash, product PID, sequence and
+intended target to the measured sample. Complete append and successful raw-file
+fsync precede its heartbeat. The final row additionally uses `commit_final_sample`
+and exclusively persists the worker result before the final heartbeat. All that
+work must finish before `GO + duration + 1`; a late final helper cannot justify a
+final heartbeat even when partial snapshot/FINISHED bytes already exist. The adapter
+uses the supported 0.1-second supervisor poll so nonzero final-write latency can be
+observed inside the unchanged endpoint deadline. No supervisor limit is relaxed.
+After FINISHED, the worker keeps protocol writers open without more heartbeats until
+supervisor cleanup; a duration-plus-nine-second lease bounds a missing cleanup.
+
+After child cleanup, the adapter exclusively retains the supervisor receipt in
+`supervision.json`, including an exception-attached failed receipt. It never changes
+that receipt to match adapter validation. Completion joins the receipt's identities,
+duration and child PIDs to the manifest, requires contiguous raw rows and their
+timing/bindings, and matches the acknowledged final snapshot to the final raw sample
+and its exact byte hash/length. A mismatch produces a failed adapter result while
+preserving the original receipt. Partial files and worker/session error details are
+retained on failure; original interruptions propagate after bounded cleanup.
+
+Packet hashes are computed after cleanup, when neither owned child retains a writer.
+The final index binds existing manifest, raw samples, endpoint, worker details,
+supervision and error files by SHA-256 and byte length. It is exclusively written and
+fsynced as `packet-index.pending.json`, then linked without replacement as
+`packet-index.json`; the pending name alone never confirms completion. Failed cleanup
+or a denied hash action prevents sealing. A failed packet index can describe retained
+failure evidence, but only an index with `status: COMPLETE` reports engineering
+completion. This is a byte-consistency contract, not an installed-byte attestation,
+power-loss guarantee or proof of all metric channels. Every adapter result and index
+remain `evidenceScope: engineering`, `releaseEligible: false`.
+
 Controlled regressions run with:
 
 ```sh
-python3 -m unittest tests.external_beta.test_soak_supervisor tests.external_beta.test_soak_endpoint -v
+python3 -m unittest tests.external_beta.test_soak_supervisor tests.external_beta.test_soak_endpoint tests.external_beta.test_soak_session -v
 ```
 
 Simulated-clock endpoint tests are protocol checks. A short controlled-child timeout
-checks real stop/reap behavior; neither is physical soak or RSS acceptance. A later
-reviewed unit must connect the installed runner/collector heartbeat writer, bind the
-remaining candidate/session identities, preserve raw receipts, and require their
-semantic validation in the existing product-soak gate. SEAM-BETA-P1-05 remains open.
+checks real stop/reap behavior. Session tests use controlled measurements, fake child
+handles and clocks, and instrument synchronization for full simulated spans; a short
+temporary-file test exercises actual raw-file writes/fsync. Neither is physical soak
+or live RSS acceptance. The installed workload driver and existing saved-record
+product-soak gate are unchanged. Physical/release gate integration requires a later
+independent review. SEAM-BETA-P1-05 remains open.

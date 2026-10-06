@@ -18,6 +18,7 @@ cannot be published as a zero-byte observation.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import platform
@@ -194,6 +195,10 @@ def collect_soak_samples(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     cpu_clock: Callable[[int], float] = _process_cpu_seconds,
+    *,
+    on_sample: Callable[[dict[str, Any]], None] | None = None,
+    start_monotonic: float | None = None,
+    maximum_lateness_seconds: float | None = None,
 ) -> list[dict[str, Any]]:
     """Sample a live process on a real interval until the declared duration is covered.
 
@@ -201,26 +206,58 @@ def collect_soak_samples(
     the series to cover it and a sampler that stopped short would produce a record that fails
     its own check.
     """
-    if duration_seconds < 0 or interval_seconds <= 0:
+    if (not math.isfinite(duration_seconds) or not math.isfinite(interval_seconds)
+            or duration_seconds < 0 or interval_seconds <= 0):
         raise ValueError("soak duration must be non-negative and the interval positive")
     samples: list[dict[str, Any]] = []
-    started = clock()
+    started = clock() if start_monotonic is None else start_monotonic
+    budget = interval_seconds if maximum_lateness_seconds is None else maximum_lateness_seconds
+    if (not math.isfinite(started) or started < 0 or not math.isfinite(budget)
+            or not 0 < budget <= interval_seconds):
+        raise ValueError("sampling epoch and bounded lateness must be valid")
+    last_clock = started
+    def observed_time():
+        nonlocal last_clock
+        now = clock()
+        if not math.isfinite(now) or now < last_clock:
+            raise ValueError("sampling clock must advance monotonically")
+        last_clock = now
+        return now
     previous_cpu = cpu_clock(pid)
-    previous_at = clock()
+    previous_at = observed_time()
     index = 0
     while True:
-        now = clock()
+        target_elapsed = min(index * interval_seconds, duration_seconds)
+        target = started + target_elapsed
+        next_target = started + min((index + 1) * interval_seconds, duration_seconds)
+        deadline = min(target + budget, next_target) if next_target > target else target + budget
+        now = observed_time()
+        if now < target:
+            sleep(target - now)
+            now = observed_time()
+        if now < target:
+            raise ValueError("sampling woke before its absolute target")
+        if now >= deadline:
+            raise ValueError("sampling missed its absolute target; catch-up is forbidden")
         elapsed = now - started
         cpu_now = cpu_clock(pid)
-        samples.append(sample_once(
+        counted_at = observed_time()
+        sample = sample_once(
             pid, elapsed, audio_counters() if audio_counters else None,
-            cpu_now, clock(), previous_cpu, previous_at,
-        ))
-        previous_cpu, previous_at = cpu_now, clock()
-        if elapsed >= duration_seconds:
+            cpu_now, counted_at, previous_cpu, previous_at,
+        )
+        sample["elapsedSeconds"] = elapsed  # retain actual time, not a nominal/backdated target
+        samples.append(sample)
+        previous_cpu, previous_at = cpu_now, counted_at
+        if observed_time() >= deadline:
+            raise ValueError("measurement exceeded its absolute sampling budget")
+        if on_sample is not None:
+            on_sample(dict(sample))
+        if observed_time() >= deadline:
+            raise ValueError("sample persistence exceeded its absolute sampling budget")
+        if target_elapsed >= duration_seconds:
             break
         index += 1
-        sleep(min(interval_seconds, duration_seconds - elapsed))
     return samples
 
 
