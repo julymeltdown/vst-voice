@@ -1265,19 +1265,31 @@ The operations model can represent `DISTRIBUTION_PAUSED` and `REVOKED`, but ther
 
 ### SEAM-BETA-P1-05: An invalid soak profile silently becomes a five-second smoke run
 
-The Phase 12C soak runner selects 7,200 seconds only for the exact `full` profile; arbitrary or misspelled profile values fall through to a five-second run.
+The original Phase 12C runner selected 7,200 seconds only for the exact `full`
+profile and let arbitrary profile values become a five-second run.
 
-**Required change:** parse a closed enum, reject unknown profiles, bind the selected duration into the receipt, and require heartbeat/watchdog evidence for the full run.
+**Required change:** reject unknown durations, bind the selected duration into the
+receipt, and require independent heartbeat/watchdog evidence for the full run.
 
-**Status: the silent five-second fallthrough is CLOSED; the heartbeat half is not.**
-`tools/external_beta/product_soak.py` no longer selects a duration by string match. It validates
-`durationSeconds` against the closed set `{1800, 7200}`, binds each to exactly one phase
-(`usable-alpha-30m` and `external-beta-120m` respectively), and rejects anything else
-(`tools/external_beta/product_soak.py:207`–`212`). The sample series is separately required to be strictly increasing
-and to reach the declared duration (`tools/external_beta/product_soak.py:261`), so a run cannot claim a two-hour soak
-from a series that stops early. **Still open:** there is no independent heartbeat or watchdog
-source in the record, so "the process was alive for the declared duration" is still inferred from
-the collector's own samples rather than attested by something outside the measured process.
+**Status: duration validation is CLOSED; engineering heartbeat/watchdog coverage
+is implemented; physical release qualification remains OPEN.**
+`tools/external_beta/product_soak.py:252` accepts only integer durations 1800 and
+7200, binds each to its required phase, and requires the observed series to cover
+the declared span. `tools/external_beta/soak_supervisor.py:208` independently checks
+child liveness, monotonic-clock coverage, one-second heartbeat progress and the
+durable final-sample acknowledgement, with bounded child cleanup.
+`tools/external_beta/soak_session.py:266` owns the product and collector children,
+absolute sample targets and persisted session packet.
+`tools/external_beta/soak_session_validation.py:391` verifies that packet's bytes,
+identities and timing before the existing product/report gates consume it.
+
+These engineering producers and readers retain `evidenceScope: engineering` and
+`releaseEligible: false`. Controlled-clock regressions and short local RSS readings
+cannot satisfy the required signed-installed 30/120-minute physical workloads or
+independent review. Those observations, required metric channels and installed
+candidate identities remain necessary for U47 and P1-05 closure; neither gate is
+promoted by the engineering coverage. See
+`docs/product/external-beta-soak-supervision.md:148` for the qualification limits.
 
 ### SEAM-BETA-P1-06: Validators are ahead of evidence collectors
 

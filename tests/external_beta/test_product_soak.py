@@ -178,22 +178,27 @@ class ProductSoakRssMeasurementTests(unittest.TestCase):
 
 
 class ProductSoakCollectorTests(unittest.TestCase):
-    """The collector must produce a soak series the real validator accepts.
+    """Verify live sample fields and derived summaries without claiming a full soak.
 
     A soak record asserts memory and latency behaviour over time. Writing one by hand proves
     nothing about a process, so this case samples a live process on a real clock and feeds the
-    result into validate_product_soak.
+    result into validate_product_soak. The missing session and full-span gates stay blocked.
     """
+
+    # OS observations include ps/lsof subprocesses. Exercise the engineering
+    # session's one-second cadence and retain the collector's strict deadlines.
+    LIVE_DURATION_SECONDS = 2.0
+    LIVE_INTERVAL_SECONDS = 1.0
 
     def test_measured_samples_satisfy_the_validator_they_feed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             template = _record(root)
-            samples = collect_soak_samples(os.getpid(), 0.2, 0.05)
+            samples = collect_soak_samples(os.getpid(), self.LIVE_DURATION_SECONDS, self.LIVE_INTERVAL_SECONDS)
             self.assertGreaterEqual(len(samples), 2)
             elapsed = [sample['elapsedSeconds'] for sample in samples]
             self.assertEqual(elapsed, sorted(elapsed))
-            self.assertGreaterEqual(elapsed[-1], 0.2)
+            self.assertGreaterEqual(elapsed[-1], self.LIVE_DURATION_SECONDS)
             self.assertTrue(all(sample['rssBytes'] > 0 for sample in samples))
             self.assertTrue(all(sample['threads'] >= 1 for sample in samples))
             record = build_soak_record(
@@ -216,13 +221,15 @@ class ProductSoakCollectorTests(unittest.TestCase):
             result = validate_product_soak(record, root)
             self.assertEqual([e for e in result.errors if 'samples' in e], [])
             self.assertEqual([e for e in result.errors if 'summary' in e], [])
+            self.assertFalse(result.passed)
+            self.assertIn(SESSION_REQUIRED, result.errors)
 
     def test_rss_is_read_from_the_live_process_not_a_constant(self) -> None:
         # A constant placeholder satisfies 'rssBytes > 0', so the value is compared against
         # what the operating system reports for this very process instead.
         measured = _process_rss_bytes(os.getpid())
         self.assertGreater(measured, 1_000_000)
-        samples = collect_soak_samples(os.getpid(), 0.1, 0.05)
+        samples = collect_soak_samples(os.getpid(), self.LIVE_DURATION_SECONDS, self.LIVE_INTERVAL_SECONDS)
         observed = {sample['rssBytes'] for sample in samples}
         self.assertTrue(observed)
         for value in observed:
@@ -246,15 +253,15 @@ class ProductSoakCollectorTests(unittest.TestCase):
         self.assertGreater(after, before)
 
     def test_the_summary_is_derived_not_asserted(self) -> None:
-        samples = collect_soak_samples(os.getpid(), 0.1, 0.05)
+        samples = collect_soak_samples(os.getpid(), self.LIVE_DURATION_SECONDS, self.LIVE_INTERVAL_SECONDS)
         summary = summarise(samples)
         self.assertEqual(summary['maxRssBytes'], max(s['rssBytes'] for s in samples))
         self.assertEqual(summary['rssGrowthBytes'], samples[-1]['rssBytes'] - samples[0]['rssBytes'])
         self.assertEqual(summary['handleGrowth'], samples[-1]['handles'] - samples[0]['handles'])
 
     def test_the_series_covers_the_declared_duration(self) -> None:
-        samples = collect_soak_samples(os.getpid(), 0.15, 0.05)
-        self.assertGreaterEqual(samples[-1]['elapsedSeconds'], 0.15)
+        samples = collect_soak_samples(os.getpid(), self.LIVE_DURATION_SECONDS, self.LIVE_INTERVAL_SECONDS)
+        self.assertGreaterEqual(samples[-1]['elapsedSeconds'], self.LIVE_DURATION_SECONDS)
 
 class ProductSoakTests(unittest.TestCase):
     def assert_only_missing_session(self, result):
