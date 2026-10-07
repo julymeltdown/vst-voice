@@ -2,10 +2,15 @@
 #include "test_support.hpp"
 
 #include "seam/authoring/project_lifecycle.hpp"
+#include "seam/authoring/media_import_service.hpp"
+#include "seam/application/arrangement_commands.hpp"
 #include "seam/application/render_commands.hpp"
+#include "seam/core/sha256.hpp"
 #include "seam/formats/project_json.hpp"
 #include "seam/voice_design/recipe_resource.hpp"
+#include "seam/voicebank/wav.hpp"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -39,6 +44,101 @@ seam::authoring::ProjectDocument makeDocument() {
       std::move(project),
       seam::application::ProjectFactory{factory.nextIdValue()}};
 }
+
+constexpr std::array<float, 8> kSaveAsMediaSamples{
+    0.0F, 0.25F, -0.25F, 0.5F, -0.5F, 0.1F, -0.1F, 0.0F};
+
+struct OwnedMediaDirectory final {
+  std::filesystem::path root{seam::test::support::temporaryDirectory("save-as-media")};
+  ~OwnedMediaDirectory() {
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+  }
+};
+
+struct SaveAsMediaFixture final {
+  // This member also cleans up if a later fixture-construction assertion throws.
+  OwnedMediaDirectory directory;
+  std::filesystem::path originalProject{directory.root / "original/song.seam"};
+  std::filesystem::path destinationProject{directory.root / "destination/copy.seam"};
+  std::filesystem::path originalMedia;
+  seam::authoring::ProjectDocument document{makeDocument()};
+  seam::authoring::ProjectLifecycleService lifecycle;
+  seam::domain::AudioTrack track;
+
+  explicit SaveAsMediaFixture(bool muted = false) {
+    using namespace seam;
+    std::filesystem::create_directories(originalProject.parent_path());
+    std::filesystem::create_directories(destinationProject.parent_path());
+    CHECK(lifecycle.saveAs(document, originalProject));
+    const auto source = directory.root / "backing.wav";
+    CHECK(voicebank::writePcm16Wav(source, 48000U, 2U, kSaveAsMediaSamples));
+    const auto imported = authoring::MediaImportService::import({
+        .trackId = domain::TrackId{77U}, .trackName = "Backing", .sourcePath = source,
+        .projectPath = originalProject, .startTick = time::Tick{0},
+        .mode = authoring::MediaImportMode::Copy});
+    CHECK(imported);
+    track = imported.value().track;
+    track.muted = muted;
+    originalMedia = imported.value().ownedPath;
+    CHECK(std::filesystem::path{track.mediaPath}.is_relative());
+    CHECK(core::sha256File(originalMedia).value() == track.mediaHash);
+    CHECK(document.execute(std::make_unique<application::AddAudioTrackCommand>(track)));
+    CHECK(document.dirty());
+    CHECK(core::durableAtomicWriteText(destinationProject, "destination before Save As"));
+    CHECK(core::durableAtomicWriteText(backupPath(), "backup before Save As"));
+  }
+
+  std::filesystem::path backupPath() const {
+    return std::filesystem::path{destinationProject.string() + ".bak"};
+  }
+  std::filesystem::path destinationMedia() const {
+    return (destinationProject.parent_path() / std::filesystem::path{track.mediaPath}).lexically_normal();
+  }
+  void copyToDestination() const {
+    std::filesystem::create_directories(destinationMedia().parent_path());
+    CHECK(std::filesystem::copy_file(originalMedia, destinationMedia()));
+  }
+
+  void requireRefusal() {
+    using namespace seam;
+    const auto before = document.session().project();
+    const auto identity = document.identity();
+    const auto originalProjectHash = core::sha256File(originalProject).value();
+    const auto revision = document.session().revision();
+    const auto couldUndo = document.session().canUndo();
+    const auto couldRedo = document.session().canRedo();
+    std::size_t writeStages{0U};
+    const auto result = lifecycle.saveAs(document, destinationProject, authoring::ProjectSaveOptions{
+        .faultInjector = [&](core::AtomicWriteStage) {
+          ++writeStages;
+          return core::success();
+        }});
+    CHECK(!result);
+    CHECK(result.error().code == core::ErrorCode::Conflict);
+    CHECK(writeStages == 0U);
+    CHECK(core::readTextFileLimited(destinationProject, 1024U).value() == "destination before Save As");
+    CHECK(core::readTextFileLimited(backupPath(), 1024U).value() == "backup before Save As");
+    CHECK(core::sha256File(originalMedia).value() == track.mediaHash);
+    CHECK(core::sha256File(originalProject).value() == originalProjectHash);
+    CHECK(document.session().project() == before);
+    CHECK(document.session().revision() == revision);
+    CHECK(document.identity().projectPath == identity.projectPath);
+    CHECK(document.identity().autosavePath == identity.autosavePath);
+    CHECK(document.identity().recoveryOriginPath == identity.recoveryOriginPath);
+    CHECK(document.identity().lastSavedRevision == identity.lastSavedRevision);
+    CHECK(document.identity().baseProjectHash == identity.baseProjectHash);
+    CHECK(document.dirty() == identity.dirty);
+    CHECK(document.session().canUndo() == couldUndo);
+    CHECK(document.session().canRedo() == couldRedo);
+    if (couldUndo) {
+      CHECK(document.undo());
+      CHECK(document.session().project() != before);
+      CHECK(document.redo());
+      CHECK(document.session().project() == before);
+    }
+  }
+};
 
 }  // namespace
 
@@ -283,6 +383,125 @@ TEST_CASE("save as cannot silently retarget a relative procedural recipe") {
   CHECK(document.identity().projectPath == destination);
   const auto loaded = formats::ProjectJsonCodec{}.load(destination); CHECK(loaded); CHECK(loaded.value() == before);
   CHECK(document.undo()); CHECK(!document.session().project().findVocalTrack(trackId)->proceduralRecipe);
+}
+
+TEST_CASE("save as refuses missing relative project-copy audio before any atomic write") {
+  for (const bool clean : {false, true}) {
+    SaveAsMediaFixture fixture;
+    if (clean) {
+      CHECK(fixture.lifecycle.save(fixture.document));
+    } else {
+      fixture.document.markRecovered(fixture.directory.root / "recovery.autosave",
+          fixture.originalProject, fixture.document.identity().baseProjectHash);
+    }
+    fixture.requireRefusal();
+    CHECK(!std::filesystem::exists(fixture.destinationMedia()));
+  }
+}
+
+TEST_CASE("save as compares full WAV bytes even when destination PCM samples are identical") {
+  SaveAsMediaFixture fixture;
+  std::filesystem::create_directories(fixture.destinationMedia().parent_path());
+  // Only the sample-rate header changes; the encoded PCM samples are identical.
+  CHECK(seam::voicebank::writePcm16Wav(fixture.destinationMedia(), 44100U, 2U, kSaveAsMediaSamples));
+  const auto changedHash = seam::core::sha256File(fixture.destinationMedia()).value();
+  CHECK(changedHash != fixture.track.mediaHash);
+  fixture.requireRefusal();
+  CHECK(seam::core::sha256File(fixture.destinationMedia()).value() == changedHash);
+}
+
+TEST_CASE("save as preserves the WAV reader refusal of a matching symbolic link") {
+  SaveAsMediaFixture fixture;
+  std::filesystem::create_directories(fixture.destinationMedia().parent_path());
+  std::filesystem::create_symlink(fixture.originalMedia, fixture.destinationMedia());
+  fixture.requireRefusal();
+  CHECK(std::filesystem::is_symlink(std::filesystem::symlink_status(fixture.destinationMedia())));
+  CHECK(std::filesystem::read_symlink(fixture.destinationMedia()) == fixture.originalMedia);
+}
+
+TEST_CASE("save as checks missing relative backing audio on muted tracks") {
+  SaveAsMediaFixture fixture{true};
+  fixture.requireRefusal();
+}
+
+TEST_CASE("save as checks every expected hash on a shared normalized destination path") {
+  SaveAsMediaFixture fixture;
+  fixture.copyToDestination();
+  auto duplicate = fixture.track;
+  duplicate.id = seam::domain::TrackId{78U};
+  duplicate.mediaPath = "unused/../" + duplicate.mediaPath;
+  duplicate.mediaHash = std::string(64U, '0');
+  duplicate.muted = true;
+  CHECK(duplicate.mediaHash != fixture.track.mediaHash);
+  CHECK(fixture.document.execute(std::make_unique<seam::application::AddAudioTrackCommand>(duplicate)));
+  fixture.requireRefusal();
+  CHECK(seam::core::sha256File(fixture.destinationMedia()).value() == fixture.track.mediaHash);
+}
+
+TEST_CASE("save as accepts exact copied audio and equivalent lexical locators then reopens") {
+  SaveAsMediaFixture fixture;
+  fixture.copyToDestination();
+  auto duplicate = fixture.track;
+  duplicate.id = seam::domain::TrackId{78U};
+  duplicate.mediaPath = "unused/../" + duplicate.mediaPath;
+  CHECK(fixture.document.execute(std::make_unique<seam::application::AddAudioTrackCommand>(duplicate)));
+  const auto before = fixture.document.session().project();
+  const auto revision = fixture.document.session().revision();
+  std::size_t writeStages{0U};
+  CHECK(fixture.lifecycle.saveAs(fixture.document, fixture.destinationProject, seam::authoring::ProjectSaveOptions{
+      .faultInjector = [&](seam::core::AtomicWriteStage) {
+        ++writeStages;
+        return seam::core::success();
+      }}));
+  CHECK(writeStages > 0U); // The refusal cases' zero-stage oracle observes the real writer.
+  CHECK(!fixture.document.dirty());
+  CHECK(fixture.document.identity().projectPath == fixture.destinationProject);
+  CHECK(fixture.document.session().project() == before);
+  CHECK(fixture.document.session().revision() == revision);
+  CHECK(seam::core::readTextFileLimited(fixture.backupPath(), 1024U).value() == "destination before Save As");
+  auto reopened = makeDocument();
+  CHECK(fixture.lifecycle.open(reopened, fixture.destinationProject));
+  CHECK(reopened.session().project() == before);
+  CHECK(seam::core::sha256File(fixture.destinationMedia()).value() == fixture.track.mediaHash);
+  CHECK(fixture.document.undo());
+  CHECK(fixture.document.redo());
+  CHECK(fixture.document.session().project() == before);
+}
+
+TEST_CASE("save as checks relative project-copy audio on first path assignment") {
+  SaveAsMediaFixture fixture;
+  CHECK(fixture.document.replaceProject(fixture.document.session().project()));
+  CHECK(!fixture.document.identity().projectPath);
+  fixture.requireRefusal();
+}
+
+TEST_CASE("save as preserves same-folder absolute and external-reference audio policy") {
+  // Same-folder Save As still permits an already-unresolved backing reference.
+  {
+    SaveAsMediaFixture fixture;
+    CHECK(std::filesystem::remove(fixture.originalMedia));
+    const auto renamed = fixture.originalProject.parent_path() / "renamed.seam";
+    CHECK(fixture.lifecycle.saveAs(fixture.document, renamed));
+    CHECK(fixture.document.session().project().audioTracks().front() == fixture.track);
+  }
+  for (const auto ownership : {seam::domain::MediaOwnership::ProjectCopy,
+                               seam::domain::MediaOwnership::ExternalReference}) {
+    SaveAsMediaFixture fixture;
+    auto& track = fixture.document.session().project().audioTracks().front();
+    track.mediaOwnership = ownership;
+    track.mediaPath = fixture.originalMedia.string();
+    const auto before = fixture.document.session().project();
+    CHECK(fixture.lifecycle.saveAs(fixture.document, fixture.destinationProject));
+    CHECK(fixture.document.session().project() == before);
+  }
+  // Legacy relative ExternalReference paths also retain their existing policy.
+  SaveAsMediaFixture fixture;
+  auto& track = fixture.document.session().project().audioTracks().front();
+  track.mediaOwnership = seam::domain::MediaOwnership::ExternalReference;
+  track.mediaPath = "missing-external.wav";
+  const auto before = fixture.document.session().project();
+  CHECK(fixture.lifecycle.saveAs(fixture.document, fixture.destinationProject));
+  CHECK(fixture.document.session().project() == before);
 }
 
 TEST_CASE("project_lifecycle_save_requires_path_and_failure_preserves_dirty_state") {

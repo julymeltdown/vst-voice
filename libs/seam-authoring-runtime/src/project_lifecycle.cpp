@@ -3,10 +3,12 @@
 
 #include "seam/core/sha256.hpp"
 #include "seam/domain/note.hpp"
+#include "seam/rendering/streaming_pcm_source.hpp"
 #include "seam/voicebank/style_resolution.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <utility>
 
 namespace seam::authoring {
@@ -260,6 +262,30 @@ core::Result<void> ProjectLifecycleService::saveAs(
     if (!candidate) return core::failure(core::ErrorCode::Conflict,
         "Save As requires the matching relative recipe at the destination; copy or relink it first",
         candidate.error().message);
+  }
+  const auto& previous = document.identity().projectPath;
+  if (!previous || previous->parent_path() != normalized.value().parent_path()) {
+    // Use preview's lexical spelling, preserving the reader's symlink refusal.
+    // The existing WAV limit is per file; aggregate I/O scales with distinct paths.
+    std::map<std::filesystem::path, std::string> destinationHashes;
+    for (const auto& track : document.session().project().audioTracks()) {
+      const auto relative = std::filesystem::path{track.mediaPath};
+      if (track.mediaOwnership != domain::MediaOwnership::ProjectCopy ||
+          !relative.is_relative()) continue;
+      const auto destination = (normalized.value().parent_path() / relative).lexically_normal();
+      auto found = destinationHashes.find(destination);
+      if (found == destinationHashes.end()) {
+        const auto candidate = rendering::StreamingPcmSource::open(destination, 4096U);
+        if (!candidate) return core::failure(core::ErrorCode::Conflict,
+            "Save As requires matching backing audio at the destination; copy the existing project media folder there first",
+            destination.string() + ": " + candidate.error().message);
+        found = destinationHashes.emplace(destination, candidate.value()->info().contentHash).first;
+      }
+      // Every track claims an identity, including muted tracks and shared paths.
+      if (found->second != track.mediaHash) return core::failure(core::ErrorCode::Conflict,
+          "Save As requires matching backing audio at the destination; copy the existing project media folder there first",
+          destination.string() + ": backing media content hash does not match the project identity");
+    }
   }
   const auto written = write(document.session().project(), normalized.value(),
                              options);
