@@ -103,7 +103,8 @@ class GateResult:
         }
 
 
-@dataclass(frozen=True, slots=True)
+# Exceptions need mutable traceback metadata for contextlib and unittest.
+@dataclass(slots=True)
 class ReleaseGateInputError(ValueError):
     message: str
 
