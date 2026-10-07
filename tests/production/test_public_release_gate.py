@@ -6,7 +6,7 @@ from types import ModuleType
 import unittest
 import tempfile
 from pathlib import Path
-from tests.production.public_release_replay_fixtures import public_replay_fixture
+from tests.production.public_release_replay_fixtures import assert_legacy_soak_refusal, public_replay_fixture
 
 from tests.production.public_release_fixtures import (
     acceptance_contract,
@@ -42,7 +42,7 @@ class PublicReleaseGateTests(unittest.TestCase):
         self.assertEqual("PUBLIC_ACTIVE", result.state)
         self.assertEqual(gate.PUBLIC_REQUIREMENT_IDS, result.blocked_ids)
 
-    def test_complete_public_fixture_reaches_active_after_archive_audit(self) -> None:
+    def test_archived_public_fixture_requires_supervised_soak_sessions(self) -> None:
         gate = self._gate()
         contract = acceptance_contract()
 
@@ -51,8 +51,7 @@ class PublicReleaseGateTests(unittest.TestCase):
             with public_replay_fixture(root) as (value, manifest, contract):
                 result = gate.evaluate_gate(value, "PUBLIC_ACTIVE", acceptance_contract=contract,
                     archive_manifest=manifest, evidence_root=root)
-                self.assertTrue(result.passed, result.errors)
-                self.assertEqual((), result.blocked_ids)
+                assert_legacy_soak_refusal(self, result)
 
     def test_closed_beta_without_public_documents_or_channel_stays_blocked(self) -> None:
         gate = self._gate()
@@ -394,7 +393,7 @@ class PublicReleaseGateTests(unittest.TestCase):
                 sign_operation(operation, "envelopeSha256")
                 result = gate.evaluate_gate(value, "PUBLIC_ACTIVE", acceptance_contract=contract,
                     archive_manifest=manifest, evidence_root=root)
-                self.assertTrue(result.passed, result.errors)
+                assert_legacy_soak_refusal(self, result)
                 self.assertEqual(original_root, evidence_root["sha256"])
 
 if __name__ == "__main__":

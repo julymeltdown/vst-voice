@@ -156,7 +156,7 @@ class PublicReleaseStateMachineTests(unittest.TestCase):
             gatePassed=True,
         )
         # Fresh signatures authorize the actor, not a caller's gatePassed flag.
-        # Actual replay success is covered by test_public_release_replay.
+        # Real replay refusal and fresh evidence reads are covered by test_public_release_replay.
         with self.assertRaisesRegex(release_gate.ReleaseGateInputError, "restored releaseAudit"):
             release_gate.transition(paused, resume, contract)
         revoked = release_gate.transition(

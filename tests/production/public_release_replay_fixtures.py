@@ -3,6 +3,9 @@
 Runs the real archive, signature, registry, report and cohort validators. The
 test's trusted policy copy and archive anchor are explicit configuration, not a
 mock evaluator or a production fixture-admission switch.
+
+The legacy synthetic soak payloads deliberately lack supervised session records.
+They must be refused; they cannot establish physical release qualification.
 """
 from __future__ import annotations
 
@@ -22,6 +25,22 @@ from tools.external_beta.evidence_archive import create_archive_manifest
 from tools.external_beta.release_gate import candidate_root_sha256, sha256_json
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+LEGACY_SOAK_GATE_ERRORS = tuple("External Beta replay: gate: " + error for error in (
+    "record-EB-005-standalone-soak-1: product soak reference: product soak reference must contain a typed external-beta-product-soak record",
+    "record-EB-005-standalone-soak-2: product soak reference: product soak reference must contain a typed external-beta-product-soak record",
+    "full-product observation R17.soak-hosts: product soak reference must contain a typed external-beta-product-soak record",
+    "full-product observation R17.soak-hosts: distinct 1800/7200 supervised sessions are required",
+))
+LEGACY_SOAK_AUDIT_ERRORS = tuple("gate: " + error for error in LEGACY_SOAK_GATE_ERRORS)
+LEGACY_SOAK_OPERATION_ERROR = "reproduced public release audit failed: " + "; ".join(LEGACY_SOAK_AUDIT_ERRORS)
+
+
+def assert_legacy_soak_refusal(test, result, *, audit=False):
+    test.assertFalse(result.passed)
+    test.assertEqual(("PR-003-external-beta-closed",), result.blocked if audit else result.blocked_ids)
+    test.assertEqual(LEGACY_SOAK_AUDIT_ERRORS if audit else LEGACY_SOAK_GATE_ERRORS, result.errors)
 
 
 def write_reference(root: Path, relative: str, value):

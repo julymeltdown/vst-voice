@@ -10,7 +10,13 @@ import sys
 import tempfile
 import unittest
 
-from tests.production.public_release_replay_fixtures import public_replay_fixture, write_reference
+from tests.production.public_release_replay_fixtures import (
+    LEGACY_SOAK_AUDIT_ERRORS,
+    LEGACY_SOAK_OPERATION_ERROR,
+    assert_legacy_soak_refusal,
+    public_replay_fixture,
+    write_reference,
+)
 from tests.production.public_release_contract_fixtures import APPROVAL_ROLES, approval, sign_operation
 from tests.production.public_release_fixtures import candidate, acceptance_contract
 from tools.public_release import release_gate
@@ -45,25 +51,26 @@ class PublicReplayTests(unittest.TestCase):
                 shutil.copytree(base / "original", base / "restored")
                 (base / "original").rename(base / "hidden-original")
                 result = audit_release(value, manifest, base / "restored", acceptance_contract=contract)
-                self.assertTrue(result.passed, result.errors)
+                assert_legacy_soak_refusal(self, result, audit=True)
                 (base / "restored/beta/synthetic-tone.wav").write_bytes(b"substituted")
                 result = audit_release(value, manifest, base / "restored", acceptance_contract=contract)
                 self.assertFalse(result.passed)
                 self.assertTrue(any("digest" in error for error in result.errors), result.errors)
         self.assertEqual(before, hashlib.sha256(canonical.read_bytes()).hexdigest())
 
-    def test_ready_replay_passes_ready_but_cannot_claim_closed_or_public_active(self):
+    def test_ready_replay_requires_soak_sessions_and_cannot_claim_closed_or_public_active(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with public_replay_fixture(root, state="EXTERNAL_BETA_READY", closed=False) as (value, manifest, contract):
                 ready = audit_release(value, manifest, root, "EXTERNAL_BETA_READY", acceptance_contract=contract)
-                self.assertTrue(ready.passed, ready.errors)
+                assert_legacy_soak_refusal(self, ready, audit=True)
                 for target in ("EXTERNAL_BETA_CLOSED", "PUBLIC_ACTIVE"):
                     changed = copy.deepcopy(value)
                     changed["state"] = target
                     result = audit_release(changed, manifest, root, target, acceptance_contract=contract)
                     self.assertFalse(result.passed)
                     self.assertIn("PR-003-external-beta-closed", result.blocked)
+                    self.assertTrue(any("External Beta READY cannot substitute for CLOSED" in error for error in result.errors), result.errors)
 
     def test_signed_activation_and_resume_replay_exact_inputs_on_every_call(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,21 +87,32 @@ class PublicReplayTests(unittest.TestCase):
                 validator = Draft202012Validator(schema)
                 validator.validate(value["externalBeta"])
                 validator.validate(activate)
-                active = release_gate.transition(snapshot, activate, contract, base=root)
-                self.assertEqual("PUBLIC_ACTIVE", active["state"])
-                self.assertEqual("PUBLIC_ACTIVE", active["lastReproducedAudit"]["state"])
+                before = copy.deepcopy(snapshot)
+                with self.assertRaises(release_gate.ReleaseGateInputError) as caught:
+                    release_gate.transition(snapshot, activate, contract, base=root)
+                self.assertEqual(LEGACY_SOAK_OPERATION_ERROR, str(caught.exception))
+                self.assertEqual(before, snapshot)
+                # Seed a protocol state to exercise PAUSE/RESUME; this is not an
+                # audit receipt or evidence of a qualified public activation.
+                active = copy.deepcopy(snapshot)
+                active["state"] = "PUBLIC_ACTIVE"
                 pause = decision(active, "PAUSE", "pause", contract, reason="synthetic integrity exercise")
                 paused = release_gate.transition(active, pause, contract, base=root)
+                self.assertEqual("DISTRIBUTION_PAUSED", paused["state"])
                 fresh = [approval(role, index, snapshot["evidenceRootSha256"], "2026-08-31T04:00:00Z")
                     for index, role in enumerate(APPROVAL_ROLES, 1)]
                 resume = decision(paused, "RESUME", "resume", contract, releaseAudit=inputs, approvals=fresh)
-                resumed = release_gate.transition(paused, resume, contract, base=root)
-                self.assertEqual("PUBLIC_ACTIVE", resumed["state"])
-                # A previously valid, signed decision cannot reuse a prior PASS
-                # once the raw predecessor bytes change.
-                (root / "beta/report.json").write_text("{}")
-                with self.assertRaisesRegex(ValueError, "reproduced public release audit failed"):
+                before_paused = copy.deepcopy(paused)
+                with self.assertRaises(release_gate.ReleaseGateInputError) as caught:
                     release_gate.transition(paused, resume, contract, base=root)
+                self.assertEqual(LEGACY_SOAK_OPERATION_ERROR, str(caught.exception))
+                self.assertEqual(before_paused, paused)
+                # The same signed decision must read the bytes again, rather
+                # than reuse even a prior refusal after predecessor tampering.
+                (root / "beta/report.json").write_text("{}")
+                with self.assertRaisesRegex(release_gate.ReleaseGateInputError, "digest"):
+                    release_gate.transition(paused, resume, contract, base=root)
+                self.assertEqual(before_paused, paused)
                 revoked = release_gate.transition(paused,
                     decision(paused, "REVOKE", "revoke", contract, reason="withdraw synthetic candidate"), contract, base=root)
                 self.assertEqual("REVOKED", revoked["state"])
@@ -119,7 +137,7 @@ class PublicReplayTests(unittest.TestCase):
                 self.assertFalse(result.passed)
                 self.assertTrue(any("contract" in error and "digest" in error for error in result.errors), result.errors)
 
-    def test_cli_accepts_complete_inputs_and_rejects_signed_boolean_only_decision(self):
+    def test_cli_replays_inputs_and_refuses_legacy_soak_and_boolean_only_decisions(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with public_replay_fixture(root) as (value, manifest, contract):
@@ -130,11 +148,18 @@ class PublicReplayTests(unittest.TestCase):
                     "--candidate", str(root / "public-candidate.json"), "--archive-manifest", str(root / "public-archive.json"),
                     "--archive-root", str(root), "--acceptance-contract", str(root / "public-contract.json")]
                 result = subprocess.run(command, text=True, capture_output=True, check=False, timeout=45)
-                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.assertTrue(json.loads(result.stdout)["passed"])
+                self.assertEqual(3, result.returncode, result.stdout + result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertFalse(payload["passed"])
+                self.assertEqual(["PR-003-external-beta-closed"], payload["blocked"])
+                self.assertEqual(list(LEGACY_SOAK_AUDIT_ERRORS), payload["errors"])
+                expected = subprocess.run([*command, "--expect-blocked"], text=True, capture_output=True, check=False, timeout=45)
+                self.assertEqual(0, expected.returncode, expected.stdout + expected.stderr)
+                self.assertEqual(payload, json.loads(expected.stdout))
                 snapshot = {"schemaVersion": 1, "candidateLineageId": value["candidateLineageId"],
                     "evidenceRootSha256": value["rootChain"]["evidenceRoot"]["sha256"], "state": "EXTERNAL_BETA_CLOSED", "decisionLog": []}
                 write_reference(root, "snapshot.json", snapshot)
+                snapshot_bytes = (root / "snapshot.json").read_bytes()
                 claimed = decision(snapshot, "ACTIVATE", "claim", contract, gatePassed=True, approvals=value["approvals"])
                 write_reference(root, "decision.json", claimed)
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/run_public_release_operation.py"),
@@ -142,16 +167,20 @@ class PublicReplayTests(unittest.TestCase):
                     "--acceptance-contract", str(root / "public-contract.json")], text=True, capture_output=True, check=False, timeout=45)
                 self.assertNotEqual(0, result.returncode)
                 self.assertIn("restored releaseAudit", result.stdout)
-                accepted = decision(snapshot, "ACTIVATE", "actual-replay", contract,
+                replayed = decision(snapshot, "ACTIVATE", "actual-replay", contract,
                     approvals=value["approvals"], releaseAudit={
                         "candidate": write_reference(root, "public-candidate.json", value),
                         "archiveManifest": write_reference(root, "public-archive.json", manifest), "archiveRoot": "."})
-                write_reference(root, "decision.json", accepted)
+                write_reference(root, "decision.json", replayed)
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/run_public_release_operation.py"),
                     "--snapshot", str(root / "snapshot.json"), "--decision", str(root / "decision.json"),
                     "--acceptance-contract", str(root / "public-contract.json")], text=True, capture_output=True, check=False, timeout=45)
-                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.assertEqual("PUBLIC_ACTIVE", json.loads(result.stdout)["state"])
+                self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertFalse(payload["passed"])
+                self.assertEqual(["operation"], payload["blocked"])
+                self.assertEqual([LEGACY_SOAK_OPERATION_ERROR], payload["errors"])
+                self.assertEqual(snapshot_bytes, (root / "snapshot.json").read_bytes())
 
 
 if __name__ == "__main__":

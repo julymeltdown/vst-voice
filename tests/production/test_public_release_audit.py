@@ -6,7 +6,7 @@ import unittest
 
 from tests.production.public_release_archive_fixtures import archived_candidate
 from tests.production.public_release_fixtures import acceptance_contract, candidate
-from tests.production.public_release_replay_fixtures import public_replay_fixture
+from tests.production.public_release_replay_fixtures import assert_legacy_soak_refusal, public_replay_fixture
 
 
 class PublicReleaseAuditTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class PublicReleaseAuditTests(unittest.TestCase):
                 acceptance_contract=contract,
             )
 
-            self.assertTrue(result.passed, result.errors)
+            assert_legacy_soak_refusal(self, result, audit=True)
             records = value["evidence"]
             assert isinstance(records, list)
             raw = records[0]["rawArchive"]
