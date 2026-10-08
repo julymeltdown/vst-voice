@@ -46,9 +46,11 @@ class ListenerPacketIntegrity(unittest.TestCase):
         return subprocess.run([sys.executable, str(CLI), str(self.packet), *args],
                               cwd=self.packet, capture_output=True, text=True, timeout=30)
 
-    def assert_failure(self, result):
+    def assert_failure(self, result, reason):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn('PACKET_INTEGRITY=PASS', result.stdout)
+        self.assertIn(reason, result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
     def replace_audio(self, payload):
         artifact = self.manifest['artifacts'][0]
@@ -64,55 +66,73 @@ class ListenerPacketIntegrity(unittest.TestCase):
         for name, contents in before.items():
             self.assertEqual((self.packet / name).read_bytes(), contents)
 
+    def test_nonobject_manifest_root_fails_cleanly(self):
+        for value in ([], None, 1, 'not an object'):
+            with self.subTest(value=value):
+                self.manifest = value
+                self.assert_failure(self.run_cli(), 'manifest root must be an object')
+
+    def test_boolean_schema_version_is_not_integer_version_one(self):
+        self.manifest['schemaVersion'] = True
+        self.assert_failure(self.run_cli(), 'schema version 1')
+
     def test_checksum_mismatch_is_a_failing_process(self):
         self.manifest['artifacts'][0]['sha256'] = '0' * 64
         result = self.run_cli()
-        self.assert_failure(result)
+        self.assert_failure(result, 'MISMATCH')
         self.assertIn('MISMATCH', result.stdout)
 
     def test_hash_consistent_silence_is_a_failing_process(self):
         self.replace_audio(wav([0] * 4800))
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'PROBLEM')
 
     def test_nonfinite_float_audio_is_rejected_even_with_matching_hash(self):
         self.replace_audio(wav([0.25, float('nan'), 0.25], floating=True))
         result = self.run_cli()
-        self.assert_failure(result)
+        self.assert_failure(result, 'non-finite')
         self.assertIn('non-finite', result.stderr)
 
     def test_empty_and_truncated_wav_are_rejected(self):
-        for payload in [wav([]), wav([2000] * 100)[:-3], b'not a wave file']:
+        for payload, reason in [(wav([]), 'empty or incomplete WAV'),
+                                (wav([2000] * 100)[:-3], 'truncated WAV chunk'),
+                                (b'not a wave file', 'not RIFF/WAVE')]:
             with self.subTest(payload_size=len(payload)):
                 self.replace_audio(payload)
-                self.assert_failure(self.run_cli())
+                self.assert_failure(self.run_cli(), reason)
 
     def test_missing_artifact_and_omitted_manifest_entry_are_rejected(self):
         (self.packet / self.manifest['artifacts'][0]['file']).unlink()
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'artifact is missing')
         self.manifest['artifacts'].pop(0)
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'artifact inventory')
 
     def test_duplicate_artifact_cannot_mask_a_missing_file(self):
         self.manifest['artifacts'][0] = self.manifest['artifacts'][1]
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'artifact inventory')
 
     def test_empty_or_incomplete_case_inventory_is_rejected(self):
         self.manifest['cases'].pop()
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'case inventory')
         self.manifest['cases'] = []
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'case inventory')
 
     def test_wrong_question_files_are_rejected(self):
         self.manifest['cases'][0]['files'] = PAIRS['q3-missing-note']
-        self.assert_failure(self.run_cli())
+        self.assert_failure(self.run_cli(), 'case files')
 
     def test_diagnostics_require_an_explicit_project(self):
         result = self.run_cli('--diagnostics')
-        self.assert_failure(result)
+        self.assert_failure(result, '--q3-project')
         self.assertIn('--q3-project', result.stderr)
 
     def test_missing_explicit_project_fails_without_implicit_fallback(self):
-        self.assert_failure(self.run_cli('--diagnostics', '--q3-project', str(self.packet / 'missing.seam')))
+        result = self.run_cli('--diagnostics', '--q3-project', str(self.packet / 'missing.seam'))
+        self.assertEqual(result.returncode, 3)
+        self.assertIn('PACKET_INTEGRITY=PASS', result.stdout)
+        self.assertIn('PACKET_DIAGNOSTICS=FAIL', result.stderr)
+        self.assertIn('missing.seam', result.stderr)
+        self.assertNotIn('PACKET_INTEGRITY=FAIL', result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
 
 if __name__ == '__main__':

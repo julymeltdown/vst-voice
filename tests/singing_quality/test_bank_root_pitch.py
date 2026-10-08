@@ -34,6 +34,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -122,21 +123,40 @@ class BankRootPitchTest(unittest.TestCase):
         found = {}
         for pattern in ("assets/**/*.json", "tests/**/*.json", "out/**/*.json"):
             for path in ROOT.glob(pattern):
+                rel = str(path.relative_to(ROOT))
+                if not _is_shipped(rel):
+                    continue
                 try:
                     data = json.loads(path.read_text())
                 except (OSError, ValueError):
                     continue
+                if not isinstance(data, dict):
+                    continue
                 units = data.get("units")
                 if not isinstance(units, list) or not units:
                     continue
-                if "rootMidi" not in units[0]:
+                if not any(isinstance(unit, dict) and "rootMidi" in unit for unit in units):
                     continue
-                rel = str(path.relative_to(ROOT))
-                if _is_shipped(rel):
-                    found[rel] = len(units)
+                found[rel] = len(units)
         unlisted = sorted(set(found) - set(KNOWN_BANKS))
         self.assertEqual(unlisted, [],
                          "voicebank manifests not classified in KNOWN_BANKS: " + str(unlisted))
+
+    def test_nonbank_json_does_not_hide_an_unlisted_shipped_bank(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'assets').mkdir()
+            (root / 'out').mkdir()
+            (root / 'assets' / 'report.json').write_text('["not a bank"]')
+            (root / 'out' / 'retention-index.json').write_text('[{"sha256": "receipt"}]')
+            with mock.patch.dict(globals(), {'ROOT': root}):
+                self.test_every_shipped_bank_manifest_is_listed()
+                # Discovery is still content-based, and a malformed first unit
+                # cannot hide the actual bank unit that follows it.
+                (root / 'assets' / 'unexpected.json').write_text(
+                    '{"units": [null, {"rootMidi": 69}]}')
+                with self.assertRaisesRegex(AssertionError, 'unexpected.json'):
+                    self.test_every_shipped_bank_manifest_is_listed()
 
     def test_declared_root_mismatches_are_all_known(self) -> None:
         """Measure each listed bank and assert its offset matches the recorded class."""

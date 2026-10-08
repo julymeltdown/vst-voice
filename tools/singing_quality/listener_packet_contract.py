@@ -14,11 +14,11 @@ def case_definitions():
     return [
         {
             'id': 'q1-lead-timing',
-            'question': 'Do the transitions sound intentional, early or rushed, or indistinguishable?',
+            'question': 'Listen for onset leads in the legato and detached runs: do they sound intentional, early/rushed, or inaudible?',
             'files': ['q1-legato-run.wav', 'q1-detached-run.wav'],
             'verdictOptions': {
-                'INTENTIONAL_PHRASING': 'The transitions sound like intentional phrasing.',
-                'EARLY_OR_RUSHED': 'The transitions sound early or rushed.',
+                'INTENTIONAL_PHRASING': 'The onset leads sound like intentional phrasing.',
+                'EARLY_OR_RUSHED': 'The onset leads sound early or rushed.',
                 'NO_AUDIBLE_DISTINCTION': 'I cannot hear a distinction relevant to this question.',
             },
         },
@@ -39,7 +39,7 @@ def case_definitions():
             'verdictOptions': {
                 'INTENTIONAL_REST': 'The silence sounds like an intentional rest or breath.',
                 'UNINTENDED_HOLE': 'The silence sounds like an unintended hole in the phrase.',
-                'NO_AUDIBLE_DISTINCTION': 'I cannot hear a distinction relevant to this question.',
+                'CANNOT_JUDGE_INTENT': 'I hear the comparison but cannot judge whether the rest sounds intentional.',
             },
         },
     ]
@@ -86,6 +86,17 @@ def make_q3_control(project, note_id):
     if len(found) != 1:
         raise ValueError('Q3 requires one uniquely identified target note')
     region, note = found[0]
+    if note.get('slurGroup') is not None:
+        raise ValueError('Q3 target belongs to a slurGroup')
+    if any(edit['noteId'] == note_id for edit in region.get('phonemeOverrides', [])):
+        raise ValueError('Q3 target has phonemeOverrides')
+    # Unit selections may span multiple note tokens, and an incoming seam on
+    # the following note can depend on the target's outgoing material. Refuse
+    # these region-level edits rather than guessing their affected ranges or
+    # silently erasing user ownership to manufacture a matched comparison.
+    for field in ('unitSelectionOverrides', 'seamOverrides'):
+        if region.get(field):
+            raise ValueError('Q3 region has ' + field)
     lyrics = [item for item in region['lyrics'] if item['id'] == note['lyricId']]
     if len(lyrics) != 1:
         raise ValueError('Q3 requires one uniquely identified target lyric')

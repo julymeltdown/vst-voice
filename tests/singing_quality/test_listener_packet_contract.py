@@ -2,12 +2,13 @@
 from copy import deepcopy
 from pathlib import Path
 import subprocess
+import hashlib
 import sys
 import unittest
 
 from tools.singing_quality.listener_packet_contract import (
     VERDICT_SCHEMA, case_definitions, guide_text, validate_cases, validate_guide,
-    make_q3_control, validate_q3_control,
+    make_q3_control, validate_q3_control, canonical_json,
 )
 
 
@@ -27,6 +28,12 @@ def project():
 
 
 class ListenerVerdictContractTests(unittest.TestCase):
+    def test_version_three_meanings_match_the_reviewed_golden_digest(self):
+        # Update this pair deliberately when introducing a new verdict contract.
+        self.assertEqual(VERDICT_SCHEMA, 'com.project-seam.listener-verdicts/3')
+        self.assertEqual(hashlib.sha256(canonical_json(case_definitions()).encode()).hexdigest(),
+                         '5993ffc813b7acc1f29f0109a4e5b096944b05ed73a6c8a8136877f0b096f874')
+
     def test_guide_and_manifest_have_identical_named_meanings(self):
         cases = case_definitions()
         text = guide_text(VERDICT_SCHEMA, cases)
@@ -128,6 +135,44 @@ class MatchedRestControlTests(unittest.TestCase):
         authored['vocalTracks'][0]['regions'][0]['lyrics'][0]['language'] = 'en'
         with self.assertRaisesRegex(ValueError, 'Japanese'):
             make_q3_control(authored, 'n1')
+
+    def test_target_phoneme_override_is_refused(self):
+        authored = project()
+        authored['vocalTracks'][0]['regions'][0]['phonemeOverrides'] = [
+            {'noteId': 'n1', 'ordinal': 0, 'symbol': 'pau', 'locked': True}]
+        with self.assertRaisesRegex(ValueError, 'phonemeOverrides'):
+            make_q3_control(authored, 'n1')
+
+    def test_region_unit_selection_override_is_refused(self):
+        for note_id in ('n1', 'n2'):
+            authored = project()
+            authored['vocalTracks'][0]['regions'][0]['unitSelectionOverrides'] = [
+                {'noteId': note_id, 'ordinal': 0, 'tokenCount': 2, 'unitId': 'pinned'}]
+            with self.subTest(note_id=note_id), self.assertRaisesRegex(ValueError, 'unitSelectionOverrides'):
+                make_q3_control(authored, 'n1')
+
+    def test_target_and_following_incoming_seam_are_refused(self):
+        for note_id in ('n1', 'n2'):
+            authored = project()
+            authored['vocalTracks'][0]['regions'][0]['seamOverrides'] = [
+                {'noteId': note_id, 'ordinal': 0, 'locked': True}]
+            with self.subTest(note_id=note_id), self.assertRaisesRegex(ValueError, 'seamOverrides'):
+                make_q3_control(authored, 'n1')
+
+    def test_slur_group_is_refused(self):
+        authored = project()
+        authored['vocalTracks'][0]['regions'][0]['notes'][0]['slurGroup'] = 'phrase'
+        with self.assertRaisesRegex(ValueError, 'slurGroup'):
+            make_q3_control(authored, 'n1')
+
+    def test_unrelated_phoneme_override_is_preserved(self):
+        authored = project()
+        authored['vocalTracks'][0]['regions'][0]['phonemeOverrides'] = [
+            {'noteId': 'n2', 'ordinal': 0, 'symbol': 'u', 'locked': True}]
+        control = make_q3_control(authored, 'n1')
+        self.assertEqual(control['vocalTracks'][0]['regions'][0]['phonemeOverrides'],
+                         authored['vocalTracks'][0]['regions'][0]['phonemeOverrides'])
+        validate_q3_control(authored, control, 'n1')
 
     def test_existing_cli_supports_script_and_module_invocation(self):
         root = Path(__file__).resolve().parents[2]

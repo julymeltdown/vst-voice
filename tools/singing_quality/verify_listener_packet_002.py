@@ -20,10 +20,21 @@ REQUIRED_FILES = {
 REQUIRED_CASES = {"q1-lead-timing", "q2-harmonic-balance", "q3-missing-note"}
 
 
-def read_wav(path):
+def read_wav_bytes(path):
     if path.stat().st_size > 256 * 1024 * 1024:
         raise ValueError("WAV exceeds 256 MiB")
-    blob = path.read_bytes()
+    with path.open('rb') as stream:
+        blob = stream.read(256 * 1024 * 1024 + 1)
+    if len(blob) > 256 * 1024 * 1024:
+        raise ValueError("WAV exceeds 256 MiB")
+    return blob
+
+
+def read_wav(path):
+    return parse_wav(read_wav_bytes(path))
+
+
+def parse_wav(blob):
     if blob[:4] != b"RIFF" or blob[8:12] != b"WAVE":
         raise ValueError("not RIFF/WAVE")
     pos, fmt, data = 12, None, None
@@ -64,7 +75,9 @@ def read_wav(path):
 
 def verify_integrity(packet):
     manifest = json.loads((packet / "manifest.json").read_text())
-    if manifest.get("formatId") != "com.project-seam.listening-packet" or manifest.get("schemaVersion") != 1:
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest root must be an object")
+    if type(manifest.get("schemaVersion")) is not int or manifest.get("formatId") != "com.project-seam.listening-packet" or manifest.get("schemaVersion") != 1:
         raise ValueError("expected legacy packet 002 schema version 1")
     artifacts = manifest["artifacts"]
     names = [a["file"] for a in artifacts]
@@ -87,8 +100,9 @@ def verify_integrity(packet):
         path = packet / artifact["file"]
         if path.is_symlink() or not path.is_file():
             raise ValueError("artifact is missing or is not a regular packet file: " + path.name)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        mono, _ = read_wav(path)
+        payload = read_wav_bytes(path)
+        digest = hashlib.sha256(payload).hexdigest()
+        mono, _ = parse_wav(payload)
         rms = float(np.sqrt((mono ** 2).mean()))
         peak = float(np.abs(mono).max())
         ok = digest == artifact["sha256"] and rms > 0.001 and peak > 0.01
@@ -190,12 +204,17 @@ def main(argv=None):
         if not verify_integrity(args.packet):
             print("PACKET_INTEGRITY=FAIL")
             return 1
-        if args.diagnostics:
-            print_diagnostics(args.packet, args.q3_project)
     except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error) as error:
         print("PACKET_INTEGRITY=FAIL: " + str(error), file=sys.stderr)
         return 1
     print("PACKET_INTEGRITY=PASS; musical acceptance and provenance are NOT_VERIFIED")
+    if args.diagnostics:
+        try:
+            print_diagnostics(args.packet, args.q3_project)
+        except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error) as error:
+            print("PACKET_DIAGNOSTICS=FAIL: " + str(error), file=sys.stderr)
+            return 3
+        print("PACKET_DIAGNOSTICS=OBSERVED; no acceptance verdict")
     return 0
 
 
