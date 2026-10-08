@@ -133,3 +133,9 @@ clean pairs descriptively. Rejected clean reconstructions stay unavailable.
 It performs no synthesis, filtering, normalization, automatic selection or quality
 approval. Outputs bind source/analysis/output identities, protocol, executable,
 source lock and diagnostic code; existing output files are never overwritten.
+
+## Packet 003 review contract (implementation in progress)
+
+`listener_packet_contract.py` owns the versioned questions, stable named verdicts and generated guide. `validate_cases` rejects changed meanings, questions or file associations, and `validate_guide` requires the guide to match those same definitions. Do not maintain a separate A/B/C answer table. Generated guides start `NOT_REVIEWED` and grant no acceptance.
+
+`make_q3_control` changes only one uniquely identified Japanese authored rest to the vowel あ. `validate_q3_control` compares the complete project against that exact edit, including unchanged pitch, timing, recipe references, other lyrics and the rest time slot. Shared/ambiguous lyrics are refused. The existing authored-rest CLI uses this helper, and still accepts both module and direct-script invocation. This helper does not validate external resource bytes or render identity; the packet-003 builder/verifier must bind those separately. The complete portable builder and new packet are still pending. Historical r2 audio, manifest and guide remain immutable.

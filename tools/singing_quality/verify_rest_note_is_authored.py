@@ -43,6 +43,11 @@ import tempfile
 
 import numpy as np
 
+if __package__:
+    from .listener_packet_contract import make_q3_control
+else:
+    from listener_packet_contract import make_q3_control
+
 SILENCE_RMS = 0.002
 TRACK_INDEX = 0
 REGION_INDEX = 0
@@ -118,14 +123,7 @@ def midi_to_hz(midi: int) -> float:
 
 def write_variant(project: dict, note: dict, destination: pathlib.Path) -> None:
     """Emit the project with exactly one change: the rest hint becomes a vowel."""
-    variant = json.loads(json.dumps(project))
-    region = variant["vocalTracks"][TRACK_INDEX]["regions"][REGION_INDEX]
-    for candidate in region["notes"]:
-        if candidate["id"] == note["id"]:
-            candidate["phoneticHint"] = None
-    for lyric in region.get("lyrics", []):
-        if lyric["id"] == note["lyricId"]:
-            lyric["surface"] = "\u3042"
+    variant = make_q3_control(project, note["id"])
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "project.seam").write_text(
         json.dumps(variant, ensure_ascii=False, indent=2))
