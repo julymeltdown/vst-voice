@@ -12,6 +12,13 @@
     "liveRemoteMaster": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7"
   },
   "scope": "Current integrated source plus recoverable local branch work; no implementation changes or external acceptance.",
+  "planningFollowUp": {
+    "date": "2026-10-09",
+    "planningBaseline": "96ec8fbee8e08b695866d909c090ca0c52a5a8d9",
+    "u16Correction": "Commit 5353b8af was already in the runtime baseline and retargets measured voiced edges in PSOLA, SpectralClassic and Stretch. The earlier blanket source-pitch edge claim was stale. Fixed-corpus measurements/listening, alternative-path comparison and qualification remain open.",
+    "u21Update": "The previously branch-only request-owned budget correction was integrated in 96ec8fbe with an entry-boundary repair. Do not schedule it again. Pre-registry campaign disposition and human/reviewer evidence remain open.",
+    "receiptBoundary": "Original runtime receipts, branch snapshots and heuristic counts below retain their stated baseline. No new product test run or acceptance promotion is asserted by this documentary follow-up."
+  },
   "sourceInventory": {
     "trackedFilesAtBaseline": 2978,
     "missingTrackedFiles": 0,
