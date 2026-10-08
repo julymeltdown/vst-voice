@@ -60,12 +60,14 @@ def guide_text(schema, cases):
     lines = ['# Listening packet 003', '', f'Verdict schema: `{schema}`', '',
              'Status: NOT_REVIEWED. This diagnostic packet grants no musical or release acceptance.',
              'Record the named verdict, never an A/B/C letter. Retain the packet identity with your answers.',
+             'Keep this packet immutable. Write answers in a separate file outside its directory,',
+             'with manifestSha256 (the SHA-256 of manifest.json), verdictSchema, reviewer and case verdicts.',
              'Q1 changes written gaps; Q2 compares solo and range contexts. Only Q3 is a matched rest/vowel pair.', '']
     for case in cases:
         lines += [f"## {case['id']}", '', case['question'], '',
                   'Listen in this order: ' + ', '.join(f'`{name}`' for name in case['files']) + '.', '']
         lines += [f'- **{name}**: {meaning}' for name, meaning in case['verdictOptions'].items()]
-        lines += ['', 'Reviewer verdict: NOT_REVIEWED', 'Reviewer notes:', '']
+        lines += ['', 'Record your named verdict and notes in the separate answer file.', '']
     return '\n'.join(lines) + '\n'
 
 

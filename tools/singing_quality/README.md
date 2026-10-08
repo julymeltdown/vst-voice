@@ -138,8 +138,46 @@ source lock and diagnostic code; existing output files are never overwritten.
 
 `listener_packet_contract.py` owns the versioned questions, stable named verdicts and generated guide. `validate_cases` rejects changed meanings, questions or file associations, and `validate_guide` requires the guide to match those same definitions. Do not maintain a separate A/B/C answer table. Generated guides start `NOT_REVIEWED` and grant no acceptance.
 
-`make_q3_control` changes only one uniquely identified Japanese authored rest to the vowel あ. `validate_q3_control` compares the complete project against that exact edit, including unchanged pitch, timing, recipe references, other lyrics and the rest time slot. Shared/ambiguous lyrics, target phoneme overrides and target slurs are refused. Any regional unit-selection or seam override is also refused: unit spans and a following note's incoming seam can depend on the target, so the tool does not guess their influence or erase user edits. The existing authored-rest CLI uses this helper, and still accepts both module and direct-script invocation. This helper does not validate external resource bytes or render identity; the packet-003 builder/verifier must bind those separately. The complete portable builder and new packet are still pending. Historical r2 audio, manifest and guide remain immutable.
+`make_q3_control` changes only one uniquely identified Japanese authored rest to the vowel あ. `validate_q3_control` compares the complete project against that exact edit, including unchanged pitch, timing, recipe references, other lyrics and the rest time slot. Shared/ambiguous lyrics, target phoneme overrides and target slurs are refused. Any regional unit-selection or seam override is also refused: unit spans and a following note's incoming seam can depend on the target, so the tool does not guess their influence or erase user edits. The existing authored-rest CLI uses this helper, and still accepts both module and direct-script invocation. This helper does not validate external resource bytes or render identity; the packet-003 builder/verifier binds those separately. A usable formal packet remains pending. Historical r2 audio, manifest and guide remain immutable.
 
 The legacy packet-002 verifier reports integrity and optional diagnostics separately. Integrity failure exits 1; a diagnostic-input failure after valid integrity exits 3 with `PACKET_DIAGNOSTICS=FAIL`. Negative probes assert their specific failure reason. Hashing and WAV parsing consume the same bounded byte snapshot. Neither status supplies musical acceptance or packet-003 provenance.
 
 Usage errors retain argparse exit 2; diagnostic failures use exit 3. Receipts under `out/evidence/w01-2026-10-09` are retained locally outside temporary storage, but `out/` is git-ignored and is not a pushed or externally anchored release archive.
+
+### Portable packet builder: partial, current dry route fails Q1
+
+`listener_packet_003.py` stages six explicitly supplied projects, their saved recipe, the renderer binary, build/source evidence, tooling source snapshots and all native bake outputs/logs in a new directory. It checks the complete inventory, per-artifact bindings, exact Q1/Q2 score transformations, Q3 control and non-target resolved markers, and objective signal properties. It refuses overwrite and keeps failed output for diagnosis. It does not reconstruct missing historical r2 inputs.
+
+The request is a JSON object with `projects` mapping the six names in `case_definitions()` to project paths, plus `renderer`, `sourceEvidence`, `buildEvidence` paths and `q3NoteId`. Paths may be absolute or relative to the request. Source evidence must contain `sourceCommit`, `rendererSha256`, and `buildEvidenceSha256`. These are operator-supplied hash bindings, not independent build attestations. The binary snapshot does not capture its external dylib dependency closure (including Homebrew libcrypto); do not call this a release-reproducible package.
+
+```sh
+python3 -m tools.singing_quality.listener_packet_003 build --request /absolute/request.json --output /absolute/new-packet
+python3 -m tools.singing_quality.listener_packet_003 verify /absolute/packet --expected-manifest-sha256 RECORDED_SHA256
+```
+
+**Known refusal:** the current `bake-project` dry procedural candidate route emits Q1 markers on the written beat. It does not establish the onset leads assumed by the original question. The builder/verifier now exits 1 for this objective-property failure, even when all integrity and Q3 checks pass. No formal packet003 is claimed. Reconcile a production-render adapter and its timing/audio evidence before collecting Q1 judgments; do not alter audio or relax the criterion to make this fixture pass. Q2's solo H2/H1 is measured over the middle half using median Hann-window spectral peaks near written harmonics. Its measured ratio was 1.553 in the retained regression, but that does not establish subjective voice quality.
+
+A successful verifier returns the root `manifestSha256`; retain that exact value independently. Never edit files inside the packet. Listener answers belong in a separate external JSON file, for example:
+
+```json
+{
+  "manifestSha256": "<verified SHA-256 of manifest.json>",
+  "verdictSchema": "com.project-seam.listener-verdicts/3",
+  "reviewer": "<actual reviewer identity>",
+  "cases": [
+    {"id": "q1-lead-timing", "verdict": null, "notes": ""},
+    {"id": "q2-harmonic-balance", "verdict": null, "notes": ""},
+    {"id": "q3-rest-treatment", "verdict": null, "notes": ""}
+  ]
+}
+```
+
+Null means not reviewed. Only an actual listener fills named verdicts. This format is a handoff convention, not an acceptance validator or authority grant.
+
+The native regression lane must be explicitly enabled; ordinary discovery skips it without both inputs. It renders six real candidates and asserts the current Q1 refusal, plus tamper/control failures; synthetic known-answer tests validate the measuring functions separately.
+
+```sh
+SEAM_LISTENER_PACKET_PROJECT=/absolute/seed/project.seam \
+SEAM_VOICEBANK_CLI=/absolute/build/seam_voicebank_cli \
+ctest --test-dir build/release -R '^seam_singing_quality_contract_tests$' --output-on-failure
+```
