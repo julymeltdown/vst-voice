@@ -8306,3 +8306,6 @@ carry a contour on one.
 **What this does not change.** P0-08 stays **OPEN**. Nothing has been listened to, and no FL Studio, DAW or
 OpenUtau session has been driven — the fixture is still a MIDI file this repository wrote, though it now matches
 the shape of a Japanese vocal score rather than an ASCII one.
+
+
+2026-10-08 — Integrated the separately retained U21 request-owned byte-budget repair `7cf0ee6c` into current master. Only campaign.json and the request's batch directories count; unrelated and separately admitted preflight output no longer exhaust the request. During integration a new boundary regression failed: a maximumEntries=2 request accepted the definition, batch directory and one child (three entries). The integrated implementation now counts the batch directory before accepting its children. The exact two-entry refusal and three-entry success both pass. Full incremental Release build passed (all dependent targets rebuilt); CTest seam_export_tests and seam_voice_generation_workflow_tests passed 2/2 (8.65 seconds), and the C++/Python generation-request mirror passed 5/5 (0.671 seconds). The red regression and successful rerun are new local evidence, not historical branch results. No listening, reviewer, singer, installed-host or Beta acceptance is promoted. Pre-registry campaigns remain unregistered. Local only; .github untouched.

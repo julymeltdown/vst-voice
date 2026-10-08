@@ -70,9 +70,14 @@ struct CampaignStorageUsage final { std::uint64_t logicalBytes{0U}; std::size_t 
 [[nodiscard]] core::Result<CampaignStorageUsage> inspectCampaignStorage(
     const std::filesystem::path& root, std::uint64_t maximumBytes,
     std::size_t maximumEntries = 262144U, std::stop_token stop = {});
-// The same scan without a byte limit, so an exhausted budget is reported with its measured size.
-[[nodiscard]] core::Result<CampaignStorageUsage> measureCampaignStorage(
-    const std::filesystem::path& root, std::size_t maximumEntries = 262144U, std::stop_token stop = {});
+// The bytes a campaign request retains as its own output: its definition (campaign.json) and its
+// batch directories batch-0 .. batch-(batchCount - 1), whatever they hold. Nothing else beside the
+// campaign counts: the preflight is bounded by its own phrase and frame admission, and unrelated
+// files are not the request's output. The same scan without a byte limit, so an exhausted budget
+// is reported with its measured size; it still refuses symbolic links and special files.
+[[nodiscard]] core::Result<CampaignStorageUsage> measureCampaignRequestStorage(
+    const std::filesystem::path& root, std::size_t batchCount,
+    std::size_t maximumEntries = 262144U, std::stop_token stop = {});
 // Legacy form over the typed advancement below. It neither submits the campaign to the workspace
 // nor records terminal outcomes; cancellation, staleness and budget exhaustion return errors.
 [[nodiscard]] core::Result<CampaignAdvanceResult> advanceGenerationCampaign(

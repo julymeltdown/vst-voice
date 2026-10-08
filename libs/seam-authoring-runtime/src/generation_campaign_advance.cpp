@@ -171,7 +171,7 @@ core::Result<CampaignAdvanceReport> advanceCampaign(const production::Production
   const auto storageLimit = static_cast<std::uint64_t>(plan.find("maximumEstimatedBytes")->asInt64());
   // The measured retained size when it exceeds the admitted budget, otherwise nothing.
   const auto exhausted = [&]() -> core::Result<std::optional<std::uint64_t>> {
-    const auto usage = measureCampaignStorage(root, 262144U, stop);
+    const auto usage = measureCampaignRequestStorage(root, report.totalBatches, 262144U, stop);
     if (!usage) return core::Result<std::optional<std::uint64_t>>{usage.error()};
     if (usage.value().logicalBytes > storageLimit) return std::optional<std::uint64_t>{usage.value().logicalBytes};
     return std::optional<std::uint64_t>{};
