@@ -67,3 +67,8 @@ Agent-only work can still finish the partial units (about 1–2 weeks of focused
 2. Score the 46 listening packets. This single step tells us whether any quality work so far is moving in the right direction.
 3. Decide on acquiring a human singing corpus. Without one, quality is capped at the procedural teacher voice.
 4. Meanwhile, the agent keeps closing partial units, prioritizing U22, U25, and U30–U32 because they are closest to acceptance.
+
+
+### 2026-10-08 classification correction
+
+The inherited 6A/10I/29P/3N and ~56% table above is historical. The [current audit](docs/PROGRESS-AUDIT-2026-10-08.md) downgrades U6/U7/U18/U30 to partial and recognizes U15 as implemented-unaccepted from newer source/ledger evidence. The same explicit coarse weights now give 6A/7I/32P/3N, 26/48 ≈54%. This does not award new acceptance or imply all 48 exit criteria have been fully re-qualified.
