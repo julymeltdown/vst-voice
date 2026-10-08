@@ -1,5 +1,7 @@
 # SEAM Progress Report — 2026-09-25
 
+> Current source/progress reconciliation: [docs/PROGRESS-AUDIT-2026-10-08.md](docs/PROGRESS-AUDIT-2026-10-08.md). Earlier dated claims below are historical and are superseded where this audit explicitly corrects them.
+
 Basis: the pre-commit snapshot of branch `codex/production-readiness-completion` at `a3ff816a`, plus its then-uncommitted worktree. Previous baseline: `SEAM_PROGRESS_AND_FINISHING_PLAN_2026-09-23_KO.md`. This report grants no unit or release acceptance. GitHub CI is deferred by user direction and was not evaluated. The version-control risk below describes that initial snapshot; subsequent commits and their remote state must be checked in Git.
 
 ## Summary
