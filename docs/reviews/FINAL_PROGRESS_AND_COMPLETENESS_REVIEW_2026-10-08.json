@@ -1,0 +1,687 @@
+{
+  "schemaVersion": 1,
+  "kind": "technical-review-receipt-not-release-acceptance",
+  "recordedAt": "2026-10-08T22:46:38.159060+09:00",
+  "sourceCommit": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7",
+  "initialGit": {
+    "branch": "master",
+    "fetch": "PASS",
+    "pullFastForwardOnly": "ALREADY_UP_TO_DATE",
+    "head": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7",
+    "originMaster": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7",
+    "liveRemoteMaster": "5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7"
+  },
+  "scope": "Current integrated source plus recoverable local branch work; no implementation changes or external acceptance.",
+  "sourceInventory": {
+    "trackedFilesAtBaseline": 2978,
+    "missingTrackedFiles": 0,
+    "ordinaryUntrackedFilesAtBaseline": 0,
+    "sourceClosure": "PASS",
+    "submodulesDetected": false,
+    "lfsPointerPayloadsDetected": false,
+    "markdownFilesScanned": 489,
+    "markdownScanBoundary": "Explicit relative Markdown links outside fenced blocks; excludes backtick paths, ordinary prose and external URLs.",
+    "missingMarkdownTargets": [
+      {
+        "source": "VIRTUAL_SINGER_FEASIBILITY_AND_CODE_ROADMAP_2026-09-05.md",
+        "line": 289,
+        "target": "build/dev/u56-final-qa.4KU4f8/u57-inputs/production-brief.json",
+        "kind": "historical-local-evidence"
+      }
+    ]
+  },
+  "legacyProgressModel": {
+    "A": 6,
+    "I": 10,
+    "P": 29,
+    "N": 3,
+    "weights": {
+      "A": 1,
+      "I": 0.8,
+      "P": 0.45,
+      "N": 0
+    },
+    "weightedPercent": 56.35416666666667,
+    "partialWeightSensitivityPercent": [
+      44.27083333333333,
+      68.4375
+    ],
+    "locallyAcceptedLabelPercent": 12.5,
+    "limitation": "Historical disputed labels: SEAM_PROGRESS_REPORT_2026-09-25.md:14,25-28 already lists the same score and 6/10/29/3 split. PROGRESS-AUDIT-2026-10-08.md:19-66 repeats the original plan:219-266 titles and file anchors. This is not measured overall completion, not effort, and not a confidence interval; U29 is POSIX only."
+  },
+  "canonicalGates": {
+    "usableAlpha": {
+      "status": "BLOCKED",
+      "requirements": 20,
+      "passed": 0,
+      "notRun": 20
+    },
+    "externalBeta": {
+      "status": "BLOCKED",
+      "requiredCategories": 9,
+      "evidenceRecords": 0
+    }
+  },
+  "fullProductContract": {
+    "counts": {
+      "requirements": 20,
+      "workPackages": 18,
+      "cases": 83
+    },
+    "registry": {
+      "errors": []
+    },
+    "profile": {
+      "errors": [],
+      "pending": [
+        "acoustic-boundaries",
+        "expression-tolerances",
+        "pronunciation-scoring",
+        "identity-rubric",
+        "generation-budgets",
+        "neural-budgets",
+        "resource-limits",
+        "cancellation-budgets",
+        "reference-machines",
+        "source-volume",
+        "reproducibility-tolerances",
+        "evaluation-profile-freeze",
+        "resource matrix"
+      ]
+    },
+    "evidenceStatus": "NOT_RUN",
+    "semanticValidation": {
+      "ownerUnit": "U45",
+      "status": "UNAVAILABLE",
+      "admission": "BLOCKED"
+    },
+    "scope": {
+      "languages": [
+        "ja",
+        "en",
+        "ko"
+      ],
+      "platforms": [
+        "macos-arm64",
+        "windows-x86_64"
+      ],
+      "hostTuples": [
+        "macos-arm64/reaper/CLAP",
+        "macos-arm64/reaper/VST3",
+        "windows-x86_64/reaper/CLAP",
+        "windows-x86_64/reaper/VST3",
+        "macos-arm64/bitwig/CLAP",
+        "macos-arm64/bitwig/VST3",
+        "windows-x86_64/bitwig/CLAP",
+        "windows-x86_64/bitwig/VST3",
+        "macos-arm64/logic-pro/AUv2"
+      ],
+      "resourceKinds": [
+        "sample-real",
+        "sample-procedural",
+        "recipe-original",
+        "neural-original",
+        "dictionary-original",
+        "character-original"
+      ],
+      "backends": [
+        "classical",
+        "procedural",
+        "neural",
+        "native"
+      ],
+      "resourceCoverage": "All released resources must prove advertised language/range/style/capabilities. Language subsets and backend-specific incompatibilities are allowed only in a frozen matrix with a supported tested combination for every mandatory feature.",
+      "matrixStatus": "UNRESOLVED",
+      "matrixOwnerUnits": [
+        "U14",
+        "U19",
+        "U20",
+        "U35",
+        "U36",
+        "U42"
+      ],
+      "releasedResources": []
+    },
+    "empirical": [
+      {
+        "id": "acoustic-boundaries",
+        "status": "UNRESOLVED",
+        "requiredCells": 6
+      },
+      {
+        "id": "expression-tolerances",
+        "status": "UNRESOLVED",
+        "requiredCells": 52
+      },
+      {
+        "id": "pronunciation-scoring",
+        "status": "UNRESOLVED",
+        "requiredCells": 3
+      },
+      {
+        "id": "identity-rubric",
+        "status": "UNRESOLVED",
+        "requiredCells": 15
+      },
+      {
+        "id": "generation-budgets",
+        "status": "UNRESOLVED",
+        "requiredCells": 8
+      },
+      {
+        "id": "neural-budgets",
+        "status": "UNRESOLVED",
+        "requiredCells": 8
+      },
+      {
+        "id": "resource-limits",
+        "status": "UNRESOLVED",
+        "requiredCells": 40
+      },
+      {
+        "id": "cancellation-budgets",
+        "status": "UNRESOLVED",
+        "requiredCells": 14
+      },
+      {
+        "id": "reference-machines",
+        "status": "UNRESOLVED",
+        "requiredCells": 2
+      },
+      {
+        "id": "source-volume",
+        "status": "UNRESOLVED",
+        "requiredCells": 3
+      },
+      {
+        "id": "reproducibility-tolerances",
+        "status": "UNRESOLVED",
+        "requiredCells": 24
+      }
+    ]
+  },
+  "retainedReleaseVerification": {
+    "fullBuild": "PASS",
+    "fullCTest": {
+      "registeredResults": 232,
+      "passed": 231,
+      "failed": [
+        {
+          "name": "seam_public_release_python_tests",
+          "seconds": 180.234,
+          "result": "TIMEOUT"
+        }
+      ],
+      "skipped": []
+    },
+    "parallelism": 6,
+    "wallSeconds": 336.51,
+    "isolatedRetry": {
+      "registeredResults": 1,
+      "passed": 1,
+      "failed": [],
+      "skipped": [],
+      "tests": [
+        {
+          "name": "seam_public_release_python_tests",
+          "seconds": 108.598,
+          "result": "PASS"
+        }
+      ]
+    },
+    "isolatedInternalTests": 133,
+    "internalPythonSkips": {
+      "total": 102,
+      "training": 90,
+      "phase13a": 4,
+      "neuralPackageMaterialization": 1,
+      "singingQualityContract": 7
+    },
+    "caveat": "No clean single-run 232/232 result. Skips overlap other separately exercised native/workflow scenarios; not a defect count.",
+    "configuredTimeoutSeconds": 180,
+    "elapsedAtTimeoutSeconds": 180.234,
+    "trainingEnvironment": {
+      "interpreter": "/usr/local/bin/python3",
+      "configurationAnchor": "build/release/CMakeCache.txt:347",
+      "missingModulesConfirmed": [
+        "torch",
+        "onnx",
+        "onnxruntime"
+      ],
+      "probe": "importlib.util.find_spec under the configured interpreter",
+      "caveat": "Does not describe other environments; separate native/workflow tests pass."
+    }
+  },
+  "archiveVerification": {
+    "root": "/tmp/seam-final-review-20261008-9t2a_1k6",
+    "source": "/tmp/seam-final-review-20261008-9t2a_1k6/source",
+    "configure": "PASS",
+    "fullBuild": "PASS",
+    "ninjaSteps": 1002,
+    "configureArguments": [
+      "cmake",
+      "-S",
+      "/tmp/seam-final-review-20261008-9t2a_1k6/source",
+      "-B",
+      "/tmp/seam-final-review-20261008-9t2a_1k6/build",
+      "-G",
+      "Ninja",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DSEAM_SOURCE_COMMIT=5a331f4e976e8d8ffbd4b1b7b1e6d4f2e26541b7",
+      "-DPython3_EXECUTABLE=/usr/local/bin/python3"
+    ],
+    "focusedCTest": {
+      "registeredResults": 8,
+      "passed": 8,
+      "failed": [],
+      "skipped": [],
+      "tests": [
+        {
+          "name": "seam_smf_interchange_tests",
+          "seconds": 0.345361,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_ustx_interchange_tests",
+          "seconds": 0.517382,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_interchange_service_tests",
+          "seconds": 0.385802,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_neural_render_workflow_tests",
+          "seconds": 1.69898,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_procedural_install_journey_tests",
+          "seconds": 1.44307,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_singer_pilot_cli",
+          "seconds": 12.2048,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_singing_quality_workflow",
+          "seconds": 27.8396,
+          "result": "PASS"
+        },
+        {
+          "name": "seam_tests",
+          "seconds": 97.9102,
+          "result": "PASS"
+        }
+      ]
+    },
+    "focusedCommand": [
+      "ctest",
+      "--test-dir",
+      "/tmp/seam-final-review-20261008-9t2a_1k6/build",
+      "--output-on-failure",
+      "--output-junit",
+      "/tmp/seam-final-review-20261008-9t2a_1k6/archive-focused-ctest.xml",
+      "-j3",
+      "-R",
+      "^(seam_tests|seam_procedural_install_journey_tests|seam_smf_interchange_tests|seam_ustx_interchange_tests|seam_interchange_service_tests|seam_singer_pilot_cli|seam_singing_quality_workflow|seam_neural_render_workflow_tests)$"
+    ],
+    "focusedWallSeconds": 99.97,
+    "configurationDifference": {
+      "defaultArchiveTestCount": 218,
+      "retainedTestCount": 232,
+      "retainedOnlyTests": [
+        "seam_native_editor_platform_smoke",
+        "seam_neural_bundle_preparation",
+        "seam_neural_candidate_qualification",
+        "seam_neural_native_bundle_runtime",
+        "seam_neural_native_inspection",
+        "seam_neural_native_owned_bytes",
+        "seam_neural_native_paired_runtime",
+        "seam_neural_production_render",
+        "seam_neural_production_render_moraic_nasal",
+        "seam_neural_production_worker",
+        "seam_neural_worker_relocatability",
+        "seam_phase11_clap_editor_host_smoke",
+        "seam_phase11_clap_editor_missing_bank_smoke",
+        "seam_voicebank_studio_platform_smoke"
+      ],
+      "archiveOnlyTests": []
+    },
+    "caveat": "Clean committed source on existing macOS toolchain, not clean-machine installation. Only 8 selected CTests run; default optional neural/GUI configuration differs."
+  },
+  "listeningPackets": {
+    "r1": {
+      "artifactCount": 335,
+      "missing": [],
+      "hashMismatches": [],
+      "sourceCommit": "9307bbf5cd8d92077f20cb9b0f83fbaea4fa00b5",
+      "listeningStatus": "NOT_REVIEWED",
+      "releaseEligible": false
+    },
+    "r2": {
+      "artifactCount": 6,
+      "missing": [],
+      "hashMismatches": [],
+      "sourceCommit": "9f6dadbca5777005c08911326dc8979625105f82",
+      "listeningStatus": "NOT_REVIEWED",
+      "releaseEligible": false
+    },
+    "r2TamperedManifestProbe": {
+      "exitCode": 0,
+      "reportedHashMismatch": true,
+      "reportedProblems": true,
+      "packetPath": "/tmp/seam-final-review-20261008-9t2a_1k6/tampered-listener-r2",
+      "note": "Only a temporary copy was modified; original packet files were untouched."
+    },
+    "r2Findings": {
+      "q3VerdictConflict": {
+        "manifest": {
+          "A": "dropped note",
+          "B": "phrase break or breath"
+        },
+        "guide": {
+          "A": "deliberate rest",
+          "B": "unintended dropped note"
+        },
+        "guideAnchor": "docs/implementation/LISTENING_PACKET_002_GUIDE_2026-10-04.md:139-140",
+        "packetToolingCommit": "e0b16309",
+        "packetToolingCommitTime": "2026-10-04T23:07:54+09:00",
+        "guideRevisionCommit": "f21bf8ab",
+        "guideRevisionTime": "2026-10-04T23:36:31+09:00"
+      },
+      "confoundedControl": {
+        "originalSeconds": 3,
+        "controlSeconds": 7,
+        "remainingPitchesPreservedInOrder": true,
+        "changedVariables": [
+          "all notes set to1920 ticks",
+          "rotating Japanese lyrics without phonetic hints",
+          "authored rest time slot removed"
+        ],
+        "matchedControlTool": "tools/singing_quality/verify_rest_note_is_authored.py",
+        "matchedControlIncludedInPacket": false
+      },
+      "verifierFailure": "A corrupted checksum prints a problem but returns0; Q1/Q2/Q3 observations do not affect all_ok. tools/singing_quality/verify_listener_packet_002.py:139",
+      "machineSpecificInputs": [
+        "/tmp/seam_score/rerender",
+        "/tmp/seam_head5/song-004/project.seam",
+        "/tmp/seam_voices2/out/original/master.wav",
+        "/Users/lhs/seam-corpus-large-2026-09-19/phrase-00022/baseline",
+        "/Users/lhs/Downloads/project-seam-usable-alpha-u3-master"
+      ],
+      "caveat": "These paths exist locally; the defect is portable reconstruction/provenance and verdict integrity, not absent original WAVs."
+    }
+  },
+  "branchAudit": [
+    {
+      "branch": "codex/u14-typed-package",
+      "tip": "ce62f0d333efbd240c66d41f9680bb7abcecbf01",
+      "cherry": [
+        "+ 8ffe2f7a609e60c4cd73e84565ed9f2a3ced2654 Publish typed schema-2 resource candidates from one pinned generation",
+        "+ cc083ad6462c9ed979645fb7b25106e08253f514 Install signed resources through one atomic, interruption-safe transaction",
+        "+ 620acabe90cdceda1fb046c047e3e69de07d4221 Package and install typed resource candidates as distinct, pinned steps"
+      ],
+      "branchAddedAbsentFromMaster": [
+        "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+        "apps/seam-voicebank-cli/candidate_package_commands.hpp",
+        "libs/seam-candidate-packaging/include/seam/candidate_packaging/candidate_package.hpp",
+        "libs/seam-candidate-packaging/src/candidate_package.cpp",
+        "libs/seam-distribution/src/install_transaction.cpp",
+        "libs/seam-distribution/src/install_transaction_internal.hpp",
+        "libs/seam-voicebank-production/include/seam/voicebank_production/resource_candidate.hpp",
+        "libs/seam-voicebank-production/src/declared_candidate.cpp",
+        "libs/seam-voicebank-production/src/resource_candidate.cpp",
+        "tests/test_install_transaction.cpp"
+      ]
+    },
+    {
+      "branch": "codex/u45-full-product-gate",
+      "tip": "2a3d23e0cbe2dcd2288ff2a59b833dd7ddb039b0",
+      "cherry": [
+        "+ 2a3d23e0cbe2dcd2288ff2a59b833dd7ddb039b0 Execute the typed full-product audit for EB-009"
+      ],
+      "branchAddedAbsentFromMaster": [
+        "docs/implementation/FULL_PRODUCT_TYPED_AUDIT_2026-09-28.md",
+        "tests/external_beta/test_full_product_typed_gate.py",
+        "tools/external_beta/full_product_gate.py"
+      ]
+    },
+    {
+      "branch": "codex/u21-generation",
+      "tip": "7cf0ee6c09cae8fa72d06ae620f6ac40fbb8119d",
+      "cherry": [
+        "+ 7cf0ee6c09cae8fa72d06ae620f6ac40fbb8119d Count only a campaign request's own output against its byte budget"
+      ],
+      "branchAddedAbsentFromMaster": []
+    },
+    {
+      "branch": "codex/u12-take-qc",
+      "tip": "450a23584892e91dea4693fe822219f2f6959972",
+      "cherry": [
+        "+ 450a23584892e91dea4693fe822219f2f6959972 Bind take QC receipts to the stored bytes under per-unit policies"
+      ],
+      "branchAddedAbsentFromMaster": []
+    },
+    {
+      "branch": "codex/paint-unit-tests",
+      "tip": "23c074e3b7f623af41381bfb144d6d624d53e74f",
+      "cherry": [
+        "- 23c074e3b7f623af41381bfb144d6d624d53e74f test(ui): measure native paint coverage and determinism"
+      ],
+      "branchAddedAbsentFromMaster": []
+    },
+    {
+      "branch": "codex/u55-verification",
+      "tip": "627a37f8ede1dcd184c1ad01a9b62294372c46bc",
+      "cherry": [
+        "+ ca28bfa3ede6863fe8cee406d11b3e7814e988d8 test: stage U55 verification snapshot",
+        "+ 0030d62fa5fbe7482774b2d80db8b3c076288266 test: refresh U55 verification snapshot",
+        "+ d1d772ca9b6f76b93f74b0bb941440e0a4a0477f fix: correct silent NSIS failure dialogs",
+        "+ 627a37f8ede1dcd184c1ad01a9b62294372c46bc fix: reject unaudited Windows API-set imports"
+      ],
+      "branchAddedAbsentFromMaster": []
+    },
+    {
+      "branch": "codex/stop-status-wip",
+      "tip": "001d2797ea93a37f3b9fcbaf9d8495fa92062de2",
+      "cherry": [
+        "+ 001d2797ea93a37f3b9fcbaf9d8495fa92062de2 WIP (local only, not for push): CoreAudio stop-status series on top of 54e3e717"
+      ],
+      "branchAddedAbsentFromMaster": []
+    }
+  ],
+  "review": {
+    "threadId": "01a11bad-88f2-7521-849e-c38111dc2197",
+    "threadTitle": "Review in English",
+    "status": "APPROVED_AFTER_REQUIRED_CORRECTIONS",
+    "boundary": "AI technical review only; no human musical or release acceptance.",
+    "initialVerdict": "REQUEST_CHANGES_TO_PREVIOUS_PROGRESS_REPORT",
+    "classificationRecommendations": [
+      {
+        "units": [
+          "U6"
+        ],
+        "inherited": "I",
+        "recommended": "P pending traceability"
+      },
+      {
+        "units": [
+          "U7",
+          "U18"
+        ],
+        "inherited": "I",
+        "recommended": "P conservatively pending closure"
+      },
+      {
+        "units": [
+          "U30"
+        ],
+        "inherited": "I",
+        "recommended": "P; voice-color-to-style bridge open"
+      },
+      {
+        "units": [
+          "U15"
+        ],
+        "inherited": "P",
+        "recommended": "I; still unaccepted"
+      },
+      {
+        "units": [
+          "U21"
+        ],
+        "inherited": "P",
+        "recommended": "P pending branch correction review/integration; re-evaluate I afterwards; not acceptance"
+      },
+      {
+        "units": [
+          "U31"
+        ],
+        "inherited": "I",
+        "recommended": "I with post-fix real DAW evidence still required"
+      },
+      {
+        "units": [
+          "U10",
+          "U17",
+          "U23",
+          "U24"
+        ],
+        "inherited": "I",
+        "recommended": "I with scoped caveats in report"
+      },
+      {
+        "units": [
+          "U13",
+          "U14",
+          "U45"
+        ],
+        "inherited": "P",
+        "recommended": "P; do not count branch-only work as integrated"
+      },
+      {
+        "units": [
+          "U42",
+          "U43",
+          "U48"
+        ],
+        "inherited": "N",
+        "recommended": "Final deliverable not accepted; avoid not-started claim"
+      }
+    ],
+    "cautionsRetainedByLead": [
+      "Do not infer timeout cause from one parallel failure and isolated pass.",
+      "Matched Q3 control is missing from the packet, not proved absent everywhere.",
+      "Unmerged ancestry or patch non-equivalence alone does not establish missing behavior.",
+      "Registry and coarse release-status counts are not a per-case execution census."
+    ],
+    "finalVerdict": "REVISE (narrow); approved if seven prescribed edits are applied; another review round expressly waived",
+    "verdictTurnId": "01a11bc4-178b-7bd0-b2de-9a2b75441b01",
+    "verdictMessageId": "msg_58ac5f4b8f324822959925dc3952e9f9",
+    "requiredCorrectionCount": 7,
+    "requiredCorrectionsApplied": 7,
+    "unresolvedDisagreements": [],
+    "verificationBoundary": "Reviewer performed source/document review and read lead runtime receipts; did not independently rerun the build or tampered-hash probe.",
+    "finalizedAt": "2026-10-08T22:56:22.091656+09:00"
+  },
+  "localLogs": [
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/configure.log",
+      "bytes": 1003,
+      "sha256": "0cf1ec94832e3e524a12346b5cfb497d3a55f3e90afb3b483f41d22499bfa062"
+    },
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/build.log",
+      "bytes": 114217,
+      "sha256": "3fa596268b3d972898baace2873d04f876d671de7a87d75f30a0e67016b9b6e9"
+    },
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/archive-focused-ctest.log",
+      "bytes": 1106,
+      "sha256": "16aa9c85360f517d11d3810048ac74aaaf7f20ae1106be0830e8aa04a085c5cb"
+    },
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/archive-focused-ctest.xml",
+      "bytes": 8999,
+      "sha256": "e5b69c7bad53213f37cdce52968bbfc0401854b369e1a0b190481b4a50df3cea"
+    },
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/listener-r2-verifier.log",
+      "bytes": 1719,
+      "sha256": "ebf05f0ae1257c516a4591927104c362e8ef9dc4abbcd3ad1266f219946e63f0"
+    },
+    {
+      "path": "/tmp/seam-final-review-20261008-9t2a_1k6/listener-r2-tampered-verifier.log",
+      "bytes": 1736,
+      "sha256": "3dc29d4663aa4162aff130d83050317a0c9496d96390116679385f66efb75fff"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-build.log",
+      "bytes": 42795,
+      "sha256": "f22867a9b128d410ac9f0fa2055e983f0523112ac4132848dde0c461c128826e"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-ctest.log",
+      "bytes": 33612,
+      "sha256": "d136bcb1cdc25b4264b1bbfb82d655f360f89203a60afdfbb35de45c4b6e4e05"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-ctest.xml",
+      "bytes": 196900,
+      "sha256": "fbebc397515bff20815f6a1402515a09cb97de853d2785a6ddf2a040ce9c702a"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-full-LastTest.log",
+      "bytes": 1019824,
+      "sha256": "f5eda9bfd7546cca845c890d3e9e4621b5b8c6615357f5c8388dccb2dd0f017c"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-public-retest.log",
+      "bytes": 286,
+      "sha256": "c28bc5e3a6244228132d6d4f1059f90c590bfebc4fa59f3f34c701367a21e2d5"
+    },
+    {
+      "path": "/tmp/seam-progress-audit-2026-10-08-public-retest.xml",
+      "bytes": 608,
+      "sha256": "b89a2b8ed428a5d423a6a86683017075b89cc9ac9e55afcc320e142dec8b5b68"
+    }
+  ],
+  "remoteBranchAudit": {
+    "auditedBranchesHaveConfiguredUpstream": false,
+    "advertisedOriginHeads": [
+      "master",
+      "codex/production-readiness-completion"
+    ],
+    "auditedBranchesAdvertisedByOrigin": false,
+    "otherCopiesSearched": false,
+    "caveat": "Local refs remain readable; not asserted to be the only copies."
+  },
+  "publicationReconciliation": {
+    "upstreamCommit": "8c4678ceff3b65cfed5f0be83a8a7e42d25e15eb",
+    "reason": "Origin advanced during review; initial push rejected non-fast-forward.",
+    "changedPaths": [
+      "SEAM_PROGRESS_REPORT_2026-09-25.md",
+      "docs/PROGRESS-AUDIT-2026-10-08.md"
+    ],
+    "implementationChanged": false,
+    "action": "Rebase unpublished report commit onto fetched upstream; preserve upstream text and report cross-reference.",
+    "reviewBoundary": "Post-verdict documentation update inspected by lead; not a new independent reviewer pass."
+  },
+  "revisedUpstreamProgressModel": {
+    "upstreamCommit": "8c4678ceff3b65cfed5f0be83a8a7e42d25e15eb",
+    "A": 6,
+    "I": 7,
+    "P": 32,
+    "N": 3,
+    "weightedPercent": 54.166666666666664,
+    "partialWeightSensitivityPercent": [
+      40.833333333333336,
+      67.50000000000001
+    ],
+    "limitation": "Corrected planning index only; no exact overall-completion claim, no new acceptance, no full exit-criterion requalification."
+  }
+}
