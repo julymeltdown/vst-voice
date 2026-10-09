@@ -35,7 +35,9 @@ still in force; do not relabel an old descriptor as schema 3.
 `package-candidate CANDIDATE_DIRECTORY CANDIDATE_SHA256 OUTPUT_PACKAGE PRIVATE_KEY`
 requires the caller's captured candidate digest in both the CLI and library API. Packaging checks the directory,
 signs into private staging, verifies that signed entries exactly match the declared
-set, and checks the family manifest against the descriptor. Sample content identity
+set, and checks the family manifest against the descriptor. Typed recipes must name
+`manifest.json`, the same entry used by the native installer and catalog; a signed
+descriptor selecting another root manifest is refused. Sample content identity
 is recalculated from signed bytes. The final signed package is verified again before
 create-new publication. An existing output is never overwritten.
 
@@ -88,7 +90,9 @@ algorithm. Native code supplies these identities; Python does not reimplement th
 `scripts/verify_installed_candidate_record.py` requires caller-supplied paths and
 SHA-256 pins for the retained record, native CLI and public key. It reruns the native
 verifier with fixed arguments, a minimal environment and bounded time/output, then
-compares the entire fresh record. Rehashing a forged retained record does not make
+compares the entire fresh record. Each run owns a private scratch `TMPDIR`, removed
+after the child has terminated even on timeout; unrelated scratch paths are untouched.
+Rehashing a forged retained record does not make
 it match installed bytes. Success is `ENGINEERING_PASS`; `authorizesRelease` and
 `releaseEligible` remain false, qualification is `NOT_QUALIFIED`, and human
 acceptance is `NOT_RUN`. Human/reviewer/release claims and unknown fields refuse.

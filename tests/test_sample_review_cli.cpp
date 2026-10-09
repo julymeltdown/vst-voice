@@ -1140,6 +1140,40 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(core::durableAtomicWriteText(wrongRecipeReceipt / "install-receipt.json", formats::stringifyJson(recipeReceipt, true)));
   CHECK(!runCli({"verify-installed-candidate", (root / "recipe.seamsinger").string(), field(recipePackage, "packageDigest"),
       field(recipe, "candidateSha256"), wrongRecipeReceipt.string(), keys.publicKey}));
+  // A valid generic signed package can carry a descriptor pointing at another
+  // manifest. Typed recipe admission must agree with the native installer's entry.
+  const auto alternateRoot = copyTree(root / "recipe-candidate", root / "alternate-manifest");
+  auto alternate = recipeDescriptor.value().descriptor;
+  for (auto entry = alternate.payload.begin(); entry != alternate.payload.end(); ++entry) {
+    if (entry->path == "manifest.json") {
+      auto originalManifest = *entry; originalManifest.role = "declaration";
+      alternate.evidence.push_back(originalManifest); alternate.payload.erase(entry); break;
+    }
+  }
+  const auto alternateBytes = readText(alternateRoot / "manifest.json") + " ";
+  CHECK(core::durableAtomicWriteTextNew(alternateRoot / "alternate.json", alternateBytes));
+  alternate.rootManifest = "alternate.json";
+  alternate.manifestSha256 = core::sha256Hex(alternateBytes);
+  alternate.payload.push_back({"alternate.json", "manifest", alternate.manifestSha256, alternateBytes.size()});
+  std::sort(alternate.payload.begin(), alternate.payload.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
+  const auto alternateDescriptor = production::encodeResourceCandidateDescriptor(alternate); CHECK(alternateDescriptor);
+  CHECK(core::durableAtomicWriteText(alternateRoot / "candidate.json", alternateDescriptor.value()));
+  const auto alternateCandidate = production::verifyResourceCandidateDirectory(alternateRoot); CHECK(alternateCandidate);
+  const auto alternatePackage = root / "alternate.seamsinger";
+  CHECK(distribution::packProceduralPackage(alternateRoot, alternatePackage, keys.pair));
+  const distribution::VerifySeambankOptions alternateTrust{.trustedPublicKeys = {keys.pair.publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::verifyProceduralPackage(alternatePackage, alternateTrust));
+  const auto refusedAlternate = candidate_packaging::verifyResourceCandidatePackage(alternatePackage, alternateTrust);
+  CHECK(!refusedAlternate); CHECK(refusedAlternate.error().message.find("manifest.json") != std::string::npos);
+  CHECK(!runCli({"package-candidate", alternateRoot.string(), alternateCandidate.value().candidateSha256,
+      (root / "alternate-typed.seamsinger").string(), keys.privateKey}));
+  CHECK(!std::filesystem::exists(root / "alternate-typed.seamsinger"));
+  const auto alternateDigest = core::sha256File(alternatePackage).value();
+  CHECK(!runCli({"install-candidate", alternatePackage.string(), alternateDigest,
+      (root / "alternate-install").string(), keys.publicKey}));
+  CHECK(!std::filesystem::exists(root / "alternate-install"));
+  CHECK(!runCli({"verify-installed-candidate", alternatePackage.string(), alternateDigest,
+      alternateCandidate.value().candidateSha256, singerDirectory.string(), keys.publicKey}));
   const auto recipeWithGraph = copyTree(root / "recipe-candidate", root / "recipe-with-graph");
   CHECK(core::durableAtomicWriteTextNew(recipeWithGraph / "opaque.ONNX", "opaque graph"));
   CHECK(distribution::packSignedContainer(recipeWithGraph, root / "recipe-graph.seamsinger", keys.pair));

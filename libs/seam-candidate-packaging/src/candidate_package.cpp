@@ -134,6 +134,8 @@ core::Result<void> checkSampleFamily(const distribution::SignedContainerInfo& co
 
 core::Result<void> checkRecipeFamily(const std::filesystem::path& packagePath, const distribution::VerifySeambankOptions& options,
                                      const production::ResourceCandidateDescriptor& descriptor, std::string_view packageDigest) {
+  if (descriptor.rootManifest != "manifest.json")
+    return core::failure(core::ErrorCode::Conflict, "Recipe candidates must use the native manifest.json entry");
   const auto singer = distribution::verifyProceduralPackage(packagePath, options);
   if (!singer) return core::Result<void>{singer.error()};
   if (singer.value().container.packageDigest != packageDigest)

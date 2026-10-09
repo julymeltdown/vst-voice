@@ -67,9 +67,10 @@ def _run(command, timeout_seconds):
         raise ValueError("native installed-candidate replay is not implemented on this platform")
     # Only this explicitly selected process group can be terminated. Temporary
     # files avoid unbounded in-memory capture and inherited loader overrides.
-    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+    with tempfile.TemporaryDirectory(prefix="seam-installed-replay-") as scratch, \
+            tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=output, stderr=errors,
-            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, start_new_session=True)
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TMPDIR": scratch}, start_new_session=True)
         try:
             deadline = time.monotonic() + timeout_seconds
             while process.poll() is None:

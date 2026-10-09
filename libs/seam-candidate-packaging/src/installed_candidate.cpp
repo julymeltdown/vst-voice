@@ -279,7 +279,7 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     const auto manifest = distribution::verifyProceduralPackage(snapshot.path, options);
     if (!manifest || manifest.value().container.packageDigest != expectedPackageDigest)
       return core::failure<Output>(core::ErrorCode::Conflict, "Recipe package changed during installed verification");
-    const auto manifestBytes = distribution::readSignedContainerEntry(value.container, snapshot.path, descriptor.rootManifest, 32U * 1024U * 1024U);
+    const auto manifestBytes = distribution::readSignedContainerEntry(value.container, snapshot.path, "manifest.json", 32U * 1024U * 1024U);
     const auto recipeBytes = distribution::readSignedContainerEntry(value.container, snapshot.path, manifest.value().manifest.recipeEntry, 16U * 1024U * 1024U);
     if (!manifestBytes || !recipeBytes) return core::failure<Output>(core::ErrorCode::Conflict, "Cannot read signed recipe identity");
     contentHash = distribution::proceduralInstalledContentHash(

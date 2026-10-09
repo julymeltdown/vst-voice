@@ -83,6 +83,27 @@ class InstalledCandidateRecordTests(unittest.TestCase):
             self.assertIn("fresh native verification", result["errors"][0])
 
     @unittest.skipUnless(os.name == "posix", "native replay is POSIX-only")
+    def test_owned_scratch_is_removed_after_success_and_forced_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            unrelated = parent / "foreign.txt"
+            unrelated.write_text("preserve")
+            notice = parent / "scratch-path.txt"
+            child = ("import os,pathlib,sys,time,json; "
+                "p=pathlib.Path(os.environ['TMPDIR']); "
+                "(p/'partial-package').write_bytes(b'partial'); "
+                "pathlib.Path(sys.argv[1]).write_text(str(p)); ")
+            result = audit._run([sys.executable, "-c", child + "print(json.dumps({'ok':True}))", str(notice)], 5)
+            self.assertEqual({"ok": True}, result)
+            self.assertFalse(Path(notice.read_text()).exists())
+            notice.unlink()
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                audit._run([sys.executable, "-c", child + "time.sleep(10)", str(notice)], 1)
+            self.assertTrue(notice.exists(), "child must create scratch before timeout")
+            self.assertFalse(Path(notice.read_text()).exists())
+            self.assertEqual("preserve", unrelated.read_text())
+
+    @unittest.skipUnless(os.name == "posix", "native replay is POSIX-only")
     def test_native_runner_has_output_timeout_and_environment_bounds(self):
         with self.assertRaisesRegex(ValueError, "output limit"):
             audit._run([sys.executable, "-c", "print('x' * 100000)"], 5)
