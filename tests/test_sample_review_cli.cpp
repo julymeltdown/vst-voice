@@ -552,6 +552,58 @@ void checkInstalledProjectBinding(const formats::JsonValue& audit, const domain:
 #endif
   const auto restore=[&] { CHECK(formats::ProjectJsonCodec{}.save(project,path));args[2]=core::sha256File(path).value(); };
   if (recipe) {
+    // Independent fixture oracle: receipt fields are already checked against the
+    // signed package by the installed verifier. Never use its new carrier here.
+    const auto receipt=formats::parseJson(readText(installed/"install-receipt.json"));CHECK(receipt);
+    const auto& r=receipt.value();
+    const domain::ProceduralInstallationReference expected{field(r,"id"),field(r,"version"),
+        field(r,"contentHash"),field(r,"engineId"),static_cast<std::uint32_t>(r.find("engineRevision")->asInt64()),
+        field(r,"recipeEntry"),field(r,"packageDigest"),field(r,"signerKeyId")};
+    const auto originalPath=track->proceduralRecipe->path;
+    for (const bool absolutePath : {false,true}) {
+      track->proceduralRecipe->path=absolutePath ? (root/"unopened"/expected.recipeEntry).string() : originalPath;
+      track->proceduralRecipe->installation=expected;restore();
+      const auto boundRecord=cliSuccess(args);
+      CHECK(field(boundRecord,"runtimeAvailability")=="NOT_CHECKED");
+      CHECK(!std::filesystem::exists(root/"unopened"));
+#if defined(SEAM_TEST_PYTHON)
+      CHECK(core::durableAtomicWriteText(recordPath,formats::stringifyJson(boundRecord)));
+      auto boundReplay=replay;boundReplay[4]=core::sha256File(recordPath).value();
+      CHECK(authoring::runBoundedHelperProcess({.executable=SEAM_TEST_PYTHON,.arguments=boundReplay}));
+#endif
+      for (int changedField=0;changedField<10;++changedField) {
+        auto changedPin=expected;
+        switch (changedField) {
+          case 0: changedPin.distributionId+="-other";break;
+          case 1: changedPin.distributionVersion="999.0.0";break;
+          case 2: changedPin.installedContentHash=std::string(64,'a');break;
+          case 3: changedPin.engineId+=".other";break;
+          case 4: ++changedPin.engineRevision;break;
+          case 5: changedPin.recipeEntry="other.json";break;
+          case 6: changedPin.packageDigest=std::string(64,'a');break;
+          case 7: changedPin.signerKeyId=std::string(64,'a');break;
+          case 8: changedPin.packageDigest.clear();break;
+          case 9: changedPin.signerKeyId.clear();break;
+        }
+        track->proceduralRecipe->installation=changedPin;
+        // Keep the path structurally valid so refusal is the comparison itself.
+        if (absolutePath) track->proceduralRecipe->path=(root/"unopened"/changedPin.recipeEntry).string();
+        restore();
+        CHECK(runCli({"verify-project-binding",path.string(),args[2],trackId.toString(),regionId.toString(),
+            "recipe",resource.id,resource.version,resource.contentHash,"ja"}));
+        const auto refused=runCli(args);CHECK(!refused);
+#if defined(SEAM_TEST_PYTHON)
+        if (changedField==4) {
+          auto forgedBinding=boundRecord;forgedBinding.asObject()["project"].asObject()["projectSha256"]=args[2];
+          CHECK(core::durableAtomicWriteText(recordPath,formats::stringifyJson(forgedBinding)));
+          boundReplay[4]=core::sha256File(recordPath).value();
+          CHECK(!authoring::runBoundedHelperProcess({.executable=SEAM_TEST_PYTHON,.arguments=boundReplay}));
+        }
+#endif
+      }
+    }
+    track->proceduralRecipe->installation.reset();track->proceduralRecipe->path=originalPath;restore();
+    CHECK(runCli(args)); // Unbound reference matching does not invent provenance.
     track->proceduralRecipe->resource.version=field(audit,"resourceVersion");restore();CHECK(!runCli(args));
     track->proceduralRecipe->resource=resource;
     track->proceduralRecipe->resource.contentHash=field(audit,"installedContentHash");restore();CHECK(!runCli(args));

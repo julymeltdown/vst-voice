@@ -93,6 +93,11 @@ core::Result<Json> verifyProjectBindingRecord(const ProjectBindingRequest& reque
       resource.kind == domain::SingerResourceKind::Procedural ? "recipe" : "sample";
   if (actualFamily != family || resource.id != resourceId || resource.version != version || resource.contentHash != contentHash)
     return refuse("Decoded selected singer reference differs from the expected binding");
+  // Compare saved provenance using the same captured project bytes. Relative
+  // copies retain origin pins; neither path kind proves installed placement.
+  if (actualFamily == "recipe" && request.verifiedInstallation && track->proceduralRecipe->installation &&
+      *track->proceduralRecipe->installation != *request.verifiedInstallation)
+    return refuse("Saved procedural installation binding differs from the verified signed installation");
   std::map<domain::LyricTokenId, const domain::LyricToken*> lyrics;
   for (const auto& lyric : region->lyrics) lyrics.emplace(lyric.id, &lyric);
   std::set<domain::LyricTokenId> linked;

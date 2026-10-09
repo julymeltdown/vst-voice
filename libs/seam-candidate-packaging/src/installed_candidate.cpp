@@ -339,6 +339,7 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     return core::failure<Output>(core::ErrorCode::ParseError, "Installed receipt is not a JSON object");
   const auto& record = receipt.value();
   std::string contentHash = descriptor.contentSha256;
+  std::optional<domain::ProceduralInstallationReference> installation;
   domain::SingerResourceIdentity projectResource{domain::SingerResourceKind::Sample,
       descriptor.resourceId, descriptor.resourceVersion, descriptor.contentSha256};
   const bool recipe = descriptor.kind == production::ResourceCandidateKind::Recipe;
@@ -356,6 +357,9 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     contentHash = distribution::proceduralInstalledContentHash(
         std::string_view{reinterpret_cast<const char*>(manifestBytes.value().data()), manifestBytes.value().size()}, recipeBytes.value());
     const auto& declared = manifest.value().manifest;
+    installation = domain::ProceduralInstallationReference{descriptor.resourceId,
+        descriptor.resourceVersion, contentHash, declared.engineId, declared.engineRevision,
+        declared.recipeEntry, value.container.packageDigest, value.container.signerKeyId};
     const auto* revision = record.find("engineRevision");
     if (!stringIs(record, "resourceFamily", "procedural-singer") || !stringIs(record, "recipeEntry", declared.recipeEntry) ||
         !stringIs(record, "recipeSha256", declared.recipeSha256) || !stringIs(record, "engineId", declared.engineId) ||
@@ -397,7 +401,7 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
   return Output{descriptor.kind, descriptor.resourceKind, descriptor.resourceId, descriptor.resourceVersion,
       value.candidateSha256, value.container.packageDigest, descriptor.contentSha256, contentHash,
       value.container.signerKeyId, tree.checked.at(std::string{kReceipt}).sha, treeHash.hexDigest(), tree.checked.size(),
-      std::move(projectResource), descriptor.languages, descriptor.externalDependencies};
+      std::move(projectResource), descriptor.languages, descriptor.externalDependencies, std::move(installation)};
 #else
   (void)packagePath; (void)expectedPackageDigest; (void)expectedCandidateSha256; (void)installedDirectory; (void)options; (void)stop;
   return core::failure<Output>(core::ErrorCode::Unsupported, "Installed candidate verification is not implemented on this platform");

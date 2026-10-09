@@ -109,9 +109,21 @@ U45 hold is unchanged; actual operation/artifact observation remains required.
 The codec accepts the strict optional installation binding described in
 [Project JSON schema 21](PROJECT_JSON_V21.md). Fresh records report codec 21;
 older source schemas remain readable and are named in `sourceSchemaVersion`.
-At this checkpoint the native project/composite verifiers validate the binding's
-shape through the codec but do **not** compare it with the verified installation
-or execute runtime admission. Product rendering now consumes the shared admission
-boundary described in the schema document, but these records do not observe it.
-Their existing NOT_CHECKED scope is unchanged.
+The standalone project verifier validates the binding's shape only. The composite
+additionally compares every present saved installation pin with the identity
+derived from its verified signed package capture: distribution id/version,
+installed content hash, engine id/revision, recipe entry, package digest and signer
+key id. Missing receipt-derived package/signer pins in a present binding do not
+match a trusted signed installation. Re-select the verified resource to capture
+its identity; the verifier never repairs or fills pins.
+
+The comparison uses the existing single project-byte capture and applies equally
+to absolute references and relative copies that retain origin provenance. It does
+not open either stored path or establish its relationship to the caller's installed
+directory. Legacy or explicitly unbound references remain reference-only matches;
+success must not be interpreted as proof that a saved installation binding exists.
+The closed v1 record shape and its content-to-reference claim remain unchanged.
+Product rendering consumes the separate shared admission boundary described in the
+schema document; these records do not observe runtime admission, compiled-engine
+compatibility, playback or installed-product acceptance. NOT_CHECKED stays intact.
 Historical byte-exact replay requires the historical pinned verifier.

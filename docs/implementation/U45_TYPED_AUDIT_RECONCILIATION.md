@@ -208,8 +208,8 @@ Old project references stay unbound on load. Binding equality participates in
 performance-job freshness and undo/redo.
 
 At the persistence checkpoint rendering did not enforce these pins. The runtime
-increment below consumes them; the U45 native composite still does not compare
-the new binding to the verified installation. For existing evidence records,
+increment below consumes them; the later composite comparison increment checks
+the new binding against the verified installation. For existing evidence records,
 resourceAdmission/runtimeAvailability remain NOT_CHECKED, and no installed,
 interactive, hearing or Beta acceptance is added. Old retained records require
 their pinned verifier; fresh records name codec 21.
@@ -227,10 +227,25 @@ requests admit before cache use. A captured source is valid for its owned reques
 not evidence that the installation remains present afterward.
 
 This closes the identified product-loader bypass; it does not promote the native
-U45 project/composite record's NOT_CHECKED fields. That verifier still needs to
-cross-check schema21 pins against its independently verified installed candidate,
-then connect observed final render/artifacts to the same admitted request. Receipt
+U45 project/composite record's NOT_CHECKED fields. After the pin comparison below,
+the verifier still needs to connect observed final render/artifacts to the same admitted request. Receipt
 trust is not independent package signature verification, and filesystem checks
 are sequential. The canonical U45_RECONCILIATION_HOLD remains. Independent review
 of this runtime increment is PENDING because the authorized reviewer chat returned
 HTTP429; engineering checks and their limits are recorded in the root ledger.
+
+### Composite comparison of saved installation pins (2026-10-10)
+
+The native composite now compares every present schema21 installation pin against
+the independently verified signed package and installed contents. The expected
+identity comes from the same private package capture; comparison uses the existing
+single held project decode. Both absolute references and relative copies must
+match all eight fields, including nonempty signed package/signer pins. No saved
+resource path is opened. Unbound projects remain reference-only matches; a PASS
+does not establish that provenance was stored or that the path belongs to the
+verified directory. The closed v1 record shape and its existing limited claim
+remain unchanged; historical replay still requires its pinned verifier.
+
+This does not compare the declared engine with the executing build, exercise
+runtime admission, or observe rendering. Product admission and future operation
+records retain those obligations. U45_RECONCILIATION_HOLD remains unchanged.

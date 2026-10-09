@@ -230,7 +230,7 @@ int verifyInstalledProjectBinding(int argc, char** argv) {
   const auto& value=verified.value();
   const auto& resource=value.projectResource;
   const auto binding=verifyProjectBindingRecord({argv[2],argv[3],argv[4],argv[5],production::toString(value.kind),
-      resource.id,resource.version,resource.contentHash,argv[6]});
+      resource.id,resource.version,resource.contentHash,argv[6],value.proceduralInstallation});
   if (!binding) return fail(binding.error(),&cancellation);
   for (const auto& language : binding.value().find("languages")->asArray())
     if (std::find(value.languages.begin(),value.languages.end(),language.asString())==value.languages.end())

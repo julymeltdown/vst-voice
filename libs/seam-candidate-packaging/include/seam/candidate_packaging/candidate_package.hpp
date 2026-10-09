@@ -156,6 +156,8 @@ struct VerifiedInstalledCandidate final {
   domain::SingerResourceIdentity projectResource;
   std::vector<std::string> languages;
   std::vector<voicebank_production::ResourceCandidateExternalDependency> externalDependencies;
+  // Recipe provenance from the same verified package capture; not runtime admission.
+  std::optional<domain::ProceduralInstallationReference> proceduralInstallation{};
 };
 
 [[nodiscard]] core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
