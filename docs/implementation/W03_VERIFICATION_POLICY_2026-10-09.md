@@ -176,3 +176,62 @@ Independent review is PENDING because the authorized reviewer returned HTTP 429.
 Current build/test outcomes and the remaining song-aggregate hold belong in the
 root execution ledger. This is a test-harness correction, not installed-product,
 model, listening, platform or release acceptance.
+
+
+## Original-song sanitizer aggregate scheduling (2026-10-10)
+
+The retained ASan/UBSan aggregate on `9d0027b3` timed out at300.08s after
+four case bodies passed in42.8744,127.175,54.5343 and53.2203 seconds.
+The remaining three bodies subsequently passed in35.292,17.966 and0.129 seconds
+in separate invocations. A new diagnostic run on `f71b33fb` with an opt-in
+compiled-registry runner passed all seven cases in344.16s; its slowest body took
+121.724s. These observations establish a workload exceeding the old aggregate
+allowance, not the cause of runtime variance or a performance improvement.
+
+Independent review rejected landing that runner: separate processes lose
+instrumented cross-case state coverage, the TSan per-case limit lacked direct
+measurements, and output decoding/recoverable-UBSan handling needed correction.
+The proposed runner and its fixtures were removed from the change. Their source,
+ASan result, known-answer checks and deliberately aborted TSan diagnostic remain
+local evidence; none constitutes the final aggregate verification result.
+
+The existing test executable, ordinary main, all seven bodies, their ordering,
+and shared process are retained. On macOS, ASan/UBSan now uses a900-second
+aggregate timeout with `RUN_SERIAL`. The final single-process run passed7/7
+in323.95s. The budget gives2.78 times that observation (576.05s remaining), and
+2.62 times the344.16-second diagnostic. These are sequential busy-host
+observations, not a controlled speed comparison. The retained host snapshot
+showed6714.50MiB of8192MiB swap in use; memory pressure can affect these timings.
+CTest reservation prevents other CTest entries from overlapping; other apps
+remain outside it. The lead ran no overlapping build or test workload.
+
+Release, TSan and non-Apple configurations retain300 seconds. **TSan and
+non-Apple sanitizer budgets remain unverified gaps**, not claimed supported
+passing schedules. The aborted TSan diagnostic was still in case1 at134s,
+versus41.39s for the ASan diagnostic, a workload-specific ratio above3.2. The
+older paired ratio around2.8 does not justify this suite's TSan budget. A
+separate bounded aggregate measurement must establish its total before a
+TSan-specific scheduling correction lands. Non-Apple timing is unmeasured and
+may also exceed300s; a timeout there does not alone establish a product defect.
+
+This is an explicit ASan aggregate loosening from300 to900 seconds, not
+unchanged timeout semantics. A hang or sanitizer abort still fails the entire
+aggregate and leaves later cases unobserved. Existing flushed START/PASS lines
+identify the active case and completed bodies. Separate-case diagnostics can
+investigate a failure but cannot replace the required single-process aggregate
+pass. No case, workload, acoustic criterion, frame-count assertion or product
+acceptance threshold changes.
+
+Sanitizer configurations also set CTest `FAIL_REGULAR_EXPRESSION` for
+`runtime error:`, `ERROR: AddressSanitizer` and `WARNING: ThreadSanitizer`.
+Recoverable UBSan output must fail even with exit0. Known-answer temporary CTest
+emitters validate the actual generated property against each marker and clean
+output, ordinary nonzero exits, timeout, stderr-only markers and a marker after
+4MiB of stdout. This is scoped to output visible to this test: swallowed child output
+and negative tests that accept any child failure remain separate verification
+gaps. It is not a whole-project sanitizer-policy repair or leak-detection claim.
+
+Final build/aggregate results, source and binary hashes, retained failures and
+review disposition are recorded in the root execution ledger. No human,
+installed-product, platform, learned-singer or Beta acceptance follows from this
+engineering scheduling correction; Windows qualification remains TODO.
