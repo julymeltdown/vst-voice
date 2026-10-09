@@ -176,3 +176,23 @@ checked only the recipe entry's existence and could report success even when
 later decoding would fail. It now rejects that input too. Boundary regressions
 cover a valid whitespace-padded recipe at 512 KiB and rejection one byte over.
 Actual runtime operation/artifact evidence and the canonical U45 hold remain open.
+
+
+### Installed-singer chooser freshness (2026-10-10)
+
+The standalone installed-singer command captures its document context and previous
+selection before either modal picker. Accepted choices must still belong to that
+context, and the selected track must still exist. Before writing the reference it
+refreshes the same installation's manifest, render identity, content hash, package
+and signer identity, trust and selectability, then loads and decodes the exact
+recipe. A removed/replaced singer or an intervening document change cannot be
+committed as a fresh choice. Cancellation preserves the document.
+
+This repairs selection-time admission; filesystem observations remain sequential,
+and files can change afterward. It does not solve render-time classification of
+installed singers versus authored drafts, or bind an engine revision to a saved
+reference. The shared admission boundary must preserve existing absolute authored
+drafts and project-relative recipe workflows while enforcing installed metadata
+where applicable. ProductionProjectRenderer and operation evidence should consume
+that shared boundary after the product call sites are migrated. The canonical U45
+hold and full product acceptance requirements are unchanged.

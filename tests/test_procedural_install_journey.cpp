@@ -8,6 +8,8 @@
 
 #include "seam/core/sha256.hpp"
 #include "seam/application/note_commands.hpp"
+#include "seam/application/arrangement_commands.hpp"
+#include "seam/formats/project_json.hpp"
 #include "seam/distribution/procedural_package.hpp"
 #include "seam/distribution/procedural_review.hpp"
 #include "seam/distribution/signing.hpp"
@@ -24,6 +26,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -41,8 +44,10 @@ public:
   core::Result<std::optional<std::string>> chooseRecipeStyle(
       const std::vector<std::string>& styles) override {
     offeredStyles = styles;
+    if (styleChooser) return styleChooser(styles);
     return styleResponse;
   }
+  std::function<core::Result<std::optional<std::string>>(const std::vector<std::string>&)> styleChooser;
   std::vector<std::string> offeredStyles;
   std::optional<std::string> styleResponse;
   core::Result<std::optional<std::filesystem::path>> choose(
@@ -85,10 +90,15 @@ voice_design::VoiceRecipe authoredRecipe() {
 
 // Writes the package the way a producer would: manifest, recipe, then sign.
 std::filesystem::path createProceduralPackage(const std::filesystem::path& root,
-                                             const distribution::SigningKeyPair& key) {
+                                             const distribution::SigningKeyPair& key, bool multipleStyles = false) {
   const auto source = root / "producer-source";
   std::filesystem::create_directories(source);
-  const auto recipe = authoredRecipe();
+  auto recipe = authoredRecipe();
+  if (multipleStyles) {
+    auto soft = recipe.poses.front();
+    soft.style = "soft";
+    recipe.poses.push_back(soft);
+  }
   const auto encoded = voice_design::encodeVoiceRecipe(recipe);
   if (!encoded) throw test::Failure{"encoding the authored recipe failed: " + encoded.error().message};
   std::ofstream(source / "recipe.json", std::ios::binary | std::ios::trunc) << encoded.value();
@@ -97,7 +107,7 @@ std::filesystem::path createProceduralPackage(const std::filesystem::path& root,
   manifest.version = "1.0.0";
   manifest.displayName = "Authored Original";
   manifest.language = "ja";
-  manifest.styles = {"neutral"};
+  manifest.styles = multipleStyles ? std::vector<std::string>{"neutral", "soft"} : std::vector<std::string>{"neutral"};
   manifest.engineId = recipe.engineId;
   manifest.engineRevision = 14U;
   manifest.recipeEntry = "recipe.json";
@@ -1322,4 +1332,148 @@ TEST_CASE("The review action records through the dialog and writes nothing on ca
   CHECK(offers.hasValue());
   if (!offers) return;
   CHECK(offers.value().front().reviewed);
+}
+
+
+namespace {
+void staleInstalledChoice(std::string_view mutation) {
+  // Exercise both modal boundaries: the singer chooser and the style chooser.
+  const auto boundaries = mutation == "accept" ? std::vector<unsigned>{2U} : std::vector<unsigned>{1U, 2U};
+  for (const unsigned changeAt : boundaries) {
+    const auto root = test::support::temporaryDirectory("installed-choice-stale");
+    const auto key = distribution::generateSigningKeyPair();
+    CHECK(key);
+    const auto package = createProceduralPackage(root, key.value(), true);
+    const auto installed = distribution::installProceduralPackage(package, root / "singers",
+        distribution::InstallProceduralOptions{.verification = {
+            .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true}});
+    CHECK(installed);
+    auto session = standalone::AuthoringSession::create({.cacheRoot = root / "cache"});
+    CHECK(session);
+    auto dialog = std::make_unique<FakeDialog>();
+    auto* picker = dialog.get();
+    standalone::StandaloneApplicationControllerConfig config{
+        .autosaveRoot = root / "autosaves", .recentProjectsPath = root / "recent.json"};
+    config.proceduralSingerRoots = {{root / "singers", distribution::ProceduralRootKind::Installed}};
+    config.renderableProceduralEngineId = "seam.source-filter.v1";
+    config.renderableProceduralEngineRevision = 14U;
+    auto controller = standalone::StandaloneApplicationController::create(
+        *session.value(), std::move(dialog), std::make_unique<FakePrompt>(), config);
+    CHECK(controller);
+    auto& runtime = session.value()->runtime();
+    auto expectedProject = runtime.document().session().project();
+    auto expectedRevision = runtime.document().session().revision();
+    unsigned calls = 0U;
+    picker->styleChooser = [&](const std::vector<std::string>& labels)
+        -> core::Result<std::optional<std::string>> {
+      CHECK(!labels.empty());
+      if (++calls == changeAt) {
+        if (mutation == "cancel") return std::optional<std::string>{};
+        if (mutation == "remove") {
+          std::filesystem::remove_all(installed.value().installDirectory);
+        } else if (mutation == "edit") {
+          auto [lyric, note] = runtime.document().factory().makeNote(
+              time::Tick{0}, time::Tick{960}, 60U, U"あ", domain::Language::Japanese);
+          CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(
+              runtime.selectedRegion(), std::move(lyric), std::move(note))));
+        } else if (mutation == "delete-track") {
+          CHECK(runtime.execute(std::make_unique<application::RemoveVocalTrackCommand>(runtime.selectedTrack())));
+        } else if (mutation == "replace-document") {
+          // Opening another saved document can reuse the same track ids. The
+          // modal result must stay bound to the original document generation.
+          const auto originalTrack = runtime.selectedTrack();
+          auto replacement = runtime.document().session().project();
+          const auto text = formats::ProjectJsonCodec{}.encode(replacement);
+          CHECK(text);
+          CHECK(core::durableAtomicWriteText(root / "replacement.seam", text.value()));
+          CHECK(session.value()->openProject(root / "replacement.seam"));
+          CHECK(runtime.document().session().project() == replacement);
+          CHECK(runtime.document().session().project().findVocalTrack(originalTrack));
+        } else if (mutation == "replace-resource" || mutation == "remove-style") {
+          auto recipe = authoredRecipe();
+          auto soft = recipe.poses.front();
+          soft.style = "soft";
+          recipe.poses.push_back(soft);
+          if (mutation == "replace-resource") ++recipe.seed;
+          const auto resource = voice_design::freezeVoiceRecipeResource(recipe);
+          CHECK(resource);
+          distribution::PublishProceduralSingerOptions options;
+          options.version = "1.0.0";
+          options.language = "ja";
+          options.displayName = "Authored Original";
+          if (mutation == "remove-style") options.styles = {"neutral"};
+          CHECK(distribution::publishProceduralSingerFromRecipe(resource.value(), root / "replacement-source",
+              root / "replacement.seamsinger", key.value(), options));
+          const auto replacement = distribution::installProceduralPackage(root / "replacement.seamsinger", root / "singers",
+              distribution::InstallProceduralOptions{.verification = {
+                  .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true},
+                  .replaceExisting = true});
+          CHECK(replacement);
+          if (mutation == "remove-style") CHECK(replacement.value().renderIdentity == installed.value().renderIdentity);
+          else CHECK(replacement.value().renderIdentity != installed.value().renderIdentity);
+        }
+        expectedProject = runtime.document().session().project();
+        expectedRevision = runtime.document().session().revision();
+      }
+      return std::optional<std::string>{calls == 2U ? labels.back() : labels.front()};
+    };
+    const auto result = controller.value()->dispatch(platform::ApplicationCommand::SelectInstalledProceduralSinger);
+    if (mutation == "accept") {
+      CHECK(result);
+      CHECK(calls == 2U);
+      const auto* selected = runtime.document().session().project().findVocalTrack(runtime.selectedTrack());
+      CHECK(selected && selected->proceduralRecipe);
+      const auto reference = *selected->proceduralRecipe;
+      CHECK(reference.resource == installed.value().renderIdentity);
+      CHECK(reference.style == "soft");
+      CHECK(voice_design::loadVoiceRecipeResource(reference.path, reference.resource));
+      auto [lyric, note] = runtime.document().factory().makeNote(
+          time::Tick{0}, time::Tick{960}, 60U, U"あ", domain::Language::Japanese);
+      CHECK(runtime.execute(std::make_unique<application::AddNoteCommand>(
+          runtime.selectedRegion(), std::move(lyric), std::move(note))));
+      const auto exported = controller.value()->exportSet(root / "export", {});
+      CHECK(exported);
+      const auto audio = voicebank::readWav(exported.value().masterPath);
+      CHECK(audio);
+      CHECK(audio.value().sampleRate == 48000U);
+      CHECK(!audio.value().interleaved.empty());
+      for (const auto sample : audio.value().interleaved) CHECK(std::isfinite(sample));
+      CHECK(voicebank::analyzeAudio(audio.value().interleaved).peak > 1e-4F);
+      continue;
+    }
+    if (mutation == "cancel") CHECK(result);
+    else CHECK(!result);
+    if (mutation != "cancel") CHECK(result.error().code == core::ErrorCode::Conflict);
+    CHECK(runtime.document().session().project() == expectedProject);
+    CHECK(runtime.document().session().revision() == expectedRevision);
+    for (const auto& track : runtime.document().session().project().vocalTracks()) CHECK(!track.proceduralRecipe);
+  }
+}
+}  // namespace
+
+TEST_CASE("Installed singer choice refuses a removed installation after either modal") {
+  staleInstalledChoice("remove");
+}
+TEST_CASE("Installed singer choice preserves intervening musical edits") {
+  staleInstalledChoice("edit");
+}
+TEST_CASE("Installed singer choice never applies to a replacement document") {
+  staleInstalledChoice("replace-document");
+}
+
+TEST_CASE("Installed singer choice cancellation leaves the document unchanged") {
+  staleInstalledChoice("cancel");
+}
+TEST_CASE("Installed singer choice admits the chosen style and exports actual sound") {
+  staleInstalledChoice("accept");
+}
+
+TEST_CASE("Installed singer choice refuses deletion of the selected track") {
+  staleInstalledChoice("delete-track");
+}
+TEST_CASE("Installed singer choice refuses a replacement resource") {
+  staleInstalledChoice("replace-resource");
+}
+TEST_CASE("Installed singer choice refuses removal of an offered style") {
+  staleInstalledChoice("remove-style");
 }

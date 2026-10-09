@@ -2372,6 +2372,17 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   if (track == nullptr)
     return core::failure(core::ErrorCode::Conflict,
                          "Selecting an installed singer requires a selected vocal track");
+  // Modal pickers can process document changes. Capture owned state before
+  // entering either picker; never retain a track pointer across a modal call.
+  const auto before = track->proceduralRecipe;
+  const auto context = session_.runtime().document().session().capturePerformanceJob();
+  if (!context) return core::Result<void>{context.error()};
+  const auto validateSelectionContext = [&]() -> core::Result<void> {
+    const auto& current = session_.runtime().document().session();
+    if (!current.project().findVocalTrack(trackId) || !current.validatePerformanceJob(context.value()))
+      return core::failure(core::ErrorCode::Conflict, "The document changed during installed singer selection; choose again");
+    return core::success();
+  };
   auto candidates = installedProceduralSingers();
   if (!candidates) return core::Result<void>{candidates.error()};
   if (candidates.value().empty())
@@ -2411,13 +2422,14 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   const auto choice = fileDialog_->chooseRecipeStyle(labels);
   if (!choice) return core::Result<void>{choice.error()};
   if (!choice.value()) return core::success();
+  const auto current = validateSelectionContext();
+  if (!current) return current;
   const auto selected = std::find(labels.begin(), labels.end(), *choice.value());
   if (selected == labels.end())
     return core::failure(core::ErrorCode::InvalidArgument,
                          "Selected procedural singer is not one of the offered candidates");
   const auto index = static_cast<std::size_t>(std::distance(labels.begin(), selected));
   const auto& candidate = offered[index]->candidate;
-  const auto before = track->proceduralRecipe;
   // A singer that declares several styles must have one chosen explicitly; taking the first would
   // silently decide a musical property for the creator.
   std::string style = candidate.manifest.styles.front();
@@ -2425,14 +2437,36 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
     const auto styleChoice = fileDialog_->chooseRecipeStyle(candidate.manifest.styles);
     if (!styleChoice) return core::Result<void>{styleChoice.error()};
     if (!styleChoice.value()) return core::success();
+    const auto stillCurrent = validateSelectionContext();
+    if (!stillCurrent) return stillCurrent;
     if (std::find(candidate.manifest.styles.begin(), candidate.manifest.styles.end(),
                   *styleChoice.value()) == candidate.manifest.styles.end())
       return core::failure(core::ErrorCode::InvalidArgument,
                            "Selected style is not declared by the installed singer");
     style = *styleChoice.value();
   }
-  const auto context = session_.runtime().document().session().capturePerformanceJob();
-  if (!context) return core::Result<void>{context.error()};
+  // A selected offer may have disappeared or changed while a picker was open.
+  // Recheck the exact installation, not merely another copy of its recipe id.
+  const auto refreshed = installedSingerOffers();
+  if (!refreshed) return core::Result<void>{refreshed.error()};
+  const auto matching = std::find_if(refreshed.value().begin(), refreshed.value().end(),
+      [&](const auto& offer) {
+        const auto& found = offer.candidate;
+        return offer.selectable && found.resourceRoot == candidate.resourceRoot &&
+            found.manifest == candidate.manifest && found.renderIdentity == candidate.renderIdentity &&
+            found.contentHash == candidate.contentHash && found.packageDigest == candidate.packageDigest &&
+            found.signerKeyId == candidate.signerKeyId && found.trust == candidate.trust;
+      });
+  if (matching == refreshed.value().end())
+    return core::failure(core::ErrorCode::Conflict,
+        "The selected installed singer changed or is no longer available; choose it again");
+  const auto recipePath = matching->candidate.resourceRoot / matching->candidate.manifest.recipeEntry;
+  const auto loaded = voice_design::loadVoiceRecipeResource(recipePath, candidate.renderIdentity);
+  if (!loaded) return core::Result<void>{loaded.error()};
+  // Exercise the renderer's frozen-resource decoder too, not just discovery's
+  // raw recipe decoder. Phrase-specific coverage remains a render-time check.
+  const auto decoded = voice_design::decodeVoiceRecipeResource(loaded.value());
+  if (!decoded) return core::Result<void>{decoded.error()};
   // An installed selection records the installed manifest path, so the project is portable to
   // another machine only through the same identity resolution a bank reference uses.
   // The identity recorded is the one the renderer validates, which is derived from the recipe
@@ -2440,7 +2474,7 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   // store an identity the renderer refuses, and the selection would not sing.
   const auto reference = domain::ProceduralRecipeReference{
       candidate.renderIdentity,
-      (candidate.resourceRoot / candidate.manifest.recipeEntry).string(), style};
+      recipePath.string(), style};
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before, reference));
   if (!changed) return changed;
