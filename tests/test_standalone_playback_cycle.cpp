@@ -595,7 +595,11 @@ TEST_CASE("standalone playback: after a pause and a seek, no audio from before t
     std::this_thread::sleep_for(1ms);
   }
   CHECK(!beforePause.empty());
-  // Pause: the device stops at once, with the feeder well ahead of what was played.
+  // Establish the stale-audio precondition instead of assuming twelve 1ms sleeps
+  // gave the asynchronous feeder enough time. No fake-device callbacks run while
+  // waiting, so queued frames remain available when Pause is pressed below.
+  CHECK(waitUntil([&] { return rig.transport().ringBuffer().availableReadFrames() > 0U; }));
+  // Pause: the device stops at once, with the feeder ahead of what was played.
   CHECK(rig.pressPlay());
   CHECK(!rig.device->running());
   CHECK(rig.transport().ringBuffer().availableReadFrames() > 0U);
