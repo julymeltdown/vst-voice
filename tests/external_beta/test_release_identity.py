@@ -54,8 +54,6 @@ class ExternalBetaReleaseIdentityTests(unittest.TestCase):
             ROOT / "scripts/generate_phase13b_evidence.py",
             ROOT / "scripts/package_macos_clap.sh",
             ROOT / "scripts/package_macos_installer.sh",
-            ROOT / ".github/workflows/phase13a-plugin-formats.yml",
-            ROOT / ".github/workflows/phase13a-distribution.yml",
         )
         for path in release_surfaces:
             with self.subTest(path=path.relative_to(ROOT)):

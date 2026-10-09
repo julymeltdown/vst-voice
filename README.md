@@ -267,7 +267,7 @@ The text adapter is accurately described as a **native `EDIT` overlay under TSF 
 ### Platform verification boundary
 
 - Linux X11/XIM/PulseAudio remains runtime-verified in the current environment.
-- Windows and macOS implementations are selected by CMake, covered by a static source-contract test, and included in a three-platform GitHub Actions build/test matrix.
+- Windows and macOS implementations are selected by CMake and covered by a local static source-contract test. GitHub Actions automation was removed in `6632f584`; see the [local verification scope](docs/implementation/W03_VERIFICATION_POLICY_2026-10-09.md#local-verification-after-ci-retirement-2026-10-10).
 - This Linux package does not claim physical Windows/macOS speaker, microphone, DPI, focus, lifecycle, or IME runtime certification. Those tests remain platform release gates.
 
 ### Character 01 across native platforms
@@ -498,7 +498,7 @@ All configured builds use warnings as errors.
 
 ## Honest current boundary
 
-Phase 9 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, recording devices, and trusted-system-font CJK/Latin rasterization. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated and CI-gated but are **not** represented as locally hardware-certified.
+Phase 9 contains first-party source implementations for Linux, Windows, and macOS native windows, composition input, output devices, recording devices, and trusted-system-font CJK/Latin rasterization. Linux is runtime-verified in the current environment. Windows and macOS are source-integrated but are **not** represented as locally hardware-certified. GitHub Actions automation is deferred.
 
 The repository still does **not** claim:
 

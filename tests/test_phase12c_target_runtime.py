@@ -38,17 +38,9 @@ def passing_summary() -> dict[str, str | int | float | bool]:
 
 
 class Phase12CTargetRuntimeTests(unittest.TestCase):
-    def test_target_workflow_executes_and_records_runtime_evidence(self) -> None:
-        workflow = (ROOT / ".github/workflows/phase12c-target-runtime.yml").read_text()
+    def test_local_build_exposes_native_runtime_fixture_entrypoints(self) -> None:
         cmake = (ROOT / "CMakeLists.txt").read_text()
-        self.assertIn("SEAM_RUN_NATIVE_GUI_TESTS=ON", workflow)
-        self.assertIn("record_phase12c_target_runtime.py", workflow)
-        self.assertIn("verify_phase12c_target_runtime_packet.py", workflow)
-        self.assertIn("cp build/dev/phase11-clap-editor.ppm", workflow)
-        self.assertIn("phase12c-runner.json", workflow)
-        self.assertIn("--runner-metadata", workflow)
-        self.assertIn("ctest --test-dir build/dev", workflow)
-        self.assertNotIn('"runtimeResult":"NOT_RUN"', workflow)
+        self.assertIn("SEAM_RUN_NATIVE_GUI_TESTS", cmake)
         for marker in (
             "platform_host_appkit.mm",
             "platform_host_win32.cpp",

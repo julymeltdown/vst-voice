@@ -8,19 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Phase12CSoakWorkflowTests(unittest.TestCase):
-    def test_workflow_runs_and_validates_the_exact_full_profile(self) -> None:
-        workflow = (ROOT / ".github/workflows/phase12c-full-soak.yml").read_text()
+    def test_runner_source_keeps_the_exact_full_profile(self) -> None:
         source = (ROOT / "phase12c/src/soak_runner.cpp").read_text()
-        self.assertIn("workflow_dispatch", workflow)
-        self.assertIn("--profile", workflow)
-        self.assertIn("full", workflow)
-        self.assertIn("--require-full", workflow)
-        self.assertIn("verify_phase12c_evidence.py", workflow)
-        self.assertIn("verify_phase12c_soak_packet.py", workflow)
-        self.assertIn("runner.json", workflow)
-        self.assertIn("soak-binary", workflow)
-        self.assertIn("packet.json", workflow)
-        self.assertIn("upload-artifact", workflow)
         # The profile set is closed. A bare ternary treated every unrecognised value as the
         # five-second smoke duration while still recording the name the caller typed, so a
         # mistyped long soak produced a passing receipt without running. The runner must name

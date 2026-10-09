@@ -105,23 +105,13 @@ def main() -> int:
         if marker not in cmake:
             failures.append(f"CMakeLists.txt: missing platform selection marker {marker!r}")
 
-    workflow = root / ".github/workflows/ci.yml"
-    if not workflow.is_file():
-        failures.append("missing .github/workflows/ci.yml")
-    else:
-        workflow_text = workflow.read_text(encoding="utf-8")
-        for marker in ("windows-latest", "macos-latest",
-                       "SEAM_RUN_NATIVE_GUI_TESTS=ON"):
-            if marker not in workflow_text:
-                failures.append(f"ci.yml: missing target-host marker {marker!r}")
-
     if failures:
         for failure in failures:
             print(f"[phase8-platform-source] ERROR: {failure}", file=sys.stderr)
         return 1
     print("[phase8-platform-source] Windows Win32/TSF/WASAPI/helper-process source contract=PASS")
     print("[phase8-platform-source] macOS AppKit/NSTextInputClient/CoreAudio source contract=PASS")
-    print("[phase8-platform-source] runtime verification remains platform-specific")
+    print("[phase8-platform-source] githubActions=DEFERRED; runtime verification remains platform-specific")
     return 0
 
 

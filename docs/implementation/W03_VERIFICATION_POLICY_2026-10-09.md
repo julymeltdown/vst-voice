@@ -1,6 +1,6 @@
 # W03 production-suite verification policy
 
-Status: the complete dependency-enabled Release configuration now passes 235/235 under `-j6`, both with and without a training-specific serial reservation. The latest concurrent run executes all 469 training cases with zero skips. Final scheduler disposition is recorded below. This is engineering verification, not product/release acceptance; historical failures remain retained.
+Historical W03 scheduler checkpoint: the complete dependency-enabled Release configuration passed 235/235 under `-j6`, both with and without a training-specific serial reservation. That concurrent run executed all 469 training cases with zero skips. Scheduler disposition is recorded below; the current local scope after CI retirement is documented at the end of this file, with current receipts in the root execution ledger. This is engineering verification, not product/release acceptance; historical failures remain retained.
 
 ## Evidence and diagnosis
 
@@ -99,3 +99,40 @@ Raw serial/concurrent logs, generated registrations, the compiled runtime finger
 Final committed policy (after independent review): use `ctest --test-dir build/release -j6 --output-on-failure` with the training entry reserving CTest capacity through `RUN_SERIAL`. Keep the explicitly compiled locked interpreter, pinned source, verbose output and 120s limit. The reviewer approved checkpoint `40682e35` and requested this separate scheduler increment. The two saved registrations differ only in the training reservation after removing source backtraces. The compiled non-overlapped observations 78.88s (serial full suite) and 89.64s (isolated invocation) differ by 10.76s, exceeding the concurrent8.37s timeout margin. Both observed pairs show about30s additional training time with overlap (76.41→106.63 and78.88→111.63); 193 entries overlapped the latter run. Reserving capacity is a conservative choice from measured variance, not a claim that overlap exclusively caused historical timeouts. The full serial run cost19.26s (+5.6%) more. Current registration is checked against that retained passing serial registration; this policy-only increment needs no repeated full run. Other applications remain outside CTest's reservation.
 
 Independent reviewer turn `01a11ee9-cf32-7fe1-91e2-7b66bd8ffeac` verified checkpoint `40682e35` and recommended this policy correction. Follow-up turn `01a11f08-5c25-7e42-9d83-78d9ee965132` verified pushed `e1873a7b`, independently compared the generated registration, and approved the correction. W03's supported dependency-enabled configuration is established. Product acceptance remains separate and incomplete.
+
+## Local verification after CI retirement (2026-10-10)
+
+Upstream `6632f584` removed all seven GitHub Actions workflows at the owner's
+request. Local tests must not require or fabricate that deleted automation.
+The supported Release build/CTest command above remains the local engineering
+entrypoint. Its success does not prove CI orchestration, platform execution,
+signed validation, installer operation or release eligibility.
+
+The reconciliation makes these coverage changes explicit:
+
+| Previous check | Current local coverage and limitation |
+|---|---|
+| Phase13A validator/auval workflow wiring, Linux runner package installation, signed packet preservation, signing-before-validation-before-packaging workflow order | Four CI-only test methods retired with the workflows. **No equivalent automated orchestration is claimed.** Actual ordered signed-installed evidence remains mandatory before release. |
+| Validator attachment and clean-installer tests mixed with workflow token checks | All existing attachment-script and installer-evidence assertions retained; assertions about deleted YAML wiring removed. These are source checks, not executions of installers. |
+| Credential eligibility mixed with CI secret-loading assertions | Local macOS/Windows signing and installer script order assertions retained. Removed CI credential-loading paths are no longer checked or claimed. No production credential is accessed by this test. |
+| Soak workflow and native-runtime workflow token checks | Retained full/smoke source contract, actual invalid-profile/smoke probe, full-duration refusal tests and native CMake fixture entrypoint checks. Uploads, runner selection and automatic workload invocation are unverified. |
+| VST3 packet command extracted from YAML | Existing packet CLI invoked directly from outside the artifact root with relative inputs; creation/verification succeeds and a changed validator is refused without publishing a packet. Fixture evidence is not actual VST3 validator acceptance. |
+| Release-version checks over two workflow files | Retained checks over current application, packaging and evidence-generation surfaces; the two deleted YAML surfaces removed from that list. |
+| Phase8 and Phase13A source verifier CLIs require YAML | Platform adapters, CMake selection, exact dependency locks, source signing checks, mandatory matrix and documentation contracts retained. Phase13A now also requires local VST3/auval/host-certification entrypoints. Missing required local inputs still fail. |
+
+Phase13A reports `packagingSourceChecks=PASS`, `pipelineExecution=NOT_CHECKED`
+and `externalRuntimeResults=NOT_RUN`; it no longer labels source checks as
+`packagingPipelines=PASS`. Both source verifiers explicitly report GitHub Actions
+as deferred. Three new CLI boundary tests check this reporting and refusal of
+missing validator/host or native-adapter inputs. The six directly affected modules
+therefore contain52 cases rather than53 (four retired, three added); this is not
+coverage equivalence. No new conditional skips or relaxed runtime thresholds are
+introduced. No release gate, mandatory target matrix or evidence validator is
+removed. Exact candidate signing, validation after signing, clean installation,
+nine host tuples and required long workloads still require their real evidence;
+local green checks cannot supply it. A release operator must supply the required
+ordered execution before candidate acceptance, independent of CI availability.
+
+Independent technical review is pending while the authorized reviewer chat is
+rate-limited. This does not authorize restoration of CI or waive product gates.
+Verification receipts and current result are recorded in the root execution ledger.

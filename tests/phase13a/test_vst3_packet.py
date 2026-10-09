@@ -4,7 +4,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import textwrap
 from pathlib import Path
 
 from tools.phase13a.distribution_manifest import tree_sha256
@@ -22,13 +21,7 @@ def digest(path: Path) -> str:
 
 
 class Vst3PacketTests(unittest.TestCase):
-    def test_workflow_packet_command_uses_artifact_root_relative_inputs(self) -> None:
-        workflow = (ROOT / '.github/workflows/phase13a-plugin-formats.yml').read_text()
-        start = workflow.index('          plugin="$(find out/phase13a/payload')
-        end = workflow.index('\n      - uses:', start)
-        command = textwrap.dedent(workflow[start:end]).replace('${{ runner.os }}', 'Linux')
-        command = command.replace('python3 scripts/verify_phase13a_vst3_packet.py',
-                                  f'"{sys.executable}" "{ROOT / "scripts/verify_phase13a_vst3_packet.py"}"')
+    def test_packet_cli_uses_artifact_root_relative_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             root = workspace / 'out/phase13a'
@@ -37,11 +30,29 @@ class Vst3PacketTests(unittest.TestCase):
             inputs.result.parent.rename(root / 'Linux/vst3-validator')
             inputs.validator.rename(root / 'Linux/vst3-validator/validator')
             inputs.runner_metadata.rename(root / 'Linux/runner.json')
-            result = subprocess.run(['bash', '-eu', '-c', command], cwd=workspace,
-                                    capture_output=True, text=True, timeout=30)
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             packet = root / 'Linux/vst3-validator/packet.json'
+            # Run from outside the artifact root: inputs are rooted at --root,
+            # not the process working directory, with no CI shell involved.
+            command = [sys.executable, str(ROOT / 'scripts/verify_phase13a_vst3_packet.py'),
+                '--root', 'out/phase13a', '--packet', str(packet), '--create',
+                '--result', 'Linux/vst3-validator/result.json',
+                '--stdout-log', 'Linux/vst3-validator/validator.log',
+                '--stderr-log', 'Linux/vst3-validator/validator.stderr.log',
+                '--plugin', str(inputs.plugin.relative_to(root)),
+                '--clap', str(inputs.clap.relative_to(root)),
+                '--validator', 'Linux/vst3-validator/validator',
+                '--runner-metadata', 'Linux/runner.json',
+                '--build-result', str(inputs.build_result.relative_to(root))]
+            result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=30)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertEqual([], verify_packet(packet, root))
+            # The real CLI must also refuse a changed input without publishing
+            # another packet; no mock validator or acceptance promotion is used.
+            (root / 'Linux/vst3-validator/validator').write_bytes(b'changed validator')
+            command[command.index('--packet') + 1] = str(packet.with_name('rejected.json'))
+            refused = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, refused.returncode)
+            self.assertFalse(packet.with_name('rejected.json').exists())
 
     def fixture(self, root: Path) -> Vst3PacketInputs:
         plugin = root / "payload/VST3/ProjectSEAMEditor.vst3"

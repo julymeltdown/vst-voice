@@ -53,9 +53,6 @@ class SigningEligibilityTests(unittest.TestCase):
         windows_installer = (ROOT / "scripts/sign_windows_installer.ps1").read_text(
             encoding="utf-8"
         )
-        workflow = (ROOT / ".github/workflows/phase13a-distribution.yml").read_text(
-            encoding="utf-8"
-        )
         gate = "verify_production_signing_input.py"
         self.assertLess(
             macos.index(gate), macos.index("APPLE_DEVELOPER_ID_APPLICATION")
@@ -81,13 +78,6 @@ class SigningEligibilityTests(unittest.TestCase):
         self.assertLess(
             windows_installer.index(gate),
             windows_installer.index("WINDOWS_SIGN_CERT_SHA1"),
-        )
-        self.assertIn("-SignUninstaller", workflow)
-        self.assertIn("sign_windows_installer.ps1 -PayloadRoot", workflow)
-        self.assertLess(workflow.index(gate), workflow.index("WINDOWS_SIGN_PFX_BASE64"))
-        self.assertLess(
-            workflow.rindex(gate),
-            workflow.index("APPLE_DEVELOPER_ID_APPLICATION_P12"),
         )
 
 

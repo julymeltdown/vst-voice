@@ -46,16 +46,14 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, KeyError, json.JSONDecodeError) as exc:
         errors.append(f"dependency lock is invalid: {exc}")
 
-    require_tokens(
-        root / ".github" / "workflows" / "phase13a-plugin-formats.yml",
-        ("vst3-validator", "auval", EXPECTED_COMMITS["clap-wrapper"], EXPECTED_COMMITS["vst3sdk"], EXPECTED_COMMITS["AudioUnitSDK"], EXPECTED_COMMITS["openssl"]),
-        errors,
-    )
-    require_tokens(
-        root / ".github" / "workflows" / "phase13a-commercial-host-validation.yml",
-        ("self-hosted", "host_certification.py", "result_record"),
-        errors,
-    )
+    # CI orchestration was removed in 6632f584. Check the retained local
+    # entrypoints, without claiming their presence executes a release pipeline.
+    for relative, tokens in {
+        "scripts/run_vst3_validator.py": ("--expected-sha256", "--canonical-clap-sha256", "--expected-tool-sha256"),
+        "scripts/run_auval.py": ("--component", "--expected-sha256", "--expected-tool-sha256"),
+        "tools/phase13a/host_certification.py": ("apply_record", "validate_record", "--installed-root", "--candidate-manifest"),
+    }.items():
+        require_tokens(root / relative, tokens, errors)
     require_tokens(
         root / "packaging" / "windows" / "ProjectSEAM.nsi",
         ("ProjectSEAMEditor.clap", "ProjectSEAMEditor.vst3", "Documentation", "SetCompressor zlib"),
@@ -166,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("[phase13a-contract] dependencyPins=PASS")
     print("[phase13a-contract] mandatoryValidationDocs=PASS")
-    print("[phase13a-contract] packagingPipelines=PASS")
+    print("[phase13a-contract] packagingSourceChecks=PASS")
+    print("[phase13a-contract] githubActions=DEFERRED; pipelineExecution=NOT_CHECKED")
     print("[phase13a-contract] externalRuntimeResults=NOT_RUN")
     return 0
 

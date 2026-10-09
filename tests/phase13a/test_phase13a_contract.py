@@ -1,4 +1,8 @@
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -34,35 +38,6 @@ class Phase13AContractTests(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertIn("실제 대상 운영체제", text)
         self.assertIn("실제 DAW", text)
-
-    def test_workflow_runs_vst3_validator_and_auval(self):
-        text = (ROOT / ".github/workflows/phase13a-plugin-formats.yml").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("vst3-validator", text)
-        self.assertIn("auval", text)
-        self.assertIn("3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96", text)
-        self.assertIn("bd98b31feff57a15989fcfab4cd86dc63382b1ac", text)
-        self.assertIn("35f524b771ec09f54c164720bb90f271273b37d3", text)
-        self.assertIn("--clap-path", text)
-        self.assertIn("verify_phase13a_vst3_packet.py", text)
-        self.assertIn("packet.json", text)
-        self.assertIn("runner.json", text)
-
-    def test_linux_vst3_validator_installs_required_gui_development_dependencies(self):
-        text = (ROOT / ".github/workflows/phase13a-plugin-formats.yml").read_text(
-            encoding="utf-8"
-        )
-        for package in (
-            "libxcb-util-dev",
-            "libxcb-cursor-dev",
-            "libxcb-keysyms1-dev",
-            "libxcb-xkb-dev",
-            "libxkbcommon-dev",
-            "libxkbcommon-x11-dev",
-            "libgtkmm-3.0-dev",
-        ):
-            self.assertIn(package, text)
 
     def test_release_gate_is_connected_to_phase13a_matrix(self):
         matrix = json.loads(
@@ -112,23 +87,8 @@ class Phase13AContractTests(unittest.TestCase):
         script = (ROOT / "scripts/attach_phase13a_validation.py").read_text(
             encoding="utf-8"
         )
-        workflow = (ROOT / ".github/workflows/phase13a-plugin-formats.yml").read_text(
-            encoding="utf-8"
-        )
         self.assertIn("read_validation_status", script)
         self.assertIn("build_release_manifest", script)
-        self.assertIn("attach_phase13a_validation.py", workflow)
-        self.assertIn("--vst3-validation-result", workflow)
-        self.assertIn("--auval-validation-result", workflow)
-        self.assertIn("'scripts/attach_phase13a_validation.py'", workflow)
-
-    def test_signed_distribution_preserves_vst3_validator_packet(self):
-        workflow = (ROOT / ".github/workflows/phase13a-distribution.yml").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("verify_phase13a_vst3_packet.py", workflow)
-        self.assertIn("runner.json", workflow)
-        self.assertIn("packet.json", workflow)
 
     def test_macos_signing_refreshes_signature_dependent_wrapper_manifests(self):
         signing = (ROOT / "scripts/sign_macos_plugin_payload.sh").read_text(
@@ -154,24 +114,6 @@ class Phase13AContractTests(unittest.TestCase):
         self.assertIn("refresh_phase13a_wrapper_manifests.py", signing)
         self.assertIn("--platform windows", signing)
         self.assertIn('choices=("macos", "windows")', refresh)
-
-    def test_signed_distribution_validates_after_signing_before_packaging(self):
-        workflow = (ROOT / ".github/workflows/phase13a-distribution.yml").read_text(
-            encoding="utf-8"
-        )
-        self.assertLess(
-            workflow.index("Sign the exact payload before runtime validation"),
-            workflow.index("Run validators against the signed payload"),
-        )
-        self.assertLess(
-            workflow.index("Run validators against the signed payload"),
-            workflow.index("Build signed PKG, notarize and staple"),
-        )
-        self.assertIn("--canonical-clap-sha256", workflow)
-        self.assertIn("--expected-sha256", workflow)
-        self.assertIn('--component "$target"', workflow)
-        self.assertIn("Validate signed Windows VST3 payload", workflow)
-        self.assertIn("Attach signed Windows validator evidence", workflow)
 
     def test_wrapper_compatibility_patches_are_pinned_and_applied(self):
         build = (ROOT / "scripts/build_phase13a_formats.py").read_text(encoding="utf-8")
@@ -282,20 +224,10 @@ class Phase13AContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         macos = (ROOT / "scripts/test_macos_installer.sh").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github/workflows/phase13a-distribution.yml").read_text(
-            encoding="utf-8"
-        )
-        format_workflow = (
-            ROOT / ".github/workflows/phase13a-plugin-formats.yml"
-        ).read_text(encoding="utf-8")
         self.assertIn("EvidenceDirectory", windows)
         self.assertIn("result.json", windows)
         self.assertIn("evidence directory required", macos)
         self.assertIn("result.json", macos)
-        self.assertIn("installer-clean", workflow)
-        self.assertIn("payload-macos.tar.gz", format_workflow)
-        self.assertIn("tar -xzf", format_workflow)
-        self.assertIn("mach_o_count", format_workflow)
 
     def test_macos_payload_signing_defers_gatekeeper_to_notarized_pkg(self):
         script = (ROOT / "scripts/sign_macos_plugin_payload.sh").read_text(
@@ -334,6 +266,43 @@ class Phase13AContractTests(unittest.TestCase):
         )
         self.assertIn("macOS release payload requires Apple Silicon", build + targets)
         self.assertIn('"--config", args.configuration', build)
+
+    def test_local_source_cli_reports_source_checks_without_pipeline_execution(self):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/verify_phase13a_contracts.py"),
+            "--root", str(ROOT)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("packagingSourceChecks=PASS", result.stdout)
+        self.assertIn("pipelineExecution=NOT_CHECKED", result.stdout)
+        self.assertIn("externalRuntimeResults=NOT_RUN", result.stdout)
+        self.assertNotIn("packagingPipelines=PASS", result.stdout)
+
+    def test_local_source_cli_still_requires_validator_and_host_entrypoints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/verify_phase13a_contracts.py"),
+                "--root", directory], capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        for path in ("scripts/run_vst3_validator.py", "scripts/run_auval.py",
+                     "tools/phase13a/host_certification.py"):
+            self.assertIn("missing " + str(Path(directory).resolve() / path), result.stderr)
+        self.assertNotIn("packagingSourceChecks=PASS", result.stdout)
+
+    def test_platform_source_cli_keeps_native_adapters_required_without_ci(self):
+        from scripts.verify_phase8_platform_sources import REQUIRED
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in (*REQUIRED, "CMakeLists.txt"):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, target)
+            command = [sys.executable, str(ROOT / "scripts/verify_phase8_platform_sources.py"),
+                       "--root", str(root)]
+            valid = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+            self.assertIn("githubActions=DEFERRED", valid.stdout)
+            (root / "libs/seam-native-ui/src/native_window_win32.cpp").unlink()
+            refused = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, refused.returncode)
+            self.assertIn("missing platform source: libs/seam-native-ui/src/native_window_win32.cpp", refused.stderr)
 
 
 if __name__ == "__main__":
