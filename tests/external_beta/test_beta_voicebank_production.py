@@ -230,9 +230,8 @@ class CandidateSchemaDivergenceTests(unittest.TestCase):
     descriptor it does not understand would report readiness it never established.
     """
 
-    #: The exact top-level shape publishSampleCandidate writes (repository_candidate.cpp),
-    #: schemaVersion 2, status REVIEWED_CANDIDATE, a derived resourceKind and origin history.
-    CPP_DESCRIPTOR = {
+    #: The legacy schema-2 C++ publication shape, retained for refusal coverage.
+    LEGACY_CPP_DESCRIPTOR = {
         "format": "com.project-seam.resource-candidate",
         "schemaVersion": 2,
         "resourceKind": "sample-procedural",
@@ -257,14 +256,32 @@ class CandidateSchemaDivergenceTests(unittest.TestCase):
         return {"schemaVersion": 1, "inventorySha256": "d" * 64, "status": "PASS",
                 "openRetakes": [], "closedRetakes": []}
 
-    def test_the_cpp_descriptor_is_refused_on_version_and_status_alone(self) -> None:
-        result = validate_candidate_export(
-            self.CPP_DESCRIPTOR, {"inventorySha256": "d" * 64}, [], self.closure())
-        self.assertFalse(result.passed)
-        self.assertTrue(any("schemaVersion must be 1" in error for error in result.errors), result.errors)
-        self.assertTrue(any("status must be READY" in error for error in result.errors), result.errors)
-        # It is blocked, not merely malformed: this document is not an export result.
-        self.assertIn("candidate-export", result.blocked)
+    def test_cpp_legacy_and_typed_descriptors_are_refused_on_version_and_status(self) -> None:
+        # Current schema-3 top-level shape. This is refusal input, not a qualified
+        # candidate: empty payload/evidence/bindings are deliberate test fixtures.
+        typed = {
+            "format": "com.project-seam.resource-candidate", "schemaVersion": 3,
+            "resourceKind": "sample-procedural", "status": "REVIEWED_CANDIDATE",
+            "releaseEligible": False, "evidenceScope": "engineering",
+            "qualification": "NOT_QUALIFIED",
+            "resource": {"id": "fixture", "version": "0.1.0", "displayName": "Fixture"},
+            "languages": ["ja"], "styles": ["original"], "character": None,
+            "rootManifest": "manifest.json", "manifestSha256": "b" * 64,
+            "contentSha256": "c" * 64,
+            "source": {"projectId": "fixture", "generation": 3,
+                       "projectSha256": "a" * 64, "inventorySha256": "d" * 64,
+                       "licenseSha256": "e" * 64},
+            "payload": [], "evidence": [], "externalDependencies": [],
+            "originHistory": [], "unitBindings": [],
+        }
+        for descriptor in (self.LEGACY_CPP_DESCRIPTOR, typed):
+            with self.subTest(schema=descriptor["schemaVersion"]):
+                result = validate_candidate_export(
+                    descriptor, {"inventorySha256": "d" * 64}, [], self.closure())
+                self.assertFalse(result.passed)
+                self.assertTrue(any("schemaVersion must be 1" in error for error in result.errors), result.errors)
+                self.assertTrue(any("status must be READY" in error for error in result.errors), result.errors)
+                self.assertIn("candidate-export", result.blocked)
 
     def test_binding_fields_do_not_overlap(self) -> None:
         # The per-unit vocabularies are disjoint apart from takeId. If a future change made

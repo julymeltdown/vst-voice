@@ -883,7 +883,7 @@ TEST_CASE("a published candidate states its resource kind, languages and charact
     const auto descriptor = seam::formats::parseJson(seam::core::readTextFileLimited(
         published.value().root / "candidate.json", 1024U * 1024U).value());
     CHECK(descriptor);
-    CHECK(descriptor.value().find("schemaVersion")->asInt64() == 2);
+    CHECK(descriptor.value().find("schemaVersion")->asInt64() == 3);
     const auto* kind = descriptor.value().find("resourceKind");
     CHECK(kind);
     CHECK(kind->asString() == expected);
@@ -891,8 +891,8 @@ TEST_CASE("a published candidate states its resource kind, languages and charact
     // rather than dropped, because an unlabelled resource is what typing exists to prevent.
     const auto* languages = descriptor.value().find("languages");
     CHECK(languages && languages->isArray() && languages->asArray().size() == 1U);
-    CHECK(descriptor.value().find("characterId") != nullptr);
-    CHECK(descriptor.value().find("characterVersion") != nullptr);
+    CHECK(descriptor.value().find("character") != nullptr);
+    CHECK(descriptor.value().find("character")->isNull());
     // Every unit names the strategy its own take was admitted under, so the project-level kind
     // above stays a summary that can be checked against the rows beneath it.
     for (const auto& unit : descriptor.value().find("unitBindings")->asArray())

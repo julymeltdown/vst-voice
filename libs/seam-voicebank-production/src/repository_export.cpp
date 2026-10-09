@@ -34,6 +34,17 @@ core::Result<ExportedU57Inputs> ProductionProjectRepository::exportU57Inputs(
           error.message());
     }
   }
+  // U57 inputs are a production brief and a BLOCKED template, never a candidate. Writing them into
+  // a published candidate would both corrupt its declared file set and dress a template as one.
+  std::error_code probeError;
+  const auto descriptor = std::filesystem::symlink_status(destination / "candidate.json", probeError);
+  if (probeError != std::errc::no_such_file_or_directory &&
+      (probeError || descriptor.type() != std::filesystem::file_type::not_found)) {
+    return core::failure<ExportedU57Inputs>(
+        core::ErrorCode::Conflict,
+        "U57 inputs are not a candidate and cannot be written into a candidate directory",
+        destination.string());
+  }
   auto saved = save(project, event);
   if (!saved) return core::Result<ExportedU57Inputs>{saved.error()};
   auto verified = verify(project);

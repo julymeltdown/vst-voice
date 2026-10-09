@@ -10,6 +10,7 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/manifest_draft.hpp"
 #include "seam/voicebank_production/source_assessment.hpp"
+#include "seam/voicebank_production/resource_candidate.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -257,23 +258,22 @@ int publish(int argc, char** argv) {
     return fail({core::ErrorCode::InvalidArgument,"Publication requires the retained generation and project SHA-256",{}});
   SignalCancellation cancellation;
   if (!cancellation.install()) return fail({core::ErrorCode::IoError,"Cannot install publication cancellation handlers",{}});
-  production::ProductionProjectRepository repository{argv[2]};
-  const auto project=repository.recover(); if (!project) return fail(project.error(), &cancellation);
-  if (project.value().lastDurableGeneration!=expectedGeneration || core::sha256Hex(production::encodeProductionProject(project.value()))!=argv[5])
-    return fail({core::ErrorCode::Conflict,"Publication source changed since the captured review receipt",{}}, &cancellation);
   const auto manifest=voicebank::ManifestJsonCodec{}.load(argv[3]); if (!manifest) return fail(manifest.error(), &cancellation);
-  const auto request=production::resolveReviewedSampleCandidate(argv[2],project.value(),manifest.value(),cancellation.token());
-  if (!request) return fail(request.error(), &cancellation);
   std::error_code pathError;
   const auto destination=std::filesystem::absolute(argv[6],pathError).lexically_normal();
   if (pathError) return fail({core::ErrorCode::InvalidArgument,"Cannot resolve candidate destination",pathError.message()}, &cancellation);
-  const auto candidate=production::publishSampleCandidate(argv[2],project.value(),request.value(),destination,{},cancellation.token());
+  // Built from exactly the named generation's verified history. Its approvals must already be the
+  // ones in force there and must still be in force at the latest generation; anything else refuses.
+  const auto candidate=production::publishSampleCandidateFromGeneration(argv[2],expectedGeneration,argv[5],manifest.value(),
+      destination,{},cancellation.token());
   if (!candidate) return fail(candidate.error(), &cancellation);
   print({{"result","CandidateCommitted"},{"root",candidate.value().root.generic_string()},
+      {"schemaVersion",production::kResourceCandidateSchemaVersion},{"resourceKind",candidate.value().resourceKind},
+      {"status",std::string{production::kReviewedCandidateStatus}},{"qualification",std::string{production::kCandidateQualification}},
       {"manifestSha256",candidate.value().manifestSha256},{"contentSha256",candidate.value().contentSha256},
       {"candidateSha256",candidate.value().candidateSha256},{"sourceGeneration",std::to_string(candidate.value().sourceGeneration)},
       {"durabilityConfirmed",candidate.value().durabilityConfirmed},{"diagnostic",candidate.value().diagnostic},
-      {"releaseEligible",candidate.value().releaseEligible}});
+      {"signed",false},{"installed",false},{"releaseEligible",candidate.value().releaseEligible}});
   return 0;
 }
 int sourceQuality(int argc, char** argv, bool record) {
@@ -377,7 +377,8 @@ void printSampleReviewUsage() {
     << "  seam_voicebank_cli prepare-sample-review WORKSPACE MANIFEST OUTPUT_PACKET\n"
     << "  seam_voicebank_cli inspect-sample-review PACKET FILE_SHA256\n"
     << "  seam_voicebank_cli review-sample WORKSPACE PACKET FILE_SHA256 REVIEWER UTC accept|reject [UNIT ...]\n"
-    << "  seam_voicebank_cli publish-sample WORKSPACE MANIFEST EXPECTED_GENERATION PROJECT_SHA256 OUTPUT_DIRECTORY\n"
+    << "  seam_voicebank_cli publish-sample WORKSPACE MANIFEST GENERATION PROJECT_SHA256 OUTPUT_DIRECTORY\n"
+    << "    Builds a typed schema-3 candidate from exactly that verified generation; its approvals must still be in force.\n"
     << "    Capture/inspect never approves. Review requires a registered independent reviewer and explicit decision.\n"
     << "    Publication is an engineering candidate, not a signed package, install, or release approval.\n";
 }

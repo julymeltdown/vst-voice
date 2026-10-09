@@ -562,6 +562,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/repository_verify.cpp
   libs/seam-voicebank-production/src/repository_export.cpp
   libs/seam-voicebank-production/src/repository_candidate.cpp
+  libs/seam-voicebank-production/src/resource_candidate.cpp
   libs/seam-voicebank-production/src/repository_review.cpp
   libs/seam-voicebank-production/src/review_transition.cpp
   libs/seam-voicebank-production/src/manifest_draft.cpp

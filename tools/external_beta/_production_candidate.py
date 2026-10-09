@@ -4,10 +4,12 @@ publisher writes.
 This module validates a recording-session export document: schemaVersion 1, status READY, and
 per-unit bindings carrying coverageKey, pitchLayer, takeId, alias, markers, pitchMarks and a
 validator verdict. The C++ `publishSampleCandidate` writes a different document entirely
-(`libs/seam-voicebank-production/src/repository_candidate.cpp`): schemaVersion 2, status
-REVIEWED_CANDIDATE, a derived resourceKind, languages, character identity, and per-unit
+(`libs/seam-voicebank-production/src/repository_candidate.cpp`): schemaVersion 3, status
+REVIEWED_CANDIDATE, a derived resourceKind, languages, nested character identity, explicit
+payload/evidence lists and external dependencies, and per-unit
 bindings carrying unitId, takeId, audioSha256, review identity and captured origin history.
-The two share only the names `unitBindings` and `takeId`.
+Legacy C++ schema 2 instead used flat character identity and source fields. Neither C++
+version is this U56 export contract; their binding vocabularies overlap only at `takeId`.
 
 Neither document validates the other. `validate_candidate_export` refuses the C++ descriptor on
 its version and status alone, before any content is compared. That refusal is correct and
