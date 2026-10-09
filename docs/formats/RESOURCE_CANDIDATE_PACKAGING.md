@@ -79,7 +79,7 @@ observed consistency checking, not an atomic filesystem snapshot or proof of an
 installation event, catalog placement, durability, runtime resolution or playback.
 A byte-identical directory copy can pass.
 
-The closed `seam.u14.installed-candidate-verification.v1` record distinguishes
+The closed `seam.u14.installed-candidate-verification.v2` record distinguishes
 `candidateContentSha256`, `installedContentHash`, and `installedResourceTreeSha256`.
 The last binds all observed resource files including the receipt; it is not a product
 installation-tree digest. Sample candidate and installed content identities agree.
@@ -101,8 +101,22 @@ external execution attestation or source/build provenance certificate.
 
 Sample and recipe positive records are supported. Opaque model packages can verify,
 but installation and installed-resource verification refuse. The separate model outcome record below observes that intentional refusal.
-Sample/recipe dependency reporting, catalog placement and native execution provenance
-remain required before full U45 linkage.
+Installed v2 adds exactly three fields: `externalDependencies` is the signed list
+of closed `{kind, id, revision}` entries, `dependencyEvidence` is
+`SIGNED_DECLARATION`, and `runtimeAvailability` is `NOT_CHECKED`. Samples require
+an empty list; recipes require one `render-engine` dependency. Native verification
+also checks the recipe declaration against its signed manifest and the installed
+receipt. These checks do not prove runtime availability. Model v1 already carries
+the same declaration fields and remains unchanged.
+
+The replay accepts closed historical v1 records only with an explicitly pinned
+v1-emitting CLI. Current binaries emit only v2; cross-version replay refuses
+without upgrading or backfilling records. A v1 replay reproduces the historical
+verifier's behavior, including its lack of checks added later; it is historical
+engineering evidence, not verification by the current verifier. Historical replay remains available only
+while its original binary, keys, package, installed bytes and pins are retained;
+the local ignored evidence directory is not a durable external archive.
+Catalog placement and native execution provenance remain required before full U45 linkage.
 The canonical U45 reconciliation hold remains unchanged.
 
 ## Opaque model package and installation-refusal record

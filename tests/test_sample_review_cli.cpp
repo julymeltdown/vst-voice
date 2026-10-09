@@ -522,7 +522,7 @@ void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesy
   CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(forged, true)));
   auto changed = args; changed[4] = core::sha256File(path).value();
   CHECK(!authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = changed}));
-  if (model) {
+  if (!record.find("externalDependencies")->asArray().empty()) {
     auto changedDependency = record;
     changedDependency.asObject()["externalDependencies"].asArray().front().asObject()["revision"] = "999";
     CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(changedDependency, true)));
@@ -906,6 +906,10 @@ TEST_CASE("CLI packages and installs exactly the published candidate as distinct
   const auto audit = fixture.success({"verify-installed-candidate", package.string(), packageDigest, candidateSha,
       installDirectory.string(), keys.publicKey});
   CHECK(field(audit, "result") == "InstalledCandidateVerified");
+  CHECK(field(audit, "recordType") == "seam.u14.installed-candidate-verification.v2");
+  CHECK(audit.find("externalDependencies")->asArray().empty());
+  CHECK(field(audit, "dependencyEvidence") == "SIGNED_DECLARATION");
+  CHECK(field(audit, "runtimeAvailability") == "NOT_CHECKED");
   CHECK(field(audit, "resourceCandidateSha256") == candidateSha);
   CHECK(field(audit, "candidateContentSha256") == field(audit, "installedContentHash"));
   CHECK(field(audit, "receiptSha256") == core::sha256File(installDirectory / "install-receipt.json").value());
@@ -1138,6 +1142,9 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(core::sha256File(singerDirectory / "candidate.json").value() == field(recipe, "candidateSha256"));
   const auto singerAudit = cliSuccess({"verify-installed-candidate", (root / "recipe.seamsinger").string(),
       field(recipePackage, "packageDigest"), field(recipe, "candidateSha256"), singerDirectory.string(), keys.publicKey});
+  CHECK(field(singerAudit, "recordType") == "seam.u14.installed-candidate-verification.v2");
+  CHECK(formats::stringifyJson(*singerAudit.find("externalDependencies")) ==
+      formats::stringifyJson(*recipeInspected.find("externalDependencies")));
   CHECK(field(singerAudit, "candidateContentSha256") == field(recipe, "contentSha256"));
   CHECK(field(singerAudit, "installedContentHash") == field(recipeInstalled, "contentHash"));
   CHECK(field(singerAudit, "installedContentHash") != field(singerAudit, "candidateContentSha256"));

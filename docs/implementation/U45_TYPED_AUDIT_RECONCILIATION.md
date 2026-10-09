@@ -99,7 +99,7 @@ unchanged.
 
 ## Installed-resource bridge increment (2026-10-09)
 
-The separate `seam.u14.installed-candidate-verification.v1` record now derives
+The separate `seam.u14.installed-candidate-verification.v2` record now derives
 sample/recipe identity from a pinned signed package, actual receipt and installed
 bytes through the native CLI. A bounded private package snapshot prevents ordinary
 source replacement from mixing package reads. Retained-record replay requires
@@ -112,7 +112,10 @@ availability, model runtime admission or human qualification.
 Real native regression paths cover sample/recipe positives and opaque model
 package verification followed by install/audit refusal. The Python closed record
 supports sample/recipe success only; the model extension below supplies a distinct
-refusal outcome record. Sample/recipe dependency output remains open. Per-observation provenance, native project/
+refusal outcome record. Installed v2 exposes signed dependency triples (empty for
+samples, one render-engine for recipes), matching model v1 declaration semantics.
+Runtime availability remains NOT_CHECKED. Closed historical v1 replay requires a
+pinned historical CLI; cross-version output refuses. Per-observation provenance, native project/
 operation/measurement replay, qualified resources, frozen profiles and external
 authority still block canonical integration. `release_gate.py` and
 `U45_RECONCILIATION_HOLD` remain unchanged.
@@ -125,5 +128,5 @@ in owned scratch. Replay pins the CLI/key/record and compares fresh native outpu
 including signed dependency declarations. It has no installed-tree identity and
 never asserts graph execution, runtime availability, qualification or release
 authority. This addresses the model outcome part of item1; it does not implement
-model installation or close U14/U45. Sample/recipe dependency output, canonical
-catalog placement and execution/observation provenance remain open.
+model installation or close U14/U45. Installed v2 supplies sample/recipe dependency
+output; canonical catalog placement and execution/observation provenance remain open.

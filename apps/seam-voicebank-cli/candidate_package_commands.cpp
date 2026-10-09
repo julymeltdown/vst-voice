@@ -194,7 +194,10 @@ int verifyInstalledCandidate(int argc, char** argv) {
   const auto verified = packaging::verifyInstalledResourceCandidate(package.value(), argv[3], argv[4], installed.value(), options.value(), cancellation.token());
   if (!verified) return fail(verified.error(), &cancellation);
   const auto& value = verified.value();
-  print({{"schemaVersion", std::int64_t{1}}, {"recordType", "seam.u14.installed-candidate-verification.v1"},
+  formats::JsonValue::Array dependencies;
+  for (const auto& dependency : value.externalDependencies)
+    dependencies.emplace_back(formats::JsonValue::Object{{"kind", dependency.kind}, {"id", dependency.id}, {"revision", dependency.revision}});
+  print({{"schemaVersion", std::int64_t{2}}, {"recordType", "seam.u14.installed-candidate-verification.v2"},
       {"result", "InstalledCandidateVerified"}, {"evidenceScope", "ENGINEERING_ONLY"},
       {"resourceKind", value.resourceKind}, {"payloadFamily", std::string{production::toString(value.kind)}},
       {"resourceId", value.resourceId}, {"resourceVersion", value.resourceVersion},
@@ -202,6 +205,8 @@ int verifyInstalledCandidate(int argc, char** argv) {
       {"candidateContentSha256", value.candidateContentSha256}, {"installedContentHash", value.installedContentHash},
       {"signerKeyId", value.signerKeyId}, {"receiptSha256", value.receiptSha256},
       {"installedResourceTreeSha256", value.installedResourceTreeSha256}, {"installedFiles", static_cast<std::int64_t>(value.installedFiles)},
+      {"externalDependencies", std::move(dependencies)}, {"dependencyEvidence", "SIGNED_DECLARATION"},
+      {"runtimeAvailability", "NOT_CHECKED"},
       {"qualification", std::string{production::kCandidateQualification}}, {"humanAcceptance", "NOT_RUN"},
       {"authorizesRelease", false}, {"releaseEligible", false}});
   return 0;

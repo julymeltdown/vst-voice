@@ -390,7 +390,8 @@ core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
   }
   return Output{descriptor.kind, descriptor.resourceKind, descriptor.resourceId, descriptor.resourceVersion,
       value.candidateSha256, value.container.packageDigest, descriptor.contentSha256, contentHash,
-      value.container.signerKeyId, tree.checked.at(std::string{kReceipt}).sha, treeHash.hexDigest(), tree.checked.size()};
+      value.container.signerKeyId, tree.checked.at(std::string{kReceipt}).sha, treeHash.hexDigest(), tree.checked.size(),
+      descriptor.externalDependencies};
 #else
   (void)packagePath; (void)expectedPackageDigest; (void)expectedCandidateSha256; (void)installedDirectory; (void)options; (void)stop;
   return core::failure<Output>(core::ErrorCode::Unsupported, "Installed candidate verification is not implemented on this platform");

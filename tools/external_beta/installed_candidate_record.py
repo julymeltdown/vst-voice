@@ -18,25 +18,32 @@ import time
 
 from .full_product_report import _canonical, _parse_json, _read_regular_file
 
-RECORD_TYPE = "seam.u14.installed-candidate-verification.v1"
+LEGACY_RECORD_TYPE = "seam.u14.installed-candidate-verification.v1"
+RECORD_TYPE = "seam.u14.installed-candidate-verification.v2"
 RECORD_LIMIT = 64 * 1024
 BINARY_LIMIT = 128 * 1024 * 1024
 KEY_LIMIT = 64 * 1024
 HEX = re.compile(r"[0-9a-f]{64}")
-FIELDS = frozenset(("schemaVersion", "recordType", "result", "evidenceScope", "resourceKind", "payloadFamily",
+LEGACY_FIELDS = frozenset(("schemaVersion", "recordType", "result", "evidenceScope", "resourceKind", "payloadFamily",
     "resourceId", "resourceVersion", "resourceCandidateSha256", "packageDigest", "candidateContentSha256",
     "installedContentHash", "signerKeyId", "receiptSha256", "installedResourceTreeSha256", "installedFiles",
     "qualification", "humanAcceptance", "authorizesRelease", "releaseEligible"))
+FIELDS = LEGACY_FIELDS | {"externalDependencies", "dependencyEvidence", "runtimeAvailability"}
 DIGESTS = ("resourceCandidateSha256", "packageDigest", "candidateContentSha256", "installedContentHash",
     "receiptSha256", "installedResourceTreeSha256")
 
 
 def validate_record(record):
-    if not isinstance(record, dict) or set(record) != FIELDS:
+    if not isinstance(record, dict):
+        raise ValueError("installed candidate record must be an object")
+    legacy = record.get("recordType") == LEGACY_RECORD_TYPE
+    if set(record) != (LEGACY_FIELDS if legacy else FIELDS):
         raise ValueError("installed candidate record fields differ from the closed engineering schema")
-    fixed = {"schemaVersion": 1, "recordType": RECORD_TYPE, "result": "InstalledCandidateVerified",
+    fixed = {"schemaVersion": 1 if legacy else 2, "recordType": LEGACY_RECORD_TYPE if legacy else RECORD_TYPE, "result": "InstalledCandidateVerified",
         "evidenceScope": "ENGINEERING_ONLY", "qualification": "NOT_QUALIFIED", "humanAcceptance": "NOT_RUN",
         "authorizesRelease": False, "releaseEligible": False}
+    if not legacy:
+        fixed.update(dependencyEvidence="SIGNED_DECLARATION", runtimeAvailability="NOT_CHECKED")
     for key, expected in fixed.items():
         if type(record[key]) is not type(expected) or record[key] != expected:
             raise ValueError(f"installed candidate record has an invalid {key}")
@@ -51,6 +58,26 @@ def validate_record(record):
             raise ValueError(f"installed candidate record has an invalid {key}")
     if type(record["installedFiles"]) is not int or not 2 <= record["installedFiles"] <= 100001:
         raise ValueError("installed candidate record has an invalid installedFiles")
+
+
+    if not legacy:
+        dependencies = record["externalDependencies"]
+        if not isinstance(dependencies, list):
+            raise ValueError("installed dependencies must be a list")
+        if record["payloadFamily"] == "sample":
+            if dependencies:
+                raise ValueError("sample record must declare no external dependencies")
+        else:
+            if len(dependencies) != 1:
+                raise ValueError("recipe record requires one declared render-engine dependency")
+            dependency = dependencies[0]
+            if not isinstance(dependency, dict) or set(dependency) != {"kind", "id", "revision"}:
+                raise ValueError("recipe dependency requires only declared kind/id/revision")
+            if dependency["kind"] != "render-engine":
+                raise ValueError("recipe dependency must declare render-engine")
+            for key, limit in (("id", 128), ("revision", 64)):
+                if not isinstance(dependency[key], str) or not 1 <= len(dependency[key]) <= limit:
+                    raise ValueError(f"recipe dependency has an invalid {key}")
 
 
 def _pinned(path, expected, limit, label):
@@ -123,6 +150,8 @@ def _audit_record(*, record_path, record_sha256, package_path, public_key_path, 
             record["packageDigest"], record["resourceCandidateSha256"],
             *(str(Path(os.path.abspath(path))) for path in native_suffix), str(key)], timeout_seconds)
         validator(actual)
+        if actual["recordType"] != record["recordType"] or actual["schemaVersion"] != record["schemaVersion"]:
+            raise ValueError(f"record version mismatch: replay requires a pinned CLI emitting {record['recordType']}")
         # Reconfirm selected verifier/key bytes after execution. This detects
         # ordinary concurrent replacement, not a hostile process owner/loader.
         _pinned(cli, cli_sha256, BINARY_LIMIT, "native verifier")

@@ -152,6 +152,7 @@ struct VerifiedInstalledCandidate final {
   std::string receiptSha256;
   std::string installedResourceTreeSha256;
   std::size_t installedFiles{0U};
+  std::vector<voicebank_production::ResourceCandidateExternalDependency> externalDependencies;
 };
 
 [[nodiscard]] core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
