@@ -20,6 +20,7 @@
 #include "sample_review_commands.hpp"
 #include "campaign_commands.hpp"
 #include "coverage_commands.hpp"
+#include "project_binding_commands.hpp"
 #include "seam/formats/project_json.hpp"
 #include <charconv>
 
@@ -876,6 +877,7 @@ void printUsage() {
   seam::voicebank_cli::printSampleReviewUsage();
   seam::voicebank_cli::printCampaignUsage();
   seam::voicebank_cli::printCoverageUsage();
+  seam::voicebank_cli::printProjectBindingUsage();
 }
 
 }  // namespace
@@ -965,6 +967,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string_view command{argv[1]};
+  if (const auto result = seam::voicebank_cli::runProjectBindingCommand(argc, argv)) return *result;
   if (const auto result = seam::voicebank_cli::runCampaignCommand(argc, argv)) return *result;
   if (const auto result = seam::voicebank_cli::runCoverageCommand(argc, argv)) return *result;
   if (const auto result=seam::voicebank_cli::runSampleReviewCommand(argc,argv)) return *result;

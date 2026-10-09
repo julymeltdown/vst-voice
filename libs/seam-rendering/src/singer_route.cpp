@@ -102,6 +102,26 @@ SingerRouteEnvironment sampleSingerRouteEnvironment(
   return result;
 }
 
+core::Result<domain::SingerResourceIdentity> selectedSingerResource(const domain::VocalTrack& track) {
+  if (track.proceduralRecipe && track.neuralResource)
+    return core::failure<domain::SingerResourceIdentity>(core::ErrorCode::InvalidArgument,
+        "A track selects one singer family, not a procedural and a neural selection together");
+
+  domain::SingerResourceIdentity resource{};
+  if (track.neuralResource) {
+    resource = track.neuralResource->resource;
+  } else if (track.proceduralRecipe) {
+    resource = track.proceduralRecipe->resource;
+  } else {
+    resource = domain::SingerResourceIdentity{
+        .kind = domain::SingerResourceKind::Sample,
+        .id = track.voicebank.id,
+        .version = track.voicebank.version,
+        .contentHash = track.voicebank.contentHash};
+  }
+  return resource;
+}
+
 core::Result<ResolvedSingerRoute> resolveSingerRoute(
     const domain::Project& project, domain::TrackId trackId,
     const SingerRouteEnvironment& environment) {
@@ -109,23 +129,9 @@ core::Result<ResolvedSingerRoute> resolveSingerRoute(
   if (track == nullptr)
     return core::failure<ResolvedSingerRoute>(core::ErrorCode::NotFound,
                                               "No vocal track has that identity");
-  if (track->proceduralRecipe && track->neuralResource)
-    return core::failure<ResolvedSingerRoute>(core::ErrorCode::InvalidArgument,
-        "A track selects one singer family, not a procedural and a neural selection together");
-
-  domain::SingerResourceIdentity resource{};
-  if (track->neuralResource) {
-    resource = track->neuralResource->resource;
-  } else if (track->proceduralRecipe) {
-    resource = track->proceduralRecipe->resource;
-  } else {
-    resource = domain::SingerResourceIdentity{
-        .kind = domain::SingerResourceKind::Sample,
-        .id = track->voicebank.id,
-        .version = track->voicebank.version,
-        .contentHash = track->voicebank.contentHash};
-  }
-  auto route = resolveSingerRouteForResource(resource, synthesis::rendererCarrierFor(*track), environment);
+  const auto resource = selectedSingerResource(*track);
+  if (!resource) return core::Result<ResolvedSingerRoute>{resource.error()};
+  auto route = resolveSingerRouteForResource(resource.value(), synthesis::rendererCarrierFor(*track), environment);
   route.trackId = trackId;
   return route;
 }

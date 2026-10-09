@@ -1357,7 +1357,8 @@ add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
   apps/seam-voicebank-cli/campaign_commands.cpp
   apps/seam-voicebank-cli/coverage_commands.cpp
   apps/seam-voicebank-cli/sample_review_commands.cpp
-  apps/seam-voicebank-cli/candidate_package_commands.cpp)
+  apps/seam-voicebank-cli/candidate_package_commands.cpp
+  apps/seam-voicebank-cli/project_binding_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
   seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis seam_candidate_packaging)
 seam_apply_compiler_options(seam_voicebank_cli)
@@ -3027,7 +3028,8 @@ if(SEAM_BUILD_TESTS)
     seam_voicebank_production seam_authoring_runtime seam_application)
   seam_apply_compiler_options(seam_production_import_outcome_tests)
   add_test(NAME seam_production_import_outcome_tests COMMAND seam_production_import_outcome_tests)
-  add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp)
+  add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp
+    tests/test_project_binding_cli.cpp)
   target_include_directories(seam_sample_review_cli_tests PRIVATE tests)
   target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>" SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   if(Python3_Interpreter_FOUND)

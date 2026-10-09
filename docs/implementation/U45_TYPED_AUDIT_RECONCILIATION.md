@@ -130,3 +130,17 @@ never asserts graph execution, runtime availability, qualification or release
 authority. This addresses the model outcome part of item1; it does not implement
 model installation or close U14/U45. Installed v2 supplies sample/recipe dependency
 output; canonical catalog placement and execution/observation provenance remain open.
+
+
+### Native project binding increment (2026-10-10)
+
+[Project binding verification](../formats/PROJECT_BINDING_VERIFICATION.md) adds
+native codec/domain validation of captured, caller-pinned project bytes and a
+selected track/region's singer identity and note-linked declared language set.
+It shares the renderer's selection rule, rejects unknown raw language tags across
+the file, and records the source/codec schema versions. Replay compares a closed
+engineering record with fresh native output. This partially addresses item 4;
+it does not establish actual resource admission, operation/continuity/measurement
+execution, pronunciation, host/build lineage or human acceptance. Recipe render
+identity remains distinct from installed package identity. The canonical report
+and U45_RECONCILIATION_HOLD remain unchanged.

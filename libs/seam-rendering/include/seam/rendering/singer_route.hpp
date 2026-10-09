@@ -14,6 +14,11 @@ namespace seam::synthesis { struct SampleSingerResource; }
 
 namespace seam::rendering {
 
+// Stored selection only; no resource I/O, runtime admission or capability claim.
+// Shared by rendering and engineering project-binding verification.
+[[nodiscard]] core::Result<domain::SingerResourceIdentity> selectedSingerResource(
+    const domain::VocalTrack& track);
+
 // What an installed resource declares about itself. These fields come from the singer's own signed
 // metadata, not from this build, so they are supplied by the layer that already scanned the resource
 // rather than re-derived here. An empty declaration means the resource's metadata was not read, which
