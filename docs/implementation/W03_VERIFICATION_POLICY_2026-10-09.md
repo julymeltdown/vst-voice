@@ -136,3 +136,43 @@ ordered execution before candidate acceptance, independent of CI availability.
 Independent technical review is pending while the authorized reviewer chat is
 rate-limited. This does not authorize restoration of CI or waive product gates.
 Verification receipts and current result are recorded in the root execution ledger.
+
+## Native asynchronous functional waits (2026-10-10)
+
+The source-binding checkpoint `9d0027b3` exposed two instrumented verification
+limits, retained under `out/evidence/render-source-binding-2026-10-10`: the ASan
+original-song aggregate reached its 300-second CTest limit in case 5, and the TSan
+export suite failed its Studio batch-drain helper. These are distinct failures.
+The aggregate song scheduling issue remains open; this increment does not change
+its registration or timeout.
+
+The batch helper made 3,000 polls separated by one-millisecond sleeps. A diagnostic
+kept that original failure verdict while observing the same live worker afterward.
+The timed TSan run exhausted the poll budget at 3.78704 seconds and reached terminal
+success at 5.41479 seconds, with `GENERATED BATCH: MARKER REVIEW`. An earlier probe
+also reached success, 1.76968 seconds after its original budget expired. Neither
+probe is relabelled as passing the old criterion. These observations establish
+completion for those runs; they do not establish a production latency guarantee
+or prove instrumentation is the sole timing cause.
+
+Batch functional completion now uses a **10-second steady-clock test budget**,
+the bound already used by the export fixture's import wait. This deliberately
+loosens this helper's liveness budget from the old approximately three-second
+poll allowance, providing 4.58521 seconds of headroom over the timed observation.
+It is not an equivalent timeout policy or a performance improvement. Workloads,
+frame limits, marker/identity assertions, product performance criteria and acoustic
+thresholds are unchanged. No case is skipped or replaced by a mock.
+
+A harness deadline now throws `test::Failure`; it cannot masquerade as an ordinary
+application error accepted by `CHECK(!result)`. The shared helper requires a real
+terminal result, checks the deadline both before and after polling/readiness, and
+refuses an error while the operation is still busy. Deterministic fake-clock tests
+cover real success/refusal, a never-finishing worker, late success/error, late
+readiness, nonterminal errors and invalid budgets. The other generation and
+preparation helpers retain their 3,000-poll limits but now also throw on budget
+exhaustion. Their negative-path assertions therefore require actual worker errors.
+
+Independent review is PENDING because the authorized reviewer returned HTTP 429.
+Current build/test outcomes and the remaining song-aggregate hold belong in the
+root execution ledger. This is a test-harness correction, not installed-product,
+model, listening, platform or release acceptance.

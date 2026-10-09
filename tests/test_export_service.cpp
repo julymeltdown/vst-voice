@@ -1,4 +1,5 @@
 #include "test_framework.hpp"
+#include "async_test_support.hpp"
 #include "test_support.hpp"
 
 #include "seam/authoring/export_service.hpp"
@@ -510,7 +511,7 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
       if (!nativeGeneration.proceduralImportBusy()) return core::success();
       std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
-    return core::failure(core::ErrorCode::Internal, "Generation worker did not finish in the test budget");
+    throw test::Failure("Generation worker did not finish in the test budget");
   };
   CHECK(nativeGeneration.selectUnit(1U));
   CHECK(nativeGeneration.beginPreparedGenerationJob(nativeReference.value().directory, nativeReference.value().manifestSha256));
@@ -625,21 +626,20 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
   native_ui::VoicebankStudioController studioBatch;
   CHECK(studioBatch.openProductionProject(root / "studio-batch", studioBatchProducer.inventorySha256, "producer"));
   const auto drainBatch = [&]() -> core::Result<void> {
-    for (unsigned attempt = 0U; attempt < 3000U; ++attempt) {
+    // Functional completion budget, not a production latency assertion. The
+    // measured TSan worker completes after the old 3000-poll budget; timeout
+    // must throw so negative-path assertions cannot mistake it for a refusal.
+    return test::drainAsyncOperation([&] {
       if (const auto progress = studioBatch.generationBatchProgress()) {
         CHECK(progress->completedOutputs <= progress->totalOutputs);
         CHECK(progress->totalOutputs <= 64U);
         if (progress->phase == native_ui::VoicebankStudioController::GenerationBatchProgress::Phase::Collecting)
           CHECK(progress->completedOutputs == progress->totalOutputs);
       }
-      const auto polled = studioBatch.pollProceduralCandidateImport();
-      if (!polled) { CHECK(!studioBatch.generationBatchProgress()); return polled; }
-      if (!studioBatch.proceduralImportBusy()) {
-        CHECK(!studioBatch.generationBatchProgress()); return core::success();
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    return core::failure(core::ErrorCode::Internal, "Batch worker exceeded test budget");
+      auto polled = studioBatch.pollProceduralCandidateImport();
+      if (!polled || !studioBatch.proceduralImportBusy()) CHECK(!studioBatch.generationBatchProgress());
+      return polled;
+    }, [&] { return studioBatch.proceduralImportBusy(); }, std::chrono::seconds{10}, "Batch worker");
   };
   CHECK(!studioBatch.beginPreparedGenerationBatch(root / "batch.json", batchHash, 0U));
   const std::vector<std::filesystem::path> assemblyReferences{root / "batch-a/job.seamjob", root / "batch-b/job.seamjob"};
@@ -1231,7 +1231,7 @@ TEST_CASE("nasal and frication candidates bake and enter production with typed u
       if (!preparationStudio.proceduralImportBusy()) return core::success();
       std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
-    return core::failure(core::ErrorCode::Internal, "Preparation worker exceeded test budget");
+    throw test::Failure("Preparation worker exceeded test budget");
   };
   CHECK(preparationStudio.beginGenerationScoreInspection(root / "shared-score.seam"));
   CHECK(preparationStudio.proceduralImportBusy()); CHECK(!preparationStudio.save());
