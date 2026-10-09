@@ -7,6 +7,7 @@
 #include "seam/rendering/project_renderer.hpp"
 #include "seam/voicebank/manifest_json.hpp"
 #include "seam/voicebank/wav.hpp"
+#include "seam/voice_design/recipe_resource.hpp"
 #ifdef SEAM_COMPLETENESS_CLAP
 #include "seam/clap_editor/editor_runtime.hpp"
 #endif
@@ -121,6 +122,103 @@ TEST_CASE("Final rejects a missing sample phrase while Preview retains the succe
   CHECK(final.error().context.find(f.track.toString()) != std::string::npos);
   CHECK(final.error().context.find(f.region.toString()) != std::string::npos);
   CHECK(final.error().context.find(diagnostic.phraseId) != std::string::npos);
+}
+
+TEST_CASE("Project render refuses a sample source that differs from the saved singer identity") {
+  for (const unsigned field : {0U,1U,2U,3U}) {
+    CompletenessFixture f;
+    auto sources=f.sources();
+    rendering::PcmCache cache{f.root/"cache"};
+    CHECK(rendering::ProductionProjectRenderer{}.render(f.project,sources,f.track,f.region,1U,
+        48000U,rendering::RenderQuality::Preview,{},&cache));
+    const auto cacheBefore=cache.stats();
+    CHECK(authoring::ExportService{}.exportProject(f.project,sources,f.track,f.region,1U,f.root/"existing.wav"));
+    CHECK(authoring::ExportService{}.exportSet(f.project,sources,f.track,f.region,1U,f.root/"existing-set",settings(true,false)));
+    if (field==0U) sources.front().manifest.id+="-other";
+    if (field==1U) sources.front().manifest.version="999.0.0";
+    if (field==2U) sources.front().contentHash=std::string(64,'b');
+    if (field==3U) sources.front().contentHash.clear();
+    for (const auto quality : {rendering::RenderQuality::Preview,rendering::RenderQuality::Final}) {
+      const auto rendered=rendering::ProductionProjectRenderer{}.render(
+          f.project,sources,f.track,f.region,1U,48000U,quality,{},&cache);
+      CHECK(!rendered);
+      CHECK(rendered.error().code==core::ErrorCode::Conflict);
+    }
+    CHECK(cache.stats().memoryHits==cacheBefore.memoryHits);
+    CHECK(cache.stats().diskHits==cacheBefore.diskHits);
+    CHECK(cache.stats().misses==cacheBefore.misses);
+    CHECK(cache.stats().writes==cacheBefore.writes);
+    const auto before=tree(f.root);
+    CHECK(!authoring::ExportService{}.exportProject(f.project,sources,f.track,f.region,1U,f.root/"wrong.wav"));
+    CHECK(!authoring::ExportService{}.exportProject(f.project,sources,f.track,f.region,1U,f.root/"existing.wav"));
+    CHECK(!authoring::ExportService{}.exportSet(f.project,sources,f.track,f.region,1U,f.root/"wrong-set",settings(true,false)));
+    CHECK(!authoring::ExportService{}.exportSet(f.project,sources,f.track,f.region,1U,f.root/"existing-set",settings(true,false)));
+    CHECK(tree(f.root)==before);
+  }
+}
+
+TEST_CASE("Source binding preserves unselected authoring and rejects explicit cross-family substitution") {
+  CompletenessFixture f;
+  voice_design::VoiceRecipe recipe;recipe.id="binding-original";
+  for (const std::string phone : {"a","i"}) recipe.poses.push_back({phone,"neutral",0.0,
+      {{640.0,78.0,0.0},{1180.0,96.0,-3.0},{2650.0,150.0,-7.0}}});
+  const auto resource=voice_design::freezeVoiceRecipeResource(recipe);CHECK(resource);
+  const std::vector<rendering::TrackSingerSource> sources{
+      rendering::TrackProceduralSource{f.track,resource.value(),"neutral"}};
+  const auto render=[&] { return rendering::ProductionProjectRenderer{}.renderWithSources(
+      f.project,sources,f.track,f.region,1U,48000U,rendering::RenderQuality::Final); };
+  CHECK(!render()); // Explicit sample selection cannot silently become procedural.
+  auto candidateOnly=settings(false,false);candidateOnly.includeProceduralCandidates=true;
+  const auto before=tree(f.root);
+  CHECK(!authoring::ExportService{}.exportSetWithSources(f.project,sources,f.track,f.region,
+      1U,f.root/"wrong-candidate",candidateOnly));
+  CHECK(tree(f.root)==before);
+  f.project.findVocalTrack(f.track)->voicebank={};
+  const auto authored=render();CHECK(authored);checkAudible(authored.value());
+  f.project.findVocalTrack(f.track)->proceduralRecipe=domain::ProceduralRecipeReference{
+      resource.value().identity,"unopened/recipe.json","neutral"};
+  CHECK(render());
+  CHECK(!f.render(rendering::RenderQuality::Final)); // Sample source cannot replace selected recipe.
+  f.project.findVocalTrack(f.track)->voicebank={"inactive","999",std::string(64,'f')};
+  CHECK(render()); // Inactive sample fields do not override an explicit recipe.
+  f.project.findVocalTrack(f.track)->proceduralRecipe.reset();
+  f.project.findVocalTrack(f.track)->neuralResource=domain::NeuralResourceReference{
+      {domain::SingerResourceKind::Neural,"model","1",std::string(64,'a')}};
+  CHECK(!render());CHECK(!f.render(rendering::RenderQuality::Final));
+}
+
+TEST_CASE("Sample binding preserves legacy missing pins and preflights every audible source before file capture") {
+  CompletenessFixture f;
+  auto sources=f.sources();
+  f.project.findVocalTrack(f.track)->voicebank.contentHash.clear();
+  CHECK(rendering::ProductionProjectRenderer{}.render(f.project,sources,f.track,f.region,1U,48000U));
+  sources.front().manifest.id+="-wrong";
+  CHECK(!rendering::ProductionProjectRenderer{}.render(f.project,sources,f.track,f.region,1U,48000U));
+  const auto other=f.factory.addVocalTrack(f.project,"Missing recipe");
+  const domain::ProceduralRecipeReference reference{
+      {domain::SingerResourceKind::Procedural,"other","1",std::string(64,'b')},
+      (f.root/"does-not-exist.json").string(),"neutral"};
+  f.project.findVocalTrack(other)->proceduralRecipe=reference;
+  const std::vector<rendering::TrackSingerSource> mixed{
+      rendering::TrackRecipeFileSource{other,reference,{}},sources.front()};
+  const auto result=rendering::ProductionProjectRenderer{}.renderWithSources(
+      f.project,mixed,f.track,f.region,1U,48000U);
+  CHECK(!result);CHECK(result.error().message=="Resolved singer source differs from the saved selection");
+  CHECK(result.error().context==f.track.toString());
+}
+
+TEST_CASE("Muted source mismatch is ignored for audio but rejected when the source is packaged") {
+  CompletenessFixture f;
+  f.addBacking();
+  f.project.findVocalTrack(f.track)->muted=true;
+  auto sources=f.sources();sources.front().manifest.id+="-wrong";
+  CHECK(rendering::ProductionProjectRenderer{}.render(f.project,sources,f.track,f.region,1U,48000U));
+  auto options=settings(true,false);
+  CHECK(authoring::ExportService{}.exportSet(f.project,sources,f.track,f.region,1U,f.root/"audio-only",options));
+  options.includeMaster=false;options.includeProjectAndRecipes=true;
+  const auto before=tree(f.root);
+  CHECK(!authoring::ExportService{}.exportSet(f.project,sources,f.track,f.region,1U,f.root/"package",options));
+  CHECK(tree(f.root)==before);
 }
 
 TEST_CASE("Final rejects a conflicting sample phrase even when another singer succeeds") {

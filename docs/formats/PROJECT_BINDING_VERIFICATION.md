@@ -127,3 +127,22 @@ Product rendering consumes the separate shared admission boundary described in t
 schema document; these records do not observe runtime admission, compiled-engine
 compatibility, playback or installed-product acceptance. NOT_CHECKED stays intact.
 Historical byte-exact replay requires the historical pinned verifier.
+
+## Production render source binding
+
+Production project rendering and export share a metadata preflight before source
+file capture, PCM-cache access or export staging. Explicit procedural/neural
+selections must match the supplied family and resource; procedural style and
+file-reference pins are also compared. Sample sources must match every persisted
+nonempty id/version/content-hash field. An omitted legacy sample pin remains
+unknown and is not filled or treated as verified. A wholly unselected authoring
+track may still use an explicitly supplied raw source for Designer/pilot work.
+
+Ordinary audio rendering ignores muted/non-solo tracks. Exporting project/recipe
+or candidate contents checks every supplied source, including muted tracks, so
+packaging cannot silently replace a saved singer. Unknown and duplicate source
+tracks remain errors even when muted. This preflight compares metadata only;
+sample asset integrity, installation trust, and immutable observation provenance
+are separate obligations. Lower-level snapshot APIs and direct PCM publication
+do not become authenticated observation producers. The U45 record's NOT_CHECKED
+fields and acceptance hold remain unchanged.

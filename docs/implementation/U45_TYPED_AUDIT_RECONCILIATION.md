@@ -249,3 +249,18 @@ remain unchanged; historical replay still requires its pinned verifier.
 This does not compare the declared engine with the executing build, exercise
 runtime admission, or observe rendering. Product admission and future operation
 records retain those obligations. U45_RECONCILIATION_HOLD remains unchanged.
+
+### Production source binding prerequisite (2026-10-10)
+
+Tracing operation provenance exposed a production-render omission: supplied sample
+identity could disagree with the saved selection and still render. The shared
+render/export metadata preflight now rejects persisted identity or family drift
+before resource capture/cache use; packaging also validates muted supplied sources.
+Legacy missing sample pins and wholly unselected raw authoring sources retain
+their explicitly limited behavior. See the production source-binding section of
+[the binding contract](../formats/PROJECT_BINDING_VERIFICATION.md).
+
+This repairs a prerequisite for credible operation evidence. It does not add an
+operation record or prove asset bytes, signed installation, host behavior or human
+acceptance. The next observation must still connect the same captured admission
+and actual rendered artifacts; the existing U45 hold remains.

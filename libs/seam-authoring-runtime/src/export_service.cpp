@@ -671,10 +671,20 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
   const auto validation = project.validate();
   if (!validation) return core::Result<ExportResult>{validation.error()};
   std::unordered_set<domain::TrackId> sourceTracks;
+  const bool anySolo = std::any_of(project.vocalTracks().begin(), project.vocalTracks().end(),
+      [](const auto& track) { return track.solo && !track.muted; }) ||
+      std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
+      [](const auto& track) { return track.solo && !track.muted; });
   for (const auto& source : voicebanks) {
     const auto id = std::visit([](const auto& value) { return value.trackId; }, source);
     if (!project.findVocalTrack(id) || !sourceTracks.insert(id).second) return core::failure<ExportResult>(
         core::ErrorCode::Conflict, "Export sources contain an unknown or duplicate vocal track");
+    const auto& track = *project.findVocalTrack(id);
+    if (settings.includeProjectAndRecipes || settings.includeProceduralCandidates ||
+        (!track.muted && (!anySolo || track.solo))) {
+      const auto binding = rendering::validateTrackSingerSourceBinding(track, source);
+      if (!binding) return core::Result<ExportResult>{binding.error()};
+    }
   }
   formats::ProjectJsonCodec projectCodec;
   const auto encodedProject = projectCodec.encode(project);

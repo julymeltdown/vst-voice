@@ -55,6 +55,13 @@ struct TrackNeuralSource final {
 using TrackSingerSource = std::variant<TrackVoicebankSource, TrackProceduralSource, TrackRecipeFileSource,
                                        TrackNeuralSource>;
 
+// Metadata binding only, before resource I/O or PCM-cache access. Every persisted
+// selection must agree with its supplied source. A wholly unselected authoring
+// track may use caller-owned raw sources; missing legacy sample pins stay unknown.
+// This neither verifies sample asset bytes nor establishes installation trust.
+[[nodiscard]] core::Result<void> validateTrackSingerSourceBinding(
+    const domain::VocalTrack& track, const TrackSingerSource& source);
+
 // Shared by project rendering and export packaging. Disk-backed selections are
 // captured once; opaque admission travels with the immutable bytes for this request.
 [[nodiscard]] core::Result<TrackProceduralSource> captureProceduralSource(

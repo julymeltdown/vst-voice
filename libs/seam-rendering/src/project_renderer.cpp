@@ -51,6 +51,37 @@ std::optional<RenderedPitchRange> scorePitchRange(const domain::VocalRegion& reg
 
 }  // namespace
 
+core::Result<void> validateTrackSingerSourceBinding(
+    const domain::VocalTrack& track, const TrackSingerSource& source) {
+  const auto refuse = [&] { return core::failure(core::ErrorCode::Conflict,
+      "Resolved singer source differs from the saved selection", track.id.toString()); };
+  if (std::visit([](const auto& value) { return value.trackId; }, source) != track.id ||
+      (track.proceduralRecipe && track.neuralResource)) return refuse();
+  if (track.proceduralRecipe) {
+    const auto& saved = *track.proceduralRecipe;
+    if (const auto* file = std::get_if<TrackRecipeFileSource>(&source))
+      return file->reference == saved ? core::success() : refuse();
+    const auto* frozen = std::get_if<TrackProceduralSource>(&source);
+    return frozen && frozen->resource.identity == saved.resource && frozen->style == saved.style
+        ? core::success() : refuse();
+  }
+  if (track.neuralResource) {
+    const auto* neural = std::get_if<TrackNeuralSource>(&source);
+    if (!neural || !neural->bundle) return refuse();
+    const auto& saved = track.neuralResource->resource;
+    const auto& actual = neural->bundle->execution();
+    return saved.id == actual.modelId && saved.version == actual.modelVersion &&
+        saved.contentHash == actual.bundleContentHash ? core::success() : refuse();
+  }
+  const auto& saved = track.voicebank;
+  if (saved.id.empty() && saved.version.empty() && saved.contentHash.empty()) return core::success();
+  const auto* sample = std::get_if<TrackVoicebankSource>(&source);
+  if (!sample || (!saved.id.empty() && saved.id != sample->manifest.id) ||
+      (!saved.version.empty() && saved.version != sample->manifest.version) ||
+      (!saved.contentHash.empty() && saved.contentHash != sample->contentHash)) return refuse();
+  return core::success();
+}
+
 core::Result<TrackProceduralSource> captureProceduralSource(
     const domain::VocalTrack& track, const TrackSingerSource& source, std::stop_token stop) {
   using Output = TrackProceduralSource;
@@ -132,6 +163,13 @@ core::Result<ProjectRenderResult> ProductionProjectRenderer::renderWithSources(
       [](const auto& value) { return value.solo && !value.muted; }) ||
       std::any_of(project.audioTracks().begin(), project.audioTracks().end(),
       [](const auto& value) { return value.solo && !value.muted; });
+  // Finish binding preflight for all audible sources before any file capture.
+  for (const auto& source : sources) {
+    const auto* track = project.findVocalTrack(std::visit([](const auto& value) { return value.trackId; }, source));
+    if (track->muted || (solo && !track->solo)) continue;
+    const auto binding = validateTrackSingerSourceBinding(*track, source);
+    if (!binding) return core::Result<ProjectRenderResult>{binding.error()};
+  }
   for (const auto& source : sources) {
     if (stopToken.stop_requested()) return core::failure<ProjectRenderResult>(core::ErrorCode::Conflict, "Recipe resolution cancelled");
     if (!std::holds_alternative<TrackRecipeFileSource>(source) && !std::holds_alternative<TrackProceduralSource>(source)) {
