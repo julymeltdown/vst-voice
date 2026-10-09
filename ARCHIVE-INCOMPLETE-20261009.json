@@ -1,0 +1,144 @@
+{
+  "repo": "seam",
+  "label": "u45",
+  "source": "project-seam-usable-alpha-u3-master",
+  "source_ref": "codex/u45-full-product-gate",
+  "head": "2a3d23e0cbe2dcd2288ff2a59b833dd7ddb039b0",
+  "base": "9f266eff91b0bf18c8ae967fe1b907e4445d1654",
+  "latest": "b961e7547259ebb6c0553def9381910a52e9f19a",
+  "branch": "archive/incomplete-u45-20261009",
+  "files": [
+    {
+      "path": "docs/implementation/FULL_PRODUCT_TYPED_AUDIT_2026-09-28.md",
+      "include": false,
+      "reason": "historical status/design prose excluded; archive manifest replaces completion claims",
+      "sha256": "d0d5692cfab164a3a81ca80a1dfd2217a53fe4e06708d66dad5c31e4b8aa1eb0",
+      "deleted": false
+    },
+    {
+      "path": "docs/product/full-product-beta-evidence.schema.json",
+      "include": true,
+      "reason": null,
+      "sha256": "0739df0c891ee5efb5de1855b552d23294f2c96fdc097c7daa3200289cb2f687",
+      "deleted": false
+    },
+    {
+      "path": "scripts/verify_full_product_report.py",
+      "include": true,
+      "reason": null,
+      "sha256": "cde983426e67d9db552ab1ae53a96d840279ad1ba654337f2e6c95c34c42d252",
+      "deleted": false
+    },
+    {
+      "path": "tests/external_beta/full_product_report_fixture.py",
+      "include": true,
+      "reason": null,
+      "sha256": "fecc6c16ca8a2630b3253c4e71a7781f03738d2d3fcb0bd132c8bb02e7d35ae6",
+      "deleted": false
+    },
+    {
+      "path": "tests/external_beta/test_full_product_typed_gate.py",
+      "include": true,
+      "reason": null,
+      "sha256": "cbe6fd891763c0e006fbfa345e8e8ddc8ccb64aa82e45a6ad287db630b06f555",
+      "deleted": false
+    },
+    {
+      "path": "tests/production/public_release_replay_fixtures.py",
+      "include": true,
+      "reason": null,
+      "sha256": "b18ace4160f6843fd0772b41760b363da54f66ff8785bd5eaa08c69f3aa4756c",
+      "deleted": false
+    },
+    {
+      "path": "tests/production/test_public_release_replay.py",
+      "include": true,
+      "reason": null,
+      "sha256": "d73156d5adab364073dda783422268e5bbbad0a7972cdfb9fa0bda6f85a12c80",
+      "deleted": false
+    },
+    {
+      "path": "tools/external_beta/full_product_contract.py",
+      "include": true,
+      "reason": null,
+      "sha256": "a7d8f4006dfe69ce41fe74d0e58b5ec76265355f98d1bf1d01a820700b20a990",
+      "deleted": false
+    },
+    {
+      "path": "tools/external_beta/full_product_gate.py",
+      "include": true,
+      "reason": null,
+      "sha256": "51e85095932d49500edadf2a09d0c0cef7c8b810172e2e4b5e7c7112bdd6f0f6",
+      "deleted": false
+    },
+    {
+      "path": "tools/external_beta/full_product_report.py",
+      "include": true,
+      "reason": null,
+      "sha256": "95d7438ef5800e5b136c41c486ff1b03579b0f1365d64b5f6b766dc9f1190940",
+      "deleted": false
+    },
+    {
+      "path": "tools/external_beta/release_gate.py",
+      "include": true,
+      "reason": null,
+      "sha256": "4caefb0030a3d603ddcec17346603e666e8821e95f498f774df98478a5bd6eb9",
+      "deleted": false
+    }
+  ],
+  "status": "INCOMPLETE ARCHIVE ONLY; NOT MERGED OR ACCEPTED",
+  "authorization": "User approved remote preservation and master-only exception for this archive on 2026-10-09. No CI, secrets, or generated outputs included in archive delta.",
+  "limitations": "Selected original source delta on its historical base. Files already present or superseded on latest remote are omitted. This archival subset may not build standalone. Existing verification failures and review findings remain open. Signatures/keyrings, security checks, deployment settings and acceptance status were not changed.",
+  "verification": {
+    "label": "u45",
+    "checks": [
+      [
+        "docs/product/full-product-beta-evidence.schema.json",
+        "JSON PASS"
+      ],
+      [
+        "scripts/verify_full_product_report.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/external_beta/full_product_report_fixture.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/external_beta/test_full_product_typed_gate.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/production/public_release_replay_fixtures.py",
+        "python syntax PASS"
+      ],
+      [
+        "tests/production/test_public_release_replay.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/external_beta/full_product_contract.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/external_beta/full_product_gate.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/external_beta/full_product_report.py",
+        "python syntax PASS"
+      ],
+      [
+        "tools/external_beta/release_gate.py",
+        "python syntax PASS"
+      ]
+    ],
+    "secret_candidates": [],
+    "diff_check": {
+      "exit": 0,
+      "output": ""
+    },
+    "shell_and_node_syntax": []
+  },
+  "known_open_findings": "Canonical full-product evidence contract and current verifier differ; no acceptance promotion."
+}

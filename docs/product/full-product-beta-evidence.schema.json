@@ -8,6 +8,7 @@
     "schemaVersion",
     "recordType",
     "status",
+    "evidenceClass",
     "candidateRootId",
     "candidateRootSha256",
     "acceptanceContractSha256",
@@ -17,6 +18,7 @@
     "requirements",
     "cases",
     "rawArchive",
+    "reviewerRegistry",
     "empiricalResults"
   ],
   "properties": {
@@ -32,6 +34,12 @@
         "FAIL",
         "BLOCKED",
         "NOT_RUN"
+      ]
+    },
+    "evidenceClass": {
+      "enum": [
+        "CANDIDATE_EVIDENCE",
+        "ENGINEERING_FIXTURE"
       ]
     },
     "candidateRootId": {
@@ -13634,6 +13642,24 @@
       ]
     },
     "rawArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "locator",
+        "sha256"
+      ],
+      "properties": {
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "reviewerRegistry": {
       "type": "object",
       "additionalProperties": false,
       "required": [

@@ -27,7 +27,7 @@ try:
     )
     from .release_gate_policy import requirement_policy_errors
     from .full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
-    from .full_product_report import validate_full_product_report_reference
+    from .full_product_gate import FIXTURE_AUTHORITY_ERROR, FullProductGateResult, audit_full_product_reference
 except ImportError:
     from cohort_gate import validate_cohort
     from release_gate_validation import (
@@ -48,7 +48,7 @@ except ImportError:
     )
     from release_gate_policy import requirement_policy_errors
     from full_product_contract import full_product_report_reference_errors, _read_contract, _parse_contract
-    from full_product_report import validate_full_product_report_reference
+    from full_product_gate import FIXTURE_AUTHORITY_ERROR, FullProductGateResult, audit_full_product_reference
 
 READY_REQUIREMENT_IDS = (
     "EB-001-contract",
@@ -133,6 +133,26 @@ def _load_full_product_contract(acceptance: JsonObject, base: Path | None = None
     return value if isinstance(value, dict) else None
 
 
+def full_product_gate_result(
+    candidate: JsonObject,
+    acceptance_contract: JsonObject,
+    *,
+    evidence_root: Path | None = None,
+) -> FullProductGateResult | None:
+    """Execute the typed EB-009 audit for a candidate, or None without a report."""
+
+    reference = _full_product_report_reference(candidate)
+    if reference is None:
+        return None
+    return audit_full_product_reference(
+        reference,
+        candidate=candidate,
+        acceptance_contract=acceptance_contract,
+        full_product_contract=_load_full_product_contract(acceptance_contract, evidence_root),
+        evidence_root=evidence_root,
+    )
+
+
 def evaluate_ready(
     candidate: JsonObject,
     acceptance_contract: JsonObject | None = None,
@@ -155,24 +175,21 @@ def evaluate_ready(
     requirement_errors, blocked = _requirement_errors(candidate, READY_REQUIREMENT_IDS)
     errors.extend(requirement_errors)
     errors.extend(full_product_report_reference_errors(candidate))
-    full_product_reference = _full_product_report_reference(candidate)
-    if full_product_reference is None:
+    full_product = full_product_gate_result(candidate, contract, evidence_root=evidence_root)
+    if full_product is None:
         # Keep the legacy diagnostic precise for candidates that do not even
         # provide the mandatory U45 report reference.  A referenced report is
         # validated below; malformed/stale content receives its own errors.
         errors.append("EB-009-full-product: semantic validator unavailable until U45")
         blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
     else:
-        full_product_contract = _load_full_product_contract(contract, evidence_root)
-        semantic_errors = validate_full_product_report_reference(
-            full_product_reference,
-            candidate=candidate,
-            acceptance_contract=contract,
-            full_product_contract=full_product_contract,
-            evidence_root=evidence_root,
-        )
-        errors.extend(semantic_errors)
-        if semantic_errors:
+        # Only a release-authorizing typed result satisfies EB-009.  A complete
+        # engineering fixture passes the typed audit under the synthetic
+        # contract, but it is still reported here as a blocking error.
+        errors.extend(full_product.errors)
+        if full_product.passed and not full_product.authorizes_release:
+            errors.append(FIXTURE_AUTHORITY_ERROR)
+        if not full_product.authorizes_release:
             blocked = tuple(sorted(set(blocked) | {"EB-009-full-product"}))
     return GateResult("EXTERNAL_BETA_READY", not errors and not blocked, tuple(errors), blocked)
 

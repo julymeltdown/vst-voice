@@ -119,7 +119,12 @@ class PublicReplayTests(unittest.TestCase):
                 self.assertFalse(result.passed)
                 self.assertTrue(any("contract" in error and "digest" in error for error in result.errors), result.errors)
 
-    def test_cli_accepts_complete_inputs_and_rejects_signed_boolean_only_decision(self):
+    def test_cli_replays_complete_inputs_but_refuses_synthetic_authority_and_boolean_decisions(self):
+        # Subprocesses cannot see the in-process test double, so both
+        # operator CLIs observe the production behaviour: the complete
+        # synthetic predecessor is reproduced and refused for its authority
+        # alone, and no PUBLIC_ACTIVE decision can be minted from it.
+        from tests.production.public_release_replay_fixtures import SYNTHETIC_AUTHORITY_RESIDUE
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with public_replay_fixture(root) as (value, manifest, contract):
@@ -130,8 +135,12 @@ class PublicReplayTests(unittest.TestCase):
                     "--candidate", str(root / "public-candidate.json"), "--archive-manifest", str(root / "public-archive.json"),
                     "--archive-root", str(root), "--acceptance-contract", str(root / "public-contract.json")]
                 result = subprocess.run(command, text=True, capture_output=True, check=False, timeout=45)
-                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.assertTrue(json.loads(result.stdout)["passed"])
+                self.assertEqual(3, result.returncode, result.stdout + result.stderr)
+                refused = json.loads(result.stdout)
+                self.assertFalse(refused["passed"])
+                self.assertEqual(["PR-003-external-beta-closed"], refused["blocked"])
+                self.assertEqual({"gate: External Beta replay: " + error for error in SYNTHETIC_AUTHORITY_RESIDUE},
+                    set(refused["errors"]))
                 snapshot = {"schemaVersion": 1, "candidateLineageId": value["candidateLineageId"],
                     "evidenceRootSha256": value["rootChain"]["evidenceRoot"]["sha256"], "state": "EXTERNAL_BETA_CLOSED", "decisionLog": []}
                 write_reference(root, "snapshot.json", snapshot)
@@ -150,8 +159,10 @@ class PublicReplayTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, str(ROOT / "scripts/run_public_release_operation.py"),
                     "--snapshot", str(root / "snapshot.json"), "--decision", str(root / "decision.json"),
                     "--acceptance-contract", str(root / "public-contract.json")], text=True, capture_output=True, check=False, timeout=45)
-                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-                self.assertEqual("PUBLIC_ACTIVE", json.loads(result.stdout)["state"])
+                self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("reproduced public release audit failed", result.stdout)
+                self.assertIn("synthetic", result.stdout)
+                self.assertNotIn("PUBLIC_ACTIVE", result.stdout)
 
 
 if __name__ == "__main__":
