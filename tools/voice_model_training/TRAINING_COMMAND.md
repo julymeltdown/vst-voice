@@ -111,8 +111,10 @@ CTest supplies the built `seam_voicebank_cli` through
 `SEAM_PITCH_COMPARISON_EXTRACTOR`, enabling real waveform positive/negative
 controls. A direct unittest invocation needs that variable explicitly. Keep
 the 120-second training entry timeout visible and retain a timed-out run before
-investigating it. The entry uses the configured CTest concurrency without a
-training-specific serialization or numerical-thread override. Verbose unittest
+investigating it. The entry reserves CTest capacity with `RUN_SERIAL`: the compiled lane measured
+78.88s alone versus 111.63s under `-j6`, leaving only 8.37s under the 120s limit
+when overlapped. The cause was not isolated, and other applications still contend
+for host resources. Numerical-thread settings remain unchanged. Verbose unittest
 output records completed test names because CTest can discard a trailing
 unterminated progress line on timeout. Optional-environment skips are not successful
 model checks. Explicit bytecode compilation above prepares the cache before CTest,

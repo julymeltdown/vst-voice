@@ -2570,6 +2570,8 @@ if(SEAM_BUILD_TESTS)
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;SEAM_PITCH_COMPARISON_EXTRACTOR=$<TARGET_FILE:seam_voicebank_cli>"
       TIMEOUT 120
+      # Reserve CTest capacity for the measured dependency-enabled training lane.
+      RUN_SERIAL TRUE
       LABELS "voice-model-training")
     add_test(NAME seam_training_pitch_cli
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_training_pitch_cli.py
