@@ -200,6 +200,15 @@ core::Result<void> validateFileLists(const ResourceCandidateDescriptor& descript
       if (!isPackageableCandidatePath(file.path) || file.path == kResourceCandidateDescriptorPath ||
           !roles.contains(file.role) || !isDigest(file.sha256) || file.bytes > kMaximumListedFileBytes)
         return malformed("Candidate file entry is invalid for its list", file.path);
+      std::string lowerPath = file.path;
+      std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(),
+          [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      if (std::filesystem::path{lowerPath}.extension() == ".onnx" &&
+          (descriptor.kind != ResourceCandidateKind::Model || list != &descriptor.payload ||
+           file.role != "model-graph" || !file.path.starts_with("graphs/")))
+        return malformed("ONNX bytes are limited to declared model graphs under graphs/", file.path);
+      if (descriptor.kind == ResourceCandidateKind::Model && lowerPath == "resource.json")
+        return malformed("A model candidate cannot carry a runtime registry record", file.path);
       if (index > 0U && !((*list)[index - 1U].path < file.path))
         return malformed("Candidate file lists must be strictly ordered by path", file.path);
       if (!paths.insert(file.path).second) return malformed("Candidate lists one file twice", file.path);
@@ -279,7 +288,8 @@ core::Result<void> validateDeclared(const ResourceCandidateDescriptor& descripto
   if (std::any_of(descriptor.evidence.begin(), descriptor.evidence.end(), [](const auto& file) { return file.role != "declaration"; }))
     return malformed("Recipe and model candidates may only carry declaration evidence");
   const std::string_view dependency = recipe ? "render-engine" : "neural-runtime";
-  if (std::count_if(descriptor.externalDependencies.begin(), descriptor.externalDependencies.end(),
+  if (descriptor.externalDependencies.size() != 1U ||
+      std::count_if(descriptor.externalDependencies.begin(), descriptor.externalDependencies.end(),
           [&](const auto& value) { return value.kind == dependency; }) != 1)
     return malformed("Candidate must declare exactly one external runtime dependency", std::string{dependency});
   if (recipe) {
@@ -567,7 +577,7 @@ bool isPackageableCandidatePath(std::string_view path) noexcept {
   const auto filename = std::filesystem::path{lower}.filename().string();
   if (filename == "license" || filename == "notice") return true;
   static const std::set<std::string, std::less<>> allowed{
-      ".json", ".cbor", ".wav", ".bin", ".dat", ".png", ".webp", ".ppm", ".pgm", ".txt", ".md", ".license"};
+      ".json", ".cbor", ".wav", ".bin", ".onnx", ".dat", ".png", ".webp", ".ppm", ".pgm", ".txt", ".md", ".license"};
   return allowed.contains(std::filesystem::path{lower}.extension().string());
 }
 

@@ -188,7 +188,7 @@ core::Result<void> writeAndHash(std::ofstream& stream, core::Sha256& hash,
 
 core::Result<std::vector<CollectedFile>> collectFiles(
     const std::filesystem::path& sourceDirectory, const SeambankLimits& limits,
-    std::string_view rootManifest) {
+    std::string_view rootManifest, bool allowModelGraphs) {
   std::error_code error;
   const auto root = std::filesystem::canonical(sourceDirectory, error);
   if (error || !std::filesystem::is_directory(root)) {
@@ -230,7 +230,8 @@ core::Result<std::vector<CollectedFile>> collectFiles(
       continue;
     }
     if (error || relative.size() > limits.maximumPathBytes ||
-        !isSafeSeambankPath(relative) || !isAllowedSeambankAsset(relative)) {
+        !isSafeSeambankPath(relative) || !isAllowedSeambankAsset(relative) ||
+        (!allowModelGraphs && isModelGraphAsset(relative))) {
       return core::failure<std::vector<CollectedFile>>(
           core::ErrorCode::Unsupported, "Seambank source asset path is not allowed", relative);
     }
@@ -432,6 +433,13 @@ bool isSafeSeambankPath(std::string_view path) noexcept {
 }
 
 
+bool isModelGraphAsset(std::string_view path) {
+  auto extension = std::filesystem::path{path}.extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return extension == ".onnx";
+}
+
 bool isAllowedSeambankAsset(std::string_view path) noexcept {
   if (!isSafeSeambankPath(path)) return false;
   std::string lower{path};
@@ -441,7 +449,7 @@ bool isAllowedSeambankAsset(std::string_view path) noexcept {
   if (filename == "license" || filename == "notice") return true;
   const auto extension = std::filesystem::path{lower}.extension().string();
   static const std::set<std::string> allowed{
-      ".json", ".cbor", ".wav", ".bin", ".dat", ".png", ".webp",
+      ".json", ".cbor", ".wav", ".bin", ".onnx", ".dat", ".png", ".webp",
       ".ppm", ".pgm", ".txt", ".md", ".license"};
   return allowed.contains(extension);
 }
@@ -459,7 +467,7 @@ core::Result<SeambankPackageInfo> packSeambank(
     const std::filesystem::path& outputPackage,
     const SigningKeyPair& signingKey,
     const PackSeambankOptions& options) {
-  auto files = collectFiles(sourceDirectory, options.limits, "manifest.json");
+  auto files = collectFiles(sourceDirectory, options.limits, "manifest.json", false);
   if (!files) return core::Result<SeambankPackageInfo>{files.error()};
 
   voicebank::ManifestJsonCodec manifestCodec;
@@ -734,7 +742,7 @@ core::Result<SignedContainerInfo> packSignedContainer(
     const std::filesystem::path& outputPackage,
     const SigningKeyPair& signingKey,
     const PackSignedContainerOptions& options) {
-  auto files = collectFiles(sourceDirectory, options.limits, options.rootManifest);
+  auto files = collectFiles(sourceDirectory, options.limits, options.rootManifest, options.allowModelGraphs);
   if (!files) return core::Result<SignedContainerInfo>{files.error()};
   auto packed = packCollectedContainer(std::move(files.value()), outputPackage, signingKey,
                                        options.limits);
@@ -778,6 +786,11 @@ core::Result<SeambankPackageInfo> verifySeambank(
   auto container = openSignedContainer(packagePath, options);
   if (!container) return core::Result<SeambankPackageInfo>{container.error()};
   auto& info = container.value();
+  if (std::any_of(info.entries.begin(), info.entries.end(), [](const auto& entry) {
+        return isModelGraphAsset(entry.path);
+      }))
+    return core::failure<SeambankPackageInfo>(core::ErrorCode::Unsupported,
+        "Sample banks cannot install declared model graph files");
   const auto manifestEntry = std::find_if(info.entries.begin(), info.entries.end(),
       [](const auto& entry) { return entry.path == "manifest.json"; });
   if (manifestEntry == info.entries.end()) {

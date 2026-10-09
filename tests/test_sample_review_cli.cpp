@@ -15,6 +15,9 @@
 #include "seam/voicebank_production/repository.hpp"
 #include "seam/voicebank_production/resource_candidate.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
+#include "seam/candidate_packaging/candidate_package.hpp"
+#include <map>
+#include <stop_token>
 
 #include <set>
 
@@ -168,11 +171,17 @@ struct CliFixture final {
         [](const auto& mark) { return !mark.locked; }));
   }
   core::Result<authoring::HelperProcessOutput> run(std::vector<std::string> arguments) const {
-    return authoring::runBoundedHelperProcess({.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=std::move(arguments)});
+    authoring::HelperProcessRequest request{.executable=SEAM_TEST_VOICEBANK_CLI,.arguments=std::move(arguments)};
+#if defined(SEAM_TEST_TSAN_PUBLISH_TIMEOUT)
+    if (!request.arguments.empty() && request.arguments.front() == "publish-sample")
+      request.timeout = std::chrono::seconds{30};
+#endif
+    return authoring::runBoundedHelperProcess(request);
   }
   formats::JsonValue success(std::vector<std::string> arguments) const {
+    const auto command = arguments.empty() ? std::string{} : arguments.front();
     const auto output=run(std::move(arguments));
-    if (!output) throw std::runtime_error(output.error().message+": "+output.error().context);
+    if (!output) throw std::runtime_error(command+": "+output.error().message+": "+output.error().context);
     const auto json=formats::parseJson(output.value().standardOutput); CHECK(json); return json.value();
   }
   formats::JsonValue capture() const {
@@ -452,6 +461,41 @@ std::vector<std::string> publishArgs(const CliFixture& fixture, std::string gene
   return {"publish-sample", (fixture.root / "producer").string(), (fixture.root / "editable/manifest.json").string(),
       std::move(generation), std::move(projectSha256), destination.string()};
 }
+std::map<std::string, std::string> treeDigest(const std::filesystem::path& root) {
+  std::map<std::string, std::string> files;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(root))
+    if (entry.is_regular_file())
+      files.emplace(entry.path().lexically_relative(root).generic_string(), core::sha256File(entry.path(), 1ULL << 30U).value());
+  return files;
+}
+std::set<std::string> entriesOf(const std::filesystem::path& directory) {
+  std::set<std::string> names;
+  for (const auto& entry : std::filesystem::directory_iterator(directory)) names.insert(entry.path().filename().string());
+  return names;
+}
+struct KeyFiles final {
+  distribution::SigningKeyPair pair;
+  std::string privateKey, publicKey;
+};
+KeyFiles makeKeys(const std::filesystem::path& root, const std::string& name) {
+  const auto pair = distribution::generateSigningKeyPair();
+  if (!pair) throw std::runtime_error("key generation failed");
+  KeyFiles keys{pair.value(), (root / (name + "-private.json")).string(), (root / (name + "-public.json")).string()};
+  if (!distribution::savePrivateKey(keys.pair, keys.privateKey) || !distribution::savePublicKey(keys.pair.publicKey, keys.publicKey))
+    throw std::runtime_error("key persistence failed");
+  return keys;
+}
+core::Result<authoring::HelperProcessOutput> runCli(std::vector<std::string> arguments) {
+  return authoring::runBoundedHelperProcess({.executable = SEAM_TEST_VOICEBANK_CLI, .arguments = std::move(arguments)});
+}
+formats::JsonValue cliSuccess(std::vector<std::string> arguments) {
+  const auto output = runCli(std::move(arguments));
+  if (!output) throw std::runtime_error(output.error().message + ": " + output.error().context);
+  const auto json = formats::parseJson(output.value().standardOutput);
+  if (!json) throw std::runtime_error("CLI output is not JSON");
+  return json.value();
+}
+std::string field(const formats::JsonValue& object, std::string_view key) { return object.find(key)->asString(); }
 }  // namespace
 
 TEST_CASE("CLI publishes a typed schema-3 candidate that lists every embedded file and refuses anything else") {
@@ -747,6 +791,22 @@ TEST_CASE("typed recipe and model declarations preserve canonical kinds without 
     auto missingRuntime = descriptor;
     missingRuntime.externalDependencies.clear();
     CHECK(!production::encodeResourceCandidateDescriptor(missingRuntime));
+    auto extraRuntime = descriptor;
+    extraRuntime.externalDependencies.push_back({"dictionary", "unexpected", "1"});
+    CHECK(!production::encodeResourceCandidateDescriptor(extraRuntime));
+    auto graphEvidence = descriptor;
+    graphEvidence.evidence = {{"declaration.ONNX", "declaration", std::string(64, 'c'), 1U}};
+    CHECK(!production::encodeResourceCandidateDescriptor(graphEvidence));
+    if (!recipe) {
+      for (const auto& [path, role] : std::vector<std::pair<std::string, std::string>>{
+          {"acoustic.ONNX", "model-graph"}, {"graphs/acoustic.onnx", "model-data"}, {"RESOURCE.JSON", "model-data"}}) {
+        auto invalid = descriptor;
+        invalid.payload = {{path, role, std::string(64, 'b'), 4U}, {"manifest.json", "manifest", descriptor.manifestSha256, 2U}};
+        std::sort(invalid.payload.begin(), invalid.payload.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
+        invalid.contentSha256 = production::modelCandidateContentSha256(invalid.payload);
+        CHECK(!production::encodeResourceCandidateDescriptor(invalid));
+      }
+    }
     auto falseReview = descriptor;
     falseReview.status = "REVIEWED_CANDIDATE";
     CHECK(!production::encodeResourceCandidateDescriptor(falseReview));
@@ -754,4 +814,408 @@ TEST_CASE("typed recipe and model declarations preserve canonical kinds without 
     wrongFamily.resourceKind = std::string{production::resource_kind::kSampleReal};
     CHECK(!production::encodeResourceCandidateDescriptor(wrongFamily));
   }
+}
+
+TEST_CASE("CLI packages and installs exactly the published candidate as distinct steps and a new song renders from it") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto candidate = fixture.root / "candidate";
+  const auto published = fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), candidate));
+  const auto candidateSha = field(published, "candidateSha256");
+  const auto keys = makeKeys(fixture.root, "producer");
+  const auto other = makeKeys(fixture.root, "other");
+  const auto package = fixture.root / "candidate.seambank";
+  // Packaging signs only the candidate whose digest publication reported, into a new file.
+  CHECK(!fixture.run({"package-candidate", candidate.string(), std::string(64U, 'd'), package.string(), keys.privateKey}));
+  CHECK(!std::filesystem::exists(package));
+  const auto packaged = fixture.success({"package-candidate", candidate.string(), candidateSha, package.string(), keys.privateKey});
+  CHECK(field(packaged, "result") == "PackageCommitted");
+  CHECK(field(packaged, "candidateSha256") == candidateSha);
+  CHECK(field(packaged, "contentSha256") == field(published, "contentSha256"));
+  CHECK(field(packaged, "resourceKind") == "sample-procedural");
+  const auto packageDigest = field(packaged, "packageDigest");
+  CHECK(core::sha256File(package, 1ULL << 30U).value() == packageDigest);
+  CHECK(!packaged.find("installed")->asBool()); CHECK(!packaged.find("releaseEligible")->asBool());
+  CHECK(!fixture.run({"package-candidate", candidate.string(), candidateSha, package.string(), keys.privateKey}));
+  CHECK(core::sha256File(package, 1ULL << 30U).value() == packageDigest);
+  const auto verified = fixture.success({"verify-candidate-package", package.string(), keys.publicKey});
+  CHECK(field(verified, "packageDigest") == packageDigest); CHECK(verified.find("signerTrusted")->asBool());
+  CHECK(!fixture.run({"verify-candidate-package", package.string(), other.publicKey}));
+  // A byte change anywhere in the package is refused by verification and installation alike.
+  auto tamperedBytes = core::readFileBytesLimited(package, 1ULL << 30U).value();
+  tamperedBytes[tamperedBytes.size() / 2U] ^= std::byte{1};
+  const auto tampered = fixture.root / "tampered.seambank";
+  CHECK(core::durableAtomicWriteNew(tampered, tamperedBytes));
+  CHECK(!fixture.run({"verify-candidate-package", tampered.string(), keys.publicKey}));
+  CHECK(!fixture.run({"install-candidate", tampered.string(), core::sha256Hex(tamperedBytes),
+      (fixture.root / "installed").string(), keys.publicKey}));
+  // Installation requires the exact digest and a trusted signer; refusals install nothing.
+  CHECK(!fixture.run({"install-candidate", package.string(), std::string(64U, 'e'), (fixture.root / "installed").string(), keys.publicKey}));
+  CHECK(!fixture.run({"install-candidate", package.string(), packageDigest, (fixture.root / "installed").string(), other.publicKey}));
+  CHECK(!std::filesystem::exists(fixture.root / "installed/cli.published.fixture"));
+  const auto installed = fixture.success({"install-candidate", package.string(), packageDigest,
+      (fixture.root / "installed").string(), keys.publicKey});
+  CHECK(field(installed, "result") == "InstallCommitted");
+  CHECK(field(installed, "contentHash") == field(published, "contentSha256"));
+  CHECK(field(installed, "candidateSha256") == candidateSha);
+  CHECK(field(installed, "packageDigest") == packageDigest);
+  CHECK(installed.find("descriptorReconfirmed")->asBool());
+  CHECK(!installed.find("replacedExisting")->asBool()); CHECK(installed.find("durabilityConfirmed")->asBool());
+  const std::filesystem::path installDirectory{field(installed, "installDirectory")};
+  CHECK(core::sha256File(installDirectory / "candidate.json").value() == candidateSha);
+  const auto installedTree = treeDigest(installDirectory);
+  CHECK(!fixture.run({"install-candidate", package.string(), packageDigest, (fixture.root / "installed").string(), keys.publicKey}));
+  CHECK(treeDigest(installDirectory) == installedTree);
+  // A new song resolves and renders the installed bank with the producer and candidate unavailable.
+  std::filesystem::rename(fixture.root / "producer", fixture.root / "producer-unavailable");
+  std::filesystem::rename(candidate, fixture.root / "candidate-unavailable");
+  application::ProjectFactory factory{989100U};
+  auto song = factory.createProject("New melody from the installed typed candidate");
+  const auto track = factory.addVocalTrack(song, "Singer");
+  const auto region = factory.addRegion(song, track, "New melody", time::Tick{0}, time::Tick{1920});
+  for (int index = 0; index < 2; ++index) {
+    auto [lyric, note] = factory.makeNote(time::Tick{960 * index}, time::Tick{960}, static_cast<std::uint8_t>(69 + 3 * index), U"あ",
+                                          domain::Language::Japanese);
+    song.findRegion(region)->lyrics.push_back(lyric);
+    song.findRegion(region)->notes.push_back(note);
+  }
+  song.findVocalTrack(track)->voicebank = {fixture.manifest.id, fixture.manifest.version, field(installed, "contentHash")};
+  song.findVocalTrack(track)->styleSelection = {domain::VoiceStyleOrigin::Explicit, "original"};
+  CHECK(formats::ProjectJsonCodec{}.save(song, fixture.root / "song.seam"));
+  const auto reopened = formats::ProjectJsonCodec{}.load(fixture.root / "song.seam");
+  CHECK(reopened);
+  authoring::VoicebankSession session({{fixture.root / "installed", voicebank::VoicebankRootKind::Installed}}, false);
+  CHECK(session.refresh());
+  const auto resolved = session.resolveTrack(reopened.value(), track);
+  CHECK(resolved.resolved());
+  if (!resolved.resolved()) return;
+  CHECK(resolved.candidate->trust == voicebank::VoicebankTrust::TrustedInstalled);
+  const auto& bank = *resolved.candidate;
+  const std::vector<rendering::TrackVoicebankSource> sources{{track, bank.manifest, bank.bankRoot, bank.contentHash, bank.trust}};
+  const auto rendered = rendering::ProductionProjectRenderer{}.render(reopened.value(), sources, track, region, 1U, 48000U,
+                                                                     rendering::RenderQuality::Final);
+  CHECK(rendered);
+  if (!rendered) return;
+  CHECK(rendered.value().diagnostics.empty()); CHECK(rendered.value().fallbackCount == 0U);
+  CHECK(voicebank::analyzeAudio(std::span<const float>{rendered.value().interleaved.data(), rendered.value().interleaved.size()}).rms > 1e-4);
+#endif
+}
+
+TEST_CASE("Typed package verification refuses unlisted entries, schema-1 candidates and content that differs from the descriptor") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto candidate = fixture.root / "candidate";
+  CHECK(fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), candidate))
+            .find("result")->asString() == "CandidateCommitted");
+  const auto keys = makeKeys(fixture.root, "producer");
+  const distribution::VerifySeambankOptions trusted{.trustedPublicKeys = {keys.pair.publicKey}, .requireTrustedSigner = true};
+  // A package signed over an extra, unlisted file is not this candidate.
+  const auto extra = copyTree(candidate, fixture.root / "extra");
+  CHECK(core::durableAtomicWriteTextNew(extra / "notes.txt", "unlisted"));
+  CHECK(distribution::packSeambank(extra, fixture.root / "extra.seambank", keys.pair));
+  CHECK(!candidate_packaging::verifyResourceCandidatePackage(fixture.root / "extra.seambank", trusted));
+  CHECK(!candidate_packaging::packageResourceCandidate(extra, fixture.root / "extra-typed.seambank", keys.pair,
+      {.expectedCandidateSha256 = core::sha256File(extra / "candidate.json").value()}));
+  CHECK(!std::filesystem::exists(fixture.root / "extra-typed.seambank"));
+  // A neutral container may carry opaque graphs; a sample installer must refuse them.
+  const auto graphBank = copyTree(candidate, fixture.root / "graph-bank");
+  CHECK(core::durableAtomicWriteTextNew(graphBank / "opaque.ONNX", "opaque model bytes"));
+  CHECK(distribution::packSignedContainer(graphBank, fixture.root / "graph-bank.seambank", keys.pair));
+  CHECK(distribution::verifySignedContainer(fixture.root / "graph-bank.seambank", trusted));
+  const auto preservedBank = fixture.root / "preserved-bank.seambank";
+  CHECK(distribution::packSeambank(candidate, preservedBank, keys.pair));
+  const auto preservedBankDigest = core::sha256File(preservedBank).value();
+  CHECK(!distribution::packSeambank(graphBank, preservedBank, keys.pair));
+  CHECK(core::sha256File(preservedBank).value() == preservedBankDigest);
+  CHECK(distribution::verifySeambank(preservedBank, trusted));
+  CHECK(!distribution::packSeambank(graphBank, fixture.root / "refused-bank.seambank", keys.pair));
+  CHECK(!std::filesystem::exists(fixture.root / "refused-bank.seambank"));
+
+  CHECK(!distribution::verifySeambank(fixture.root / "graph-bank.seambank", trusted));
+  distribution::InstallSeambankOptions graphInstall;
+  graphInstall.verification = trusted;
+  CHECK(!distribution::installSeambank(fixture.root / "graph-bank.seambank", fixture.root / "graph-install", graphInstall));
+  CHECK(!std::filesystem::exists(fixture.root / "graph-install"));
+  const auto sampleDescriptor = production::verifyResourceCandidateDirectory(candidate).value().descriptor;
+  for (const bool evidence : {false, true}) {
+    auto graphDescriptor = sampleDescriptor;
+    auto& list = evidence ? graphDescriptor.evidence : graphDescriptor.payload;
+    list.push_back({evidence ? "quality.ONNX" : "character/x.OnNx",
+        evidence ? "source-quality-evidence" : "character", core::sha256Hex("opaque"), 6U});
+    std::sort(list.begin(), list.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
+    CHECK(!production::encodeResourceCandidateDescriptor(graphDescriptor));
+  }
+  // A descriptor whose content identity differs from the audio it lists never installs.
+  const auto relabelled = copyTree(candidate, fixture.root / "relabelled");
+  const auto descriptor = production::verifyResourceCandidateDirectory(candidate).value().descriptor;
+  auto text = readText(relabelled / "candidate.json");
+  CHECK(replaceOnce(text, "\"contentSha256\": \"" + descriptor.contentSha256 + "\"", "\"contentSha256\": \"" + std::string(64U, 'f') + "\""));
+  CHECK(core::durableAtomicWriteText(relabelled / "candidate.json", text));
+  CHECK(!production::verifyResourceCandidateDirectory(relabelled));
+  CHECK(distribution::packSeambank(relabelled, fixture.root / "relabelled.seambank", keys.pair));
+  // Its signature and entry listing are valid; only the derived content identity exposes the relabelling.
+  CHECK(distribution::verifySeambank(fixture.root / "relabelled.seambank", trusted));
+  CHECK(!candidate_packaging::verifyResourceCandidatePackage(fixture.root / "relabelled.seambank", trusted));
+  CHECK(!fixture.run({"verify-candidate-package", (fixture.root / "relabelled.seambank").string(), keys.publicKey}));
+  candidate_packaging::InstallCandidateOptions install;
+  install.verification = trusted;
+  install.expectedPackageDigest = core::sha256File(fixture.root / "relabelled.seambank", 1ULL << 30U).value();
+  CHECK(!candidate_packaging::installResourceCandidatePackage(fixture.root / "relabelled.seambank", fixture.root / "installed", install));
+  CHECK(!std::filesystem::exists(fixture.root / "installed/cli.published.fixture"));
+  // Schema 1 cannot be packaged as a typed candidate: it never declared its dependency set.
+  const auto legacy = copyTree(candidate, fixture.root / "legacy");
+  formats::JsonValue::Object schema1{{"format", "com.project-seam.resource-candidate"}, {"schemaVersion", std::int64_t{1}},
+      {"resourceKind", "sample"}, {"status", "REVIEWED_CANDIDATE"}, {"releaseEligible", false},
+      {"evidenceScope", "engineering"}, {"sourceProjectSha256", descriptor.source->projectSha256},
+      {"sourceGeneration", static_cast<std::int64_t>(descriptor.source->generation)},
+      {"inventorySha256", descriptor.source->inventorySha256}, {"licenseSha256", descriptor.source->licenseSha256},
+      {"manifestSha256", descriptor.manifestSha256}, {"contentSha256", descriptor.contentSha256},
+      {"originHistory", descriptor.originHistory}, {"unitBindings", descriptor.unitBindings}};
+  for (auto& binding : schema1["unitBindings"].asArray()) binding.asObject().erase("sourceKind");
+  CHECK(core::durableAtomicWriteText(legacy / "candidate.json", formats::stringifyJson(formats::JsonValue{schema1}, true) + "\n"));
+  const auto inspected = fixture.success({"inspect-candidate", legacy.string()});
+  CHECK(inspected.find("schemaVersion")->asInt64() == 1); CHECK(!inspected.find("dependencySetDeclared")->asBool());
+  CHECK(!candidate_packaging::packageResourceCandidate(legacy, fixture.root / "legacy.seambank", keys.pair,
+      {.expectedCandidateSha256 = core::sha256File(legacy / "candidate.json").value()}));
+  CHECK(!std::filesystem::exists(fixture.root / "legacy.seambank"));
+  // Master legacy schema 2 is readable, but also lacks dependency closure.
+  auto schema2 = schema1;
+  schema2["unitBindings"] = descriptor.unitBindings;
+  schema2["schemaVersion"] = std::int64_t{2};
+  schema2["resourceKind"] = descriptor.resourceKind;
+  schema2["languages"] = formats::JsonValue::Array{"ja"};
+  schema2["characterId"] = ""; schema2["characterVersion"] = "";
+  CHECK(core::durableAtomicWriteText(legacy / "candidate.json", formats::stringifyJson(formats::JsonValue{schema2}, true) + "\n"));
+  const auto legacy2 = fixture.success({"inspect-candidate", legacy.string()});
+  CHECK(legacy2.find("schemaVersion")->asInt64() == 2); CHECK(!legacy2.find("dependencySetDeclared")->asBool());
+  CHECK(!candidate_packaging::packageResourceCandidate(legacy, fixture.root / "legacy2.seambank", keys.pair,
+      {.expectedCandidateSha256 = core::sha256File(legacy / "candidate.json").value()}));
+  CHECK(!std::filesystem::exists(fixture.root / "legacy2.seambank"));
+  // Even an independently valid generic signature cannot upgrade either legacy schema.
+  CHECK(distribution::packSeambank(legacy, fixture.root / "legacy2-generic.seambank", keys.pair));
+  CHECK(!candidate_packaging::verifyResourceCandidatePackage(fixture.root / "legacy2-generic.seambank", trusted));
+  CHECK(!fixture.run({"package-candidate", legacy.string(), core::sha256File(legacy / "candidate.json").value(),
+      (fixture.root / "legacy2-cli.seambank").string(), keys.privateKey}));
+  CHECK(!fixture.run({"verify-candidate-package", (fixture.root / "legacy2-generic.seambank").string(), keys.publicKey}));
+  CHECK(!fixture.run({"install-candidate", (fixture.root / "legacy2-generic.seambank").string(),
+      core::sha256File(fixture.root / "legacy2-generic.seambank").value(), (fixture.root / "legacy2-installed").string(), keys.publicKey}));
+  CHECK(!std::filesystem::exists(fixture.root / "legacy2-installed"));
+
+#endif
+}
+
+TEST_CASE("Interrupted publication or packaging leaves the previous candidate and package intact") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto generation = std::stoull(field(reviewed, "generation"));
+  const auto first = fixture.root / "candidate-a";
+  CHECK(fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), first))
+            .find("result")->asString() == "CandidateCommitted");
+  const auto keys = makeKeys(fixture.root, "producer");
+  const auto firstPackage = candidate_packaging::packageResourceCandidate(first, fixture.root / "a.seambank", keys.pair,
+      {.expectedCandidateSha256 = production::verifyResourceCandidateDirectory(first).value().candidateSha256});
+  CHECK(firstPackage);
+  const auto candidateBefore = treeDigest(first);
+  const auto packageBefore = core::sha256File(fixture.root / "a.seambank", 1ULL << 30U).value();
+  const auto parentBefore = entriesOf(fixture.root);
+  const auto intact = [&] {
+    return treeDigest(first) == candidateBefore && entriesOf(fixture.root) == parentBefore &&
+           core::sha256File(fixture.root / "a.seambank", 1ULL << 30U).value() == packageBefore;
+  };
+  for (const auto stage : {production::CandidatePublicationStage::AudioStaged, production::CandidatePublicationStage::BeforeCommit}) {
+    production::CandidatePublicationOptions options;
+    options.faultInjector = [stage](production::CandidatePublicationStage current) -> core::Result<void> {
+      return current == stage ? core::failure(core::ErrorCode::IoError, "No space left on device (simulated disk exhaustion)")
+                              : core::success();
+    };
+    CHECK(!production::publishSampleCandidateFromGeneration(fixture.root / "producer", generation, field(reviewed, "projectSha256"),
+                                                           fixture.manifest, fixture.root / "candidate-b", options));
+    CHECK(intact());
+  }
+  std::stop_source cancel;
+  production::CandidatePublicationOptions cancelling;
+  cancelling.faultInjector = [&cancel](production::CandidatePublicationStage current) -> core::Result<void> {
+    if (current == production::CandidatePublicationStage::AudioStaged) cancel.request_stop();
+    return core::success();
+  };
+  CHECK(!production::publishSampleCandidateFromGeneration(fixture.root / "producer", generation, field(reviewed, "projectSha256"),
+                                                         fixture.manifest, fixture.root / "candidate-b", cancelling, cancel.get_token()));
+  CHECK(intact());
+  std::stop_source stopped;
+  stopped.request_stop();
+  CHECK(!candidate_packaging::packageResourceCandidate(first, fixture.root / "b.seambank", keys.pair, {}, stopped.get_token()));
+  CHECK(!candidate_packaging::packageResourceCandidate(first, fixture.root / "a.seambank", keys.pair,
+      {.expectedCandidateSha256 = production::verifyResourceCandidateDirectory(first).value().candidateSha256}));
+  CHECK(intact());
+#endif
+}
+
+TEST_CASE("Recipe and model contract fixtures travel through typed packaging without any qualification claim") {
+#if defined(__APPLE__) || defined(__linux__)
+  const auto root = test::support::temporaryDirectory("typed-declared-candidates");
+  const auto keys = makeKeys(root, "producer");
+  // Recipe: the Designer's recipe with its derived procedural manifest; installs as a procedural singer.
+  const auto recipe = cliSuccess({"publish-recipe-candidate",
+      (std::filesystem::path{SEAM_TEST_SOURCE_DIR} / "assets/pilots/seam-song-01/recipe.json").string(), "1.0.0", "ja",
+      (root / "recipe-candidate").string()});
+  CHECK(field(recipe, "status") == "DECLARED_CANDIDATE"); CHECK(field(recipe, "qualification") == "NOT_QUALIFIED");
+  CHECK(!recipe.find("reviewed")->asBool());
+  const auto recipeInspected = cliSuccess({"inspect-candidate", (root / "recipe-candidate").string()});
+  CHECK(field(recipeInspected, "resourceKind") == "recipe-original");
+  CHECK(recipeInspected.find("languages")->asArray().front().asString() == "ja");
+  CHECK(!recipeInspected.find("sourceGeneration"));
+  CHECK(recipeInspected.find("externalDependencies")->asArray().front().find("kind")->asString() == "render-engine");
+  const auto recipeDescriptor = production::verifyResourceCandidateDirectory(root / "recipe-candidate");
+  CHECK(recipeDescriptor); CHECK(!recipeDescriptor.value().descriptor.source.has_value());
+  CHECK(recipeDescriptor.value().descriptor.evidence.empty());
+  const auto recipePackage = cliSuccess({"package-candidate", (root / "recipe-candidate").string(), field(recipe, "candidateSha256"),
+      (root / "recipe.seamsinger").string(), keys.privateKey});
+  CHECK(field(recipePackage, "resourceKind") == "recipe-original");
+  const auto recipeInstalled = cliSuccess({"install-candidate", (root / "recipe.seamsinger").string(),
+      field(recipePackage, "packageDigest"), (root / "singers").string(), keys.publicKey});
+  CHECK(field(recipeInstalled, "resourceKind") == "recipe-original");
+  const std::filesystem::path singerDirectory{field(recipeInstalled, "installDirectory")};
+  CHECK(readText(singerDirectory / "install-receipt.json").find("procedural-singer") != std::string::npos);
+  CHECK(core::sha256File(singerDirectory / "candidate.json").value() == field(recipe, "candidateSha256"));
+  const auto recipeWithGraph = copyTree(root / "recipe-candidate", root / "recipe-with-graph");
+  CHECK(core::durableAtomicWriteTextNew(recipeWithGraph / "opaque.ONNX", "opaque graph"));
+  CHECK(distribution::packSignedContainer(recipeWithGraph, root / "recipe-graph.seamsinger", keys.pair));
+  const distribution::VerifySeambankOptions graphTrust{.trustedPublicKeys = {keys.pair.publicKey}, .requireTrustedSigner = true};
+  CHECK(distribution::verifySignedContainer(root / "recipe-graph.seamsinger", graphTrust));
+  const auto recipeDigestBefore = core::sha256File(root / "recipe.seamsinger").value();
+  CHECK(!distribution::packProceduralPackage(recipeWithGraph, root / "recipe.seamsinger", keys.pair));
+  CHECK(core::sha256File(root / "recipe.seamsinger").value() == recipeDigestBefore);
+  CHECK(distribution::verifyProceduralPackage(root / "recipe.seamsinger", graphTrust));
+  CHECK(!distribution::packProceduralPackage(recipeWithGraph, root / "refused-recipe.seamsinger", keys.pair));
+  CHECK(!std::filesystem::exists(root / "refused-recipe.seamsinger"));
+
+  CHECK(!distribution::verifyProceduralPackage(root / "recipe-graph.seamsinger", graphTrust));
+  distribution::InstallProceduralOptions graphInstall;
+  graphInstall.verification = graphTrust;
+  CHECK(!distribution::installProceduralPackage(root / "recipe-graph.seamsinger", root / "graph-singers", graphInstall));
+  CHECK(!std::filesystem::exists(root / "graph-singers"));
+  // A recipe descriptor that relabels the manifest's language is refused at packaging.
+  const auto relabelled = copyTree(root / "recipe-candidate", root / "recipe-relabelled");
+  auto text = readText(relabelled / "candidate.json");
+  CHECK(replaceOnce(text, "\"ja\"", "\"en\""));
+  CHECK(core::durableAtomicWriteText(relabelled / "candidate.json", text));
+  const auto relabelledSha = core::sha256Hex(text);
+  CHECK(!runCli({"package-candidate", relabelled.string(), relabelledSha, (root / "relabelled.seamsinger").string(), keys.privateKey}));
+  CHECK(!std::filesystem::exists(root / "relabelled.seamsinger"));
+  // Model: a contract payload, not a trained or qualified model. It packages and verifies but never installs.
+  const auto payload = root / "model-payload";
+  std::filesystem::create_directories(payload / "graphs");
+  CHECK(core::durableAtomicWriteTextNew(payload / "manifest.json",
+      "{\"modelId\":\"fixture.model\",\"modelVersion\":\"0.0.1\",\"note\":\"contract fixture; not a trained model\"}\n"));
+  CHECK(core::durableAtomicWriteTextNew(payload / "graphs/acoustic.onnx", std::string(4096U, '\x5a')));
+  CHECK(core::durableAtomicWriteTextNew(payload / "vocabulary.json", "{\"phones\":[\"a\",\"i\"]}\n"));
+  const auto model = cliSuccess({"publish-model-candidate", payload.string(), "ja,en", "neutral", "seam-neural-worker", "1",
+      (root / "model-candidate").string(), "Contract fixture model"});
+  CHECK(field(model, "status") == "DECLARED_CANDIDATE"); CHECK(field(model, "resourceKind") == "neural-original");
+  const auto modelDescriptor = production::verifyResourceCandidateDirectory(root / "model-candidate");
+  CHECK(modelDescriptor);
+  if (modelDescriptor) {
+    CHECK((modelDescriptor.value().descriptor.languages == std::vector<std::string>{"ja", "en"}));
+    CHECK(modelDescriptor.value().descriptor.contentSha256 ==
+          production::modelCandidateContentSha256(modelDescriptor.value().descriptor.payload));
+  }
+  const auto modelPackage = cliSuccess({"package-candidate", (root / "model-candidate").string(), field(model, "candidateSha256"),
+      (root / "model.seampkg.bin").string(), keys.privateKey});
+  CHECK(field(modelPackage, "resourceKind") == "neural-original");
+  CHECK(cliSuccess({"verify-candidate-package", (root / "model.seampkg.bin").string(), keys.publicKey}).find("result")->asString() ==
+        "PackageVerified");
+  CHECK(!runCli({"install-candidate", (root / "model.seampkg.bin").string(), field(modelPackage, "packageDigest"),
+      (root / "models").string(), keys.publicKey}));
+  CHECK(!std::filesystem::exists(root / "models/fixture.model"));
+  // A declaration can never produce a sample candidate: those come only from a reviewed producer generation.
+  production::DeclaredResourceCandidateRequest declaredSample;
+  declaredSample.kind = production::ResourceCandidateKind::Sample;
+  declaredSample.resourceId = "fixture.model"; declaredSample.resourceVersion = "0.0.1"; declaredSample.displayName = "Declared sample";
+  declaredSample.languages = {"ja"}; declaredSample.styles = {"neutral"};
+  declaredSample.roles = {{"graphs/acoustic.bin", "sample-audio"}, {"manifest.json", "manifest"}, {"vocabulary.json", "model-data"}};
+  CHECK(!production::publishDeclaredResourceCandidate(payload, declaredSample, root / "declared-sample"));
+  CHECK(!std::filesystem::exists(root / "declared-sample"));
+  // Opaque .onnx bytes are packageable, not a graph-validity claim. Executable payloads still refuse.
+  CHECK(core::durableAtomicWriteTextNew(payload / "graphs/runner.exe", "not packageable"));
+  CHECK(!runCli({"publish-model-candidate", payload.string(), "ja", "neutral", "seam-neural-worker", "1",
+      (root / "model-executable").string()}));
+  CHECK(!std::filesystem::exists(root / "model-executable"));
+#endif
+}
+
+TEST_CASE("Candidate packaging preserves foreign parents, checks final cancellation and reports committed sync uncertainty") {
+#if defined(__APPLE__) || defined(__linux__)
+  CliFixture fixture;
+  const auto captured = fixture.capture();
+  const auto reviewed = fixture.success(fixture.reviewArgs(field(captured, "fileSha256")));
+  const auto candidate = fixture.root / "guard-candidate";
+  const auto published = fixture.success(publishArgs(fixture, field(reviewed, "generation"), field(reviewed, "projectSha256"), candidate));
+  const auto key = makeKeys(fixture.root, "guard");
+  candidate_packaging::PackageCandidateOptions options;
+  options.expectedCandidateSha256 = field(published, "candidateSha256");
+  std::stop_source cancellation;
+  options.faultInjector = [&](candidate_packaging::CandidatePackagingStage stage) {
+    if (stage == candidate_packaging::CandidatePackagingStage::BeforePublish) cancellation.request_stop();
+    return core::success();
+  };
+  const auto cancelledPackage = fixture.root / "cancelled.seambank";
+  CHECK(!candidate_packaging::packageResourceCandidate(candidate, cancelledPackage, key.pair, options, cancellation.get_token()));
+  CHECK(!std::filesystem::exists(cancelledPackage));
+
+  const auto redirectedParent = fixture.root / "packages";
+  std::filesystem::create_directory(redirectedParent);
+  bool redirected = false;
+  options.faultInjector = [&](candidate_packaging::CandidatePackagingStage stage) {
+    if (stage == candidate_packaging::CandidatePackagingStage::BeforePublish) {
+      std::filesystem::rename(redirectedParent, fixture.root / "original-packages");
+      std::filesystem::create_directory(redirectedParent);
+      CHECK(core::durableAtomicWriteTextNew(redirectedParent / "foreign.txt", "must survive"));
+      redirected = true;
+    }
+    return core::success();
+  };
+  CHECK(!candidate_packaging::packageResourceCandidate(candidate, redirectedParent / "candidate.seambank", key.pair, options));
+  CHECK(redirected);
+  CHECK(readText(redirectedParent / "foreign.txt") == "must survive");
+  CHECK(entriesOf(redirectedParent) == std::set<std::string>{"foreign.txt"});
+  CHECK(!std::filesystem::exists(fixture.root / "original-packages/candidate.seambank"));
+
+  options.faultInjector = [&](candidate_packaging::CandidatePackagingStage stage) {
+    return stage == candidate_packaging::CandidatePackagingStage::AfterPublishBeforeSync
+        ? core::failure(core::ErrorCode::IoError, "simulated directory sync failure") : core::success();
+  };
+  const auto committed = candidate_packaging::packageResourceCandidate(candidate, fixture.root / "committed.seambank", key.pair, options);
+  CHECK(committed); CHECK(!committed.value().durabilityConfirmed);
+  CHECK(committed.value().diagnostic.find("committed") != std::string::npos);
+  const auto verified = candidate_packaging::verifyResourceCandidatePackage(fixture.root / "committed.seambank",
+      {.trustedPublicKeys = {key.pair.publicKey}, .requireTrustedSigner = true});
+  CHECK(verified); CHECK(verified.value().container.packageDigest == committed.value().packageDigest);
+  candidate_packaging::InstallCandidateOptions install;
+  install.verification = {.trustedPublicKeys = {key.pair.publicKey}, .requireTrustedSigner = true};
+  install.expectedPackageDigest = committed.value().packageDigest;
+  install.faultInjector = [](distribution::InstallStage stage) {
+    return stage == distribution::InstallStage::AfterCommitBeforeSync
+        ? core::failure(core::ErrorCode::IoError, "simulated install sync failure") : core::success();
+  };
+  const auto installed = candidate_packaging::installResourceCandidatePackage(committed.value().packagePath,
+      fixture.root / "sync-install", install);
+  CHECK(installed); CHECK(!installed.value().durabilityConfirmed); CHECK(installed.value().descriptorReconfirmed);
+  CHECK(core::sha256File(installed.value().installDirectory / "candidate.json").value() == field(published, "candidateSha256"));
+  const auto changedInstall = fixture.root / "changed-install";
+  install.faultInjector = [&](distribution::InstallStage stage) {
+    if (stage == distribution::InstallStage::AfterCommitBeforeSync)
+      CHECK(core::durableAtomicWriteText(changedInstall / "cli.published.fixture/0.1.0/candidate.json", "changed after commit"));
+    return core::success();
+  };
+  const auto changed = candidate_packaging::installResourceCandidatePackage(committed.value().packagePath, changedInstall, install);
+  CHECK(changed); CHECK(changed.value().durabilityConfirmed); CHECK(!changed.value().descriptorReconfirmed);
+  CHECK(changed.value().diagnostic.find("after commit") != std::string::npos);
+
+#endif
 }

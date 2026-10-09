@@ -73,6 +73,8 @@ struct VerifySeambankOptions final {
     const VerifySeambankOptions& options = {});
 
 [[nodiscard]] bool isSafeSeambankPath(std::string_view path) noexcept;
+// Opaque model-graph extension, case-insensitive; installable families refuse it.
+[[nodiscard]] bool isModelGraphAsset(std::string_view path);
 // A verified signed container whose payload meaning belongs to the caller. The sample-bank
 // entrypoints above are one family over it; a procedural singer package is another, and neither
 // re-implements the signature, entry table, path policy or digest checks.
@@ -93,6 +95,8 @@ struct PackSignedContainerOptions final {
   SeambankLimits limits{};
   // The manifest path every member of this family must contain. The container does not decode it.
   std::string rootManifest{"manifest.json"};
+  // Family packers set false so refusal happens before output publication.
+  bool allowModelGraphs{true};
 };
 
 [[nodiscard]] core::Result<SignedContainerInfo> packSignedContainer(

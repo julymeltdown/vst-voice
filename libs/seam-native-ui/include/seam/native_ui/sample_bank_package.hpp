@@ -2,6 +2,7 @@
 
 #include "seam/core/result.hpp"
 #include "seam/distribution/seambank.hpp"
+#include "seam/candidate_packaging/candidate_package.hpp"
 #include "seam/distribution/signing.hpp"
 #include "seam/voicebank_production/candidate_publication.hpp"
 
@@ -29,10 +30,10 @@ struct SampleBankInstallation final {
 // candidate is decoded, re-encoded and compared with the digest recorded at publication, so a
 // package is never signed from material that no longer matches what reviewers saw. Publication does
 // not sign or distribute; this step is what makes the reviewed material installable.
-[[nodiscard]] core::Result<distribution::SeambankPackageInfo> packPublishedSampleBank(
+[[nodiscard]] core::Result<candidate_packaging::PackagedResourceCandidate> packPublishedSampleBank(
     const voicebank_production::PublishedSampleCandidate& candidate,
     const std::filesystem::path& packagePath,
-    const distribution::SigningKeyPair& signingKey);
+    const distribution::SigningKeyPair& signingKey, std::stop_token stop = {});
 
 // Installs a signed bank and proves it is the reviewed content: the installation must re-scan from
 // its root as a trusted installation whose content hash is exactly the published one. A signature
@@ -42,6 +43,7 @@ struct SampleBankInstallation final {
     const std::filesystem::path& installRoot,
     const std::vector<distribution::Ed25519PublicKey>& trustedPublicKeys,
     std::string_view expectedContentHash,
+    std::string_view expectedPackageDigest,
     std::stop_token stop = {});
 
 }  // namespace seam::native_ui

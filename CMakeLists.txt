@@ -563,6 +563,7 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/repository_export.cpp
   libs/seam-voicebank-production/src/repository_candidate.cpp
   libs/seam-voicebank-production/src/resource_candidate.cpp
+  libs/seam-voicebank-production/src/declared_candidate.cpp
   libs/seam-voicebank-production/src/repository_review.cpp
   libs/seam-voicebank-production/src/review_transition.cpp
   libs/seam-voicebank-production/src/manifest_draft.cpp
@@ -596,6 +597,14 @@ target_include_directories(seam_distribution PUBLIC
 target_link_libraries(seam_distribution PUBLIC
   seam_voicebank seam_voice_design seam_formats seam_domain seam_core OpenSSL::Crypto)
 seam_apply_compiler_options(seam_distribution)
+
+# Producer candidate -> signed package -> installed resource; neither lower layer depends on the other.
+add_library(seam_candidate_packaging libs/seam-candidate-packaging/src/candidate_package.cpp)
+target_include_directories(seam_candidate_packaging PUBLIC libs/seam-candidate-packaging/include)
+target_link_libraries(seam_candidate_packaging PUBLIC
+  seam_voicebank_production seam_distribution seam_voicebank seam_formats seam_core)
+seam_apply_compiler_options(seam_candidate_packaging)
+
 
 
 add_library(seam_voice_design
@@ -823,7 +832,7 @@ if(SEAM_BUILD_NATIVE_DESKTOP)
     libs/seam-authoring-runtime/include
     libs/seam-rendering/include
     libs/seam-voicebank/include)
-  target_link_libraries(seam_native_ui PUBLIC
+  target_link_libraries(seam_native_ui PUBLIC seam_candidate_packaging
     seam_authoring_runtime seam_character seam_editor_inspection seam_voicebank_production seam_voicebank seam_editor_ui seam_phonemizer seam_application seam_domain seam_text seam_distribution seam_platform seam_core)
   if(WIN32)
     target_sources(seam_native_ui PRIVATE
@@ -1345,9 +1354,10 @@ seam_apply_compiler_options(seam_clap_state_tool)
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
   apps/seam-voicebank-cli/campaign_commands.cpp
   apps/seam-voicebank-cli/coverage_commands.cpp
-  apps/seam-voicebank-cli/sample_review_commands.cpp)
+  apps/seam-voicebank-cli/sample_review_commands.cpp
+  apps/seam-voicebank-cli/candidate_package_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
-  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis)
+  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis seam_candidate_packaging)
 seam_apply_compiler_options(seam_voicebank_cli)
 add_executable(seam_singer_pilot apps/seam-singer-pilot/main.cpp)
 target_link_libraries(seam_singer_pilot PRIVATE seam_authoring_runtime)
@@ -3017,9 +3027,14 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_production_import_outcome_tests COMMAND seam_production_import_outcome_tests)
   add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp)
   target_include_directories(seam_sample_review_cli_tests PRIVATE tests)
-  target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>" SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(seam_sample_review_cli_tests PRIVATE
-    seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application)
+    seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application seam_candidate_packaging)
+  if(SEAM_ENABLE_THREAD_SANITIZER)
+    # Four-unit publish measured 14.06s under TSan versus the helper's 10s default.
+    # Only this test command gets an instrumentation budget; product deadlines stay unchanged.
+    target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_TSAN_PUBLISH_TIMEOUT=1)
+  endif()
   add_dependencies(seam_sample_review_cli_tests seam_voicebank_cli)
   seam_apply_compiler_options(seam_sample_review_cli_tests)
   add_test(NAME seam_sample_review_cli_tests COMMAND seam_sample_review_cli_tests)

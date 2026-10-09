@@ -176,7 +176,7 @@ public:
   [[nodiscard]] core::Result<void> beginSampleBankPackaging(const SampleReviewContext& context,
       voicebank_production::PublishedSampleCandidate candidate,
       std::filesystem::path packagePath, distribution::SigningKeyPair signingKey);
-  [[nodiscard]] const std::optional<distribution::SeambankPackageInfo>& publishedSampleBank() const noexcept { return publishedSampleBank_; }
+  [[nodiscard]] const std::optional<candidate_packaging::PackagedResourceCandidate>& publishedSampleBank() const noexcept { return publishedSampleBank_; }
   [[nodiscard]] core::Result<void> beginSampleBankInstallation(const SampleReviewContext& context,
       voicebank_production::PublishedSampleCandidate candidate,
       std::filesystem::path packagePath, std::filesystem::path installRoot,
@@ -529,7 +529,7 @@ private:
     std::optional<voicebank_production::VoicebankProductionProject> committedProject;
     std::optional<voicebank_production::SampleCandidateReviewReceipt> receipt;
     std::optional<voicebank_production::PublishedSampleCandidate> published;
-    std::optional<distribution::SeambankPackageInfo> publishedBank;
+    std::optional<candidate_packaging::PackagedResourceCandidate> publishedBank;
     std::optional<SampleBankInstallation> installedBank;
     std::optional<LoadedUnit> loadedUnit;
     std::optional<voicebank_production::CreatedSampleManifestDraft> createdDraft;
@@ -565,7 +565,7 @@ private:
   std::optional<voicebank_production::ProductionCommitReceipt> reviewerRegistrationReceipt_;
   std::optional<voicebank_production::SampleCandidateReviewReceipt> sampleReviewReceipt_;
   std::optional<voicebank_production::PublishedSampleCandidate> publishedSampleCandidate_;
-  std::optional<distribution::SeambankPackageInfo> publishedSampleBank_;
+  std::optional<candidate_packaging::PackagedResourceCandidate> publishedSampleBank_;
   std::optional<SampleBankInstallation> installedSampleBank_;
   std::optional<voicebank_production::CreatedSampleManifestDraft> createdSampleManifestDraft_;
   std::string sampleManifestDraftLoadDiagnostic_;

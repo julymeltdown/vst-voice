@@ -160,16 +160,17 @@ TEST_CASE("Studio signs and installs a published candidate as the exact reviewed
     CHECK(packed.hasValue());
     CHECK(std::filesystem::exists(package));
     if (packed) {
-      CHECK(packed.value().signatureValid);
-      CHECK(packed.value().signerTrusted);
-      CHECK(packed.value().manifest.id == "studio-bank-handoff");
+      const auto verified = distribution::verifySeambank(package, {.trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true});
+      CHECK(verified);
+      CHECK(verified.value().manifest.id == "studio-bank-handoff");
+      CHECK(packed.value().candidateSha256 == produced.published.candidateSha256);
     }
     // Packing the same reviewed candidate twice is a refusal, never a silent overwrite.
     CHECK(!native_ui::packPublishedSampleBank(produced.published, package, key.value()).hasValue());
 
     const auto installRoot = produced.root / "voicebanks";
     const auto installed = native_ui::installSignedSampleBank(package, installRoot,
-        {key.value().publicKey}, produced.published.contentSha256);
+        {key.value().publicKey}, produced.published.contentSha256, packed.value().packageDigest);
     CHECK(installed.hasValue());
     if (installed) {
       CHECK(installed.value().voicebankId == "studio-bank-handoff");
@@ -191,7 +192,7 @@ TEST_CASE("Studio signs and installs a published candidate as the exact reviewed
     if (otherKey) {
       const auto secondRoot = produced.root / "voicebanks-untrusted";
       const auto refused = native_ui::installSignedSampleBank(package, secondRoot,
-          {otherKey.value().publicKey}, produced.published.contentSha256);
+          {otherKey.value().publicKey}, produced.published.contentSha256, packed.value().packageDigest);
       CHECK(!refused.hasValue());
       CHECK(!std::filesystem::exists(secondRoot / "studio-bank-handoff"));
     }
@@ -199,12 +200,12 @@ TEST_CASE("Studio signs and installs a published candidate as the exact reviewed
     // even with the correct signing key, so a package cannot be installed under a false review.
     const auto wrongHash = produced.root / "voicebanks-wrong-hash";
     const auto mismatched = native_ui::installSignedSampleBank(package, wrongHash,
-        {key.value().publicKey}, std::string(64U, 'b'));
+        {key.value().publicKey}, std::string(64U, 'b'), packed.value().packageDigest);
     CHECK(!mismatched.hasValue());
     CHECK(!std::filesystem::exists(wrongHash / "studio-bank-handoff"));
     // A refused package must not poison this id/version or block the correct retry.
     CHECK(native_ui::installSignedSampleBank(package, wrongHash,
-        {key.value().publicKey}, produced.published.contentSha256));
+        {key.value().publicKey}, produced.published.contentSha256, packed.value().packageDigest));
   }
 }
 
@@ -249,10 +250,11 @@ TEST_CASE("Studio writes a song bound to the installed bank and refuses anywhere
   if (!key) return;
   const auto package = produced.root / "out" / "song-bank.seambank";
   std::filesystem::create_directories(package.parent_path());
-  CHECK(native_ui::packPublishedSampleBank(produced.published, package, key.value()).hasValue());
+  const auto packed = native_ui::packPublishedSampleBank(produced.published, package, key.value());
+  CHECK(packed.hasValue());
   const auto installRoot = produced.root / "voicebanks";
   const auto installed = native_ui::installSignedSampleBank(package, installRoot,
-      {key.value().publicKey}, produced.published.contentSha256);
+      {key.value().publicKey}, produced.published.contentSha256, packed.value().packageDigest);
   CHECK(installed.hasValue());
   if (!installed) return;
   const std::vector<voicebank::VoicebankSearchRoot> roots{
@@ -317,10 +319,11 @@ TEST_CASE("Studio writes no song for an installation whose content no longer mat
   if (!key) return;
   const auto package = produced.root / "out" / "drift.seambank";
   std::filesystem::create_directories(package.parent_path());
-  CHECK(native_ui::packPublishedSampleBank(produced.published, package, key.value()).hasValue());
+  const auto packed = native_ui::packPublishedSampleBank(produced.published, package, key.value());
+  CHECK(packed.hasValue());
   const auto installRoot = produced.root / "voicebanks";
   const auto installed = native_ui::installSignedSampleBank(package, installRoot,
-      {key.value().publicKey}, produced.published.contentSha256);
+      {key.value().publicKey}, produced.published.contentSha256, packed.value().packageDigest);
   CHECK(installed.hasValue());
   if (!installed) return;
   const std::vector<voicebank::VoicebankSearchRoot> roots{
@@ -337,4 +340,27 @@ TEST_CASE("Studio writes no song for an installation whose content no longer mat
       .installDirectory = installed.value().installDirectory});
   CHECK(!mismatched.hasValue());
   CHECK(!std::filesystem::exists(songs / "Mismatched Song.seam"));
+}
+
+TEST_CASE("Studio signing refuses unlisted dependencies and a changed candidate identity before creating a package") {
+  const auto produced = publishReviewedCandidate();
+  CHECK(!produced.published.root.empty());
+  const auto key = distribution::generateSigningKeyPair(); CHECK(key);
+  const auto package = produced.root / "out/closure.seambank";
+  std::filesystem::create_directories(package.parent_path());
+  CHECK(core::durableAtomicWriteTextNew(produced.published.root / "unlisted.txt", "not in the reviewed dependency set"));
+  CHECK(!native_ui::packPublishedSampleBank(produced.published, package, key.value()));
+  CHECK(!std::filesystem::exists(package));
+  std::filesystem::remove(produced.published.root / "unlisted.txt");
+  auto wrong = produced.published;
+  wrong.candidateSha256 = std::string(64U, 'f');
+  CHECK(!native_ui::packPublishedSampleBank(wrong, package, key.value()));
+  CHECK(!std::filesystem::exists(package));
+  const auto packed = native_ui::packPublishedSampleBank(produced.published, package, key.value()); CHECK(packed);
+  const auto root = produced.root / "pinned-install";
+  CHECK(!native_ui::installSignedSampleBank(package, root, {key.value().publicKey},
+      produced.published.contentSha256, std::string(64U, 'f')));
+  CHECK(!std::filesystem::exists(root));
+  CHECK(native_ui::installSignedSampleBank(package, root, {key.value().publicKey},
+      produced.published.contentSha256, packed.value().packageDigest));
 }

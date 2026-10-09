@@ -352,8 +352,6 @@ core::Result<void> VoicebankStudioController::beginSampleBankPackaging(const Sam
   if (candidate.sourceGeneration != productionProject_->lastDurableGeneration)
     return core::failure(core::ErrorCode::Conflict, "Pack the published candidate of the current durable producer generation");
   if (packagePath.empty()) return core::failure(core::ErrorCode::InvalidArgument, "Choose a new signed package destination");
-  if (installedSampleBank_ && installedSampleBank_->packageDigest == candidate.candidateSha256)
-    return core::failure(core::ErrorCode::Conflict, "This published candidate is already installed");
   proceduralImportStop_ = std::stop_source{};
   const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
   try {
@@ -361,7 +359,7 @@ core::Result<void> VoicebankStudioController::beginSampleBankPackaging(const Sam
         [context, candidate = std::move(candidate), packagePath = std::move(packagePath),
          signingKey = signingKey, stop]() mutable -> core::Result<SampleReviewWorkResult> {
       if (const auto check = cancelled(stop); !check) return core::Result<SampleReviewWorkResult>{check.error()};
-      auto packed = packPublishedSampleBank(candidate, packagePath, signingKey);
+      auto packed = packPublishedSampleBank(candidate, packagePath, signingKey, stop);
       if (!packed) return core::Result<SampleReviewWorkResult>{packed.error()};
       if (const auto check = cancelled(stop); !check) {
         // The package exists. A late cancellation must not report that nothing was written.
@@ -386,15 +384,19 @@ core::Result<void> VoicebankStudioController::beginSampleBankInstallation(const 
     return core::failure(core::ErrorCode::InvalidArgument, "Installing a signed bank needs the explicit signing key that produced it");
   if (installedSampleBank_ && installedSampleBank_->contentHash == candidate.contentSha256)
     return core::failure(core::ErrorCode::Conflict, "The reviewed candidate content is already installed");
+  if (!publishedSampleBank_ || publishedSampleBank_->candidateSha256 != candidate.candidateSha256 ||
+      publishedSampleBank_->packagePath != packagePath || publishedSampleBank_->contentSha256 != candidate.contentSha256)
+    return core::failure(core::ErrorCode::Conflict, "Install the exact package reported by this candidate's signing step");
+  const auto packageDigest = publishedSampleBank_->packageDigest;
   proceduralImportStop_ = std::stop_source{};
   const auto stop = proceduralImportStop_.get_token(); statusBeforeImport_ = status_;
   try {
     sampleReviewWork_ = std::async(std::launch::async,
-        [context, contentHash = candidate.contentSha256, packagePath = std::move(packagePath),
+        [context, contentHash = candidate.contentSha256, packageDigest, packagePath = std::move(packagePath),
          installRoot = std::move(installRoot), trustedPublicKeys = std::move(trustedPublicKeys),
          stop]() -> core::Result<SampleReviewWorkResult> {
       if (const auto check = cancelled(stop); !check) return core::Result<SampleReviewWorkResult>{check.error()};
-      auto installed = installSignedSampleBank(packagePath, installRoot, trustedPublicKeys, contentHash, stop);
+      auto installed = installSignedSampleBank(packagePath, installRoot, trustedPublicKeys, contentHash, packageDigest, stop);
       if (!installed) return core::Result<SampleReviewWorkResult>{installed.error()};
       return SampleReviewWorkResult{.context = context, .installedBank = std::move(installed.value())};
     });
@@ -488,6 +490,7 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
       publishedSampleBank_ = std::move(value.publishedBank);
       sampleReviewStatus_ = "SIGNED PACKAGE COMMITTED / NOT INSTALLED / NOT A RELEASE QUALIFICATION";
       if (!current) sampleReviewStatus_ += " / CAPTURED CONTEXT, NOT CURRENT EDITS";
+      if (!publishedSampleBank_->durabilityConfirmed) sampleReviewStatus_ += " / DURABILITY UNCONFIRMED: " + publishedSampleBank_->diagnostic;
       if (value.draftLoadDiagnostic.empty()) status_ = sampleReviewStatus_;
       else { sampleReviewStatus_ += " / " + value.draftLoadDiagnostic; status_ = sampleReviewStatus_; }
       return core::success();

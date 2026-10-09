@@ -1,4 +1,5 @@
 #include "sample_review_commands.hpp"
+#include "candidate_package_commands.hpp"
 #include "signal_cancellation.hpp"
 #include "seam/core/file_io.hpp"
 #include "seam/core/sha256.hpp"
@@ -339,6 +340,7 @@ int migrateStyle(int argc, char** argv) {
 
 std::optional<int> runSampleReviewCommand(int argc, char** argv) {
   if (argc<2) return std::nullopt;
+  if (const auto result = runCandidatePackageCommand(argc, argv)) return result;
   const std::string_view command{argv[1]};
   if (command=="register-source") return registerSource(argc,argv);
   if (command=="select-take") return selectTake(argc,argv);
@@ -381,5 +383,6 @@ void printSampleReviewUsage() {
     << "    Builds a typed schema-3 candidate from exactly that verified generation; its approvals must still be in force.\n"
     << "    Capture/inspect never approves. Review requires a registered independent reviewer and explicit decision.\n"
     << "    Publication is an engineering candidate, not a signed package, install, or release approval.\n";
+  printCandidatePackageUsage();
 }
 } // namespace seam::voicebank_cli

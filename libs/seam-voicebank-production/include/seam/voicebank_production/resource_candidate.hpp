@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -133,5 +134,40 @@ struct VerifiedResourceCandidate final {
 // snapshot. Legacy schemas are checked against their named files and reported with their original version.
 [[nodiscard]] core::Result<VerifiedResourceCandidate> verifyResourceCandidateDirectory(
     const std::filesystem::path& root, std::stop_token stop = {});
+
+// Producer-declared facts for a recipe or model candidate. Declared only: nothing here is
+// reviewed, measured or qualified, and no producer source or contracted-singer profile is implied.
+struct DeclaredResourceCandidateRequest final {
+  ResourceCandidateKind kind{ResourceCandidateKind::Recipe};
+  std::string resourceId;
+  std::string resourceVersion;
+  std::string displayName;
+  std::vector<std::string> languages;
+  std::vector<std::string> styles;
+  std::vector<ResourceCandidateExternalDependency> externalDependencies;
+  std::string rootManifest{"manifest.json"};
+  // The role of every payload file by relative path; the payload directory must hold exactly these.
+  std::map<std::string, std::string, std::less<>> roles;
+  // Recipe: the canonical recipe digest. Model: left empty; derived from the payload listing.
+  std::string contentSha256;
+};
+
+struct PublishedResourceCandidate final {
+  std::filesystem::path root;
+  std::string candidateSha256;
+  std::string manifestSha256;
+  std::string contentSha256;
+  // False only for a committed candidate whose parent directory entry may not be durable yet.
+  bool durabilityConfirmed{true};
+  std::string diagnostic;
+};
+
+// Copies a declared payload into a new candidate directory with its schema-3 descriptor, verifies
+// the staged directory against the descriptor and publishes it create-new. Never overwrites, signs,
+// installs or qualifies anything. Sample candidates are refused here: they come only from a reviewed
+// producer generation.
+[[nodiscard]] core::Result<PublishedResourceCandidate> publishDeclaredResourceCandidate(
+    const std::filesystem::path& payloadDirectory, const DeclaredResourceCandidateRequest& request,
+    const std::filesystem::path& destination, std::stop_token stop = {});
 
 }  // namespace seam::voicebank_production

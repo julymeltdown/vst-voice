@@ -257,6 +257,7 @@ std::vector<std::string> studioSampleReviewDetailLines(const VoicebankStudioCont
     values.push_back("LAST SIGNED PACKAGE " + signedBank->packagePath.string());
     values.push_back("PACKAGE SHA256 " + signedBank->packageDigest);
     values.push_back("SIGNER KEY " + signedBank->signerKeyId);
+    if (!signedBank->diagnostic.empty()) values.push_back(signedBank->diagnostic);
   }
   if (const auto& installedBank = controller.installedSampleBank()) {
     values.push_back("P INSTALL BANK INSTALLS THE SIGNED PACKAGE INTO THE SONG EDITOR'S BANK FOLDER.");

@@ -103,6 +103,15 @@ struct PublishProceduralSingerOptions final {
     const PublishProceduralSingerOptions& options = {},
     std::stop_token stop = {});
 
+// The unsigned half of publishProceduralSingerFromRecipe: writes the canonical recipe and the
+// manifest derived from it into a new directory and returns that manifest. Nothing is signed, so a
+// typed resource candidate can carry exactly these bytes before a separate packaging step.
+[[nodiscard]] core::Result<ProceduralSingerManifest> writeProceduralSingerSource(
+    const synthesis::ProceduralSingerResource& recipe,
+    const std::filesystem::path& stagingDirectory,
+    const PublishProceduralSingerOptions& options = {},
+    std::stop_token stop = {});
+
 [[nodiscard]] core::Result<ProceduralPackageInfo> verifyProceduralPackage(
     const std::filesystem::path& packagePath,
     const VerifySeambankOptions& options = {});

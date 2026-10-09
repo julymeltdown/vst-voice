@@ -29,16 +29,16 @@ bool isDigest(std::string_view value) noexcept {
 
 }  // namespace
 
-core::Result<distribution::SeambankPackageInfo> packPublishedSampleBank(
+core::Result<candidate_packaging::PackagedResourceCandidate> packPublishedSampleBank(
     const voicebank_production::PublishedSampleCandidate& candidate,
     const std::filesystem::path& packagePath,
-    const distribution::SigningKeyPair& signingKey) {
-  using Output = distribution::SeambankPackageInfo;
+    const distribution::SigningKeyPair& signingKey, std::stop_token stop) {
+  using Output = candidate_packaging::PackagedResourceCandidate;
   // A published engineering candidate is deliberately not release-eligible: signing a package is
   // what makes reviewed material installable, and it never turns publication into a release
   // qualification. What is required here is the exact reviewed identity, not a release flag.
   if (candidate.root.empty() || !isDigest(candidate.contentSha256) ||
-      !isDigest(candidate.manifestSha256))
+      !isDigest(candidate.manifestSha256) || !isDigest(candidate.candidateSha256))
     return core::failure<Output>(core::ErrorCode::InvalidState,
         "Publish a complete engineering candidate before packing it for installation");
   if (packagePath.empty() || !packagePath.is_absolute() || packagePath.filename().empty() ||
@@ -84,31 +84,36 @@ core::Result<distribution::SeambankPackageInfo> packPublishedSampleBank(
         "The published candidate audio changed after publication; publish a new candidate before packing",
         candidate.root.string());
 
-  auto packed = distribution::packSeambank(candidate.root, packagePath, signingKey);
-  if (!packed) return core::Result<Output>{packed.error()};
-  if (!packed.value().signatureValid || !packed.value().signerTrusted)
-    return core::failure<Output>(core::ErrorCode::Internal,
-        "The signed package did not verify against the key that signed it");
-  return packed;
+  return candidate_packaging::packageResourceCandidate(candidate.root, packagePath, signingKey,
+      {.expectedCandidateSha256 = candidate.candidateSha256}, stop);
 }
 
 core::Result<SampleBankInstallation> installSignedSampleBank(
     const std::filesystem::path& packagePath, const std::filesystem::path& installRoot,
     const std::vector<distribution::Ed25519PublicKey>& trustedPublicKeys,
-    std::string_view expectedContentHash, std::stop_token stop) {
+    std::string_view expectedContentHash, std::string_view expectedPackageDigest, std::stop_token stop) {
   using Output = SampleBankInstallation;
   if (packagePath.empty() || installRoot.empty())
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Installing a signed bank needs its package and an installation folder");
-  if (!isDigest(expectedContentHash) || trustedPublicKeys.empty())
+  if (!isDigest(expectedContentHash) || !isDigest(expectedPackageDigest) || trustedPublicKeys.empty())
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
         "Installing a signed bank needs the reviewed content hash and an explicitly trusted key");
-  auto installed = distribution::installSeambank(packagePath, installRoot,
-      distribution::InstallSeambankOptions{
-          .verification = {.trustedPublicKeys = trustedPublicKeys, .requireTrustedSigner = true},
-          .replaceExisting = false,
-          .expectedContentHash = std::string{expectedContentHash}}, stop);
+  const distribution::VerifySeambankOptions verification{
+      .trustedPublicKeys = trustedPublicKeys, .requireTrustedSigner = true};
+  const auto checked = candidate_packaging::verifyResourceCandidatePackage(packagePath, verification);
+  if (!checked) return core::Result<Output>{checked.error()};
+  if (checked.value().descriptor.kind != voicebank_production::ResourceCandidateKind::Sample ||
+      checked.value().descriptor.contentSha256 != expectedContentHash ||
+      checked.value().container.packageDigest != expectedPackageDigest)
+    return core::failure<Output>(core::ErrorCode::Conflict, "The package is not the exact signed reviewed sample candidate");
+  auto installed = candidate_packaging::installResourceCandidatePackage(packagePath, installRoot,
+      {.verification = verification, .expectedPackageDigest = std::string{expectedPackageDigest}}, stop);
   if (!installed) return core::Result<Output>{installed.error()};
+  if (!installed.value().descriptorReconfirmed)
+    return core::failure<Output>(core::ErrorCode::Conflict,
+        "Installation committed, but its candidate identity could not be reconfirmed; inspect before use",
+        installed.value().installDirectory.string());
 
   // The catalog the song editor uses is the only authority on whether a bank is a trusted
   // installation, so the installation is re-scanned from its root instead of trusted from the

@@ -307,7 +307,7 @@ core::Result<ProceduralPackageInfo> packProceduralPackage(
   const auto recipeChecked = checkRecipeBytes(recipeBytes.value(), manifest.value());
   if (!recipeChecked) return core::Result<ProceduralPackageInfo>{recipeChecked.error()};
   auto packed = packSignedContainer(sourceDirectory, outputPackage, signingKey,
-      PackSignedContainerOptions{.limits = options.limits, .rootManifest = std::string{kManifestEntry}});
+      PackSignedContainerOptions{.limits = options.limits, .rootManifest = std::string{kManifestEntry}, .allowModelGraphs = false});
   if (!packed) return core::Result<ProceduralPackageInfo>{packed.error()};
   return verifyProceduralPackage(outputPackage, VerifySeambankOptions{
       .limits = options.limits,
@@ -315,13 +315,11 @@ core::Result<ProceduralPackageInfo> packProceduralPackage(
       .requireTrustedSigner = true});
 }
 
-core::Result<ProceduralPackageInfo> publishProceduralSingerFromRecipe(
+core::Result<ProceduralSingerManifest> writeProceduralSingerSource(
     const synthesis::ProceduralSingerResource& resource,
     const std::filesystem::path& stagingDirectory,
-    const std::filesystem::path& outputPackage,
-    const SigningKeyPair& signingKey,
     const PublishProceduralSingerOptions& options, std::stop_token stop) {
-  using Output = ProceduralPackageInfo;
+  using Output = ProceduralSingerManifest;
   if (stop.stop_requested())
     return core::failure<Output>(core::ErrorCode::Conflict, "Procedural publication cancelled");
   if (options.version.empty() || options.version.size() > 128U)
@@ -401,6 +399,19 @@ core::Result<ProceduralPackageInfo> publishProceduralSingerFromRecipe(
   if (!manifestWritten) return core::Result<Output>{manifestWritten.error()};
   if (stop.stop_requested())
     return core::failure<Output>(core::ErrorCode::Conflict, "Procedural publication cancelled");
+  return manifest;
+}
+
+core::Result<ProceduralPackageInfo> publishProceduralSingerFromRecipe(
+    const synthesis::ProceduralSingerResource& resource,
+    const std::filesystem::path& stagingDirectory,
+    const std::filesystem::path& outputPackage,
+    const SigningKeyPair& signingKey,
+    const PublishProceduralSingerOptions& options, std::stop_token stop) {
+  const auto written = writeProceduralSingerSource(resource, stagingDirectory, options, stop);
+  if (!written) return core::Result<ProceduralPackageInfo>{written.error()};
+  if (stop.stop_requested())
+    return core::failure<ProceduralPackageInfo>(core::ErrorCode::Conflict, "Procedural publication cancelled");
   return packProceduralPackage(stagingDirectory, outputPackage, signingKey, options.packing);
 }
 
@@ -409,6 +420,11 @@ core::Result<ProceduralPackageInfo> verifyProceduralPackage(
     const VerifySeambankOptions& options) {
   auto container = verifySignedContainer(packagePath, options);
   if (!container) return core::Result<ProceduralPackageInfo>{container.error()};
+  if (std::any_of(container.value().entries.begin(), container.value().entries.end(), [](const auto& entry) {
+        return isModelGraphAsset(entry.path);
+      }))
+    return core::failure<ProceduralPackageInfo>(core::ErrorCode::Unsupported,
+        "Procedural singers cannot install declared model graph files");
   auto manifestBytes = readSignedContainerEntry(container.value(), packagePath, kManifestEntry,
                                                 1024U * 1024U);
   if (!manifestBytes) return core::Result<ProceduralPackageInfo>{manifestBytes.error()};
