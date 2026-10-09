@@ -65,6 +65,7 @@ public:
 private:
   void raise(std::size_t channel, float peak) noexcept;
   void finishBlock(std::size_t channels, bool clipped) noexcept;
+  void forgetDisplay() noexcept;
   void forget() noexcept;
 
   static_assert(std::atomic<float>::is_always_lock_free);

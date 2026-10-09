@@ -160,6 +160,37 @@ TEST_CASE("output level is absent when the device stops or callbacks stop arrivi
   // Running but silent callbacks stopped (a device that died without stopping): stale -> nothing.
   CHECK(meter.read(true, t0 + milliseconds{300}).has_value());
   CHECK(!meter.read(true, t0 + milliseconds{800}).has_value());
+  // A resumed callback starts a new display, without resurrecting the old hold.
+  meter.measure(quiet.context());
+  const auto resumed = meter.read(true, t0 + milliseconds{801});
+  CHECK(resumed.has_value() && near(resumed->peak[0], 0.1F) && near(resumed->hold[0], 0.1F));
+}
+
+TEST_CASE("a first transient survives concurrent empty UI reads") {
+  // Repeated fresh meters exercise the startup boundary as well as steady-state handoff.
+  // Freeze the UI clock so scheduler speed cannot turn this into a stale/decay test.
+  for (int attempt = 0; attempt < 256; ++attempt) {
+    OutputLevelMeter meter;
+    const auto at = Clock::now();
+    std::atomic<bool> start{false};
+    std::atomic<bool> done{false};
+    std::thread audio([&] {
+      StereoBlock spike{0.95F, 0.1F};
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+      meter.measure(spike.context());
+      done.store(true, std::memory_order_release);
+    });
+    float loudest = 0.0F;
+    start.store(true, std::memory_order_release);
+    while (!done.load(std::memory_order_acquire)) {
+      if (const auto reading = meter.read(true, at))
+        loudest = std::max(loudest, reading->peak[0]);
+    }
+    audio.join();
+    if (const auto reading = meter.read(true, at))
+      loudest = std::max(loudest, reading->peak[0]);
+    CHECK(near(loudest, 0.95F));
+  }
 }
 
 TEST_CASE("a mono bus has one entry") {

@@ -79,11 +79,15 @@ void OutputLevelMeter::measure(std::span<const double* const> channels,
   finishBlock(count, clipped);
 }
 
-void OutputLevelMeter::forget() noexcept {
+void OutputLevelMeter::forgetDisplay() noexcept {
   live_ = false;
   shownChannels_ = 0U;
   level_.fill(0.0F);
   hold_.fill(0.0F);
+}
+
+void OutputLevelMeter::forget() noexcept {
+  forgetDisplay();
   // Whatever the audio thread measured before this point belongs to a run that is over.
   for (auto& window : windowPeak_) window.store(0.0F, std::memory_order_relaxed);
   seenBlocks_ = blocks_.load(std::memory_order_acquire);
@@ -102,13 +106,15 @@ std::optional<OutputLevelReading> OutputLevelMeter::read(
     lastBlockAt_ = now;
   } else if (!live_ || now - lastBlockAt_ > ballistics_.staleAfter) {
     // Nothing measured since the source started, or the callback stopped arriving.
-    forget();
+    // A callback may publish after the counter snapshot above. Only hide UI state:
+    // clearing the audio windows or advancing seenBlocks_ would lose that publication.
+    forgetDisplay();
     return std::nullopt;
   }
   const auto channels =
       std::min<std::size_t>(channels_.load(std::memory_order_relaxed), kMaxChannels);
   if (channels == 0U) {
-    forget();
+    forgetDisplay();
     return std::nullopt;
   }
   if (!live_ || channels != shownChannels_) {
