@@ -54,11 +54,25 @@ verified package through an explicit replacement transaction, keeping the saved 
 until that installation and its dependent projects have been checked. Automated
 crash-left inventory/recovery tooling and actual power-loss testing remain separate work.
 
-## Remaining standalone notification gap
+## Standalone installation notices
 
-The standalone menu handlers currently discard the returned durability diagnostic.
-The installer service preserves the result, but a committed installation with failed
-sync is not yet shown as uncertain in that editor. This is a known caller gap, not
-successful standalone acceptance. The next UI increment must surface a nonfatal,
-visible committed-install warning, while avoiding a false warning for an already
-installed resource whose durability simply was not rechecked.
+A newly committed sample-bank or procedural-singer installation whose sync is
+unconfirmed produces `INSTALL_DURABILITY_UNCONFIRMED`, a nonfatal warning in the
+standalone diagnostics panel. It names the installed version, directory and signed
+package digest and offers Dismiss and Copy details. The install remains successful;
+the notice does not say that nothing changed. An already-installed sample-bank match
+is explicitly distinguished from a new installation and does not produce a warning
+merely because durability was not rechecked.
+
+Notices belong to the running app, survive diagnostic/frame rebuilds, and dismiss
+individually without clearing runtime diagnostics or another resource's warning.
+They are session-scoped, not persisted across restart, and dismissal does not prove
+storage durability. Keep the original signed package for recovery. Neither a passing
+fault-injection test nor a receipt proves survival of actual power loss.
+
+The warning path covers successful install results. A separate post-publication
+catalog/resolution error in the sample-bank service can still return an error before
+this callback is reached. The macOS Voicebank menu currently discards returned
+errors (the Procedural Singer menu already displays them); that older refusal/error
+presentation gap remains a separate P2. Native physical-user and accessibility
+acceptance remain separate from automated command-dispatch and paint verification.

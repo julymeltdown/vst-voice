@@ -68,6 +68,7 @@ constexpr DiagnosticAction kNotice[]{DiagnosticAction::Dismiss};
 constexpr DiagnosticAction kRetryNotice[]{DiagnosticAction::Retry, DiagnosticAction::Dismiss};
 
 constexpr std::array definitions{
+    Definition{"INSTALL_DURABILITY_UNCONFIRMED", DiagnosticSeverity::Warning, kRendererChanged},
     Definition{"PROJECT_NOT_FOUND", DiagnosticSeverity::Error, kOpenSupport},
     Definition{"BANK_MISSING", DiagnosticSeverity::Error, kBankRecovery},
     Definition{"BANK_UNTRUSTED", DiagnosticSeverity::Error, kChooseBankSupport},

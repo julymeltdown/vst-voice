@@ -34,6 +34,19 @@ struct StandaloneApplicationController::AutomaticPerformanceProposalJob final {
 
 namespace {
 
+authoring::Diagnostic installationWarning(std::string_view id, std::string_view version,
+    std::string_view packageDigest, const std::filesystem::path& directory, std::string_view detail) {
+  constexpr auto code = "INSTALL_DURABILITY_UNCONFIRMED";
+  authoring::Diagnostic warning{.code = code,
+      .severity = authoring::DiagnosticRegistry::severity(code),
+      .messageKey = "resource.install-durability-unconfirmed",
+      .affectedIds = {std::string{id}, std::string{version}, std::string{packageDigest}, directory.generic_string()},
+      .actions = authoring::DiagnosticRegistry::actions(code)};
+  warning.setDetail("Installed " + std::string{id} + " " + std::string{version} + " at " + directory.string() +
+                    "\nPackage SHA-256: " + std::string{packageDigest} + "\n" + std::string{detail});
+  return warning;
+}
+
 std::filesystem::path initialDirectory(
     const authoring::ProjectDocument& document) {
   if (document.identity().projectPath.has_value()) {
@@ -2105,8 +2118,12 @@ StandaloneApplicationController::installVoicebank(
       .trustedPublicKeys = config_.trustedVoicebankKeys,
       .useDevelopmentTrustRoot = config_.developmentTrustRoot.has_value(),
       .existingDecision = decision,
+      .faultInjector = config_.installFaultInjector,
   });
   if (!result) return result;
+  if (result.value().newlyInstalled && !result.value().durabilityConfirmed && config_.installationWarning)
+    config_.installationWarning(installationWarning(result.value().voicebankId, result.value().voicebankVersion,
+        result.value().packageDigest, result.value().installDirectory, result.value().diagnostic));
   auto refreshed = refreshVoicebankBrowser();
   if (!refreshed) {
     return core::Result<authoring::VoicebankInstallResult>{refreshed.error()};
@@ -2138,10 +2155,14 @@ StandaloneApplicationController::installProceduralSinger(
   options.verification.trustedPublicKeys = config_.trustedVoicebankKeys;
   options.verification.requireTrustedSigner = true;
   options.replaceExisting = false;
+  options.faultInjector = config_.installFaultInjector;
   auto installed = distribution::installProceduralPackage(
       packagePath, installRoot->path, options);
   if (!installed)
     return core::Result<distribution::InstalledProceduralSinger>{installed.error()};
+  if (!installed.value().durabilityConfirmed && config_.installationWarning)
+    config_.installationWarning(installationWarning(installed.value().id, installed.value().version,
+        installed.value().packageDigest, installed.value().installDirectory, installed.value().diagnostic));
   notifyStateChanged();
   return installed;
 }

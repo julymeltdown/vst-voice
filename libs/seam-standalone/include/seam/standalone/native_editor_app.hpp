@@ -87,6 +87,8 @@ struct NativeEditorAppConfig final {
   // the shipping app, which uses the steady clock. A test moves it by hand, so that a blink cannot
   // fall among the frames it counts.
   std::function<std::chrono::steady_clock::time_point()> uiClock;
+  // Deterministic installation failure injection; empty in the shipping application.
+  std::function<core::Result<void>(distribution::InstallStage)> installFaultInjector;
 };
 
 [[nodiscard]] NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
@@ -286,6 +288,9 @@ private:
   // runs. Held beside the audio notice rather than inside the document, because it is a disclosure
   // about the document, not a property of it, and it must disappear when the creator dismisses it.
   std::optional<authoring::Diagnostic> rendererChangedDiagnostic_;
+  // Installation notices belong to the app, survive document/frame changes and are dismissed
+  // individually. A later installation never silently clears another resource's warning.
+  std::vector<authoring::Diagnostic> installationDiagnostics_;
   // The difference the creator already dismissed. Dismissal is keyed to that exact description, so
   // re-raising the notice every frame would be a notice nobody can close, while a genuinely new
   // difference still speaks up.

@@ -32,7 +32,11 @@ std::string actionLabel(authoring::DiagnosticAction action) {
 
 DiagnosticPresentation presentDiagnostic(const authoring::Diagnostic& diagnostic) {
   DiagnosticPresentation result;
-  if (diagnostic.code == "BANK_MISSING") {
+  if (diagnostic.code == "INSTALL_DURABILITY_UNCONFIRMED") {
+    result.title = "Installed; storage sync unconfirmed";
+    result.impact = "It is installed and can be used now, but SEAM could not confirm it was saved to storage. "
+                    "Keep the original package. If it is missing after a crash or power loss, install it again from that package.";
+  } else if (diagnostic.code == "BANK_MISSING") {
     result.title = "Voicebank needs attention";
     result.impact = "This track cannot render until its exact voicebank is available.";
   } else if (diagnostic.code == "MEDIA_MISSING") {

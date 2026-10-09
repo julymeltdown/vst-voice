@@ -127,6 +127,10 @@ struct StandaloneApplicationControllerConfig final {
   // interval has passed). Empty in the shipping app, which reads the steady clock. A test moves it by
   // hand, so that an interval of a minute does not have to be waited out.
   std::function<std::chrono::steady_clock::time_point()> clock;
+  // A committed installation whose storage sync was not confirmed needs a nonfatal notice.
+  std::function<void(authoring::Diagnostic)> installationWarning;
+  // Diagnostic interruption seam, empty in the shipping application. Cannot bypass verification.
+  std::function<core::Result<void>(distribution::InstallStage)> installFaultInjector;
 };
 
 class StandaloneApplicationController final

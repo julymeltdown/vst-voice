@@ -5,6 +5,7 @@
 #include "seam/distribution/signing.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -18,6 +19,7 @@ struct VoicebankInstallRequest final {
   bool useDevelopmentTrustRoot{false};
   ExistingVoicebankDecision existingDecision{
       ExistingVoicebankDecision::Reject};
+  std::function<core::Result<void>(distribution::InstallStage)> faultInjector;
 };
 
 struct VoicebankInstallResult final {
@@ -28,6 +30,7 @@ struct VoicebankInstallResult final {
   std::string signerKeyId;
   std::filesystem::path installDirectory;
   voicebank::VoicebankCandidate candidate;
+  bool newlyInstalled{false};
   bool durabilityConfirmed{false};
   std::string diagnostic;
 };

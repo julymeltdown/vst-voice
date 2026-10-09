@@ -178,6 +178,7 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
           .replaceExisting = false,
           .expectedPackageDigest = verified.value().packageDigest,
           .expectedContentHash = incomingHash.value(),
+          .faultInjector = request.faultInjector,
       });
   if (!installed) return core::Result<VoicebankInstallResult>{installed.error()};
 
@@ -208,6 +209,7 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
       .signerKeyId = candidate->signerKeyId,
       .installDirectory = candidate->bankRoot,
       .candidate = *candidate,
+      .newlyInstalled = true,
       .durabilityConfirmed = installed.value().durabilityConfirmed,
       .diagnostic = installed.value().diagnostic,
   };

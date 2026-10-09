@@ -745,6 +745,19 @@ core::Result<void> NativeEditorApp::initialize() {
           // The autosave interval counts on the clock the animation reads, so a test that moves one
           // moves both. Empty in the shipping app.
           .clock = config_.uiClock,
+          .installationWarning = [this](authoring::Diagnostic warning) {
+            const auto same = std::find_if(installationDiagnostics_.begin(), installationDiagnostics_.end(),
+                [&](const auto& existing) { return existing.sameIssueAs(warning); });
+            if (same == installationDiagnostics_.end()) installationDiagnostics_.push_back(std::move(warning));
+            else same->addOccurrences(warning.occurrenceCount);
+            auto diagnostics = authoring_->runtime().diagnostics();
+            if (audioDiagnostic_) diagnostics.push_back(*audioDiagnostic_);
+            if (rendererChangedDiagnostic_) diagnostics.push_back(*rendererChangedDiagnostic_);
+            diagnostics.insert(diagnostics.end(), installationDiagnostics_.begin(), installationDiagnostics_.end());
+            authoring_->controller().setDiagnostics(std::move(diagnostics));
+            requestWindowRepaint();
+          },
+          .installFaultInjector = config_.installFaultInjector,
       },
       [this] { closeRequested_.store(true, std::memory_order_release); });
   if (!application) return core::Result<void>{application.error()};
@@ -1397,6 +1410,18 @@ core::Result<void> NativeEditorApp::handleDiagnosticAction(
     authoring::DiagnosticAction action) {
   switch (action) {
     case authoring::DiagnosticAction::Dismiss:
+      if (diagnostic.code == "INSTALL_DURABILITY_UNCONFIRMED") {
+        // Copy before rebuilding: the action may refer to the current panel's storage.
+        const auto dismissed = diagnostic;
+        std::erase_if(installationDiagnostics_, [&](const auto& held) { return held.sameIssueAs(dismissed); });
+        auto diagnostics = authoring_->runtime().diagnostics();
+        diagnostics.insert(diagnostics.end(), installationDiagnostics_.begin(), installationDiagnostics_.end());
+        if (audioDiagnostic_) diagnostics.push_back(*audioDiagnostic_);
+        if (rendererChangedDiagnostic_) diagnostics.push_back(*rendererChangedDiagnostic_);
+        authoring_->controller().setDiagnostics(std::move(diagnostics));
+        requestWindowRepaint();
+        return core::success();
+      }
       if (diagnostic.code == "CRASH_RECOVERY_AVAILABLE" && crashCapture_ != nullptr) {
         static_cast<void>(crashCapture_->clearMarker());
         startupCrashMarker_.reset();
@@ -1949,6 +1974,7 @@ void NativeEditorApp::paint(native_ui::RasterCanvas& canvas) noexcept {
   if (rendererChangedDiagnostic_.has_value()) {
     diagnostics.push_back(*rendererChangedDiagnostic_);
   }
+  diagnostics.insert(diagnostics.end(), installationDiagnostics_.begin(), installationDiagnostics_.end());
   authoring_->controller().setDiagnostics(std::move(diagnostics));
   const auto& project = authoring_->runtime().document().session().project();
   const auto tick = project.tempoMap().tickAtSampleFrame(
