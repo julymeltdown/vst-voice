@@ -201,6 +201,10 @@ TEST_CASE("Studio signs and installs a published candidate as the exact reviewed
     const auto mismatched = native_ui::installSignedSampleBank(package, wrongHash,
         {key.value().publicKey}, std::string(64U, 'b'));
     CHECK(!mismatched.hasValue());
+    CHECK(!std::filesystem::exists(wrongHash / "studio-bank-handoff"));
+    // A refused package must not poison this id/version or block the correct retry.
+    CHECK(native_ui::installSignedSampleBank(package, wrongHash,
+        {key.value().publicKey}, produced.published.contentSha256));
   }
 }
 

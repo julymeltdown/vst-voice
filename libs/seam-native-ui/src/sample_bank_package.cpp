@@ -95,7 +95,7 @@ core::Result<distribution::SeambankPackageInfo> packPublishedSampleBank(
 core::Result<SampleBankInstallation> installSignedSampleBank(
     const std::filesystem::path& packagePath, const std::filesystem::path& installRoot,
     const std::vector<distribution::Ed25519PublicKey>& trustedPublicKeys,
-    std::string_view expectedContentHash) {
+    std::string_view expectedContentHash, std::stop_token stop) {
   using Output = SampleBankInstallation;
   if (packagePath.empty() || installRoot.empty())
     return core::failure<Output>(core::ErrorCode::InvalidArgument,
@@ -106,7 +106,8 @@ core::Result<SampleBankInstallation> installSignedSampleBank(
   auto installed = distribution::installSeambank(packagePath, installRoot,
       distribution::InstallSeambankOptions{
           .verification = {.trustedPublicKeys = trustedPublicKeys, .requireTrustedSigner = true},
-          .replaceExisting = false});
+          .replaceExisting = false,
+          .expectedContentHash = std::string{expectedContentHash}}, stop);
   if (!installed) return core::Result<Output>{installed.error()};
 
   // The catalog the song editor uses is the only authority on whether a bank is a trusted
@@ -137,7 +138,9 @@ core::Result<SampleBankInstallation> installSignedSampleBank(
                 .contentHash = match->contentHash,
                 .packageDigest = installed.value().packageDigest,
                 .signerKeyId = installed.value().signerKeyId,
-                .installDirectory = installed.value().installDirectory};
+                .installDirectory = installed.value().installDirectory,
+                .durabilityConfirmed = installed.value().durabilityConfirmed,
+                .diagnostic = installed.value().diagnostic};
 }
 
 }  // namespace seam::native_ui

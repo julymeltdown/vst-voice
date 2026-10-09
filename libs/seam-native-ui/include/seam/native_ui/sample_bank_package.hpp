@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <string>
+#include <stop_token>
 #include <vector>
 
 namespace seam::native_ui {
@@ -20,6 +21,8 @@ struct SampleBankInstallation final {
   std::string packageDigest;
   std::string signerKeyId;
   std::filesystem::path installDirectory;
+  bool durabilityConfirmed{true};
+  std::string diagnostic;
 };
 
 // Packs an already published engineering candidate into a signed .seambank. The manifest inside the
@@ -38,6 +41,7 @@ struct SampleBankInstallation final {
     const std::filesystem::path& packagePath,
     const std::filesystem::path& installRoot,
     const std::vector<distribution::Ed25519PublicKey>& trustedPublicKeys,
-    std::string_view expectedContentHash);
+    std::string_view expectedContentHash,
+    std::stop_token stop = {});
 
 }  // namespace seam::native_ui

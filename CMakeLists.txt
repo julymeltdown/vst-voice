@@ -583,6 +583,7 @@ add_library(seam_distribution
   libs/seam-distribution/src/signing.cpp
   libs/seam-distribution/src/seambank.cpp
   libs/seam-distribution/src/installer.cpp
+  libs/seam-distribution/src/install_transaction.cpp
   libs/seam-distribution/src/trust_policy.cpp
   libs/seam-distribution/src/update_manifest.cpp
   libs/seam-distribution/src/sealed_handoff.cpp
@@ -2404,6 +2405,16 @@ if(SEAM_BUILD_TESTS)
     seam_distribution seam_voice_design seam_core)
   seam_apply_compiler_options(seam_procedural_package_tests)
  add_test(NAME seam_procedural_package_tests COMMAND seam_procedural_package_tests)
+  add_executable(seam_install_transaction_tests
+    tests/test_main.cpp
+    tests/test_install_transaction.cpp)
+  target_include_directories(seam_install_transaction_tests PRIVATE tests)
+  target_compile_definitions(seam_install_transaction_tests PRIVATE
+    SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(seam_install_transaction_tests PRIVATE
+    seam_distribution seam_voice_design seam_voicebank seam_formats seam_core)
+  seam_apply_compiler_options(seam_install_transaction_tests)
+  add_test(NAME seam_install_transaction_tests COMMAND seam_install_transaction_tests)
   add_executable(seam_procedural_review_tests
     tests/test_main.cpp
     tests/test_procedural_review.cpp)

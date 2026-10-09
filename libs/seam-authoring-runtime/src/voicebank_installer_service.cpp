@@ -163,6 +163,7 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
           .signerKeyId = existing->signerKeyId,
           .installDirectory = existing->bankRoot,
           .candidate = *existing,
+          .diagnostic = "Already installed; directory durability was not rechecked",
       };
     }
     return core::failure<VoicebankInstallResult>(
@@ -175,6 +176,8 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
       distribution::InstallSeambankOptions{
           .verification = verification,
           .replaceExisting = false,
+          .expectedPackageDigest = verified.value().packageDigest,
+          .expectedContentHash = incomingHash.value(),
       });
   if (!installed) return core::Result<VoicebankInstallResult>{installed.error()};
 
@@ -205,6 +208,8 @@ core::Result<VoicebankInstallResult> VoicebankInstallerService::install(
       .signerKeyId = candidate->signerKeyId,
       .installDirectory = candidate->bankRoot,
       .candidate = *candidate,
+      .durabilityConfirmed = installed.value().durabilityConfirmed,
+      .diagnostic = installed.value().diagnostic,
   };
 }
 

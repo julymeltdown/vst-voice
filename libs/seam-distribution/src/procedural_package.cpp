@@ -1,4 +1,5 @@
 #include "seam/distribution/procedural_package.hpp"
+#include "install_transaction_internal.hpp"
 #include "seam/core/environment.hpp"
 
 #include "seam/core/file_io.hpp"
@@ -440,8 +441,6 @@ core::Result<std::vector<std::byte>> readProceduralRecipe(
 
 namespace {
 
-std::atomic<std::uint64_t> gProceduralInstallCounter{0U};
-
 bool safeComponent(std::string_view value) noexcept {
   if (value.empty() || value.front() == '.') return false;
   return std::all_of(value.begin(), value.end(), [](unsigned char character) {
@@ -465,7 +464,8 @@ std::string proceduralContentHash(std::string_view manifestBytes,
 core::Result<InstalledProceduralSinger> installProceduralPackage(
     const std::filesystem::path& packagePath,
     const std::filesystem::path& installRoot,
-    const InstallProceduralOptions& options) {
+    const InstallProceduralOptions& options,
+    std::stop_token stop) {
   if (!options.verification.requireTrustedSigner ||
       options.verification.trustedPublicKeys.empty()) {
     return core::failure<InstalledProceduralSinger>(
@@ -492,174 +492,68 @@ core::Result<InstalledProceduralSinger> installProceduralPackage(
         core::ErrorCode::Unsupported,
         "Procedural singer identity is unsafe for installation");
   }
-  std::error_code error;
-  if (std::filesystem::exists(installRoot, error)) {
-    const auto status = std::filesystem::symlink_status(installRoot, error);
-    if (error || std::filesystem::is_symlink(status) ||
-        !std::filesystem::is_directory(status)) {
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::Conflict, "Procedural install root must be a real directory",
-          installRoot.string());
-    }
-  } else {
-    std::filesystem::create_directories(installRoot, error);
-    if (error) {
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::IoError, "Unable to create procedural install root",
-          error.message());
-    }
-  }
-  const auto canonicalRoot = std::filesystem::canonical(installRoot, error);
-  if (error) {
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::IoError, "Unable to canonicalize procedural install root",
-        error.message());
-  }
-  const auto productRoot = canonicalRoot / manifest.id;
-  if (std::filesystem::exists(productRoot, error)) {
-    const auto status = std::filesystem::symlink_status(productRoot, error);
-    if (error || std::filesystem::is_symlink(status) ||
-        !std::filesystem::is_directory(status)) {
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::Conflict, "Procedural product install path is unsafe",
-          productRoot.string());
-    }
-  } else {
-    std::filesystem::create_directory(productRoot, error);
-    if (error) {
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::IoError, "Unable to create procedural product directory",
-          error.message());
-    }
-  }
-  const auto target = productRoot / manifest.version;
-  if (std::filesystem::exists(target) && !options.replaceExisting) {
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::Conflict, "Procedural singer version is already installed",
-        target.string());
-  }
-  const auto token = gProceduralInstallCounter.fetch_add(1U, std::memory_order_relaxed);
-  const auto staging = canonicalRoot / (".staging-" + manifest.id + "-" + manifest.version +
-                                        "-" + std::to_string(token));
-  const auto backup = canonicalRoot / (".backup-" + manifest.id + "-" + manifest.version + "-" +
-                                       std::to_string(token));
-  std::filesystem::remove_all(staging, error);
-  std::filesystem::create_directories(staging, error);
-  if (error) {
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::IoError, "Unable to create procedural staging directory",
-        error.message());
-  }
-  // Every entry is written from the verified container, so the installed bytes are the signed ones.
-  for (const auto& entry : package.value().container.entries) {
-    auto bytes = readSignedContainerEntry(package.value().container, packagePath, entry.path,
-                                          options.verification.limits.maximumEntryBytes);
-    if (!bytes) {
-      std::filesystem::remove_all(staging, error);
-      return core::Result<InstalledProceduralSinger>{bytes.error()};
-    }
-    const auto destination = staging / std::filesystem::path{entry.path};
-    std::filesystem::create_directories(destination.parent_path(), error);
-    if (error) {
-      std::filesystem::remove_all(staging, error);
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::IoError, "Unable to create installed asset directory", entry.path);
-    }
-    auto written = core::durableAtomicWrite(destination, bytes.value());
-    if (!written) {
-      std::filesystem::remove_all(staging, error);
-      return core::Result<InstalledProceduralSinger>{written.error()};
-    }
-  }
-  // The installed manifest and recipe must still be the exact signed ones before a receipt exists.
-  ProceduralSingerManifestJsonCodec codec;
-  auto installedText = core::readTextFileLimited(staging / kManifestEntry, 1024U * 1024U);
-  if (!installedText) {
-    std::filesystem::remove_all(staging, error);
-    return core::Result<InstalledProceduralSinger>{installedText.error()};
-  }
-  auto installedManifest = codec.decode(installedText.value());
-  if (!installedManifest || installedManifest.value() != manifest) {
-    std::filesystem::remove_all(staging, error);
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::Conflict,
-        "Installed procedural manifest differs from the signed manifest");
-  }
-  const auto contentHash = proceduralContentHash(installedText.value(), recipeBytes.value());
-  // The installed recipe is already verified, so this derivation cannot fail for a resource that
-  // reached this point; a failure still refuses installation rather than publishing an unrenderable
-  // singer.
-  const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
-  if (!renderIdentity) {
-    std::filesystem::remove_all(staging, error);
-    return core::Result<InstalledProceduralSinger>{renderIdentity.error()};
-  }
-  formats::JsonValue::Object receipt;
-  receipt.emplace("schemaVersion", static_cast<std::int64_t>(1));
-  receipt.emplace("resourceFamily", std::string{"procedural-singer"});
-  receipt.emplace("id", manifest.id);
-  receipt.emplace("version", manifest.version);
-  receipt.emplace("contentHash", contentHash);
-  receipt.emplace("recipeEntry", manifest.recipeEntry);
-  receipt.emplace("recipeSha256", manifest.recipeSha256);
-  receipt.emplace("engineId", manifest.engineId);
-  receipt.emplace("engineRevision", static_cast<std::int64_t>(manifest.engineRevision));
-  receipt.emplace("packageDigest", package.value().container.packageDigest);
-  receipt.emplace("signerKeyId", package.value().container.signerKeyId);
-  receipt.emplace("signatureValid", package.value().container.signatureValid);
-  receipt.emplace("signerTrusted", package.value().container.signerTrusted);
-  auto receiptText = formats::stringifyJson(formats::JsonValue{std::move(receipt)}, true) + "\n";
-  auto receiptWritten = core::durableAtomicWriteText(staging / "install-receipt.json", receiptText);
-  if (!receiptWritten) {
-    std::filesystem::remove_all(staging, error);
-    return core::Result<InstalledProceduralSinger>{receiptWritten.error()};
-  }
-  auto finalDigest = core::sha256File(packagePath, options.verification.limits.maximumArchiveBytes);
-  if (!finalDigest || finalDigest.value() != package.value().container.packageDigest) {
-    std::filesystem::remove_all(staging, error);
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::Conflict, "Procedural package changed during installation");
-  }
-  bool movedExisting = false;
-  if (std::filesystem::exists(target)) {
-    const auto targetStatus = std::filesystem::symlink_status(target, error);
-    if (error || std::filesystem::is_symlink(targetStatus) ||
-        !std::filesystem::is_directory(targetStatus)) {
-      std::filesystem::remove_all(staging, error);
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::Conflict, "Existing procedural installation target is unsafe",
-          target.string());
-    }
-    std::filesystem::remove_all(backup, error);
-    std::filesystem::rename(target, backup, error);
-    if (error) {
-      std::filesystem::remove_all(staging, error);
-      return core::failure<InstalledProceduralSinger>(
-          core::ErrorCode::IoError,
-          "Unable to stage the existing procedural singer for replacement", error.message());
-    }
-    movedExisting = true;
-  }
-  std::filesystem::rename(staging, target, error);
-  if (error) {
-    if (movedExisting) {
-      std::error_code rollbackError;
-      std::filesystem::rename(backup, target, rollbackError);
-    }
-    std::filesystem::remove_all(staging, error);
-    return core::failure<InstalledProceduralSinger>(
-        core::ErrorCode::IoError, "Unable to publish the installed procedural singer",
-        error.message());
-  }
-  if (movedExisting) std::filesystem::remove_all(backup, error);
+  if (stop.stop_requested())
+    return core::failure<InstalledProceduralSinger>(core::ErrorCode::Conflict,
+                                                    "Procedural singer installation cancelled; nothing changed");
+  // The shared transaction stages and re-checks every signed entry, then this family proves the
+  // staged manifest is the signed one and writes the receipt before anything is published.
+  std::string contentHash;
+  std::optional<domain::SingerResourceIdentity> renderIdentity;
+  install_internal::ContainerInstallRequest request;
+  request.container = &package.value().container;
+  request.installRoot = installRoot;
+  request.id = manifest.id;
+  request.version = manifest.version;
+  request.replaceExisting = options.replaceExisting;
+  request.maximumEntryBytes = options.verification.limits.maximumEntryBytes;
+  request.maximumArchiveBytes = options.verification.limits.maximumArchiveBytes;
+  request.faultInjector = options.faultInjector;
+  request.finalizeStaged = [&](const std::filesystem::path& staging) -> core::Result<void> {
+    auto installedText = core::readTextFileLimited(staging / kManifestEntry, 1024U * 1024U);
+    if (!installedText) return core::Result<void>{installedText.error()};
+    auto installedManifest = ProceduralSingerManifestJsonCodec{}.decode(installedText.value());
+    if (!installedManifest || installedManifest.value() != manifest)
+      return core::failure(core::ErrorCode::Conflict, "Installed procedural manifest differs from the signed manifest");
+    contentHash = proceduralContentHash(installedText.value(), recipeBytes.value());
+    if (options.expectedContentHash && contentHash != *options.expectedContentHash)
+      return core::failure(core::ErrorCode::Conflict,
+                           "Staged procedural singer differs from the expected content identity");
+    // The installed recipe is already verified, so this derivation cannot fail for a resource that
+    // reached this point; a failure still refuses installation rather than publishing an
+    // unrenderable singer.
+    auto identity = proceduralRenderIdentity(recipeBytes.value());
+    if (!identity) return core::Result<void>{identity.error()};
+    renderIdentity = identity.value();
+    formats::JsonValue::Object receipt;
+    receipt.emplace("schemaVersion", static_cast<std::int64_t>(1));
+    receipt.emplace("resourceFamily", std::string{"procedural-singer"});
+    receipt.emplace("id", manifest.id);
+    receipt.emplace("version", manifest.version);
+    receipt.emplace("contentHash", contentHash);
+    receipt.emplace("recipeEntry", manifest.recipeEntry);
+    receipt.emplace("recipeSha256", manifest.recipeSha256);
+    receipt.emplace("engineId", manifest.engineId);
+    receipt.emplace("engineRevision", static_cast<std::int64_t>(manifest.engineRevision));
+    receipt.emplace("packageDigest", package.value().container.packageDigest);
+    receipt.emplace("signerKeyId", package.value().container.signerKeyId);
+    receipt.emplace("signatureValid", package.value().container.signatureValid);
+    receipt.emplace("signerTrusted", package.value().container.signerTrusted);
+    const auto receiptText = formats::stringifyJson(formats::JsonValue{std::move(receipt)}, true) + "\n";
+    return core::durableAtomicWriteTextNew(staging / std::string{install_internal::kInstallReceiptEntry}, receiptText);
+  };
+  auto outcome = install_internal::installContainerTree(request, stop);
+  if (!outcome) return core::Result<InstalledProceduralSinger>{outcome.error()};
   return InstalledProceduralSinger{
       .id = manifest.id,
       .version = manifest.version,
       .contentHash = contentHash,
-      .renderIdentity = renderIdentity.value(),
+      .renderIdentity = *renderIdentity,
       .packageDigest = package.value().container.packageDigest,
       .signerKeyId = package.value().container.signerKeyId,
-      .installDirectory = target,
+      .installDirectory = outcome.value().installDirectory,
+      .replacedExisting = outcome.value().replacedExisting,
+      .durabilityConfirmed = outcome.value().durabilityConfirmed,
+      .diagnostic = outcome.value().diagnostic,
   };
 }
 

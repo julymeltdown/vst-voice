@@ -351,6 +351,8 @@ public:
     installedSinger_ = installed.value();
     designerPublishStatus_ = "INSTALLED FOR STANDALONE / NOT QUALITY-APPROVED / " +
         publishedSingerDisplayName_ + " " + installed.value().version + " / CMD-ALT-O SONG EDITOR";
+    if (!installed.value().durabilityConfirmed)
+      designerPublishStatus_ += " / DURABILITY UNCONFIRMED: " + installed.value().diagnostic;
     lastError_.clear();
     return seam::core::success();
   }

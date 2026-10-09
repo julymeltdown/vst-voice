@@ -394,7 +394,7 @@ core::Result<void> VoicebankStudioController::beginSampleBankInstallation(const 
          installRoot = std::move(installRoot), trustedPublicKeys = std::move(trustedPublicKeys),
          stop]() -> core::Result<SampleReviewWorkResult> {
       if (const auto check = cancelled(stop); !check) return core::Result<SampleReviewWorkResult>{check.error()};
-      auto installed = installSignedSampleBank(packagePath, installRoot, trustedPublicKeys, contentHash);
+      auto installed = installSignedSampleBank(packagePath, installRoot, trustedPublicKeys, contentHash, stop);
       if (!installed) return core::Result<SampleReviewWorkResult>{installed.error()};
       return SampleReviewWorkResult{.context = context, .installedBank = std::move(installed.value())};
     });
@@ -496,6 +496,8 @@ core::Result<void> VoicebankStudioController::pollSampleReviewWork() {
       installedSampleBank_ = std::move(value.installedBank);
       sampleReviewStatus_ = "INSTALLED AS A TRUSTED BANK / NOT A RELEASE QUALIFICATION / " +
           installedSampleBank_->voicebankId + " " + installedSampleBank_->voicebankVersion;
+      if (!installedSampleBank_->durabilityConfirmed)
+        sampleReviewStatus_ += " / DURABILITY UNCONFIRMED: " + installedSampleBank_->diagnostic;
       status_ = sampleReviewStatus_;
       return core::success();
     }

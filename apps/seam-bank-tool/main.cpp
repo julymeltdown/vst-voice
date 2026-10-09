@@ -186,6 +186,8 @@ int main(int argc, char** argv) {
     auto installed = seam::distribution::installProceduralPackage(
         argv[4], *installRoot, installOptions);
     if (!installed) { printError(installed.error()); return 8; }
+    std::cout << "durabilityConfirmed=" << (installed.value().durabilityConfirmed ? "true" : "false") << '\n'
+              << "diagnostic=" << installed.value().diagnostic << '\n';
     std::cout << "installed=" << installed.value().installDirectory.string() << '\n'
               << "rendered=" << installed.value().renderIdentity.id << '\n'
               << "contentHash=" << installed.value().renderIdentity.contentHash << '\n';
@@ -206,6 +208,8 @@ int main(int argc, char** argv) {
                               .verification = std::move(options.value()),
                               .replaceExisting = replace});
     if (!installed) { printError(installed.error()); return 4; }
+    std::cout << "durabilityConfirmed=" << (installed.value().durabilityConfirmed ? "true" : "false") << '\n'
+              << "diagnostic=" << installed.value().diagnostic << '\n';
     std::cout << "installed=" << installed.value().installDirectory.string() << '\n'
               << "digest=" << installed.value().packageDigest << '\n'
               << "signer=" << installed.value().signerKeyId << '\n';

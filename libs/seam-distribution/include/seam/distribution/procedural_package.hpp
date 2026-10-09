@@ -1,11 +1,13 @@
 #pragma once
 
 #include "seam/distribution/seambank.hpp"
+#include "seam/distribution/installer.hpp"
 #include "seam/domain/performance_intent.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -116,6 +118,10 @@ struct InstallProceduralOptions final {
   // captured by an earlier publication step, not merely any package from the same signer.
   std::optional<std::string> expectedPackageDigest{};
   bool replaceExisting{false};
+  // The installed content hash (manifest and recipe) must equal this before anything is published.
+  std::optional<std::string> expectedContentHash{};
+  // Diagnostic interruption hook shared with sample-bank installation; it can only fail an install.
+  std::function<core::Result<void>(InstallStage)> faultInjector{};
 };
 
 struct InstalledProceduralSinger final {
@@ -130,6 +136,10 @@ struct InstalledProceduralSinger final {
   std::string packageDigest;
   std::string signerKeyId;
   std::filesystem::path installDirectory;
+  bool replacedExisting{false};
+  // False only for a committed installation whose directory entry may not be durable yet.
+  bool durabilityConfirmed{true};
+  std::string diagnostic;
 };
 
 enum class ProceduralRootKind { Installed, Development };
@@ -237,7 +247,8 @@ struct ProceduralResolution final {
 [[nodiscard]] core::Result<InstalledProceduralSinger> installProceduralPackage(
     const std::filesystem::path& packagePath,
     const std::filesystem::path& installRoot,
-    const InstallProceduralOptions& options = {});
+    const InstallProceduralOptions& options = {},
+    std::stop_token stop = {});
 
 // Copying an installed singer to a creator-owned draft. A signed installation is immutable, so a
 // creator who wants to change one edits a copy instead. The copy reads the installed recipe after

@@ -28,6 +28,8 @@ struct VoicebankInstallResult final {
   std::string signerKeyId;
   std::filesystem::path installDirectory;
   voicebank::VoicebankCandidate candidate;
+  bool durabilityConfirmed{false};
+  std::string diagnostic;
 };
 
 class VoicebankInstallerService final {
