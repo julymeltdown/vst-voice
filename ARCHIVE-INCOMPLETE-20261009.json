@@ -346,8 +346,8 @@
     },
     {
       "path": "tests/test_installer_verifier.cpp",
-      "include": true,
-      "reason": null,
+      "include": false,
+      "reason": "identical preexisting origin/codex/production-readiness-completion content",
       "sha256": "202ece3f68f1a369d94714b8514024efa1e17679fcee39bafe0ba1fa010420d6",
       "deleted": false
     },
@@ -547,5 +547,6 @@
       }
     ]
   },
-  "known_open_findings": "CI deltas and generated SBOM excluded; 42 paths already incorporated/superseded on current remote omitted. Remaining archival subset is not a qualified release."
+  "known_open_findings": "CI deltas and generated SBOM excluded; 43 paths already incorporated/superseded on current remote omitted. Remaining archival subset is not a qualified release.",
+  "post_push_deduplication": "All-preexisting-remote comparison found tests/test_installer_verifier.cpp already on origin/codex/production-readiness-completion. A normal follow-up commit removes its addition from the final archive delta; the first archive commit is retained without rewriting history. The local copied file is preserved."
 }
