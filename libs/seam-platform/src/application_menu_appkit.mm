@@ -130,7 +130,11 @@
 - (void)saveProject:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProject]; }
 - (void)saveProjectAs:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::SaveProjectAs]; }
 - (void)importAudio:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::ImportAudio]; }
-- (void)installVoicebank:(id)sender { (void)sender; [self send:seam::platform::ApplicationCommand::InstallVoicebank]; }
+- (void)installVoicebank:(id)sender {
+  (void)sender;
+  [self dispatchCommand:seam::platform::ApplicationCommand::InstallVoicebank
+             errorTitle:@"Voicebank installation did not complete"];
+}
 - (void)installProceduralSinger:(id)sender {
   (void)sender;
   [self dispatchCommand:seam::platform::ApplicationCommand::InstallProceduralSinger

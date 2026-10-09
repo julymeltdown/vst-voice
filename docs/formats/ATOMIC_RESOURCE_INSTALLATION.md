@@ -72,7 +72,8 @@ fault-injection test nor a receipt proves survival of actual power loss.
 
 The warning path covers successful install results. A separate post-publication
 catalog/resolution error in the sample-bank service can still return an error before
-this callback is reached. The macOS Voicebank menu currently discards returned
-errors (the Procedural Singer menu already displays them); that older refusal/error
-presentation gap remains a separate P2. Native physical-user and accessibility
+this callback is reached. The macOS Voicebank menu now displays returned errors in an AppKit alert titled
+"Voicebank installation did not complete", which does not claim that no files were
+installed. The successful-install notice and partial-success error are still separate
+paths; a fully typed partial-success recovery flow remains open. Native physical-user and accessibility
 acceptance remain separate from automated command-dispatch and paint verification.
