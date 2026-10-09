@@ -1703,13 +1703,27 @@ TEST_CASE("standalone playback window: a Transport-menu Play and Stop show thems
   // transport button shows is up to the frames that the commands ask for.
   rig.device->failStart = true;
   std::vector<float> heard;
+  // Let the command-requested frame run immediately, then synchronize only the
+  // asynchronous feeder. Waiting moves no UI time and paints no extra frame;
+  // the original five-frame display deadline still has to be met by the app.
+  const auto applyCommand = [&](ApplicationCommand command) {
+    const auto before = *rig.clock;
+    CHECK(rig.menu(command));
+    CHECK(rig.windowTurn(0ms));
+    CHECK(waitUntil([&] { return rig.transport().state().settled; }));
+    CHECK(*rig.clock == before);
+  };
   CHECK(!rig.playShown());
-  CHECK(rig.menu(ApplicationCommand::TogglePlayback));
+  applyCommand(ApplicationCommand::TogglePlayback);
   CHECK(runWindow(rig, heard, [&] { return rig.playShown(); }, 5));
   // Stop takes the Play away, and the button shows that without waiting for the next try at the
   // device, which comes a quarter of a second later.
-  CHECK(rig.menu(ApplicationCommand::StopPlayback));
+  const auto stopTime = *rig.clock;
+  const auto startsBeforeStop = rig.device->startAttempts();
+  applyCommand(ApplicationCommand::StopPlayback);
   CHECK(runWindow(rig, heard, [&] { return !rig.playShown(); }, 5));
+  CHECK(*rig.clock - stopTime <= 80ms);
+  CHECK(rig.device->startAttempts() == startsBeforeStop);
   CHECK(!rig.transport().state().playAwaitsConsumer);
   // With the Play gone nothing is asked of the device, and the window sleeps.
   rig.settleWindow();
