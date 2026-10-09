@@ -73,6 +73,25 @@ struct PackageSnapshot final {
         ::lstat(source.c_str(), &named) == 0 && ::lstat(path.c_str(), &copied) == 0 &&
         same(sourceStamp, held) && same(sourceStamp, named) && same(snapshotStamp, copied);
   }
+  bool containsOnlyCapture() const {
+    if (!unchanged()) return false;
+    Handle directory{::open(stage->path.c_str(), O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW)};
+    if (directory.value < 0) return false;
+    DIR* raw = ::fdopendir(directory.value);
+    if (!raw) return false;
+    directory.value = -1;  // closedir owns the descriptor now.
+    struct Listing { DIR* value; ~Listing() { ::closedir(value); } } listing{raw};
+    std::size_t count = 0;
+    while (true) {
+      errno = 0;
+      const auto* entry = ::readdir(raw);
+      if (!entry) { if (errno != 0) return false; break; }
+      const std::string_view name{entry->d_name};
+      if (name == "." || name == "..") continue;
+      if (++count != 1U || name != "captured.seambank") return false;
+    }
+    return count == 1U && unchanged();
+  }
   static core::Result<std::unique_ptr<PackageSnapshot>> capture(
       const std::filesystem::path& source, std::string_view pin,
       std::uint64_t limit, std::stop_token stop) {
@@ -247,6 +266,8 @@ core::Result<ModelCandidateInstallProbe> probeModelCandidateInstallation(
   if (value.container.packageDigest != expectedPackageDigest || value.candidateSha256 != expectedCandidateSha256 ||
       value.descriptor.kind != production::ResourceCandidateKind::Model)
     return core::failure<Output>(core::ErrorCode::Conflict, "Model probe requires the captured typed model package");
+  if (!snapshot.containsOnlyCapture())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model probe scratch contains unexpected entries before installation");
   const auto destination = snapshot.stage->path / "model-install-probe";
   struct stat state{};
   if (::lstat(destination.c_str(), &state) == 0 || errno != ENOENT)
@@ -259,6 +280,8 @@ core::Result<ModelCandidateInstallProbe> probeModelCandidateInstallation(
     return core::failure<Output>(core::ErrorCode::Conflict, "Model probe did not observe the required model installation refusal");
   if (::lstat(destination.c_str(), &state) == 0 || errno != ENOENT)
     return core::failure<Output>(core::ErrorCode::Conflict, "Model installation refusal created a destination");
+  if (!snapshot.containsOnlyCapture())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model refusal left unexpected scratch entries");
   const auto digest = core::sha256File(snapshot.path, options.limits.maximumArchiveBytes, stop);
   if (!digest || digest.value() != expectedPackageDigest || !snapshot.unchanged())
     return core::failure<Output>(core::ErrorCode::Conflict, "Model package changed during the refusal probe");

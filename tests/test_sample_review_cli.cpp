@@ -1231,6 +1231,31 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(field(modelPackage, "resourceKind") == "neural-original");
   CHECK(cliSuccess({"verify-candidate-package", (root / "model.seampkg.bin").string(), keys.publicKey}).find("result")->asString() ==
         "PackageVerified");
+  // The model identity must be read from the same root entry native readers use.
+  const auto alternateModelRoot = copyTree(root / "model-candidate", root / "alternate-model-manifest");
+  auto alternateModel = modelDescriptor.value().descriptor;
+  for (auto& entry : alternateModel.payload) if (entry.path == "manifest.json") entry.role = "model-data";
+  const auto alternateModelBytes = readText(alternateModelRoot / "manifest.json") + " ";
+  CHECK(core::durableAtomicWriteTextNew(alternateModelRoot / "alternate.json", alternateModelBytes));
+  alternateModel.rootManifest = "alternate.json";
+  alternateModel.manifestSha256 = core::sha256Hex(alternateModelBytes);
+  alternateModel.payload.push_back({"alternate.json", "manifest", alternateModel.manifestSha256, alternateModelBytes.size()});
+  std::sort(alternateModel.payload.begin(), alternateModel.payload.end(), [](const auto& a, const auto& b) { return a.path < b.path; });
+  alternateModel.contentSha256 = production::modelCandidateContentSha256(alternateModel.payload);
+  const auto alternateModelDescriptor = production::encodeResourceCandidateDescriptor(alternateModel); CHECK(alternateModelDescriptor);
+  CHECK(core::durableAtomicWriteText(alternateModelRoot / "candidate.json", alternateModelDescriptor.value()));
+  const auto alternateModelCandidate = production::verifyResourceCandidateDirectory(alternateModelRoot); CHECK(alternateModelCandidate);
+  const auto alternateModelPackage = root / "alternate-model.seampkg.bin";
+  CHECK(distribution::packSignedContainer(alternateModelRoot, alternateModelPackage, keys.pair, {.rootManifest = "alternate.json"}));
+  CHECK(distribution::verifySignedContainer(alternateModelPackage, graphTrust));
+  const auto refusedModel = candidate_packaging::verifyResourceCandidatePackage(alternateModelPackage, graphTrust);
+  CHECK(!refusedModel); CHECK(refusedModel.error().message.find("manifest.json") != std::string::npos);
+  CHECK(!runCli({"verify-candidate-package", alternateModelPackage.string(), keys.publicKey}));
+  CHECK(!runCli({"probe-model-candidate", alternateModelPackage.string(), core::sha256File(alternateModelPackage).value(),
+      alternateModelCandidate.value().candidateSha256, keys.publicKey}));
+  CHECK(!runCli({"package-candidate", alternateModelRoot.string(), alternateModelCandidate.value().candidateSha256,
+      (root / "refused-model.seampkg.bin").string(), keys.privateKey}));
+  CHECK(!std::filesystem::exists(root / "refused-model.seampkg.bin"));
   const auto modelProbe = cliSuccess({"probe-model-candidate", (root / "model.seampkg.bin").string(),
       field(modelPackage, "packageDigest"), field(model, "candidateSha256"), keys.publicKey});
   CHECK(field(modelProbe, "result") == "ModelPackageVerifiedInstallRefused");

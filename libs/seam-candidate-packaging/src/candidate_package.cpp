@@ -255,7 +255,9 @@ core::Result<VerifiedCandidatePackage> verifyResourceCandidatePackage(
     case production::ResourceCandidateKind::Sample: family = checkSampleFamily(container.value(), packagePath, options, declared); break;
     case production::ResourceCandidateKind::Recipe: family = checkRecipeFamily(packagePath, options, declared, container.value().packageDigest); break;
     case production::ResourceCandidateKind::Model: {
-      const auto manifest = distribution::readSignedContainerEntry(container.value(), packagePath, declared.rootManifest, 1024U * 1024U);
+      if (declared.rootManifest != "manifest.json")
+        return core::failure<Output>(core::ErrorCode::Conflict, "Model candidates must use the native manifest.json entry");
+      const auto manifest = distribution::readSignedContainerEntry(container.value(), packagePath, "manifest.json", 1024U * 1024U);
       if (!manifest) return core::Result<Output>{manifest.error()};
       family = checkModelManifest(std::string_view{reinterpret_cast<const char*>(manifest.value().data()), manifest.value().size()},
                                   declared);

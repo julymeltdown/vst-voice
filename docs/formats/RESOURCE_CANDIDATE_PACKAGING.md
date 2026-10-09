@@ -109,9 +109,14 @@ The canonical U45 reconciliation hold remains unchanged.
 
 `probe-model-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 PUBLIC_KEY` uses the
 same pinned private snapshot to verify an opaque typed model package, then calls the
-real candidate installer with an absent destination inside owned scratch. Success
+real candidate installer with an absent destination inside owned scratch. Typed
+model verification requires the native `manifest.json` entry; a descriptor
+selecting an alternate root is refused even when the generic signature is valid. Success
 requires the specific `MODEL_INSTALL_UNSUPPORTED` refusal and confirmation that no
-installation directory was created. A signature failure, wrong identity, wrong
+installation directory was created. The stage is enumerated before and after the
+installer call and must contain only the captured package. This observes surviving
+entries, not every write that might occur and be undone during the call. A signature
+failure, wrong identity, wrong
 family, cancellation, other error or unexpected installation cannot produce this
 success record. It does not execute a model graph or establish learned singing.
 
