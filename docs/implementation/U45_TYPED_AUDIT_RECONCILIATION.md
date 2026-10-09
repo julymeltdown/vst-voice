@@ -157,3 +157,22 @@ composite replay. No project-supplied resource path is opened. This advances ite
 placement, an installation event, an
 atomic cross-file snapshot or an observed render/operation. Models remain without
 installed admission. The 83-case report integration and canonical hold are unchanged.
+
+
+### Procedural admission consistency (2026-10-10)
+
+Procedural package verification now reads the signed recipe and checks its native
+codec limit, canonical digest, engine id and declared style/phone inventories.
+Packing, installation and catalogue discovery use the same consistency checks;
+a signature alone cannot make absent inventory selectable. Declarations may be
+subsets of the recipe's inventories. This is not proof of every style/phone pair,
+phrase coverage, language quality, compatible engine revision or observed sound.
+The catalogue remains discovery, not independent verification of receipt trust.
+
+The earlier 16 MiB versus 512 KiB concern is narrower than an installed-resource
+size mismatch: recipe decoding already enforced 512 KiB during family packing,
+installation and catalogue loading. Previously, standalone package verification
+checked only the recipe entry's existence and could report success even when
+later decoding would fail. It now rejects that input too. Boundary regressions
+cover a valid whitespace-padded recipe at 512 KiB and rejection one byte over.
+Actual runtime operation/artifact evidence and the canonical U45 hold remain open.

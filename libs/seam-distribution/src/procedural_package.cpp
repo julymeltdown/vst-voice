@@ -210,27 +210,6 @@ core::Result<ProceduralSingerManifest> ProceduralSingerManifestJsonCodec::decode
 
 namespace {
 
-// The declared digest is over the recipe's *canonical* encoding, which is exactly the identity a
-// project stores and the renderer validates. Comparing it to the raw file bytes instead would accept
-// a package whose recipe re-encodes to a different identity than the one the manifest promised.
-core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
-                                    const ProceduralSingerManifest& manifest) {
-  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
-  auto recipe = voice_design::decodeVoiceRecipe(text);
-  if (!recipe) return core::Result<void>{recipe.error()};
-  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
-  if (!canonical) return core::Result<void>{canonical.error()};
-  if (core::sha256Hex(canonical.value()) != manifest.recipeSha256)
-    return core::failure(core::ErrorCode::Conflict,
-                         "Procedural recipe does not match the manifest digest",
-                         manifest.recipeEntry);
-  if (recipe.value().engineId != manifest.engineId)
-    return core::failure(core::ErrorCode::Conflict,
-                         "Procedural recipe engine does not match the manifest",
-                         recipe.value().engineId);
-  return core::success();
-}
-
 // Every style the recipe declares, across all its articulation families. A singer that offers a
 // style the recipe does not carry would render that style by falling back to another one, so the
 // offered set is read from the recipe rather than asked for.
@@ -270,6 +249,40 @@ std::vector<std::string> recipePhones(const voice_design::VoiceRecipe& recipe) {
   for (const auto& pose : recipe.breaths) observe(pose.phone);
   return {unique.begin(), unique.end()};
 }
+
+// The declared digest is over the recipe's *canonical* encoding, which is exactly the identity a
+// project stores and the renderer validates. Comparing it to the raw file bytes instead would accept
+// a package whose recipe re-encodes to a different identity than the one the manifest promised.
+core::Result<void> checkRecipeBytes(const std::vector<std::byte>& bytes,
+                                    const ProceduralSingerManifest& manifest) {
+  const std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  auto recipe = voice_design::decodeVoiceRecipe(text);
+  if (!recipe) return core::Result<void>{recipe.error()};
+  auto canonical = voice_design::encodeVoiceRecipe(recipe.value());
+  if (!canonical) return core::Result<void>{canonical.error()};
+  if (core::sha256Hex(canonical.value()) != manifest.recipeSha256)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Procedural recipe does not match the manifest digest",
+                         manifest.recipeEntry);
+  if (recipe.value().engineId != manifest.engineId)
+    return core::failure(core::ErrorCode::Conflict,
+                         "Procedural recipe engine does not match the manifest",
+                         recipe.value().engineId);
+  const auto styles = recipeStyles(recipe.value());
+  for (const auto& style : manifest.styles) {
+    if (!std::binary_search(styles.begin(), styles.end(), style))
+      return core::failure(core::ErrorCode::Conflict,
+                           "Procedural manifest style is absent from the recipe", style);
+  }
+  const auto phones = recipePhones(recipe.value());
+  for (const auto& phone : manifest.phones) {
+    if (!std::binary_search(phones.begin(), phones.end(), phone))
+      return core::failure(core::ErrorCode::Conflict,
+                           "Procedural manifest phone is absent from the recipe", phone);
+  }
+  return core::success();
+}
+
 
 }  // namespace
 
@@ -442,7 +455,12 @@ core::Result<ProceduralPackageInfo> verifyProceduralPackage(
                                                 "Procedural package lacks its declared recipe",
                                                 manifest.value().recipeEntry);
   }
-  return ProceduralPackageInfo{std::move(container.value()), std::move(manifest.value())};
+  ProceduralPackageInfo package{std::move(container.value()), std::move(manifest.value())};
+  // A valid signature and entry name are insufficient: validate the recipe's
+  // decoder limit, canonical identity, engine and declared inventories too.
+  const auto recipe = readProceduralRecipe(package);
+  if (!recipe) return core::Result<ProceduralPackageInfo>{recipe.error()};
+  return package;
 }
 
 core::Result<std::vector<std::byte>> readProceduralRecipe(
@@ -689,6 +707,11 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
           recipeBytes.error().code,
           "Cannot read package recipe: " + recipeBytes.error().message,
           recipeBytes.error().context);
+    const auto checked = checkRecipeBytes(recipeBytes.value(), manifest.value());
+    if (!checked)
+      return core::failure<ProceduralCandidate>(
+          checked.error().code, "Invalid package recipe: " + checked.error().message,
+          checked.error().context);
     const auto renderIdentity = proceduralRenderIdentity(recipeBytes.value());
     if (!renderIdentity)
       return core::failure<ProceduralCandidate>(

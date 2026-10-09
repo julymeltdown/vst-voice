@@ -50,7 +50,7 @@ std::filesystem::path createProceduralSource(const std::filesystem::path& root,
   manifest.engineRevision = voice_design::ArticulationPlan::algorithmRevision;
   manifest.recipeEntry = "recipe.json";
   manifest.recipeSha256 = core::sha256Hex(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-  manifest.phones = {"a", "i", "u", "e", "o", "s"};
+  manifest.phones = {"a"};
   distribution::ProceduralSingerManifestJsonCodec codec;
   auto text = codec.encode(manifest);
   if (!text) throw std::runtime_error(text.error().message);
@@ -719,4 +719,135 @@ TEST_CASE("Publishing refuses a style, version or engine the recipe cannot honou
   CHECK(refusedStaging.error().message.find("staging") != std::string::npos);
   // The existing directory is untouched by the refusal.
   CHECK(std::filesystem::exists(occupied));
+}
+
+
+namespace {
+void checkInconsistentRecipeAdmission(std::string_view mutation, std::string_view diagnostic) {
+  const auto root = test::support::temporaryDirectory("procedural-semantic-admission");
+  const auto source = createProceduralSource(root);
+  const auto text = core::readTextFileLimited(source / "manifest.json", 1U << 20U);
+  CHECK(text);
+  const auto decoded = distribution::ProceduralSingerManifestJsonCodec{}.decode(text.value());
+  CHECK(decoded);
+  auto manifest = decoded.value();
+  if (mutation == "style") manifest.styles = {"operatic"};
+  else if (mutation == "phone") manifest.phones = {"missing-phone"};
+  else if (mutation == "engine") manifest.engineId = "other-engine";
+  else if (mutation == "digest") manifest.recipeSha256 = std::string(64U, 'b');
+  else if (mutation == "size") {
+    const auto recipe = core::readTextFileLimited(source / "recipe.json", 1U << 20U);
+    CHECK(recipe);
+    auto oversized = recipe.value();
+    oversized.resize(512U * 1024U + 1U, ' ');
+    CHECK(core::durableAtomicWriteText(source / "recipe.json", oversized));
+    CHECK(!voice_design::loadVoiceRecipeResource(source / "recipe.json"));
+  }
+  const auto encoded = distribution::ProceduralSingerManifestJsonCodec{}.encode(manifest);
+  CHECK(encoded);
+  CHECK(core::durableAtomicWriteText(source / "manifest.json", encoded.value()));
+  const auto key = distribution::generateSigningKeyPair();
+  CHECK(key);
+  const distribution::VerifySeambankOptions trust{
+      .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true};
+
+  // Signing proves authenticity, not that the manifest describes its recipe.
+  // Bypass the family packer exactly as another producer's container writer can.
+  const auto package = root / "signed-inconsistent.seamsinger";
+  CHECK(distribution::packSignedContainer(source, package, key.value()));
+  CHECK(distribution::verifySignedContainer(package, trust));
+  const auto verified = distribution::verifyProceduralPackage(package, trust);
+  CHECK(!verified);
+  CHECK(verified.error().message.find(diagnostic) != std::string::npos);
+  const auto packed = distribution::packProceduralPackage(source, root / "family.seamsinger", key.value());
+  CHECK(!packed);
+  CHECK(packed.error().message.find(diagnostic) != std::string::npos);
+  CHECK(!std::filesystem::exists(root / "family.seamsinger"));
+  const auto installed = distribution::installProceduralPackage(package, root / "installed",
+      distribution::InstallProceduralOptions{.verification = trust});
+  CHECK(!installed);
+  CHECK(installed.error().message.find(diagnostic) != std::string::npos);
+  CHECK(!std::filesystem::exists(root / "installed"));
+
+  // Copied or older package-shaped directories must not become selectable
+  // merely because the recipe decodes or development resources are permitted.
+  const auto catalogueRoot = root / "catalogue";
+  const auto directory = catalogueRoot / manifest.id / manifest.version;
+  std::filesystem::create_directories(directory);
+  std::filesystem::copy_file(source / "manifest.json", directory / "manifest.json");
+  std::filesystem::copy_file(source / "recipe.json", directory / "recipe.json");
+  for (const auto kind : {distribution::ProceduralRootKind::Installed,
+                          distribution::ProceduralRootKind::Development}) {
+    const auto scan = distribution::ProceduralCatalogue{}.scanDetailed({{catalogueRoot, kind}});
+    CHECK(scan);
+    CHECK(scan.value().candidates.empty());
+    CHECK(scan.value().issues.size() == 1U);
+    CHECK(scan.value().issues.front().detail.find(diagnostic) != std::string::npos);
+  }
+}
+}  // namespace
+
+TEST_CASE("Procedural admission refuses a signed absent style") {
+  checkInconsistentRecipeAdmission("style", "style");
+}
+TEST_CASE("Procedural admission refuses a signed absent phone") {
+  checkInconsistentRecipeAdmission("phone", "phone");
+}
+TEST_CASE("Procedural admission refuses a signed mismatched engine") {
+  checkInconsistentRecipeAdmission("engine", "engine");
+}
+TEST_CASE("Procedural admission refuses a signed mismatched recipe digest") {
+  checkInconsistentRecipeAdmission("digest", "digest");
+}
+TEST_CASE("Procedural admission applies the renderer recipe byte limit") {
+  checkInconsistentRecipeAdmission("size", "limit");
+}
+
+
+TEST_CASE("Procedural admission preserves declared subsets and the exact decoder boundary") {
+  const auto root = test::support::temporaryDirectory("procedural-admission-subset");
+  const auto source = createProceduralSource(root);
+  auto recipe = testRecipe();
+  auto extra = recipe.poses.front();
+  extra.phone = "i";
+  extra.style = "soft";
+  recipe.poses.push_back(extra);
+  const auto canonical = voice_design::encodeVoiceRecipe(recipe);
+  CHECK(canonical);
+  const auto manifestText = core::readTextFileLimited(source / "manifest.json", 1U << 20U);
+  CHECK(manifestText);
+  auto manifest = distribution::ProceduralSingerManifestJsonCodec{}.decode(manifestText.value());
+  CHECK(manifest);
+  // The package intentionally offers only neutral/a; the recipe may carry more.
+  manifest.value().recipeSha256 = core::sha256Hex(canonical.value());
+  const auto encoded = distribution::ProceduralSingerManifestJsonCodec{}.encode(manifest.value());
+  CHECK(encoded);
+  CHECK(core::durableAtomicWriteText(source / "manifest.json", encoded.value()));
+  auto padded = canonical.value();
+  padded.resize(512U * 1024U, ' ');
+  CHECK(core::durableAtomicWriteText(source / "recipe.json", padded));
+  const auto loaded = voice_design::loadVoiceRecipeResource(source / "recipe.json");
+  CHECK(loaded);
+  const auto key = distribution::generateSigningKeyPair();
+  CHECK(key);
+  const auto package = root / "subset.seamsinger";
+  const auto packed = distribution::packProceduralPackage(source, package, key.value());
+  CHECK(packed);
+  const auto installed = distribution::installProceduralPackage(package, root / "installed",
+      distribution::InstallProceduralOptions{.verification = {
+          .limits = {}, .trustedPublicKeys = {key.value().publicKey}, .requireTrustedSigner = true}});
+  CHECK(installed);
+  const auto scan = distribution::ProceduralCatalogue{}.scanDetailed(
+      {{root / "installed", distribution::ProceduralRootKind::Installed}});
+  CHECK(scan);
+  CHECK(scan.value().issues.empty());
+  CHECK(scan.value().candidates.size() == 1U);
+  const auto& candidate = scan.value().candidates.front();
+  CHECK(candidate.manifest.styles == (std::vector<std::string>{"neutral"}));
+  CHECK(candidate.manifest.phones == (std::vector<std::string>{"a"}));
+  CHECK(candidate.trust == distribution::ProceduralTrust::TrustedInstalled);
+  const auto admitted = voice_design::loadVoiceRecipeResource(
+      candidate.resourceRoot / candidate.manifest.recipeEntry, candidate.renderIdentity);
+  CHECK(admitted);
+  CHECK(admitted.value().identity == loaded.value().identity);
 }

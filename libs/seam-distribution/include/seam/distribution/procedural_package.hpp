@@ -66,7 +66,8 @@ public:
 };
 
 // A verified signed procedural package: the container it was admitted from, plus the declared
-// manifest. The recipe itself is read on demand so a large recipe is not duplicated in memory.
+// manifest. Verification checks the recipe too; its bytes are not retained here.
+// Later reads recheck the signed entry and recipe semantics.
 struct ProceduralPackageInfo final {
   SignedContainerInfo container;
   ProceduralSingerManifest manifest;
@@ -78,7 +79,8 @@ struct PackProceduralPackageOptions final {
 
 // Packs a source directory that contains the procedural manifest and the exact recipe bytes it
 // names. The manifest, the recipe digest and the recipe's own decodability are all checked before
-// anything is signed, so a package that verifies is one a first-party renderer can admit.
+// anything is signed. Declared styles and phones must occur in the recipe.
+// Engine-revision compatibility and phrase-specific rendering remain separate checks.
 [[nodiscard]] core::Result<ProceduralPackageInfo> packProceduralPackage(
     const std::filesystem::path& sourceDirectory,
     const std::filesystem::path& outputPackage,
@@ -121,6 +123,8 @@ struct PublishProceduralSingerOptions final {
     const PublishProceduralSingerOptions& options = {},
     std::stop_token stop = {});
 
+// Verifies the signature and recipe/manifest consistency, including decoder limits.
+// Inventory inclusion is not complete style-by-phone or linguistic/render qualification.
 [[nodiscard]] core::Result<ProceduralPackageInfo> verifyProceduralPackage(
     const std::filesystem::path& packagePath,
     const VerifySeambankOptions& options = {});
