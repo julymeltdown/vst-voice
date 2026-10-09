@@ -10,7 +10,7 @@ Fresh measurements:
 
 - Production discovery: 133/133 PASS, 92.964 seconds in an isolated per-test timing run.
 - Replay: 6 tests, 44.756 seconds; gate: 18 tests, 18.709 seconds; audit: 1 test, 9.537 seconds. Remaining 108 tests took approximately 20 seconds, including state-machine checks.
-- Unchanged full Release CTest: 232/232 PASS, 267.70 seconds under `-j6`. The production aggregate passed in 106.75 seconds. The historical timeout did not recur.
+- Unchanged full Release CTest: 232/232 PASS, 267.70 seconds under `-j6`. The production aggregate passed in 106.75 seconds. The historical timeout did not recur; its cause remains unknown. After the split, a comparable slowdown may appear as an unusually long entry rather than a timeout, so entry timings must remain visible.
 - First split run: 234/235 PASS, 236.48 seconds. All four production entries passed (remaining 24.99s, audit 10.41s, gate 24.79s, replay 51.92s). Source closure correctly failed because this new report had not yet been added to the index. This was an integration-order error, not a production test failure. The report and CMake change were staged before the final full rerun.
 - Final indexed split run: **235/235 PASS**, 192.05 seconds under `-j6`. Production entries: remaining 108 cases 22.56s; audit 1 case 10.54s; gate 18 cases 25.25s; replay 6 cases 53.40s. All internal production cases ran without skips. The source-closure check passed. Differences in CTest ordering/cost history and machine load mean total-run timing is not a controlled speedup benchmark.
 - An interrupted earlier run stopped at 9/232. Its process handle was gone and no CTest process remained before a fresh run was started. Its partial log is retained and is not a passing/failing full-suite verdict.
@@ -28,7 +28,7 @@ ctest --test-dir build/release -j6 --output-on-failure
 
 The retained optional configuration registers three additional CTest entries after the split: 235 instead of 232. This registration count is configuration-specific, not a universal product test total.
 
-The existing `seam_public_release_python_tests` runs the 108 remaining cases. Three separately bounded entries run archive audit, gate and replay. All four retain `TIMEOUT 180`; no timeout is increased. All four carry the `production-public-release` label. To select the entire production suite, use:
+The existing `seam_public_release_python_tests` runs the 108 remaining cases. Three separately bounded entries run archive audit, gate and replay. All four retain `TIMEOUT 180` per entry. This changes the budget boundary: previously all 133 cases shared 180 seconds; now four separate entries can consume up to 720 seconds in summed entry time. Timeout sensitivity is therefore looser even though each numeric limit is unchanged. At the measured 53.40 seconds, replay alone has about 127 seconds of headroom. This is a scheduling trade-off, not proof that the historical stall was repaired. All four carry the `production-public-release` label. To select the entire production suite, use:
 
 ```sh
 ctest --test-dir build/release -L '^production-public-release$' -j6 --output-on-failure
@@ -36,7 +36,7 @@ ctest --test-dir build/release -L '^production-public-release$' -j6 --output-on-
 
 An exact-name selection of the old entry now selects only its remaining modules. Prefix selection `-R '^seam_public_release_python_tests'` includes all four.
 
-CMake discovers every `tests/production/test_*.py` with `CONFIGURE_DEPENDS`, then assigns each module to exactly one entry. A comparison of the generated CTest commands against ordinary unittest discovery proved all 133 current test IDs occur exactly once: 108 + 1 + 18 + 6. Future matching modules automatically enter the remaining group unless explicitly split. This avoids a stale manually maintained whitelist.
+CMake discovers every `tests/production/test_*.py` with `CONFIGURE_DEPENDS`, then assigns each module to exactly one entry. A comparison of the generated CTest commands against ordinary unittest discovery proved all 133 current test IDs occur exactly once within the `production-public-release` label: 108 + 1 + 18 + 6. After the next `cmake --build` rechecks the glob, future matching modules enter the remaining group unless explicitly split; `ctest` alone does not register newly added modules. This avoids a stale manually maintained whitelist. The full CTest configuration also has older separate entries that rerun 10 of these cases; the exactly-once statement applies to this label, not the entire configuration.
 
 ## Scope and retained evidence
 
@@ -45,3 +45,5 @@ Raw logs, per-case timings, generated registration, exact partition comparison, 
 A passing CTest entry does not mean all internal optional cases ran. The unchanged baseline's training entry discovered 408 cases and skipped 90 with its existing interpreter. Its singing-quality entry discovered 141 and skipped 19: the 12 packet003 native cases require explicit fixture/binary environment variables, while 7 other native lanes require their own inputs. Those 12 were exercised in the preceding dedicated W01 run; the default aggregate result does not rerun them. The production entry ran all 133 with no skips.
 
 The pinned training environment and execution of dependency-gated model/export tests remain W03 follow-up work. Human listening, sample-bank production approval, macOS/Windows installed acceptance, host workloads and final release authority remain separate unmet product obligations.
+
+Independent review: APPROVE in reviewer turn `01a11eac-a490-7ad2-a902-425105ae2ab5`, based on source, Git objects, the complete static inventory and retained runtime logs. The reviewer ran no tests. The required clarification of timeout-budget semantics and the unknown historical cause is incorporated above.
