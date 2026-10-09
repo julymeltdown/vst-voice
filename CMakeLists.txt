@@ -2619,11 +2619,33 @@ if(SEAM_BUILD_TESTS)
           -s tests/singing_quality -p test_driver_workflow.py -v)
     set_tests_properties(seam_singing_quality_workflow PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 900)
+    # Keep expensive archive replay, gate and audit modules independently
+    # bounded. One aggregate previously exceeded 180s under -j6 even though
+    # an isolated retry passed. Discover every module, including future ones,
+    # and assign it exactly once; do not weaken its assertions or cache audits.
+    file(GLOB SEAM_PRODUCTION_TEST_FILES CONFIGURE_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/production/test_*.py")
+    set(SEAM_PRODUCTION_SLOW_MODULES
+      test_public_release_replay test_public_release_gate test_public_release_audit)
+    set(SEAM_PRODUCTION_REMAINING_MODULES "")
+    set(SEAM_PRODUCTION_CTESTS seam_public_release_python_tests)
+    foreach(test_file IN LISTS SEAM_PRODUCTION_TEST_FILES)
+      get_filename_component(test_module "${test_file}" NAME_WE)
+      if(test_module IN_LIST SEAM_PRODUCTION_SLOW_MODULES)
+        string(REPLACE "test_public_release_" "" test_suffix "${test_module}")
+        set(test_name "seam_public_release_python_tests_${test_suffix}")
+        add_test(NAME ${test_name}
+          COMMAND ${Python3_EXECUTABLE} -m unittest "tests.production.${test_module}")
+        list(APPEND SEAM_PRODUCTION_CTESTS ${test_name})
+      else()
+        list(APPEND SEAM_PRODUCTION_REMAINING_MODULES "tests.production.${test_module}")
+      endif()
+    endforeach()
     add_test(NAME seam_public_release_python_tests
-      COMMAND ${Python3_EXECUTABLE} -m unittest discover
-        -s tests/production -p "test_*.py")
-    set_tests_properties(seam_public_release_python_tests PROPERTIES
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180)
+      COMMAND ${Python3_EXECUTABLE} -m unittest ${SEAM_PRODUCTION_REMAINING_MODULES})
+    set_tests_properties(${SEAM_PRODUCTION_CTESTS} PROPERTIES
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180
+      LABELS "production-public-release")
     add_test(NAME seam_ui_design_assets
       COMMAND ${Python3_EXECUTABLE} -m unittest
         tests.design.test_ui_design_assets)
