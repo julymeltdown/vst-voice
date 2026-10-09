@@ -111,7 +111,12 @@ CTest supplies the built `seam_voicebank_cli` through
 `SEAM_PITCH_COMPARISON_EXTRACTOR`, enabling real waveform positive/negative
 controls. A direct unittest invocation needs that variable explicitly. Keep
 the 120-second training entry timeout visible and retain a timed-out run before
-investigating it; optional-environment skips are not successful model checks.
+investigating it. The entry uses the configured CTest concurrency without a
+training-specific serialization or numerical-thread override. Verbose unittest
+output records completed test names because CTest can discard a trailing
+unterminated progress line on timeout. Optional-environment skips are not successful
+model checks. Explicit bytecode compilation above prepares the cache before CTest,
+which disables bytecode writes; the runtime content fingerprint excludes caches.
 Capture the installed environment with `training_environment.capture_environment`
 after importing its numerical dependencies, and retain the lockfile, interpreter,
 upstream source revision and raw test log with that fingerprint.

@@ -1,6 +1,6 @@
 # W03 production-suite verification policy
 
-Status: scheduling change verified by a full 235/235 passing run under `-j6`. This is engineering test evidence, not product/release acceptance. The separate training-environment update below executes its dependency-enabled tests, but the latest full run has three failures described below and W03 remains open.
+Status: the complete dependency-enabled Release configuration now passes 235/235 under `-j6`, both with and without a training-specific serial reservation. The latest concurrent run executes all 469 training cases with zero skips. Final scheduler disposition is recorded below. This is engineering verification, not product/release acceptance; historical failures remain retained.
 
 ## Evidence and diagnosis
 
@@ -70,3 +70,30 @@ The intervening full run used the **superseded idle child**, not this final fixt
 A new environment from the same lock (`build/neural-runtime/training-w03-cache-probe`, Python 3.11.15, initially two bytecode files) timed out at 120.29s in an isolated CTest invocation. After explicit `uv pip sync --compile-bytecode` compiled 11,168 files in 10.24s, the same entry passed: 469 cases, zero skips, 81.899s internally / 89.64s CTest. Both setup documents now include that flag. This sequential comparison supports explicit cache preparation; it does not prove the historical timeout's cause or that compilation alone makes concurrent runs reliable. Other applications imposed substantial CPU and memory pressure. No external processes were stopped, and no test timeout, Torch thread count or product threshold was changed.
 
 Evidence: local ignored `out/evidence/w03-rss-2026-10-09/receipt.json`, including failed full/cold logs, compiled pass, active-fixture checks and host-load samples. Review and a full matrix with all repairs remain pending. W03 remains open; no installed-product, listening, model-quality or Beta acceptance changes.
+
+
+## Complete dependency-enabled verification comparison
+
+Native meter repair `aef6ee80` prevents a running empty/stale UI read from erasing a concurrent audio publication. Independent reviewer `01a11ed7-68e8-7dd3-9222-197a6e69a0cf` approved that repair and RSS/setup checkpoint `946f5694`. The new startup regression fails on old uninstrumented source in 20/20 invocations (each stops at its first failed CHECK, with at most 256 attempts), versus 20/20 successful fixed CTest invocations completing 5,120 attempts. The deterministic instrumented before/after probe and focused 10-case ThreadSanitizer run are retained in the meter receipt. This is not whole-project sanitizer or installed-product evidence.
+
+After a full dependent rebuild, both scheduling settings passed on the same compiled environment and native code:
+
+| Setting | Full CTest | Training CTest | Internal training cases | Remaining training timeout margin |
+| --- | --- | --- | --- | --- |
+| Training `RUN_SERIAL`, other entries `-j6` | 235/235, 365.82s | 78.88s | 469, zero skips | 41.12s |
+| Normal `-j6`, no training reservation | 235/235, 346.56s | 111.63s | 469, zero skips | 8.37s |
+
+The concurrent production entries also executed all 133 cases without skips: remaining108/32.78s, audit1/13.76s, gate18/43.70s and replay6/86.88s. No production assertion, crypto check, acoustic criterion, numerical thread setting or entry timeout changed. These sequential busy-host runs do not establish a causal performance improvement or prove serialization necessary. Swap use was 12,570.25M before the concurrent run and 12,410.25M near its end; exact `vm.swapusage` output and `vm_stat` snapshots are retained rather than treated as a controlled machine profile.
+
+The active compiled environment is `build/neural-runtime/training-w03-cache-probe`: Python3.11.15, 63 distributions, 31,209 hashed files and 863,305,460 bytes. Fingerprint `dd37440583850ab6dbc81e4c8e8f3609c1931b6c0c8f7e1bbfadc8dd42c90dfc`; `pip check` PASS. It uses the same locked package set as the earlier environment. Its content fingerprint differs because entrypoint shebangs bind a different environment prefix: every changed bin script was reproduced by prefix substitution. Bytecode is excluded from both fingerprints.
+
+CTest now requests verbose unittest names. A one-second known-answer timeout probe printed a complete line followed by explicitly flushed text without a newline; CTest retained the line and dropped the trailing text. Thus the repeated warning after 116 dots in earlier failed logs cannot locate the actual test at termination. The historical timeouts remain unexplained; partial cache state and host contention are plausible factors, not proved causes. The late concurrent process sample shows the vocoder recovery subprocess running and the completed verbose log confirms its PASS. No unsupported timeout signal was added.
+
+### Remaining skips and their named coverage
+
+There are 24 skip instances across aggregate entries, representing 23 distinct cases. Four native phase13a cases skipped in the general entry run in `seam_neural_package_materialization_tests` (three probe cases) and `seam_neural_worker_relocatability` (one staging case). The staging case also accounts for the one duplicate skip in the materialization entry. Of the 19 singing-quality aggregate skips, four run in `seam_singing_quality_workflow`, three in `seam_import_refuses_unrenderable`, and twelve in the separate W01 packet-native lane retained in `out/evidence/w01-2026-10-09/packet003-tools/receipt.json`. Those twelve were exercised in the prior dedicated W01 run, not rerun by this default matrix. Their evidence proves integrity/refusal behavior; Q1 and a valid formal listening packet remain unresolved under W01/W05a.
+
+Raw serial/concurrent logs, generated registrations, the compiled runtime fingerprint, host snapshots, diagnostic probe, and skip mapping are under local ignored `out/evidence/w03-final-2026-10-09/`. They are not a signed or externally anchored release archive. Human listening, rights-cleared bank approval, 20-row UA acceptance, learned-voice qualification, Windows, host/platform and final release gates remain separate open work.
+
+
+Final committed policy: retain normal `ctest --test-dir build/release -j6 --output-on-failure`, use the hash-locked explicitly bytecode-compiled interpreter and pinned upstream source, and keep verbose training output. `RUN_SERIAL` was tested but is not retained: the concurrent configuration passes, and the measurements do not establish that serialization is necessary. Its 8.37s training margin is narrow; a later timeout must retain its named-test log and be investigated, not silently retried or hidden by a larger budget. The reviewer already approved `-v` and both product/test repairs; review of these final comparison records is pending in `01a11ee9-cf32-7fe1-91e2-7b66bd8ffeac`. The passing configuration is established; independent final-record review remains explicit. This permits source integration checks using the demonstrated configuration, without promoting any product acceptance gate.
