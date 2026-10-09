@@ -100,10 +100,37 @@ The script executes the explicitly selected trusted CLI; its hash pin is not an
 external execution attestation or source/build provenance certificate.
 
 Sample and recipe positive records are supported. Opaque model packages can verify,
-but installation and installed-resource verification refuse. A separate closed model
-package/refusal outcome record is still required, as are external dependency
-reporting, catalog placement and native execution provenance before full U45 linkage.
+but installation and installed-resource verification refuse. The separate model outcome record below observes that intentional refusal.
+Sample/recipe dependency reporting, catalog placement and native execution provenance
+remain required before full U45 linkage.
 The canonical U45 reconciliation hold remains unchanged.
+
+## Opaque model package and installation-refusal record
+
+`probe-model-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 PUBLIC_KEY` uses the
+same pinned private snapshot to verify an opaque typed model package, then calls the
+real candidate installer with an absent destination inside owned scratch. Success
+requires the specific `MODEL_INSTALL_UNSUPPORTED` refusal and confirmation that no
+installation directory was created. A signature failure, wrong identity, wrong
+family, cancellation, other error or unexpected installation cannot produce this
+success record. It does not execute a model graph or establish learned singing.
+
+The distinct closed `seam.u14.model-installation-refusal.v1` record includes candidate,
+package and signer identities plus the signed `externalDependencies` declarations:
+exactly the declared neural-runtime kind/id/revision, without invented runtime or
+package digests. `dependencyEvidence` is `SIGNED_DECLARATION`, `runtimeAvailability`
+is `NOT_CHECKED`, and `graphExecution` is `NOT_RUN`. There are no installed-tree or
+receipt fields. Installation is `REFUSED`, qualification is `NOT_QUALIFIED`, human
+acceptance is `NOT_RUN`, and release authorization remains false.
+
+`scripts/verify_model_candidate_record.py` replays this probe with externally supplied
+record/CLI/public-key pins and compares the complete fresh result. Its runner shares
+the installed-record verifier's fixed-argument, minimal-environment, owned-scratch
+and time/output protections. Rehashed changes to model content or dependency
+revision are refused by comparison to the native result. `ENGINEERING_PASS` proves
+this package/refusal observation only. Runtime model installation remains an unmet
+product obligation. Source/build/platform attribution and external execution
+attestation still require their own evidence; a pinned local CLI is not those proofs.
 
 ## Publication and recovery boundaries
 

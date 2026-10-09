@@ -111,8 +111,19 @@ availability, model runtime admission or human qualification.
 
 Real native regression paths cover sample/recipe positives and opaque model
 package verification followed by install/audit refusal. The Python closed record
-supports sample/recipe success only. A separate model refusal outcome record and
-declared dependency report remain open. Per-observation provenance, native project/
+supports sample/recipe success only; the model extension below supplies a distinct
+refusal outcome record. Sample/recipe dependency output remains open. Per-observation provenance, native project/
 operation/measurement replay, qualified resources, frozen profiles and external
 authority still block canonical integration. `release_gate.py` and
 `U45_RECONCILIATION_HOLD` remain unchanged.
+
+### Model outcome extension (2026-10-09)
+
+The separate closed `seam.u14.model-installation-refusal.v1` record now observes
+opaque package verification and actual intentional native model-install refusal
+in owned scratch. Replay pins the CLI/key/record and compares fresh native output,
+including signed dependency declarations. It has no installed-tree identity and
+never asserts graph execution, runtime availability, qualification or release
+authority. This addresses the model outcome part of item1; it does not implement
+model installation or close U14/U45. Sample/recipe dependency output, canonical
+catalog placement and execution/observation provenance remain open.

@@ -151,6 +151,36 @@ int verifyCandidatePackage(int argc, char** argv) {
   return 0;
 }
 
+int probeModelCandidate(int argc, char** argv) {
+  if (argc != 6) { printCandidatePackageUsage(); return 1; }
+  SignalCancellation cancellation;
+  if (!cancellation.install()) return fail({core::ErrorCode::IoError, "Cannot install model probe cancellation handlers", {}});
+  const auto options = trustedKey(argv[5]);
+  const auto package = absolute(argv[2]);
+  if (!options) return fail(options.error());
+  if (!package) return fail(package.error());
+  const auto probe = packaging::probeModelCandidateInstallation(package.value(), argv[3], argv[4], options.value(), cancellation.token());
+  if (!probe) return fail(probe.error(), &cancellation);
+  const auto& value = probe.value();
+  const auto& descriptor = value.descriptor;
+  Json::Array dependencies;
+  for (const auto& dependency : descriptor.externalDependencies)
+    dependencies.emplace_back(Json::Object{{"kind", dependency.kind}, {"id", dependency.id}, {"revision", dependency.revision}});
+  print({{"schemaVersion", std::int64_t{1}}, {"recordType", "seam.u14.model-installation-refusal.v1"},
+      {"result", "ModelPackageVerifiedInstallRefused"}, {"evidenceScope", "ENGINEERING_ONLY"},
+      {"resourceKind", descriptor.resourceKind}, {"payloadFamily", "model"},
+      {"resourceId", descriptor.resourceId}, {"resourceVersion", descriptor.resourceVersion},
+      {"resourceCandidateSha256", value.candidateSha256}, {"packageDigest", value.packageDigest},
+      {"candidateContentSha256", descriptor.contentSha256}, {"signerKeyId", value.signerKeyId},
+      {"packageEntries", static_cast<std::int64_t>(value.entries)},
+      {"installationResult", "REFUSED"}, {"refusalReason", std::string{packaging::kModelInstallUnsupported}},
+      {"installDirectoryCreated", false}, {"externalDependencies", std::move(dependencies)},
+      {"dependencyEvidence", "SIGNED_DECLARATION"}, {"runtimeAvailability", "NOT_CHECKED"},
+      {"graphExecution", "NOT_RUN"}, {"qualification", std::string{production::kCandidateQualification}},
+      {"humanAcceptance", "NOT_RUN"}, {"authorizesRelease", false}, {"releaseEligible", false}});
+  return 0;
+}
+
 int verifyInstalledCandidate(int argc, char** argv) {
   if (argc != 7) { printCandidatePackageUsage(); return 1; }
   SignalCancellation cancellation;
@@ -244,6 +274,7 @@ std::optional<int> runCandidatePackageCommand(int argc, char** argv) {
   if (command == "inspect-candidate") return inspectCandidate(argc, argv);
   if (command == "package-candidate") return packageCandidate(argc, argv);
   if (command == "verify-candidate-package") return verifyCandidatePackage(argc, argv);
+  if (command == "probe-model-candidate") return probeModelCandidate(argc, argv);
   if (command == "verify-installed-candidate") return verifyInstalledCandidate(argc, argv);
   if (command == "install-candidate") return installCandidate(argc, argv);
   if (command == "publish-recipe-candidate") return publishRecipeCandidate(argc, argv);
@@ -257,6 +288,8 @@ void printCandidatePackageUsage() {
     << "  seam_voicebank_cli package-candidate CANDIDATE_DIRECTORY CANDIDATE_SHA256 OUTPUT_PACKAGE PRIVATE_KEY\n"
     << "    Signs exactly that schema-3 candidate into a new package; never replaces a package.\n"
     << "  seam_voicebank_cli verify-candidate-package PACKAGE PUBLIC_KEY\n"
+    << "  seam_voicebank_cli probe-model-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 PUBLIC_KEY\n"
+    << "    Verifies opaque model bytes and observes intentional installation refusal in private scratch.\n"
     << "  seam_voicebank_cli verify-installed-candidate PACKAGE PACKAGE_SHA256 CANDIDATE_SHA256 INSTALL_DIRECTORY PUBLIC_KEY\n"
     << "    Read-only exact signed-entry and family-receipt verification; engineering only.\n"
     << "  seam_voicebank_cli install-candidate PACKAGE PACKAGE_SHA256 INSTALL_ROOT PUBLIC_KEY [--replace]\n"

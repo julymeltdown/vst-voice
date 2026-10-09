@@ -499,14 +499,17 @@ std::string field(const formats::JsonValue& object, std::string_view key) { retu
 #if defined(SEAM_TEST_PYTHON)
 void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesystem::path& root,
     const std::filesystem::path& package, const std::filesystem::path& installed, const std::string& key) {
-  const auto path = root / "native-install-record.json";
+  const bool model = field(record, "recordType") == "seam.u14.model-installation-refusal.v1";
+  const auto path = root / (model ? "native-model-record.json" : "native-install-record.json");
   CHECK(core::durableAtomicWriteTextNew(path, formats::stringifyJson(record, true)));
   const auto recordSha = core::sha256File(path).value();
   const auto cliSha = core::sha256File(SEAM_TEST_VOICEBANK_CLI).value();
-  const std::vector<std::string> args{(std::filesystem::path{SEAM_TEST_SOURCE_DIR} / "scripts/verify_installed_candidate_record.py").string(),
+  std::vector<std::string> args{(std::filesystem::path{SEAM_TEST_SOURCE_DIR} /
+      (model ? "scripts/verify_model_candidate_record.py" : "scripts/verify_installed_candidate_record.py")).string(),
       "--record", path.string(), "--record-sha256", recordSha, "--package", package.string(),
-      "--installed-directory", installed.string(), "--public-key", key, "--public-key-sha256", core::sha256File(key).value(),
+      "--public-key", key, "--public-key-sha256", core::sha256File(key).value(),
       "--voicebank-cli", SEAM_TEST_VOICEBANK_CLI, "--cli-sha256", cliSha};
+  if (!model) { args.push_back("--installed-directory"); args.push_back(installed.string()); }
   const auto run = authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = args});
   CHECK(run);
   const auto result = formats::parseJson(run.value().standardOutput); CHECK(result);
@@ -515,10 +518,17 @@ void checkNativeRecordReplay(const formats::JsonValue& record, const std::filesy
   CHECK(result.value().find("verifierSha256")->asString() == cliSha);
   // A forged digest in an otherwise valid record must fail even after rehashing
   // the record itself: fresh native verification independently derives the value.
-  auto forged = record; forged.asObject()["installedResourceTreeSha256"] = std::string(64, 'a');
+  auto forged = record; forged.asObject()[model ? "candidateContentSha256" : "installedResourceTreeSha256"] = std::string(64, 'a');
   CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(forged, true)));
   auto changed = args; changed[4] = core::sha256File(path).value();
   CHECK(!authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = changed}));
+  if (model) {
+    auto changedDependency = record;
+    changedDependency.asObject()["externalDependencies"].asArray().front().asObject()["revision"] = "999";
+    CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(changedDependency, true)));
+    changed[4] = core::sha256File(path).value();
+    CHECK(!authoring::runBoundedHelperProcess({.executable = SEAM_TEST_PYTHON, .arguments = changed}));
+  }
   CHECK(core::durableAtomicWriteText(path, formats::stringifyJson(record, true)));
 }
 #endif
@@ -1221,6 +1231,37 @@ TEST_CASE("Recipe and model contract fixtures travel through typed packaging wit
   CHECK(field(modelPackage, "resourceKind") == "neural-original");
   CHECK(cliSuccess({"verify-candidate-package", (root / "model.seampkg.bin").string(), keys.publicKey}).find("result")->asString() ==
         "PackageVerified");
+  const auto modelProbe = cliSuccess({"probe-model-candidate", (root / "model.seampkg.bin").string(),
+      field(modelPackage, "packageDigest"), field(model, "candidateSha256"), keys.publicKey});
+  CHECK(field(modelProbe, "result") == "ModelPackageVerifiedInstallRefused");
+  CHECK(field(modelProbe, "refusalReason") == "MODEL_INSTALL_UNSUPPORTED");
+  CHECK(!modelProbe.find("installDirectoryCreated")->asBool());
+  CHECK(!modelProbe.find("authorizesRelease")->asBool());
+  CHECK(field(modelProbe, "graphExecution") == "NOT_RUN");
+  CHECK(field(modelProbe, "runtimeAvailability") == "NOT_CHECKED");
+  CHECK(field(modelProbe, "candidateContentSha256") == field(model, "contentSha256"));
+  const auto& dependency = modelProbe.find("externalDependencies")->asArray().front();
+  CHECK(field(dependency, "kind") == "neural-runtime");
+  CHECK(field(dependency, "id") == "seam-neural-worker"); CHECK(field(dependency, "revision") == "1");
+  CHECK(!modelProbe.find("installedResourceTreeSha256"));
+#if defined(SEAM_TEST_PYTHON)
+  checkNativeRecordReplay(modelProbe, root, root / "model.seampkg.bin", {}, keys.publicKey);
+#endif
+  CHECK(!runCli({"probe-model-candidate", (root / "recipe.seamsinger").string(),
+      field(recipePackage, "packageDigest"), field(recipe, "candidateSha256"), keys.publicKey}));
+  CHECK(!runCli({"probe-model-candidate", (root / "model.seampkg.bin").string(),
+      std::string(64, 'f'), field(model, "candidateSha256"), keys.publicKey}));
+  CHECK(!runCli({"probe-model-candidate", (root / "model.seampkg.bin").string(),
+      field(modelPackage, "packageDigest"), std::string(64, 'f'), keys.publicKey}));
+  const auto modelOtherKey = makeKeys(root, "model-other");
+  CHECK(!runCli({"probe-model-candidate", (root / "model.seampkg.bin").string(),
+      field(modelPackage, "packageDigest"), field(model, "candidateSha256"), modelOtherKey.publicKey}));
+  const auto modelRefusal = candidate_packaging::installResourceCandidatePackage(root / "model.seampkg.bin", root / "models",
+      {.verification = graphTrust, .expectedPackageDigest = field(modelPackage, "packageDigest")});
+  CHECK(!modelRefusal); CHECK(modelRefusal.error().context == candidate_packaging::kModelInstallUnsupported);
+  std::stop_source stoppedModel; stoppedModel.request_stop();
+  CHECK(!candidate_packaging::probeModelCandidateInstallation(root / "model.seampkg.bin", field(modelPackage, "packageDigest"),
+      field(model, "candidateSha256"), graphTrust, stoppedModel.get_token()));
   CHECK(!runCli({"install-candidate", (root / "model.seampkg.bin").string(), field(modelPackage, "packageDigest"),
       (root / "models").string(), keys.publicKey}));
   CHECK(!std::filesystem::exists(root / "models/fixture.model"));

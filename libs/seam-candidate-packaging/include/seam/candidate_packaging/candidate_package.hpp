@@ -119,6 +119,22 @@ struct InstalledResourceCandidate final {
     const std::filesystem::path& packagePath, const std::filesystem::path& installRoot,
     const InstallCandidateOptions& options, std::stop_token stop = {});
 
+inline constexpr std::string_view kModelInstallUnsupported = "MODEL_INSTALL_UNSUPPORTED";
+
+// Observes the existing model installer's intentional refusal in owned scratch.
+// Package validity is opaque-byte validity, never graph execution or qualification.
+struct ModelCandidateInstallProbe final {
+  voicebank_production::ResourceCandidateDescriptor descriptor;
+  std::string candidateSha256;
+  std::string packageDigest;
+  std::string signerKeyId;
+  std::size_t entries{0U};
+};
+[[nodiscard]] core::Result<ModelCandidateInstallProbe> probeModelCandidateInstallation(
+    const std::filesystem::path& packagePath, std::string_view expectedPackageDigest,
+    std::string_view expectedCandidateSha256, const distribution::VerifySeambankOptions& options,
+    std::stop_token stop = {});
+
 // Read-only engineering verification of an already installed sample or recipe.
 // Trust is established from the signed package and caller's key, never from receipt
 // booleans. Every installed file must match the signed entries, plus one typed

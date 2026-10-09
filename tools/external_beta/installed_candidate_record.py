@@ -104,23 +104,25 @@ def _run(command, timeout_seconds):
             process.wait()
 
 
-def audit_installed_candidate_record(*, record_path, record_sha256, package_path, installed_directory,
-        public_key_path, public_key_sha256, cli_path, cli_sha256, timeout_seconds=60):
+def _audit_record(*, record_path, record_sha256, package_path, public_key_path, public_key_sha256,
+        cli_path, cli_sha256, validator, command, identity_fields, native_suffix=(), timeout_seconds=60):
     result = {"status": "BLOCKED", "passed": False, "authorizesRelease": False,
         "evidenceScope": "ENGINEERING_ONLY", "errors": []}
     try:
         if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 300:
             raise ValueError("native verification timeout must be within (0, 300] seconds")
         record = _parse_json(_pinned(record_path, record_sha256, RECORD_LIMIT, "record"))
-        validate_record(record)
+        validator(record)
         cli = Path(os.path.abspath(cli_path))
         key = Path(os.path.abspath(public_key_path))
         _pinned(cli, cli_sha256, BINARY_LIMIT, "native verifier")
         _pinned(key, public_key_sha256, KEY_LIMIT, "trusted public key")
-        actual = _run([str(cli), "verify-installed-candidate", str(Path(os.path.abspath(package_path))),
+        # Command and suffix come only from the two fixed Python entrypoints,
+        # never from retained record fields.
+        actual = _run([str(cli), command, str(Path(os.path.abspath(package_path))),
             record["packageDigest"], record["resourceCandidateSha256"],
-            str(Path(os.path.abspath(installed_directory))), str(key)], timeout_seconds)
-        validate_record(actual)
+            *(str(Path(os.path.abspath(path))) for path in native_suffix), str(key)], timeout_seconds)
+        validator(actual)
         # Reconfirm selected verifier/key bytes after execution. This detects
         # ordinary concurrent replacement, not a hostile process owner/loader.
         _pinned(cli, cli_sha256, BINARY_LIMIT, "native verifier")
@@ -129,7 +131,16 @@ def audit_installed_candidate_record(*, record_path, record_sha256, package_path
             raise ValueError("retained installed record differs from fresh native verification")
         result.update(status="ENGINEERING_PASS", passed=True, recordSha256=record_sha256,
             verifierSha256=cli_sha256, publicKeySha256=public_key_sha256,
-            resourceCandidateSha256=record["resourceCandidateSha256"], installedResourceTreeSha256=record["installedResourceTreeSha256"])
+            **{key: record[key] for key in identity_fields})
     except (OSError, ValueError, TypeError, subprocess.SubprocessError) as error:
         result["errors"] = [str(error)[:2000]]
     return result
+
+
+def audit_installed_candidate_record(*, record_path, record_sha256, package_path, installed_directory,
+        public_key_path, public_key_sha256, cli_path, cli_sha256, timeout_seconds=60):
+    return _audit_record(record_path=record_path, record_sha256=record_sha256, package_path=package_path,
+        public_key_path=public_key_path, public_key_sha256=public_key_sha256, cli_path=cli_path, cli_sha256=cli_sha256,
+        validator=validate_record, command="verify-installed-candidate",
+        native_suffix=(installed_directory,),
+        identity_fields=("resourceCandidateSha256", "installedResourceTreeSha256"), timeout_seconds=timeout_seconds)

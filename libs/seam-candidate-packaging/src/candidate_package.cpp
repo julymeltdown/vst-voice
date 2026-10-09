@@ -412,7 +412,8 @@ core::Result<InstalledResourceCandidate> installResourceCandidatePackage(
     }
     case production::ResourceCandidateKind::Model:
       return core::failure<Output>(core::ErrorCode::Unsupported,
-          "Model candidates are a packaging contract only; this build installs no model resources");
+          "Model candidates are a packaging contract only; this build installs no model resources",
+          std::string{kModelInstallUnsupported});
   }
   // This postcommit read is a disclosure, never a prepublication failure. The atomic
   // installer already pinned the signed package and verified all entries before rename.

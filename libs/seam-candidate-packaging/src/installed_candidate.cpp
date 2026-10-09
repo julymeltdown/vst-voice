@@ -228,6 +228,48 @@ bool stringIs(const formats::JsonValue& value, std::string_view key, std::string
 #endif
 }  // namespace
 
+core::Result<ModelCandidateInstallProbe> probeModelCandidateInstallation(
+    const std::filesystem::path& packagePath, std::string_view expectedPackageDigest,
+    std::string_view expectedCandidateSha256, const distribution::VerifySeambankOptions& options,
+    std::stop_token stop) {
+  using Output = ModelCandidateInstallProbe;
+#if defined(__APPLE__) || defined(__linux__)
+  if (!digestText(expectedPackageDigest) || !digestText(expectedCandidateSha256) ||
+      !options.requireTrustedSigner || options.trustedPublicKeys.empty())
+    return core::failure<Output>(core::ErrorCode::InvalidArgument, "Model probe requires captured package/candidate digests and explicit trust");
+  if (stop.stop_requested()) return core::failure<Output>(core::ErrorCode::Conflict, "Model probe cancelled");
+  auto captured = PackageSnapshot::capture(packagePath, expectedPackageDigest, options.limits.maximumArchiveBytes, stop);
+  if (!captured) return core::Result<Output>{captured.error()};
+  const auto& snapshot = *captured.value();
+  const auto verified = verifyResourceCandidatePackage(snapshot.path, options);
+  if (!verified) return core::Result<Output>{verified.error()};
+  const auto& value = verified.value();
+  if (value.container.packageDigest != expectedPackageDigest || value.candidateSha256 != expectedCandidateSha256 ||
+      value.descriptor.kind != production::ResourceCandidateKind::Model)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model probe requires the captured typed model package");
+  const auto destination = snapshot.stage->path / "model-install-probe";
+  struct stat state{};
+  if (::lstat(destination.c_str(), &state) == 0 || errno != ENOENT)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model probe destination is not absent");
+  InstallCandidateOptions install;
+  install.verification = options;
+  install.expectedPackageDigest = std::string{expectedPackageDigest};
+  const auto attempt = installResourceCandidatePackage(snapshot.path, destination, install, stop);
+  if (attempt || attempt.error().code != core::ErrorCode::Unsupported || attempt.error().context != kModelInstallUnsupported)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model probe did not observe the required model installation refusal");
+  if (::lstat(destination.c_str(), &state) == 0 || errno != ENOENT)
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model installation refusal created a destination");
+  const auto digest = core::sha256File(snapshot.path, options.limits.maximumArchiveBytes, stop);
+  if (!digest || digest.value() != expectedPackageDigest || !snapshot.unchanged())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Model package changed during the refusal probe");
+  return Output{value.descriptor, value.candidateSha256, value.container.packageDigest,
+      value.container.signerKeyId, value.container.entries.size()};
+#else
+  (void)packagePath; (void)expectedPackageDigest; (void)expectedCandidateSha256; (void)options; (void)stop;
+  return core::failure<Output>(core::ErrorCode::Unsupported, "Model candidate probing is not implemented on this platform");
+#endif
+}
+
 core::Result<VerifiedInstalledCandidate> verifyInstalledResourceCandidate(
     const std::filesystem::path& packagePath, std::string_view expectedPackageDigest,
     std::string_view expectedCandidateSha256, const std::filesystem::path& installedDirectory,
