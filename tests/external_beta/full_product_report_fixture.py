@@ -86,7 +86,7 @@ def complete_report(root: Path):
                 "role": role, "language": language, "status": "ACCEPTED", "rubricSha256": generic["sha256"]}
             review["rawEvidence"] = raw(f"review-{identifier}-{role}.json", review)
             observation["reviews"].append(review)
-        for criterion in CRITERIA_BY_REQUIREMENT[case["requirementId"]]:
+        for criterion in case["criteriaIds"]:
             definition = next(row for row in contract["evaluationProfile"]["criteria"] if row["id"] == criterion)
             fixed = FIXED_CRITERIA.get(criterion)
             value = fixed[1] if fixed else 1
@@ -112,7 +112,10 @@ def complete_report(root: Path):
             observation["checkResults"].append(check)
         cases.append({"id": identifier, "requirementId": case["requirementId"], "status": "PASS",
             "resultType": requirement.result_type, "observations": [observation]})
+    # Generic registry metadata serves reader-shape tests only; the typed audit
+    # rejects it because it is not a registered-reviewer record.
     report = {"schemaVersion": 1, "recordType": "full-product-beta-report", "status": "PASS",
+        "evidenceClass": "ENGINEERING_FIXTURE", "reviewerRegistry": generic,
         "candidateRootId": "synthetic-test-only-not-a-release", "candidateRootSha256": "4" * 64,
         "acceptanceContractSha256": "5" * 64, "fullProductContractSha256": digest(contract),
         "evaluationProfileSha256": digest(contract["evaluationProfile"]),

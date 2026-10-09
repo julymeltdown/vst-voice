@@ -56,10 +56,19 @@ MAXIMUM_REPORT_BYTES = 64 * 1024 * 1024
 MAXIMUM_REFERENCE_BYTES = 256 * 1024 * 1024
 MAXIMUM_JSON_DEPTH = 96
 REFERENCE_READ_CHUNK_BYTES = 1024 * 1024
+# jsonschema embeds the offending instance in its messages; a rejected
+# 83-case report would otherwise produce megabytes of diagnostics.
+MAXIMUM_SCHEMA_MESSAGE_CHARS = 300
 
 
 class FullProductReportError(ValueError):
     """Raised only for malformed report/reference input."""
+
+
+# Metaschema checking the 1 MiB evidence schema costs most of a validation run.
+# Cache the checked validator only under the exact schema-byte digest, so any
+# change to the schema file is checked again before it is trusted.
+_SCHEMA_VALIDATORS: dict[str, Any] = {}
 
 
 def _canonical(value: JsonValue) -> str:
@@ -167,6 +176,14 @@ def _read_regular_reference(
     except ValueError as error:
         raise FullProductReportError(f"{label}: {error}") from error
     path = _safe_reference_path(reference.get("locator"), base, label)
+    contents = _read_regular_file(path, label=label, maximum_bytes=maximum_bytes)
+    if _sha256_bytes(contents) != digest:
+        raise FullProductReportError(f"{label} content digest does not match its bytes")
+    return contents
+
+
+def _read_regular_file(path: Path, *, label: str, maximum_bytes: int) -> bytes:
+    """Bounded no-follow snapshot for a CLI input without a supplied digest."""
     try:
         before = path.lstat()
     except OSError as error:
@@ -212,8 +229,6 @@ def _read_regular_reference(
     ):
         raise FullProductReportError(f"{label} changed while reading")
     contents = bytes(contents)
-    if _sha256_bytes(contents) != digest:
-        raise FullProductReportError(f"{label} content digest does not match its bytes")
     return contents
 
 
@@ -223,14 +238,22 @@ def _schema_errors(report: JsonValue) -> list[str]:
     except ImportError:
         return ["semantic validator requires the jsonschema package"]
     try:
-        schema = _parse_json(SCHEMA_PATH.read_bytes())
-        Draft202012Validator.check_schema(schema)
-        validator = Draft202012Validator(schema)
+        contents = SCHEMA_PATH.read_bytes()
+        schema_digest = _sha256_bytes(contents)
+        validator = _SCHEMA_VALIDATORS.get(schema_digest)
+        if validator is None:
+            schema = _parse_json(contents)
+            Draft202012Validator.check_schema(schema)
+            validator = Draft202012Validator(schema)
+            _SCHEMA_VALIDATORS.clear()
+            _SCHEMA_VALIDATORS[schema_digest] = validator
         errors = sorted(validator.iter_errors(report), key=lambda error: list(error.absolute_path))
     except (OSError, FullProductReportError, TypeError, ValueError) as error:
         return [f"full-product evidence schema cannot be loaded: {error}"]
     return [
-        "schema " + ("/".join(str(part) for part in error.absolute_path) or "<root>") + ": " + error.message
+        "schema " + ("/".join(str(part) for part in error.absolute_path) or "<root>") + ": "
+        + (error.message if len(error.message) <= MAXIMUM_SCHEMA_MESSAGE_CHARS
+           else error.message[:MAXIMUM_SCHEMA_MESSAGE_CHARS] + "... [truncated]")
         for error in errors[:64]
     ]
 
@@ -349,6 +372,7 @@ def _observation_errors(
     criterion_definitions: dict[str, JsonObject],
     soak_errors: list[str],
     soak_context: SoakReplayContext,
+    case_criteria: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = list(soak_errors)
     label = f"full-product observation {case_id}"
@@ -404,7 +428,9 @@ def _observation_errors(
                     base=report_base, label=f"{label}.reviews[{index}]", soak_context=soak_context))
     measurements = observation.get("measurements")
     if isinstance(measurements, list):
-        criteria = set(CRITERIA_BY_REQUIREMENT[case_id.split(".", 1)[0]])
+        # Case-specific criteria (for example classical-small-edit-p95) are
+        # declared by the frozen case row, not by the requirement-wide list.
+        criteria = set(case_criteria if case_criteria is not None else CRITERIA_BY_REQUIREMENT[case_id.split(".", 1)[0]])
         observed_criteria: set[str] = set()
         for index, measurement in enumerate(measurements):
             if not isinstance(measurement, dict):
@@ -587,10 +613,14 @@ def validate_full_product_report(
     source_commit = release_identity.get("sourceCommit") if isinstance(release_identity, dict) else None
     build_id = release_identity.get("buildId") if isinstance(release_identity, dict) else None
     criterion_definitions = {}
+    case_criteria: dict[str, tuple[str, ...]] = {}
     if isinstance(full_product_contract, dict):
         profile = full_product_contract.get("evaluationProfile", {})
         if isinstance(profile, dict):
             criterion_definitions = {row["id"]: row for row in profile.get("criteria", []) if isinstance(row, dict) and isinstance(row.get("id"), str)}
+        for definition in full_product_contract.get("cases", []):
+            if isinstance(definition, dict) and isinstance(definition.get("id"), str) and isinstance(definition.get("criteriaIds"), list):
+                case_criteria[definition["id"]] = tuple(item for item in definition["criteriaIds"] if isinstance(item, str))
     if isinstance(cases, list):
         for row in cases:
             if not isinstance(row, dict) or not isinstance(row.get("id"), str):
@@ -625,7 +655,8 @@ def validate_full_product_report(
                 if isinstance(checks, list):
                     observed_checks.update(item.get("id") for item in checks if isinstance(item, dict) and isinstance(item.get("id"), str))
                 errors.extend(_observation_errors(observation, case_id=case_id, source_commit=source_commit, build_id=build_id, resource_ids=scope_resources, report_base=report_base, verify_references=verify_references, criterion_definitions=criterion_definitions,
-                    soak_errors=soak_errors.get(id(observation), []), soak_context=soak_context))
+                    soak_errors=soak_errors.get(id(observation), []), soak_context=soak_context,
+                    case_criteria=case_criteria.get(case_id)))
             expected_checks = set(required_check_ids(case_id))
             if observed_checks != expected_checks:
                 errors.append(f"full-product case {case_id}: check coverage differs from canonical workload")

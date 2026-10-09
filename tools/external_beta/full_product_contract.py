@@ -20,6 +20,15 @@ except ImportError:
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 ORIGIN_SHA256: Final = "635606cfd10be803612dfcb47cf84651796a06860ff34dc8343705eac20c9c01"
+CANONICAL_CONTRACT_ID: Final = "project-seam.full-product-beta"
+# Engineering fixtures use this reserved identity instead of impersonating the
+# canonical contract.  The typed audit may accept fixture evidence under it,
+# but no release state may ever be granted from it.
+SYNTHETIC_CONTRACT_ID: Final = "synthetic-test-only.full-product-beta"
+SYNTHETIC_CONTRACT_AUTHORITY_ERROR: Final = (
+    "full-product contract is the synthetic engineering-fixture contract; "
+    "it can never authorize a release state"
+)
 MAXIMUM_CONTRACT_BYTES: Final = 1024 * 1024
 MAXIMUM_JSON_DEPTH: Final = 64
 
@@ -104,7 +113,11 @@ def full_product_contract_errors(acceptance: JsonObject, *, base: Path | None = 
     errors = list(registry.errors)
     if not isinstance(contract, dict):
         return errors
-    if contract.get("schemaVersion") != 1 or isinstance(contract.get("schemaVersion"), bool) or contract.get("contractId") != "project-seam.full-product-beta" or contract.get("contractVersion") != "1.0.0" or contract.get("beforeBetaGO") is not True:
+    if contract.get("contractId") == SYNTHETIC_CONTRACT_ID:
+        errors.append(SYNTHETIC_CONTRACT_AUTHORITY_ERROR)
+    elif contract.get("contractId") != CANONICAL_CONTRACT_ID:
+        errors.append("full-product contract version or mandatory scope differs")
+    if contract.get("schemaVersion") != 1 or isinstance(contract.get("schemaVersion"), bool) or contract.get("contractVersion") != "1.0.0" or contract.get("beforeBetaGO") is not True:
         errors.append("full-product contract version or mandatory scope differs")
     authority = contract.get("authority")
     if not isinstance(authority, dict) or authority.get("sha256") != ORIGIN_SHA256 or authority.get("decision") != "USER_SETTLED_FULL_SCOPE":
