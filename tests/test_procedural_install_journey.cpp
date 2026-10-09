@@ -228,6 +228,19 @@ TEST_CASE("An installed procedural singer records an identity the renderer can l
   CHECK(recorded.resource.id == "authored-original");
   CHECK(recorded.resource.kind == domain::SingerResourceKind::Procedural);
   CHECK(recorded.style == "neutral");
+  CHECK(recorded.installation.has_value());
+  CHECK(recorded.installation->distributionId == installed.value().id);
+  CHECK(recorded.installation->distributionVersion == installed.value().version);
+  CHECK(recorded.installation->installedContentHash == installed.value().contentHash);
+  CHECK(recorded.installation->packageDigest == installed.value().packageDigest);
+  CHECK(recorded.installation->signerKeyId == installed.value().signerKeyId);
+  CHECK(recorded.installation->recipeEntry == "recipe.json");
+  CHECK(recorded.installation->engineRevision == 14U);
+  CHECK(recorded.validate());
+  const auto callsBeforeRelink = picker->requests.size();
+  CHECK(!controller.value()->dispatch(platform::ApplicationCommand::RelinkProceduralRecipe));
+  CHECK(picker->requests.size() == callsBeforeRelink);
+  CHECK(*runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe == recorded);
 
   // The recorded identity must be one the renderer will accept for the installed recipe. A
   // selection that records an identity the renderer refuses is a selection that cannot sing.
@@ -325,6 +338,7 @@ TEST_CASE("An installed procedural singer sings a tuned phrase after the produce
   CHECK(reopened->proceduralRecipe.has_value());
   if (!reopened->proceduralRecipe) return;
   CHECK(reopened->proceduralRecipe->resource == installed.value().renderIdentity);
+  CHECK(reopened->proceduralRecipe->installation->installedContentHash == installed.value().contentHash);
   authoring::ExportSettings settings;
   settings.includeMaster = true;
   const auto exported = controller.value()->exportSet(root / "export", settings);
@@ -798,12 +812,16 @@ TEST_CASE("The application copies the selected installed singer to an editable d
   CHECK(std::filesystem::exists(draft));
   const auto* afterCopy = runtime.document().session().project().findVocalTrack(trackId);
   CHECK(afterCopy->proceduralRecipe->path == draft.string());
+  CHECK(!afterCopy->proceduralRecipe->installation);
   // The draft carries the installed singer's identity, because it is the same voice as a starting
   // point; editing it is what produces a different one.
   CHECK(afterCopy->proceduralRecipe->resource == installed.value().renderIdentity);
   CHECK(runtime.undo());
   CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->path ==
         selectedRecipe);
+  CHECK(runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->installation.has_value());
+  CHECK(runtime.redo());
+  CHECK(!runtime.document().session().project().findVocalTrack(trackId)->proceduralRecipe->installation);
   // Nothing in this sequence modified the signed installation.
   const auto installedAfter = core::sha256File(selectedRecipe, 1024U * 1024U);
   CHECK(installedAfter.hasValue());

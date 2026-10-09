@@ -602,3 +602,26 @@ TEST_CASE("project_lifecycle_never_serializes_active_document_paths") {
   CHECK(content.value().find(path.string()) == std::string::npos);
   CHECK(content.value().find(root.string()) == std::string::npos);
 }
+
+TEST_CASE("installation provenance changes invalidate performance work and undo restores the binding") {
+  using namespace seam;
+  auto document = makeDocument();
+  const auto trackId = document.session().project().vocalTracks().front().id;
+  domain::ProceduralRecipeReference reference{
+      {domain::SingerResourceKind::Procedural, "recipe", "11", std::string(64U, 'a')},
+      "/installed/recipe.json", "neutral",
+      domain::ProceduralInstallationReference{"singer", "1.0.0", std::string(64U, 'b'),
+          "seam.source-filter.v1", 15U, "recipe.json", std::string(64U, 'c'), std::string(64U, 'd')}};
+  CHECK(document.execute(std::make_unique<application::SetTrackProceduralRecipeCommand>(
+      trackId, std::nullopt, reference)));
+  const auto context = document.session().capturePerformanceJob(); CHECK(context);
+  auto replacement = reference;
+  ++replacement.installation->engineRevision; // Same recipe, path and style, different dependency.
+  CHECK(document.execute(std::make_unique<application::SetTrackProceduralRecipeCommand>(
+      trackId, reference, replacement)));
+  CHECK(!document.session().validatePerformanceJob(context.value()));
+  CHECK(document.undo());
+  CHECK(document.session().project().findVocalTrack(trackId)->proceduralRecipe == reference);
+  CHECK(document.redo());
+  CHECK(document.session().project().findVocalTrack(trackId)->proceduralRecipe == replacement);
+}

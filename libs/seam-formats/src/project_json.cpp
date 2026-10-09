@@ -7,6 +7,7 @@
 #include <charconv>
 #include <cmath>
 #include <optional>
+#include <limits>
 #include <sstream>
 #include <system_error>
 
@@ -15,6 +16,44 @@ namespace {
 
 using Object = JsonValue::Object;
 using Array = JsonValue::Array;
+
+JsonValue encodeProceduralInstallation(
+    const std::optional<domain::ProceduralInstallationReference>& binding) {
+  if (!binding) return JsonValue{};
+  return Object{{"distributionId", binding->distributionId},
+      {"distributionVersion", binding->distributionVersion},
+      {"installedContentHash", binding->installedContentHash},
+      {"engineId", binding->engineId},
+      {"engineRevision", JsonValue{static_cast<std::int64_t>(binding->engineRevision)}},
+      {"recipeEntry", binding->recipeEntry}, {"packageDigest", binding->packageDigest},
+      {"signerKeyId", binding->signerKeyId}};
+}
+
+core::Result<std::optional<domain::ProceduralInstallationReference>> decodeProceduralInstallation(
+    const JsonValue* value) {
+  using Output = std::optional<domain::ProceduralInstallationReference>;
+  const auto invalid = [] { return core::failure<Output>(core::ErrorCode::ParseError,
+      "Procedural installation reference has an invalid shape or field"); };
+  if (!value) return invalid();
+  if (value->isNull()) return Output{};
+  if (!value->isObject() || value->asObject().size() != 8U) return invalid();
+  for (const auto* key : {"distributionId", "distributionVersion", "installedContentHash",
+                         "engineId", "recipeEntry", "packageDigest", "signerKeyId"}) {
+    if (!value->find(key) || !value->find(key)->isString()) return invalid();
+  }
+  const auto* revision = value->find("engineRevision");
+  if (!revision || !revision->isInteger() || revision->asInt64() <= 0 ||
+      revision->asInt64() > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max()))
+    return invalid();
+  domain::ProceduralInstallationReference binding{
+      value->find("distributionId")->asString(), value->find("distributionVersion")->asString(),
+      value->find("installedContentHash")->asString(), value->find("engineId")->asString(),
+      static_cast<std::uint32_t>(revision->asInt64()), value->find("recipeEntry")->asString(),
+      value->find("packageDigest")->asString(), value->find("signerKeyId")->asString()};
+  if (!binding.validate()) return invalid();
+  return Output{std::move(binding)};
+}
+
 
 core::Result<void> validateProjectPath(const std::filesystem::path& path,
                                        bool allowMissing) {
@@ -617,7 +656,8 @@ JsonValue encodeProject(const domain::Project& project,
             {"version", JsonValue{track.proceduralRecipe->resource.version}},
             {"contentHash", JsonValue{track.proceduralRecipe->resource.contentHash}},
             {"path", JsonValue{track.proceduralRecipe->path}},
-            {"style", JsonValue{track.proceduralRecipe->style}}}} : JsonValue{}},
+            {"style", JsonValue{track.proceduralRecipe->style}},
+            {"installation", encodeProceduralInstallation(track.proceduralRecipe->installation)}}} : JsonValue{}},
         {"neuralResource", track.neuralResource ? JsonValue{Object{
             {"id", JsonValue{track.neuralResource->resource.id}},
             {"version", JsonValue{track.neuralResource->resource.version}},
@@ -951,7 +991,7 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
     if (schemaVersion >= 9 && recipe == nullptr) return core::failure<domain::Project>(
         core::ErrorCode::ParseError, "Schema 9 track is missing proceduralRecipe");
     if (recipe && !recipe->isNull()) {
-      if (schemaVersion < 9 || !recipe->isObject() || recipe->asObject().size() != 5U) return core::failure<domain::Project>(
+      if (schemaVersion < 9 || !recipe->isObject() || recipe->asObject().size() != (schemaVersion >= 21 ? 6U : 5U)) return core::failure<domain::Project>(
           core::ErrorCode::ParseError, "Procedural recipe reference has an invalid schema or shape");
       for (const auto* key : {"id", "version", "contentHash", "path", "style"}) {
         if (!recipe->find(key) || !recipe->find(key)->isString()) return core::failure<domain::Project>(
@@ -960,7 +1000,12 @@ core::Result<domain::Project> decodeProject(const JsonValue& root) {
       track.proceduralRecipe = domain::ProceduralRecipeReference{
           {domain::SingerResourceKind::Procedural, recipe->find("id")->asString(),
            recipe->find("version")->asString(), recipe->find("contentHash")->asString()},
-          recipe->find("path")->asString(), recipe->find("style")->asString()};
+          recipe->find("path")->asString(), recipe->find("style")->asString(), std::nullopt};
+      if (schemaVersion >= 21) {
+        auto installation = decodeProceduralInstallation(recipe->find("installation"));
+        if (!installation) return core::Result<domain::Project>{installation.error()};
+        track.proceduralRecipe->installation = std::move(installation).value();
+      }
     }
     // Schema 10 records the optional neural singer selection. It is required to be
     // present so an older build refuses a newer project instead of silently

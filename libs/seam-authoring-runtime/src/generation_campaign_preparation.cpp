@@ -74,7 +74,7 @@ core::Result<PreparedCampaignBatch> prepareGenerationCampaignBatch(
     const auto assignment = std::find_if(producer.unitAssignments.begin(), producer.unitAssignments.end(),
         [&](const auto& item) { return item.plannedTakeId == takeId; });
     score.value().project.findVocalTrack(score.value().trackId)->proceduralRecipe = domain::ProceduralRecipeReference{
-        resource.value().identity, "recipe.json", assignment->style};
+        resource.value().identity, "recipe.json", assignment->style, std::nullopt};
     const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(score.value().project, resource.value(),
         score.value().trackId, score.value().regionId, 0U, rendering::RenderQuality::Final,
         static_cast<std::uint32_t>(score.value().project.settings().sampleRate), assignment->style);

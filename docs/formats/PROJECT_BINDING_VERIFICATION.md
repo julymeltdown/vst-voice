@@ -103,3 +103,13 @@ rendering, selected-style coverage, language quality, host provenance, and human
 The nested project's resourceAdmission therefore stays NOT_CHECKED. Both nested
 records and the composite retain false release-authority flags. The canonical
 U45 hold is unchanged; actual operation/artifact observation remains required.
+
+## Schema 21 provenance checkpoint
+
+The codec accepts the strict optional installation binding described in
+[Project JSON schema 21](PROJECT_JSON_V21.md). Fresh records report codec 21;
+older source schemas remain readable and are named in `sourceSchemaVersion`.
+At this checkpoint the native project/composite verifiers validate the binding's
+shape through the codec but do **not** compare it with the verified installation
+or enforce it at runtime. Their existing NOT_CHECKED scope is unchanged.
+Historical byte-exact replay requires the historical pinned verifier.

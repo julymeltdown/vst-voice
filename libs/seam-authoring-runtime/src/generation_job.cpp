@@ -111,7 +111,7 @@ core::Result<PreparedGenerationJob> prepareGenerationJobFromScore(
       return core::failure<Output>(core::ErrorCode::InvalidArgument, "Selected Designer style is not present in the frozen recipe");
     // Only this owned score copy changes. The job package carries its verified
     // resource bytes; the user song and original external recipe stay untouched.
-    track->proceduralRecipe = domain::ProceduralRecipeReference{selectedRecipe->resource.identity, "recipe.json", selectedRecipe->style};
+    track->proceduralRecipe = domain::ProceduralRecipeReference{selectedRecipe->resource.identity, "recipe.json", selectedRecipe->style, std::nullopt};
   }
   const auto& reference = *track->proceduralRecipe;
   const auto rate = project.value().settings().sampleRate;

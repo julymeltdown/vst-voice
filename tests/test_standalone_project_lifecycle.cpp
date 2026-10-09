@@ -208,6 +208,9 @@ TEST_CASE("New Project preserves installed singers that are not currently select
   available.candidate.manifest.language = "ja";
   available.candidate.manifest.styles = {"soft", "clear"};
   available.candidate.manifest.recipeEntry = "recipe.json";
+  available.candidate.manifest.engineId = "seam.source-filter.v1";
+  available.candidate.manifest.engineRevision = 15U;
+  available.candidate.contentHash = std::string(64U, 'b');
   available.candidate.resourceRoot = "/support/Singers/ready-singer/2.0.1";
   available.candidate.renderIdentity = seam::domain::SingerResourceIdentity{
       .kind = seam::domain::SingerResourceKind::Procedural,
@@ -234,7 +237,13 @@ TEST_CASE("New Project preserves installed singers that are not currently select
   CHECK(choices.selectable[0].reference.path ==
         "/support/Singers/ready-singer/2.0.1/recipe.json");
   CHECK(choices.selectable[0].reference.style == "soft");
+  CHECK(choices.selectable[0].reference.validate());
   CHECK(choices.selectable[1].reference.style == "clear");
+  CHECK(choices.selectable[0].reference.installation ==
+      seam::distribution::proceduralInstallationReference(available.candidate));
+  available.candidate.trust = seam::distribution::ProceduralTrust::DevelopmentFixture;
+  const auto development = seam::standalone::makeNativeNewProjectSingerChoices({available}, {}, 0U, false);
+  CHECK(!development.selectable.front().reference.installation);
   CHECK(choices.unavailable[1].label.find("broken-singer/0.1.0") !=
         std::string::npos);
   CHECK(choices.unavailable[1].detail.find("Invalid manifest.json") !=
@@ -307,7 +316,7 @@ TEST_CASE("a schema one predecessor project opens migrates saves and reopens as 
       reinterpret_cast<const char*>(savedBytes.value().data()),
       savedBytes.value().size());
   // The saved file is this build's schema, not the predecessor's, and the bytes changed.
-  CHECK(savedText.find("\"schemaVersion\": 20") != std::string::npos);
+  CHECK(savedText.find("\"schemaVersion\": 21") != std::string::npos);
   CHECK(seam::core::sha256Hex(savedText) != predecessorSha);
   // A legacy lyric survives; it is not dropped by the version bump.
   CHECK(savedText.find("あ") != std::string::npos);
@@ -2552,11 +2561,20 @@ TEST_CASE("standalone app installs a trusted procedural singer without changing 
         .outputChannels = 2U, .initialProceduralSinger = stale}));
     checkDocumentUnchanged(*session, before);
 
+    auto staleBinding = initial;
+    staleBinding.installation = distribution::proceduralInstallationReference(candidate);
+    ++staleBinding.installation->engineRevision;
+    CHECK(!controller.value()->createNewProject(authoring::NewProjectRequest{
+        .name = "Stale binding", .tempoBpm = 120.0, .sampleRate = 48000U,
+        .outputChannels = 2U, .initialProceduralSinger = staleBinding}));
+    checkDocumentUnchanged(*session, before);
+
     CHECK(controller.value()->createNewProject(authoring::NewProjectRequest{
         .name = "New song with installed singer", .tempoBpm = 120.0,
         .sampleRate = 48000U, .outputChannels = 2U,
         .initialProceduralSinger = initial}));
     const auto& track = session->runtime().document().session().project().vocalTracks().front();
+    initial.installation = distribution::proceduralInstallationReference(candidate);
     CHECK(track.proceduralRecipe == initial);
     CHECK(track.voicebank.id.empty());
   }

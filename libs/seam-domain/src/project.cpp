@@ -1,6 +1,7 @@
 #include "seam/domain/project.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <limits>
 #include <unordered_set>
 #include <set>
@@ -51,6 +52,36 @@ std::string rendererProvenanceDifference(
   return difference;
 }
 
+core::Result<void> ProceduralInstallationReference::validate() const {
+  const auto validText = [](const std::string& value, std::size_t limit) {
+    return !value.empty() && value.size() <= limit && std::none_of(value.begin(), value.end(),
+        [](unsigned char c) { return c < 32U || c == 127U; });
+  };
+  const auto digest = [](const std::string& value) {
+    return value.size() == 64U && std::all_of(value.begin(), value.end(), [](unsigned char c) {
+      return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+  };
+  // Portable, slash-separated package entry; never accept traversal or an OS root.
+  bool safeEntry = validText(recipeEntry, 1024U) && recipeEntry.front() != '/' &&
+      recipeEntry.find_first_of("\\:") == std::string::npos;
+  for (std::size_t start = 0U; safeEntry && start <= recipeEntry.size();) {
+    const auto end = recipeEntry.find('/', start);
+    const auto part = recipeEntry.substr(start, end == std::string::npos ? end : end - start);
+    safeEntry = !part.empty() && part != "." && part != "..";
+    if (end == std::string::npos) break;
+    start = end + 1U;
+  }
+  if (!validText(distributionId, 256U) || !validText(distributionVersion, 128U) ||
+      !digest(installedContentHash) || !validText(engineId, 256U) || engineRevision == 0U ||
+      !safeEntry || recipeEntry == "manifest.json" ||
+      (!packageDigest.empty() && !digest(packageDigest)) || (!signerKeyId.empty() && !digest(signerKeyId))) {
+    return core::failure(core::ErrorCode::InvalidArgument,
+        "Procedural installation reference is invalid");
+  }
+  return core::success();
+}
+
 core::Result<void> ProceduralRecipeReference::validate() const {
   const auto identity = resource.validate();
   if (!identity) return identity;
@@ -60,6 +91,24 @@ core::Result<void> ProceduralRecipeReference::validate() const {
   };
   if (resource.kind != SingerResourceKind::Procedural || invalidText(path, 4096U) || invalidText(style, 128U)) {
     return core::failure(core::ErrorCode::InvalidArgument, "Procedural recipe reference is invalid");
+  }
+  if (installation) {
+    const auto binding = installation->validate();
+    if (!binding) return binding;
+    const auto recipePath = std::filesystem::path{path};
+    // A project-relative copy is deliberately independent of the installation.
+    if (recipePath.is_absolute()) {
+      auto remaining = recipePath;
+      auto entry = std::filesystem::path{installation->recipeEntry};
+      while (!entry.empty()) {
+        if (remaining.filename() != entry.filename()) return core::failure(
+            core::ErrorCode::InvalidArgument, "Installed recipe path does not end with its recipe entry");
+        remaining = remaining.parent_path();
+        entry = entry.parent_path();
+      }
+      if (remaining.empty()) return core::failure(core::ErrorCode::InvalidArgument,
+          "Installed recipe path has no installation root");
+    }
   }
   return core::success();
 }

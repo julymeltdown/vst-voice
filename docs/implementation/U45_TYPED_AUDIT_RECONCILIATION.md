@@ -196,3 +196,20 @@ drafts and project-relative recipe workflows while enforcing installed metadata
 where applicable. ProductionProjectRenderer and operation evidence should consume
 that shared boundary after the product call sites are migrated. The canonical U45
 hold and full product acceptance requirements are unchanged.
+
+### Persisted procedural installation binding (2026-10-10)
+
+[Project schema 21](../formats/PROJECT_JSON_V21.md) now separates recipe render
+identity from installation/distribution and engine pins. Installed selection,
+New Project and Studio song creation record the current candidate; authored
+replacement and draft copies deliberately do not. Portable export preserves
+origin pins. Stale/missing receipts cannot supply package/signer provenance.
+Old project references stay unbound on load. Binding equality participates in
+performance-job freshness and undo/redo.
+
+This is a persistence checkpoint for the shared admission work. Rendering still
+does not enforce these pins, and the U45 native composite still does not compare
+the new binding to the verified installation. Both remain explicit next work;
+resourceAdmission/runtimeAvailability remain NOT_CHECKED, and no installed,
+interactive, hearing or Beta acceptance is added. Old retained records require
+their pinned verifier; fresh records name codec 21.

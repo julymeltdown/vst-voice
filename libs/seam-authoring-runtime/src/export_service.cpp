@@ -806,7 +806,9 @@ core::Result<ExportResult> ExportService::exportSetWithSources(
       }
       auto* track = packaged.findVocalTrack(frozen.trackId);
       if (!track) return core::failure<ExportResult>(core::ErrorCode::NotFound, "Packaged recipe track is missing");
-      track->proceduralRecipe = domain::ProceduralRecipeReference{frozen.resource.identity, relative, frozen.style};
+      const auto installation = track->proceduralRecipe ? track->proceduralRecipe->installation : std::nullopt;
+      track->proceduralRecipe = domain::ProceduralRecipeReference{
+          frozen.resource.identity, relative, frozen.style, installation};
       frozenSources.emplace_back(std::move(frozen));
     }
     const auto encoded = projectCodec.encode(packaged);

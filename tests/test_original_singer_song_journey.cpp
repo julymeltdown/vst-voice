@@ -468,7 +468,8 @@ TEST_CASE("An installed original singer renders an authored lyric song") {
   const domain::ProceduralRecipeReference initialSinger{
       .resource = candidate.renderIdentity,
       .path = (candidate.resourceRoot / candidate.manifest.recipeEntry).string(),
-      .style = candidate.manifest.styles.front()};
+      .style = candidate.manifest.styles.front(),
+      .installation = distribution::proceduralInstallationReference(candidate)};
   const auto created = editor.controller->createNewProject(authoring::NewProjectRequest{
       .name = "Original Singer Song", .tempoBpm = 120.0, .sampleRate = 48000U,
       .outputChannels = 2U, .initialProceduralSinger = initialSinger});
@@ -1499,7 +1500,8 @@ TEST_CASE("A voice designed and saved here becomes a singer that sings a song") 
       .resource = installedCandidate.renderIdentity,
       .path = (installedCandidate.resourceRoot /
                installedCandidate.manifest.recipeEntry).string(),
-      .style = installedCandidate.manifest.styles.front()};
+      .style = installedCandidate.manifest.styles.front(),
+      .installation = distribution::proceduralInstallationReference(installedCandidate)};
   const auto created = editor.controller->createNewProject(
       authoring::NewProjectRequest{
           .name = "Designed Voice Song",
@@ -1661,6 +1663,10 @@ TEST_CASE("Studio's song hand-off writes a new project the editor opens and sing
   CHECK(song.value().projectPath == std::filesystem::canonical(root / "Handoff Voice Song.seam"));
   CHECK(song.value().projectName == "Handoff Voice Song");
   CHECK(song.value().singer.style == "neutral");
+  CHECK(song.value().singer.installation.has_value());
+  CHECK(song.value().singer.installation->installedContentHash == installed.value().contentHash);
+  CHECK(song.value().singer.installation->packageDigest == installed.value().packageDigest);
+  CHECK(song.value().singer.installation->signerKeyId == installed.value().signerKeyId);
   const auto digest = core::sha256File(song.value().projectPath);
   CHECK(digest.hasValue() && digest.value() == song.value().projectSha256);
   // A second hand-off to the same name is refused and leaves the first project byte-identical.

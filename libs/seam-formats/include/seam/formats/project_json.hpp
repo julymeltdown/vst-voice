@@ -21,9 +21,9 @@ struct ProjectJsonEncodeOptions final {
 
 class ProjectJsonCodec final {
 public:
-  // Schema 20 adds a nullable lyric reading hint, separate from visible text
-  // and note-level phonetic phone hints.
-  static constexpr std::int32_t kSchemaVersion = 20;
+  // Schema 21 adds nullable installation provenance to procedural recipe references.
+  // Older references remain unbound; loading never invents installation provenance.
+  static constexpr std::int32_t kSchemaVersion = 21;
 
   [[nodiscard]] core::Result<std::string> encode(const domain::Project& project) const;
   [[nodiscard]] core::Result<std::string> encode(

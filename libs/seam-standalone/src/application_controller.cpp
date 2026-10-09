@@ -1604,6 +1604,11 @@ core::Result<void> StandaloneApplicationController::createNewProject(
       return core::failure(core::ErrorCode::Conflict,
           "The selected procedural singer is no longer installed, trusted, or renderable; reopen New Project and choose again");
     }
+    const auto binding = distribution::proceduralInstallationReference(current->candidate);
+    if (reference.installation && reference.installation != binding)
+      return core::failure(core::ErrorCode::Conflict,
+          "The installed singer changed; reopen New Project and choose again");
+    request.initialProceduralSinger->installation = binding;
   }
   auto created = session_.createNewProject(std::move(request));
   if (created) {
@@ -2190,6 +2195,8 @@ core::Result<void> StandaloneApplicationController::selectProceduralRecipeFromDi
   if (!track) return core::failure(core::ErrorCode::Conflict, "Recipe selection requires a selected vocal track");
   const auto before = track->proceduralRecipe;
   if (relink && !before) return core::failure(core::ErrorCode::Conflict, "No procedural recipe is selected to relink");
+  if (relink && before->installation) return core::failure(core::ErrorCode::Conflict,
+      "Reselect the installed singer, copy it to a draft, or use Select Procedural Recipe to explicitly replace it with an authored recipe");
   const auto context = session_.runtime().document().session().capturePerformanceJob();
   if (!context) return core::Result<void>{context.error()};
   const auto selected = fileDialog_->choose(platform::FileDialogRequest{
@@ -2224,7 +2231,7 @@ core::Result<void> StandaloneApplicationController::selectProceduralRecipeFromDi
   }
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before,
-          domain::ProceduralRecipeReference{resource.value().identity, path.string(), style}));
+          domain::ProceduralRecipeReference{resource.value().identity, path.string(), style, std::nullopt}));
   if (!changed) return changed;
   const auto recorded = onDocumentChanged();
   if (!recorded) return recorded;
@@ -2467,14 +2474,11 @@ core::Result<void> StandaloneApplicationController::selectInstalledProceduralSin
   // raw recipe decoder. Phrase-specific coverage remains a render-time check.
   const auto decoded = voice_design::decodeVoiceRecipeResource(loaded.value());
   if (!decoded) return core::Result<void>{decoded.error()};
-  // An installed selection records the installed manifest path, so the project is portable to
-  // another machine only through the same identity resolution a bank reference uses.
-  // The identity recorded is the one the renderer validates, which is derived from the recipe
-  // rather than from the manifest's release version. Recording the distribution version here would
-  // store an identity the renderer refuses, and the selection would not sing.
+  // Keep recipe/render identity distinct from the distribution and engine pins.
+  // The absolute installed path is local; portable export copies retain provenance.
   const auto reference = domain::ProceduralRecipeReference{
-      candidate.renderIdentity,
-      recipePath.string(), style};
+      candidate.renderIdentity, recipePath.string(), style,
+      distribution::proceduralInstallationReference(candidate)};
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before, reference));
   if (!changed) return changed;
@@ -3005,7 +3009,7 @@ StandaloneApplicationController::copyInstalledSingerToDraft(
   const auto changed = session_.runtime().executePerformanceResult(context.value(),
       std::make_unique<application::SetTrackProceduralRecipeCommand>(trackId, before,
           domain::ProceduralRecipeReference{resource.value().identity, written.value().string(),
-                                            before->style}));
+                                            before->style, std::nullopt}));
   if (!changed) return core::Result<std::filesystem::path>{changed.error()};
   const auto recorded = onDocumentChanged();
   if (!recorded) return core::Result<std::filesystem::path>{recorded.error()};

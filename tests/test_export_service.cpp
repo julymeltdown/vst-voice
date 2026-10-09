@@ -1940,10 +1940,23 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   project.findRegion(regionId)->lyrics.push_back(std::move(lyric));
   project.findRegion(regionId)->notes.push_back(std::move(note));
   project.findVocalTrack(trackId)->proceduralRecipe = domain::ProceduralRecipeReference{resource.value().identity, "singer.json", "neutral"};
+  // A portable copy retains origin pins without requiring an installation.
+  const domain::ProceduralInstallationReference origin{
+      "original-install", "1.0.0", std::string(64U, 'a'), std::string{voice_design::kSourceFilterEngineId},
+      voice_design::kSourceFilterEngineRevision, "nested/recipe.json", std::string(64U, 'b'), std::string(64U, 'c')};
+  project.findVocalTrack(trackId)->proceduralRecipe->installation = origin;
   const std::vector<rendering::TrackSingerSource> sources{rendering::TrackRecipeFileSource{
       trackId, *project.findVocalTrack(trackId)->proceduralRecipe, root}};
   const auto expected = rendering::ProductionProjectRenderer{}.renderWithSources(project, sources,
       trackId, regionId, 1U, 48000U, rendering::RenderQuality::Final); CHECK(expected);
+  auto unboundProject = project;
+  unboundProject.findVocalTrack(trackId)->proceduralRecipe->installation.reset();
+  const std::vector<rendering::TrackSingerSource> unboundSources{rendering::TrackRecipeFileSource{
+      trackId, *unboundProject.findVocalTrack(trackId)->proceduralRecipe, root}};
+  const auto unboundPcm = rendering::ProductionProjectRenderer{}.renderWithSources(unboundProject, unboundSources,
+      trackId, regionId, 1U, 48000U, rendering::RenderQuality::Final); CHECK(unboundPcm);
+  CHECK(unboundPcm.value().interleaved == expected.value().interleaved);
+
   authoring::ExportSettings settings; settings.format = voicebank::WavSampleFormat::Float32; settings.includeStems = true;
   const auto exported = authoring::ExportService{}.exportSetWithSources(project, sources, trackId, regionId,
       1U, root / "export", settings); CHECK(exported);
@@ -2100,6 +2113,7 @@ TEST_CASE("procedural export commits exact final PCM stems and truthful recipe r
   const auto packagedProject = formats::ProjectJsonCodec{}.load(root / "packaged/project.seam"); CHECK(packagedProject);
   const auto& reference = *packagedProject.value().findVocalTrack(trackId)->proceduralRecipe;
   CHECK(reference.resource == resource.value().identity); CHECK(std::filesystem::path{reference.path}.is_relative());
+  CHECK(reference.installation == origin);
   const auto& packagedAudio = packagedProject.value().audioTracks().front();
   CHECK(packagedAudio.mediaPath == (std::filesystem::path{"media"} /
       (resolvedBacking.value()->info().contentHash + ".wav")).generic_string());

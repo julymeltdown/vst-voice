@@ -668,6 +668,15 @@ ProceduralReceipt loadProceduralReceipt(const std::filesystem::path& resourceRoo
 
 }  // namespace
 
+std::optional<domain::ProceduralInstallationReference> proceduralInstallationReference(
+    const ProceduralCandidate& candidate) {
+  if (candidate.trust == ProceduralTrust::DevelopmentFixture) return std::nullopt;
+  return domain::ProceduralInstallationReference{
+      candidate.manifest.id, candidate.manifest.version, candidate.contentHash,
+      candidate.manifest.engineId, candidate.manifest.engineRevision, candidate.manifest.recipeEntry,
+      candidate.packageDigest, candidate.signerKeyId};
+}
+
 core::Result<std::vector<ProceduralCandidate>> ProceduralCatalogue::scan(
     const std::vector<ProceduralSearchRoot>& roots) const {
   auto detailed = scanDetailed(roots);
@@ -735,8 +744,9 @@ core::Result<ProceduralCatalogueScan> ProceduralCatalogue::scanDetailed(
         .contentHash = contentHash,
         .renderIdentity = renderIdentity.value(),
         .trust = trust,
-        .packageDigest = receipt.packageDigest,
-        .signerKeyId = receipt.signerKeyId,
+        // A stale receipt cannot supply provenance for these installed bytes.
+        .packageDigest = matches ? receipt.packageDigest : std::string{},
+        .signerKeyId = matches ? receipt.signerKeyId : std::string{},
     };
   };
   std::size_t visitedPackageFolders = 0U;

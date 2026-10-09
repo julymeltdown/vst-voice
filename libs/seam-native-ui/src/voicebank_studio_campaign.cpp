@@ -102,7 +102,7 @@ core::Result<ExpectedCampaignJob> expectedCampaignJob(const formats::JsonValue& 
   auto* track = score.value().project.findVocalTrack(score.value().trackId);
   if (track == nullptr) return invalid("Campaign score has no expected vocal track");
   track->proceduralRecipe = domain::ProceduralRecipeReference{
-      resource.identity, "recipe.json", assignment->style};
+      resource.identity, "recipe.json", assignment->style, std::nullopt};
   const auto sampleRate = static_cast<std::uint32_t>(score.value().project.settings().sampleRate);
   const auto snapshot = rendering::RenderSnapshotFactory{}.createProcedural(score.value().project,
       resource, score.value().trackId, score.value().regionId, 0U,

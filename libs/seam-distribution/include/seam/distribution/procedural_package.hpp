@@ -3,6 +3,7 @@
 #include "seam/distribution/seambank.hpp"
 #include "seam/distribution/installer.hpp"
 #include "seam/domain/performance_intent.hpp"
+#include "seam/domain/project.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -205,6 +206,11 @@ struct ProceduralCandidate final {
   std::string packageDigest;
   std::string signerKeyId;
 };
+
+// Captures installed identity pins. Development fixtures are deliberately unbound.
+// The result records provenance only; callers must still perform runtime admission.
+[[nodiscard]] std::optional<domain::ProceduralInstallationReference> proceduralInstallationReference(
+    const ProceduralCandidate& candidate);
 
 // A package-shaped directory that the catalogue found but could not safely load. These are
 // diagnostics, never candidates: callers may explain them but must not make them selectable.

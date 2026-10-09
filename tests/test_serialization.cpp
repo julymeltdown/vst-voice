@@ -407,3 +407,100 @@ TEST_CASE("project JSON path I/O rejects symlink and non-file targets") {
   CHECK(std::filesystem::is_symlink(backupLink));
   CHECK(codec.load(backupSource));
 }
+
+TEST_CASE("project JSON schema 21 preserves installation pins and migrates unbound recipes") {
+  using namespace seam;
+  application::ProjectFactory factory{901U};
+  auto project = factory.createProject("Installation pins");
+  const auto id = factory.addVocalTrack(project, "Installed");
+  auto& reference = project.findVocalTrack(id)->proceduralRecipe;
+  reference = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "recipe", "11", std::string(64U, 'a')},
+      "/installed/singer/1/nested/recipe.json", "neutral",
+      domain::ProceduralInstallationReference{"singer", "1.0.0", std::string(64U, 'b'),
+          "seam.source-filter.v1", 15U, "nested/recipe.json", std::string(64U, 'c'), std::string(64U, 'd')}};
+  formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project); CHECK(encoded);
+  const auto decoded = codec.decode(encoded.value()); CHECK(decoded);
+  CHECK(decoded.value() == project);
+  const auto installed = project;
+  reference->installation.reset();
+  CHECK(project != installed);
+  const auto unbound = codec.encode(project); CHECK(unbound);
+  CHECK(codec.decode(unbound.value()).value() == project);
+  auto json = formats::parseJson(unbound.value()).value();
+  json.asObject()["schemaVersion"] = formats::JsonValue{std::int64_t{20}};
+  auto& recipe = json.find("vocalTracks")->asArray().front().find("proceduralRecipe")->asObject();
+  // Schema 20 must not silently discard a new installation member.
+  CHECK(!codec.decode(formats::stringifyJson(json)));
+  recipe.erase("installation");
+  const auto migrated = codec.decode(formats::stringifyJson(json)); CHECK(migrated);
+  CHECK(migrated.value() == project);
+  CHECK(!migrated.value().vocalTracks().front().proceduralRecipe->installation);
+}
+
+TEST_CASE("project JSON installation binding rejects malformed pins and unsafe entries") {
+  using namespace seam;
+  application::ProjectFactory factory{902U};
+  auto project = factory.createProject("Installation schema negatives");
+  const auto id = factory.addVocalTrack(project, "Installed");
+  project.findVocalTrack(id)->proceduralRecipe = domain::ProceduralRecipeReference{
+      {domain::SingerResourceKind::Procedural, "recipe", "11", std::string(64U, 'a')},
+      "recipes/portable.json", "neutral",
+      domain::ProceduralInstallationReference{"singer", "1.0.0", std::string(64U, 'b'),
+          "seam.source-filter.v1", 15U, "nested/recipe.json", std::string(64U, 'c'), std::string(64U, 'd')}};
+  formats::ProjectJsonCodec codec;
+  const auto encoded = codec.encode(project); CHECK(encoded);
+  const auto baseline = formats::parseJson(encoded.value()).value();
+  const auto member = [](formats::JsonValue& value) -> formats::JsonValue::Object& {
+    return value.find("vocalTracks")->asArray().front().find("proceduralRecipe")->asObject();
+  };
+  for (const auto* key : {"distributionId", "distributionVersion", "installedContentHash", "engineId",
+                          "engineRevision", "recipeEntry", "packageDigest", "signerKeyId"}) {
+    auto missing = baseline;
+    member(missing)["installation"].asObject().erase(key);
+    CHECK(!codec.decode(formats::stringifyJson(missing)));
+    auto wrongType = baseline;
+    member(wrongType)["installation"].asObject()[key] = true;
+    CHECK(!codec.decode(formats::stringifyJson(wrongType)));
+  }
+  auto unknown = baseline;
+  member(unknown)["installation"].asObject()["trusted"] = true;
+  CHECK(!codec.decode(formats::stringifyJson(unknown)));
+  auto absent = baseline;
+  member(absent).erase("installation");
+  CHECK(!codec.decode(formats::stringifyJson(absent)));
+  for (const auto& revision : {formats::JsonValue{std::int64_t{0}}, formats::JsonValue{std::int64_t{-1}},
+                             formats::JsonValue{std::int64_t{4294967296LL}}, formats::JsonValue{1.5}}) {
+    auto invalid = baseline;
+    member(invalid)["installation"].asObject()["engineRevision"] = revision;
+    CHECK(!codec.decode(formats::stringifyJson(invalid)));
+  }
+  for (const auto* path : {"", "../recipe.json", "/recipe.json", "a/../b", "a//b", "a/./b",
+                           "a/", "C:/recipe.json", "a\\b", "manifest.json"}) {
+    auto invalid = baseline;
+    member(invalid)["installation"].asObject()["recipeEntry"] = path;
+    CHECK(!codec.decode(formats::stringifyJson(invalid)));
+  }
+  for (const auto* key : {"installedContentHash", "packageDigest", "signerKeyId"}) {
+    auto invalid = baseline;
+    member(invalid)["installation"].asObject()[key] = std::string(64U, 'A');
+    CHECK(!codec.decode(formats::stringifyJson(invalid)));
+  }
+}
+
+TEST_CASE("procedural installation paths distinguish installed roots from portable copies") {
+  using namespace seam;
+  domain::ProceduralRecipeReference reference{
+      {domain::SingerResourceKind::Procedural, "recipe", "11", std::string(64U, 'a')},
+      "/installed/singer/nested/recipe.json", "neutral",
+      domain::ProceduralInstallationReference{"singer", "1.0.0", std::string(64U, 'b'),
+          "seam.source-filter.v1", 15U, "nested/recipe.json", {}, {}}};
+  CHECK(reference.validate()); // Missing receipt provenance never invents a signer.
+  reference.path = "/installed/singer/other/recipe.json";
+  CHECK(!reference.validate());
+  reference.path = "/installed/singer/nested/recipe.json.more";
+  CHECK(!reference.validate());
+  reference.path = "recipes/copied.json";
+  CHECK(reference.validate()); // Project copy, not the installation it came from.
+}

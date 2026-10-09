@@ -237,7 +237,7 @@ int main(int argc, char** argv) {
       const auto recipeFile = root / (name + "-recipe.json");
       require(voice_design::saveVoiceRecipeFile(recipeFile, recipe));
       project.findVocalTrack(trackId)->proceduralRecipe = domain::ProceduralRecipeReference{
-          resource.value().identity, recipeFile.filename().string(), "neutral"};
+          resource.value().identity, recipeFile.filename().string(), "neutral", std::nullopt};
       require(formats::ProjectJsonCodec{}.save(project, root / (name + ".seam")));
       const std::vector<rendering::TrackSingerSource> sources{rendering::TrackProceduralSource{trackId, resource.value(), "neutral"}};
       authoring::ExportSettings settings; settings.format = voicebank::WavSampleFormat::Float32;

@@ -121,7 +121,8 @@ core::Result<InstalledSingerSongProject> createInstalledSingerSongProject(
   const domain::ProceduralRecipeReference singer{
       .resource = match->renderIdentity,
       .path = (match->resourceRoot / match->manifest.recipeEntry).string(),
-      .style = preferred != styles.end() ? *preferred : styles.front()};
+      .style = preferred != styles.end() ? *preferred : styles.front(),
+      .installation = distribution::proceduralInstallationReference(*match)};
 
   application::ProjectFactory seed{1U};
   auto initial = seed.createProject("Song");

@@ -60,7 +60,8 @@ NativeNewProjectSingerChoices makeNativeNewProjectSingerChoices(
           .reference = domain::ProceduralRecipeReference{
               .resource = candidate.renderIdentity,
               .path = (candidate.resourceRoot / candidate.manifest.recipeEntry).string(),
-              .style = style}});
+              .style = style,
+              .installation = distribution::proceduralInstallationReference(candidate)}});
     }
   }
   for (const auto& issue : issues) {

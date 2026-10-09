@@ -163,6 +163,6 @@ TEST_CASE("Native project binding refuses nonregular oversized and codec-invalid
   const auto migrated=f.run(args);CHECK(migrated);
   const auto record=formats::parseJson(migrated.value().standardOutput);CHECK(record);
   CHECK(record.value().find("sourceSchemaVersion")->asInt64()==1);
-  CHECK(record.value().find("codecSchemaVersion")->asInt64()==20);
+  CHECK(record.value().find("codecSchemaVersion")->asInt64()==seam::formats::ProjectJsonCodec::kSchemaVersion);
 #endif
 }

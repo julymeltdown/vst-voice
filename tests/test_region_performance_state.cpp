@@ -255,7 +255,7 @@ TEST_CASE("project schema 20 stores lyric readings and schema 19 migrates withou
   const seam::formats::ProjectJsonCodec codec;
   const auto encoded = codec.encode(project); CHECK(encoded);
   const auto parsed = seam::formats::parseJson(encoded.value()); CHECK(parsed);
-  CHECK(parsed.value().find("schemaVersion")->asInt64() == 20);
+  CHECK(parsed.value().find("schemaVersion")->asInt64() == seam::formats::ProjectJsonCodec::kSchemaVersion);
   const auto roundtrip = codec.decode(encoded.value()); CHECK(roundtrip);
   CHECK(roundtrip.value() == project);
 

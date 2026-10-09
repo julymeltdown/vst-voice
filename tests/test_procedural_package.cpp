@@ -480,6 +480,7 @@ TEST_CASE("A development procedural resource is labelled and never trusted by de
   CHECK(scanned.value().size() == 1U);
   if (scanned.value().size() != 1U) return;
   CHECK(scanned.value().front().trust == distribution::ProceduralTrust::DevelopmentFixture);
+  CHECK(!distribution::proceduralInstallationReference(scanned.value().front()));
   const auto reference = scanned.value().front().renderIdentity;
   distribution::ProceduralResolveOptions strict;
   strict.requireTrustedInstalled = true;
@@ -494,6 +495,15 @@ TEST_CASE("A development procedural resource is labelled and never trusted by de
 
   // A receipt that no longer matches the installed bytes downgrades trust rather than being trusted.
   const auto& directory = installed.value().installDirectory;
+  auto staleReceipt = formats::parseJson(core::readTextFileLimited(
+      directory / "install-receipt.json", 1024U * 1024U).value()).value();
+  staleReceipt.asObject()["contentHash"] = std::string(64U, 'f');
+  CHECK(core::durableAtomicWriteText(directory / "install-receipt.json", formats::stringifyJson(staleReceipt)));
+  const auto stale = catalogue.scan({{installRoot, distribution::ProceduralRootKind::Installed}}); CHECK(stale);
+  CHECK(stale.value().size() == 1U);
+  const auto staleBinding = distribution::proceduralInstallationReference(stale.value().front());
+  CHECK(staleBinding && staleBinding->validate());
+  CHECK(staleBinding->packageDigest.empty()); CHECK(staleBinding->signerKeyId.empty());
   std::filesystem::remove(directory / "install-receipt.json");
   auto rescan = catalogue.scan({distribution::ProceduralSearchRoot{
       .path = installRoot, .kind = distribution::ProceduralRootKind::Installed}});
@@ -502,6 +512,9 @@ TEST_CASE("A development procedural resource is labelled and never trusted by de
   CHECK(rescan.value().size() == 1U);
   if (rescan.value().size() != 1U) return;
   CHECK(rescan.value().front().trust == distribution::ProceduralTrust::UntrustedInstalled);
+  const auto untrustedBinding = distribution::proceduralInstallationReference(rescan.value().front());
+  CHECK(untrustedBinding && untrustedBinding->validate());
+  CHECK(untrustedBinding->packageDigest.empty()); CHECK(untrustedBinding->signerKeyId.empty());
   CHECK(distribution::resolveProceduralSinger(reference, rescan.value(), strict).status ==
         distribution::ProceduralResolveStatus::Untrusted);
 }

@@ -161,10 +161,29 @@ struct VocalRegion final {
   friend bool operator==(const VocalRegion&, const VocalRegion&) = default;
 };
 
+// Provenance captured when selecting an installed procedural singer. This is a
+// persisted identity pin, not proof of trust, runtime admission or qualification.
+// A relative project copy retains these pins without claiming to be installed.
+struct ProceduralInstallationReference final {
+  std::string distributionId;
+  std::string distributionVersion;
+  std::string installedContentHash;
+  std::string engineId;
+  std::uint32_t engineRevision{0U};
+  std::string recipeEntry;
+  // Receipt-reported provenance; empty when an untrusted installation has no receipt.
+  std::string packageDigest;
+  std::string signerKeyId;
+  [[nodiscard]] core::Result<void> validate() const;
+  friend bool operator==(const ProceduralInstallationReference&,
+                         const ProceduralInstallationReference&) = default;
+};
+
 struct ProceduralRecipeReference final {
   SingerResourceIdentity resource;
   std::string path;
   std::string style{"neutral"};
+  std::optional<ProceduralInstallationReference> installation{};
   [[nodiscard]] core::Result<void> validate() const;
   friend bool operator==(const ProceduralRecipeReference&, const ProceduralRecipeReference&) = default;
 };

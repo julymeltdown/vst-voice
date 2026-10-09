@@ -723,7 +723,7 @@ int importScoreCommand(int argc, char** argv) {
     // sources" anywhere else.
     request.proceduralRecipe = seam::domain::ProceduralRecipeReference{
         recipe.value().identity, (std::filesystem::path{"recipes"} / recipePath.filename()).generic_string(),
-        "neutral"};
+        "neutral", std::nullopt};
     const auto validRecipe = request.proceduralRecipe->validate();
     if (!validRecipe) {
       std::cerr << "error: recipe reference is invalid: " << validRecipe.error().message << '\n';
