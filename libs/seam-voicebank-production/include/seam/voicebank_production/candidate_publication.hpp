@@ -97,7 +97,9 @@ struct SampleCandidateReviewReceipt final {
     const voicebank::Manifest& editedManifest,
     std::stop_token stop = {});
 
-enum class CandidatePublicationStage { AudioStaged, BeforeCommit, AfterCommitBeforeParentSync };
+// BeforeSourceLock runs after bindings are resolved and before the producer writer lock is taken,
+// the window in which another writer could still withdraw an approval.
+enum class CandidatePublicationStage { AudioStaged, BeforeCommit, AfterCommitBeforeParentSync, BeforeSourceLock };
 struct CandidatePublicationOptions final {
   std::uint64_t maximumAudioBytes{256ULL * 1024ULL * 1024ULL};
   // Cannot approve input or replace final resource verification. A failure at
@@ -135,6 +137,21 @@ sampleCandidateReviewValues(const VoicebankProductionProject& project,
     const std::filesystem::path& repositoryRoot,
     const VoicebankProductionProject& project,
     const SampleCandidateRequest& request,
+    const std::filesystem::path& destination,
+    const CandidatePublicationOptions& options = {},
+    std::stop_token stop = {});
+
+// The builder from one specified immutable generation. The producer state is recovered from that
+// generation's verified history file (never the caller's memory), and the candidate is built from it
+// alone. The edited manifest must describe exactly that generation's reviewed audio, markers and
+// pitch, and every bound approval must already be in force there and still be in force at the latest
+// durable generation; a manifest, take or review from any other generation is refused. Writes the
+// typed schema-2 descriptor listing every embedded file, like publishSampleCandidate.
+[[nodiscard]] core::Result<PublishedSampleCandidate> publishSampleCandidateFromGeneration(
+    const std::filesystem::path& repositoryRoot,
+    std::uint64_t generation,
+    std::string_view projectSha256,
+    const voicebank::Manifest& editedManifest,
     const std::filesystem::path& destination,
     const CandidatePublicationOptions& options = {},
     std::stop_token stop = {});

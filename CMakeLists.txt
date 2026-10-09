@@ -471,6 +471,8 @@ add_library(seam_voicebank_production
   libs/seam-voicebank-production/src/repository_verify.cpp
   libs/seam-voicebank-production/src/repository_export.cpp
   libs/seam-voicebank-production/src/repository_candidate.cpp
+  libs/seam-voicebank-production/src/resource_candidate.cpp
+  libs/seam-voicebank-production/src/declared_candidate.cpp
   libs/seam-voicebank-production/src/repository_review.cpp
   libs/seam-voicebank-production/src/review_transition.cpp
   libs/seam-voicebank-production/src/manifest_draft.cpp
@@ -489,6 +491,7 @@ add_library(seam_distribution
   libs/seam-distribution/src/signing.cpp
   libs/seam-distribution/src/seambank.cpp
   libs/seam-distribution/src/installer.cpp
+  libs/seam-distribution/src/install_transaction.cpp
   libs/seam-distribution/src/trust_policy.cpp
   libs/seam-distribution/src/update_manifest.cpp
   libs/seam-distribution/src/sealed_handoff.cpp
@@ -501,6 +504,17 @@ target_include_directories(seam_distribution PUBLIC
 target_link_libraries(seam_distribution PUBLIC
   seam_voicebank seam_voice_design seam_formats seam_domain seam_core OpenSSL::Crypto)
 seam_apply_compiler_options(seam_distribution)
+
+# Candidate -> signed package -> installed resource. Links both the producer and distribution
+# layers so neither has to depend on the other.
+add_library(seam_candidate_packaging
+  libs/seam-candidate-packaging/src/candidate_package.cpp
+)
+target_include_directories(seam_candidate_packaging PUBLIC
+  libs/seam-candidate-packaging/include)
+target_link_libraries(seam_candidate_packaging PUBLIC
+  seam_voicebank_production seam_distribution seam_voicebank seam_formats seam_core)
+seam_apply_compiler_options(seam_candidate_packaging)
 
 
 add_library(seam_voice_design
@@ -1229,9 +1243,11 @@ seam_apply_compiler_options(seam_clap_state_tool)
 add_executable(seam_voicebank_cli apps/seam-voicebank-cli/main.cpp
   apps/seam-voicebank-cli/campaign_commands.cpp
   apps/seam-voicebank-cli/coverage_commands.cpp
-  apps/seam-voicebank-cli/sample_review_commands.cpp)
+  apps/seam-voicebank-cli/sample_review_commands.cpp
+  apps/seam-voicebank-cli/candidate_package_commands.cpp)
 target_link_libraries(seam_voicebank_cli PRIVATE
-  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis)
+  seam_voicebank seam_formats seam_domain seam_core seam_voice_design seam_voicebank_production seam_authoring_runtime seam_neural_synthesis
+  seam_candidate_packaging)
 seam_apply_compiler_options(seam_voicebank_cli)
 add_executable(seam_singer_pilot apps/seam-singer-pilot/main.cpp)
 target_link_libraries(seam_singer_pilot PRIVATE seam_authoring_runtime)
@@ -2259,6 +2275,16 @@ if(SEAM_BUILD_TESTS)
     seam_distribution seam_voice_design seam_core)
   seam_apply_compiler_options(seam_procedural_package_tests)
  add_test(NAME seam_procedural_package_tests COMMAND seam_procedural_package_tests)
+  add_executable(seam_install_transaction_tests
+    tests/test_main.cpp
+    tests/test_install_transaction.cpp)
+  target_include_directories(seam_install_transaction_tests PRIVATE tests)
+  target_compile_definitions(seam_install_transaction_tests PRIVATE
+    SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(seam_install_transaction_tests PRIVATE
+    seam_distribution seam_voice_design seam_voicebank seam_formats seam_core)
+  seam_apply_compiler_options(seam_install_transaction_tests)
+  add_test(NAME seam_install_transaction_tests COMMAND seam_install_transaction_tests)
   add_executable(seam_procedural_review_tests
     tests/test_main.cpp
     tests/test_procedural_review.cpp)
@@ -2753,9 +2779,11 @@ if(SEAM_BUILD_TESTS)
   add_test(NAME seam_production_import_outcome_tests COMMAND seam_production_import_outcome_tests)
   add_executable(seam_sample_review_cli_tests tests/test_main.cpp tests/test_sample_review_cli.cpp)
   target_include_directories(seam_sample_review_cli_tests PRIVATE tests)
-  target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>")
+  target_compile_definitions(seam_sample_review_cli_tests PRIVATE SEAM_TEST_VOICEBANK_CLI="$<TARGET_FILE:seam_voicebank_cli>"
+    SEAM_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(seam_sample_review_cli_tests PRIVATE
-    seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application)
+    seam_voicebank_production seam_authoring_runtime seam_distribution seam_rendering seam_application
+    seam_candidate_packaging)
   add_dependencies(seam_sample_review_cli_tests seam_voicebank_cli)
   seam_apply_compiler_options(seam_sample_review_cli_tests)
   add_test(NAME seam_sample_review_cli_tests COMMAND seam_sample_review_cli_tests)

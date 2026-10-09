@@ -14,6 +14,7 @@
 #include "seam/voicebank/wav.hpp"
 #include "seam/voicebank_production/project_codec.hpp"
 #include "seam/voicebank_production/repository.hpp"
+#include "seam/voicebank_production/resource_candidate.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -535,10 +536,56 @@ core::Result<std::map<std::string, std::string, std::less<>>> sampleCandidateRev
       {"reviewBasisSha256", reviewBasis(project, binding.takeId)}};
 }
 
-core::Result<PublishedSampleCandidate> publishSampleCandidate(
+namespace {
+// Where the producer state behind a publication came from. Current: the caller's state must be the
+// latest durable pointer. Historic: one verified immutable generation whose bound approvals must
+// still be in force at the latest durable generation.
+enum class PublicationSource { Current, Historic };
+
+std::string candidateLanguage(domain::Language language) {
+  switch (language) {
+    case domain::Language::Japanese: return "ja";
+    case domain::Language::English: return "en";
+    case domain::Language::Korean: return "ko";
+    default: return "und";
+  }
+}
+
+core::Result<void> verifyPublicationSource(const ProductionProjectRepository& repository,
+    const VoicebankProductionProject& project, const std::string& projectSha256, PublicationSource source) {
+  if (source == PublicationSource::Current) return repository.verify(project);
+  const auto recovered = repository.recoverGeneration(project.lastDurableGeneration, projectSha256);
+  if (!recovered) return core::Result<void>{recovered.error()};
+  return encodeProductionProject(recovered.value()) == encodeProductionProject(project) ? core::success()
+      : core::failure(core::ErrorCode::Conflict, "Historical producer generation differs from its verified bytes");
+}
+
+// A historic generation may be published only while nothing has withdrawn its approvals: each bound
+// take must still carry the same latest PASS and review material for the same audio and basis, with
+// qualifying source evidence, at the latest durable generation.
+core::Result<void> requireApprovalsInForce(const ProductionProjectRepository& repository,
+    const VoicebankProductionProject& snapshot, const SampleCandidateRequest& request) {
+  const auto latest = repository.recover();
+  if (!latest) return core::Result<void>{latest.error()};
+  if (latest.value().projectId != snapshot.projectId ||
+      latest.value().lastDurableGeneration < snapshot.lastDurableGeneration)
+    return core::failure(core::ErrorCode::Conflict, "Candidate generation is not part of the latest producer history");
+  for (const auto& binding : request.units) {
+    auto checked = requireTakeSourceQualification(latest.value(), binding.takeId);
+    if (checked) checked = validateReviewedBinding(latest.value(), request.manifest, binding);
+    if (!checked)
+      return core::failure(core::ErrorCode::Conflict,
+          "Approval bound at generation " + std::to_string(snapshot.lastDurableGeneration) +
+              " is no longer in force at generation " + std::to_string(latest.value().lastDurableGeneration),
+          binding.unitId + ": " + checked.error().message);
+  }
+  return core::success();
+}
+
+core::Result<PublishedSampleCandidate> publishReviewedCandidate(
     const std::filesystem::path& repositoryRoot, const VoicebankProductionProject& project,
     const SampleCandidateRequest& request, const std::filesystem::path& destination,
-    const CandidatePublicationOptions& options, std::stop_token stop) {
+    const CandidatePublicationOptions& options, std::stop_token stop, PublicationSource publicationSource) {
   using Output = PublishedSampleCandidate;
   auto checkpoint = cancelled(stop);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
@@ -556,11 +603,15 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   const auto relativeToWorkspace = finalPath.lexically_relative(workspace.value());
   if (!relativeToWorkspace.empty() && *relativeToWorkspace.begin() != "..")
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidates must publish outside the producer workspace");
+  if (options.faultInjector) {
+    checkpoint = options.faultInjector(CandidatePublicationStage::BeforeSourceLock);
+    if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  }
   core::ExclusiveFileLock workspaceLock;
   checkpoint = workspaceLock.acquire(workspace.value() / ".writer.lock");
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
   ProductionProjectRepository repository{workspace.value()};
-  checkpoint = repository.verify(project);
+  checkpoint = verifyPublicationSource(repository, project, request.expectedProjectSha256, publicationSource);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
   const auto sourceJson = encodeProductionProject(project);
   if (request.expectedGeneration != project.lastDurableGeneration ||
@@ -568,6 +619,11 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate request does not match the current durable producer generation");
   const auto manifestJson = boundedManifest(request.manifest);
   if (!manifestJson) return core::Result<Output>{manifestJson.error()};
+  // A character reference is an effective dependency: the package must embed that character. The
+  // producer holds no character package, so publishing without one would understate the identity.
+  if (!request.manifest.characterId.empty() || !request.manifest.characterVersion.empty())
+    return core::failure<Output>(core::ErrorCode::Unsupported,
+        "Character-bound sample candidates must embed their character package; the producer cannot supply one");
   if (request.manifest.styles.size() != 1U && project.schemaVersion < kProductionStyleSchemaVersion)
     return core::failure<Output>(core::ErrorCode::Unsupported, "Multi-style candidate publication requires style-owned producer assignments");
   if (project.schemaVersion >= kProductionStyleSchemaVersion) {
@@ -606,6 +662,10 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     if (asset == project.assets.end()) return core::failure<Output>(core::ErrorCode::NotFound, "Candidate immutable audio asset is missing");
     audioAssets.emplace(binding.audioSha256, &*asset);
   }
+  if (publicationSource == PublicationSource::Historic) {
+    checkpoint = requireApprovalsInForce(repository, project, request);
+    if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  }
   core::ExclusiveFileLock destinationLock;
   checkpoint = destinationLock.acquire(parent.value() / ".seam-candidate-writer.lock");
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
@@ -627,6 +687,9 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   StagingCleanup cleanup{stage, parentIdentity.value(), stageIdentity.value()};
   std::filesystem::permissions(stage, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace, error);
   if (error) return core::failure<Output>(core::ErrorCode::IoError, "Cannot restrict candidate staging directory", error.message());
+  // Every staged byte is recorded with its role as it is written, so the descriptor lists the
+  // complete dependency set and the staged directory can be verified against it before commit.
+  std::vector<ResourceCandidateFile> payloadFiles, evidenceFiles;
   std::uint64_t totalBytes = 0U;
   for (const auto& [digest, asset] : audioAssets) {
     checkpoint = cancelled(stop);
@@ -639,6 +702,8 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     const auto output = stage / "audio" / (digest + ".wav");
     checkpoint = core::durableAtomicWriteNew(output, bytes.value());
     if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+    payloadFiles.push_back({"audio/" + digest + ".wav", "sample-audio", digest,
+        static_cast<std::uint64_t>(bytes.value().size())});
     const auto decoded = voicebank::readWav(output);
     if (!decoded) return core::Result<Output>{decoded.error()};
     if (decoded.value().channels != 1U || decoded.value().sampleRate != request.manifest.expectedSampleRate ||
@@ -652,10 +717,27 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   }
   checkpoint = core::durableAtomicWriteTextNew(stage / "manifest.json", manifestJson.value());
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  payloadFiles.push_back({"manifest.json", "manifest", core::sha256Hex(manifestJson.value()),
+      static_cast<std::uint64_t>(manifestJson.value().size())});
   // U15: bind a measured acoustic analysis to each staged unit's exact bytes, so
   // the QC below, the content identity and the renderers read one record.
   const auto analysed = voicebank::storeBankAcousticAnalyses(request.manifest, stage, stop);
   if (!analysed) return core::Result<Output>{analysed.error()};
+  // Every stored record is part of the synthesis identity, so it is a listed dependency of the
+  // candidate. A unit the analyser could not measure has no record, and none is listed.
+  for (const auto& unit : request.manifest.units) {
+    const auto relative = voicebank::acousticAnalysisSidecarPath(unit.id);
+    std::error_code recordError;
+    const auto recordStatus = std::filesystem::symlink_status(stage / relative, recordError);
+    if (recordError == std::errc::no_such_file_or_directory ||
+        (!recordError && recordStatus.type() == std::filesystem::file_type::not_found)) continue;
+    if (recordError || !std::filesystem::is_regular_file(recordStatus))
+      return core::failure<Output>(core::ErrorCode::Conflict, "Staged acoustic analysis is not a regular file", relative);
+    const auto record = core::readFileBytesLimited(stage / relative, 4ULL * 1024ULL * 1024ULL);
+    if (!record) return core::Result<Output>{record.error()};
+    payloadFiles.push_back({relative, "acoustic-analysis", core::sha256Hex(record.value()),
+        static_cast<std::uint64_t>(record.value().size())});
+  }
   const auto validation = voicebank::BankValidator{}.validate(request.manifest, stage);
   if (!validation.ok()) return core::failure<Output>(core::ErrorCode::Conflict, "Candidate manifest/audio validation failed");
   const auto contentHash = voicebank::computeVoicebankContentHash(request.manifest, stage);
@@ -673,8 +755,12 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate source evidence changed while staging");
   checkpoint = core::durableAtomicWriteNew(stage / "source-license.txt", license.value());
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  evidenceFiles.push_back({"source-license.txt", "source-license", primaryLicenseSha256,
+      static_cast<std::uint64_t>(license.value().size())});
   checkpoint = core::durableAtomicWriteTextNew(stage / "provenance" / "production.json", sourceJson);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+  evidenceFiles.push_back({"provenance/production.json", "production-snapshot", request.expectedProjectSha256,
+      static_cast<std::uint64_t>(sourceJson.size())});
   std::map<std::string, std::string> sourceEvidenceHashes;
   std::uint64_t sourceEvidenceBytes = 0U;
   for (const auto& binding : project.sourceBindings) {
@@ -688,6 +774,8 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
       return core::failure<Output>(core::ErrorCode::Conflict, "Captured source evidence changed while publishing", binding.id);
     checkpoint = core::durableAtomicWriteNew(stage / relative, bytes.value());
     if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+    evidenceFiles.push_back({relative, "source-license-snapshot", binding.strategy.licenseSha256,
+        static_cast<std::uint64_t>(bytes.value().size())});
     sourceEvidenceHashes.emplace(relative, binding.strategy.licenseSha256);
   }
   // Retain the exact history (including certified journal-only attempts) that
@@ -705,6 +793,8 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
       return core::failure<Output>(core::ErrorCode::Conflict,"Source quality evidence changed during candidate publication");
     checkpoint = core::durableAtomicWriteNew(stage/relative,bytes.value());
     if (!checkpoint) return core::Result<Output>{checkpoint.error()};
+    evidenceFiles.push_back({relative, "source-quality-evidence", assessment.evidenceSha256,
+        static_cast<std::uint64_t>(bytes.value().size())});
     sourceEvidenceHashes.emplace(relative,assessment.evidenceSha256);
   }
   std::uint64_t lastOriginGeneration = project.sourceQualityAssessments.empty() ? 0U : project.lastDurableGeneration;
@@ -716,7 +806,6 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     return core::failure<Output>(core::ErrorCode::Unsupported, "Candidate origin history exceeds its retained record limit");
   J::Array originHistory;
   std::uint64_t historyBytes = 0U;
-  std::map<std::string, std::string> historyHashes;
   std::map<std::uint64_t, history_internal::AbortedGeneration> abortedHistory;
   for (std::uint64_t generation = 1U; generation <= lastOriginGeneration; ++generation) {
     checkpoint = cancelled(stop);
@@ -755,7 +844,8 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
       const auto journalPath = "provenance/history/journal/" + filename;
       checkpoint = core::durableAtomicWriteNew(stage / journalPath, journalBytes.value());
       if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-      historyHashes.emplace(journalPath, journalHash);
+      evidenceFiles.push_back({journalPath, "history-journal", journalHash,
+          static_cast<std::uint64_t>(journalBytes.value().size())});
       originHistory.emplace_back(J::Object{{"generation", static_cast<std::int64_t>(generation)},
           {"entryType", "aborted-write"}, {"journalPath", journalPath}, {"journalSha256", journalHash}});
       continue;
@@ -785,8 +875,10 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     if (!checkpoint) return core::Result<Output>{checkpoint.error()};
     checkpoint = core::durableAtomicWriteNew(stage / journalPath, journalBytes.value());
     if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-    historyHashes.emplace(generationPath, generationHash);
-    historyHashes.emplace(journalPath, journalHash);
+    evidenceFiles.push_back({generationPath, "history-generation", generationHash,
+        static_cast<std::uint64_t>(generationBytes.value().size())});
+    evidenceFiles.push_back({journalPath, "history-journal", journalHash,
+        static_cast<std::uint64_t>(journalBytes.value().size())});
     originHistory.emplace_back(J::Object{{"generation", static_cast<std::int64_t>(generation)},
         {"generationPath", generationPath}, {"generationSha256", generationHash},
         {"journalPath", journalPath}, {"journalSha256", journalHash}});
@@ -806,18 +898,31 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
       {"originOperatorId", origins.value().at(binding.takeId).actor},
       {"originGeneration", static_cast<std::int64_t>(origins.value().at(binding.takeId).generation)},
       {"originJournalSha256", origins.value().at(binding.takeId).journalSha256}});
-  const auto descriptor = formats::stringifyJson(J{J::Object{
-      {"format", "com.project-seam.resource-candidate"}, {"schemaVersion", std::int64_t{1}},
-      {"resourceKind", "sample"}, {"status", "REVIEWED_CANDIDATE"}, {"releaseEligible", false}, {"evidenceScope", "engineering"},
-      {"sourceProjectSha256", request.expectedProjectSha256},
-      {"sourceGeneration", static_cast<std::int64_t>(project.lastDurableGeneration)},
-      {"inventorySha256", project.inventorySha256}, {"licenseSha256", primaryLicenseSha256},
-      {"manifestSha256", core::sha256Hex(manifestJson.value())}, {"contentSha256", contentHash.value()},
-      {"originHistory", std::move(originHistory)},
-      {"unitBindings", std::move(bindings)}}}, true) + "\n";
+  const auto byPath = [](const auto& left, const auto& right) { return left.path < right.path; };
+  std::sort(payloadFiles.begin(), payloadFiles.end(), byPath);
+  std::sort(evidenceFiles.begin(), evidenceFiles.end(), byPath);
+  ResourceCandidateDescriptor typed;
+  typed.kind = ResourceCandidateKind::Sample;
+  typed.status = std::string{kReviewedCandidateStatus};
+  typed.resourceId = request.manifest.id;
+  typed.resourceVersion = request.manifest.version;
+  typed.displayName = request.manifest.displayName;
+  typed.languages = {candidateLanguage(request.manifest.language)};
+  typed.styles = request.manifest.styles;
+  typed.manifestSha256 = core::sha256Hex(manifestJson.value());
+  typed.contentSha256 = contentHash.value();
+  typed.source = ResourceCandidateSource{project.projectId, project.lastDurableGeneration,
+      request.expectedProjectSha256, project.inventorySha256, primaryLicenseSha256};
+  typed.payload = std::move(payloadFiles);
+  typed.evidence = std::move(evidenceFiles);
+  typed.originHistory = std::move(originHistory);
+  typed.unitBindings = std::move(bindings);
+  const auto encodedDescriptor = encodeResourceCandidateDescriptor(typed);
+  if (!encodedDescriptor) return core::Result<Output>{encodedDescriptor.error()};
+  const auto& descriptor = encodedDescriptor.value();
   checkpoint = core::durableAtomicWriteTextNew(stage / "candidate.json", descriptor);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-  for (const auto& directory : {stage / "audio", stage / "provenance" / "source-evidence",
+  for (const auto& directory : {stage / "audio", stage / "analysis", stage / "provenance" / "source-evidence",
       stage / "provenance" / "history" / "generations", stage / "provenance" / "history" / "journal",
       stage / "provenance" / "history", stage / "provenance", stage}) {
     checkpoint = syncDirectory(directory);
@@ -833,33 +938,18 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
   checkpoint = validateDirectoryIdentity(stage, stageIdentity.value());
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-  checkpoint = repository.verify(project);
+  checkpoint = verifyPublicationSource(repository, project, request.expectedProjectSha256, publicationSource);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
-  const auto finalContent = voicebank::computeVoicebankContentHash(request.manifest, stage);
-  if (!finalContent || finalContent.value() != contentHash.value())
-    return core::failure<Output>(core::ErrorCode::Conflict, "Candidate staged content changed before publication");
   const auto reopened = voicebank::ManifestJsonCodec{}.load(stage / "manifest.json");
   if (!reopened || reopened.value() != request.manifest)
     return core::failure<Output>(core::ErrorCode::Conflict, "Candidate staged manifest does not reopen with its reviewed values");
-  for (const auto& [relative, expectedHash] : std::vector<std::pair<std::string, std::string>>{
-      {"manifest.json", core::sha256Hex(manifestJson.value())},
-      {"candidate.json", core::sha256Hex(descriptor)},
-      {"source-license.txt", primaryLicenseSha256},
-      {"provenance/production.json", request.expectedProjectSha256}}) {
-    const auto actual = core::sha256File(stage / relative);
-    if (!actual || actual.value() != expectedHash)
-      return core::failure<Output>(core::ErrorCode::Conflict, "Candidate staged metadata changed before publication", relative);
-  }
-  for (const auto& [relative, expectedHash] : sourceEvidenceHashes) {
-    const auto actual = core::sha256File(stage / relative, 4ULL * 1024ULL * 1024ULL);
-    if (!actual || actual.value() != expectedHash)
-      return core::failure<Output>(core::ErrorCode::Conflict, "Candidate retained source evidence changed before publication", relative);
-  }
-  for (const auto& [relative, expectedHash] : historyHashes) {
-    const auto actual = core::sha256File(stage / relative, 64ULL * 1024ULL * 1024ULL);
-    if (!actual || actual.value() != expectedHash)
-      return core::failure<Output>(core::ErrorCode::Conflict, "Candidate retained origin history changed before publication", relative);
-  }
+  // The staged directory must verify as exactly the candidate it declares: every listed file with
+  // its size and digest, nothing unlisted, and the voicebank content and producer snapshot it names.
+  const auto staged = verifyResourceCandidateDirectory(stage, stop);
+  if (!staged || staged.value().candidateSha256 != core::sha256Hex(descriptor) ||
+      staged.value().descriptor.contentSha256 != contentHash.value())
+    return core::failure<Output>(core::ErrorCode::Conflict, "Candidate staged content changed before publication",
+        staged ? std::string{} : staged.error().message);
   checkpoint = cancelled(stop);
   if (!checkpoint) return core::Result<Output>{checkpoint.error()};
   checkpoint = publishNewDirectory(stage, finalPath, parentIdentity.value(), stageIdentity.value());
@@ -873,6 +963,47 @@ core::Result<PublishedSampleCandidate> publishSampleCandidate(
     output.diagnostic = "Candidate is committed but parent-directory durability is uncertain. Inspect the returned destination and exact manifest/content/candidate hashes before retrying; do not regenerate or overwrite it. " + checkpoint.error().message;
   }
   return output;
+}
+
+}  // namespace
+
+core::Result<PublishedSampleCandidate> publishSampleCandidate(
+    const std::filesystem::path& repositoryRoot, const VoicebankProductionProject& project,
+    const SampleCandidateRequest& request, const std::filesystem::path& destination,
+    const CandidatePublicationOptions& options, std::stop_token stop) {
+  return publishReviewedCandidate(repositoryRoot, project, request, destination, options, stop,
+                                  PublicationSource::Current);
+}
+
+core::Result<PublishedSampleCandidate> publishSampleCandidateFromGeneration(
+    const std::filesystem::path& repositoryRoot, std::uint64_t generation, std::string_view projectSha256,
+    const voicebank::Manifest& editedManifest, const std::filesystem::path& destination,
+    const CandidatePublicationOptions& options, std::stop_token stop) {
+  using Output = PublishedSampleCandidate;
+  const auto active = cancelled(stop);
+  if (!active) return core::Result<Output>{active.error()};
+  const ProductionProjectRepository repository{repositoryRoot};
+  const auto snapshot = repository.recoverGeneration(generation, projectSha256);
+  if (!snapshot) return core::Result<Output>{snapshot.error()};
+  const auto latest = repository.recover();
+  if (!latest) return core::Result<Output>{latest.error()};
+  // Bindings are resolved from the latest durable generation, then required to be the exact
+  // approvals already in force at the requested one. A manifest, take or review from any other
+  // generation therefore refuses instead of mixing two producer states.
+  auto request = resolveReviewedSampleCandidate(repositoryRoot, latest.value(), editedManifest, stop);
+  if (!request) return core::Result<Output>{request.error()};
+  for (const auto& binding : request.value().units) {
+    auto checked = requireTakeSourceQualification(snapshot.value(), binding.takeId);
+    if (checked) checked = validateReviewedBinding(snapshot.value(), request.value().manifest, binding);
+    if (!checked)
+      return core::failure<Output>(core::ErrorCode::Conflict,
+          "Candidate mixes producer generations: this approval is not the one in force at generation " +
+              std::to_string(generation), binding.unitId + ": " + checked.error().message);
+  }
+  request.value().expectedGeneration = generation;
+  request.value().expectedProjectSha256 = std::string{projectSha256};
+  return publishReviewedCandidate(repositoryRoot, snapshot.value(), request.value(), destination, options, stop,
+                                  PublicationSource::Historic);
 }
 
 }  // namespace seam::voicebank_production

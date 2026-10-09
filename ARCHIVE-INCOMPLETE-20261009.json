@@ -1,0 +1,166 @@
+{
+  "repo": "seam",
+  "label": "u14",
+  "source": "project-seam-usable-alpha-u3-master",
+  "source_ref": "codex/u14-typed-package",
+  "head": "ce62f0d333efbd240c66d41f9680bb7abcecbf01",
+  "base": "9ce39700a1b96a96d698c5e786f7d32cce211a91",
+  "latest": "b961e7547259ebb6c0553def9381910a52e9f19a",
+  "branch": "archive/incomplete-u14-20261009",
+  "files": [
+    {
+      "path": "CMakeLists.txt",
+      "include": true,
+      "reason": null,
+      "sha256": "652c9ebfa9b10c402ea9f94441d1ef82a117b1219603df640e336b924aa1b905",
+      "deleted": false
+    },
+    {
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "106e549af95c84d956bb7688fabf3d4f9292833386a10d5c29da12e006d2d94d",
+      "deleted": false
+    },
+    {
+      "path": "apps/seam-voicebank-cli/candidate_package_commands.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "294c442bda4340cf895cd75e6f4e38df18d9b60fea9f417e36ffdf21b573524c",
+      "deleted": false
+    },
+    {
+      "path": "apps/seam-voicebank-cli/sample_review_commands.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "7d5454f36790831db95ec7812351eb4d3e22fd1eb1d275c88d0234cf586d2750",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-candidate-packaging/include/seam/candidate_packaging/candidate_package.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "81983a577639a7fce71c715df9912ff517a117b10ce209c6678692a1ec13a853",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-candidate-packaging/src/candidate_package.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "daad893d47569b3c723d370ad0d74b36d15b8e72459b27ed82b57c3b802eb794",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/include/seam/distribution/installer.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "704fc0f327a5f2247b7e488fa450ff337ce411fadd1ffe9caa31da48bf6e7d9b",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/include/seam/distribution/procedural_package.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "e8ae6b9da76d56ece06793a13f71fad9879f52bbfcc79e5a8c19a2a6b255107e",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/src/install_transaction.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "b198df914ea1ac50173056a63e3d9625e7aafc5b34bcca1a6f6b3e2503ebf671",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/src/install_transaction_internal.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "6c0cb9b98ec9df15fd3af26e3084bba623174d84d773010593e2207dd8c906f8",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/src/installer.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "6d7271dd2884a4013ecc7339a32aa7e956518921d406a390a865e9b6223613ee",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-distribution/src/procedural_package.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "589621e9f39afb4f2e331f443b684c847f0f29710a2b3b95679ae3779a4fcf12",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/include/seam/voicebank_production/candidate_publication.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "74e02abe3f437e9a5249cf53bdf62b5d9833ad3a27791b474939f56a4a223929",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/include/seam/voicebank_production/resource_candidate.hpp",
+      "include": true,
+      "reason": null,
+      "sha256": "3ab0810cca8eb6484a2b2febc448f22ccb3e4736cb9d3c5190ead91468767163",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/src/declared_candidate.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "ad28b628bbd6d4f07608f7d9f98e1c545de92066fd380798b71638e141e01672",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/src/repository_candidate.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "69d08831c26ef3358bfd148d03d2fc7a8d2e90a05817957cd5090cafa13fadb4",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/src/repository_export.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "30cebdab1adee9f556d43280d81ec0ad04b6313876d67afa832b219907066eb6",
+      "deleted": false
+    },
+    {
+      "path": "libs/seam-voicebank-production/src/resource_candidate.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "782d0777d1c27509c51f7cf68ee5bf56eeb00855b2652909f11e59005ded7b78",
+      "deleted": false
+    },
+    {
+      "path": "tests/test_install_transaction.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "9c31f2c39344046f9838644533ab1dcb76a470bf797904dfc55e3c41413f3c22",
+      "deleted": false
+    },
+    {
+      "path": "tests/test_sample_review_cli.cpp",
+      "include": true,
+      "reason": null,
+      "sha256": "284c3e6fc04c95c84a9979c57913c247b0017d09298510a8c1b2ee0e3851e60c",
+      "deleted": false
+    }
+  ],
+  "status": "INCOMPLETE ARCHIVE ONLY; NOT MERGED OR ACCEPTED",
+  "authorization": "User approved remote preservation and master-only exception for this archive on 2026-10-09. No CI, secrets, or generated outputs included in archive delta.",
+  "limitations": "Selected original source delta on its historical base. Files already present or superseded on latest remote are omitted. This archival subset may not build standalone. Existing verification failures and review findings remain open. Signatures/keyrings, security checks, deployment settings and acceptance status were not changed.",
+  "verification": {
+    "label": "u14",
+    "checks": [],
+    "secret_candidates": [],
+    "diff_check": {
+      "exit": 0,
+      "output": ""
+    },
+    "shell_and_node_syntax": []
+  },
+  "known_open_findings": "Character-bound resource semantics differ from current master; no integration or feature removal authorized by this archive."
+}
