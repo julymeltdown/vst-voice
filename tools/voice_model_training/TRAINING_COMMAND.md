@@ -86,6 +86,36 @@ This lock is target-specific, contains hashes for binary artifacts, and is not a
 cross-platform lock. Runtime fingerprinting detects installed-content drift;
 neither mechanism proves corpus rights, model quality, or release eligibility.
 
+### Execute the complete training test lane
+
+The Torch-enabled upstream-generator tests also require the inspected
+SingingVocoders source pin from `VOCODER_INTAKE.md`. In a new checkout directory:
+
+```sh
+git clone https://github.com/openvpi/SingingVocoders.git build/neural-runtime/singing-vocoders-source
+git -C build/neural-runtime/singing-vocoders-source checkout --detach 4d0889c4c180c75ad3000cc565864656344f8190
+cmake -S . -B build/release \
+  -DSEAM_VOICE_TRAINING_PYTHON="$PWD/build/neural-runtime/diffsinger-repro/bin/python"
+cmake --build build/release -j6
+ctest --test-dir build/release -L '^voice-model-training$' --output-on-failure
+```
+
+Preserve an existing checkout; verify its exact revision and clean state instead
+of resetting it. The test defaults to the repository-relative source directory
+above. Set `SEAM_VOCODER_TEST_CHECKOUT` to use another clean checkout of the same
+pin. Missing, dirty or wrong-revision source fails when Torch is available; it
+does not silently skip the upstream comparison. Only source is needed here;
+no pretrained weights or rights approval are supplied by this fixture.
+
+CTest supplies the built `seam_voicebank_cli` through
+`SEAM_PITCH_COMPARISON_EXTRACTOR`, enabling real waveform positive/negative
+controls. A direct unittest invocation needs that variable explicitly. Keep
+the 120-second training entry timeout visible and retain a timed-out run before
+investigating it; optional-environment skips are not successful model checks.
+Capture the installed environment with `training_environment.capture_environment`
+after importing its numerical dependencies, and retain the lockfile, interpreter,
+upstream source revision and raw test log with that fingerprint.
+
 ## Inputs and invocation
 
 Run from the repository root using the isolated model environment described in

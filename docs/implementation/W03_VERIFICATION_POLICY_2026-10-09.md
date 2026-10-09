@@ -1,6 +1,6 @@
 # W03 production-suite verification policy
 
-Status: scheduling change verified by a full 235/235 passing run under `-j6`. This is engineering test evidence, not product/release acceptance. The separate W03 training-environment obligation remains open.
+Status: scheduling change verified by a full 235/235 passing run under `-j6`. This is engineering test evidence, not product/release acceptance. The separate training-environment update below executes its dependency-enabled tests, but the latest full run has a new RSS-test failure and W03 remains open.
 
 ## Evidence and diagnosis
 
@@ -44,6 +44,18 @@ Raw logs, per-case timings, generated registration, exact partition comparison, 
 
 A passing CTest entry does not mean all internal optional cases ran. The unchanged baseline's training entry discovered 408 cases and skipped 90 with its existing interpreter. Its singing-quality entry discovered 141 and skipped 19: the 12 packet003 native cases require explicit fixture/binary environment variables, while 7 other native lanes require their own inputs. Those 12 were exercised in the preceding dedicated W01 run; the default aggregate result does not rerun them. The production entry ran all 133 with no skips.
 
-The pinned training environment and execution of dependency-gated model/export tests remain W03 follow-up work. Human listening, sample-bank production approval, macOS/Windows installed acceptance, host workloads and final release authority remain separate unmet product obligations.
+The baseline above predates the pinned training environment described below. Human listening, sample-bank production approval, macOS/Windows installed acceptance, host workloads and final release authority remain separate unmet product obligations.
 
 Independent review: APPROVE in reviewer turn `01a11eac-a490-7ad2-a902-425105ae2ab5`, based on source, Git objects, the complete static inventory and retained runtime logs. The reviewer ran no tests. The required clarification of timeout-budget semantics and the unknown historical cause is incorporated above.
+
+## Pinned training environment update
+
+Created a separate Python 3.11.15 environment at `build/neural-runtime/training-w03-20261009`, synchronized the existing hash-locked macOS arm64 requirements, and passed `pip check`. The 63-distribution content fingerprint is `fcdda51f1fc6b42cba63341fc29a637095ad76eba77d5400bf9685efa915699a` (31,209 files; 863,305,394 installed bytes), unchanged on re-capture after testing. CMake's existing `SEAM_VOICE_TRAINING_PYTHON` cache entry points to it. A full dependent rebuild succeeded; the native pitch executable was rebuilt before its use in the focused test.
+
+The first enabled CTest hit the existing 120-second limit. A bounded verbose diagnostic rerun completed in 74.373 seconds and exposed a missing pinned SingingVocoders source checkout. Its hard-coded user-home path is now replaced with a repository-relative default and `SEAM_VOCODER_TEST_CHECKOUT` override. The official documented source revision `4d0889c4c180c75ad3000cc565864656344f8190` was fetched into a fresh ignored directory and verified clean; no pretrained weights were acquired. Missing/dirty/wrong-revision source remains an error when Torch is available. CTest now binds the actual native pitch target automatically, so the waveform-control test executes without a manual environment variable.
+
+Focused training CTest PASS in 76.41 seconds: **469 tests, zero skips**. Native pitch CLI CTest PASS in 1.94 seconds. The enabled discovery count exceeds the old 408 because module-level optional skips previously prevented complete discovery. No timeout, thread count or acoustic threshold was changed. The cause of the initial 120-second event remains unproven.
+
+The subsequent full `-j6` run is explicitly **FAILED: 234/235**, 384.92 seconds. Its training entry passed in 106.63 seconds with all 469 tests and zero skips. The sole failure, before the training entry started, was `test_rss_is_read_from_the_live_process_not_a_constant`: a self-process live RSS baseline of 181,387,264 bytes was compared with a later 36,814,848-byte reading and failed an assumed factor-four stability bound. Both measurements use the live collector; this is not peak-RSS versus current-RSS. The preceding growth test allocates/releases a large ballast, so a shared test-process baseline is an uncontrolled oracle. The exact reason for the shrink has not been established. Next work must check this with a controlled live target, retaining production soak thresholds and the failed log. W03 and the full verification gate remain open until that is resolved and the full matrix passes.
+
+Install/build/configuration logs, before/after environment check, source pin and successful/failed tests are retained in `out/evidence/w03-2026-10-09/training-receipt.json` and its hashed files. These dependencies and receipts are local and git-ignored; repository instructions make the setup reproducible but are not a release archive. This establishes tool/test readiness, not model or singer qualification. Independent review of this increment is pending in turn `01a11ec0-e7ad-7702-bc4f-26005b112d50`.

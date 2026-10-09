@@ -6,6 +6,8 @@ at nonzero noise, and identical state_dict keys for warm-start governance.
 Uses the small smoke architecture so the fixture stays in-memory.
 """
 import importlib.util
+import os
+from pathlib import Path
 import unittest
 
 if importlib.util.find_spec("torch") is None:
@@ -19,15 +21,14 @@ from tools.voice_model_training.train_vocoder import _module
 from tools.voice_model_training.uv_noise_excitation import (
     SOURCE_SAMPLES_PER_FRAME, uv_noise_generator_class)
 
-CHECKOUT = ('/Users/lhs/Downloads/project-seam-usable-alpha-u3-master/'
-            'build/neural-runtime/singing-vocoders-source')
+CHECKOUT = Path(os.environ.get('SEAM_VOCODER_TEST_CHECKOUT',
+    Path(__file__).resolve().parents[2] / 'build/neural-runtime/singing-vocoders-source'))
 
 
 class PinnedGeneratorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from pathlib import Path
-        checkout = trusted_checkout(Path(CHECKOUT), TRAINING_REVISION)
+        checkout = trusted_checkout(CHECKOUT, TRAINING_REVISION)
         source = _module(checkout, 'seam_test_uvnoise_arch', 'models/nsf_HiFigan/models.py')
         cls.AttrDict = source.AttrDict
         cls.Base = source.Generator

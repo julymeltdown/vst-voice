@@ -2568,7 +2568,8 @@ if(SEAM_BUILD_TESTS)
         -s tools/voice_model_training -p "test_*.py")
     set_tests_properties(seam_voice_model_training_tests PROPERTIES
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1" TIMEOUT 120
+      ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1;SEAM_PITCH_COMPARISON_EXTRACTOR=$<TARGET_FILE:seam_voicebank_cli>"
+      TIMEOUT 120
       LABELS "voice-model-training")
     add_test(NAME seam_training_pitch_cli
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_training_pitch_cli.py
